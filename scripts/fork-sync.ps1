@@ -9,7 +9,8 @@
 param(
     [string]$UpstreamRemote = 'upstream',
     [string]$MainBranch     = 'main',
-    [string]$DevBranch      = 'dev'
+    [string]$DevBranch      = 'dev',
+    [switch]$Push
 )
 
 # PowerShell 5.1 在 Stop 模式下会把 git 写到 stderr 的正常输出（拉取进度、CONFLICT 提示）
@@ -110,3 +111,17 @@ if ($devBefore -eq $devAfter) {
 }
 Write-Step "当前分支：$DevBranch（运行前：$startBranch）"
 git log --oneline -1
+
+# --- 推送到自己的 fork（可选） ----------------------------------------------
+
+if ($Push) {
+    if ((git remote) -notcontains 'origin') {
+        Write-WarnLine '未配置 origin，跳过推送。'
+    } else {
+        Write-Step "推送 $MainBranch 与 $DevBranch 到 origin..."
+        git push --quiet origin $MainBranch
+        if ($LASTEXITCODE -ne 0) { Write-WarnLine "推送 $MainBranch 失败。" }
+        git push --quiet origin $DevBranch
+        if ($LASTEXITCODE -ne 0) { Write-WarnLine "推送 $DevBranch 失败。" }
+    }
+}

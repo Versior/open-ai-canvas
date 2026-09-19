@@ -11,7 +11,7 @@
 | 远程 | 地址 | 用途 |
 | --- | --- | --- |
 | `upstream` | `github.com/ddcat-ai/open-ai-canvas` | 只读，拉取作者更新（push URL 已禁用） |
-| `origin` | 你自己的仓库（GitHub / Gitee / 内网均可） | 二开提交与备份 |
+| `origin` | `github.com/Versior/open-ai-canvas`（你的 fork） | 二开提交与备份 |
 
 | 分支 | 用途 | 纪律 |
 | --- | --- | --- |
@@ -22,13 +22,26 @@
 
 这样上游更新永远是干净的 fast-forward，冲突只可能出现在 `dev` 上——而 `dev` 是你的分支，随时可以丢弃重来，不会污染上游历史。
 
-### 首次配置自己的远程仓库
+### 远程仓库
+
+`origin` 已指向自己的 fork，`dev` 跟踪 `origin/dev`：
+
+| 项 | 值 |
+| --- | --- |
+| `origin` | `github.com/Versior/open-ai-canvas`（你的 fork） |
+| `upstream` | `github.com/ddcat-ai/open-ai-canvas`（push URL 已禁用） |
+
+`main` 刻意**不**跟踪 `origin`，而是跟踪 `upstream/main`——这样在这个分支上误敲 `git push`，不会把东西推进上游镜像分支。
+
+换机器时重建远程：
 
 ```powershell
-git remote add origin <你的仓库地址>
-git push -u origin main
-git push -u origin dev
+git remote add upstream https://github.com/ddcat-ai/open-ai-canvas
+git remote set-url --push upstream DISABLED
+git remote add origin https://github.com/Versior/open-ai-canvas.git
 ```
+
+> ⚠️ 该 fork 是 **public**。不要提交密钥、私有渠道信息或内部业务逻辑——`.env` 已被 `.gitignore` 忽略，但新增文件要自己确认。
 
 ---
 
@@ -76,6 +89,11 @@ Manifest 合同见 `docs/content/docs/plugins/plugin-system.mdx`。
 .\scripts\fork-sync.ps1
 ```
 
+同步后可以把结果推回自己的 fork（默认不推送，避免多余的网络副作用）：
+
+```powershell
+.\scripts\fork-sync.ps1 -Push
+```
 脚本会检查工作区、拉取 `upstream`、把 `main` fast-forward、再把 `main` 合并进 `dev`。
 
 手动等价流程：
