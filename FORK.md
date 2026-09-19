@@ -173,6 +173,44 @@ git merge fix/lighting-preset-overlap
 
 后端检查需要本机 Go 工具链，版本见 `backend/go.mod`。
 
+#### 上游 CI 当前在 `main` 上就是红的（存量问题，与你的改动无关）
+
+截至 v1.5.4，上游 `main` 的 Quality checks 连续多次失败：
+
+| Job | 失败点 | 说明 |
+| --- | --- | --- |
+| Backend checks | `Check formatting`（`gofmt -l .` 有输出） | 存量 Go 对齐问题：`internal/model/models.go`、`internal/protocol/image_tools_test.go`、`internal/app/channel_model_upstream_rename_test.go` |
+| Web checks | `Run tests` | 一个 CSS 断言失败（`.admin-model-editor-references` 相关） |
+| Payment plugin artifacts | — | 通过 |
+
+**提 PR 后 CI 出现红叉，先确认失败点是不是你自己的改动。** 不要为了让 CI 变绿而顺手改无关文件——那会污染 PR；真要修存量问题，单独开一个 PR。
+
+#### Windows：CRLF 会让 `gofmt` 全部误报
+
+若全局 `core.autocrlf=true`，Go 文件会被检出为 CRLF，`gofmt -l .` 会把**所有** Go 文件列为待格式化（纯假阳性）。本仓库已用 `.git/info/attributes` 强制 `*.go` 用 LF——该文件**不进版本控制**，换机器需重建：
+
+```powershell
+'*.go text eol=lf' | Set-Content -Encoding utf8 .git\info\attributes
+```
+
+已存在的 CRLF 文件需转换一次（字节级替换，不碰编码），再刷新索引：
+
+```powershell
+git ls-files '*.go' | ForEach-Object {
+  $p = Join-Path (Get-Location) ($_ -replace '/', '\')
+  $b = [System.IO.File]::ReadAllBytes($p)
+  $out = New-Object System.Collections.Generic.List[byte]
+  for ($i = 0; $i -lt $b.Length; $i++) {
+    if ($b[$i] -eq 13 -and ($i + 1) -lt $b.Length -and $b[$i + 1] -eq 10) { continue }
+    $out.Add($b[$i])
+  }
+  [System.IO.File]::WriteAllBytes($p, $out.ToArray())
+}
+git add -- '*.go'
+```
+
+转换不产生实际内容差异（`git diff --cached` 为空），只修正行尾和索引 stat。
+
 ### 4.4 PR 描述
 
 按 `.github/pull_request_template.md` 填写：**改动摘要**、**风险与兼容性**、**验证**（UI 改动附关键路径截图），以及三个勾选项——未提交密钥/数据库/日志/本机配置、保留上游署名与许可证通知、已检查权限与资源归属和失败语义。
