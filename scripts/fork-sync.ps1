@@ -12,7 +12,9 @@ param(
     [string]$DevBranch      = 'dev'
 )
 
-$ErrorActionPreference = 'Stop'
+# PowerShell 5.1 在 Stop 模式下会把 git 写到 stderr 的正常输出（拉取进度、CONFLICT 提示）
+# 当成终止错误，导致脚本在上游真有更新时中断。这里统一用 Continue，失败判断全部交给 $LASTEXITCODE。
+$ErrorActionPreference = 'Continue'
 
 function Write-Step([string]$Message) {
     Write-Host "[fork-sync] $Message" -ForegroundColor Cyan
@@ -61,7 +63,7 @@ $devBefore   = "$(git rev-parse $DevBranch)".Trim()
 # --- 拉取上游 ---------------------------------------------------------------
 
 Write-Step "从 $UpstreamRemote 拉取更新..."
-git fetch $UpstreamRemote --prune --tags
+git fetch --quiet $UpstreamRemote --prune --tags
 if ($LASTEXITCODE -ne 0) {
     Stop-Sync '拉取上游失败，请检查网络或远程地址。'
 }
