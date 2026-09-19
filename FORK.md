@@ -16,11 +16,16 @@
 | 分支 | 用途 | 纪律 |
 | --- | --- | --- |
 | `main` | 上游镜像 | **永不提交**，只允许 fast-forward 到 `upstream/main` |
-| `dev` | 二开主线 | 全部二开改动提交在这里 |
+| `dev` | 私有二开主线 | 不能公开的改动都提交在这里 |
+| `fix/*`、`feat/*` | 上游贡献分支 | **必须从 `main` 分出**，只含能公开的最小改动 |
 
-**核心纪律：`main` 永远等于上游，二开只写在 `dev`。**
+**三条纪律：**
 
-这样上游更新永远是干净的 fast-forward，冲突只可能出现在 `dev` 上——而 `dev` 是你的分支，随时可以丢弃重来，不会污染上游历史。
+1. `main` 永远等于上游——只允许 fast-forward，永不提交。
+2. 提 PR 的改动只写在 `fix/*`、`feat/*`，且**必须从 `main` 分出**。
+3. 私有二开只写在 `dev`。
+
+这样上游更新永远是干净的 fast-forward；能公开的改动走贡献分支提 PR，不能公开的留在 `dev`，两者互不污染。
 
 ### 远程仓库
 
@@ -112,7 +117,83 @@ git merge main
 
 ---
 
-## 4. 冲突热点清单
+## 4. 向上游提 PR
+
+### 4.1 铁律：贡献分支从 `main` 分出
+
+```text
+upstream/main ──► main（上游镜像，只 fast-forward）
+                    ├── fix/*  feat/*  ──► 提 PR 给上游（干净、最小）
+                    └── (merge 回来) dev（私有二开主线）
+```
+
+**绝不能从 `dev` 分贡献分支。** `dev` 上带着不能公开的改动，从它分出去的 PR 会把这些一起推给上游——上游不会接受，还可能泄露私有内容。
+
+### 4.2 提 PR 流程
+
+```powershell
+# 1 先把上游镜像更新到最新
+.\scripts\fork-sync.ps1
+
+# 2 从 main 开一个只做这一件事的分支
+git switch -c fix/lighting-preset-overlap main
+
+# 3 改代码，保持最小，然后提交
+git add -A
+git commit -m "fix(canvas): 打光效果 - 修复预设文字重叠"
+
+# 4 按 4.3 节跑一遍本地自检
+
+# 5 推到自己 fork
+git push -u origin fix/lighting-preset-overlap
+
+# 6 提 PR（--head 必须写 <你的账号>:<分支名>）
+gh pr create --repo ddcat-ai/open-ai-canvas --base main `
+  --head Versior:fix/lighting-preset-overlap `
+  --title "fix(canvas): 打光效果 - 修复预设文字重叠" --fill
+
+# 7 让自己私有版本也吃到这个修复
+git switch dev
+git merge fix/lighting-preset-overlap
+```
+
+### 4.3 PR 前本地自检（上游 CI 会卡这些）
+
+上游 `.github/workflows/quality.yml` 在每个 PR 上运行，改动不合规会被直接打回：
+
+| 检查 | 命令 |
+| --- | --- |
+| Go 格式（必须无输出） | `cd backend; gofmt -l .` |
+| Go 测试 | `cd backend; go test ./...` |
+| 禁止残留 lockfile | 不得存在 `web/pnpm-lock.yaml`、`web/package-lock.json`、`web/yarn.lock`（只允许 `bun.lock`） |
+| 前端格式 | `cd web; bunx prettier --check <改动文件>` |
+| 前端类型 | `cd web; bun run typecheck` |
+| 前端 lint | `cd web; bun run lint` |
+| 前端测试 | `cd web; bun run test` |
+
+后端检查需要本机 Go 工具链，版本见 `backend/go.mod`。
+
+### 4.4 PR 描述
+
+按 `.github/pull_request_template.md` 填写：**改动摘要**、**风险与兼容性**、**验证**（UI 改动附关键路径截图），以及三个勾选项——未提交密钥/数据库/日志/本机配置、保留上游署名与许可证通知、已检查权限与资源归属和失败语义。
+
+### 4.5 上游合并你的 PR 之后
+
+作者会重写提交信息（也可能 squash），所以上游 `main` 上的提交与你 `fix/*` 分支上的提交是**不同 SHA、相同内容**。这种情况已实测：
+
+- `main` fast-forward ✓
+- `dev` 合并 `main` **自动完成、无冲突**，`dev` 内容与 `main` 完全一致 ✓
+
+所以正常跑 `.\scripts\fork-sync.ps1 -Push` 即可，然后删掉贡献分支：
+
+```powershell
+git branch -d fix/lighting-preset-overlap
+git push origin --delete fix/lighting-preset-overlap
+```
+
+---
+
+## 5. 冲突热点清单
 
 下面这些文件是二开与上游的"接缝"，上游更新时冲突高发。改之前先问自己：**能不能改用 L2 插件包？**
 
@@ -135,7 +216,7 @@ git merge main
 
 ---
 
-## 5. 日常约定
+## 6. 日常约定
 
 - **二开新代码优先新增文件、独立目录**，避免在上游文件里插入大段逻辑。
 - **不要在 `dev` 上 rebase 上游**：长期分支重写历史会让冲突处理成本翻倍。用 `merge`。
@@ -150,7 +231,7 @@ git merge main
 
 ---
 
-## 6. 回退
+## 7. 回退
 
 - 撤销一次同步：`git switch dev; git reset --hard ORIG_HEAD`（合并前的状态）
 - 完全重来：`git switch main; git merge --ff-only upstream/main; git branch -f dev main`
