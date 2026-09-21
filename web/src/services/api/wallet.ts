@@ -1,4 +1,5 @@
 import { http } from "@/services/api/request";
+import type { ModelTag } from "@/lib/model-tags";
 
 
 export type CreditAccount = {
@@ -53,6 +54,7 @@ export type ChannelModel = {
     providerModelKey: string;
     displayName: string;
     channelLabel?: string;
+    tags?: ModelTag[];
     description?: string;
     sortOrder?: number;
     icon: string;
@@ -109,6 +111,7 @@ export type ChannelModelMutation = {
     providerModelKey?: string;
     displayName?: string;
     channelLabel?: string;
+    tags?: ModelTag[];
     description?: string;
     icon?: string;
     capability: ChannelModel["capability"];
@@ -318,6 +321,16 @@ export function deleteAdminChannelModel(channelId: string, id: string) {
 
 export function deleteAdminChannelModels(channelId: string, modelIds: string[]) {
     return http.post<{ deleted: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/batch-delete`, { modelIds });
+}
+
+export type ChannelModelRepriceInput = {
+    modelId: string;
+    priceVersion: number;
+    priceTiers: { id: string; priceVersion: number; prices: Partial<Record<"unitPriceMicrocredits" | "inputTokenPriceMicrocredits" | "outputTokenPriceMicrocredits" | "cachedTokenPriceMicrocredits", number>> }[];
+};
+
+export function repriceAdminChannelModels(channelId: string, models: ChannelModelRepriceInput[]) {
+    return http.post<{ updated: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/batch-reprice`, { models });
 }
 
 export type AdminFinanceListParams = { keyword?: string; status?: string; validity?: string; page?: number; pageSize?: number };
