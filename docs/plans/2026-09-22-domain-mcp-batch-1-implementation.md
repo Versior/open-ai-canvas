@@ -82,7 +82,7 @@
 **Interfaces:**
 - Produces: `ErrorCode`, `DomainError`, `ErrNoEvidence`, `ErrPolicyBlocked`, `Evidence`, `Finding`, `Artifact`, `Result`, `ToolManifest`, `PackManifest`, `Catalog`, `ValidateResult(Result) error`.
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 ```go
 func TestValidateResultRequiresEvidenceForExternalFindings(t *testing.T) {
@@ -93,7 +93,8 @@ func TestValidateResultRequiresEvidenceForExternalFindings(t *testing.T) {
 }
 
 func TestBuiltinCatalogContainsCommerceProductInsight(t *testing.T) {
-    catalog := NewCatalog(BuiltinPacks()...)
+    catalog, err := NewCatalog(BuiltinPacks()...)
+    if err != nil { t.Fatal(err) }
     pack, ok := catalog.Pack("commerce.product-insight")
     if !ok || pack.Tools[0].Name != "commerce.product_analyze" {
         t.Fatalf("pack = %#v", pack)
@@ -101,13 +102,13 @@ func TestBuiltinCatalogContainsCommerceProductInsight(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run: `cd backend && go test ./internal/domainmcp -run 'ValidateResult|BuiltinCatalog' -count=1`
 
 Expected: compilation fails because `Result`, `ValidateResult` and `NewCatalog` do not exist.
 
-- [ ] **Step 3: Implement the contracts and immutable catalog**
+- [x] **Step 3: Implement the contracts and immutable catalog**
 
 ```go
 type ErrorCode string
@@ -132,13 +133,13 @@ type DomainError struct {
 
 `DomainError.Is` 按错误码匹配，并导出 `ErrNoEvidence`、`ErrPolicyBlocked` 等不含上游正文的哨兵错误。`ValidateResult` 必须校验：最多 100 个发现、50 个来源、50 个产物；外部发现至少引用一个存在的 `Evidence.ID`；URL 为绝对 HTTPS；字符串和序列化结果有界；Artifact 类型来自白名单。
 
-- [ ] **Step 4: Run tests and verify GREEN**
+- [x] **Step 4: Run tests and verify GREEN**
 
 Run: `cd backend && go test ./internal/domainmcp -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/domainmcp
