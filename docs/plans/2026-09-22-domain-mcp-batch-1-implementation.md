@@ -262,7 +262,7 @@ git commit -m "feat(mcp): AnySearch - 增加受限搜索 Provider"
 - Consumes: `providers.SearchProvider`.
 - Produces: four registered tools, with `commerce.product_analyze` fully executable in Batch 1.
 
-- [ ] **Step 1: Write failing behavior tests**
+- [x] **Step 1: Write failing behavior tests**
 
 ```go
 func TestProductAnalyzeSeparatesProductFactsFromMarketSignals(t *testing.T) {
@@ -276,23 +276,23 @@ func TestProductAnalyzeSeparatesProductFactsFromMarketSignals(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/domainmcp/packs/commerce -count=1`
 
 Expected: package or constructor does not exist.
 
-- [ ] **Step 3: Implement the first executable tool**
+- [x] **Step 3: Implement the first executable tool**
 
 `commerce.product_analyze` accepts product name, known facts, audience hint, market and language. It builds bounded search queries, deduplicates canonical URLs, scores source recency and agreement, separates supplied facts from public-search signals, and returns a report Artifact plus a `canvas.recipe` Artifact containing deterministic text-node sections. The other three tools are listed in the Manifest but marked unavailable until their handlers are registered, so the Hub never exposes a non-executable tool.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/domainmcp/packs/commerce ./internal/domainmcp -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/domainmcp/packs/commerce

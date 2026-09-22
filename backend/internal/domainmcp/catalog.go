@@ -125,7 +125,7 @@ func builtinPack(id, name, description string, providers []string, dataNotice st
 			Name:                toolName,
 			Description:         builtinToolDescription(toolName),
 			Permission:          PermissionReadOnly,
-			InputSchema:         map[string]any{"type": "object", "additionalProperties": false},
+			InputSchema:         builtinToolInputSchema(toolName),
 			OutputSchemaVersion: 1,
 		})
 	}
@@ -133,8 +133,29 @@ func builtinPack(id, name, description string, providers []string, dataNotice st
 }
 
 func builtinToolDescription(name string) string {
+	if name == "commerce.product_analyze" {
+		return "基于用户提供的商品事实和可追溯公网检索信号，分析受众、购买动机、购买阻力与卖点方向；不会把市场推测写成商品事实。"
+	}
 	readable := strings.NewReplacer(".", " ", "_", " ").Replace(name)
 	return "影策领域能力：" + readable
+}
+
+func builtinToolInputSchema(name string) map[string]any {
+	if name == "commerce.product_analyze" {
+		return map[string]any{
+			"type":                 "object",
+			"additionalProperties": false,
+			"required":             []any{"productName"},
+			"properties": map[string]any{
+				"productName":  map[string]any{"type": "string", "minLength": 1, "maxLength": 200, "description": "明确的商品名称"},
+				"productFacts": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}, "description": "用户确认的商品事实，不包含推测"},
+				"audienceHint": map[string]any{"type": "string", "maxLength": 500, "description": "已有目标人群提示"},
+				"market":       map[string]any{"type": "string", "maxLength": 100, "description": "目标市场，默认中国大陆"},
+				"language":     map[string]any{"type": "string", "maxLength": 32, "description": "结果语言，默认 zh-CN"},
+			},
+		}
+	}
+	return map[string]any{"type": "object", "additionalProperties": false}
 }
 
 func validatePackManifest(pack PackManifest) error {
