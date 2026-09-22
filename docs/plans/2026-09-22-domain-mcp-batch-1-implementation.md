@@ -213,7 +213,7 @@ git commit -m "feat(mcp): 领域能力 - 增加受策略约束的 Hub"
 - Consumes: `internal/mcp.Service`, AnySearch `search` and `extract` tools.
 - Produces: `SearchProvider.Search`, `SearchProvider.Extract`, normalized `SearchHit` and `ExtractedPage`.
 
-- [ ] **Step 1: Write failing adapter tests with an HTTP fixture**
+- [x] **Step 1: Write failing adapter tests with an HTTP fixture**
 
 ```go
 func TestAnySearchNormalizesStructuredAndTextResults(t *testing.T) {
@@ -226,25 +226,25 @@ func TestAnySearchNormalizesStructuredAndTextResults(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/domainmcp/providers -count=1`
 
 Expected: package or types do not exist.
 
-- [ ] **Step 3: Implement bounded provider translation**
+- [x] **Step 3: Implement bounded provider translation**
 
 The adapter calls `search` with `query` and bounded `limit`, accepts `structuredContent` first and text JSON second, rejects non-HTTPS evidence URLs, truncates snippets, maps 401/403 to `UPSTREAM_AUTH`, 429 to `UPSTREAM_QUOTA`, deadline errors to `UPSTREAM_TIMEOUT`, and preserves partial valid hits with `PARTIAL_RESULT`.
 
 Increase the generic MCP response limit from 96 KiB to 512 KiB only after adding a test proving a 500 KiB response succeeds and a 512 KiB+1 response fails. The Domain adapter applies a smaller normalized output limit before returning to the Agent.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/domainmcp/providers ./internal/mcp -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/domainmcp/providers backend/internal/mcp
