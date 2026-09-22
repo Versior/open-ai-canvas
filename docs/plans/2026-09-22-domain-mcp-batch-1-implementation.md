@@ -156,7 +156,7 @@ git commit -m "feat(mcp): 领域能力 - 建立结果合同与能力目录"
 - Consumes: `PackManifest`, `Result`, `ValidateResult`.
 - Produces: `ToolHandler`, `ToolRegistry`, `Hub.ListTools`, `Hub.CallTool`.
 
-- [ ] **Step 1: Write failing Hub tests**
+- [x] **Step 1: Write failing Hub tests**
 
 ```go
 func TestHubExposesOnlyEnabledAllowlistedTools(t *testing.T) {
@@ -170,13 +170,13 @@ func TestHubExposesOnlyEnabledAllowlistedTools(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/domainmcp -run Hub -count=1`
 
 Expected: compilation fails because `Hub` does not exist.
 
-- [ ] **Step 3: Implement minimal registry and call path**
+- [x] **Step 3: Implement minimal registry and call path**
 
 ```go
 type ToolHandler interface {
@@ -187,13 +187,13 @@ type ToolHandler interface {
 
 Hub construction rejects duplicate pack IDs, duplicate tool names, unknown allowlist entries and enabled packs without handlers. Calls decode bounded JSON, invoke one handler, then run `ValidateResult` before returning.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/domainmcp -run Hub -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/domainmcp/hub.go backend/internal/domainmcp/hub_test.go
