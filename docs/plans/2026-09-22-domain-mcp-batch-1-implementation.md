@@ -545,17 +545,17 @@ git commit -m "feat(admin): MCP 市场 - 增加安装与连接管理界面"
 - Consumes: completed Batch 1 implementation.
 - Produces: deployable configuration and verified release path.
 
-- [ ] **Step 1: Add failing deployment contract tests**
+- [x] **Step 1: Add failing deployment contract tests**
 
 Extend existing Compose and image-release tests to assert that MCP settings are forwarded without embedding credentials, `dev` image tags build from the fork, and the optional external endpoint remains closed unless a token is configured.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd web && bun.cmd test test/ci-image-release.test.mjs test/fork-image-deployment.test.ts`
 
 Expected: missing variables or workflow branch coverage fails.
 
-- [ ] **Step 3: Implement deployment wiring and documentation**
+- [x] **Step 3: Implement deployment wiring and documentation**
 
 Document database-backed marketplace configuration as primary, environment JSON as recovery-only, the AnySearch credential UI, the public-search signal limitation, the standard MCP endpoint opt-in, and credential rotation. Never include a real key.
 
@@ -579,11 +579,13 @@ git diff --check
 
 Expected: every command exits 0. If the host lacks a working C compiler, record the CGO blocker and run all non-SQLite packages plus the existing Docker/GitHub build path; do not label backend integration tests as passed.
 
+Current verification evidence (2026-09-23): targeted Domain MCP, Agent MCP, subagent, visual-context and handler tests pass with the G-drive CGO toolchain; frontend typecheck, lint, production build and the new targeted suites pass. The complete frontend suite still has 16 pre-existing Windows path/CRLF portability failures, while complete backend verification is not green because one Windows permission-mode assertion differs (`0640` vs `0666`) and the full `internal/app` package exceeds the 10-minute local timeout in SQLite sync/bootstrap work. Keep this step open until the full CI matrix is green.
+
 - [ ] **Step 5: Perform real read-only smoke tests**
 
 Use the configured AnySearch connection to run one non-sensitive public query, verify at least one source URL, verify no key appears in response/events/logs, apply the resulting Bundle to a disposable local canvas, undo the single operation group, and verify the canvas returns to the previous snapshot.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .env.example docker-compose*.yml .github/workflows docs/content/docs

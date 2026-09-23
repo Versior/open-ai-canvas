@@ -117,15 +117,29 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。参考
 
 管理员通过 `GET/PATCH /admin/settings/features` 读取和保存 `welcomeEnabled`，默认 `true`，与其他功能开关一起存入 `system_settings` 的 `feature_availability` JSON，并记录管理员审计。关闭后新访问 `/welcome` 的浏览器跳转到 `/`。
 
+## 领域 MCP 能力市场
+
+管理员通过 `/admin/mcp` 管理领域能力包，配置写入数据库中的 `domain_mcp_marketplace` 系统设置；Provider 凭据使用系统设置密钥加密保存，读取接口只返回 `credentialConfigured`，从不回传密钥原文。API 包括：
+
+- `GET /admin/domain-mcp/catalog`：内置能力包目录、版本、工具、Provider 要求、数据说明和可安装状态。
+- `GET /admin/domain-mcp/installations`：当前安装、工具白名单、Endpoint 与凭据是否已配置。
+- `POST /admin/domain-mcp/installations`：安装能力包；`PATCH /admin/domain-mcp/installations/:id` 更新名称、启停、Endpoint、工具白名单或凭据。更新时 `apiKey: ""` 表示保留现有凭据，只有 `clearCredential: true` 才清除。
+- `POST /admin/domain-mcp/installations/:id/test`：在与运行时相同的 SSRF、Header、响应大小和超时边界内发现工具；`DELETE /admin/domain-mcp/installations/:id` 卸载并立即刷新运行时目录。
+
+首批可执行能力包是“电商商品洞察”，通过 AnySearch 的 `search` / `extract` 获取公开网页信号。结论必须附来源；公网结果不等于平台官方榜单、销量事实或用户商品事实。`CANVAS_AGENT_MCP_SERVERS_JSON` 是部署者管理的通用 Agent MCP 网关，不是领域市场的凭据源，也不会同步到市场；领域能力凭据应通过后台写入数据库。紧急恢复时可暂时使用通用网关提供只读工具，但仍受其独立白名单和逐次审批约束。
+
+标准 MCP Streamable HTTP 入口为 `/mcp/domain`。默认不开放：`CANVAS_DOMAIN_MCP_TOKEN` 为空时返回 404；配置后只接受 `Authorization: Bearer <token>`，登录 Cookie 不能替代 Bearer Token。Token 只放在部署环境或 Secret Manager，不写入镜像、Compose 默认值或仓库。轮换时更新私有环境并重启后端，旧 Token 立即失效。
+
 ## 云端 Agent
 
-所有 `/agent` 路径都需要登录 Cookie。`GET /agent/capabilities` 返回当前版本（2）、权限模式、上下文范围、技能和工具清单；跨轮历史仍按可恢复事实和发送预算整理，不把某个固定字节数当作模型窗口。Agent 运行由服务端任务 Worker 驱动，浏览器断开不会停止运行。
+所有 `/agent` 路径都需要登录 Cookie。`GET /agent/capabilities` 返回当前版本（3）、权限模式、上下文范围、技能、MCP、子智能体和工具清单；跨轮历史仍按可恢复事实和发送预算整理，不把某个固定字节数当作模型窗口。Agent 运行由服务端任务 Worker 驱动，浏览器断开不会停止运行。
 
 文本模型能力合同包含 `contextWindowTokens`（输入加输出的总上下文窗口）和 `maxOutputTokens`（输出/推理上限）。Agent 每轮根据实际执行的渠道模型计算输入预算，并预留工具 schema、协议包装和恢复空间；逻辑模型按候选文本线路取安全交集，旧配置或能力解析失败回退 128K / 16K。1M 模型可通过后台能力配置使用更大输入预算。前后端的 Token 估算用于提前压缩和拒绝病态请求，最终仍以上游 tokenizer 和响应为准。运行 checkpoint 的 512KB 持久化上限只约束恢复状态，不限制模型上下文窗口。
 
 - `POST /agent/runs` 创建一轮；`POST /agent/runs/:id/messages` 以上一轮为父节点创建新的不可变轮次，两者返回 `{ run }`，追加后必须使用新的 `run.id` 订阅。
 - `POST /agent/runs/:id/interjections` 向**正在运行**的轮次插入一句话，不新建轮次、不产生新的扣费身份。请求 `{ text, messageId }`，`text` 最多 4000 字符；同一 `messageId` 幂等。插话在下一次模型调用前注入；运行已结束返回 409，前端应回落为新一轮发送。步数耗尽或运行失败时发出 `user_interjection_dropped`，不会静默吞掉，也不会自动替用户开新一轮。
-- 请求字段：`canvasId`、`prompt`、受管 `logicalModelId` 或 `channelId` + `channelModelKey`、`permissionMode: "read_only" | "request_approval" | "auto"`、`reasoningMode: "off" | "auto" | "deep"`、`profileRevision`、`skillIds`、`contextScope: [] | ["canvas"]`、`budget: { maxCredits, maxGenerationTasks, maxVideoSeconds }`、`idempotencyKey`。不接受密钥、自定义 URL、客户端历史或未知字段。
+- 请求字段：`canvasId`、`prompt`、受管 `logicalModelId` 或 `channelId` + `channelModelKey`、`permissionMode: "read_only" | "request_approval" | "auto"`、`reasoningMode: "off" | "auto" | "deep"`、`profileRevision`、`skillIds`、`mcpServerIds`、`contextScope: [] | ["canvas"]`、`budget: { maxCredits, maxGenerationTasks, maxVideoSeconds, maxSubagents }`、`idempotencyKey`。不接受密钥、自定义 URL、客户端历史或未知字段；`mcpServerIds` 最多 8 个，`maxSubagents` 为 0–8。
+- `GET /agent/mcp/servers` 返回部署者允许选择的受管连接，只公开 `id`、名称、说明和工具白名单，不返回 URL、Header 或密钥。连接由 `CANVAS_AGENT_MCP_SERVERS_JSON` 配置，仅支持 Streamable HTTP；客户端优先探测无会话的 MCP `2026-07-28`，并自动回退到 `2025-11-25` 及更早的 initialize/initialized 协商。私网或 HTTP 主机仍需 `CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS` 精确放行。新轮次会冻结 Server ID、显示名和配置哈希，运行期间配置变化会拒绝继续调用并要求新开一轮。
 - 同用户同幂等键及相同请求返回同一运行；不同请求复用键返回 409。失败后重试同一提交应保留键。上一轮未完成时禁止追加；已完成、失败、取消或已拒绝的终态轮次作为不可变历史读取，即使其冻结的策略或节点能力版本早于当前服务，也可用于创建采用当前执行合同的新一轮，父运行不会被改写。旧版合同下仍活动或待审批的运行不得恢复执行。历史只保留最近 10 轮用户目标；运行历史与跨轮摘要仍受独立的持久化 JSON 保护，超限先丢掉更早的可重读正文并保留结构化事实，单轮仍超出当前模型能力预算时才提示缩小范围或新建对话；历史结构损坏返回明确 409，不投影为通用 500。
 - `POST /agent/runs/:id/approvals/:approvalId/decision` 的 `{ decision, reason? }` 可在批准图片生成时附带 `mediaSettings: { logicalModelId? | channelId? + channelModelKey?, size, quality }`。仅替换本次模型选择、画幅和质量，不允许修改目标、提示词、引用、模式或快照。服务端先无收费预检，失败保留待审批状态；成功原子更新审批调用、哈希及预览，提交任务时再次校验内容、资源归属、模型能力、价格与累计预算。相同参数重复批准幂等，不同参数复用已决定审批返回 409。
 - 审批拒绝是独立终态 `rejected`，表示本次操作未执行；不会生成 `tool_failed`、继续调用模型、写入画布、提交生成任务或扣费。拒绝后的草稿按既有草稿策略保留，用户可在下一轮说明修改方向。
@@ -135,7 +149,8 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。参考
 - 系统行为策略与媒体默认策略是版本化、编译进后端发布物的资源，修改它们仍需发布后端，不是后台热更新；工具、校验、扣费和审批在代码侧强制执行。画布节点能力由服务端 registry 定义，工具 schema、创建、连线与画布摘要读取共同消费；新生成模式还必须接入媒体任务适配器，不能仅凭 md 或注册节点启用收费操作。
 - 已安装且属于当前用户的技能在创建时只保存版本、哈希和文本文件路径，不预存全部正文，也不按所有选中技能正文合计 128KB 拒绝创建。`skill_read_file` 按需读取 `SKILL.md` 或必要引用，支持字符偏移 `offset`（默认 0），每页最多 12000 字符，返回 `hasMore` / `nextOffset`。读取时重新验证用户权限、启用状态和版本；技能更新后拒绝混读，需新开一轮。技能是不可信数据，不能创造工具、改变权限或覆盖系统规则。
 - Agent 按实际文本模型的 `contextWindowTokens` 与 `maxOutputTokens` 计算输入预算，并在达到该模型预算的压缩阈值时移除较早工具结果中可重新读取的正文，保留工具调用/结果配对、用户原始要求、生成回执及最近完整工具轮次，并允许重新读取。此机制是确定性正文卸载，不是 LLM 语义摘要；运行 checkpoint 的持久化上限与模型上下文窗口独立。技能读取事件只保存回执，不复制正文，正文页只进入模型对话。
-- 平台支持工具全集为 `agent_profile_read`、`plan_update`、`ask_user`、`recall_lessons`、`remember_lesson`、`canvas_list_node_types`、`canvas_get_state`、`skill_read_file`、`task_get`、`model_list`、`canvas_apply_ops`、`generate_media`；单轮实际工具仍按偏好快照、技能、权限、画布上下文和生成预算裁剪。画布写入工具要求本轮授权 `contextScope: ["canvas"]`。禁止 shell、任意网络请求和外部 MCP。`remember_lesson` 在 `read_only` 下不可用。
+- 平台支持工具全集还包括受管 `mcp_list_tools`、`mcp_call` 与 `delegate_task`；单轮实际工具仍按偏好快照、技能、MCP 选择、权限、画布上下文、生成预算和子智能体预算裁剪。画布写入工具要求本轮授权 `contextScope: ["canvas"]`。禁止 shell 和任意网络请求；MCP 只能通过后端受管网关访问白名单工具，`mcp_call` 无论 `permissionMode` 为何都逐次审批，`read_only` 不提供调用工具。`remember_lesson` 在 `read_only` 下不可用。
+- `delegate_task` 只在 `maxSubagents > 0` 时开放，角色固定为总导演、编剧、分镜导演、美术导演、提示词专家、连续性审核或研究员。子智能体使用同一受管文本模型创建独立、可恢复、计费的 `cloud_agent_subagent` 任务；没有工具、画布写入、媒体生成、网络或递归委派权限。父运行一次只等待一个子任务，结果或安全错误作为原工具结果回到父上下文；费用计入同一 `maxCredits`，取消父运行会取消活动子任务。
 - `plan_update` 维护本轮结构化待办清单（整表替换，最多 20 项），跨轮继承未完成项，并在界面以 PlanBar 展示。权限为 `request_approval` 时，首次建立至少 2 项的清单会先进入审批；`auto` 直接写入清单。新一轮的第一次模型请求就会带上继承的清单。模型在没有工具调用且清单仍有未完成项时，服务端会催办并要求继续调用工具；这是软约束，不验证工作是否真的完成，也不会在没有清单时强行催建。
 - `ask_user` 给出一个问题与 2–6 个候选项后结束本轮，界面弹出选项面板；用户点选或输入后作为新一轮继续。运行中也可以用插话直接回答。
 - `recall_lessons` / `remember_lesson` 是当前用户的个人记忆：已批准条目在系统提示里只出现索引（标题 + 适用场景，最多 20 条，与当前目标可能相关的排在前面），完整做法由模型用 `recall_lessons(topic/keyword/category)` 取；Agent 写入先入待审，用户在 `GET/POST/PATCH/DELETE /agent/memories` 与 `POST /agent/memories/:id/decide` 自己批准、添加、编辑、删除，也可用 `GET /agent/memories/export`、`POST /agent/memories/import` 导出导入，并用 `GET/PATCH /agent/memories/settings`、`POST /agent/memories/compact` 选择文本模型后手动或按日/周/月压缩。管理员只在 `GET/DELETE /admin/agent-lessons` 按 `userId` / `keyword` / `status` 查看或删除，不能代批。写入会机械脱敏（拒绝链接、资源键、节点/任务 ID；@引用允许），只读模式不能写，本轮最多 3 条、每位用户最多 50 条待审、300 条已批准，一次导入最多 200 条。召回接口不返回作者。记忆只作参考，不能覆盖工具契约、权限、计费或审批。

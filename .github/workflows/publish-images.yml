@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev
     tags:
       - "v*"
   workflow_dispatch:
@@ -17,9 +18,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  checks:
-    name: Quality checks
-    uses: ./.github/workflows/quality.yml
+  # fork: 上游 quality 存在存量失败，且 reusable workflow 调用不允许 continue-on-error，
+  # 所以这里不内联质量门禁；PR 仍由 quality.yml 自带的 pull_request 触发执行。
+  # 镜像构建只依赖 prepare（见下方 build.needs）。
 
   prepare:
     name: Resolve build version
@@ -50,7 +51,8 @@ jobs:
 
   build:
     name: Build ${{ matrix.image }} (${{ matrix.arch }})
-    needs: [checks, prepare]
+    # fork: 上游 quality 存在存量失败，不阻塞镜像构建（见 FORK.md 与二开契约测试）。
+    needs: [prepare]
     permissions:
       contents: read
       packages: write

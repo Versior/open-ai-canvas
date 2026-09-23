@@ -15,15 +15,24 @@ done
 
 tags=(--tag "$IMAGE:sha-$GITHUB_SHA" --tag "$IMAGE:sha-${GITHUB_SHA:0:7}")
 if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-  [[ "${VERSION_TAG:?}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "Invalid version image tag" >&2; exit 1; }
+  [[ "${VERSION_TAG:?}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]] || { echo "Invalid version image tag" >&2; exit 1; }
   tags+=(--tag "$IMAGE:$VERSION_TAG")
-elif [[ "$GITHUB_REF" == refs/heads/main ]]; then
-  current_sha=$(gh api "repos/${GITHUB_REPOSITORY:?}/git/ref/heads/main" --jq '.object.sha')
-  [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid main branch SHA" >&2; exit 1; }
-  if [[ "$current_sha" == "$GITHUB_SHA" ]]; then
-    tags+=(--tag "$IMAGE:latest")
-  else
-    echo 'A newer main commit exists; leaving latest unchanged.'
+elif [[ "$GITHUB_REF" == refs/heads/* ]]; then
+  # 只有长期分支推进可变标签：main -> latest，dev -> dev（二开部署用）。
+  branch="${GITHUB_REF#refs/heads/}"
+  case "$branch" in
+    main) deploy_tag=latest ;;
+    dev) deploy_tag=dev ;;
+    *) deploy_tag= ;;
+  esac
+  if [[ -n "$deploy_tag" ]]; then
+    current_sha=$(gh api "repos/${GITHUB_REPOSITORY:?}/git/ref/heads/$branch" --jq '.object.sha')
+    [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid $branch branch SHA" >&2; exit 1; }
+    if [[ "$current_sha" == "$GITHUB_SHA" ]]; then
+      tags+=(--tag "$IMAGE:$deploy_tag")
+    else
+      echo "A newer $branch commit exists; leaving $deploy_tag unchanged."
+    fi
   fi
 fi
 
