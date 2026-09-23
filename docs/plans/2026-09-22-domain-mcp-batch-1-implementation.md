@@ -313,7 +313,7 @@ git commit -m "feat(mcp): 电商洞察 - 增加商品分析能力包"
 - Consumes: validated `Result.Artifacts`.
 - Produces: `ArtifactBundle`, neutral `CanvasRecipeOp`, `CompileCanvasRecipe`, Agent tool `canvas_apply_artifact_bundle(bundleId)`; `internal/app` alone maps `CanvasRecipeOp` to private `agentCanvasOp`.
 
-- [ ] **Step 1: Write failing scope and compilation tests**
+- [x] **Step 1: Write failing scope and compilation tests**
 
 ```go
 func TestArtifactBundleRejectsCrossRunUse(t *testing.T) {
@@ -324,23 +324,23 @@ func TestArtifactBundleRejectsCrossRunUse(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/domainmcp ./internal/app -run ArtifactBundle -count=1`
 
 Expected: Bundle and Agent tool types do not exist.
 
-- [ ] **Step 3: Implement Bundle storage inside the durable Agent runtime**
+- [x] **Step 3: Implement Bundle storage inside the durable Agent runtime**
 
 Add `ArtifactBundles map[string]domainmcp.ArtifactBundle` to `cloudAgentRuntime`. Bundle IDs use server-generated IDs and never come from MCP output. `CompileCanvasRecipe` accepts only known Artifact types, returns neutral `CanvasRecipeOp` values, generates stable node IDs from bundle ID plus artifact index, lays out nodes in rows and caps the result at 20 operations. `internal/app` maps those values to `agentCanvasOp` and calls the existing `prepareCloudAgentCanvasMutation`/`saveCloudAgentDocument` path once. The mutation recorder stores operation `canvas_apply_artifact_bundle`, preserving one整体撤销操作组。
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/domainmcp ./internal/app -run ArtifactBundle -count=1`
 
 Expected: PASS with `CGO_ENABLED=1` on Windows.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/domainmcp/artifact_bundle* backend/internal/app/cloud_agent_artifact_bundle* backend/internal/app/cloud_agent_runtime.go backend/internal/app/cloud_agent_tools.go

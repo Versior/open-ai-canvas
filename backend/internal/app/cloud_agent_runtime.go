@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"gorm.io/gorm"
+	"infinite-canvas/backend/internal/domainmcp"
 	"infinite-canvas/backend/internal/kernel"
 	"infinite-canvas/backend/internal/model"
 	"infinite-canvas/backend/internal/prompts"
@@ -57,6 +58,7 @@ type cloudAgentRuntime struct {
 	Skills                 []cloudAgentSkill                       `json:"skills"`
 	SkillReads             map[string]bool                         `json:"skillReads,omitempty"`
 	Profile                cloudAgentProfileSnapshot               `json:"profile"`
+	ArtifactBundles        map[string]domainmcp.ArtifactBundle     `json:"artifactBundles,omitempty"`
 	ProfileReads           map[string]bool                         `json:"profileReads,omitempty"`
 	Canonical              canonicalAgentRequest                   `json:"canonical"`
 	ActiveTaskID           string                                  `json:"activeTaskId"`
@@ -208,6 +210,9 @@ func validateCloudAgentRuntime(run *model.CloudAgentExecution, state *cloudAgent
 	}
 	if err := validateCloudAgentRequest(&state.Request); err != nil {
 		return fmt.Errorf("invalid Agent runtime request: %w", err)
+	}
+	if err := validateCloudAgentArtifactBundles(run, state); err != nil {
+		return err
 	}
 	if err := validateCloudAgentPolicySnapshotStructure(state.Policy); err != nil {
 		return err
@@ -1100,6 +1105,14 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 					if err == nil {
 						preview = batchPlan.Preview
 					}
+				case "canvas_apply_artifact_bundle":
+					bundlePlan, err := prepareCloudAgentArtifactBundleMutation(repo, run.UserID, state.Request.CanvasID, run.ID, state, call, time.Now().UTC())
+					mutationErr = err
+					if err == nil {
+						call = bundlePlan.Call
+						state.Calls[state.CallIndex] = call
+						preview = bundlePlan.Preview
+					}
 				default:
 					canvasPlan, err := prepareCloudAgentCanvasMutation(repo, run.UserID, state.Request.CanvasID, call)
 					mutationErr = err
@@ -1176,6 +1189,8 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 			toolErr = BadAuthRequest("工具未获本轮权限授权")
 		case call.Function.Name == "canvas_apply_ops":
 			result, toolErr = applyCloudAgentCanvas(repo, run.UserID, state.Request.CanvasID, call, policy, cloudAgentCanvasEventRecorder(run.ID, state))
+		case call.Function.Name == "canvas_apply_artifact_bundle":
+			result, toolErr = applyCloudAgentArtifactBundle(repo, run.UserID, state.Request.CanvasID, run.ID, state, call, policy, time.Now().UTC(), cloudAgentCanvasEventRecorder(run.ID, state))
 		case call.Function.Name == "canvas_create_storyboard", call.Function.Name == "canvas_edit_storyboard":
 			result, toolErr = applyCloudAgentStoryboardMutation(repo, run.UserID, state.Request.CanvasID, call, policy, cloudAgentCanvasEventRecorder(run.ID, state))
 		case call.Function.Name == "canvas_edit_batch_table":

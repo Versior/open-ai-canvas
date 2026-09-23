@@ -209,6 +209,9 @@ func compileCloudAgentTools(req CloudAgentRequest, includeProfileTool bool) []ma
 		add("model_list", "读取当前生效的生成模型目录、能力与价格档。生成前传 mode 和本次实际 referenceNodeIds，服务端按真实素材类型、数量和生成操作筛选匹配模型；空列表表示无匹配项，不得退回不匹配模型。素材或模式变化后重新查询。复制 selection 到 generate_media，不猜ID或混用模型选择；再按返回的能力配置核对时长、画幅、音频和价格。", map[string]any{"mode": map[string]any{"type": "string", "enum": cloudAgentGenerationModeNames()}, "referenceNodeIds": map[string]any{"type": "array", "maxItems": 16, "items": str("本次实际使用的画布媒体参考节点ID；文生媒体传空数组")}})
 	}
 	if req.PermissionMode != "read_only" && len(req.ContextScope) > 0 {
+		add("canvas_apply_artifact_bundle", "把领域能力工具返回的 Artifact Bundle 一次性应用到当前画布。只能使用本次 Agent Run 内真实返回的 bundleId；服务端会校验用户、画布、运行、有效期和当前画布快照，并将受限 Recipe 编译为可审批、可撤销的节点写入。不要猜测或复用其他运行的 bundleId。", map[string]any{
+			"bundleId": str("领域能力工具返回的真实 Artifact Bundle ID"),
+		}, "bundleId")
 		add("canvas_create_storyboard", "创建带真实镜头行的结构化分镜脚本节点，写入前按权限模式进入现有画布审批。仅在多镜头、连续性、逐镜审查/生成或后续维护确有价值时使用；单画面快速试验优先轻量节点。必须提交结构化 rows，不能用普通 content 或 Markdown 伪装分镜。", map[string]any{
 			"snapshotHash": str("最近一次画布读取返回的 snapshotHash"),
 			"nodeId":       str("当前画布内新的稳定分镜节点ID"),
@@ -310,7 +313,7 @@ func cloudAgentToolAllowed(req CloudAgentRequest, name string) bool {
 	return false
 }
 func cloudAgentWrite(name string) bool {
-	return name == "canvas_apply_ops" || name == "generate_media" || name == "image_layer_split" || name == "canvas_create_storyboard" || name == "canvas_edit_storyboard" || name == "canvas_edit_batch_table"
+	return name == "canvas_apply_ops" || name == "canvas_apply_artifact_bundle" || name == "generate_media" || name == "image_layer_split" || name == "canvas_create_storyboard" || name == "canvas_edit_storyboard" || name == "canvas_edit_batch_table"
 }
 
 func cloudAgentReadTool(repo *repository.Repository, userID string, state *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {
