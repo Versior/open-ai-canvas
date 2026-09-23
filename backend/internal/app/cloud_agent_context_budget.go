@@ -127,7 +127,9 @@ func cloudAgentRequestEstimatedTokens(request *canonicalAgentRequest) (int, erro
 	if err != nil {
 		return 0, err
 	}
-	return cloudAgentEstimatedTokens(raw), nil
+	// Resource placeholders are tiny strings, but their hydrated pixels consume
+	// model context. Reserve conservatively; this is not a billing token count.
+	return cloudAgentEstimatedTokens(raw) + len(cloudAgentImageReferences(request))*4096, nil
 }
 
 func cloudAgentContextBudgetMessage(budget cloudAgentContextBudget) string {

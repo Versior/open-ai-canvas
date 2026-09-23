@@ -8,6 +8,7 @@ type (
 	CloudAgentRequest                      = app.CloudAgentRequest
 	CloudAgentMediaSettings                = app.CloudAgentMediaSettings
 	CloudAgentCapabilitySet                = app.CloudAgentCapabilitySet
+	AgentMCPServerView                     = app.AgentMCPServerView
 	AgentProfileRequest                    = app.AgentProfileRequest
 	AgentProfileView                       = app.AgentProfileView
 	AgentLessonView                        = app.AgentLessonView

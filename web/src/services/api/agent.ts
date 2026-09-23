@@ -27,7 +27,14 @@ export type AgentProfileView = {
     layers: AgentProfileLayer[];
 };
 
-export type AgentApprovalPreviewOperation = "add_node" | "update_node" | "connect_nodes" | "generate_media" | "create_storyboard" | "edit_storyboard" | "plan_step";
+export type AgentMCPServer = {
+    id: string;
+    name: string;
+    description?: string;
+    allowedTools: string[];
+};
+
+export type AgentApprovalPreviewOperation = "add_node" | "update_node" | "connect_nodes" | "generate_media" | "create_storyboard" | "edit_storyboard" | "plan_step" | "mcp_call";
 
 export type AgentApprovalPreviewItem = {
     operation: AgentApprovalPreviewOperation;
@@ -112,9 +119,10 @@ export type CreateAgentRunInput = {
     channelId?: string;
     channelModelKey?: string;
     skillIds?: string[];
+    mcpServerIds?: string[];
     permissionMode?: AgentPermissionMode;
     contextScope?: string[];
-    budget?: { maxCredits?: number; maxGenerationTasks?: number; maxVideoSeconds?: number; maxSteps?: number };
+    budget?: { maxCredits?: number; maxGenerationTasks?: number; maxVideoSeconds?: number; maxSteps?: number; maxSubagents?: number };
     idempotencyKey: string;
 };
 
@@ -150,7 +158,11 @@ export function sendAgentInterjection(runId: string, input: { text: string; mess
 }
 
 export function getAgentCapabilities() {
-    return http.get<{ version: number; permissionModes: AgentPermissionMode[]; contextScopes: string[]; skills: boolean; writeTools: boolean; capabilitySetVersion?: string; capabilitySetHash?: string; nodeTypes?: string[] }>("/agent/capabilities", { timeout: 15_000 });
+    return http.get<{ version: number; permissionModes: AgentPermissionMode[]; contextScopes: string[]; skills: boolean; writeTools: boolean; mcp?: boolean; subagents?: boolean; maxSubagents?: number; capabilitySetVersion?: string; capabilitySetHash?: string; nodeTypes?: string[] }>("/agent/capabilities", { timeout: 15_000 });
+}
+
+export function getAgentMCPServers() {
+    return http.get<{ servers: AgentMCPServer[] }>("/agent/mcp/servers", { timeout: 15_000 });
 }
 
 export function getAgentProfile(options: { projectId?: string; canvasId?: string; scope?: AgentProfileScope } = {}) {

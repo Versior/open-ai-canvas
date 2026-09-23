@@ -5,7 +5,7 @@ import { ArrowLeft, BookMarked, Check, ChevronRight, Cpu, Gauge, LockKeyhole, Pl
 import { ModelPicker } from "@/components/model-picker";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import AgentMemoryPane from "@/pages/settings/agent-memory-pane";
-import type { AgentPermissionMode, AgentProfileLayer, AgentProfileScope, AgentProfileView, AgentReasoningMode } from "@/services/api/agent";
+import type { AgentMCPServer, AgentPermissionMode, AgentProfileLayer, AgentProfileScope, AgentProfileView, AgentReasoningMode } from "@/services/api/agent";
 import type { Skill } from "@/services/api/skills";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -35,20 +35,27 @@ type AgentSettingsProps = {
     skillSearch: string;
     skillsLoading: boolean;
     skillHasMore: boolean;
+    mcpServers: AgentMCPServer[];
+    selectedMCPServerIds: string[];
+    mcpLoading: boolean;
+    mcpError?: string;
     maxCredits: string;
     maxGenerationTasks: string;
     maxVideoSeconds: string;
+    maxSubagents: string;
     onBack: () => void;
     onModelChange: (model: string) => void;
     onPermissionChange: (mode: AgentPermissionMode) => void;
     onContextToggle: (value: AgentContextKey) => void;
     onSkillSearch: (value: string) => void;
     onSkillToggle: (skillId: string) => void;
+    onMCPServerToggle: (serverId: string) => void;
     onSkillInstall: (skill: Skill) => Promise<void>;
     onLoadMoreSkills: () => Promise<void>;
     onMaxCreditsChange: (value: string) => void;
     onMaxGenerationTasksChange: (value: string) => void;
     onMaxVideoSecondsChange: (value: string) => void;
+    onMaxSubagentsChange: (value: string) => void;
 };
 
 const permissionOptions: Array<{ value: AgentPermissionMode; label: string; description: string; icon: typeof ShieldCheck; color: string }> = [
@@ -86,7 +93,7 @@ export function CanvasCloudAgentSettings(props: AgentSettingsProps) {
             {section === "profile" ? <ProfileWorkspace props={props} theme={theme} /> : null}
             {section === "memories" ? <MemoriesWorkspace /> : null}
             {section === "skills" ? <SkillsWorkspace props={props} theme={theme} tab={skillTab} onTabChange={setSkillTab} /> : null}
-            {section === "mcp" ? <McpWorkspace theme={theme} /> : null}
+            {section === "mcp" ? <McpWorkspace props={props} theme={theme} /> : null}
             {section === "context" ? <ContextWorkspace props={props} theme={theme} /> : null}
             {section === "budget" ? <BudgetWorkspace props={props} theme={theme} /> : null}
         </div>
@@ -130,8 +137,8 @@ function SettingsHome({ props, theme, onOpen }: { props: AgentSettingsProps; the
                     <SettingRow theme={theme} icon={<Sparkles className="size-4" />} title="长期偏好" summary={profileSummary(props.profileView)} onClick={() => onOpen("profile")} />
                     <SettingRow theme={theme} icon={<BookMarked className="size-4" />} title="个人记忆" summary="批准、添加、导出导入；只影响你的会话" onClick={() => onOpen("memories")} />
                     <SettingRow theme={theme} icon={<Sparkles className="size-4" />} title="Skills · 用户技能库" summary={`${props.installedSkills.length} 个已安装 · 本轮启用 ${props.selectedSkillIds.length} 个`} onClick={() => onOpen("skills")} />
-                    <SettingRow theme={theme} icon={<Wrench className="size-4" />} title="工具与连接" summary="画布、技能参考文件、生成任务" onClick={() => onOpen("mcp")} />
-                    <SettingRow theme={theme} icon={<Gauge className="size-4" />} title="预算" summary={`每轮最多 ${props.maxCredits || "未设置"} 积分 · 固定计价模型`} onClick={() => onOpen("budget")} />
+                    <SettingRow theme={theme} icon={<Wrench className="size-4" />} title="工具与连接" summary={`画布、生成任务 · MCP ${props.selectedMCPServerIds.length}/${props.mcpServers.length}`} onClick={() => onOpen("mcp")} />
+                    <SettingRow theme={theme} icon={<Gauge className="size-4" />} title="预算" summary={`每轮最多 ${props.maxCredits || "未设置"} 积分 · ${props.maxSubagents || "0"} 个子智能体`} onClick={() => onOpen("budget")} />
                 </div>
             </section>
         </div>
@@ -285,18 +292,29 @@ function SkillRow({ skill, theme, selected, installed, selectable, onToggle, onI
     );
 }
 
-function McpWorkspace({ theme }: { theme: CanvasTheme }) {
+function McpWorkspace({ props, theme }: { props: AgentSettingsProps; theme: CanvasTheme }) {
     return (
         <div className="canvas-agent-settings-scroll thin-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
             <div className="rounded-xl p-4" style={{ background: theme.node.fill }}>
-                <div className="flex items-center gap-2 text-sm font-medium"><PlugZap className="size-4 shrink-0" />服务端内置工具</div>
-                <p className="mt-2 text-xs leading-5" style={{ color: theme.node.muted }}>按本轮权限开放，实际能力在发送前向后端确认。Skills 提供操作知识，不会提升工具权限。</p>
+                <div className="flex items-center gap-2 text-sm font-medium"><PlugZap className="size-4 shrink-0" />受管 MCP Server</div>
+                <p className="mt-2 text-xs leading-5" style={{ color: theme.node.muted }}>地址、鉴权和工具白名单只由后端配置。此处选择本轮允许使用的连接；实际调用始终逐次审批。</p>
             </div>
             <section>
-                <SettingLabel label="工具范围" />
+                <SettingLabel label="内置工具范围" />
                 {["已保存画布读取", "技能参考文件（固定版本）", "文本 / Markdown 节点写入", "系统模型媒体生成与任务查询"].map((tool) => <div key={tool} className="flex items-center gap-3 py-3 text-xs"><Wrench className="size-4 shrink-0" style={{ color: theme.node.muted }} /><span className="flex-1">{tool}</span><span style={{ color: theme.node.muted }}>受权限约束</span></div>)}
             </section>
-            <p className="text-xs leading-5" style={{ color: theme.node.muted }}>自定义 MCP 暂未开放。实际工具权限、密钥和调用配额需由 Agent 后端校验，不能在浏览器中假设已启用。</p>
+            <section>
+                <SettingLabel label="MCP Server" hint={`${props.selectedMCPServerIds.length} 已选择`} />
+                {props.mcpLoading && !props.mcpServers.length ? <div className="py-5 text-center text-xs" style={{ color: theme.node.muted }}>正在读取服务端连接…</div> : null}
+                {props.mcpError ? <div className="rounded-lg px-3 py-2 text-xs" style={{ background: "#d66b6b1f", color: "#d66b6b" }}>{props.mcpError}</div> : null}
+                {!props.mcpLoading && !props.mcpError && !props.mcpServers.length ? <div className="rounded-xl p-4 text-xs leading-5" style={{ background: theme.node.fill, color: theme.node.muted }}>部署环境尚未配置 MCP Server。配置后会在这里显示，浏览器不会接触连接密钥。</div> : null}
+                <div className="space-y-2">
+                    {props.mcpServers.map((server) => {
+                        const selected = props.selectedMCPServerIds.includes(server.id);
+                        return <button key={server.id} type="button" className="flex w-full items-start gap-3 rounded-xl p-3 text-left focus-visible:outline focus-visible:outline-2" style={{ background: selected ? theme.accent.primarySoft : theme.node.fill }} aria-pressed={selected} onClick={() => props.onMCPServerToggle(server.id)}><span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded" style={{ background: selected ? theme.accent.primary : theme.node.panel, color: selected ? theme.accent.onPrimary : theme.node.muted }}>{selected ? <Check className="size-3" /> : null}</span><span className="min-w-0 flex-1"><span className="block text-xs font-medium">{server.name}</span><span className="mt-1 block text-[10px] leading-4" style={{ color: theme.node.muted }}>{server.description || `${server.allowedTools.length} 个允许工具`}</span></span><span className="shrink-0 text-[10px]" style={{ color: theme.node.muted }}>{server.allowedTools.length || "动态"}</span></button>;
+                    })}
+                </div>
+            </section>
         </div>
     );
 }
@@ -306,7 +324,7 @@ function ContextWorkspace({ props, theme }: { props: AgentSettingsProps; theme: 
 }
 
 function BudgetWorkspace({ props, theme }: { props: AgentSettingsProps; theme: CanvasTheme }) {
-    return <div className="thin-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5"><div className="rounded-xl p-4" style={{ background: theme.node.fill }}><div className="text-sm font-semibold">本轮累计预算</div><p className="mt-2 text-xs opacity-60">积分预算用于费用保护；生成任务和视频秒数填 0 表示不设该项上限。模型循环由预算和运行状态控制，不再用固定次数截断。</p></div><BudgetInput label="积分上限" hint="必填且大于 0；所有步骤累计" value={props.maxCredits} onChange={props.onMaxCreditsChange} theme={theme} /><BudgetInput label="生成任务上限" hint="0 表示不限；只读模式不执行生成" value={props.maxGenerationTasks} onChange={props.onMaxGenerationTasksChange} theme={theme} /><BudgetInput label="视频秒数上限" hint="0 表示不限；按请求时长累计" value={props.maxVideoSeconds} onChange={props.onMaxVideoSecondsChange} theme={theme} /></div>;
+    return <div className="thin-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5"><div className="rounded-xl p-4" style={{ background: theme.node.fill }}><div className="text-sm font-semibold">本轮累计预算</div><p className="mt-2 text-xs opacity-60">积分预算覆盖主 Agent 与子智能体；生成任务和视频秒数填 0 表示不设该项上限。子智能体为单层只读专家，不会继续委派或直接改画布。</p></div><BudgetInput label="积分上限" hint="必填且大于 0；所有步骤累计" value={props.maxCredits} onChange={props.onMaxCreditsChange} theme={theme} /><BudgetInput label="生成任务上限" hint="0 表示不限；只读模式不执行生成" value={props.maxGenerationTasks} onChange={props.onMaxGenerationTasksChange} theme={theme} /><BudgetInput label="视频秒数上限" hint="0 表示不限；按请求时长累计" value={props.maxVideoSeconds} onChange={props.onMaxVideoSecondsChange} theme={theme} /><BudgetInput label="子智能体上限" hint="0 关闭；最多 8 个" value={props.maxSubagents} onChange={(value) => props.onMaxSubagentsChange(String(Math.min(8, Number(value || 0))))} theme={theme} /></div>;
 }
 
 function SettingRow({ theme, icon, title, summary, onClick }: { theme: CanvasTheme; icon: ReactNode; title: string; summary: string; onClick: () => void }) { return <button type="button" className="canvas-agent-setting-row flex w-full min-w-0 items-center gap-3 rounded-xl p-3 text-left transition-colors focus-visible:outline focus-visible:outline-2" onClick={onClick}><span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: theme.node.fill, color: theme.node.muted }}>{icon}</span><span className="min-w-0 flex-1"><span className="block text-[13px] font-medium">{title}</span><span className="mt-1 block text-xs leading-5" style={{ color: theme.node.muted }}>{summary}</span></span><ChevronRight className="size-4 shrink-0" style={{ color: theme.node.muted }} /></button>; }

@@ -16,12 +16,23 @@ func (s *Service) finishCloudAgentCleanup(ctx context.Context, run *model.CloudA
 		return nil
 	}
 	state, decodeErr := cloudAgentDecode(run)
-	activeID, mediaID, canvasID := run.ActiveTaskID, run.MediaTaskID, run.CanvasID
+	activeID, mediaID, delegationID, canvasID := run.ActiveTaskID, run.MediaTaskID, "", run.CanvasID
 	if decodeErr == nil {
 		activeID, mediaID, canvasID = state.ActiveTaskID, state.MediaTaskID, state.Request.CanvasID
+		if state.Delegation != nil {
+			delegationID = state.Delegation.TaskID
+		}
+	}
+	linkedTasks, err := s.repo.ActiveTasksForAgentRun(run.UserID, run.ID)
+	if err != nil {
+		return err
+	}
+	taskIDs := []string{run.ID, activeID, mediaID, delegationID}
+	for _, task := range linkedTasks {
+		taskIDs = append(taskIDs, task.ID)
 	}
 	seen := map[string]bool{}
-	for _, id := range []string{run.ID, activeID, mediaID} {
+	for _, id := range taskIDs {
 		if id == "" || seen[id] {
 			continue
 		}

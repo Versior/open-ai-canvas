@@ -52,6 +52,11 @@ func (s *Service) cloudAgentModelContext(run *model.CloudAgentExecution, state *
 		return canonical, err
 	}
 	canonical.Messages = append(append([]map[string]any{}, canonical.Messages...), map[string]any{"role": "user", "content": cloudAgentRuntimeContextMarker + string(body), cloudAgentContextSourceKey: "runtime"})
+	if len(state.Request.ContextScope) > 0 {
+		if err := s.attachCloudAgentVisualContext(run.UserID, &canonical); err != nil {
+			return canonical, err
+		}
+	}
 	if err := fitCloudAgentModelContext(&canonical, budget.InputBudgetTokens); err != nil {
 		return canonical, err
 	}

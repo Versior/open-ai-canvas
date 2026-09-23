@@ -708,6 +708,18 @@ func (r *Repository) Tasks(userID string, limit int, projectID string, activeOnl
 	return tasks, err
 }
 
+// ActiveTasksForAgentRun is the recovery source of truth when an Agent
+// checkpoint cannot be decoded. Agent-created model, media and subagent tasks
+// all carry agent_run_id, so terminal cleanup does not depend on state JSON.
+func (r *Repository) ActiveTasksForAgentRun(userID string, runID string) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.db.Select("id", "status").Where(
+		"user_id = ? AND agent_run_id = ? AND status IN ?",
+		userID, runID, []model.TaskStatus{model.TaskStatusQueued, model.TaskStatusRunning},
+	).Order("created_at asc, id asc").Find(&tasks).Error
+	return tasks, err
+}
+
 // SuccessfulWorkflowTasksForProject 返回需要补偿工作流产物的成功任务。
 // 不设分页，供项目详情读取时修复浏览器中断造成的历史断点。
 func (r *Repository) SuccessfulWorkflowTasksForProject(userID string, projectID string) ([]model.Task, error) {

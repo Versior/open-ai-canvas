@@ -2,6 +2,13 @@ import { describe, expect, it } from "bun:test";
 import { agentToolCategory, agentToolCategoryLabel, agentToolStatus, friendlyAgentToolSummary } from "@/lib/canvas/agent-tool-presentation";
 
 describe("Agent tool presentation", () => {
+    it("labels visual reads without claiming recognition has finished", () => {
+        for (const name of ["canvas_read_image", "image_text_detect"]) {
+            expect(agentToolCategory(name, { eventType: "tool_completed" })).toBe("read");
+        }
+        expect(friendlyAgentToolSummary("canvas_read_image", "", { eventType: "tool_completed" })).toBe("已准备图片供助手查看");
+        expect(friendlyAgentToolSummary("image_text_detect", "", { eventType: "tool_completed" })).toBe("已准备图片供助手识别文字");
+    });
     it("separates read, create, and canvas operation activity", () => {
         expect(agentToolCategory("canvas_get_state", { eventType: "tool_completed" })).toBe("read");
         expect(agentToolCategoryLabel("canvas_get_state", "read")).toBe("读取节点");

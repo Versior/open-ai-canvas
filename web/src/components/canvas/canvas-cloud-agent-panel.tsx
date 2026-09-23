@@ -16,7 +16,7 @@ import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { agentErrorPresentation, agentSubmissionErrorTitle } from "@/lib/canvas/agent-error-presentation";
-import { cancelAgentRun, getAgentCapabilities, getAgentProfile, getAgentRun, createAgentRun, decideAgentApproval, sendAgentInterjection, sendAgentMessage, subscribeAgentEvents, updateAgentProfile, type AgentEvent, type AgentPermissionMode, type AgentProfileScope, type AgentProfileView, type AgentReasoningMode, type AgentRun } from "@/services/api/agent";
+import { cancelAgentRun, getAgentCapabilities, getAgentMCPServers, getAgentProfile, getAgentRun, createAgentRun, decideAgentApproval, sendAgentInterjection, sendAgentMessage, subscribeAgentEvents, updateAgentProfile, type AgentEvent, type AgentMCPServer, type AgentPermissionMode, type AgentProfileScope, type AgentProfileView, type AgentReasoningMode, type AgentRun } from "@/services/api/agent";
 import { agentApprovalPresentation } from "@/lib/canvas/agent-approval-presentation";
 import { agentApprovalMatchesSettings, agentImageApproval } from "@/lib/canvas/agent-media-approval";
 import type { AgentMediaSettings } from "@/services/api/agent";
@@ -29,7 +29,7 @@ import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { applyAgentCanvasPatches, refreshCanvasAfterAgent, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { createAgentCanvasSync } from "@/services/agent-canvas-sync";
 import { buildSkillMentionReferences, resolveSkillMentions } from "@/services/skill-runtime";
-import { AgentChatComposer, AgentChatMessage, AgentPlanBar, AgentQuestionBar, AgentWorkingMessage, type CloudAgentChatMessage, type CloudAgentPlanItem } from "./canvas-cloud-agent-chat-ui";
+import { AgentChatComposer, AgentChatMessage, AgentPlanBar, AgentQuestionBar, AgentWorkingMessage, type CloudAgentChatMessage, type CloudAgentPlanItem, type CloudAgentUserQuestion } from "./canvas-cloud-agent-chat-ui";
 import { CanvasAgentSkillLibraryModal } from "./canvas-agent-skill-library-modal";
 import { CanvasCloudAgentSettings, agentPermissionLabel, agentPermissionMenuItems, agentPermissionVisual, type AgentContextKey } from "./canvas-cloud-agent-settings";
 import { useAgentPanelLayout } from "./use-agent-panel-layout";
@@ -74,6 +74,10 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
     const [skillCategories, setSkillCategories] = useState<SkillCategory[]>([]);
     const [skillTag, setSkillTag] = useState("all");
     const [skillsOpen, setSkillsOpen] = useState(false);
+    const [mcpServers, setMCPServers] = useState<AgentMCPServer[]>([]);
+    const [selectedMCPServerIds, setSelectedMCPServerIds] = useState<string[]>([]);
+    const [mcpLoading, setMCPLoading] = useState(false);
+    const [mcpError, setMCPError] = useState<string>();
     const [busy, setBusy] = useState(false);
     const [approvalSubmitting, setApprovalSubmitting] = useState(false);
     const [exporting, setExporting] = useState(false);
@@ -84,6 +88,7 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
     const [maxCredits, setMaxCredits] = useState("200");
     const [maxGenerationTasks, setMaxGenerationTasks] = useState("0");
     const [maxVideoSeconds, setMaxVideoSeconds] = useState("0");
+    const [maxSubagents, setMaxSubagents] = useState("3");
     const [conversations, setConversations] = useState<CloudAgentConversation[]>([]);
     const [activeConversationId, setActiveConversationId] = useState(() => nanoid());
     const [historyHydrated, setHistoryHydrated] = useState(false);
@@ -156,6 +161,26 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
     useEffect(() => {
         void reloadProfile();
     }, [reloadProfile]);
+
+    useEffect(() => {
+        if (!open) return;
+        let active = true;
+        setMCPLoading(true);
+        setMCPError(undefined);
+        void getAgentMCPServers()
+            .then(({ servers }) => {
+                if (!active) return;
+                setMCPServers(servers);
+                const available = new Set(servers.map((server) => server.id));
+                setSelectedMCPServerIds((current) => current.filter((id) => available.has(id)));
+            })
+            .catch((cause) => {
+                if (!active) return;
+                setMCPError(cause instanceof Error ? cause.message : String(cause));
+            })
+            .finally(() => { if (active) setMCPLoading(false); });
+        return () => { active = false; };
+    }, [open]);
 
     const saveProfile = async (input: { scope: AgentProfileScope; projectId?: string; canvasId?: string; content: string; revision: number }) => {
         setProfileSaving(true);
@@ -402,6 +427,8 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                 if (currentScope.current !== scope) return;
                 if (!capabilities.permissionModes.includes(permissionMode)) throw new Error("当前后端不支持所选 Agent 权限，请更新后端");
                 if (selectedSkillIds.length && !capabilities.skills) throw new Error("当前后端尚未接入技能库");
+                if (selectedMCPServerIds.length && !capabilities.mcp) throw new Error("当前后端尚未接入 MCP 工具");
+                if (Number(maxSubagents) > 0 && !capabilities.subagents) throw new Error("当前后端尚未接入子智能体");
                 await saveRemoteUserDataNow();
                 if (currentScope.current !== scope) return;
                 const agentConfig = { ...config, model: selectedModel };
@@ -412,8 +439,9 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                     model: modelOptionName(selectedModel) || undefined,
                     ...(logicalModelId ? { logicalModelId } : requestConfig.channelId ? { channelId: requestConfig.channelId, channelModelKey: modelOptionName(selectedModel) || undefined } : {}),
                     skillIds: [...new Set([...selectedSkillIds, ...resolveSkillMentions(value, installedSkills).map((skill) => skill.skillId)])],
+                    mcpServerIds: selectedMCPServerIds,
                     permissionMode, contextScope,
-                    budget: { maxCredits: positiveNumber(maxCredits), maxGenerationTasks: permissionMode === "read_only" ? 0 : Number(maxGenerationTasks), maxVideoSeconds: permissionMode === "read_only" ? 0 : Number(maxVideoSeconds) },
+                    budget: { maxCredits: positiveNumber(maxCredits), maxGenerationTasks: permissionMode === "read_only" ? 0 : Number(maxGenerationTasks), maxVideoSeconds: permissionMode === "read_only" ? 0 : Number(maxVideoSeconds), maxSubagents: Number(maxSubagents) },
                 };
                 const fingerprint = JSON.stringify({ scope, parent: run?.id, input });
                 if (pending && pending.fingerprint !== fingerprint) throw new Error("上一条请求尚未确认，请恢复原消息与设置后核对，不能覆盖原幂等记录");
@@ -643,9 +671,14 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                                         skillSearch={skillSearch}
                                         skillsLoading={skillsLoading}
                                         skillHasMore={skillHasMore}
+                                        mcpServers={mcpServers}
+                                        selectedMCPServerIds={selectedMCPServerIds}
+                                        mcpLoading={mcpLoading}
+                                        mcpError={mcpError}
                                         maxCredits={maxCredits}
                                         maxGenerationTasks={maxGenerationTasks}
                                         maxVideoSeconds={maxVideoSeconds}
+                                        maxSubagents={maxSubagents}
                                         onBack={() => setView("chat")}
                                         onModelChange={setModel}
                                         onPermissionChange={setPermissionMode}
@@ -662,11 +695,24 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                                         onContextToggle={(value) => setContextScope((current) => (current.includes(value) ? current.filter((item) => item !== value) : [...current, value]))}
                                         onSkillSearch={setSkillSearch}
                                         onSkillToggle={(id) => setSelectedSkillIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))}
+                                        onMCPServerToggle={(id) => setSelectedMCPServerIds((current) => {
+                                            if (current.includes(id)) {
+                                                setMCPError(undefined);
+                                                return current.filter((item) => item !== id);
+                                            }
+                                            if (current.length >= 8) {
+                                                setMCPError("单轮最多选择 8 个 MCP Server");
+                                                return current;
+                                            }
+                                            setMCPError(undefined);
+                                            return [...current, id];
+                                        })}
                                         onSkillInstall={installSkill}
                                         onLoadMoreSkills={loadMoreSkills}
                                         onMaxCreditsChange={setMaxCredits}
                                         onMaxGenerationTasksChange={setMaxGenerationTasks}
                                         onMaxVideoSecondsChange={setMaxVideoSeconds}
+                                        onMaxSubagentsChange={setMaxSubagents}
                                     />
                                 </motion.div>
                             ) : view === "history" ? (
@@ -730,16 +776,11 @@ export function CanvasCloudAgentPanel({ canvasId, domainProjectId, nodeCount, re
                                         onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
                                         onApprove={(settings) => void submitApproval("approve", settings)}
                                         onReject={() => void submitApproval("reject")}
+                                        question={pendingQuestion}
+                                        questionDisabled={approvalSubmitting || connectionStatus !== "connected"}
+                                        onAnswer={(label) => void submit(label)}
                                     />
                                     {planVisible ? <AgentPlanBar items={planItems} theme={theme} minimized={planMinimized} onToggle={() => setPlanMinimized((value) => !value)} /> : null}
-                                    {pendingQuestion ? (
-                                        <AgentQuestionBar
-                                            question={pendingQuestion}
-                                            theme={theme}
-                                            disabled={approvalSubmitting || connectionStatus !== "connected"}
-                                            onAnswer={(label) => void submit(label)}
-                                        />
-                                    ) : null}
                                     <AgentChatComposer
                                         prompt={prompt}
                                         disabled={Boolean(run && connectionStatus !== "connected") || !historyHydrated || !pendingHydrated}
@@ -918,6 +959,9 @@ function AgentConversation({
     onApprovalReasonChange,
     onApprove,
     onReject,
+    question,
+    questionDisabled,
+    onAnswer,
 }: {
     theme: CanvasTheme;
     messages: CloudAgentChatMessage[];
@@ -932,6 +976,9 @@ function AgentConversation({
     onApprovalReasonChange: (reason: string) => void;
     onApprove: (settings?: AgentMediaSettings) => void;
     onReject: () => void;
+    question?: CloudAgentUserQuestion;
+    questionDisabled: boolean;
+    onAnswer: (label: string) => void;
 }) {
     const appearance = useAppearanceStore((state) => state.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -960,7 +1007,7 @@ function AgentConversation({
     }, []);
 
     return (
-        <div ref={scrollRef} data-agent-conversation className="agent-conversation thin-scrollbar min-h-0 flex-1 overflow-y-auto" onScroll={(event) => {
+        <div ref={scrollRef} data-agent-conversation data-canvas-wheel-scroll tabIndex={0} aria-label="Agent 对话记录" className="agent-conversation thin-scrollbar min-h-0 flex-1 overflow-y-auto" onScroll={(event) => {
             const element = event.currentTarget;
             followRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
         }}>
@@ -970,6 +1017,7 @@ function AgentConversation({
                     <AgentChatMessage key={item.id} item={item} theme={theme} references={references} onFocusNode={onFocusNode} isStreaming={busy && !approval && item.streaming === true && item === messages.at(-1)} />
                 ))}
                 {approval ? <ApprovalCard key={approval.approvalId} approval={approval} theme={theme} submitting={approvalSubmitting} onFocusNode={onFocusNode} onReasonChange={onApprovalReasonChange} onApprove={onApprove} onReject={onReject} /> : null}
+                {question ? <AgentQuestionBar question={question} theme={theme} disabled={questionDisabled} onAnswer={onAnswer} /> : null}
                 {busy && !approval ? (
                     <AgentWorkingMessage theme={theme} label="正在处理当前画布" />
                 ) : null}
@@ -1102,7 +1150,7 @@ function ApprovalCard({ approval, theme, submitting, onFocusNode, onReasonChange
 }
 
 function ApprovalPreviewItemView({ item, theme, onFocusNode }: { item: ReturnType<typeof agentApprovalPresentation>["items"][number]; theme: CanvasTheme; onFocusNode?: (nodeId: string) => void }) {
-    const operationLabel = item.operation === "add_node" ? "新增" : item.operation === "update_node" ? "修改" : item.operation === "connect_nodes" ? "连线" : item.operation === "create_storyboard" ? "创建分镜" : item.operation === "edit_storyboard" ? "修改分镜" : item.operation === "plan_step" ? "计划" : "生成";
+    const operationLabel = item.operation === "add_node" ? "新增" : item.operation === "update_node" ? "修改" : item.operation === "connect_nodes" ? "连线" : item.operation === "create_storyboard" ? "创建分镜" : item.operation === "edit_storyboard" ? "修改分镜" : item.operation === "plan_step" ? "计划" : item.operation === "mcp_call" ? "外部工具" : "生成";
     const renderNode = (title: string | undefined, id: string | undefined, typeLabel: string | undefined, role: "source" | "target" | "node") => {
         if (!title) return null;
         const content = <><span className="canvas-agent-approval-node-title">{title}</span>{typeLabel ? <span className="canvas-agent-approval-node-type">{typeLabel}</span> : null}</>;
@@ -1265,6 +1313,18 @@ function applyAgentEvent(event: AgentEvent, setMessages: Dispatch<SetStateAction
     if (event.type === "generation_task_created") {
         const message: CloudAgentChatMessage = { id: event.eventId, role: "tool", title: "generate_media", text: text || event.type, detail: { ...payload, eventType: event.type } };
         setMessages((current) => upsertMediaToolTrace(current, message));
+        return;
+    }
+    if (event.type.startsWith("subagent_")) {
+        const id = payload.callId ? `subagent-${event.runId}-${String(payload.callId)}` : event.eventId;
+        const message: CloudAgentChatMessage = { id, role: "tool", title: "delegate_task", text: text || event.type, detail: { ...payload, eventType: event.type } };
+        setMessages((current) => {
+            const index = current.findIndex((item) => item.id === id);
+            if (index < 0) return [...current, message];
+            const next = [...current];
+            next[index] = message;
+            return next;
+        });
         return;
     }
     if (event.type.startsWith("tool_")) {

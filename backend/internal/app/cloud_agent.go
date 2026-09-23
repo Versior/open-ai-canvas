@@ -14,6 +14,7 @@ import (
 
 	"gorm.io/gorm"
 	"infinite-canvas/backend/internal/kernel"
+	mcpprotocol "infinite-canvas/backend/internal/mcp"
 	"infinite-canvas/backend/internal/model"
 )
 
@@ -33,11 +34,13 @@ type CloudAgentRequest struct {
 	ChannelModelKey string   `json:"channelModelKey,omitempty"`
 	PermissionMode  string   `json:"permissionMode"`
 	SkillIDs        []string `json:"skillIds,omitempty"`
+	MCPServerIDs    []string `json:"mcpServerIds,omitempty"`
 	ContextScope    []string `json:"contextScope"`
 	Budget          struct {
 		MaxCredits         float64 `json:"maxCredits"`
 		MaxGenerationTasks int     `json:"maxGenerationTasks,omitempty"`
 		MaxVideoSeconds    int     `json:"maxVideoSeconds,omitempty"`
+		MaxSubagents       int     `json:"maxSubagents,omitempty"`
 		// 0 = 不限制模型调用步数（与官方取消固定截断一致）。正数时夹到上限。
 		MaxSteps int `json:"maxSteps,omitempty"`
 	} `json:"budget"`
@@ -54,15 +57,16 @@ func cloudAgentStepLimit(req CloudAgentRequest) int {
 }
 
 type cloudAgentState struct {
-	Version        int                       `json:"version"`
-	Request        CloudAgentRequest         `json:"request"`
-	ParentID       string                    `json:"parentId"`
-	Fingerprint    string                    `json:"fingerprint"`
-	CreativeAnchor cloudAgentCreativeAnchor  `json:"creativeAnchor,omitempty"`
-	Plan           []cloudAgentPlanItem      `json:"plan,omitempty"`
-	Skills         []cloudAgentSkill         `json:"skills,omitempty"`
-	Profile        cloudAgentProfileSnapshot `json:"profile"`
-	Policy         cloudAgentPolicySnapshot  `json:"policy"`
+	Version        int                          `json:"version"`
+	Request        CloudAgentRequest            `json:"request"`
+	ParentID       string                       `json:"parentId"`
+	Fingerprint    string                       `json:"fingerprint"`
+	CreativeAnchor cloudAgentCreativeAnchor     `json:"creativeAnchor,omitempty"`
+	Plan           []cloudAgentPlanItem         `json:"plan,omitempty"`
+	Skills         []cloudAgentSkill            `json:"skills,omitempty"`
+	Profile        cloudAgentProfileSnapshot    `json:"profile"`
+	Policy         cloudAgentPolicySnapshot     `json:"policy"`
+	MCPServers     []mcpprotocol.ServerSnapshot `json:"mcpServers,omitempty"`
 }
 
 type CloudAgentRun struct {
@@ -149,8 +153,8 @@ func validateCloudAgentRequest(req *CloudAgentRequest) error {
 	} else if req.Model != "" && req.Model != req.ChannelModelKey {
 		return BadAuthRequest("渠道模型标识与 model 不一致")
 	}
-	if req.Budget.MaxGenerationTasks < 0 || req.Budget.MaxVideoSeconds < 0 || req.Budget.MaxSteps < 0 {
-		return BadAuthRequest("生成任务、视频秒数和模型调用步数预算不能为负数")
+	if req.Budget.MaxGenerationTasks < 0 || req.Budget.MaxVideoSeconds < 0 || req.Budget.MaxSteps < 0 || req.Budget.MaxSubagents < 0 || req.Budget.MaxSubagents > cloudAgentMaxSubagents {
+		return BadAuthRequest("生成任务、视频秒数和模型调用步数预算不能为负数，子智能体上限必须为 0–8")
 	}
 	seen := map[string]bool{}
 	for i, id := range req.SkillIDs {
@@ -160,6 +164,18 @@ func validateCloudAgentRequest(req *CloudAgentRequest) error {
 		}
 		req.SkillIDs[i] = id
 		seen[id] = true
+	}
+	seenMCP := map[string]bool{}
+	if len(req.MCPServerIDs) > 8 {
+		return BadAuthRequest("单轮最多选择 8 个 MCP Server")
+	}
+	for i, id := range req.MCPServerIDs {
+		id = strings.TrimSpace(id)
+		if err := validateCloudAgentID(id, "MCP Server ID", 64); err != nil || seenMCP[id] {
+			return BadAuthRequest("MCP Server ID 无效或重复")
+		}
+		req.MCPServerIDs[i] = id
+		seenMCP[id] = true
 	}
 	if req.PermissionMode == "read_only" && (req.Budget.MaxGenerationTasks != 0 || req.Budget.MaxVideoSeconds != 0) {
 		return BadAuthRequest("只读模式不能设置生成预算")
@@ -250,7 +266,7 @@ func (s *Service) cloudAgentTask(userID, id string) (*model.Task, cloudAgentStat
 	if task.ID != cloudAgentID(userID, state.Request.IdempotencyKey) || task.ProjectID != state.Request.CanvasID {
 		return nil, input.Agent, kernel.NotFound("Agent 运行不存在")
 	}
-	input.Agent = cloudAgentState{Version: 1, Request: state.Request, ParentID: state.ParentID, Fingerprint: state.Fingerprint, CreativeAnchor: state.CreativeAnchor, Skills: state.Skills, Profile: state.Profile, Policy: state.Policy}
+	input.Agent = cloudAgentState{Version: 1, Request: state.Request, ParentID: state.ParentID, Fingerprint: state.Fingerprint, CreativeAnchor: state.CreativeAnchor, Skills: state.Skills, Profile: state.Profile, Policy: state.Policy, MCPServers: state.MCPServers}
 	return task, input.Agent, nil
 }
 
@@ -414,6 +430,10 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	if err != nil {
 		return nil, err
 	}
+	mcpSnapshots, err := s.cloudAgentMCPSnapshots(req.MCPServerIDs)
+	if err != nil {
+		return nil, err
+	}
 	canvasSummary := ""
 	if len(req.ContextScope) != 0 {
 		canvasSummary, err = cloudAgentCanvasSummary(canvas)
@@ -425,7 +445,7 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	if err != nil {
 		return nil, err
 	}
-	state := cloudAgentState{Version: 1, Request: req, ParentID: parentID, Fingerprint: fingerprint, CreativeAnchor: creativeAnchor, Plan: inheritedPlan, Skills: skillSnapshots, Profile: profile, Policy: policy}
+	state := cloudAgentState{Version: 1, Request: req, ParentID: parentID, Fingerprint: fingerprint, CreativeAnchor: creativeAnchor, Plan: inheritedPlan, Skills: skillSnapshots, Profile: profile, Policy: policy, MCPServers: mcpSnapshots}
 	canonical := cloudAgentCanonicalFor(system, history, req.Prompt, req, len(profile.Layers) > 0)
 	s.attachCloudAgentLessons(&canonical, userID, req.Prompt)
 	canonical.PromptCacheKey = cloudAgentPromptCacheKey(req.CanvasID, canonical.SystemPrompt)

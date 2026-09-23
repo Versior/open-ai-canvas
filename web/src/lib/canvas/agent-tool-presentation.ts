@@ -3,13 +3,15 @@ import { agentToolRetry } from "./agent-tool-retry";
 export const AGENT_TOOL_METADATA: Record<string, { summary: string | ((context: { pending: boolean; detail?: unknown }) => string); failureMessage: string }> = {
     canvas_list_node_types: { summary: "已读取可用节点类型", failureMessage: "获取可用节点类型失败" },
     canvas_get_state: { summary: "已读取当前画布", failureMessage: "获取画布内容失败" },
+    canvas_read_image: { summary: "已准备图片供助手查看", failureMessage: "读取图片失败" },
+    image_text_detect: { summary: "已准备图片供助手识别文字", failureMessage: "读取文字识别图片失败" },
     task_get: { summary: "已查询任务状态", failureMessage: "查询任务状态失败" },
     canvas_apply_ops: { summary: ({ pending }) => pending ? "准备更新画布内容" : "画布内容已保存至服务端", failureMessage: "更新画布内容失败" },
     model_list: { summary: "已获取可用模型", failureMessage: "获取可用模型失败" },
     generate_media: { summary: ({ pending, detail }) => pending ? "准备创建媒体节点并生成" : field(detail, "eventType") === "tool_completed" ? "生成结果已回写画布节点" : "媒体节点已创建，生成任务已提交", failureMessage: "媒体生成未完成" },
 };
 
-export type AgentToolCategory = "read" | "create" | "operate";
+export type AgentToolCategory = "read" | "create" | "operate" | "think";
 
 function record(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -28,7 +30,8 @@ function toolArguments(detail?: unknown) {
  * change or get localized.
  */
 export function agentToolCategory(toolName: string, detail?: unknown): AgentToolCategory {
-    if (["canvas_get_state", "canvas_list_node_types", "model_list", "task_get", "skills_load", "skill_read_file"].includes(toolName)) return "read";
+    if (["canvas_get_state", "canvas_read_image", "image_text_detect", "canvas_list_node_types", "model_list", "task_get", "skills_load", "skill_read_file", "mcp_list_tools"].includes(toolName)) return "read";
+    if (toolName === "delegate_task") return "think";
     if (toolName === "generate_media") return "create";
     if (toolName === "canvas_apply_ops") {
         const actions = record(detail).actions;
@@ -42,6 +45,8 @@ export function agentToolCategory(toolName: string, detail?: unknown): AgentTool
 export function agentToolCategoryLabel(toolName: string, category: AgentToolCategory): string {
     if (category === "read") return toolName === "canvas_get_state" ? "读取节点" : "读取信息";
     if (category === "create") return "创建节点";
+    if (category === "think") return "专家协作";
+    if (toolName === "mcp_call") return "外部工具";
     return "操作画布";
 }
 
@@ -82,6 +87,23 @@ export function friendlyAgentToolSummary(toolName: string, text: string, detail?
         if (failed) return `${listing ? "列出参考文件失败" : "读取参考资料失败"} · ${target}`;
         if (listing && Array.isArray(files)) return files.length ? `${name} · 可读参考文件 ${files.length} 个` : `${name} · 无可读参考文件，使用已加载正文`;
         return `${pending ? "准备读取参考资料" : "已读取参考资料"} · ${target}`;
+    }
+    if (toolName === "mcp_list_tools") {
+        const serverName = String(field(detail, "serverName") || field(field(detail, "result"), "serverName") || field(detail, "serverId") || "MCP Server");
+        return failed ? `读取 MCP 工具失败 · ${serverName}` : `${pending ? "准备读取 MCP 工具" : "已读取 MCP 工具"} · ${serverName}`;
+    }
+    if (toolName === "mcp_call") {
+        const eventToolName = field(detail, "toolName");
+        const name = String(field(detail, "mcpToolName") || field(field(detail, "result"), "toolName") || (eventToolName === "mcp_call" ? "" : eventToolName) || "外部工具");
+        return failed ? `MCP 工具调用失败 · ${name}` : `${pending ? "准备调用 MCP 工具" : "MCP 工具调用完成"} · ${name}`;
+    }
+    if (toolName === "delegate_task") {
+        const role = String(field(detail, "roleLabel") || "专家");
+        const event = String(field(detail, "eventType") || "");
+        if (event === "subagent_failed" || failed) return `${role}处理失败`;
+        if (event === "subagent_completed") return `${role}已完成`;
+        if (event === "subagent_queued") return `${role}已排队`;
+        return `${role}正在处理`;
     }
     const metadata = AGENT_TOOL_METADATA[toolName];
     const summary = typeof metadata?.summary === "function" ? metadata.summary({ pending, detail }) : metadata?.summary;

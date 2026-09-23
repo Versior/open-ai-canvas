@@ -490,7 +490,16 @@ paths:
       summary: 读取云端 Agent 能力
       responses:
         "200":
-          description: 信封 data 包含 version、permissionModes、contextScopes、skills、writeTools、billing、maxHistoryPairs、maxSteps、maxHistoryBytes、capabilitySetVersion、capabilitySetHash、nodeTypes、tools；maxHistoryPairs 为跨轮保留的用户对话轮数，maxSteps 为 0 表示无固定模型调用上限，历史仍受 maxHistoryBytes 限制
+          description: 信封 data 包含 version、permissionModes、contextScopes、skills、mcp、subagents、maxSubagents、writeTools、billing、maxHistoryPairs、maxSteps、maxHistoryBytes、capabilitySetVersion、capabilitySetHash、nodeTypes、tools；maxHistoryPairs 为跨轮保留的用户对话轮数，maxSteps 为 0 表示无固定模型调用上限，历史仍受 maxHistoryBytes 限制
+  /agent/mcp/servers:
+    get:
+      tags: [agent]
+      summary: 读取部署者配置且可供本轮选择的 MCP Server
+      responses:
+        "200":
+          description: 信封 data.servers 仅包含 id、name、description、allowedTools，不返回 URL、Header 或密钥
+        "500":
+          description: 部署环境中的 MCP 配置无效
   /agent/profile:
     get:
       tags: [agent]
@@ -1376,6 +1385,13 @@ components:
           maxItems: 8
           items:
             type: string
+        mcpServerIds:
+          type: array
+          maxItems: 8
+          uniqueItems: true
+          description: 从 GET /agent/mcp/servers 选择；后端在创建时冻结配置哈希，浏览器不提交 URL 或密钥
+          items:
+            type: string
         contextScope:
           type: array
           maxItems: 1
@@ -1400,6 +1416,11 @@ components:
               type: integer
               minimum: 0
               maximum: 120
+            maxSubagents:
+              type: integer
+              minimum: 0
+              maximum: 8
+              description: 0 禁用；子智能体费用计入 maxCredits
         idempotencyKey:
           type: string
           minLength: 8
