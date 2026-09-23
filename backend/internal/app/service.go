@@ -72,6 +72,11 @@ type Service struct {
 	prompts                  *prompts.Service
 	auth                     *auth.Service
 	canvas                   *canvas.Service
+	domainMCPMu              sync.RWMutex
+	domainMCPUpdateMu        sync.Mutex
+	domainMCPRuntime         *domainMCPRuntimeSnapshot
+	domainMCPRuntimeErr      error
+	domainMCPLoaded          bool
 }
 
 const taskWorkerConcurrency = 3

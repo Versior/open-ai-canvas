@@ -359,7 +359,7 @@ git commit -m "feat(agent): 画布产物 - 增加 Bundle 批量落点"
 **Interfaces:**
 - Produces: `AdminDomainMCPCatalog`, `AdminDomainMCPInstallations`, `InstallDomainMCPPack`, `UpdateDomainMCPInstallation`, `DeleteDomainMCPInstallation`, `TestDomainMCPConnection`.
 
-- [ ] **Step 1: Write failing admin-setting tests**
+- [x] **Step 1: Write failing admin-setting tests**
 
 ```go
 func TestDomainMCPSettingsEncryptCredentialsAndKeepSecretOnBlankUpdate(t *testing.T) {
@@ -373,23 +373,23 @@ func TestDomainMCPSettingsEncryptCredentialsAndKeepSecretOnBlankUpdate(t *testin
 }
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/app -run DomainMCPSettings -count=1`
 
 Expected: methods and request types do not exist.
 
-- [ ] **Step 3: Implement settings and atomic runtime reload**
+- [x] **Step 3: Implement settings and atomic runtime reload**
 
 Store one schema-versioned value under `domain_mcp_marketplace`. Encrypt each credential with existing `encryptSettingValue`; blank update preserves the current cipher and explicit `ClearCredential` removes it. Every write checks `actor.Role == admin`, validates before persistence, appends an `AdminAuditEvent`, saves setting and audit transactionally, builds a new immutable Hub, then swaps it under a mutex. On reload failure keep the previous working Hub and return the failure to the write request.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/app -run 'DomainMCPSettings|DomainMCPRuntime' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/app/domain_mcp_* backend/internal/app/service.go backend/internal/service/aliases_types.go

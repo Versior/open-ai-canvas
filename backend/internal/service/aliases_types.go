@@ -33,6 +33,8 @@ type (
 	AdminChannelPage                       = app.AdminChannelPage
 	AdminChannelReference                  = app.AdminChannelReference
 	AdminCreditAdjustmentRequest           = app.AdminCreditAdjustmentRequest
+	AdminDomainMCPInstallation             = app.AdminDomainMCPInstallation
+	AdminDomainMCPPack                     = app.AdminDomainMCPPack
 	AdminListQuery                         = app.AdminListQuery
 	AdminLogicalModel                      = app.AdminLogicalModel
 	AdminLogicalRoute                      = app.AdminLogicalRoute
@@ -139,6 +141,7 @@ type (
 	DiagnosticExportRequest                = app.DiagnosticExportRequest
 	DiagnosticPreview                      = app.DiagnosticPreview
 	DiagnosticRuntime                      = app.DiagnosticRuntime
+	DomainMCPConnectionTestResult          = app.DomainMCPConnectionTestResult
 	DrawingEngineSetting                   = app.DrawingEngineSetting
 	EagleAddItemRequest                    = app.EagleAddItemRequest
 	EagleCreatedItem                       = app.EagleCreatedItem
@@ -157,6 +160,7 @@ type (
 	ImageSizeConfig                        = app.ImageSizeConfig
 	ImageSizePreset                        = app.ImageSizePreset
 	ImportProjectUnitsRequest              = app.ImportProjectUnitsRequest
+	InstallDomainMCPRequest                = app.InstallDomainMCPRequest
 	InputConstraint                        = app.InputConstraint
 	LibTVImportRequest                     = app.LibTVImportRequest
 	LibTVImportResult                      = app.LibTVImportResult
@@ -177,6 +181,7 @@ type (
 	LoginRequest                           = app.LoginRequest
 	ModelCapabilityConfig                  = app.ModelCapabilityConfig
 	ModelCatalogResponse                   = app.ModelCatalogResponse
+	UpdateDomainMCPRequest                 = app.UpdateDomainMCPRequest
 	ModelCatalogSource                     = app.ModelCatalogSource
 	ModelError                             = app.ModelError
 	ModelErrorCode                         = app.ModelErrorCode
