@@ -500,27 +500,27 @@ git commit -m "feat(agent): MCP 领域能力 - 接入商品洞察与画布产物
 - Consumes: admin APIs from Task 7.
 - Produces: `/admin/mcp` management page.
 
-- [ ] **Step 1: Write failing static and component-contract tests**
+- [x] **Step 1: Write failing static and component-contract tests**
 
 Tests assert that the route exists, the API uses `http`, the page has “推荐能力包 / 已安装 / 自定义连接”, secrets are write-only, empty secret means preserve, and long tool lists are inside a `data-canvas-wheel-scroll` scroll region.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd web && bun.cmd test test/admin-mcp-marketplace.test.ts`
 
 Expected: imports or required UI text are missing.
 
-- [ ] **Step 3: Implement the management page**
+- [x] **Step 3: Implement the management page**
 
 Use `AdminPageFrame`, project admin controls and semantic tokens. Install/test/update/delete failures remain visible and are not converted to optimistic success. Cards show source, version, data note, permissions, provider need, tool count and current status. Credential fields never receive server values.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd web && bun.cmd test test/admin-mcp-marketplace.test.ts && bun.cmd run typecheck`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/services/api/domain-mcp.ts web/src/pages/admin/mcp web/src/router.tsx web/src/pages/admin/components/admin-shell.tsx web/test/admin-mcp-marketplace.test.ts
