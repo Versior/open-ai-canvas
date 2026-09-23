@@ -410,17 +410,17 @@ git commit -m "feat(admin): MCP 市场 - 持久化安装与加密凭据"
 - Consumes: app methods from Task 6 and Hub from Task 2.
 - Produces: admin routes in the design and `/mcp/domain` Streamable HTTP endpoint.
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Test non-admin rejection, response secret redaction, unknown JSON fields, request-size limits, connection-test timeout and the MCP sequence `initialize/server-discover → tools/list → tools/call`.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/handler -run DomainMCP -count=1`
 
 Expected: routes return 404 or symbols do not exist.
 
-- [ ] **Step 3: Add official SDK and register handlers**
+- [x] **Step 3: Add official SDK and register handlers**
 
 Run: `cd backend && go get github.com/modelcontextprotocol/go-sdk@v1.8.0`
 
@@ -432,13 +432,13 @@ handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return
 
 The Gin adapter requires authenticated admin access for management routes. The external MCP endpoint uses a deployment token or remains disabled; it never inherits browser Cookie authorization implicitly.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/handler ./internal/domainmcp/... -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/go.mod backend/go.sum backend/internal/handler

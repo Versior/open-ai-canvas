@@ -26,6 +26,94 @@ tags:
   - name: agent
   - name: admin
 paths:
+  /mcp/domain:
+    servers:
+      - url: /
+    post:
+      tags: [meta]
+      summary: 标准 MCP Streamable HTTP Endpoint
+      description: 仅在 CANVAS_DOMAIN_MCP_TOKEN 已配置时启用。必须使用独立 Bearer token；浏览器 session Cookie 不授予访问权。请求体最大 256 KiB。
+      security:
+        - domainMCPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: MCP JSON-RPC 响应}
+        "401": {description: Bearer token 缺失或无效}
+        "404": {description: Endpoint 未启用}
+        "413": {description: 请求体超过限制}
+  /admin/domain-mcp/catalog:
+    get:
+      tags: [admin]
+      summary: 查询领域 MCP 能力市场目录
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/domain-mcp/installations:
+    get:
+      tags: [admin]
+      summary: 查询领域 MCP 安装
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 安装领域 MCP 能力包
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DomainMCPInstallRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+  /admin/domain-mcp/installations/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    patch:
+      tags: [admin]
+      summary: 更新领域 MCP 安装
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DomainMCPUpdateRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 删除领域 MCP 安装
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/domain-mcp/installations/{id}/test:
+    post:
+      tags: [admin]
+      summary: 测试领域 MCP 上游连接和必需工具
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
   /admin/settings/appearance/live2d:
     post:
       tags: [admin]
@@ -1103,6 +1191,10 @@ components:
       type: apiKey
       in: cookie
       name: open_ai_canvas_session
+    domainMCPBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque deployment token
   schemas:
     ToolMutation:
       type: object
@@ -1312,6 +1404,33 @@ components:
           type: string
           minLength: 8
           maxLength: 128
+    DomainMCPInstallRequest:
+      type: object
+      additionalProperties: false
+      required: [packId]
+      properties:
+        packId: {type: string}
+        name: {type: string, maxLength: 80}
+        enabled: {type: boolean, default: true}
+        allowedTools:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+        endpoint: {type: string, format: uri, description: 仅允许通过出站安全策略的 HTTP(S) MCP 地址}
+        apiKey: {type: string, writeOnly: true, description: 加密保存，响应永不回传}
+    DomainMCPUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, maxLength: 80}
+        enabled: {type: boolean}
+        allowedTools:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+        endpoint: {type: string, format: uri}
+        apiKey: {type: string, writeOnly: true, description: 留空表示保留已有凭据}
+        clearCredential: {type: boolean, description: 仅在禁用安装时允许清空凭据}
     Envelope:
       type: object
       required: [code, msg]

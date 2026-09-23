@@ -30,6 +30,12 @@ func (s *Service) domainMCPHubSnapshot() (*domainmcp.Hub, error) {
 	return runtime.Hub, nil
 }
 
+// DomainMCPHubSnapshot exposes the immutable Hub snapshot to transport
+// adapters while keeping installation state and credentials inside app.
+func (s *Service) DomainMCPHubSnapshot() (*domainmcp.Hub, error) {
+	return s.domainMCPHubSnapshot()
+}
+
 func (s *Service) domainMCPRuntimeSnapshot() (*domainMCPRuntimeSnapshot, error) {
 	s.domainMCPMu.RLock()
 	if s.domainMCPLoaded {
