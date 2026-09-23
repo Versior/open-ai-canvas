@@ -1179,6 +1179,12 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 		state.RuntimeRunID = run.ID
 		skillResult, skillErr = cloudAgentReadTool(s.repo, run.UserID, state, call, s)
 	}
+	var domainMCPResult any
+	var domainMCPErr error
+	if allowed && (call.Function.Name == "domain_mcp_list_tools" || call.Function.Name == "domain_mcp_call") {
+		state.RuntimeRunID = run.ID
+		domainMCPResult, domainMCPErr = s.cloudAgentDomainMCPTool(context.Background(), run, state, call)
+	}
 	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
 	return s.repo.MutateCloudAgent(run.UserID, run.ID, run.Revision, func(current *model.CloudAgentExecution, repo *repository.Repository) error {
@@ -1199,6 +1205,8 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 			result, toolErr = modelList, modelListErr
 		case call.Function.Name == "skill_read_file", call.Function.Name == "image_annotation_render":
 			result, toolErr = skillResult, skillErr
+		case call.Function.Name == "domain_mcp_list_tools", call.Function.Name == "domain_mcp_call":
+			result, toolErr = domainMCPResult, domainMCPErr
 		default:
 			result, toolErr = cloudAgentReadTool(repo, run.UserID, state, call)
 		}

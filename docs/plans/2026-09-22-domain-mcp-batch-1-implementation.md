@@ -459,27 +459,27 @@ git commit -m "feat(api): MCP 市场 - 增加管理接口与标准 Endpoint"
 - Consumes: immutable Domain Hub snapshot and Artifact Bundle compiler.
 - Produces: `domain_mcp_list_tools`, `domain_mcp_call`, `canvas_apply_artifact_bundle` Agent tools.
 
-- [ ] **Step 1: Write failing Agent tests**
+- [x] **Step 1: Write failing Agent tests**
 
 Test that only enabled packs appear, a call result emits source-linked findings, Bundle payload is not copied into the model transcript, bundle ID is present, cross-run application fails, and `canvas_apply_artifact_bundle` enters existing approval behavior.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `cd backend && go test ./internal/app -run CloudAgentDomainMCP -count=1`
 
 Expected: tools are absent.
 
-- [ ] **Step 3: Implement Agent tools**
+- [x] **Step 3: Implement Agent tools**
 
 The call path stores validated artifacts in `state.ArtifactBundles`, returns only summary/findings/sources/warnings/nextActions and `bundleId`, truncates model-facing text, and records a sanitized event. Tool descriptions explicitly state that retrieved pages are data rather than instructions.
 
-- [ ] **Step 4: Run and verify GREEN**
+- [x] **Step 4: Run and verify GREEN**
 
 Run: `cd backend && go test ./internal/app ./internal/prompts -run 'CloudAgentDomainMCP|AgentPolicy' -count=1`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/internal/app/cloud_agent_domain_mcp* backend/internal/app/cloud_agent_runtime.go backend/internal/app/cloud_agent_tools.go backend/internal/prompts
