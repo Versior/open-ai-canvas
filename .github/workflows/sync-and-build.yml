@@ -1,0 +1,262 @@
+name: Sync upstream and build fork images
+
+# 二开自动流水线（放在 ci/auto 分支，永不参与上游同步）：
+#   1. 每 3 小时把 fork 的 main 快进到 ddcat-ai/open-ai-canvas 最新；
+#      main 永远只是上游镜像 —— 本工作流绝不向 main 提交任何东西。
+#   2. main 有新提交时，直接在上游源码上构建镜像并推到 ghcr.io/<owner>/open-ai-canvas-{backend,web}。
+#   3. 产物标签：:latest（移动·部署用）、:sha-<短>、:sha-<全>（不可变·可回滚）。
+#
+# 为什么不复用上游的 publish-images.yml：
+#   a) 上游该工作流的 build 依赖 Quality checks，而上游 main 的检查是存量失败状态，会把构建一起跳过；
+#   b) 它的 GITHUB_SHA 语义绑定「被 push 的那个提交」，套到二开分支上会把标签打成误导性的值。
+# 因此这里自建同样的构建矩阵，但用 main 的真实提交号打标签与写 label。
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: fork-sync-build
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync upstream into main and refresh the automation branch
+    runs-on: ubuntu-latest
+    outputs:
+      needs_build: ${{ steps.sync.outputs.needs_build }}
+      sha: ${{ steps.sync.outputs.sha }}
+      short: ${{ steps.sync.outputs.short }}
+      version: ${{ steps.sync.outputs.version }}
+      owner: ${{ steps.sync.outputs.owner }}
+      build_time: ${{ steps.sync.outputs.build_time }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/auto
+          fetch-depth: 0
+      - id: sync
+        name: Sync main and this branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/ddcat-ai/open-ai-canvas.git
+          git fetch --no-tags upstream main
+          after="$(git rev-parse FETCH_HEAD)"
+          short="${after:0:7}"
+          version="$(git show "$after:VERSION" | tr -d '\r\n')"
+          build_time="$(git show -s --format=%cI "$after")"
+
+          # main 永远只是上游镜像：只允许快进，绝不在这里提交任何东西
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" == "$after" ]]; then
+            echo "main 已与上游一致：$after"
+          elif git push origin "$after:main"; then
+            echo "main 已快进到 $after"
+          else
+            echo "::warning::fork 的 main 上有上游之外的提交，无法快进。构建不受影响（构建用的是上游提交号），但建议把 main 重置回上游。"
+            echo "main 同步失败（不阻塞构建）"
+          fi
+
+          # 该提交是否已有镜像？有就跳过构建
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          needs_build=true
+          token="$(curl -sS 'https://ghcr.io/token?scope=repository:'"$owner"'/open-ai-canvas-backend:pull&service=ghcr.io' | jq -r '.token // empty')"
+          if [[ -n "$token" ]]; then
+            code="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $token" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json' \
+              "https://ghcr.io/v2/$owner/open-ai-canvas-backend/manifests/sha-$short" || true)"
+            if [[ "$code" == "200" ]]; then
+              needs_build=false
+              echo "ghcr 已有 sha-$short，跳过构建"
+            else
+              echo "ghcr 尚无 sha-$short（HTTP $code），需要构建"
+            fi
+          else
+            echo "取不到 ghcr 匿名 token，按需要构建处理"
+          fi
+
+          echo "sha=$after" >> "$GITHUB_OUTPUT"
+          echo "short=$short" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_time=$build_time" >> "$GITHUB_OUTPUT"
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+          echo "needs_build=$needs_build" >> "$GITHUB_OUTPUT"
+          echo "目标提交=$short version=$version build_time=$build_time owner=$owner needs_build=$needs_build"
+
+          # 承载本工作流的默认分支：重建为「上游 + 本工作流」，不累积合并、不会冲突。
+          # 放在最后，即使失败也已写完 outputs，构建不受影响。
+          if (
+            set -e
+            git config user.name github-actions
+            git config user.email actions@users.noreply.github.com
+            cp .github/workflows/sync-and-build.yml "$RUNNER_TEMP/sync-and-build.yml"
+            git checkout --detach "$after"
+            mkdir -p .github/workflows
+            cp "$RUNNER_TEMP/sync-and-build.yml" .github/workflows/sync-and-build.yml
+            git add .github/workflows/sync-and-build.yml
+            git commit -q -m "ci: 跟随上游 $short"
+            git push --force origin HEAD:ci/auto
+          ); then
+            echo "ci/auto 已重建为上游 $short + 工作流"
+          else
+            echo "::warning::ci/auto 重建失败（不阻塞构建）"
+          fi
+
+  build:
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
+    needs: sync
+    if: needs.sync.outputs.needs_build == 'true'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: open-ai-canvas-web
+            dockerfile: Dockerfile
+            arch: multi
+            platforms: linux/amd64,linux/arm64
+            runner: ubuntu-24.04
+          - image: open-ai-canvas-backend
+            dockerfile: backend/Dockerfile
+            arch: amd64
+            platforms: linux/amd64
+            runner: ubuntu-24.04
+          - image: open-ai-canvas-backend
+            dockerfile: backend/Dockerfile
+            arch: arm64
+            platforms: linux/arm64
+            runner: ubuntu-24.04-arm
+    env:
+      MAIN_SHA: ${{ needs.sync.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ci/auto
+          fetch-depth: 1
+      - name: Check out the exact upstream commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/ddcat-ai/open-ai-canvas.git
+          git fetch --no-tags --depth 1 upstream main
+          head="$(git rev-parse FETCH_HEAD)"
+          if [[ "$head" != "${{ needs.sync.outputs.sha }}" ]]; then
+            echo "上游在同步与构建之间又前进了（$head != ${{ needs.sync.outputs.sha }}），请重跑本轮" >&2
+            exit 1
+          fi
+          git checkout --detach "$head"
+          echo "已切到上游提交 $(git rev-parse --short HEAD)"
+      - name: Patch backend Dockerfile if upstream still misses third_party
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys
+          path = "backend/Dockerfile"
+          text = open(path, encoding="utf-8").read()
+          anchor = "COPY backend/go.mod backend/go.sum ./\n"
+          added = "COPY backend/third_party ./third_party\n"
+          if added in text:
+              print("上游已自带 third_party 复制，跳过补丁")
+          elif anchor not in text:
+              sys.exit("补丁锚点缺失：backend/Dockerfile 结构已变，请更新本工作流")
+          else:
+              open(path, "w", encoding="utf-8").write(text.replace(anchor, anchor + added, 1))
+              print("已补 COPY backend/third_party ./third_party")
+          PY
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        name: Build and push staging image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
+          push: true
+          build-args: |
+            BUILD_VERSION=${{ needs.sync.outputs.version }}
+            BUILD_COMMIT=${{ needs.sync.outputs.sha }}
+            BUILD_TIME=${{ needs.sync.outputs.build_time }}
+          tags: ghcr.io/${{ needs.sync.outputs.owner }}/${{ matrix.image }}:stage-${{ needs.sync.outputs.short }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.sync.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.sync.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+      - name: Record image digest
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "非法镜像 digest" >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  publish:
+    name: Publish ${{ matrix.image }} tags
+    needs: [sync, build]
+    if: needs.sync.outputs.needs_build == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [open-ai-canvas-web, open-ai-canvas-backend]
+    concurrency:
+      group: fork-image-tags-${{ matrix.image }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-${{ matrix.image }}-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote verified digests
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ needs.sync.outputs.owner }}/${{ matrix.image }}
+          MAIN_SHA: ${{ needs.sync.outputs.sha }}
+          DIGEST_DIR: ${{ runner.temp }}/digests
+          EXPECTED: ${{ matrix.image == 'open-ai-canvas-backend' && '2' || '1' }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$DIGEST_DIR"/*)
+          [[ ${#files[@]} -eq "$EXPECTED" ]] || { echo "镜像 digest 数量不符：期望 $EXPECTED，实际 ${#files[@]}" >&2; exit 1; }
+          sources=()
+          for file in "${files[@]}"; do
+            digest="${file##*/}"
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || { echo "非法 digest：$digest" >&2; exit 1; }
+            sources+=("$IMAGE@sha256:$digest")
+          done
+          docker buildx imagetools create \
+            --tag "$IMAGE:latest" \
+            --tag "$IMAGE:sha-${MAIN_SHA:0:7}" \
+            --tag "$IMAGE:sha-$MAIN_SHA" \
+            "${sources[@]}"
+          echo "已发布 $IMAGE:latest <- $MAIN_SHA"
