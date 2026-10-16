@@ -8,6 +8,18 @@ import type { CameraControlOptions } from "@/lib/canvas/camera-prompt-library";
 import type { SrtEntry, SubtitleHighlight, SubtitleStyle } from "@/types/timeline";
 import type { GenerationSpec } from "@/lib/canvas/generation-contract.generated";
 import type { GenerationTask } from "@/services/api/task-center";
+import type { EcommerceCopy, EcommerceProductProfile, EcommerceSellingPoint, EcommerceShotSet, EcommerceStyle } from "@/lib/ecommerce/ecommerce-contract";
+import type { EcommerceSuite } from "@/lib/ecommerce/ecommerce-suite";
+import type { EcommerceLayout } from "@/lib/ecommerce/ecommerce-layout";
+import type { EcommerceInfographic } from "@/lib/ecommerce/ecommerce-infographic";
+import type { EcommerceSizeChart } from "@/lib/ecommerce/ecommerce-size-chart";
+import type { EcommerceAplus } from "@/lib/ecommerce/ecommerce-aplus";
+import type { EcommerceReplica } from "@/lib/ecommerce/ecommerce-replica";
+import type { EcommerceTeardown } from "@/lib/ecommerce/ecommerce-teardown";
+import type { EcommerceDelivery } from "@/lib/ecommerce/ecommerce-delivery";
+import type { EcommerceRevision } from "@/lib/ecommerce/ecommerce-revision";
+import type { EcommerceVariantSet } from "@/lib/ecommerce/ecommerce-variants";
+import type { EcommerceVideo } from "@/lib/ecommerce/ecommerce-video";
 
 export type Position = {
     x: number;
@@ -39,6 +51,32 @@ export enum CanvasNodeType {
     ColorGrade = "colorgrade",
     MediaConversion = "media-conversion",
     BatchTable = "batch-table",
+    /** 电商创作：商品档案，输出商品身份。 */
+    Product = "product",
+    /** 电商创作：拍法，输出拍摄方案。 */
+    ShotRecipe = "shot-recipe",
+    /** 电商创作：卖点清单，输出可验证的商品主张。 */
+    SellingPoint = "selling-point",
+    /** 电商创作：文案，输出图上要出现的文字。 */
+    Copy = "ecommerce-copy",
+    /** 电商创作：品牌风格，输出跨整组图统一的视觉规范。 */
+    Style = "ecommerce-style",
+    /** 电商创作：排版，把文案叠在成品图上并导出多尺寸。文字不烧进像素。 */
+    Layout = "ecommerce-layout",
+    /** 电商创作：信息图，标注与规格表逐字进提示词；文字错不起时改走本地精确合成。 */
+    Infographic = "ecommerce-infographic",
+    /** 电商创作：爆款复刻，参考图给结构、产品图给主体。复刻公式不复刻画面。 */
+    Replica = "ecommerce-replica",
+    /** 电商创作：竞品拆解，把别人的详情页拆成可执行的大纲。 */
+    Teardown = "ecommerce-teardown",
+    /** 电商创作：交付，汇总一套图、按平台校验、按规范命名、导出清单。 */
+    Delivery = "ecommerce-delivery",
+    /** 电商创作：改稿，一张图的版本链与局部修改。 */
+    Revision = "ecommerce-revision",
+    /** 电商创作：视频，把一套图编排成主图视频/轮播视频/种草短视频。 */
+    EcommerceVideo = "ecommerce-video",
+    /** 电商创作：A+ 内容，亚马逊详情页的模块化版式，每个模块有精确到像素的规格。 */
+    Aplus = "ecommerce-aplus",
 }
 
 /** Runtime IDs contributed by plugins share the persisted node type field. */
@@ -48,6 +86,36 @@ export type CanvasNodeTypeId = CanvasNodeType | PluginCanvasNodeType;
 export function isBuiltinCanvasNodeType(type: CanvasNodeTypeId): type is CanvasNodeType {
     return Object.values(CanvasNodeType).includes(type as CanvasNodeType);
 }
+
+/**
+ * 从连线菜单能直接建出来的节点类型。
+ *
+ * 电商的六个节点也在其中——从商品图拉一条线就能长出拍法、卖点、文案、风格、排版，
+ * 不必绕到右键菜单去找。连线是这个画布的主交互，电商节点没有理由绕开它。
+ */
+export type CanvasCreatableNodeType =
+    | CanvasNodeType.Image
+    | CanvasNodeType.Text
+    | CanvasNodeType.Script
+    | CanvasNodeType.BatchTable
+    | CanvasNodeType.Video
+    | CanvasNodeType.Audio
+    | CanvasNodeType.Drawing
+    | CanvasNodeType.Config
+    | CanvasNodeType.MediaConversion
+    | CanvasNodeType.Product
+    | CanvasNodeType.ShotRecipe
+    | CanvasNodeType.SellingPoint
+    | CanvasNodeType.Copy
+    | CanvasNodeType.Style
+    | CanvasNodeType.Layout
+    | CanvasNodeType.Infographic
+    | CanvasNodeType.Replica
+    | CanvasNodeType.Teardown
+    | CanvasNodeType.Delivery
+    | CanvasNodeType.Revision
+    | CanvasNodeType.EcommerceVideo
+    | CanvasNodeType.Aplus;
 
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasMediaPerformanceMode = "auto" | "quality" | "performance";
@@ -173,7 +241,9 @@ export type CanvasGenerationBatch = {
     updatedAt: string;
 };
 
-export type CanvasBatchOperation = "try_on" | "creative";
+export type CanvasBatchOperation = "try_on" | "creative" | "product";
+/** 电商创作的产物配方。只描述"怎么拍"，商品长什么样由锁定块负责。 */
+export type CanvasBatchProductRecipe = "main" | "scene" | "detail" | "selling_point" | "model" | "detail_page" | "promo" | "ugc";
 export type CanvasBatchRow = {
     id: string;
     enabled: boolean;
@@ -181,6 +251,8 @@ export type CanvasBatchRow = {
     /** Text nodes selected for this row; their contents are appended to prompt. */
     textNodeIds?: string[];
     prompt: string;
+    /** 电商创作专用：本行使用的配方。缺失时按自由提示词处理。 */
+    recipe?: CanvasBatchProductRecipe;
     outputNodeId?: string;
     /** AI-generated cell content keyed by column id (for aiGenerated tables). */
     cells?: Record<string, string>;
@@ -202,6 +274,11 @@ export type CanvasBatchTableData = {
     storyboardSourceNodeIds?: string[];
     /** Optional prompt override applied to every batch row while non-empty. */
     globalPrompt?: string;
+    /**
+     * 电商创作的商品锁定块：用户确认过的商品事实，逐行拼在每个配方提示词前面。
+     * 这是文本约束，不是蒙版——影策不做抠图，商品一致性靠提示词压住。
+     */
+    productLock?: string;
     referenceColumns?: CanvasBatchReferenceColumn[];
     textColumns?: CanvasBatchReferenceColumn[];
     rows: CanvasBatchRow[];
@@ -449,6 +526,104 @@ export type CanvasNodeMetadata = {
     batchRowId?: string;
     batchOperation?: CanvasBatchOperation;
     batchInputNodeIds?: string[];
+    /** 电商创作：商品档案。落盘字段。 */
+    productProfile?: EcommerceProductProfile;
+    /** 电商创作：拍摄清单（一组图共用一张清单）。落盘字段。 */
+    shotSet?: EcommerceShotSet;
+    /**
+     * 电商创作：一键出整套时挂在**商品节点**上的拍摄清单。落盘字段。
+     *
+     * 一键流程不铺拍法节点——铺了就得让用户去核对那张表，而那张表是系统按行业套路
+     * 生成的。挂在商品节点上，约束链照样能把每一屏的拍法带下去（见 resolveEcommerceInputs）。
+     */
+    ecommerceShotSet?: EcommerceShotSet;
+    /**
+     * 电商创作：一次一键流程的进行状态，挂在商品节点上。落盘字段。
+     *
+     * 全屏出完之后要自动装订（详情页拼长图 + 切片），所以得记住这一批是哪几屏、
+     * 落在哪几个节点上。做完清掉——只在这一次流程里生效。
+     */
+    ecommerceOneClick?: { flow: string; slotIds: string[]; nodeIds: string[] };
+    /**
+     * 电商创作：这一套的套图提示词表，挂在商品节点上。落盘字段。
+     *
+     * **单位是「一张图一条提示词」**——主图画什么、模特上身图画什么、细节图画什么，
+     * 构图光线景别全不一样。分析时由文本模型读图逐条写出，用户在面板里逐条核对，
+     * 出图时那一行原样交给图片模型。见 ecommerce-suite.ts。
+     */
+    ecommerceSuite?: EcommerceSuite;
+    /**
+     * 电商创作：分析商品用哪个文本模型。落盘字段。
+     *
+     * 分析要读图、出图不用，两者常常不是同一个模型，而全局配置只有一个。
+     * 空着就跟着全局配置走。
+     */
+    ecommerceAnalysisModel?: string;
+    /** 电商创作：这一套出图用哪个图片模型。落盘字段。空着跟着全局配置走。 */
+    ecommerceImageModel?: string;
+    /** 电商创作：这一套出图的画幅/尺寸。落盘字段。空着跟着全局配置走。 */
+    ecommerceImageSize?: string;
+    /** 电商创作：这一套出图的画质档。落盘字段。空着跟着全局配置走。 */
+    ecommerceImageQuality?: string;
+    /**
+     * 电商创作：出完之后要不要自动拼长图并按平台切片。落盘字段。
+     *
+     * 不写就是开（「一键」是这套流程的承诺）。关掉之后出图照出、只是不装订——
+     * 用户可能想先挑掉两张再拼，或者根本不想拼。要拼时在商品节点上点「拼成长图」。
+     */
+    ecommerceAutoBind?: boolean;
+    /** 电商创作：这一套投哪个平台。落盘字段。决定图上文字的合规口径与切片上限。 */
+    ecommercePlatform?: string;
+    /** 电商创作：图上文字用什么语言（zh / en / bilingual）。落盘字段。 */
+    ecommerceLanguage?: string;
+    /** 电商创作：风格参考图的 storageKey——「照这个调性来」。落盘字段。 */
+    ecommerceStyleReferenceKey?: string;
+    /**
+     * 电商创作：分析商品时注入哪几个技能。落盘字段。
+     *
+     * 空数组就是不用技能——**默认不注入**，选了才注入。用户技能库里可能有二十个，
+     * 全塞进一次分析会把提示词顶爆，而大部分跟这个品类无关。
+     */
+    ecommerceAnalysisSkills?: string[];
+    /**
+     * 电商创作：自定义的分析提示词（只有「怎么写」那一段）。落盘字段。
+     *
+     * 商品事实、屏次清单与输出格式由系统追加，不在这里——那三段是任务本身不是写法，
+     * 少了它们自定义的提示词会产出解析不了的东西。空着用默认那一份。
+     */
+    ecommerceSuitePrompt?: string;
+    /** 电商创作：这张产物图认领拍摄清单里的哪一行。落盘字段。 */
+    ecommerceShotId?: string;
+    /** 电商创作：卖点清单。落盘字段。 */
+    sellingPoints?: EcommerceSellingPoint[];
+    /** 电商创作：文案。落盘字段。 */
+    ecommerceCopy?: EcommerceCopy;
+    /** 电商创作：品牌风格。落盘字段。 */
+    ecommerceStyle?: EcommerceStyle;
+    /** 电商创作：排版版式。落盘字段。 */
+    ecommerceLayout?: EcommerceLayout;
+    /** 电商创作：画幅，排版节点与下游生成共用。 */
+    ecommerceAspectRatio?: string;
+    /** 电商创作：信息图（标注 + 规格表）。落盘字段。 */
+    ecommerceInfographic?: EcommerceInfographic;
+    /** 电商创作：尺码表，挂在信息图节点上（它是信息图的第七种骨架）。落盘字段。 */
+    ecommerceSizeChart?: EcommerceSizeChart;
+    /** 电商创作：A+ 内容的模块清单。落盘字段。 */
+    ecommerceAplus?: EcommerceAplus;
+    /** 电商创作：这个节点用模特库里的哪位模特。落盘字段。 */
+    ecommerceModelId?: string;
+    /** 电商创作：爆款复刻配置。落盘字段。 */
+    ecommerceReplica?: EcommerceReplica;
+    /** 电商创作：竞品拆解结果。落盘字段。 */
+    ecommerceTeardown?: EcommerceTeardown;
+    /** 电商创作：交付配置。落盘字段。 */
+    ecommerceDelivery?: EcommerceDelivery;
+    /** 电商创作：一张图的版本链。落盘字段。 */
+    ecommerceRevisions?: EcommerceRevision[];
+    /** 电商创作：SKU 变体轴，挂在商品节点上。落盘字段。 */
+    ecommerceVariants?: EcommerceVariantSet;
+    /** 电商创作：视频镜头表。落盘字段。 */
+    ecommerceVideo?: EcommerceVideo;
     frame?: {
         collapsed: boolean;
         expandedWidth: number;

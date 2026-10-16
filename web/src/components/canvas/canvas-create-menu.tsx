@@ -12,6 +12,14 @@ export type CanvasCreateCommand = {
     icon: ReactNode;
     badge?: string;
     section: "node" | "workflow" | "project" | "resource";
+    /**
+     * section 内的二级分组标题。
+     *
+     * 电商画布的「创作节点」有二十来项（十三个电商节点 + 通用节点），
+     * 平铺成一张四列网格是一团——用户要找「A+ 内容」得把整片扫一遍。
+     * 分组后标题本身就是导航。
+     */
+    group?: string;
     onClick: () => void;
 };
 
@@ -19,6 +27,25 @@ export function CanvasCreateMenu({ commands }: { commands: CanvasCreateCommand[]
     const theme = canvasThemes[useActiveTheme()];
     const projectCommands = commands.filter((command) => command.section === "project");
     const nodeCommands = commands.filter((command) => command.section === "node");
+    /**
+     * 按 group 聚拢，保持命令注册顺序。
+     *
+     * 无 group 的通用节点（文本、图片、视频……）在 defaultOrder 上被电商节点夹在中间，
+     * 直接按出现顺序聚拢会得到两个同名的「创作节点」段。所以显式把它排到最后：
+     * 电商画布里电商节点本来就该在前，自由画布里只有这一段，排哪都一样。
+     */
+    const groupedNodeCommands = (() => {
+        const groups = new Map<string, CanvasCreateCommand[]>();
+        for (const command of nodeCommands) {
+            const title = command.group || "";
+            const list = groups.get(title);
+            if (list) list.push(command);
+            else groups.set(title, [command]);
+        }
+        const named = [...groups].filter(([title]) => title).map(([title, commands]) => ({ title, commands }));
+        const rest = groups.get("");
+        return rest?.length ? [...named, { title: "", commands: rest }] : named;
+    })();
     const workflowCommands = commands.filter((command) => command.section === "workflow");
     const resourceCommands = commands.filter((command) => command.section === "resource");
 
@@ -42,8 +69,12 @@ export function CanvasCreateMenu({ commands }: { commands: CanvasCreateCommand[]
                 ))}
             </header>
 
-            <MenuSection title="创作节点" color={theme.node.muted} />
-            <CanvasCreateCommandGrid commands={nodeCommands} variant="node" />
+            {groupedNodeCommands.map((group) => (
+                <div key={group.title || "default"}>
+                    <MenuSection title={group.title || "创作节点"} color={theme.node.muted} spaced={Boolean(group.title)} />
+                    <CanvasCreateCommandGrid commands={group.commands} variant="node" />
+                </div>
+            ))}
 
             {workflowCommands.length ? (
                 <>

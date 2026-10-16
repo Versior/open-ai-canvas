@@ -1,13 +1,14 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Clapperboard, Image as ImageIcon, List, Music2, Pencil, Table2, Video, WandSparkles, Workflow as WorkflowIcon } from "lucide-react";
+import { Aperture, BadgeCheck, Clapperboard, Copy, Film, History, Image as ImageIcon, Layers, LayoutTemplate, List, Music2, Package, PackageCheck, Palette, Pencil, PenLine, Search, SwatchBook, Table2, Video, WandSparkles, Workflow as WorkflowIcon } from "lucide-react";
 
 import { useCanvasOverlayLayer } from "@/components/canvas/canvas-overlay-layer";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { subscribeCanvasGraphicsViewportPreview, subscribeCanvasNodeDragPreview, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import { CanvasNodeType, type CanvasNodeData, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasCreatableNodeType, type CanvasNodeData, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
 
 export type PendingConnectionCreate = {
     connection: ConnectionHandle;
@@ -188,6 +189,7 @@ export function CanvasConnectionCreateMenu({
     viewportSize,
     containerRef,
     canCreateDrawing,
+    canvasKind = "freeform",
     getDisabledReason,
     onCreate,
     onClose,
@@ -197,24 +199,32 @@ export function CanvasConnectionCreateMenu({
     viewportSize: { width: number; height: number };
     containerRef: RefObject<HTMLDivElement | null>;
     canCreateDrawing: boolean;
+    /**
+     * 画布种类。电商节点只在电商画布里出现，影视侧的节点也不进电商画布——
+     * 两边是两套工作流，混在一起会把两条流程的入口都搞模糊（见 canvas-kind.ts）。
+     */
+    canvasKind?: CanvasKind;
     getDisabledReason: (
-        type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Script | CanvasNodeType.BatchTable | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.Drawing | CanvasNodeType.Config | CanvasNodeType.MediaConversion,
+        type: CanvasCreatableNodeType,
         provider?: "runninghub",
     ) => string;
     onCreate: (
-        type: CanvasNodeType.Image | CanvasNodeType.Text | CanvasNodeType.Script | CanvasNodeType.BatchTable | CanvasNodeType.Video | CanvasNodeType.Audio | CanvasNodeType.Drawing | CanvasNodeType.Config | CanvasNodeType.MediaConversion,
+        type: CanvasCreatableNodeType,
         provider?: "runninghub",
     ) => void;
     onClose: () => void;
 }) {
     const theme = canvasThemes[useActiveTheme()];
     const reducedMotion = useReducedMotion();
+    const ecommerceCanvas = canvasKind === "ecommerce";
     const menuRef = useRef<HTMLDivElement>(null);
     const [activeOption, setActiveOption] = useState<string | null>(null);
     const lastPointerRef = useRef<Position | null>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer("connection-create-menu", "var(--z-modal-overlay)");
     const menuWidth = Math.min(288, viewportSize.width - 24);
-    const menuHeight = canCreateDrawing ? 448 : 404;
+    // 只用于首帧定位；菜单挂载后按 offsetHeight 实测。菜单已经长到需要滚动，
+    // 估小了会在第一帧把菜单摆偏，所以这里按完整条目数估。
+    const menuHeight = canCreateDrawing ? 1320 : 1276;
     const gap = 12;
     const initialPosition = getConnectionMenuPosition(pending.position, viewport, viewportSize, menuWidth, menuHeight, gap);
 
@@ -278,6 +288,8 @@ export function CanvasConnectionCreateMenu({
             onPointerDown={(event) => event.stopPropagation()}
         >
             <div className="grid min-w-0 grid-cols-1 gap-1">
+                {ecommerceCanvas ? null : (<>
+                <ConnectionCreateGroupLabel label="通用" />
                 <ConnectionCreateOption
                     expanded={activeOption === "文本生成"}
                     motionEnabled={!reducedMotion}
@@ -296,6 +308,7 @@ export function CanvasConnectionCreateMenu({
                     disabledReason={getDisabledReason(CanvasNodeType.Script)}
                     onClick={() => onCreate(CanvasNodeType.Script)}
                 />
+                </>)}
                 <ConnectionCreateOption
                     expanded={activeOption === "批量创作表"}
                     motionEnabled={!reducedMotion}
@@ -361,8 +374,34 @@ export function CanvasConnectionCreateMenu({
                     disabledReason={getDisabledReason(CanvasNodeType.MediaConversion)}
                     onClick={() => onCreate(CanvasNodeType.MediaConversion)}
                 />
+                <span aria-hidden className="mx-1 my-0.5 h-px" style={{ background: "color-mix(in srgb, currentColor 12%, transparent)" }} />
+                {/* 电商画布现在只有一个电商节点：商品。
+                    另外十二个暂时从菜单里去掉了——它们把「一步能做完的事」拆成十几个节点
+                    让用户自己接，合起来是一条没人走得完的流水线。内容改挂在商品节点上，
+                    入口收成商品节点上的两个一键按钮（详情页 / 种草秀）。节点实现都还在，
+                    老画布照常渲染；要放回来只改这一段。 */}
+                {ecommerceCanvas ? (
+                    <ConnectionCreateOption
+                        expanded={activeOption === "商品"}
+                        motionEnabled={!reducedMotion}
+                        icon={<Package className="size-4" />}
+                        title="商品"
+                        description="商品档案与多视角实拍；一键详情页、一键种草秀都从这里发"
+                        disabledReason={getDisabledReason(CanvasNodeType.Product)}
+                        onClick={() => onCreate(CanvasNodeType.Product)}
+                    />
+                ) : null}
             </div>
         </motion.div>
+    );
+}
+
+/** 菜单里的分组标题。标题本身就是导航——22 项平铺时用户得把整列扫一遍。 */
+function ConnectionCreateGroupLabel({ label }: { label: string }) {
+    return (
+        <span className="px-2 pb-0.5 pt-2 text-[9px] font-bold tracking-[.12em]" style={{ color: "var(--canvas-connection-group, var(--muted-foreground))" }}>
+            {label}
+        </span>
     );
 }
 

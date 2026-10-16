@@ -78,7 +78,28 @@ description: 从产品功能快速定位主要代码入口
 | 本地持久化状态 | `web/src/stores/canvas/use-canvas-store.ts` |
 | 云端 Agent 运行与事件 API | `web/src/services/api/agent.ts`、`web/src/components/canvas/canvas-cloud-agent-panel.tsx` |
 | Agent 画布上下文、操作与历史 | `web/src/lib/canvas/canvas-context-discovery.ts`、`canvas-operation-contract.ts`、`web/src/pages/canvas/use-canvas-operation-history.ts` |
-| 官方提示词目录与客户端起始稿 | `backend/internal/prompts/`、`web/src/lib/prompts/` |
+| 官方提示词目录与客户端起始稿 | `backend/internal/prompts/`、`web/src/lib/prompts/`（`CANVAS_BUILTIN_PRESETS` 标 `scope: "film"`，`ECOMMERCE_BUILTIN_PRESETS` 标 `scope: "ecommerce"`）|
+| 画布种类与节点隔离 | `web/src/lib/canvas/canvas-kind.ts`；`CanvasProject.kind` 落在 `web/src/stores/canvas/use-canvas-store.ts` |
+
+### 电商创作
+
+领域层全在 `web/src/lib/ecommerce/`，一个文件一件事：`ecommerce-contract.ts` 是商品档案、拍摄清单与提示词编译器（顺序是硬约束：商品锁定 → 复刻参考 → 竞品参考 → 品牌风格 → 商品卖点 → 文案 → 拍摄方案）；`ecommerce-recipes.ts` 是 33 种拍法、6 种风格、6 种画幅的选择库；`ecommerce-deliverables.ts` 是 7 套行业标准交付物结构；`ecommerce-canvas.ts` 沿约束链上溯解析上游（6 层，碰到产出媒体的节点就停）；`ecommerce-canvas-preset.ts` 负责开局与按需生长（含从拍法清单补齐缺的产物图，并把拍法的上游电商节点一起连到新图上）；`ecommerce-layout.ts` + `ecommerce-rasterize.ts` 是排版层（文字是独立一层，预览改字即时生效；出图主路径是提示词走模型，本地合成是文字必须逐字准确时的备用路径）；`ecommerce-infographic.ts` + `ecommerce-infographic-rasterize.ts` 是信息图（标注、引线、规格表默认逐字进提示词交给模型，本地精确合成是备用路径）；`ecommerce-replica.ts` 是爆款复刻与溶图合成（同一节点两种用途，约束相反：复刻要「不照搬」，溶图要「尽量贴合」）；`ecommerce-teardown.ts` 是竞品拆解；`ecommerce-delivery.ts` 是交付清单；`ecommerce-video.ts` 是电商视频的镜头表与四平台视频规格；`ecommerce-revision.ts` 是改稿版本链；`ecommerce-variants.ts` 是 SKU 变体轴与占位符替换；`ecommerce-size-chart.ts` 是六个品类的尺码表；`ecommerce-aplus.ts` 是亚马逊 A+ 的八个模块规格；`ecommerce-slice.ts` 是详情页长图切点方案（切点优先落在屏边界，挪不动记 conflict）；`ecommerce-rasterize.ts` 的 `rasterizeEcommerceDetailPage` 把一屏一屏的图拼成长图并切片；`ecommerce-video-templates.ts` 是八种爆款视频结构的分镜骨架；`ecommerce-video-replica.ts` 是爆款视频复刻与视频反推指令；`ecommerce-draft.ts` 是「让助手起草」的四条指令；`ecommerce-looks.ts` 是画布上那颗「风格」按钮在电商画布里给的拍法（从拍法预设编译，不新写内容）；`ecommerce-node-summary.ts` 是「画布节点」清单里每类电商节点的一句话摘要、分组与待补标记（判断复用各领域模块自己的函数，不重写规则）；`ecommerce-platform-specs.ts` 是 10 个平台的规范与校验；`ecommerce-aplus.ts` 是亚马逊 A+ 的八个模块规格与字数校验；`ecommerce-image-audit.ts` 是白底边缘采样；`ecommerce-compliance.ts` 是绝对化用语与功效承诺规则。
+
+节点组件在 `web/src/components/canvas/nodes/`，共用 `canvas-ecommerce-node-card.css` 的卡片视觉语言（与预演台节点卡同源）。生成接线在 `web/src/pages/canvas/use-canvas-generation-executor.ts`（编译提示词 + 补商品多视角参考图）、`use-canvas-media-tools.ts`（`spawnEcommerceMaterials` 按方案铺一整套、`spawnEcommerceShotOutputs` 按拍法清单补齐缺的产物、`exportEcommerceLayout` 本地合成导出）。
+
+电商节点经 `canvas-node-action-context.ts` 拿三个生成入口，不各自接生成链路：
+
+| 入口 | 谁用 | 做什么 |
+| --- | --- | --- |
+| `generateEcommerceNode(node, mode, prompt)` | 排版、信息图、爆款复刻、电商视频、改稿 | 把节点编译出的提示词交给模型，出图或出片 |
+| `generateEcommerceShotSet(node, shotIds?)` | 拍摄清单 | 缺的产物节点先补齐，再按清单（或指定行）整组进批次队列 |
+| `spawnEcommerceMaterials(node, planId)` | 商品 | 按交付物方案铺一整套节点 |
+
+`generateEcommerceShotSet` 里的「先补齐再生成」不能省：清单会被用户改（加行、删行、换拍法），画布上产物节点与清单行会对不上，按方案重铺会冲掉改动，按清单对账才不会。
+
+改稿节点读**上游和下游**两头的图（`canvas-node-graph-context.ts` 的 `useUpstreamNodes` / `useDownstreamNodes`）——它生成的下一版落在下游，只读上游的话刚出的图不会出现在版本链的下拉框里。
+
+服务端能力描述符在 `backend/internal/canvas/capability/builtin.go`，结构化投影器在 `backend/internal/app/cloud_agent_canvas_state.go`。
 
 ## 前端 HTTP 与产品壳
 

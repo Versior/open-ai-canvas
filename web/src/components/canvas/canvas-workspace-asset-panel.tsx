@@ -12,7 +12,7 @@ import type { Asset } from "@/stores/use-asset-store";
 import { assetPickerItemsToInsertPayloads, type InsertAssetPayload } from "./asset-picker-modal";
 import { Select } from "@/components/ui/base/select";
 
-const categories: AssetCategory[] = ["material", "character", "environment", "prop", "other"];
+const categories: AssetCategory[] = ["material", "character", "environment", "prop", "product", "other"];
 export function CanvasWorkspaceAssetPanel({ onInsert, onManage, onProjectAssets }: { onInsert: (payloads: InsertAssetPayload[]) => Promise<unknown>; onManage: () => void; onProjectAssets?: () => void }) {
     const { message } = App.useApp();
     const userId = useUserStore((state) => state.user?.id);

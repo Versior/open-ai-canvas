@@ -1,0 +1,105 @@
+/*
+ * 整组统一弹窗。挂在商品节点上，不挂在套图面板上——所以样式也独立一个文件，
+ * 不借面板的 CSS：面板不渲染时它也得在。
+ */
+
+/* 整组统一弹窗。每行「标签 + 选择器 + 一句人话说明」——
+   这几个选项的差别不在名字上（「自然有机」和「活力快消」光看名字分不出来），
+   所以说明必须跟着选项走，选中之后换成那一项的说明。 */
+.ecom-uniform-shell {
+    display: flex;
+    flex-direction: column;
+    max-height: min(90vh, 760px);
+    background: var(--background);
+    color: var(--foreground);
+}
+
+.ecom-uniform-head {
+    flex-shrink: 0;
+    padding: var(--space-4) var(--space-5) var(--space-3);
+    border-bottom: 1px solid var(--border);
+}
+
+.ecom-uniform-head h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.ecom-uniform-head p {
+    margin: 6px 0 0;
+    color: color-mix(in srgb, var(--foreground) 55%, transparent);
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.ecom-uniform-rows {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-3);
+    overflow: auto;
+    padding: var(--space-4) var(--space-5);
+    overscroll-behavior: contain;
+}
+
+.ecom-uniform-row {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    align-items: center;
+    gap: 4px var(--space-3);
+}
+
+.ecom-uniform-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: color-mix(in srgb, var(--foreground) 72%, transparent);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ecom-uniform-hint {
+    grid-column: 2;
+    color: color-mix(in srgb, var(--foreground) 45%, transparent);
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+/* 色板：让「色彩美学」看得见，不只是个名字 */
+.ecom-uniform-swatches {
+    display: inline-flex;
+    gap: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+}
+
+.ecom-uniform-swatches i {
+    width: 10px;
+    height: 10px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 20%, transparent);
+    border-radius: 2px;
+}
+
+.ecom-uniform-foot {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5) var(--space-4);
+    border-top: 1px solid var(--border);
+    color: color-mix(in srgb, var(--foreground) 45%, transparent);
+    font-size: 10px;
+}
+
+.ecom-uniform-close {
+    padding: 7px 16px;
+    border: 0;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}

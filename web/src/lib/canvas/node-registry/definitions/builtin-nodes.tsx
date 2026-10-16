@@ -1,4 +1,4 @@
-import { ChartColumn, Clapperboard, Code, Columns2, FileText, Globe, Image as ImageIcon, Music2, PanelTop, Palette, Pencil, Settings2, Shapes, Sparkles, Table2, Type, Video, WandSparkles } from "lucide-react";
+import { Aperture, BadgeCheck, ChartColumn, Clapperboard, Code, Columns2, Copy, FileText, Globe, History, Image as ImageIcon, Layers, LayoutTemplate, Music2, Package, PackageCheck, PanelTop, Palette, Pencil, PenLine, Search, Settings2, Shapes, Sparkles, SwatchBook, Table2, Type, Video, WandSparkles } from "lucide-react";
 
 import { NODE_SPECS } from "@/constant/canvas";
 import { MEDIA_NODE_MIN_SIZE } from "@/lib/canvas/canvas-node-size";
@@ -167,6 +167,34 @@ const BUILTIN_NODE_TRAITS = {
         resourceKind: () => "image",
         inputKind: "image",
     },
+    // 电商创作的约束节点：都不产出媒体，只往下游输出约束（锁定块 / 拍摄方案）。
+    // inputKind 记 text 而不是 image——它们不占下游的参考图槽位，商品的多视角图
+    // 由 executor 单独补进参考图，避免挤掉用户自己连的图。
+    //
+    // acceptsInputKind 收 text 与 image 两种：text 让「商品 → 拍法/卖点/风格」这类
+    // 约束链能连（约束节点之间只传文字）；image 让用户能把参考图直接丢进拍法或风格，
+    // 让模型照着那张的构图或配色来。只收 image 会把商品节点挡在门外。
+    [CanvasNodeType.Product]: { label: "商品", icon: <Package />, minSize: { width: 340, height: 420 }, showInCreateMenu: true, acceptsInputKind: "image", inputKind: "text", resourceKind: () => null },
+    [CanvasNodeType.ShotRecipe]: { label: "拍法", icon: <Aperture />, minSize: { width: 320, height: 380 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    [CanvasNodeType.SellingPoint]: { label: "卖点", icon: <BadgeCheck />, minSize: { width: 320, height: 320 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    [CanvasNodeType.Copy]: { label: "文案", icon: <PenLine />, minSize: { width: 300, height: 300 }, showInCreateMenu: true, acceptsInputKind: "text", inputKind: "text", resourceKind: () => null },
+    [CanvasNodeType.Style]: { label: "品牌风格", icon: <SwatchBook />, minSize: { width: 320, height: 340 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    [CanvasNodeType.Layout]: { label: "排版", icon: <LayoutTemplate />, minSize: { width: 420, height: 460 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "image", resourceKind: () => null },
+    // 信息图输出的是合成好的成品图，所以 inputKind 记 image——它和排版节点一样，
+    // 下游可以直接拿它当参考图或素材用。
+    [CanvasNodeType.Infographic]: { label: "信息图", icon: <Table2 />, minSize: { width: 420, height: 520 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "image", resourceKind: () => null },
+    // 复刻需要两张图：参考图给结构（image 入边），产品图从商品节点走约束链。
+    [CanvasNodeType.Replica]: { label: "爆款复刻", icon: <Copy />, minSize: { width: 360, height: 440 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    // 拆解吃竞品图，吐结构大纲；大纲往下游走文字约束。
+    [CanvasNodeType.Teardown]: { label: "竞品拆解", icon: <Search />, minSize: { width: 420, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    // 交付是这条链的终点：汇总上游的图，不产出媒体，也不该再往下接生成节点。
+    [CanvasNodeType.Delivery]: { label: "交付", icon: <PackageCheck />, minSize: { width: 480, height: 520 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    // 改稿吃一张成品图，吐版本链；不产出媒体，往下游走文字约束。
+    [CanvasNodeType.Revision]: { label: "改稿", icon: <History />, minSize: { width: 400, height: 500 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    // 电商视频吃一套图，产出视频——所以 inputKind 记 video，下游能把它当视频素材用。
+    [CanvasNodeType.EcommerceVideo]: { label: "电商视频", icon: <Clapperboard />, minSize: { width: 520, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "video", resourceKind: () => null },
+    // A+ 内容吃商品与卖点，自己出每一块的画面；不产出媒体，往下游走文字约束。
+    [CanvasNodeType.Aplus]: { label: "A+ 内容", icon: <Layers />, minSize: { width: 440, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "image", resourceKind: () => null },
 } satisfies Record<string, Omit<CanvasNodeDefinition, "type" | "defaultTitle" | "defaultSize" | "defaultMetadata">>;
 
 export const BUILTIN_NODE_DEFINITIONS: CanvasNodeDefinition[] = (Object.keys(BUILTIN_NODE_TRAITS) as CanvasNodeType[]).map((type) => {

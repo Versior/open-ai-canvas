@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { CanvasWorkspaceAssetPanel } from "./canvas-workspace-asset-panel";
 import { CanvasWorkspaceHistoryPanel } from "./canvas-workspace-history-panel";
 import type { InsertAssetPayload } from "./asset-picker-modal";
@@ -30,6 +31,7 @@ export function CanvasWorkspacePanel({
     onAssets,
     onProjectAssets,
     onCancelTask,
+    canvasKind = "freeform",
 }: {
     projectId: string;
     nodes: CanvasNodeData[];
@@ -42,6 +44,8 @@ export function CanvasWorkspacePanel({
     onAssets: () => void;
     onProjectAssets?: () => void;
     onCancelTask: (task: GenerationTask) => void;
+    /** 画布种类：决定节点清单要不要按电商阶段分组（见 canvas-kind.ts）。 */
+    canvasKind?: CanvasKind;
 }) {
     const [tab, setTab] = useState("nodes");
     const theme = canvasThemes[useActiveTheme()];
@@ -63,7 +67,7 @@ export function CanvasWorkspacePanel({
                 <X className="size-4" />
             </button>
             {tab === "nodes" && (
-                <CanvasWorkspaceNodeListPanel nodes={nodes} config={config} results={searchCanvasNodes(nodes, deferredQuery, nodes.length, config)} query={query} deferredQuery={deferredQuery} selectedNodeIds={selectedNodeIds} onQueryChange={setQuery} onFocus={onFocus} />
+                <CanvasWorkspaceNodeListPanel nodes={nodes} config={config} results={searchCanvasNodes(nodes, deferredQuery, nodes.length, config)} query={query} deferredQuery={deferredQuery} selectedNodeIds={selectedNodeIds} canvasKind={canvasKind} onQueryChange={setQuery} onFocus={onFocus} />
             )}
             {tab === "assets" && <CanvasWorkspaceAssetPanel onInsert={onInsertAssets} onManage={onAssets} onProjectAssets={onProjectAssets} />}
             {(tab === "tasks" || history) && (

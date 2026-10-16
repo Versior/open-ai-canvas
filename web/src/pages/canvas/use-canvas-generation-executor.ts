@@ -4,6 +4,8 @@ import { App } from "antd";
 
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
+import { mergeEcommercePrompt, resolveEcommerceInputs, type EcommerceGenerationInputs } from "@/lib/ecommerce/ecommerce-canvas";
+import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { buildGenerationConfig, isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
 import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-batch";
@@ -110,7 +112,16 @@ export function useCanvasGenerationExecutor({
                         message.info("合并成片节点不直接重新生成，请重新选择源视频合并");
                         return;
                     }
-                    let generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
+                    // 节点上存着一份不可用的模型/渠道时 buildGenerationConfig 会抛。
+                    // 不接住它，异常会冲出整个提交（批次调度那条路已经单独接了一次），
+                    // 节点状态停在「提交中」、用户看到的是点了没反应。
+                    let generationConfig;
+                    try {
+                        generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
+                    } catch (error) {
+                        message.error(generationErrorMessage(error));
+                        return;
+                    }
                     const hasLiveBatchChildren =
                         sourceNode?.type === CanvasNodeType.Image && (sourceNode.metadata?.batchChildIds || []).some((childId) => nodesRef.current.some((node) => node.id === childId && node.metadata?.batchRootId === sourceNode.id));
                     const hasStaleImageBatchState =
@@ -137,6 +148,14 @@ export function useCanvasGenerationExecutor({
                     const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
                     const editingTextNode = mode === "text" && Boolean(sourceTextContent);
                     let generationPrompt = mode === "image" && sourceNode?.metadata?.portraitTexture ? buildPortraitTexturePrompt(prompt, sourceNode.metadata.portraitTexture) : prompt;
+                    // 电商创作：上游商品节点与拍法节点编译出锁定块和拍摄方案，并到节点自己的提示词前面。
+                    // 自定义模特在用户级库里（zustand），不是画布数据——所以要在这里读出来传进去。
+                    // 用 getState() 而不是 hook：这是在回调里，不需要订阅重渲染。
+                    const customModels = useEcommerceModelLibrary.getState().models;
+                    const ecommerceInputs: EcommerceGenerationInputs = mode === "image"
+                        ? resolveEcommerceInputs(nodeId, nodesRef.current, connectionsRef.current, customModels)
+                        : { sources: {}, prompt: "", referenceImages: [] };
+                    if (ecommerceInputs.prompt) generationPrompt = mergeEcommercePrompt(ecommerceInputs.prompt, generationPrompt);
                     if (mode === "image" && sourceNode?.metadata?.cameraControl?.enabled) {
                         const cameraControl = sourceNode.metadata.cameraControl;
                         const cameraPrompt = buildCameraPrompt({ cameraId: cameraControl.camera, lensId: cameraControl.lens, focalLengthMm: cameraControl.focalLength, apertureF: cameraControl.aperture });
@@ -165,6 +184,17 @@ export function useCanvasGenerationExecutor({
                         if (compatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${compatibilityError}`);
                         const referenceLimits = usesWorkflowProvider ? undefined : modelGroupReferenceLimits(effectiveConfig, generationConfig.model, mode, requirements);
                         rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, mode, mode === "video" && Boolean(referenceLimits?.maxAudios), !promptOnly, referenceLimits);
+                        // 商品实拍 + 模特参考图补进参考图。
+                        //
+                        // 它们都不在连线上：用户连的是商品节点/选了模特，不是图片节点。
+                        // 而这两样恰恰是「同一件商品」「同一个人」的全部依据——
+                        // 少了它们，模型会照着文字描述自己编一个商品、编一个人。
+                        if (ecommerceInputs.referenceImages.length) {
+                            const evidenceImages = ecommerceInputs.referenceImages
+                                .filter((image) => image.storageKey || image.url || image.dataUrl)
+                                .filter((image) => !rawGenerationContext.referenceImages.some((existing) => existing.id === image.id));
+                            if (evidenceImages.length) rawGenerationContext = { ...rawGenerationContext, referenceImages: [...rawGenerationContext.referenceImages, ...evidenceImages], imageCount: rawGenerationContext.imageCount + evidenceImages.length };
+                        }
                         const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
                         generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, hydratedRequirements);
                         const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);

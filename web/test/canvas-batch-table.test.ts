@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
     batchGenerationRows,
+    batchOperationLabel,
     batchRowReady,
     batchPromptForRow,
     batchReferenceColumns,
@@ -17,6 +18,7 @@ import {
     reorderBatchReferenceColumns,
     BATCH_REFERENCE_HANDLE_GAP,
     BATCH_REFERENCE_HANDLE_TOP,
+    PRODUCT_MAIN_IMAGE_PROMPT,
     TRY_ON_BATCH_PROMPT,
 } from "@/lib/canvas/canvas-batch-table";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
@@ -62,6 +64,30 @@ describe("batch creation table", () => {
 
     test("creates one creative row per connected image", () => {
         expect(createBatchRowsFromInputs("creative", ["a", "b"]).map((row) => row.inputNodeIds)).toEqual([["a"], ["b"]]);
+    });
+
+    test("collapses every product view into a single e-commerce row", () => {
+        const rows = createBatchRowsFromInputs("product", ["front", "side", "detail"]);
+
+        expect(rows).toHaveLength(1);
+        expect(rows[0].inputNodeIds).toEqual(["front", "side", "detail"]);
+        expect(rows[0].prompt).toBe(PRODUCT_MAIN_IMAGE_PROMPT);
+        expect(createBatchRowsFromInputs("product", [])).toEqual([]);
+    });
+
+    test("treats a lone product photo as enough to generate", () => {
+        const input = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { storageKey: "product" });
+        const nodeById = new Map([[input.id, input]]);
+        const table = { operation: "product" as const, concurrency: 1, rows: [] };
+
+        expect(batchRowReady({ id: "row", enabled: true, inputNodeIds: [input.id], prompt: PRODUCT_MAIN_IMAGE_PROMPT }, table, nodeById)).toBe(true);
+        expect(batchRowReady({ id: "row", enabled: true, inputNodeIds: [], prompt: PRODUCT_MAIN_IMAGE_PROMPT }, table, nodeById)).toBe(false);
+    });
+
+    test("labels product outputs distinctly from try-on and creative", () => {
+        expect(batchOperationLabel("product")).toBe("商品");
+        expect(batchOperationLabel("try_on")).toBe("换装");
+        expect(batchOperationLabel("creative")).toBe("创意");
     });
 
     test("broadcasts a singleton reference column across rows", () => {

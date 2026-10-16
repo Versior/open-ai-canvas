@@ -19,9 +19,10 @@ type CanvasImageSettingsPopoverProps = {
     placement?: "topLeft" | "top" | "topRight" | "bottomLeft" | "bottom" | "bottomRight";
     autoAdjustOverflow?: boolean;
     showCount?: boolean;
+    showTransparent?: boolean;
 };
 
-export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft", showCount = true }: CanvasImageSettingsPopoverProps) {
+export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChange, buttonClassName, placement = "topLeft", showCount = true, showTransparent = true }: CanvasImageSettingsPopoverProps) {
     const theme = canvasThemes[useActiveTheme()];
     const buttonRef = useRef<HTMLSpanElement>(null);
     const panelRef = useRef<HTMLDivElement>(null);
@@ -33,10 +34,10 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         ...(profile.size.parameter !== "none" ? [imageSizeLabel(normalized.size)] : []),
         ...(profile.quality.supported ? [imageQualityLabel(normalized.quality)] : []),
         ...(showCount && profile.maxOutputs > 1 ? [`${normalized.count} 张`] : []),
-        ...(profile.transparentBackground.supported && normalized.transparentBackground === "true" ? ["透明"] : []),
+        ...(showTransparent && profile.transparentBackground.supported && normalized.transparentBackground === "true" ? ["透明"] : []),
     ];
     const summary = summaryParts.join(" · ");
-    const hasSettings = profile.size.parameter !== "none" || profile.quality.supported || profile.transparentBackground.supported || (showCount && profile.maxOutputs > 1);
+    const hasSettings = profile.size.parameter !== "none" || profile.quality.supported || (showTransparent && profile.transparentBackground.supported) || (showCount && profile.maxOutputs > 1);
     const updateOpen = (nextOpen: boolean) => {
         setOpen(nextOpen);
         onOpenChange?.(nextOpen);
@@ -65,7 +66,7 @@ export function CanvasImageSettingsPopover({ config, onConfigChange, onOpenChang
         };
     }, [onOpenChange, open]);
 
-    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} showCount={showCount} onConfigChange={onConfigChange} /> : null;
+    const panel = open && buttonRect ? <ImageSettingsPortal buttonRect={buttonRect} panelRef={panelRef} placement={placement} theme={theme} config={config} showCount={showCount} showTransparent={showTransparent} onConfigChange={onConfigChange} /> : null;
 
     if (!hasSettings) return null;
 
@@ -88,6 +89,7 @@ function ImageSettingsPortal({
     theme,
     config,
     showCount,
+    showTransparent,
     onConfigChange,
 }: {
     buttonRect: DOMRect;
@@ -96,6 +98,7 @@ function ImageSettingsPortal({
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     config: AiConfig;
     showCount: boolean;
+    showTransparent: boolean;
     onConfigChange: (key: keyof AiConfig, value: string) => void;
 }) {
     const gap = 8;
@@ -129,7 +132,7 @@ function ImageSettingsPortal({
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
         >
-            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} showCount={showCount} quickCount={3} className="space-y-3" />
+            <ImageSettingsPanel config={config} onConfigChange={(key, value) => onConfigChange(key, value)} theme={theme} showCount={showCount} showTransparent={showTransparent} quickCount={3} className="space-y-3" />
         </div>,
         document.body,
     );

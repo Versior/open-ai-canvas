@@ -51,6 +51,7 @@ type Props = {
 const OPERATION_OPTIONS = [
     { value: "try_on", label: "批量换装" },
     { value: "creative", label: "创意生图" },
+    { value: "product", label: "电商创作" },
 ] satisfies Array<{ value: CanvasBatchOperation; label: string }>;
 
 const CONCURRENCY_OPTIONS = [1, 5, 10] as const;
@@ -240,7 +241,7 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
                         const completedRow = hasNodeMedia(output);
                         const references = batchRowMentionReferences(row, referenceColumns, nodeById);
                         const effectivePrompt = batchPromptForRow(table, row);
-                        const disabledReason = status.loading ? "当前任务正在生成" : !row.enabled ? "请先启用这一行" : !effectivePrompt.trim() ? "请填写任务提示词" : table.operation === "try_on" && row.inputNodeIds.filter(Boolean).length < 2 ? "批量换装至少需要两张参考图" : !ready ? "请补齐有效参考图" : "";
+                        const disabledReason = status.loading ? "当前任务正在生成" : !row.enabled ? "请先启用这一行" : !effectivePrompt.trim() ? "请填写任务提示词" : table.operation === "try_on" && row.inputNodeIds.filter(Boolean).length < 2 ? "批量换装至少需要两张参考图" : table.operation === "product" && !row.inputNodeIds.filter(Boolean).length ? "电商创作至少需要一张商品图" : !ready ? "请补齐有效参考图" : "";
                         return (
                             <div key={row.id} className="group grid items-center border-b px-3 py-3 transition-colors hover:bg-black/[.025] dark:hover:bg-white/[.025]" style={{ borderColor: theme.node.stroke, gridTemplateColumns, opacity: row.enabled ? 1 : 0.58 }}>
                                 <div className="flex items-center justify-center gap-1.5">

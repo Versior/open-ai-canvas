@@ -1,4 +1,4 @@
-export const ASSET_CATEGORIES = ["character", "environment", "prop", "material", "other"] as const;
+export const ASSET_CATEGORIES = ["character", "environment", "prop", "material", "product", "other"] as const;
 
 export type AssetCategory = (typeof ASSET_CATEGORIES)[number];
 
@@ -7,6 +7,7 @@ export const ASSET_CATEGORY_LABELS: Record<AssetCategory, string> = {
     environment: "场景",
     prop: "道具",
     material: "素材",
+    product: "商品",
     other: "其他",
 };
 

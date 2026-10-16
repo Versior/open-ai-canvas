@@ -35,6 +35,8 @@ import {
     runBackendCanvasGenerationTask,
 } from "@/lib/canvas/canvas-project-generation";
 import { fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
+import { isEcommerceNode } from "@/lib/ecommerce/ecommerce-canvas";
+import { ecommerceMaterialNodes, ecommerceMaterialPlan, ecommerceShotSetOutputs } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { compositeEmotionImage, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
 import { DEFAULT_PORTRAIT_TEXTURE_SETTINGS } from "@/lib/canvas/canvas-portrait-texture";
 import { IMAGE_PROMPT_REVERSE } from "@/lib/prompts";
@@ -170,18 +172,25 @@ export function useCanvasMediaTools({
         return assetIds;
     }, [domainProjectId, message, projectId, setNodes]);
 
-    const createImageReversePromptNodes = useCallback((node: CanvasNodeData) => {
+    /**
+     * 从图片节点反推提示词：建一个指令文本节点 + 一个结果节点，并把两者连到图上。
+     *
+     * prompt 可传——不传走通用的生图提示词反推；传了就按传进来的指令走
+     * （竞品拆解就是这样用的：同一张图，问的是结构而不是提示词）。
+     */
+    const createImageReversePromptNodes = useCallback((node: CanvasNodeData, prompt?: string) => {
         if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
             message.warning("图片节点为空，无法反推提示词");
             return;
         }
+        const instruction = prompt?.trim() || IMAGE_PROMPT_REVERSE;
         const gap = 96;
         const textSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
         const resultSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
         const centerY = node.position.y + node.height / 2;
         const textNode = {
-            ...createCanvasNode(CanvasNodeType.Text, { x: node.position.x + node.width + gap + textSpec.width / 2, y: centerY }, { content: IMAGE_PROMPT_REVERSE, prompt: IMAGE_PROMPT_REVERSE, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
-            title: "反推提示词",
+            ...createCanvasNode(CanvasNodeType.Text, { x: node.position.x + node.width + gap + textSpec.width / 2, y: centerY }, { content: instruction, prompt: instruction, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
+            title: prompt ? "拆解指令" : "反推提示词",
         };
         const resultNode = {
             ...createCanvasNode(CanvasNodeType.Text, { x: textNode.position.x + textNode.width + gap + resultSpec.width / 2, y: centerY }, {
@@ -638,8 +647,124 @@ export function useCanvasMediaTools({
         message.success(`已导出「${title}」`);
     }, [connectionsRef, message, persistMediaNodes, setConnections, setNodes]);
 
-    const splitImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageSplitParams) => {
-        if (!node.metadata?.content || !isValidGridSplit(params)) return;
+    /**
+     * 电商创作：按物料方案从商品节点长出下游。
+     *
+     * 不预铺节点是这套设计的一条硬规矩——用户只要一张主图时，铺七个节点是荒谬的。
+     * 这里只在用户明确选了「要什么」之后才建节点，节点数量因此始终等于用户真正要的东西。
+     */
+    const spawnEcommerceMaterials = useCallback(async (node: CanvasNodeData, planId: string): Promise<string[]> => {
+        const plan = ecommerceMaterialPlan(planId);
+        if (!plan) return [];
+        const existing = new Set(nodesRef.current.map((item) => item.id));
+        const { nodes: spawned, connections: spawnedConnections } = ecommerceMaterialNodes(node, plan, () => nanoid());
+        if (spawned.some((item) => existing.has(item.id))) return [];
+        const spawnedImageIds = spawned.filter((item) => item.type === CanvasNodeType.Image).map((item) => item.id);
+        setNodes((current) => [...current, ...spawned]);
+        setConnections((current) => [...current, ...spawnedConnections]);
+        setSelectedNodeIds(new Set(spawnedImageIds));
+        setSelectedConnectionId(null);
+        await persistMediaNodes(spawned);
+        message.success(`已铺「${plan.name}」：${plan.slots.length} 张图${plan.extras?.length ? ` + ${plan.extras.length} 个辅助节点` : ""}`);
+        return spawnedImageIds;
+    }, [message, nodesRef, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
+
+    /**
+     * 电商创作：从拍法节点按清单补齐缺的产物图。
+     *
+     * 与 spawnEcommerceMaterials 的分工：那个从商品节点按方案铺一整套，
+     * 这个从已有的拍法节点按**当前清单**对账——用户改过清单（加行、删行、换拍法）之后，
+     * 产物节点与清单行会对不上，按方案重铺会冲掉改动，按清单补齐才不会。
+     */
+    const spawnEcommerceShotOutputs = useCallback(async (node: CanvasNodeData, shotIds?: string[]): Promise<string[]> => {
+        const claimed = new Set(
+            connectionsRef.current
+                .filter((connection) => connection.fromNodeId === node.id)
+                .map((connection) => nodesRef.current.find((item) => item.id === connection.toNodeId))
+                .filter((item): item is CanvasNodeData => Boolean(item) && item!.type === CanvasNodeType.Image)
+                .map((item) => item.metadata?.ecommerceShotId)
+                .filter(Boolean) as string[],
+        );
+        const { nodes: spawned, connections: spawnedConnections } = ecommerceShotSetOutputs(node, claimed, () => nanoid(), shotIds);
+        if (!spawned.length) return [];
+        // 拍法节点的上游电商节点（商品、风格、卖点、文案……）要一起连到新图上。
+        // 少了这一步，新图沿约束链往上只能走到拍法——商品锁定块静默丢失，
+        // 生成结果看起来正常，商品却不是同一件，这是最难查的一类错。
+        const nodeById = new Map(nodesRef.current.map((item) => [item.id, item]));
+        const upstreamSources = connectionsRef.current
+            .filter((connection) => connection.toNodeId === node.id)
+            .map((connection) => nodeById.get(connection.fromNodeId))
+            .filter((item): item is CanvasNodeData => Boolean(item) && isEcommerceNode(item!));
+        for (const image of spawned) {
+            for (const source of upstreamSources) spawnedConnections.push({ id: nanoid(), fromNodeId: source.id, toNodeId: image.id });
+        }
+        const spawnedImageIds = spawned.map((item) => item.id);
+        setNodes((current) => [...current, ...spawned]);
+        setConnections((current) => [...current, ...spawnedConnections]);
+        setSelectedNodeIds(new Set(spawnedImageIds));
+        setSelectedConnectionId(null);
+        await persistMediaNodes(spawned);
+        return spawnedImageIds;
+    }, [connectionsRef, nodesRef, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
+
+    /** 电商创作：把排版节点合成成成品图，导出为新图片节点。合成只在导出时跑一次。 */
+    const exportEcommerceLayout = useCallback(async (node: CanvasNodeData, dataUrl: string, title: string) => {
+        const image = await uploadImage(dataUrl);
+        const size = fitNodeSize(image.width || 720, image.height || 720);
+        const outputCount = connectionsRef.current.filter((connection) => connection.fromNodeId === node.id).length;
+        const childNode: CanvasNodeData = {
+            id: nanoid(),
+            type: CanvasNodeType.Image,
+            title,
+            position: { x: node.position.x + node.width + 96, y: node.position.y + (outputCount % 5) * (size.height + 32) },
+            width: size.width,
+            height: size.height,
+            metadata: { ...imageMetadata(image), prompt: node.metadata?.prompt },
+        };
+        setNodes((current) => [...current, childNode]);
+        setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childNode.id }]);
+        await persistMediaNodes([childNode]);
+        message.success(`已导出「${title}」`);
+    }, [connectionsRef, message, persistMediaNodes, setConnections, setNodes]);
+
+
+    /**
+     * 电商创作：一键详情页——长图与切片各落成一张图片节点。
+     *
+     * 长图排在最前面（它是整体），切片按顺序排在后面。切片标题用交付命名，
+     * 这样用户上传时直接照抄文件名，不用再对照 CSV 找哪张是哪张。
+     */
+    const exportEcommerceDetailPage = useCallback(async (
+        node: CanvasNodeData,
+        longImageDataUrl: string,
+        pieces: { index: number; top: number; height: number; dataUrl: string }[],
+        fileNames: string[],
+    ) => {
+        if (!pieces.length) return;
+        const outputs: { title: string; dataUrl: string }[] = [{ title: `${node.title || "详情页"} · 长图`, dataUrl: longImageDataUrl }];
+        pieces.forEach((piece, index) => outputs.push({ title: fileNames[index] || `切片 ${piece.index}`, dataUrl: piece.dataUrl }));
+        const uploaded = await Promise.all(outputs.map(async (output) => {
+            const image = await uploadImage(output.dataUrl);
+            return { output, image, size: fitNodeSize(image.width || 720, image.height || 720) };
+        }));
+        const startX = node.position.x + node.width + 96;
+        const childNodes = uploaded.map(({ output, image, size }, index) => ({
+            id: nanoid(),
+            type: CanvasNodeType.Image,
+            title: output.title,
+            position: { x: startX + (index % 3) * (size.width + 32), y: node.position.y + Math.floor(index / 3) * (size.height + 32) },
+            width: size.width,
+            height: size.height,
+            metadata: { ...imageMetadata(image), prompt: node.metadata?.prompt },
+        } satisfies CanvasNodeData));
+        setNodes((current) => [...current, ...childNodes]);
+        setConnections((current) => [...current, ...childNodes.map((child) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: child.id }))]);
+        setSelectedNodeIds(new Set(childNodes.map((child) => child.id)));
+        setSelectedConnectionId(null);
+        await persistMediaNodes(childNodes);
+    }, [connectionsRef, message, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
+
+    const splitImageNode = useCallback(async (node: CanvasNodeData, params: CanvasImageSplitParams) => {        if (!node.metadata?.content || !isValidGridSplit(params)) return;
         try {
             const pieces = await splitDataUrl(node.metadata.content, params);
             const sizedPieces = await Promise.all(pieces.map(async (piece) => {
@@ -1254,6 +1379,10 @@ export function useCanvasMediaTools({
         openPanoramaConfig,
         createPanoramaViewerWithConfig,
         addPanoramaCaptureNode,
+        spawnEcommerceMaterials,
+        spawnEcommerceShotOutputs,
+        exportEcommerceLayout,
+        exportEcommerceDetailPage,
         panoramaConfigNodeId,
         setPanoramaConfigNodeId,
         maskEditImageNode,

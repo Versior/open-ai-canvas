@@ -81,7 +81,7 @@ func batchTableNodeFromDocument(doc map[string]any, nodeID string) (map[string]a
 			return nil, nil, nil, nil, BadAuthRequest("批量创作表节点缺少结构化数据")
 		}
 		operation := stringValue(table["operation"])
-		if operation != "try_on" && operation != "creative" {
+		if !cloudAgentBatchOperationAllowed(operation) {
 			return nil, nil, nil, nil, BadAuthRequest("批量创作表包含无效的任务类型")
 		}
 		concurrency, ok := cloudAgentInteger(table["concurrency"])
@@ -280,8 +280,8 @@ func prepareCloudAgentBatchTableEdit(repo *repository.Repository, userID, canvas
 		table["rows"] = mapsAsAny(rows)
 		fields, summaryVerb = []string{"任务行"}, "删除一行自"
 	case "set_operation":
-		if args.Operation != "try_on" && args.Operation != "creative" {
-			return nil, BadAuthRequest("批量任务类型必须是 try_on 或 creative")
+		if !cloudAgentBatchOperationAllowed(args.Operation) {
+			return nil, BadAuthRequest("批量任务类型必须是 try_on、creative 或 product")
 		}
 		if args.RowID != "" || len(args.Patch) != 0 || args.Concurrency != 0 {
 			return nil, BadAuthRequest("设置批量任务类型不接受行级修改参数")
@@ -390,6 +390,11 @@ func validateCloudAgentBatchRowPatch(doc map[string]any, input map[string]any, m
 
 func cloudAgentBatchConcurrencyAllowed(value int) bool {
 	return value == 1 || value == 5 || value == 10
+}
+
+// 任务类型与前端 CanvasBatchOperation 一一对应，新增类型时两处必须同时改。
+func cloudAgentBatchOperationAllowed(value string) bool {
+	return value == "try_on" || value == "creative" || value == "product"
 }
 
 func applyCloudAgentBatchTableMutation(repo *repository.Repository, userID, canvasID string, call cloudAgentCall, policy RuntimePolicySetting, recorder ...cloudAgentMutationRecorder) (any, error) {

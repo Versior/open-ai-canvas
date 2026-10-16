@@ -5,6 +5,7 @@ export {
 } from "./operations";
 export {
     CANVAS_BUILTIN_PRESETS,
+    ECOMMERCE_BUILTIN_PRESETS,
     IMAGE_PROMPT_REVERSE,
     buildSubtitleHighlightSystemPrompt,
     buildSubtitleHighlightUserMessage,

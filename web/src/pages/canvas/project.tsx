@@ -1,4 +1,5 @@
 import { CanvasWorkspacePanel } from "@/components/canvas/canvas-workspace-panel";
+import { resolveCanvasKind } from "@/lib/canvas/canvas-kind";
 import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import { createCanvasStateWriter } from "@/lib/canvas/canvas-editor-state";
 import { canCancelGenerationTask } from "@/lib/generation-task-display";
@@ -8,11 +9,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router";
 import { loadAssetsForUse } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
-import { useEffectiveConfig } from "@/stores/use-config-store";
+import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
+import { skillRuntime } from "@/services/skill-runtime";
+import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
+import { synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
+import { modelCompatibilityError } from "@/lib/model-selection";
+import { runBackendGenerationTask } from "@/services/api/generation-task";
+import { navigateToSettings } from "@/lib/settings-navigation";
+import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { createCanvasGenerationLiveProjectAdapter, registerCanvasGenerationLiveProject } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
-import { uploadImage } from "@/services/image-storage";
+import { imageToDataUrl, uploadImage } from "@/services/image-storage";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
 import copyToClipboard from "copy-to-clipboard";
@@ -85,6 +93,7 @@ import {
     canvasResourceMentionToken,
     buildCanvasNodeMentionReferenceMap,
     buildCanvasResourceReferences,
+    getContextDownstreamResourceNodes,
     getContextResourceNodes,
     normalizeCanvasNodeMentionTokens,
     reorderCanvasResourceConnections,
@@ -98,6 +107,16 @@ import { CanvasFreeformEmptyState, CanvasLinkedProjectEmptyState, CanvasShortDra
 import { resolveCanvasEmptyStateKind } from "@/lib/canvas/canvas-starter";
 import { failedImageBatchChildren, markImageBatchRetrying, reconcileImageBatchRoot, restoreUnsubmittedImageBatchChild } from "@/lib/canvas/canvas-image-batch-retry";
 import { cinematicStoryboardColumns, createCanvasNode, getInputSummary, isHiddenBatchChild } from "@/lib/canvas/canvas-project-domain";
+import { ecommerceModelPresetPrompt, type EcommerceModelPreset } from "@/lib/ecommerce/ecommerce-models";
+import { connectedImageNodes, resolveEcommerceInputs } from "@/lib/ecommerce/ecommerce-canvas";
+import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
+import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
+import { ecommerceOneClickFlow, ecommerceOneClickScreens, type EcommerceOneClickFlowId } from "@/lib/ecommerce/ecommerce-oneclick";
+import { ecommerceSuiteDraftPrompt, ecommerceSuiteRows, parseEcommerceSuiteDraft } from "@/lib/ecommerce/ecommerce-suite";
+import { ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
+import { rasterizeEcommerceDetailPage } from "@/lib/ecommerce/ecommerce-rasterize";
+import { generationErrorMessage } from "@/lib/generation-error";
+import { saveModelFromImage } from "@/stores/use-ecommerce-model-library";
 import { bindStoryboardKeyframes, storyboardKeyframeTime, storyboardRowsFromBatchTable } from "@/lib/canvas/canvas-batch-storyboard";
 import { stampCanvasNodeChanges, updateCanvasNode, updateCanvasNodes } from "@/lib/canvas/canvas-node-timestamps";
 import { canvasAssetHandoffAttempt, finalizeCanvasAssetHandoff, uninsertedCanvasAssetHandoffPayloads } from "@/lib/canvas/canvas-asset-handoff";
@@ -409,7 +428,14 @@ function InfiniteCanvasPage() {
     const openVersions = () => { closeAgent(); setVersionCompareRootId(null); versions.show(); };
     const openAgent = useCallback(() => { versions.close(); openAssistant(); }, [versions.close, openAssistant]);
 
-    const sendSelectionToAgent = useCallback((nodeId?: string) => {
+    /**
+     * 把选中的节点交给画布助手。
+     *
+     * instruction 可传：不传只是把节点引用丢进输入框，让用户自己写要干什么；
+     * 传了就带上一条准备好的指令——电商节点的「让助手起草档案」走的就是这条路，
+     * 用户点一下就有活干，不用自己描述要助手做什么。
+     */
+    const sendSelectionToAgent = useCallback((nodeId?: string, instruction?: string) => {
         const ids = nodeId ? [nodeId] : Array.from(selectedNodeIdsRef.current);
         const references = ids.map((id) => agentMentionReferences.find((reference) => reference.nodeId === id)).filter((reference): reference is CanvasResourceReference => Boolean(reference));
         if (!references.length) return;
@@ -418,7 +444,7 @@ function InfiniteCanvasPage() {
             selectedNodeIdsRef.current = selection;
             setSelectedNodeIds(selection);
         }
-        const text = `${references.map(canvasResourceMentionToken).join(" ")} `;
+        const text = `${references.map(canvasResourceMentionToken).join(" ")}${instruction?.trim() ? `\n${instruction.trim()}` : " "}`;
         setAgentPrefillRequest((current) => ({ id: (current?.id ?? 0) + 1, text }));
         openAgent();
         setContextMenu(null);
@@ -477,6 +503,9 @@ function InfiniteCanvasPage() {
         [saveCanvasProject, setConnections, setNodes],
     );
     const linkedProjectId = shortDramaEnabled ? currentProject?.projectId || "" : "";
+    // 画布种类决定节点菜单里出现哪一套节点（见 lib/canvas/canvas-kind.ts）。
+    // 缺省是自由画布：老画布没有 kind 字段，它们是自由画布。
+    const canvasKind = resolveCanvasKind(currentProject?.kind);
     const linkedProjectQuery = useQuery({ queryKey: ["project", linkedProjectId], queryFn: () => getProject(linkedProjectId), enabled: Boolean(linkedProjectId) });
     const refetchLinkedProject = linkedProjectQuery.refetch;
     const archiveNodesToLinkedFolder = useCallback(
@@ -523,7 +552,13 @@ function InfiniteCanvasPage() {
     // 扩展节点（对比/图表/调色）要读自己的上游才能渲染，经 Context 下发；
     // 取上游复用 canvas-resource-references 的实现，别在这里另写一份。必须 memo——
     // 每帧新对象会让所有节点跟着重渲染，错题本里多条崩溃都出在画布高频更新。
-    const nodeGraphContext = useMemo<CanvasNodeGraphContextValue>(() => ({ getUpstreamNodes: (nodeId: string) => getContextResourceNodes(nodeId, nodes, connections) }), [connections, nodes]);
+    const nodeGraphContext = useMemo<CanvasNodeGraphContextValue>(
+        () => ({
+            getUpstreamNodes: (nodeId: string) => getContextResourceNodes(nodeId, nodes, connections),
+            getDownstreamNodes: (nodeId: string) => getContextDownstreamResourceNodes(nodeId, nodes, connections),
+        }),
+        [connections, nodes],
+    );
 
     const { applyGenerationTaskResult, bindGenerationTask, finishGenerationRequest, openNodeTaskDetails, runningNodeId, setRunningNodeId, setTaskDetail, startGenerationRequest, taskDetail, taskDetailLoading, taskDetailLogs } = useCanvasGeneration({
         projectId,
@@ -831,6 +866,10 @@ function InfiniteCanvasPage() {
         openPanoramaConfig,
         createPanoramaViewerWithConfig,
         addPanoramaCaptureNode,
+        spawnEcommerceMaterials,
+        spawnEcommerceShotOutputs,
+        exportEcommerceLayout,
+        exportEcommerceDetailPage,
         panoramaConfigNodeId,
         setPanoramaConfigNodeId,
         generateEmotionNode,
@@ -1544,6 +1583,74 @@ function InfiniteCanvasPage() {
         },
         [updateNodeFromContent],
     );
+    /**
+     * 电商创作：把画布上的一张图存进模特库。
+     *
+     * 存的是 storageKey，不是 url——直传失败退回本机时 url 是个重启就失效的
+     * blob URL，存它等于模特库过一夜全变空白。
+     */
+    const saveImageAsModel = useCallback((node: CanvasNodeData) => {
+        const ref = node.metadata?.storageKey;
+        if (!ref) {
+            message.warning("这张图还没落盘，等生成完成后再存");
+            return;
+        }
+        saveModelFromImage(ref, node.title || "新模特");
+        message.success(`已把「${node.title || "这张图"}」存为模特，在输入框的「模特」里可以选它`);
+    }, [message]);
+
+    /**
+     * 电商创作：公共起手式出一张模特参考图。
+     *
+     * 落一个图片节点再提交生成，而不是在弹窗里悄悄出一张塞进库：
+     * 出图要花积分，用户得看得见它、能重出、能删。出完在图上点「存为模特」入库。
+     */
+    const generateEcommerceModelPreset = useCallback(async (preset: EcommerceModelPreset) => {
+        const prompt = ecommerceModelPresetPrompt(preset);
+        const imageNode = createCanvasNode(CanvasNodeType.Image, getCanvasCenter(), { prompt });
+        imageNode.title = preset.name;
+        setNodes((current) => [...current, imageNode]);
+        setSelectedNodeIds(new Set([imageNode.id]));
+        setSelectedConnectionId(null);
+        await generateNodeRef.current?.(imageNode.id, "image", prompt, { skipDuplicateConfirmation: true });
+    }, [getCanvasCenter, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
+
+    /**
+     * 一键流程的收尾：全屏出完 → 装订成详情页长图并切片。
+     *
+     * 装订是纯装配：九屏已经出好了，长图只是按顺序接起来、按平台上限切开。
+     * 交给模型做才是错的——它会顺手重画每一屏，商品就不一致了。
+     * 这一步不涉及文字：文字已经和画面一起由模型画在每一屏上了。
+     */
+    const bindingRef = useRef(new Set<string>());
+    useEffect(() => {
+        if (!projectLoaded || !exportEcommerceDetailPage) return;
+        for (const product of nodes.filter((item) => item.type === CanvasNodeType.Product && item.metadata?.ecommerceOneClick)) {
+            const plan = product.metadata!.ecommerceOneClick!;
+            if (bindingRef.current.has(product.id)) continue;
+            const outputs = plan.nodeIds.map((id) => nodes.find((item) => item.id === id));
+            // 有节点被删了就不装订——缺屏的长图交出去比不交更糟
+            if (outputs.some((item) => !item)) continue;
+            const ready = outputs as CanvasNodeData[];
+            if (ready.some((item) => !item.metadata?.content)) continue;
+            bindingRef.current.add(product.id);
+            void (async () => {
+                try {
+                    const urls: string[] = [];
+                    for (const item of ready) urls.push(await imageToDataUrl({ url: item.metadata?.content, storageKey: item.metadata?.storageKey, name: item.title }));
+                    const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform: "taobao", code: product.metadata?.productProfile?.name });
+                    await exportEcommerceDetailPage(product, result.longImage.dataUrl, result.pieces, result.fileNames);
+                    setNodes((current) => current.map((item) => (item.id === product.id ? { ...item, metadata: { ...item.metadata, ecommerceOneClick: undefined } } : item)));
+                    message.success(`已装订：${result.longImage.height}px 长图 + ${result.pieces.length} 张切片`);
+                } catch (error) {
+                    message.error(generationErrorMessage(error));
+                    // 装订失败时放开锁，用户可以重试（例如先补上缺的那一屏）
+                    bindingRef.current.delete(product.id);
+                }
+            })();
+        }
+    }, [exportEcommerceDetailPage, message, nodes, projectLoaded, setNodes]);
+
     const canvasNodeActions = useMemo<CanvasNodeActionContextValue>(
         () => ({
             upload: replaceCanvasNodeMedia,
@@ -1555,8 +1662,21 @@ function InfiniteCanvasPage() {
             updateMediaNode: updateMediaNodeFromContent,
             openArtCritique,
             addPanoramaCaptureNode,
+            spawnEcommerceMaterials: async (node, planId) => { await spawnEcommerceMaterials(node, planId); },
+            generateEcommerceMaterials: async (node, planId) => { await generateEcommerceMaterialsRef.current?.(node, planId); },
+            exportEcommerceLayout,
+            exportEcommerceDetailPage,
+            reversePromptFromNode: (node, prompt) => createImageReversePromptNodes(node, prompt),
+            draftWithAgent: (node, instruction) => sendSelectionToAgent(node.id, instruction),
+            generateEcommerceNode: async (node, mode, prompt) => { await generateNodeRef.current?.(node.id, mode, prompt, { skipDuplicateConfirmation: true }); },
+            generateEcommerceShotSet: async (node, shotIds) => { await generateEcommerceShotSetRef.current?.(node, shotIds); },
+            saveImageAsModel,
+            generateEcommerceModelPreset,
+            generateEcommerceSuite: async (node, flowId, slotIds) => { await generateEcommerceSuiteRef.current?.(node, flowId, slotIds); },
+            draftEcommerceSuite: (node, flowId, analysisModel) => draftEcommerceSuiteRef.current?.(node, flowId, analysisModel),
+            draftEcommerceProfile: (node) => draftEcommerceProfileRef.current?.(node),
         }),
-        [addPanoramaCaptureNode, deleteNodeFromContent, downloadNodeImage, duplicateNodeFromContent, openArtCritique, replaceCanvasNodeMedia, updateMediaNodeFromContent, updateNodeFromContent, updateNodeMetadataFromContent],
+        [addPanoramaCaptureNode, createImageReversePromptNodes, deleteNodeFromContent, downloadNodeImage, duplicateNodeFromContent, exportEcommerceLayout, generateEcommerceModelPreset, openArtCritique, replaceCanvasNodeMedia, saveImageAsModel, sendSelectionToAgent, spawnEcommerceMaterials, updateMediaNodeFromContent, updateNodeFromContent, updateNodeMetadataFromContent],
     );
     const { dismissLastAgentChange, lastAgentChange, undoAgentOps, viewLastAgentChange } = useCanvasOperationHistory({
         projectId,
@@ -1914,6 +2034,356 @@ function InfiniteCanvasPage() {
         handleGenerateNode,
     });
 
+    /**
+     * 电商创作：铺一套物料并直接推入生成队列。
+     *
+     * 铺完再让人一张张点「生成」是这条流程里最蠢的一段——五张主图点五次，十三张点十三次。
+     * 批次队列（并发上限、失败重试、任务对账）本来就有，电商直接复用它；批次挂在商品节点上，
+     * 因为这一套交付物本来就属于这个商品，不属于其中某一张图。
+     *
+     * 提交前确认张数与模型：一次铺一套会真金白银地跑十几次外部模型调用，不能静默提交。
+     */
+    const generateEcommerceMaterials = useCallback(async (node: CanvasNodeData, planId: string) => {
+        const imageNodeIds = await spawnEcommerceMaterials(node, planId);
+        if (!imageNodeIds.length) return;
+        const model = effectiveConfig.imageModel || effectiveConfig.model;
+        const confirmed = await new Promise<boolean>((resolve) => {
+            modal.confirm({
+                title: `确认提交 ${imageNodeIds.length} 张生成任务`,
+                content: `任务数：${imageNodeIds.length}；模型：${model}。当前没有可用价格数据，将提交 ${imageNodeIds.length} 个外部模型任务。可以先「只铺节点」，改完拍法再一起生成。`,
+                okText: "确认生成",
+                cancelText: "只铺节点",
+                centered: true,
+                onOk: () => resolve(true),
+                onCancel: () => resolve(false),
+            });
+        });
+        if (!confirmed) return;
+        if (enqueueGenerationBatch(node.id, "batch_image", imageNodeIds.map((id) => ({ rowId: id, nodeId: id })))) {
+            message.success(`${imageNodeIds.length} 张已加入生成队列`);
+        }
+    }, [effectiveConfig.imageModel, effectiveConfig.model, enqueueGenerationBatch, message, modal, spawnEcommerceMaterials]);
+
+    // 节点动作 Context 在批次队列之前组装，所以这里用 ref 把处理器递进去，
+    // 与 generateNodeRef 同一套做法，避免为一次接线把整个 Context 挪到批次之后。
+    const generateEcommerceMaterialsRef = useRef(generateEcommerceMaterials);
+    useEffect(() => {
+        generateEcommerceMaterialsRef.current = generateEcommerceMaterials;
+    }, [generateEcommerceMaterials]);
+
+    /**
+     * 电商创作：拍法清单整组出图。
+     *
+     * 与商品节点的「铺一套并生成」不同：那条路是按交付物方案铺一整套，
+     * 这条路是按**当前清单**出图——清单可能已经被改过（加了行、换了拍法、删了行），
+     * 所以要按清单对账补齐，而不是按方案重铺。
+     *
+     * 传 shotIds 只出那几行；不传就出整张清单。缺的产物节点先补齐再进同一个批次，
+     * 一次确认覆盖全部外部调用。
+     */
+    const generateEcommerceShotSet = useCallback(async (node: CanvasNodeData, shotIds?: string[]) => {
+        const spawnedIds = await spawnEcommerceShotOutputs(node, shotIds);
+        const set = node.metadata?.shotSet;
+        if (!set) return;
+        // 要出的行 = 本次新铺的 + 之前已认领的（限定在 shotIds 范围内）
+        const wanted = shotIds?.length ? new Set(shotIds) : undefined;
+        const targetShotIds = set.shots.filter((shot) => !wanted || wanted.has(shot.id)).map((shot) => shot.id);
+        if (!targetShotIds.length) return;
+        const outputByShot = new Map<string, string>();
+        for (const connection of connectionsRef.current) {
+            if (connection.fromNodeId !== node.id) continue;
+            const child = nodesRef.current.find((item) => item.id === connection.toNodeId);
+            const shotId = child?.metadata?.ecommerceShotId;
+            if (child?.type === CanvasNodeType.Image && shotId && targetShotIds.includes(shotId)) outputByShot.set(shotId, child.id);
+        }
+        for (const id of spawnedIds) {
+            const child = nodesRef.current.find((item) => item.id === id) || nodes.find((item) => item.id === id);
+            const shotId = child?.metadata?.ecommerceShotId;
+            if (shotId) outputByShot.set(shotId, id);
+        }
+        const targets = targetShotIds.map((shotId) => outputByShot.get(shotId)).filter(Boolean) as string[];
+        if (!targets.length) return;
+        const model = effectiveConfig.imageModel || effectiveConfig.model;
+        const confirmed = await new Promise<boolean>((resolve) => {
+            modal.confirm({
+                title: `确认提交 ${targets.length} 张生成任务`,
+                content: `任务数：${targets.length}；模型：${model}。清单里每一行按各自的构图、光线、背景编译提示词，商品特征逐字锁定。`,
+                okText: "确认生成",
+                cancelText: "再改改",
+                centered: true,
+                onOk: () => resolve(true),
+                onCancel: () => resolve(false),
+            });
+        });
+        if (!confirmed) return;
+        if (enqueueGenerationBatch(node.id, "batch_image", targets.map((id) => ({ rowId: id, nodeId: id })))) {
+            message.success(`${targets.length} 张已加入生成队列`);
+        }
+    }, [connectionsRef, effectiveConfig.imageModel, effectiveConfig.model, enqueueGenerationBatch, message, modal, nodes, nodesRef, spawnEcommerceShotOutputs]);
+
+    const generateEcommerceShotSetRef = useRef(generateEcommerceShotSet);
+    useEffect(() => {
+        generateEcommerceShotSetRef.current = generateEcommerceShotSet;
+    }, [generateEcommerceShotSet]);
+
+    /**
+     * 商品节点上连着的实拍，转成生成链路的参考图。
+     *
+     * **这一步是「读图起草」能不能成立的全部。** 模型是多模态的，能看图——
+     * 但图必须真的递过去。上一版没传 referenceImages，模型收到的只有一段文字，
+     * 于是它只能回一句「系统未传入图片节点的画面像素数据」。
+     *
+     * 判据与生成链路共用 `connectedImageNodes`：起草时看到的图，
+     * 必须和后面出图时用的图是同一批。
+     */
+    const productReferenceImages = useCallback(
+        (productNodeId: string) =>
+            connectedImageNodes(productNodeId, nodesRef.current, connectionsRef.current).map((node) => ({
+                id: node.id,
+                name: node.title || `${node.id}.png`,
+                type: node.metadata?.mimeType || "image/png",
+                dataUrl: "",
+                url: node.metadata?.content,
+                storageKey: node.metadata?.storageKey,
+            })),
+        [connectionsRef, nodesRef],
+    );
+
+    /**
+     * 跑一次「读图 → 出结论」的文本任务，返回模型的原话。
+     *
+     * 三件事一件都不能少：**把图递进去、确认这个文本模型看得了图、把结果原样带回来。**
+     * 少任何一条，用户拿到的都是一句关于工具链的抱怨而不是内容——
+     * 上一版就是这么坏的：走云 agent，那边没有取图工具，模型只好说「未挂载视觉查看工具」。
+     *
+     * 模型看不了图时直接说清楚并让用户换模型，不静默降级成纯文本——
+     * 那会得到一份看起来正常、实际全是编的档案。
+     *
+     * `modelOverride` 让面板上选的分析模型压过全局配置：分析要读图、出图不用，
+     * 两者常常不是同一个模型，而全局配置只有一个。传了就用它，没传才回落到全局。
+     *
+     * 覆盖走节点 metadata.model 这条既有通道，不是直接改 config.model——
+     * 模型选的是「渠道 :: 模型」，直接写 model 字段会留下旧渠道，
+     * 走 buildGenerationConfig 才能把渠道与能力一起重新解析。
+     */
+    const runEcommerceTextDraft = useCallback(async (productNode: CanvasNodeData, prompt: string, modelOverride?: string, skillIds?: string[]) => {
+        const referenceImages = productReferenceImages(productNode.id);
+        // 技能注入与出图那条链路同一套：`skillRuntime.prepare` 把技能的正文与关联文件
+        // 拼进提示词。**没选就不注入**——用户库里可能有二十个技能，全塞进一次分析
+        // 会把提示词顶爆，而大部分跟这个品类无关。
+        let effectivePrompt = prompt;
+        if (skillIds?.length) {
+            try {
+                const skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt, skills: addedSkills, selectedSkillIds: skillIds });
+                effectivePrompt = skillExecution.prompt;
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "技能上下文加载失败");
+                return undefined;
+            }
+        }
+        const requirements = { capability: "text" as const, input: { textCount: 0, imageCount: referenceImages.length, videoCount: 0, audioCount: 0, characterCount: 0 } };
+        const target = modelOverride ? { ...productNode, metadata: { ...productNode.metadata, model: modelOverride } } : productNode;
+        const generationConfig = buildGenerationConfig(effectiveConfig, target, "text", requirements);
+        if (!useConfigStore.getState().isAiConfigReady(generationConfig, generationConfig.model)) {
+            navigateToSettings({ continueCreation: true });
+            return undefined;
+        }
+        const incompatible = modelCompatibilityError(generationConfig, generationConfig.model, requirements);
+        if (incompatible) {
+            message.error(`这个文本模型看不了图：${incompatible}。分析商品必须能看见实拍，请在面板上换一个支持图片输入的文本模型。`);
+            return undefined;
+        }
+        try {
+            const result = await runBackendGenerationTask({
+                projectId,
+                mode: "text",
+                config: generationConfig,
+                prompt: effectivePrompt,
+                referenceImages,
+                streamText: false,
+            });
+            return result.text || "";
+        } catch (error) {
+            message.error(generationErrorMessage(error));
+            return undefined;
+        }
+    }, [addedSkills, effectiveConfig, message, productReferenceImages, projectId]);
+
+    /**
+     * 电商创作：读商品实拍，起草商品档案。
+     *
+     * 读的是**图**，不是档案——档案就是它要写的东西。所以这里必须把商品实拍递进去，
+     * 这也是「让助手读图起草档案」这句话里「读图」两个字的全部含义。
+     */
+    const draftEcommerceProfile = useCallback(async (node: CanvasNodeData) => {
+        const productNode = nodesRef.current.find((item) => item.id === node.id) || node;
+        if (!productReferenceImages(productNode.id).length) {
+            message.warning("还没有连入商品实拍——读图起草要先有图");
+            return undefined;
+        }
+        const text = await runEcommerceTextDraft(productNode, buildEcommerceProfileDraftPrompt());
+        if (text === undefined) return undefined;
+        const parsed = parseEcommerceProfileDraft(text);
+        const { unsure, ...fields } = parsed;
+        if (!Object.keys(fields).length) {
+            message.warning("模型这次没按格式回——换个文本模型再试，或者直接在档案里手填");
+            return undefined;
+        }
+        updateNodeMetadataFromContent(productNode.id, { productProfile: { ...createEcommerceProductProfile(productNode.title || "未命名商品"), ...productNode.metadata?.productProfile, ...fields } });
+        message.success(unsure && unsure !== "无" ? `档案已填好。这几条是模型推测的，请核对：${unsure}` : "档案已填好，请核对");
+        return parsed;
+    }, [message, nodesRef, productReferenceImages, runEcommerceTextDraft, updateNodeMetadataFromContent]);
+
+    /**
+     * 电商创作：分析商品，为这一套的每一张写一条完整的出图提示词。
+     *
+     * 单位是**一张图一条提示词**，不是一张图一句话。图递进去（见 runEcommerceTextDraft）——
+     * 主图画什么、模特上身图画什么、细节图画什么，构图光线景别全不一样，
+     * 这些只有看过商品实拍才写得出来。
+     *
+     * 分析用哪个模型由面板上选（`modelOverride`），不跟着全局配置走：
+     * 分析要读图，出图不用，两者往往是不同的模型。
+     */
+    const draftEcommerceSuite = useCallback(async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string) => {
+        const flow = ecommerceOneClickFlow(flowId);
+        if (!flow) return undefined;
+        const productNode = nodesRef.current.find((item) => item.id === node.id) || node;
+        if (!productReferenceImages(productNode.id).length) {
+            message.warning("还没有连入商品实拍——分析要先有图，模型才知道要画的是什么");
+            return undefined;
+        }
+        // 交给模型的是**当前那张表**，不是行业套路给的骨架：用户可能已经删到六屏、
+        // 改过职责，或者在自己的提示词里要求了不同的分工。
+        const rows = ecommerceSuiteRows(flow, productNode.metadata?.ecommerceSuite);
+        const uniform = {
+            platformId: productNode.metadata?.ecommercePlatform,
+            languageId: productNode.metadata?.ecommerceLanguage,
+            style: productNode.metadata?.ecommerceStyle,
+            // 参考图传的是 storageKey，这里换成用户看得懂的名字——提示词里
+            // 得说清「哪一张是风格参考」，模型手里那几张图才有主次。
+            styleReferenceName: productNode.metadata?.ecommerceStyleReferenceKey
+                ? productReferenceImages(productNode.id).find((image) => image.storageKey === productNode.metadata?.ecommerceStyleReferenceKey)?.name
+                : undefined,
+        };
+        const text = await runEcommerceTextDraft(productNode, ecommerceSuiteDraftPrompt(flow, productNode.metadata?.productProfile, rows, productNode.metadata?.ecommerceSuitePrompt, uniform), analysisModel, productNode.metadata?.ecommerceAnalysisSkills);
+        if (text === undefined) return undefined;
+        const parsed = parseEcommerceSuiteDraft(text, flow);
+        if (!parsed) {
+            message.warning("模型这次没按格式回——换个能看图的文本模型再试，或者点「按行业套路铺底」自己改");
+            return undefined;
+        }
+        updateNodeMetadataFromContent(productNode.id, { ecommerceSuite: { flow: flow.id, rows: parsed, source: "draft", updatedAt: new Date().toISOString() } });
+        // 模型可以重新规划屏数（用户在自己的提示词里要求过），所以报的是它返回的行数，
+        // 不是骨架那张表的行数——报错了用户会以为自己的要求没生效。
+        message.success(`分析完成：${parsed.length} 张都有提示词${parsed.length === rows.length ? "" : `（模型按你的要求规划了 ${parsed.length} 屏，原来是 ${rows.length} 屏）`}。逐条核对，改完点右下角批量生成`);
+        return parsed;
+    }, [message, nodesRef, productReferenceImages, runEcommerceTextDraft, updateNodeMetadataFromContent]);
+
+    /**
+     * 电商创作：按套图面板里那张表出图。
+     *
+     * 一张图一条提示词，原样写进那一行对应的图片节点——**不再靠编译时去拼**。
+     * 商品锁定与模特锁定由 ecommerce 编译链自动前置，提示词是用户核对过的那一份。
+     *
+     * **节点只为真正要出的那几张铺，而且按槽位复用。** 上一版点一下先铺九屏，
+     * 用户看到的是一堆还没出图的空方块；重出一次又在旁边堆九个。现在铺节点并进出图，
+     * 已有的按槽位认回来，重出只是覆盖那几张。
+     *
+     * 传 `slotIds` 就只出那几行——面板里每张旁边那个「出这一张」走的就是这条路。
+     *
+     * **每一条提前退出的路都要说话。** 上一版 targets 为空时静默 return，
+     * 用户点了「批量生成」看到的是面板关掉、画布上什么都没发生——最难查的一类 bug，
+     * 因为它既不报错也不留痕。
+     */
+    const generateEcommerceSuite = useCallback(async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[]) => {
+        const flow = ecommerceOneClickFlow(flowId);
+        if (!flow) return;
+        const productNode = nodesRef.current.find((item) => item.id === node.id) || node;
+
+        // 出图模型与参数在面板上选，写在每一张节点上——批次调度按节点自己的模型解析，
+        // 不读商品节点的字段。
+        const imageModel = productNode.metadata?.ecommerceImageModel?.trim();
+        const imageSize = productNode.metadata?.ecommerceImageSize?.trim();
+        const imageQuality = productNode.metadata?.ecommerceImageQuality?.trim();
+        const plan = ecommerceSuiteTargets(
+            productNode,
+            flow,
+            productNode.metadata?.ecommerceSuite,
+            { nodes: nodesRef.current, connections: connectionsRef.current },
+            { ...(imageModel ? { model: imageModel } : {}), ...(imageSize ? { size: imageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) },
+            () => nanoid(),
+            slotIds,
+        );
+        if (!plan.rows.length) {
+            message.warning(`「${flow.name}」还没有提示词——在面板里点「分析商品」或「按行业套路铺底」`);
+            return;
+        }
+        if (!plan.nodeIds.length) {
+            message.error("这一套的产物节点没能铺出来——刷新页面后重试，或先删掉画布上重名的图片节点");
+            return;
+        }
+        const reuseByNodeId = new Map(plan.reuse.map((item) => [item.nodeId, item.prompt]));
+
+        // 流程状态挂在商品节点上：全屏出完之后要自动装订，得记住这一批是哪几张、
+        // 落在哪几个节点上。单张出图不写这个状态——只出一张时不该触发装订。
+        //
+        // **不再挂拍法清单。** 每一张的拍法已经写进那一张自己的提示词里了；
+        // 再挂一份通用清单，编译时它会作为「本张：构图…光线…」前置到提示词之前，
+        // 与用户核对过的那条打架（用户改成俯拍，清单还写着平视）。
+        // 清掉而不是不写：早先版本铺下的清单还留在画布上，不清就会一直压着新提示词。
+        const nodeIds = plan.nodeIds;
+        const nodeIdSet = new Set(nodeIds);
+        const single = Boolean(slotIds?.length);
+        const autoBind = productNode.metadata?.ecommerceAutoBind !== false;
+        const shotPatch = { ...(imageModel ? { model: imageModel } : {}), ...(imageSize ? { size: imageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) };
+        setNodes((current) => [
+            ...current.map((item) => {
+                if (item.id === productNode.id) {
+                    // 装订可关：关掉就不写流程状态——装订链路只认这个字段，
+                    // 不写它出完就只是出完，想拼时在商品节点上手动点。
+                    if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined } };
+                    return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: { flow: flow.id, slotIds: plan.rows.map((row) => row.slotId), nodeIds } } };
+                }
+                const prompt = reuseByNodeId.get(item.id);
+                if (!prompt || !nodeIdSet.has(item.id)) return item;
+                // 提示词写进节点自己的 prompt：用户点开那一屏能看见它、能改它、能单独重出。
+                //
+                // 走 synchronizeGenerationSpec 而不是直接铺 metadata：节点上可能已经有一份
+                // generationSpec（用户单独生成过，或上一次批量生成写进去的），它的 prompt 和
+                // options 会盖住 metadata 里的同名字段——那样「重出」用的还是上一版提示词、
+                // 上一版尺寸，用户改了表却看不出任何变化。
+                return synchronizeGenerationSpec(item, { prompt, composerContent: prompt, errorDetails: undefined, ...shotPatch });
+            }),
+            // 新铺的节点由 ecommerceSuiteTargets 带上自己的提示词与参数——
+            // 它们进不了上面那个循环（上面只走画布上已有的节点），
+            // 少了那句话每一张都是空提示词，整批会被标成「生成提示词为空」。
+            ...plan.spawned,
+        ]);
+        // 认回来的节点可能没连到商品（连接被删过、或上一次铺节点时没落盘）。
+        // 少了那条边，生成时约束链走不上去，商品锁定块静默丢失——出来的图看着正常
+        // 却不是同一件商品。补上，而不是让那种图悄悄出街。
+        if (plan.connections.length || plan.reconnect.length) setConnections((current) => [...current, ...plan.connections, ...plan.reconnect]);
+        setSelectedNodeIds(nodeIdSet);
+        if (enqueueGenerationBatch(productNode.id, "batch_image", nodeIds.map((id) => ({ rowId: id, nodeId: id })))) {
+            message.success(`${nodeIds.length} 张已加入生成队列${!single && flow.bind && autoBind ? "，出完自动装订成详情页长图" : ""}`);
+        }
+    }, [connectionsRef, enqueueGenerationBatch, message, nodesRef, setConnections, setNodes, setSelectedNodeIds]);
+
+    // 动作 Context 在批次队列之前组装，所以用 ref 把处理器递进去，
+    // 与 generateNodeRef 同一套做法。
+    const generateEcommerceSuiteRef = useRef(generateEcommerceSuite);
+    useEffect(() => {
+        generateEcommerceSuiteRef.current = generateEcommerceSuite;
+    }, [generateEcommerceSuite]);
+    const draftEcommerceSuiteRef = useRef(draftEcommerceSuite);
+    useEffect(() => {
+        draftEcommerceSuiteRef.current = draftEcommerceSuite;
+    }, [draftEcommerceSuite]);
+    const draftEcommerceProfileRef = useRef(draftEcommerceProfile);
+    useEffect(() => {
+        draftEcommerceProfileRef.current = draftEcommerceProfile;
+    }, [draftEcommerceProfile]);
+
     const {
         addReferenceColumn: addBatchReferenceColumn,
         addRow: addBatchRow,
@@ -2159,6 +2629,8 @@ function InfiniteCanvasPage() {
                 <CanvasNodePromptPanel
                     projectId={projectId}
                     node={panelNode}
+                    canvasKind={canvasKind}
+                    ecommercePromptAvailable={canvasKind === "ecommerce" && Boolean(resolveEcommerceInputs(panelNode.id, nodesRef.current, connectionsRef.current).prompt)}
                     isRunning={isCanvasNodeGenerating(panelNode, runningNodeId)}
                     mentionReferences={[
                         ...(mentionReferencesByNodeId.get(panelNode.id) || EMPTY_RESOURCE_REFERENCES),
@@ -2450,6 +2922,7 @@ function InfiniteCanvasPage() {
     }, [focusCanvasNode, message, nodesRef]);
     const freeformCreateCommands = useCanvasCreateCommands({
         workspaceMode,
+        canvasKind: canvasKind,
         isProjectLinked: Boolean(shortDramaEnabled && currentProject?.projectId),
         handlers: {
             onAddText: () => createNode(CanvasNodeType.Text),
@@ -2521,7 +2994,7 @@ function InfiniteCanvasPage() {
                 跳转到画布主内容
             </a>
             <main id="canvas-main" tabIndex={-1} className={`relative flex h-full min-h-0 overflow-hidden outline-none ${!focusMode && !versions.preview ? `canvas-main-with-workspace ${workspaceOpen ? "canvas-workspace-expanded" : ""}` : ""}`} style={{ background: resolvedCanvasAppearance.background, color: theme.node.text }}>
-                {!focusMode && !versions.preview ? <CanvasWorkspacePanel key={projectId} open={workspaceOpen} onOpen={() => setWorkspaceOpen(true)} onInsertAssets={handleProjectAssetsInsert} projectId={projectId} nodes={nodes} selectedNodeIds={selectedNodeIds} onClose={() => setWorkspaceOpen(false)} onAssets={() => openCanvasAssetLibrary()} onProjectAssets={currentProject?.projectId ? () => openProjectAssets() : undefined} onCancelTask={cancelCanvasTask} onFocus={nodeId => {
+                {!focusMode && !versions.preview ? <CanvasWorkspacePanel key={projectId} open={workspaceOpen} onOpen={() => setWorkspaceOpen(true)} onInsertAssets={handleProjectAssetsInsert} projectId={projectId} nodes={nodes} selectedNodeIds={selectedNodeIds} canvasKind={canvasKind} onClose={() => setWorkspaceOpen(false)} onAssets={() => openCanvasAssetLibrary()} onProjectAssets={currentProject?.projectId ? () => openProjectAssets() : undefined} onCancelTask={cancelCanvasTask} onFocus={nodeId => {
                     const target = nodeById.get(nodeId);
                     const parent = target?.parentId ? nodeById.get(target.parentId) : null;
                     if (parent?.metadata?.frame?.collapsed) toggleFrameCollapsed(parent.id);
@@ -2886,6 +3359,7 @@ function InfiniteCanvasPage() {
                                 viewportSize={size}
                                 containerRef={containerRef}
                                 canCreateDrawing={canCreateDrawingFromConnection}
+                                canvasKind={canvasKind}
                                 getDisabledReason={(type) => getConnectionCreateDisabledReason(type, pendingConnectionCreate)}
                                 onCreate={(type) => void createConnectedNode(type, pendingConnectionCreate)}
                                 onClose={cancelPendingConnectionCreate}
@@ -2989,6 +3463,8 @@ function InfiniteCanvasPage() {
                             trimmingVideo={segmentRunningMode === "video"}
                             onNineGrid={(node, id, label, icon) => void generateNineGridNode(node, id, label, icon)}
                             onReversePrompt={createImageReversePromptNodes}
+                            onSaveAsModel={saveImageAsModel}
+                            canvasKind={canvasKind}
                             onRetry={retryCanvasNode}
                             onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}
                             onToggleLocked={(node) => toggleNodeLocked(node.id)}
@@ -3025,6 +3501,7 @@ function InfiniteCanvasPage() {
                             menu={contextMenu}
                             node={contextMenuNode}
                             workspaceMode={workspaceMode}
+                            canvasKind={canvasKind}
                             isProjectLinked={Boolean(currentProject?.projectId)}
                             canUndo={historyState.canUndo}
                             canRedo={historyState.canRedo}

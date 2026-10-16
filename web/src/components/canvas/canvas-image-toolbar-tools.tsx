@@ -1,10 +1,10 @@
 import { isValidElement, type ReactNode } from "react";
-import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, Sun, Upload, Scaling, WandSparkles } from "lucide-react";
+import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, Sun, Upload, UserRound, Scaling, WandSparkles } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import type { NodeToolbarGroup } from "@/lib/canvas/tool-registry";
 
-type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "maskEdit" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
+type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "saveAsModel" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "maskEdit" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
 
 type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
@@ -26,6 +26,7 @@ type ImageToolHandlers = {
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
+    onSaveAsModel: (node: CanvasNodeData) => void;
     onNineGrid: (node: CanvasNodeData, toolId: number, label: string, icon: string) => void;
 };
 
@@ -41,6 +42,8 @@ type ImageToolDefinition = {
     run: (node: CanvasNodeData, handlers: ImageToolHandlers, tool: ImageToolDefinition) => void;
     /** 仅 group === "nine_grid" 时使用，对应后端工具 ID */
     toolId?: number;
+    /** 只在电商画布里出现。自由画布的工具盘不掺电商的东西。 */
+    ecommerceOnly?: boolean;
 };
 
 /** lucide 组件把 PascalCase 图标名写入 displayName，从 icon 渲染结果反查图标名，未命中时回退 Grid3x3。 */
@@ -75,6 +78,17 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         group: "more",
         order: 60,
         run: (node, handlers) => handlers.onReversePrompt(node),
+    },
+    {
+        id: "saveAsModel",
+        section: "素材",
+        label: "存为模特",
+        description: "把这张图存进模特库，之后同一款商品的每张图都用它锁住同一个人",
+        icon: () => <UserRound className="size-3.5" />,
+        group: "more",
+        order: 46,
+        ecommerceOnly: true,
+        run: (node, handlers) => handlers.onSaveAsModel(node),
     },
     {
         id: "replace",
@@ -341,18 +355,20 @@ const imageToolDefinitions: ImageToolDefinition[] = [
     },
 ];
 
-export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers) {
-    return imageToolDefinitions.map((tool) => ({
-        id: tool.id,
-        label: resolveToolText(tool.label, node),
-        icon: tool.icon(node),
-        group: tool.group,
-        order: tool.order,
-        section: tool.section,
-        description: tool.description,
-        active: tool.active?.(node),
-        onClick: () => tool.run(node, handlers, tool),
-    }));
+export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers, options?: { ecommerce?: boolean }) {
+    return imageToolDefinitions
+        .filter((tool) => !tool.ecommerceOnly || options?.ecommerce)
+        .map((tool) => ({
+            id: tool.id,
+            label: resolveToolText(tool.label, node),
+            icon: tool.icon(node),
+            group: tool.group,
+            order: tool.order,
+            section: tool.section,
+            description: tool.description,
+            active: tool.active?.(node),
+            onClick: () => tool.run(node, handlers, tool),
+        }));
 }
 
 function resolveToolText(value: string | ((node: CanvasNodeData) => string), node: CanvasNodeData) {

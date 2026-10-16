@@ -1,5 +1,14 @@
 import { CanvasNodeType } from "@/types/canvas";
 import type { CanvasNodeMetadata } from "@/types/canvas";
+import { createEcommerceCopy, createEcommerceProductProfile, createEcommerceShotSet, createEcommerceStyle } from "@/lib/ecommerce/ecommerce-contract";
+import { createEcommerceDelivery } from "@/lib/ecommerce/ecommerce-delivery";
+import { createEcommerceVideo } from "@/lib/ecommerce/ecommerce-video";
+import { createEcommerceAplus } from "@/lib/ecommerce/ecommerce-aplus";
+import { createEcommerceSizeChart } from "@/lib/ecommerce/ecommerce-size-chart";
+import { createEcommerceInfographic } from "@/lib/ecommerce/ecommerce-infographic";
+import { createEcommerceLayout } from "@/lib/ecommerce/ecommerce-layout";
+import { createEcommerceReplica } from "@/lib/ecommerce/ecommerce-replica";
+import { createEcommerceTeardown } from "@/lib/ecommerce/ecommerce-teardown";
 
 type CanvasNodeSpec = {
     width: number;
@@ -28,6 +37,19 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.ColorGrade]: { width: 420, height: 360, title: "调色" },
     [CanvasNodeType.MediaConversion]: { width: 480, height: 460, title: "转换" },
     [CanvasNodeType.BatchTable]: { width: 1280, height: 560, title: "批量创作表" },
+    [CanvasNodeType.Product]: { width: 460, height: 660, title: "商品" },
+    [CanvasNodeType.ShotRecipe]: { width: 420, height: 580, title: "拍法" },
+    [CanvasNodeType.SellingPoint]: { width: 400, height: 440, title: "卖点" },
+    [CanvasNodeType.Copy]: { width: 380, height: 400, title: "文案" },
+    [CanvasNodeType.Style]: { width: 400, height: 460, title: "品牌风格" },
+    [CanvasNodeType.Layout]: { width: 560, height: 620, title: "排版" },
+    [CanvasNodeType.Infographic]: { width: 560, height: 660, title: "信息图" },
+    [CanvasNodeType.Replica]: { width: 460, height: 560, title: "爆款复刻" },
+    [CanvasNodeType.Teardown]: { width: 560, height: 620, title: "竞品拆解" },
+    [CanvasNodeType.Delivery]: { width: 620, height: 640, title: "交付" },
+    [CanvasNodeType.Revision]: { width: 460, height: 620, title: "改稿" },
+    [CanvasNodeType.EcommerceVideo]: { width: 640, height: 660, title: "电商视频" },
+    [CanvasNodeType.Aplus]: { width: 600, height: 660, title: "A+ 内容" },
 } satisfies Record<CanvasNodeType, { width: number; height: number; title: string }>;
 
 export const NODE_SPECS = {
@@ -119,6 +141,58 @@ export const NODE_SPECS = {
                 rows: [],
             },
         },
+    },
+    [CanvasNodeType.Product]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Product],
+        metadata: { status: "idle", productProfile: createEcommerceProductProfile() },
+    },
+    [CanvasNodeType.ShotRecipe]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.ShotRecipe],
+        metadata: { status: "idle", shotSet: createEcommerceShotSet() },
+    },
+    [CanvasNodeType.SellingPoint]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.SellingPoint],
+        metadata: { status: "idle", sellingPoints: [] },
+    },
+    [CanvasNodeType.Copy]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Copy],
+        metadata: { status: "idle", ecommerceCopy: createEcommerceCopy() },
+    },
+    [CanvasNodeType.Style]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Style],
+        metadata: { status: "idle", ecommerceStyle: createEcommerceStyle() },
+    },
+    [CanvasNodeType.Layout]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Layout],
+        metadata: { status: "idle", ecommerceLayout: createEcommerceLayout(), ecommerceAspectRatio: "1:1" },
+    },
+    [CanvasNodeType.Infographic]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Infographic],
+        metadata: { status: "idle", ecommerceInfographic: createEcommerceInfographic(), ecommerceAspectRatio: "1:1", ecommerceSizeChart: createEcommerceSizeChart("top") },
+    },
+    [CanvasNodeType.Aplus]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Aplus],
+        metadata: { status: "idle", ecommerceAplus: createEcommerceAplus() },
+    },
+    [CanvasNodeType.Replica]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Replica],
+        metadata: { status: "idle", ecommerceReplica: createEcommerceReplica() },
+    },
+    [CanvasNodeType.Teardown]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Teardown],
+        metadata: { status: "idle", ecommerceTeardown: createEcommerceTeardown() },
+    },
+    [CanvasNodeType.Delivery]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Delivery],
+        metadata: { status: "idle", ecommerceDelivery: createEcommerceDelivery() },
+    },
+    [CanvasNodeType.Revision]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.Revision],
+        metadata: { status: "idle", ecommerceRevisions: [] },
+    },
+    [CanvasNodeType.EcommerceVideo]: {
+        ...NODE_DEFAULT_SIZE[CanvasNodeType.EcommerceVideo],
+        metadata: { status: "idle", ecommerceVideo: createEcommerceVideo() },
     },
 } satisfies Record<CanvasNodeType, CanvasNodeSpec>;
 

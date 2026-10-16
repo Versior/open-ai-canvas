@@ -8,6 +8,7 @@ import { modelOptionName, resolveModelChannel, useEffectiveConfig } from "@/stor
 import { canonicalGenerationMetadata, nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 import { PROMPT_EDITOR_VIEWPORT_MARGIN } from "@/lib/canvas/canvas-prompt-editor-size";
 import { CreditSymbol, requestCreditCost } from "@/constant/credits";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { modelQuoteDescription, modelQuoteRequest } from "@/lib/model-pricing";
 import { modelRequestOptions, defaultImageParamsForModel, type ModelRequirements } from "@/lib/model-selection";
@@ -23,10 +24,12 @@ import { CanvasVideoPromptTools } from "./canvas-video-prompt-tools";
 import { CanvasPresetPicker, type CanvasPromptPreset } from "./canvas-preset-picker";
 import { CanvasNineGridPicker } from "./canvas-nine-grid-picker";
 import { CanvasChooseImageStylePicker } from "./canvas-choose-image-style-picker";
+import { CanvasEcommerceModelButton } from "./canvas-ecommerce-model-button";
 import { CanvasChooseEffectPicker } from "./canvas-choose-effect-picker";
 import { CanvasChooseMotionPicker } from "./canvas-choose-motion-picker";
 import { CanvasPortraitTexturePopover } from "./canvas-portrait-texture-popover";
 import { CanvasPromptOptimizerDrawer } from "./canvas-prompt-optimizer-drawer";
+import { isCanvasNodeInteractiveTarget } from "@/lib/canvas/node-interaction";
 import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type CanvasWorkspaceMode } from "@/types/canvas";
 import { applyToolMention, removeToolMentions, autoMentionCanvasResourceReferences, buildToolMentionReference, canvasResourceMentionToken, normalizeCanvasNodeMentionTokens, overwriteSameTypeToolMention, parseToolMentionTokens, type CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
@@ -59,6 +62,16 @@ type CanvasNodePromptPanelProps = {
     onNodeMouseDown?: (event: ReactPointerEvent, nodeId: string) => void;
     onImageSettingsOpenChange?: (open: boolean) => void;
     workspaceMode?: CanvasWorkspaceMode;
+    /** 画布种类：决定风格与预设给哪一套（见 canvas-kind.ts）。 */
+    canvasKind?: CanvasKind;
+    /**
+     * 上游有电商节点，它们会编译出提示词。
+     *
+     * 判据由页面给（它拿得到 nodes/connections），面板自己不遍历图。
+     * 有这个时输入框空着也能提交——否则用户连好商品和拍法之后点生成，
+     * 按钮是灰的、点了没反应，而系统其实完全知道该画什么。
+     */
+    ecommercePromptAvailable?: boolean;
     onListGenerate?: (nodeId: string, prompt: string) => void;
 };
 
@@ -78,7 +91,7 @@ const PROMPT_EDITOR_MODAL_WIDTH = "min(1200px, 92vw)";
 const PROMPT_EDITOR_MODAL_DEFAULT_WIDTH = 1200;
 const PROMPT_EDITOR_MODAL_DEFAULT_HEIGHT = 420;
 
-export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChange, onConfigChange, onGenerate, mentionReferences = [], onAddReference, onRemoveReference, onReorderReferences, onReplaceReference, onReplaceReferenceFiles, onClose, onNodeMouseDown, onImageSettingsOpenChange, workspaceMode = "professional", onListGenerate }: CanvasNodePromptPanelProps) {
+export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChange, onConfigChange, onGenerate, mentionReferences = [], onAddReference, onRemoveReference, onReorderReferences, onReplaceReference, onReplaceReferenceFiles, onClose, onNodeMouseDown, onImageSettingsOpenChange, workspaceMode = "professional", canvasKind = "freeform", ecommercePromptAvailable = false, onListGenerate }: CanvasNodePromptPanelProps) {
     const globalConfig = useEffectiveConfig();
     const themeName = useActiveTheme();
     const theme = canvasThemes[themeName];
@@ -87,7 +100,9 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
     const promptOptimizerEnabled = usePluginStore((state) => state.pluginStates[PROMPT_OPTIMIZER_PLUGIN_ID]?.effectiveEnabled ?? Boolean(state.installations.find((item) => item.manifest.id === PROMPT_OPTIMIZER_PLUGIN_ID)?.enabled));
     const simpleMode = workspaceMode === "simple";
     const mode = defaultMode(node.type);
-    const showPromptTemplates = !simpleMode && mode !== "image";
+    // 电商画布里 image 模式也要给预设——那批预设正是为商品图写的（白底主图、种草图、
+    // 详情页单屏），藏起来等于把最该点的东西藏了。
+    const showPromptTemplates = !simpleMode && (mode !== "image" || canvasKind === "ecommerce");
     node = { ...node, metadata: canonicalGenerationMetadata(node, mode) };
     const hasTextContent = node.type === CanvasNodeType.Text && Boolean(node.metadata?.content?.trim());
     const hasImageContent = node.type === CanvasNodeType.Image && Boolean(node.metadata?.content);
@@ -208,7 +223,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
         if (!rect?.width || !rect.height) return { width: PROMPT_EDITOR_MODAL_DEFAULT_WIDTH, height: PROMPT_EDITOR_MODAL_DEFAULT_HEIGHT };
         return { width: Math.round(rect.width), height: Math.round(rect.height) };
     };
-    const isSubmitDisabled = !isRunning && !prompt.trim();
+    const isSubmitDisabled = !isRunning && !prompt.trim() && !ecommercePromptAvailable;
     const canExpandPrompt = mode === "image" || mode === "video";
     const canOptimizePrompt = Boolean(promptOptimizerProvider) && canExpandPrompt;
     const isPortraitTexture = mode === "image" && Boolean(node.metadata?.portraitTexture);
@@ -298,7 +313,10 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
 
     const submit = () => {
         const text = prompt.trim();
-        if (!text || isRunning) return false;
+        // 电商画布里上游电商节点会编译出提示词，输入框空着也能提交。
+        // 少了这一条，用户连好商品和拍法之后点生成，按钮是灰的、点了没反应——
+        // 而系统其实完全知道该画什么。
+        if ((!text && !ecommercePromptAvailable) || isRunning) return false;
         if (mode === "text" && node.metadata?.listMode && onListGenerate) onListGenerate(node.id, text);
         else onGenerate(node.id, mode, text);
         return true;
@@ -318,8 +336,7 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
             data-canvas-node-drag-handle
             title="拖动节点"
             onPointerDown={(event) => {
-                const target = event.target instanceof Element ? event.target : null;
-                if (!target?.closest("button, input, textarea, select, a, [contenteditable=\"true\"], [data-canvas-no-drag]")) onNodeMouseDown?.(event, node.id);
+                if (!isCanvasNodeInteractiveTarget(event.target)) onNodeMouseDown?.(event, node.id);
             }}
         >
             {isPortraitTexture ? (
@@ -339,14 +356,24 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
             <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
             {!simpleMode && (mode === "image" || mode === "video") ? <div className="canvas-node-tool-controls canvas-node-tool-controls-inline flex items-center gap-1" data-canvas-no-zoom data-canvas-wheel-scroll onPointerDown={e => e.stopPropagation()}>
                 {mode === "image" ? <>
-                    <CanvasChooseImageStylePicker open={expanded ? expandedStyleToolOpen : styleToolOpen} onOpenChange={expanded ? setExpandedStyleToolOpen : setStyleToolOpen} activeToolId={activeStyleTool?.toolId} activeLabel={activeStyleTool?.label} onSelect={(id,label) => updatePromptFromCurrent((currentPrompt) => applyToolMention(currentPrompt,{id,label,type:"style"},"Palette"))} onClear={() => updatePromptFromCurrent((currentPrompt) => removeToolMentions(currentPrompt,"style"))} />
+                    {/* 电商画布里这一格是「人是谁」，自由画布里是「像什么流派」——
+                        两者不是同一个问题，所以换掉的不是内容而是整个入口。 */}
+                    {canvasKind === "ecommerce" ? (
+                        <CanvasEcommerceModelButton
+                            modelId={node.metadata?.ecommerceModelId}
+                            onSelect={(model) => onConfigChange(node.id, { ecommerceModelId: model.id })}
+                            onClear={() => onConfigChange(node.id, { ecommerceModelId: undefined })}
+                        />
+                    ) : (
+                        <CanvasChooseImageStylePicker open={expanded ? expandedStyleToolOpen : styleToolOpen} onOpenChange={expanded ? setExpandedStyleToolOpen : setStyleToolOpen} activeToolId={activeStyleTool?.toolId} activeLabel={activeStyleTool?.label} onSelect={(id,label) => updatePromptFromCurrent((currentPrompt) => applyToolMention(currentPrompt,{id,label,type:"style"},"Palette"))} onClear={() => updatePromptFromCurrent((currentPrompt) => removeToolMentions(currentPrompt,"style"))} />
+                    )}
                     <CanvasNineGridPicker open={expanded ? expandedNineGridOpen : nineGridOpen} onOpenChange={expanded ? setExpandedNineGridOpen : setNineGridOpen} icon={activeNineGridIcon} onSelect={(id,label,icon) => updatePromptFromCurrent((currentPrompt) => applyToolMention(currentPrompt,{id,label,type:"nine_grid"},icon))} />
                 </> : <>
                     <CanvasChooseEffectPicker open={expanded ? expandedEffectToolOpen : effectToolOpen} onOpenChange={expanded ? setExpandedEffectToolOpen : setEffectToolOpen} activeToolId={activeEffectTool?.toolId} activeLabel={activeEffectTool?.label} onSelect={(id,label) => updatePromptFromCurrent((currentPrompt) => applyToolMention(currentPrompt,{id,label,type:"effect"},"Sparkles"))} onClear={() => updatePromptFromCurrent((currentPrompt) => removeToolMentions(currentPrompt,"effect"))} />
                     <CanvasChooseMotionPicker open={expanded ? expandedMotionToolOpen : motionToolOpen} onOpenChange={expanded ? setExpandedMotionToolOpen : setMotionToolOpen} activeToolIds={activeMotionTools.map(t => t.toolId)} activeLabel={activeMotionTool?.label} onSelect={(id,label) => updatePromptFromCurrent((currentPrompt) => applyToolMention(currentPrompt,{id,label,type:"motion"},"Camera"))} onClear={removeMotionToolMention} />
                 </>}
             </div> : null}
-            {showPromptTemplates ? <CanvasPresetPicker mode={mode} skillReferences={skillReferences} open={expanded ? expandedPresetOpen : presetOpen} onOpenChange={expanded ? setExpandedPresetOpen : setPresetOpen} onSelect={applyPreset} dense appearance="quiet" /> : null}
+            {showPromptTemplates ? <CanvasPresetPicker mode={mode} skillReferences={skillReferences} open={expanded ? expandedPresetOpen : presetOpen} onOpenChange={expanded ? setExpandedPresetOpen : setPresetOpen} onSelect={applyPreset} dense appearance="quiet" canvasKind={canvasKind} /> : null}
             {canOptimizePrompt ? (
                 <Tooltip title="用 AI 润色提示词">
                     <button
@@ -597,6 +624,8 @@ export function CanvasNodePromptPanel({ projectId, node, isRunning, onPromptChan
             >
             {renderComposerHeader(false)}
 
+            {/* 一键详情页铺出来的每一屏都是普通图片节点，所以每一屏都能单独改、单独重出。
+                「这一屏」这一条编辑的是文案覆盖链的第一层：改第七屏那句话不会动到其他八屏。 */}
             {renderPromptEditor(false)}
 
             {/* B区 参数区（对应 #98 决策2：默认折叠，手风琴展开）*/}
@@ -669,3 +698,14 @@ function GenerationModeIcon({ mode }: { mode: CanvasNodeGenerationMode }) {
     if (mode === "audio") return <Music2 className="size-3" />;
     return <FileText className="size-3" />;
 }
+
+/**
+ * 电商画布里的「这一屏」。
+ *
+ * 一键详情页铺出来的九屏不是黑盒：每一屏都是普通图片节点，所以每一屏都能单独改、
+ * 单独重出。文案的覆盖链是**这一屏自己的 → 商品节点上按屏填的默认 → 文案节点**，
+ * 这里编辑的是最上面那层——改第七屏的那句话，不会动到其他八屏。
+ *
+ * 画面上的其他改动走下面的输入框：节点自己的提示词追加在约束之后，
+ * 「这屏改成俯拍」这类单屏调整写在那里。
+ */

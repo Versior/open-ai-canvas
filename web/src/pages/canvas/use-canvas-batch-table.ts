@@ -3,7 +3,7 @@ import { App } from "antd";
 import { nanoid } from "nanoid";
 
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
-import { MAX_BATCH_REFERENCE_COLUMNS, batchGenerationRows, batchInputColumns, batchPromptForRow, batchReferenceColumns, batchReferenceHandleId, batchTextInputColumns, createInheritedBatchRow, createBatchRowsFromColumns, moveBatchReferenceCell, removeLastBatchReferenceColumn, reorderBatchReferenceColumns } from "@/lib/canvas/canvas-batch-table";
+import { MAX_BATCH_REFERENCE_COLUMNS, batchGenerationRows, batchInputColumns, batchOperationLabel, batchPromptForRow, batchReferenceColumns, batchReferenceHandleId, batchTextInputColumns, createInheritedBatchRow, createBatchRowsFromColumns, moveBatchReferenceCell, removeLastBatchReferenceColumn, reorderBatchReferenceColumns } from "@/lib/canvas/canvas-batch-table";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { buildGenerationConfig, resetGenerationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
 import { navigateToSettings } from "@/lib/settings-navigation";
@@ -117,7 +117,7 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
             }) : row.textNodeIds,
         }));
         if (!rows.length) {
-            if (!silent) message.warning("批量换装至少需要一张人物图和一张服装图");
+            if (!silent) message.warning(table.operation === "product" ? "电商创作至少需要一张商品图" : "批量换装至少需要一张人物图和一张服装图");
             return false;
         }
         const rowsChanged = JSON.stringify(table.rows) !== JSON.stringify(rowsWithText);
@@ -186,7 +186,7 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
                 generationMode: "image" as const,
                 generationType: "edit" as const,
                 workflowKind: "final" as const,
-                workflowTitle: `${table.operation === "try_on" ? "换装" : "创意"}任务 ${index + 1}`,
+                workflowTitle: `${batchOperationLabel(table.operation)}任务 ${index + 1}`,
                 status: "idle" as const,
                 batchSourceNodeId: nodeId,
                 batchRowId: row.id,
@@ -197,7 +197,7 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, setNodes, setCon
             const output = existingIndex >= 0
                 ? { ...nextNodes[existingIndex], metadata }
                 : createCanvasNode(CanvasNodeType.Image, { x: sourceNode.position.x + sourceNode.width + 120 + imageSpec.width / 2, y: sourceNode.position.y + index * (imageSpec.height + 32) + imageSpec.height / 2 }, metadata);
-            output.title = `${table.operation === "try_on" ? "换装" : "创意"} · ${index + 1}`;
+            output.title = `${batchOperationLabel(table.operation)} · ${index + 1}`;
             if (existingIndex >= 0) nextNodes[existingIndex] = output;
             else nextNodes.push(output);
             nextConnections = nextConnections.filter((connection) => connection.toNodeId !== output.id);

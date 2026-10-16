@@ -3,12 +3,17 @@ import { Input, Popover } from "antd";
 import { LayoutTemplate, Search, WandSparkles } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
-import { CANVAS_BUILTIN_PRESETS, type CanvasPromptPreset } from "@/lib/prompts";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
+import { CANVAS_BUILTIN_PRESETS, ECOMMERCE_BUILTIN_PRESETS, type CanvasPromptPreset } from "@/lib/prompts";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasGenerationMode } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 
 export type { CanvasPromptPreset };
+
+/** 影视侧预设：显式标了 scope: "film" 的那批，加上没标 scope 的通用条目。 */
+const filmPresets = CANVAS_BUILTIN_PRESETS.filter((preset) => preset.scope !== "ecommerce");
+const ecommercePresets = ECOMMERCE_BUILTIN_PRESETS;
 
 export function CanvasPresetPicker({
     mode,
@@ -19,6 +24,7 @@ export function CanvasPresetPicker({
     compact = false,
     dense = false,
     appearance = "default",
+    canvasKind = "freeform",
 }: {
     mode: CanvasGenerationMode;
     skillReferences?: CanvasResourceReference[];
@@ -28,6 +34,8 @@ export function CanvasPresetPicker({
     compact?: boolean;
     dense?: boolean;
     appearance?: "default" | "quiet";
+    /** 画布种类：决定给影视那批还是电商那批预设。见 canvas-kind.ts。 */
+    canvasKind?: CanvasKind;
 }) {
     const theme = canvasThemes[useActiveTheme()];
     const [internalOpen, setInternalOpen] = useState(false);
@@ -53,8 +61,11 @@ export function CanvasPresetPicker({
             ];
         });
         const normalized = query.trim().toLowerCase();
-        return [...CANVAS_BUILTIN_PRESETS.filter((preset) => preset.modes.includes(mode)), ...skills].filter((preset) => !normalized || `${preset.name} ${preset.description}`.toLowerCase().includes(normalized));
-    }, [mode, query, skillReferences]);
+        // 按画布种类分流：角色设定图、多机位、电影光影在电商画布里只会让人困惑
+        // （商品图不需要「角色一致性」）；商品一致性复述、详情页单屏反过来也一样。
+        const scoped = canvasKind === "ecommerce" ? ecommercePresets : filmPresets;
+        return [...scoped.filter((preset) => preset.modes.includes(mode)), ...skills].filter((preset) => !normalized || `${preset.name} ${preset.description}`.toLowerCase().includes(normalized));
+    }, [canvasKind, mode, query, skillReferences]);
 
     const content = (
         <div data-canvas-no-zoom className="canvas-preset-picker-menu w-[var(--panel-width-compact)] max-w-[calc(100vw-24px)]" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>

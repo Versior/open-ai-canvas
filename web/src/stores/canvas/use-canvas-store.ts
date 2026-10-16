@@ -8,6 +8,7 @@ import { parseCanvasStorageDocument, rebaseCanvasProjects, serializeCanvasStorag
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { DEFAULT_CANVAS_COLOR_THEME, type CanvasBackgroundMode } from "@/lib/canvas-theme";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import type { CanvasStarterMode } from "@/lib/canvas/canvas-starter";
 import type { CanvasAssistantSession, CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
 import type { PrevisScene } from "@/types/previs";
@@ -26,6 +27,11 @@ export type CanvasProject = {
     chatSessions: CanvasAssistantSession[];
     activeChatId: string | null;
     starterMode?: CanvasStarterMode;
+    /**
+     * 画布种类：自由画布还是电商创作画布。决定节点菜单里出现哪一套节点。
+     * 缺省是自由画布——老数据没有这个字段。
+     */
+    kind?: CanvasKind;
     appearance?: CanvasAppearance;
     backgroundMode: CanvasBackgroundMode;
     showImageInfo: boolean;
@@ -43,7 +49,7 @@ type CanvasStore = {
     renameProject: (id: string, title: string) => void;
     deleteProjects: (ids: string[]) => void;
     replaceProjects: (projects: CanvasProject[]) => void;
-    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "projectId" | "nodes" | "connections" | "chatSessions" | "activeChatId" | "starterMode" | "appearance" | "backgroundMode" | "showImageInfo" | "viewport" | "previsScenes" | "timeline">>) => void;
+    updateProject: (id: string, patch: Partial<Pick<CanvasProject, "projectId" | "nodes" | "connections" | "chatSessions" | "activeChatId" | "starterMode" | "kind" | "appearance" | "backgroundMode" | "showImageInfo" | "viewport" | "previsScenes" | "timeline">>) => void;
 };
 
 const initialViewport: ViewportTransform = { x: 0, y: 0, k: 1 };
@@ -461,6 +467,8 @@ export const useCanvasStore = create<CanvasStore>()(
                     connections: [],
                     chatSessions: [],
                     activeChatId: null,
+                    // 新建默认自由画布；电商画布由创建入口显式指定
+                    kind: "freeform",
                     appearance: appearanceDefault?.appearance ?? canvasAppearanceForTheme(DEFAULT_CANVAS_COLOR_THEME),
                     backgroundMode: appearanceDefault?.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
                     showImageInfo: false,
@@ -484,6 +492,7 @@ export const useCanvasStore = create<CanvasStore>()(
                     chatSessions: source.chatSessions || [],
                     activeChatId: source.activeChatId || null,
                     starterMode: source.starterMode,
+                    kind: source.kind,
                     appearance: source.appearance ? normalizeCanvasAppearance(source.appearance, "dark") : undefined,
                     backgroundMode: source.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
                     showImageInfo: source.showImageInfo || false,

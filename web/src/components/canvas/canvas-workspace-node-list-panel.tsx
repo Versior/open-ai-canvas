@@ -1,11 +1,14 @@
-import { memo, useState } from "react";
-import { AudioLines, Clock3, FileText, Image, Layers, Pencil, Search, X } from "lucide-react";
+import { memo, useMemo, useState } from "react";
+import { AlertTriangle, AudioLines, Clock3, FileText, Image, Layers, LoaderCircle, Pencil, Search, X } from "lucide-react";
 
 import { CanvasVideoPreviewImage } from "@/components/canvas/canvas-video-preview-image";
 import { WorkspaceState } from "@/components/layout/workspace-state";
 import { canvasNodeMaterialSummary, canvasNodeSearchContext, canvasNodeSearchTimes } from "@/lib/canvas/canvas-node-search";
+import { isCanvasNodeGenerating } from "@/lib/canvas/canvas-node-task-state";
 import type { AiConfig } from "@/stores/use-config-store";
-import { getNodeListLabel } from "@/lib/canvas/node-registry";
+import { getNodeIcon, getNodeListLabel } from "@/lib/canvas/node-registry";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
+import { ECOMMERCE_NODE_GROUPS, ecommerceNodeGroup, ecommerceNodeSummary, type EcommerceNodeFlag } from "@/lib/ecommerce/ecommerce-node-summary";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { Video as CanvasVideoIcon } from "lucide-react";
 
@@ -16,6 +19,7 @@ export function CanvasWorkspaceNodeListPanel({
     query,
     deferredQuery,
     selectedNodeIds,
+    canvasKind = "freeform",
     onQueryChange,
     onFocus,
 }: {
@@ -25,15 +29,52 @@ export function CanvasWorkspaceNodeListPanel({
     query: string;
     deferredQuery: string;
     selectedNodeIds: Set<string>;
+    canvasKind?: CanvasKind;
     onQueryChange: (value: string) => void;
     onFocus: (nodeId: string) => void;
 }) {
+    // 「只看没配齐的」——一套上新几十个节点，查漏才是这张表的主要用途。
+    const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+    const ecommerce = canvasKind === "ecommerce";
+
+    /**
+     * 分组只对电商画布做。
+     *
+     * 电商画布的节点本来就是按阶段铺开的（上→下是事实→成图→收尾），
+     * 清单按同一个顺序排，两边的空间位置与列表位置能对上；
+     * 自由画布节点类型杂且没有固定阶段，硬分组反而更难找。
+     */
+    const grouped = useMemo(() => {
+        const flagged = results.map((node) => ({ node, summary: ecommerce ? ecommerceNodeSummary(node) : null }));
+        const visible = onlyIncomplete ? flagged.filter((item) => item.summary?.incomplete) : flagged;
+        if (!ecommerce) return [{ id: "all", label: "", hint: "", items: visible }];
+        return ECOMMERCE_NODE_GROUPS
+            .map((group) => ({ ...group, items: visible.filter((item) => ecommerceNodeGroup(item.node) === group.id) }))
+            .filter((group) => group.items.length);
+    }, [ecommerce, onlyIncomplete, results]);
+
+    const incompleteCount = useMemo(
+        () => (ecommerce ? results.filter((node) => ecommerceNodeSummary(node).incomplete).length : 0),
+        [ecommerce, results],
+    );
+    const visibleCount = grouped.reduce((total, group) => total + group.items.length, 0);
+    // 一批提交十几张时，「还有几张在跑」是用户最想知道的数
+    const generatingCount = useMemo(() => results.filter((node) => isCanvasNodeGenerating(node)).length, [results]);
+
     return (
         <>
             <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2.5">
                 <Layers className="size-3.5 shrink-0" />
                 <span className="truncate text-xs font-semibold">画布节点</span>
                 <span className="tabular-nums text-foreground/32">{nodes.length.toLocaleString("zh-CN")}</span>
+                {generatingCount ? (
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5 tabular-nums text-[10px] text-primary" title="正在生成">
+                        <LoaderCircle className="size-2.5 animate-spin" />
+                        {generatingCount}
+                    </span>
+                ) : incompleteCount ? (
+                    <span className="ml-auto shrink-0 tabular-nums text-[10px] text-amber-600" title="有节点还没配齐">待补 {incompleteCount}</span>
+                ) : null}
             </header>
             <div className="shrink-0 border-b border-border/70 p-2">
                 <label className="flex h-8 items-center gap-1.5 rounded-[var(--r-md)] bg-foreground/[.045] px-2 focus-within:ring-2 focus-within:ring-[var(--workspace-accent-soft)]">
@@ -51,23 +92,55 @@ export function CanvasWorkspaceNodeListPanel({
                         </button>
                     ) : null}
                 </label>
-                {deferredQuery ? <div className="mt-1 px-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/35">找到 {results.length.toLocaleString("zh-CN")} 个节点</div> : null}
+                {deferredQuery || (ecommerce && onlyIncomplete) ? (
+                    <div className="mt-1 flex items-center gap-2 px-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/35">
+                        <span>找到 {visibleCount.toLocaleString("zh-CN")} 个节点</span>
+                        {ecommerce ? (
+                            <button type="button" className="rounded px-1 hover:bg-surface-hover hover:text-foreground" aria-pressed={onlyIncomplete} onClick={() => setOnlyIncomplete((value) => !value)}>
+                                {onlyIncomplete ? "显示全部" : "只看没配齐"}
+                            </button>
+                        ) : null}
+                    </div>
+                ) : ecommerce ? (
+                    <div className="mt-1 px-0.5">
+                        <button type="button" className="rounded px-1 text-[var(--fs-micro)] text-foreground/35 hover:bg-surface-hover hover:text-foreground" aria-pressed={false} onClick={() => setOnlyIncomplete(true)}>
+                            只看没配齐
+                        </button>
+                    </div>
+                ) : null}
             </div>
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain py-1" role="listbox" aria-label="画布节点列表">
-                {results.length ? (
-                    results.map((node) => <CanvasNodeListItem key={node.id} node={node} config={config} active={selectedNodeIds.has(node.id)} onSelect={() => onFocus(node.id)} />)
+                {grouped.length ? (
+                    grouped.map((group) => (
+                        <div key={group.id}>
+                            {/* 分组标题只在电商画布出现，且只占一行——它是导航不是内容 */}
+                            {group.label ? (
+                                <div className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-2" title={group.hint}>
+                                    <span className="text-[9px] font-bold tracking-[.12em] text-foreground/40">{group.label}</span>
+                                    <span className="tabular-nums text-[9px] text-foreground/28">{group.items.length}</span>
+                                </div>
+                            ) : null}
+                            {group.items.map(({ node, summary }) => (
+                                <CanvasNodeListItem key={node.id} node={node} config={config} active={selectedNodeIds.has(node.id)} summary={summary} onSelect={() => onFocus(node.id)} />
+                            ))}
+                        </div>
+                    ))
                 ) : (
-                    <WorkspaceState icon="canvas" compact title="没有匹配节点" description="换一个关键词继续搜索。" />
+                    <WorkspaceState icon="canvas" compact title={onlyIncomplete ? "都配齐了" : "没有匹配节点"} description={onlyIncomplete ? "点「显示全部」看所有节点。" : "换一个关键词继续搜索。"} />
                 )}
             </div>
         </>
     );
 }
 
-const CanvasNodeListItem = memo(function CanvasNodeListItem({ node, config, active, onSelect }: { node: CanvasNodeData; config: AiConfig; active: boolean; onSelect: () => void }) {
+const FLAG_COLOR: Record<EcommerceNodeFlag, string> = { ok: "", warn: "#d97706", block: "#dc2626" };
+
+const CanvasNodeListItem = memo(function CanvasNodeListItem({ node, config, active, summary, onSelect }: { node: CanvasNodeData; config: AiConfig; active: boolean; summary: { text: string; flag: EcommerceNodeFlag } | null; onSelect: () => void }) {
     const times = canvasNodeSearchTimes(node);
-    const materialSummary = canvasNodeMaterialSummary(node, config);
+    // 电商节点优先用自己那句摘要；它比「商品节点 · 800×800」有用得多
+    const materialSummary = summary?.text || canvasNodeMaterialSummary(node, config);
     const context = canvasNodeSearchContext(node);
+    const generating = isCanvasNodeGenerating(node);
     return (
         <button
             type="button"
@@ -85,14 +158,37 @@ const CanvasNodeListItem = memo(function CanvasNodeListItem({ node, config, acti
             <CanvasNodeListThumbnail node={node} />
             <span className="min-w-0 self-center">
                 <span className="flex min-w-0 items-center gap-1.5">
+                    {/* 有拦截项或待补时点一个点——几十行里靠它一眼找到要处理的 */}
+                    {summary?.flag && summary.flag !== "ok" ? (
+                        <span
+                            className="grid size-3 shrink-0 place-items-center"
+                            style={{ color: FLAG_COLOR[summary.flag] }}
+                            title={summary.flag === "block" ? "有拦截项" : "还没配齐"}
+                            aria-label={summary.flag === "block" ? "有拦截项" : "还没配齐"}
+                        >
+                            {summary.flag === "block" ? <AlertTriangle className="size-2.5" /> : <span className="size-1.5 rounded-full bg-current" />}
+                        </span>
+                    ) : null}
                     <span className="min-w-0 truncate text-xs font-medium leading-4 text-foreground" title={node.title}>
                         {node.title || getNodeListLabel(node.type)}
                     </span>
                 </span>
-                <span className="mt-0.5 block truncate text-[10px] leading-3 text-foreground/45" title={materialSummary}>
-                    {materialSummary}
+                <span className="mt-0.5 block truncate text-[10px] leading-3 text-foreground/45" title={materialSummary || context}>
+                    {materialSummary || context}
                 </span>
                 <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] leading-3 text-foreground/40">
+                    {/* 生成状态排在时间前面——「这张还在跑」比「这张什么时候改的」重要得多 */}
+                    {generating ? (
+                        <span className="flex shrink-0 items-center gap-0.5 text-primary" title="生成中">
+                            <LoaderCircle className="size-2.5 animate-spin" />
+                            <span className="tabular-nums">生成中</span>
+                        </span>
+                    ) : node.metadata?.status === "error" ? (
+                        <span className="flex shrink-0 items-center gap-0.5" style={{ color: "#dc2626" }} title="生成失败">
+                            <AlertTriangle className="size-2.5" />
+                            <span>失败</span>
+                        </span>
+                    ) : null}
                     <Clock3 className="size-2.5 shrink-0" />
                     <span className="mt-0.5 block text-[10px] tabular-nums text-foreground/35" title={fullTime(times.updatedAt)}>
                         {times.updatedLabel}
@@ -131,18 +227,23 @@ function CanvasNodeListThumbnail({ node }: { node: CanvasNodeData }) {
         );
     }
 
+    // 电商节点用注册表里的图标，不是清一色的文件图标——
+    // 商品/拍法/信息图/交付在一列里长得一样，等于没缩略图。
+    const registryIcon = getNodeIcon(node.type);
     return (
         <span aria-hidden="true" className="grid h-9 w-11 place-items-center rounded-[var(--r-sm)] border text-foreground/48" style={commonStyle}>
-            {node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Panorama ? (
-                <Image className="size-3.5" />
-            ) : node.type === CanvasNodeType.Video ? (
-                <CanvasVideoIcon className="size-3.5" />
-            ) : node.type === CanvasNodeType.Audio ? (
-                <AudioLines className="size-3.5" />
-            ) : node.type === CanvasNodeType.Drawing ? (
-                <Pencil className="size-3.5" />
-            ) : (
-                <FileText className="size-3.5" />
+            {registryIcon ?? (
+                node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Panorama ? (
+                    <Image className="size-3.5" />
+                ) : node.type === CanvasNodeType.Video ? (
+                    <CanvasVideoIcon className="size-3.5" />
+                ) : node.type === CanvasNodeType.Audio ? (
+                    <AudioLines className="size-3.5" />
+                ) : node.type === CanvasNodeType.Drawing ? (
+                    <Pencil className="size-3.5" />
+                ) : (
+                    <FileText className="size-3.5" />
+                )
             )}
         </span>
     );

@@ -29,17 +29,19 @@ export function useSkillRuntimeCatalog() {
     return { skills, loading };
 }
 
-export function SkillRuntimePicker({ skills, loading, value, onChange, placeholder = "选择本次生成使用的技能", profile = "canvas" }: { skills: Skill[]; loading?: boolean; value: string[]; onChange: (skillIds: string[]) => void; placeholder?: string; profile?: SkillRuntimeProfile }) {
+export function SkillRuntimePicker({ skills, loading, value, onChange, placeholder = "选择本次生成使用的技能", profile = "canvas", className, ariaLabel = "本次生成使用的技能" }: { skills: Skill[]; loading?: boolean; value: string[]; onChange: (skillIds: string[]) => void; placeholder?: string; profile?: SkillRuntimeProfile; /** 嵌在工具条里时传宽度类，默认撑满 */ className?: string; ariaLabel?: string }) {
     const options = useMemo(
         () => skills.map((skill) => ({ value: skill.skillId, label: skill.skillName, title: skill.description })),
         [skills],
     );
     const maxSkills = SKILL_RUNTIME_PROFILES[profile].maxSkills;
 
+    // 不传 className 就是「占满表单」（章节/分镜那些表单里的默认），
+    // 传了就是嵌在工具条里的窄控件。两件事分开写，别让窄控件去覆盖表单的宽度。
+    const sizingProps = className ? { className } : { className: "w-full", style: { width: "100%" } };
     return (
         <Select
-            className="w-full"
-            style={{ width: "100%" }}
+            {...sizingProps}
             mode="multiple"
             allowClear
             showSearch
@@ -52,7 +54,7 @@ export function SkillRuntimePicker({ skills, loading, value, onChange, placehold
             options={options}
             onChange={onChange}
             notFoundContent={loading ? "正在读取技能库" : "暂无已加入的技能"}
-            aria-label="本次生成使用的技能"
+            aria-label={ariaLabel}
         />
     );
 }

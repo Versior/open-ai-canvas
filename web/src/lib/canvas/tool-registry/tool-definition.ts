@@ -1,3 +1,4 @@
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import type { ReactNode } from "react";
 import type { MouseEvent } from "react";
 
@@ -136,6 +137,12 @@ export type ToolContext = {
 /** 添加节点菜单只依赖创建动作，避免右键菜单为工具栏状态补无意义字段。 */
 export type AddNodeMenuContext = {
     workspaceMode: CanvasWorkspaceMode;
+    /**
+     * 画布种类。电商节点只在电商画布里出现——两边的节点集是两套工作流，
+     * 混在一起会把两条流程的入口都搞模糊（见 canvas-kind.ts）。
+     * 未提供时按自由画布处理：宁可少显示电商节点，也不该把电商节点漏进自由画布。
+     */
+    canvasKind?: CanvasKind;
     isProjectLinked: boolean;
     /** 内置应用插件的启用状态；未声明时视为未提供 gating 信息。 */
     enabledPluginIds?: ReadonlySet<string>;
@@ -204,6 +211,11 @@ export type AddNodeMenuCommand = {
     badge?: string;
     // extension：展示与加工类扩展节点。单独一区，避免挤散 node 区调好的四列网格。
     section: "node" | "workflow" | "project" | "resource";
+    /**
+     * section 内的二级分组标题。电商画布的 node 区有二十来项，
+     * 平铺成一张四列网格是一团——分组后标题本身就是导航。
+     */
+    group?: string;
     defaultOrder: number;
     applicable?: (ctx: AddNodeMenuContext) => boolean;
     run: (ctx: AddNodeMenuContext) => void;

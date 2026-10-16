@@ -148,6 +148,7 @@ const (
 	AssetCategoryEnvironment AssetCategory = "environment"
 	AssetCategoryProp        AssetCategory = "prop"
 	AssetCategoryMaterial    AssetCategory = "material"
+	AssetCategoryProduct     AssetCategory = "product"
 	AssetCategoryOther       AssetCategory = "other"
 
 	AssetVersionStatusDraft     AssetVersionStatus = "draft"

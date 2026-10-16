@@ -6,6 +6,7 @@ import { LoaderCircle, Palette, Wrench, X } from "lucide-react";
 
 import { listTools, type ToolScope, type ToolSummary } from "@/services/api/tools";
 import { FEED_TABS, SUB_TAB_TAGS, toAbsoluteUrl } from "@/lib/canvas/canvas-tool-presentation";
+import { ecommerceLooksByGroup } from "@/lib/ecommerce/ecommerce-looks";
 
 const STYLE_TOOL_PAGE_SIZE = 40;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -17,8 +18,10 @@ export function CanvasChooseImageStylePicker({
     activeLabel,
     scope = "public",
     tag,
+    ecommerce = false,
     onSelect,
     onClear,
+    onInsertLook,
 }: {
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
@@ -30,9 +33,19 @@ export function CanvasChooseImageStylePicker({
     scope?: ToolScope;
     /** 标签过滤初始值，弹层内可切换。 */
     tag?: string;
+    /**
+     * 电商画布：这里给的不是模型调性，是**商品的拍法**。
+     *
+     * 自由画布点「风格」想的是「这张图看起来像什么流派」，电商画布点它想的是
+     * 「这张图拿去干什么」——白底主图、真实种草图、模特上身图。两者不是同一个东西，
+     * 所以电商画布里换成精选拍法 + 品牌调性，数据来自已有的拍法预设（不新写内容）。
+     */
+    ecommerce?: boolean;
     onSelect: (toolId: number, label: string) => void;
     /** 关闭已选风格：从提示词移除 style 工具标签。 */
     onClear?: () => void;
+    /** 电商拍法：把编译好的片段插进提示词。 */
+    onInsertLook?: (prompt: string, label: string) => void;
 }) {
     const [internalOpen, setInternalOpen] = useState(false);
     const [searchInput, setSearchInput] = useState("");
@@ -85,6 +98,32 @@ export function CanvasChooseImageStylePicker({
                     onKeyDown={(event) => event.stopPropagation()}
                 >
                     <div className="canvas-node-toolbar-menu-stack">
+                        {ecommerce ? (
+                            <div className="thin-scrollbar max-h-80 overflow-y-auto p-2">
+                                {ecommerceLooksByGroup().map(({ group, looks }) => (
+                                    <div key={group} className="mb-2 last:mb-0">
+                                        <span className="mb-1 block text-[9px] font-bold tracking-[.1em] text-foreground/50">{group}</span>
+                                        <div className="grid grid-cols-3 gap-1">
+                                            {looks.map((look) => (
+                                                <button
+                                                    key={look.id}
+                                                    type="button"
+                                                    title={`${look.hint}\n\n${look.prompt}`}
+                                                    className="truncate rounded-[var(--r-sm)] border border-border/60 px-2 py-1.5 text-left text-[11px] font-medium transition-colors hover:bg-[var(--surface-hover)] focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:outline-none"
+                                                    onClick={() => {
+                                                        setOpen(false);
+                                                        onInsertLook?.(look.prompt, look.name);
+                                                    }}
+                                                >
+                                                    {look.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                        <>
                         <div className="asset-filters border-b border-border/70 px-2 py-1.5">
                             <div className="asset-filter-row">
                                 <div className="col-feed-tabs shrink-0">
@@ -127,6 +166,8 @@ export function CanvasChooseImageStylePicker({
                                 加载更多
                             </button>
                         )}
+                        </>
+                        )}
                     </div>
                 </div>
             )}
@@ -135,7 +176,7 @@ export function CanvasChooseImageStylePicker({
                 role="button"
                 tabIndex={0}
                 className="canvas-node-composer-header-action canvas-node-fixed-chip relative overflow-hidden cursor-pointer"
-                title={resolvedLabel ? `风格：${resolvedLabel}` : "选择风格"}
+                title={resolvedLabel ? `风格：${resolvedLabel}` : ecommerce ? "选择拍法——这张图拿去干什么" : "选择风格"}
                 aria-expanded={actualOpen}
                 aria-haspopup="menu"
                 onClick={() => setOpen(true)}
@@ -148,7 +189,8 @@ export function CanvasChooseImageStylePicker({
                 onPointerDown={(event) => event.stopPropagation()}
             >
                 <Palette className="size-3 shrink-0" />
-                <span className="truncate">{resolvedLabel || "风格"}</span>
+                {/* 电商画布这颗按钮给的是拍法不是调性，标签跟着说清楚 */}
+                <span className="truncate">{resolvedLabel || (ecommerce ? "拍法" : "风格")}</span>
                 {activeToolId != null && onClear ? (
                     <button
                         type="button"

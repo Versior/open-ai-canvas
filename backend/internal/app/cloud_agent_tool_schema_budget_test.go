@@ -57,9 +57,16 @@ func TestCloudAgentToolSchemaStaysCompact(t *testing.T) {
 	// canvas_create_character（角色卡打包创建，设定字段已压成一行描述）后为 25 个工具、29,938
 	// 字节；本轮加入 previs_scene_create 与 previs_apply_patch 后为 27 个工具、34,171 字节，
 	// 因此显式上调到 35,000；视频生成支持 Agent 设置首尾帧（#696）后为 35,050 字节，
-	// 再显式上调到 36,000，保留约2.7%的余量。新增工具或字段时请重新测量并有意识地
-	// 调整这个数字，而不是让 schema 悄悄膨胀（它每一步都要发、还在前缀最前面）。
-	if len(raw) > 36000 {
-		t.Fatalf("平台工具 schema 体积 %d 字节超出预算 36000：请压缩描述或显式调整预算", len(raw))
+	// 再显式上调到 36,000，保留约2.7%的余量。
+	//
+	// 电商创作接入 Agent（六个约束节点）后为 36,588 字节。增长来自
+	// cloudAgentPatchSchema：它把所有可更新节点的 PatchFields 键平铺进 canvas_apply_ops 的
+	// patch 表，所以每新增一种节点类型都会推高固定开销，与描述文案无关——本轮已把五个视角
+	// 绑定键从 frontView/sideView/... 压成 front/side/...，并删掉冗余描述，仍不够抵掉
+	// 25 个新可写字段。这是有意的功能扩张，因此上调到 38,000（余量约 3.9%）。
+	// 新增工具或字段时请重新测量并有意识地调整这个数字，而不是让 schema 悄悄膨胀
+	// （它每一步都要发、还在前缀最前面）。
+	if len(raw) > 38000 {
+		t.Fatalf("平台工具 schema 体积 %d 字节超出预算 38000：请压缩描述或显式调整预算", len(raw))
 	}
 }

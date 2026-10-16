@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 
 import { generationBatchStatus, isGenerationCostUncertainError } from "@/lib/canvas/canvas-generation-batch";
 import { buildGenerationConfig, createGenerationRetryContext, generationTaskMetadata, resetGenerationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
-import { unchangedModeratedPrompt } from "@/lib/generation-error";
+import { generationErrorMessage, unchangedModeratedPrompt } from "@/lib/generation-error";
 import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 import { listGenerationTasks } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
@@ -59,7 +59,12 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
     const enqueueGenerationBatch = useCallback(
         (sourceNodeId: string, mode: CanvasGenerationBatchMode, targets: BatchTarget[], options?: { concurrency?: number }) => {
             const sourceNode = nodesRef.current.find((node) => node.id === sourceNodeId);
-            if (!sourceNode || !targets.length) return;
+            if (!sourceNode) {
+                // 静默 return 会让调用方以为批次已经建好：面板关掉、画布上什么都没发生。
+                message.warning("发起生成的节点已经不在画布上了，请重新选择后重试");
+                return;
+            }
+            if (!targets.length) return;
             const activeNodeIds = new Set((sourceNode.metadata?.generationBatches || []).flatMap((batch) => batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status)).map((item) => item.nodeId)));
             const availableTargets = targets.filter((target) => !activeNodeIds.has(target.nodeId));
             if (!availableTargets.length) {
@@ -203,7 +208,16 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                 const key = batchItemKey(batch.id, item.id);
                 if (controllersRef.current.has(key)) continue;
                 const generationMode: CanvasNodeGenerationMode = batch.mode === "storyboard_video" ? "video" : "image";
-                const generationConfig = buildGenerationConfig(effectiveConfig, node, generationMode);
+                // buildGenerationConfig 在「节点选的模型或渠道已不可用」时会抛错。
+                // 不接住它，异常会冲出整个调度循环——同一轮里排在后面的镜头一个都不提交，
+                // 而且每轮都在同一个镜头上再抛一次，整批永远停摆，用户只看到「点了没反应」。
+                let generationConfig;
+                try {
+                    generationConfig = buildGenerationConfig(effectiveConfig, node, generationMode);
+                } catch (error) {
+                    updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: generationErrorMessage(error) }));
+                    continue;
+                }
                 if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                     updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "failed", errorDetails: "生成模型未配置，请完成配置后重试" }));
                     continue;

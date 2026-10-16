@@ -26,6 +26,68 @@ var cloudAgentStructuredProjectors = map[string]cloudAgentStructuredProjector{
 		}
 		return cloudAgentBatchTableState(table, offset, precise), nil
 	},
+	// 电商创作的六个节点结构各异（商品档案、拍法、卖点清单、文案、风格、版式），
+	// 但都是纯文本与画布ID，没有需要分页的行，所以共用一个递归投影器。
+	"ecommerce": func(value any, offset int, precise bool) (any, error) {
+		return cloudAgentEcommerceState(value, 0), nil
+	},
+}
+
+// cloudAgentEcommerceState 递归投影电商节点的结构化数据。
+//
+// 只保留可读文本、数字和画布节点ID；丢掉 URL、storageKey、正文和任务状态——
+// 模型要的是「这件商品长什么样、这张图怎么拍」，不是资源位置。
+// 深度上限防住异常数据把投影撑爆。
+func cloudAgentEcommerceState(value any, depth int) any {
+	const maxDepth = 6
+	const maxItems = 32
+	if depth >= maxDepth {
+		return nil
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		out := map[string]any{}
+		for key, item := range typed {
+			if cloudAgentEcommerceUnsafeKey(key) {
+				continue
+			}
+			if safe := cloudAgentEcommerceState(item, depth+1); safe != nil {
+				out[key] = safe
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case []any:
+		items := make([]any, 0, min(len(typed), maxItems))
+		for _, item := range typed[:min(len(typed), maxItems)] {
+			if safe := cloudAgentEcommerceState(item, depth+1); safe != nil {
+				items = append(items, safe)
+			}
+		}
+		return items
+	case []string:
+		items := make([]string, 0, min(len(typed), maxItems))
+		for _, item := range typed[:min(len(typed), maxItems)] {
+			items = append(items, truncateRunes(item, 200))
+		}
+		return items
+	default:
+		safe, _ := cloudAgentSafeProjection(value, 2000)
+		return safe
+	}
+}
+
+// cloudAgentEcommerceUnsafeKey 列出投影时必须丢弃的字段：资源位置、正文与任务状态
+// 都不该出现在模型上下文里。
+func cloudAgentEcommerceUnsafeKey(key string) bool {
+	switch key {
+	case "storageKey", "url", "content", "dataUrl", "richText", "composerContent",
+		"taskId", "taskStatus", "taskStage", "taskProgress", "outputNodeId", "generationSpec", "generationBatches":
+		return true
+	}
+	return false
 }
 
 // cloudAgentNodeHash 是单个节点内容的版本号。分镜/批量表的读写只作用在一个节点上，

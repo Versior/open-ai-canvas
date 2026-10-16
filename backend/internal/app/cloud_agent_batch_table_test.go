@@ -117,6 +117,17 @@ func TestCloudAgentBatchTableToolsAreScopedAndStructured(t *testing.T) {
 	if properties["globalPrompt"] == nil {
 		t.Fatal("batch table edit schema missing globalPrompt")
 	}
+	operationEnum, _ := properties["operation"].(map[string]any)["enum"].([]string)
+	foundProduct := false
+	for _, operation := range operationEnum {
+		if operation == "product" {
+			foundProduct = true
+			break
+		}
+	}
+	if !foundProduct {
+		t.Fatalf("batch table edit schema missing the product operation: %+v", operationEnum)
+	}
 	actionEnum, _ := properties["action"].(map[string]any)["enum"].([]string)
 	foundGlobalPrompt := false
 	for _, action := range actionEnum {
@@ -131,6 +142,19 @@ func TestCloudAgentBatchTableToolsAreScopedAndStructured(t *testing.T) {
 	for _, forbidden := range []string{"outputNodeId", "taskId", "url", "storageKey", "metadata"} {
 		if patch[forbidden] != nil {
 			t.Fatalf("batch row patch schema exposes forbidden field %s", forbidden)
+		}
+	}
+}
+
+func TestCloudAgentBatchOperationGateMatchesFrontendContract(t *testing.T) {
+	for _, allowed := range []string{"try_on", "creative", "product"} {
+		if !cloudAgentBatchOperationAllowed(allowed) {
+			t.Fatalf("operation %q must be accepted", allowed)
+		}
+	}
+	for _, rejected := range []string{"", "try-on", "ecommerce", "product_visual", "unknown"} {
+		if cloudAgentBatchOperationAllowed(rejected) {
+			t.Fatalf("operation %q must be rejected", rejected)
 		}
 	}
 }

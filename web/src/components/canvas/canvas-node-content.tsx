@@ -22,6 +22,19 @@ import { MarkdownNodeContent } from "./nodes/markdown-node";
 import { ChartNodeContent } from "./nodes/chart-node";
 import { CompareNodeContent } from "./nodes/compare-node";
 import { ColorGradeNodeContent } from "./nodes/color-grade-node";
+import { CopyNodeContent } from "./nodes/copy-node";
+import { LayoutNodeContent } from "./nodes/layout-node";
+import { AplusNodeContent } from "./nodes/aplus-node";
+import { InfographicNodeContent } from "./nodes/infographic-node";
+import { ReplicaNodeContent } from "./nodes/replica-node";
+import { TeardownNodeContent } from "./nodes/teardown-node";
+import { DeliveryNodeContent } from "./nodes/delivery-node";
+import { RevisionNodeContent } from "./nodes/revision-node";
+import { EcommerceVideoNodeContent } from "./nodes/ecommerce-video-node";
+import { ProductNodeContent } from "./nodes/product-node";
+import { SellingPointNodeContent } from "./nodes/selling-point-node";
+import { ShotRecipeNodeContent } from "./nodes/shot-recipe-node";
+import { StyleNodeContent } from "./nodes/style-node";
 import { HtmlNodeContent } from "./nodes/html-node";
 import { PanoramaNodeContent } from "./nodes/panorama-node";
 import { SvgNodeContent } from "./nodes/svg-node";
@@ -154,6 +167,19 @@ const nodeContentRenderers: Partial<Record<string, (props: CanvasNodeContentProp
     [CanvasNodeType.Compare]: CompareNodeContent,
     [CanvasNodeType.Chart]: ChartNodeContent,
     [CanvasNodeType.ColorGrade]: ColorGradeNodeContent,
+    [CanvasNodeType.Product]: ProductNodeContent,
+    [CanvasNodeType.ShotRecipe]: ShotRecipeNodeContent,
+    [CanvasNodeType.SellingPoint]: SellingPointNodeContent,
+    [CanvasNodeType.Copy]: CopyNodeContent,
+    [CanvasNodeType.Style]: StyleNodeContent,
+    [CanvasNodeType.Layout]: LayoutNodeContent,
+    [CanvasNodeType.Infographic]: InfographicNodeContent,
+    [CanvasNodeType.Aplus]: AplusNodeContent,
+    [CanvasNodeType.Replica]: ReplicaNodeContent,
+    [CanvasNodeType.Teardown]: TeardownNodeContent,
+    [CanvasNodeType.Delivery]: DeliveryNodeContent,
+    [CanvasNodeType.Revision]: RevisionNodeContent,
+    [CanvasNodeType.EcommerceVideo]: EcommerceVideoNodeContent,
 };
 
 function DrawingContent({ node, theme, drawingProjectId }: CanvasNodeContentProps) {

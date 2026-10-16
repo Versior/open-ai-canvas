@@ -25,7 +25,10 @@ test("镜头画面使用已绑定资产的 @ 引用编辑器", async () => {
 
 test("技能选择器占满表单宽度", async () => {
     const source = await Bun.file(new URL("../src/components/skills/skill-runtime-picker.tsx", import.meta.url)).text();
-    expect(source).toContain('style={{ width: "100%" }}');
+    // 不传 className 时（章节、分镜那些表单里的默认）撑满表单。
+    // 嵌在工具条里时会传窄 className——那是例外，不是默认。
+    expect(source).toContain('className: "w-full"');
+    expect(source).toContain('style: { width: "100%" }');
 });
 
 test("画布分镜生成统一经过 Skill Runtime", async () => {
