@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"infinite-canvas/backend/internal/model"
-	"infinite-canvas/backend/internal/repository"
+	"yingce/backend/internal/model"
+	"yingce/backend/internal/repository"
 )
 
 type AdminUserDetail struct {
@@ -112,6 +112,11 @@ func (s *Service) AdminUserLedger(actor *model.User, userID string, entryType st
 	entries, total, err := s.repo.CreditLedger(userID, entryType, limit, (page-1)*limit)
 	if err != nil {
 		return nil, err
+	}
+	for index := range entries {
+		if strings.TrimSpace(entries[index].Note) != "" {
+			entries[index].Note = userFacingTaskError(entries[index].Note)
+		}
 	}
 	return &WalletSummary{Account: *account, Entries: entries, Total: total, Page: page, Limit: limit}, nil
 }

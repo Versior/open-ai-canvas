@@ -9,11 +9,11 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"infinite-canvas/backend/internal/app"
-	"infinite-canvas/backend/internal/database"
-	"infinite-canvas/backend/internal/model"
-	"infinite-canvas/backend/internal/repository"
-	"infinite-canvas/backend/internal/service"
+	"yingce/backend/internal/app"
+	"yingce/backend/internal/database"
+	"yingce/backend/internal/model"
+	"yingce/backend/internal/repository"
+	"yingce/backend/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,6 +28,9 @@ func TestAppearanceRoutesAreRegistered(t *testing.T) {
 		"POST /api/admin/settings/appearance/live2d":          false,
 		"GET /api/admin/settings/appearance/live2d/:id/*file": false,
 		"GET /api/public/appearance/live2d/:id/*file":         false,
+		"POST /api/admin/settings/appearance/avatar-bundles":  false,
+		"GET /api/admin/settings/appearance/avatar/:id/*file": false,
+		"GET /api/public/appearance/avatar/:id/*file":         false,
 		"GET /api/public/appearance":                          false,
 		"GET /api/public/appearance/assets/:slot":             false,
 		"GET /api/admin/settings/appearance":                  false,

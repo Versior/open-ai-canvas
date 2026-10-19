@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"infinite-canvas/backend/internal/model"
+	"yingce/backend/internal/model"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -67,7 +67,7 @@ func TestCanvasRevision(t *testing.T) {
 
 func testCanvasRevision(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	if err := db.AutoMigrate(&model.CanvasProject{}, &model.CanvasUnitLink{}, &model.Project{}); err != nil {
+	if err := db.AutoMigrate(&model.CanvasEditLease{}, &model.CanvasProject{}, &model.CanvasUnitLink{}, &model.Project{}); err != nil {
 		t.Fatal(err)
 	}
 	repo := New(db)

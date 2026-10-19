@@ -2,6 +2,7 @@ import { App, Button, Form, Input, InputNumber, Modal, Spin, Switch } from "antd
 import { ChevronRight, Copy, Pencil, Plus, Power, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
+import { AdminSearchInput } from "../components/admin-search-input";
 
 import { ChannelHeadersEditor, validateChannelHeaders } from "@/components/channel-headers-editor";
 import { refreshSystemChannels } from "@/lib/user-session";
@@ -13,6 +14,7 @@ import { AdminRowActions, AdminStatusBadge, AdminTableEmpty, configuredSecretTex
 import { ChannelModelManager } from "../components/channel-model-manager";
 import { ChannelOrderDialog } from "../components/channel-order-dialog";
 import { selectChannelWorkspace } from "./channel-workspace-state";
+import { ProviderCatalogWizard } from "./provider-catalog-wizard";
 import "./channels-page.css";
 import { Select } from "@/components/ui/base/select";
 
@@ -25,6 +27,7 @@ type ChannelFormValues = {
     useGlobalConcurrency?: boolean;
     concurrencyLimit?: number;
     enabled?: boolean;
+    proxyUrl?: string;
 };
 
 export function adminChannelSavePayload(values: ChannelFormValues) {
@@ -37,6 +40,7 @@ export function adminChannelSavePayload(values: ChannelFormValues) {
         useGlobalConcurrency: values.useGlobalConcurrency !== false,
         concurrencyLimit: values.useGlobalConcurrency === false ? values.concurrencyLimit : undefined,
         enabled: values.enabled !== false,
+        proxyUrl: values.proxyUrl?.trim() || "",
     };
 }
 
@@ -54,6 +58,7 @@ export default function ChannelsPage() {
     const [editingChannel, setEditingChannel] = useState<ModelChannel | null>(null);
     const [saving, setSaving] = useState(false);
     const [duplicatingChannelId, setDuplicatingChannelId] = useState<string | null>(null);
+    const [wizardOpen, setWizardOpen] = useState(false);
     const requestSequence = useRef(0);
     const [form] = Form.useForm<ChannelFormValues>();
     const useGlobalConcurrency = Form.useWatch("useGlobalConcurrency", form) !== false;
@@ -129,8 +134,9 @@ export default function ChannelsPage() {
                       useGlobalConcurrency: !channel.concurrencyLimit,
                       concurrencyLimit: channel.concurrencyLimit || undefined,
                       enabled: channel.enabled !== false,
+                      proxyUrl: channel.proxyUrl || "",
                   }
-                : { name: "", baseUrl: "", apiKey: "", secretKey: "", headers: [], useGlobalConcurrency: true, concurrencyLimit: undefined, enabled: true },
+                : { name: "", baseUrl: "", apiKey: "", secretKey: "", headers: [], useGlobalConcurrency: true, concurrencyLimit: undefined, enabled: true, proxyUrl: "" },
         );
         setDrawerOpen(true);
     };
@@ -249,10 +255,10 @@ export default function ChannelsPage() {
                             <h2 className="font-semibold">渠道</h2>
                             <span className="admin-channel-count">{hasFilters ? `${visibleChannels.length} / ${channels.length}` : channels.length}</span>
                         </div>
-                        <Button block type="primary" icon={<Plus className="size-4" />} onClick={() => openDrawer()}>
+                        <Button block type="primary" icon={<Plus className="size-4" />} onClick={() => setWizardOpen(true)}>
                             新增渠道
                         </Button>
-                        <Input
+                        <AdminSearchInput
                             id="admin-channel-search"
                             aria-label="搜索系统渠道"
                             autoComplete="off"
@@ -260,7 +266,7 @@ export default function ChannelsPage() {
                             prefix={<Search className="size-4 text-foreground/40" />}
                             value={keyword}
                             placeholder="搜索渠道名称或地址"
-                            onChange={(event) => updateUrl({ filter: event.target.value }, true)}
+                            onValueChange={(value) => updateUrl({ filter: value }, true)}
                         />
                         <Select
                             aria-label="筛选渠道状态"
@@ -331,6 +337,7 @@ export default function ChannelsPage() {
                                     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground/50">
                                         <span>{selectedChannel.hasApiKey ? (selectedChannel.hasSecretKey ? "AK/SK 已配置" : "API Key 已配置") : "凭证未配置"}</span>
                                         <span>最大并发：{selectedChannel.concurrencyLimit || "跟随系统"}</span>
+                                        {selectedChannel.catalogProviderId ? <span>来源：服务商目录 · {selectedChannel.catalogProviderId}</span> : null}
                                     </div>
                                 </div>
                                 {channelActions(selectedChannel)}
@@ -393,6 +400,13 @@ export default function ChannelsPage() {
                             <ChannelHeadersEditor />
                         </Form.Item>
                     </div>
+                    <Form.Item
+                        name="proxyUrl"
+                        label="代理地址"
+                        extra="为该渠道单独配置出站代理，支持 socks5://、socks5h://、http://、https://。留空则使用全局环境变量代理。"
+                    >
+                        <Input placeholder="例如：socks5://127.0.0.1:1080 或 http://127.0.0.1:7890" />
+                    </Form.Item>
                     <Form.Item name="useGlobalConcurrency" label="跟随系统并发配置" valuePropName="checked">
                         <Switch />
                     </Form.Item>
@@ -416,6 +430,20 @@ export default function ChannelsPage() {
                     </Form.Item>
                 </Form>
             </Modal>
+            <ProviderCatalogWizard
+                open={wizardOpen}
+                onClose={() => setWizardOpen(false)}
+                onCustom={() => {
+                    setWizardOpen(false);
+                    openDrawer();
+                }}
+                onInstalled={async (channel) => {
+                    setWizardOpen(false);
+                    updateUrl({ channel: channel.id, filter: "", status: "all" }, true);
+                    await syncChannels();
+                    await reload();
+                }}
+            />
         </AdminPageFrame>
     );
 }

@@ -18,14 +18,14 @@ import { ArrowUp, ChevronLeft, ChevronRight } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 
 import { catalogIdOf, type CreationInspiration } from "@/lib/inspirations/catalog";
+import { fillablePrompt } from "@/lib/inspirations/resolve";
 import { loadGalleryPool } from "@/services/inspiration-catalog";
 import type { CreationMode } from "./creation-types";
+import { createGalleryWheelGesture } from "./creation-gallery-gesture";
 import "./creation-inspiration-tunnel.css";
 
 /** 画廊里排队展示的照片数，取奇数，两侧层数才对得齐。 */
 const GALLERY_SIZE = 11;
-/** 每后退一层的横向偏移（px）。 */
-const STEP_X = 185;
 /** 每后退一层的纵深（px）。 */
 const STEP_Z = 150;
 /** 虚拟焦距，只用来算出"后退一层缩多少"，不再是 CSS perspective。 */
@@ -181,37 +181,30 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
         return () => document.removeEventListener("visibilitychange", handleVisibility);
     }, []);
 
-    // 滚轮切换：向上退到上一张、向下进到下一张。
+    // 只在画廊区域消费滚轮，缩放手势仍由浏览器处理。
     useEffect(() => {
         const node = stageRef.current;
         if (!node) return;
-        let latched = false;
+        const gesture = createGalleryWheelGesture();
         const handleWheel = (event: WheelEvent) => {
+            if (event.ctrlKey || shots.length < 2) return;
+            const rawDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+            const delta = rawDelta * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? node.clientHeight : 1);
+            if (Math.abs(delta) < 0.5) return;
             event.preventDefault();
-            // 触控板一次滑动会连发多个事件，锁一小段时间，避免一次滑过好几张。
-            if (latched) return;
-            latched = true;
-            window.setTimeout(() => {
-                latched = false;
-            }, 240);
-            step(event.deltaY > 0 ? 1 : -1);
+            const direction = gesture(delta, performance.now());
+            if (direction) step(direction);
         };
         node.addEventListener("wheel", handleWheel, { passive: false });
         return () => node.removeEventListener("wheel", handleWheel);
-    }, [step]);
+    }, [step, shots.length]);
 
     const current = shots[active];
 
     if (!shots.length) return null;
 
     return (
-        <div
-            className="creation-inspiration-tunnel"
-            onPointerEnter={() => setPaused(true)}
-            onPointerLeave={() => setPaused(false)}
-            onFocusCapture={() => setPaused(true)}
-            onBlurCapture={() => setPaused(false)}
-        >
+        <div className="creation-inspiration-tunnel" onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)}>
             <div ref={stageRef} className="creation-gallery-stage" aria-hidden="true">
                 {shots.map((inspiration, index) => {
                     const id = catalogIdOf(inspiration);
@@ -223,9 +216,9 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
                     // 超出可见层数就靠透明度淡出，不切 visibility——
                     // 硬切会让最远那张在过渡中途"啪"地消失。
                     const style = {
-                        "--card-x": `${(Math.sign(relative) * STEP_X * depth).toFixed(1)}px`,
+                        "--card-x": `calc(${relative} * var(--gallery-step))`,
                         "--card-scale": depthScale(depth).toFixed(4),
-                        "--card-depth-opacity": `${DEPTH_OPACITY[Math.min(depth, DEPTH_OPACITY.length - 1)]}`,
+                        "--card-depth-opacity": depth > MAX_DEPTH ? "0" : `${DEPTH_OPACITY[depth]}`,
                         zIndex: `${100 - depth}`,
                     } as CSSProperties;
 
@@ -236,7 +229,7 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
                             tabIndex={-1}
                             className={`creation-tunnel-card ${depth === 0 ? "is-active" : ""} ${readyIds.has(id) ? "is-ready" : ""}`}
                             style={style}
-                            onClick={() => onStartPrompt(inspiration.mode, inspiration.prompt)}
+                            onClick={() => onStartPrompt(inspiration.mode, fillablePrompt(inspiration))}
                         >
                             <img
                                 src={inspiration.image}
@@ -269,10 +262,14 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
                 用 !important 改写 color / background 并把 transform 顶成 translateY(-1px)，
                 按钮会当场掉半个身位。带 span 的按钮不在那条规则的射程内。 */}
             <button type="button" className="creation-gallery-arrow is-prev" aria-label="上一张灵感" onClick={() => step(-1)}>
-                <span className="creation-gallery-arrow-icon"><ChevronLeft aria-hidden="true" /></span>
+                <span className="creation-gallery-arrow-icon">
+                    <ChevronLeft aria-hidden="true" />
+                </span>
             </button>
             <button type="button" className="creation-gallery-arrow is-next" aria-label="下一张灵感" onClick={() => step(1)}>
-                <span className="creation-gallery-arrow-icon"><ChevronRight aria-hidden="true" /></span>
+                <span className="creation-gallery-arrow-icon">
+                    <ChevronRight aria-hidden="true" />
+                </span>
             </button>
 
             {/* 卡片本身对辅助技术隐藏，切换结果靠这条播报传达。 */}

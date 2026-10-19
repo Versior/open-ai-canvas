@@ -121,6 +121,7 @@ export type CanvasNodeActionContextValue = {
         pieces: { index: number; top: number; height: number; dataUrl: string }[],
         fileNames: string[],
     ) => Promise<void> | void;
+    extractLayerMaterials?: (node: CanvasNodeData) => Promise<void> | void;
 };
 
 export const CanvasNodeActionContext = createContext<CanvasNodeActionContextValue>({});

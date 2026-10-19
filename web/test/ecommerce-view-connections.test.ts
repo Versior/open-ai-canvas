@@ -44,7 +44,7 @@ test("replacing a view keeps other view connections and removes the former occup
 });
 
 test("product input anchors match actual pin coordinates", () => {
-    const anchor = (getConnectionTargetAnchor as unknown as (...args: unknown[]) => { x: number; y: number })(product, { nodeId: "image", handleType: "source" }, "product-view:front", 0, 0.4, 0.25);
+    const anchor = getConnectionTargetAnchor(product, { nodeId: "image", handleType: "source" }, "product-view:front", 0, undefined, 0.4, 0.25);
     expect(anchor).toEqual({ x: 200, y: 300 });
     const edge = { id: "edge", fromNodeId: "image", toNodeId: "product", toHandleId: "product-view:front", toAnchorRatio: 0.4, toAnchorXRatio: 0.25 } as CanvasConnection;
     const path = canvasConnectionPath(edge, photo("image"), product);

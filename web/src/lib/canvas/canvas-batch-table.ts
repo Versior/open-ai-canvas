@@ -92,8 +92,8 @@ export function composeProductPrompt(lock: string | undefined, recipePrompt: str
 /** 铺配方时用的默认行集合：先铺最高频的几张。 */
 export const DEFAULT_PRODUCT_RECIPE_IDS: CanvasBatchProductRecipe[] = ["main", "scene", "detail", "selling_point"];
 export const BATCH_REFERENCE_HANDLE_PREFIX = "batch-reference:";
-/** 两行工具栏（操作栏 44 + 全局提示词 36 + 分隔 1）之后，对准表头中线。 */
-export const BATCH_REFERENCE_HANDLE_TOP = 102;
+/** 操作栏 44 + 全局提示词 76 + 分隔 1 + 列头半高 18，对准表头中线。 */
+export const BATCH_REFERENCE_HANDLE_TOP = 139;
 export const BATCH_REFERENCE_HANDLE_GAP = 40;
 export const MIN_BATCH_REFERENCE_COLUMNS = 1;
 export const MAX_BATCH_REFERENCE_COLUMNS = 10;
@@ -261,7 +261,7 @@ export function batchInputColumns(node: CanvasNodeData, connections: CanvasConne
     const columns = batchReferenceColumns(node.metadata?.batchTable);
     const indexById = new Map(columns.map((column, index) => [column.id, index]));
     const result = columns.map(() => [] as string[]);
-    connections.filter((connection) => connection.toNodeId === node.id && connection.relation !== "batch-output" && !connection.toHandleId?.startsWith("batch-text:")).forEach((connection) => {
+    connections.filter((connection) => connection.toNodeId === node.id && connection.relation !== "batch-output" && !connection.toHandleId?.startsWith("batch-text:") && !connection.toHandleId?.startsWith("batch-cell:")).forEach((connection) => {
         const columnId = batchReferenceColumnId(connection.toHandleId);
         const index = columnId ? indexById.get(columnId) : 0;
         if (index === undefined || result[index].includes(connection.fromNodeId)) return;
@@ -289,6 +289,15 @@ export function createInheritedBatchRow(operation: CanvasBatchOperation, rows: C
     return createBatchRow(operation, [...(rows.at(-1)?.inputNodeIds || [])], operation === "product" ? rows.at(-1)?.recipe : undefined);
 }
 
+/** 按稳定行 ID 插入，沿用前一行图片，不复制正文、任务状态或生成结果。 */
+export function insertBatchRow(table: CanvasBatchTableData, afterRowId?: string) {
+    const index = afterRowId === undefined ? table.rows.length - 1 : table.rows.findIndex((row) => row.id === afterRowId);
+    if (afterRowId !== undefined && index < 0) return undefined;
+    const row = createBatchRow(table.operation, [...(table.rows[index]?.inputNodeIds || [])]);
+    row.referenceOverrides = table.rows[index]?.referenceOverrides ? [...table.rows[index].referenceOverrides!] : undefined;
+    return { row, rows: [...table.rows.slice(0, index + 1), row, ...table.rows.slice(index + 1)] };
+}
+
 /**
  * Connected try-on inputs follow the reference layout: all model/person images first,
  * followed by one shared garment image. Users can still edit any row afterwards.
@@ -312,9 +321,9 @@ export function createBatchRowsFromColumns(operation: CanvasBatchOperation, colu
     const rowCount = Math.max(0, ...columns.map((column) => column.length));
     const unmatchedRows = [...previousRows];
     const synchronizedRows = Array.from({ length: rowCount }, (_, rowIndex) => {
-        const inputNodeIds = columns.flatMap((column) => {
+        const inputNodeIds = columns.map((column) => {
             const input = column.length === 1 ? column[0] : column[rowIndex];
-            return input ? [input] : [];
+            return input || "";
         });
         let previousIndex = unmatchedRows.findIndex((row) => sameBatchInputs(row.inputNodeIds, inputNodeIds));
         if (previousIndex < 0 && inputNodeIds[0]) previousIndex = unmatchedRows.findIndex((row) => row.inputNodeIds[0] === inputNodeIds[0]);
@@ -323,7 +332,7 @@ export function createBatchRowsFromColumns(operation: CanvasBatchOperation, colu
         return {
             ...createBatchRow(operation, inputNodeIds),
             ...(previous ? { id: previous.id, enabled: previous.enabled, prompt: previous.prompt, cells: previous.cells, textNodeIds: previous.textNodeIds } : {}),
-            ...(inputsUnchanged && previous?.outputNodeId ? { outputNodeId: previous.outputNodeId } : {}),
+            ...(previous?.outputNodeId ? { outputNodeId: previous.outputNodeId, ...(previous.generatedInputSignature ? { generatedInputSignature: previous.generatedInputSignature } : {}), ...(!inputsUnchanged || previous.inputChanged ? { inputChanged: true } : {}) } : {}),
             inputNodeIds,
         };
     });

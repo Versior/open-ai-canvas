@@ -21,8 +21,8 @@ import (
 
 	"github.com/gabriel-vasile/mimetype"
 	"gorm.io/gorm"
-	"infinite-canvas/backend/internal/assets"
-	"infinite-canvas/backend/internal/model"
+	"yingce/backend/internal/assets"
+	"yingce/backend/internal/model"
 )
 
 func (s *Service) UploadResource(userID string, header *multipart.FileHeader, kind string, width int, height int, durationMs int64, uploadIdentity ...string) (*model.Resource, error) {
@@ -58,7 +58,7 @@ func (s *Service) uploadResource(userID string, header *multipart.FileHeader, ki
 	if err != nil {
 		return nil, err
 	}
-	if !(forceLocal && kind == "live2d") {
+	if !(forceLocal && (kind == "live2d" || kind == "agent-avatar-bundle")) {
 		kind = uploadedResourceKind(mimeType)
 	}
 	if existing != nil {
@@ -288,7 +288,7 @@ func (s *Service) storeResourceWithWriter(userID string, kind string, fileName s
 		reservationID = reservationIDs[0]
 	}
 	// Live2D is reserved for the administrator's validated local import path.
-	if !(forceLocal && kind == "live2d") {
+	if !(forceLocal && (kind == "live2d" || kind == "agent-avatar-bundle")) {
 		kind = normalizeResourceKind(kind, mimeType)
 	}
 	if existing, err := s.resourceForUploadKey(userID, uploadKey); err != nil {

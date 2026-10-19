@@ -3,7 +3,7 @@ package app
 import (
 	"testing"
 
-	"infinite-canvas/backend/internal/model"
+	"yingce/backend/internal/model"
 )
 
 // 业务分类必须与前端 web/src/lib/asset-category.ts 的 ASSET_CATEGORIES 一一对应：

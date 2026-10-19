@@ -13,6 +13,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { localizeInspirationEntries } from "./inspiration-localization.mjs";
 
 const WEB_DIR = resolve(import.meta.dir, "..");
 const PUBLIC_DIR = join(WEB_DIR, "public", "inspirations");
@@ -49,9 +50,7 @@ const THUMB_DIR = "inspiration-thumbs";
  * 上游封面不可用的条目：封面本身是影片片头白板，画面上只有一个白底和 "MUDA / FILM 01"，
  * 放在画廊里就是一块空白。清单按 slug 写死，重新同步不会把它带回来。
  */
-const EXCLUDED_SEEDANCE_SLUGS = new Set([
-    "seedance-make-a-modern-slick-and-punchy-video-for-a-modern-startup-that-works-on-infere-07ba4673539c",
-]);
+const EXCLUDED_SEEDANCE_SLUGS = new Set(["seedance-make-a-modern-slick-and-punchy-video-for-a-modern-startup-that-works-on-infere-07ba4673539c"]);
 
 /**
  * 上游模板分类的中文标签。id 来自 awesome-seedance 的 data/case-taxonomy.json，
@@ -131,7 +130,9 @@ function clip(value, limit) {
 }
 
 function sanitizeFileName(value) {
-    return String(value).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 90);
+    return String(value)
+        .replace(/[^a-zA-Z0-9._-]/g, "-")
+        .slice(0, 90);
 }
 
 async function fetchText(url, { accept } = {}) {
@@ -373,7 +374,9 @@ function renderSourceRevisions(revisions) {
 // 各来源同步时的上游版本号，供灵感页与画廊署名展示。
 
 export const HIGHLIGHT_REVISIONS = {
-${Object.entries(revisions).map(([name, value]) => `    ${name}: ${JSON.stringify(value)},`).join("\n")}
+${Object.entries(revisions)
+    .map(([name, value]) => `    ${name}: ${JSON.stringify(value)},`)
+    .join("\n")}
 };
 `;
 }
@@ -485,6 +488,14 @@ async function main() {
     const selected = SOURCE_PIPELINES.filter((pipeline) => !options.only || options.only === pipeline.name);
     if (!selected.length) throw new Error(`--only 不认识的来源: ${options.only}`);
 
+    const translations = JSON.parse(readFileSync(join(WEB_DIR, "scripts", "data", "inspiration-prompts-zh.json"), "utf8"));
+    const localizedSources = new Map();
+    // 先检查所有选中来源的中文覆盖，再下载封面或写目录，避免半批更新后才发现缺译。
+    for (const pipeline of selected) {
+        const loaded = await pipeline.load(options);
+        localizedSources.set(pipeline.name, { ...loaded, entries: localizeInspirationEntries(loaded.entries, translations) });
+    }
+
     mkdirSync(PUBLIC_DIR, { recursive: true });
     const revisions = {};
     const counts = {};
@@ -506,7 +517,7 @@ async function main() {
             continue;
         }
 
-        const loaded = await pipeline.load(options);
+        const loaded = localizedSources.get(pipeline.name);
         const { entries } = loaded;
         if (!entries.length) throw new Error(`${pipeline.name} 没有解析出任何条目`);
         revisions[pipeline.name] = loaded.revision;
@@ -533,11 +544,7 @@ async function main() {
         pruned += pruneOrphanThumbs(pipeline.name, thumbNames);
         highlights[pipeline.name] = thumbed;
 
-        writeFileSync(
-            join(PUBLIC_DIR, pipeline.file),
-            JSON.stringify({ source: pipeline.name, revision: loaded.revision, count: entries.length, categories: loaded.categories ?? {}, entries: entries.map(toCatalogEntry) }),
-            "utf8",
-        );
+        writeFileSync(join(PUBLIC_DIR, pipeline.file), JSON.stringify({ source: pipeline.name, revision: loaded.revision, count: entries.length, categories: loaded.categories ?? {}, entries: entries.map(toCatalogEntry) }), "utf8");
 
         console.log(`${pipeline.name.padEnd(12)}: ${loaded.note} → 入库 ${entries.length} 条，本地缩略图 ${thumbed.length} 张`);
     }
@@ -547,9 +554,7 @@ async function main() {
 
     const manifest = {
         generatedAt: new Date().toISOString(),
-        sources: Object.fromEntries(
-            Object.entries(revisions).map(([name, revision]) => [name, { revision, count: counts[name], categories: categoriesBySource[name] ?? {} }]),
-        ),
+        sources: Object.fromEntries(Object.entries(revisions).map(([name, revision]) => [name, { revision, count: counts[name], categories: categoriesBySource[name] ?? {} }])),
     };
     writeFileSync(join(PUBLIC_DIR, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
 

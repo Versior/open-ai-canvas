@@ -35,7 +35,7 @@ afterEach(async () => {
     }
 });
 
-const product: CanvasNodeData = { id: "product", type: CanvasNodeType.Product, title: "Product", position: { x: 0, y: 0 } };
+const product: CanvasNodeData = { id: "product", type: CanvasNodeType.Product, title: "Product", position: { x: 0, y: 0 }, width: 460, height: 660 };
 const image = (id: string): CanvasNodeData => ({ ...product, id, type: CanvasNodeType.Image, metadata: { prompt: "Original " + id, model: "test::gpt-image-2" } });
 const envelope = () => ({ data: { code: 0, data: [], msg: "ok" }, status: 200, headers: {} });
 
@@ -49,7 +49,8 @@ async function mountQueue(initial: CanvasNodeData[], realExecutor = false) {
         clearInterval(callback: () => void) { intervals.delete(callback); },
         dispatchEvent() { return true; },
     } });
-    const app = { message: { warning() {}, info() {}, success() {}, error() {} }, modal: { confirm() {} } };
+    const errors: string[] = [];
+    const app = { message: { warning() {}, info() {}, success() {}, error(value: string) { errors.push(value); } }, modal: { confirm() {} } };
     App.useApp = (() => app) as typeof App.useApp;
     useConfigStore.setState({ config: { ...defaultConfig, channels: [{ id: "test", name: "Test", scope: "system", baseUrl: "/api", apiKey: "test-boundary", apiFormat: "openai", models: ["gpt-image-2"], modelCosts: [{ model: "gpt-image-2", capability: "image", billingMode: "fixed_request", unitPriceMicrocredits: 1 }] }], imageModel: "test::gpt-image-2" } });
     useUserStore.setState({ runtimeLimits: { activeTaskLimit: 9, resourceUploadMB: 50 } });
@@ -79,14 +80,14 @@ async function mountQueue(initial: CanvasNodeData[], realExecutor = false) {
         }), [ref, write]);
         const executor = useCanvasGenerationExecutor(executorOptions);
         const handleGenerateNode = realExecutor ? executor : fakeGenerate;
-        api = { nodes, ref, write, ...useCanvasContentUpdates(ref, publish), ...useCanvasGenerationBatches({ projectId: "test-project", projectLoaded: true, nodes, nodesRef: ref, setNodes: write, handleGenerateNode }) };
+        api = { nodes, ref, write, ...useCanvasContentUpdates(ref, publish), ...useCanvasGenerationBatches({ projectId: "test-project", projectLoaded: true, nodes, nodesRef: ref, connectionsRef: executorOptions.connectionsRef, assets: [], setNodes: write, handleGenerateNode }) };
         return null;
     }
     const fail = (error: unknown) => { throw error; };
     const root = reconciler.createContainer({} as never, 1, null, false, null, "", fail, fail, fail, null);
     await act(async () => { reconciler.updateContainer(<Probe />, root, null, null); });
     unmount = async () => { await act(async () => { reconciler.updateContainer(null, root, null, null); }); };
-    return { api: () => api, submitted, tick: () => { for (const callback of intervals) callback(); } };
+    return { api: () => api, submitted, errors, tick: () => { for (const callback of intervals) callback(); } };
 }
 
 test("draft save, suite creation and actual queue scheduling preserve both generation rounds", async () => {
@@ -115,7 +116,7 @@ test("draft save, suite creation and actual queue scheduling preserve both gener
     expect(new Set(queue.submitted.map((item) => item.id)).size).toBe(10);
 });
 
-test("task listing cannot submit deleted nodes or a prompt edited while awaiting capacity", async () => {
+test("task listing skips deleted nodes and submits the queued prompt snapshot while awaiting capacity", async () => {
     const queue = await mountQueue([product, image("deleted"), image("edited")]);
     let release!: (value: ReturnType<typeof envelope>) => void;
     const pending = new Promise<ReturnType<typeof envelope>>((resolve) => { release = resolve; });
@@ -130,15 +131,29 @@ test("task listing cannot submit deleted nodes or a prompt edited while awaiting
         queue.api().updateNode("edited", (node) => ({ ...node, metadata: { ...node.metadata, prompt: "Latest edited prompt" } }));
     });
     await act(async () => { release(envelope()); });
-    expect(queue.submitted).toEqual([{ id: "edited", prompt: "Latest edited prompt" }]);
+    expect(queue.submitted).toEqual([{ id: "edited", prompt: "Original edited" }]);
 });
 
-test("invalid references fail the actual executor batch instead of requeueing forever", async () => {
+test("invalid references are rejected before a batch is queued", async () => {
     const target = image("invalid-reference");
     target.metadata = { ...target.metadata, prompt: "Use @[node:missing-reference]" };
     const queue = await mountQueue([product, target], true);
     await act(async () => {
+        expect(queue.api().enqueueGenerationBatch(product.id, "batch_image", [{ nodeId: target.id, rowId: target.id }])).toBeUndefined();
+        queue.tick();
+    });
+    expect(queue.errors).toHaveLength(1);
+    expect(queue.errors[0]).toContain("引用");
+    expect(queue.api().nodes[0].metadata?.generationBatches).toBeUndefined();
+});
+
+test("invalid references fail a legacy batch without a snapshot instead of requeueing forever", async () => {
+    const target = image("invalid-reference");
+    const queue = await mountQueue([product, target], true);
+    await act(async () => {
         queue.api().enqueueGenerationBatch(product.id, "batch_image", [{ nodeId: target.id, rowId: target.id }]);
+        queue.api().updateNode(product.id, (node) => ({ ...node, metadata: { ...node.metadata, generationBatches: node.metadata!.generationBatches!.map((batch) => ({ ...batch, items: batch.items.map((item) => ({ ...item, inputSnapshot: undefined })) })) } }));
+        queue.api().updateNode(target.id, (node) => ({ ...node, metadata: { ...node.metadata, prompt: "Use @[node:missing-reference]" } }));
         queue.tick();
     });
     const result = queue.api().nodes.find((node) => node.id === target.id)!;
