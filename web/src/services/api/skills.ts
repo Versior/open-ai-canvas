@@ -2,7 +2,7 @@ import { ApiError, http, apiBaseURL, compactApiParams, serializeApiParams, type 
 import { getActiveUserScope } from "@/lib/user-scope";
 
 
-let addedSkillsRequest: { scope: string; promise: Promise<{ skills: Skill[] }> } | null = null;
+let addedSkillsRequest: { scope: string; version: number; force: boolean; promise: Promise<{ skills: Skill[] }> } | null = null;
 let addedSkillsCache: { scope: string; value: { skills: Skill[] }; expiresAt: number } | null = null;
 let addedSkillsCacheVersion = 0;
 
@@ -209,13 +209,19 @@ export function listSkillPresets() {
     return http.get<{ presets: SkillPreset[] }>("/skills/presets");
 }
 
-export function listAddedSkills() {
+export function getAddedSkillsCatalogRevision() {
+    return addedSkillsCacheVersion;
+}
+
+export function listAddedSkills(options: { force?: boolean; afterRevision?: number } = {}) {
     const scope = getActiveUserScope();
-    const version = addedSkillsCacheVersion;
     const now = Date.now();
-    if (addedSkillsCache?.scope === scope && addedSkillsCache.expiresAt > now) return Promise.resolve(addedSkillsCache.value);
-    if (addedSkillsRequest?.scope === scope) return addedSkillsRequest.promise;
-    const promise = readAddedSkillsWithRetry()
+    // Explicit refreshes only share requests started after their freshness boundary.
+    if (addedSkillsRequest?.scope === scope && addedSkillsRequest.version === addedSkillsCacheVersion && (!options.force || addedSkillsRequest.force) && (options.afterRevision === undefined || addedSkillsRequest.version > options.afterRevision)) return addedSkillsRequest.promise;
+    if (!options.force && addedSkillsCache?.scope === scope && addedSkillsCache.expiresAt > now) return Promise.resolve(addedSkillsCache.value);
+    const version = ++addedSkillsCacheVersion;
+    addedSkillsCache = null;
+    const promise = readAddedSkillsWithRetry(scope)
         .then((value) => {
             if (version === addedSkillsCacheVersion) addedSkillsCache = { scope, value, expiresAt: Date.now() + 15_000 };
             return value;
@@ -223,21 +229,28 @@ export function listAddedSkills() {
         .finally(() => {
             if (addedSkillsRequest?.promise === promise) addedSkillsRequest = null;
         });
-    addedSkillsRequest = { scope, promise };
+    addedSkillsRequest = { scope, version, force: Boolean(options.force), promise };
     return promise;
 }
 
-async function readAddedSkillsWithRetry() {
+async function readAddedSkillsWithRetry(scope: string) {
     const retryDelays = [300, 900, 1800];
     for (let attempt = 0; ; attempt += 1) {
+        assertAddedSkillsScope(scope);
         try {
             const response = await http.get<{ skills: AddedSkillReference[] }>("/skills/added");
+            assertAddedSkillsScope(scope);
             return { skills: response.skills.map(normalizeAddedSkillReference) };
         } catch (cause) {
+            assertAddedSkillsScope(scope);
             if (!(cause instanceof ApiError) || !cause.retryable || attempt >= retryDelays.length) throw cause;
             await new Promise<void>((resolve) => globalThis.setTimeout(resolve, retryDelays[attempt]));
         }
     }
+}
+
+function assertAddedSkillsScope(scope: string) {
+    if (getActiveUserScope() !== scope) throw new DOMException("账号已切换，请重新读取技能库", "AbortError");
 }
 
 function normalizeAddedSkillReference(skill: AddedSkillReference): Skill {

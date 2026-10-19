@@ -138,6 +138,21 @@ export function useCanvasViewportController({
         setToolbarNodeId(node.id);
     }, [nodesRef, selectFocusedNode, setDialogNodeId, setToolbarNodeId, size.height, size.width, transitionViewportTo, viewportRef]);
 
+    const focusCanvasImageNodes = useCallback((nodeIds: string[]) => {
+        const ids = new Set(nodeIds);
+        const targets = nodesRef.current.filter((node) => ids.has(node.id) && node.type === CanvasNodeType.Image);
+        const bounds = getCanvasNodesBounds(targets);
+        if (!bounds) return false;
+        transitionViewportTo(viewportForBounds(bounds, size, { padding: 96, maxScale: 0.9 }));
+        selectedNodeIdsRef.current = ids;
+        setSelectedNodeIds(ids);
+        setSelectedConnectionId(null);
+        setContextMenu(null);
+        setDialogNodeId(null);
+        setToolbarNodeId(null);
+        return true;
+    }, [nodesRef, selectedNodeIdsRef, setContextMenu, setDialogNodeId, setSelectedConnectionId, setSelectedNodeIds, setToolbarNodeId, size, transitionViewportTo]);
+
     const focusCanvasNode = useCallback((nodeId: string) => {
         const node = nodesRef.current.find((item) => item.id === nodeId);
         if (!node) return;
@@ -178,6 +193,7 @@ export function useCanvasViewportController({
         fitCanvasContent,
         fitCanvasSelection,
         focusCanvasImageNode,
+        focusCanvasImageNodes,
         focusCanvasNode,
         getCanvasCenter,
         handleCanvasDoubleClick,

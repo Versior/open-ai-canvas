@@ -14,25 +14,25 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { createEcommerceModel, type EcommerceModel } from "@/lib/ecommerce/ecommerce-models";
 
 const STORE_KEY = "ecommerce-model-library";
+export type EcommerceModelPatch = Partial<EcommerceModel> | ((current: EcommerceModel) => Partial<EcommerceModel>);
 
 type ModelLibraryState = {
     models: EcommerceModel[];
     hydrated: boolean;
+    scope: string;
 };
 
 type ModelLibraryActions = {
     hydrate: () => Promise<void>;
-    addModel: (model: EcommerceModel) => string;
-    updateModel: (id: string, patch: Partial<EcommerceModel>) => void;
-    removeModel: (id: string) => void;
-    touchModel: (id: string) => void;
+    reset: () => void;
+    addModel: (model: EcommerceModel) => Promise<string>;
+    updateModel: (id: string, patch: EcommerceModelPatch) => Promise<void>;
+    removeModel: (id: string) => Promise<void>;
+    removeModels: (ids: string[]) => Promise<void>;
+    touchModel: (id: string) => Promise<void>;
 };
 
 export type EcommerceModelLibraryStore = ModelLibraryState & ModelLibraryActions;
-
-function scopeStorage() {
-    return localForageStorageForScope(getActiveUserScope());
-}
 
 /**
  * 老记录缺字段时补齐。
@@ -48,6 +48,7 @@ function normalizeModel(value: unknown): EcommerceModel | null {
     if (!value || typeof value !== "object") return null;
     const raw = value as Partial<EcommerceModel> & { angles?: Record<string, string | undefined>; cover?: string };
     if (!raw.id || !raw.name) return null;
+    if (raw.kind === "preset") return null;
     const refs = Array.isArray(raw.refs) ? raw.refs.filter((ref): ref is string => typeof ref === "string" && Boolean(ref)) : [];
     if (!refs.length && raw.angles && typeof raw.angles === "object") {
         for (const role of LEGACY_ANGLE_ORDER) {
@@ -60,7 +61,7 @@ function normalizeModel(value: unknown): EcommerceModel | null {
     return {
         id: raw.id,
         name: raw.name,
-        kind: raw.kind === "preset" ? "preset" : "custom",
+        kind: "custom",
         refs,
         tags: Array.isArray(raw.tags) ? raw.tags.filter((tag): tag is string => typeof tag === "string") : [],
         createdAt: raw.createdAt || fallback.createdAt,
@@ -68,52 +69,75 @@ function normalizeModel(value: unknown): EcommerceModel | null {
     };
 }
 
-export const useEcommerceModelLibrary = create<EcommerceModelLibraryStore>((set, get) => ({
-    models: [],
-    hydrated: false,
+export const useEcommerceModelLibrary = create<EcommerceModelLibraryStore>((set, get) => {
+    let generation = 0;
+    let loading: { scope: string; promise: Promise<void> } | null = null;
+    let writes: Promise<void> = Promise.resolve();
 
-    hydrate: async () => {
-        if (get().hydrated) return;
-        try {
-            const raw = await scopeStorage().getItem(STORE_KEY);
-            const parsed = raw ? JSON.parse(raw) : null;
-            const candidate: unknown = parsed?.state?.models ?? parsed?.models;
-            const list: unknown[] = Array.isArray(candidate) ? candidate : [];
-            const models = list.map(normalizeModel).filter((model): model is EcommerceModel => Boolean(model));
-            set({ models, hydrated: true });
-        } catch {
-            // 读不出来就当空库，不把整个模特库变成打不开的错误页
-            set({ models: [], hydrated: true });
-        }
-    },
+    const mutate = (update: (models: EcommerceModel[]) => EcommerceModel[]) => {
+        const scope = getActiveUserScope();
+        const operation = writes.catch(() => undefined).then(async () => {
+            if (scope !== getActiveUserScope()) throw new Error("账号已切换，请重新操作模特库");
+            await get().hydrate();
+            if (scope !== getActiveUserScope() || get().scope !== scope) throw new Error("账号已切换，请重新操作模特库");
+            const models = update(get().models);
+            await localForageStorageForScope(scope).setItem(STORE_KEY, JSON.stringify({ version: 2, models }));
+            if (scope !== getActiveUserScope() || get().scope !== scope) throw new Error("账号已切换，模特已保存到原账号");
+            set({ models });
+        });
+        writes = operation.catch(() => undefined);
+        return operation;
+    };
 
-    addModel: (model) => {
-        set((state) => ({ models: [model, ...state.models] }));
-        void persist(get());
-        return model.id;
-    },
-
-    updateModel: (id, patch) => {
-        set((state) => ({ models: state.models.map((model) => (model.id === id ? { ...model, ...patch } : model)) }));
-        void persist(get());
-    },
-
-    removeModel: (id) => {
-        set((state) => ({ models: state.models.filter((model) => model.id !== id) }));
-        void persist(get());
-    },
-
-    touchModel: (id) => {
-        const now = new Date().toISOString();
-        set((state) => ({ models: state.models.map((model) => (model.id === id ? { ...model, lastUsedAt: now } : model)) }));
-        void persist(get());
-    },
-}));
-
-async function persist(state: EcommerceModelLibraryStore) {
-    const storage = scopeStorage();
-    await storage.setItem(STORE_KEY, JSON.stringify({ version: 2, models: state.models }));
-}
+    return {
+        models: [],
+        hydrated: false,
+        scope: "",
+        reset: () => {
+            generation += 1;
+            loading = null;
+            set({ models: [], hydrated: false, scope: "" });
+        },
+        hydrate: async () => {
+            const scope = getActiveUserScope();
+            if (get().hydrated && get().scope === scope) return;
+            if (loading?.scope === scope) return loading.promise;
+            const epoch = ++generation;
+            set({ models: [], hydrated: false, scope });
+            const promise = (async () => {
+                const storage = localForageStorageForScope(scope);
+                const raw = await storage.getItem(STORE_KEY);
+                const parsed = raw ? JSON.parse(raw) : null;
+                const candidate: unknown = parsed?.state?.models ?? parsed?.models;
+                if (candidate !== undefined && !Array.isArray(candidate)) throw new Error("模特库数据格式异常，已停止写入");
+                const list: unknown[] = Array.isArray(candidate) ? candidate : [];
+                const models = list.map(normalizeModel).filter((model): model is EcommerceModel => Boolean(model));
+                if (epoch !== generation || scope !== getActiveUserScope()) return;
+                if (list.some((item) => item && typeof item === "object" && (item as { kind?: string }).kind === "preset")) {
+                    await storage.setItem(STORE_KEY, JSON.stringify({ version: 2, models }));
+                }
+                if (epoch === generation && scope === getActiveUserScope()) set({ models, hydrated: true, scope });
+            })();
+            loading = { scope, promise };
+            try {
+                await promise;
+            } finally {
+                if (loading?.promise === promise) loading = null;
+            }
+        },
+        addModel: async (model) => {
+            await mutate((models) => [model, ...models.filter((item) => item.id !== model.id)]);
+            return model.id;
+        },
+        updateModel: (id, patch) => mutate((models) => models.map((model) => model.id === id ? { ...model, ...(typeof patch === "function" ? patch(model) : patch), id: model.id, kind: "custom" } : model)),
+        removeModel: (id) => mutate((models) => models.filter((model) => model.id !== id)),
+        removeModels: (ids) => {
+            const removed = new Set(ids);
+            return mutate((models) => models.filter((model) => !removed.has(model.id)));
+        },
+        touchModel: (id) => mutate((models) => models.map((model) => model.id === id ? { ...model, lastUsedAt: new Date().toISOString() } : model)),
+    };
+});
 
 /**
  * 把一张参考图存成模特。
@@ -121,6 +145,7 @@ async function persist(state: EcommerceModelLibraryStore) {
  * 「上传保存为模特」与「画布图存为模特」共用这条写路径——两处各写一遍的话，
  * 迟早会出现一处忘了校验 storageKey。
  */
-export function saveModelFromImage(ref: string, name: string) {
+export async function saveModelFromImage(ref: string, name: string) {
+    if (!ref.trim()) throw new Error("图片还没有保存，无法加入模特库");
     return useEcommerceModelLibrary.getState().addModel(createEcommerceModel(name, [ref]));
 }

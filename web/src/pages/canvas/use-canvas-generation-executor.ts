@@ -4,7 +4,7 @@ import { App } from "antd";
 
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
-import { mergeEcommercePrompt, resolveEcommerceInputs, type EcommerceGenerationInputs } from "@/lib/ecommerce/ecommerce-canvas";
+import { ecommerceReferenceImageGuide, mergeEcommercePrompt, resolveEcommerceInputs, type EcommerceGenerationInputs } from "@/lib/ecommerce/ecommerce-canvas";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { buildGenerationConfig, isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
@@ -13,7 +13,7 @@ import { buildPortraitTexturePrompt } from "@/lib/canvas/canvas-portrait-texture
 import { buildCameraPrompt } from "@/lib/canvas/camera-prompt-library";
 import { buildTextRewritePrompt } from "@/lib/prompts";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
-import { generationErrorMessage, generationFailureMetadata } from "@/lib/generation-error";
+import { generationFailureMetadata } from "@/lib/generation-error";
 import { modelCompatibilityError, modelGroupReferenceLimits, modelPromptLengthError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import type { Skill } from "@/services/api/skills";
@@ -104,6 +104,15 @@ export function useCanvasGenerationExecutor({
                 nodeId,
                 async () => {
                     const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
+                    const failPreflight = (error: unknown) => {
+                        const failure = generationFailureMetadata(error, prompt);
+                        message.error(failure.errorDetails);
+                        if (!options?.waitForTaskCapacity) return;
+                        setNodes((current) => current.map((node) => {
+                            if (node.id !== nodeId || node.metadata?.content || node.metadata?.taskId || isCanvasNodeGenerating(node)) return node;
+                            return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } };
+                        }));
+                    };
                     if (isCanvasNodeGenerating(sourceNode)) {
                         message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
                         return;
@@ -119,7 +128,7 @@ export function useCanvasGenerationExecutor({
                     try {
                         generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);
                     } catch (error) {
-                        message.error(generationErrorMessage(error));
+                        failPreflight(error);
                         return;
                     }
                     const hasLiveBatchChildren =
@@ -194,14 +203,14 @@ export function useCanvasGenerationExecutor({
                                 .filter((image) => image.storageKey || image.url || image.dataUrl)
                                 .filter((image) => !rawGenerationContext.referenceImages.some((existing) => existing.id === image.id));
                             if (evidenceImages.length) rawGenerationContext = { ...rawGenerationContext, referenceImages: [...rawGenerationContext.referenceImages, ...evidenceImages], imageCount: rawGenerationContext.imageCount + evidenceImages.length };
+                            rawGenerationContext = { ...rawGenerationContext, prompt: mergeEcommercePrompt(rawGenerationContext.prompt, ecommerceReferenceImageGuide(rawGenerationContext.referenceImages)) };
                         }
                         const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
                         generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, hydratedRequirements);
                         const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);
                         if (hydratedCompatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${hydratedCompatibilityError}`);
                     } catch (error) {
-                        const errorDetails = generationErrorMessage(error);
-                        message.error(errorDetails);
+                        failPreflight(error);
                         return;
                     }
 
@@ -209,7 +218,7 @@ export function useCanvasGenerationExecutor({
                     try {
                         skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: rawGenerationContext.prompt, skills: addedSkills });
                     } catch (error) {
-                        message.error(error instanceof Error ? error.message : "技能上下文加载失败");
+                        failPreflight(error);
                         return;
                     }
                     let effectivePrompt = skillExecution.prompt.trim();
@@ -222,14 +231,13 @@ export function useCanvasGenerationExecutor({
                                 styleMetadata = { styleProfileJson: styleRuntime.profileJson, styleExecutionPlan: styleRuntime.plan };
                             }
                         } catch (error) {
-                            const errorDetails = generationErrorMessage(error);
-                            message.error(errorDetails);
+                            failPreflight(error);
                             return;
                         }
                     }
                     const promptLengthError = mode === "video" ? modelPromptLengthError(generationConfig, generationConfig.model, mode, effectivePrompt) : "";
                     if (promptLengthError) {
-                        message.error(promptLengthError);
+                        failPreflight(new Error(promptLengthError));
                         return;
                     }
                     const generationContext = { ...rawGenerationContext, prompt: effectivePrompt };

@@ -9,6 +9,14 @@ import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 // 通过 Context 注入，避免改动 world-layers。无 Provider 时静默降级为 no-op。
 export type CanvasNodeActionContextValue = {
     upload?: (node: CanvasNodeData) => void;
+    viewImage?: (node: CanvasNodeData) => void;
+    focusNode?: (nodeId: string) => void;
+    addEcommerceReference?: (product: CanvasNodeData) => void;
+    addEcommerceInput?: (product: CanvasNodeData, handle: string) => void;
+    connectEcommerceInput?: (event: React.PointerEvent, nodeId: string, handle: string) => void;
+    dropEcommerceInput?: (event: React.PointerEvent, nodeId: string, handle: string) => void;
+    disconnectEcommerceInput?: (nodeId: string, handle: string, sourceId: string) => void;
+    updateEcommerceInputAnchor?: (nodeId: string, handle: string, anchorRatio: number, anchorXRatio: number) => void;
     download?: (node: CanvasNodeData) => void;
     duplicate?: (node: CanvasNodeData) => void;
     deleteNode?: (node: CanvasNodeData) => void;
@@ -52,7 +60,7 @@ export type CanvasNodeActionContextValue = {
      * 为什么节点在出图时才铺：上一版点一下先铺九屏，用户看到的是一堆还没出图的
      * 空方块，还得自己在画布上找哪块对应哪张。过程是那张表，不是画布上的方块。
      */
-    generateEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[]) => Promise<void> | void;
+    generateEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[], rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<boolean> | boolean;
     /**
      * 电商创作：分析商品，为这一套的每一张写一条完整的出图提示词。
      *

@@ -19,36 +19,60 @@ type SuitePromptState = {
     /** 用户自己那份分析提示词。空串 = 用代码里那一份默认。 */
     director: string;
     hydrated: boolean;
+    scope: string;
 };
 
 type SuitePromptActions = {
     hydrate: () => Promise<void>;
     /** 存成用户级默认。传空串就是「回到默认那一份」。 */
-    setDirector: (value: string) => void;
+    setDirector: (value: string) => Promise<void>;
+    reset: () => void;
 };
 
 export type EcommerceSuitePromptStore = SuitePromptState & SuitePromptActions;
 
-function scopeStorage() {
-    return localForageStorageForScope(getActiveUserScope());
-}
-
-export const useEcommerceSuitePrompt = create<EcommerceSuitePromptStore>()((set, get) => ({
-    director: "",
-    hydrated: false,
-    hydrate: async () => {
-        if (get().hydrated) return;
-        try {
-            const stored = await scopeStorage().getItem(STORE_KEY);
-            set({ director: typeof stored === "string" ? stored : "", hydrated: true });
-        } catch {
-            // 读不出来就当没存过：提示词丢一份不影响出图，卡住整个面板才是问题。
-            set({ hydrated: true });
-        }
-    },
-    setDirector: (value) => {
-        const next = typeof value === "string" ? value : "";
-        set({ director: next });
-        void Promise.resolve(scopeStorage().setItem(STORE_KEY, next)).catch(() => undefined);
-    },
-}));
+export const useEcommerceSuitePrompt = create<EcommerceSuitePromptStore>()((set, get) => {
+    let generation = 0;
+    let loading: { scope: string; promise: Promise<void> } | null = null;
+    let writes: Promise<void> = Promise.resolve();
+    return {
+        director: "",
+        hydrated: false,
+        scope: "",
+        reset: () => {
+            generation += 1;
+            loading = null;
+            set({ director: "", hydrated: false, scope: "" });
+        },
+        hydrate: async () => {
+            const scope = getActiveUserScope();
+            if (get().hydrated && get().scope === scope) return;
+            if (loading?.scope === scope) return loading.promise;
+            const epoch = ++generation;
+            set({ director: "", hydrated: false, scope });
+            const promise = (async () => {
+                const stored = await localForageStorageForScope(scope).getItem(STORE_KEY);
+                if (epoch === generation && scope === getActiveUserScope()) set({ director: typeof stored === "string" ? stored : "", hydrated: true, scope });
+            })();
+            loading = { scope, promise };
+            try {
+                await promise;
+            } finally {
+                if (loading?.promise === promise) loading = null;
+            }
+        },
+        setDirector: (value) => {
+            const scope = getActiveUserScope();
+            const next = typeof value === "string" ? value : "";
+            const operation = writes.catch(() => undefined).then(async () => {
+                if (scope !== getActiveUserScope()) throw new Error("账号已切换，请重新保存提示词");
+                await get().hydrate();
+                if (scope !== getActiveUserScope()) throw new Error("账号已切换，请重新保存提示词");
+                await localForageStorageForScope(scope).setItem(STORE_KEY, next);
+                if (scope === getActiveUserScope()) set({ director: next });
+            });
+            writes = operation.catch(() => undefined);
+            return operation;
+        },
+    };
+});

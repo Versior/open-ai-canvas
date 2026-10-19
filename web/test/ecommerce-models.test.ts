@@ -49,42 +49,21 @@ describe("模特就是图，不是一段文字", () => {
     });
 });
 
-describe("公共起手式", () => {
-    test("十二个起手式，每个都有名字、说明和出图提示词", () => {
-        expect(ECOMMERCE_MODEL_PRESETS).toHaveLength(12);
-        for (const preset of ECOMMERCE_MODEL_PRESETS) {
-            expect(preset.name.trim()).toBeTruthy();
-            expect(preset.hint.trim()).toBeTruthy();
-            expect(preset.brief.trim()).toBeTruthy();
-            expect(preset.tags.length).toBeGreaterThan(0);
-        }
+describe("移除内置模特预设", () => {
+    test("不再提供默认模特记录，自建模特仍可使用", () => {
+        expect(ECOMMERCE_MODEL_PRESETS).toEqual([]);
+        const own = createEcommerceModel("我的模特", ["resource:my-model"]);
+        expect(ecommerceModelById(own.id, [own])).toEqual(own);
     });
-
-    test("起手式的 id 唯一", () => {
-        const ids = ECOMMERCE_MODEL_PRESETS.map((preset) => preset.id);
-        expect(new Set(ids).size).toBe(ids.length);
-    });
-
-    test("覆盖电商最常用的几类：女装 / 男装 / 鞋 / 配饰 / 童装 / 不出脸", () => {
-        const tags = ECOMMERCE_MODEL_PRESETS.flatMap((preset) => preset.tags).join(" ");
-        for (const category of ["女装", "男装", "鞋", "配饰", "童装", "内衣"]) {
-            expect(tags).toContain(category);
-        }
-    });
-
     test("出图提示词要求全身正面、白底、不要文字——参考图定的是身高与比例", () => {
-        const prompt = ecommerceModelPresetPrompt(ECOMMERCE_MODEL_PRESETS[0]);
-        expect(prompt).toContain(ECOMMERCE_MODEL_PRESETS[0].brief);
+        const prompt = ecommerceModelPresetPrompt({ id: "explicit", name: "用户模板", brief: "用户的拍摄要求", hint: "", tags: [] });
+        expect(prompt).toContain("用户的拍摄要求");
         expect(prompt).toContain("全身");
         expect(prompt).toContain("不要任何文字");
     });
 
-    test("起手式不是模特——它没有参考图，不能直接拿去锁人", () => {
-        // 这条是设计的核心：起手式只能「生成一张参考图」，不能直接当选中的模特。
-        // 把它当模特用会走进「拿一段文字去锁一个人」那条已经验证过走不通的路。
-        for (const preset of ECOMMERCE_MODEL_PRESETS) {
-            expect(ecommerceModelById(preset.id, [])).toBeUndefined();
-        }
+    test("旧内置预设 ID 不能作为已选模特", () => {
+        expect(ecommerceModelById("preset-female-young-slim", [])).toBeUndefined();
     });
 });
 
@@ -152,7 +131,7 @@ describe("模特挂在节点上，不沿连线继承", () => {
     });
 
     test("公共起手式不能当模特选中——它没有图", () => {
-        expect(resolveEcommerceModel(node(CanvasNodeType.Image, { ecommerceModelId: ECOMMERCE_MODEL_PRESETS[0].id }), [])).toBeUndefined();
+        expect(resolveEcommerceModel(node(CanvasNodeType.Image, { ecommerceModelId: "preset-female-young-slim" }), [])).toBeUndefined();
     });
 });
 
@@ -161,21 +140,14 @@ describe("模特库的存储与界面", () => {
     const modal = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-model-library.tsx", import.meta.url), "utf8");
     const panel = readFileSync(new URL("../src/components/canvas/canvas-node-prompt-panel.tsx", import.meta.url), "utf8");
 
-    test("scope 每次读写时解析，不锁死在模块初始化", () => {
-        // 锁死的话切账号会读到上一个人的模特库
-        expect(store).toContain("function scopeStorage()");
-        expect(store).toContain("localForageStorageForScope(getActiveUserScope())");
-    });
-
     test("老记录把 angles 迁移成 refs，不整库读不出来", () => {
         // 旧版本按全身/半身/侧面分槽存参考图；不迁移的话用户升级后模特全空了
         expect(store).toContain("LEGACY_ANGLE_ORDER");
         expect(store).toContain("raw.angles");
     });
 
-    test("弹窗有两个库与上传入口", () => {
+    test("弹窗有自建模特上传入口", () => {
         expect(modal).toContain("我的模特");
-        expect(modal).toContain("公共模特库");
         expect(modal).toContain("上传保存为模特");
     });
 
@@ -187,7 +159,6 @@ describe("模特库的存储与界面", () => {
 
     test("没有参考图的模特不能直接用", () => {
         expect(modal).toContain("没有参考图，锁不住人");
-        expect(modal).toContain("没有图就锁不住人");
     });
 
     test("不再有性别 / 体型 / 年龄 / 姿势 / 角度这些要手填的字段", () => {
@@ -217,6 +188,6 @@ describe("画布图存为模特", () => {
 
     test("存的是 storageKey——url 在退回本机时会失效", () => {
         expect(project).toContain("const ref = node.metadata?.storageKey;");
-        expect(project).toContain("saveModelFromImage(ref, node.title || \"新模特\")");
+        expect(project).toContain("setModelImageToAdd({ storageKey: ref, name: node.title");
     });
 });

@@ -170,7 +170,7 @@ func DefaultRuntimePolicy() RuntimePolicySetting {
 		Task: RuntimeTaskPolicy{
 			WorkerConcurrency:        defaultWorkerConcurrencyLimit(),
 			ChannelConcurrency:       defaultChannelConcurrencyLimit(),
-			ActiveTaskLimit:          5,
+			ActiveTaskLimit:          9,
 			ImageTimeoutMinutes:      8,
 			TextTimeoutMinutes:       8,
 			AudioTimeoutMinutes:      8,

@@ -498,6 +498,13 @@ export function getContextResourceNodes(nodeId: string, nodes: CanvasNodeData[],
         .filter((node): node is CanvasNodeData => Boolean(node && isResourceNode(node)));
 }
 
+export function getContextDownstreamResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return connections
+        .filter((connection) => connection.fromNodeId === nodeId)
+        .map((connection) => nodes.find((node) => node.id === connection.toNodeId))
+        .filter((node): node is CanvasNodeData => Boolean(node && isResourceNode(node)));
+}
+
 /**
  * 调整目标节点的素材输入边顺序。连接数组是引用编号的唯一顺序源；只替换相关
  * 输入边所在槽位，避免改变主链和其他节点的连线顺序。

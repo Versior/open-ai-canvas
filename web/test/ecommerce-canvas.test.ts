@@ -67,6 +67,13 @@ describe("ecommerce canvas wiring", () => {
         expect(mergeEcommercePrompt("", "只用自己的提示词")).toBe("只用自己的提示词");
     });
 
+    test("旧商品拍摄方案不再覆盖逐张确认的提示词", () => {
+        const legacyProduct = { ...product, metadata: { ...product.metadata, ecommerceShotSet: shotSet } };
+        const inputs = resolveEcommerceInputs("target-1", [legacyProduct, target], [connect("product-1", "target-1")]);
+        expect(inputs.sources.shotSet).toBeUndefined();
+        expect(inputs.prompt).not.toContain("【拍摄方案】");
+    });
+
     test("collects bound view images in view order and drops unbound or missing ones", () => {
         const views = productViewNodes(profile, nodes);
         expect(views.map((node) => node.id)).toEqual(["img-front", "img-side"]);

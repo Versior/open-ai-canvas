@@ -10,7 +10,9 @@ import { Link, useParams, useSearchParams } from "react-router";
 import { loadAssetsForUse } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { skillRuntime } from "@/services/skill-runtime";
+import { skillRuntime, type SkillRuntimeMetadata } from "@/services/skill-runtime";
+import { listAddedSkills } from "@/services/api/skills";
+import { ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
 import { synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
 import { modelCompatibilityError } from "@/lib/model-selection";
@@ -107,18 +109,21 @@ import { CanvasFreeformEmptyState, CanvasLinkedProjectEmptyState, CanvasShortDra
 import { resolveCanvasEmptyStateKind } from "@/lib/canvas/canvas-starter";
 import { failedImageBatchChildren, markImageBatchRetrying, reconcileImageBatchRoot, restoreUnsubmittedImageBatchChild } from "@/lib/canvas/canvas-image-batch-retry";
 import { cinematicStoryboardColumns, createCanvasNode, getInputSummary, isHiddenBatchChild } from "@/lib/canvas/canvas-project-domain";
-import { ecommerceModelPresetPrompt, type EcommerceModelPreset } from "@/lib/ecommerce/ecommerce-models";
-import { connectedImageNodes, resolveEcommerceInputs } from "@/lib/ecommerce/ecommerce-canvas";
+import { canSaveCanvasImageAsModel, ecommerceModelPresetPrompt, type EcommerceModelPreset } from "@/lib/ecommerce/ecommerce-models";
+import { ecommerceProductReferenceImages, ecommerceReferenceImageGuide, connectedStyleReferenceNodes, resolveEcommerceInputs, withImageAsEcommerceReference } from "@/lib/ecommerce/ecommerce-canvas";
 import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
 import { ecommerceOneClickFlow, ecommerceOneClickScreens, type EcommerceOneClickFlowId } from "@/lib/ecommerce/ecommerce-oneclick";
-import { ecommerceSuiteDraftPrompt, ecommerceSuiteRows, parseEcommerceSuiteDraft } from "@/lib/ecommerce/ecommerce-suite";
-import { ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
+import { ecommerceSuiteDirectorPrompt, ecommerceSuiteDraftPrompt, ecommerceSuiteRows, parseEcommerceSuiteDraft, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
+import { createEcommerceStyleReference, ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
+import { isEcommerceInputHandle, withEcommerceInputConnection } from "@/lib/ecommerce/ecommerce-canvas";
 import { rasterizeEcommerceDetailPage } from "@/lib/ecommerce/ecommerce-rasterize";
 import { generationErrorMessage } from "@/lib/generation-error";
-import { saveModelFromImage } from "@/stores/use-ecommerce-model-library";
+import { useEcommerceSuitePrompt } from "@/stores/use-ecommerce-suite-prompt";
+import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
 import { bindStoryboardKeyframes, storyboardKeyframeTime, storyboardRowsFromBatchTable } from "@/lib/canvas/canvas-batch-storyboard";
-import { stampCanvasNodeChanges, updateCanvasNode, updateCanvasNodes } from "@/lib/canvas/canvas-node-timestamps";
+import { stampCanvasNodeChanges } from "@/lib/canvas/canvas-node-timestamps";
+import { useCanvasContentUpdates } from "./use-canvas-content-updates";
 import { canvasAssetHandoffAttempt, finalizeCanvasAssetHandoff, uninsertedCanvasAssetHandoffPayloads } from "@/lib/canvas/canvas-asset-handoff";
 import { batchSourceRestriction } from "@/lib/canvas/canvas-batch-connection";
 import { deriveStoryboardPipelineProgress } from "@/lib/canvas/canvas-storyboard-progress";
@@ -284,6 +289,8 @@ function InfiniteCanvasPage() {
     const [characterLibraryPosition, setCharacterLibraryPosition] = useState<Position | undefined>();
     const [drawingNodeId, setDrawingNodeId] = useState<string | null>(null);
     const [stylePickerOpen, setStylePickerOpen] = useState(false);
+    const [modelLibraryOpen, setModelLibraryOpen] = useState(false);
+    const [modelImageToAdd, setModelImageToAdd] = useState<{ storageKey: string; name: string } | null>(null);
     // 新建预演台镜头必须先选模板：null 表示未在选择中，undefined position 表示用画布中心。
     const [previsTemplateRequest, setPrevisTemplateRequest] = useState<{ position?: Position } | null>(null);
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
@@ -556,6 +563,11 @@ function InfiniteCanvasPage() {
         () => ({
             getUpstreamNodes: (nodeId: string) => getContextResourceNodes(nodeId, nodes, connections),
             getDownstreamNodes: (nodeId: string) => getContextDownstreamResourceNodes(nodeId, nodes, connections),
+            getConnections: (nodeId: string) => connections.filter((edge) => edge.fromNodeId === nodeId || edge.toNodeId === nodeId),
+            getInputNodes: (nodeId: string) => {
+                const ids = new Set(connections.filter((edge) => edge.toNodeId === nodeId && edge.relation !== "batch-output").map((edge) => edge.fromNodeId));
+                return nodes.filter((node) => ids.has(node.id));
+            },
         }),
         [connections, nodes],
     );
@@ -655,6 +667,7 @@ function InfiniteCanvasPage() {
 
         const updateSize = () => {
             const rect = el.getBoundingClientRect();
+            if (rect.width <= 0 || rect.height <= 0) return;
             setSize((current) => (current.width === rect.width && current.height === rect.height ? current : { width: rect.width, height: rect.height }));
             if (!didInitialCenterRef.current) {
                 didInitialCenterRef.current = true;
@@ -677,6 +690,7 @@ function InfiniteCanvasPage() {
         fitCanvasContent,
         fitCanvasSelection,
         focusCanvasImageNode,
+        focusCanvasImageNodes,
         focusCanvasNode,
         getCanvasCenter,
         handleCanvasDoubleClick,
@@ -1095,6 +1109,8 @@ function InfiniteCanvasPage() {
         cancelPendingConnectionCreate,
         closeConnectionCreateMenu,
         connectionTargetAnchorRatio,
+        connectionTargetAnchorXRatio,
+        connectionTargetHandleId,
         connectionTargetNodeId,
         connectionApproach,
         connectionReplaceHover,
@@ -1552,31 +1568,7 @@ function InfiniteCanvasPage() {
     }, []);
     const duplicateNodeFromContent = useCallback((node: CanvasNodeData) => duplicateNode(node.id), [duplicateNode]);
     const deleteNodeFromContent = useCallback((node: CanvasNodeData) => deleteNodes(new Set([node.id])), [deleteNodes]);
-    const updateNodeFromContent = useCallback((nodeId: string, update: (node: CanvasNodeData) => CanvasNodeData) => {
-        setNodesState((current) => {
-            const next = updateCanvasNode(current, nodeId, update);
-            nodesRef.current = next;
-            return next;
-        });
-    }, []);
-    const pendingMediaUpdatesRef = useRef(new Map<string, (node: CanvasNodeData) => CanvasNodeData>());
-    const mediaUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const updateMediaNodeFromContent = useCallback((nodeId: string, update: (node: CanvasNodeData) => CanvasNodeData) => {
-        const previous = pendingMediaUpdatesRef.current.get(nodeId);
-        pendingMediaUpdatesRef.current.set(nodeId, previous ? (node) => update(previous(node)) : update);
-        if (mediaUpdateTimerRef.current) return;
-        mediaUpdateTimerRef.current = setTimeout(() => {
-            const updates = pendingMediaUpdatesRef.current;
-            pendingMediaUpdatesRef.current = new Map();
-            mediaUpdateTimerRef.current = null;
-            if (!updates.size) return;
-            setNodesState((current) => {
-                const next = updateCanvasNodes(current, updates);
-                nodesRef.current = next;
-                return next;
-            });
-        }, 120);
-    }, []);
+    const { updateNode: updateNodeFromContent, updateMediaNode: updateMediaNodeFromContent } = useCanvasContentUpdates(nodesRef, setNodesState);
     const updateNodeMetadataFromContent = useCallback(
         (nodeId: string, patch: CanvasNodeMetadata) => {
             updateNodeFromContent(nodeId, (node) => ({ ...node, metadata: { ...node.metadata, ...patch } }));
@@ -1591,13 +1583,89 @@ function InfiniteCanvasPage() {
      */
     const saveImageAsModel = useCallback((node: CanvasNodeData) => {
         const ref = node.metadata?.storageKey;
-        if (!ref) {
+        if (!ref || !canSaveCanvasImageAsModel(node)) {
             message.warning("这张图还没落盘，等生成完成后再存");
             return;
         }
-        saveModelFromImage(ref, node.title || "新模特");
-        message.success(`已把「${node.title || "这张图"}」存为模特，在输入框的「模特」里可以选它`);
+        setModelImageToAdd({ storageKey: ref, name: node.title || "新模特" });
+        setModelLibraryOpen(true);
     }, [message]);
+
+    const addEcommerceInput = useCallback((product: CanvasNodeData, handle: string) => {
+        if (!isEcommerceInputHandle(handle)) return;
+        const plan = createEcommerceStyleReference(product, nodesRef.current, handle);
+        if (handle.startsWith("product-view:")) {
+            const view = ECOMMERCE_PRODUCT_VIEWS.find((item) => handle === `product-view:${item.id}`);
+            plan.node.title = view?.label || "商品图";
+            plan.node.metadata = { ...plan.node.metadata, ecommerceReferenceRole: undefined };
+        }
+        const wrapper = Array.from(document.querySelectorAll<HTMLElement>("[data-node-id]")).find((element) => element.dataset.nodeId === product.id);
+        const slot = Array.from(wrapper?.querySelectorAll<HTMLElement>("[data-ecommerce-input]") || []).find((element) => element.dataset.ecommerceInput === handle);
+        const rect = wrapper?.getBoundingClientRect();
+        const pin = slot?.querySelector(".ecom-input-pin")?.getBoundingClientRect();
+        const connection = { ...plan.connection, ...(rect?.width && rect.height && pin ? { toAnchorRatio: (pin.top + pin.height / 2 - rect.top) / rect.height, toAnchorXRatio: (pin.left + pin.width / 2 - rect.left) / rect.width } : {}) };
+        const nextNodes = [...nodesRef.current, plan.node];
+        const nextConnections = withEcommerceInputConnection(connectionsRef.current, connection);
+        nodesRef.current = nextNodes;
+        connectionsRef.current = nextConnections;
+        setNodes(nextNodes);
+        setConnections(nextConnections);
+        setSelectedNodeIds(new Set([plan.node.id]));
+        setSelectedConnectionId(null);
+        handleUploadRequest(plan.node.id);
+    }, [handleUploadRequest, nodesRef, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds]);
+
+    const addEcommerceReference = useCallback((product: CanvasNodeData) => {
+        const used = new Set(connectionsRef.current.filter((edge) => edge.toNodeId === product.id).map((edge) => edge.toHandleId));
+        let index = 0;
+        while (used.has(`visual-reference:${index}`)) index += 1;
+        addEcommerceInput(product, `visual-reference:${index}`);
+    }, [addEcommerceInput]);
+
+    const ecommerceInputAnchor = (element: Element) => {
+        const slot = element.closest("[data-ecommerce-input]");
+        const rect = slot?.closest("[data-node-id]")?.getBoundingClientRect();
+        const pin = slot?.querySelector(".ecom-input-pin")?.getBoundingClientRect();
+        return rect?.width && rect.height && pin ? [(pin.top + pin.height / 2 - rect.top) / rect.height, (pin.left + pin.width / 2 - rect.left) / rect.width] as const : [undefined, undefined] as const;
+    };
+    const connectEcommerceInput = useCallback((event: React.PointerEvent, nodeId: string, handle: string) => {
+        const [y, x] = ecommerceInputAnchor(event.currentTarget);
+        handleConnectStart(event, nodeId, "target", handle, y, x);
+    }, [handleConnectStart]);
+    const dropEcommerceInput = useCallback((event: React.PointerEvent, nodeId: string, handle: string) => {
+        const [y, x] = ecommerceInputAnchor(event.currentTarget);
+        handleConnectDrop(event, nodeId, handle, y, x);
+    }, [handleConnectDrop]);
+    const disconnectEcommerceInput = useCallback((nodeId: string, handle: string, sourceId: string) => {
+        const next = connectionsRef.current.filter((edge) => !(edge.toNodeId === nodeId && edge.fromNodeId === sourceId));
+        connectionsRef.current = next;
+        setConnections(next);
+        const product = nodesRef.current.find((node) => node.id === nodeId);
+        if (product?.metadata?.productProfile && handle.startsWith("product-view:")) {
+            const views = { ...product.metadata.productProfile.views };
+            for (const key of ECOMMERCE_PRODUCT_VIEWS) if (views[key.id] === sourceId || handle === `product-view:${key.id}`) views[key.id] = "";
+            updateNodeMetadataFromContent(nodeId, { productProfile: { ...product.metadata.productProfile, views } });
+        }
+        setSelectedConnectionId(null);
+    }, [setConnections, updateNodeMetadataFromContent]);
+    const updateEcommerceInputAnchor = useCallback((nodeId: string, handle: string, y: number, x: number) => {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+        let changed = false;
+        const next = connectionsRef.current.map((edge) => {
+            if (edge.toNodeId !== nodeId || edge.toHandleId !== handle || (Math.abs((edge.toAnchorRatio ?? -1) - y) < 0.001 && Math.abs((edge.toAnchorXRatio ?? -1) - x) < 0.001)) return edge;
+            changed = true;
+            return { ...edge, toAnchorRatio: y, toAnchorXRatio: x };
+        });
+        if (changed) { connectionsRef.current = next; setConnections(next); }
+    }, [setConnections]);
+
+    const useImageAsStyleReference = useCallback((node: CanvasNodeData) => {
+        const productIds = nodesRef.current.filter((item) => item.type === CanvasNodeType.Product).map((item) => item.id);
+        const next = withImageAsEcommerceReference(connectionsRef.current, node.id, productIds);
+        connectionsRef.current = next;
+        setConnections(next);
+        updateNodeMetadataFromContent(node.id, { ecommerceReferenceRole: "style" });
+    }, [setConnections, updateNodeMetadataFromContent]);
 
     /**
      * 电商创作：公共起手式出一张模特参考图。
@@ -1671,12 +1739,20 @@ function InfiniteCanvasPage() {
             generateEcommerceNode: async (node, mode, prompt) => { await generateNodeRef.current?.(node.id, mode, prompt, { skipDuplicateConfirmation: true }); },
             generateEcommerceShotSet: async (node, shotIds) => { await generateEcommerceShotSetRef.current?.(node, shotIds); },
             saveImageAsModel,
+            addEcommerceReference,
+            addEcommerceInput,
+            connectEcommerceInput,
+            dropEcommerceInput,
+            disconnectEcommerceInput,
+            updateEcommerceInputAnchor,
+            viewImage: (node) => setPreviewNodeId(node.id),
+            focusNode: focusCanvasNode,
             generateEcommerceModelPreset,
-            generateEcommerceSuite: async (node, flowId, slotIds) => { await generateEcommerceSuiteRef.current?.(node, flowId, slotIds); },
+            generateEcommerceSuite: async (node, flowId, slotIds, rows) => Boolean(await generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows)),
             draftEcommerceSuite: (node, flowId, analysisModel) => draftEcommerceSuiteRef.current?.(node, flowId, analysisModel),
             draftEcommerceProfile: (node) => draftEcommerceProfileRef.current?.(node),
         }),
-        [addPanoramaCaptureNode, createImageReversePromptNodes, deleteNodeFromContent, downloadNodeImage, duplicateNodeFromContent, exportEcommerceLayout, generateEcommerceModelPreset, openArtCritique, replaceCanvasNodeMedia, saveImageAsModel, sendSelectionToAgent, spawnEcommerceMaterials, updateMediaNodeFromContent, updateNodeFromContent, updateNodeMetadataFromContent],
+        [addEcommerceInput, addEcommerceReference, connectEcommerceInput, dropEcommerceInput, disconnectEcommerceInput, updateEcommerceInputAnchor, addPanoramaCaptureNode, createImageReversePromptNodes, deleteNodeFromContent, downloadNodeImage, duplicateNodeFromContent, exportEcommerceLayout, focusCanvasNode, generateEcommerceModelPreset, openArtCritique, replaceCanvasNodeMedia, saveImageAsModel, sendSelectionToAgent, spawnEcommerceMaterials, updateMediaNodeFromContent, updateNodeFromContent, updateNodeMetadataFromContent],
     );
     const { dismissLastAgentChange, lastAgentChange, undoAgentOps, viewLastAgentChange } = useCanvasOperationHistory({
         projectId,
@@ -2059,10 +2135,11 @@ function InfiniteCanvasPage() {
             });
         });
         if (!confirmed) return;
+        focusCanvasImageNodes(imageNodeIds);
         if (enqueueGenerationBatch(node.id, "batch_image", imageNodeIds.map((id) => ({ rowId: id, nodeId: id })))) {
             message.success(`${imageNodeIds.length} 张已加入生成队列`);
         }
-    }, [effectiveConfig.imageModel, effectiveConfig.model, enqueueGenerationBatch, message, modal, spawnEcommerceMaterials]);
+    }, [effectiveConfig.imageModel, effectiveConfig.model, enqueueGenerationBatch, focusCanvasImageNodes, message, modal, spawnEcommerceMaterials]);
 
     // 节点动作 Context 在批次队列之前组装，所以这里用 ref 把处理器递进去，
     // 与 generateNodeRef 同一套做法，避免为一次接线把整个 Context 挪到批次之后。
@@ -2133,19 +2210,24 @@ function InfiniteCanvasPage() {
      * 但图必须真的递过去。上一版没传 referenceImages，模型收到的只有一段文字，
      * 于是它只能回一句「系统未传入图片节点的画面像素数据」。
      *
-     * 判据与生成链路共用 `connectedImageNodes`：起草时看到的图，
+     * 判据与生成链路共用视图解析：起草时看到的图，
      * 必须和后面出图时用的图是同一批。
      */
     const productReferenceImages = useCallback(
-        (productNodeId: string) =>
-            connectedImageNodes(productNodeId, nodesRef.current, connectionsRef.current).map((node) => ({
+        (productNodeId: string, includeVisualReferences = false) => {
+            const product = nodesRef.current.find((node) => node.id === productNodeId);
+            return [
+                ...(product ? ecommerceProductReferenceImages(product, nodesRef.current, connectionsRef.current) : []),
+                ...(includeVisualReferences ? connectedStyleReferenceNodes(productNodeId, nodesRef.current, connectionsRef.current).map((node) => ({
                 id: node.id,
-                name: node.title || `${node.id}.png`,
+                name: `视觉参考：${node.title || node.id}`,
                 type: node.metadata?.mimeType || "image/png",
                 dataUrl: "",
                 url: node.metadata?.content,
                 storageKey: node.metadata?.storageKey,
-            })),
+                })) : []),
+            ];
+        },
         [connectionsRef, nodesRef],
     );
 
@@ -2166,21 +2248,26 @@ function InfiniteCanvasPage() {
      * 模型选的是「渠道 :: 模型」，直接写 model 字段会留下旧渠道，
      * 走 buildGenerationConfig 才能把渠道与能力一起重新解析。
      */
-    const runEcommerceTextDraft = useCallback(async (productNode: CanvasNodeData, prompt: string, modelOverride?: string, skillIds?: string[]) => {
-        const referenceImages = productReferenceImages(productNode.id);
+    const runEcommerceTextDraft = useCallback(async (productNode: CanvasNodeData, prompt: string, modelOverride?: string, skillIds?: string[], includeVisualReferences = false) => {
+        const scope = getActiveUserScope();
+        const referenceImages = productReferenceImages(productNode.id, includeVisualReferences);
         // 技能注入与出图那条链路同一套：`skillRuntime.prepare` 把技能的正文与关联文件
         // 拼进提示词。**没选就不注入**——用户库里可能有二十个技能，全塞进一次分析
         // 会把提示词顶爆，而大部分跟这个品类无关。
-        let effectivePrompt = prompt;
+        let effectivePrompt = [prompt, ecommerceReferenceImageGuide(referenceImages)].filter(Boolean).join("\n\n");
+        let skillMetadata: SkillRuntimeMetadata = {};
         if (skillIds?.length) {
             try {
-                const skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt, skills: addedSkills, selectedSkillIds: skillIds });
+                const { skills } = await listAddedSkills({ force: true });
+                const skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: effectivePrompt, skills, selectedSkillIds: skillIds });
                 effectivePrompt = skillExecution.prompt;
+                skillMetadata = skillExecution.metadata;
             } catch (error) {
                 message.error(error instanceof Error ? error.message : "技能上下文加载失败");
                 return undefined;
             }
         }
+        if (getActiveUserScope() !== scope) return undefined;
         const requirements = { capability: "text" as const, input: { textCount: 0, imageCount: referenceImages.length, videoCount: 0, audioCount: 0, characterCount: 0 } };
         const target = modelOverride ? { ...productNode, metadata: { ...productNode.metadata, model: modelOverride } } : productNode;
         const generationConfig = buildGenerationConfig(effectiveConfig, target, "text", requirements);
@@ -2201,13 +2288,14 @@ function InfiniteCanvasPage() {
                 prompt: effectivePrompt,
                 referenceImages,
                 streamText: false,
+                metadata: { ...skillMetadata, nodeId: productNode.id },
             });
-            return result.text || "";
+            return getActiveUserScope() === scope ? result.text || "" : undefined;
         } catch (error) {
             message.error(generationErrorMessage(error));
             return undefined;
         }
-    }, [addedSkills, effectiveConfig, message, productReferenceImages, projectId]);
+    }, [effectiveConfig, message, productReferenceImages, projectId]);
 
     /**
      * 电商创作：读商品实拍，起草商品档案。
@@ -2248,6 +2336,10 @@ function InfiniteCanvasPage() {
         const flow = ecommerceOneClickFlow(flowId);
         if (!flow) return undefined;
         const productNode = nodesRef.current.find((item) => item.id === node.id) || node;
+        if (!analysisModel?.trim()) {
+            message.warning("未选择分析模型，请先在面板中选择一个支持看图的文本模型");
+            return undefined;
+        }
         if (!productReferenceImages(productNode.id).length) {
             message.warning("还没有连入商品实拍——分析要先有图，模型才知道要画的是什么");
             return undefined;
@@ -2256,20 +2348,15 @@ function InfiniteCanvasPage() {
         // 改过职责，或者在自己的提示词里要求了不同的分工。
         const rows = ecommerceSuiteRows(flow, productNode.metadata?.ecommerceSuite);
         const uniform = {
-            platformId: productNode.metadata?.ecommercePlatform,
-            languageId: productNode.metadata?.ecommerceLanguage,
-            style: productNode.metadata?.ecommerceStyle,
-            // 参考图传的是 storageKey，这里换成用户看得懂的名字——提示词里
-            // 得说清「哪一张是风格参考」，模型手里那几张图才有主次。
-            styleReferenceName: productNode.metadata?.ecommerceStyleReferenceKey
-                ? productReferenceImages(productNode.id).find((image) => image.storageKey === productNode.metadata?.ecommerceStyleReferenceKey)?.name
-                : undefined,
+            styleReferenceNames: connectedStyleReferenceNodes(productNode.id, nodesRef.current, connectionsRef.current).map((item) => item.title || item.id),
         };
-        const text = await runEcommerceTextDraft(productNode, ecommerceSuiteDraftPrompt(flow, productNode.metadata?.productProfile, rows, productNode.metadata?.ecommerceSuitePrompt, uniform), analysisModel, productNode.metadata?.ecommerceAnalysisSkills);
+        const director = productNode.metadata?.ecommerceSuitePrompts?.[flowId] || "";
+        const skillIds = productNode.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId];
+        const text = await runEcommerceTextDraft(productNode, ecommerceSuiteDraftPrompt(flow, productNode.metadata?.productProfile, rows, director || ecommerceSuiteDirectorPrompt(undefined, flow), uniform), analysisModel, skillIds, true);
         if (text === undefined) return undefined;
         const parsed = parseEcommerceSuiteDraft(text, flow);
         if (!parsed) {
-            message.warning("模型这次没按格式回——换个能看图的文本模型再试，或者点「按行业套路铺底」自己改");
+            message.warning("模型返回的提示词格式不完整，请重试或直接编辑提示词表");
             return undefined;
         }
         updateNodeMetadataFromContent(productNode.id, { ecommerceSuite: { flow: flow.id, rows: parsed, source: "draft", updatedAt: new Date().toISOString() } });
@@ -2295,9 +2382,9 @@ function InfiniteCanvasPage() {
      * 用户点了「批量生成」看到的是面板关掉、画布上什么都没发生——最难查的一类 bug，
      * 因为它既不报错也不留痕。
      */
-    const generateEcommerceSuite = useCallback(async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[]) => {
+    const generateEcommerceSuite = useCallback(async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[], rowsOverride?: EcommerceSuiteRow[]) => {
         const flow = ecommerceOneClickFlow(flowId);
-        if (!flow) return;
+        if (!flow) return false;
         const productNode = nodesRef.current.find((item) => item.id === node.id) || node;
 
         // 出图模型与参数在面板上选，写在每一张节点上——批次调度按节点自己的模型解析，
@@ -2305,22 +2392,26 @@ function InfiniteCanvasPage() {
         const imageModel = productNode.metadata?.ecommerceImageModel?.trim();
         const imageSize = productNode.metadata?.ecommerceImageSize?.trim();
         const imageQuality = productNode.metadata?.ecommerceImageQuality?.trim();
+        if (!imageModel) {
+            message.warning("未选择生图模型，请先在面板中选择生图模型");
+            return false;
+        }
         const plan = ecommerceSuiteTargets(
             productNode,
             flow,
-            productNode.metadata?.ecommerceSuite,
+            rowsOverride ? { flow: flow.id, rows: rowsOverride, source: "draft", updatedAt: new Date().toISOString() } : productNode.metadata?.ecommerceSuite,
             { nodes: nodesRef.current, connections: connectionsRef.current },
             { ...(imageModel ? { model: imageModel } : {}), ...(imageSize ? { size: imageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) },
             () => nanoid(),
             slotIds,
         );
         if (!plan.rows.length) {
-            message.warning(`「${flow.name}」还没有提示词——在面板里点「分析商品」或「按行业套路铺底」`);
-            return;
+            message.warning(`「${flow.name}」还没有提示词，请先分析商品或编辑提示词表`);
+            return false;
         }
         if (!plan.nodeIds.length) {
             message.error("这一套的产物节点没能铺出来——刷新页面后重试，或先删掉画布上重名的图片节点");
-            return;
+            return false;
         }
         const reuseByNodeId = new Map(plan.reuse.map((item) => [item.nodeId, item.prompt]));
 
@@ -2334,14 +2425,14 @@ function InfiniteCanvasPage() {
         const nodeIds = plan.nodeIds;
         const nodeIdSet = new Set(nodeIds);
         const single = Boolean(slotIds?.length);
-        const autoBind = productNode.metadata?.ecommerceAutoBind !== false;
+        const autoBind = productNode.metadata?.ecommerceAutoBind === true;
         const shotPatch = { ...(imageModel ? { model: imageModel } : {}), ...(imageSize ? { size: imageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) };
         setNodes((current) => [
             ...current.map((item) => {
                 if (item.id === productNode.id) {
                     // 装订可关：关掉就不写流程状态——装订链路只认这个字段，
                     // 不写它出完就只是出完，想拼时在商品节点上手动点。
-                    if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined } };
+                    if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } };
                     return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: { flow: flow.id, slotIds: plan.rows.map((row) => row.slotId), nodeIds } } };
                 }
                 const prompt = reuseByNodeId.get(item.id);
@@ -2363,11 +2454,13 @@ function InfiniteCanvasPage() {
         // 少了那条边，生成时约束链走不上去，商品锁定块静默丢失——出来的图看着正常
         // 却不是同一件商品。补上，而不是让那种图悄悄出街。
         if (plan.connections.length || plan.reconnect.length) setConnections((current) => [...current, ...plan.connections, ...plan.reconnect]);
-        setSelectedNodeIds(nodeIdSet);
-        if (enqueueGenerationBatch(productNode.id, "batch_image", nodeIds.map((id) => ({ rowId: id, nodeId: id })))) {
+        focusCanvasImageNodes(nodeIds);
+        const batchId = enqueueGenerationBatch(productNode.id, "batch_image", nodeIds.map((id) => ({ rowId: id, nodeId: id })));
+        if (batchId) {
             message.success(`${nodeIds.length} 张已加入生成队列${!single && flow.bind && autoBind ? "，出完自动装订成详情页长图" : ""}`);
         }
-    }, [connectionsRef, enqueueGenerationBatch, message, nodesRef, setConnections, setNodes, setSelectedNodeIds]);
+        return Boolean(batchId);
+    }, [connectionsRef, enqueueGenerationBatch, focusCanvasImageNodes, message, nodesRef, setConnections, setNodes]);
 
     // 动作 Context 在批次队列之前组装，所以用 ref 把处理器递进去，
     // 与 generateNodeRef 同一套做法。
@@ -3036,6 +3129,7 @@ function InfiniteCanvasPage() {
                                 mediaPerformanceMode={mediaPerformanceMode}
                                 onMediaPerformanceModeChange={setMediaPerformanceMode}
                                 onOpenSearch={() => setNodeSearchOpen(true)}
+                                onOpenModelLibrary={canvasKind === "ecommerce" ? () => setModelLibraryOpen(true) : undefined}
                                 projectContext={
                                     shortDramaEnabled && currentProject?.projectId
                                         ? {
@@ -3077,6 +3171,7 @@ function InfiniteCanvasPage() {
                         <TapNowImportDialog open={tapNowImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => setTapNowImportOpen(false)} onApply={applyTapNowImport} />
 
                         <CanvasStylePickerModal open={stylePickerOpen} value={activeStylePresetId} applying={styleApplying} onClose={() => setStylePickerOpen(false)} onSelect={selectCanvasStyle} />
+                        <CanvasEcommerceModelLibraryModal open={modelLibraryOpen} imageToAdd={modelImageToAdd || undefined} onClose={() => { setModelLibraryOpen(false); setModelImageToAdd(null); }} />
 
                         <CanvasPrevisTemplateModal open={Boolean(previsTemplateRequest)} onClose={() => setPrevisTemplateRequest(null)} onSelect={(templateId) => createPrevisShot(templateId, previsTemplateRequest?.position)} />
 
@@ -3102,6 +3197,8 @@ function InfiniteCanvasPage() {
                                             mouseWorld={mouseWorld}
                                             connectionTargetNodeId={connectionTargetNodeId}
                                             connectionTargetAnchorRatio={connectionTargetAnchorRatio}
+                                            connectionTargetAnchorXRatio={connectionTargetAnchorXRatio}
+                                            connectionTargetHandleId={connectionTargetHandleId}
                                             nodeById={nodeById}
                                             selectionBox={selectionBox}
                                             selectedNodeBounds={selectedNodeBounds}
@@ -3502,6 +3599,9 @@ function InfiniteCanvasPage() {
                             node={contextMenuNode}
                             workspaceMode={workspaceMode}
                             canvasKind={canvasKind}
+                            onSaveAsModel={saveImageAsModel}
+                            onUseAsStyleReference={useImageAsStyleReference}
+                            onOpenModelLibrary={() => setModelLibraryOpen(true)}
                             isProjectLinked={Boolean(currentProject?.projectId)}
                             canUndo={historyState.canUndo}
                             canRedo={historyState.canRedo}

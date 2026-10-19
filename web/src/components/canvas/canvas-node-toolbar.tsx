@@ -62,7 +62,7 @@ type CanvasNodeToolbarProps = {
     extractingAudio: boolean;
     trimmingVideo: boolean;
     onReversePrompt: (node: CanvasNodeData) => void;
-    onSaveAsModel: (node: CanvasNodeData) => void;
+    onSaveAsModel?: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
     onToggleLocked: (node: CanvasNodeData) => void;

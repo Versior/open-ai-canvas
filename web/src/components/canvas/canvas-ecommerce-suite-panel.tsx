@@ -1,6 +1,7 @@
 import { App } from "antd";
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Eraser, FileText, ImagePlus, LoaderCircle, Plus, RotateCcw, Sparkles, Upload, WandSparkles, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Eraser, FileText, ImagePlus, LoaderCircle, Plus, RotateCcw, Sparkles, Upload, X, RefreshCw, Library } from "lucide-react";
+import { Link } from "react-router";
 
 import { AppModal } from "@/components/ui/product/app-modal";
 import { SkillRuntimePicker } from "@/components/skills/skill-runtime-picker";
@@ -8,7 +9,7 @@ import type { Skill } from "@/services/api/skills";
 import { ModelPicker } from "@/components/model-picker";
 import { CanvasImageSettingsPopover } from "@/components/canvas/canvas-image-settings-popover";
 import type { EcommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
-import { ECOMMERCE_SUITE_DIRECTOR_PROMPT, ecommerceSuiteDirectorPrompt, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
+import { ECOMMERCE_SUITE_DIRECTOR_PROMPT, ecommerceSuiteDirectorPrompt, ecommerceSuiteRowId, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import { resolveImageUrl } from "@/services/image-storage";
 import { useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import type { CanvasNodeData } from "@/types/canvas";
@@ -41,9 +42,12 @@ export type EcommerceSuitePanelProps = {
     /** 可选的技能——用户「已加入」的整库。 */
     availableSkills: Skill[];
     skillsLoading: boolean;
+    skillsError?: string;
+    onRefreshSkills?: () => void;
     /** 出完自动拼长图并按平台切片。 */
     autoBind: boolean;
     analyzing: boolean;
+    generating?: boolean;
     onAnalysisModelChange: (model: string) => void;
     onImageModelChange: (model: string) => void;
     onImageOptionChange: (key: "size" | "quality", value: string) => void;
@@ -53,15 +57,15 @@ export type EcommerceSuitePanelProps = {
     onClearPrompts: () => void;
     onDirectorPromptChange: (value: string) => void;
     onAnalyze: () => void;
-    onSeedPresets: () => void;
     /** 改某一行的一格：标题 / 职责 / 提示词。 */
     onRowChange: (slotId: string, patch: Partial<Pick<EcommerceSuiteRow, "title" | "duty" | "prompt">>) => void;
+    onRowsChange: (rows: EcommerceSuiteRow[]) => void;
     onAddRow: () => void;
     onRemoveRow: (slotId: string) => void;
     /** 出整张表。 */
-    onGenerate: () => void;
+    onGenerate: (rows?: EcommerceSuiteRow[]) => void | Promise<unknown>;
     /** 只出某一张——不传就出整张表。 */
-    onGenerateOne: (slotId: string) => void;
+    onGenerateOne: (slotId: string, rows?: EcommerceSuiteRow[]) => void | Promise<unknown>;
     /** 把某一行往前（-1）或往后（+1）挪一格。顺序决定叙事，也决定长图接法。 */
     onMoveRow: (slotId: string, delta: number) => void;
     onClose: () => void;
@@ -97,8 +101,11 @@ export function CanvasEcommerceSuitePanel({
     skillIds,
     availableSkills,
     skillsLoading,
+    skillsError,
+    onRefreshSkills,
     autoBind,
     analyzing,
+    generating = false,
     onAnalysisModelChange,
     onImageModelChange,
     onImageOptionChange,
@@ -107,8 +114,8 @@ export function CanvasEcommerceSuitePanel({
     onClearPrompts,
     onDirectorPromptChange,
     onAnalyze,
-    onSeedPresets,
     onRowChange,
+    onRowsChange,
     onAddRow,
     onRemoveRow,
     onGenerate,
@@ -119,8 +126,20 @@ export function CanvasEcommerceSuitePanel({
     const config = useEffectiveConfig();
     const { modal } = App.useApp();
     const [promptOpen, setPromptOpen] = useState(false);
-    const total = rows.length;
-    const missing = rows.filter((row) => !row.prompt.trim()).length;
+    const [draftRows, setDraftRows] = useState(rows);
+    const previousInput = useRef({ rows, open });
+    useEffect(() => {
+        const previous = previousInput.current;
+        const sameRows = previous.rows.length === rows.length && previous.rows.every((row, index) => {
+            const next = rows[index];
+            return row.slotId === next.slotId && row.title === next.title && row.duty === next.duty && row.prompt === next.prompt;
+        });
+        // Model and skill changes can recreate equivalent rows without changing the draft.
+        if (!sameRows || previous.open !== open) setDraftRows(rows);
+        previousInput.current = { rows, open };
+    }, [rows, open]);
+    const total = draftRows.length;
+    const missing = draftRows.filter((row) => !row.prompt.trim()).length;
     const ready = total > 0 && missing === 0;
     const generated = rows.filter((row) => nodeBySlot.get(row.slotId)?.metadata?.content).length;
 
@@ -133,6 +152,11 @@ export function CanvasEcommerceSuitePanel({
         ...(imageQuality ? { quality: imageQuality } : {}),
     };
 
+    const updateDraftRows = (update: (current: EcommerceSuiteRow[]) => EcommerceSuiteRow[]) => setDraftRows(update);
+    const commitDraftRows = () => onRowsChange(draftRows);
+    const generateDraft = () => { commitDraftRows(); void onGenerate(draftRows); };
+    const generateDraftOne = (slotId: string) => { commitDraftRows(); void onGenerateOne(slotId, draftRows); };
+
     const confirmGenerate = () => {
         // 一条提示词都没有时不能给「只出有的」——那等于出 0 张，
         // 面板关掉、画布上什么都没发生，用户只会以为按钮坏了。
@@ -141,15 +165,15 @@ export function CanvasEcommerceSuitePanel({
             modal.confirm({
                 title: `还有 ${missing} 张没有提示词`,
                 content: empty
-                    ? "这一套还没有任何提示词。先点「分析商品」让模型读图来写，或者点「按行业套路铺底」拿一份能用的底子，改完再出图。"
+                    ? "请先分析商品，或为需要生成的图片填写提示词。"
                     : "没有提示词的图不会生成。要先把它们补上，还是只出已经有提示词的那几张？",
                 okText: empty ? "去补提示词" : "只出有的",
                 centered: true,
-                ...(empty ? { cancelButtonProps: { style: { display: "none" } } } : { cancelText: "回去补", onOk: onGenerate }),
+                ...(empty ? { cancelButtonProps: { style: { display: "none" } } } : { cancelText: "回去补", onOk: generateDraft }),
             });
             return;
         }
-        onGenerate();
+        generateDraft();
     };
 
     return (
@@ -159,7 +183,6 @@ export function CanvasEcommerceSuitePanel({
                     <div className="min-w-0">
                         <span className="ecom-suite-kicker">电商 / 套图</span>
                         <h2 className="ecom-suite-title">{flow.name}</h2>
-                        <p className="ecom-suite-subtitle">{flow.hint}</p>
                     </div>
                     <span className="ecom-suite-count tabular-nums" data-warn={missing ? "true" : undefined}>
                         {total - missing}/{total} 条提示词
@@ -182,21 +205,17 @@ export function CanvasEcommerceSuitePanel({
                             showConfiguredModelName
                         />
                     </label>
-                    <button type="button" className="ecom-suite-primary" disabled={analyzing} onClick={onAnalyze} title="读商品实拍 + 商品档案，为每一张写一条完整的出图提示词">
+                    <button type="button" className="ecom-suite-primary" disabled={analyzing || !analysisModel} onClick={onAnalyze} title={!analysisModel ? "请先选择分析模型" : "分析商品图与参考图"}>
                         {analyzing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                         {analyzing ? "分析中…" : "分析商品"}
-                    </button>
-                    <button type="button" className="ecom-suite-ghost" disabled={analyzing} onClick={onSeedPresets} title="不调模型，直接按行业套路的拍法预设铺一份能用的提示词底子">
-                        <WandSparkles className="size-3.5" />
-                        按行业套路铺底
                     </button>
                     <button
                         type="button"
                         className="ecom-suite-ghost"
                         data-active={promptOpen ? "true" : undefined}
                         aria-expanded={promptOpen}
-                        title="改分析用的提示词——你自己的写法、你库里攒的模板"
-                        onClick={() => setPromptOpen((value) => !value)}
+                        title="编辑分析提示词"
+                            onClick={() => setPromptOpen((value) => !value)}
                     >
                         <FileText className="size-3.5" />
                         分析提示词
@@ -204,21 +223,23 @@ export function CanvasEcommerceSuitePanel({
                     </button>
                     {/* 技能：用户库里攒的写法，按品类挑几个注入这次分析。
                         默认不选——库里可能二十个，全塞进去会把提示词顶爆。 */}
-                    <label className="ecom-suite-field ecom-suite-skills">
-                        <span>技能</span>
-                        <SkillRuntimePicker
-                            skills={availableSkills}
-                            loading={skillsLoading}
-                            value={skillIds}
-                            onChange={onSkillIdsChange}
-                            className="!h-7 !w-48 !min-w-0 !text-[var(--fs-tiny)]"
-                            placeholder={skillsLoading ? "读取技能库…" : "不用技能"}
-                            ariaLabel="本次分析使用的技能"
-                        />
-                    </label>
-                    <span className="ecom-suite-hint">
-                        分析模型必须能看图——它要读你连进来的商品实拍。出图模型与参数在右下角。
-                    </span>
+                    <div className="ecom-suite-skills">
+                        <label className="ecom-suite-field">
+                            <span>Skills</span>
+                            <SkillRuntimePicker
+                                skills={availableSkills}
+                                loading={skillsLoading}
+                                value={skillIds}
+                                onChange={onSkillIdsChange}
+                                className="!h-7 !w-48 !min-w-0 !text-[var(--fs-tiny)]"
+                                placeholder={skillsLoading ? "读取技能库…" : "不使用技能"}
+                                ariaLabel="本次分析使用的技能"
+                            />
+                        </label>
+                        <button type="button" className="ecom-suite-icon" title="刷新 Skills 库" aria-label="刷新 Skills 库" disabled={skillsLoading || !onRefreshSkills} onClick={onRefreshSkills}><RefreshCw className={`size-3.5${skillsLoading ? " animate-spin" : ""}`} /></button>
+                        <Link className="ecom-suite-library-link" to="/skills" target="_blank" rel="noopener noreferrer" title="打开技能库管理并添加更多技能"><Library className="size-3.5" />技能库</Link>
+                    </div>
+                    {skillsError ? <span role="alert" className="ecom-suite-error">{skillsError}</span> : null}
                 </div>
 
                 {/* 分析提示词：**只有「怎么写」这一段交出去**。
@@ -228,26 +249,23 @@ export function CanvasEcommerceSuitePanel({
                 {promptOpen ? (
                     <div className="ecom-suite-director">
                         <div className="ecom-suite-director-head">
-                            <span className="ecom-suite-director-title">分析提示词 · 可改</span>
-                            <span className="ecom-suite-director-note">
-                                商品事实（你填的档案）、屏次清单与输出格式由系统自动接在这段后面，不用写在这里。
-                            </span>
+                            <span className="ecom-suite-director-title">分析提示词</span>
                         </div>
                         <textarea
                             className="ecom-suite-director-input thin-scrollbar"
                             rows={10}
-                            value={ecommerceSuiteDirectorPrompt(directorPrompt)}
+                            value={ecommerceSuiteDirectorPrompt(directorPrompt, flow)}
                             aria-label="分析提示词"
                             onChange={(event) => onDirectorPromptChange(event.target.value)}
                         />
                         <div className="ecom-suite-director-foot">
                             <span className="ecom-suite-director-state">
-                                {directorPrompt.trim() ? "已改成你的版本 · 新的套图也会用它" : "正在用默认那一份"}
+                                {directorPrompt.trim() ? "自定义" : "默认"}
                             </span>
                             {/* 导入：自己的提示词、从别处攒的 skill 文件都能直接吃进来。
                                 读成文本填进编辑框，不直接生效——用户得看一眼、可能还要删掉
                                 里面用不上的段落。 */}
-                            <label className="ecom-suite-ghost" title="读一个 .md / .txt 进来当分析提示词——你自己攒的模板、skill 文件都行">
+                            <label className="ecom-suite-ghost" title="导入 Markdown 或文本提示词">
                                 <Upload className="size-3" />
                                 导入文件
                                 <input
@@ -269,7 +287,7 @@ export function CanvasEcommerceSuitePanel({
                                 type="button"
                                 className="ecom-suite-ghost"
                                 disabled={!directorPrompt.trim()}
-                                title="丢掉改动，回到默认那一份"
+                                title="恢复默认提示词"
                                 onClick={() => onDirectorPromptChange("")}
                             >
                                 <RotateCcw className="size-3" />
@@ -283,10 +301,10 @@ export function CanvasEcommerceSuitePanel({
                     <div className="ecom-suite-grid-head">
                         <span>屏次</span>
                         <span>这一张要什么</span>
-                        <span>提示词 · 直接交给图片模型</span>
+                        <span>提示词</span>
                         <span>结果</span>
                     </div>
-                    {rows.map((row, index) => {
+                    {draftRows.map((row, index) => {
                         const node = nodeBySlot.get(row.slotId);
                         const status = node?.metadata?.status;
                         const hasPrompt = Boolean(row.prompt.trim());
@@ -302,15 +320,15 @@ export function CanvasEcommerceSuitePanel({
                                         value={row.title}
                                         placeholder="这一屏叫什么"
                                         aria-label={`第 ${index + 1} 屏的标题`}
-                                        onChange={(event) => onRowChange(row.slotId, { title: event.target.value })}
+                                    onChange={(event) => setDraftRows((current) => current.map((item) => item.slotId === row.slotId ? { ...item, title: event.target.value } : item))}
                                     />
                                     <button
                                         type="button"
                                         className="ecom-suite-row-move"
                                         disabled={index === 0}
-                                        title="往前挪一格——顺序决定叙事，也决定长图怎么接"
+                                        title="往前挪一格"
                                         aria-label={`把「${label}」往前挪一格`}
-                                        onClick={() => onMoveRow(row.slotId, -1)}
+                                        onClick={() => updateDraftRows((current) => moveDraftRow(current, row.slotId, -1))}
                                     >
                                         <ArrowUp className="size-3" />
                                     </button>
@@ -320,7 +338,7 @@ export function CanvasEcommerceSuitePanel({
                                         disabled={index === rows.length - 1}
                                         title="往后挪一格"
                                         aria-label={`把「${label}」往后挪一格`}
-                                        onClick={() => onMoveRow(row.slotId, 1)}
+                                        onClick={() => updateDraftRows((current) => moveDraftRow(current, row.slotId, 1))}
                                     >
                                         <ArrowDown className="size-3" />
                                     </button>
@@ -329,7 +347,7 @@ export function CanvasEcommerceSuitePanel({
                                         className="ecom-suite-row-remove"
                                         title={`删掉这一屏：${label}`}
                                         aria-label={`删掉这一屏：${label}`}
-                                        onClick={() => onRemoveRow(row.slotId)}
+                                        onClick={() => updateDraftRows((current) => current.length > 1 ? current.filter((item) => item.slotId !== row.slotId) : current)}
                                     >
                                         <X className="size-3" />
                                     </button>
@@ -340,7 +358,7 @@ export function CanvasEcommerceSuitePanel({
                                     value={row.duty}
                                     placeholder="这一张要解决什么"
                                     aria-label={`${label} 要解决什么`}
-                                    onChange={(event) => onRowChange(row.slotId, { duty: event.target.value })}
+                                    onChange={(event) => setDraftRows((current) => current.map((item) => item.slotId === row.slotId ? { ...item, duty: event.target.value } : item))}
                                 />
                                 <textarea
                                     className="ecom-suite-prompt thin-scrollbar"
@@ -348,7 +366,7 @@ export function CanvasEcommerceSuitePanel({
                                     value={row.prompt}
                                     placeholder="这一张要画什么——主体与状态、场景与背景、光线与镜头、图上文字。点「分析商品」让模型读图来写，或者自己填。"
                                     aria-label={`${label} 提示词`}
-                                    onChange={(event) => onRowChange(row.slotId, { prompt: event.target.value })}
+                                    onChange={(event) => setDraftRows((current) => current.map((item) => item.slotId === row.slotId ? { ...item, prompt: event.target.value } : item))}
                                 />
                                 <span className="ecom-suite-result" data-status={status || "idle"}>
                                     {status === "loading" ? <LoaderCircle className="size-3.5 animate-spin" /> : <SuiteThumb node={node} />}
@@ -358,7 +376,7 @@ export function CanvasEcommerceSuitePanel({
                                         disabled={!hasPrompt || status === "loading"}
                                         title={hasPrompt ? `只出这一张：${label}` : "这一张还没有提示词"}
                                         aria-label={`只出这一张：${label}`}
-                                        onClick={() => onGenerateOne(row.slotId)}
+                                        onClick={() => generateDraftOne(row.slotId)}
                                     >
                                         {status === "loading" ? <LoaderCircle className="size-3 animate-spin" /> : <ImagePlus className="size-3" />}
                                         {node?.metadata?.content ? "重出" : "出图"}
@@ -368,7 +386,7 @@ export function CanvasEcommerceSuitePanel({
                         );
                     })}
                     {/* 加一屏：这一套出几张由用户定，不是行业套路定 */}
-                    <button type="button" className="ecom-suite-add-row" onClick={onAddRow}>
+                    <button type="button" className="ecom-suite-add-row" onClick={() => updateDraftRows((current) => [...current, { slotId: ecommerceSuiteRowId(flow, current), title: "", duty: "", prompt: "" }])}>
                         <Plus className="size-3" />
                         加一屏
                     </button>
@@ -405,7 +423,7 @@ export function CanvasEcommerceSuitePanel({
                     {/* 装订可关：默认开（「一键」是这套流程的承诺），关掉之后出图照出、
                         只是不拼长图——用户可能想先挑掉两张再拼，或者根本不想拼。 */}
                     {flow.bind ? (
-                        <label className="ecom-suite-field" title="关掉之后出图照出，只是不自动拼长图；想拼时在商品节点上点「拼成长图」">
+                        <label className="ecom-suite-field">
                             <input type="checkbox" checked={autoBind} onChange={(event) => onAutoBindChange(event.target.checked)} />
                             <span>出完自动拼长图</span>
                         </label>
@@ -418,7 +436,7 @@ export function CanvasEcommerceSuitePanel({
                         type="button"
                         className="ecom-suite-ghost"
                         disabled={total - missing === 0}
-                        title="抹掉表里所有提示词，屏次与职责留着——想重来一遍时用"
+                        title="清空所有提示词"
                         onClick={() => {
                             modal.confirm({
                                 title: "清空所有提示词？",
@@ -426,7 +444,10 @@ export function CanvasEcommerceSuitePanel({
                                 okText: "清空",
                                 cancelText: "算了",
                                 centered: true,
-                                onOk: onClearPrompts,
+                                onOk: () => {
+                                    setDraftRows((current) => current.map((row) => ({ ...row, prompt: "" })));
+                                    onClearPrompts();
+                                },
                             });
                         }}
                     >
@@ -436,7 +457,7 @@ export function CanvasEcommerceSuitePanel({
                     <button type="button" className="ecom-suite-ghost" onClick={onClose}>
                         关闭
                     </button>
-                    <button type="button" className="ecom-suite-primary" disabled={analyzing} onClick={confirmGenerate} title="按这张表批量提交出图任务">
+                    <button type="button" className="ecom-suite-primary" disabled={analyzing || generating || !imageModel} onClick={confirmGenerate} title={!imageModel ? "请先选择生图模型" : "按这张表批量提交出图任务"}>
                         <ImagePlus className="size-3.5" />
                         批量生成 {total - missing} 张
                     </button>
@@ -444,6 +465,15 @@ export function CanvasEcommerceSuitePanel({
             </div>
         </AppModal>
     );
+}
+
+function moveDraftRow(rows: EcommerceSuiteRow[], slotId: string, delta: number) {
+    const index = rows.findIndex((row) => row.slotId === slotId);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= rows.length) return rows;
+    const next = [...rows];
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
 }
 
 /** 结果缩略图。按 storageKey 解析——url 在退回本机时会失效。 */

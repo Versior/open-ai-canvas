@@ -51,7 +51,7 @@ test("real collection toolbar supplies filled selects without changing their lab
 test("collection select focus uses a thin keyboard ring, not a persistent pointer outline", () => {
     const css = readFileSync(new URL("../src/styles/workspace-product.css", import.meta.url), "utf8");
     const toolbar = readFileSync(new URL("../src/components/layout/collection-toolbar.tsx", import.meta.url), "utf8");
-    expect(css).toContain(".collection-toolbar .ant-select {\n        outline: none !important;");
+    expect(css.replace(/\r\n/g, "\n")).toContain(".app-user-workspace .collection-toolbar .ant-select {\n        outline: none !important;");
     expect(css).toContain('[data-input-modality="keyboard"] .ant-select:not(.ant-select-disabled):focus-within');
     expect(css).toContain("outline: 1px solid var(--control-focus-ring) !important;");
     expect(toolbar).toContain('onPointerDownCapture={() => setInputModality("pointer")}');

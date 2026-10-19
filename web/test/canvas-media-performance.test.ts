@@ -79,7 +79,7 @@ describe("large canvas media rendering", () => {
     });
 
     test("keeps inactive video nodes on a viewport-gated static first frame", () => {
-        const inactivePreviewSource = canvasNodeContentSource.match(/function InactiveVideoPreview[\s\S]*?\n}\n\n(?:export )?function VideoPreviewPlayButton/)?.[0] || "";
+        const inactivePreviewSource = readFileSync(resolve(import.meta.dir, "../src/components/canvas/canvas-node-media-content.tsx"), "utf8").replace(/\r\n/g, "\n");
         expect(canvasNodeContentSource).toContain("if (hasPersistedPreview || !nearViewport || (!node.metadata?.content && !node.metadata?.storageKey) || !updateMetadataRef.current)");
         expect(canvasNodeContentSource).not.toContain("hydrateMediaPreview");
         expect(inactivePreviewSource).toContain("hasPersistedPreview || !nearViewport");
@@ -88,7 +88,11 @@ describe("large canvas media rendering", () => {
         expect(inactivePreviewSource).toContain("hydrateCanvasVideoPreview(node, controller.signal)");
         expect(canvasVideoPreviewSource).toContain("captureVideoPoster(source, { signal, maxWidth: 400 })");
         expect(inactivePreviewSource).toContain("hydrated.persisted.then");
-        expect(inactivePreviewSource).not.toContain("autoPlay");
+        const inactivePreviewComponent = inactivePreviewSource.slice(
+            inactivePreviewSource.indexOf("export function InactiveVideoPreview("),
+            inactivePreviewSource.indexOf("function useNearViewport(", inactivePreviewSource.indexOf("export function InactiveVideoPreview(")),
+        );
+        expect(inactivePreviewComponent).not.toContain("autoPlay");
         expect(inactivePreviewSource).toContain("<VideoPreviewPlayButton");
         expect(canvasNodeContentSource).toContain("useVideoPlaybackUrl(node, mediaActive)");
         expect(canvasNodeContentSource).toContain("onMediaPlayRequest?.(node.id)");

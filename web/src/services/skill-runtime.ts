@@ -1,4 +1,5 @@
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
+import { getActiveUserScope } from "@/lib/user-scope";
 import {
     getSkillFile,
     listSkillFiles,
@@ -80,6 +81,7 @@ type PreparedSkillInput = {
     prompt: string;
     selectedSkills: Skill[];
     config: SkillRuntimeProfileConfig;
+    scope: string;
 };
 
 type SkillDeliveryAdapter<TResult> = {
@@ -146,11 +148,19 @@ export function createSkillRuntime(dependencies: SkillRuntimeDependencies = {
 
     return {
         async prepare<P extends keyof SkillRuntimeResultByProfile>(input: PrepareSkillRuntimeInput<P>): Promise<SkillRuntimeResultByProfile[P]> {
+            const scope = getActiveUserScope();
             const config = SKILL_RUNTIME_PROFILES[input.profile];
-            const selectedSkills = resolveSkillMentions(input.prompt, input.skills, input.selectedSkillIds).slice(0, config.maxSkills);
+            const requestedIds = input.selectedSkillIds ?? Array.from(input.prompt.matchAll(SKILL_REF_PATTERN), (match) => match[1]);
+            const activeIds = new Set(input.skills.filter((skill) => skill.isAdded).map((skill) => skill.skillId));
+            const missingIds = Array.from(new Set(requestedIds)).filter((id) => !activeIds.has(id));
+            if (missingIds.length) throw new Error(`所选技能已不在当前技能库中：${missingIds.join("、")}。请刷新技能库并重新选择`);
+            const selectedSkills = resolveSkillMentions(input.prompt, input.skills, input.selectedSkillIds);
+            if (selectedSkills.length > config.maxSkills) throw new Error(`本次最多使用 ${config.maxSkills} 个技能，请减少所选技能`);
             const adapter = deliveryAdapters[config.delivery as keyof typeof deliveryAdapters];
             if (!adapter) throw new Error(`技能运行模式 ${config.delivery} 不支持直接准备上下文`);
-            return adapter.prepare({ prompt: normalizeSkillTokens(input.prompt, input.skills), selectedSkills, config }) as Promise<SkillRuntimeResultByProfile[P]>;
+            const result = await adapter.prepare({ prompt: normalizeSkillTokens(input.prompt, input.skills), selectedSkills, config, scope });
+            assertSkillRuntimeScope(scope);
+            return result as SkillRuntimeResultByProfile[P];
         },
     };
 }
@@ -161,7 +171,8 @@ async function prepareLinkedContext(input: PreparedSkillInput, dependencies: Ski
     if (!input.selectedSkills.length) return linkedResult(input.prompt, [], EMPTY_PROVENANCE);
 
     const perSkillBudget = Math.max(1, Math.floor(input.config.maxContextChars / input.selectedSkills.length));
-    const loaded = await Promise.all(input.selectedSkills.map((skill) => loadLinkedSkill(skill, input.prompt, perSkillBudget, input.config.maxLinkedFilesPerSkill, dependencies)));
+    const loaded = await Promise.all(input.selectedSkills.map((skill) => loadLinkedSkill(skill, input.prompt, perSkillBudget, input.config.maxLinkedFilesPerSkill, dependencies, input.scope)));
+    assertSkillRuntimeScope(input.scope);
     const contexts = loaded.map((item) => renderLinkedSkillContext(item.skill, item.files));
     const provenance = provenanceFromLoaded(loaded);
     const prompt = [
@@ -172,8 +183,10 @@ async function prepareLinkedContext(input: PreparedSkillInput, dependencies: Ski
     return linkedResult(prompt, input.selectedSkills, provenance);
 }
 
-async function loadLinkedSkill(skill: Skill, prompt: string, budget: number, maxLinkedFiles: number, dependencies: SkillRuntimeDependencies) {
+async function loadLinkedSkill(skill: Skill, prompt: string, budget: number, maxLinkedFiles: number, dependencies: SkillRuntimeDependencies, scope: string) {
+    assertSkillRuntimeScope(scope);
     const [entryResult, fileList] = await Promise.all([dependencies.getFile(skill.skillId, "SKILL.md"), dependencies.listFiles(skill.skillId)]);
+    assertSkillRuntimeScope(scope);
     if (entryResult.file.binary) throw new Error(`技能「${skill.skillName}」的 SKILL.md 不是文本文件`);
 
     let remaining = budget;
@@ -184,6 +197,7 @@ async function loadLinkedSkill(skill: Skill, prompt: string, budget: number, max
 
     const candidates = linkedFileCandidates(entryResult.file.content, fileList.files, prompt).slice(0, maxLinkedFiles);
     const linkedFiles = await Promise.all(candidates.map((candidate) => dependencies.getFile(skill.skillId, candidate.path)));
+    assertSkillRuntimeScope(scope);
     for (let index = 0; index < candidates.length; index += 1) {
         if (remaining <= 0) break;
         const candidate = candidates[index];
@@ -195,6 +209,10 @@ async function loadLinkedSkill(skill: Skill, prompt: string, budget: number, max
         remaining -= content.length;
     }
     return { skill, files };
+}
+
+function assertSkillRuntimeScope(scope: string) {
+    if (getActiveUserScope() !== scope) throw new DOMException("账号已切换，请重新选择技能并生成", "AbortError");
 }
 
 function linkedFileCandidates(entry: string, files: SkillPackageFile[], prompt: string) {

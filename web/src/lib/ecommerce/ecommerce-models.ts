@@ -20,6 +20,7 @@
  * 手上还没有模特实拍的人，先生成一张，再用它去锁后面所有的图。
  */
 import type { EcommerceProductView } from "./ecommerce-contract";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 export type EcommerceModelKind = "preset" | "custom";
 
@@ -64,80 +65,18 @@ export type EcommerceModelPreset = {
 export const ECOMMERCE_MODEL_REFERENCE_SUFFIX =
     "正面全身站姿，自然放松，双臂自然垂放不遮挡身体轮廓，影棚均匀柔光，纯白无缝背景，全身入画（头顶与脚底留出余量），高清写实摄影，不要任何文字、水印、logo、道具与背景装饰。";
 
-export const ECOMMERCE_MODEL_PRESETS: EcommerceModelPreset[] = [
-    {
-        id: "preset-female-young-slim", name: "女装 · 青年纤细",
-        hint: "女装、连衣裙、配饰",
-        tags: ["女装", "连衣裙", "配饰"],
-        brief: "亚洲女性，约 22 岁，纤细身材，鹅蛋脸，黑色中长发齐肩，自然裸妆，肤色偏冷调白皙，气质清新。",
-    },
-    {
-        id: "preset-female-regular", name: "女装 · 通勤标准",
-        hint: "通勤装、包袋、女装",
-        tags: ["女装", "通勤装", "包袋"],
-        brief: "亚洲女性，约 28 岁，标准身材，短发干练，淡妆，肤色自然暖调，气质干净利落。",
-    },
-    {
-        id: "preset-female-mature", name: "女装 · 成熟知性",
-        hint: "珠宝、家居、成熟女装",
-        tags: ["女装", "珠宝", "家居"],
-        brief: "亚洲女性，约 38 岁，标准身材，锁骨发，淡妆偏知性，肤色自然，面部有自然的成熟感，不磨皮成少女。",
-    },
-    {
-        id: "preset-female-plus", name: "女装 · 丰满体型",
-        hint: "大码女装、内衣",
-        tags: ["大码女装", "内衣"],
-        brief: "亚洲女性，约 30 岁，丰满身材，黑色长卷发，自然妆，肤色暖调，笑容亲和。",
-    },
-    {
-        id: "preset-male-young-slim", name: "男装 · 青年清瘦",
-        hint: "男装、鞋类",
-        tags: ["男装", "鞋类"],
-        brief: "亚洲男性，约 23 岁，清瘦身材，短发干净，肤色自然，气质清爽。",
-    },
-    {
-        id: "preset-male-athletic", name: "男装 · 运动健硕",
-        hint: "运动服、户外、男装",
-        tags: ["运动服", "男装", "户外"],
-        brief: "亚洲男性，约 26 岁，运动型身材，肩背肌肉线条明显，短发，肤色偏健康小麦色。",
-    },
-    {
-        id: "preset-male-mature", name: "男装 · 成熟商务",
-        hint: "商务男装、腕表",
-        tags: ["男装", "商务", "腕表"],
-        brief: "亚洲男性，约 40 岁，标准身材，短发略带灰白，面相沉稳，气质商务。",
-    },
-    {
-        id: "preset-female-shoe", name: "鞋类 · 腿部特写",
-        hint: "女鞋、袜类、裤装",
-        tags: ["女鞋", "袜类", "裤装"],
-        brief: "亚洲女性，约 24 岁，腿部修长、线条匀称，皮肤细腻无明显瑕疵，浅色系穿搭。只拍小腿以下入镜，全身其余部分不入画。",
-    },
-    {
-        id: "preset-female-hand", name: "配饰 · 手部特写",
-        hint: "珠宝、腕表、美妆",
-        tags: ["珠宝", "腕表", "配饰", "美妆"],
-        brief: "亚洲女性，约 25 岁，手指修长匀称，指甲修剪干净无长甲，手背皮肤细腻无青筋突出，腕围细。只拍手部与前臂入镜。",
-    },
-    {
-        id: "preset-girl-kids", name: "童装 · 女孩",
-        hint: "童装、儿童用品、文具",
-        tags: ["童装", "儿童用品", "文具"],
-        brief: "亚洲女孩，约 8 岁，儿童体型自然比例，不做成人化处理，齐肩短发或双马尾，表情自然不摆拍，肤色健康。",
-    },
-    {
-        id: "preset-boy-kids", name: "童装 · 男孩",
-        hint: "童装、儿童用品、运动",
-        tags: ["童装", "儿童用品", "运动"],
-        brief: "亚洲男孩，约 9 岁，儿童体型自然比例，短发，表情自然，动作放松，肤色健康。",
-    },
-    {
-        id: "preset-hands-only", name: "无脸 · 只出手与身形",
-        hint: "内衣、美妆、私护、食品",
-        tags: ["内衣", "美妆", "私护", "食品"],
-        brief: "不出现面部：只入镜手部、肩颈与躯干局部。手部皮肤自然，指甲修剪干净，服装合身。",
-    },
-];
+export const ECOMMERCE_MODEL_PRESETS: EcommerceModelPreset[] = [];
+
+export function filterEcommerceModels(models: EcommerceModel[], query: string, order = "recent") {
+    const search = query.trim().toLocaleLowerCase();
+    return models
+        .filter((model) => !search || [model.name, ...model.tags].some((value) => value.toLocaleLowerCase().includes(search)))
+        .sort((a, b) => order === "name" ? a.name.localeCompare(b.name, "zh-CN") : b.lastUsedAt.localeCompare(a.lastUsedAt));
+}
+
+export function canSaveCanvasImageAsModel(node: CanvasNodeData | null | undefined) {
+    return Boolean(node?.type === CanvasNodeType.Image && node.metadata?.storageKey?.trim());
+}
 
 export function createEcommerceModel(name = "新模特", refs: string[] = []): EcommerceModel {
     const now = new Date().toISOString();

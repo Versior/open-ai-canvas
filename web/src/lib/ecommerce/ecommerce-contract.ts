@@ -287,6 +287,9 @@ export type EcommercePromptSources = {
     sellingPoints?: EcommerceSellingPoint[];
     copy?: EcommerceCopy;
     style?: EcommerceStyle;
+    uniformPrompt?: string;
+    styleReferenceNames?: string[];
+    imageDrivenStyle?: boolean;
     /** 爆款复刻：参考图给结构。见 ecommerce-replica.ts。 */
     replica?: import("./ecommerce-replica").EcommerceReplica;
     /** 竞品拆解：别人的页面结构，只作参考不复述文案。见 ecommerce-teardown.ts。 */
@@ -352,6 +355,17 @@ export function ecommerceStyleBlock(style: EcommerceStyle | undefined) {
     ].join("\n");
 }
 
+export function ecommerceUniformBlock(prompt?: string, referenceNames: string[] = [], imageDriven = false) {
+    if (!imageDriven && !prompt?.trim() && !referenceNames.length) return "";
+    return [
+        "【图片参考职责】商品身份与视觉参考分开处理：",
+        "商品图用于确认形状、材质、颜色和标识，画面主体必须是本次商品，不得替换成视觉参考中的商品。",
+        ...referenceNames.map((name) => `名为「${name}」的图是视觉参考：借鉴其光线、空间感、质感、配色关系与文字气质，不复制商品、标识和文案。`),
+        prompt?.trim() ? `整组要求：${prompt.trim()}` : "未另行指定的风格跟随商品图与视觉参考，不套用固定色板或固定字体。",
+        "各张构图可以不同，但整组的视觉语言保持一致；商品真实性优先于风格模仿。",
+    ].join("\n");
+}
+
 /**
  * 把各块编译成最终提示词。
  *
@@ -375,6 +389,7 @@ export function compileEcommercePrompt(sources: EcommercePromptSources) {
         ecommerceReplicaBlock(sources.replica),
         ecommerceTeardownBlock(sources.teardown),
         ecommerceStyleBlock(sources.style),
+        ecommerceUniformBlock(sources.uniformPrompt, sources.styleReferenceNames, sources.imageDrivenStyle),
         ecommerceSellingPointsBlock(sources.sellingPoints),
         ecommerceCopyBlock(sources.copy, sources.renderCopyText),
         ecommerceShotSetBlock(sources.shotSet, sources.shotId),

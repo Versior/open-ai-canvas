@@ -1862,35 +1862,234 @@ input.ecom-card-title-input {
     letter-spacing: .08em;
 }
 
-/* 整组统一的入口：卡片上的一行摘要。
-   这几条是「这一套长什么样」的底色，调一次用一整套——它不该藏在套图面板里，
-   那是「这一张画什么」那一层的事。没设过时显示的是默认文案而不是空白，
-   否则用户永远不知道这里能点。 */
-.ecom-uniform-trigger {
+/* 槽位始终为预览、标签和工具预留空间，不随图片加载或悬停变化。 */
+.ecom-product-card {
+    container-type: inline-size;
+    gap: var(--space-3);
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    background: var(--background);
+}
+
+.ecom-product-card > * {
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+.ecom-product-card .ecom-card-kicker {
+    font-size: 11px;
+    letter-spacing: 0;
+}
+
+.ecom-product-card .ecom-card-status {
+    font-size: 12px;
+}
+
+.ecom-input-section {
     display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.ecom-input-section h4 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.ecom-input-section h4 span {
+    color: var(--muted-foreground);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.ecom-input-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: start;
+    gap: var(--space-2);
+}
+
+.ecom-reference-grid {
+    max-height: 270px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding: 3px;
+    margin: -3px;
+}
+
+.ecom-input-slot {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    grid-template-rows: auto 24px 28px;
+    border: 1px dashed var(--border);
+    border-radius: min(var(--r-md), 8px);
+    background: var(--muted);
+}
+
+.ecom-input-slot[data-filled] {
+    border-style: solid;
+    background: var(--background);
+}
+
+.ecom-input-slot:focus-within {
+    border-color: var(--foreground);
+}
+
+.ecom-input-preview {
+    display: grid;
     width: 100%;
     min-width: 0;
-    align-items: center;
-    gap: 6px;
-    margin-top: 6px;
-    padding: 6px 10px;
-    border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
-    border-radius: var(--r-md);
+    aspect-ratio: 1;
+    place-items: center;
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    border-radius: min(var(--r-md), 8px) min(var(--r-md), 8px) 0 0;
     background: transparent;
-    color: color-mix(in srgb, currentColor 72%, transparent);
-    font-size: 11px;
-    text-align: left;
+    color: var(--muted-foreground);
     cursor: pointer;
 }
 
-.ecom-uniform-trigger:hover {
-    border-color: color-mix(in srgb, currentColor 30%, transparent);
-    background: color-mix(in srgb, currentColor 5%, transparent);
+.ecom-input-preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
-.ecom-uniform-trigger-label {
+.ecom-input-label {
+    display: block;
     min-width: 0;
     overflow: hidden;
+    padding: 0 4px;
+    font-size: 12px;
+    line-height: 24px;
+    text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.ecom-input-tools {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 2px 4px;
+}
+
+.ecom-input-icon,
+.ecom-input-pin {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    place-items: center;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+}
+
+.ecom-input-pin {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    border-color: var(--border);
+    border-radius: 50%;
+    background: var(--background);
+    color: var(--foreground);
+    touch-action: none;
+}
+
+.ecom-input-icon:hover,
+.ecom-input-pin:hover,
+.ecom-input-preview:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--accent-foreground);
+}
+
+.ecom-input-icon:focus-visible,
+.ecom-input-pin:focus-visible,
+.ecom-input-preview:focus-visible,
+.ecom-product-card .ecom-model-pick:focus-visible,
+.ecom-product-card .ecom-oneclick:focus-visible {
+    outline: 2px solid var(--foreground);
+    outline-offset: -2px;
+}
+
+.ecom-input-preview:disabled {
+    cursor: default;
+    opacity: .5;
+}
+
+.ecom-product-model-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+
+.ecom-product-model-row .ecom-model-pick {
+    min-width: 0;
+    flex: 1 1 auto;
+    border-radius: min(var(--r-md), 8px);
+}
+
+.ecom-product-model-row .ecom-model-pick > svg,
+.ecom-product-card .ecom-oneclick-name > svg {
+    flex: 0 0 auto;
+}
+
+.ecom-product-model-row .ecom-model-pick-hint {
+    font-size: 12px;
+}
+
+.ecom-product-card .ecom-oneclick {
+    min-height: 68px;
+    border-radius: min(var(--r-md), 8px);
+}
+
+.ecom-product-card .ecom-oneclick-name {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}
+
+.ecom-product-card .ecom-oneclick-stat {
+    font-size: 12px;
+}
+
+@container (max-width: 360px) {
+    .ecom-input-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .ecom-product-model-row .ecom-model-pick {
+        flex-wrap: wrap;
+    }
+}
+
+@media (pointer: coarse) {
+    .ecom-input-slot {
+        grid-template-rows: auto 24px 36px;
+    }
+
+    .ecom-input-icon,
+    .ecom-input-pin {
+        width: 32px;
+        height: 32px;
+    }
 }

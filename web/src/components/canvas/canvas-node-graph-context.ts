@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { CanvasNodeData } from "@/types/canvas";
+import type { CanvasConnection, CanvasNodeData } from "@/types/canvas";
 
 // 扩展节点（对比/图表/调色等）要读自己的上游才能工作，但节点经 CanvasProjectWorldLayers
 // 渲染、CanvasNodeContentProps 里只有 node 本身，没有 nodes/connections。
@@ -16,7 +16,17 @@ export type CanvasNodeGraphContextValue = {
      * 下拉框里没有刚出的那张，只能手动再连一次线。
      */
     getDownstreamNodes?: (nodeId: string) => CanvasNodeData[];
+    getConnections?: (nodeId: string) => CanvasConnection[];
+    getInputNodes?: (nodeId: string) => CanvasNodeData[];
 };
+
+export function useNodeConnections(nodeId: string) {
+    return useContext(CanvasNodeGraphContext).getConnections?.(nodeId) ?? [];
+}
+
+export function useNodeInputs(nodeId: string) {
+    return useContext(CanvasNodeGraphContext).getInputNodes?.(nodeId) ?? [];
+}
 
 export const CanvasNodeGraphContext = createContext<CanvasNodeGraphContextValue>({});
 

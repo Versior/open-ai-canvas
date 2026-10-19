@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { Skill, SkillPackageFile, SkillPackageFileContent } from "../src/services/api/skills";
 import { createSkillRuntime, resolveSkillMentions } from "../src/services/skill-runtime";
+import { setActiveUserScope } from "../src/lib/user-scope";
 
 function skill(overrides: Partial<Skill> = {}): Skill {
     return {
@@ -112,4 +113,91 @@ describe("skill runtime", () => {
         expect(result.prompt).toContain('<skill-context skill-id="director"');
         expect(result.metadata.skillIds).toEqual(["director"]);
     });
+
+    for (const [name, skills, selectedSkillIds] of [
+        ["empty catalog", [], ["director"]],
+        ["partially missing selection", [skill()], ["director", "removed"]],
+        ["removed library membership", [skill({ isAdded: false })], ["director"]],
+        ["missing ID beyond the selection limit", [skill()], ["director", "director", "director", "director", "removed"]],
+    ] as const) {
+        test(`rejects ${name} before reading skill files`, async () => {
+            let reads = 0;
+            const runtime = createSkillRuntime({
+                getFile: async () => { reads += 1; return { file: file("SKILL.md", "# Director") }; },
+                listFiles: async () => { reads += 1; return { files: [] }; },
+            });
+            await expect(runtime.prepare({ profile: "canvas", prompt: "Generate", skills: [...skills], selectedSkillIds: [...selectedSkillIds] })).rejects.toThrow();
+            expect(reads).toBe(0);
+        });
+    }
+
+    test("rejects an unavailable stable skill token", async () => {
+        const runtime = createSkillRuntime({
+            getFile: async () => ({ file: file("SKILL.md", "# Director") }),
+            listFiles: async () => ({ files: [] }),
+        });
+        await expect(runtime.prepare({ profile: "canvas", prompt: "Use @[skill:removed]", skills: [skill()] })).rejects.toThrow();
+    });
+
+    test("rejects too many selected skills rather than silently truncating", async () => {
+        let reads = 0;
+        const runtime = createSkillRuntime({
+            getFile: async () => { reads += 1; return { file: file("SKILL.md", "# Director") }; },
+            listFiles: async () => { reads += 1; return { files: [] }; },
+        });
+        const skills = ["one", "two", "three", "four", "five"].map((skillId) => skill({ skillId }));
+        await expect(runtime.prepare({ profile: "canvas", prompt: "Generate", skills, selectedSkillIds: skills.map((item) => item.skillId) })).rejects.toThrow();
+        expect(reads).toBe(0);
+    });
+
+    test("deduplicates explicit selections and records exact loaded provenance", async () => {
+        const runtime = createSkillRuntime({
+            getFile: async () => ({ file: file("SKILL.md", "# Director") }),
+            listFiles: async () => ({ files: [] }),
+        });
+        const result = await runtime.prepare({ profile: "canvas", prompt: "Generate", skills: [skill()], selectedSkillIds: ["director", "director"] });
+        expect(result.selectedSkills.map((item) => item.skillId)).toEqual(["director"]);
+        expect(result.provenance).toEqual({
+            skillIds: ["director"],
+            skillVersions: [{ skillId: "director", versionId: "version-2", version: "2.0.0" }],
+            skillFiles: [{ skillId: "director", path: "SKILL.md", sha256: "sha-SKILL.md" }],
+        });
+        expect(result.metadata).toEqual(result.provenance);
+    });
+
+    test("an explicitly empty selection does not infer skills from mentions", async () => {
+        const runtime = createSkillRuntime({
+            getFile: async () => { throw new Error("No file should be loaded"); },
+            listFiles: async () => { throw new Error("No file list should be loaded"); },
+        });
+        const result = await runtime.prepare({ profile: "canvas", prompt: "@[skill:director]", skills: [skill()], selectedSkillIds: [] });
+        expect(result.selectedSkills).toEqual([]);
+        expect(result.metadata).toEqual({});
+    });
+
+    for (const stage of ["entry", "linked"] as const) {
+        test(`account changes during ${stage} file reads prevent prompt injection`, async () => {
+            const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+            const values = new Map<string, string>();
+            Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: {
+                getItem: (key: string) => values.get(key) ?? null,
+                setItem: (key: string, value: string) => values.set(key, value),
+            } } });
+            try {
+                setActiveUserScope("runtime-A");
+                const linked = file("references/guide.md", "Private guide");
+                const runtime = createSkillRuntime({
+                    getFile: async (_id, path) => {
+                        if ((stage === "entry" && path === "SKILL.md") || (stage === "linked" && path === linked.file.path)) setActiveUserScope("runtime-B");
+                        return { file: path === "SKILL.md" ? file(path, "先读取 references/guide.md。") : linked };
+                    },
+                    listFiles: async () => ({ files: [linked.file] }),
+                });
+                await expect(runtime.prepare({ profile: "canvas", prompt: "Generate", skills: [skill()], selectedSkillIds: ["director"] })).rejects.toThrow();
+            } finally {
+                if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+                else Reflect.deleteProperty(globalThis, "window");
+            }
+        });
+    }
 });

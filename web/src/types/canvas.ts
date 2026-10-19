@@ -578,6 +578,10 @@ export type CanvasNodeMetadata = {
     ecommerceLanguage?: string;
     /** 电商创作：风格参考图的 storageKey——「照这个调性来」。落盘字段。 */
     ecommerceStyleReferenceKey?: string;
+    /** 独立图片节点的用途；视觉参考不参与商品视角绑定。 */
+    ecommerceReferenceRole?: "style";
+    /** 商品节点上的整组视觉要求，与参考图片共同进入分析和生成。 */
+    ecommerceUniformPrompt?: string;
     /**
      * 电商创作：分析商品时注入哪几个技能。落盘字段。
      *
@@ -585,6 +589,8 @@ export type CanvasNodeMetadata = {
      * 全塞进一次分析会把提示词顶爆，而大部分跟这个品类无关。
      */
     ecommerceAnalysisSkills?: string[];
+    /** 每种一键创作独立选择分析技能。 */
+    ecommerceAnalysisSkillsByFlow?: Partial<Record<"detail" | "main" | "wear" | "seed", string[]>>;
     /**
      * 电商创作：自定义的分析提示词（只有「怎么写」那一段）。落盘字段。
      *
@@ -592,6 +598,8 @@ export type CanvasNodeMetadata = {
      * 少了它们自定义的提示词会产出解析不了的东西。空着用默认那一份。
      */
     ecommerceSuitePrompt?: string;
+    /** 每种一键创作独立的分析提示词。 */
+    ecommerceSuitePrompts?: Partial<Record<"detail" | "main" | "wear" | "seed", string>>;
     /** 电商创作：这张产物图认领拍摄清单里的哪一行。落盘字段。 */
     ecommerceShotId?: string;
     /** 电商创作：卖点清单。落盘字段。 */
@@ -709,6 +717,7 @@ export type CanvasConnection = {
     toHandleId?: string;
     fromAnchorRatio?: number;
     toAnchorRatio?: number;
+    toAnchorXRatio?: number;
     relation?: "storyboard-output" | "storyboard-asset-reference" | "batch-output" | "batch-input";
     storyboardRowId?: string;
 };
@@ -768,6 +777,7 @@ export type ConnectionHandle = {
     handleType: "source" | "target";
     handleId?: string;
     anchorRatio?: number;
+    anchorXRatio?: number;
 };
 
 export type CanvasSelectionStrategy = "replace" | "add" | "toggle" | "subtract";

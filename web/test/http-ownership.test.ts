@@ -29,7 +29,7 @@ const axiosAllowed = new Set([
 test("business API modules call http instead of axios or request(apiClient)", () => {
     const offenders = walkSourceFiles(resolve(srcRoot, "services"))
         .filter((file) => {
-            const rel = relative(srcRoot, file);
+            const rel = relative(srcRoot, file).replaceAll("\\", "/");
             if (axiosAllowed.has(rel)) return false;
             const source = readFileSync(file, "utf8");
             return /from ["']axios["']/.test(source) || /request\s*(?:<[^>]+>)?\s*\(\s*apiClient\./.test(source) || /const api = apiClient/.test(source);
@@ -41,10 +41,10 @@ test("business API modules call http instead of axios or request(apiClient)", ()
 test("axios.create stays in the shared request client", () => {
     const offenders = walkSourceFiles(srcRoot)
         .filter((file) => {
-            if (relative(srcRoot, file) === "services/api/request.ts") return false;
+            if (relative(srcRoot, file).replaceAll("\\", "/") === "services/api/request.ts") return false;
             return readFileSync(file, "utf8").includes("axios.create(");
         })
-        .map((file) => relative(srcRoot, file));
+        .map((file) => relative(srcRoot, file).replaceAll("\\", "/"));
     expect(offenders).toEqual([]);
 });
 

@@ -5,6 +5,7 @@ import { CanvasEcommerceModelLibraryModal } from "./canvas-ecommerce-model-libra
 import { useCanvasNodeActions } from "./canvas-node-action-context";
 import { ecommerceModelById, ecommerceModelRefCount, type EcommerceModel } from "@/lib/ecommerce/ecommerce-models";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
+import { App } from "antd";
 
 /**
  * 输入框上的模特按钮——电商画布里它取代了原来的「风格」。
@@ -32,11 +33,11 @@ export function CanvasEcommerceModelButton({
     const models = useEcommerceModelLibrary((state) => state.models);
     const hydrate = useEcommerceModelLibrary((state) => state.hydrate);
     const touchModel = useEcommerceModelLibrary((state) => state.touchModel);
-    const { generateEcommerceModelPreset } = useCanvasNodeActions();
+    const { message } = App.useApp();
 
     useEffect(() => {
-        void hydrate();
-    }, [hydrate]);
+        void hydrate().catch((error) => message.error(error instanceof Error ? error.message : "模特库加载失败"));
+    }, [hydrate, message]);
 
     const active = ecommerceModelById(modelId, models);
     const refs = ecommerceModelRefCount(active);
@@ -78,9 +79,8 @@ export function CanvasEcommerceModelButton({
                 open={open}
                 activeModelId={modelId}
                 onClose={() => setOpen(false)}
-                onGeneratePreset={generateEcommerceModelPreset}
-                onSelect={(model) => {
-                    touchModel(model.id);
+                onSelect={async (model) => {
+                    await touchModel(model.id);
                     onSelect(model);
                 }}
             />

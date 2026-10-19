@@ -25,7 +25,7 @@
     align-items: flex-end;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: var(--space-4) var(--space-5) 0;
+    padding: var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--border);
 }
 
@@ -34,7 +34,7 @@
     color: var(--muted-foreground);
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: .14em;
+    letter-spacing: 0;
 }
 
 .ecom-model-title {
@@ -89,6 +89,7 @@
     flex-shrink: 0;
     align-items: center;
     gap: var(--space-2);
+    flex-wrap: wrap;
 }
 
 .ecom-model-count {
@@ -157,7 +158,7 @@
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: var(--r-lg);
+    border-radius: 8px;
     background: color-mix(in srgb, var(--foreground) 3%, transparent);
     transition: border-color 140ms cubic-bezier(.16, 1, .3, 1);
 }
@@ -171,6 +172,7 @@
 }
 
 .ecom-model-cover {
+    position: relative;
     display: grid;
     aspect-ratio: 4 / 5;
     place-items: center;
@@ -181,7 +183,7 @@
 .ecom-model-cover img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
 }
 
 .ecom-model-cover-empty {
@@ -217,8 +219,8 @@
 
 .ecom-model-icon {
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: 32px;
+    height: 32px;
     flex: 0 0 auto;
     place-items: center;
     border: 0;
@@ -244,8 +246,8 @@
 
 .ecom-model-card-meta,
 .ecom-model-card-stats {
-    color: color-mix(in srgb, var(--foreground) 45%, transparent);
-    font-size: 10px;
+    color: var(--muted-foreground);
+    font-size: 12px;
 }
 
 .ecom-model-card-warn {
@@ -439,15 +441,16 @@
     top: 2px;
     right: 2px;
     display: grid;
-    width: 16px;
-    height: 16px;
+    width: 24px;
+    height: 24px;
     place-items: center;
     border: 0;
     border-radius: 999px;
     background: rgba(0, 0, 0, .55);
     color: #fff;
     cursor: pointer;
-    opacity: 0;
+    opacity: 1;
+    z-index: 2;
     transition: opacity 140ms cubic-bezier(.16, 1, .3, 1);
 }
 
@@ -488,4 +491,25 @@
     width: 100%;
     height: 100%;
     background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.ecom-model-filters { display: flex; align-items: center; gap: 8px; }
+.ecom-model-search { display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.ecom-model-search input { width: 100%; min-width: 0; border: 0; background: transparent; color: inherit; font-size: 13px; outline: none; }
+.ecom-model-sort { flex: 0 0 116px; width: 116px; min-height: 36px; }
+.ecom-model-selection { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; font-size: 12px; }
+.ecom-model-selection label { display: inline-flex; align-items: center; gap: 6px; }
+.ecom-model-select { position: absolute; top: 8px; left: 8px; z-index: 1; display: grid; width: 28px; height: 28px; place-items: center; border-radius: 6px; background: var(--background); }
+.ecom-model-source { display: flex; align-items: center; gap: 12px; min-height: 80px; font-size: 13px; }
+.ecom-model-source img, .ecom-model-source .ecom-model-image-pending { width: 72px; height: 80px; object-fit: contain; border-radius: 6px; }
+.ecom-model-full-preview { display: grid; height: min(72vh, 800px); place-items: center; }
+.ecom-model-full-preview img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+.ecom-model-ref-preview { position: absolute; inset: 0; border: 0; background: transparent; cursor: zoom-in; }
+.ecom-model-ref-primary { position: absolute; top: 2px; left: 2px; z-index: 2; display: grid; width: 24px; height: 24px; place-items: center; border: 0; border-radius: 6px; background: var(--background); color: var(--foreground); cursor: pointer; }
+.ecom-model-shell button:focus-visible, .ecom-model-shell input:focus-visible, .ecom-model-shell select:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
+@media (max-width: 640px) {
+    .ecom-model-head { padding: 16px; }
+    .ecom-model-body { padding: 16px; }
+    .ecom-model-primary { margin-left: 0; }
+    .ecom-model-grid { grid-template-columns: 1fr; }
 }

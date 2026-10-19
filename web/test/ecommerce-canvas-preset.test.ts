@@ -17,6 +17,8 @@ describe("ecommerce canvas growth", () => {
         // 只要一张主图时铺七个节点是荒谬的——开局必须只有一个必需输入
         expect(nodes).toHaveLength(1);
         expect(nodes[0].type).toBe(CanvasNodeType.Product);
+        expect(nodes[0].position.x + nodes[0].width / 2).toBe(0);
+        expect(nodes[0].position.y + nodes[0].height / 2).toBe(0);
         expect(connections).toEqual([]);
     });
 

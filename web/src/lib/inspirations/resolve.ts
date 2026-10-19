@@ -26,7 +26,7 @@ export function isCustomInspiration(id: string): boolean {
 }
 
 function withoutUndefined<T extends object>(value: T): T {
-    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== "")) as T;
+    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 }
 
 /**

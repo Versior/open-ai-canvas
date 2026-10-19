@@ -15,7 +15,7 @@
  */
 import { createEcommerceShotSetFromSlots, ecommerceLanguageRule, ecommerceShotPreset } from "./ecommerce-recipes";
 import { ecommerceShotLines, type EcommerceProductProfile, type EcommerceStyle } from "./ecommerce-contract";
-import { ecommerceOneClickScreens, type EcommerceOneClickFlow } from "./ecommerce-oneclick";
+import { ecommerceOneClickScreens, type EcommerceOneClickFlow, type EcommerceOneClickFlowId } from "./ecommerce-oneclick";
 import { ecommercePlatform, type EcommercePlatformId } from "./ecommerce-platform-specs";
 
 export type EcommerceSuiteRow = {
@@ -152,8 +152,15 @@ export const ECOMMERCE_SUITE_DIRECTOR_PROMPT = [
 ].join("\n");
 
 /** 面板里改过的就用改过的，没改过就用默认。空串代表「没改过」。 */
-export function ecommerceSuiteDirectorPrompt(override: string | undefined) {
-    return override?.trim() || ECOMMERCE_SUITE_DIRECTOR_PROMPT;
+export function ecommerceSuiteDirectorPrompt(override: string | undefined, flow?: EcommerceOneClickFlow) {
+    if (override?.trim()) return override.trim();
+    const direction: Partial<Record<EcommerceOneClickFlowId, string>> = {
+        detail: "本次是商品详情页：按用户理解顺序组织画面，从需求/痛点、解决方案、证据细节到使用与保障；相邻屏承担不同信息任务，整套阅读连贯。",
+        main: "本次是商品搜索列表主图：优先保证缩略图识别与点击；主图干净突出商品，其余分别呈现核心卖点、真实场景、工艺细节和规格，不要做成长图分屏。",
+        wear: "本次是模特上身图：每张明确人物姿态、穿着/佩戴状态、取景范围及商品与身体的比例；正面、局部、背面等视角按各行职责区分，商品外观忠于实拍。",
+        seed: "本次是社交内容平台种草图：采用可信的生活化场景与自然表达，封面负责吸引注意，后续补充场景、上身体验和细节；避免电商详情页式硬广排版。",
+    };
+    return flow ? `${ECOMMERCE_SUITE_DIRECTOR_PROMPT}\n\n【本套专属要求】${direction[flow.id] || ""}` : ECOMMERCE_SUITE_DIRECTOR_PROMPT;
 }
 
 /**
@@ -182,6 +189,8 @@ export function ecommerceSuiteDirectorPrompt(override: string | undefined) {
  * 也进生成时的约束块（见 resolveEcommerceInputs 读的 ecommerceStyle）。
  */
 export type EcommerceSuiteUniform = {
+    prompt?: string;
+    styleReferenceNames?: string[];
     platformId?: string;
     languageId?: string;
     style?: EcommerceStyle;
@@ -209,13 +218,20 @@ function uniformBlock(uniform: EcommerceSuiteUniform | undefined) {
     }
     const language = ecommerceLanguageRule(uniform.languageId);
     if (language) lines.push(`【图上文字的语言】${language}`);
-    if (uniform.style) {
+    if (uniform.style && uniform.prompt === undefined && !uniform.styleReferenceNames?.length) {
         const style = uniform.style;
         if (style.palette.length) lines.push(`【色彩美学】${style.name}——色板 ${style.palette.join(" ")}；${style.tone}；${style.mood}`);
         if (style.typography) lines.push(`【字体风格】${style.typography}。文字要按这个气质排，不要用默认的系统字体观感。`);
     }
     if (uniform.styleReferenceName) {
         lines.push(`【风格参考图】随附的图里，名为「${uniform.styleReferenceName}」的那张是风格参考。**只取它的调性、质感与氛围，不要复刻它的构图、商品和文字**——画面主体永远是本次这个商品。`);
+    }
+    if (uniform.styleReferenceNames?.length) {
+        lines.push(`【独立视觉参考】随附的「${uniform.styleReferenceNames.join("」「")}」用于整组的光线、空间感、质感、配色关系和文字气质。商品实拍才是主体身份依据，不要把视觉参考里的商品和文字搬过来。`);
+    }
+    if (uniform.prompt?.trim()) lines.push(`【整组提示词】${uniform.prompt.trim()}`);
+    if (uniform.prompt !== undefined || uniform.styleReferenceNames?.length) {
+        lines.push("整组风格以商品图、独立视觉参考和用户提示词共同确定；没有指定的色彩与文字气质从图片推导，不套固定色板或字体。");
     }
     if (!lines.length) return [];
     return ["", ...lines, ""];

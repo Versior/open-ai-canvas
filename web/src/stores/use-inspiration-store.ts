@@ -11,6 +11,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import { catalogIdOf, type CreationInspiration, type InspirationSourceId } from "@/lib/inspirations/catalog";
 import { CUSTOM_ID_PREFIX, isCustomInspiration, type InspirationOverride } from "@/lib/inspirations/resolve";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
+import { getActiveUserScope } from "@/lib/user-scope";
 
 export const INSPIRATION_STORE_KEY = "open_ai_canvas:inspirations";
 /** 导入导出文件的格式版本，字段变化时递增并在这里做迁移。 */
@@ -85,10 +86,10 @@ export function normalizeDraft(input: unknown): InspirationDraft {
         image: nonEmpty(raw.image, "封面地址"),
         mode: raw.mode,
         prompt: nonEmpty(raw.prompt, "提示词正文"),
-        ...(typeof raw.promptZh === "string" && raw.promptZh.trim() ? { promptZh: raw.promptZh.trim() } : {}),
-        ...(typeof raw.category === "string" && raw.category.trim() ? { category: raw.category.trim() } : {}),
-        ...(asStringArray(raw.tags) ? { tags: asStringArray(raw.tags) } : {}),
-        ...(typeof raw.ratio === "string" && raw.ratio.trim() ? { ratio: raw.ratio.trim() } : {}),
+        promptZh: typeof raw.promptZh === "string" ? raw.promptZh.trim() : "",
+        category: typeof raw.category === "string" ? raw.category.trim() : "",
+        tags: asStringArray(raw.tags) || [],
+        ratio: typeof raw.ratio === "string" ? raw.ratio.trim() : "",
     };
 }
 
@@ -128,7 +129,7 @@ export const useInspirationStore = create<InspirationStore>()(
 
             updateEntry: (id, patch) => {
                 if (!id) throw new Error("缺少要修改的灵感 ID");
-                const sanitized = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined && value !== ""));
+                const sanitized = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
                 if (!Object.keys(sanitized).length) return;
                 if (isCustomInspiration(id)) {
                     set((state) => ({ custom: state.custom.map((item) => (catalogIdOf(item) === id ? { ...item, ...sanitized } : item)) }));
@@ -215,10 +216,26 @@ export const useInspirationStore = create<InspirationStore>()(
         }),
         {
             name: INSPIRATION_STORE_KEY,
-            storage: createJSONStorage(() => localForageStorageForScope()),
+            storage: createJSONStorage(() => ({
+                ...localForageStorageForScope(),
+                getItem: async (name) => {
+                    const scope = getActiveUserScope();
+                    const value = await localForageStorageForScope(scope).getItem(name);
+                    if (scope !== getActiveUserScope()) throw new Error("账号已切换");
+                    return value;
+                },
+            })),
             partialize: (state) => ({ custom: state.custom, overrides: state.overrides, hidden: state.hidden, favorites: state.favorites }),
-            onRehydrateStorage: () => (state) => {
-                state?.markHydrated();
+            merge: (persisted, current) => ({
+                ...current,
+                custom: [], overrides: {}, hidden: [], favorites: [],
+                ...(persisted as Partial<InspirationStore> | undefined),
+            }),
+            onRehydrateStorage: () => {
+                const scope = getActiveUserScope();
+                return (state) => {
+                    if (scope === getActiveUserScope()) state?.markHydrated();
+                };
             },
         },
     ),

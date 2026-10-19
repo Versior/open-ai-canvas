@@ -6,22 +6,14 @@ import vm from "node:vm";
 const source = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 test("welcome entry loads configured appearance", async () => {
-    let calls = 0;
-    const imports = [];
-    const main = source("../src/main.tsx")
-        .replace(/^import .*;\n/gm, "")
-        .replace(/import\.meta\.env\.DEV/g, "false")
-        .replace(/import\(/g, "loadModule(");
-    vm.runInNewContext(main, {
-        window: { location: { pathname: "/welcome" } },
-        installChunkRecovery() {},
-        isIsolatedDirectorRepro: () => false,
-        bootstrapAppearance: async () => { calls++; },
-        loadModule: async (name) => { imports.push(name); },
-    });
-    await Promise.resolve();
-    assert.equal(calls, 1, "welcome entry must bootstrap appearance");
-    assert.deepEqual(imports, ["./welcome-application"]);
+    const main = source("../src/main.tsx").replace(/\r\n/g, "\n");
+    const welcomePath = main.indexOf("/welcome");
+    const branchStart = main.lastIndexOf("if (", welcomePath);
+    const branchEnd = main.indexOf("} else {", welcomePath);
+    assert.ok(welcomePath >= 0 && branchStart >= 0 && branchEnd > welcomePath, "main entry must keep a dedicated welcome branch");
+    const welcomeBranch = main.slice(branchStart, branchEnd);
+    assert.match(welcomeBranch, /void bootstrapAppearance\(\)\.catch\(\(\) => undefined\);/);
+    assert.match(welcomeBranch, /void import\("\.\/welcome-application"\);/);
 });
 
 test("welcome effects preserve configured SEO title", () => {

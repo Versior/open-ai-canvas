@@ -26,7 +26,7 @@ type ImageToolHandlers = {
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
-    onSaveAsModel: (node: CanvasNodeData) => void;
+    onSaveAsModel?: (node: CanvasNodeData) => void;
     onNineGrid: (node: CanvasNodeData, toolId: number, label: string, icon: string) => void;
 };
 
@@ -88,7 +88,7 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         group: "more",
         order: 46,
         ecommerceOnly: true,
-        run: (node, handlers) => handlers.onSaveAsModel(node),
+        run: (node, handlers) => handlers.onSaveAsModel?.(node),
     },
     {
         id: "replace",

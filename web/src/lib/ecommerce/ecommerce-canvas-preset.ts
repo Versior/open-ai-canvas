@@ -36,6 +36,16 @@ export function ecommerceCanvasPreset(): { nodes: CanvasNodeData[]; connections:
     return { nodes: [product], connections: [] };
 }
 
+export function createEcommerceStyleReference(product: CanvasNodeData, existing: CanvasNodeData[], handle = "visual-reference:0") {
+    const node = createCanvasNode(CanvasNodeType.Image, { x: product.position.x - 600, y: product.position.y - 360 }, { status: "idle", ecommerceReferenceRole: "style" });
+    node.title = "视觉参考";
+    for (let attempt = 0; attempt <= existing.length; attempt += 1) {
+        const overlaps = existing.some((item) => Math.abs(item.position.x - node.position.x) < (item.width + node.width) / 2 + 32 && Math.abs(item.position.y - node.position.y) < (item.height + node.height) / 2 + 32);
+        if (!overlaps) break;
+        node.position.y -= node.height + 48;
+    }
+    return { node, connection: { id: `reference-${node.id}`, fromNodeId: node.id, toNodeId: product.id, toHandleId: handle } };
+}
 /**
  * 一次要出多少东西。
  *
@@ -248,37 +258,22 @@ export function ecommerceSuiteTargets(
     // **按槽位在全画布认领，不只看连接。** 只看连接的话，连接被删过一次、
     // 或上一次铺节点时连接没落盘，重出就会在画布上再堆一遍一模一样的九张——
     // 用户看到的是「重复出一样的图」。认领靠的是槽位这个稳定标识，连接缺了补上就是。
-    const wantedSlots = new Set(rows.map((row) => row.slotId));
-    const existingBySlot = new Map<string, CanvasNodeData>();
-    for (const node of canvas.nodes) {
-        if (node.type !== CanvasNodeType.Image) continue;
-        const slotId = node.metadata?.ecommerceShotId;
-        if (!slotId || !wantedSlots.has(slotId) || existingBySlot.has(slotId)) continue;
-        existingBySlot.set(slotId, node);
-    }
-
-    const { nodes: spawnedRaw, connections } = ecommerceSuiteNodes(product, flow, rows, new Set(existingBySlot.keys()), createId, rows.map((row) => row.slotId));
+    const { nodes: spawnedRaw, connections } = ecommerceSuiteNodes(product, flow, rows, new Set(), createId, rows.map((row) => row.slotId));
     const promptBySlot = new Map(rows.map((row) => [row.slotId, row.prompt.trim()]));
     const spawned = spawnedRaw.map((item) => {
         const prompt = item.metadata?.ecommerceShotId ? promptBySlot.get(item.metadata.ecommerceShotId) : undefined;
-        return { ...item, metadata: { ...item.metadata, ...(prompt ? { prompt, composerContent: prompt } : {}), ...patch } };
+        const slotId = item.metadata?.ecommerceShotId;
+        const priorRuns = slotId ? canvas.nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.ecommerceShotId === slotId).length : 0;
+        return { ...item, position: { ...item.position, y: item.position.y + priorRuns * 360 }, metadata: { ...item.metadata, ...(prompt ? { prompt, composerContent: prompt } : {}), ...patch } };
     });
 
-    const targetBySlot = new Map(existingBySlot);
-    for (const item of spawned) {
-        const slotId = item.metadata?.ecommerceShotId;
-        if (slotId) targetBySlot.set(slotId, item);
-    }
-    const targets = rows.map((row) => targetBySlot.get(row.slotId)).filter((item): item is CanvasNodeData => Boolean(item));
-    const spawnedIds = new Set(spawned.map((item) => item.id));
-    const linked = new Set(canvas.connections.filter((connection) => connection.fromNodeId === product.id && connection.relation !== "batch-output").map((connection) => connection.toNodeId));
     return {
         rows,
-        reuse: targets.filter((item) => !spawnedIds.has(item.id)).map((item) => ({ slotId: item.metadata?.ecommerceShotId || "", nodeId: item.id, prompt: promptBySlot.get(item.metadata?.ecommerceShotId || "") || "" })),
+        reuse: [],
         spawned,
         connections,
-        reconnect: targets.filter((item) => !spawnedIds.has(item.id) && !linked.has(item.id)).map((item) => ({ id: createId(), fromNodeId: product.id, toNodeId: item.id })),
-        nodeIds: targets.map((item) => item.id),
+        reconnect: [],
+        nodeIds: spawned.map((item) => item.id),
     };
 }
 

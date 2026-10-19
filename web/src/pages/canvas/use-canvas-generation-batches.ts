@@ -162,15 +162,16 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
         if (!projectLoaded || schedulingRef.current) return;
         schedulingRef.current = true;
         try {
-            const currentNodes = nodesRef.current;
             // 没有当前画布的等待项时无需查询任务中心，避免空画布持续轮询。
-            const hasWaitingItems = currentNodes.some((sourceNode) =>
+            const hasWaitingItems = nodesRef.current.some((sourceNode) =>
                 (sourceNode.metadata?.generationBatches || []).some((batch) => batch.projectId === projectId && batch.status !== "completed" && batch.status !== "cancelled" && batch.items.some((item) => item.status === "waiting")),
             );
             if (!hasWaitingItems) return;
 
             const tasks = await listGenerationTasks(100, { projectId, activeOnly: true }).catch(() => null);
             if (!tasks) return;
+            // Awaiting capacity can outlive node edits, deletion or queue cancellation.
+            const currentNodes = nodesRef.current;
             const activeTaskCount = tasks.filter((task) => task.status === "queued" || task.status === "running").length;
             const nodeById = new Map(currentNodes.map((node) => [node.id, node]));
             const pendingReservations = [...controllersRef.current.keys()].filter((key) => {

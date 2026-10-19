@@ -17,6 +17,9 @@ import { clearResourceAccessCache } from "@/services/api/resources";
 import { clearResourceBlobCache } from "@/services/resource-blob-cache";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
+import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
+import { useEcommerceSuitePrompt } from "@/stores/use-ecommerce-suite-prompt";
+import { useInspirationStore } from "@/stores/use-inspiration-store";
 
 export async function switchUserStorageScope(userId?: string | null) {
     await withGenerationConsumersPaused(async () => {
@@ -68,6 +71,9 @@ function resetUserScopedMemory() {
     useConfigStore.setState({ config: normalizeConfigSnapshot({ config: defaultConfig }).config });
     usePluginStore.setState({ hydrated: false, installations: [], runtimeStatuses: {}, pluginStates: {} });
     useCreationPreferencesStore.setState({ hydrated: false, preferences: {} });
+    useEcommerceModelLibrary.getState().reset();
+    useEcommerceSuitePrompt.getState().reset();
+    useInspirationStore.setState({ hydrated: false, custom: [], overrides: {}, hidden: [], favorites: [] });
 }
 
 async function hydrateUserSessionData(payload: AuthSessionPayload, generation: number) {
@@ -89,6 +95,9 @@ async function hydrateUserSessionData(payload: AuthSessionPayload, generation: n
         useConfigStore.persist.rehydrate(),
         usePluginStore.persist.rehydrate(),
         useCreationPreferencesStore.persist.rehydrate(),
+        useEcommerceModelLibrary.getState().hydrate(),
+        useEcommerceSuitePrompt.getState().hydrate(),
+        useInspirationStore.persist.rehydrate(),
     ]);
     if (!isCurrentSession(generation, userId)) return;
     // Zustand 在目标 scope 没有快照时会保留旧内存，必须显式恢复该 scope 的空状态。

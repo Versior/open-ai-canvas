@@ -9,6 +9,7 @@ const scripts = fileURLToPath(new URL("../../.github/scripts/", import.meta.url)
 const temporaryDirectories = [];
 const sha = "a".repeat(40);
 const digest = "b".repeat(64);
+const hasBash = spawnSync("bash", ["--version"], { stdio: "ignore" }).status === 0;
 afterEach(() => {
     for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -53,31 +54,31 @@ function fixture(overrides = {}) {
 }
 
 describe("commit image reuse", () => {
-    test("reuses the exact existing digest", () => {
+    test.skipIf(!hasBash)("reuses the exact existing digest", () => {
         const repo = fixture();
         expect(repo.run("resolve-image.sh", "ghcr.io/fixture/image:sha-test").status).toBe(0);
         expect(repo.output()).toBe(`found=true\ndigest=sha256:${digest}\n`);
     });
-    test("only a missing manifest permits a rebuild", () => {
+    test.skipIf(!hasBash)("only a missing manifest permits a rebuild", () => {
         const repo = fixture({ MOCK_ERROR: "ERROR: ghcr.io/fixture/image:sha-test: not found" });
         expect(repo.run("resolve-image.sh", "ghcr.io/fixture/image:sha-test").status).toBe(0);
         expect(repo.output()).toBe("found=false\n");
     });
     for (const error of ["ERROR: unauthorized", "ERROR: 429 Too Many Requests", "ERROR: dial tcp: i/o timeout", "ERROR: certificate file: not found: authentication failed"]) {
-        test(`fails closed on ${error}`, () => {
+        test.skipIf(!hasBash)(`fails closed on ${error}`, () => {
             const repo = fixture({ MOCK_ERROR: error });
             expect(repo.run("resolve-image.sh", "ghcr.io/fixture/image:sha-test").status).not.toBe(0);
             expect(repo.output()).toBe("");
         });
     }
-    test("rejects malformed successful responses", () => {
+    test.skipIf(!hasBash)("rejects malformed successful responses", () => {
         const repo = fixture({ MOCK_DIGEST: "<html>error</html>" });
         expect(repo.run("resolve-image.sh", "ghcr.io/fixture/image:sha-test").status).not.toBe(0);
     });
 });
 
 describe("digest promotion", () => {
-    test("current main promotes latest and SHA tags using digests", () => {
+    test.skipIf(!hasBash)("current main promotes latest and SHA tags using digests", () => {
         const repo = fixture();
         expect(repo.run("promote-image.sh").status).toBe(0);
         expect(repo.call()).toContain("ghcr.io/fixture/image:latest");
@@ -85,23 +86,23 @@ describe("digest promotion", () => {
         expect(repo.call()).toContain(`ghcr.io/fixture/image:sha-${sha}`);
         expect(repo.call()).not.toContain("ghcr.io/fixture/image:1.5.5");
     });
-    test("stale main cannot roll latest back", () => {
+    test.skipIf(!hasBash)("stale main cannot roll latest back", () => {
         const repo = fixture({ MOCK_MAIN: "c".repeat(40) });
         expect(repo.run("promote-image.sh").status).toBe(0);
         expect(repo.call()).not.toContain(":latest");
     });
-    test("tag release promotes the exact version without touching latest", () => {
+    test.skipIf(!hasBash)("tag release promotes the exact version without touching latest", () => {
         const repo = fixture({ GITHUB_REF: "refs/tags/v1.5.5" });
         expect(repo.run("promote-image.sh").status).toBe(0);
         expect(repo.call()).toContain("ghcr.io/fixture/image:1.5.5");
         expect(repo.call()).not.toContain(":latest");
     });
-    test("missing architecture blocks every tag update", () => {
+    test.skipIf(!hasBash)("missing architecture blocks every tag update", () => {
         const repo = fixture({ EXPECTED_DIGESTS: "2" });
         expect(repo.run("promote-image.sh").status).not.toBe(0);
         expect(repo.call()).toBe("");
     });
-    test("failure to resolve main blocks promotion", () => {
+    test.skipIf(!hasBash)("failure to resolve main blocks promotion", () => {
         const repo = fixture({ MOCK_GH_ERROR: "1" });
         expect(repo.run("promote-image.sh").status).not.toBe(0);
         expect(repo.call()).toBe("");

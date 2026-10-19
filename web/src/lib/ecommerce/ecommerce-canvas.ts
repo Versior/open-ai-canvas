@@ -13,7 +13,7 @@
  */
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
-import { compileEcommercePrompt, ECOMMERCE_PRODUCT_VIEWS, type EcommercePromptSources } from "./ecommerce-contract";
+import { compileEcommercePrompt, createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS, type EcommercePromptSources } from "./ecommerce-contract";
 import { ecommerceModelById, ecommerceModelRefs, type EcommerceModel } from "./ecommerce-models";
 
 /** 电商节点的类型，用于识别上游。 */
@@ -97,11 +97,50 @@ function isUsableImageNode(node: CanvasNodeData | undefined): node is CanvasNode
  * 用户把商品图连到商品节点，就是在说「这是这个商品」，生成时必须用上。
  */
 export function connectedImageNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    return connectedImageInputNodes(nodeId, nodes, connections).filter(isUsableImageNode);
+}
+
+function connectedImageInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     return connections
         .filter((connection) => connection.toNodeId === nodeId && connection.relation !== "batch-output")
         .map((connection) => nodeById.get(connection.fromNodeId))
-        .filter(isUsableImageNode);
+        .filter((node): node is CanvasNodeData => node?.type === CanvasNodeType.Image);
+}
+
+export function isEcommerceStyleReference(node: CanvasNodeData) {
+    return node.metadata?.ecommerceReferenceRole === "style";
+}
+
+export function connectedStyleReferenceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const ids = new Set(connections.filter((edge) => edge.toNodeId === nodeId && edge.toHandleId?.startsWith("visual-reference:")).map((edge) => edge.fromNodeId));
+    const viewIds = new Set(connections.filter((edge) => edge.toNodeId === nodeId && edge.toHandleId?.startsWith("product-view:")).map((edge) => edge.fromNodeId));
+    return connectedImageNodes(nodeId, nodes, connections).filter((node) => ids.has(node.id) || (!viewIds.has(node.id) && isEcommerceStyleReference(node)));
+}
+
+export function connectedProductImageNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const ids = new Set(connectedStyleReferenceNodes(nodeId, nodes, connections).map((node) => node.id));
+    return connectedImageNodes(nodeId, nodes, connections).filter((node) => !ids.has(node.id));
+}
+
+export function isEcommerceInputHandle(handle?: string) {
+    return Boolean(handle?.startsWith("product-view:") || handle?.startsWith("visual-reference:"));
+}
+
+export function withEcommerceInputConnection(connections: CanvasConnection[], edge: CanvasConnection) {
+    if (!isEcommerceInputHandle(edge.toHandleId)) return [...connections, edge];
+    return [...connections.filter((item) => !(item.toNodeId === edge.toNodeId && (item.toHandleId === edge.toHandleId || item.fromNodeId === edge.fromNodeId))), edge];
+}
+
+export function withImageAsEcommerceReference(connections: CanvasConnection[], imageId: string, productIds: string[]) {
+    const products = new Set(productIds);
+    return connections.map((edge) => {
+        if (edge.fromNodeId !== imageId || !products.has(edge.toNodeId) || edge.relation === "batch-output" || edge.toHandleId?.startsWith("visual-reference:")) return edge;
+        const occupied = new Set(connections.filter((item) => item.toNodeId === edge.toNodeId).map((item) => item.toHandleId));
+        let index = 0;
+        while (occupied.has(`visual-reference:${index}`)) index += 1;
+        return { ...edge, toHandleId: `visual-reference:${index}`, toAnchorRatio: undefined, toAnchorXRatio: undefined };
+    });
 }
 
 /**
@@ -121,10 +160,23 @@ export function connectedImageNodes(nodeId: string, nodes: CanvasNodeData[], con
  * 新图，生成时也取不到图，模型于是照旧档案画上一个商品。用户看到的是
  * 「我明明换了图，它还认成之前那个」。
  */
-export function effectiveProductViews(profile: EcommercePromptSources["profile"], candidates: CanvasNodeData[]) {
+export function effectiveProductViews(profile: EcommercePromptSources["profile"], candidates: CanvasNodeData[], connections: CanvasConnection[] = [], productNodeId?: string) {
     const views: Partial<Record<string, string>> = { ...(profile?.views || {}) };
     if (!profile) return views;
-    const candidateIds = new Set(candidates.filter(isUsableImageNode).map((node) => node.id));
+    const explicit = connections.filter((edge) => edge.toNodeId === productNodeId && isEcommerceInputHandle(edge.toHandleId));
+    const visualIds = new Set(explicit.filter((edge) => edge.toHandleId?.startsWith("visual-reference:")).map((edge) => edge.fromNodeId));
+    for (const id of visualIds) {
+        for (const view of ECOMMERCE_PRODUCT_VIEWS) if (views[view.id] === id) delete views[view.id];
+    }
+    for (const edge of explicit) {
+        const view = ECOMMERCE_PRODUCT_VIEWS.find((item) => edge.toHandleId === `product-view:${item.id}`);
+        if (view && candidates.some((node) => node.id === edge.fromNodeId && node.type === CanvasNodeType.Image)) {
+            for (const other of ECOMMERCE_PRODUCT_VIEWS) if (other.id !== view.id && views[other.id] === edge.fromNodeId) delete views[other.id];
+            views[view.id] = edge.fromNodeId;
+        }
+    }
+    const explicitIds = new Set(explicit.filter((edge) => edge.toHandleId?.startsWith("product-view:")).map((edge) => edge.fromNodeId));
+    const candidateIds = new Set(candidates.filter((node) => node.type === CanvasNodeType.Image && !visualIds.has(node.id) && (explicitIds.has(node.id) || (isUsableImageNode(node) && !isEcommerceStyleReference(node)))).map((node) => node.id));
     for (const view of ECOMMERCE_PRODUCT_VIEWS) {
         const bound = views[view.id];
         if (bound && !candidateIds.has(bound)) delete views[view.id];
@@ -132,7 +184,7 @@ export function effectiveProductViews(profile: EcommercePromptSources["profile"]
     const claimed = new Set(Object.values(views).filter(Boolean) as string[]);
     const free = ECOMMERCE_PRODUCT_VIEWS.filter((view) => !(view.id in views));
     if (!free.length) return views;
-    const available = candidates.filter((node) => isUsableImageNode(node) && !claimed.has(node.id));
+    const available = candidates.filter((node) => isUsableImageNode(node) && !isEcommerceStyleReference(node) && !visualIds.has(node.id) && !claimed.has(node.id));
     free.forEach((view, index) => {
         const node = available[index];
         if (node) views[view.id] = node.id;
@@ -154,7 +206,7 @@ export function productViewNodes(profile: EcommercePromptSources["profile"], nod
     // 给了商品节点就用「连进它的图」当候选池，没给就是把整个 nodes 当候选池。
     // 传空数组会让每一个已绑定的视角都被判成悬空然后清掉——那是「不传上下文」，
     // 不是「这个商品没有任何图」。
-    const views = effectiveProductViews(profile, productNodeId ? connectedImageNodes(productNodeId, nodes, connections) : nodes);
+    const views = effectiveProductViews(profile, productNodeId ? connectedImageInputNodes(productNodeId, nodes, connections) : nodes, connections, productNodeId);
     const picked: CanvasNodeData[] = [];
     const seen = new Set<string>();
     for (const view of ECOMMERCE_PRODUCT_VIEWS) {
@@ -164,6 +216,20 @@ export function productViewNodes(profile: EcommercePromptSources["profile"], nod
         picked.push(node);
     }
     return picked;
+}
+
+export function ecommerceProductReferenceImages(product: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]): ReferenceImage[] {
+    const profile = product.metadata?.productProfile || createEcommerceProductProfile(product.title || "商品");
+    const views = effectiveProductViews(profile, connectedImageInputNodes(product.id, nodes, connections), connections, product.id);
+    return productViewNodes(profile, nodes, connections, product.id).map((node) => {
+        const label = ECOMMERCE_PRODUCT_VIEWS.find((view) => views[view.id] === node.id)?.label;
+        return { ...productViewReferenceImage(node), name: `商品${label || "实拍"}：${node.title || node.id}` };
+    });
+}
+
+export function ecommerceReferenceImageGuide(images: Pick<ReferenceImage, "name">[]) {
+    if (!images.length) return "";
+    return ["【输入图片对应关系】以下编号按本次实际提交的图片顺序：", ...images.map((image, index) => `第 ${index + 1} 张：${image.name}`)].join("\n");
 }
 
 /**
@@ -220,16 +286,19 @@ export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], 
     const upstream = upstreamEcommerceNodes(nodeId, nodes, connections);
     const target = nodes.find((node) => node.id === nodeId);
     const model = resolveEcommerceModel(target, customModels, resolveEcommerceModel(upstream.product, customModels));
+    const styleReferences = upstream.product ? connectedStyleReferenceNodes(upstream.product.id, nodes, connections) : [];
     const shotId = target?.metadata?.ecommerceShotId;
     const sources: EcommercePromptSources = {
-        profile: upstream.product?.metadata?.productProfile,
-        shotSet: upstream.recipe?.metadata?.shotSet || upstream.product?.metadata?.ecommerceShotSet,
+        profile: upstream.product ? upstream.product.metadata?.productProfile || createEcommerceProductProfile(upstream.product.title || "商品") : undefined,
+        shotSet: upstream.recipe?.metadata?.shotSet,
         shotId,
         sellingPoints: upstream.sellingPoints?.metadata?.sellingPoints,
         // 文案的覆盖链：**这一屏自己的** → 独立的文案节点。
         // 一键流程按屏写的文字不在这里——它写在那一张的提示词里（ecommerceSuite）。
         copy: target?.metadata?.ecommerceCopy || upstream.copy?.metadata?.ecommerceCopy,
         style: upstream.style?.metadata?.ecommerceStyle,
+        styleReferenceNames: styleReferences.map((node) => node.title || node.id),
+        imageDrivenStyle: Boolean(upstream.product),
         replica: upstream.replica?.metadata?.ecommerceReplica,
         teardown: upstream.teardown?.metadata?.ecommerceTeardown,
         model,
@@ -238,7 +307,8 @@ export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], 
         sources,
         prompt: compileEcommercePrompt(sources),
         referenceImages: [
-            ...productViewNodes(sources.profile, nodes, connections, upstream.product?.id).map(productViewReferenceImage),
+            ...(upstream.product ? ecommerceProductReferenceImages(upstream.product, nodes, connections) : []),
+            ...styleReferences.map((node) => ({ ...productViewReferenceImage(node), name: `视觉参考：${node.title || node.id}` })),
             ...ecommerceModelReferenceImages(model),
         ],
     };

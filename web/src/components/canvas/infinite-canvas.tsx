@@ -31,8 +31,8 @@ type InfiniteCanvasProps = {
 const CANVAS_WHEEL_IGNORE_SELECTOR = "[data-canvas-no-zoom],[data-canvas-wheel-scroll],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown";
 const CANVAS_POINTER_IGNORE_SELECTOR = "[data-canvas-no-zoom],[data-connection-create-menu],.ant-modal,.ant-popover,.ant-dropdown,.ant-select-dropdown,.ant-picker-dropdown";
 const CANVAS_INTERNAL_DRAG_SELECTOR = "[data-canvas-batch-table]";
-const WHEEL_ZOOM_DELTA = 72;
-const TRACKPAD_PINCH_ZOOM_DELTA = 24;
+const WHEEL_ZOOM_DELTA = 144;
+const TRACKPAD_PINCH_ZOOM_DELTA = 48;
 
 type TouchPoint = { x: number; y: number };
 

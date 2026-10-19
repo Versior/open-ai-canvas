@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 
 import { canvasConnectionError } from "@/lib/canvas/canvas-connection-policy";
+import { isEcommerceInputHandle } from "@/lib/ecommerce/ecommerce-canvas";
 import { normalizeConnection } from "@/lib/canvas/canvas-project-domain";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type ConnectionHandle, type Position } from "@/types/canvas";
@@ -89,6 +90,10 @@ export function planBatchConnections({ sourceNodeIds, targetNodeId, targetHandle
         }
         if (source.id === targetNodeId) {
             skipped.push({ nodeId: source.id, reason: "目标节点不能连接到自身" });
+            return;
+        }
+        if (isEcommerceInputHandle(targetHandleId)) {
+            skipped.push({ nodeId: source.id, reason: "商品视图和参考图槽位请逐张连接" });
             return;
         }
 

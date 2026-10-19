@@ -175,7 +175,7 @@ func TestRuntimePolicySaveAndResetTakeEffectImmediately(t *testing.T) {
 		t.Fatal(err)
 	}
 	effective, err = svc.RuntimePolicy()
-	if err != nil || effective.Task.ActiveTaskLimit != 5 {
+	if err != nil || effective.Task.ActiveTaskLimit != 9 {
 		t.Fatalf("reset active task limit = %d, error = %v", effective.Task.ActiveTaskLimit, err)
 	}
 }

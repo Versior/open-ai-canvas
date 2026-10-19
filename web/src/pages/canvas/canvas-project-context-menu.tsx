@@ -1,5 +1,6 @@
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type CanvasWorkspaceMode, type ContextMenuState, type Position } from "@/types/canvas";
+import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 
 type CanvasAssetCategory = NonNullable<NonNullable<CanvasNodeData["metadata"]>["assetCategory"]>;
 
@@ -7,6 +8,7 @@ type CanvasProjectContextMenuProps = {
     menu: ContextMenuState | null;
     node: CanvasNodeData | null;
     workspaceMode: CanvasWorkspaceMode;
+    canvasKind?: CanvasKind;
     isProjectLinked: boolean;
     canUndo: boolean;
     canRedo: boolean;
@@ -30,6 +32,9 @@ type CanvasProjectContextMenuProps = {
     onDeleteNode: (nodeId: string) => void;
     onDeleteConnection: (connectionId: string) => void;
     onSaveAsset: (node: CanvasNodeData) => void;
+    onSaveAsModel?: (node: CanvasNodeData) => void;
+    onUseAsStyleReference?: (node: CanvasNodeData) => void;
+    onOpenModelLibrary?: () => void;
     onViewMedia: (node: CanvasNodeData) => void;
     onEditText: (node: CanvasNodeData) => void;
     onOpenDrawing: (node: CanvasNodeData) => void;
@@ -53,6 +58,7 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
             menu={menu}
             node={node}
             workspaceMode={props.workspaceMode}
+            canvasKind={props.canvasKind}
             isProjectLinked={props.isProjectLinked}
             canUndo={props.canUndo}
             canRedo={props.canRedo}
@@ -89,6 +95,9 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
             onSaveAsset={() => {
                 if (node) props.onSaveAsset(node);
             }}
+            onSaveAsModel={node && props.onSaveAsModel ? () => props.onSaveAsModel?.(node) : undefined}
+            onUseAsStyleReference={node && props.onUseAsStyleReference ? () => props.onUseAsStyleReference?.(node) : undefined}
+            onOpenModelLibrary={props.onOpenModelLibrary}
             onViewMedia={() => {
                 if (node) props.onViewMedia(node);
             }}

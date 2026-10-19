@@ -47,7 +47,7 @@ export function InspirationDetailModal({
             width={880}
             title={null}
             footer={null}
-            styles={{ body: { padding: 0 } }}
+        flush
         >
             {item ? (
                 <div className="flex max-h-[76vh] flex-col">
