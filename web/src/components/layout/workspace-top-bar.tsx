@@ -22,6 +22,7 @@ const PAGE_TITLES: Record<string, string> = {
     inspirations: "灵感",
     skills: "技能",
     plugins: "插件",
+    inspiration: "灵感广场",
     settings: "设置",
 };
 

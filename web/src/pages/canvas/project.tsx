@@ -322,6 +322,17 @@ function CanvasViewportPage() {
     const [batchScrollById, setBatchScrollById] = useState<Record<string, BatchScroll>>({});
     const [previsNodeId, setPrevisNodeId] = useState<string | null>(null);
     const [libTVImportOpen, setLibTVImportOpen] = useState(false);
+    const [libTVImportTemplateUuid, setLibTVImportTemplateUuid] = useState<string>();
+
+    useEffect(() => {
+        const templateUuid = searchParams.get("importTemplate");
+        if (!projectLoaded || !templateUuid) return;
+        setLibTVImportOpen(true);
+        setLibTVImportTemplateUuid(templateUuid);
+        const next = new URLSearchParams(searchParams);
+        next.delete("importTemplate");
+        setSearchParams(next, { replace: true });
+    }, [projectLoaded, searchParams, setSearchParams]);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
     const [shortcutRequestNonce, setShortcutRequestNonce] = useState(0);
@@ -742,6 +753,15 @@ ${instruction.trim()}` : " "}`;
         setDialogNodeId,
         setToolbarNodeId,
     });
+
+    const applyLibTVDialogImport = useCallback(
+        async (importedNodes: CanvasNodeData[], importedConnections: CanvasConnection[]) => {
+            const fitAfterImport = Boolean(libTVImportTemplateUuid) && nodesRef.current.length === 0;
+            await applyLibTVImport(importedNodes, importedConnections);
+            if (fitAfterImport) fitCanvasContent();
+        },
+        [applyLibTVImport, fitCanvasContent, libTVImportTemplateUuid],
+    );
 
     useEffect(() => {
         const project = linkedProjectQuery.data?.project;
@@ -3246,7 +3266,7 @@ ${instruction.trim()}` : " "}`;
 
                             {batchReferencePickerModal}
                             <CanvasShareModal projectId={projectId} open={shareModalOpen} onClose={() => setShareModalOpen(false)} beforeCreate={saveCanvasProject} />
-                            <LibTVImportDialog open={libTVImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => setLibTVImportOpen(false)} onApply={applyLibTVImport} />
+                            <LibTVImportDialog open={libTVImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => { setLibTVImportOpen(false); setLibTVImportTemplateUuid(undefined); }} onApply={applyLibTVDialogImport} templateUuid={libTVImportTemplateUuid} />
                             <TapNowImportDialog open={tapNowImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => setTapNowImportOpen(false)} onApply={applyTapNowImport} />
 
                             <CanvasStylePickerModal open={stylePickerOpen} value={activeStylePresetId} applying={styleApplying} onClose={() => setStylePickerOpen(false)} onSelect={selectCanvasStyle} />

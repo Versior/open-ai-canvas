@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { App, Spin } from "antd";
+import { App, Segmented, Spin } from "antd";
 import { History, ArrowUp } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useNavigate, useLocation } from "react-router";
@@ -37,6 +37,7 @@ import { CreationComposer, CreationEmptySuggest, CreationHistoryDrawer, Creation
 import { CreationInspirationTunnel } from "./creation-inspiration-tunnel";
 import { fillablePrompt } from "@/lib/inspirations/resolve";
 import { CreationRecentCanvases } from "./creation-recent-canvases";
+import { CreationFeaturedWorks } from "./creation-workspace-empty";
 import { CreationAgentEntry } from "./creation-agent-entry";
 import { createCreationSubmitGate } from "./creation-submit-gate";
 import { creationVideoConfig } from "./creation-generation-config";
@@ -67,6 +68,7 @@ function writeComposerPref(key: string, value: boolean) {
 }
 
 export default function CreatePage() {
+    const [inspirationView, setInspirationView] = useState<"canvas" | "prompt">("canvas");
     const [agentMode, setAgentMode] = useState(false);
     const { message: toast, modal } = App.useApp();
     const navigate = useNavigate();
@@ -220,6 +222,22 @@ export default function CreatePage() {
         }
         setComposerPreferencesInitialized(true);
     }, [composerPreferencesHydrated, composerPreferencesInitialized]);
+
+    useEffect(() => {
+        if (!composerPreferencesInitialized || !location.state) return;
+        const state = location.state as { mode?: CreationMode; ratio?: string; prompt?: string };
+        if (state.mode !== "image" && state.mode !== "video") return;
+        setAgentMode(false);
+        setMode(state.mode);
+        rememberMode(state.mode);
+        if (typeof state.ratio === "string" && state.ratio) {
+            setRatio(state.ratio);
+            if (state.mode === "image") rememberImageSettings({ ratio: state.ratio });
+            else rememberVideoSettings({ ratio: state.ratio });
+        }
+        if (typeof state.prompt === "string") setPrompt(state.prompt);
+        navigate(location.pathname, { replace: true, state: null });
+    }, [composerPreferencesInitialized, location.state, location.pathname, navigate, rememberMode, rememberImageSettings, rememberVideoSettings]);
 
     useEffect(() => {
         if (!composerPreferencesHydrated || !composerPreferencesInitialized || mode !== "image") return;
@@ -1104,9 +1122,17 @@ export default function CreatePage() {
                     />
                 </section>
                 <CreationRecentCanvases onRequireLogin={() => setLoginDialogOpen(true)} />
+                <div className="creation-inspiration-switch">
+                    <h2>精选灵感</h2>
+                    <Segmented value={inspirationView} onChange={setInspirationView} options={[{ label: "画布灵感", value: "canvas" }, { label: "单次创作灵感", value: "prompt" }]} />
+                </div>
+                {inspirationView === "canvas" ? (userId && userSessionHydrated ? <CreationFeaturedWorks showHeading={false} /> : <div className="creation-inspiration-load-status">
+                    <button type="button" onClick={() => setLoginDialogOpen(true)}>登录后查看画布灵感</button>
+                </div>) : <>
                 <Suspense fallback={<div className="creation-hall-loading" role="status">正在准备灵感大厅…</div>}>
                     <InspirationHall embedded creationMode={mode} onUse={(item) => startPrompt(item.mode, fillablePrompt(item))} />
                 </Suspense>
+                </>}
                 </main>
             </> : <div className="creation-thread-workbench">
                 <CreationWorkspaceToolbar onNewConversation={startNewConversation} onOpenHistory={() => setHistoryOpen(true)} shots={videoShots} onJumpToShot={jumpToShot} onContinueCanvas={() => void continueOnCanvas()} openingCanvas={openingCanvas} />
