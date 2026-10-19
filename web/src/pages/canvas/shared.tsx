@@ -1,3 +1,4 @@
+import { CanvasEcommerceTableNodeContent } from "@/components/canvas/canvas-ecommerce-table-node";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { App, Button } from "antd";
 import { Clapperboard, Eye, FileText, Image as ImageIcon, LockKeyhole, LogIn, Send, Share2, Video } from "lucide-react";
@@ -238,6 +239,7 @@ export default function SharedCanvasPage() {
     }));
     const renderSharedNode = useCallback((node: CanvasNodeData): ReactNode => {
         if (node.type === CanvasNodeType.Script) return <SharedScriptNode node={node} onUnauthorized={unauthorized} />;
+        if (node.type === CanvasNodeType.BatchTable && node.metadata?.ecommerceFlowId) return <CanvasEcommerceTableNodeContent node={node} readOnly />;
         if (node.type === CanvasNodeType.BatchTable) return <CanvasBatchTableNodeContent node={node} nodes={nodes} connections={connections} batch={node.metadata?.generationBatches?.at(-1)} theme={theme} readOnly onPatchTable={() => {}} onAddRow={() => {}} onRemoveRow={() => {}} onUpdateRow={() => {}} onFillRows={() => {}} onGenerate={() => {}} onRetryItem={() => {}} onAddReferenceColumn={() => {}} onReorderReferenceColumns={() => {}} onMoveReferenceCell={() => {}} onUploadReference={() => {}} onConnectStart={() => {}} />;
         return <SharedConfigNode node={node} onUnauthorized={unauthorized} />;
     }, [connections, nodes, theme, unauthorized]);

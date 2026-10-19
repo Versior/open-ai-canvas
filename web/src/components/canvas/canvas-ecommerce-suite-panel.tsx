@@ -1,6 +1,6 @@
 import { App } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Eraser, FileText, ImagePlus, LoaderCircle, Plus, RotateCcw, Sparkles, Upload, X, RefreshCw, Library } from "lucide-react";
+import { ArrowDown, ArrowUp, Eraser, FileText, ImagePlus, LoaderCircle, Plus, Sparkles, X, RefreshCw, Library } from "lucide-react";
 import { Link } from "react-router";
 
 import { AppModal } from "@/components/ui/product/app-modal";
@@ -9,13 +9,15 @@ import type { Skill } from "@/services/api/skills";
 import { ModelPicker } from "@/components/model-picker";
 import { CanvasImageSettingsPopover } from "@/components/canvas/canvas-image-settings-popover";
 import type { EcommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
-import { ECOMMERCE_SUITE_DIRECTOR_PROMPT, ecommerceSuiteDirectorPrompt, ecommerceSuiteRowId, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
+import { ecommerceSuiteRowId, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import { resolveImageUrl } from "@/services/image-storage";
 import { useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
+import type { EcommerceBrief } from "@/lib/ecommerce/ecommerce-brief";
 import type { CanvasNodeData } from "@/types/canvas";
 import "./canvas-ecommerce-suite-panel.css";
 
 export type EcommerceSuitePanelProps = {
+    embedded?: boolean;
     open: boolean;
     flow: EcommerceOneClickFlow;
     suite: EcommerceSuite | undefined;
@@ -36,7 +38,11 @@ export type EcommerceSuitePanelProps = {
     imageSize: string;
     imageQuality: string;
     /** 自定义的分析指令。空着用默认那一份。 */
-    directorPrompt: string;
+    directorPrompt?: string;
+    brief?: EcommerceBrief;
+    onBriefChange?: (value: EcommerceBrief) => void;
+    defaultDirectorPrompt?: string;
+    autoBindAvailable?: boolean;
     /** 分析时注入哪几个技能。空数组就是不用。 */
     skillIds: string[];
     /** 可选的技能——用户「已加入」的整库。 */
@@ -55,8 +61,8 @@ export type EcommerceSuitePanelProps = {
     onAutoBindChange: (value: boolean) => void;
     /** 清空表里所有提示词——结构留着，只把每行的提示词抹掉。 */
     onClearPrompts: () => void;
-    onDirectorPromptChange: (value: string) => void;
-    onAnalyze: () => void;
+    onDirectorPromptChange?: (value: string) => void;
+    onAnalyze: (rows: EcommerceSuiteRow[]) => void;
     /** 改某一行的一格：标题 / 职责 / 提示词。 */
     onRowChange: (slotId: string, patch: Partial<Pick<EcommerceSuiteRow, "title" | "duty" | "prompt">>) => void;
     onRowsChange: (rows: EcommerceSuiteRow[]) => void;
@@ -88,6 +94,7 @@ export type EcommerceSuitePanelProps = {
  * 过程是这张表——用户要在这里看清楚每一张要画什么，而不是在画布上找九个方块。
  */
 export function CanvasEcommerceSuitePanel({
+    embedded = false,
     open,
     flow,
     suite,
@@ -97,7 +104,9 @@ export function CanvasEcommerceSuitePanel({
     rows,
     imageSize,
     imageQuality,
-    directorPrompt,
+    brief = {},
+    onBriefChange,
+    autoBindAvailable = true,
     skillIds,
     availableSkills,
     skillsLoading,
@@ -112,7 +121,6 @@ export function CanvasEcommerceSuitePanel({
     onSkillIdsChange,
     onAutoBindChange,
     onClearPrompts,
-    onDirectorPromptChange,
     onAnalyze,
     onRowChange,
     onRowsChange,
@@ -126,7 +134,13 @@ export function CanvasEcommerceSuitePanel({
     const config = useEffectiveConfig();
     const { modal } = App.useApp();
     const [promptOpen, setPromptOpen] = useState(false);
-    const [draftRows, setDraftRows] = useState(rows);
+    const [localRows, setLocalRows] = useState(rows);
+    const draftRows = embedded ? rows : localRows;
+    const setDraftRows = (update: EcommerceSuiteRow[] | ((current: EcommerceSuiteRow[]) => EcommerceSuiteRow[])) => {
+        const next = typeof update === "function" ? update(draftRows) : update;
+        if (embedded) onRowsChange(next);
+        else setLocalRows(next);
+    };
     const previousInput = useRef({ rows, open });
     useEffect(() => {
         const previous = previousInput.current;
@@ -135,7 +149,7 @@ export function CanvasEcommerceSuitePanel({
             return row.slotId === next.slotId && row.title === next.title && row.duty === next.duty && row.prompt === next.prompt;
         });
         // Model and skill changes can recreate equivalent rows without changing the draft.
-        if (!sameRows || previous.open !== open) setDraftRows(rows);
+        if (!sameRows || previous.open !== open) setLocalRows(rows);
         previousInput.current = { rows, open };
     }, [rows, open]);
     const total = draftRows.length;
@@ -154,6 +168,7 @@ export function CanvasEcommerceSuitePanel({
 
     const updateDraftRows = (update: (current: EcommerceSuiteRow[]) => EcommerceSuiteRow[]) => setDraftRows(update);
     const commitDraftRows = () => onRowsChange(draftRows);
+    const closeDraft = () => { commitDraftRows(); onClose(); };
     const generateDraft = () => { commitDraftRows(); void onGenerate(draftRows); };
     const generateDraftOne = (slotId: string) => { commitDraftRows(); void onGenerateOne(slotId, draftRows); };
 
@@ -176,9 +191,8 @@ export function CanvasEcommerceSuitePanel({
         generateDraft();
     };
 
-    return (
-        <AppModal open={open} onCancel={onClose} footer={null} width={1080} centered destroyOnHidden flush title={null} className="ecom-suite-modal">
-            <div className="ecom-suite-shell">
+    const content = (
+            <div className={embedded ? "ecom-suite-shell ecom-suite-embedded" : "ecom-suite-shell"}>
                 <header className="ecom-suite-head">
                     <div className="min-w-0">
                         <span className="ecom-suite-kicker">电商 / 套图</span>
@@ -205,7 +219,7 @@ export function CanvasEcommerceSuitePanel({
                             showConfiguredModelName
                         />
                     </label>
-                    <button type="button" className="ecom-suite-primary" disabled={analyzing || !analysisModel} onClick={onAnalyze} title={!analysisModel ? "请先选择分析模型" : "分析商品图与参考图"}>
+                    <button type="button" className="ecom-suite-primary" disabled={analyzing || !analysisModel} onClick={() => { commitDraftRows(); onAnalyze(draftRows); }} title={!analysisModel ? "请先选择分析模型" : "分析商品图与参考图"}>
                         {analyzing ? <LoaderCircle className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
                         {analyzing ? "分析中…" : "分析商品"}
                     </button>
@@ -214,12 +228,11 @@ export function CanvasEcommerceSuitePanel({
                         className="ecom-suite-ghost"
                         data-active={promptOpen ? "true" : undefined}
                         aria-expanded={promptOpen}
-                        title="编辑分析提示词"
+                        title="补充平台、张数和商品信息"
                             onClick={() => setPromptOpen((value) => !value)}
                     >
                         <FileText className="size-3.5" />
-                        分析提示词
-                        {directorPrompt.trim() ? <span className="ecom-suite-ghost-dot" aria-label="已自定义" /> : null}
+                        补充信息
                     </button>
                     {/* 技能：用户库里攒的写法，按品类挑几个注入这次分析。
                         默认不选——库里可能二十个，全塞进去会把提示词顶爆。 */}
@@ -242,60 +255,15 @@ export function CanvasEcommerceSuitePanel({
                     {skillsError ? <span role="alert" className="ecom-suite-error">{skillsError}</span> : null}
                 </div>
 
-                {/* 分析提示词：**只有「怎么写」这一段交出去**。
-                    商品事实、屏次与职责、输出格式由系统追加——那三段不是写法而是任务本身，
-                    少了任何一段，自定义的提示词都会产出解析不了的东西，而用户不会觉得
-                    是自己少写了格式，只会觉得功能坏了。 */}
-                {promptOpen ? (
-                    <div className="ecom-suite-director">
-                        <div className="ecom-suite-director-head">
-                            <span className="ecom-suite-director-title">分析提示词</span>
-                        </div>
-                        <textarea
-                            className="ecom-suite-director-input thin-scrollbar"
-                            rows={10}
-                            value={ecommerceSuiteDirectorPrompt(directorPrompt, flow)}
-                            aria-label="分析提示词"
-                            onChange={(event) => onDirectorPromptChange(event.target.value)}
-                        />
-                        <div className="ecom-suite-director-foot">
-                            <span className="ecom-suite-director-state">
-                                {directorPrompt.trim() ? "自定义" : "默认"}
-                            </span>
-                            {/* 导入：自己的提示词、从别处攒的 skill 文件都能直接吃进来。
-                                读成文本填进编辑框，不直接生效——用户得看一眼、可能还要删掉
-                                里面用不上的段落。 */}
-                            <label className="ecom-suite-ghost" title="导入 Markdown 或文本提示词">
-                                <Upload className="size-3" />
-                                导入文件
-                                <input
-                                    type="file"
-                                    accept=".md,.markdown,.txt,text/plain,text/markdown"
-                                    className="hidden"
-                                    onChange={(event) => {
-                                        const file = event.target.files?.[0];
-                                        event.target.value = "";
-                                        if (!file) return;
-                                        void file.text().then(
-                                            (content) => onDirectorPromptChange(content.slice(0, 20000)),
-                                            () => { modal.error({ title: "这个文件读不出来", content: "换一个纯文本或 Markdown 文件试试。", centered: true }); },
-                                        );
-                                    }}
-                                />
-                            </label>
-                            <button
-                                type="button"
-                                className="ecom-suite-ghost"
-                                disabled={!directorPrompt.trim()}
-                                title="恢复默认提示词"
-                                onClick={() => onDirectorPromptChange("")}
-                            >
-                                <RotateCcw className="size-3" />
-                                恢复默认
-                            </button>
-                        </div>
-                    </div>
-                ) : null}
+                {promptOpen ? <div className="ecom-suite-brief" aria-label="补充信息">
+                    <label>发布平台<input aria-label="发布平台" className="ecom-suite-director-input" value={brief.platform || ""} placeholder="淘宝、抖音、Amazon…" maxLength={100} onChange={e => onBriefChange?.({ ...brief, platform: e.target.value })} /></label>
+                    <label>计划张数<input aria-label="计划张数" className="ecom-suite-director-input" type="number" min={1} max={30} value={brief.imageCount ?? ""} placeholder="按当前表格" onChange={e => { const count = Number(e.target.value); if (!e.target.value || Number.isInteger(count) && count >= 1 && count <= 30) onBriefChange?.({ ...brief, imageCount: e.target.value ? count : undefined }); }} /></label>
+                    <label>文案语言<input aria-label="文案语言" className="ecom-suite-director-input" value={brief.language || ""} placeholder="简体中文、English…" maxLength={64} onChange={e => onBriefChange?.({ ...brief, language: e.target.value })} /></label>
+                    <label>人群与场景<input aria-label="人群与场景" className="ecom-suite-director-input" value={brief.audience || ""} maxLength={2000} onChange={e => onBriefChange?.({ ...brief, audience: e.target.value })} /></label>
+                    <label className="ecom-suite-brief-wide">卖点与依据<textarea aria-label="卖点与依据" className="ecom-suite-director-input" rows={2} maxLength={6000} placeholder="填写可以确认的商品信息" value={brief.sellingPoints || ""} onChange={e => onBriefChange?.({ ...brief, sellingPoints: e.target.value })} /></label>
+                    <label>整套视觉规范<textarea aria-label="整套视觉规范" className="ecom-suite-director-input" rows={2} maxLength={2000} placeholder="配色、背景、光线、字体等" value={brief.style || ""} onChange={e => onBriefChange?.({ ...brief, style: e.target.value })} /></label>
+                    <label>禁止项<textarea aria-label="禁止项" className="ecom-suite-director-input" rows={2} maxLength={2000} placeholder="禁止宣称、不可改变的外观等" value={brief.forbidden || ""} onChange={e => onBriefChange?.({ ...brief, forbidden: e.target.value })} /></label>
+                </div> : null}
 
                 <div className="ecom-suite-grid thin-scrollbar">
                     <div className="ecom-suite-grid-head">
@@ -424,7 +392,7 @@ export function CanvasEcommerceSuitePanel({
                         只是不拼长图——用户可能想先挑掉两张再拼，或者根本不想拼。 */}
                     {flow.bind ? (
                         <label className="ecom-suite-field">
-                            <input type="checkbox" checked={autoBind} onChange={(event) => onAutoBindChange(event.target.checked)} />
+                            <input type="checkbox" checked={autoBind && autoBindAvailable} disabled={!autoBindAvailable} onChange={(event) => onAutoBindChange(event.target.checked)} />
                             <span>出完自动拼长图</span>
                         </label>
                     ) : null}
@@ -454,17 +422,17 @@ export function CanvasEcommerceSuitePanel({
                         <Eraser className="size-3" />
                         清空提示词
                     </button>
-                    <button type="button" className="ecom-suite-ghost" onClick={onClose}>
+                    {!embedded ? <button type="button" className="ecom-suite-ghost" onClick={closeDraft}>
                         关闭
-                    </button>
+                    </button> : null}
                     <button type="button" className="ecom-suite-primary" disabled={analyzing || generating || !imageModel} onClick={confirmGenerate} title={!imageModel ? "请先选择生图模型" : "按这张表批量提交出图任务"}>
                         <ImagePlus className="size-3.5" />
                         批量生成 {total - missing} 张
                     </button>
                 </footer>
             </div>
-        </AppModal>
     );
+    return embedded ? content : <AppModal open={open} onCancel={closeDraft} footer={null} width={1080} centered destroyOnHidden flush title={null} className="ecom-suite-modal">{content}</AppModal>;
 }
 
 function moveDraftRow(rows: EcommerceSuiteRow[], slotId: string, delta: number) {

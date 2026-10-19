@@ -2,6 +2,15 @@
 
 本文档是管理后台 UI 的追踪与回滚台账。后续每批 UI 调整都必须在实施时追加，不覆盖历史记录。
 
+## 电商画布配置页
+
+- 目的：集中管理电商画布业务开关、四种用途的默认分析提示词和公共模特库。沿用 AdminPageFrame、SettingsSectionCard、后台独立 Switch 与 token，没有为此修改用户端全局样式。
+- 入口：`/admin/settings/ecommerce`，位于“平台配置”。支持保存、撤销、刷新确认、上一版载入草稿和离页保护；上传/保存/读取上一版共用同步操作锁，开关均有独立可访问名称。
+- 文件：新增 `settings/ecommerce-settings-page.tsx`、`services/api/ecommerce.ts`、`stores/use-ecommerce-settings.ts`；菜单与路由分别接入 `admin-shell.tsx`、`router.tsx`。后端配置、图片分发与资源引用保护同步实现。
+- 修改前完整备份：`.local/backups/ecommerce-admin-20261020-055248/workspace.tar.gz`，SHA-256 `3f5007b4af933c6ed908ff033426c25f20ebb32784d54cf0a349b8691f92174c`。该目录 `baseline/` 保存菜单与路由原文件；路由 SHA-256 `8cd150d992bfc178eb216f94890f0bc37bb26df0cadc64146938eddf59d49b08`，菜单 SHA-256 `1ba1f437147d92ad856dcd773cbc25d075500d15e2c651168b4ce0fa7555715f`。
+- 验证：真实页面 hook 回归覆盖保存失败保留草稿、重复保存去重、上一版覆盖确认；配置缓存回归验证旧 GET 不覆盖新保存结果。前端源码生产构建及后端专项通过。实际浏览器已打开路由，现有旧后端返回“请求不存在”，故保存、主题与窄屏的真实联调仍待新后端加载。
+- 回退：先保存当前差异，只逐项撤销本轮路由、菜单、页面及依赖。完整备份产生时另有 merge，之后其他协作者已完成；禁止恢复旧 index、MERGE_HEAD 或整包覆盖。详见本地交付报告与回退清单。配置上一版通过页面载入后显式保存，无新增表或 Schema 迁移。
+
 ## 用户登录日志筛选布局收敛
 
 - 问题：用户搜索与嵌套筛选容器分别换行，IP 输入被基础样式撑满一行，实际 1280px 视口占四排、工具栏高 168px。

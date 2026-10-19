@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import localforage from "localforage";
-import { apiClient } from "../src/services/api/request";
+import { apiClient, ApiError } from "../src/services/api/request";
+import { buildLibTVCanvasNodes } from "../src/lib/canvas/libtv-import";
 import { setActiveUserScope } from "../src/lib/user-scope";
 import { initializeRemoteUserDataSession, loadCanvasProjectForEditing, resetRemoteUserDataSync, saveRemoteUserDataNow, syncRemoteUserData } from "../src/services/user-data-sync";
 import { flushCanvasStorePersistence, useCanvasStore, type CanvasProject } from "../src/stores/canvas/use-canvas-store";
@@ -19,6 +20,9 @@ let mutations: CanvasOperationsRequest[];
 let onWrite: (() => void) | undefined;
 let scope: string;
 let sequence = 0;
+let assetWrites = 0;
+let assetLimit = Infinity;
+const remoteAssets = new Map<string, unknown>();
 
 function node(id: string) {
     return {
@@ -35,6 +39,9 @@ beforeEach(async () => {
     resetRemoteUserDataSync();
     disk.clear();
     mutations = [];
+    assetWrites = 0;
+    assetLimit = Infinity;
+    remoteAssets.clear();
     onWrite = undefined;
     scope = `core-review-${++sequence}`;
     Object.defineProperty(globalThis, "window", {
@@ -80,6 +87,19 @@ beforeEach(async () => {
         const url = String(config.url);
         let data: unknown;
         if (url === "/user-data/snapshot") data = { projects: [structuredClone(remote)], assets: [] };
+        else if (url.startsWith("/assets/")) {
+            const id = url.slice("/assets/".length);
+            if (config.method === "get") {
+                if (!remoteAssets.has(id)) throw new ApiError("missing", { status: 404 });
+                data = { asset: structuredClone(remoteAssets.get(id)) };
+            } else if (config.method === "put") {
+                assetWrites++;
+                if (assetWrites > assetLimit) throw new ApiError("请求过于频繁", { status: 429, retryAfterMs: 60_000 });
+                const { asset } = JSON.parse(config.data);
+                remoteAssets.set(id, asset);
+                data = { asset };
+            } else throw new Error("Unexpected asset method");
+        }
         else if (url === "/canvas-projects/canvas" && config.method === "get") data = { project: structuredClone(remote) };
         else if (url === "/canvas-projects/canvas/operations" && config.method === "patch") {
             const body = JSON.parse(config.data) as CanvasOperationsRequest;
@@ -145,6 +165,35 @@ test("reopening a dirty local draft preserves a node added remotely", async () =
     expect(mutations.flatMap((item) => item.operations).some((op) => op.type === "remove_node" && op.id === "other-editor")).toBe(false);
     expect(remote.nodes.map((item) => item.id)).toEqual(["original", "other-editor"]);
     expect(remote.title).toBe("local edit");
+});
+
+test("large LibTV import stops on rate limit and resumes only remaining assets after cooldown", async () => {
+    const imported = buildLibTVCanvasNodes(Array.from({ length: 125 }, (_, i) => ({
+        id: `import-${i}`, type: "image" as const, title: `image-${i}`, x: i * 320, y: 0, width: 320, height: 240,
+        content: `https://libtv-res.liblib.art/test-${i}.png`, prompt: "", model: "",
+        metadata: { provider: "libtv" as const, projectUuid: "d".repeat(32), nodeKey: `key-${i}`, batchId: "batch", sourceType: "image" },
+    })), { x: 0, y: 0, k: 1 }, { width: 1200, height: 800 });
+    useCanvasStore.getState().updateProject("canvas", { nodes: [...remote.nodes, ...imported] });
+    await flushCanvasStorePersistence();
+    assetLimit = 120;
+    const now = Date.now;
+    const time = now();
+    Date.now = () => time;
+    try {
+        await expect(saveRemoteUserDataNow("canvas")).rejects.toMatchObject({ status: 429 });
+        expect(assetWrites).toBe(121);
+        expect(remote.nodes).toHaveLength(1);
+        expect(useCanvasStore.getState().openProject("canvas")?.nodes).toHaveLength(126);
+        await expect(saveRemoteUserDataNow("canvas")).rejects.toMatchObject({ status: 429 });
+        expect(assetWrites).toBe(121);
+        Date.now = () => time + 60_001;
+        assetLimit = Infinity;
+        await saveRemoteUserDataNow("canvas");
+        expect(assetWrites).toBe(126);
+        expect(remoteAssets.size).toBe(125);
+        expect(remote.nodes).toHaveLength(126);
+        expect(new Set(remote.nodes.map((node) => node.id)).size).toBe(126);
+    } finally { Date.now = now; }
 });
 
 test("another local edit during save rebases over remote additions", async () => {

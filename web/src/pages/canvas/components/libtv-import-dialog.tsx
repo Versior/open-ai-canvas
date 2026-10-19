@@ -1,11 +1,12 @@
-import { App, Button, Input, Modal, Tag } from "antd";
-import { CircleAlert, ExternalLink, Import, LoaderCircle } from "lucide-react";
+import { App, Button, Input, Modal } from "antd";
+import { CircleAlert, Import, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { buildLibTVCanvasNodes, formatLibTVBatchTime, parseLibTVProjectUUID, summarizeLibTVImportWarnings } from "@/lib/canvas/libtv-import";
 import { createLatestRequestGuard } from "@/lib/libtv-gallery";
 import { importLibTVCanvas, importLibTVTemplate, type LibTVImportResult } from "@/services/api/libtv";
 import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import "./libtv-import-dialog.css";
 
 type Props = {
     open: boolean;
@@ -105,7 +106,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
 
     return (
         <Modal
-            className="workspace-modal"
+            className="workspace-modal libtv-import-dialog"
             open={open}
             onCancel={close}
             title={templateMode ? "复制到画布" : "导入 LibTV 画布"}
@@ -153,7 +154,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                                     <div className="text-sm font-semibold">{result.projectName || "LibTV 画布"}</div>
                                     <div className="mt-1 text-sm text-foreground/60">可导入 {result.importedNodeCount} 个节点 · {result.importedConnectionCount} 条连线</div>
                                 </div>
-                                <Tag color="blue">批次：{formatLibTVBatchTime(result.batchCreatedAt)}</Tag>
+                                <span className="libtv-import-batch">批次：{formatLibTVBatchTime(result.batchCreatedAt)}</span>
                             </div>
                             <div className="mt-3 text-xs leading-5 text-foreground/50">节点会保留相对位置，并整体放到当前可视区域中心。</div>
                         </div>
@@ -183,9 +184,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                                 </div>
                             </div>
                         ) : null}
-                        <div className="flex flex-wrap gap-2">
-                            <Tag>等待确认导入</Tag>
-                        </div>
+                        <p className="libtv-import-status" role="status">等待确认导入</p>
                     </div>
                 ) : null}
             </div>

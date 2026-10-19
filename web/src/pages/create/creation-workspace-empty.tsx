@@ -4,13 +4,18 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import type { CreationMode } from "./creation-assets";
 import { Alert, Button, Spin } from "antd";
-import { ArrowUp, Clapperboard, FileText, Image as ImageIcon, RotateCw, Sparkles } from "lucide-react";
+import { Clapperboard, FileText, Image as ImageIcon, RotateCw, Sparkles } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { aceternityMotion } from "@/lib/aceternity-motion";
-import { libTVGalleryInfiniteQuery, pickLibTVRecommendations, shuffleLibTVGalleryPages } from "@/lib/libtv-gallery";
+import { libTVGalleryInfiniteQuery, shuffleLibTVGalleryPages } from "@/lib/libtv-gallery";
 import { getLibTVGallery } from "@/services/api/libtv-gallery";
 import { LibTVWorkDetailDialog } from "@/pages/inspiration/work-detail-dialog";
+import { LibTVGalleryCard } from "@/pages/inspiration/gallery-card";
+import { InspirationHall } from "@/pages/inspirations";
+import type { CreationInspiration } from "@/lib/inspirations/catalog";
+import { fillablePrompt } from "@/lib/inspirations/resolve";
+import { useNavigate } from "react-router";
 
 export const creationEmptyBannerFrames = [
     { src: "/short-drama-styles/cyberpunk-neon.jpg", caption: "镜头01 · 雨夜霓虹" },
@@ -83,21 +88,23 @@ export function CreationEmptySuggest({ onStartPrompt, onOpenLibrary }: { onStart
 
 /**
  * 精选灵感直接读灵感广场的同一份公开作品（同一个 queryKey，命中缓存，不复制数据、不转存媒体）。
- * 点开的是同一个作品弹窗，所以创作页的对话、模型、积分都留在原地；点一下不会填提示词，也不会自动生成。
- * 加载中/失败/无结果照实说，不拿旧的内置示例冒充「已同步」。
+ * 点开画布作品使用原作品弹窗；缺少图片作品时复用单次创作图片灵感及使用提示词操作。
  */
-export function CreationFeaturedWorks({ showHeading = true }: { showHeading?: boolean }) {
+export function CreationFeaturedWorks({ showHeading = true, creationMode, onUseInspiration }: { showHeading?: boolean; creationMode?: CreationMode; onUseInspiration?: (item: CreationInspiration) => void }) {
+    const navigate = useNavigate();
+    const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
     const [activeTemplateUuid, setActiveTemplateUuid] = useState<string>();
     const [shuffleSeed] = useState(() => Math.floor(Math.random() * 0x100000000));
     const loadMoreRef = useRef<HTMLDivElement>(null);
     const { data, isLoading, isError, error, refetch, isFetching, fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: "" }, getLibTVGallery));
 
-    const items = useMemo(() => shuffleLibTVGalleryPages(data?.pages ?? [], shuffleSeed), [data?.pages, shuffleSeed]);
-    const recommended = useMemo(() => (activeTemplateUuid ? pickLibTVRecommendations(items, activeTemplateUuid, 6) : []), [activeTemplateUuid, items]);
+    const allItems = useMemo(() => shuffleLibTVGalleryPages(data?.pages ?? [], shuffleSeed), [data?.pages, shuffleSeed]);
+    const items = useMemo(() => allItems.filter((item) => !unavailable.has(item.templateUuid) && (!(creationMode === "image" || creationMode === "video") || item.mediaType === creationMode)), [allItems, creationMode, unavailable]);
+    const useImageFallback = !isLoading && creationMode === "image" && items.length === 0;
 
     useEffect(() => {
         const target = loadMoreRef.current;
-        if (!target || !hasNextPage || isFetching || isError || activeTemplateUuid || typeof IntersectionObserver === "undefined") return;
+        if (!target || useImageFallback || !hasNextPage || isFetching || isError || activeTemplateUuid || typeof IntersectionObserver === "undefined") return;
         let requested = false;
         const observer = new IntersectionObserver((entries) => {
             if (requested || !entries.some((entry) => entry.isIntersecting)) return;
@@ -106,7 +113,7 @@ export function CreationFeaturedWorks({ showHeading = true }: { showHeading?: bo
         }, { root: target.closest(".creation-home-scroll, .creation-empty-workspace"), rootMargin: "0px 0px 240px 0px" });
         observer.observe(target);
         return () => observer.disconnect();
-    }, [activeTemplateUuid, fetchNextPage, hasNextPage, isError, isFetching, items.length]);
+    }, [activeTemplateUuid, fetchNextPage, hasNextPage, isError, isFetching, allItems.length, creationMode, items.length, useImageFallback]);
     return (
         <section className="creation-featured-works" aria-label="精选灵感">
             {showHeading ? <div className="creation-featured-heading">
@@ -115,7 +122,7 @@ export function CreationFeaturedWorks({ showHeading = true }: { showHeading?: bo
                 </div>
             </div> : null}
 
-            {isError && !isFetchNextPageError ? (
+            {useImageFallback ? <InspirationHall embedded creationMode="image" onUse={onUseInspiration ?? ((item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } }))} /> : isError && !isFetchNextPageError ? (
                 <Alert
                     type="error"
                     showIcon
@@ -128,44 +135,30 @@ export function CreationFeaturedWorks({ showHeading = true }: { showHeading?: bo
                     }
                 />
             ) : isLoading ? (
-                <div className="creation-featured-layout" aria-busy="true">
+                <div className="libtv-gallery-grid" aria-busy="true">
                     {[0, 1, 2].map((key) => (
-                        <span key={key} className="product-collection-card creation-featured-card is-placeholder" />
+                        <span key={key} className="libtv-gallery-cover" />
                     ))}
                 </div>
             ) : items.length === 0 ? (
-                <p className="creation-featured-empty">灵感广场现在还没有公开作品。</p>
+                <p className="creation-featured-empty">{hasNextPage ? "当前批次暂无匹配作品，下滑继续查找。" : creationMode === "image" ? "暂无图片画布灵感。" : creationMode === "video" ? "暂无视频画布灵感。" : "灵感广场现在还没有公开作品。"}</p>
             ) : (
                 <div className="creation-featured-layout">
                     {items.map((item, index) => (
-                        <button
+                        <LibTVGalleryCard
                             key={item.templateUuid}
-                            type="button"
-                            className={`product-collection-card creation-featured-card ${index === 0 ? "is-featured-hero" : ""}`}
+                            item={item}
+                            priority={index < 4}
+                            featured
+                            hero={index === 0}
+                            onUnavailable={() => setUnavailable((current) => new Set(current).add(item.templateUuid))}
                             onClick={() => setActiveTemplateUuid(item.templateUuid)}
-                        >
-                            <span className="creation-featured-media">
-                                <img src={item.coverUrl} alt="" loading="lazy" />
-                                <span className="creation-inspiration-overlay">
-                                    <ArrowUp />
-                                    查看作品
-                                </span>
-                            </span>
-                            <span className="creation-featured-copy">
-                                <strong>{item.title}</strong>
-                                <span>{item.description}</span>
-                                <em>
-                                    <Sparkles />
-                                    {item.authorName || "LibTV 创作者"}
-                                    {item.tags[0] ? ` · ${item.tags[0].label}` : ""}
-                                </em>
-                            </span>
-                        </button>
+                        />
                     ))}
                 </div>
             )}
 
-            {items.length > 0 && (
+            {!isLoading && !useImageFallback && (allItems.length > 0 || hasNextPage) && (
                 <div ref={loadMoreRef} className="creation-inspiration-load-status" role="status" aria-live="polite">
                     {isFetchNextPageError ? (
                         <>
@@ -178,14 +171,12 @@ export function CreationFeaturedWorks({ showHeading = true }: { showHeading?: bo
                         <><Spin size="small" /><span>正在加载更多灵感…</span></>
                     ) : !hasNextPage ? (
                         <span>已展示全部 {items.length} 个作品</span>
-                    ) : null}
+                    ) : <Button size="small" disabled={isFetching} onClick={() => void fetchNextPage({ cancelRefetch: false })}>加载更多</Button>}
                 </div>
             )}
 
             <LibTVWorkDetailDialog
                 templateUuid={activeTemplateUuid}
-                recommended={recommended}
-                onSelectWork={(item) => setActiveTemplateUuid(item.templateUuid)}
                 onClose={() => setActiveTemplateUuid(undefined)}
             />
         </section>

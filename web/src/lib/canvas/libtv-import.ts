@@ -40,12 +40,12 @@ export function summarizeLibTVImportWarnings(warnings: readonly LibTVImportWarni
     return [...groups.values()];
 }
 
-export function buildLibTVImagePreviewUrl(rawUrl: string) {
+export function buildLibTVImagePreviewUrl(rawUrl: string, width = LIBTV_PREVIEW_WIDTH) {
     try {
         const url = new URL(rawUrl);
         if (url.protocol !== "https:" || url.hostname !== LIBTV_RESOURCE_HOST) return rawUrl;
         if (!url.searchParams.has("x-oss-process")) {
-            url.searchParams.set("x-oss-process", `image/resize,w_${LIBTV_PREVIEW_WIDTH}`);
+            url.searchParams.set("x-oss-process", `image/resize,w_${width}`);
         }
         return url.toString();
     } catch {

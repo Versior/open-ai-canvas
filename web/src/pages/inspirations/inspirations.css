@@ -10,6 +10,30 @@
     padding-block: var(--space-2) var(--space-6);
 }
 
+.inspirations-view-switch {
+    display: flex;
+    gap: var(--space-6);
+    margin-bottom: var(--space-5);
+    border-bottom: var(--stroke-1) solid var(--border);
+}
+.inspirations-view-switch button {
+    padding: var(--space-3) 0;
+    border: 0;
+    border-bottom: var(--stroke-2) solid transparent;
+    background: transparent;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-body);
+    cursor: pointer;
+}
+.inspirations-view-switch button[aria-pressed="true"] {
+    border-bottom-color: var(--user-ink);
+    color: var(--user-ink);
+}
+.inspirations-view-switch button:focus-visible {
+    outline: var(--stroke-2) solid var(--control-focus-ring);
+    outline-offset: var(--space-1);
+}
+
 .inspiration-hall {
     min-width: 0;
     width: 100%;

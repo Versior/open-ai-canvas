@@ -222,7 +222,7 @@ describe("LibTV work detail dialog", () => {
     test("opening pushes history so Back only closes the modal, closing uses replace so it does not stack", () => {
         const gallery = source("../src/pages/inspiration/index.tsx");
         const open = gallery.slice(gallery.indexOf("const openWork"), gallery.indexOf("const closeWork"));
-        const close = gallery.slice(gallery.indexOf("const closeWork"), gallery.indexOf("// 推荐来自已加载的真实列表"));
+        const close = gallery.slice(gallery.indexOf("const closeWork"), gallery.indexOf("    return (", gallery.indexOf("const closeWork")));
         // replace:true 会改写列表那条历史，返回键就会离开页面；打开必须压新记录。
         expect(open).toContain("setSearchParams(next);");
         expect(open).not.toContain("replace: true");
@@ -267,16 +267,16 @@ describe("LibTV work detail dialog", () => {
         const pane = detail.slice(detail.indexOf("export function WorkDetailPane"), detail.indexOf("export default function WorkDetailPage"));
         // 只看渲染部分，避免匹配到事件处理函数里的同名文案。
         const render = pane.slice(pane.indexOf("const body = () => {"));
-        const video = render.indexOf("<video ref={mainVideoRef} src={data.work.mediaUrl}");
-        for (const anchor of ['查看制作过程', '复制到画布', '一键复刻视频', ">作品描述<", ">提示词<", ">制作流程<"]) {
+        const video = render.indexOf("<video ref={mainVideoRef}");
+        for (const anchor of ['查看制作过程', '复制到画布', '使用视频步骤', ">提示词<", ">制作流程<"]) {
             expect(render).toContain(anchor);
             expect(video).toBeLessThan(render.indexOf(anchor));
         }
-        // 主播放器仍是 LibTV 外链且不自动播放。
+        // 主播放器打开后加载原视频并尝试静音播放。
         expect(pane).toContain('poster={data.work.coverUrl || undefined}');
-        expect(pane).toContain("preload=\"none\"");
-        expect(pane).toContain("aspect-video w-full bg-black");
-        expect(pane).not.toContain("autoplay");
+        expect(pane).toContain("preload=\"auto\"");
+        expect(pane).toContain("libtv-detail-media w-full bg-black object-contain");
+        expect(pane).toContain("autoPlay muted controls");
     });
 
     test("the process grid opens both media and text steps in the same dialog", () => {
@@ -292,18 +292,15 @@ describe("LibTV work detail dialog", () => {
         expect(grid).not.toContain("<img");
     });
 
-    test("the recommendation column is real data, independent, and never a placeholder grid", () => {
+    test("work details use the full content area without recommendations or their extra query", () => {
         const dialog = source("../src/pages/inspiration/work-detail-dialog.tsx");
-        expect(dialog).toContain("recommended: LibTVGalleryItem[]");
+        expect(dialog).not.toContain("recommended");
         const detail = source("../src/pages/inspiration/work-detail.tsx");
-        const aside = detail.slice(detail.indexOf("精选推荐"), detail.indexOf("</aside>"));
-        expect(aside).toContain("recommended.map((item)");
-        expect(aside).not.toContain("Skeleton");
-        expect(aside).not.toContain("占位");
-        // 宽屏时左栏自己滚，推荐栏不动；窄屏整块由弹窗体滚。
+        expect(detail).not.toContain("<aside");
+        expect(detail).not.toContain("精选推荐");
+        expect(detail).not.toContain("libtv-work-detail-recommend");
+        expect(detail).not.toContain("getLibTVGallery");
         expect(detail).toContain("min-w-0 flex-1 lg:h-full lg:overflow-y-auto lg:pr-1");
-        expect(detail).toContain("w-full shrink-0 border-t border-border pt-4 lg:w-[280px]");
-        expect(aside).not.toContain('aria-label="关闭"');
     });
 
     test("recommendations exclude the open work, dedupe, and prefer the same tag", () => {
@@ -530,8 +527,8 @@ describe("LibTV work detail liveness", () => {
         // 直接链接页也逐条重置：弹窗按 key 重建，路由页靠这个 effect。
         const route = detail.slice(detail.indexOf("export default function WorkDetailPage"));
         expect(route).toContain("<WorkDetailPane templateUuid={templateUuid}");
-        expect(route).toContain("pickLibTVRecommendations(data?.items ?? [], templateUuid, 6)");
-        expect(route).toContain('queryKey: ["libtv-work-detail-recommend", templateUuid]');
+        expect(route).not.toContain("pickLibTVRecommendations");
+        expect(route).not.toContain("useQuery");
     });
 
     test("the modal width override is scoped to this one dialog", () => {
@@ -557,7 +554,7 @@ describe("LibTV creation page featured works", () => {
         expect(empty).not.toContain("creationFeaturedWorks");
         expect(empty).not.toContain("inspirationSource");
         expect(empty).not.toContain("creation-inspirations");
-        expect(empty).toContain("<img src={item.coverUrl} alt=\"\" loading=\"lazy\" />");
+        expect(empty).toContain("<LibTVGalleryCard");
         expect(empty).not.toContain("mediaUrls");
     });
 
@@ -574,7 +571,7 @@ describe("LibTV creation page featured works", () => {
         expect(featured).not.toContain("submit");
         // 创作页对话、模型与积分都留在原地。
         const create = source("../src/pages/create/index.tsx");
-        expect(create).toContain("<CreationFeaturedWorks showHeading={false} />");
+        expect(create).toContain("<CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration=");
         expect(create).toContain('userId && userSessionHydrated ? <CreationFeaturedWorks');
         expect(create).toContain('登录后查看画布灵感');
     });
@@ -605,7 +602,7 @@ describe("LibTV creation page featured works", () => {
         expect(empty).toContain("requested = true;");
         expect(empty).toContain("fetchNextPage({ cancelRefetch: false })");
         expect(empty).toContain("return () => observer.disconnect();");
-        expect(empty).toContain("isFetching, items.length]");
+        expect(empty).toContain("isFetching, allItems.length, creationMode, items.length, useImageFallback]");
         expect(empty).toContain('ref={loadMoreRef} className="creation-inspiration-load-status" role="status"');
         expect(empty).toContain("下一批灵感加载失败");
         expect(empty).toContain("isFetchNextPageError ? (");
@@ -622,12 +619,28 @@ describe("LibTV creation page featured works", () => {
     test("only a real loaded item can be opened", () => {
         const empty = source("../src/pages/create/creation-workspace-empty.tsx");
         expect(empty).toContain("const [activeTemplateUuid, setActiveTemplateUuid] = useState<string>();");
-        expect(empty).toContain("const recommended = useMemo(() => (activeTemplateUuid ? pickLibTVRecommendations(items, activeTemplateUuid, 6) : []), [activeTemplateUuid, items]);");
+        expect(empty).not.toContain("recommended=");
+        expect(empty).toContain('className="creation-featured-layout"');
+        expect(empty).toContain("hero={index === 0}");
         expect(empty).toContain("key={item.templateUuid}");
     });
 });
 
 describe("LibTV inspiration navigation", () => {
+    test("import confirmation uses a neutral scoped footer and readable status text", () => {
+        const dialog = source("../src/pages/canvas/components/libtv-import-dialog.tsx");
+        expect(dialog).toContain('className="workspace-modal libtv-import-dialog"');
+        expect(dialog).toContain('className="libtv-import-status"');
+        expect(dialog).not.toContain('<Tag>等待确认导入</Tag>');
+        expect(dialog).not.toContain('color="blue"');
+        const css = source("../src/pages/canvas/components/libtv-import-dialog.css");
+        expect(css).toContain('--button-primary-bg: var(--foreground)');
+        expect(css).toContain('--button-primary-fg: var(--background)');
+        expect(css).toContain('align-items: center');
+        expect(css).toContain('height: var(--space-10)');
+        expect(css).toContain('transform: none');
+    });
+
     test("sidebar, title, command palette and route preload all know the inspiration page", () => {
         const sidebar = source("../src/components/layout/workspace-sidebar-nav.tsx");
         const resources = sidebar.slice(sidebar.indexOf('heading: "资源与工具"'), sidebar.indexOf("taskCenterEnabled ? [{ items"));
@@ -637,7 +650,10 @@ describe("LibTV inspiration navigation", () => {
         expect(source("../src/components/layout/workspace-top-bar.tsx")).toContain('inspiration: "灵感广场"');
         expect(source("../src/components/layout/workspace-command-palette.tsx")).toContain('toolEntry("inspiration", "/inspiration")');
         const modules = source("../src/lib/workspace-route-modules.ts");
-        expect(modules).toContain('inspiration: () => import("@/pages/inspiration")');
+        expect(modules).toContain('inspiration: () => import("@/pages/inspirations")');
+        expect(sidebar).not.toContain('toolItem("inspirations", "/inspirations")');
+        expect(source("../src/constant/navigation-tools.ts")).not.toContain('slug: "inspirations"');
+        expect(source("../src/router.tsx")).toContain('path: "/inspirations", element: <LegacyInspirationsRedirect />');
         expect(source("../src/router.tsx")).toContain("lazy(loadInspirationPage)");
         expect(source("../src/constant/navigation-tools.ts")).toContain("inspiration");
     });

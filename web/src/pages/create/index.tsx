@@ -1103,7 +1103,7 @@ export default function CreatePage() {
                     </motion.div> : null}
                 </AnimatePresence>
                 <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-home-scroll creation-scrollbar">
-                <CreationInspirationTunnel mode={mode} hidden={launchpadCondensed} onStartPrompt={startPrompt} />
+                <CreationInspirationTunnel mode={mode} hidden={launchpadCondensed} enabled={Boolean(userId && userSessionHydrated)} onUseInspiration={(item) => startPrompt(item.mode, fillablePrompt(item))} />
                 <section ref={launchpadRef} className="creation-launchpad" aria-label="开始创作">
                     <header className="creation-start-heading">
                         <div>
@@ -1126,7 +1126,7 @@ export default function CreatePage() {
                     <h2>精选灵感</h2>
                     <Segmented value={inspirationView} onChange={setInspirationView} options={[{ label: "画布灵感", value: "canvas" }, { label: "单次创作灵感", value: "prompt" }]} />
                 </div>
-                {inspirationView === "canvas" ? (userId && userSessionHydrated ? <CreationFeaturedWorks showHeading={false} /> : <div className="creation-inspiration-load-status">
+                {inspirationView === "canvas" ? (userId && userSessionHydrated ? <CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration={(item) => startPrompt(item.mode, fillablePrompt(item))} /> : <div className="creation-inspiration-load-status">
                     <button type="button" onClick={() => setLoginDialogOpen(true)}>登录后查看画布灵感</button>
                 </div>) : <>
                 <Suspense fallback={<div className="creation-hall-loading" role="status">正在准备灵感大厅…</div>}>

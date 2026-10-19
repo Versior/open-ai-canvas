@@ -260,11 +260,12 @@ export function ecommerceSuiteTargets(
     // 用户看到的是「重复出一样的图」。认领靠的是槽位这个稳定标识，连接缺了补上就是。
     const { nodes: spawnedRaw, connections } = ecommerceSuiteNodes(product, flow, rows, new Set(), createId, rows.map((row) => row.slotId));
     const promptBySlot = new Map(rows.map((row) => [row.slotId, row.prompt.trim()]));
+    const productOutputs = new Set(canvas.connections.filter((edge) => edge.fromNodeId === product.id).map((edge) => edge.toNodeId));
     const spawned = spawnedRaw.map((item) => {
         const prompt = item.metadata?.ecommerceShotId ? promptBySlot.get(item.metadata.ecommerceShotId) : undefined;
         const slotId = item.metadata?.ecommerceShotId;
-        const priorRuns = slotId ? canvas.nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.ecommerceShotId === slotId).length : 0;
-        return { ...item, position: { ...item.position, y: item.position.y + priorRuns * 360 }, metadata: { ...item.metadata, ...(prompt ? { prompt, composerContent: prompt } : {}), ...patch } };
+        const priorRuns = slotId ? canvas.nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.ecommerceShotId === slotId && (node.metadata?.ecommerceProductId === product.id || productOutputs.has(node.id))).length : 0;
+        return { ...item, position: { ...item.position, y: item.position.y + priorRuns * 360 }, metadata: { ...item.metadata, ecommerceProductId: product.id, ecommerceFlowId: flow.id, ...(prompt ? { prompt, composerContent: prompt } : {}), ...patch } };
     });
 
     return {

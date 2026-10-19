@@ -29,11 +29,22 @@ dom.HTMLMediaElement.prototype.load = function () {};
 const { act, StrictMode } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const catalogEntries: CreationInspiration[] = Array.from({ length: 72 }, (_, index) => ({ id: `case-${index}`, title: `案例${index}`, description: "测试", image: `/poster-${index}.webp`, mode: index < 36 ? "image" : "video", prompt: "提示词", sourceId: "original" }));
-mock.module("@/services/inspiration-catalog", () => ({ loadInspirationCatalog: async () => ({ entries: catalogEntries, categoriesBySource: {}, revisions: {}, loadedAt: 0 }) }));
+mock.module("@/services/inspiration-catalog", () => ({ loadGalleryPool: async () => catalogEntries, loadInspirationCatalog: async () => ({ entries: catalogEntries, categoriesBySource: {}, revisions: {}, loadedAt: 0 }) }));
 const { App } = await import("antd");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const canvasWork = { templateUuid: "canvas-work", projectUuid: "canvas-project", title: "画布作品案例", description: "作品描述", coverUrl: "/canvas.webp", mediaUrl: "/canvas.mp4", mediaType: "video", authorName: "", authorAvatar: "", likeCount: 0, publishedAt: "", tags: [], sourceUrl: "" };
+const imageCanvasWork = { ...canvasWork, templateUuid: "image-work", title: "图片作品案例", mediaType: "image", mediaUrl: "/image.webp" };
+mock.module("@/services/api/libtv-gallery", () => ({
+    LIBTV_GALLERY_PAGE_SIZE: 20,
+    getLibTVGallery: async () => ({ items: [canvasWork, imageCanvasWork], page: 1, pageSize: 20, hasMore: false, requestId: "fixture" }),
+    getLibTVWorkDetail: async () => ({ work: canvasWork, steps: [], nodeCount: 0, connectionCount: 0, canImport: false, warnings: [{ message: "部分引用未公开" }, { message: "暂不支持的节点类型" }] }),
+}));
 mock.module("@/lib/localforage-storage", () => ({ localForageStorageForScope: () => ({ getItem: async () => null, setItem: async () => {}, removeItem: async () => {} }) }));
 const { useInspirationStore } = await import("../../src/stores/use-inspiration-store");
 const { InspirationCard, InspirationHall, default: InspirationsPage } = await import("../../src/pages/inspirations");
+const { CreationFeaturedWorks } = await import("../../src/pages/create/creation-workspace-empty");
+const { CreationInspirationTunnel } = await import("../../src/pages/create/creation-inspiration-tunnel");
+const { LibTVGalleryCard } = await import("../../src/pages/inspiration/gallery-card");
 const { MemoryRouter, Routes, Route, useLocation } = await import("react-router");
 const { InspirationDetailModal } = await import("../../src/pages/inspirations/inspiration-detail-modal");
 const { VIDEO_HOVER_DELAY_MS } = await import("../../src/lib/canvas/canvas-video-hover-preview");
@@ -285,7 +296,7 @@ test("embedded hall follows composer modes, keeps appended order stable and resh
     } finally { Math.random = random; }
 });
 
-test("embedded hall keeps only the heading and appends cards without pagination", async () => {
+test("embedded hall removes its duplicate heading and appends cards without pagination", async () => {
     useInspirationStore.setState({ hydrated: true, custom: [], overrides: {}, hidden: [], favorites: [] });
     const show = async (mode: "image" | "video") => {
         await act(async () => root.render(<App><InspirationHall embedded creationMode={mode} onUse={noop} /></App>));
@@ -293,7 +304,8 @@ test("embedded hall keeps only the heading and appends cards without pagination"
     const titles = () => Array.from(host.querySelectorAll(".inspiration-card-open"), (button) => button.getAttribute("aria-label"));
     await show("video");
     await act(async () => { intersect([{ isIntersecting: true }]); });
-    expect(host.querySelector("h2")?.textContent).toBe("灵感大厅");
+    expect(host.querySelector("h2")).toBeNull();
+    expect(host.querySelector(".inspiration-hall")?.getAttribute("aria-label")).toBe("单次创作灵感");
     expect(host.querySelector(".inspiration-hall-header p")).toBeNull();
     expect(host.querySelector(".inspiration-hall-actions")).toBeNull();
     expect(host.querySelector(".inspiration-hall-toolbar")).toBeNull();
@@ -317,7 +329,7 @@ test("embedded hall keeps only the heading and appends cards without pagination"
 });
 
 test("standalone route owns scrolling, appends in catalog order and keeps order on reentry", async () => {
-    await act(async () => root.render(<MemoryRouter><App><InspirationsPage /></App></MemoryRouter>));
+    await act(async () => root.render(<MemoryRouter initialEntries={["/inspiration?view=prompt"]}><App><InspirationsPage /></App></MemoryRouter>));
     const scrollOwner = host.querySelector("main.app-workspace-scroll");
     expect(scrollOwner).not.toBeNull();
     expect(scrollOwner?.classList.contains("h-full")).toBe(true);
@@ -339,10 +351,158 @@ test("standalone route owns scrolling, appends in catalog order and keeps order 
     expect(titles()).toEqual(expected.slice(0, 30));
     expect(host.querySelector('.inspiration-hall-modes [aria-pressed="true"]')?.textContent).toBe("图片");
     await act(async () => root.render(null));
-    await act(async () => root.render(<MemoryRouter><App><InspirationsPage /></App></MemoryRouter>));
+    await act(async () => root.render(<MemoryRouter initialEntries={["/inspiration?view=prompt"]}><App><InspirationsPage /></App></MemoryRouter>));
     await act(async () => { intersect([{ isIntersecting: true }]); });
     expect(titles()).toEqual(expected.slice(0, 30));
     await act(async () => root.render(null));
+});
+
+test("standalone inspiration switches to canvas works and opens details without nested page scrolling", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/inspiration?view=prompt"]}><App><InspirationsPage /></App></MemoryRouter></QueryClientProvider>));
+    const buttons = host.querySelectorAll(".inspirations-view-switch button");
+    expect(buttons[0].getAttribute("aria-pressed")).toBe("true");
+    expect(host.textContent).not.toContain("新建灵感");
+    expect(host.querySelector('[aria-label="更多灵感管理操作"]')).toBeNull();
+    expect(host.querySelector("h2#inspiration-hall-title")).toBeNull();
+    await act(async () => (buttons[1] as HTMLElement).click());
+    for (let attempt = 0; attempt < 30 && !host.querySelector(".library-item"); attempt++) {
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    }
+    expect(host.textContent).toContain(canvasWork.title);
+    expect(host.querySelector(".library-item-info")?.textContent).toBe(canvasWork.title);
+    expect(host.textContent).not.toContain("灵感大厅");
+    expect(host.querySelectorAll("main.app-workspace-scroll")).toHaveLength(1);
+    expect(host.querySelector(".inspiration-hall")).toBeNull();
+    const playsBeforeOpen = plays;
+    await act(async () => (host.querySelector(".library-item") as HTMLElement).click());
+    for (let attempt = 0; attempt < 30 && !document.querySelector(".libtv-detail-main"); attempt++) {
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    }
+    const dialog = document.querySelector(".libtv-work-detail-dialog")!;
+    expect(dialog.querySelector("aside")).toBeNull();
+    expect(dialog.textContent).not.toContain("精选推荐");
+    expect(dialog.querySelector("h1")?.textContent).toBe(canvasWork.title);
+    expect(dialog.querySelector("video")?.controls).toBe(true);
+    expect(dialog.querySelector("video")?.preload).toBe("auto");
+    expect(dialog.querySelector("video")?.muted).toBe(true);
+    expect(plays).toBeGreaterThan(playsBeforeOpen);
+    const video = dialog.querySelector("video")!;
+    expect(video.src).toContain(canvasWork.mediaUrl);
+    const notice = dialog.querySelector("details.libtv-import-notice")!;
+    expect(notice.hasAttribute("open")).toBe(false);
+    expect(notice.querySelector("summary")?.textContent).toContain("2 项");
+    expect(notice.querySelectorAll("li")).toHaveLength(2);
+    expect(dialog.querySelector(".libtv-detail-main")?.getAttribute("tabindex")).toBe("0");
+    expect(dialog.textContent).not.toContain("一键复刻");
+    await act(async () => (document.querySelector(".libtv-work-detail-dialog .ant-modal-close") as HTMLElement).click());
+    await act(async () => (buttons[0] as HTMLElement).click());
+    expect(host.querySelector(".inspiration-hall")).not.toBeNull();
+    await act(async () => root.render(null));
+    expect(video.getAttribute("src")).toBeNull();
+    client.clear();
+});
+
+test("canvas works follow creation mode and remove exhausted cover failures", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const renderMode = async (mode: "image" | "video") => {
+        await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><App><CreationFeaturedWorks creationMode={mode} /></App></MemoryRouter></QueryClientProvider>));
+    };
+    await renderMode("video");
+    for (let attempt = 0; attempt < 30 && !host.querySelector(".creation-featured-card"); attempt++) {
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    }
+    expect(host.textContent).toContain(canvasWork.title);
+    expect(host.textContent).not.toContain(imageCanvasWork.title);
+    expect(host.querySelector(".creation-featured-layout .is-featured-hero")).not.toBeNull();
+    expect(host.querySelector(".creation-featured-media img")).not.toBeNull();
+    expect(host.querySelector(".creation-featured-copy")?.textContent).toBe(canvasWork.title);
+    await renderMode("image");
+    expect(host.textContent).toContain(imageCanvasWork.title);
+    expect(host.textContent).not.toContain(canvasWork.title);
+    await act(async () => root.render(<LibTVGalleryCard priority item={{ ...canvasWork, coverUrl: "https://libtv-res.liblib.art/fixture/cover.png", mediaUrl: "https://libtv-res.liblib.art/fixture/video.mp4", mediaType: "video" }} onClick={noop} />));
+    expect(host.querySelector("img")?.src).toContain("image%2Fresize%2Cw_480");
+    await act(async () => host.querySelector("img")!.dispatchEvent(new dom.Event("error")));
+    expect(host.querySelector("img")?.src).toBe("https://libtv-res.liblib.art/fixture/cover.png");
+    await act(async () => host.querySelector("img")!.dispatchEvent(new dom.Event("error")));
+    expect(host.querySelector("img")?.src).toContain("video%2Fsnapshot");
+    await act(async () => host.querySelector("img")!.dispatchEvent(new dom.Event("error")));
+    expect(host.querySelectorAll(".libtv-gallery-card").length).toBe(0);
+    expect(host.querySelector(".libtv-cover-spinner")).toBeNull();
+    await act(async () => root.render(null));
+    client.clear();
+});
+
+test("creation tunnel shows canvas works by mode and opens autoplay details", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const show = async (mode: "image" | "video", enabled = true, hidden = false) => {
+        await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><App><CreationInspirationTunnel mode={mode} enabled={enabled} hidden={hidden} /></App></MemoryRouter></QueryClientProvider>));
+    };
+    await show("video", false);
+    expect(host.querySelector(".creation-inspiration-tunnel")).toBeNull();
+    await show("video");
+    for (let attempt = 0; attempt < 30 && !host.querySelector(".creation-tunnel-card"); attempt++) {
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    }
+    expect(host.querySelectorAll(".creation-tunnel-card")).toHaveLength(1);
+    expect(host.querySelector(".creation-tunnel-card-title")?.textContent).toBe(canvasWork.title);
+    await act(async () => host.querySelector("img")!.dispatchEvent(new dom.Event("load")));
+    expect(host.querySelector(".creation-tunnel-card")?.classList.contains("is-ready")).toBe(true);
+    const before = plays;
+    await act(async () => host.querySelector(".creation-tunnel-card")!.dispatchEvent(new dom.KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    for (let attempt = 0; attempt < 30 && !document.querySelector(".libtv-detail-main video"); attempt++) {
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    }
+    expect(document.querySelector(".libtv-work-detail-dialog h1")?.textContent).toBe(canvasWork.title);
+    expect(plays).toBeGreaterThan(before);
+    await act(async () => (document.querySelector(".libtv-work-detail-dialog .ant-modal-close") as HTMLElement).click());
+    await show("image");
+    expect(host.querySelector(".creation-tunnel-card-title")?.textContent).toBe(imageCanvasWork.title);
+    expect(host.querySelectorAll(".creation-tunnel-card")).toHaveLength(1);
+    await show("image", true, true);
+    expect(host.querySelector(".creation-inspiration-tunnel")?.getAttribute("data-hidden")).toBe("true");
+    expect(host.querySelector(".creation-inspiration-tunnel")?.getAttribute("aria-hidden")).toBe("true");
+    await act(async () => root.render(null));
+    client.clear();
+});
+
+test("missing canvas images use single creation images in both areas and keep prompt handoff", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } } });
+    client.setQueryData(["libtv-gallery", "", null], { pages: [{ items: [canvasWork], page: 1, pageSize: 20, hasMore: false, requestId: "fixture" }], pageParams: [{ page: 1 }] });
+    useInspirationStore.setState({ hydrated: true, custom: [], overrides: {}, hidden: [], favorites: [] });
+    let used: CreationInspiration | undefined;
+    const onUse = (entry: CreationInspiration) => { used = entry; };
+    await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><App><CreationFeaturedWorks creationMode="image" onUseInspiration={onUse} /></App></MemoryRouter></QueryClientProvider>));
+    await act(async () => { intersect([{ isIntersecting: true }]); });
+    expect(host.querySelectorAll(".inspiration-card-open").length).toBeGreaterThan(0);
+    expect(host.querySelectorAll(".creation-featured-card, video").length).toBe(0);
+    await act(async () => (host.querySelector(".inspiration-card-open") as HTMLElement).click());
+    await act(async () => (document.querySelector(".inspiration-detail-use") as HTMLElement).click());
+    expect(used?.mode).toBe("image");
+    expect(used?.prompt).toBeTruthy();
+    used = undefined;
+    await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><App><CreationInspirationTunnel mode="image" enabled onUseInspiration={onUse} /></App></MemoryRouter></QueryClientProvider>));
+    expect(host.querySelectorAll(".creation-tunnel-card").length).toBeGreaterThan(0);
+    expect(host.textContent).not.toContain(canvasWork.title);
+    await act(async () => host.querySelector(".creation-tunnel-card.is-active")!.dispatchEvent(new dom.MouseEvent("click", { bubbles: true })));
+    await act(async () => (document.querySelector(".inspiration-detail-use") as HTMLElement).click());
+    expect(used?.mode).toBe("image");
+    await act(async () => root.render(null));
+    client.clear();
+});
+
+test("failed featured hero disappears and the next loaded card takes its place", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } } });
+    client.setQueryData(["libtv-gallery", "", null], { pages: [{ items: [canvasWork, { ...canvasWork, templateUuid: "second-work", title: "第二张作品" }], page: 1, pageSize: 20, hasMore: false, requestId: "fixture" }], pageParams: [{ page: 1 }] });
+    await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter><App><CreationFeaturedWorks creationMode="video" /></App></MemoryRouter></QueryClientProvider>));
+    expect(host.querySelectorAll(".creation-featured-card").length).toBe(2);
+    const first = host.querySelector(".is-featured-hero")!;
+    const title = first.getAttribute("aria-label");
+    await act(async () => first.querySelector("img")!.dispatchEvent(new dom.Event("error")));
+    expect(host.querySelectorAll(".creation-featured-card").length).toBe(1);
+    expect(host.querySelector(".is-featured-hero")?.getAttribute("aria-label")).not.toBe(title);
+    await act(async () => root.render(null));
+    client.clear();
 });
 
 test("standalone detail hands the selected prompt and mode to the creation route", async () => {
@@ -353,8 +513,8 @@ test("standalone detail hands the selected prompt and mode to the creation route
     for (const mode of ["image", "video"] as const) {
         const selected = { ...item, id: `custom:handoff-${mode}`, mode, prompt: "Original prompt", promptZh: `  ${mode} 中文提示词\n保留第二行  ` };
         useInspirationStore.setState({ hydrated: true, custom: [selected], overrides: {}, hidden: [], favorites: [] });
-        await act(async () => root.render(<MemoryRouter initialEntries={["/inspirations"]}><App><Routes>
-            <Route path="/inspirations" element={<InspirationsPage />} />
+        await act(async () => root.render(<MemoryRouter initialEntries={["/inspiration?view=prompt"]}><App><Routes>
+            <Route path="/inspiration" element={<InspirationsPage />} />
             <Route path="/create" element={<CreationDestination />} />
         </Routes></App></MemoryRouter>));
         await act(async () => { intersect([{ isIntersecting: true }]); });

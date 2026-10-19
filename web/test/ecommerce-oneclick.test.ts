@@ -348,18 +348,19 @@ describe("出图调动计划", () => {
 describe("套图面板的接线", () => {
     const project = readFileSync(new URL("../src/pages/canvas/project.tsx", import.meta.url), "utf8");
     const preset = readFileSync(new URL("../src/lib/ecommerce/ecommerce-canvas-preset.ts", import.meta.url), "utf8");
-    const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
+    const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
     const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
 
     test("商品节点上一排套图入口，不是九套方案", () => {
-        expect(node).toContain("ECOMMERCE_ONE_CLICK_FLOWS.map");
+        const product = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
+        expect(product).toContain("ECOMMERCE_ONE_CLICK_FLOWS.map");
         // 点入口开的是套图面板——表里逐条核对过才出图
-        expect(node).toContain("onClick={() => openSuite(flow.id)}");
+        expect(product).toContain("actions.openEcommerceTable?.(node, flow)");
         expect(node).toContain("<CanvasEcommerceSuitePanel");
-        expect(node).toContain("ecom-oneclick");
+        expect(product).toContain("ecom-oneclick");
     });
 
-    test("分析模型和出图模型是两个选择器，存在商品节点上", () => {
+    test("分析模型和出图模型独立保存在创作表上", () => {
         // 分析要读图、出图不用，两者常常不是同一个模型，而全局配置只有一个
         expect(panel).toContain('capability="text"');
         expect(panel).toContain('capability="image"');
@@ -381,15 +382,15 @@ describe("套图面板的接线", () => {
         // 提示词写进节点自己的 prompt：点开那一屏能看见它、能改它、能单独重出
         expect(project).toContain("prompt, composerContent: prompt");
         // 按槽位复用已铺的节点，重出不在画布上再堆一遍
-        expect(project).toContain("...plan.spawned,");
+        expect(project).toContain("...plan.spawned.map((item) => ({ ...item, metadata: { ...item.metadata, ecommerceRunId: runId } }))");
         expect(preset).toContain("reuse: [],");
     });
 
     test("批量生图提交后重新选择整批输出，避免聚焦首张时虚拟化卸载其余节点", () => {
         const generation = project.slice(project.indexOf("const generateEcommerceSuite = useCallback("), project.indexOf("// \u52a8\u4f5c Context", project.indexOf("const generateEcommerceSuite = useCallback(")));
         const viewport = readFileSync(new URL("../src/pages/canvas/use-canvas-viewport-controller.ts", import.meta.url), "utf8");
-        expect(generation).toMatch(/setNodes\(\(current\) => \[[\s\S]*?\.\.\.plan\.spawned,[\s\S]*?\]\);/);
-        expect(generation).toMatch(/focusCanvasImageNodes\(nodeIds\);\s*const batchId = enqueueGenerationBatch/);
+        expect(generation).toMatch(/setNodes\(\(current\) => \[[\s\S]*?\.\.\.plan\.spawned\.map\([\s\S]*?ecommerceRunId: runId[\s\S]*?\]\);/);
+        expect(generation).toMatch(/focusCanvasImageNodes\(nodeIds\);[\s\S]*?batchId = enqueueGenerationBatch/);
         expect(viewport).toMatch(/const focusCanvasImageNodes = useCallback\([\s\S]*?getCanvasNodesBounds\(targets\)[\s\S]*?viewportForBounds\(bounds, size/);
     });
 
@@ -413,8 +414,8 @@ describe("套图面板的接线", () => {
         // 节点铺了一地、一个都不出图，批量生成和单张出图都是这样。
         // 现在这件事由 ecommerceSuiteTargets 保证（见「出图调动计划」那一组），
         // 页面层只负责把 plan.spawned 原样追加进去。
-        expect(project).toContain("...plan.spawned,");
-        expect(project).toContain("const plan = ecommerceSuiteTargets(");
+        expect(project).toContain("...plan.spawned.map((item) => ({ ...item, metadata: { ...item.metadata, ecommerceRunId: runId } }))");
+        expect(project).toContain("connectEcommerceTableOutputs(ecommerceSuiteTargets(");
     });
 
     test("提交路上 buildGenerationConfig 抛错不能静默冲出去", () => {
@@ -433,7 +434,7 @@ describe("套图面板的接线", () => {
         expect(panel).toContain("disabled={!hasPrompt || status === \"loading\"}");
         expect(project).toContain("generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows)");
         // 单张出图不写流程状态：只出一张时不该触发装订
-        expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } }");
+        expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined } }");
     });
 
     test("尺寸与画质在面板上选，写进每一张产物节点", () => {
@@ -466,7 +467,7 @@ describe("套图面板的接线", () => {
     test("表要认自己那一套——跨入口读串了会让槽位对不上然后什么都不做", () => {
         // 判定收在 ecommerceSuiteTargets 里（见「出图调动计划」），页面层把
         // 商品节点上那份 suite 原样递进去，由它决定要不要用。
-        expect(project).toContain("productNode.metadata?.ecommerceSuite,");
+        expect(project).toContain("suiteNode.metadata?.ecommerceSuite,");
         expect(preset).toContain("if (suite?.flow !== flow.id) return empty;");
     });
 
@@ -495,7 +496,7 @@ describe("套图面板的接线", () => {
 
 describe("整组统一与结构可调", () => {
     const project = readFileSync(new URL("../src/pages/canvas/project.tsx", import.meta.url), "utf8");
-    const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
+    const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
     const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
 
     test("屏次与职责可改，张数可增删——九屏只是起点", () => {
@@ -567,6 +568,7 @@ describe("整组统一与结构可调", () => {
     });
 
     test("商品卡片保留图片槽位，去除整组统一与行业铺底", () => {
+        const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
         expect(node).toContain("ProductInputSlot");
         expect(node).toContain("visual-reference:");
         expect(node).not.toContain("CanvasEcommerceUniformDialog");
@@ -625,7 +627,7 @@ describe("读图起草：图必须真的递进模型", () => {
     });
 
     test("读图起草不走云 agent——那边没有取图工具", () => {
-        const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
+        const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
         expect(node).toContain("draftEcommerceSuite");
         expect(node).not.toContain("draftWithAgent?.(node");
     });
@@ -684,35 +686,32 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(prompts[3]).toContain("内容平台");
     });
 
-    test("面板上有编辑入口，值存在商品节点上", () => {
+    test("创作表以补充信息代替分析指令编辑，分析仍读取既有指令", () => {
         const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
-        const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
-        expect(panel).toContain("分析提示词");
-        expect(panel).toContain("恢复默认");
-        expect(panel).toContain("onDirectorPromptChange");
-        expect(panel).toContain("ecommerceSuiteDirectorPrompt(directorPrompt, flow)");
-        expect(node).toContain("ecommerceSuitePrompts?.[activeFlow.id]");
-        expect(project).toContain("productNode.metadata?.ecommerceSuitePrompts?.[flowId]");
+        const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
+        expect(panel).toContain("补充平台、张数和商品信息");
+        expect(panel).toContain("onBriefChange");
+        expect(node).toContain("ecommerceBrief: value");
+        expect(project).toContain("suiteNode.metadata?.ecommerceSuitePrompts?.[flowId]");
     });
 
-    test("分析提示词和 Skills 按四种 flow 独立保存并传入分析", () => {
-        const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
-        expect(node).toContain("ecommerceSuitePrompts?.[activeFlow.id]");
+    test("Skills 按四种 flow 独立保存并传入分析", () => {
+        const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
         expect(node).toContain("ecommerceAnalysisSkillsByFlow?.[activeFlow.id]");
-        expect(node).toContain("ecommerceSuitePrompts: { ...node.metadata?.ecommerceSuitePrompts, [activeFlow.id]: value }");
         expect(node).toContain("ecommerceAnalysisSkillsByFlow: { ...node.metadata?.ecommerceAnalysisSkillsByFlow, [activeFlow.id]: value }");
-        expect(project).toContain("productNode.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId]");
+        expect(project).toContain("suiteNode.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId]");
     });
 
-    test("只有生成成功入队后才关闭套图面板", () => {
-        const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
-        expect(node).toContain("if (enqueued) setSuiteFlow(null)");
-        expect(project).toContain("const batchId = enqueueGenerationBatch(");
+    test("生成后创作表保持在画布中", () => {
+        const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
+        expect(node).not.toContain("setSuiteFlow");
+        expect(node).toContain("CanvasEcommerceSuitePanel embedded");
+        expect(project).toContain("batchId = enqueueGenerationBatch(");
         expect(project).toContain("return Boolean(batchId);");
     });
 
     test("阻止重复提交、默认不自动装订，并要求显式选择分析和生图模型", () => {
-        const node = readFileSync(new URL("../src/components/canvas/nodes/product-node.tsx", import.meta.url), "utf8");
+        const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
         const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
         expect(node).toContain("generationInFlight.current");
         expect(node).toContain("ecommerceAutoBind === true");

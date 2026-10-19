@@ -10,16 +10,14 @@ import {
     createEcommerceDelivery,
     createEcommerceDeliveryTarget,
     ecommerceDeliveryCsv,
-    ecommerceDeliveryFileName,
+    buildEcommerceDeliveryEntry,
     ecommerceDeliveryManifestName,
     ecommerceDeliverySummary,
     ecommerceNextVersion,
     type EcommerceDelivery,
-    type EcommerceDeliveryEntry,
 } from "@/lib/ecommerce/ecommerce-delivery";
 import {
     ECOMMERCE_PLATFORMS,
-    checkImageAgainstSpec,
     ecommerceRoleSpec,
     type EcommerceImageRole,
     type EcommercePlatformId,
@@ -69,20 +67,10 @@ export function DeliveryNodeContent({ node, theme }: DeliveryNodeContentProps) {
 
     /**
      * 每个目标各出一份清单——同一张图发淘宝和发亚马逊，文件名和校验都不一样。
-     * 尺寸与字节数从节点自己的记录里取；取不到就留 undefined，校验会跳过对应项。
+     * 使用原图元数据；缺失项明确标注未检测。
      */
     const entriesByTarget = useMemo(() => delivery.targets.map((target) => {
-        const entries: EcommerceDeliveryEntry[] = images.map((image, index) => {
-            const facts = { width: image.width, height: image.height, bytes: undefined as number | undefined };
-            return {
-                nodeId: image.id,
-                title: image.title || image.id,
-                fileName: ecommerceDeliveryFileName(delivery, target, index + 1, image.metadata?.ecommerceShotId ? undefined : image.title || undefined),
-                width: facts.width,
-                height: facts.height,
-                issues: checkImageAgainstSpec({ platformId: target.platformId, role: target.role, facts }).map((issue) => ({ ...issue, targetId: target.id })),
-            };
-        });
+        const entries = images.map((image, index) => buildEcommerceDeliveryEntry(image, delivery, target, index + 1));
         return { target, entries };
     }), [delivery, images]);
 

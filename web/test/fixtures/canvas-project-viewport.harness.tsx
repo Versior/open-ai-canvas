@@ -10,7 +10,12 @@ for (const [key, value] of Object.entries({ window: dom, document: dom.document,
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 }
 const noop = () => {};
-const message = { warning: noop, error: noop, success: noop };
+const notices: string[] = [];
+const message = { warning: (text: string) => notices.push(text), error: (text: string) => notices.push(text), success: (text: string) => notices.push(text) };
+let localFailure = false;
+let remoteFailure = false;
+let remoteSaves = 0;
+let save: (options?: { requireRemote?: boolean }) => Promise<boolean>;
 mock.module("antd", () => ({ App: { useApp: () => ({ message }) } }));
 mock.module("react-router", () => ({ useNavigate: () => noop }));
 const { canvasAppearanceForTheme } = await import("../../src/lib/canvas/canvas-appearance");
@@ -20,7 +25,7 @@ const product = ecommerceCanvasPreset().nodes[0];
 const project: CanvasProject = { id: "product-project", title: "商品", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", nodes: [product], connections: [], chatSessions: [], activeChatId: null, kind: "ecommerce", appearance, backgroundMode: "dots", showImageInfo: false, viewport: { x: 0, y: 0, k: 1 }, previsScenes: [] };
 const store = { hydrated: true, projects: [project], openProject: () => project, updateProject: noop, renameProject: noop };
 const canvasStore = Object.assign((selector: (state: typeof store) => unknown) => selector(store), { getState: () => store });
-mock.module("@/stores/canvas/use-canvas-store", () => ({ useCanvasStore: canvasStore, flushCanvasStorePersistence: async () => {} }));
+mock.module("@/stores/canvas/use-canvas-store", () => ({ useCanvasStore: canvasStore, flushCanvasStorePersistence: async () => { if (localFailure) throw new Error("local disk unavailable"); } }));
 mock.module("@/stores/use-user-store", () => ({ useUserStore: (selector: (state: unknown) => unknown) => selector({ hydrated: true }) }));
 mock.module("@/stores/canvas/use-canvas-theme-store", () => ({ useCanvasThemeStore: { getState: () => ({ theme: "dark", setTheme: noop }) } }));
 mock.module("@/services/api/skills", () => ({ listAddedSkills: async () => ({ skills: [] }) }));
@@ -33,7 +38,7 @@ mock.module("@/services/api/user-data", () => ({ getCanvasSyncStatus: noop }));
 let restore: (value: CanvasProject) => void;
 let finish: (value: CanvasProject) => void;
 mock.module("@/services/user-data-sync", () => ({
-    createCanvasProjectWithRemoteSync: noop, deleteCanvasProjectsWithRemoteSync: noop, saveRemoteUserDataNow: noop, prepareCanvasForCloudAction: noop, refreshCanvasAfterAgent: noop, subscribeAgentCanvasRefresh: () => noop,
+    createCanvasProjectWithRemoteSync: noop, deleteCanvasProjectsWithRemoteSync: noop, saveRemoteUserDataNow: async () => { remoteSaves++; if (remoteFailure) throw new Error("请求过于频繁"); }, scheduleRemoteUserDataSync: noop, prepareCanvasForCloudAction: async () => { remoteSaves++; if (remoteFailure) throw new Error("请求过于频繁"); }, refreshCanvasAfterAgent: noop, subscribeAgentCanvasRefresh: () => noop,
     loadCanvasProjectForEditing: (_: string, options: { onLoad: typeof restore }) => {
         restore = options.onLoad;
         return new Promise<CanvasProject>((resolve) => { finish = resolve; });
@@ -69,7 +74,7 @@ async function mount(cached: CanvasProject) {
         const historyPausedRef = useRef(true);
         move = (next) => { viewportRef.current = next; setViewport(next); };
         current = viewport;
-        useCanvasProjectLifecycle({ projectId: cached.id, projectLoaded, nodes: cached.nodes, connections: cached.connections, chatSessions: cached.chatSessions, activeChatId: cached.activeChatId, canvasAppearance: appearance, backgroundMode: cached.backgroundMode, showImageInfo: false, viewport, nodesRef, connectionsRef, chatSessionsRef, activeChatIdRef, viewportRef, historyPausedRef, setNodes: noop, setConnections: noop, setChatSessions: noop, setActiveChatId: noop, setCanvasAppearance: noop, setBackgroundMode: noop, setShowImageInfo: noop, setViewport, setProjectLoaded, resetHistory: noop, cleanupAssetImages: noop, cleanupCanvasFiles: noop });
+        save = useCanvasProjectLifecycle({ projectId: cached.id, projectLoaded, nodes: cached.nodes, connections: cached.connections, chatSessions: cached.chatSessions, activeChatId: cached.activeChatId, canvasAppearance: appearance, backgroundMode: cached.backgroundMode, showImageInfo: false, viewport, nodesRef, connectionsRef, chatSessionsRef, activeChatIdRef, viewportRef, historyPausedRef, setNodes: noop, setConnections: noop, setChatSessions: noop, setActiveChatId: noop, setCanvasAppearance: noop, setBackgroundMode: noop, setShowImageInfo: noop, setViewport, setProjectLoaded, resetHistory: noop, cleanupAssetImages: noop, cleanupCanvasFiles: noop }).saveCanvasProject;
         return null;
     }
     await act(async () => root.render(<Editor />));
@@ -105,4 +110,26 @@ test("opening a saved canvas restores its existing viewport", async () => {
         await editor.cloud(saved);
         expect(editor.viewport()).toEqual(saved.viewport);
     } finally { await editor.dispose(); }
+});
+
+test("import accepts durable local save when cloud is rate limited without claiming cloud success", async () => {
+    const editor = await mount(project);
+    remoteFailure = true;
+    notices.length = 0;
+    try {
+        expect(await save({ requireRemote: false })).toBe(true);
+        expect(notices.some((text) => text.includes("本地已保存") && text.includes("请求过于频繁"))).toBe(true);
+        expect(notices).not.toContain("画布已保存到云端");
+        expect(await save()).toBe(false);
+    } finally { remoteFailure = false; await editor.dispose(); }
+});
+
+test("failed local persistence rejects import before sending anything to cloud", async () => {
+    const editor = await mount(project);
+    localFailure = true;
+    const before = remoteSaves;
+    try {
+        expect(await save({ requireRemote: false })).toBe(false);
+        expect(remoteSaves).toBe(before);
+    } finally { localFailure = false; await editor.dispose(); }
 });

@@ -5,6 +5,14 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 电商画布管理与套图稳定性
+
+- 导航入口：`workspace-sidebar-nav.tsx` 的 `/ecommerce` 路由由 `pages/canvas/ecommerce-entry.tsx` 校验配置、创建商品画布并跳转，复用创建 Promise 防止 StrictMode 重复创建画布；自由画布列表移除电商新建按钮。
+- 管理入口：`web/src/pages/admin/settings/ecommerce-settings-page.tsx`；配置协议在 `services/api/ecommerce.ts`，账号范围缓存与请求去重在 `stores/use-ecommerce-settings.ts`。
+- 服务端：`backend/internal/handler/ecommerce.go` 接收鉴权与受限上传，`app/ecommerce_settings.go` 校验管理员、公共模特发布与图片访问，`repository/ecommerce_settings.go` 原子保存当前配置、上一版和审计。资源删除与自动清理复用配置引用保护。
+- 创作表：`nodes/product-node.tsx` 提供四种用途入口；`lib/ecommerce/ecommerce-table.ts` 负责创建、复用、商品连接校验与结果连线布局；`canvas-ecommerce-table-node.tsx` 在真实表节点内复用 `canvas-ecommerce-suite-panel.tsx` 的编辑区，即时保存用途草稿。`pages/canvas/project.tsx` 编排分析、运行与装订，`lib/ecommerce/ecommerce-binding.ts` 校验运行归属，`ecommerce-delivery.ts` 读取真实媒体信息并区分未检测项。
+- 节点查询：`web/src/lib/canvas/canvas-node-graph.ts` 为同一画布快照建立邻接索引；尚未改变 Context 的整体订阅范围。
+
 ## 画布实时会话
 
 - 传输入口：`backend/internal/handler/canvas_realtime.go` 校验登录与 Origin、管理 WebSocket；`app/canvas_realtime.go` 校验画布归属，`internal/canvas/realtime.go` 负责临时 Presence、房间隔离与 Redis 分发，`realtime_devices.go` 管理跨实例统一窗口编号及临时租期。

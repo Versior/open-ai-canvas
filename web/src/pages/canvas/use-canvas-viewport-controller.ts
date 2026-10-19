@@ -156,11 +156,19 @@ export function useCanvasViewportController({
     const focusCanvasNode = useCallback((nodeId: string) => {
         const node = nodesRef.current.find((item) => item.id === nodeId);
         if (!node) return;
+        if (node.type === CanvasNodeType.BatchTable && node.metadata?.ecommerceFlowId) {
+            const bounds = getCanvasNodesBounds([node]);
+            if (bounds) transitionViewportTo(viewportForBounds(bounds, size, { padding: 48, maxScale: 1 }));
+            selectFocusedNode(node.id);
+            setDialogNodeId(null);
+            setToolbarNodeId(null);
+            return;
+        }
         const scale = Math.min(1.18, Math.max(viewportRef.current.k, 0.72));
         transitionViewportTo({ x: size.width / 2 - (node.position.x + node.width / 2) * scale, y: size.height / 2 - (node.position.y + node.height / 2) * scale, k: scale });
         selectFocusedNode(node.id);
         setDialogNodeId(node.type === CanvasNodeType.Drawing || node.type === CanvasNodeType.Script ? null : node.id);
-    }, [nodesRef, selectFocusedNode, setDialogNodeId, size.height, size.width, transitionViewportTo, viewportRef]);
+    }, [nodesRef, selectFocusedNode, setDialogNodeId, setToolbarNodeId, size.height, size.width, transitionViewportTo, viewportRef]);
 
     const setZoomScale = useCallback((scale: number) => {
         cancelViewportTransition();

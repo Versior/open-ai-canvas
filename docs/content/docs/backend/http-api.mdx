@@ -5,6 +5,23 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 电商画布配置与公共模特
+
+管理页为 `/admin/settings/ecommerce`。普通登录用户只能读取已发布模特；管理配置、上传和上一版读取在 service 层校验管理员权限。
+
+| 接口 | 合同 |
+| --- | --- |
+| `GET /api/ecommerce/settings` | 返回 `data.setting`，包含功能、四种用途、默认提示词和启用的公共模特 |
+| `GET /api/admin/settings/ecommerce` | 完整配置，包括停用模特与 `revision` |
+| `PUT /api/admin/settings/ecommerce` | 提交完整配置及读取时的 `revision`；冲突拒绝覆盖；响应为保存后的 `data.setting` |
+| `GET /api/admin/settings/ecommerce/previous` | 读取上一版供草稿恢复，不立即生效；首次保存前返回 404 |
+| `POST /api/admin/settings/ecommerce/images` | multipart `file`；PNG/JPEG/WebP，单图最多 10 MiB，返回 `data.resource`；上传后须保存配置才发布 |
+| `GET /api/ecommerce/models/:modelId/images/:resourceId` | 登录及引用校验后分发图片；管理员可预览当前及上一版引用 |
+
+配置字段为 `enabled`、`modelLibraryEnabled`、`autoBindEnabled`、`flows`、`models`、`revision`。`flows` 必须完整包含 `detail/main/wear/seed`，各有 `enabled/directorPrompt`。模特有 `id/name/enabled/tags/resourceIds`，最多 200 个，每位最多 20 个标签、12 张图片；启用必须有就绪参考图。新增图片归当前管理员所有，已发布或上一版中的引用允许其他管理员维护。写请求上限 2 MiB。
+
+当前配置、上一版与审计同事务提交，并比较持久化快照防止并发覆盖。当前及上一版图片引用均阻止后台删除和自动清理；配置损坏时暂停删除。前端设置缓存最多 30 秒，分析、套图生成和新建入口读取配置；这些业务开关不替代模型权限与额度策略，也不取消已提交任务。公共模特导入时复制为用户自己的资源和私人模特记录，后台停用不会破坏既有私人副本。
+
 ## LibTV 公开作品与模板
 
 以下接口需要平台登录态。作品查询按用户限流，仅访问 LibTV 已审核的公开作品，不转发管理员配置的 LibTV 凭证。

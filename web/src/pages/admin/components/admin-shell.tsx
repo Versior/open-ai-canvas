@@ -103,6 +103,7 @@ const adminNavigation: Array<{ label: string; items: AdminNavigationItem[] }> = 
             { path: "/admin/settings/appearance", label: "站点及外观", description: "品牌、SEO、备案与皮肤", icon: <Palette className="size-4" /> },
             { path: "/admin/settings/features", label: "功能开放", description: "工作台、插件与模型能力", icon: <ToggleLeft className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", description: "画布绘图节点默认引擎", icon: <Paintbrush className="size-4" /> },
+            { path: "/admin/settings/ecommerce", label: "电商画布", description: "功能、提示词与公共模特库", icon: <Paintbrush className="size-4" /> },
             { path: "/admin/settings/runtime-policy", label: "资源与策略", description: "配额、并发、频控与超时", icon: <Settings2 className="size-4" /> },
             { path: "/admin/settings/access", label: "登录与注册", description: "账号创建与第三方登录", icon: <ShieldCheck className="size-4" /> },
             { path: "/admin/settings/email", label: "邮件服务", description: "注册验证码与 SMTP", icon: <Mail className="size-4" /> },

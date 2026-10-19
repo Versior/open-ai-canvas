@@ -39,6 +39,7 @@ let syncPromise: Promise<void> | null = null;
 let syncQueued = false;
 let autoSyncQueued = false;
 let syncRetryAttempt = 0;
+let assetWriteCooldown: { until: number; error: ApiError } | undefined;
 let remoteOperationTail: Promise<void> = Promise.resolve();
 let subscriptionsInstalled = false;
 let acknowledgedAssets = new Map<string, Asset>();
@@ -706,6 +707,7 @@ export function installRemoteUserDataAutoSync() {
 
 export function resetRemoteUserDataSync() {
     sessionEpoch += 1;
+    assetWriteCooldown = undefined;
     // Old operations retain their epoch guards, but must never hold the next
     // account behind a stalled IndexedDB/network promise.
     remoteOperationTail = Promise.resolve();
@@ -774,7 +776,7 @@ export function scheduleRemoteUserDataSync() {
             syncFirstQueuedAt = 0;
             void saveRemoteUserDataNow().catch((error) => console.warn("云端自动同步失败", error));
         },
-        Math.min(1200, Math.max(0, 5000 - (Date.now() - syncFirstQueuedAt))),
+        Math.max(Math.min(1200, Math.max(0, 5000 - (Date.now() - syncFirstQueuedAt))), (assetWriteCooldown?.until || 0) - Date.now()),
     );
 }
 
@@ -1281,6 +1283,7 @@ async function reconcileCanvasLocalEdits(id: string, rejected?: PendingCanvasMut
 }
 
 async function syncRemoteAssetBatch(dirtyAssets: Asset[], uploaded: Map<string, string>) {
+    if (assetWriteCooldown && assetWriteCooldown.until > Date.now()) throw assetWriteCooldown.error;
     const epoch = sessionEpoch;
     const requireCurrentSession = () => {
         if (epoch !== sessionEpoch) throw new Error("账号已切换，已停止旧会话保存");
@@ -1459,6 +1462,14 @@ async function saveRemoteUserDataBatch(uploaded: Map<string, string>, options: {
                 } catch (recoveryError) { error = recoveryError; }
             }
             failedAssets.set(asset.id, error);
+            if (error instanceof ApiError && error.status === 429) {
+                // 一次批量导入可超过每分钟素材写入额度；停止本轮，保留已确认素材，冷却后续传。
+                if (!assetWriteCooldown || assetWriteCooldown.until <= Date.now()) assetWriteCooldown = { until: Date.now() + (error.retryAfterMs || 60_000), error };
+                for (const pending of dirtyAssets) {
+                    if (!sameEntitySnapshot(acknowledgedAssets.get(pending.id), pending)) failedAssets.set(pending.id, error);
+                }
+                break;
+            }
         }
     }
     const errors: unknown[] = dirtyProjects.length ? [] : [...failedAssets.values()];

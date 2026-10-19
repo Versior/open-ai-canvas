@@ -1,5 +1,5 @@
 import { Button } from "antd";
-import { FileText, Sparkles } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useState } from "react";
 
 import { AppModal } from "@/components/ui/product/app-modal";
@@ -122,7 +122,7 @@ export function LibTVStepDetails({ step, steps, onMakeSame }: { step: LibTVWorkS
                 ) : <p className="m-0 text-xs text-foreground/45">未公开关联引用。</p>}
             </div>
             {!makeSame.ok && makeSame.reason === "has-references" && <p className="m-0 text-xs leading-5 text-foreground/50">含引用，请用「复制到画布」保留完整关系。</p>}
-            {makeSame.ok && <Button type="primary" size="small" icon={<Sparkles className="size-3.5" />} onClick={onMakeSame}>做同款</Button>}
+            {makeSame.ok && <Button type="primary" size="small" onClick={onMakeSame}>做同款</Button>}
         </div>
     );
 }

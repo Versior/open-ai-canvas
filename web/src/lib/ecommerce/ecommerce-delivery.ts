@@ -13,7 +13,8 @@
  * 导出一份可以直接核对的清单**。不替代上传（平台 API 各有各的门槛），
  * 但把「能不能上架」这件事在导出前说清楚。
  */
-import { ecommerceFileName, type EcommerceImageRole, type EcommercePlatformId, type EcommerceSpecIssue } from "./ecommerce-platform-specs";
+import { checkImageAgainstSpec, ecommerceRoleSpec, ecommerceFileName, type EcommerceImageRole, type EcommercePlatformId, type EcommerceSpecIssue } from "./ecommerce-platform-specs";
+import type { CanvasNodeData } from "@/types/canvas";
 
 /** 一个交付目标：发到哪个平台的哪个位置。 */
 export type EcommerceDeliveryTarget = {
@@ -58,6 +59,35 @@ export type EcommerceDeliveryEntry = {
     issues: (EcommerceSpecIssue & { targetId: string })[];
 };
 
+/** The canvas box is a display size; only original media metadata is evidence. */
+export function buildEcommerceDeliveryEntry(image: CanvasNodeData, delivery: EcommerceDelivery, target: EcommerceDeliveryTarget, index: number): EcommerceDeliveryEntry {
+    const positive = (value: number | undefined) => value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined;
+    const width = positive(image.metadata?.naturalWidth);
+    const height = positive(image.metadata?.naturalHeight);
+    const bytes = positive(image.metadata?.bytes);
+    const facts = { width: width ?? NaN, height: height ?? NaN, bytes };
+    const spec = ecommerceRoleSpec(target.platformId, target.role);
+    const missing: string[] = [];
+    if (!spec) missing.push("平台用途规范");
+    if (spec && (spec.minWidth || spec.minHeight || spec.ratio || spec.allowedRatios?.length) && (!width || !height)) missing.push("原图尺寸与比例");
+    if (spec?.maxBytes && !bytes) missing.push("文件大小");
+    if (spec?.whiteBackground) missing.push("纯白背景");
+    if (spec?.minSubjectRatio) missing.push("主体占比");
+    if (spec?.noText || spec?.maxTextRatio) missing.push("文字面积");
+    if (spec?.maxBadges !== undefined) missing.push("角标数量");
+    if (spec?.maxBorderRatio !== undefined) missing.push("边框留白");
+    if (spec?.requiresAiDisclosure) missing.push("AI 标识");
+    return {
+        nodeId: image.id, title: image.title || image.id,
+        fileName: ecommerceDeliveryFileName(delivery, target, index, image.metadata?.ecommerceShotId ? undefined : image.title || undefined),
+        width: width ?? NaN, height: height ?? NaN, bytes,
+        issues: [
+            ...checkImageAgainstSpec({ ...target, facts }).map(issue => ({ ...issue, targetId: target.id })),
+            ...missing.map(item => ({ level: "warn" as const, scope: "检测覆盖", message: `未检测：${item}`, targetId: target.id })),
+        ],
+    };
+}
+
 /** 清单的汇总数字，用于节点卡片页脚与导出摘要。 */
 export function ecommerceDeliverySummary(entries: EcommerceDeliveryEntry[]) {
     const blocked = entries.filter((entry) => entry.issues.some((issue) => issue.level === "block")).length;
@@ -77,8 +107,8 @@ export function ecommerceDeliveryCsv(entries: EcommerceDeliveryEntry[]) {
         entry.nodeId,
         entry.title,
         entry.fileName,
-        String(entry.width),
-        String(entry.height),
+        Number.isFinite(entry.width) ? String(entry.width) : "未检测",
+        Number.isFinite(entry.height) ? String(entry.height) : "未检测",
         entry.bytes ? String(Math.round(entry.bytes / 1024)) : "",
         entry.issues.length ? entry.issues.map((issue) => `${issue.level === "block" ? "拦" : "警"}:${issue.scope} ${issue.message}`).join(" / ") : "通过",
     ]);

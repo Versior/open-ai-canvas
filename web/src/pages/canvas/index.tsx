@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { App, Button, Dropdown, Input, Modal } from "antd";
 import { Select } from "@/components/ui/base/select";
-import { ArrowDownAZ, Clock3, Download, FileUp, History, ListFilter, MoreHorizontal, Package, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowDownAZ, Clock3, Download, FileUp, History, ListFilter, MoreHorizontal, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 
 import { CollectionGrid, PageHeader, WorkspacePage } from "@/components/layout/workspace-page";
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
@@ -21,7 +21,6 @@ import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { saveCanvasDrawing, type CanvasDrawingRenderDraft } from "@/lib/canvas/canvas-drawing-storage";
 import { createCanvasProjectWithRemoteSync, hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow, scheduleRemoteUserDataSync } from "@/services/user-data-sync";
-import { ecommerceCanvasPreset, ecommerceCanvasTitle } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { listRemoteCanvasProjectsPage, type CanvasLibrarySummary } from "@/services/api/user-data";
 import { useUserStore } from "@/stores/use-user-store";
 import { listProjects } from "@/services/api/projects";
@@ -97,15 +96,6 @@ export default function CanvasPage() {
     );
     const createAndEnter = () => {
         void createCanvasProjectWithRemoteSync(`自由画布 ${projects.length + 1}`).then(({ id, syncError }) => {
-            if (syncError) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
-            enterProject(id);
-        });
-    };
-    // 电商创作是另一种画布：开局就铺好商品节点 + 拍法节点 → 图片节点，
-    // 用户连商品图、填事实、选拍法就能出图，不用先想清楚该建哪些节点。
-    const createEcommerceAndEnter = () => {
-        const preset = ecommerceCanvasPreset();
-        void createCanvasProjectWithRemoteSync(ecommerceCanvasTitle(projects.map((project) => project.title)), undefined, { ...preset, kind: "ecommerce" }).then(({ id, syncError }) => {
             if (syncError) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
             enterProject(id);
         });
@@ -425,9 +415,6 @@ export default function CanvasPage() {
                     meta={<span className="app-projects-header-meta">{totalProjects} 个</span>}
                     actions={
                         <div className="collection-header-actions">
-                            <Button disabled={!hydrated} icon={<Package />} onClick={createEcommerceAndEnter}>
-                                新建电商创作
-                            </Button>
                             <Button type="primary" disabled={!hydrated} icon={<Plus />} onClick={createAndEnter}>
                                 新建画布
                             </Button>

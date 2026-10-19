@@ -1,19 +1,17 @@
 import { App } from "antd";
-import { Image as ImageIcon, Package, Plus, Replace, Sparkles, Unplug, UserRound, X } from "lucide-react";
+import { ArrowUpRight, Image as ImageIcon, Plus, Replace, Unplug, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
-import { useDownstreamNodes, useNodeConnections, useNodeInputs } from "@/components/canvas/canvas-node-graph-context";
+import { useNodeConnections, useNodeInputs } from "@/components/canvas/canvas-node-graph-context";
 import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
-import { CanvasEcommerceSuitePanel } from "@/components/canvas/canvas-ecommerce-suite-panel";
-import { useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
 import { createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
 import { connectedStyleReferenceNodes, effectiveProductViews } from "@/lib/ecommerce/ecommerce-canvas";
-import { ECOMMERCE_ONE_CLICK_FLOWS, ecommerceOneClickFlow, type EcommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
-import { ecommerceSuiteMoveRow, ecommerceSuiteRowId, ecommerceSuiteRows, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
+import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
 import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
 import { ecommerceModelById, ecommerceModelRefCount } from "@/lib/ecommerce/ecommerce-models";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
+import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { resolveImageUrl } from "@/services/image-storage";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
@@ -21,26 +19,20 @@ import "./canvas-ecommerce-node-card.css";
 
 export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     const actions = useCanvasNodeActions();
-    const { updateMetadata, generateEcommerceSuite, draftEcommerceSuite, viewImage, upload } = actions;
+    const setting = useEcommerceSettings((state) => state.setting);
+    const { updateMetadata, upload } = actions;
     const inputs = useNodeInputs(node.id);
     const connections = useNodeConnections(node.id);
-    const downstream = useDownstreamNodes(node.id);
     const { message } = App.useApp();
-    const [suiteFlow, setSuiteFlow] = useState<string | null>(null);
-    const [analyzing, setAnalyzing] = useState(false);
-    const [generating, setGenerating] = useState(false);
-    const generationInFlight = useRef(false);
     const [modelPickerOpen, setModelPickerOpen] = useState(false);
     const models = useEcommerceModelLibrary((state) => state.models);
     const hydrateModels = useEcommerceModelLibrary((state) => state.hydrate);
     const touchModel = useEcommerceModelLibrary((state) => state.touchModel);
-    const { skills, loading: skillsLoading, error: skillsError, refresh: refreshSkills } = useSkillRuntimeCatalog();
     useEffect(() => {
         void hydrateModels().catch((error) => message.error(error instanceof Error ? error.message : "加载失败"));
     }, [hydrateModels, message]);
 
     const profile = node.metadata?.productProfile || createEcommerceProductProfile(node.title || "商品");
-    const suite = node.metadata?.ecommerceSuite;
     const views = effectiveProductViews(profile, inputs, connections, node.id);
     const inputById = new Map(inputs.map((item) => [item.id, item]));
     const referenceIds = new Set(connectedStyleReferenceNodes(node.id, inputs, connections).map((item) => item.id));
@@ -49,42 +41,9 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
     const productImages = inputs.filter((item) => item.type === CanvasNodeType.Image && !referenceIds.has(item.id) && (item.metadata?.content || item.metadata?.storageKey));
     const editable = Boolean(updateMetadata);
     const model = ecommerceModelById(node.metadata?.ecommerceModelId, models);
-    const activeFlow = ecommerceOneClickFlow(suiteFlow || undefined);
-    const nodeBySlot = new Map<string, CanvasNodeData>();
-    for (const child of downstream) {
-        const slot = child.metadata?.ecommerceShotId;
-        if (child.type === CanvasNodeType.Image && slot) nodeBySlot.set(slot, child);
-    }
-    const currentSuite = (flow: EcommerceOneClickFlow): EcommerceSuite => suite?.flow === flow.id ? suite : { flow: flow.id, rows: ecommerceSuiteRows(flow, undefined), source: "draft", updatedAt: "" };
-    const changeRows = (update: (rows: EcommerceSuiteRow[], flow: EcommerceOneClickFlow) => EcommerceSuiteRow[]) => {
-        if (!activeFlow) return false;
-        const current = currentSuite(activeFlow);
-        updateMetadata?.(node.id, { ecommerceSuite: { ...current, rows: update(current.rows, activeFlow), updatedAt: new Date().toISOString() } });
-    };
-    const patchSuiteRow = (slotId: string, patch: Partial<Pick<EcommerceSuiteRow, "title" | "duty" | "prompt">>) => changeRows((rows) => rows.map((row) => row.slotId === slotId ? { ...row, ...patch } : row));
-    const openSuite = (flow: string) => {
-        if (!productImages.length) { message.warning("请先连接商品图"); return; }
-        setSuiteFlow(flow);
-    };
-    const analyze = async () => {
-        if (!activeFlow) return;
-        setAnalyzing(true);
-        try { await draftEcommerceSuite?.(node, activeFlow.id, node.metadata?.ecommerceAnalysisModel || undefined); }
-        catch (error) { message.error(error instanceof Error ? error.message : "分析失败"); }
-        finally { setAnalyzing(false); }
-    };
-    const generate = async (slotId?: string, rows?: EcommerceSuiteRow[]) => {
-        if (!activeFlow) return false;
-        if (generationInFlight.current) return false;
-        generationInFlight.current = true;
-        setGenerating(true);
-        try {
-            const enqueued = await generateEcommerceSuite?.(node, activeFlow.id, slotId ? [slotId] : undefined, rows);
-            if (enqueued) setSuiteFlow(null);
-            return Boolean(enqueued);
-        }
-        catch (error) { message.error(error instanceof Error ? error.message : "生成失败"); }
-        finally { generationInFlight.current = false; setGenerating(false); }
+    const openSuite = (flow: typeof ECOMMERCE_ONE_CLICK_FLOWS[number]["id"]) => {
+        if (!setting.enabled || !setting.flows[flow].enabled) { message.warning("管理员已停用此创作用途"); return; }
+        actions.openEcommerceTable?.(node, flow);
     };
     const addInput = (handle: string) => actions.addEcommerceInput?.(node, handle);
     const referenceEdges = connections.filter((edge) => edge.toNodeId === node.id && referenceIds.has(edge.fromNodeId));
@@ -105,8 +64,12 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
 
     return (
         <div className="ecom-card ecom-product-card" style={{ color: theme.node.text }} onMouseDown={stopCanvasDragFromInteractive}>
-            <header className="ecom-card-header"><div className="ecom-card-kicker"><span className="ecom-card-mark"><Package className="size-3.5" /></span><span>电商 / 商品</span></div><span className="ecom-card-status">{productImages.length} 张商品图</span></header>
-            <EcommerceNodeTitle node={node} fallback="商品" />
+            <header className="ecom-card-header"><EcommerceNodeTitle node={node} fallback="商品" /><span className="ecom-card-status">{productImages.length} 张商品图</span></header>
+            {node.metadata?.ecommerceOneClick && editable ? <div className="ecom-input-section" role="status">
+                <p>{node.metadata.ecommerceOneClick.status === "failed" ? `自动装订失败：${node.metadata.ecommerceOneClick.error || "请重试"}` : "等待本轮图片完成后自动装订"}</p>
+                {node.metadata.ecommerceOneClick.status === "failed" ? <button type="button" className="ecom-action" onClick={() => updateMetadata?.(node.id, { ecommerceOneClick: { ...node.metadata!.ecommerceOneClick!, status: "running", error: undefined } })}>重试装订（不重新生图）</button> : null}
+                <button type="button" className="ecom-action" onClick={() => updateMetadata?.(node.id, { ecommerceOneClick: undefined })}>取消自动装订</button>
+            </div> : null}
             <section className="ecom-input-section" aria-label="商品视图">
                 <h4>商品视图</h4>
                 <div className="ecom-input-grid">
@@ -123,32 +86,14 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
                 </div>
             </section>
             <div className="ecom-product-model-row">
-                <button type="button" className="ecom-model-pick" disabled={!editable} onClick={() => setModelPickerOpen(true)}><UserRound className="size-4" /><span className="truncate">{model?.name || "选择模特"}</span>{model ? <span className="ecom-model-pick-hint">{ecommerceModelRefCount(model)} 张参考图</span> : null}</button>
+                <button type="button" className="ecom-model-pick" disabled={!editable || !setting.modelLibraryEnabled} onClick={() => setModelPickerOpen(true)}><UserRound className="size-4" /><span className="truncate">{model?.name || "选择模特"}</span>{model ? <span className="ecom-model-pick-hint">{ecommerceModelRefCount(model)} 张参考图</span> : null}</button>
                 {node.metadata?.ecommerceModelId && editable ? <button type="button" className="ecom-input-icon" title="取消模特" aria-label="取消模特" onClick={() => updateMetadata?.(node.id, { ecommerceModelId: undefined })}><X className="size-4" /></button> : null}
             </div>
             <div className="ecom-oneclick-row">
                 {ECOMMERCE_ONE_CLICK_FLOWS.map((flow) => {
-                    const rows = ecommerceSuiteRows(flow, suite);
-                    const ready = rows.filter((row) => row.prompt.trim()).length;
-                    return <button key={flow.id} type="button" className="ecom-oneclick" disabled={!editable || !generateEcommerceSuite || !draftEcommerceSuite} onClick={() => openSuite(flow.id)}><span className="ecom-oneclick-name"><Sparkles className="size-3.5" />{flow.name}</span><span className="ecom-oneclick-stat">{ready}/{rows.length} 条提示词</span></button>;
+                    return <button key={flow.id} type="button" className="ecom-oneclick" disabled={!editable || !setting.enabled || !setting.flows[flow.id].enabled || !actions.openEcommerceTable} onClick={() => openSuite(flow.id)}><span className="ecom-oneclick-name">{flow.name.replace(/^一键/, "")}</span><ArrowUpRight className="size-3.5" aria-hidden="true" /></button>;
                 })}
             </div>
-            {activeFlow ? <CanvasEcommerceSuitePanel
-                open flow={activeFlow} suite={suite?.flow === activeFlow.id ? suite : undefined} rows={currentSuite(activeFlow).rows} nodeBySlot={nodeBySlot}
-                analysisModel={node.metadata?.ecommerceAnalysisModel || ""} imageModel={node.metadata?.ecommerceImageModel || ""} imageSize={node.metadata?.ecommerceImageSize || ""} imageQuality={node.metadata?.ecommerceImageQuality || ""}
-                directorPrompt={node.metadata?.ecommerceSuitePrompts?.[activeFlow.id] ?? ""} skillIds={node.metadata?.ecommerceAnalysisSkillsByFlow?.[activeFlow.id] ?? []} availableSkills={skills} skillsLoading={skillsLoading} skillsError={skillsError} onRefreshSkills={refreshSkills}
-                autoBind={node.metadata?.ecommerceAutoBind === true} analyzing={analyzing} generating={generating}
-                onAnalysisModelChange={(value) => updateMetadata?.(node.id, { ecommerceAnalysisModel: value })} onImageModelChange={(value) => updateMetadata?.(node.id, { ecommerceImageModel: value })}
-                onImageOptionChange={(key, value) => updateMetadata?.(node.id, key === "size" ? { ecommerceImageSize: value } : { ecommerceImageQuality: value })}
-                onSkillIdsChange={(value) => updateMetadata?.(node.id, { ecommerceAnalysisSkillsByFlow: { ...node.metadata?.ecommerceAnalysisSkillsByFlow, [activeFlow.id]: value } })} onAutoBindChange={(value) => updateMetadata?.(node.id, { ecommerceAutoBind: value })}
-                onClearPrompts={() => changeRows((rows) => rows.map((row) => ({ ...row, prompt: "" })))}
-                onDirectorPromptChange={(value) => updateMetadata?.(node.id, { ecommerceSuitePrompts: { ...node.metadata?.ecommerceSuitePrompts, [activeFlow.id]: value } })}
-                onAnalyze={() => void analyze()} onRowChange={patchSuiteRow}
-                onRowsChange={(rows) => changeRows(() => rows)}
-                onAddRow={() => changeRows((rows, flow) => [...rows, { slotId: ecommerceSuiteRowId(flow, rows), title: "", duty: "", prompt: "" }])}
-                onRemoveRow={(id) => { if (currentSuite(activeFlow).rows.length <= 1) { message.warning("至少保留一行"); return; } changeRows((rows) => rows.filter((row) => row.slotId !== id)); }}
-                onGenerate={(rows) => void generate(undefined, rows)} onGenerateOne={(id, rows) => void generate(id, rows)} onMoveRow={(id, delta) => changeRows((rows) => ecommerceSuiteMoveRow(rows, id, delta))} onClose={() => setSuiteFlow(null)}
-            /> : null}
             <CanvasEcommerceModelLibraryModal open={modelPickerOpen} activeModelId={node.metadata?.ecommerceModelId} onClose={() => setModelPickerOpen(false)} onSelect={async (model) => { await touchModel(model.id); updateMetadata?.(node.id, { ecommerceModelId: model.id }); }} />
         </div>
     );

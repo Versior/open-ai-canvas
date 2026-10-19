@@ -59,7 +59,7 @@ export function syncBatchColumnReferences(nodes: CanvasNodeData[], connections: 
     let changed = false;
     const next = nodes.map((node) => {
         const table = node.metadata?.batchTable;
-        if (!table || node.metadata?.locked) return node;
+        if (!table || node.metadata?.locked || node.metadata?.ecommerceFlowId) return node;
         const columns = batchReferenceColumns(table);
         const inputs = batchInputColumns(node, incoming.get(node.id) || []).map((ids) =>
             ids.filter((id) => {

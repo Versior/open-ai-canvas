@@ -505,7 +505,7 @@ export function useCanvasConnectionController({
             .forEach((node) => {
                 const scrollTop = scriptScrollTopById[node.id] || 0;
                 const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
-                if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
+                if ((node.type === CanvasNodeType.Script || (node.type === CanvasNodeType.BatchTable && !node.metadata?.ecommerceFlowId)) && !targetHandleId) return;
                 // Ordinary nodes expose one centered input/output port. Only
                 // storyboard rows have a meaningful vertical target position.
                 const targetAnchorRatio = undefined;
@@ -562,7 +562,7 @@ export function useCanvasConnectionController({
             .forEach((node) => {
                 const scrollTop = scriptScrollTopById[node.id] || 0;
                 const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
-                if ((node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !targetHandleId) return;
+                if ((node.type === CanvasNodeType.Script || (node.type === CanvasNodeType.BatchTable && !node.metadata?.ecommerceFlowId)) && !targetHandleId) return;
                 const targetAnchorRatio = undefined;
                 const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop, batchScrollById?.[node.id]);
                 const dx = world.x - anchor.x;
@@ -722,10 +722,14 @@ export function useCanvasConnectionController({
             const position = screenToCanvas(clientX, clientY);
             setMouseWorld(position);
             const pending = { connection: currentConnection, position };
+            if (currentConnection.handleType === "target" && isEcommerceInputHandle(currentConnection.handleId)) {
+                void createConnectedNode(CanvasNodeType.Image, pending);
+                return;
+            }
             pendingConnectionCreateRef.current = pending;
             setPendingConnectionCreate(pending);
         }
-    }, [connectNodes, getConnectionDropTarget, onReplaceReference, screenToCanvas, setConnecting, updateConnectionReplaceHover]);
+    }, [connectNodes, createConnectedNode, getConnectionDropTarget, onReplaceReference, screenToCanvas, setConnecting, updateConnectionReplaceHover]);
 
     const handleConnectStart = useCallback((event: ReactPointerEvent, nodeId: string, handleType: "source" | "target", handleId?: string, anchorRatio?: number, anchorXRatio?: number) => {
         event.preventDefault();
@@ -871,6 +875,10 @@ export function useCanvasConnectionController({
                 const current = connectingParamsRef.current;
                 if (current) {
                     const pending = { connection: current, position: screenToCanvas(event.clientX, event.clientY), quick: true };
+                    if (current.handleType === "target" && isEcommerceInputHandle(current.handleId)) {
+                        void createConnectedNode(CanvasNodeType.Image, pending);
+                        return;
+                    }
                     pendingConnectionCreateRef.current = pending;
                     setPendingConnectionCreate(pending);
                     setConnecting(null);
@@ -905,7 +913,7 @@ export function useCanvasConnectionController({
             window.removeEventListener("pointercancel", handlePointerCancel);
             window.removeEventListener("blur", cancel);
         };
-    }, [clearBatchConnection, commitBatchConnection, finishBatchConnection, finishConnection, getBatchConnectionDropTarget, getConnectionDropTarget, openBatchConnectionCreateMenu, previewBatchConnection, screenToCanvas, setConnecting]);
+    }, [clearBatchConnection, commitBatchConnection, createConnectedNode, finishBatchConnection, finishConnection, getBatchConnectionDropTarget, getConnectionDropTarget, openBatchConnectionCreateMenu, previewBatchConnection, screenToCanvas, setConnecting]);
 
     return {
         cancelPendingConnectionCreate,

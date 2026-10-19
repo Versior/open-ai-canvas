@@ -14,6 +14,13 @@ export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[],
     const target = nodes.find((node) => node.id === candidate.toNodeId);
     if (!target) return "找不到连线目标节点";
     if (target.type === CanvasNodeType.BatchTable && target.metadata?.locked) return "批量创作表已锁定";
+    const sourceNode = nodes.find(node => node.id === candidate.fromNodeId);
+    if (target.type === CanvasNodeType.BatchTable && (sourceNode?.type === CanvasNodeType.Product || target.metadata?.ecommerceFlowId)) {
+        if (sourceNode?.type !== CanvasNodeType.Product) return "电商创作表只接受商品输入";
+        if (target.metadata?.ecommerceProductId && target.metadata.ecommerceProductId !== sourceNode.id) return "此创作表属于其他商品，请新建创作表";
+        if (connections.some(edge => edge.toNodeId === target.id && edge.fromNodeId !== sourceNode.id)) return "创作表只能连接一个商品，请先断开已有输入";
+        return "";
+    }
     const acceptedInputKinds = getNodeAcceptedInputKinds(target.type);
     if (acceptedInputKinds.length) {
         const source = nodes.find((node) => node.id === candidate.fromNodeId);

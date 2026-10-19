@@ -28,6 +28,81 @@ tags:
   - name: skills
   - name: workbench
 paths:
+  /ecommerce/settings:
+    get:
+      tags: [canvas]
+      summary: 读取电商画布功能、默认提示词及已发布公共模特
+      description: 需要登录，仅返回启用模特。业务开关不替代模型权限与额度，前端缓存最多 30 秒。
+      responses:
+        "200": {description: 标准信封 data.setting 为 EcommerceSetting，models 已过滤停用记录}
+        "401": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce:
+    get:
+      tags: [admin]
+      summary: 管理员读取完整电商画布配置
+      responses:
+        "200": {description: 标准信封 data.setting 为 EcommerceSetting}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [admin]
+      summary: 保存配置并保留上一版
+      description: 需要管理员，携带读取时 revision，过期版本拒绝覆盖。当前配置、上一版和审计在同一事务提交。新增图片须属于当前管理员；已有及上一版引用允许其他管理员维护。请求体上限 2 MiB。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EcommerceSetting"}
+      responses:
+        "200": {description: 标准信封 data.setting 为新 revision 的完整配置}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce/previous:
+    get:
+      tags: [admin]
+      summary: 管理员读取上一版供草稿恢复
+      description: 只读取不激活，保存时须使用当前配置 revision。
+      responses:
+        "200": {description: 标准信封 data.setting 为上一版 EcommerceSetting}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce/images:
+    post:
+      tags: [admin]
+      summary: 管理员上传公共模特参考图
+      description: 内容嗅探 PNG、JPEG、WebP，单文件最多 10 MiB；写入本地受管资源，遵守上传频率和容量配额。上传后须保存模特配置才发布。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        "200": {description: 标准信封 data.resource 为已保存资源}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /ecommerce/models/{modelId}/images/{resourceId}:
+    get:
+      tags: [canvas]
+      summary: 登录后读取公共模特参考图
+      description: 校验模特、图片引用及功能开关；管理员可预览当前和上一版引用。复用资源分发和 Range 合同。
+      parameters:
+        - {in: path, name: modelId, required: true, schema: {type: string}}
+        - {in: path, name: resourceId, required: true, schema: {type: string}}
+      responses:
+        "200": {description: 图片内容或 access 描述}
+        "206": {description: 图片 Range 内容}
+        "307": {description: 按资源存储位置跳转}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /libtv/gallery:
     get:
       tags: [libtv]
@@ -1920,6 +1995,41 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    EcommerceSetting:
+      type: object
+      required: [enabled, modelLibraryEnabled, autoBindEnabled, flows, models, revision]
+      properties:
+        enabled: {type: boolean}
+        modelLibraryEnabled: {type: boolean}
+        autoBindEnabled: {type: boolean}
+        revision: {type: string, description: 读取时的版本，新配置为 initial}
+        flows:
+          type: object
+          required: [detail, main, wear, seed]
+          additionalProperties: false
+          properties:
+            detail: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            main: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            wear: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            seed: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+        models:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [id, name, enabled, tags, resourceIds]
+            properties:
+              id: {type: string, maxLength: 100}
+              name: {type: string, maxLength: 100}
+              enabled: {type: boolean, description: 启用须至少一张图片}
+              tags: {type: array, maxItems: 20, items: {type: string, maxLength: 50}}
+              resourceIds: {type: array, maxItems: 12, uniqueItems: true, items: {type: string, maxLength: 100}}
+    EcommerceFlowSetting:
+      type: object
+      required: [enabled, directorPrompt]
+      properties:
+        enabled: {type: boolean}
+        directorPrompt: {type: string, maxLength: 20000, description: 空串使用内置指令，用户自定义优先}
     LoginLog:
       type: object
       properties:

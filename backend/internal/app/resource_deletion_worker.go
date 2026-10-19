@@ -81,6 +81,9 @@ func (s *Service) cleanupDetachedUserResources(userID string, candidates []model
 	for resourceID := range s.appearanceResourceReferences(resourceIDs) {
 		referenced[resourceID] = struct{}{}
 	}
+	for resourceID := range s.ecommerceResourceReferences(resourceIDs) {
+		referenced[resourceID] = struct{}{}
+	}
 	for _, reference := range snapshot.Direct {
 		if _, exists := candidateSet[reference.ResourceID]; exists {
 			referenced[reference.ResourceID] = struct{}{}

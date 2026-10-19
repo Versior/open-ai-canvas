@@ -1,9 +1,9 @@
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { preconnect } from "react-dom";
 import { fillablePrompt } from "@/lib/inspirations/resolve";
-import { App, Button, Dropdown, Input } from "antd";
-import { ChevronDown, Download, Import, MoreHorizontal, Play, Plus, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { App, Button, Input } from "antd";
+import { ChevronDown, Play, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { WorkspaceErrorState, WorkspaceLoadingState, WorkspaceState } from "@/components/layout/workspace-state";
@@ -16,8 +16,10 @@ import { loadInspirationCatalog, type InspirationCatalog } from "@/services/insp
 import { useInspirationStore } from "@/stores/use-inspiration-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { InspirationCover, InspirationDetailModal } from "./inspiration-detail-modal";
-import { InspirationEditorModal, type InspirationCategoryChoice } from "./inspiration-editor-modal";
+import type { InspirationCategoryChoice } from "./inspiration-editor-modal";
 import "./inspirations.css";
+
+const LibTVGalleryContent = lazy(() => import("@/pages/inspiration").then((module) => ({ default: module.LibTVGalleryContent })));
 
 type SourceFilter = "all" | InspirationSourceId;
 type ViewFilter = "all" | "favorites" | "hidden";
@@ -44,20 +46,6 @@ const MODE_OPTIONS = [
     { label: "文本", value: "text" },
 ] as const;
 
-/** 导出文件名带上日期，重复导出不会互相覆盖。 */
-function exportFileName() {
-    return `yingce-inspirations-${new Date().toISOString().slice(0, 10)}.json`;
-}
-
-function downloadText(text: string, fileName: string) {
-    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    anchor.click();
-    URL.revokeObjectURL(url);
-}
-
 export function InspirationHall({ onUse, creationMode, embedded = false }: { onUse: (item: CreationInspiration) => void; creationMode?: CreationInspiration["mode"]; embedded?: boolean }) {
     const { message } = App.useApp();
     const inspirationSourcesVisible = useUserStore((state) => state.features.inspirationSourcesVisible);
@@ -67,9 +55,6 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
     const hidden = useInspirationStore((state) => state.hidden);
     const favorites = useInspirationStore((state) => state.favorites);
     const hydrated = useInspirationStore((state) => state.hydrated);
-    const createEntry = useInspirationStore((state) => state.createEntry);
-    const exportPayload = useInspirationStore((state) => state.exportPayload);
-    const importPayload = useInspirationStore((state) => state.importPayload);
 
     const [catalog, setCatalog] = useState<InspirationCatalog | null>(null);
     const [shouldLoadCatalog, setShouldLoadCatalog] = useState(false);
@@ -92,8 +77,6 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
     const pageSize = 30;
 
     const [detail, setDetail] = useState<CreationInspiration | null>(null);
-    const [editorOpen, setEditorOpen] = useState(false);
-    const importRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const section = sectionRef.current;
@@ -260,40 +243,6 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
         [message],
     );
 
-    const handleSubmit = useCallback(
-        (draft: Parameters<typeof createEntry>[0]) => {
-            createEntry(draft);
-            // 新建后把筛选整体清掉：自建条目的来源固定是「原创」、分类也常和当前筛选不符，
-            // 不清的话用户刚点完"创建"却看不到自己建的东西。
-            setSource("all");
-            setModeFilter("all");
-            setCategory("all");
-            setView("all");
-            setSort("default");
-            setSearch("");
-            setPage(1);
-            message.success("灵感已创建");
-        },
-        [createEntry, message],
-    );
-
-    const handleExport = useCallback(() => {
-        downloadText(exportPayload(), exportFileName());
-        message.success("已导出本地改动（自建条目 / 改写 / 隐藏 / 收藏）");
-    }, [exportPayload, message]);
-
-    const handleImportFile = useCallback(
-        async (file: File) => {
-            try {
-                const result = importPayload(await file.text());
-                message.success(`导入完成：新增 ${result.created}，覆盖 ${result.updated}${result.skipped ? `，跳过 ${result.skipped} 条无效数据` : ""}`);
-            } catch (error) {
-                message.error(error instanceof Error ? error.message : "导入失败");
-            }
-        },
-        [importPayload, message],
-    );
-
     const advancedFilterCount = Number(source !== "all") + Number(category !== "all") + Number(view !== "all") + Number(sort !== "default");
     const hasFilters = Boolean(advancedFilterCount || modeFilter !== "all" || search.trim());
     const resetFilters = () => {
@@ -306,41 +255,7 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
     };
 
     return (
-        <section ref={sectionRef} id="creation-inspirations" className="inspiration-hall" aria-labelledby="inspiration-hall-title">
-            <header className="inspiration-hall-header">
-                <div>
-                    <div className="inspiration-hall-heading">
-                        <h2 id="inspiration-hall-title">灵感大厅</h2>
-                    </div>
-                </div>
-                {!embedded ? <div className="inspiration-hall-actions">
-                    <Button
-                        disabled={!hydrated}
-                        icon={<Plus className="size-4" />}
-                        onClick={() => {
-                            setEditorOpen(true);
-                        }}
-                    >
-                        新建灵感
-                    </Button>
-                    <Dropdown
-                        trigger={["click"]}
-                        placement="bottomRight"
-                        menu={{
-                            items: [
-                                { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
-                                { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
-                            ],
-                            onClick: ({ key }) => {
-                                if (key === "import") importRef.current?.click();
-                                if (key === "export") handleExport();
-                            },
-                        }}
-                    >
-                        <Button type="text" icon={<MoreHorizontal className="size-4" />} aria-label="更多灵感管理操作" title="更多操作" />
-                    </Dropdown>
-                </div> : null}
-            </header>
+        <section ref={sectionRef} id="creation-inspirations" className="inspiration-hall" aria-label="单次创作灵感">
 
             {!embedded ? <div className="inspiration-hall-toolbar">
                 <div className="inspiration-hall-modes" role="group" aria-label="按创作类型筛选灵感">
@@ -437,31 +352,11 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                 )}
             </div>
 
-            <input
-                ref={importRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = "";
-                    if (file) void handleImportFile(file);
-                }}
-            />
             <InspirationDetailModal
                 item={detail}
                 onClose={() => setDetail(null)}
                 onUse={handleUse}
                 onCopy={handleCopy}
-            />
-            <InspirationEditorModal
-                open={editorOpen}
-                item={null}
-                categoryOptions={categoryChoices}
-                onClose={() => {
-                    setEditorOpen(false);
-                }}
-                onSubmit={handleSubmit}
             />
         </section>
     );
@@ -535,5 +430,22 @@ export function InspirationCard({
 
 export default function InspirationsPage() {
     const navigate = useNavigate();
-    return <WorkspacePage className="inspirations-page"><InspirationHall onUse={(item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } })} /></WorkspacePage>;
+    const [searchParams, setSearchParams] = useSearchParams();
+    const canvasView = searchParams.has("work") || searchParams.get("view") !== "prompt";
+    return <WorkspacePage className="inspirations-page">
+        <nav className="inspirations-view-switch" aria-label="灵感内容">
+            {([{ label: "单次创作", canvas: false }, { label: "画布灵感", canvas: true }]).map((view) => (
+                <button key={view.label} type="button" aria-pressed={canvasView === view.canvas} onClick={() => {
+                    const next = new URLSearchParams(searchParams);
+                    if (view.canvas) next.set("view", "canvas");
+                    else next.set("view", "prompt");
+                    next.delete("work");
+                    setSearchParams(next);
+                }}>{view.label}</button>
+            ))}
+        </nav>
+        {canvasView ? <>
+            <Suspense fallback={<WorkspaceLoadingState label="正在准备画布灵感" rows={3} />}><LibTVGalleryContent /></Suspense>
+        </> : <InspirationHall onUse={(item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } })} />}
+    </WorkspacePage>;
 }

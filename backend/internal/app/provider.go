@@ -166,6 +166,9 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 		return nil, err
 	}
 	input.Config = config
+	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil {
+		return nil, err
+	}
 	if input.Mode == "text" && input.Config.CapabilityConfig != nil && input.Config.CapabilityConfig.Text != nil {
 		// The same capability contract drives provider output limits, billing
 		// estimates and Agent context budgeting. Never silently fall back to a

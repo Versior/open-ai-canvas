@@ -15,6 +15,8 @@ import {
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useEcommerceModelLibrary, type EcommerceModelPatch } from "@/stores/use-ecommerce-model-library";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
+import { ecommercePublicImageUrl, type PublicEcommerceModel } from "@/services/api/ecommerce";
 import "./canvas-ecommerce-model-library.css";
 
 type ModelLibraryModalProps = {
@@ -46,8 +48,10 @@ export function CanvasEcommerceModelLibraryModal({ open, onClose, onSelect, acti
     const [previewRef, setPreviewRef] = useState("");
     const [loadError, setLoadError] = useState("");
     const fileRef = useRef<HTMLInputElement>(null);
+    const publicImportInFlight = useRef(false);
 
     const models = useEcommerceModelLibrary((state) => state.models);
+    const setting = useEcommerceSettings((state) => state.setting);
     const hydrated = useEcommerceModelLibrary((state) => state.hydrated);
     const hydrate = useEcommerceModelLibrary((state) => state.hydrate);
     const addModel = useEcommerceModelLibrary((state) => state.addModel);
@@ -56,6 +60,7 @@ export function CanvasEcommerceModelLibraryModal({ open, onClose, onSelect, acti
 
     const editing = useMemo(() => ecommerceModelById(editingId || undefined, models), [editingId, models]);
     const visible = useMemo(() => filterEcommerceModels(models, search, order), [models, search, order]);
+    const publicModels = setting.enabled && setting.modelLibraryEnabled ? setting.models.filter(model => model.enabled && (!search.trim() || [model.name, ...model.tags].join(' ').toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()))) : [];
     useEffect(() => {
         if (!open) {
             setPreviewRef("");
@@ -67,8 +72,37 @@ export function CanvasEcommerceModelLibraryModal({ open, onClose, onSelect, acti
         void hydrate().catch((error) => {
             if (!cancelled) setLoadError(error instanceof Error ? error.message : "模特库加载失败");
         });
+        void useEcommerceSettings.getState().load().catch(error => { if (!cancelled) setLoadError(error instanceof Error ? error.message : "公共模特加载失败"); });
         return () => { cancelled = true; };
     }, [open, hydrate]);
+
+    const importPublicModel = async (model: PublicEcommerceModel) => {
+        if (uploading || publicImportInFlight.current) return;
+        publicImportInFlight.current = true;
+        const scope = getActiveUserScope();
+        setUploading(true);
+        try {
+            const latest = await useEcommerceSettings.getState().load();
+            const current = latest.models.find(item => item.id === model.id && item.enabled);
+            if (!latest.enabled || !latest.modelLibraryEnabled || !current) throw new Error('此公共模特已停用，请刷新');
+            const refs: string[] = [];
+            for (const id of current.resourceIds) {
+                const response = await fetch(ecommercePublicImageUrl(current.id, id), { credentials: 'include' });
+                if (!response.ok) throw new Error('公共模特参考图读取失败');
+                const blob = await response.blob();
+                if (scope !== getActiveUserScope()) throw new Error('账号已切换，请重试');
+                const image = await uploadImage(blob);
+                if (image.pendingRemoteUpload) throw new Error('模特图片尚未同步到服务器，请稍后重试');
+                refs.push(image.storageKey);
+            }
+            if (scope !== getActiveUserScope()) throw new Error('账号已切换，请重试');
+            const imported = { ...createEcommerceModel(current.name, refs), tags: current.tags };
+            await addModel(imported);
+            if (onSelect && !imageToAdd) { await onSelect(imported); onClose(); }
+            message.success('已保存到我的模特库');
+        } catch (error) { message.error(error instanceof Error ? error.message : '导入失败'); }
+        finally { publicImportInFlight.current = false; setUploading(false); }
+    };
 
     const createModel = async () => {
         try {
@@ -150,6 +184,7 @@ export function CanvasEcommerceModelLibraryModal({ open, onClose, onSelect, acti
                 </header>
 
                 <div className="ecom-model-body">
+                    {publicModels.length ? <section aria-label="公共模特库"><h3>公共模特</h3><div className="ecom-model-grid">{publicModels.map(model => <div key={model.id} className="ecom-model-card"><img src={ecommercePublicImageUrl(model.id, model.resourceIds[0])} alt={model.name} loading="lazy" className="h-40 w-full object-contain" /><strong>{model.name}</strong><span>{model.tags.join(' · ')}</span><button type="button" className="ecom-model-ghost" disabled={uploading || !hydrated} onClick={() => void importPublicModel(model)}>{uploading ? '导入中…' : onSelect && !imageToAdd ? '导入并使用' : '加入我的模特'}</button></div>)}</div></section> : null}
                     {imageToAdd ? <div className="ecom-model-source"><ModelImage refKey={imageToAdd.storageKey} /><span>{imageToAdd.name}</span></div> : null}
                             <div className="ecom-model-bar">
                                 <span className="ecom-model-count">{models.length} 位我的模特</span>

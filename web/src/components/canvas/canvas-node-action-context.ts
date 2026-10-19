@@ -49,10 +49,12 @@ export type CanvasNodeActionContextValue = {
      * 用户点一下就有活干，不用自己描述要助手做什么。
      */
     draftWithAgent?: (node: CanvasNodeData, instruction: string) => void;
+    /** 创建或定位当前商品、用途对应的已连线创作表。 */
+    openEcommerceTable?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId) => void;
     /**
-     * 电商创作：按套图面板里那张表出图。
+     * 电商创作：按创作表出图。
      *
-     * 铺产物节点（只铺表里真有提示词的那几行，按槽位复用）、把每行的提示词
+     * 铺产物节点（只铺表里真有提示词的那几行，保留旧图）、把每行的提示词
      * 与参数写进对应节点、提交生成。出完由装订链路接手。
      *
      * 传 `slotIds` 就只出那几行——面板里每张旁边那个「出这一张」走的就是这条路。
@@ -65,13 +67,13 @@ export type CanvasNodeActionContextValue = {
      * 电商创作：分析商品，为这一套的每一张写一条完整的出图提示词。
      *
      * 单位是**一张图一条提示词**，不是一张图一句话——主图画什么、模特上身图画什么、
-     * 细节图画什么，构图光线景别全不一样。结果落进商品节点的 `ecommerceSuite`，
-     * 审核面是套图面板里的表。
+     * 细节图画什么，构图光线景别全不一样。结果落进创作表节点的 `ecommerceSuite`，
+     * 在画布内逐行审核。
      *
      * `analysisModel` 是面板上选的分析模型：分析要读图、出图不用，
      * 两者常常不是同一个模型，而全局配置只有一个。
      */
-    draftEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string) => Promise<unknown> | void;
+    draftEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string, rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<unknown> | void;
     /**
      * 电商创作：读商品实拍起草商品档案。
      *

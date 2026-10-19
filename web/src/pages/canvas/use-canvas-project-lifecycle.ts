@@ -11,7 +11,8 @@ import { normalizeCanvasNodeTimestamps } from "@/lib/canvas/canvas-node-timestam
 import { canvasPersistentNodes } from "@/lib/canvas/canvas-persistent-nodes";
 import { hydrateAssistantImages, resetInterruptedGeneration } from "@/lib/canvas/canvas-project-generation";
 import { listAddedSkills, type Skill } from "@/services/api/skills";
-import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync, loadCanvasProjectForEditing, saveRemoteUserDataNow, prepareCanvasForCloudAction, subscribeAgentCanvasRefresh, refreshCanvasAfterAgent } from "@/services/user-data-sync";
+import { createCanvasProjectWithRemoteSync, deleteCanvasProjectsWithRemoteSync, loadCanvasProjectForEditing, saveRemoteUserDataNow, prepareCanvasForCloudAction, scheduleRemoteUserDataSync, subscribeAgentCanvasRefresh, refreshCanvasAfterAgent } from "@/services/user-data-sync";
+import { ApiError } from "@/services/api/request";
 import { getCanvasSyncStatus } from "@/services/api/user-data";
 import { canvasEditLeases } from "@/services/canvas-edit-leases";
 import { startCanvasSyncPolling } from "@/services/canvas-sync-polling";
@@ -396,6 +397,10 @@ export function useCanvasProjectLifecycle({
             await persistLocalEdits();
         } catch (error) {
             console.warn("画布本地持久化暂未完成", error);
+            if (options.requireRemote === false) {
+                message.error(error instanceof Error ? `画布本地保存失败：${error.message}` : "画布本地保存失败");
+                return false;
+            }
         }
         try {
             if (options.requireRemote === false) {
@@ -408,6 +413,12 @@ export function useCanvasProjectLifecycle({
             return true;
         } catch (error) {
             console.warn("画布等待后台同步", error);
+            if (options.requireRemote === false) {
+                const retryable = !(error instanceof ApiError) || error.retryable;
+                if (retryable) scheduleRemoteUserDataSync();
+                message.warning(`本地已保存，云端同步失败：${error instanceof Error ? error.message : "请检查同步状态"}${retryable ? "，将自动重试" : "，请处理后重试"}`);
+                return true;
+            }
             return false;
         }
     }, [message, persistLocalEdits, projectId]);

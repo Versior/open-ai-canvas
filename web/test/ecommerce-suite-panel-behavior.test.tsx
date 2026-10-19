@@ -65,6 +65,26 @@ test("partial generation submits the latest edited rows, never the modal close c
     expect(panel.saved).toEqual(panel.submitted);
 });
 
+test('closing the panel saves the latest local draft', async () => {
+    const panel = await mountPanel();
+    let closed = 0;
+    await panel.rerender({ onClose: () => { closed += 1; } });
+    await act(async () => { panel.find(p => p['aria-label'] === 'First 提示词').onChange({ target: { value: 'Keep my edit' } }); });
+    await act(async () => { panel.find(p => p.children === '关闭').onClick(); });
+    expect(closed).toBe(1);
+    expect(panel.saved.at(-1)).toEqual([expect.objectContaining({ prompt: 'Keep my edit' }), expect.anything()]);
+});
+
+test('analysis receives the edited duties and latest rows', async () => {
+    const panel = await mountPanel();
+    let analyzed: unknown;
+    await panel.rerender({ onAnalyze: rows => { analyzed = rows; } });
+    await act(async () => { panel.find(p => p['aria-label'] === 'First 要解决什么').onChange({ target: { value: 'New direction' } }); });
+    await act(async () => { panel.find(p => p.title === '分析商品图与参考图').onClick(); });
+    expect(analyzed).toEqual([expect.objectContaining({ duty: 'New direction' }), expect.anything()]);
+    expect(panel.saved.at(-1)).toEqual(analyzed);
+});
+
 test("changing skill selection with equivalent upstream rows preserves local edits", async () => {
     const panel = await mountPanel();
     await act(async () => { panel.find((p) => p["aria-label"] === "第 1 屏的标题").onChange({ target: { value: "Edited title" } }); });
@@ -92,6 +112,15 @@ test("empty prompts never offer partial generation", async () => {
     expect(panel.confirmation()?.onOk).toBeUndefined();
     expect(panel.submitted).toEqual([]);
     expect(panel.saved).toEqual([]);
+});
+
+test("supplementary information replaces director editing and file import", async () => {
+    const panel = await mountPanel();
+    await act(async () => { panel.find(p => p.title === "补充平台、张数和商品信息").onClick(); });
+    expect(panel.find(p => p["aria-label"] === "发布平台")).toBeDefined();
+    expect(panel.find(p => p["aria-label"] === "计划张数")).toBeDefined();
+    expect(() => panel.find(p => p["aria-label"] === "分析提示词")).toThrow();
+    expect(() => panel.find(p => p.type === "file")).toThrow();
 });
 
 test("clear prompts also clears edits when upstream prompts were already empty", async () => {

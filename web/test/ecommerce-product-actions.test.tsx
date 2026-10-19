@@ -8,6 +8,9 @@ import { CanvasNodeActionContext, type CanvasNodeActionContextValue } from "../s
 import { CanvasNodeGraphContext } from "../src/components/canvas/canvas-node-graph-context";
 import { CanvasEcommerceSuitePanel, type EcommerceSuitePanelProps } from "../src/components/canvas/canvas-ecommerce-suite-panel";
 import { ProductNodeContent } from "../src/components/canvas/nodes/product-node";
+import { CanvasEcommerceTableNodeContent } from "../src/components/canvas/canvas-ecommerce-table-node";
+import { openEcommerceTable } from "../src/lib/ecommerce/ecommerce-table";
+import { createCanvasNodeGraph } from "../src/lib/canvas/canvas-node-graph";
 import { canvasThemes } from "../src/lib/canvas-theme";
 import type { EcommerceSuiteRow } from "../src/lib/ecommerce/ecommerce-suite";
 import { setActiveUserScope } from "../src/lib/user-scope";
@@ -83,15 +86,14 @@ async function mountProduct(rows = initialRows) {
         id: "product-photo", type: CanvasNodeType.Image, title: "Product photo", position: { x: 0, y: 0 },
         metadata: { content: "/product-photo.png" },
     };
-    const graph = {
-        getInputNodes: () => [image], getDownstreamNodes: () => [],
-        getConnections: () => [{ id: "front", fromNodeId: image.id, toNodeId: product.id, toHandleId: "product-view:front" }],
-    };
     const calls: Parameters<NonNullable<CanvasNodeActionContextValue["generateEcommerceSuite"]>>[] = [];
     let next = deferred();
     let productTree: ReactNode;
     let panelTree: ReactNode;
+    let currentNodes = [product, image];
+    let currentEdges = [{ id: "front", fromNodeId: image.id, toNodeId: product.id, toHandleId: "product-view:front" }];
     let currentNode = product;
+    let activeId = "";
     let panelProps: EcommerceSuitePanelProps | undefined;
     let unmount: (() => Promise<void>) | undefined;
     cleanup = async () => {
@@ -131,24 +133,38 @@ async function mountProduct(rows = initialRows) {
         return null;
     }
     function ProductProbe() {
-        productTree = ProductNodeContent({ node: currentNode, theme: canvasThemes.dark });
-        const panel = findElement(productTree, (element) => element.type === CanvasEcommerceSuitePanel);
+        productTree = ProductNodeContent({ node: product, theme: canvasThemes.dark });
+        expect(findElement(productTree, element => element.type === CanvasEcommerceSuitePanel)).toBeUndefined();
+        return null;
+    }
+    function TableProbe() {
+        const element = CanvasEcommerceTableNodeContent({ node: currentNode });
+        const tableTree = (element.type as (props: { node: CanvasNodeData }) => ReactNode)(element.props);
+        const panel = findElement(tableTree, element => element.type === CanvasEcommerceSuitePanel);
         panelProps = panel?.props as EcommerceSuitePanelProps | undefined;
-        // Execute both real hook bodies without sending DOM hosts to the 3D renderer.
+        expect(panelProps?.embedded).toBe(true);
         return panelProps ? <PanelProbe {...panelProps} /> : null;
     }
     function Fixture() {
-        const [node, setNode] = useState(product);
-        currentNode = node;
+        const [, publish] = useState(0);
         const actions: CanvasNodeActionContextValue = {
+            openEcommerceTable: (node, flow) => {
+                const plan = openEcommerceTable(currentNodes, currentEdges, node.id, flow);
+                currentNodes = plan.nodes;
+                currentEdges = plan.connections as typeof currentEdges;
+                activeId = plan.table.id;
+                currentNode = plan.table;
+                publish(value => value + 1);
+            },
             updateMetadata: (id, patch) => {
-                if (id !== product.id) throw new Error("Unexpected metadata target: " + id);
-                setNode((current) => ({ ...current, metadata: { ...current.metadata, ...patch } }));
+                currentNodes = currentNodes.map(node => node.id === id ? { ...node, metadata: { ...node.metadata, ...patch } } : node);
+                currentNode = currentNodes.find(node => node.id === activeId)!;
+                publish(value => value + 1);
             },
             draftEcommerceSuite: () => undefined,
             generateEcommerceSuite: (...args) => { calls.push(args); return next.promise; },
         };
-        return <CanvasNodeActionContext.Provider value={actions}><CanvasNodeGraphContext.Provider value={graph}><ProductProbe /></CanvasNodeGraphContext.Provider></CanvasNodeActionContext.Provider>;
+        return <CanvasNodeActionContext.Provider value={actions}><CanvasNodeGraphContext.Provider value={createCanvasNodeGraph(currentNodes, currentEdges)}><ProductProbe />{activeId ? <TableProbe key={activeId} /> : null}</CanvasNodeGraphContext.Provider></CanvasNodeActionContext.Provider>;
     }
     const fail = (error: unknown) => { throw error; };
     const root = reconciler.createContainer({} as never, 1, null, false, null, "", fail, fail, fail, null);
@@ -161,8 +177,20 @@ async function mountProduct(rows = initialRows) {
         return found.props;
     }
     const batchButton = () => control(panelTree, (props) => props.title === "按这张表批量提交出图任务");
-    const open = async () => {
-        await act(async () => { control(productTree, (props) => props.className === "ecom-oneclick").onClick!(); });
+    const open = async (flowName?: string) => {
+        await act(async () => {
+            const candidates: ReactElement<ControlProps>[] = [];
+            const walk = (tree: ReactNode) => {
+                if (!React.isValidElement<ControlProps>(tree)) return;
+                if (tree.props.className === "ecom-oneclick") candidates.push(tree);
+                React.Children.forEach(tree.props.children, walk);
+            };
+            walk(productTree);
+            const text = (node: ReactNode): string => typeof node === 'string' || typeof node === 'number' ? String(node) : React.isValidElement<ControlProps>(node) ? React.Children.toArray(node.props.children).map(text).join('') : '';
+            const candidate = flowName ? candidates.find(item => text(item).includes(flowName)) : candidates[0];
+            if (!candidate) throw new Error('Flow button missing');
+            candidate.props.onClick!();
+        });
         expect(panelProps?.open).toBe(true);
     };
     await open();
@@ -172,14 +200,28 @@ async function mountProduct(rows = initialRows) {
     expect(errors).toEqual([]);
     return {
         calls, errors, open, batchButton, isOpen: () => Boolean(panelProps?.open),
+        tables: () => currentNodes.filter(node => node.type === CanvasNodeType.BatchTable),
         props: () => panelProps!, node: () => currentNode, confirmation: () => confirmation,
         edit: async (label: string, value: string) => { await act(async () => { control(panelTree, (props) => props["aria-label"] === label).onChange!({ target: { value } }); }); },
         click: async (label: string) => { await act(async () => { control(panelTree, (props) => props["aria-label"] === label).onClick!(); }); },
         submit: async () => { const button = batchButton(); expect(button.disabled).toBe(false); await act(async () => { button.onClick!(); }); },
         settle: async (result: boolean | Error) => { await act(async () => { if (result instanceof Error) next.reject(result); else next.resolve(result); }); },
         retry: () => { next = deferred(); },
+
     };
 }
+
+test('switching purposes creates separate connected tables and preserves edits', async () => {
+    const product = await mountProduct();
+    await editHero(product);
+    await product.open('主图');
+    const mainSlot = product.props().rows[0].slotId;
+    await act(async () => { product.props().onRowsChange([{ ...product.props().rows[0], prompt: 'Main draft' }]); });
+    await product.open('详情页');
+    expect(product.props().rows).toEqual(editedRows);
+    expect(product.tables()).toHaveLength(2);
+    expect(product.tables().find(node => node.metadata?.ecommerceFlowId === 'main')?.metadata?.ecommerceSuite?.rows[0]).toMatchObject({ slotId: mainSlot, prompt: 'Main draft' });
+});
 
 async function editHero(product: Awaited<ReturnType<typeof mountProduct>>) {
     await product.edit("第 1 屏的标题", "Edited hero");
@@ -188,19 +230,19 @@ async function editHero(product: Awaited<ReturnType<typeof mountProduct>>) {
 }
 
 for (const outcome of [true, false, new Error("Queue unavailable")]) {
-    test("product suite " + (outcome === true ? "closes on true enqueue" : outcome === false ? "stays open on false enqueue" : "stays open on rejected enqueue") + " and submits edited draft rows", async () => {
+    test("product suite " + (outcome === true ? "remains on canvas after successful enqueue" : outcome === false ? "stays open on false enqueue" : "stays open on rejected enqueue") + " and submits edited draft rows", async () => {
         const product = await mountProduct();
         await editHero(product);
-        expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(initialRows);
+        expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(editedRows);
         await product.submit();
         expect(product.calls).toHaveLength(1);
-        expect(product.calls[0]).toEqual([expect.objectContaining({ id: "product" }), "detail", undefined, editedRows]);
+        expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", undefined, editedRows]);
         expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(editedRows);
         expect(product.isOpen()).toBe(true);
         expect(product.props().generating).toBe(true);
         expect(product.batchButton().disabled).toBe(true);
         await product.settle(outcome);
-        expect(product.isOpen()).toBe(outcome !== true);
+        expect(product.isOpen()).toBe(true);
         expect(product.errors).toEqual(outcome instanceof Error ? ["Queue unavailable"] : []);
         if (outcome === true) {
             await product.open();
@@ -212,10 +254,11 @@ for (const outcome of [true, false, new Error("Queue unavailable")]) {
             expect(product.calls).toHaveLength(2);
             expect(product.calls[1]?.[3]).toEqual(editedRows);
             await product.settle(true);
-            expect(product.isOpen()).toBe(false);
+            expect(product.isOpen()).toBe(true);
             await product.open();
         }
         expect(product.props().rows).toEqual(editedRows);
+        expect(product.tables()).toHaveLength(1);
     });
 }
 
@@ -233,11 +276,11 @@ test("partial-generation confirmation forwards the current draft, not the modal 
         { slotId: "detail-2", title: "Detail", duty: "Show the texture", prompt: "" },
     ];
     expect(product.calls).toHaveLength(1);
-    expect(product.calls[0]).toEqual([expect.objectContaining({ id: "product" }), "detail", undefined, expected]);
+    expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", undefined, expected]);
     expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(expected);
     expect(product.isOpen()).toBe(true);
     await product.settle(true);
-    expect(product.isOpen()).toBe(false);
+    expect(product.isOpen()).toBe(true);
 });
 
 test("single-row generation forwards its slot and reordered draft, and suppresses another enqueue while pending", async () => {
@@ -250,7 +293,7 @@ test("single-row generation forwards its slot and reordered draft, and suppresse
         { slotId: "detail-1", title: "Edited hero", duty: "Show the edited composition", prompt: "Edited hero prompt" },
     ];
     expect(product.calls).toHaveLength(1);
-    expect(product.calls[0]).toEqual([expect.objectContaining({ id: "product" }), "detail", ["detail-1"], expected]);
+    expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", ["detail-1"], expected]);
     expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(expected);
     await product.click("只出这一张：Detail");
     expect(product.calls).toHaveLength(1);
@@ -264,5 +307,5 @@ test("single-row generation forwards its slot and reordered draft, and suppresse
     expect(product.calls[1]?.[2]).toEqual(["detail-2"]);
     expect(product.calls[1]?.[3]).toEqual(expected);
     await product.settle(true);
-    expect(product.isOpen()).toBe(false);
+    expect(product.isOpen()).toBe(true);
 });

@@ -143,6 +143,7 @@ export function batchReferenceColumnId(handleId?: string) {
 
 export function batchReferenceHandleY(node: CanvasNodeData, handleId?: string) {
     if (node.type !== "batch-table") return undefined;
+    if (node.metadata?.ecommerceFlowId) return undefined;
     const columnId = batchReferenceColumnId(handleId);
     const columns = batchReferenceColumns(node.metadata?.batchTable);
     const index = columnId ? columns.findIndex((column) => column.id === columnId) : 0;
@@ -152,6 +153,7 @@ export function batchReferenceHandleY(node: CanvasNodeData, handleId?: string) {
 
 export function batchReferenceHandleAtY(node: CanvasNodeData, worldY: number, hitRadius = 18) {
     if (node.type !== "batch-table") return undefined;
+    if (node.metadata?.ecommerceFlowId) return undefined;
     const columns = batchReferenceColumns(node.metadata?.batchTable);
     let nearestIndex = -1;
     let nearestDistance = Number.POSITIVE_INFINITY;

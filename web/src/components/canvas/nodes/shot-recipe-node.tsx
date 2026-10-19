@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
-import { useUpstreamNodes } from "@/components/canvas/canvas-node-graph-context";
+import { useDownstreamNodes } from "@/components/canvas/canvas-node-graph-context";
 import { createEcommerceShot, createEcommerceShotSet, ecommerceShotSetReady, type EcommerceShot, type EcommerceShotSet } from "@/lib/ecommerce/ecommerce-contract";
 import { createEcommerceShotFromPreset, ecommerceShotPresetsByGroup } from "@/lib/ecommerce/ecommerce-recipes";
 import { ecommerceDiagramBoxes, ecommerceShotDiagram } from "@/lib/ecommerce/ecommerce-shot-diagram";
@@ -43,7 +43,7 @@ const SHOT_FIELDS: { key: keyof Omit<EcommerceShot, "id" | "title">; label: stri
  */
 export function ShotRecipeNodeContent({ node, theme }: ShotRecipeNodeContentProps) {
     const { updateMetadata, generateEcommerceShotSet } = useCanvasNodeActions();
-    const upstream = useUpstreamNodes(node.id);
+    const downstream = useDownstreamNodes(node.id);
     const [editing, setEditing] = useState(false);
     const [activeShotId, setActiveShotId] = useState<string | null>(null);
     const [generatingShotId, setGeneratingShotId] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function ShotRecipeNodeContent({ node, theme }: ShotRecipeNodeContentProp
     const ready = ecommerceShotSetReady(set);
 
     // 下游图片各自认领了哪一行——认领不到的行会退化成只用整组统一，卡片上要点出来。
-    const claimed = new Set(upstream.filter((item) => item.type === CanvasNodeType.Image).map((item) => item.metadata?.ecommerceShotId).filter(Boolean) as string[]);
+    const claimed = new Set(downstream.filter((item) => item.type === CanvasNodeType.Image).map((item) => item.metadata?.ecommerceShotId).filter(Boolean) as string[]);
     const unclaimed = shots.filter((shot) => !claimed.has(shot.id));
 
     const patchSet = (next: Partial<EcommerceShotSet>) => updateMetadata?.(node.id, { shotSet: { ...set, ...next } });

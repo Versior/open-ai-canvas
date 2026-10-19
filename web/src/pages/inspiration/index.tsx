@@ -1,17 +1,17 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Alert, Button, Input, Spin, Tag } from "antd";
-import { Lightbulb, LoaderCircle, RotateCw, Search } from "lucide-react";
+import { RotateCw, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { PageHeader, WorkspacePage } from "@/components/layout/workspace-page";
-import { libTVGalleryInfiniteQuery, pickLibTVRecommendations, rankLibTVGalleryTags } from "@/lib/libtv-gallery";
+import { libTVGalleryInfiniteQuery, rankLibTVGalleryTags } from "@/lib/libtv-gallery";
 import { getLibTVGallery } from "@/services/api/libtv-gallery";
 import type { LibTVGalleryItem, LibTVGalleryTag } from "@/types/libtv-gallery";
 
 import { LibTVWorkDetailDialog } from "./work-detail-dialog";
+import { LibTVGalleryCard } from "./gallery-card";
 
-export default function InspirationGalleryPage() {
+export function LibTVGalleryContent() {
     const [searchParams, setSearchParams] = useSearchParams();
     // 作品弹窗状态挂在地址栏上：返回键可关弹窗，作品链接也能直接分享。
     const activeTemplateUuid = searchParams.get("work") || undefined;
@@ -19,6 +19,7 @@ export default function InspirationGalleryPage() {
     const [searchValue, setSearchValue] = useState("");
     const [selectedTagId, setSelectedTagId] = useState<number>();
     const [tagsExpanded, setTagsExpanded] = useState(false);
+    const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
     const loadMoreRef = useRef<HTMLDivElement>(null);
 
     const { data, isLoading, isError, isFetching, isFetchingNextPage, isFetchNextPageError, error, refetch, fetchNextPage, hasNextPage } = useInfiniteQuery(
@@ -28,11 +29,11 @@ export default function InspirationGalleryPage() {
     const items = useMemo(() => {
         const seen = new Set<string>();
         return (data?.pages.flatMap((page) => page.items) ?? []).filter((item) => {
-            if (seen.has(item.templateUuid)) return false;
+            if (seen.has(item.templateUuid) || unavailable.has(item.templateUuid)) return false;
             seen.add(item.templateUuid);
             return true;
         });
-    }, [data?.pages]);
+    }, [data?.pages, unavailable]);
 
     useEffect(() => {
         const target = loadMoreRef.current;
@@ -100,21 +101,8 @@ export default function InspirationGalleryPage() {
         setSearchParams(next, { replace: true });
     };
 
-    // 推荐来自已加载的真实列表：排除当前作品，优先同标签，数据不够就少给。
-    const recommended = useMemo(() => {
-        if (!activeTemplateUuid) return [];
-        const current = items.find((item) => item.templateUuid === activeTemplateUuid);
-        const preferredTagIds = current?.tags.map((tag) => tag.id) ?? [];
-        return pickLibTVRecommendations(items, activeTemplateUuid, 6, preferredTagIds);
-    }, [activeTemplateUuid, items]);
-
     return (
-        <WorkspacePage>
-            <PageHeader
-                title="灵感广场"
-                meta={<Lightbulb className="size-5" />}
-            />
-
+        <>
             <div className="space-y-6 pb-12">
                 {/* Search */}
                 <div className="flex gap-3">
@@ -127,7 +115,7 @@ export default function InspirationGalleryPage() {
                         size="large"
                         allowClear
                     />
-                    <Button type="primary" size="large" onClick={handleSearch} loading={isLoading}>
+                    <Button type="primary" className="libtv-gallery-search" size="large" onClick={handleSearch} loading={isLoading}>
                         搜索
                     </Button>
                 </div>
@@ -170,15 +158,15 @@ export default function InspirationGalleryPage() {
                     <div className="flex items-center justify-center py-20">
                         <Spin size="large" />
                     </div>
-                ) : items.length === 0 && !error ? (
+                ) : items.length === 0 && !hasNextPage && !error ? (
                     <div className="py-20 text-center text-sm text-foreground/45">
                         {keyword ? `没有找到包含「${keyword}」的作品` : "暂无作品"}
                     </div>
-                ) : items.length > 0 ? (
+                ) : items.length > 0 || hasNextPage ? (
                     <>
-                        <div className="library-grid">
-                            {items.map((item) => (
-                                <GalleryCard key={item.templateUuid} item={item} onClick={() => openWork(item)} />
+                        <div className="libtv-gallery-grid">
+                            {items.map((item, index) => (
+                                <LibTVGalleryCard key={item.templateUuid} item={item} priority={index < 4} onClick={() => openWork(item)} onUnavailable={() => setUnavailable((current) => new Set(current).add(item.templateUuid))} />
                             ))}
                         </div>
 
@@ -200,38 +188,7 @@ export default function InspirationGalleryPage() {
                 ) : null}
             </div>
 
-            <LibTVWorkDetailDialog templateUuid={activeTemplateUuid} recommended={recommended} onSelectWork={openWork} onClose={closeWork} />
-        </WorkspacePage>
-    );
-}
-
-function GalleryCard({ item, onClick }: { item: LibTVGalleryItem; onClick: () => void }) {
-    const [imageLoaded, setImageLoaded] = useState(false);
-
-    return (
-        <div className="library-item group cursor-pointer" onClick={onClick}>
-            <div className="library-item-cover relative overflow-hidden rounded-lg" style={{ background: "var(--library-surface)" }}>
-                {!imageLoaded && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <LoaderCircle className="size-6 animate-spin text-foreground/20" />
-                    </div>
-                )}
-                <img
-                    src={item.coverUrl}
-                    alt={item.title}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    onLoad={() => setImageLoaded(true)}
-                    style={{ opacity: imageLoaded ? 1 : 0 }}
-                />
-                {item.mediaType === "video" && (
-                    <div className="absolute bottom-2 right-2 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white backdrop-blur-sm">视频</div>
-                )}
-            </div>
-            <div className="library-item-info">
-                <div className="library-item-title">{item.title}</div>
-                {item.description && <div className="library-item-subtitle line-clamp-2 text-xs text-foreground/50">{item.description}</div>}
-            </div>
-        </div>
+            <LibTVWorkDetailDialog templateUuid={activeTemplateUuid} onClose={closeWork} />
+        </>
     );
 }

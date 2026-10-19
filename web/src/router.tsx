@@ -3,7 +3,7 @@ import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router
 
 import { RequireAuth } from "@/components/auth/require-auth";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
-import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadInspirationsPage, loadInspirationPage, loadProjectDetailPage, loadProjectsPage } from "@/lib/workspace-route-modules";
+import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadEcommercePage, loadInspirationPage, loadProjectDetailPage, loadProjectsPage } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
@@ -30,6 +30,7 @@ const RedemptionCodesPage = lazy(() => import("@/pages/admin/redemption-codes/re
 const RuntimePolicySettingsPage = lazy(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
 const AppearanceSettingsPage = lazy(() => import("@/pages/admin/settings/appearance-settings-page"));
 const DrawingEngineSettingsPage = lazy(() => import("@/pages/admin/settings/drawing-engine-settings-page"));
+const EcommerceSettingsPage = lazy(() => import("@/pages/admin/settings/ecommerce-settings-page"));
 const StorageSettingsPage = lazy(() => import("@/pages/admin/settings/storage-settings-page"));
 const ArkPrivateAssetsSettingsPage = lazy(() => import("@/pages/admin/settings/ark-private-assets-settings-page"));
 const ResponseInterceptionSettingsPage = lazy(() => import("@/pages/admin/settings/response-interception-settings-page"));
@@ -46,10 +47,10 @@ const LoginPage = lazy(() => import("@/pages/auth/login"));
 const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
+const EcommercePage = lazy(loadEcommercePage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const CreatePage = lazy(loadCreatePage);
-const InspirationsPage = lazy(loadInspirationsPage);
 const ImageWorkbenchPage = lazy(() => import("@/pages/workbench/image-workbench-route"));
 const VideoWorkbenchPage = lazy(() => import("@/pages/workbench/video-workbench-page"));
 const NotFound = lazy(() => import("@/pages/not-found"));
@@ -70,6 +71,13 @@ function deferred(element: ReactNode) {
 
 function fullScreenDeferred(element: ReactNode) {
     return <Suspense fallback={<FullScreenLoader label="正在打开创作空间" detail="准备当前页面" />}>{element}</Suspense>;
+}
+
+function LegacyInspirationsRedirect() {
+    const { search, hash } = useLocation();
+    const params = new URLSearchParams(search);
+    if (!params.has("view") && !params.has("work")) params.set("view", "prompt");
+    return <Navigate to={{ pathname: "/inspiration", search: `?${params}`, hash }} replace />;
 }
 
 function AuthenticatedWorkspaceLayout() {
@@ -122,7 +130,7 @@ export const router = createBrowserRouter([
         children: [
             { path: "/", element: deferred(<CreatePage />) },
             { path: "/create", element: deferred(<CreatePage />) },
-            { path: "/inspirations", element: deferred(<InspirationsPage />) },
+            { path: "/inspirations", element: <LegacyInspirationsRedirect /> },
             {
                 path: "/toolbox/image",
                 element: (
@@ -214,6 +222,7 @@ export const router = createBrowserRouter([
                 ),
             },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
+            { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
             {
                 path: "/canvas/:id",
                 element: (
@@ -254,6 +263,7 @@ export const router = createBrowserRouter([
                     { path: "settings", element: <Navigate to="runtime-policy" replace /> },
                     { path: "settings/appearance", element: <AppearanceSettingsPage /> },
                     { path: "settings/drawing-engine", element: <DrawingEngineSettingsPage /> },
+                    { path: "settings/ecommerce", element: <EcommerceSettingsPage /> },
                     { path: "settings/concurrency", element: <Navigate to="/admin/settings/runtime-policy" replace /> },
                     { path: "settings/runtime-policy", element: <RuntimePolicySettingsPage /> },
                     { path: "settings/features", element: <FeatureAvailabilityPage /> },

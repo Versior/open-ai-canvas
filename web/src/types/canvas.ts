@@ -10,6 +10,7 @@ import type { GenerationSpec } from "@/lib/canvas/generation-contract.generated"
 import type { GenerationTask } from "@/services/api/task-center";
 import type { EcommerceCopy, EcommerceProductProfile, EcommerceSellingPoint, EcommerceShotSet, EcommerceStyle } from "@/lib/ecommerce/ecommerce-contract";
 import type { EcommerceSuite } from "@/lib/ecommerce/ecommerce-suite";
+import type { EcommerceBrief } from "@/lib/ecommerce/ecommerce-brief";
 import type { EcommerceLayout } from "@/lib/ecommerce/ecommerce-layout";
 import type { EcommerceInfographic } from "@/lib/ecommerce/ecommerce-infographic";
 import type { EcommerceSizeChart } from "@/lib/ecommerce/ecommerce-size-chart";
@@ -634,7 +635,7 @@ export type CanvasNodeMetadata = {
      * 全屏出完之后要自动装订（详情页拼长图 + 切片），所以得记住这一批是哪几屏、
      * 落在哪几个节点上。做完清掉——只在这一次流程里生效。
      */
-    ecommerceOneClick?: { flow: string; slotIds: string[]; nodeIds: string[] };
+    ecommerceOneClick?: { flow: string; slotIds: string[]; nodeIds: string[]; runId?: string; platform?: string; status?: "running" | "failed"; error?: string };
     /**
      * 电商创作：这一套的套图提示词表，挂在商品节点上。落盘字段。
      *
@@ -643,6 +644,10 @@ export type CanvasNodeMetadata = {
      * 出图时那一行原样交给图片模型。见 ecommerce-suite.ts。
      */
     ecommerceSuite?: EcommerceSuite;
+    ecommerceSuitesByFlow?: Partial<Record<"detail" | "main" | "wear" | "seed", EcommerceSuite>>;
+    ecommerceProductId?: string;
+    ecommerceFlowId?: string;
+    ecommerceRunId?: string;
     /**
      * 电商创作：分析商品用哪个文本模型。落盘字段。
      *
@@ -691,6 +696,7 @@ export type CanvasNodeMetadata = {
     ecommerceSuitePrompt?: string;
     /** 每种一键创作独立的分析提示词。 */
     ecommerceSuitePrompts?: Partial<Record<"detail" | "main" | "wear" | "seed", string>>;
+    ecommerceBrief?: EcommerceBrief;
     /** 电商创作：这张产物图认领拍摄清单里的哪一行。落盘字段。 */
     ecommerceShotId?: string;
     /** 电商创作：卖点清单。落盘字段。 */

@@ -249,7 +249,7 @@ export function ecommerceSuiteDraftPrompt(flow: EcommerceOneClickFlow, profile: 
     ].filter(Boolean).join("\n");
 
     return [
-        ecommerceSuiteDirectorPrompt(director),
+        director === " " ? "" : ecommerceSuiteDirectorPrompt(director),
         "",
         "【商品事实】以下是卖家确认过的档案，优先级高于你从图里看到的东西：",
         facts || "（档案是空的——那就只依据图里看得见的东西写）",
