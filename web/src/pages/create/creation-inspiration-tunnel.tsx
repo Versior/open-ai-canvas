@@ -96,7 +96,7 @@ function pickBatch(pool: CreationInspiration[], size: number, mode: CreationMode
  * 所以卡片整体对辅助技术隐藏、也不进 Tab 顺序；左右切换按钮仍可聚焦，
  * 当前展示的是哪一张由下面那条 aria-live 文本播报。
  */
-export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: CreationMode; onStartPrompt: (mode: CreationMode, prompt: string) => void }) {
+export function CreationInspirationTunnel({ mode, onStartPrompt, hidden = false }: { mode: CreationMode; onStartPrompt: (mode: CreationMode, prompt: string) => void; hidden?: boolean }) {
     /**
      * 池子来自 gallery-pool.json，是单独一份静态 JSON，不打包。
      * 它没到之前整条画廊不渲染——先摆一小批再换成大池子，用户会看到画面整排重排一次。
@@ -161,7 +161,7 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
 
     // 自动轮播：走完一轮就换一批新的，用户不会反复看到同样那几张。
     useEffect(() => {
-        if (paused || reducedMotion || shots.length < 2) return;
+        if (hidden || paused || reducedMotion || shots.length < 2) return;
         const timer = window.setInterval(() => {
             const next = activeRef.current + 1;
             if (next < shots.length) {
@@ -172,7 +172,7 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
             setActive(0);
         }, AUTO_ADVANCE_MS);
         return () => window.clearInterval(timer);
-    }, [paused, reducedMotion, shots.length, mode]);
+    }, [hidden, paused, reducedMotion, shots.length, mode]);
 
     // 标签页切到后台时停掉，回来再继续，免得空转。
     useEffect(() => {
@@ -204,7 +204,7 @@ export function CreationInspirationTunnel({ mode, onStartPrompt }: { mode: Creat
     if (!shots.length) return null;
 
     return (
-        <div className="creation-inspiration-tunnel" onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)}>
+        <div className="creation-inspiration-tunnel" data-hidden={hidden} aria-hidden={hidden || undefined} inert={hidden} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)}>
             <div ref={stageRef} className="creation-gallery-stage" aria-hidden="true">
                 {shots.map((inspiration, index) => {
                     const id = catalogIdOf(inspiration);

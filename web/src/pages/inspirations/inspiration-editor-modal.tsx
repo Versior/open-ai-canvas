@@ -135,7 +135,7 @@ export function InspirationEditorModal({
                     <Form.Item name="prompt" label="提示词正文" rules={[{ required: true, message: "请填写提示词正文" }]}>
                         <Input.TextArea rows={6} placeholder="粘贴完整提示词；外部英文提示词也可以直接放这里" />
                     </Form.Item>
-                    <Form.Item name="promptZh" label="中文正文（可选）" extra="填了以后，卡片和「用这个创意创作」会优先用中文这版">
+                    <Form.Item name="promptZh" label="中文正文（可选）" extra="填了以后，卡片和「使用提示词」会优先用中文这版">
                         <Input.TextArea rows={4} placeholder="中文改写版，留空则只用上面的正文" />
                     </Form.Item>
                 </div>

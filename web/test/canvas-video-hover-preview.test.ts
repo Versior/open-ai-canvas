@@ -20,6 +20,7 @@ class FakeVideo extends EventTarget {
     async play() { this.paused = false; this.dispatchEvent(new Event("playing")); }
 }
 class FakeElement extends EventTarget {
+    dataset: Record<string, string> = {};
     isConnected = true;
     closest(selector: string) { return selector.includes('="true"') ? (interacting ? this : null) : this; }
     getAttribute() { return interacting ? "true" : null; }

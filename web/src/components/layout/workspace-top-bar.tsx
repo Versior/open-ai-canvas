@@ -19,6 +19,7 @@ const PAGE_TITLES: Record<string, string> = {
     canvas: "自由画布",
     tasks: "创作历史",
     assets: "资产",
+    inspirations: "灵感",
     skills: "技能",
     plugins: "插件",
     settings: "设置",

@@ -205,6 +205,7 @@ function buildSeedanceEntries(raw) {
                 title: item.title,
                 description: seedanceDescription(item, category),
                 image: item.posterUrl,
+                ...(item.mediaType === "video" && /^https:\/\//.test(item.mediaUrl ?? "") ? { videoUrl: item.mediaUrl } : {}),
                 mode: "video",
                 prompt: item.promptFull,
                 ...(category ? { category } : {}),

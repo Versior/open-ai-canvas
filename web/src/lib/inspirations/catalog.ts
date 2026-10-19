@@ -4,7 +4,7 @@ import { HIGHLIGHT_REVISIONS } from "./source-revisions";
 export type InspirationSourceId = "original" | "chatgpt-prompts" | "seedance" | "haohaoxue" | "youmind";
 
 export type InspirationSourceInfo = {
-    /** 卡片来源行上的短标签。 */
+    /** 来源筛选与详情里的短标签。 */
     label: string;
     /** 页脚链接文本，通常是仓库短名或站点名。 */
     name?: string;
@@ -15,7 +15,7 @@ export type InspirationSourceInfo = {
     notice?: string;
 };
 
-/** 来源表：新增外部灵感源时在这里加一项，卡片与页脚都按它渲染许可标识。 */
+/** 来源表：新增外部灵感源时在这里加一项，详情与页脚按它渲染来源和许可。 */
 export const inspirationSources: Record<InspirationSourceId, InspirationSourceInfo> = {
     original: { label: "原创提示词" },
     "chatgpt-prompts": {
@@ -66,6 +66,8 @@ export type CreationInspiration = {
     title: string;
     description: string;
     image: string;
+    /** 上游原视频地址，仅悬停预览时请求。 */
+    videoUrl?: string;
     mode: CreationMode;
     prompt: string;
     /** 自定义双语条目的中文正文；内置目录已将中文统一存入 prompt。 */

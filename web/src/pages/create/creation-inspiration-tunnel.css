@@ -67,6 +67,16 @@
     overflow: hidden;
 }
 
+.creation-inspiration-tunnel[data-hidden="true"] {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.creation-home-scroll > .creation-inspiration-tunnel {
+    max-width: none;
+    flex: none;
+}
+
 .creation-gallery-stage {
     position: relative;
     height: calc(var(--gallery-card-width) * 9 / 16 + 48px);
