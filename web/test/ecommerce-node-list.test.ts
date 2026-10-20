@@ -24,10 +24,20 @@ function node(type: CanvasNodeType, metadata: CanvasNodeMetadata = {}, title = "
 describe("电商节点清单：分组按工作流阶段", () => {
     test("每个电商节点都有归属分组", () => {
         const types = [
-            CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style,
-            CanvasNodeType.ShotRecipe, CanvasNodeType.Image, CanvasNodeType.Layout, CanvasNodeType.Infographic, CanvasNodeType.Replica,
+            CanvasNodeType.Product,
+            CanvasNodeType.SellingPoint,
+            CanvasNodeType.Copy,
+            CanvasNodeType.Style,
+            CanvasNodeType.ShotRecipe,
+            CanvasNodeType.Image,
+            CanvasNodeType.Layout,
+            CanvasNodeType.Infographic,
+            CanvasNodeType.Replica,
             CanvasNodeType.Teardown,
-            CanvasNodeType.EcommerceVideo, CanvasNodeType.Aplus, CanvasNodeType.Revision, CanvasNodeType.Delivery,
+            CanvasNodeType.EcommerceVideo,
+            CanvasNodeType.Aplus,
+            CanvasNodeType.Revision,
+            CanvasNodeType.Delivery,
         ];
         for (const type of types) {
             expect(ecommerceNodeGroup(node(type))).not.toBeNull();
@@ -55,26 +65,32 @@ describe("电商节点清单：摘要说能不能往下走", () => {
         expect(empty.flag).toBe("warn");
         expect(empty.incomplete).toBe(true);
 
-        const filled = ecommerceNodeSummary(node(CanvasNodeType.Product, {
-            productProfile: { ...createEcommerceProductProfile("保温杯"), category: "保温杯", appearance: "哑光黑" },
-        }));
+        const filled = ecommerceNodeSummary(
+            node(CanvasNodeType.Product, {
+                productProfile: { ...createEcommerceProductProfile("保温杯"), category: "保温杯", appearance: "哑光黑" },
+            }),
+        );
         expect(filled.text).toContain("档案 2/4");
         // 档案齐了但没绑视角，仍然要提醒——没有视角参考就没有商品一致性
         expect(filled.flag).toBe("warn");
     });
 
     test("拍法说清单张数与整组要求", () => {
-        const summary = ecommerceNodeSummary(node(CanvasNodeType.ShotRecipe, {
-            shotSet: { ...createEcommerceShotSet("主图五张"), shots: [] },
-        }));
+        const summary = ecommerceNodeSummary(
+            node(CanvasNodeType.ShotRecipe, {
+                shotSet: { ...createEcommerceShotSet("主图五张"), shots: [] },
+            }),
+        );
         expect(summary.text).toBe("清单为空");
         expect(summary.flag).toBe("warn");
     });
 
     test("卖点缺依据时标 warn 并报出条数", () => {
-        const summary = ecommerceNodeSummary(node(CanvasNodeType.SellingPoint, {
-            sellingPoints: [createEcommerceSellingPoint("保温 12 小时", ""), createEcommerceSellingPoint("304 不锈钢", "检测报告")],
-        }));
+        const summary = ecommerceNodeSummary(
+            node(CanvasNodeType.SellingPoint, {
+                sellingPoints: [createEcommerceSellingPoint("保温 12 小时", ""), createEcommerceSellingPoint("304 不锈钢", "检测报告")],
+            }),
+        );
         expect(summary.text).toContain("2 条");
         expect(summary.text).toContain("1 条缺依据");
         expect(summary.flag).toBe("warn");
@@ -102,9 +118,11 @@ describe("电商节点清单：摘要说能不能往下走", () => {
     });
 
     test("信息图说标题、标注数与有没有表格", () => {
-        const summary = ecommerceNodeSummary(node(CanvasNodeType.Infographic, {
-            ecommerceInfographic: { ...createEcommerceInfographic("卖点标注"), headline: "保温 12 小时", callouts: [createEcommerceInfographicCallout("真空层")] },
-        }));
+        const summary = ecommerceNodeSummary(
+            node(CanvasNodeType.Infographic, {
+                ecommerceInfographic: { ...createEcommerceInfographic("卖点标注"), headline: "保温 12 小时", callouts: [createEcommerceInfographicCallout("真空层")] },
+            }),
+        );
         expect(summary.text).toContain("保温 12 小时");
         expect(summary.text).toContain("1 条标注");
         // 没有表格时整段省略，不写「无表格」占位——清单要短
@@ -222,24 +240,39 @@ describe("添加节点菜单按分组呈现", () => {
     const menu = readFileSync(new URL("../src/components/canvas/canvas-create-menu.tsx", import.meta.url), "utf8");
     const commands = readFileSync(new URL("../src/lib/canvas/tool-registry/definitions/add-node-menu-tools.tsx", import.meta.url), "utf8");
 
-    test("电商画布只放商品节点——其余十二个暂时从菜单里去掉了", () => {
-        // 它们把「一步能做完的事」拆成十几个节点让用户自己接：铺九屏、连文案、连排版、
-        // 逐张点生成、等九张出完、再逐张叠字、再拼长图、再切片。每一步都「可配置」，
-        // 合起来是一条没人走得完的流水线。内容改挂在商品节点上，入口收成两个一键按钮。
-        expect(commands).toContain('group: "电商"');
-        const matches = commands.match(/group: "/g) || [];
-        expect(matches).toHaveLength(1);
-        for (const type of ["ShotRecipe", "SellingPoint", "Copy", "Style", "Layout", "Infographic", "Replica", "Teardown", "Delivery", "Revision", "EcommerceVideo", "Aplus"]) {
-            expect(commands).not.toContain(`CanvasNodeType.${type}, {`);
+    test("专业电商节点按用途开放，仍只在电商画布出现", async () => {
+        const { addNodeMenuCommands } = await import("../src/lib/canvas/tool-registry/definitions/add-node-menu-tools");
+        const types = [
+            CanvasNodeType.Product,
+            CanvasNodeType.ShotRecipe,
+            CanvasNodeType.SellingPoint,
+            CanvasNodeType.Copy,
+            CanvasNodeType.Style,
+            CanvasNodeType.Layout,
+            CanvasNodeType.Infographic,
+            CanvasNodeType.Replica,
+            CanvasNodeType.Teardown,
+            CanvasNodeType.Delivery,
+            CanvasNodeType.Revision,
+            CanvasNodeType.EcommerceVideo,
+            CanvasNodeType.Aplus,
+        ];
+        const created: string[] = [];
+        for (const type of types) {
+            const command = addNodeMenuCommands.find((item) => item.id === type)!;
+            expect(command).toBeDefined();
+            expect(command.applicable?.({ canvasKind: "ecommerce" } as never)).toBe(true);
+            expect(command.applicable?.({ canvasKind: "free" } as never)).toBe(false);
+            command.run({ handlers: { onAddExtensionNode: (value: string) => created.push(value) } } as never);
         }
-        // 节点实现都还在——老画布照常渲染，要放回来只改这张表
-        expect(commands).toContain("nodeCommand(CanvasNodeType.Product");
+        expect(created).toEqual(types);
+        expect(new Set(addNodeMenuCommands.filter((item) => types.includes(item.id as CanvasNodeType)).map((item) => item.group))).toEqual(new Set(["商品信息", "画面制作", "参考分析", "修改交付"]));
     });
 
     test("无分组的通用节点排到最后，不会出现两个同名的「创作节点」段", () => {
         // 通用节点的 defaultOrder 被电商节点夹在中间，直接按出现顺序聚拢会得到两段同名
         expect(menu).toContain('const rest = groups.get("")');
-        expect(menu).toContain("return rest?.length ? [...named, { title: \"\", commands: rest }] : named;");
+        expect(menu).toContain('return rest?.length ? [...named, { title: "", commands: rest }] : named;');
     });
 
     test("分组标题就是导航，不再是一张平铺的四列网格", () => {

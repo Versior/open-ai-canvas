@@ -309,8 +309,8 @@ func (s *Service) UserAssetsByIDs(userID string, ids []string) ([]json.RawMessag
 	return s.canvasDomain().UserAssetsByIDs(userID, ids)
 }
 
-func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string) (CanvasLibraryPage, error) {
-	return s.canvasDomain().UserCanvasProjectsPage(userID, page, pageSize, projectID, search, sort)
+func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string, kinds ...string) (CanvasLibraryPage, error) {
+	return s.canvasDomain().UserCanvasProjectsPage(userID, page, pageSize, projectID, search, sort, kinds...)
 }
 
 func clientAssetPayload(asset model.Asset) json.RawMessage {

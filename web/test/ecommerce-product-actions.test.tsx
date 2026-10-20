@@ -41,7 +41,10 @@ function findElement(tree: ReactNode, predicate: (element: ReactElement<ControlP
 function deferred() {
     let resolve!: (value: boolean) => void;
     let reject!: (error: Error) => void;
-    const promise = new Promise<boolean>((yes, no) => { resolve = yes; reject = no; });
+    const promise = new Promise<boolean>((yes, no) => {
+        resolve = yes;
+        reject = no;
+    });
     return { promise, resolve, reject };
 }
 
@@ -57,8 +60,11 @@ const editedRows: EcommerceSuiteRow[] = [
 let cleanup: (() => Promise<void>) | undefined;
 let sequence = 0;
 afterEach(async () => {
-    try { await cleanup?.(); }
-    finally { cleanup = undefined; }
+    try {
+        await cleanup?.();
+    } finally {
+        cleanup = undefined;
+    }
 });
 
 async function mountProduct(rows = initialRows) {
@@ -74,16 +80,32 @@ async function mountProduct(rows = initialRows) {
     const warnings: unknown[] = [];
     let confirmation: { onOk?: (...args: unknown[]) => unknown } | undefined;
     const app = {
-        message: { error: (error: unknown) => { errors.push(error); }, warning: (warning: unknown) => { warnings.push(warning); } },
-        modal: { confirm: (options: typeof confirmation) => { confirmation = options; } },
+        message: {
+            error: (error: unknown) => {
+                errors.push(error);
+            },
+            warning: (warning: unknown) => {
+                warnings.push(warning);
+            },
+        },
+        modal: {
+            confirm: (options: typeof confirmation) => {
+                confirmation = options;
+            },
+        },
     };
     const product: CanvasNodeData = {
-        id: "product", type: CanvasNodeType.Product, title: "Test product", position: { x: 0, y: 0 },
-        metadata: { ecommerceAnalysisModel: "analysis-model", ecommerceImageModel: "image-model",
-            ecommerceSuite: { flow: "detail", source: "draft", updatedAt: "", rows: rows.map((row) => ({ ...row })) } },
+        id: "product",
+        type: CanvasNodeType.Product,
+        title: "Test product",
+        position: { x: 0, y: 0 },
+        metadata: { ecommerceAnalysisModel: "analysis-model", ecommerceImageModel: "image-model", ecommerceSuite: { flow: "detail", source: "draft", updatedAt: "", rows: rows.map((row) => ({ ...row })) } },
     };
     const image: CanvasNodeData = {
-        id: "product-photo", type: CanvasNodeType.Image, title: "Product photo", position: { x: 0, y: 0 },
+        id: "product-photo",
+        type: CanvasNodeType.Image,
+        title: "Product photo",
+        position: { x: 0, y: 0 },
         metadata: { content: "/product-photo.png" },
     };
     const calls: Parameters<NonNullable<CanvasNodeActionContextValue["generateEcommerceSuite"]>>[] = [];
@@ -97,8 +119,9 @@ async function mountProduct(rows = initialRows) {
     let panelProps: EcommerceSuitePanelProps | undefined;
     let unmount: (() => Promise<void>) | undefined;
     cleanup = async () => {
-        try { await unmount?.(); }
-        finally {
+        try {
+            await unmount?.();
+        } finally {
             apiClient.request = originalRequest;
             localforage.getItem = originalGetItem;
             localforage.setItem = originalSetItem;
@@ -111,11 +134,20 @@ async function mountProduct(rows = initialRows) {
             else Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
         }
     };
-    Object.defineProperty(globalThis, "window", { configurable: true, value: Object.assign(new EventTarget(), { localStorage: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => { storage.set(key, value); },
-        removeItem: (key: string) => { storage.delete(key); },
-    } }) });
+    Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: Object.assign(new EventTarget(), {
+            localStorage: {
+                getItem: (key: string) => storage.get(key) ?? null,
+                setItem: (key: string, value: string) => {
+                    storage.set(key, value);
+                },
+                removeItem: (key: string) => {
+                    storage.delete(key);
+                },
+            },
+        }),
+    });
     Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
     setActiveUserScope("product-actions-" + ++sequence);
     // Keep real catalog and model hydration; only HTTP and browser storage are external.
@@ -124,7 +156,10 @@ async function mountProduct(rows = initialRows) {
         return { data: { code: 0, data: { skills: [] }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
     localforage.getItem = (async (key: string) => storage.get(key) ?? null) as typeof localforage.getItem;
-    localforage.setItem = (async (key: string, value: string) => { storage.set(key, value); return value; }) as typeof localforage.setItem;
+    localforage.setItem = (async (key: string, value: string) => {
+        storage.set(key, value);
+        return value;
+    }) as typeof localforage.setItem;
     App.useApp = (() => app) as unknown as typeof App.useApp;
     useEcommerceModelLibrary.getState().reset();
 
@@ -134,13 +169,13 @@ async function mountProduct(rows = initialRows) {
     }
     function ProductProbe() {
         productTree = ProductNodeContent({ node: product, theme: canvasThemes.dark });
-        expect(findElement(productTree, element => element.type === CanvasEcommerceSuitePanel)).toBeUndefined();
+        expect(findElement(productTree, (element) => element.type === CanvasEcommerceSuitePanel)).toBeUndefined();
         return null;
     }
     function TableProbe() {
         const element = CanvasEcommerceTableNodeContent({ node: currentNode });
         const tableTree = (element.type as (props: { node: CanvasNodeData }) => ReactNode)(element.props);
-        const panel = findElement(tableTree, element => element.type === CanvasEcommerceSuitePanel);
+        const panel = findElement(tableTree, (element) => element.type === CanvasEcommerceSuitePanel);
         panelProps = panel?.props as EcommerceSuitePanelProps | undefined;
         expect(panelProps?.embedded).toBe(true);
         return panelProps ? <PanelProbe {...panelProps} /> : null;
@@ -154,22 +189,40 @@ async function mountProduct(rows = initialRows) {
                 currentEdges = plan.connections as typeof currentEdges;
                 activeId = plan.table.id;
                 currentNode = plan.table;
-                publish(value => value + 1);
+                publish((value) => value + 1);
             },
             updateMetadata: (id, patch) => {
-                currentNodes = currentNodes.map(node => node.id === id ? { ...node, metadata: { ...node.metadata, ...patch } } : node);
-                currentNode = currentNodes.find(node => node.id === activeId)!;
-                publish(value => value + 1);
+                currentNodes = currentNodes.map((node) => (node.id === id ? { ...node, metadata: { ...node.metadata, ...patch } } : node));
+                currentNode = currentNodes.find((node) => node.id === activeId)!;
+                publish((value) => value + 1);
             },
             draftEcommerceSuite: () => undefined,
-            generateEcommerceSuite: (...args) => { calls.push(args); return next.promise; },
+            generateEcommerceSuite: (...args) => {
+                calls.push(args);
+                return next.promise;
+            },
         };
-        return <CanvasNodeActionContext.Provider value={actions}><CanvasNodeGraphContext.Provider value={createCanvasNodeGraph(currentNodes, currentEdges)}><ProductProbe />{activeId ? <TableProbe key={activeId} /> : null}</CanvasNodeGraphContext.Provider></CanvasNodeActionContext.Provider>;
+        return (
+            <CanvasNodeActionContext.Provider value={actions}>
+                <CanvasNodeGraphContext.Provider value={createCanvasNodeGraph(currentNodes, currentEdges)}>
+                    <ProductProbe />
+                    {activeId ? <TableProbe key={activeId} /> : null}
+                </CanvasNodeGraphContext.Provider>
+            </CanvasNodeActionContext.Provider>
+        );
     }
-    const fail = (error: unknown) => { throw error; };
+    const fail = (error: unknown) => {
+        throw error;
+    };
     const root = reconciler.createContainer({} as never, 1, null, false, null, "", fail, fail, fail, null);
-    unmount = async () => { await act(async () => { reconciler.updateContainer(null, root, null, null); }); };
-    await act(async () => { reconciler.updateContainer(<Fixture />, root, null, null); });
+    unmount = async () => {
+        await act(async () => {
+            reconciler.updateContainer(null, root, null, null);
+        });
+    };
+    await act(async () => {
+        reconciler.updateContainer(<Fixture />, root, null, null);
+    });
 
     function control(tree: ReactNode, predicate: (props: ControlProps) => boolean) {
         const found = findElement(tree, (element) => predicate(element.props));
@@ -186,9 +239,9 @@ async function mountProduct(rows = initialRows) {
                 React.Children.forEach(tree.props.children, walk);
             };
             walk(productTree);
-            const text = (node: ReactNode): string => typeof node === 'string' || typeof node === 'number' ? String(node) : React.isValidElement<ControlProps>(node) ? React.Children.toArray(node.props.children).map(text).join('') : '';
-            const candidate = flowName ? candidates.find(item => text(item).includes(flowName)) : candidates[0];
-            if (!candidate) throw new Error('Flow button missing');
+            const text = (node: ReactNode): string => (typeof node === "string" || typeof node === "number" ? String(node) : React.isValidElement<ControlProps>(node) ? React.Children.toArray(node.props.children).map(text).join("") : "");
+            const candidate = candidates.find((item) => text(item).includes(flowName || "详情"));
+            if (!candidate) throw new Error("Flow button missing");
             candidate.props.onClick!();
         });
         expect(panelProps?.open).toBe(true);
@@ -199,28 +252,56 @@ async function mountProduct(rows = initialRows) {
     expect(warnings).toEqual([]);
     expect(errors).toEqual([]);
     return {
-        calls, errors, open, batchButton, isOpen: () => Boolean(panelProps?.open),
-        tables: () => currentNodes.filter(node => node.type === CanvasNodeType.BatchTable),
-        props: () => panelProps!, node: () => currentNode, confirmation: () => confirmation,
-        edit: async (label: string, value: string) => { await act(async () => { control(panelTree, (props) => props["aria-label"] === label).onChange!({ target: { value } }); }); },
-        click: async (label: string) => { await act(async () => { control(panelTree, (props) => props["aria-label"] === label).onClick!(); }); },
-        submit: async () => { const button = batchButton(); expect(button.disabled).toBe(false); await act(async () => { button.onClick!(); }); },
-        settle: async (result: boolean | Error) => { await act(async () => { if (result instanceof Error) next.reject(result); else next.resolve(result); }); },
-        retry: () => { next = deferred(); },
-
+        calls,
+        errors,
+        open,
+        batchButton,
+        isOpen: () => Boolean(panelProps?.open),
+        tables: () => currentNodes.filter((node) => node.type === CanvasNodeType.BatchTable),
+        props: () => panelProps!,
+        node: () => currentNode,
+        confirmation: () => confirmation,
+        edit: async (label: string, value: string) => {
+            await act(async () => {
+                control(panelTree, (props) => props["aria-label"] === label).onChange!({ target: { value } });
+            });
+        },
+        click: async (label: string) => {
+            await act(async () => {
+                control(panelTree, (props) => props["aria-label"] === label).onClick!();
+            });
+        },
+        submit: async () => {
+            const button = batchButton();
+            expect(button.disabled).toBe(false);
+            await act(async () => {
+                button.onClick!();
+            });
+        },
+        settle: async (result: boolean | Error) => {
+            await act(async () => {
+                if (result instanceof Error) next.reject(result);
+                else next.resolve(result);
+            });
+        },
+        retry: () => {
+            next = deferred();
+        },
     };
 }
 
-test('switching purposes creates separate connected tables and preserves edits', async () => {
+test("switching purposes creates separate connected tables and preserves edits", async () => {
     const product = await mountProduct();
     await editHero(product);
-    await product.open('主图');
+    await product.open("主图");
     const mainSlot = product.props().rows[0].slotId;
-    await act(async () => { product.props().onRowsChange([{ ...product.props().rows[0], prompt: 'Main draft' }]); });
-    await product.open('详情页');
+    await act(async () => {
+        product.props().onRowsChange([{ ...product.props().rows[0], prompt: "Main draft" }]);
+    });
+    await product.open("详情页");
     expect(product.props().rows).toEqual(editedRows);
     expect(product.tables()).toHaveLength(2);
-    expect(product.tables().find(node => node.metadata?.ecommerceFlowId === 'main')?.metadata?.ecommerceSuite?.rows[0]).toMatchObject({ slotId: mainSlot, prompt: 'Main draft' });
+    expect(product.tables().find((node) => node.metadata?.ecommerceFlowId === "main")?.metadata?.ecommerceSuite?.rows[0]).toMatchObject({ slotId: mainSlot, prompt: "Main draft" });
 });
 
 async function editHero(product: Awaited<ReturnType<typeof mountProduct>>) {
@@ -269,8 +350,12 @@ test("partial-generation confirmation forwards the current draft, not the modal 
     expect(product.calls).toEqual([]);
     expect(product.props().generating).toBe(false);
     expect(product.confirmation()?.onOk).toBeFunction();
-    const modalClose = () => { throw new Error("Modal close callback must not be submitted as draft rows"); };
-    await act(async () => { product.confirmation()!.onOk!(modalClose); });
+    const modalClose = () => {
+        throw new Error("Modal close callback must not be submitted as draft rows");
+    };
+    await act(async () => {
+        product.confirmation()!.onOk!(modalClose);
+    });
     const expected = [
         { slotId: "detail-1", title: "Edited hero", duty: "Show the edited composition", prompt: "Edited hero prompt" },
         { slotId: "detail-2", title: "Detail", duty: "Show the texture", prompt: "" },

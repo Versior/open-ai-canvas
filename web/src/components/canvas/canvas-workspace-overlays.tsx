@@ -1,8 +1,32 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Aperture, BadgeCheck, Clapperboard, Copy, Film, History, Image as ImageIcon, Layers, LayoutTemplate, List, Music2, Package, PackageCheck, Palette, Pencil, PenLine, Search, SwatchBook, Table2, Video, WandSparkles, Workflow as WorkflowIcon } from "lucide-react";
+import {
+    Aperture,
+    BadgeCheck,
+    Clapperboard,
+    Copy,
+    Film,
+    History,
+    Image as ImageIcon,
+    Layers,
+    LayoutTemplate,
+    List,
+    Music2,
+    Package,
+    PackageCheck,
+    Palette,
+    Pencil,
+    PenLine,
+    Search,
+    SwatchBook,
+    Table2,
+    Video,
+    WandSparkles,
+    Workflow as WorkflowIcon,
+} from "lucide-react";
 
 import { useCanvasOverlayLayer } from "@/components/canvas/canvas-overlay-layer";
+import { getNodeIcon, getNodeLabel } from "@/lib/canvas/node-registry";
 import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { aceternityMotion } from "@/lib/aceternity-motion";
@@ -220,14 +244,8 @@ export function CanvasConnectionCreateMenu({
      * 两边是两套工作流，混在一起会把两条流程的入口都搞模糊（见 canvas-kind.ts）。
      */
     canvasKind?: CanvasKind;
-    getDisabledReason: (
-        type: CanvasCreatableNodeType,
-        provider?: "runninghub",
-    ) => string;
-    onCreate: (
-        type: CanvasCreatableNodeType,
-        provider?: "runninghub",
-    ) => void;
+    getDisabledReason: (type: CanvasCreatableNodeType, provider?: "runninghub") => string;
+    onCreate: (type: CanvasCreatableNodeType, provider?: "runninghub") => void;
     onClose: () => void;
 }) {
     const theme = canvasThemes[useActiveTheme()];
@@ -303,27 +321,29 @@ export function CanvasConnectionCreateMenu({
             onPointerDown={(event) => event.stopPropagation()}
         >
             <div className="grid min-w-0 grid-cols-1 gap-1">
-                {ecommerceCanvas ? null : (<>
-                <ConnectionCreateGroupLabel label="通用" />
-                <ConnectionCreateOption
-                    expanded={activeOption === "文本生成"}
-                    motionEnabled={!reducedMotion}
-                    icon={<List className="size-4" />}
-                    title="文本生成"
-                    description="引用当前内容，生成或改写文本"
-                    disabledReason={getDisabledReason(CanvasNodeType.Text)}
-                    onClick={() => onCreate(CanvasNodeType.Text)}
-                />
-                <ConnectionCreateOption
-                    expanded={activeOption === "分镜脚本"}
-                    motionEnabled={!reducedMotion}
-                    icon={<Clapperboard className="size-4" />}
-                    title="分镜脚本"
-                    description="根据剧情拆解镜头，编排分镜脚本"
-                    disabledReason={getDisabledReason(CanvasNodeType.Script)}
-                    onClick={() => onCreate(CanvasNodeType.Script)}
-                />
-                </>)}
+                {ecommerceCanvas ? null : (
+                    <>
+                        <ConnectionCreateGroupLabel label="通用" />
+                        <ConnectionCreateOption
+                            expanded={activeOption === "文本生成"}
+                            motionEnabled={!reducedMotion}
+                            icon={<List className="size-4" />}
+                            title="文本生成"
+                            description="引用当前内容，生成或改写文本"
+                            disabledReason={getDisabledReason(CanvasNodeType.Text)}
+                            onClick={() => onCreate(CanvasNodeType.Text)}
+                        />
+                        <ConnectionCreateOption
+                            expanded={activeOption === "分镜脚本"}
+                            motionEnabled={!reducedMotion}
+                            icon={<Clapperboard className="size-4" />}
+                            title="分镜脚本"
+                            description="根据剧情拆解镜头，编排分镜脚本"
+                            disabledReason={getDisabledReason(CanvasNodeType.Script)}
+                            onClick={() => onCreate(CanvasNodeType.Script)}
+                        />
+                    </>
+                )}
                 <ConnectionCreateOption
                     expanded={activeOption === "批量创作表"}
                     motionEnabled={!reducedMotion}
@@ -390,22 +410,32 @@ export function CanvasConnectionCreateMenu({
                     onClick={() => onCreate(CanvasNodeType.MediaConversion)}
                 />
                 <span aria-hidden className="mx-1 my-0.5 h-px" style={{ background: "color-mix(in srgb, currentColor 12%, transparent)" }} />
-                {/* 电商画布现在只有一个电商节点：商品。
-                    另外十二个暂时从菜单里去掉了——它们把「一步能做完的事」拆成十几个节点
-                    让用户自己接，合起来是一条没人走得完的流水线。内容改挂在商品节点上，
-                    入口收成商品节点上的两个一键按钮（详情页 / 种草秀）。节点实现都还在，
-                    老画布照常渲染；要放回来只改这一段。 */}
-                {ecommerceCanvas ? (
-                    <ConnectionCreateOption
-                        expanded={activeOption === "商品"}
-                        motionEnabled={!reducedMotion}
-                        icon={<Package className="size-4" />}
-                        title="商品"
-                        description="商品档案与多视角实拍；一键详情页、一键种草秀都从这里发"
-                        disabledReason={getDisabledReason(CanvasNodeType.Product)}
-                        onClick={() => onCreate(CanvasNodeType.Product)}
-                    />
-                ) : null}
+                {ecommerceCanvas
+                    ? (
+                          [
+                              { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
+                              { label: "画面制作", types: [CanvasNodeType.EcommerceStudio, CanvasNodeType.ShotRecipe, CanvasNodeType.Layout, CanvasNodeType.Infographic, CanvasNodeType.Aplus, CanvasNodeType.EcommerceVideo] },
+                              { label: "参考分析", types: [CanvasNodeType.Replica, CanvasNodeType.Teardown] },
+                              { label: "修改交付", types: [CanvasNodeType.Revision, CanvasNodeType.Delivery] },
+                          ] as const
+                      ).map((group) => (
+                          <div key={group.label}>
+                              <ConnectionCreateGroupLabel label={group.label} />
+                              {group.types.map((type) => (
+                                  <ConnectionCreateOption
+                                      key={type}
+                                      expanded={activeOption === getNodeLabel(type)}
+                                      motionEnabled={!reducedMotion}
+                                      icon={getNodeIcon(type)}
+                                      title={getNodeLabel(type)}
+                                      description={`添加并连接${getNodeLabel(type)}`}
+                                      disabledReason={getDisabledReason(type)}
+                                      onClick={() => onCreate(type)}
+                                  />
+                              ))}
+                          </div>
+                      ))
+                    : null}
             </div>
         </motion.div>
     );

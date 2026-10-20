@@ -46,6 +46,7 @@ const GROUP_BY_TYPE: Partial<Record<string, EcommerceNodeGroupId>> = {
     [CanvasNodeType.Copy]: "facts",
     [CanvasNodeType.Style]: "facts",
     [CanvasNodeType.ShotRecipe]: "media",
+    [CanvasNodeType.EcommerceStudio]: "media",
     [CanvasNodeType.Image]: "media",
     [CanvasNodeType.Layout]: "media",
     [CanvasNodeType.Infographic]: "media",
@@ -100,6 +101,11 @@ function productSummary(profile: EcommerceProductProfile | undefined): Ecommerce
 export function ecommerceNodeSummary(node: CanvasNodeData): EcommerceNodeSummary {
     const metadata = node.metadata;
     switch (node.type) {
+        case CanvasNodeType.EcommerceStudio: {
+            const shots = metadata?.ecommerceStudio?.plan?.shots || [];
+            const ready = shots.filter((shot) => shot.title.trim() && shot.duty.trim() && shot.prompt?.trim()).length;
+            return { text: shots.length ? `${ready}/${shots.length} 张可出图` : "待规划画面", flag: ready && ready === shots.length ? "ok" : "warn", incomplete: !ready || ready !== shots.length };
+        }
         case CanvasNodeType.Product:
             return productSummary(metadata?.productProfile);
 

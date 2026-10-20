@@ -3,11 +3,64 @@ package handler
 import (
 	"github.com/gin-gonic/gin"
 	"net/http"
+	"strconv"
 	"time"
 	"yingce/backend/internal/service"
 )
 
 func RegisterEcommerceRoutes(r *gin.RouterGroup, svc *service.Service) {
+	r.GET("/ecommerce/templates", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		size, err := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		value, err := svc.EcommerceCatalog(actor, c.Query("q"), page, size)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-cache")
+		ok(c, value)
+	})
+	r.GET("/ecommerce/templates/:templateId", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		value, err := svc.EcommerceCatalogTemplate(actor, c.Param("templateId"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-cache")
+		ok(c, gin.H{"template": value})
+	})
+	r.GET("/admin/settings/ecommerce/defaults", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		value, err := svc.AdminEcommerceDefaults(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		ok(c, gin.H{"defaults": value})
+	})
 	r.GET("/ecommerce/settings", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

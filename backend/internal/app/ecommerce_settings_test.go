@@ -1,11 +1,218 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 	"yingce/backend/internal/model"
 )
+
+func TestEcommercePlannerDefaultsAndOverrides(t *testing.T) {
+	s, _, _, admin := newAdminStorageDeleteTestService(t)
+	if _, err := s.AdminEcommerceDefaults(&model.User{ID: "ordinary"}); err == nil {
+		t.Fatal("ordinary user read defaults")
+	}
+	defaults, err := s.AdminEcommerceDefaults(admin)
+	if err != nil || len(defaults) != 12 || defaults["cap:planning"] != defaultEcommerceCapabilityPrompt("planning") || defaults["detail"] != defaultEcommerceDirectorPrompt("detail") {
+		t.Fatal("defaults differ from worker instructions")
+	}
+	input := canvasGenerationInput{Mode: "text", Prompt: "verified product facts", Metadata: map[string]interface{}{"ecommerceCapability": "planning", "ecommerceAnalysisFlow": "cap:planning"}}
+	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(input.Config.SystemPrompt, ecommercePlannerDefault) || !strings.Contains(input.Config.SystemPrompt, "Yingce runtime adapter") || input.Prompt != "verified product facts" {
+		t.Fatal("planner default or runtime adaptation missing")
+	}
+	for _, flow := range []string{"main", "detail", "wear", "seed"} {
+		if !strings.HasPrefix(defaultEcommerceDirectorPrompt(flow), ecommercePlannerDefault) || !strings.Contains(defaultEcommerceDirectorPrompt(flow), "槽位id | 标题") {
+			t.Fatal("legacy flow lost upstream default or row contract")
+		}
+	}
+	setting := defaultEcommerceSetting()
+	setting.Capabilities["planning"] = EcommerceFlowSetting{Enabled: true, DirectorPrompt: "private planning override"}
+	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil || input.Config.SystemPrompt != "private planning override" {
+		t.Fatal("admin override not applied")
+	}
+	public, err := s.EcommerceSetting(&model.User{ID: "user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(public)
+	if strings.Contains(string(encoded), "directorPrompt") || strings.Contains(string(encoded), "private planning override") {
+		t.Fatal("private capability prompt leaked")
+	}
+}
+
+func TestEcommerceCapabilityAdmission(t *testing.T) {
+	s, db, _, admin := newAdminStorageDeleteTestService(t)
+	for _, tc := range []struct {
+		mode, capability, flow string
+		valid                  bool
+	}{
+		{"text", "planning", "cap:planning", true}, {"image", "planning", "", true},
+		{"image", "model-cast", "", true}, {"text", "listing", "cap:listing", true},
+		{"text", "unknown", "cap:unknown", false}, {"text", "planning", "cap:listing", false},
+		{"image", "listing", "", false}, {"image", "planning", "cap:planning", false},
+		{"text", "pattern", "cap:pattern", false}, {"video", "planning", "", false},
+	} {
+		metadata := map[string]interface{}{"ecommerceCapability": tc.capability}
+		if tc.flow != "" {
+			metadata["ecommerceAnalysisFlow"] = tc.flow
+		}
+		err := s.validateEcommerceCapability(&canvasGenerationInput{Mode: tc.mode, Metadata: metadata})
+		if (err == nil) != tc.valid {
+			t.Fatalf("unexpected admission for %s/%s/%s: %v", tc.mode, tc.capability, tc.flow, err)
+		}
+	}
+	setting := defaultEcommerceSetting()
+	setting.Capabilities["planning"] = EcommerceFlowSetting{Enabled: false}
+	setting.Capabilities["pattern"] = EcommerceFlowSetting{Enabled: false}
+	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"planning", "pipeline"} {
+		input := canvasGenerationInput{Mode: "text", Metadata: map[string]interface{}{"ecommerceCapability": id, "ecommerceAnalysisFlow": "cap:" + id}}
+		if s.validateEcommerceCapability(&input) == nil {
+			t.Fatal("disabled capability/dependency accepted")
+		}
+	}
+	_, err := s.CreateTask(admin.ID, CreateTaskRequest{Type: "canvas_image", Prompt: "product", Input: map[string]any{"mode": "image", "metadata": map[string]any{"ecommerceCapability": "planning"}}})
+	if err == nil || !strings.Contains(err.Error(), "停用") {
+		t.Fatalf("disabled image reached routing: %v", err)
+	}
+	var count int64
+	if err := db.Model(&model.Task{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatal("rejected capability persisted a task")
+	}
+}
+
+func TestEcommerceTemplatePublicationAndValidation(t *testing.T) {
+	s, _, _, admin := newAdminStorageDeleteTestService(t)
+	setting := defaultEcommerceSetting()
+	template := EcommerceSuiteTemplate{ID: "template", Name: "Product story", Flow: "main", Enabled: true, Style: "Warm light", Shots: []EcommerceTemplateShot{{Title: "Hero", Duty: "Show true product"}}}
+	setting.Templates = []EcommerceSuiteTemplate{template, {ID: "draft", Name: "Draft", Flow: "main", Shots: template.Shots}}
+	stored, err := s.UpdateEcommerceSetting(admin, setting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, err := s.EcommerceSetting(&model.User{ID: "user"})
+	if err != nil || len(public.Templates) != 1 || public.Templates[0].Style != template.Style {
+		t.Fatal("published template missing or private draft exposed")
+	}
+	stored.Flows["main"] = EcommerceFlowSetting{Enabled: false}
+	if _, err := s.UpdateEcommerceSetting(admin, *stored); err != nil {
+		t.Fatal(err)
+	}
+	public, err = s.EcommerceSetting(&model.User{ID: "user"})
+	if err != nil || len(public.Templates) != 0 {
+		t.Fatal("disabled flow template exposed")
+	}
+	for _, bad := range []EcommerceSuiteTemplate{{ID: "bad", Name: "Bad", Flow: "unknown", Shots: template.Shots}, {ID: "empty", Name: "Empty", Flow: "main"}} {
+		setting.Templates = []EcommerceSuiteTemplate{bad}
+		if validateEcommerceSetting(setting) == nil {
+			t.Fatal("invalid template accepted")
+		}
+	}
+}
+
+func TestEcommercePrivateErrorsKeepStatusWithoutEchoedInstructions(t *testing.T) {
+	secret := "private administrator direction"
+	for _, original := range []error{providerHTTPError{StatusCode: 429, Body: secret}, providerPayloadError{raw: secret, message: secret}, fmt.Errorf("decode failed: %s", secret)} {
+		filtered := privateEcommerceAnalysisError(original)
+		if strings.Contains(filtered.Error(), secret) {
+			t.Fatal("private text reached task error")
+		}
+		var upstream providerHTTPError
+		if errors.As(original, &upstream) {
+			var preserved providerHTTPError
+			if !errors.As(filtered, &preserved) || preserved.StatusCode != 429 || preserved.Body != "" {
+				t.Fatal("routing status lost or payload retained")
+			}
+		}
+	}
+	if !errors.Is(privateEcommerceAnalysisError(context.Canceled), context.Canceled) {
+		t.Fatal("cancellation lost")
+	}
+}
+
+func TestEcommercePrivateErrorsPreserveUnsubmittedChannelSlotFailure(t *testing.T) {
+	s, _, _, _ := newAdminStorageDeleteTestService(t)
+	_, _, err := s.AcquireChannelSlot(context.Background(), "", "", time.Second)
+	code, _ := ChannelSlotFailureDetails(err)
+	if code == "" {
+		t.Fatal("expected a channel slot failure")
+	}
+	filtered := privateEcommerceAnalysisError(err)
+	preserved, _ := ChannelSlotFailureDetails(filtered)
+	if preserved != code {
+		t.Fatal("unsubmitted marker lost")
+	}
+}
+
+func TestEcommerceTemplateLongShotsAndPayloadBudget(t *testing.T) {
+	setting := defaultEcommerceSetting()
+	shot := EcommerceTemplateShot{Title: "Hero", Duty: strings.Repeat("方", 12000)}
+	setting.Templates = []EcommerceSuiteTemplate{{ID: "long", Name: "Long", Flow: "main", Shots: []EcommerceTemplateShot{shot}}}
+	if err := validateEcommerceSetting(setting); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i < 60; i++ {
+		setting.Templates = append(setting.Templates, EcommerceSuiteTemplate{ID: fmt.Sprint(i), Name: "Long", Flow: "main", Shots: []EcommerceTemplateShot{shot}})
+	}
+	if err := validateEcommerceSetting(setting); err == nil || !strings.Contains(err.Error(), "2MB") {
+		t.Fatal("oversized settings accepted")
+	}
+}
+
+func TestEcommerceAdmissionRejectsDisabledBeforeModelOrBilling(t *testing.T) {
+	s, db, _, admin := newAdminStorageDeleteTestService(t)
+	setting := defaultEcommerceSetting()
+	setting.Enabled = false
+	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.CreateTask(admin.ID, CreateTaskRequest{Type: "canvas_text", Prompt: "Analyze product", Input: map[string]any{"mode": "text", "metadata": map[string]any{"ecommerceAnalysisFlow": "main"}}})
+	if err == nil || !strings.Contains(err.Error(), "停用") {
+		t.Fatalf("disabled task reached model routing: %v", err)
+	}
+	var count int64
+	if err := db.Model(&model.Task{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatal("disabled analysis persisted")
+	}
+}
+
+func TestEcommerceProviderLogsExcludePrivatePayloads(t *testing.T) {
+	s, db, _, _ := newAdminStorageDeleteTestService(t)
+	if err := db.AutoMigrate(&model.ApiCallLog{}, &model.ModelPricing{}); err != nil {
+		t.Fatal(err)
+	}
+	task := model.Task{ID: "private-analysis", UserID: "user", Type: "canvas_text", InputJSON: ` {"mode":"text","metadata":{"ecommerceAnalysisFlow":"main"}}`}
+	ctx := withProviderAnalytics(context.Background(), s, task)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://example.com/v1/chat/completions", strings.NewReader(`{"system":"private administrator direction"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordProviderRequest(req, time.Now(), 400, []byte(`{"error":"private administrator direction"}`), errors.New("private administrator direction"))
+	var logs []model.ApiCallLog
+	if err := db.Where("task_id = ?", task.ID).Find(&logs).Error; err != nil || len(logs) != 1 {
+		t.Fatalf("missing audit log: %v", err)
+	}
+	encoded, _ := json.Marshal(logs)
+	if strings.Contains(string(encoded), "private administrator direction") {
+		t.Fatal("private instruction persisted in logs")
+	}
+	if logs[0].StatusCode != 400 || logs[0].TaskID != task.ID {
+		t.Fatal("diagnostic identity lost")
+	}
+}
 
 func TestEcommerceSettingsPermissionsAndValidation(t *testing.T) {
 	s := &Service{}
@@ -44,6 +251,54 @@ func TestEcommerceSettingsPermissionsAndValidation(t *testing.T) {
 		if validateEcommerceSetting(value) == nil {
 			t.Fatal("invalid setting accepted")
 		}
+	}
+}
+
+func TestEcommerceInstructionsStayOnServer(t *testing.T) {
+	s, _, _, admin := newAdminStorageDeleteTestService(t)
+	setting := defaultEcommerceSetting()
+	setting.Flows["main"] = EcommerceFlowSetting{Enabled: true, DirectorPrompt: "private administrator direction"}
+	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
+		t.Fatal(err)
+	}
+	public, err := s.EcommerceSetting(&model.User{ID: "ordinary-user", Role: model.UserRoleUser})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(public)
+	if err != nil || strings.Contains(string(encoded), "directorPrompt") || strings.Contains(string(encoded), "private administrator") {
+		t.Fatal("public settings exposed analysis instruction")
+	}
+	stored, err := s.AdminEcommerceSetting(admin)
+	if err != nil || stored.Flows["main"].DirectorPrompt != "private administrator direction" {
+		t.Fatal("admin direction missing")
+	}
+	input := canvasGenerationInput{Mode: "text", Prompt: "seller facts", Metadata: map[string]interface{}{"ecommerceAnalysisFlow": "main"}}
+	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil {
+		t.Fatal(err)
+	}
+	if input.Config.SystemPrompt != "private administrator direction" || input.Prompt != "seller facts" {
+		t.Fatal("worker did not inject instruction separately from user facts")
+	}
+	input.Metadata["ecommerceAnalysisFlow"] = "unknown"
+	if err := s.applyEcommerceAnalysisInstruction(&input); err == nil {
+		t.Fatal("unknown flow accepted")
+	}
+	input.Metadata["ecommerceAnalysisFlow"] = "detail"
+	input.Mode = "image"
+	if err := s.applyEcommerceAnalysisInstruction(&input); err == nil {
+		t.Fatal("image analysis accepted")
+	}
+	input.Mode = "text"
+	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil || input.Config.SystemPrompt == "" {
+		t.Fatal("built-in direction unavailable")
+	}
+	stored.Enabled = false
+	if _, err := s.UpdateEcommerceSetting(admin, *stored); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.applyEcommerceAnalysisInstruction(&input); err == nil {
+		t.Fatal("disabled analysis accepted")
 	}
 }
 

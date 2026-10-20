@@ -30,10 +30,13 @@ import { primeResourceBlobCache } from "@/services/resource-blob-cache";
 import { useSyncProgressStore } from "@/stores/use-sync-progress-store";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { ecommerceCanvasPreset, ecommerceCanvasTitle } from "@/lib/ecommerce/ecommerce-canvas-preset";
+import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 
 const CanvasDeleteProjectsDialog = lazy(() => import("@/components/canvas/canvas-delete-projects-dialog").then((module) => ({ default: module.CanvasDeleteProjectsDialog })));
 
-export default function CanvasPage() {
+export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | "ecommerce" }) {
+    const ecommerce = kind === "ecommerce";
     const { message } = App.useApp();
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const navigate = useNavigate();
@@ -57,18 +60,23 @@ export default function CanvasPage() {
         return () => window.clearTimeout(timer);
     }, [keyword]);
     const libraryQuery = useInfiniteQuery({
-        queryKey: ["canvas-library", userId, projectFilter, sort, debouncedKeyword],
-        queryFn: ({ pageParam, signal }) => listRemoteCanvasProjectsPage({ page: pageParam, pageSize: 40, projectId: projectFilter, sort, query: debouncedKeyword, signal }),
+        queryKey: ["canvas-library", userId, kind, projectFilter, sort, debouncedKeyword],
+        queryFn: ({ pageParam, signal }) => listRemoteCanvasProjectsPage({ page: pageParam, pageSize: 40, kind, projectId: projectFilter, sort, query: debouncedKeyword, signal }),
         initialPageParam: 1,
-        getNextPageParam: (last) => last.hasMore ? last.page + 1 : undefined,
+        getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
         enabled: Boolean(userId) && sessionHydrated,
     });
-    const projects = useMemo<CanvasLibrarySummary[]>(() => userId
-        ? libraryQuery.data?.pages.flatMap((page) => page.projects) || []
-        : localProjects.map((project) => ({ ...project, nodeCount: project.nodes.length, previewNodes: project.nodes.slice(0, 4) })), [libraryQuery.data, localProjects, userId]);
+    const projects = useMemo<CanvasLibrarySummary[]>(
+        () =>
+            userId
+                ? libraryQuery.data?.pages.flatMap((page) => page.projects) || []
+                : localProjects.filter((project) => (project.kind === "ecommerce") === ecommerce).map((project) => ({ ...project, nodeCount: project.nodes.length, previewNodes: project.nodes.slice(0, 4) })),
+        [libraryQuery.data, localProjects, userId, ecommerce],
+    );
     const totalProjects = userId ? libraryQuery.data?.pages[0]?.total || 0 : projects.length;
     const importProject = useCanvasStore((state) => state.importProject);
-    const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
+    const allSelectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
+    const selectedIds = allSelectedIds.filter((id) => projects.some((project) => project.id === id));
     const deleteDialogOpen = useCanvasUiStore((state) => state.deleteProjectIds.length > 0);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const updateProject = useCanvasStore((state) => state.updateProject);
@@ -77,7 +85,7 @@ export default function CanvasPage() {
     const [associationProjectId, setAssociationProjectId] = useState("");
     const projectQuery = useQuery({ queryKey: ["projects"], queryFn: () => listProjects() });
 
-    const mode = searchParams.get("mode");
+    const mode = ecommerce ? null : searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
     const handoffMode = mode === "handoff";
     const forwardedQuery = agentMode || handoffMode || searchParams.get("agent") === "1" ? `?${searchParams.toString()}` : "";
@@ -94,11 +102,24 @@ export default function CanvasPage() {
         },
         [forwardedQuery, navigate, preloadProject],
     );
-    const createAndEnter = () => {
-        void createCanvasProjectWithRemoteSync(`自由画布 ${projects.length + 1}`).then(({ id, syncError }) => {
+    const [creating, setCreating] = useState(false);
+    const creatingRef = useRef(false);
+    const createAndEnter = async () => {
+        if (creatingRef.current) return;
+        creatingRef.current = true;
+        setCreating(true);
+        try {
+            if (ecommerce && !(await useEcommerceSettings.getState().load()).enabled) throw new Error("管理员已停用新建电商画布");
+            const title = ecommerce ? ecommerceCanvasTitle(projects.map((project) => project.title)) : `自由画布 ${projects.length + 1}`;
+            const { id, syncError } = await createCanvasProjectWithRemoteSync(title, undefined, ecommerce ? { ...ecommerceCanvasPreset(), kind: "ecommerce" } : undefined);
             if (syncError) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
             enterProject(id);
-        });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "创建画布失败");
+        } finally {
+            creatingRef.current = false;
+            setCreating(false);
+        }
     };
     const filteredProjects = useMemo(() => {
         if (userId) return projects;
@@ -159,7 +180,9 @@ export default function CanvasPage() {
                 selected.push(project);
             }
             await exportCanvasProjects(selected, `${brandName}画布-${selected.length}个画布`);
-        } catch (error) { message.error(error instanceof Error ? error.message : "导出失败"); }
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "导出失败");
+        }
     };
     const importCanvas = async (file?: File) => {
         if (!file) return;
@@ -410,13 +433,13 @@ export default function CanvasPage() {
         <WorkspacePage className="studio-collection-page">
             <div className="studio-band">
                 <PageHeader
-                    title="我的画布"
-                    description="把镜头、素材和想法留在同一张画布里。"
+                    title={ecommerce ? "我的电商画布" : "我的画布"}
+                    description={ecommerce ? "管理商品素材、画面方案与电商交付。" : "把镜头、素材和想法留在同一张画布里。"}
                     meta={<span className="app-projects-header-meta">{totalProjects} 个</span>}
                     actions={
                         <div className="collection-header-actions">
-                            <Button type="primary" disabled={!hydrated} icon={<Plus />} onClick={createAndEnter}>
-                                新建画布
+                            <Button disabled={!hydrated || creating} loading={creating} icon={<Plus />} onClick={() => void createAndEnter()}>
+                                {ecommerce ? "新建电商画布" : "新建画布"}
                             </Button>
                             {projects.length ? (
                                 <Dropdown
@@ -441,15 +464,27 @@ export default function CanvasPage() {
                 <CollectionToolbar
                     label="画布浏览工具"
                     active={Boolean(keyword || projectFilter !== "all" || sort !== "updated")}
-                    onReset={() => { setKeyword(""); setProjectFilter("all"); setSort("updated"); }}
-                    trailing={<Button type="text" icon={<History />} onClick={() => setHistoryOpen(true)}>创作历史</Button>}
+                    onReset={() => {
+                        setKeyword("");
+                        setProjectFilter("all");
+                        setSort("updated");
+                    }}
+                    trailing={
+                        <Button type="text" icon={<History />} onClick={() => setHistoryOpen(true)}>
+                            创作历史
+                        </Button>
+                    }
                 >
                     <Input prefix={<Search />} value={keyword} allowClear placeholder="搜索画布" aria-label="搜索画布" onChange={(event) => setKeyword(event.target.value)} />
                     <Dropdown trigger={["click"]} placement="bottomLeft" menu={{ items: projectFilterItems, selectedKeys: [projectFilter], onClick: ({ key }) => setProjectFilter(String(key)) }}>
-                        <Button icon={<SlidersHorizontal />} aria-label="按所属项目筛选">{projectFilterLabel}</Button>
+                        <Button icon={<SlidersHorizontal />} aria-label="按所属项目筛选">
+                            {projectFilterLabel}
+                        </Button>
                     </Dropdown>
                     <Dropdown trigger={["click"]} placement="bottomLeft" menu={{ items: sortItems, selectedKeys: [sort], onClick: ({ key }) => setSort(key as typeof sort) }}>
-                        <Button icon={sort === "updated" ? <Clock3 /> : sort === "name" ? <ArrowDownAZ /> : <ListFilter />} aria-label="画布排序">{sortLabel}</Button>
+                        <Button icon={sort === "updated" ? <Clock3 /> : sort === "name" ? <ArrowDownAZ /> : <ListFilter />} aria-label="画布排序">
+                            {sortLabel}
+                        </Button>
                     </Dropdown>
                 </CollectionToolbar>
             </div>
@@ -490,7 +525,9 @@ export default function CanvasPage() {
                 ) : null}
 
                 {userId && libraryQuery.isError ? (
-                    <div role="alert">画布列表读取失败<Button onClick={() => void libraryQuery.refetch()}>重试</Button></div>
+                    <div role="alert">
+                        画布列表读取失败<Button onClick={() => void libraryQuery.refetch()}>重试</Button>
+                    </div>
                 ) : !hydrated || (userId && libraryQuery.isPending) ? (
                     <WorkspaceLoadingState label="正在恢复画布" detail="读取本地缓存与账号同步状态" />
                 ) : visibleProjects.length ? (
@@ -507,7 +544,18 @@ export default function CanvasPage() {
                         ))}
                     </CollectionGrid>
                 ) : (
-                    <WorkspaceState icon="canvas" title={keyword || projectFilter !== "all" ? "没有匹配的画布" : "让第一个想法落在画布上"} description={keyword || projectFilter !== "all" ? "换一个画布名称或重置筛选条件。" : "图片、分镜和灵感，都可以在这里自由组织。"} action={!keyword && projectFilter === "all" ? <Button type="primary" icon={<Plus />} disabled={!hydrated} onClick={createAndEnter}>新建画布</Button> : undefined} />
+                    <WorkspaceState
+                        icon="canvas"
+                        title={keyword || projectFilter !== "all" ? "没有匹配的画布" : ecommerce ? "创建第一张电商画布" : "让第一个想法落在画布上"}
+                        description={keyword || projectFilter !== "all" ? "换一个画布名称或重置筛选条件。" : ecommerce ? "从商品实拍开始，规划画面并制作套图。" : "图片、分镜和灵感，都可以在这里自由组织。"}
+                        action={
+                            !keyword && projectFilter === "all" ? (
+                                <Button icon={<Plus />} disabled={!hydrated || creating} onClick={() => void createAndEnter()}>
+                                    {ecommerce ? "新建电商画布" : "新建画布"}
+                                </Button>
+                            ) : undefined
+                        }
+                    />
                 )}
                 {hydrated && visibleProjects.length ? (
                     <div ref={loadMoreRef} className="library-load-more" aria-live="polite">
@@ -536,7 +584,11 @@ export default function CanvasPage() {
                 />
             </Modal>
             <CanvasHistoryDrawer open={historyOpen} onClose={() => setHistoryOpen(false)} />
-            {deleteDialogOpen ? <Suspense fallback={null}><CanvasDeleteProjectsDialog /></Suspense> : null}
+            {deleteDialogOpen ? (
+                <Suspense fallback={null}>
+                    <CanvasDeleteProjectsDialog />
+                </Suspense>
+            ) : null}
         </WorkspacePage>
     );
 }

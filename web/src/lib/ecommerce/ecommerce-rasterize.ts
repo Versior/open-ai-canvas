@@ -6,7 +6,7 @@
  */
 import { ecommerceLayoutVisibleBlocks, ecommerceRatioValue, type EcommerceLayout, type EcommerceLayoutBlock } from "./ecommerce-layout";
 import type { EcommerceCopy } from "./ecommerce-contract";
-import { ecommerceSliceFileName, ecommerceSlicePlan, type EcommerceSlicePlan, type EcommerceSlicePlatform } from "./ecommerce-slice";
+import { ecommerceSliceFileName, ecommerceSlicePlan, ecommerceSliceSpec, type EcommerceSlicePlan, type EcommerceSlicePlatform } from "./ecommerce-slice";
 
 /** 与界面一致的无衬线栈，导出结果与预览观感一致。 */
 const FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif';
@@ -16,9 +16,7 @@ export type EcommerceRasterSize = { width: number; height: number };
 /** 按画幅算出导出尺寸。长边固定，短边按比例，避免不同画幅分辨率差太多。 */
 export function ecommerceExportSize(ratio: string, longSide = 1600): EcommerceRasterSize {
     const value = ecommerceRatioValue(ratio);
-    return value >= 1
-        ? { width: Math.round(longSide), height: Math.round(longSide / value) }
-        : { width: Math.round(longSide * value), height: Math.round(longSide) };
+    return value >= 1 ? { width: Math.round(longSide), height: Math.round(longSide / value) } : { width: Math.round(longSide * value), height: Math.round(longSide) };
 }
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -106,9 +104,7 @@ function drawBlock(context: CanvasRenderingContext2D, placed: PlacedBlock, size:
     context.textBaseline = "top";
     lines.forEach((line, index) => {
         const lineWidth = lineWidths[index];
-        const textX = block.align === "left" ? x + padding.x
-            : block.align === "right" ? x + boxWidth - padding.x - lineWidth
-            : x + (boxWidth - lineWidth) / 2;
+        const textX = block.align === "left" ? x + padding.x : block.align === "right" ? x + boxWidth - padding.x - lineWidth : x + (boxWidth - lineWidth) / 2;
         context.fillText(line, textX, y + padding.y + index * lineHeight);
     });
 }
@@ -195,6 +191,7 @@ export async function rasterizeEcommerceLongImage(input: EcommerceLongImageInput
         cursor += height + gap;
     }
     const totalHeight = Math.max(1, cursor - gap);
+    if (!Number.isFinite(width) || !Number.isFinite(totalHeight) || width > 32767 || totalHeight > 32767 || width * totalHeight > 32_000_000) throw new Error("长图超过浏览器安全合成尺寸，请减少屏数或降低导出宽度");
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = totalHeight;
@@ -256,9 +253,11 @@ export async function rasterizeEcommerceDetailPage(input: {
     code?: string;
     version?: number;
 }): Promise<EcommerceDetailPageResult> {
+    const spec = ecommerceSliceSpec(input.platform);
+    if (!spec) throw new Error("请选择支持的长图切片规格");
     const longImage = await rasterizeEcommerceLongImage({
         imageUrls: input.imageUrls,
-        width: input.width,
+        width: input.width || spec.width,
         gap: input.gap,
         background: input.background,
     });
@@ -269,17 +268,21 @@ export async function rasterizeEcommerceDetailPage(input: {
         platform: input.platform,
         protected: longImage.screens.map((screen, index) => ({ id: `screen-${index + 1}`, top: screen.top, height: screen.height, label: `第 ${index + 1} 屏` })),
     });
+    if (plan.conflicts.length || plan.overTotalHeight || plan.pieces.some((piece) => piece.height > spec.maxSliceHeight || piece.height < spec.minSliceHeight)) throw new Error("图片无法满足当前平台的切片尺寸与安全切点，请在交付节点调整");
     const stitched = await loadImage(longImage.dataUrl);
     const pieces: EcommerceDetailPagePiece[] = [];
     const fileNames: string[] = [];
     for (const piece of plan.pieces) {
         pieces.push({ index: piece.index, top: piece.top, height: piece.height, dataUrl: await cropPiece(stitched, piece.top, piece.height, longImage.width) });
-        fileNames.push(ecommerceSliceFileName({
-            code: input.code?.trim() || "详情页",
-            index: piece.index,
-            total: plan.pieces.length,
-            version: input.version,
-        }));
+        fileNames.push(
+            ecommerceSliceFileName({
+                code: input.code?.trim() || "详情页",
+                index: piece.index,
+                total: plan.pieces.length,
+                version: input.version,
+                extension: "png",
+            }),
+        );
     }
     return { longImage, plan, pieces, fileNames };
 }

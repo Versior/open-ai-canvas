@@ -28,11 +28,59 @@ tags:
   - name: skills
   - name: workbench
 paths:
+  /canvas-projects:
+    get:
+      tags: [canvas]
+      summary: 按分类分页读取自己的画布
+      description: 分类在计数和分页前过滤；缺省 kind 保留全部读取。未标记分类的旧画布归自由画布。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50}}
+        - {in: query, name: kind, schema: {type: string, enum: [freeform, ecommerce]}}
+      responses:
+        "200": {description: 分页信封 data 包含 projects、total、hasMore；每项包含 kind 与受限预览}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce/defaults:
+    get:
+      tags: [admin]
+      summary: 管理员读取内置默认指令全文
+      description: data.defaults 按能力标识及四种用途返回 worker 实际使用的内置规则。只读，不修改覆盖或 revision；普通用户无权读取。
+      responses:
+        "200": {description: data.defaults 为字符串映射；Cache-Control 为 no-store}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/templates:
+    get:
+      tags: [canvas]
+      summary: 搜索分页读取项目内置套图库
+      description: 登录可读，普通用户须启用电商与详情套图；管理员可在停用时管理。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。
+      parameters:
+        - {in: query, name: q, schema: {type: string, maxLength: 100}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        "200": {description: data 包含 items、total、page、pageSize；每项含 id、name、category、description、count}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/templates/{templateId}:
+    get:
+      tags: [canvas]
+      summary: 读取单套内置模板的完整视觉规范与画面参考
+      description: 权限同套图库。data.template 可作为分析参考或载入后台草稿，原内置内容只读。
+      parameters:
+        - {in: path, name: templateId, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data.template 为 EcommerceSuiteTemplate}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /ecommerce/settings:
     get:
       tags: [canvas]
-      summary: 读取电商画布功能、默认提示词及已发布公共模特
-      description: 需要登录，仅返回启用模特。业务开关不替代模型权限与额度，前端缓存最多 30 秒。
+      summary: 读取电商画布功能及已发布模板与公共模特
+      description: 需要登录，仅返回启用模特、全局与用途均启用的模板；不下发分析指令。业务开关不替代模型权限与额度，前端缓存最多 30 秒。
       responses:
         "200": {description: 标准信封 data.setting 为 EcommerceSetting，models 已过滤停用记录}
         "401": {$ref: "#/components/responses/Error"}
@@ -1997,12 +2045,30 @@ components:
   schemas:
     EcommerceSetting:
       type: object
-      required: [enabled, modelLibraryEnabled, autoBindEnabled, flows, models, revision]
+      required: [enabled, modelLibraryEnabled, autoBindEnabled, flows, models, templates, revision]
       properties:
         enabled: {type: boolean}
         modelLibraryEnabled: {type: boolean}
         autoBindEnabled: {type: boolean}
         revision: {type: string, description: 读取时的版本，新配置为 initial}
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [planning, suite-forge, model-cast, pattern, listing, print-pack, pipeline, layers]
+          properties:
+            planning: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            suite-forge: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            model-cast: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            pattern: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            listing: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            print-pack: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            pipeline: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            layers: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+        templates:
+          type: array
+          maxItems: 200
+          description: 整份配置请求体最多 2 MiB；公共接口只返回已发布且用途启用的模板
+          items: {$ref: "#/components/schemas/EcommerceSuiteTemplate"}
         flows:
           type: object
           required: [detail, main, wear, seed]
@@ -2024,12 +2090,33 @@ components:
               enabled: {type: boolean, description: 启用须至少一张图片}
               tags: {type: array, maxItems: 20, items: {type: string, maxLength: 50}}
               resourceIds: {type: array, maxItems: 12, uniqueItems: true, items: {type: string, maxLength: 100}}
+    EcommerceSuiteTemplate:
+      type: object
+      required: [id, name, flow, category, enabled, style, source, shots]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 150}
+        name: {type: string, minLength: 1, maxLength: 100}
+        flow: {type: string, enum: [detail, main, wear, seed]}
+        category: {type: string, maxLength: 200}
+        enabled: {type: boolean}
+        style: {type: string, maxLength: 6000}
+        source: {type: string, maxLength: 500}
+        shots:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [title, duty]
+            properties:
+              title: {type: string, minLength: 1, maxLength: 100}
+              duty: {type: string, minLength: 1, maxLength: 12000}
     EcommerceFlowSetting:
       type: object
-      required: [enabled, directorPrompt]
+      required: [enabled]
       properties:
         enabled: {type: boolean}
-        directorPrompt: {type: string, maxLength: 20000, description: 空串使用内置指令，用户自定义优先}
+        directorPrompt: {type: string, maxLength: 20000, description: 仅管理员接口读写；公共接口省略。空串使用服务端内置指令}
     LoginLog:
       type: object
       properties:

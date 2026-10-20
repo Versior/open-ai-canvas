@@ -1,13 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
+import { ECOMMERCE_ONE_CLICK_FLOWS, ecommerceOneClickFlow, ecommerceOneClickLayoutPreset, ecommerceOneClickScreens } from "@/lib/ecommerce/ecommerce-oneclick";
 import {
-    ECOMMERCE_ONE_CLICK_FLOWS,
-    ecommerceOneClickFlow,
-    ecommerceOneClickLayoutPreset,
-    ecommerceOneClickScreens,
-} from "@/lib/ecommerce/ecommerce-oneclick";
-import { ECOMMERCE_SUITE_DIRECTOR_PROMPT, ecommerceSuiteDirectorPrompt, ecommerceSuiteDraftPrompt, ecommerceSuiteFromPresets, ecommerceSuiteMissing, ecommerceSuiteReady, ecommerceSuiteRowId, ecommerceSuiteRows, ecommerceSuiteSkeleton, parseEcommerceSuiteDraft } from "@/lib/ecommerce/ecommerce-suite";
+    ECOMMERCE_SUITE_DIRECTOR_PROMPT,
+    ecommerceSuiteDirectorPrompt,
+    ecommerceSuiteDraftPrompt,
+    ecommerceSuiteFromPresets,
+    ecommerceSuiteMissing,
+    ecommerceSuiteReady,
+    ecommerceSuiteRowId,
+    ecommerceSuiteRows,
+    ecommerceSuiteSkeleton,
+    parseEcommerceSuiteDraft,
+} from "@/lib/ecommerce/ecommerce-suite";
 import { ecommerceShotPreset } from "@/lib/ecommerce/ecommerce-recipes";
 import { ecommerceSuiteNodes, ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
@@ -144,22 +150,16 @@ describe("分析结果的解析", () => {
     });
 
     test("模型返回几行就是几行——屏数不固定，可以由提示词要求", () => {
-        const six = ["痛点", "卖点", "场景", "细节", "参数", "售后"]
-            .map((name, index) => `detail-${index + 1} | ${name} | 这一屏解决${name} | 提示词${index + 1}`)
-            .join("\n");
+        const six = ["痛点", "卖点", "场景", "细节", "参数", "售后"].map((name, index) => `detail-${index + 1} | ${name} | 这一屏解决${name} | 提示词${index + 1}`).join("\n");
         const parsed = parseEcommerceSuiteDraft(six, flow());
         expect(parsed).toHaveLength(6);
         expect(parsed!.map((row) => row.title)).toEqual(["痛点", "卖点", "场景", "细节", "参数", "售后"]);
     });
 
     test("容忍模型的坏习惯：序号、全角竖线、代码块、加粗、结尾的职责说明", () => {
-        const messy = [
-            "```",
-            "1. detail-1｜**痛点共情**｜说出问题｜**商品居中，纯白背景，正面平视**",
-            "- detail-2 | 场景代入 | 有生活痕迹 | 模特手持商品走在街上，侧逆光，中景",
-            "以上是九屏提示词，请核对。",
-            "这条不是屏次 | 也不该进表 | 更不该出图",
-        ].join("\n");
+        const messy = ["```", "1. detail-1｜**痛点共情**｜说出问题｜**商品居中，纯白背景，正面平视**", "- detail-2 | 场景代入 | 有生活痕迹 | 模特手持商品走在街上，侧逆光，中景", "以上是九屏提示词，请核对。", "这条不是屏次 | 也不该进表 | 更不该出图"].join(
+            "\n",
+        );
         const parsed = parseEcommerceSuiteDraft(messy, flow());
         expect(parsed!.map((row) => row.slotId)).toEqual(["detail-1", "detail-2"]);
         expect(parsed![0].title).toBe("痛点共情");
@@ -184,7 +184,10 @@ describe("分析结果的解析", () => {
 });
 
 describe("铺产物节点", () => {
-    const counter = () => { let i = 0; return () => `c${++i}`; };
+    const counter = () => {
+        let i = 0;
+        return () => `c${++i}`;
+    };
     const rowsOf = (flowId: "detail" | "main" | "seed" | "wear" = "detail") => ecommerceSuiteFromPresets(ecommerceOneClickFlow(flowId)!);
 
     test("只为还没有节点的那几行铺——重出这一套不该在画布上再堆一遍", () => {
@@ -245,7 +248,10 @@ describe("铺产物节点", () => {
 });
 
 describe("出图调动计划", () => {
-    const counter = () => { let i = 0; return () => `c${++i}`; };
+    const counter = () => {
+        let i = 0;
+        return () => `c${++i}`;
+    };
     const suiteOf = (flowId: "detail" | "main" | "seed" | "wear" = "detail") => {
         const flow = ecommerceOneClickFlow(flowId)!;
         return { flow: flowId, rows: ecommerceSuiteFromPresets(flow), source: "preset" as const, updatedAt: "" };
@@ -378,7 +384,7 @@ describe("套图面板的接线", () => {
 
     test("批量生成：把每行的提示词写进那一张的节点，再一次提交整批", () => {
         expect(project).toContain("const generateEcommerceSuite = useCallback(");
-        expect(project).toContain("enqueueGenerationBatch(productNode.id, \"batch_image\"");
+        expect(project).toMatch(/enqueueGenerationBatch\(\s*productNode\.id,\s*"batch_image"/);
         // 提示词写进节点自己的 prompt：点开那一屏能看见它、能改它、能单独重出
         expect(project).toContain("prompt, composerContent: prompt");
         // 按槽位复用已铺的节点，重出不在画布上再堆一遍
@@ -397,7 +403,7 @@ describe("套图面板的接线", () => {
     test("物料一键生图在显示入队提示前把新建图节点带入画布视野", () => {
         const generation = project.slice(project.indexOf("const generateEcommerceMaterials = useCallback("), project.indexOf("// \u8282\u70b9\u52a8\u4f5c Context", project.indexOf("const generateEcommerceMaterials = useCallback(")));
         expect(generation).toMatch(/spawnEcommerceMaterials\(node, planId\)/);
-        expect(generation).toMatch(/focusCanvasImageNodes\(imageNodeIds\);[\s\S]*?enqueueGenerationBatch\(node\.id,[\s\S]*?imageNodeIds\.map/);
+        expect(generation).toMatch(/focusCanvasImageNodes\(imageNodeIds\);[\s\S]*?enqueueGenerationBatch\(\s*node\.id,[\s\S]*?imageNodeIds\.map/);
         expect(generation).toMatch(/if \(!imageNodeIds\.length\) return/);
     });
 
@@ -415,7 +421,7 @@ describe("套图面板的接线", () => {
         // 现在这件事由 ecommerceSuiteTargets 保证（见「出图调动计划」那一组），
         // 页面层只负责把 plan.spawned 原样追加进去。
         expect(project).toContain("...plan.spawned.map((item) => ({ ...item, metadata: { ...item.metadata, ecommerceRunId: runId } }))");
-        expect(project).toContain("connectEcommerceTableOutputs(ecommerceSuiteTargets(");
+        expect(project).toMatch(/connectEcommerceTableOutputs\(\s*ecommerceSuiteTargets\(/);
     });
 
     test("提交路上 buildGenerationConfig 抛错不能静默冲出去", () => {
@@ -431,7 +437,7 @@ describe("套图面板的接线", () => {
         expect(panel).toContain("onGenerateOne");
         expect(panel).toContain("ecom-suite-row-run");
         // 没有提示词的行不给按——出了也是一张空图
-        expect(panel).toContain("disabled={!hasPrompt || status === \"loading\"}");
+        expect(panel).toContain('disabled={!hasPrompt || generating || status === "loading"}');
         expect(project).toContain("generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows)");
         // 单张出图不写流程状态：只出一张时不该触发装订
         expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined } }");
@@ -485,7 +491,8 @@ describe("套图面板的接线", () => {
         expect(project).toContain("rasterizeEcommerceDetailPage");
         expect(project).toContain("bindingRef");
         // 缺屏就不装订——缺屏的长图交出去比不交更糟
-        expect(project).toContain("outputs.some((item) => !item)");
+        expect(project).toContain("ecommerceBindingImages(plan, nodes)");
+        expect(project).toContain("if (!ready) continue");
     });
 
     test("本地叠字那套从一键流程里去掉了", () => {
@@ -559,7 +566,8 @@ describe("整组统一与结构可调", () => {
     test("整组提示词与独立视觉参考进入分析，不套固定色板", () => {
         const flow = ecommerceOneClickFlow("detail")!;
         const prompt = ecommerceSuiteDraftPrompt(flow, undefined, ecommerceSuiteRows(flow, undefined), undefined, {
-            prompt: "参考暖窗光，商品原色不变", styleReferenceNames: ["窗边视觉参考"],
+            prompt: "参考暖窗光，商品原色不变",
+            styleReferenceNames: ["窗边视觉参考"],
         });
         expect(prompt).toContain("参考暖窗光，商品原色不变");
         expect(prompt).toContain("窗边视觉参考");
@@ -589,9 +597,9 @@ describe("整组统一与结构可调", () => {
         expect(panel).toContain("onSkillIdsChange");
         expect(node).toContain("ecommerceAnalysisSkills");
         // 与出图那条链路同一套注入：prepare 把技能正文与关联文件拼进提示词
-        expect(project).toContain('listAddedSkills({ force: true })');
-        expect(project).toContain('selectedSkillIds: skillIds');
-        expect(project).toContain('skillMetadata = skillExecution.metadata');
+        expect(project).toContain("listAddedSkills({ force: true })");
+        expect(project).toContain("selectedSkillIds: skillIds");
+        expect(project).toContain("skillMetadata = skillExecution.metadata");
         // 没选就不注入——库里可能有二十个，全塞进去会把提示词顶爆
         expect(project).toContain("if (skillIds?.length) {");
     });
@@ -623,7 +631,7 @@ describe("读图起草：图必须真的递进模型", () => {
     test("商品实拍放进 referenceImages 传给文本模型", () => {
         // 上一版没传 referenceImages，模型收到的只有一段文字，
         // 于是它只能回一句「系统未传入图片节点的画面像素数据」
-        expect(project).toContain("referenceImages,\n                streamText: false,");
+        expect(project).toMatch(/referenceImages,\s*streamText: false,/);
     });
 
     test("读图起草不走云 agent——那边没有取图工具", () => {
@@ -686,13 +694,14 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(prompts[3]).toContain("内容平台");
     });
 
-    test("创作表以补充信息代替分析指令编辑，分析仍读取既有指令", () => {
+    test("创作表以补充信息代替分析指令编辑，指令由服务端注入", () => {
         const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
         const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
         expect(panel).toContain("补充平台、张数和商品信息");
         expect(panel).toContain("onBriefChange");
         expect(node).toContain("ecommerceBrief: value");
-        expect(project).toContain("suiteNode.metadata?.ecommerceSuitePrompts?.[flowId]");
+        expect(project).not.toContain("suiteNode.metadata?.ecommerceSuitePrompts?.[flowId]");
+        expect(project).toContain("ecommerceAnalysisFlow");
     });
 
     test("Skills 按四种 flow 独立保存并传入分析", () => {
@@ -705,7 +714,7 @@ describe("读图起草：图必须真的递进模型", () => {
     test("生成后创作表保持在画布中", () => {
         const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
         expect(node).not.toContain("setSuiteFlow");
-        expect(node).toContain("CanvasEcommerceSuitePanel embedded");
+        expect(node).toMatch(/CanvasEcommerceSuitePanel\s+embedded/);
         expect(project).toContain("batchId = enqueueGenerationBatch(");
         expect(project).toContain("return Boolean(batchId);");
     });

@@ -454,6 +454,15 @@ func recordProviderRequest(req *http.Request, startedAt time.Time, statusCode in
 	}
 	metadata.Service.EnrichAPICallLog(&callLog, responseBody)
 	callLog.Error = withUserVisibleLogError(requestErr, callLog.Error)
+	if metadata.PrivateInstruction {
+		// Provider failures may echo the full request, including private system text.
+		// Keep status, usage and billing diagnostics without persisting the payload.
+		callLog.RequestBody = `[REDACTED: private ecommerce analysis]`
+		callLog.ResponseBody = `[REDACTED: private ecommerce analysis]`
+		if callLog.Error != "" {
+			callLog.Error = "电商分析上游调用失败，请结合状态码与请求标识排查"
+		}
+	}
 	if err := metadata.Service.LogAPICall(callLog); err != nil {
 		if !channelSlotFailure && metadata.Billing != nil {
 			if uncertainErr := metadata.Billing.MarkBillingUncertain(metadata.BillingOrderID, "上游调用日志写入失败，费用状态待核对"); uncertainErr != nil {

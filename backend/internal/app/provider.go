@@ -130,7 +130,7 @@ type imageResponse struct {
 	Msg   string                   `json:"msg"`
 }
 
-func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string, taskProjectID string, taskType string, fallbackPrompt string, rawInput string) (map[string]interface{}, error) {
+func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string, taskProjectID string, taskType string, fallbackPrompt string, rawInput string) (output map[string]interface{}, taskError error) {
 	ctx = withProtocolRegistry(ctx, s.protocolRegistry())
 	var input canvasGenerationInput
 	if err := json.Unmarshal([]byte(rawInput), &input); err != nil {
@@ -168,6 +168,13 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	input.Config = config
 	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil {
 		return nil, err
+	}
+	if _, private := input.Metadata["ecommerceAnalysisFlow"]; private {
+		defer func() {
+			if taskError != nil {
+				taskError = privateEcommerceAnalysisError(taskError)
+			}
+		}()
 	}
 	if input.Mode == "text" && input.Config.CapabilityConfig != nil && input.Config.CapabilityConfig.Text != nil {
 		// The same capability contract drives provider output limits, billing

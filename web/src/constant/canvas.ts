@@ -37,6 +37,7 @@ export const NODE_DEFAULT_SIZE = {
     [CanvasNodeType.ColorGrade]: { width: 420, height: 360, title: "调色" },
     [CanvasNodeType.MediaConversion]: { width: 480, height: 460, title: "转换" },
     [CanvasNodeType.BatchTable]: { width: 1280, height: 560, title: "批量创作表" },
+    [CanvasNodeType.EcommerceStudio]: { width: 640, height: 740, title: "电商生图台" },
     [CanvasNodeType.Product]: { width: 460, height: 660, title: "商品" },
     [CanvasNodeType.ShotRecipe]: { width: 420, height: 580, title: "拍法" },
     [CanvasNodeType.SellingPoint]: { width: 400, height: 440, title: "卖点" },
@@ -126,6 +127,7 @@ export const NODE_SPECS = {
         metadata: { status: "idle" },
     },
     [CanvasNodeType.MediaConversion]: { ...NODE_DEFAULT_SIZE[CanvasNodeType.MediaConversion], metadata: { status: "idle" } },
+    [CanvasNodeType.EcommerceStudio]: { ...NODE_DEFAULT_SIZE[CanvasNodeType.EcommerceStudio], metadata: { status: "idle" } },
     [CanvasNodeType.BatchTable]: {
         ...NODE_DEFAULT_SIZE[CanvasNodeType.BatchTable],
         metadata: {

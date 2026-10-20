@@ -13,12 +13,27 @@ type CanvasConnectionPolicyOptions = {
 export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[], connections: CanvasConnection[], candidate: ConnectionCandidate, options: CanvasConnectionPolicyOptions = {}) {
     const target = nodes.find((node) => node.id === candidate.toNodeId);
     if (!target) return "找不到连线目标节点";
+    if (target.type === CanvasNodeType.EcommerceStudio && target.metadata?.locked) return "电商生图台已锁定";
+    if (target.type === CanvasNodeType.EcommerceStudio) {
+        const source = nodes.find((node) => node.id === candidate.fromNodeId);
+        if (!source || ![CanvasNodeType.Product, CanvasNodeType.Image, CanvasNodeType.Text].includes(source.type as CanvasNodeType)) return "电商生图台只接受商品、图片或文本输入";
+        if (source.id === target.id) return "生图台不能连接自身";
+        const visited = new Set<string>();
+        const pending = [target.id];
+        while (pending.length) {
+            const id = pending.pop()!;
+            if (id === source.id) return "不能将生图台下游结果连回输入，请复制为独立素材后使用";
+            if (visited.has(id)) continue;
+            visited.add(id);
+            for (const edge of connections) if (edge.fromNodeId === id) pending.push(edge.toNodeId);
+        }
+    }
     if (target.type === CanvasNodeType.BatchTable && target.metadata?.locked) return "批量创作表已锁定";
-    const sourceNode = nodes.find(node => node.id === candidate.fromNodeId);
+    const sourceNode = nodes.find((node) => node.id === candidate.fromNodeId);
     if (target.type === CanvasNodeType.BatchTable && (sourceNode?.type === CanvasNodeType.Product || target.metadata?.ecommerceFlowId)) {
         if (sourceNode?.type !== CanvasNodeType.Product) return "电商创作表只接受商品输入";
         if (target.metadata?.ecommerceProductId && target.metadata.ecommerceProductId !== sourceNode.id) return "此创作表属于其他商品，请新建创作表";
-        if (connections.some(edge => edge.toNodeId === target.id && edge.fromNodeId !== sourceNode.id)) return "创作表只能连接一个商品，请先断开已有输入";
+        if (connections.some((edge) => edge.toNodeId === target.id && edge.fromNodeId !== sourceNode.id)) return "创作表只能连接一个商品，请先断开已有输入";
         return "";
     }
     const acceptedInputKinds = getNodeAcceptedInputKinds(target.type);
@@ -26,9 +41,7 @@ export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[],
         const source = nodes.find((node) => node.id === candidate.fromNodeId);
         const sourceKind = source ? getNodeInputKind(source.type) : undefined;
         const isMediaConversion = target.type === CanvasNodeType.MediaConversion;
-        const hasAcceptedSource = isMediaConversion
-            ? source?.type === CanvasNodeType.Image || source?.type === CanvasNodeType.Video
-            : Boolean(sourceKind && acceptedInputKinds.includes(sourceKind));
+        const hasAcceptedSource = isMediaConversion ? source?.type === CanvasNodeType.Image || source?.type === CanvasNodeType.Video : Boolean(sourceKind && acceptedInputKinds.includes(sourceKind));
         if (!sourceKind || !hasAcceptedSource) {
             const labels = acceptedInputKinds.map(acceptedInputKindLabel).join("或");
             const targetLabel = isMediaConversion ? "转换" : target.type === CanvasNodeType.BatchTable ? "批量创作表" : labels;
@@ -36,11 +49,7 @@ export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[],
         }
         const maxInputCount = getNodeMaxInputCount(target.type);
         if (maxInputCount) {
-            const inputCount = new Set(
-                [...connections, { id: "candidate", ...candidate }]
-                    .filter((connection) => connection.toNodeId === target.id)
-                    .map((connection) => connection.fromNodeId),
-            ).size;
+            const inputCount = new Set([...connections, { id: "candidate", ...candidate }].filter((connection) => connection.toNodeId === target.id).map((connection) => connection.fromNodeId)).size;
             if (inputCount > maxInputCount) return `${isMediaConversion ? "转换" : "当前"}节点最多连接 ${maxInputCount} 个输入`;
         }
     }

@@ -36,7 +36,7 @@ export type RemoteUserDataSnapshot = {
     projects: CanvasProject[];
 };
 
-export type CanvasLibrarySummary = Pick<CanvasProject, "id" | "projectId" | "title" | "revision" | "createdAt" | "updatedAt"> & {
+export type CanvasLibrarySummary = Pick<CanvasProject, "id" | "kind" | "projectId" | "title" | "revision" | "createdAt" | "updatedAt"> & {
     nodeCount: number;
     previewNodes: CanvasProject["nodes"];
 };
@@ -71,10 +71,10 @@ export function changeCanvasEditLease(id: string, proof: CanvasEditProof, action
     return http.post<{ serverTime: string; lease?: CanvasEditLease; token?: string }>(`/canvas-projects/${encodeURIComponent(id)}/edit-lease`, { ...proof, action }, { timeout: 8000 });
 }
 
-export function listRemoteCanvasProjectsPage(options: { page: number; pageSize: number; projectId?: string; query?: string; sort?: string; signal?: AbortSignal }) {
+export function listRemoteCanvasProjectsPage(options: { page: number; pageSize: number; kind?: "freeform" | "ecommerce"; projectId?: string; query?: string; sort?: string; signal?: AbortSignal }) {
     return http.get<{ projects: CanvasLibrarySummary[]; page: number; pageSize: number; total: number; hasMore: boolean }>("/canvas-projects", {
         signal: options.signal,
-        params: compactApiParams({ page: options.page, pageSize: options.pageSize, projectId: options.projectId, q: options.query, sort: options.sort }),
+        params: compactApiParams({ page: options.page, pageSize: options.pageSize, kind: options.kind, projectId: options.projectId, q: options.query, sort: options.sort }),
     });
 }
 

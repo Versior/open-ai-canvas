@@ -8,13 +8,36 @@ import { Switch } from "../ui/controls";
 import { ECOMMERCE_FLOW_IDS, ecommercePublicImageUrl, ecommerceSettingsEqual, getAdminEcommerceSetting, getPreviousEcommerceSetting, saveAdminEcommerceSetting, uploadEcommerceModelImage, type EcommerceSetting } from "@/services/api/ecommerce";
 import { resourceFileUrl } from "@/services/api/resources";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
-import { ecommerceSuiteDirectorPrompt } from "@/lib/ecommerce/ecommerce-suite";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
+import { EcommerceTemplateEditor } from "./ecommerce-template-editor";
+import "./ecommerce-settings-page.css";
+import { ECOMMERCE_CAPABILITIES, type EcommerceCapability } from "@/lib/ecommerce/ecommerce-capabilities";
+import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
+import { getAdminEcommerceDefaults } from "@/services/api/ecommerce";
 
 export default function EcommerceSettingsPage() {
     const { message, modal } = App.useApp();
     const [saved, setSaved] = useState<EcommerceSetting>();
+    const [defaults, setDefaults] = useState<Record<string, string>>({});
+    const [defaultsError, setDefaultsError] = useState("");
+    const [defaultsLoading, setDefaultsLoading] = useState(true);
+    const loadDefaults = useCallback(async () => {
+        setDefaultsLoading(true);
+        setDefaultsError("");
+        try {
+            const result = await getAdminEcommerceDefaults();
+            const keys = [...ECOMMERCE_FLOW_IDS, ...ECOMMERCE_CAPABILITIES.map((item) => "cap:" + item.id)];
+            if (keys.some((key) => typeof result.defaults?.[key] !== "string" || !result.defaults[key].trim())) throw new Error("内置指令响应不完整，请更新后端后重试");
+            setDefaults(result.defaults);
+        } catch (error) {
+            setDefaultsError(error instanceof Error ? error.message : "默认指令读取失败");
+        } finally {
+            setDefaultsLoading(false);
+        }
+    }, []);
     const [draft, setDraft] = useState<EcommerceSetting>();
+    const [promptFlow, setPromptFlow] = useState<(typeof ECOMMERCE_FLOW_IDS)[number]>("detail");
+    const [selectedCapability, setSelectedCapability] = useState<EcommerceCapability>("planning");
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -27,6 +50,7 @@ export default function EcommerceSettingsPage() {
         operationRef.current = true;
         setLoading(true);
         setError("");
+        void loadDefaults();
         try {
             const value = await getAdminEcommerceSetting();
             setSaved(value);
@@ -37,7 +61,7 @@ export default function EcommerceSettingsPage() {
             operationRef.current = false;
             setLoading(false);
         }
-    }, []);
+    }, [loadDefaults]);
     useEffect(() => {
         void load();
     }, [load]);
@@ -129,7 +153,7 @@ export default function EcommerceSettingsPage() {
                     <Button disabled={!dirty || busy} onClick={() => setDraft(saved && structuredClone(saved))} icon={<Undo2 className="size-4" />}>
                         撤销
                     </Button>
-                    <Button type="primary" loading={busy} disabled={!dirty || loading} onClick={() => void save()} icon={<Save className="size-4" />}>
+                    <Button className="admin-ecommerce-save" loading={busy} disabled={!dirty || loading} onClick={() => void save()} icon={<Save className="size-4" />}>
                         保存修改
                     </Button>
                 </>
@@ -146,34 +170,116 @@ export default function EcommerceSettingsPage() {
                     <Skeleton active />
                 ) : null
             ) : (
-                <div className="admin-settings-stack">
+                <div className="admin-settings-stack admin-ecommerce">
                     <div className="admin-settings-status-bar">
                         <AdminStatusBadge label={dirty ? "有未保存修改" : "已保存"} tone={dirty ? "warning" : "success"} />
-                        <Button disabled={busy || loading} onClick={() => dirty ? modal.confirm({ title: "载入上一版会覆盖当前草稿", okText: "载入上一版", cancelText: "继续编辑", onOk: previous }) : void previous()}>
+                        <Button disabled={busy || loading} onClick={() => (dirty ? modal.confirm({ title: "载入上一版会覆盖当前草稿", okText: "载入上一版", cancelText: "继续编辑", onOk: previous }) : void previous())}>
                             载入上一版
                         </Button>
-                        <span>保存保留上一版；公共模特停用不会删除用户已导入的私人副本。</span>
+                        <span>修改保存后生效</span>
                     </div>
+                    {defaultsError ? (
+                        <p role="alert">
+                            {defaultsError}
+                            <Button type="text" disabled={defaultsLoading} onClick={() => void loadDefaults()}>
+                                重试读取默认指令
+                            </Button>
+                        </p>
+                    ) : null}
                     <Tabs
+                        className="admin-ecommerce-tabs"
                         items={[
+                            {
+                                key: "capabilities",
+                                label: "工作台能力",
+                                children: (
+                                    <SettingsSectionCard title="电商工作台" description="选择左侧功能，配置开放状态与专用指令。修改保存后生效。" layout="stacked">
+                                        <div className="admin-ecommerce-capability-workspace">
+                                            <nav className="admin-ecommerce-capability-nav" aria-label="选择工作台能力">
+                                                {ECOMMERCE_CAPABILITIES.map((item) => (
+                                                    <button key={item.id} type="button" aria-pressed={selectedCapability === item.id} onClick={() => setSelectedCapability(item.id)}>
+                                                        <strong>{item.name}</strong>
+                                                        <span>
+                                                            {ecommerceCapabilitySettings(draft)[item.id].enabled ? "已开放" : "已停用"} ·{" "}
+                                                            {["print-pack", "layers"].includes(item.id) ? "图片处理与导出" : ecommerceCapabilitySettings(draft)[item.id].directorPrompt.trim() ? "自定义指令" : "内置指令"}
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </nav>
+                                            <Form layout="vertical" className="admin-ecommerce-capability-editor">
+                                                {ECOMMERCE_CAPABILITIES.filter((item) => item.id === selectedCapability).map((item) => {
+                                                    const config = ecommerceCapabilitySettings(draft)[item.id];
+                                                    const patch = (change: Partial<typeof config>) => {
+                                                        const capabilities = { ...ecommerceCapabilitySettings(draft), [item.id]: { ...config, ...change } };
+                                                        const originalDefaults = !saved?.capabilities && Object.values(capabilities).every((item) => item.enabled && !item.directorPrompt);
+                                                        setDraft({ ...draft, capabilities: originalDefaults ? undefined : capabilities });
+                                                    };
+                                                    const localOnly = item.id === "print-pack" || item.id === "layers";
+                                                    return (
+                                                        <div key={item.id}>
+                                                            <Form.Item label={item.name} extra={item.description}>
+                                                                <Switch aria-label={item.name + "开放使用"} disabled={busy} checked={config.enabled} onChange={(enabled) => patch({ enabled })} />
+                                                            </Form.Item>
+                                                            {item.id === "pipeline" ? (
+                                                                <p className="admin-ecommerce-note">
+                                                                    成包流水线需要同时开放花型工坊、印刷规格包和 Listing 文案。
+                                                                    {["pattern", "print-pack", "listing"].some((id) => !ecommerceCapabilitySettings(draft)[id as EcommerceCapability].enabled) ? "当前有依赖功能停用，流水线执行会被阻止。" : ""}
+                                                                </p>
+                                                            ) : null}
+                                                            {localOnly ? (
+                                                                <p>使用专用图片处理与导出流程，无需配置分析指令。</p>
+                                                            ) : (
+                                                                <>
+                                                                    <div className="admin-ecommerce-prompt-heading">
+                                                                        <span>{config.directorPrompt.trim() ? "自定义指令" : "内置默认指令"}</span>
+                                                                        <Button type="text" size="small" icon={<Undo2 className="size-3.5" />} disabled={busy || !config.directorPrompt} onClick={() => patch({ directorPrompt: "" })}>
+                                                                            恢复内置默认
+                                                                        </Button>
+                                                                    </div>
+                                                                    <Form.Item extra="下方展示实际使用的完整指令。编辑后成为自定义覆盖，保存修改后生效。">
+                                                                        <Input.TextArea
+                                                                            aria-label={item.name + "私有分析指令"}
+                                                                            disabled={busy || (!config.directorPrompt && !defaults["cap:" + item.id])}
+                                                                            rows={8}
+                                                                            maxLength={20000}
+                                                                            value={config.directorPrompt || defaults["cap:" + item.id] || ""}
+                                                                            placeholder={defaultsLoading ? "正在读取内置指令…" : "内置指令未读取成功，请点击上方重试"}
+                                                                            onChange={(event) => patch({ directorPrompt: event.target.value })}
+                                                                        />
+                                                                    </Form.Item>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </Form>
+                                        </div>
+                                    </SettingsSectionCard>
+                                ),
+                            },
                             {
                                 key: "features",
                                 label: "使用功能",
                                 children: (
                                     <SettingsSectionCard title="功能开放" description="控制新创作入口与后续套图操作，已有画布内容保留">
-                                        <Form layout="vertical">
-                                            <Form.Item label="电商画布">
+                                        <Form layout="vertical" className="admin-ecommerce-features">
+                                            <Form.Item label="电商画布" extra="允许用户创建电商画布">
                                                 <Switch aria-label="电商画布" disabled={busy} checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
                                             </Form.Item>
-                                            <Form.Item label="模特库">
+                                            <Form.Item label="模特库" extra="使用公共与私人模特参考图">
                                                 <Switch aria-label="模特库" disabled={busy} checked={draft.modelLibraryEnabled} onChange={(modelLibraryEnabled) => setDraft({ ...draft, modelLibraryEnabled })} />
                                             </Form.Item>
-                                            <Form.Item label="自动装订">
+                                            <Form.Item label="自动装订" extra="图片生成后拼接与切片">
                                                 <Switch aria-label="自动装订" disabled={busy} checked={draft.autoBindEnabled} onChange={(autoBindEnabled) => setDraft({ ...draft, autoBindEnabled })} />
                                             </Form.Item>
                                             {ECOMMERCE_ONE_CLICK_FLOWS.map((flow) => (
-                                                <Form.Item key={flow.id} label={flow.name}>
-                                                    <Switch aria-label={flow.name} disabled={busy} checked={draft.flows[flow.id].enabled} onChange={(enabled) => setDraft({ ...draft, flows: { ...draft.flows, [flow.id]: { ...draft.flows[flow.id], enabled } } })} />
+                                                <Form.Item key={flow.id} label={flow.name.replace(/^一键/, "")} extra={flow.hint}>
+                                                    <Switch
+                                                        aria-label={flow.name}
+                                                        disabled={busy}
+                                                        checked={draft.flows[flow.id].enabled}
+                                                        onChange={(enabled) => setDraft({ ...draft, flows: { ...draft.flows, [flow.id]: { ...draft.flows[flow.id], enabled } } })}
+                                                    />
                                                 </Form.Item>
                                             ))}
                                         </Form>
@@ -182,28 +288,62 @@ export default function EcommerceSettingsPage() {
                             },
                             {
                                 key: "prompts",
-                                label: "默认提示词",
+                                label: "分析指令",
                                 children: (
-                                    <SettingsSectionCard title="分析提示词" description="用户自定义优先；这里配置全站默认写法。留空使用内置版本，商品事实与输出格式由系统追加。" layout="stacked">
-                                        <Form layout="vertical">
-                                            {ECOMMERCE_FLOW_IDS.map((id) => {
+                                    <SettingsSectionCard title="分析提示词" description="已内置 EcomGen 默认规划规则，留空即可使用。仅需定制时填写覆盖指令，用户端不可见。" layout="stacked">
+                                        <div className="admin-ecommerce-prompt-nav" role="group" aria-label="选择分析用途">
+                                            {ECOMMERCE_ONE_CLICK_FLOWS.map((flow) => (
+                                                <button key={flow.id} type="button" aria-pressed={promptFlow === flow.id} onClick={() => setPromptFlow(flow.id)}>
+                                                    {flow.name.replace(/^一键/, "")}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <Form layout="vertical" className="admin-ecommerce-prompt-editor">
+                                            {[promptFlow].map((id) => {
                                                 const flow = ECOMMERCE_ONE_CLICK_FLOWS.find((item) => item.id === id)!;
                                                 return (
-                                                    <Form.Item key={id} label={flow.name}>
+                                                    <Form.Item
+                                                        key={id}
+                                                        label={
+                                                            <div className="admin-ecommerce-prompt-heading">
+                                                                <span>
+                                                                    {flow.name} · {draft.flows[id].directorPrompt ? "自定义" : "内置默认"}
+                                                                </span>
+                                                                <Button
+                                                                    type="text"
+                                                                    size="small"
+                                                                    icon={<Undo2 className="size-3.5" />}
+                                                                    disabled={busy || !draft.flows[id].directorPrompt}
+                                                                    onClick={() => setDraft({ ...draft, flows: { ...draft.flows, [id]: { ...draft.flows[id], directorPrompt: "" } } })}
+                                                                >
+                                                                    恢复内置默认
+                                                                </Button>
+                                                            </div>
+                                                        }
+                                                    >
                                                         <Input.TextArea
                                                             aria-label={`${flow.name}默认提示词`}
-                                                            disabled={busy}
-                                                            rows={8}
+                                                            disabled={busy || (!draft.flows[id].directorPrompt && !defaults[id])}
+                                                            rows={16}
                                                             maxLength={20000}
                                                             showCount
-                                                            value={draft.flows[id].directorPrompt}
-                                                            placeholder={ecommerceSuiteDirectorPrompt(undefined, flow)}
+                                                            value={draft.flows[id].directorPrompt || defaults[id] || ""}
+                                                            placeholder="留空使用服务端内置指令：遵守商品事实、禁止项、计划张数及整套视觉规范，逐行生成完整出图提示词。"
                                                             onChange={(event) => setDraft({ ...draft, flows: { ...draft.flows, [id]: { ...draft.flows[id], directorPrompt: event.target.value } } })}
                                                         />
                                                     </Form.Item>
                                                 );
                                             })}
                                         </Form>
+                                    </SettingsSectionCard>
+                                ),
+                            },
+                            {
+                                key: "templates",
+                                label: `套图模板（${draft.templates.length}）`,
+                                children: (
+                                    <SettingsSectionCard title="套图模板" description="维护画面顺序、每张职责与整套视觉规范。已选用的创作表保存快照，后续修改不会覆盖已有创作。" layout="stacked">
+                                        <EcommerceTemplateEditor templates={draft.templates} disabled={busy} onChange={(templates) => setDraft({ ...draft, templates })} />
                                     </SettingsSectionCard>
                                 ),
                             },
@@ -221,8 +361,8 @@ export default function EcommerceSettingsPage() {
                                         </Button>
                                         {draft.models.length ? (
                                             draft.models.map((model) => (
-                                                <div key={model.id} className="mt-4 border-b pb-4">
-                                                    <Form layout="vertical">
+                                                <div key={model.id} className="admin-ecommerce-model">
+                                                    <Form layout="vertical" className="admin-ecommerce-model-fields">
                                                         <Form.Item label="名称">
                                                             <Input aria-label="公共模特名称" disabled={busy} maxLength={100} value={model.name} onChange={(event) => patchModel(model.id, { name: event.target.value })} />
                                                         </Form.Item>
@@ -259,7 +399,7 @@ export default function EcommerceSettingsPage() {
                                                             </div>
                                                         ))}
                                                     </div>
-                                                    <label className="mt-3 inline-block">
+                                                    <label className="admin-ecommerce-upload">
                                                         添加参考图
                                                         <input
                                                             aria-label={`${model.name}上传参考图`}

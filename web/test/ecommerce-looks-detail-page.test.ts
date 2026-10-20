@@ -109,6 +109,19 @@ describe("一键详情页：切点优先落在屏边界", () => {
         expect(plan.pieces).toHaveLength(1);
         expect(plan.pieces[0]).toMatchObject({ index: 1, top: 0, height: 1000 });
     });
+
+    test("nine full screens retain contiguous boundaries and respect the platform ceiling", () => {
+        const ranges = Array.from({ length: 9 }, (_, index) => ({ id: String(index), top: index * 1008, height: 1000, label: "screen" }));
+        const plan = ecommerceSlicePlan({ totalHeight: 9064, platform: "taobao", protected: ranges });
+        expect(plan.conflicts).toEqual([]);
+        expect(plan.pieces).toHaveLength(9);
+        for (const [index, piece] of plan.pieces.entries()) {
+            expect(piece.height).toBeLessThanOrEqual(1100);
+            expect(piece.height).toBeGreaterThanOrEqual(200);
+            expect(piece.top).toBe(index ? plan.pieces[index - 1].top + plan.pieces[index - 1].height : 0);
+        }
+        expect(plan.pieces.at(-1)!.top + plan.pieces.at(-1)!.height).toBe(9064);
+    });
 });
 
 describe("溶图合成：与爆款复刻的约束正好相反", () => {

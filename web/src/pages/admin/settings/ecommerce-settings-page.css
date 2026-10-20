@@ -1,0 +1,281 @@
+.admin-ecommerce {
+    max-width: 1180px;
+    width: 100%;
+    margin-inline: auto;
+}
+.admin-ecommerce-save.ant-btn:not(:disabled) {
+    background: var(--admin-text);
+    border-color: var(--admin-text);
+    color: var(--admin-surface);
+}
+.admin-ecommerce-capability-workspace {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+}
+.admin-ecommerce-capability-nav {
+    display: grid;
+    gap: var(--space-2);
+}
+.admin-ecommerce-capability-nav button {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    text-align: left;
+    background: var(--admin-surface);
+    color: var(--admin-text);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    cursor: pointer;
+    font: inherit;
+}
+.admin-ecommerce-capability-nav button:hover,
+.admin-ecommerce-capability-nav button[aria-pressed="true"] {
+    background: var(--admin-surface-hover, var(--muted));
+    border-color: var(--admin-border);
+}
+.admin-ecommerce-capability-nav button:focus-visible {
+    outline: 2px solid var(--admin-text);
+    outline-offset: 2px;
+}
+.admin-ecommerce-capability-nav span,
+.admin-ecommerce-note {
+    color: var(--admin-text-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.7;
+}
+.admin-ecommerce-capability-editor {
+    min-width: 0;
+    padding: var(--space-4);
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+}
+.admin-ecommerce-capability-editor textarea {
+    line-height: 1.8;
+    min-height: 320px;
+    resize: vertical;
+}
+@media (max-width: 760px) {
+    .admin-ecommerce-capability-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .admin-ecommerce-capability-nav {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+.admin-ecommerce .admin-settings-status-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+.admin-ecommerce .admin-settings-status-bar > span:last-child {
+    margin-left: auto;
+}
+.admin-ecommerce .admin-settings-section {
+    border: 1px solid var(--admin-border);
+}
+.admin-ecommerce .admin-settings-section-summary {
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--admin-border);
+}
+.admin-ecommerce .admin-settings-section-content {
+    padding: var(--space-4);
+}
+.admin-ecommerce .admin-ecommerce-features {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 var(--space-5);
+}
+.admin-ecommerce-features .ant-form-item {
+    margin: 0;
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--admin-border);
+}
+.admin-ecommerce-features .ant-form-item-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: var(--space-3);
+    align-items: start;
+}
+.admin-ecommerce-features .ant-form-item-label {
+    text-align: left;
+    padding: 0;
+}
+.admin-ecommerce-features .ant-form-item-control {
+    min-width: 0;
+    display: contents;
+}
+.admin-ecommerce-features .ant-form-item-control-input {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 24px;
+}
+.admin-ecommerce-features .ant-form-item-extra {
+    grid-column: 1 / -1;
+    max-width: none;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--admin-text-muted);
+}
+.admin-ecommerce-prompt-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+}
+.admin-ecommerce-prompt-nav button {
+    border: 1px solid var(--admin-border);
+    border-radius: var(--r-md);
+    padding: var(--space-2) var(--space-3);
+    color: var(--admin-text-muted);
+    background: var(--admin-surface);
+    cursor: pointer;
+}
+.admin-ecommerce-prompt-nav button[aria-pressed="true"] {
+    background: var(--admin-surface-hover, var(--muted));
+    color: var(--admin-text);
+    border-color: var(--admin-text-muted);
+}
+.admin-ecommerce-prompt-nav button:focus-visible {
+    outline: 2px solid var(--admin-text);
+    outline-offset: 2px;
+}
+.admin-ecommerce-prompt-editor .ant-form-item {
+    margin-bottom: var(--space-2);
+}
+.admin-ecommerce-prompt-editor textarea {
+    line-height: 1.8;
+}
+.admin-ecommerce-prompt-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+    color: var(--admin-text);
+}
+.admin-ecommerce-prompt-heading .ant-btn {
+    color: var(--admin-text-muted);
+}
+.admin-ecommerce .ant-form-item-label > label:has(.admin-ecommerce-prompt-heading) {
+    width: 100%;
+}
+.admin-ecommerce-model {
+    padding: var(--space-4);
+    margin-top: var(--space-4);
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+}
+.admin-ecommerce-model-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: var(--space-3);
+}
+.admin-ecommerce-upload {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding-block: var(--space-3);
+    margin-right: var(--space-3);
+    font-size: 12px;
+}
+.admin-ecommerce-template-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-block: var(--space-3);
+}
+.admin-ecommerce-template-import {
+    margin-block: var(--space-4);
+    color: var(--admin-text-muted);
+}
+.admin-ecommerce-template-import summary {
+    cursor: pointer;
+    color: var(--admin-text);
+}
+.admin-ecommerce-template-import p {
+    margin-block: var(--space-3);
+}
+.admin-ecommerce-template-workspace {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+}
+.admin-ecommerce-template-list {
+    display: grid;
+    gap: var(--space-2);
+    max-height: 560px;
+    overflow-y: auto;
+    margin-top: var(--space-3);
+}
+.admin-ecommerce-template-list button {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    text-align: left;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--r-md);
+    background: var(--admin-surface);
+    color: var(--admin-text);
+    cursor: pointer;
+}
+.admin-ecommerce-template-list button[aria-pressed="true"] {
+    border-color: var(--admin-text-muted);
+    background: var(--admin-surface-hover, var(--muted));
+}
+.admin-ecommerce-template-list span {
+    font-size: 12px;
+    color: var(--admin-text-muted);
+}
+.admin-ecommerce-template-fields {
+    min-width: 0;
+    display: grid;
+    gap: var(--space-4);
+    border: 0;
+    padding: 0;
+}
+.admin-ecommerce-template-fields label {
+    display: grid;
+    gap: var(--space-2);
+    font-size: 12px;
+    color: var(--admin-text-muted);
+}
+.admin-ecommerce-template-shots {
+    display: grid;
+    gap: var(--space-4);
+}
+.admin-ecommerce-template-shots > div {
+    display: grid;
+    gap: var(--space-3);
+    padding-block: var(--space-3);
+    border-top: 1px solid var(--admin-border);
+}
+.admin-ecommerce-template-editor select {
+    padding: var(--space-2);
+    margin-left: var(--space-2);
+    border: 1px solid var(--admin-border);
+    border-radius: var(--r-md);
+    color: var(--admin-text);
+    background: var(--admin-surface);
+}
+@media (max-width: 760px) {
+    .admin-ecommerce-template-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 760px) {
+    .admin-ecommerce .admin-ecommerce-features,
+    .admin-ecommerce-model-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

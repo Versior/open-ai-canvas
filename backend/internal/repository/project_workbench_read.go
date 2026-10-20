@@ -168,10 +168,21 @@ func (r *Repository) ProjectCanvasSummariesPage(userID string, projectID string,
 	return canvases, total, err
 }
 
-func (r *Repository) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string) ([]model.CanvasProject, int64, error) {
+func (r *Repository) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string, kinds ...string) ([]model.CanvasProject, int64, error) {
 	var projects []model.CanvasProject
 	var total int64
 	query := r.db.Model(&model.CanvasProject{}).Where("user_id = ?", userID)
+	if len(kinds) > 0 && kinds[0] != "" {
+		expression := "COALESCE(json_extract(payload_json, '$.kind'), 'freeform')"
+		if r.db.Dialector.Name() == "postgres" {
+			expression = "COALESCE(payload_json::jsonb->>'kind', 'freeform')"
+		}
+		if kinds[0] == "ecommerce" {
+			query = query.Where(expression+" = ?", "ecommerce")
+		} else {
+			query = query.Where(expression+" <> ?", "ecommerce")
+		}
+	}
 	if projectID == "independent" {
 		query = query.Where("project_id = '' OR project_id IS NULL")
 	} else if projectID != "" && projectID != "all" {

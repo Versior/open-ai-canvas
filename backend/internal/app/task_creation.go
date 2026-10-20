@@ -46,6 +46,34 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	if err != nil {
 		return nil, err
 	}
+	if metadata, ok := normalizedInput["metadata"].(map[string]any); ok {
+		if _, marked := metadata["ecommerceCapability"]; marked {
+			encoded, err := json.Marshal(normalizedInput)
+			if err != nil {
+				return nil, BadAuthRequest("电商能力任务格式无效")
+			}
+			var input canvasGenerationInput
+			if json.Unmarshal(encoded, &input) != nil || taskType != "canvas_"+input.Mode || isTextReplayTaskRequest(normalizedInput) {
+				return nil, BadAuthRequest("电商能力须通过对应的服务端任务执行")
+			}
+			if err := s.validateEcommerceCapability(&input); err != nil {
+				return nil, err
+			}
+		}
+		if _, marked := metadata["ecommerceAnalysisFlow"]; marked {
+			encoded, err := json.Marshal(normalizedInput)
+			if err != nil {
+				return nil, BadAuthRequest("电商分析任务格式无效")
+			}
+			var analysis canvasGenerationInput
+			if json.Unmarshal(encoded, &analysis) != nil || taskType != "canvas_text" || isTextReplayTaskRequest(normalizedInput) {
+				return nil, BadAuthRequest("电商分析必须通过服务端文本任务执行")
+			}
+			if err := s.applyEcommerceAnalysisInstruction(&analysis); err != nil {
+				return nil, err
+			}
+		}
+	}
 	// Fail admission before queueing or charging; the worker validates again in
 	// case a tool is deleted or its visibility changes while queued.
 	toolMode, _ := normalizedInput["mode"].(string)

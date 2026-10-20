@@ -1,0 +1,65 @@
+import { createZip } from "@/lib/zip";
+import { downloadName } from "@/lib/media-package";
+import { getImageBlob } from "@/services/image-storage";
+import { getActiveUserScope } from "@/lib/user-scope";
+import type { EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
+import type { CanvasNodeData } from "@/types/canvas";
+import { queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
+
+/** Export only the chosen outputs and explicit metadata; never serialize node config. */
+export async function buildEcommerceSuiteArchive(rows: EcommerceSuiteRow[], nodeBySlot: Map<string, CanvasNodeData>, readBlob = getImageBlob, readTask = queryGenerationTask) {
+    const scope = getActiveUserScope();
+    const files: { name: string; data: BlobPart }[] = [];
+    const entries: {
+        slotId: string;
+        title: string;
+        planning: { duty: string; prompt: string };
+        generation: { status: "verified-task" | "unavailable"; taskId?: string; prompt?: string; model?: string; completedAt?: string; runId?: string };
+        file: string;
+        nodeId: string;
+        width?: number;
+        height?: number;
+        bytes: number;
+        review: string;
+    }[] = [];
+    const tasks = new Map<string, GenerationTask>();
+    let totalBytes = 0;
+    for (const [index, row] of rows.entries()) {
+        const node = nodeBySlot.get(row.slotId);
+        if (row.resultNodeId && node?.id !== row.resultNodeId) throw new Error(`第 ${index + 1} 张所选结果已变化，请重新选择`);
+        if (!node?.metadata?.storageKey || node.metadata.status === "loading" || node.metadata.status === "error") throw new Error(`第 ${index + 1} 张尚无可导出的成功图片，请完成生成或选择有效结果`);
+        const taskId = node.metadata.taskId;
+        let task: GenerationTask | undefined;
+        if (taskId) {
+            task = tasks.get(taskId) || (await readTask(taskId));
+            if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消导出");
+            if (task.id !== taskId || task.status !== "succeeded") throw new Error(`第 ${index + 1} 张的生成任务未成功，请刷新结果后重试`);
+            tasks.set(taskId, task);
+        }
+        const blob = await readBlob(node.metadata.storageKey);
+        if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消导出");
+        if (!blob || !["image/png", "image/jpeg", "image/webp"].includes(blob.type)) throw new Error(`第 ${index + 1} 张原图缺失或格式不支持`);
+        totalBytes += blob.size;
+        if (totalBytes > 256 * 1024 * 1024) throw new Error("套图超过 256MB，请分批导出");
+        const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
+        const file = `images/${String(index + 1).padStart(2, "0")}_${downloadName(row.title)}.${extension}`;
+        files.push({ name: file, data: blob });
+        entries.push({
+            slotId: row.slotId,
+            title: row.title,
+            planning: { duty: row.duty, prompt: row.prompt },
+            generation: task ? { status: "verified-task", taskId: task.id, prompt: task.prompt, model: task.model, completedAt: task.completedAt, runId: node.metadata.ecommerceRunId } : { status: "unavailable", runId: node.metadata.ecommerceRunId },
+            file,
+            nodeId: node.id,
+            width: node.metadata.naturalWidth,
+            height: node.metadata.naturalHeight,
+            bytes: blob.size,
+            review: "待人工核对商品真实性、文案和平台要求",
+        });
+    }
+    if (!entries.length) throw new Error("没有可导出的图片");
+    files.push({ name: "manifest.json", data: JSON.stringify({ format: "yingce.ecommerce-suite", version: 2, exportedAt: new Date().toISOString(), entries }, null, 2) });
+    const archive = await createZip(files);
+    if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消导出");
+    return archive;
+}

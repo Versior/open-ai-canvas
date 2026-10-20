@@ -48,7 +48,7 @@ describe("上传图片是输入素材", () => {
         expect(canGenerateImageInPlace(source)).toBe(false);
     });
     test("页面和工具入口共享素材判定，人物质感接入原图连线", () => {
-        expect(flat(moduleGroupSource("pages/canvas/project.tsx"))).toContain("dialogNode && !isCanvasImageSourceNode(dialogNode)");
+        expect(flat(moduleGroupSource("pages/canvas/project.tsx"))).toContain("dialogNode && !hasEmbeddedEcommerceControls(dialogNode) && !isCanvasImageSourceNode(dialogNode)");
         expect(read("lib/canvas/tool-registry/definitions/node-hover-tools.tsx")).toContain("!isCanvasImageSourceNode(ctx.node)");
         const mediaTools = read("pages/canvas/use-canvas-media-tools.ts");
         const portrait = mediaTools.slice(mediaTools.indexOf("const openPortraitTextureEditor"), mediaTools.indexOf("const cropImageNode"));
@@ -67,5 +67,5 @@ test("底部菜单使用画布浮层管理并响应打开、鼠标和键盘交�
     const toolbar = read("components/canvas/canvas-toolbar.tsx");
     expect(toolbar).toContain('useCanvasOverlayLayer("main-toolbar", "var(--z-toolbar)")');
     expect(toolbar).toContain("if (addOpen || appearanceOpen) bringToFront()");
-    expect(toolbar).toContain("style={{ zIndex }} onPointerDownCapture={bringToFront} onFocusCapture={bringToFront}");
+    expect(flat(toolbar)).toContain("style={{ zIndex }} onPointerDownCapture={bringToFront} onFocusCapture={bringToFront}");
 });

@@ -1,0 +1,88 @@
+.ecommerce-workbench fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+    display: grid;
+    gap: 18px;
+}
+.ecommerce-workbench label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: var(--fs-caption);
+}
+.ecommerce-workbench .ant-select {
+    width: 100%;
+}
+.ecommerce-workbench-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+}
+.ecommerce-workbench-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.ecommerce-workbench .ecommerce-command:not(:disabled) {
+    color: var(--background);
+    background: var(--foreground);
+    border-color: var(--foreground);
+}
+.ecommerce-workbench details {
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+}
+.ecommerce-workbench summary {
+    cursor: pointer;
+    margin-bottom: 16px;
+}
+.ecommerce-workbench-hint {
+    color: var(--muted-foreground);
+    margin: 4px 0 20px;
+}
+.ecommerce-workbench-error {
+    color: var(--destructive);
+}
+.ecommerce-workbench .ant-checkbox-group {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+.ecommerce-workbench .ant-checkbox-wrapper {
+    flex-direction: row;
+    align-items: center;
+}
+.ecommerce-workbench-sources {
+    display: grid;
+    gap: 8px;
+}
+.ecommerce-workbench-sources > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.ecommerce-workbench-history {
+    margin-top: 28px;
+}
+.ecommerce-workbench-history article {
+    display: grid;
+    gap: 10px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+}
+.ecommerce-workbench-history article > button:first-child {
+    text-align: left;
+    cursor: pointer;
+}
+.ecommerce-workbench-history article > span {
+    font-size: var(--fs-caption);
+    color: var(--muted-foreground);
+}
+@media (max-width: 600px) {
+    .ecommerce-workbench .ant-checkbox-group {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

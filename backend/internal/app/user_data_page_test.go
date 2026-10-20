@@ -44,6 +44,35 @@ func TestUserCanvasLibraryPageIsBoundedAndScoped(t *testing.T) {
 	}
 }
 
+func TestUserCanvasLibrarySeparatesKindsBeforePagination(t *testing.T) {
+	s, db := newProjectWorkbenchReadTestService(t)
+	for _, item := range []struct{ id, owner, kind string }{{"shop-a", "owner", "ecommerce"}, {"shop-b", "owner", "ecommerce"}, {"free", "owner", "freeform"}, {"legacy", "owner", ""}, {"foreign", "other", "ecommerce"}} {
+		payload := "{}"
+		if item.kind != "" {
+			payload = fmt.Sprintf(`{"kind":%q}`, item.kind)
+		}
+		if err := db.Create(&model.CanvasProject{ID: item.id, UserID: item.owner, Title: item.id, PayloadJSON: payload}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := s.UserCanvasProjectsPage("owner", 1, 1, "", "", "name", "ecommerce")
+	if err != nil || page.Total != 2 || len(page.Projects) != 1 || !page.HasMore || page.Projects[0].Kind != "ecommerce" {
+		t.Fatalf("ecommerce page: %+v %v", page, err)
+	}
+	free, err := s.UserCanvasProjectsPage("owner", 1, 40, "", "", "name", "freeform")
+	if err != nil || free.Total != 2 || free.HasMore {
+		t.Fatalf("free page: %+v %v", free, err)
+	}
+	for _, project := range free.Projects {
+		if project.Kind == "ecommerce" {
+			t.Fatal("ecommerce canvas leaked into free library")
+		}
+	}
+	if _, err := s.UserCanvasProjectsPage("owner", 1, 40, "", "", "name", "bad"); err == nil {
+		t.Fatal("invalid kind accepted")
+	}
+}
+
 func TestUserAssetsBatchIsBoundedAndScoped(t *testing.T) {
 	service, db := newProjectWorkbenchReadTestService(t)
 	for _, owner := range []string{"owner", "other"} {

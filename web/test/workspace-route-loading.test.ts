@@ -71,7 +71,7 @@ describe("workspace route loading", () => {
         }
         expect(layout).not.toContain("useCanvasUiStore");
         expect(layout).not.toContain("CanvasDeleteProjectsDialog");
-        expect(canvas).toContain("deleteDialogOpen ? <Suspense");
+        expect(canvas).toMatch(/deleteDialogOpen \?\s*\(?\s*<Suspense/);
         expect(detail).toContain("project-workspace-header");
         expect(detail).not.toContain("useWorkspaceTopBarExtension");
         expect(detail).toContain("新建画布");

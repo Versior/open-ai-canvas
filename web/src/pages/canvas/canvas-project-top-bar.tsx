@@ -15,6 +15,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { CanvasShortcutsModal } from "./canvas-shortcuts-modal";
 
 type CanvasTopBarProps = {
+    ecommerce?: boolean;
     title: string;
     titleDraft: string;
     isTitleEditing: boolean;
@@ -43,6 +44,7 @@ type CanvasTopBarProps = {
 };
 
 export function CanvasTopBar({
+    ecommerce = false,
     title,
     titleDraft,
     isTitleEditing,
@@ -104,7 +106,7 @@ export function CanvasTopBar({
                             menu={{
                                 items: [
                                     { key: "home", icon: <Home className="size-4" />, label: <Link to="/">主页</Link> },
-                                    { key: "projects", icon: <LayoutGrid className="size-4" />, label: <Link to="/canvas">画布</Link> },
+                                    { key: "projects", icon: <LayoutGrid className="size-4" />, label: <Link to={ecommerce ? "/ecommerce" : "/canvas"}>{ecommerce ? "电商画布" : "画布"}</Link> },
                                     { type: "divider" },
                                     { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },
                                     { key: "delete", danger: true, icon: <Trash2 className="size-4" />, label: "删除当前画布", onClick: onDeleteProject },

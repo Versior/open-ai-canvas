@@ -67,23 +67,24 @@ func (e providerStatePendingError) Unwrap() error { return e.Cause }
 type providerAnalyticsKey struct{}
 
 type providerAnalyticsContext struct {
-	Service           *Service
-	Billing           taskBillingLifecycle
-	UserID            string
-	TaskID            string
-	TraceID           string
-	RequestID         string
-	BillingOrderID    string
-	BillingMode       string
-	Capability        string
-	Operation         string
-	ChannelID         string
-	ProxyURL          string
-	Model             string
-	VideoSeconds      int
-	RequestKind       string
-	ProviderRequestID string
-	ConcurrencyLimit  int
+	Service            *Service
+	Billing            taskBillingLifecycle
+	UserID             string
+	TaskID             string
+	TraceID            string
+	RequestID          string
+	BillingOrderID     string
+	BillingMode        string
+	Capability         string
+	Operation          string
+	ChannelID          string
+	ProxyURL           string
+	Model              string
+	VideoSeconds       int
+	RequestKind        string
+	ProviderRequestID  string
+	ConcurrencyLimit   int
+	PrivateInstruction bool
 }
 
 func withProviderAnalytics(ctx context.Context, service *Service, task model.Task) context.Context {
@@ -98,10 +99,12 @@ func withProviderAnalytics(ctx context.Context, service *Service, task model.Tas
 		}
 	}
 	var input struct {
-		Mode   string         `json:"mode"`
-		Config providerConfig `json:"config"`
+		Mode     string         `json:"mode"`
+		Config   providerConfig `json:"config"`
+		Metadata map[string]any `json:"metadata"`
 	}
 	if json.Unmarshal([]byte(task.InputJSON), &input) == nil {
+		_, metadata.PrivateInstruction = input.Metadata["ecommerceAnalysisFlow"]
 		metadata.ChannelID = firstNonEmpty(input.Config.ChannelID, systemChannelIDFromBaseURL(input.Config.BaseURL))
 		metadata.Model = firstNonEmpty(input.Config.ChannelModelKey, input.Config.Model, metadata.Model)
 		metadata.VideoSeconds, _ = strconv.Atoi(input.Config.VideoSeconds)

@@ -620,10 +620,10 @@ func TestCloudAgentToolLoopPersistsApprovalAndAppliesCanvasWrite(t *testing.T) {
 func TestCloudAgentNodeTypesExposeExecutableAllowList(t *testing.T) {
 	result := cloudAgentNodeTypes()
 	nodes, ok := result["nodes"].([]map[string]any)
-	if !ok || len(nodes) != 23 {
+	if !ok || len(nodes) != 24 {
 		t.Fatalf("unexpected node registry: %#v", result)
 	}
-	var character map[string]any
+	var character, studio map[string]any
 	for _, node := range nodes {
 		if node["type"] == "panorama" {
 			t.Fatal("UI-only node must not be exposed")
@@ -631,6 +631,12 @@ func TestCloudAgentNodeTypesExposeExecutableAllowList(t *testing.T) {
 		if node["type"] == "character" {
 			character = node
 		}
+		if node["type"] == "ecommerce-studio" {
+			studio = node
+		}
+	}
+	if studio == nil || studio["canTarget"] != true || studio["canSource"] != true || studio["generationMode"] != nil {
+		t.Fatalf("studio must expose inputs without pretending to generate media directly: %#v", studio)
 	}
 	// 角色卡必须被 Agent 发现，但只是 text 节点的变体：不能出现在 add_node 的 nodeType 枚举里。
 	if character == nil || character["creatable"] != false || character["canvasNodeType"] != "text" || character["workflowKind"] != "character" || character["canReference"] != true {

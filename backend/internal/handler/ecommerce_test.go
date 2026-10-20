@@ -24,6 +24,8 @@ func TestEcommerceRoutesRequireAuthentication(t *testing.T) {
 	RegisterEcommerceRoutes(router.Group("/api"), &service.Service{})
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/ecommerce/settings"}, {"GET", "/api/admin/settings/ecommerce"},
+		{"GET", "/api/admin/settings/ecommerce/defaults"},
+		{"GET", "/api/ecommerce/templates"}, {"GET", "/api/ecommerce/templates/missing"},
 		{"PUT", "/api/admin/settings/ecommerce"}, {"GET", "/api/admin/settings/ecommerce/previous"},
 		{"POST", "/api/admin/settings/ecommerce/images"}, {"GET", "/api/ecommerce/models/model/images/image"},
 	} {
@@ -59,6 +61,7 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 	cookie := "fixture-session.fixture-token"
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/admin/settings/ecommerce"}, {"PUT", "/api/admin/settings/ecommerce"},
+		{"GET", "/api/admin/settings/ecommerce/defaults"},
 		{"GET", "/api/admin/settings/ecommerce/previous"}, {"POST", "/api/admin/settings/ecommerce/images"},
 	} {
 		result := profileRequest(router, tc.method, tc.path, "{}", cookie)
@@ -83,6 +86,36 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 		t.Fatalf("admin read: %d %v", response.Code, err)
 	}
 	value := envelope.Data.Setting
+	response = profileRequest(router, "GET", "/api/admin/settings/ecommerce/defaults", "", cookie)
+	var defaults struct {
+		Data struct {
+			Defaults map[string]string `json:"defaults"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &defaults); err != nil || response.Code != 200 || len(defaults.Data.Defaults) != 12 || defaults.Data.Defaults["cap:planning"] == "" {
+		t.Fatal("default instruction HTTP contract incomplete")
+	}
+	response = profileRequest(router, "GET", "/api/ecommerce/templates?q=&page=1&pageSize=20", "", cookie)
+	var catalog struct {
+		Data struct {
+			Total int `json:"total"`
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || response.Code != 200 || catalog.Data.Total != 1173 || len(catalog.Data.Items) != 20 {
+		t.Fatal("catalog HTTP contract failed")
+	}
+	response = profileRequest(router, "GET", "/api/ecommerce/templates/"+catalog.Data.Items[0].ID, "", cookie)
+	var detail struct {
+		Data struct {
+			Template service.EcommerceSuiteTemplate `json:"template"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil || response.Code != 200 || len(detail.Data.Template.Shots) == 0 {
+		t.Fatal("catalog detail failed")
+	}
 	value.Enabled = false
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -106,6 +139,7 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	for path, methods := range map[string][]string{
+		"/admin/settings/ecommerce/defaults": {"get"}, "/ecommerce/templates": {"get"}, "/ecommerce/templates/{templateId}": {"get"},
 		"/ecommerce/settings": {"get"}, "/admin/settings/ecommerce": {"get", "put"},
 		"/admin/settings/ecommerce/previous": {"get"}, "/admin/settings/ecommerce/images": {"post"},
 		"/ecommerce/models/{modelId}/images/{resourceId}": {"get"},

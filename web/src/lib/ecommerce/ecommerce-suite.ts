@@ -33,6 +33,8 @@ export type EcommerceSuiteRow = {
      * 免得用户改提示词时把它们删掉。
      */
     prompt: string;
+    /** 用户明确采用的结果；缺失时使用最近一次成功结果。 */
+    resultNodeId?: string;
 };
 
 export type EcommerceSuite = {
@@ -103,9 +105,7 @@ export function ecommerceSuiteFromPresets(flow: EcommerceOneClickFlow): Ecommerc
         const shot = set.shots.find((item) => item.id === screen.slotId);
         const lines = shot ? ecommerceShotLines(shot) : [];
         const preset = ecommerceShotPreset(screen.presetId);
-        const prompt = lines.length
-            ? `${preset?.hint || screen.duty}。${lines.map(restateCopyZone).join("。")}`
-            : screen.duty;
+        const prompt = lines.length ? `${preset?.hint || screen.duty}。${lines.map(restateCopyZone).join("。")}` : screen.duty;
         return { slotId: screen.slotId, title: screen.title, duty: screen.duty, prompt };
     });
 }
@@ -237,7 +237,7 @@ function uniformBlock(uniform: EcommerceSuiteUniform | undefined) {
     return ["", ...lines, ""];
 }
 
-export function ecommerceSuiteDraftPrompt(flow: EcommerceOneClickFlow, profile: EcommerceProductProfile | undefined, rows: EcommerceSuiteRow[], director?: string, uniform?: EcommerceSuiteUniform) {
+export function ecommerceSuiteDraftPrompt(flow: EcommerceOneClickFlow, profile: EcommerceProductProfile | undefined, rows: EcommerceSuiteRow[], director?: string | null, uniform?: EcommerceSuiteUniform) {
     const facts = [
         profile?.name.trim() ? `商品名：${profile.name.trim()}` : "",
         profile?.category.trim() ? `品类：${profile.category.trim()}` : "",
@@ -246,10 +246,13 @@ export function ecommerceSuiteDraftPrompt(flow: EcommerceOneClickFlow, profile: 
         profile?.price.trim() ? `价格：${profile.price.trim()}` : "",
         profile?.audience.trim() ? `目标人群与使用场景：${profile.audience.trim()}` : "",
         profile?.facts.trim() ? `卖点与依据：\n${profile.facts.trim()}` : "",
-    ].filter(Boolean).join("\n");
+        profile?.forbidden.trim() ? `禁止宣称与禁止改动：${profile.forbidden.trim()}` : "",
+    ]
+        .filter(Boolean)
+        .join("\n");
 
     return [
-        director === " " ? "" : ecommerceSuiteDirectorPrompt(director),
+        director === null ? "" : ecommerceSuiteDirectorPrompt(director),
         "",
         "【商品事实】以下是卖家确认过的档案，优先级高于你从图里看到的东西：",
         facts || "（档案是空的——那就只依据图里看得见的东西写）",
@@ -285,7 +288,10 @@ export function parseEcommerceSuiteDraft(text: string, flow: EcommerceOneClickFl
     const parsed: EcommerceSuiteRow[] = [];
     const seen = new Set<string>();
     for (const rawLine of text.split("\n")) {
-        const line = rawLine.replace(/^[\s>*\-•\d.、)]+/, "").replace(/[`*]/g, "").trim();
+        const line = rawLine
+            .replace(/^[\s>*\-•\d.、)]+/, "")
+            .replace(/[`*]/g, "")
+            .trim();
         if (!line) continue;
         const parts = line.split(/[|｜]/).map((part) => part.trim());
         if (parts.length < 2) continue;

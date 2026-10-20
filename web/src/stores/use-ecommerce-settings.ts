@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DEFAULT_ECOMMERCE_SETTING, getEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, ECOMMERCE_FLOW_IDS, getEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce";
 import { getActiveUserScope } from "@/lib/user-scope";
 type State = { setting: EcommerceSetting; scope: string; loadedAt: number; load: () => Promise<EcommerceSetting>; commit: (setting: EcommerceSetting) => void };
 export const useEcommerceSettings = create<State>((set, get) => {
@@ -12,7 +12,12 @@ export const useEcommerceSettings = create<State>((set, get) => {
         commit: (setting) => {
             generation++;
             pending = undefined;
-            set({ setting, scope: getActiveUserScope(), loadedAt: Date.now() });
+            const publicSetting = structuredClone(setting);
+            for (const id of ECOMMERCE_FLOW_IDS) publicSetting.flows[id].directorPrompt = "";
+            for (const item of Object.values(publicSetting.capabilities || {})) item.directorPrompt = "";
+            publicSetting.models = publicSetting.enabled && publicSetting.modelLibraryEnabled ? publicSetting.models.filter((model) => model.enabled) : [];
+            publicSetting.templates = publicSetting.enabled ? publicSetting.templates.filter((item) => item.enabled && publicSetting.flows[item.flow].enabled) : [];
+            set({ setting: publicSetting, scope: getActiveUserScope(), loadedAt: Date.now() });
         },
         load: async () => {
             const scope = getActiveUserScope();

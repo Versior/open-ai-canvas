@@ -106,21 +106,19 @@ export function ecommerceSlicePlan(input: { totalHeight: number; platform: Ecomm
     for (let index = 1; index < count; index += 1) cuts.push(Math.round(evenHeight * index));
 
     const conflicts: EcommerceSlicePlan["conflicts"] = [];
-    const resolved = cuts.map((cut, index) => {
-        const hit = ranges.find((range) => collidesWith(range, cut));
-        if (!hit) return cut;
-        // 往上挪到保护区间之前——那里通常正好是模块边界
-        const up = hit.top;
-        // 上下的片高都要够
-        const previous = index === 0 ? 0 : cuts[index - 1];
-        const next = index === cuts.length - 1 ? totalHeight : cuts[index + 1];
-        if (up - previous >= spec.minSliceHeight && next - up >= spec.minSliceHeight) return up;
-        // 挪不动就往下推一整个保护区间
-        const down = hit.top + hit.height;
-        if (down - previous >= spec.minSliceHeight && next - down >= spec.minSliceHeight) return down;
-        conflicts.push({ top: cut, label: hit.label || "未命名区块" });
-        return cut;
-    });
+    const resolved: number[] = [];
+    let previous = 0;
+    while (totalHeight - previous > spec.maxSliceHeight) {
+        const remaining = totalHeight - previous;
+        const cut = previous + Math.round(remaining / Math.ceil(remaining / spec.maxSliceHeight));
+        const candidates = [cut, ...ranges.flatMap((range) => [range.top, range.top + range.height])]
+            .filter((value) => value - previous >= spec.minSliceHeight && value - previous <= spec.maxSliceHeight && totalHeight - value >= spec.minSliceHeight && !ranges.some((range) => collidesWith(range, value)))
+            .sort((a, b) => Math.abs(a - cut) - Math.abs(b - cut) || a - b);
+        const next = candidates[0] ?? cut;
+        if (!candidates.length) conflicts.push({ top: cut, label: ranges.find((range) => collidesWith(range, cut))?.label || "未命名区块" });
+        resolved.push(next);
+        previous = next;
+    }
 
     const boundaries = [0, ...resolved, totalHeight];
     const pieces: EcommerceSlicePiece[] = [];

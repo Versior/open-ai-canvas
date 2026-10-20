@@ -7,7 +7,7 @@ const source = (name: string) => readFileSync(resolve(import.meta.dir, `../src/p
 describe("storyboard prompt panel boundaries", () => {
     test("creation and duplication clear the previous node panel", () => {
         const operations = source("use-canvas-node-operations.ts");
-        expect(operations).toContain("if (type === CanvasNodeType.Script) setDialogNodeId(null)");
+        expect(operations).toContain("if (type === CanvasNodeType.Script || hasEmbeddedEcommerceControls(node)) setDialogNodeId(null)");
         expect(operations).toContain("if (source.type === CanvasNodeType.Script) setDialogNodeId(null)");
         expect(operations).toContain("primaryNode.type !== CanvasNodeType.Script ? primaryNode.id : null");
     });

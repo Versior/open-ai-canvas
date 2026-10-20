@@ -20,6 +20,7 @@ import { withGenerationConsumersPaused } from "@/services/generation-consumer-li
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { useEcommerceSuitePrompt } from "@/stores/use-ecommerce-suite-prompt";
+import { useEcommerceTemplateLibrary } from "@/stores/use-ecommerce-template-library";
 import { useInspirationStore } from "@/stores/use-inspiration-store";
 
 export async function switchUserStorageScope(userId?: string | null) {
@@ -46,9 +47,13 @@ export async function applyUserSession(payload: AuthSessionPayload) {
     await switchUserStorageScope(payload.user?.id);
     // 切换存储 scope 时 user store 仍保留旧身份；此处只能先检查 generation。
     if (!isCurrentGeneration(generation)) return;
-    withCanvasStorePersistenceSuppressed(() => withAssetStorePersistenceSuppressed(() => withUserScopedPersistenceSuppressed(() => {
-        resetUserScopedMemory();
-    })));
+    withCanvasStorePersistenceSuppressed(() =>
+        withAssetStorePersistenceSuppressed(() =>
+            withUserScopedPersistenceSuppressed(() => {
+                resetUserScopedMemory();
+            }),
+        ),
+    );
     useUserStore.getState().setUser(payload.user);
     useUserStore.getState().setRuntimeLimits(payload.runtimeLimits);
     useUserStore.getState().setDrawingEngine(payload.drawingEngine);
@@ -73,6 +78,7 @@ function resetUserScopedMemory() {
     useCreationPreferencesStore.setState({ hydrated: false, preferences: {} });
     useEcommerceModelLibrary.getState().reset();
     useEcommerceSuitePrompt.getState().reset();
+    useEcommerceTemplateLibrary.getState().reset();
     useInspirationStore.setState({ hydrated: false, custom: [], overrides: {}, hidden: [], favorites: [] });
 }
 

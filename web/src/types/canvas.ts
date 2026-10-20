@@ -54,6 +54,7 @@ export enum CanvasNodeType {
     ColorGrade = "colorgrade",
     MediaConversion = "media-conversion",
     BatchTable = "batch-table",
+    EcommerceStudio = "ecommerce-studio",
     /** 电商创作：商品档案，输出商品身份。 */
     Product = "product",
     /** 电商创作：拍法，输出拍摄方案。 */
@@ -101,6 +102,7 @@ export type CanvasCreatableNodeType =
     | CanvasNodeType.Text
     | CanvasNodeType.Script
     | CanvasNodeType.BatchTable
+    | CanvasNodeType.EcommerceStudio
     | CanvasNodeType.Video
     | CanvasNodeType.Audio
     | CanvasNodeType.Drawing
@@ -331,6 +333,22 @@ export type CanvasSkillSnapshot = {
 };
 
 export type CanvasNodeMetadata = {
+    ecommerceStudio?: {
+        brief: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchBrief;
+        plan?: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchPlan;
+        imageModel?: string;
+        textModel?: string;
+        skillIds?: string[];
+        adoptedResults?: Record<string, string>;
+    };
+    ecommerceStudioOutput?: { studioId: string; shotIndex: number; signature: string; sourceIds?: string[]; sourceSignature?: string; inputIds?: string[] };
+    ecommerceWorkbench?: {
+        capability: string;
+        brief: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchBrief;
+        sourceIds: string[];
+        request?: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchRequest;
+        steps: { id: string; status: "running" | "succeeded" | "failed"; taskId?: string; nodeIds?: string[]; error?: string; completedAt?: string }[];
+    };
     /** Credential-free editable generation contract; submitted recipes live with tasks. */
     generationSpec?: GenerationSpec;
     /** Namespaced extension ownership for nodes contributed by a unified plugin. */

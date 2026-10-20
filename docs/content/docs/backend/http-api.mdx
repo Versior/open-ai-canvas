@@ -7,18 +7,32 @@ description: 信封、错误码与 OpenAPI
 
 ## 电商画布配置与公共模特
 
+管理员只读接口 GET /api/admin/settings/ecommerce/defaults 返回 data.defaults：cap:能力标识及 detail/main/wear/seed 对应 worker 实际内置规则。响应禁止缓存，普通用户无权读取，不修改自定义覆盖或 revision。
+
+GET /api/canvas-projects 的分页查询可传 kind=freeform 或 ecommerce，在用户归属约束内先分类再计数和分页，摘要包含 kind。缺省 kind 保留全部查询，旧画布没有 kind 时归自由画布。
+
 管理页为 `/admin/settings/ecommerce`。普通登录用户只能读取已发布模特；管理配置、上传和上一版读取在 service 层校验管理员权限。
 
 | 接口 | 合同 |
 | --- | --- |
-| `GET /api/ecommerce/settings` | 返回 `data.setting`，包含功能、四种用途、默认提示词和启用的公共模特 |
+| `GET /api/ecommerce/settings` | 返回 `data.setting`，包含功能、四种用途开关、已发布模板和启用的公共模特；省略分析指令 |
+| `GET /api/ecommerce/templates` | 内置 1173 套目录，支持 q（100 字内）、page、pageSize（最多 50）；返回 items/total/page/pageSize 摘要 |
+| `GET /api/ecommerce/templates/:templateId` | 返回 data.template，含完整视觉规范、逐张镜头/布光/留白及参考提示词；原库只读 |
 | `GET /api/admin/settings/ecommerce` | 完整配置，包括停用模特与 `revision` |
 | `PUT /api/admin/settings/ecommerce` | 提交完整配置及读取时的 `revision`；冲突拒绝覆盖；响应为保存后的 `data.setting` |
 | `GET /api/admin/settings/ecommerce/previous` | 读取上一版供草稿恢复，不立即生效；首次保存前返回 404 |
 | `POST /api/admin/settings/ecommerce/images` | multipart `file`；PNG/JPEG/WebP，单图最多 10 MiB，返回 `data.resource`；上传后须保存配置才发布 |
 | `GET /api/ecommerce/models/:modelId/images/:resourceId` | 登录及引用校验后分发图片；管理员可预览当前及上一版引用 |
 
-配置字段为 `enabled`、`modelLibraryEnabled`、`autoBindEnabled`、`flows`、`models`、`revision`。`flows` 必须完整包含 `detail/main/wear/seed`，各有 `enabled/directorPrompt`。模特有 `id/name/enabled/tags/resourceIds`，最多 200 个，每位最多 20 个标签、12 张图片；启用必须有就绪参考图。新增图片归当前管理员所有，已发布或上一版中的引用允许其他管理员维护。写请求上限 2 MiB。
+配置字段为 `enabled`、`modelLibraryEnabled`、`autoBindEnabled`、`flows`、`capabilities`、`models`、`templates`、`revision`。`flows` 必须完整包含 `detail/main/wear/seed`；`capabilities` 包含 `planning/suite-forge/model-cast/pattern/listing/print-pack/pipeline/layers` 的开关与可选 `directorPrompt`。旧配置未提供该能力表时初始化为启用，提供时须完整。`directorPrompt` 仅管理员接口可读写，空串使用服务端内置默认；规划和旧四用途复用 EcomGen 规划规则并适配输出结构。模特有 `id/name/enabled/tags/resourceIds`，最多 200 个，每位最多 20 个标签、12 张图片；启用必须有就绪参考图。新增图片归当前管理员所有，已发布或上一版中的引用允许其他管理员维护。写请求上限 2 MiB。
+
+`templates` 最多 200 套，各含 `id/name/flow/category/enabled/style/source/shots`；名称最多 100 字、类目 200 字、视觉规范 6000 字、来源 500 字，每套 1–30 张，每张标题 100 字、职责 12000 字。配置总大小仍受 2 MiB 限制。普通接口仅下发全局启用、用途启用且模板自身启用的记录。已有创作表保留选用时的模板快照。
+
+项目内置目录独立压缩嵌入后端，按页摘要和单套正文读取，不占上述 200 套管理员自定义配置额度。登录用户可选用；全局或详情套图停用时普通用户无权读取，管理员仍可维护。生图台、工作台规划页与创作表可选用，后台可载入为停用草稿再编辑发布；选用不会自动提交生成任务。
+
+电商文本分析通过原生成任务提交 `metadata.ecommerceAnalysisFlow`（四种用途之一）；在模型路由与计费前校验用途开关，worker 在内存中注入后台分析指令。持久任务输入不写入此指令，上游请求/响应正文日志整体隐藏；失败任务不回显上游原文。该处理不保证模型绝不会复述系统文本，前台解析只接受结构化套图行。
+
+独立生图台任务提交 `metadata.ecommerceCapability`；文本任务必须同时提交匹配的 `ecommerceAnalysisFlow=cap:<能力>`。文本仅允许规划、套图反推、Listing 或流水线文案；图片仅允许规划出图、选角和花型。服务端在准入和 worker 执行时复查开关、模式与分析标识，拒绝 replay 和 AgentRequests 混用；流水线另查花型、规格包、Listing 依赖。停用不自动取消已经提交的任务。本地像素处理与文件下载不经过模型队列。
 
 当前配置、上一版与审计同事务提交，并比较持久化快照防止并发覆盖。当前及上一版图片引用均阻止后台删除和自动清理；配置损坏时暂停删除。前端设置缓存最多 30 秒，分析、套图生成和新建入口读取配置；这些业务开关不替代模型权限与额度策略，也不取消已提交任务。公共模特导入时复制为用户自己的资源和私人模特记录，后台停用不会破坏既有私人副本。
 

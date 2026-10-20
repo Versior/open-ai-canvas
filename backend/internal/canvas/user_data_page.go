@@ -37,6 +37,7 @@ func (s *Service) UserAssetsByIDs(userID string, ids []string) ([]json.RawMessag
 }
 
 type CanvasLibrarySummary struct {
+	Kind         string           `json:"kind,omitempty"`
 	ID           string           `json:"id"`
 	ProjectID    string           `json:"projectId,omitempty"`
 	Title        string           `json:"title"`
@@ -55,7 +56,10 @@ type CanvasLibraryPage struct {
 	HasMore  bool                   `json:"hasMore"`
 }
 
-func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string) (CanvasLibraryPage, error) {
+func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, projectID string, search string, sort string, kinds ...string) (CanvasLibraryPage, error) {
+	if len(kinds) > 0 && kinds[0] != "" && kinds[0] != "freeform" && kinds[0] != "ecommerce" {
+		return CanvasLibraryPage{}, kernel.BadAuthRequest("画布分类无效")
+	}
 	if page < 1 {
 		page = 1
 	}
@@ -68,13 +72,14 @@ func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, 
 	if pageSize > 50 {
 		pageSize = 50
 	}
-	projects, total, err := s.repo.UserCanvasProjectsPage(userID, page, pageSize, projectID, search, sort)
+	projects, total, err := s.repo.UserCanvasProjectsPage(userID, page, pageSize, projectID, search, sort, kinds...)
 	if err != nil {
 		return CanvasLibraryPage{}, err
 	}
 	result := CanvasLibraryPage{Projects: make([]CanvasLibrarySummary, 0, len(projects)), Page: page, PageSize: pageSize, Total: total, HasMore: int64(page)*int64(pageSize) < total}
 	for _, project := range projects {
 		var document struct {
+			Kind  string           `json:"kind"`
 			Nodes []map[string]any `json:"nodes"`
 		}
 		if err := json.Unmarshal([]byte(project.PayloadJSON), &document); err != nil {
@@ -108,7 +113,7 @@ func (s *Service) UserCanvasProjectsPage(userID string, page int, pageSize int, 
 			item["metadata"] = metadata
 			preview = append(preview, item)
 		}
-		result.Projects = append(result.Projects, CanvasLibrarySummary{ID: project.ID, ProjectID: project.ProjectID, Title: project.Title, Revision: project.Revision, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt, NodeCount: len(document.Nodes), PreviewNodes: preview})
+		result.Projects = append(result.Projects, CanvasLibrarySummary{Kind: document.Kind, ID: project.ID, ProjectID: project.ProjectID, Title: project.Title, Revision: project.Revision, CreatedAt: project.CreatedAt, UpdatedAt: project.UpdatedAt, NodeCount: len(document.Nodes), PreviewNodes: preview})
 	}
 	return result, nil
 }

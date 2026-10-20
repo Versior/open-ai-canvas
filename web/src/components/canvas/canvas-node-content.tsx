@@ -33,6 +33,7 @@ import { DeliveryNodeContent } from "./nodes/delivery-node";
 import { RevisionNodeContent } from "./nodes/revision-node";
 import { EcommerceVideoNodeContent } from "./nodes/ecommerce-video-node";
 import { ProductNodeContent } from "./nodes/product-node";
+import { EcommerceStudioNodeContent } from "./nodes/ecommerce-studio-node";
 import { SellingPointNodeContent } from "./nodes/selling-point-node";
 import { ShotRecipeNodeContent } from "./nodes/shot-recipe-node";
 import { StyleNodeContent } from "./nodes/style-node";
@@ -92,6 +93,7 @@ export function CanvasNodeContent(props: CanvasNodeContentProps) {
     if (hasCustomContent && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (props.node.type === ART_CRITIQUE_NODE_TYPE) return <ArtCritiqueNodeContent node={props.node} />;
     if (props.node.type === MEDIA_CONVERSION_NODE_TYPE) return <MediaConversionNodeContent node={props.node} theme={props.theme} />;
+    if (props.node.type === CanvasNodeType.EcommerceStudio) return <EcommerceStudioNodeContent node={props.node} theme={props.theme} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
     if (props.node.metadata?.status === "loading") return <LoadingContent node={props.node} theme={props.theme} onOpenTaskDetails={props.onOpenTaskDetails} />;
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onReloadResource={props.onReloadResource} />;
@@ -107,17 +109,41 @@ function CanvasNodeShellContent({ node, theme }: { node: CanvasNodeData; theme: 
     return (
         <div className="flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-3 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
             <Icon className="size-6 opacity-40" />
-            <span className="max-w-full truncate text-xs font-medium" title={node.title}>{node.title || "画布节点"}</span>
+            <span className="max-w-full truncate text-xs font-medium" title={node.title}>
+                {node.title || "画布节点"}
+            </span>
         </div>
     );
 }
 
 function CanvasNodePreviewContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     if (node.type === CanvasNodeType.Image && (node.metadata?.content || node.metadata?.storageKey)) {
-        return <CachedResourceImage storageKey={node.metadata?.storageKey} src={node.metadata?.previewContent || node.metadata?.content} variant="thumbnail" alt={node.title} loading="lazy" decoding="async" draggable={false} className="pointer-events-none block size-full select-none object-contain" fallback={<CanvasNodeShellContent node={node} theme={theme} />} />;
+        return (
+            <CachedResourceImage
+                storageKey={node.metadata?.storageKey}
+                src={node.metadata?.previewContent || node.metadata?.content}
+                variant="thumbnail"
+                alt={node.title}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                className="pointer-events-none block size-full select-none object-contain"
+                fallback={<CanvasNodeShellContent node={node} theme={theme} />}
+            />
+        );
     }
     if (node.type === CanvasNodeType.Video && (node.metadata?.content || node.metadata?.storageKey)) {
-        return <CanvasVideoPreviewImage node={node} alt={node.title} loading="lazy" decoding="async" draggable={false} className="pointer-events-none block size-full select-none object-contain" fallback={<CanvasNodeShellContent node={node} theme={theme} />} />;
+        return (
+            <CanvasVideoPreviewImage
+                node={node}
+                alt={node.title}
+                loading="lazy"
+                decoding="async"
+                draggable={false}
+                className="pointer-events-none block size-full select-none object-contain"
+                fallback={<CanvasNodeShellContent node={node} theme={theme} />}
+            />
+        );
     }
     return <CanvasNodeShellContent node={node} theme={theme} />;
 }
@@ -378,7 +404,7 @@ export function CanvasNodeProducedModel({ stored }: { stored: string }) {
     // Keep catalog subscriptions off the CanvasNode shell and avoid normalizing config per node.
     const channels = useConfigStore((state) => state.config.channels);
     const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
-    const visibleChannels = useMemo(() => customChannelsEnabled ? channels : channels.filter((channel) => channel.scope === "system"), [channels, customChannelsEnabled]);
+    const visibleChannels = useMemo(() => (customChannelsEnabled ? channels : channels.filter((channel) => channel.scope === "system")), [channels, customChannelsEnabled]);
     const label = producedModelLabel({ channels: visibleChannels }, stored);
     return <span className="max-w-full min-w-0 truncate rounded-[var(--r-sm)] bg-black/55 px-2 py-1 text-[var(--fs-label)] font-medium leading-none text-white backdrop-blur-sm">{label}</span>;
 }

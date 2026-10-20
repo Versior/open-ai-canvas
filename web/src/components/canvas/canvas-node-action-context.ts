@@ -8,6 +8,11 @@ import type { CanvasNodeData, CanvasNodeMetadata } from "@/types/canvas";
 // 但画布节点经 CanvasProjectWorldLayers 渲染、不便逐个透传 handler，
 // 通过 Context 注入，避免改动 world-layers。无 Provider 时静默降级为 no-op。
 export type CanvasNodeActionContextValue = {
+    stopEcommerceWorkbench?: () => void;
+    isEcommerceWorkbenchRunning?: (nodeId: string) => boolean;
+    runEcommerceWorkbench?: (request: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchRequest) => Promise<string>;
+    openEcommerceWorkbench?: (node: CanvasNodeData, capability?: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceCapability) => void;
+    openEcommerceStudio?: (product: CanvasNodeData) => void;
     upload?: (node: CanvasNodeData) => void;
     viewImage?: (node: CanvasNodeData) => void;
     focusNode?: (nodeId: string) => void;
@@ -74,6 +79,8 @@ export type CanvasNodeActionContextValue = {
      * 两者常常不是同一个模型，而全局配置只有一个。
      */
     draftEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string, rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<unknown> | void;
+    reverseEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string) => Promise<unknown> | void;
+    bindEcommerceSuite?: (node: CanvasNodeData, rows: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<void>;
     /**
      * 电商创作：读商品实拍起草商品档案。
      *
@@ -117,12 +124,7 @@ export type CanvasNodeActionContextValue = {
      * 产物直接进画布而不是弹下载：用户要的是能上传的片，看得见、能逐张核对、
      * 能接着连进改稿或交付。给一句「已导出」等于把核对这一步推给用户自己找文件。
      */
-    exportEcommerceDetailPage?: (
-        node: CanvasNodeData,
-        longImageDataUrl: string,
-        pieces: { index: number; top: number; height: number; dataUrl: string }[],
-        fileNames: string[],
-    ) => Promise<void> | void;
+    exportEcommerceDetailPage?: (node: CanvasNodeData, longImageDataUrl: string, pieces: { index: number; top: number; height: number; dataUrl: string }[], fileNames: string[], validateSource?: () => void) => Promise<void> | void;
     extractLayerMaterials?: (node: CanvasNodeData) => Promise<void> | void;
 };
 

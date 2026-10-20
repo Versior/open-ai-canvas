@@ -26,7 +26,7 @@
     gap: 8px;
     padding: 12px 12px 10px;
     overflow: hidden;
-    background: linear-gradient(180deg, rgba(255, 255, 255, .055), rgba(255, 255, 255, .018));
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018));
     color: inherit;
 }
 
@@ -52,7 +52,7 @@
     color: color-mix(in srgb, currentColor 62%, transparent);
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: .14em;
+    letter-spacing: 0.14em;
 }
 
 .ecom-card-mark {
@@ -60,9 +60,9 @@
     width: 24px;
     height: 24px;
     place-items: center;
-    border: 1px solid rgba(255, 255, 255, .14);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 8px;
-    background: rgba(255, 255, 255, .07);
+    background: rgba(255, 255, 255, 0.07);
     color: currentColor;
 }
 
@@ -113,12 +113,12 @@ button.ecom-card-title:focus-visible {
 .ecom-card-title-pencil {
     flex: 0 0 auto;
     opacity: 0;
-    transition: opacity 140ms cubic-bezier(.16, 1, .3, 1);
+    transition: opacity 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 button.ecom-card-title:hover .ecom-card-title-pencil,
 button.ecom-card-title:focus-visible .ecom-card-title-pencil {
-    opacity: .55;
+    opacity: 0.55;
 }
 
 input.ecom-card-title-input {
@@ -191,7 +191,9 @@ input.ecom-card-title-input {
     color: color-mix(in srgb, currentColor 42%, transparent);
     font-size: 9px;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-view-slot[data-filled="true"] {
@@ -234,7 +236,7 @@ input.ecom-card-title-input {
     inset-inline: 0;
     bottom: 0;
     padding: 2px 0;
-    background: rgba(0, 0, 0, .55);
+    background: rgba(0, 0, 0, 0.55);
     color: #fff;
     font-size: 9px;
     text-align: center;
@@ -265,7 +267,9 @@ input.ecom-card-title-input {
     border-radius: 10px;
     background: color-mix(in srgb, currentColor 5%, transparent);
     color: inherit;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-plan-card:hover {
@@ -301,7 +305,9 @@ input.ecom-card-title-input {
     background: transparent;
     color: color-mix(in srgb, currentColor 45%, transparent);
     cursor: pointer;
-    transition: background 140ms cubic-bezier(.16, 1, .3, 1), color 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        color 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-plan-card-spawn:hover,
@@ -314,7 +320,7 @@ input.ecom-card-title-input {
 .ecom-plan-card-main:disabled,
 .ecom-plan-card-spawn:disabled {
     cursor: default;
-    opacity: .5;
+    opacity: 0.5;
 }
 
 .ecom-plan-card-name {
@@ -352,7 +358,9 @@ input.ecom-card-title-input {
     border-radius: 9px;
     background: transparent;
     color: inherit;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-shot-row:hover {
@@ -398,7 +406,9 @@ input.ecom-card-title-input {
     background: transparent;
     color: color-mix(in srgb, currentColor 42%, transparent);
     cursor: pointer;
-    transition: background 140ms cubic-bezier(.16, 1, .3, 1), color 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        color 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-shot-row-go:hover,
@@ -409,7 +419,7 @@ input.ecom-card-title-input {
 
 .ecom-shot-row-go:disabled {
     cursor: default;
-    opacity: .35;
+    opacity: 0.35;
 }
 
 .ecom-shot-row-body {
@@ -463,7 +473,7 @@ input.ecom-card-title-input {
 }
 
 .ecom-info-headline {
-    background: rgba(255, 255, 255, .85);
+    background: rgba(255, 255, 255, 0.85);
 }
 
 .ecom-info-subhead {
@@ -501,7 +511,7 @@ input.ecom-card-title-input {
     overflow: hidden;
     padding: 5px 7px;
     border-radius: 7px;
-    background: rgba(255, 255, 255, .92);
+    background: rgba(255, 255, 255, 0.92);
     color: #111111;
 }
 
@@ -522,7 +532,7 @@ input.ecom-card-title-input {
     overflow: hidden;
     padding: 5px 7px;
     border-radius: 7px;
-    background: rgba(255, 255, 255, .94);
+    background: rgba(255, 255, 255, 0.94);
     color: #111111;
     line-height: 1.4;
 }
@@ -612,7 +622,7 @@ input.ecom-card-title-input {
     inset-inline: 0;
     bottom: 0;
     padding: 2px 0;
-    background: rgba(0, 0, 0, .55);
+    background: rgba(0, 0, 0, 0.55);
     color: #fff;
     font-size: 9px;
     text-align: center;
@@ -637,9 +647,9 @@ input.ecom-card-title-input {
     flex-direction: column;
     gap: 2px;
     padding: 7px 9px;
-    border: 1px solid rgba(217, 119, 6, .35);
+    border: 1px solid rgba(217, 119, 6, 0.35);
     border-radius: 10px;
-    background: rgba(217, 119, 6, .07);
+    background: rgba(217, 119, 6, 0.07);
 }
 
 .ecom-replica-never-title {
@@ -720,7 +730,7 @@ input.ecom-card-title-input {
 }
 
 .ecom-teardown-stance[data-stance="differentiate"] {
-    background: rgba(217, 119, 6, .16);
+    background: rgba(217, 119, 6, 0.16);
     color: #d97706;
 }
 
@@ -788,7 +798,7 @@ input.ecom-card-title-input {
 }
 
 .ecom-delivery-entry[data-blocked="true"] {
-    background: rgba(200, 52, 31, .1);
+    background: rgba(200, 52, 31, 0.1);
 }
 
 .ecom-delivery-entry-name {
@@ -836,7 +846,9 @@ input.ecom-card-title-input {
     background: color-mix(in srgb, currentColor 8%, transparent);
     color: inherit;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), flex-grow 220ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        flex-grow 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-video-cell[aria-pressed="true"] {
@@ -872,7 +884,7 @@ input.ecom-card-title-input {
     justify-content: space-between;
     gap: 4px;
     padding: 2px 4px;
-    background: rgba(0, 0, 0, .5);
+    background: rgba(0, 0, 0, 0.5);
     color: #fff;
     font-size: 9px;
     font-variant-numeric: tabular-nums;
@@ -888,7 +900,7 @@ input.ecom-card-title-input {
     bottom: 0;
     overflow: hidden;
     padding: 2px 4px;
-    background: rgba(0, 0, 0, .6);
+    background: rgba(0, 0, 0, 0.6);
     color: #fff;
     font-size: 9px;
     line-height: 1.3;
@@ -912,7 +924,7 @@ input.ecom-card-title-input {
     height: 100%;
     border-radius: 999px;
     background: color-mix(in srgb, currentColor 55%, transparent);
-    transition: width 200ms cubic-bezier(.16, 1, .3, 1);
+    transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-video-gauge-fill[data-over="true"] {
@@ -959,7 +971,7 @@ input.ecom-card-title-input {
     bottom: 6px;
     padding: 2px 7px;
     border-radius: 999px;
-    background: rgba(0, 0, 0, .62);
+    background: rgba(0, 0, 0, 0.62);
     color: #fff;
     font-size: 9px;
     font-variant-numeric: tabular-nums;
@@ -987,7 +999,9 @@ input.ecom-card-title-input {
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-revision-row:hover {
@@ -1110,7 +1124,9 @@ input.ecom-card-title-input {
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-video-template:hover {
@@ -1198,7 +1214,7 @@ input.ecom-card-title-input {
     color: color-mix(in srgb, currentColor 52%, transparent);
     font-size: 9px;
     font-weight: 700;
-    letter-spacing: .1em;
+    letter-spacing: 0.1em;
 }
 
 .ecom-plan-group-label::after {
@@ -1237,7 +1253,7 @@ input.ecom-card-title-input {
     left: 5px;
     color: color-mix(in srgb, currentColor 46%, transparent);
     font-size: 8px;
-    letter-spacing: .06em;
+    letter-spacing: 0.06em;
 }
 
 .ecom-shot-light {
@@ -1467,7 +1483,9 @@ input.ecom-card-title-input {
     color: inherit;
     font-size: 10px;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-chip:hover {
@@ -1481,7 +1499,7 @@ input.ecom-card-title-input {
 
 .ecom-chip:disabled {
     cursor: default;
-    opacity: .45;
+    opacity: 0.45;
 }
 
 /* 工具条按钮 */
@@ -1497,7 +1515,9 @@ input.ecom-card-title-input {
     font-size: 11px;
     font-weight: 600;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-action:hover {
@@ -1507,7 +1527,7 @@ input.ecom-card-title-input {
 
 .ecom-action:disabled {
     cursor: default;
-    opacity: .45;
+    opacity: 0.45;
 }
 
 .ecom-action-primary {
@@ -1580,7 +1600,9 @@ input.ecom-card-title-input {
     background: transparent;
     color: color-mix(in srgb, currentColor 42%, transparent);
     cursor: pointer;
-    transition: background 140ms cubic-bezier(.16, 1, .3, 1), color 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        color 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-aplus-block-go:hover,
@@ -1591,7 +1613,7 @@ input.ecom-card-title-input {
 
 .ecom-aplus-block-go:disabled {
     cursor: default;
-    opacity: .35;
+    opacity: 0.35;
 }
 
 .ecom-aplus-block-brief {
@@ -1623,7 +1645,9 @@ input.ecom-card-title-input {
     color: inherit;
     text-align: left;
     cursor: pointer;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-aplus-module:hover {
@@ -1733,7 +1757,7 @@ input.ecom-card-title-input {
 
 .ecom-model-pick:disabled {
     cursor: default;
-    opacity: .6;
+    opacity: 0.6;
 }
 
 .ecom-model-pick-hint {
@@ -1762,7 +1786,9 @@ input.ecom-card-title-input {
     color: inherit;
     cursor: pointer;
     text-align: left;
-    transition: border-color 140ms cubic-bezier(.16, 1, .3, 1), background 140ms cubic-bezier(.16, 1, .3, 1);
+    transition:
+        border-color 140ms cubic-bezier(0.16, 1, 0.3, 1),
+        background 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ecom-oneclick:hover {
@@ -1772,12 +1798,12 @@ input.ecom-card-title-input {
 
 .ecom-oneclick:disabled {
     cursor: default;
-    opacity: .55;
+    opacity: 0.55;
 }
 
 /* 缺输入（没商品图 / 文案全空）时边框转暖色：一眼看出这颗按钮现在按下去会白跑 */
 .ecom-oneclick[data-blocked="true"] {
-    border-color: color-mix(in srgb, var(--status-warning, #D97706) 55%, transparent);
+    border-color: color-mix(in srgb, var(--status-warning, #d97706) 55%, transparent);
 }
 
 .ecom-oneclick-name {
@@ -1805,7 +1831,7 @@ input.ecom-card-title-input {
 }
 
 .ecom-oneclick-stat[data-warn="true"] {
-    color: #D97706;
+    color: #d97706;
 }
 
 /* 文案表：一行一屏。标题栏固定宽度，输入框占满剩下的——
@@ -1859,7 +1885,7 @@ input.ecom-card-title-input {
     color: color-mix(in srgb, currentColor 52%, transparent);
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: .08em;
+    letter-spacing: 0.08em;
 }
 
 /* 槽位始终为预览、标签和工具预留空间，不随图片加载或悬停变化。 */
@@ -1870,6 +1896,7 @@ input.ecom-card-title-input {
     overscroll-behavior: contain;
     scrollbar-width: thin;
     background: var(--background);
+    padding: var(--space-3);
 }
 
 .ecom-product-card > * {
@@ -1910,7 +1937,7 @@ input.ecom-card-title-input {
 
 .ecom-input-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 88px));
     align-items: start;
     gap: var(--space-2);
 }
@@ -1928,7 +1955,7 @@ input.ecom-card-title-input {
     position: relative;
     display: grid;
     min-width: 0;
-    grid-template-rows: auto 24px 28px;
+    grid-template-rows: auto 24px;
     border: 1px dashed var(--border);
     border-radius: min(var(--r-md), 8px);
     background: var(--muted);
@@ -1983,7 +2010,19 @@ input.ecom-card-title-input {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    padding: 0 2px 4px;
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    border-radius: var(--r-sm);
+    background: var(--background);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ecom-input-slot:hover .ecom-input-tools,
+.ecom-input-slot:focus-within .ecom-input-tools {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .ecom-input-icon,
@@ -2030,7 +2069,7 @@ input.ecom-card-title-input {
 
 .ecom-input-preview:disabled {
     cursor: default;
-    opacity: .5;
+    opacity: 0.5;
 }
 
 .ecom-product-model-row {
@@ -2057,7 +2096,11 @@ input.ecom-card-title-input {
 }
 
 .ecom-product-card .ecom-oneclick {
-    min-height: 68px;
+    min-height: 40px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    background: transparent;
     border-radius: min(var(--r-md), 8px);
 }
 
@@ -2084,7 +2127,12 @@ input.ecom-card-title-input {
 
 @media (pointer: coarse) {
     .ecom-input-slot {
-        grid-template-rows: auto 24px 36px;
+        grid-template-rows: auto 24px;
+    }
+    .ecom-input-tools {
+        position: static;
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .ecom-input-icon,
