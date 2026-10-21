@@ -440,7 +440,7 @@ export function backendProviderConfig(config: AiConfig, mode: BackendGenerationM
         secretKey: requestConfig.secretKey,
         model: requestConfig.model,
         ...generationOptions,
-        capabilityConfig: modelCapabilityConfigFor(config, requestConfig.model),
+        capabilityConfig: modelCapabilityConfigFor(config, config.model),
         systemPrompt: config.systemPrompt,
     };
 }

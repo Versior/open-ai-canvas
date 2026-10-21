@@ -27,9 +27,8 @@ import { ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
 import { ecommerceBindingImages, ecommerceBindingKey, finishEcommerceBinding } from "@/lib/ecommerce/ecommerce-binding";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { ecommerceSliceSpec, type EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
-import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
+import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
-import { modelCompatibilityError } from "@/lib/model-selection";
 import { runBackendGenerationTask } from "@/services/api/generation-task";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
@@ -2540,15 +2539,15 @@ ${instruction.trim()}`
             }
             if (getActiveUserScope() !== scope) return undefined;
             const requirements = { capability: "text" as const, input: { textCount: 0, imageCount: referenceImages.length, videoCount: 0, audioCount: 0, characterCount: 0 } };
-            const target = modelOverride ? { ...productNode, metadata: { ...productNode.metadata, model: modelOverride } } : productNode;
-            const generationConfig = buildGenerationConfig(effectiveConfig, target, "text", requirements);
-            if (!useConfigStore.getState().isAiConfigReady(generationConfig, generationConfig.model)) {
-                navigateToSettings({ continueCreation: true });
+            let generationConfig: typeof effectiveConfig;
+            try {
+                generationConfig = buildEcommerceAnalysisGeneration(effectiveConfig, modelOverride, requirements.input);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "分析模型配置无效");
                 return undefined;
             }
-            const incompatible = modelCompatibilityError(generationConfig, generationConfig.model, requirements);
-            if (incompatible) {
-                message.error(`这个文本模型看不了图：${incompatible}。分析商品必须能看见实拍，请在面板上换一个支持图片输入的文本模型。`);
+            if (!useConfigStore.getState().isAiConfigReady(generationConfig, generationConfig.model)) {
+                navigateToSettings({ continueCreation: true });
                 return undefined;
             }
             try {

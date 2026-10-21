@@ -378,8 +378,7 @@ describe("套图面板的接线", () => {
     test("分析要带图，模型看不了图就说清楚而不是静默降级", () => {
         expect(project).toContain("const productReferenceImages = useCallback(");
         expect(project).toContain("ecommerceProductReferenceImages(product, nodesRef.current, connectionsRef.current)");
-        expect(project).toContain("modelCompatibilityError(generationConfig, generationConfig.model, requirements)");
-        expect(project).toContain("分析商品必须能看见实拍");
+        expect(project).toContain("buildEcommerceAnalysisGeneration(effectiveConfig, modelOverride, requirements.input)");
     });
 
     test("批量生成：把每行的提示词写进那一张的节点，再一次提交整批", () => {

@@ -32,6 +32,42 @@ func runTextTask(ctx context.Context, input canvasGenerationInput) (map[string]i
 // while sharing the SSE parser used by text generation and Agent requests.
 func executeProtocolCreateRequest(ctx context.Context, input canvasGenerationInput, spec protocol.RequestSpec) ([]byte, *protocol.Result, error) {
 	wire := input.Config.InterfaceType
+	if input.Mode == "text" && wire == officialGeminiAgentInterface {
+		content, err := textChatContent(input)
+		if err != nil {
+			return nil, nil, err
+		}
+		if parts, ok := content.([]map[string]interface{}); ok {
+			values := make([]interface{}, len(parts))
+			for index, part := range parts {
+				values[index] = part
+			}
+			content = values
+		}
+		messages := validatedTextHistory(input.TextHistory)
+		if instruction := strings.TrimSpace(input.Config.SystemPrompt); instruction != "" {
+			messages = append([]map[string]interface{}{{"role": "system", "content": instruction}}, messages...)
+		}
+		messages = append(messages, map[string]interface{}{"role": "user", "content": content})
+		// Reuse the existing Gemini multimodal encoder while retaining the
+		// installed plugin's endpoint, authentication and provider options.
+		body := protocolBodyObject(spec.Body)
+		if body == nil {
+			return nil, nil, errors.New("Gemini 文本请求体必须是 JSON 对象")
+		}
+		for key, value := range canonicalAgentGeminiBody(&canonicalAgentRequest{Messages: messages}) {
+			body[key] = value
+		}
+		if input.MaxOutputTokens > 0 {
+			options, _ := body["generationConfig"].(map[string]interface{})
+			if options == nil {
+				options = map[string]interface{}{}
+			}
+			options["maxOutputTokens"] = input.MaxOutputTokens
+			body["generationConfig"] = options
+		}
+		spec.Body = body
+	}
 	if wire == string(model.ChannelInterfaceOpenAIResponse) {
 		wire = "responses"
 	}

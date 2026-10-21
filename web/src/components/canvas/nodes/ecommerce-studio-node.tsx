@@ -266,7 +266,7 @@ export function EcommerceStudioNodeContent({ node, theme }: { node: CanvasNodeDa
                             <div className="ecommerce-studio-grid">
                                 <label>
                                     分析模型
-                                    <ModelPicker config={config} capability="text" value={studio.textModel || config.model} onChange={(textModel) => patch({ textModel })} fullWidth />
+                                    <ModelPicker config={config} capability="text" value={studio.textModel || config.textModel} onChange={(textModel) => patch({ textModel })} fullWidth />
                                 </label>
                             </div>
                             <label>

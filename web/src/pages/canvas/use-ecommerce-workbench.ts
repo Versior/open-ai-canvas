@@ -3,7 +3,8 @@ import { nanoid } from "nanoid";
 import { canonicalize } from "json-canonicalize";
 import { saveAs } from "file-saver";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
-import { buildGenerationConfig, nodeReferenceImage } from "@/lib/canvas/canvas-project-generation";
+import { nodeReferenceImage } from "@/lib/canvas/canvas-project-generation";
+import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { fitImageNodeSize } from "@/lib/canvas/canvas-node-size";
 import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
@@ -31,7 +32,6 @@ import { loadRasterImage } from "@/lib/image-raster";
 import { createEcommerceModel } from "@/lib/ecommerce/ecommerce-models";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { modelCompatibilityError } from "@/lib/model-selection";
 import { buildEcommerceImageGeneration, ecommerceImageSettings } from "@/lib/ecommerce/ecommerce-image-generation";
 import { downloadName } from "@/lib/media-package";
 import { ecommerceStudioExecutionSignature } from "@/lib/ecommerce/ecommerce-studio";
@@ -265,12 +265,9 @@ export function useEcommerceWorkbench(options: Options) {
                         )
                         .join("\n");
                     const requirements = { capability: mode, input: { textCount: 0, imageCount: refs.length, videoCount: 0, audioCount: 0, characterCount: 0 } };
-                    const generationTarget = inlinePlan ? { ...target, metadata: { ...target.metadata, model: request.textModel } } : target;
-                    const imageGeneration = mode === "image" ? buildEcommerceImageGeneration(config, generationTarget, request.brief, requirements.input) : undefined;
-                    const generationConfig = imageGeneration?.config || buildGenerationConfig(config, generationTarget, mode, requirements);
+                    const imageGeneration = mode === "image" ? buildEcommerceImageGeneration(config, target, request.brief, requirements.input) : undefined;
+                    const generationConfig = imageGeneration?.config || buildEcommerceAnalysisGeneration(config, request.textModel, requirements.input);
                     if (imageGeneration) target.metadata = imageGeneration.metadata;
-                    const incompatible = mode === "image" ? "" : modelCompatibilityError(generationConfig, generationConfig.model, requirements);
-                    if (incompatible) throw new Error(incompatible);
                     let effectivePrompt = prompt + (referenceManifest ? "\n附图角色清单：\n" + referenceManifest : "") + (productContext ? "\n用户商品档案（仅已核实字段可作事实）：" + productContext : "");
                     if (mode === "image" && (request.action === "studio-generate" || request.generateAfterPlanning) && request.brief.generationMode === "product-protected") {
                         if (!references.some((node) => ecommerceStudioImageRole(node, sources, connectionsRef.current) === "商品实拍")) throw new Error("商品保护模式至少需要一张商品实拍，视觉参考不能代替实拍");

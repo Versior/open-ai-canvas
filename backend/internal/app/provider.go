@@ -224,7 +224,8 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	}
 	if input.Config.APIFormat == "gemini" && input.Config.InterfaceType != string(model.ChannelInterfaceGeminiVeo) && input.Config.InterfaceType != string(model.ChannelInterfaceGeminiImage) {
 		_, hasDeclarativeAgent := agentProtocolAdapterForContext(ctx, input.Config.InterfaceType)
-		if input.AgentRequests == nil || !hasDeclarativeAgent {
+		_, hasDeclarativeText := declarativeProtocolAdapterForContext(ctx, input.Config.InterfaceType)
+		if (input.AgentRequests != nil && !hasDeclarativeAgent) || (input.AgentRequests == nil && (input.Mode != "text" || !hasDeclarativeText)) {
 			return nil, errors.New("后端任务队列暂不支持该 Gemini 调用格式，请选择已安装的 Gemini 协议插件")
 		}
 	}
