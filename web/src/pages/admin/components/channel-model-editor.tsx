@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { canonicalize } from "json-canonicalize";
-import { Alert, App, AutoComplete, Button, Form, Input, Segmented, Switch, Tabs } from "antd";
-import { Select } from "@/components/ui/base/select";
+import { Alert, App, AutoComplete, Button, Form, Input, Segmented, Select, Switch, Tabs } from "antd";
 import { useAdminContext } from "../admin-context";
 import { AdminModal } from "@/pages/admin/ui/overlays";
-import { FlaskConical, Plus } from "lucide-react";
+import { Copy, FlaskConical, Plus } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
@@ -489,13 +488,15 @@ export function ChannelModelEditor({
                             children: (
                                 <div className="admin-model-editor-tab-content">
                                     {configurationChange && <Alert type="warning" showIcon title="请核对定价" description={configurationChange === "parameters" ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。" : "能力或协议已变更。请重新检查规格条件、计费方式和金额；不会自动转换价格单位。"} action={<Button size="small" onClick={() => setConfigurationChange(null)}>已核对</Button>} />}{" "}
-                                    <section className="admin-model-editor-section">
-                                        <SectionHeading title="从现有模型复制价格" description="复制整套售价、成本及规格条件，替换当前价格表；不改变当前模型和接口，保存后生效。" />
-                                        <div className="admin-model-editor-section-content space-y-3">
-                                            <Select className="w-full" ariaLabel="价格来源渠道" value={priceSourceChannel} options={priceSourceChannels} disabled={busy} onChange={setPriceSourceChannel} />
-                                            <Select className="w-full" ariaLabel="价格来源模型" showSearch optionFilterProp="label" allowClear placeholder="选择相同能力的现有模型" value={priceSourceId} loading={priceSourcesLoading} disabled={busy || priceSourcesLoading} options={priceSources.filter((item) => item.capability === modelCapability && item.id !== editing?.id).map((item) => ({ value: item.id, label: `${item.channelLabel || item.providerModelKey || item.modelKey} · ${item.protocol || "未配置协议"} · ${item.priceTiers?.length || 1} 个价格档` }))} onChange={setPriceSourceId} />
+                                    <section className="admin-model-assist-card" aria-label="从现有模型复制价格">
+                                        <header className="admin-model-assist-heading"><Copy size={16} aria-hidden /><div><h2>从现有模型复制价格</h2><p>选择来源渠道与模型，复制整套售价、成本和规格条件。</p></div></header>
+                                        <div className="admin-model-assist-content">
+                                            <div className="admin-model-price-source-fields">
+                                                <div><span className="admin-model-assist-label">来源渠道</span><Select className="admin-model-assist-select" aria-label="价格来源渠道" value={priceSourceChannel} options={priceSourceChannels} disabled={busy} onChange={setPriceSourceChannel} /></div>
+                                                <div><span className="admin-model-assist-label">来源模型</span><Select className="admin-model-assist-select" aria-label="价格来源模型" showSearch={{ optionFilterProp: "label" }} allowClear placeholder="选择相同能力的现有模型" notFoundContent="此渠道暂无相同能力的模型" value={priceSourceId} loading={priceSourcesLoading} disabled={busy || priceSourcesLoading} options={priceSources.filter((item) => item.capability === modelCapability && item.id !== editing?.id).map((item) => ({ value: item.id, label: `${item.channelLabel || item.providerModelKey || item.modelKey} · ${item.protocol || "未配置协议"} · ${item.priceTiers?.length || 1} 个价格档` }))} onChange={setPriceSourceId} /></div>
+                                            </div>
                                             {priceSourcesError && <Alert type="error" title="读取价格来源失败" description={priceSourcesError} />}
-                                            <Button disabled={busy || priceSourcesLoading || !priceSourceId} onClick={() => {
+                                            <footer className="admin-model-assist-footer"><p className="admin-model-assist-note">替换当前价格表，保存后生效。</p><Button icon={<Copy size={14} aria-hidden />} disabled={busy || priceSourcesLoading || !priceSourceId} onClick={() => {
                                                 const source = priceSources.find((item) => item.id === priceSourceId);
                                                 if (!source) return;
                                                 try {
@@ -505,7 +506,7 @@ export function ChannelModelEditor({
                                                     dirtyRef.current = true;
                                                     message.success("价格已复制到表单，保存后生效");
                                                 } catch (error) { message.warning(error instanceof Error ? error.message : "复制价格失败"); }
-                                            }}>复制价格到表单</Button>
+                                            }}>复制价格到表单</Button></footer>
                                         </div>
                                     </section>
                                     <section className="admin-model-editor-section">
