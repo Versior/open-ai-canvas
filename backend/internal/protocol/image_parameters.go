@@ -17,7 +17,7 @@ type ImageParameter struct {
 	Label       string   `json:"label"`
 	Type        string   `json:"type"`
 	Description string   `json:"description,omitempty"`
-	Values      []any    `json:"values,omitempty"`
+	Values      []any    `json:"values"`
 	Min         *float64 `json:"min,omitempty"`
 	Max         *float64 `json:"max,omitempty"`
 	Step        *float64 `json:"step,omitempty"`
@@ -163,7 +163,7 @@ func validImageParameterBinding(binding string) bool {
 	return len(parts) == 3 && parts[0] == "providerOptions" && validManifestIdentifier(parts[1]) && imageParameterName.MatchString(parts[2])
 }
 
-// ResolveImageParameters takes only channel-editable restrictions. Labels,
+// ResolveImageParameters takes model-specific values and bounds. Labels,
 // types, pricing eligibility and bindings always come from the plugin.
 func ResolveImageParameters(definitions, configured []ImageParameter, model string) ([]ImageParameter, error) {
 	if err := ValidateImageParameters(definitions); err != nil {
@@ -188,43 +188,16 @@ func ResolveImageParameters(definitions, configured []ImageParameter, model stri
 				return nil, fmt.Errorf("%s is required", p.Label)
 			}
 			if setting.Values != nil {
-				for _, value := range setting.Values {
-					if !definition.Accepts(value) {
-						return nil, fmt.Errorf("%s value exceeds plugin constraints", p.Label)
-					}
-				}
-				if len(setting.Values) == 0 && len(definition.Values) > 0 && p.IsEnabled() {
-					return nil, fmt.Errorf("%s requires supported values", p.Label)
-				}
 				p.Values = setting.Values
 			}
 			if setting.Min != nil {
-				if definition.Min != nil && *setting.Min < *definition.Min {
-					return nil, fmt.Errorf("%s minimum exceeds plugin constraints", p.Label)
-				}
 				p.Min = setting.Min
 			}
 			if setting.Max != nil {
-				if definition.Max != nil && *setting.Max > *definition.Max {
-					return nil, fmt.Errorf("%s maximum exceeds plugin constraints", p.Label)
-				}
 				p.Max = setting.Max
 			}
 			if setting.Step != nil {
-				if definition.Step != nil && (math.Abs(*setting.Step / *definition.Step - math.Round(*setting.Step / *definition.Step)) > 1e-8 || *setting.Step < *definition.Step) {
-					return nil, fmt.Errorf("%s step exceeds plugin constraints", p.Label)
-				}
 				p.Step = setting.Step
-			}
-			if definition.Step != nil && p.Min != nil {
-				base := 0.0
-				if definition.Min != nil {
-					base = *definition.Min
-				}
-				steps := (*p.Min - base) / *definition.Step
-				if math.Abs(steps-math.Round(steps)) > 1e-8 {
-					return nil, fmt.Errorf("%s minimum does not align with plugin step", p.Label)
-				}
 			}
 			p.Default = setting.Default
 			delete(settings, p.Name)
@@ -245,6 +218,14 @@ func ApplyImageParameters(request GenerationRequest, definitions []ImageParamete
 	if request.Capability != CapabilityImage || request.ImageParameters == nil {
 		return request, nil
 	}
+	if request.ImageParameterSchema != nil {
+		resolved, err := ResolveImageParameters(definitions, request.ImageParameterSchema, request.Model)
+		if err != nil {
+			return request, err
+		}
+		definitions = resolved
+		request.ImageParameterSchema = resolved
+	}
 	allowed := map[string]ImageParameter{}
 	for _, p := range definitions {
 		if p.AppliesTo(request.Model) {
@@ -259,7 +240,7 @@ func ApplyImageParameters(request GenerationRequest, definitions []ImageParamete
 	}
 	for name, value := range request.ImageParameters {
 		p, ok := allowed[name]
-		if !ok || !p.Accepts(value) {
+		if !ok || request.ImageParameterSchema != nil && !p.IsEnabled() || !p.Accepts(value) {
 			return request, fmt.Errorf("unsupported image parameter %s", name)
 		}
 		if value == nil {

@@ -14,6 +14,7 @@ import "./ecommerce-settings-page.css";
 import { ECOMMERCE_CAPABILITIES, type EcommerceCapability } from "@/lib/ecommerce/ecommerce-capabilities";
 import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
 import { getAdminEcommerceDefaults } from "@/services/api/ecommerce";
+import { ECOMMERCE_PRINT_SPECS } from "@/lib/ecommerce/ecommerce-print-specs";
 
 export default function EcommerceSettingsPage() {
     const { message, modal } = App.useApp();
@@ -226,6 +227,14 @@ export default function EcommerceSettingsPage() {
                                                                     {["pattern", "print-pack", "listing"].some((id) => !ecommerceCapabilitySettings(draft)[id as EcommerceCapability].enabled) ? "当前有依赖功能停用，流水线执行会被阻止。" : ""}
                                                                 </p>
                                                             ) : null}
+                                                            {["print-pack", "pipeline"].includes(item.id) ? (
+                                                                <div className="admin-ecommerce-specs">
+                                                                    <p>内置印刷规格 · 300 DPI</p>
+                                                                    <ul>{ECOMMERCE_PRINT_SPECS.map((spec) => <li key={spec.id}><span>{spec.label}</span><span>{spec.width} × {spec.height} px · 安全边距 {spec.safeMarginPct}%</span></li>)}</ul>
+                                                                    <p className="admin-ecommerce-note">居中排版自动留出安全边距；满印和铺满只显示裁切参考线。规格包包含原稿、预览、品类示意和清单。手机壳为通用初稿，生产前须核对承印商模板。</p>
+                                                                </div>
+                                                            ) : null}
+                                                            {item.id === "pattern" ? <p className="admin-ecommerce-note">支持提取、起稿、衍生、确定性改色、像素验缝和私人花型库。私人模板、模特与花型可由用户核对后同步云端；公共发布仍由管理员维护。</p> : null}
                                                             {localOnly ? (
                                                                 <p>使用专用图片处理与导出流程，无需配置分析指令。</p>
                                                             ) : (

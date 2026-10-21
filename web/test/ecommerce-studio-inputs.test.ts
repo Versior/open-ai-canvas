@@ -74,6 +74,14 @@ const edges = [
     { id: "style-edge", fromNodeId: style.id, toNodeId: product.id, toHandleId: "visual-reference:0" },
 ];
 
+test("saved object key order does not invalidate studio inputs or image results", () => {
+    const sorted = <T,>(value: T): T => JSON.parse(JSON.stringify(value, (_key, item) => item && !Array.isArray(item) && typeof item === "object" ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item));
+    const brief = { ...structuredClone(DEFAULT_ECOMMERCE_BRIEF), name: "Cup" };
+    const plan = { name: "Cup", style: "White", shots: [{ title: "Hero", duty: "Show", prompt: "Draw cup" }] };
+    expect(ecommerceStudioShotSignature(plan, 0, brief)).toBe(ecommerceStudioShotSignature(sorted(plan), 0, sorted(brief)));
+    expect(ecommerceStudioInputSignature([product.id], [product, image, style], edges)).toBe(ecommerceStudioInputSignature([product.id], sorted([product, image, style]), sorted(edges)));
+});
+
 test("export rejects replaced photos and changed input roles but allows moving source nodes", () => {
     const sources = [image, style, product];
     const output: CanvasNodeData = {

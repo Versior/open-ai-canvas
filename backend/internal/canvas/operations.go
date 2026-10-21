@@ -13,7 +13,7 @@ import (
 	"yingce/backend/internal/model"
 )
 
-var canvasOperationFields = []string{"title", "projectId", "chatSessions", "activeChatId", "starterMode", "appearance", "backgroundMode", "showImageInfo", "previsScenes", "timeline"}
+var canvasOperationFields = []string{"title", "kind", "projectId", "chatSessions", "activeChatId", "starterMode", "appearance", "backgroundMode", "showImageInfo", "previsScenes", "timeline"}
 var canvasOptionalOperationFields = map[string]struct{}{"projectId": {}, "starterMode": {}, "appearance": {}, "timeline": {}}
 
 // CanvasOperationsRequest is the durable write envelope shared by the editor,
@@ -481,6 +481,9 @@ func applyCanvasOperations(payload map[string]json.RawMessage, operations []Canv
 			}
 			connections = append(connections[:index], connections[index+1:]...)
 		case "set_field":
+			if op.Field == "kind" && !validCanvasKind(op.Value) {
+				return fmt.Errorf("画布分类无效")
+			}
 			if !allowedCanvasOperationField(op.Field) {
 				return fmt.Errorf("不支持的画布字段操作: 字段 %q", op.Field)
 			}

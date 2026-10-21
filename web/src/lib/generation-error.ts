@@ -91,7 +91,10 @@ export function generationErrorMessage(error: unknown) {
         if (hasHttpStatus(raw, 429)) return "服务当前繁忙，请稍后重试。";
         if (hasHttpStatus(raw, 401, 403)) return "生成服务鉴权失败，请检查渠道配置。";
         if (hasHttpStatus(raw, 404)) return "生成服务地址不可用，请检查渠道配置。";
-        if (hasHttpStatus(raw, 500, 502, 503, 504)) return NETWORK_ERROR_MESSAGE;
+        if (hasHttpStatus(raw, 504)) return "模型服务响应超时（HTTP 504），请稍后重试。";
+        if (hasHttpStatus(raw, 503)) return "模型服务暂时不可用（HTTP 503），请稍后重试。";
+        if (hasHttpStatus(raw, 502)) return "模型服务网关异常（HTTP 502），请稍后重试。";
+        if (hasHttpStatus(raw, 500)) return "模型服务处理失败（HTTP 500），请稍后重试。";
         if (containsInfrastructureDetails(raw)) return NETWORK_ERROR_MESSAGE;
     }
     if (isModelCapabilityFailure(displayMessage)) return MODEL_CAPABILITY_ERROR_MESSAGE;

@@ -22,6 +22,12 @@ function canvas(patch: Partial<CanvasProject> = {}): CanvasProject {
 }
 
 describe("画布 operations 生成", () => {
+    test("电商画布的新建和分类变更必须同步 kind", () => {
+        const created = buildCanvasOperations(undefined, canvas({ kind: "ecommerce" }));
+        expect(created[0]).toMatchObject({ type: "create_canvas", patch: { kind: "ecommerce" } });
+        expect(buildCanvasOperations(canvas(), canvas({ kind: "ecommerce" }))).toEqual([{ type: "set_field", field: "kind", value: "ecommerce", beforeValue: null }]);
+        expect(buildCanvasOperations(canvas({ kind: "ecommerce" }), canvas({ kind: "freeform" }))).toEqual([{ type: "set_field", field: "kind", value: "freeform", beforeValue: "ecommerce" }]);
+    });
     test("生成任务时间戳更新携带taskId身份前置条件", () => {
         const before = canvas({ nodes: [{ id: "video", type: "video", metadata: { taskId: "task-1", taskUpdatedAt: "2026-04-01T00:00:00Z" } }] as CanvasProject["nodes"] });
         const after = canvas({ nodes: [{ id: "video", type: "video", metadata: { taskId: "task-1", taskUpdatedAt: "2026-04-01T00:00:01Z" } }] as CanvasProject["nodes"] });

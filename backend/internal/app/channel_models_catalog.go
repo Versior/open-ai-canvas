@@ -50,6 +50,11 @@ func (s *Service) FetchAdminChannelModels(ctx context.Context, actor *model.User
 		}
 		missing = append(missing, model.ChannelModel{ID: modelID, ChannelID: channelID, ModelKey: name, ProviderModelKey: name, DisplayName: "未分类", BillingMode: "fixed_request", Enabled: false, PriceVersion: 1})
 	}
+	for index := range missing {
+		if err := s.prepareDiscoveredChannelModel(channel, &missing[index], existing); err != nil {
+			return nil, err
+		}
+	}
 	added, err := s.repo.CreateMissingChannelModels(missing)
 	if err != nil {
 		return nil, err
@@ -135,6 +140,11 @@ func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.Use
 		}
 		missing = append(missing, model.ChannelModel{ID: modelID, ChannelID: channelID, ModelKey: name, ProviderModelKey: name, DisplayName: "未分类", BillingMode: "fixed_request", Enabled: false, PriceConfigured: false, PriceVersion: 1})
 		known[key] = struct{}{}
+	}
+	for index := range missing {
+		if err := s.prepareDiscoveredChannelModel(channel, &missing[index], existing); err != nil {
+			return nil, err
+		}
 	}
 	added, err := s.repo.CreateMissingChannelModels(missing)
 	if err != nil {

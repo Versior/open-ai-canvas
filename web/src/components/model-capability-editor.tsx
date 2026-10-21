@@ -447,7 +447,8 @@ function ImageCapabilityEditor({ value, onChange, protocol, model, imageParamete
     const updateQuality = (patch: Partial<ImageCapabilityConfig["quality"]>) => update({ quality: { ...profile.quality, ...patch } });
 
     if (section !== "references" && profile.parameters) {
-        const definitions = imageParameters || profile.parameters;
+        // Plugin declarations seed the controls; configured model values define their range.
+        const definitions = profile.parameters;
         const size = profile.parameters.find((p) => p.name === "size");
         return <div className="space-y-4">
             <ImageParameterSchemaEditor definitions={definitions} parameters={profile.parameters.filter((p) => p.name === "imageResolution")} disabled={disabled} onChange={(parameters) => onChange?.({ version: 1, image: updateImageParameterSchema(profile, profile.parameters!.map((p) => parameters.find((next) => next.name === p.name) || p), definitions) })} />

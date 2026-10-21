@@ -288,6 +288,7 @@ func manifestRequestValues(request GenerationRequest) map[string]any {
 	}
 
 	return map[string]any{
+		"imageParameters": request.ImageParameters,
 		"capability":      request.Capability,
 		"model":           request.Model,
 		"prompt":          request.Prompt,

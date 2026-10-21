@@ -1067,7 +1067,7 @@ function canvasOperationValue(value: unknown) {
     return value === undefined ? null : value;
 }
 
-const CANVAS_OPERATION_FIELDS = ["title", "projectId", "chatSessions", "activeChatId", "starterMode", "appearance", "backgroundMode", "showImageInfo", "previsScenes", "timeline"] as const;
+const CANVAS_OPERATION_FIELDS = ["title", "kind", "projectId", "chatSessions", "activeChatId", "starterMode", "appearance", "backgroundMode", "showImageInfo", "previsScenes", "timeline"] as const;
 
 export function buildCanvasOperations(base: CanvasProject | undefined, next: CanvasProject): CanvasOperation[] {
     const operations: CanvasOperation[] = [];
@@ -1077,6 +1077,7 @@ export function buildCanvasOperations(base: CanvasProject | undefined, next: Can
             id: next.id,
             patch: {
                 title: next.title,
+                kind: next.kind,
                 projectId: next.projectId,
                 chatSessions: next.chatSessions,
                 activeChatId: next.activeChatId,

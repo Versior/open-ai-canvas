@@ -12,12 +12,12 @@ import type { CanvasNodeData } from "@/types/canvas";
  * 而且和卡片里的大标题是两个地方。设计师盯着卡片看，改名入口就得在卡片上，
  * 而且要能单击直接改——双击或右键不能是唯一入口。
  */
-export function EcommerceNodeTitle({ node, fallback, subtitle }: { node: CanvasNodeData; fallback: string; subtitle?: React.ReactNode }) {
+export function EcommerceNodeTitle({ node, fallback, subtitle, disabled = false }: { node: CanvasNodeData; fallback: string; subtitle?: React.ReactNode; disabled?: boolean }) {
     const { updateNode } = useCanvasNodeActions();
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState("");
     const name = ecommerceNodeName(node) || fallback;
-    const editable = Boolean(updateNode);
+    const editable = Boolean(updateNode) && !disabled && !node.metadata?.locked;
 
     const commit = () => {
         const patch = ecommerceNodeRenamePatch(node, draft);

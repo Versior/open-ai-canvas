@@ -93,6 +93,7 @@ export function useCanvasRenderModel({
         const batchChildCountById = new Map<string, number>();
 
         for (const node of nodes) {
+            if (node.metadata?.ecommerceCandidate) { renderHiddenNodeIds.add(node.id); continue; }
             const rootId = node.metadata?.batchRootId;
             const root = rootId ? nodeById.get(rootId) : undefined;
             if (root && !root.metadata?.imageBatchExpanded) {
@@ -332,7 +333,7 @@ export function useCanvasRenderModel({
         return [...candidateById.values()].flatMap(({ connection, fromId, toId }) => {
             const sourceFrom = nodeById.get(fromId);
             const sourceTo = nodeById.get(toId);
-            if (!sourceFrom || !sourceTo) return [];
+            if (!sourceFrom || !sourceTo || sourceFrom.metadata?.ecommerceCandidate || sourceTo.metadata?.ecommerceCandidate) return [];
             const from = dragPreview?.nodeIds.has(fromId) ? { ...sourceFrom, position: { x: sourceFrom.position.x + dragPreview.x, y: sourceFrom.position.y + dragPreview.y } } : sourceFrom;
             const to = dragPreview?.nodeIds.has(toId) ? { ...sourceTo, position: { x: sourceTo.position.x + dragPreview.x, y: sourceTo.position.y + dragPreview.y } } : sourceTo;
             const connectionLeft = Math.min(from.position.x, to.position.x);

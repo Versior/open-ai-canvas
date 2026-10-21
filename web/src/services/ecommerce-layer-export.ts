@@ -34,10 +34,11 @@ class Bytes {
 export function encodeLayeredPsd(layers: { name: string; pixels: PatternPixels; visible: boolean }[]) {
     if (!layers.length || layers.length > 50) throw new Error("请选择 1–50 个图层");
     const { width, height } = layers[0].pixels;
-    if (layers.some((layer) => layer.pixels.width !== width || layer.pixels.height !== height) || width * height * layers.length > 32_000_000) throw new Error("PSD 图层尺寸须相同，总像素不能超过 3200 万");
+    if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1 || width > 30000 || height > 30000 || layers.some((layer) => layer.pixels.width !== width || layer.pixels.height !== height || layer.pixels.data.length !== width * height * 4) || width * height * layers.length > 32_000_000) throw new Error("PSD 图层尺寸须相同且像素完整，总像素不能超过 3200 万");
     const records = new Bytes(),
         channels = new Bytes();
-    records.number(layers.length, 2);
+    // A negative layer count declares the merged fourth channel as transparency.
+    records.number((-layers.length) & 65535, 2);
     for (const layer of layers) {
         records.number(0, 4);
         records.number(0, 4);

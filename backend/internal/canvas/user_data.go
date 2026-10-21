@@ -596,6 +596,13 @@ func canvasProjectFromJSONWithValidation(userID string, raw json.RawMessage, val
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return model.CanvasProject{}, kernel.BadAuthRequest("画布数据格式错误")
 	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return model.CanvasProject{}, kernel.BadAuthRequest("画布数据格式错误")
+	}
+	if kind, exists := fields["kind"]; exists && !validCanvasKind(kind) {
+		return model.CanvasProject{}, kernel.BadAuthRequest("画布分类无效")
+	}
 	now := time.Now()
 	createdAt := parseClientTime(payload.CreatedAt, now)
 	updatedAt := parseClientTime(payload.UpdatedAt, createdAt)
@@ -612,6 +619,11 @@ func canvasProjectFromJSONWithValidation(userID string, raw json.RawMessage, val
 		CreatedAt:   createdAt,
 		UpdatedAt:   updatedAt,
 	}, nil
+}
+
+func validCanvasKind(raw json.RawMessage) bool {
+	var kind string
+	return json.Unmarshal(raw, &kind) == nil && (kind == "freeform" || kind == "ecommerce")
 }
 
 func ValidateSyncedPayload(raw json.RawMessage, label string) error {

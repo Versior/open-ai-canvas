@@ -93,7 +93,7 @@ export function useCanvasViewportController({
     }, [containerRef, screenToCanvas, size.height, size.width]);
 
     const focusNodesInView = useCallback((targetNodes: CanvasNodeData[], maxScale = 1) => {
-        const bounds = getCanvasNodesBounds(targetNodes);
+        const bounds = getCanvasNodesBounds(targetNodes.filter((node) => !node.metadata?.ecommerceCandidate));
         if (!bounds) return false;
         transitionViewportTo(viewportForBounds(bounds, size, { padding: 88, maxScale }));
         setContextMenu(null);

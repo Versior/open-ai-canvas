@@ -11,7 +11,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 57
+const CurrentSchemaVersion int64 = 59
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -197,6 +197,21 @@ var schemaMigrations = []migration{
 	}},
 	{version: 56, name: "sql_perf_indexes", checksum: "sha256:sql-perf-indexes-v56-20261016", apply: migrateSchemaV56},
 	{version: 57, name: "canvas_multi_session_sync", checksum: "sha256:canvas-multi-session-sync-v57", apply: migrateCanvasCollaboration},
+	{version: 58, name: "ecommerce_private_library", checksum: "sha256:ecommerce-private-library-v58", apply: func(tx *gorm.DB) error { return tx.AutoMigrate(&model.EcommerceLibrary{}) }},
+	{version: 59, name: "restore_ecommerce_canvas_kind", checksum: "sha256:restore-ecommerce-canvas-kind-v59", apply: migrateEcommerceCanvasKind},
+}
+
+func migrateEcommerceCanvasKind(tx *gorm.DB) error {
+	// 仅修复旧同步协议遗漏的分类；明确分类不改，标题不作为判据。
+	types := []string{"product", "ecommerce-studio", "shot-recipe", "selling-point", "ecommerce-copy", "ecommerce-style", "ecommerce-layout", "ecommerce-infographic", "ecommerce-replica", "ecommerce-teardown", "ecommerce-delivery", "ecommerce-revision", "ecommerce-video", "ecommerce-aplus"}
+	if tx.Dialector.Name() == "postgres" {
+		return tx.Exec(`UPDATE canvas_projects SET payload_json = jsonb_set(payload_json::jsonb, '{kind}', '"ecommerce"'::jsonb)::text, revision = COALESCE(revision, 0) + 1
+			WHERE COALESCE(payload_json::jsonb->>'kind', '') = ''
+			AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(payload_json::jsonb->'nodes', '[]'::jsonb)) AS node WHERE node->>'type' IN ?)`, types).Error
+	}
+	return tx.Exec(`UPDATE canvas_projects SET payload_json = json_set(payload_json, '$.kind', 'ecommerce'), revision = COALESCE(revision, 0) + 1
+		WHERE COALESCE(json_extract(payload_json, '$.kind'), '') = ''
+		AND EXISTS (SELECT 1 FROM json_each(payload_json, '$.nodes') AS node WHERE json_extract(node.value, '$.type') IN ?)`, types).Error
 }
 
 func migratePrefixedIDSequenceReconcile(tx *gorm.DB) error {

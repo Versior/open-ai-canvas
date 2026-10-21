@@ -159,7 +159,7 @@ export function useCanvasKeyboard({
             }
             if (isModifierShortcut && !event.altKey && key === "a") {
                 event.preventDefault();
-                setSelectedNodeIds(new Set(nodesRef.current.map((node) => node.id)));
+                setSelectedNodeIds(new Set(nodesRef.current.filter((node) => !node.metadata?.ecommerceCandidate).map((node) => node.id)));
                 setSelectedConnectionId(null);
                 setContextMenu(null);
                 cancelSelectionBox();

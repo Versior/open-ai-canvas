@@ -155,6 +155,13 @@ func (s *Service) SaveAdminChannelModel(actor *model.User, channelID string, id 
 	if err != nil {
 		return nil, err
 	}
+	if id == "" {
+		existing, loadErr := s.repo.ChannelModels(channelID, true)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		req = s.autoConfigureNewChannelModel(channel, req, existing)
+	}
 	modelKey, providerModelKey, capability, protocol, err := s.normalizeChannelModelContract(channel, req)
 	if err != nil {
 		return nil, err
@@ -392,7 +399,10 @@ func (s *Service) syncInitialChannelModels(channel *model.ModelChannel, names []
 			return idErr
 		}
 		item := model.ChannelModel{ID: modelID, ChannelID: channel.ID, ModelKey: name, ProviderModelKey: name, DisplayName: "未分类", BillingMode: "fixed_request", Enabled: false, PriceConfigured: false, UnitPriceMicrocredits: 0, PriceVersion: 1}
-		if err := s.repo.SaveChannelModel(&item); err != nil {
+		if err := s.prepareDiscoveredChannelModel(channel, &item, existing); err != nil {
+			return err
+		}
+		if err := s.repo.SaveChannelModelWithPriceTiers(&item, item.PriceTiers); err != nil {
 			return err
 		}
 	}

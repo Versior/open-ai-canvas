@@ -26,6 +26,7 @@ docs/content/docs/backend/*
 !docs/content/docs/backend/http-api.mdx
 !docs/content/docs/backend/code-map.mdx
 !docs/content/docs/backend/newapi-channel-2.mdx
+!docs/content/docs/backend/model-metadata-presets.mdx
 !docs/content/docs/backend/bailian-minimax-video.mdx
 !docs/content/docs/backend/video-token-billing.mdx
 !docs/content/docs/backend/creative-agent-runtime.mdx
@@ -36,6 +37,10 @@ docs/content/docs/overview/*
 .env*
 !.env.example
 data/
+!web/src/lib/data/
+web/src/lib/data/*
+!web/src/lib/data/model-metadata-presets.json
+!web/src/lib/data/pi-models-LICENSE.txt
 .local/
 /.local/docker-compose.postgres.yml
 coverage/

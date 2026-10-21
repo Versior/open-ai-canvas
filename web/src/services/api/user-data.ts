@@ -49,7 +49,7 @@ export type CanvasOperation =
     | { type: "create_connection"; connection: CanvasProject["connections"][number] }
     | { type: "update_connection"; id: string; connection: CanvasProject["connections"][number]; expected: CanvasProject["connections"][number] }
     | { type: "remove_connection"; id: string; expected?: CanvasProject["connections"][number] }
-    | { type: "set_field"; field: "title" | "projectId" | "chatSessions" | "activeChatId" | "starterMode" | "appearance" | "backgroundMode" | "showImageInfo" | "previsScenes" | "timeline"; value: unknown; beforeValue: unknown };
+    | { type: "set_field"; field: "title" | "kind" | "projectId" | "chatSessions" | "activeChatId" | "starterMode" | "appearance" | "backgroundMode" | "showImageInfo" | "previsScenes" | "timeline"; value: unknown; beforeValue: unknown };
 
 export type CanvasOperationsRequest = {
     mutationId: string;

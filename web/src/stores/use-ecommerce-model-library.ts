@@ -8,6 +8,7 @@
  * 新账号会读到上一个账号的模特库。这条和 use-asset-store 的做法一致。
  */
 import { create } from "zustand";
+import { canonicalize } from "json-canonicalize";
 
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
@@ -30,6 +31,7 @@ type ModelLibraryActions = {
     removeModel: (id: string) => Promise<void>;
     removeModels: (ids: string[]) => Promise<void>;
     touchModel: (id: string) => Promise<void>;
+    replace: (models: EcommerceModel[], expected?: EcommerceModel[]) => Promise<void>;
 };
 
 export type EcommerceModelLibraryStore = ModelLibraryState & ModelLibraryActions;
@@ -136,6 +138,10 @@ export const useEcommerceModelLibrary = create<EcommerceModelLibraryStore>((set,
             return mutate((models) => models.filter((model) => !removed.has(model.id)));
         },
         touchModel: (id) => mutate((models) => models.map((model) => model.id === id ? { ...model, lastUsedAt: new Date().toISOString() } : model)),
+        replace: (models, expected) => mutate((current) => {
+            if (expected && canonicalize(current) !== canonicalize(expected)) throw new Error("本机模特已修改，未覆盖新编辑，请重新核对");
+            return structuredClone(models);
+        }),
     };
 });
 

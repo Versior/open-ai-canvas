@@ -138,6 +138,9 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 	if err := yaml.Unmarshal(openAPISpec, &spec); err != nil {
 		t.Fatal(err)
 	}
+	if spec.Paths["/ecommerce/library"] != nil {
+		t.Fatal("removed private library endpoint remains in OpenAPI")
+	}
 	for path, methods := range map[string][]string{
 		"/admin/settings/ecommerce/defaults": {"get"}, "/ecommerce/templates": {"get"}, "/ecommerce/templates/{templateId}": {"get"},
 		"/ecommerce/settings": {"get"}, "/admin/settings/ecommerce": {"get", "put"},
@@ -148,6 +151,19 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 			if spec.Paths[path][method] == nil {
 				t.Fatalf("OpenAPI missing %s %s", method, path)
 			}
+		}
+	}
+}
+
+func TestEcommercePrivateLibraryRoutesRemoved(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterEcommerceRoutes(router.Group("/api"), &service.Service{})
+	for _, method := range []string{http.MethodGet, http.MethodPut} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(method, "/api/ecommerce/library", nil))
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("removed endpoint %s returned %d", method, response.Code)
 		}
 	}
 }

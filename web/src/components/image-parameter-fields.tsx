@@ -199,6 +199,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                             items.map((item) => {
                                 const declared = definition.values?.find((v) => String(v) === item);
                                 if (declared !== undefined) return declared;
+                                if (field.type === "number" || field.type === "integer") return Number(item);
                                 return isResolution && !definition.values?.length && /^\d+(?:\.\d+)?k$/i.test(item.trim()) ? item.trim().toLowerCase() : item;
                             }),
                         ),
@@ -221,11 +222,11 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                 {definition.values?.length || field.type === "string" ? (
                                     <div className="space-y-1.5 text-xs">
                                         <label className="block space-y-1.5">
-                                            <span>支持值{!definition.values?.length ? "（留空允许自由输入）" : ""}</span>
+                                            <span>支持值（可自定义，留空允许自由输入）</span>
                                             <Select
                                                 className="w-full"
                                                 ariaLabel={`${field.label}支持值`}
-                                                mode={definition.values?.length ? "multiple" : "tags"}
+                                                mode={field.type === "boolean" ? "multiple" : "tags"}
                                                 disabled={disabled}
                                                 value={(field.values || []).map(String)}
                                                 options={(isResolution ? resolutionChoices : definition.values || []).map((v) => ({
@@ -255,7 +256,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                                         );
                                                     })}
                                                 </div>
-                                                <p className="image-size-hint">点选模型支持的档位，再次点击可移除。{!definition.values?.length ? "其他档位可在上方输入后按回车添加。" : ""}</p>
+                                                <p className="image-size-hint">点选模型支持的档位，再次点击可移除。其他档位可在上方输入后按回车添加。</p>
                                             </div>
                                         ) : null}
                                     </div>
@@ -268,7 +269,6 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                                 className="w-full"
                                                 aria-label={`${field.label}最小值`}
                                                 disabled={disabled}
-                                                min={definition.min}
                                                 max={field.max}
                                                 value={field.min}
                                                 onChange={(min) => update(field.name, { min: min ?? definition.min })}
@@ -281,12 +281,17 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                                 aria-label={`${field.label}最大值`}
                                                 disabled={disabled}
                                                 min={field.min}
-                                                max={definition.max}
                                                 value={field.max}
                                                 onChange={(max) => update(field.name, { max: max ?? definition.max })}
                                             />
                                         </label>
                                     </div>
+                                ) : null}
+                                {(field.type === "number" || field.type === "integer") && !definition.values?.length ? (
+                                    <label className="space-y-1.5 text-xs">
+                                        <span>步长</span>
+                                        <InputNumber className="w-full" aria-label={`${field.label}步长`} disabled={disabled} min={field.type === "integer" ? 1 : undefined} value={field.step} onChange={(step) => update(field.name, { step: step ?? undefined })} />
+                                    </label>
                                 ) : null}
                                 <div className="space-y-1.5 text-xs">
                                     <span>默认值</span>
@@ -367,7 +372,7 @@ export function ImageParameterSizeEditor({ profile, definition, disabled, onChan
                         tiers={tiers}
                         grouped={grouped}
                         ratios={definition.values?.filter((v) => String(v).includes(":")).map(String)}
-                        allowCustomRatio={!definition.values?.length}
+                        allowCustomRatio
                         disabled={disabled}
                         onChange={updateSize}
                     />
@@ -382,14 +387,12 @@ export function ImageParameterSizeEditor({ profile, definition, disabled, onChan
                                 ))}
                             </div>
                         </div>
-                        {!definition.values?.length ? (
-                            <div className="image-size-preset-add">
-                                <Input aria-label="自定义比例" placeholder="其他比例，如 17:11" value={draft} disabled={disabled} onChange={(e) => setDraft(e.target.value)} onPressEnter={addRatio} />
-                                <button type="button" disabled={disabled || !draft.trim()} onClick={addRatio}>
-                                    添加
-                                </button>
-                            </div>
-                        ) : null}
+                        <div className="image-size-preset-add">
+                            <Input aria-label="自定义比例" placeholder="其他比例，如 17:11" value={draft} disabled={disabled} onChange={(e) => setDraft(e.target.value)} onPressEnter={addRatio} />
+                            <button type="button" disabled={disabled || !draft.trim()} onClick={addRatio}>
+                                添加
+                            </button>
+                        </div>
                         {error ? <p role="alert">{error}</p> : null}
                         <div className="image-size-defaults">
                             <strong>默认输出</strong>

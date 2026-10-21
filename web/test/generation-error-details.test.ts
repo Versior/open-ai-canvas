@@ -9,8 +9,8 @@ describe("safe upstream error details", () => {
     });
     test("does not replace a safe upstream message with a generic HTTP hint", () => {
         const message = `模型服务暂时不可用（HTTP 500）；上游：${detail}`;
-        expect(generationErrorMessage(message)).toBe("网络异常。");
-        expect(generationErrorMessage("模型服务暂时不可用（HTTP 500）")).toBe("网络异常。");
+        expect(generationErrorMessage(message)).toBe("模型服务处理失败（HTTP 500），请稍后重试。");
+        expect(generationErrorMessage("模型服务暂时不可用（HTTP 500）")).toBe("模型服务处理失败（HTTP 500），请稍后重试。");
     });
     test("keeps details when moderation metadata is stored", () => {
         const message = `内容审核未通过；上游：${detail}`;
@@ -24,5 +24,10 @@ describe("safe upstream error details", () => {
     });
     test("upstream marker does not bypass URL hiding", () => {
         expect(generationErrorMessage("模型服务请求失败；上游：https://private.test")).toBe("模型服务请求失败");
+    });
+    test("distinguishes unavailable model services from client network failures", () => {
+        expect(generationErrorMessage("模型服务暂时不可用（HTTP 503）")).toBe("模型服务暂时不可用（HTTP 503），请稍后重试。");
+        expect(generationErrorMessage("HTTP 504 Gateway Timeout")).toContain("模型服务响应超时");
+        expect(generationErrorMessage("Failed to fetch")).toBe("网络异常。");
     });
 });

@@ -4,12 +4,41 @@ import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
 import { DEFAULT_ECOMMERCE_BRIEF } from "./ecommerce-capabilities";
 import { nanoid } from "nanoid";
+import { canonicalize } from "json-canonicalize";
 import type { EcommerceWorkbenchPlan, EcommerceWorkbenchBrief } from "./ecommerce-capabilities";
 import type { EcommerceSuiteRow } from "./ecommerce-suite";
 
+/** Output adoption is delivery state and cannot invalidate an already paid generation. */
+export function ecommerceStudioExecutionSignature(studio: NonNullable<CanvasNodeData["metadata"]>["ecommerceStudio"]) {
+    if (!studio) return canonicalize(studio);
+    const { adoptedResults: _adopted, deliveryReview: _delivery, ...inputs } = studio;
+    return canonicalize(inputs);
+}
+
+export function ecommerceStudioPlanReviewSignature(studio: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const saved = studio.metadata?.ecommerceStudio;
+    if (!saved?.plan?.shots.length) throw new Error("请先添加画面方案");
+    const ids = [...new Set(connections.filter((edge) => edge.toNodeId === studio.id && edge.relation !== "batch-output").map((edge) => edge.fromNodeId))].sort();
+    return canonicalize([saved.brief, saved.plan, saved.imageModel, saved.textModel, saved.skillIds, ids, ecommerceStudioInputSignature(ids, nodes, connections)]);
+}
+
+export function ecommerceStudioDeliveryReviewSignature(studio: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const outputs = nodes.filter((node) => connections.some((edge) => edge.fromNodeId === studio.id && edge.toNodeId === node.id));
+    const selection = ecommerceStudioExportSelection(studio, outputs);
+    for (const output of selection.selected.values()) validateEcommerceStudioResultInputs(output, nodes, connections);
+    return canonicalize([ecommerceStudioPlanReviewSignature(studio, nodes, connections), [...selection.selected.values()].map((node) => [node.id, node.metadata?.storageKey, node.metadata?.taskId, node.metadata?.status])]);
+}
+
+export function assertEcommerceStudioReview(studio: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[], delivery = false) {
+    if (!studio.metadata?.ecommerceStudio?.brief.reviewRequired) return;
+    const signature = delivery ? ecommerceStudioDeliveryReviewSignature(studio, nodes, connections) : ecommerceStudioPlanReviewSignature(studio, nodes, connections);
+    const review = delivery ? studio.metadata.ecommerceStudio.deliveryReview : studio.metadata.ecommerceStudio.planReview;
+    if (review?.signature !== signature) throw new Error(delivery ? "采用结果尚未审核，或结果与输入已变化，请重新审核后导出" : "当前方案尚未审核，或方案与输入已变化，请审核后生成");
+}
+
 export function ecommerceStudioShotSignature(plan: EcommerceWorkbenchPlan, index: number, brief?: EcommerceWorkbenchBrief) {
     const shot = plan.shots[index];
-    return JSON.stringify([plan.style, shot?.title, shot?.duty, shot?.prompt, brief]);
+    return canonicalize([plan.style, shot?.title, shot?.duty, shot?.prompt, brief]);
 }
 
 /** A changed shot cannot silently adopt an output from a previous plan. */
@@ -77,7 +106,7 @@ export function ecommerceStudioSources(sourceIds: string[], nodes: CanvasNodeDat
 }
 
 export function ecommerceStudioSourceSignature(node: CanvasNodeData) {
-    return JSON.stringify({ id: node.id, type: node.type, locked: node.metadata?.locked, storageKey: node.metadata?.storageKey, content: node.metadata?.content, status: node.metadata?.status, product: node.metadata?.productProfile });
+    return canonicalize({ id: node.id, type: node.type, locked: node.metadata?.locked, storageKey: node.metadata?.storageKey, content: node.metadata?.content, status: node.metadata?.status, product: node.metadata?.productProfile });
 }
 
 export function ecommerceStudioInputSignature(sourceIds: string[], nodes: CanvasNodeData[], connections: CanvasConnection[]) {

@@ -1,6 +1,7 @@
 import { defaultModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
-import { modelProtocolCapability, protocolForModelCatalog, type ModelProtocol } from "@/lib/model-protocols";
+import { modelProtocolCapability, protocolForModelCatalog, type ModelProtocol, type ModelProtocolDefinition } from "@/lib/model-protocols";
 import type { ModelChannel } from "@/stores/use-config-store";
+import { applyModelMetadataPreset, matchingModelPresets, modelFamilyIdentity, modelMatchScore, presetApplicationError, type ModelMetadataPreset } from "./model-metadata-presets";
 
 export type ChannelModelCatalogOption = { value: string; label?: string };
 
@@ -25,6 +26,38 @@ export type ChannelModelCatalogItem = {
 };
 
 type ChannelModelCost = NonNullable<ModelChannel["modelCosts"]>[number];
+
+export function autoConfigureUserChannelModels(channel: ModelChannel, presets: ModelMetadataPreset[], protocols: ModelProtocolDefinition[] = []): ChannelModelCost[] {
+    const existing = channel.modelCosts || [];
+    return channel.models.flatMap((id): ChannelModelCost[] => {
+        const saved = existing.find((cost) => cost.model === id);
+        if (saved) return [saved];
+        const scored = existing.map((cost) => ({ cost, score: modelMatchScore(id, cost.model, true) }));
+        const best = Math.max(0, ...scored.map((item) => item.score));
+        const matches = scored.filter((item) => best > 0 && item.score === best);
+        const template = matches.length === 1 ? matches[0].cost : undefined;
+        const preset = matchingModelPresets(presets, id)[0];
+        const identity = modelFamilyIdentity(id);
+        const channelCapability = modelProtocolCapability(channel.interfaceType, protocols);
+        if (!template && !preset && (!identity || !channelCapability)) return [];
+        const capability = template?.capability || channelCapability || "text";
+        const protocol = template?.protocol || (capability === "text" && channel.apiFormat === "gemini" ? "gemini-generate-content" : protocolTemplateForNewCatalogModel(capability, channel.interfaceType));
+        let cost: ChannelModelCost = {
+            model: id, capability, protocol, billingMode: template?.billingMode || "fixed_request",
+            unitPriceMicrocredits: template?.unitPriceMicrocredits || 0,
+            inputTokenPriceMicrocredits: template?.inputTokenPriceMicrocredits,
+            outputTokenPriceMicrocredits: template?.outputTokenPriceMicrocredits,
+            cachedTokenPriceMicrocredits: template?.cachedTokenPriceMicrocredits,
+            displayName: template?.displayName?.trim() && template.displayName !== "未分类" ? template.displayName : identity?.category,
+            icon: template?.icon || identity?.icon, capabilityConfig: template?.capabilityConfig && best >= 2 ? structuredClone(template.capabilityConfig) : undefined,
+        };
+        if (preset && !presetApplicationError(preset, capability)) {
+            const applied = applyModelMetadataPreset({ ...cost, modelKey: id }, preset);
+            cost = { ...cost, icon: applied.icon, capabilityConfig: applied.capabilityConfig };
+        }
+        return [cost];
+    });
+}
 
 export function sanitizeChannelModelCatalogItem(value: unknown): ChannelModelCatalogItem | null {
     if (!value || typeof value !== "object") return null;
@@ -61,7 +94,8 @@ export function sanitizeChannelModelCatalogItem(value: unknown): ChannelModelCat
     });
 }
 
-export function mergeFetchedChannelModelCosts(channel: ModelChannel, catalog: ChannelModelCatalogItem[]): ChannelModelCost[] {
+export function mergeFetchedChannelModelCosts(channel: ModelChannel, catalog: ChannelModelCatalogItem[], presets: ModelMetadataPreset[] = []): ChannelModelCost[] {
+    channel = { ...channel, modelCosts: autoConfigureUserChannelModels({ ...channel, models: catalog.map((item) => item.id) }, presets) };
     const existingByModel = new Map((channel.modelCosts || []).map((cost) => [cost.model, cost]));
     const next: ChannelModelCost[] = [];
     for (const item of catalog) {
@@ -94,7 +128,8 @@ export function mergeFetchedChannelModelCosts(channel: ModelChannel, catalog: Ch
         const capabilityConfig = capability === "image" || capability === "video" ? catalogCapabilityConfig(item, protocol, capability, undefined, true) : undefined;
         next.push({
             model: item.id,
-            ...(item.displayName ? { displayName: item.displayName } : {}),
+            displayName: item.displayName || modelFamilyIdentity(item.id)?.category,
+            icon: modelFamilyIdentity(item.id)?.icon,
             capability,
             protocol,
             billingMode: "fixed_request",

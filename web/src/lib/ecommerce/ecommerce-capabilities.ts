@@ -1,4 +1,6 @@
 import { ecommercePlatformGuidance } from "./ecommerce-platform-guidance";
+import { ecommerceImageGuidance } from "./ecommerce-image-guidance";
+import { jsonrepair } from "jsonrepair";
 
 export const ECOMMERCE_CAPABILITIES = [
     { id: "planning", name: "智能规划", description: "按商品事实与目标市场规划多种图型" },
@@ -24,7 +26,7 @@ export const DEFAULT_ECOMMERCE_BRIEF: EcommerceWorkbenchBrief = {
     identity: "",
     poses: ["正面全身", "侧面全身", "背面全身"],
 };
-export type EcommerceWorkbenchAction = EcommerceCapability | "pattern-extract" | "pattern-draft" | "pattern-derive" | "recolor" | "seams" | "save-template" | "apply-plan" | "save-model" | "export-layers" | "studio-generate" | "studio-export";
+export type EcommerceWorkbenchAction = EcommerceCapability | "pattern-extract" | "pattern-draft" | "pattern-derive" | "recolor" | "seams" | "save-template" | "apply-plan" | "save-model" | "save-pattern" | "add-pattern" | "export-layers" | "studio-generate" | "studio-export" | "studio-place-results" | "studio-compose" | "review-plan" | "review-delivery";
 export type EcommerceWorkbenchRequest = {
     action: EcommerceWorkbenchAction;
     brief: EcommerceWorkbenchBrief;
@@ -41,11 +43,21 @@ export type EcommerceWorkbenchRequest = {
     studioId?: string;
     shotIndices?: number[];
     requireStudioInputs?: boolean;
+    printSpecId?: string;
+    resumeReceiptId?: string;
+    rerunFrom?: "seams" | "print-pack" | "listing";
+    patternId?: string;
+    generateAfterPlanning?: boolean;
+    retryFailed?: boolean;
+    restoreStudioInputs?: boolean;
+    resultIds?: string[];
+    composeWidth?: number;
+    composeGap?: number;
 };
 export const ecommerceActionCapability = (action: EcommerceWorkbenchAction): EcommerceCapability =>
-    action.startsWith("pattern-") || ["recolor", "seams"].includes(action)
+    action.startsWith("pattern-") || ["recolor", "seams", "save-pattern", "add-pattern"].includes(action)
         ? "pattern"
-        : ["apply-plan", "studio-generate", "studio-export"].includes(action)
+        : ["apply-plan", "studio-generate", "studio-export", "studio-place-results", "studio-compose", "review-plan", "review-delivery"].includes(action)
           ? "planning"
           : action === "save-template"
             ? "suite-forge"
@@ -98,10 +110,29 @@ export type EcommerceWorkbenchBrief = {
     identity: string;
     poses: string[];
     template?: import("@/services/api/ecommerce").EcommerceSuiteTemplate;
+    generationMode?: "standard" | "product-protected";
+    reviewRequired?: boolean;
+    brand?: string;
+    aspectRatio?: string;
+    imageSettings?: import("./ecommerce-image-generation").EcommerceImageSettings;
 };
+export function validateEcommerceWorkbenchBrief(brief: EcommerceWorkbenchBrief) {
+    if (brief.imageSettings !== undefined && (!brief.imageSettings || typeof brief.imageSettings !== "object" || Array.isArray(brief.imageSettings) || Object.entries(brief.imageSettings).some(([key, value]) => !["size", "quality", "imageResolution", "imageParameters", "transparentBackground"].includes(key) || typeof value !== "string" || value.length > 12000))) throw new Error("生图参数无效，请重新选择尺寸和质量");
+    const limits = { name: 100, facts: 12000, forbidden: 6000, direction: 6000, market: 200, platform: 200, language: 200, identity: 2000 };
+    if (Object.entries(limits).some(([key, limit]) => typeof brief[key as keyof typeof limits] !== "string" || [...brief[key as keyof typeof limits]].length > limit) || !brief.name.trim() || !Number.isInteger(brief.count) || brief.count < 1 || brief.count > 30) throw new Error("请填写有效名称，张数须为 1–30，商品信息不能超长");
+    if (!Array.isArray(brief.imageTypes) || brief.imageTypes.length > 25 || brief.imageTypes.some((item) => typeof item !== "string" || !item.trim() || item.length > 100) || !Array.isArray(brief.poses) || brief.poses.length > 8 || brief.poses.some((item) => typeof item !== "string" || !item.trim() || item.length > 100)) throw new Error("图型或姿态选项无效");
+    if (brief.brand !== undefined && (typeof brief.brand !== "string" || brief.brand.length > 6000) || brief.generationMode !== undefined && !["standard", "product-protected"].includes(brief.generationMode) || brief.reviewRequired !== undefined && typeof brief.reviewRequired !== "boolean" || brief.aspectRatio && !/^([1-9]\d?):([1-9]\d?)$/.test(brief.aspectRatio)) throw new Error("品牌、生成模式、审核或画幅设置无效");
+}
+export function patchEcommerceWorkbenchBrief(brief: EcommerceWorkbenchBrief, change: Partial<EcommerceWorkbenchBrief>): EcommerceWorkbenchBrief {
+    const next = { ...brief, ...change };
+    return { ...next, count: Math.max(next.count, new Set(next.imageTypes).size, 1) };
+}
+export function validateEcommercePlanningCount(brief: EcommerceWorkbenchBrief) {
+    if (brief.count < new Set(brief.imageTypes).size) throw new Error("计划张数不能少于已选图型数量；每个已选图型至少一张，请核对总张数后重新执行");
+}
 export function ecommerceWorkbenchPrompt(operation: EcommerceCapability | "pattern-extract" | "pattern-draft" | "pattern-derive", brief: EcommerceWorkbenchBrief) {
-    if (!brief.name.trim() || brief.name.length > 200 || brief.facts.length > 12000 || brief.direction.length > 6000 || !Number.isInteger(brief.count) || brief.count < 1 || brief.count > 30)
-        throw new Error("请填写名称，张数须为 1–30，商品事实与要求不能超长");
+    validateEcommerceWorkbenchBrief(brief);
+    if (operation === "planning") validateEcommercePlanningCount(brief);
     const context = JSON.stringify({
         name: brief.name,
         verifiedFacts: brief.facts,
@@ -110,6 +141,9 @@ export function ecommerceWorkbenchPrompt(operation: EcommerceCapability | "patte
         platform: brief.platform,
         language: brief.language,
         direction: brief.direction,
+        brandGuidelines: brief.brand || "",
+        aspectRatio: brief.aspectRatio || "模型默认",
+        ...(operation === "planning" ? { imageTypeGuidance: ecommerceImageGuidance(brief.imageTypes) } : {}),
         ...(["planning", "suite-forge", "listing"].includes(operation) ? { platformGuidance: ecommercePlatformGuidance(brief.platform) } : {}),
         ...(brief.template && operation === "planning"
             ? { templateReference: { name: brief.template.name, style: brief.template.style, shots: brief.template.shots }, templateRule: "模板属性与示例文案均非当前商品事实。保留视觉方向，按当前实拍、已核实事实和计划张数重新规划；替换所有占位符。" }
@@ -127,7 +161,7 @@ export function ecommerceWorkbenchPrompt(operation: EcommerceCapability | "patte
             brief.count +
             " 张。选用图型：" +
             brief.imageTypes.join("、") +
-            "。分镜角色可选：" +
+            "。每个已选图型至少一张，剩余张数按商品需求分配，总数必须等于计划张数。分镜角色可选：" +
             ECOMMERCE_SHOT_ROLES.join("、") +
             '。只返回 JSON：{"name":"名称","style":"整套视觉锁","shots":[{"title":"图型与角色","duty":"本张职责","prompt":"可直接生成的完整提示词"}]}。只用已核实事实，缺事实标待核实，不得编造。'
         );
@@ -144,7 +178,18 @@ export type EcommerceWorkbenchPlan = { name: string; style: string; shots: { tit
 export function parseEcommerceWorkbenchPlan(text: string): EcommerceWorkbenchPlan {
     const fence = String.fromCharCode(96).repeat(3);
     const clean = text.trim();
-    const value = JSON.parse(clean.startsWith(fence) ? clean.slice(clean.indexOf("\n") + 1, clean.lastIndexOf(fence)).trim() : clean);
+    const raw = clean.startsWith(fence) ? clean.slice(clean.indexOf("\n") + 1, clean.lastIndexOf(fence)).trim() : clean;
+    if (!raw.startsWith("{") || !raw.endsWith("}")) throw new Error("规划结果不完整，已保留原任务，请重新规划；尚未提交图片任务");
+    let value;
+    try { value = JSON.parse(raw); } catch {
+        try {
+            const repaired = jsonrepair(raw);
+            // Only accept escaping/whitespace repairs, never invented fields or closing brackets.
+            const unescaped = (input: string) => input.replace(/\\(["\\])/g, "$1").replace(/\s/g, "");
+            if (unescaped(raw) !== unescaped(repaired)) throw new Error("incomplete plan");
+            value = JSON.parse(repaired);
+        } catch { throw new Error("规划结果格式无效，已保留原任务；尚未提交图片任务"); }
+    }
     if (
         !value ||
         typeof value.name !== "string" ||
@@ -157,7 +202,7 @@ export function parseEcommerceWorkbenchPlan(text: string): EcommerceWorkbenchPla
         value.shots.length > 30 ||
         value.shots.some(
             (s: { title?: unknown; duty?: unknown; prompt?: unknown }) =>
-                !s || typeof s.title !== "string" || !s.title.trim() || s.title.length > 100 || typeof s.duty !== "string" || !s.duty.trim() || s.duty.length > 12000 || (s.prompt !== undefined && (typeof s.prompt !== "string" || s.prompt.length > 20000)),
+                !s || typeof s.title !== "string" || !s.title.trim() || s.title.length > 100 || typeof s.duty !== "string" || !s.duty.trim() || s.duty.length > 12000 || typeof s.prompt !== "string" || !s.prompt.trim() || s.prompt.length > 20000,
         )
     )
         throw new Error("模型返回的套图结构无效，请检查结果后重试");

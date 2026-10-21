@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Switch } from "@/components/ui/base/switch";
-import { Palette, Info } from "lucide-react";
+import { Palette, Info, Images } from "lucide-react";
 
 import { FloatingDock } from "@/components/ui/aceternity/floating-dock";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
@@ -243,6 +243,7 @@ export function CanvasToolbar({
     };
 
     const items = resolveToolbarEntries("main", ctx, prefs ?? defaultToolbarPrefs("main"));
+    if (canvasKind === "ecommerce" && onOpenEcommerceWorkbench) items.push({ id: "ecommerce-studio", label: "添加电商生图台", icon: <Images />, onClick: onOpenEcommerceWorkbench });
 
     // 中央空白起点与主工具栏共用同一份命令解析，避免素材类型和插件节点逐渐分叉。
     const createCommands = useCanvasCreateCommands(ctx, runAddAction);
@@ -259,11 +260,6 @@ export function CanvasToolbar({
             <AnimatePresence>{addOpen ? <AddNodeMenu x={panelX} theme={theme} commands={createCommands} /> : null}</AnimatePresence>
 
             <FloatingDock ref={dockRef} items={items} className="canvas-floating-dock pointer-events-auto max-w-full" style={canvasDockStyle(theme)} />
-            {canvasKind === "ecommerce" && onOpenEcommerceWorkbench ? (
-                <button type="button" className="pointer-events-auto ml-2 rounded-[var(--panel-radius)] border px-4 py-2 text-sm" style={canvasDockStyle(theme)} onClick={onOpenEcommerceWorkbench}>
-                    电商生图台
-                </button>
-            ) : null}
 
             <AnimatePresence>
                 {appearanceOpen ? (

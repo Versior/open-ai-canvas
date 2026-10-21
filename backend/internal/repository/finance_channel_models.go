@@ -334,6 +334,31 @@ func (r *Repository) CreateMissingChannelModels(items []model.ChannelModel) (int
 		return 0, nil
 	}
 	// 拉取目录可能与其他管理员操作并发，唯一键冲突时保留已有定价配置。
-	result := r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&items)
-	return result.RowsAffected, result.Error
+	var added int64
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		for index := range items {
+			item := &items[index]
+			result := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(item)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			added++
+			for tierIndex := range item.PriceTiers {
+				item.PriceTiers[tierIndex].ChannelModelID = item.ID
+			}
+			if len(item.PriceTiers) > 0 {
+				if err := tx.Create(&item.PriceTiers).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return added, nil
 }

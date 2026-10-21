@@ -361,7 +361,7 @@ func validateManifestRequest(rules []ManifestValidation, request GenerationReque
 	}
 	env := map[string]any{"request": manifestRequestValues(request)}
 	for _, rule := range rules {
-		value, err := evaluateManifestValue(rule.Assert, env)
+		value, err := evaluateManifestValue(modelImageParameterValidation(rule.Assert, request), env)
 		if err != nil {
 			return fmt.Errorf("协议参数校验表达式错误：%w", err)
 		}
@@ -370,6 +370,78 @@ func validateManifestRequest(rules []ManifestValidation, request GenerationReque
 		}
 	}
 	return nil
+}
+
+func modelImageParameterValidation(assert any, request GenerationRequest) any {
+	if node, ok := assert.(map[string]any); ok && len(node) == 1 {
+		for _, operator := range []string{"$and", "$or"} {
+			if children, ok := node[operator].([]any); ok {
+				replaced := make([]any, len(children))
+				for index, child := range children {
+					replaced[index] = modelImageParameterValidation(child, request)
+				}
+				return map[string]any{operator: replaced}
+			}
+		}
+	}
+	if modelImageParametersReplaceValidation(assert, request) {
+		return true
+	}
+	return assert
+}
+
+// Model parameter admission already checked these values. Keep unrelated rules
+// (prompt, media and mixed-field requirements), rather than reapplying plugin bounds.
+func modelImageParametersReplaceValidation(assert any, request GenerationRequest) bool {
+	if request.Capability != CapabilityImage || request.ImageParameterSchema == nil {
+		return false
+	}
+	paths := map[string]bool{}
+	for _, field := range request.ImageParameterSchema {
+		value, supplied := request.ImageParameters[field.Name]
+		if !supplied || !field.Accepts(value) || !field.AppliesTo(request.Model) || !field.IsEnabled() {
+			continue
+		}
+		path := field.Binding
+		if path == "transparentBackground" {
+			path = "extra.transparentBackground"
+		}
+		if path != "" {
+			paths["request."+path] = true
+		}
+	}
+	found := map[string]bool{}
+	var covered func(any) bool
+	covered = func(value any) bool {
+		switch node := value.(type) {
+		case map[string]any:
+			for key, child := range node {
+				if key == "$ref" {
+					path, ok := child.(string)
+					if !ok || !paths[path] {
+						return false
+					}
+					if paths[path] {
+						found[path] = true
+					}
+				} else if !covered(child) {
+					return false
+				}
+			}
+		case []any:
+			for _, child := range node {
+				if !covered(child) {
+					return false
+				}
+			}
+		case string:
+			if strings.Contains(node, "${") || strings.Contains(node, "{{") {
+				return false
+			}
+		}
+		return true
+	}
+	return covered(assert) && len(found) == 1
 }
 
 func manifestResponseString(template any, env map[string]any) string {

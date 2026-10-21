@@ -82,6 +82,32 @@ func TestApplyCanvasOperationsCreatesOnlyExplicitCanvas(t *testing.T) {
 		t.Fatal("implicit canvas creation was accepted")
 	}
 }
+
+func TestCanvasKindSurvivesOperationsAndSeparatesLibraries(t *testing.T) {
+	svc := newCanvasOperationTestService(t)
+	_, err := svc.ApplyUserCanvasOperations("user", "shop", CanvasOperationsRequest{MutationID: "create-shop", Operations: []CanvasOperation{{Type: "create_canvas", ID: "shop", Patch: map[string]json.RawMessage{"title": json.RawMessage(`"商品创作"`), "kind": json.RawMessage(`"ecommerce"`)}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shop, err := svc.UserCanvasProjectsPage("user", 1, 40, "", "", "name", "ecommerce")
+	if err != nil || shop.Total != 1 || shop.Projects[0].Kind != "ecommerce" {
+		t.Fatalf("shop library: %+v %v", shop, err)
+	}
+	free, err := svc.UserCanvasProjectsPage("user", 1, 40, "", "", "name", "freeform")
+	if err != nil || free.Total != 0 {
+		t.Fatalf("shop leaked into freeform: %+v %v", free, err)
+	}
+	_, err = svc.ApplyUserCanvasOperations("user", "shop", CanvasOperationsRequest{MutationID: "classify-free", Operations: []CanvasOperation{{Type: "set_field", Field: "kind", Value: json.RawMessage(`"freeform"`), BeforeValue: json.RawMessage(`"ecommerce"`)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{`"bad"`, `null`, `12`} {
+		_, err = svc.ApplyUserCanvasOperations("user", "shop", CanvasOperationsRequest{MutationID: "invalid-" + kind, Operations: []CanvasOperation{{Type: "set_field", Field: "kind", Value: json.RawMessage(kind), BeforeValue: json.RawMessage(`"freeform"`)}}})
+		if err == nil {
+			t.Fatalf("invalid kind accepted: %s", kind)
+		}
+	}
+}
 func TestApplyCanvasOperationsDoesNotRecreateDeletedNode(t *testing.T) {
 	svc := newCanvasOperationTestService(t)
 	if err := svc.repo.Create(&model.CanvasProject{

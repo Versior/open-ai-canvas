@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { canonicalize } from "json-canonicalize";
 import { DEFAULT_ECOMMERCE_SETTING, parseEcommerceSetting, type EcommerceSuiteTemplate } from "@/services/api/ecommerce";
 
 const key = "ecommerce-template-library";
@@ -12,6 +13,7 @@ type TemplateLibrary = {
     hydrate: () => Promise<void>;
     save: (template: EcommerceSuiteTemplate) => Promise<void>;
     remove: (id: string) => Promise<void>;
+    replace: (templates: EcommerceSuiteTemplate[], expected?: EcommerceSuiteTemplate[]) => Promise<void>;
 };
 
 /** Local, account-scoped planning templates. Public publication remains an admin action. */
@@ -69,5 +71,9 @@ export const useEcommerceTemplateLibrary = create<TemplateLibrary>((set, get) =>
         },
         save: (template) => mutate((templates) => [...templates.filter((item) => item.id !== template.id), structuredClone(template)]),
         remove: (id) => mutate((templates) => templates.filter((item) => item.id !== id)),
+        replace: (templates, expected) => mutate((current) => {
+            if (expected && canonicalize(current) !== canonicalize(expected)) throw new Error("本机模板已修改，未覆盖新编辑，请重新核对");
+            return structuredClone(templates);
+        }),
     };
 });

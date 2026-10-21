@@ -60,6 +60,9 @@ func protocolRequestFromInput(input canvasGenerationInput) protocol.GenerationRe
 			"count":             input.Config.Count,
 		},
 	}
+	if input.Mode == "image" && input.ImageCapability != nil {
+		request.ImageParameterSchema = input.ImageCapability.Parameters
+	}
 	for _, message := range input.TextHistory {
 		role := strings.ToLower(strings.TrimSpace(message.Role))
 		if role != "user" && role != "assistant" && role != "system" {

@@ -129,7 +129,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
             await reload();
             await onChanged();
             resetFetchPreview();
-            if (result.added > 0) message.success(`已导入 ${result.added} 个模型，新增模型仍需配置价格后启用`);
+            if (result.added > 0) message.success(`已导入 ${result.added} 个模型，已匹配参数及可复用配置，请核对价格后启用`);
             else message.info("所选模型均已存在，没有新增模型");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "导入模型失败");
@@ -517,6 +517,7 @@ export function ChannelModelManager({ channel, onChanged }: { channel: ModelChan
             {editorOpen && (
                 <ChannelModelEditor
                     channel={channel}
+                    existingModels={items}
                     editing={editing}
                     draftValues={copyDraft ?? undefined}
                     protocols={availableProtocols}

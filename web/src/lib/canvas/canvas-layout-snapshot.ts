@@ -15,6 +15,7 @@ function sameLayout(a: CanvasNodeData, b: CanvasNodeData) {
             a.position.y === b.position.y &&
             a.width === b.width &&
             a.height === b.height &&
+            a.metadata?.ecommerceCandidate?.studioId === b.metadata?.ecommerceCandidate?.studioId &&
             a.metadata?.batchRootId === b.metadata?.batchRootId &&
             a.metadata?.imageBatchExpanded === b.metadata?.imageBatchExpanded &&
             a.metadata?.frame?.collapsed === b.metadata?.frame?.collapsed)

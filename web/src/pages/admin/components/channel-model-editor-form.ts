@@ -6,6 +6,7 @@ import type { ChannelModel } from "@/services/api/wallet";
 import type { ModelTag } from "@/lib/model-tags";
 import { initializeImageRatioDefaults, resolveImageParameters } from "@/lib/image-parameters";
 import { defaultPriceTier, legacyPriceTierToForm, normalizeUpstreamModelKey, priceTierToForm, type PriceTierFormValues } from "./channel-model-price-tier-form";
+import { applyModelMetadataPreset, matchingModelPresets, modelFamilyIdentity, modelMatchScore, presetApplicationError, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
 
 export type ChannelModelFormValues = {
     modelKey: string;
@@ -23,6 +24,61 @@ export type ChannelModelFormValues = {
 };
 
 export type EditorSection = "identity" | "capabilities" | "pricing";
+
+export function copyChannelModelPrices(values: ChannelModelFormValues, source: ChannelModel): ChannelModelFormValues {
+    if (source.capability !== values.capability) throw new Error("请选择相同能力的模型复制价格");
+    const tiers = source.priceTiers?.length ? source.priceTiers.map((tier) => priceTierToForm(tier, source.capabilityConfig?.image, source.protocol)) : [legacyPriceTierToForm(source)];
+    if (source.protocol !== values.protocol && tiers.some((tier) => tier.matchMode === "advanced")) throw new Error("规格价格需要相同调用协议，请选择同协议模型，或手动配置规格条件");
+    const next = { ...values, priceTiers: tiers.map((tier) => ({ ...structuredClone(tier), providerModelKey: "" })) };
+    validateChannelModelPrices(next);
+    return next;
+}
+
+export function autoConfigureChannelModel(values: ChannelModelFormValues, models: ChannelModel[], protocols: ModelProtocolDefinition[], presets: ModelMetadataPreset[], protectedFields = new Set<string>()) {
+    const id = values.providerModelKey?.trim() || values.modelKey.trim();
+    const ranked = models.filter((model) => model.protocol && model.capability && protocols.some((p) => p.value === model.protocol && p.capability === model.capability && p.enabled !== false))
+        .map((model) => ({ model, score: Math.max(modelMatchScore(id, model.providerModelKey || model.modelKey, true), modelMatchScore(id, model.modelKey, true)) }));
+    const score = Math.max(0, ...ranked.map((item) => item.score));
+    const candidates = ranked.filter((item) => score > 0 && item.score === score);
+    const template = candidates.length === 1 ? candidates[0].model : undefined;
+    let next = { ...values };
+    const blank = initialChannelModelValues(null, protocols);
+    if (protectedFields.has("capability")) blank.capability = values.capability;
+    if (protectedFields.has("protocol")) blank.protocol = values.protocol;
+    else blank.protocol = protocols.find((p) => p.capability === blank.capability && p.enabled !== false)?.value;
+    blank.capabilityConfig = blank.capability === "audio" ? undefined : defaultModelCapabilityConfig(blank.protocol, id);
+    blank.priceTiers = blank.priceTiers.map((tier) => ({ ...tier, priceConfigured: false }));
+    for (const key of ["displayName", "capability", "protocol", "capabilityConfig", "icon", "priceTiers"] as const) {
+        if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(blank[key]) });
+    }
+    const sources: string[] = [];
+    if (template && (!protectedFields.has("capability") || values.capability === template.capability) && (!protectedFields.has("protocol") || values.protocol === template.protocol)) {
+        const defaults = initialChannelModelValues(template, protocols);
+        for (const key of ["capability", "protocol", "capabilityConfig", "icon"] as const) {
+            if (key === "capabilityConfig" && score === 1) {
+                if (!protectedFields.has(key)) next.capabilityConfig = template.capability === "audio" ? undefined : defaultModelCapabilityConfig(defaults.protocol, id);
+                continue;
+            }
+            if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(defaults[key]) });
+        }
+        if (!protectedFields.has("priceTiers") && (!protectedFields.has("protocol") || values.protocol === template.protocol) && (template.priceConfigured || template.priceTiers?.some((tier) => tier.priceConfigured))) {
+            next.priceTiers = defaults.priceTiers.map((tier) => ({ ...tier, providerModelKey: "" }));
+            sources.push(`接口和价格参考 ${template.providerModelKey || template.modelKey}`);
+        } else sources.push(`接口参考 ${template.providerModelKey || template.modelKey}`);
+    }
+    const preset = matchingModelPresets(presets, id)[0];
+    const identity = modelFamilyIdentity(id);
+    if (!protectedFields.has("displayName")) next.displayName = template?.displayName?.trim() && template.displayName !== "未分类" ? template.displayName : identity?.category || "未分类";
+    if (!protectedFields.has("icon")) next.icon = template?.icon?.trim() || identity?.icon || "";
+    if (identity) sources.push(`分类与 Logo 匹配 ${identity.category}`);
+    if (preset && !presetApplicationError(preset, next.capability)) {
+        const applied = applyModelMetadataPreset(next, preset);
+        if (!protectedFields.has("capabilityConfig")) next.capabilityConfig = applied.capabilityConfig;
+        if (!protectedFields.has("icon")) next.icon = applied.icon;
+        sources.push(`参数匹配 ${preset.id}`);
+    }
+    return { values: next, source: sources.join("；") };
+}
 
 export function editorSectionForField(name: (string | number)[]): EditorSection {
     return name[0] === "priceTiers" ? "pricing" : name[0] === "capabilityConfig" ? "capabilities" : "identity";

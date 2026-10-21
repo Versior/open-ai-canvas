@@ -80,6 +80,7 @@ describe("canvas selection semantics", () => {
             { ...node("frame", 300, 0), type: CanvasNodeType.Frame, metadata: { frame: { collapsed: true, expandedWidth: 160, expandedHeight: 90 } } },
             { ...node("frame-child", 320, 20), parentId: "frame" },
             node("visible", 600, 0),
+            node("candidate", 600, 0, { ecommerceCandidate: { studioId: "studio" } }),
         ];
         const cache = createCanvasSelectionSpatialIndexCache();
         const first = cache.get(nodes);

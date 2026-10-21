@@ -96,7 +96,9 @@ type GenerationRequest struct {
 	Output          OutputOptions             `json:"output,omitempty"`
 	ProviderOptions map[string]map[string]any `json:"providerOptions,omitempty"`
 	ImageParameters map[string]any            `json:"imageParameters,omitempty"`
-	Extra           map[string]any            `json:"extra,omitempty"`
+	// Populated only by the host from the resolved model; never accepted from JSON.
+	ImageParameterSchema []ImageParameter `json:"-"`
+	Extra                map[string]any   `json:"extra,omitempty"`
 }
 
 type RequestContext struct {

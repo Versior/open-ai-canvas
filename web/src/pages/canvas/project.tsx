@@ -3339,6 +3339,12 @@ ${instruction.trim()}`
     );
     const retryCanvasNode = useCallback(
         (node: CanvasNodeData) => {
+            if (node.type === CanvasNodeType.EcommerceStudio) {
+                const work = node.metadata?.ecommerceWorkbench;
+                if (!work?.request) { message.warning("请在生图台选择电商操作后执行"); return; }
+                void ecommerceWorkbench.run({ ...structuredClone(work.request), resumeReceiptId: node.id, retryFailed: Boolean(work.inputSignature && work.steps.some((step) => step.status === "failed")) }).catch((error) => message.error(error instanceof Error ? error.message : "电商任务重试失败"));
+                return;
+            }
             if (node.metadata?.imageLayerWorkflow && !node.metadata.experimentalLayerPlan && !node.metadata.layerDecomposition) {
                 const source = nodesRef.current.find((item) => item.id === node.metadata!.imageLayerWorkflow!.sourceNodeId);
                 if (source?.metadata?.content) setLayerDecompositionNodeId(source.id);
@@ -3374,7 +3380,7 @@ ${instruction.trim()}`
             }
             void handleRetryNode(node);
         },
-        [generateScriptRows, handleRetryNode, message, nodesRef, retryImageBatchChildren, setLayerDecompositionNodeId],
+        [ecommerceWorkbench.run, generateScriptRows, handleRetryNode, message, nodesRef, retryImageBatchChildren, setLayerDecompositionNodeId],
     );
     const openCanvasNodeTaskDetails = useCallback(
         (node: CanvasNodeData) => {
@@ -3800,24 +3806,22 @@ ${instruction.trim()}`
                                 </div>
 
                                 <div className="contents">
-                                    {currentProject?.kind === "ecommerce" ? (
-                                        <CanvasEcommerceWorkbench
-                                            key={projectId}
-                                            studioId={ecommerceWorkbenchStudioId}
-                                            initialCapability={ecommerceWorkbenchCapability}
-                                            open={ecommerceWorkbenchOpen}
-                                            onClose={() => setEcommerceWorkbenchOpen(false)}
-                                            nodes={nodes}
-                                            connections={connections}
-                                            selectedIds={selectedNodeIds}
-                                            busy={ecommerceWorkbench.busy}
-                                            onRun={ecommerceWorkbench.run}
-                                            onStop={ecommerceWorkbench.stop}
-                                            onLayers={openLayerDecomposition}
-                                            onFocus={focusCanvasNode}
-                                            onAssets={() => openCanvasAssetLibrary()}
-                                        />
-                                    ) : null}
+                                    <CanvasEcommerceWorkbench
+                                        key={projectId}
+                                        studioId={ecommerceWorkbenchStudioId}
+                                        initialCapability={ecommerceWorkbenchCapability}
+                                        open={ecommerceWorkbenchOpen}
+                                        onClose={() => setEcommerceWorkbenchOpen(false)}
+                                        nodes={nodes}
+                                        connections={connections}
+                                        selectedIds={selectedNodeIds}
+                                        busy={ecommerceWorkbench.busy}
+                                        onRun={ecommerceWorkbench.run}
+                                        onStop={ecommerceWorkbench.stop}
+                                        onLayers={openLayerDecomposition}
+                                        onFocus={focusCanvasNode}
+                                        onAssets={() => openCanvasAssetLibrary()}
+                                    />
                                     <CanvasCloudAgentPanel
                                         canvasId={projectId}
                                         domainProjectId={currentProject?.projectId}

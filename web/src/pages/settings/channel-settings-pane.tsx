@@ -1,12 +1,15 @@
 import { App, Button, Form, Input, Popconfirm, Segmented, Tooltip } from "antd";
 import { Pencil, Plus, RefreshCw, Trash2, Workflow } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { ModelEditorModal } from "@/components/model-editor-modal";
 import { ChannelHeadersEditor, validateChannelHeaders } from "@/components/channel-headers-editor";
 import { WorkspaceState } from "@/components/layout/workspace-state";
-import { mergeFetchedChannelModelCosts } from "@/lib/channel-model-catalog";
+import { autoConfigureUserChannelModels, mergeFetchedChannelModelCosts } from "@/lib/channel-model-catalog";
+import { loadModelMetadataPresets, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
 import { fetchChannelModels } from "@/services/api/image";
+import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
+import type { ModelProtocolDefinition } from "@/lib/model-protocols";
 import {
     createModelChannel,
     defaultBaseUrlForApiFormat,
@@ -32,6 +35,33 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
     const [loadingChannelIds, setLoadingChannelIds] = useState<string[]>([]);
     const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
     const [newChannelId, setNewChannelId] = useState<string | null>(null);
+    const [presets, setPresets] = useState<ModelMetadataPreset[]>([]);
+    const [protocols, setProtocols] = useState<ModelProtocolDefinition[]>([]);
+    useEffect(() => {
+        let active = true;
+        void fetchPluginProviderCatalog("user.custom-channel").then((items) => { if (active) setProtocols(items); })
+            .catch(() => { if (active) message.warning("协议目录读取失败，图片与视频模型仍可手动配置"); });
+        return () => { active = false; };
+    }, [message]);
+    useEffect(() => {
+        let active = true;
+        void loadModelMetadataPresets().then((items) => { if (active) setPresets(items); })
+            .catch(() => { if (active) message.warning("模型参数目录读取失败，仍可手动配置模型"); });
+        return () => { active = false; };
+    }, [message]);
+    useEffect(() => {
+        if (!presets.length) return;
+        const latest = useConfigStore.getState().config;
+        let changed = false;
+        const channels = latest.channels.map((channel) => {
+            if (channel.scope === "system") return channel;
+            const costs = autoConfigureUserChannelModels(channel, presets, protocols);
+            if (!costs.some((cost) => !channel.modelCosts?.some((saved) => saved.model === cost.model))) return channel;
+            changed = true;
+            return { ...channel, modelCosts: costs };
+        });
+        if (changed) replaceConfig(withChannels(latest, channels));
+    }, [config.channels, presets, protocols, replaceConfig]);
     const userChannels = config.channels.filter((channel) => channel.scope !== "system");
     const runningHubReady = Boolean(config.runningHub.enabled && config.runningHub.baseUrl.trim() && config.runningHub.apiKey.trim() && config.runningHub.workflowId.trim());
 
@@ -47,7 +77,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                 ...channel,
                 ...patch,
                 models,
-                modelCosts: patch.modelCosts !== undefined ? patch.modelCosts : (patch.models ? channel.modelCosts?.filter((item) => models.includes(item.model)) : channel.modelCosts),
+                modelCosts: patch.modelCosts !== undefined ? patch.modelCosts : (patch.models ? autoConfigureUserChannelModels({ ...channel, models }, presets, protocols) : channel.modelCosts),
             };
         }));
     };
@@ -94,6 +124,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
         setChannelLoading(channel.id, true);
         try {
             const result = await fetchChannelModels(channel, true);
+            const metadata = await loadModelMetadataPresets();
             if (!result.models.length) {
                 message.warning(`${channel.name || "当前渠道"}未返回模型，已保留现有手工模型`);
                 return;
@@ -106,7 +137,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                 return;
             }
             updateChannels(
-                latestConfig.channels.map((item) => (item.id === channel.id ? { ...item, models: result.models, modelCosts: mergeFetchedChannelModelCosts(item, result.catalog) } : item)),
+                latestConfig.channels.map((item) => (item.id === channel.id ? { ...item, models: result.models, modelCosts: mergeFetchedChannelModelCosts(item, result.catalog, metadata) } : item)),
                 latestConfig,
             );
             message.success(`${latestChannel.name || "当前渠道"}模型列表已更新`);
@@ -137,6 +168,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                     }
                 }),
             );
+            const metadata = await loadModelMetadataPresets();
             const latestConfig = useConfigStore.getState().config;
             const successful = results.filter((item) => {
                 const latestChannel = latestConfig.channels.find((channel) => channel.id === item.channel.id);
@@ -152,7 +184,7 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                 updateChannels(
                     latestConfig.channels.map((channel) => {
                         const fetched = resultMap.get(channel.id);
-                        return fetched ? { ...channel, models: fetched.models, modelCosts: mergeFetchedChannelModelCosts(channel, fetched.catalog) } : channel;
+                        return fetched ? { ...channel, models: fetched.models, modelCosts: mergeFetchedChannelModelCosts(channel, fetched.catalog, metadata) } : channel;
                     }),
                     latestConfig,
                 );

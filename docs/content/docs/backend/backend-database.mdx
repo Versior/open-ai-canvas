@@ -13,6 +13,8 @@ description: 影策后端核心持久化表与状态边界
 
 ## 画布多端协作（Schema 57）
 
+Schema 59 `restore_ecommerce_canvas_kind` 修复旧操作同步遗漏的画布分类：仅对 `kind` 缺失、null 或空字符串且含内置电商节点的画布补 `ecommerce`，不以标题判断，不覆盖明确分类。更新 `payload_json.kind` 并递增 `revision`，不改变节点、连线或更新时间；SQLite 与 PostgreSQL 均使用事务迁移，重复执行保持幂等。应用前端与后端时同步升级，先运行 `migrate-schema up`，再运行 `verify`。没有降级迁移，回退旧程序前需确认 Schema 版本兼容，不直接降低迁移账本版本。
+
 迁移 `canvas_multi_session_sync` 新增 `canvas_edit_leases`，以 `(user_id, canvas_id, node_id)` 为主键，记录浏览器会话、随机租约凭据与到期时间。服务端在画布事务锁内裁决占用和写入，租约有效期 30 秒；读取状态不返回凭据，浏览器计时不能代替服务端授权。
 
 `tasks.agent_execution_ready` 标记 Agent 执行记录已建立。迁移按任务 ID 和用户归属回填，保留任务内容与状态；`EnsureCloudAgent` 在创建执行的事务内更新标记，普通任务更新不能回写该字段。增加 `idx_cloud_agent_canvas_active` 和 `idx_tasks_canvas_agent_reservation` 两个部分索引，使占用查询只检查活动执行及未建立执行的根任务，不反复遍历终态历史。

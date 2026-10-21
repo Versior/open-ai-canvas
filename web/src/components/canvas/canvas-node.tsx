@@ -217,7 +217,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 scale={scale}
                 dimensionLabel={mediaDimensionLabel}
                 active={isSelected || isFocusRelated}
-                editable={!readOnly && !data.metadata?.locked && Boolean(onTitleChange)}
+                editable={!readOnly && !data.metadata?.locked && !(data.type === CanvasNodeType.EcommerceStudio && data.metadata?.status === "loading") && Boolean(onTitleChange)}
                 editing={isEditingTitle}
                 draft={titleDraft}
                 theme={theme}
@@ -293,7 +293,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     }
                 >
                     {/* 节点状态徽章（对应 #97 决策2：左上角 loading/success/error，近距离确认信号）*/}
-                    {showChrome && data.metadata?.status && data.metadata.status !== "idle" && data.type !== CanvasNodeType.Frame ? (
+                    {showChrome && data.metadata?.status && data.metadata.status !== "idle" && data.type !== CanvasNodeType.Frame && data.type !== CanvasNodeType.EcommerceStudio ? (
                         <NodeStatusBadge status={data.metadata.status} />
                     ) : null}
                     <CanvasNodeContent

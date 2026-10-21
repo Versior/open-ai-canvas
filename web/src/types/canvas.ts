@@ -340,13 +340,22 @@ export type CanvasNodeMetadata = {
         textModel?: string;
         skillIds?: string[];
         adoptedResults?: Record<string, string>;
+        planReview?: { signature: string; reviewedAt: string };
+        deliveryReview?: { signature: string; reviewedAt: string };
     };
     ecommerceStudioOutput?: { studioId: string; shotIndex: number; signature: string; sourceIds?: string[]; sourceSignature?: string; inputIds?: string[] };
+    /** Persist task outputs for review before placing them on the visible canvas. */
+    ecommerceCandidate?: { studioId: string };
     ecommerceWorkbench?: {
         capability: string;
         brief: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchBrief;
         sourceIds: string[];
         request?: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchRequest;
+        inputSignature?: string;
+        studioSignature?: string;
+        startedAt?: string;
+        finishedAt?: string;
+        stopped?: boolean;
         steps: { id: string; status: "running" | "succeeded" | "failed"; taskId?: string; nodeIds?: string[]; error?: string; completedAt?: string }[];
     };
     /** Credential-free editable generation contract; submitted recipes live with tasks. */

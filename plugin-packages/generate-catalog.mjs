@@ -493,7 +493,7 @@ add({
   response: arkSeedanceResponse
 });
 
-// Gemini imageConfig.imageSize 只接受 1K/2K/4K；画布统一层用 1k/2k/4k 或 low/medium/high。
+// 标准档位映射为大写；扩展档位仅取已校验的图片参数，避免混入视频清晰度。
 const geminiImageSize = omit({
   $coalesce: [
     {
@@ -503,7 +503,7 @@ const geminiImageSize = omit({
           { when: { $in: [lower(ref("request.quality")), ["2k", "medium"]] }, then: "2K" },
           { when: { $in: [lower(ref("request.quality")), ["4k", "high"]] }, then: "4K" }
         ],
-        default: null
+        default: { $upper: ref("request.imageParameters.imageResolution") }
       }
     },
     {
@@ -522,7 +522,7 @@ const geminiImageSize = omit({
 add({
   id: "google-gemini-image", providerId: "gemini-image", name: "Google Gemini Image", vendor: "Google", capability: "image",
   baseUrl: "https://generativelanguage.googleapis.com", auth: { type: "google-api-key", field: "apiKey" }, params: imageParams,
-  notes: "imageSize 只映射 1K/2K/4K；未知质量值（如视频清晰度 720）必须省略。多图输出由宿主按次创建，不映射 candidateCount。",
+  notes: "imageSize 映射标准档位，并透传已校验的自定义图片分辨率；旧请求的未知质量值（如视频清晰度 720）省略。多图输出由宿主按次创建，不映射 candidateCount。",
   create: jsonCreate("/v1beta/models/{{model}}:generateContent", {
     contents: [{ role: "user", parts: { $concatArrays: [
       [{ text: ref("request.prompt") }],

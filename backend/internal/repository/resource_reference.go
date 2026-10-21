@@ -132,6 +132,15 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 		return snapshot, err
 	}
 	snapshot.Direct = append(snapshot.Direct, history...)
+	if r.db.Migrator().HasTable(&model.EcommerceLibrary{}) {
+		library, err := r.EcommerceLibrary(userID)
+		if err != nil {
+			return snapshot, err
+		}
+		if library != nil {
+			snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "私人电商库", ID: userID, Title: "我的模特与花型", PrimaryJSON: library.PayloadJSON})
+		}
+	}
 	var leases []model.CloudAgentResourceLease
 	if err := r.db.Where("user_id = ? AND resource_id IN ? AND expires_at > ?", userID, resourceIDs, time.Now()).Find(&leases).Error; err != nil {
 		return snapshot, err

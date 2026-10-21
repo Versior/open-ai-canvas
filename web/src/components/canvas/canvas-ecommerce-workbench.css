@@ -6,6 +6,39 @@
     display: grid;
     gap: 18px;
 }
+.ecommerce-workbench-source-group {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    background: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+}
+.ecommerce-workbench-source-group h3 {
+    margin: 0;
+    font-size: var(--fs-body);
+}
+.ecommerce-workbench details > label {
+    margin-bottom: 14px;
+}
+.ecommerce-workbench .ant-tabs-nav-list {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    gap: 6px;
+}
+.ecommerce-workbench .ant-tabs-tab {
+    justify-content: center;
+    margin: 0;
+    padding: 10px 6px;
+    border-radius: var(--r-md);
+}
+.ecommerce-workbench .ant-tabs-tab-active {
+    background: var(--muted);
+}
+.ecommerce-workbench .ant-tabs-ink-bar {
+    display: none;
+}
 .ecommerce-workbench label {
     display: flex;
     flex-direction: column;

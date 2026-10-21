@@ -404,6 +404,7 @@ func migrations() []tableMigration {
 		migrateTable[model.AdminAuditEvent]("admin_audit_events"),
 		migrateTable[model.UserDailyActivity]("user_daily_activities"),
 		migrateTable[model.SystemSetting]("system_settings"),
+		migrateTable[model.EcommerceLibrary]("ecommerce_libraries"),
 		migrateTable[model.PluginPlatformState]("plugin_platform_states"),
 		migrateTable[model.UserPluginState]("user_plugin_states"),
 		migrateTable[model.ArkPrivateAssetBinding]("ark_private_asset_bindings"),

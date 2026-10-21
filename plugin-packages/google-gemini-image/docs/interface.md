@@ -42,7 +42,7 @@
 | `create.body.contents[0].parts` | `{"$concatArrays":[[{"text":{"$ref":"request.prompt"}}],{"$map":{"from":{"$ref":"request.images"},"as":"media","in":{"$if":{"condition":{"$ref":"media.dataUrl"},"then":{"inlineData":{"mimeType":{"$dataMime":{"$ref":"media.dataUrl"}},"data":{"$dataPayload":{"$ref":"media.dataUrl"}}}},"else":{"fileData":{"mimeType":{"$omitEmpty":{"$ref":"media.mimeType"}},"fileUri":{"$ref":"media.url"}}}}}}}]}` |
 | `create.body.generationConfig.responseModalities` | `{"$coalesce":[{"$ref":"request.providerOptions.gemini-image.responseModalities"},["TEXT","IMAGE"]]}` |
 | `create.body.generationConfig.imageConfig.aspectRatio` | `{"$omitEmpty":{"$ref":"request.aspectRatio"}}` |
-| `create.body.generationConfig.imageConfig.imageSize` | `{"$omitEmpty":{"$coalesce":[{"$switch":{"cases":[{"when":{"$in":[{"$lower":{"$ref":"request.quality"}},["1k","low"]]},"then":"1K"},{"when":{"$in":[{"$lower":{"$ref":"request.quality"}},["2k","medium"]]},"then":"2K"},{"when":{"$in":[{"$lower":{"$ref":"request.quality"}},["4k","high"]]},"then":"4K"}],"default":null}},{"$switch":{"cases":[{"when":{"$in":[{"$lower":{"$ref":"request.resolution"}},["1k","low"]]},"then":"1K"},{"when":{"$in":[{"$lower":{"$ref":"request.resolution"}},["2k","medium"]]},"then":"2K"},{"when":{"$in":[{"$lower":{"$ref":"request.resolution"}},["4k","high"]]},"then":"4K"}],"default":null}}]}}` |
+| `create.body.generationConfig.imageConfig.imageSize` | `{"$omitEmpty":{"$coalesce":[{"$switch":{"cases":[{"when":{"$in":[{"$lower":{"$ref":"request.quality"}},["1k","low"]]},"then":"1K"},{"when":{"$in":[{"$lower":{"$ref":"request.quality"}},["2k","medium"]]},"then":"2K"},{"when":{"$in":[{"$lower":{"$ref":"request.quality"}},["4k","high"]]},"then":"4K"}],"default":{"$upper":{"$ref":"request.imageParameters.imageResolution"}}}},{"$switch":{"cases":[{"when":{"$in":[{"$lower":{"$ref":"request.resolution"}},["1k","low"]]},"then":"1K"},{"when":{"$in":[{"$lower":{"$ref":"request.resolution"}},["2k","medium"]]},"then":"2K"},{"when":{"$in":[{"$lower":{"$ref":"request.resolution"}},["4k","high"]]},"then":"4K"}],"default":null}}]}}` |
 | `create.body.generationConfig.temperature` | `{"$omitEmpty":{"$ref":"request.providerOptions.gemini-image.temperature"}}` |
 | `create.body.generationConfig.topP` | `{"$omitEmpty":{"$ref":"request.providerOptions.gemini-image.topP"}}` |
 | `create.body.generationConfig.topK` | `{"$omitEmpty":{"$ref":"request.providerOptions.gemini-image.topK"}}` |
@@ -79,11 +79,11 @@
 
 ## 兼容边界
 
-imageSize 只映射 1K/2K/4K；未知质量值（如视频清晰度 720）必须省略。多图输出由宿主按次创建，不映射 candidateCount。
+imageSize 映射标准档位，并透传已校验的自定义图片分辨率；旧请求的未知质量值（如视频清晰度 720）省略。多图输出由宿主按次创建，不映射 candidateCount。
 
 ## 动态图片参数
 
-`contributes.providers[].imageParameters` 是渠道模型、前台模型与生成界面共用的参数合同。`name` 为稳定身份，`type`、`values`、`min/max/step`、`default` 描述输入；`models` 限定适用上游模型，`enabled` 为初始启用状态。只有 `pricing: true` 的启用字段允许作为价格条件；其他参数仍参与生成。渠道可收窄范围，绑定与计价资格由插件拥有。`binding` 映射到统一请求或插件自己的 `providerOptions` 命名空间。
+`contributes.providers[].imageParameters` 是渠道模型、前台模型与生成界面共用的参数合同。`name` 为稳定身份，`type`、`values`、`min/max/step`、`default` 描述输入；`models` 限定适用上游模型，`enabled` 为初始启用状态。只有 `pricing: true` 的启用字段允许作为价格条件；其他参数仍参与生成。渠道可自定义支持值和数值范围，字段类型、绑定与计价资格由插件拥有。`binding` 映射到统一请求或插件自己的 `providerOptions` 命名空间。
 
 <!-- YINGCE_MANIFEST_CONTRACT_START -->
 ## Manifest 完整接口定义
@@ -388,7 +388,11 @@ imageSize 只映射 1K/2K/4K；未知质量值（如视频清晰度 720）必须
                               "then": "4K"
                             }
                           ],
-                          "default": null
+                          "default": {
+                            "$upper": {
+                              "$ref": "request.imageParameters.imageResolution"
+                            }
+                          }
                         }
                       },
                       {

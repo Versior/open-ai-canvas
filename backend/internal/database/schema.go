@@ -62,6 +62,7 @@ func Models() []any {
 		&model.AdminAuditEvent{},
 		&model.UserDailyActivity{},
 		&model.SystemSetting{},
+		&model.EcommerceLibrary{},
 		&model.PluginPlatformState{},
 		&model.UserPluginState{},
 		&model.ArkPrivateAssetBinding{},

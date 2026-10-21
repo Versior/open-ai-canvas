@@ -66,6 +66,60 @@ func TestImageParameterRatioUsesDeclaredPixelPreset(t *testing.T) {
 	}
 }
 
+func TestImageParametersCustomValuesPersistAndReachProvider(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	admin := &model.User{ID: "admin", Role: model.UserRoleAdmin}
+	channel := model.ModelChannel{ID: "custom-parameters", UserID: admin.ID, Scope: model.ChannelScopeSystem, Name: "Test", APIFormat: "openai", ModelsJSON: `[]`}
+	if err := db.Create(&channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	profile := DefaultModelCapabilityConfigForModel("gemini-image", "custom-image")
+	if err := resolveImageCapabilityParameters(profile.Image, imageParameterTestAdapter(t, "google-gemini-image", "gemini-image").Metadata().ImageParameters, "custom-image"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range profile.Image.Parameters {
+		field := &profile.Image.Parameters[i]
+		enabled := true
+		if field.Name == "imageResolution" {
+			field.Values, field.Default = []any{"8k"}, "8k"
+			field.Enabled = &enabled
+		}
+		if field.Name == "size" {
+			field.Values, field.Default = []any{"17:11"}, "17:11"
+			field.Enabled = &enabled
+		}
+	}
+	profile.Image.Size.Presets = nil
+	saved, err := svc.SaveAdminChannelModel(admin, channel.ID, "", ChannelModelRequest{ModelKey: "custom-image", Capability: "image", Protocol: "gemini-image", CapabilityConfig: profile, PriceTiers: []ChannelModelPriceTierRequest{{BillingMode: "fixed_request", UnitPriceMicrocredits: 123, PriceConfigured: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := svc.repo.ChannelModelByID(channel.ID, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := normalizedChannelModelCapability(stored, svc.protocolRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Image.Resolution.Default != "8k" || reopened.Image.Size.Default != "17:11" {
+		t.Fatal("custom specification lost after persistence")
+	}
+	input := canvasGenerationInput{Mode: "image", Config: providerConfig{Model: "custom-image", InterfaceType: "gemini-image", ImageParameters: map[string]any{"imageResolution": "8k", "size": "17:11"}}, ImageCapability: reopened.Image}
+	if err := applyImageParameterValues(&input.Config, reopened.Image); err != nil {
+		t.Fatal(err)
+	}
+	adapter := imageParameterTestAdapter(t, "google-gemini-image", "gemini-image")
+	spec, err := adapter.BuildCreate(context.Background(), protocol.RequestContext{Request: protocolRequestFromInput(input)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(spec.Body)
+	if !strings.Contains(string(body), `"8K"`) || !strings.Contains(string(body), `"17:11"`) {
+		t.Fatalf("custom specification missing from provider body: %s", body)
+	}
+}
+
 func TestImageParametersResolutionOnlyAndLogicalReconciliation(t *testing.T) {
 	a := imageParameterTestAdapter(t, "google-gemini-image", "gemini-image")
 	registry, err := protocol.NewRegistry(a)
