@@ -618,6 +618,7 @@ export type CanvasNodeMetadata = {
     previsShotId?: string;
     previsPreviewNodeId?: string;
     previsDepthNodeId?: string;
+    previsDepthVideoNodeId?: string;
     previsNormalNodeId?: string;
     previsClayVideoNodeId?: string;
     subtitleEntries?: SrtEntry[];
