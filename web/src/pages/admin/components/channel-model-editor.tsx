@@ -19,7 +19,18 @@ import { ChannelModelTagsEditor } from "./channel-model-tags-editor";
 import { ChannelModelPresetPicker } from "./channel-model-preset-picker";
 import { applyModelMetadataPreset, loadModelMetadataPresets } from "@/lib/model-metadata-presets";
 import { autoConfigureChannelModel, copyChannelModelPrices } from "./channel-model-editor-form";
-import { changeChannelModelCapability, changeChannelModelProtocol, editorSectionForField, initialChannelModelValues, updateChannelModelUpstreamCapabilities, validateChannelModelPrices, validateChannelModelProtocol, type ChannelModelFormValues as FormValues, type EditorSection } from "./channel-model-editor-form";
+import {
+    changeChannelModelCapability,
+    changeChannelModelProtocol,
+    editorSectionForField,
+    initialChannelModelValues,
+    replaceChannelModelFormValues,
+    updateChannelModelUpstreamCapabilities,
+    validateChannelModelPrices,
+    validateChannelModelProtocol,
+    type ChannelModelFormValues as FormValues,
+    type EditorSection,
+} from "./channel-model-editor-form";
 
 const noExistingModels: ChannelModel[] = [];
 
@@ -48,9 +59,7 @@ export function ChannelModelEditor({
 }) {
     const { message, modal } = App.useApp();
     const { references } = useAdminContext();
-    const displayNameOptions = [...new Set(["未分类", ...references.channels.flatMap((item) => item.modelDisplayNames ?? [])])]
-        .sort((a, b) => a.localeCompare(b, "zh-CN"))
-        .map((value) => ({ value }));
+    const displayNameOptions = [...new Set(["未分类", ...references.channels.flatMap((item) => item.modelDisplayNames ?? [])])].sort((a, b) => a.localeCompare(b, "zh-CN")).map((value) => ({ value }));
     const [groupSearch, setGroupSearch] = useState("");
     const [form] = Form.useForm<FormValues>();
     const [initialValues] = useState(() => draftValues ?? initialChannelModelValues(editing, protocols));
@@ -101,7 +110,7 @@ export function ChannelModelEditor({
             void loadModelMetadataPresets().then((presets) => {
                 if (!active) return;
                 const result = autoConfigureChannelModel(form.getFieldsValue(true), existingModels, protocols, presets, protectedFields.current);
-                form.setFieldsValue(result.values);
+                replaceChannelModelFormValues(form, result.values);
                 setAutoSource(result.source || "未找到可靠匹配，请手动配置参数与价格。");
             }).catch(() => { if (active) setAutoSource("模型参数读取失败，请在下方重试或手动配置。"); });
         }, 350);
@@ -121,10 +130,10 @@ export function ChannelModelEditor({
         dirtyRef.current = true;
         for (const key of Object.keys(changed)) protectedFields.current.add(key);
         if (changed.capability) {
-            form.setFieldsValue(changeChannelModelCapability(form.getFieldsValue(true), protocols));
+            replaceChannelModelFormValues(form, changeChannelModelCapability(form.getFieldsValue(true), protocols));
             setConfigurationChange("capability");
         } else if (changed.protocol) {
-            form.setFieldsValue(changeChannelModelProtocol(form.getFieldsValue(true), changed.protocol, protocols));
+            replaceChannelModelFormValues(form, changeChannelModelProtocol(form.getFieldsValue(true), changed.protocol, protocols));
             setConfigurationChange("protocol");
         } else if (changed.providerModelKey !== undefined || changed.modelKey !== undefined) {
             const values = form.getFieldsValue(true);
@@ -165,7 +174,7 @@ export function ChannelModelEditor({
             try {
                 const presets = await loadModelMetadataPresets();
                 const result = autoConfigureChannelModel(form.getFieldsValue(true), existingModels, protocols, presets, protectedFields.current);
-                form.setFieldsValue(result.values);
+                replaceChannelModelFormValues(form, result.values);
                 setAutoSource(result.source);
             } catch {
                 message.warning("模型参数读取失败，将按当前手动配置保存");
@@ -254,7 +263,8 @@ export function ChannelModelEditor({
             keyboard={!busy}
             closable={!busy}
             onCancel={requestClose}
-            flush styles={{ body: { minHeight: 0, flex: 1 }, header: { margin: 0 }, footer: { margin: 0 } }}
+            flush
+            styles={{ body: { minHeight: 0, flex: 1 }, header: { margin: 0 }, footer: { margin: 0 } }}
             footer={
                 <div className="admin-model-editor-footer-actions">
                     <div className="admin-model-editor-footer-status">
@@ -312,7 +322,8 @@ export function ChannelModelEditor({
                                     {!editing && !draftValues && <p className="text-xs text-foreground/60" role="status">{autoSource || "填写模型 ID 后自动补齐参数，并参考当前渠道同类模型的接口与价格。"}</p>}
                                     <ChannelModelPresetPicker modelId={providerModelKey || modelKey} capability={modelCapability || initialValues.capability} disabled={busy} onApply={(preset) => {
                                         const next = applyModelMetadataPreset(form.getFieldsValue(true), preset);
-                                        form.setFieldsValue({ icon: next.icon, capabilityConfig: next.capabilityConfig });
+                                        form.setFieldValue("icon", next.icon);
+                                        form.setFieldValue("capabilityConfig", next.capabilityConfig);
                                         protectedFields.current.add("capabilityConfig");
                                         protectedFields.current.add("icon");
                                         dirtyRef.current = true;
@@ -321,7 +332,12 @@ export function ChannelModelEditor({
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="模型身份" description="区分产品侧展示标识与上游实际调用 ID。" />
                                         <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
-                                            <Form.Item name="modelKey" label="产品模型标识" tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。" rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}>
+                                            <Form.Item
+                                                name="modelKey"
+                                                label="产品模型标识"
+                                                tooltip="不同渠道使用相同标识时，创作端归为同一个产品模型。不同版本（例如 Fast）应使用不同标识；请勿为分组随意修改已有标识。"
+                                                rules={[{ required: true, whitespace: true, message: "请输入产品模型标识" }]}
+                                            >
                                                 <Input
                                                     prefix={
                                                         <span className="grid size-6 place-items-center">
@@ -340,12 +356,25 @@ export function ChannelModelEditor({
                                                     filterOption={(_, option) => Boolean(option?.value.toLowerCase().includes(groupSearch.trim().toLowerCase()))}
                                                     onSearch={setGroupSearch}
                                                     onFocus={() => setGroupSearch("")}
-                                                    onOpenChange={(open) => { if (open) setGroupSearch(""); }}
+                                                    onOpenChange={(open) => {
+                                                        if (open) setGroupSearch("");
+                                                    }}
                                                     placeholder="自动匹配分类，也可选择或输入分组"
                                                     allowClear
                                                 />
                                             </Form.Item>
-                                            <Form.Item name="channelLabel" label="渠道展示名（二级目录）" tooltip="默认跟随上游模型 ID；手动名称最多 80 字。" rules={[{ validator: async (_, value: string | undefined) => { if (value?.trim() !== modelUpstream && Array.from(value?.trim() || "").length > 80) throw new Error("渠道展示名不能超过 80 字"); } }]}>
+                                            <Form.Item
+                                                name="channelLabel"
+                                                label="渠道展示名（二级目录）"
+                                                tooltip="默认跟随上游模型 ID；手动名称最多 80 字。"
+                                                rules={[
+                                                    {
+                                                        validator: async (_, value: string | undefined) => {
+                                                            if (value?.trim() !== modelUpstream && Array.from(value?.trim() || "").length > 80) throw new Error("渠道展示名不能超过 80 字");
+                                                        },
+                                                    },
+                                                ]}
+                                            >
                                                 <Input maxLength={80} placeholder={modelUpstream || "默认使用上游模型 ID"} />
                                             </Form.Item>
                                             <Form.Item name="icon" label="模型 Logo">
