@@ -1794,25 +1794,31 @@ ${instruction.trim()}`
     const bindingRef = useRef(new Set<string>());
     const bindEcommerceSuite = useCallback(
         async (node: CanvasNodeData, rows: EcommerceSuiteRow[]) => {
-            if (bindingRef.current.has(node.id)) throw new Error("正在装订，请稍候");
             const bindingProduct = ecommerceTableSource(node, nodesRef.current, connectionsRef.current).product;
-            if (bindingProduct.metadata?.ecommerceOneClick) throw new Error("请先完成或取消当前自动装订");
-            bindingRef.current.add(node.id);
+            const bindingPlan = bindingProduct.metadata?.ecommerceOneClick;
+            if (bindingRef.current.has(bindingProduct.id) || (bindingPlan && bindingRef.current.has(ecommerceBindingKey(bindingProduct.id, bindingPlan)))) throw new Error("正在装订，请稍候");
+            bindingRef.current.add(bindingProduct.id);
             const scope = getActiveUserScope();
             try {
                 const setting = await useEcommerceSettings.getState().load();
+                if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消装订");
                 const { source, product } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
+                if (product.id !== bindingProduct.id) throw new Error("商品连接已变化，请重新装订");
                 const flow = ecommerceOneClickFlow(source.metadata?.ecommerceFlowId);
                 if (!flow?.bind || !setting.enabled || !setting.autoBindEnabled || !setting.flows[flow.id].enabled) throw new Error("当前用途未开放长图装订");
                 const platform = ecommerceBriefSlicePlatform(source.metadata?.ecommerceBrief, source.metadata?.ecommercePlatform || product.metadata?.ecommercePlatform);
                 const outputs = ecommerceSelectedOutputs(source, rows, nodesRef.current, connectionsRef.current);
                 const snapshot = JSON.stringify([product.id, platform, outputs.map((image) => [image.id, image.metadata?.storageKey])]);
+                // 手动采用结果后接管等待/失败的自动计划，避免旧计划永久阻塞或重复导出。
+                const pendingPlan = product.metadata?.ecommerceOneClick;
+                if (pendingPlan) setNodes((current) => finishEcommerceBinding(current, product.id, ecommerceBindingKey(product.id, pendingPlan)));
                 const urls: string[] = [];
                 for (const image of outputs) urls.push(await imageToDataUrl({ url: image.metadata?.content, storageKey: image.metadata?.storageKey, name: image.title }));
                 const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform, code: product.metadata?.productProfile?.name });
                 if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消装订");
                 const validateSelection = () => {
                     const { source: latest, product: latestProduct } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
+                    if (latestProduct.metadata?.ecommerceOneClick) throw new Error("自动装订计划已变化，请重新装订");
                     const selected = ecommerceSelectedOutputs(latest, latest.metadata?.ecommerceSuite?.rows || [], nodesRef.current, connectionsRef.current);
                     const latestPlatform = ecommerceBriefSlicePlatform(latest.metadata?.ecommerceBrief, latest.metadata?.ecommercePlatform || latestProduct.metadata?.ecommercePlatform);
                     if (snapshot !== JSON.stringify([latestProduct.id, latestPlatform, selected.map((image) => [image.id, image.metadata?.storageKey])])) throw new Error("商品、切片规格、采用结果或顺序已变化，请重新装订");
@@ -1822,19 +1828,20 @@ ${instruction.trim()}`
                 await exportEcommerceDetailPage(source, result.longImage.dataUrl, result.pieces, result.fileNames, validateSelection);
                 message.success("已按采用版本生成长图与切片");
             } finally {
-                bindingRef.current.delete(node.id);
+                bindingRef.current.delete(bindingProduct.id);
             }
         },
-        [exportEcommerceDetailPage, message],
+        [exportEcommerceDetailPage, message, setNodes],
     );
     useEffect(() => {
         if (!projectLoaded || !exportEcommerceDetailPage) return;
         for (const product of nodes.filter((item) => item.type === CanvasNodeType.Product && item.metadata?.ecommerceOneClick)) {
             const plan = product.metadata!.ecommerceOneClick!;
             const bindingKey = ecommerceBindingKey(product.id, plan);
-            if (plan.status === "failed" || bindingRef.current.has(bindingKey) || !plan.nodeIds.length) continue;
+            if (plan.status === "failed" || bindingRef.current.has(product.id) || bindingRef.current.has(bindingKey) || !plan.nodeIds.length) continue;
             const ready = ecommerceBindingImages(plan, nodes);
             if (!ready) continue;
+            bindingRef.current.add(product.id);
             bindingRef.current.add(bindingKey);
             const scope = getActiveUserScope();
             void (async () => {
@@ -1869,6 +1876,7 @@ ${instruction.trim()}`
                     setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey, generationErrorMessage(error)));
                 } finally {
                     bindingRef.current.delete(bindingKey);
+                    bindingRef.current.delete(product.id);
                 }
             })();
         }
@@ -2683,7 +2691,9 @@ ${instruction.trim()}`
             const { source: suiteNode, product: productNode } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
 
             // 出图模型与参数在面板上选，写在每一张节点上——批次调度按节点自己的模型解析，
-            if (productNode.metadata?.ecommerceOneClick) throw new Error("请先完成或取消当前自动装订，再开始新一轮套图");
+            const bindingPlan = productNode.metadata?.ecommerceOneClick;
+            if (bindingRef.current.has(productNode.id) || (bindingPlan && bindingRef.current.has(ecommerceBindingKey(productNode.id, bindingPlan)))) throw new Error("正在装订，请稍候");
+            if (bindingPlan && bindingPlan.status !== "failed") throw new Error("请先完成或取消当前自动装订，再开始新一轮套图");
             // 不读商品节点的字段。
             const imageModel = suiteNode.metadata?.ecommerceImageModel?.trim();
             const imageSize = suiteNode.metadata?.ecommerceImageSize?.trim();
@@ -2734,7 +2744,7 @@ ${instruction.trim()}`
                     if (item.id === productNode.id) {
                         // 装订可关：关掉就不写流程状态——装订链路只认这个字段，
                         // 不写它出完就只是出完，想拼时在商品节点上手动点。
-                        if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined } };
+                        if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } };
                         return {
                             ...item,
                             metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: { flow: flow.id, slotIds: plan.rows.map((row) => row.slotId), nodeIds, runId, platform: slicePlatform, status: "running" as const } },

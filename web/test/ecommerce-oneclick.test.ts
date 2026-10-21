@@ -439,8 +439,8 @@ describe("套图面板的接线", () => {
         // 没有提示词的行不给按——出了也是一张空图
         expect(panel).toContain('disabled={!hasPrompt || generating || status === "loading"}');
         expect(project).toContain("generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows)");
-        // 单张出图不写流程状态：只出一张时不该触发装订
-        expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined } }");
+        // 单张出图或关闭自动装订时清除旧失败计划，不触发装订。
+        expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } }");
     });
 
     test("尺寸与画质在面板上选，写进每一张产物节点", () => {
