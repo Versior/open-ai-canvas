@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 74
+const CurrentSchemaVersion int64 = 76
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -40,6 +40,10 @@ const restoreEcommerceCanvasKindMigrationChecksum = "sha256:restore-ecommerce-ca
 const referralCenterMigrationName = "referral_center"
 const upstreamReferralCenterMigrationChecksum = "sha256:referral-center-v72-20261027"
 const referralCenterMigrationChecksum = "sha256:referral-center-v74-20261027"
+const dramaEpisodeSourceFormatMigrationName = "drama_episode_source_format"
+const dramaEpisodeSourceFormatMigrationChecksum = "sha256:drama-episode-source-format-v73-20261027"
+const dramaSegmentReferencesMigrationName = "drama_segment_references"
+const dramaSegmentReferencesMigrationChecksum = "sha256:drama-segment-references-v74-20261027"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -263,10 +267,12 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.ResourceOffloadJob{})
 	}},
 	{version: 71, name: "drama_segment_mode", checksum: "sha256:drama-segment-mode-v71-20261026", apply: migrateDramaSegmentMode},
-	// 电商二开先占用 72/73，上游推广中心顺延到 74；checksum 里的 v58/v59 是历史命名，不要改。
+	// 已发布 Fork 的 72/73/74 是规范身份；上游同号迁移在启动时严格识别后顺延。
 	{version: 72, name: ecommercePrivateLibraryMigrationName, checksum: ecommercePrivateLibraryMigrationChecksum, apply: func(tx *gorm.DB) error { return tx.AutoMigrate(&model.EcommerceLibrary{}) }},
 	{version: 73, name: restoreEcommerceCanvasKindMigrationName, checksum: restoreEcommerceCanvasKindMigrationChecksum, apply: migrateEcommerceCanvasKind},
 	{version: 74, name: referralCenterMigrationName, checksum: referralCenterMigrationChecksum, apply: migrateReferralCenter},
+	{version: 75, name: dramaEpisodeSourceFormatMigrationName, checksum: dramaEpisodeSourceFormatMigrationChecksum, apply: migrateDramaEpisodeSourceFormat},
+	{version: 76, name: dramaSegmentReferencesMigrationName, checksum: dramaSegmentReferencesMigrationChecksum, apply: migrateDramaSegmentReferences},
 }
 
 // migrateReferralCenter 增加推广人标记和推广码、绑定、返佣三张表；旧用户默认不是推广人。
@@ -282,6 +288,22 @@ func migrateReferralCenter(tx *gorm.DB) error {
 		}
 	}
 	return tx.AutoMigrate(&model.ReferralProfile{}, &model.ReferralBinding{}, &model.ReferralCommission{})
+}
+
+func migrateDramaEpisodeSourceFormat(tx *gorm.DB) error {
+	// 旧集没有素材类型，空串按小说原文处理。
+	if tx.Migrator().HasColumn(&model.DramaEpisode{}, "SourceFormat") {
+		return nil
+	}
+	return tx.Migrator().AddColumn(&model.DramaEpisode{}, "SourceFormat")
+}
+
+func migrateDramaSegmentReferences(tx *gorm.DB) error {
+	// 空串表示按镜头自动取参考图，旧段保持原行为。
+	if tx.Migrator().HasColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON") {
+		return nil
+	}
+	return tx.Migrator().AddColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON")
 }
 
 // migrateDramaSegmentMode 把旧的剧情段目标秒数改写为新的切段模式：大于 0 的是用户指定的固定时长，0 表示按模型上限，即智能。
@@ -750,39 +772,151 @@ func normalizeLegacyEcommerceMigrations(tx *gorm.DB) error {
 	return nil
 }
 
-func normalizeUpstreamReferralMigration(tx *gorm.DB) error {
-	var applied schemaMigration
-	if err := tx.First(&applied, "version = ?", 72).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return fmt.Errorf("读取上游推广中心迁移记录：%w", err)
-	}
-	if applied.Name != referralCenterMigrationName {
-		return nil
-	}
-	if err := validateMigrationRecord(applied, migration{version: 72, name: referralCenterMigrationName, checksum: upstreamReferralCenterMigrationChecksum}); err != nil {
-		return err
-	}
-	var target schemaMigration
-	if err := tx.First(&target, "version = ?", 74).Error; err == nil {
-		return fmt.Errorf("迁移上游推广中心账本前发现版本 74 已被占用")
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("检查推广中心迁移目标版本：%w", err)
-	}
+func validateReferralCenterPhysicalSchema(tx *gorm.DB) error {
 	for _, table := range []any{&model.ReferralProfile{}, &model.ReferralBinding{}, &model.ReferralCommission{}} {
 		if !tx.Migrator().HasTable(table) {
-			return fmt.Errorf("数据库记录了上游推广中心迁移，但推广中心表不完整；请从备份恢复后再升级")
+			return fmt.Errorf("推广中心迁移账本与物理结构不一致：缺少表 %T", table)
 		}
 	}
-	result := tx.Model(&schemaMigration{}).
-		Where("version = ? AND name = ? AND checksum = ?", 72, referralCenterMigrationName, upstreamReferralCenterMigrationChecksum).
-		Updates(map[string]any{"version": 74, "checksum": referralCenterMigrationChecksum})
-	if result.Error != nil {
-		return fmt.Errorf("迁移上游推广中心账本记录到版本 74：%w", result.Error)
+	if !tx.Migrator().HasColumn(&model.User{}, "IsPromoter") {
+		return fmt.Errorf("推广中心迁移账本与物理结构不一致：缺少 users.is_promoter")
 	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("迁移上游推广中心账本记录到版本 74 影响 %d 行，拒绝继续启动", result.RowsAffected)
+	for _, index := range []struct {
+		model any
+		name  string
+	}{
+		{&model.User{}, "IsPromoter"},
+		{&model.ReferralProfile{}, "Code"},
+		{&model.ReferralBinding{}, "idx_referral_binding_inviter_created"},
+		{&model.ReferralCommission{}, "PaymentOrderID"},
+		{&model.ReferralCommission{}, "idx_referral_commission_inviter_created"},
+	} {
+		if !tx.Migrator().HasIndex(index.model, index.name) {
+			return fmt.Errorf("推广中心迁移账本与物理结构不一致：缺少索引 %s", index.name)
+		}
+	}
+	return nil
+}
+
+func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error {
+	switch version {
+	case 72:
+		if !tx.Migrator().HasTable(&model.EcommerceLibrary{}) {
+			return fmt.Errorf("电商素材库迁移账本与物理结构不一致：缺少表 %s", "ecommerce_libraries")
+		}
+	case 73:
+		if !tx.Migrator().HasTable(&model.CanvasProject{}) {
+			return fmt.Errorf("电商画布迁移账本与物理结构不一致：缺少画布表")
+		}
+	case 74:
+		return validateReferralCenterPhysicalSchema(tx)
+	case 75:
+		if !tx.Migrator().HasColumn(&model.DramaEpisode{}, "SourceFormat") {
+			return fmt.Errorf("短剧来源格式迁移账本与物理结构不一致：缺少 drama_episodes.source_format")
+		}
+	case 76:
+		if !tx.Migrator().HasColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON") {
+			return fmt.Errorf("短剧参考角色迁移账本与物理结构不一致：缺少 drama_segments.reference_cast_ids_json")
+		}
+	}
+	return nil
+}
+
+func modernMigrationRecords(tx *gorm.DB) ([]schemaMigration, error) {
+	var records []schemaMigration
+	if err := tx.Where("version BETWEEN ? AND ?", 72, CurrentSchemaVersion).Order("version asc").Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("读取 72 之后的迁移账本：%w", err)
+	}
+	return records, nil
+}
+
+func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
+	records, err := modernMigrationRecords(tx)
+	if err != nil || len(records) == 0 {
+		return false, err
+	}
+	if records[0].Version != 72 {
+		return false, fmt.Errorf("数据库迁移账本在版本 72 后不连续：首条为 %d", records[0].Version)
+	}
+	if records[0].Name != referralCenterMigrationName {
+		return false, nil
+	}
+
+	upstream := []migration{
+		{version: 72, name: referralCenterMigrationName, checksum: upstreamReferralCenterMigrationChecksum},
+		{version: 73, name: dramaEpisodeSourceFormatMigrationName, checksum: dramaEpisodeSourceFormatMigrationChecksum},
+		{version: 74, name: dramaSegmentReferencesMigrationName, checksum: dramaSegmentReferencesMigrationChecksum},
+	}
+	if len(records) > len(upstream) {
+		return false, fmt.Errorf("上游迁移账本在版本 74 后仍有记录，拒绝自动重排")
+	}
+	for index, applied := range records {
+		expected := upstream[index]
+		if applied.Version != expected.version {
+			return false, fmt.Errorf("上游迁移账本不连续：期望版本 %d，实际为 %d", expected.version, applied.Version)
+		}
+		if err := validateMigrationRecord(applied, expected); err != nil {
+			return false, err
+		}
+	}
+	if err := validateReferralCenterPhysicalSchema(tx); err != nil {
+		return false, err
+	}
+	if len(records) >= 2 && !tx.Migrator().HasColumn(&model.DramaEpisode{}, "SourceFormat") {
+		return false, fmt.Errorf("上游短剧来源格式迁移账本与物理结构不一致：缺少 drama_episodes.source_format")
+	}
+	if len(records) >= 3 && !tx.Migrator().HasColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON") {
+		return false, fmt.Errorf("上游短剧参考角色迁移账本与物理结构不一致：缺少 drama_segments.reference_cast_ids_json")
+	}
+
+	// 逆序搬迁避免完整上游 74 的主键槽位互相碰撞；AppliedAt 不参与更新。
+	for index := len(records) - 1; index >= 0; index-- {
+		applied := records[index]
+		values := map[string]any{"version": applied.Version + 2}
+		if applied.Version == 72 {
+			values["checksum"] = referralCenterMigrationChecksum
+		}
+		result := tx.Model(&schemaMigration{}).
+			Where("version = ? AND name = ? AND checksum = ?", applied.Version, applied.Name, applied.Checksum).
+			Updates(values)
+		if result.Error != nil {
+			return false, fmt.Errorf("迁移上游账本记录 %d 到 %d：%w", applied.Version, applied.Version+2, result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return false, fmt.Errorf("迁移上游账本记录 %d 到 %d 影响 %d 行，拒绝继续启动", applied.Version, applied.Version+2, result.RowsAffected)
+		}
+	}
+	return true, nil
+}
+
+func validateCanonicalMigrationPrefix(tx *gorm.DB) error {
+	records, err := modernMigrationRecords(tx)
+	if err != nil || len(records) == 0 {
+		return err
+	}
+	if records[0].Version != 72 {
+		return fmt.Errorf("数据库迁移账本在版本 72 后不连续：首条为 %d", records[0].Version)
+	}
+	canonical := make([]migration, 0, 5)
+	for _, item := range schemaMigrations {
+		if item.version >= 72 && item.version <= CurrentSchemaVersion {
+			canonical = append(canonical, item)
+		}
+	}
+	if len(records) > len(canonical) {
+		return fmt.Errorf("数据库迁移账本超过程序支持范围")
+	}
+	for index, applied := range records {
+		expected := canonical[index]
+		if applied.Version != expected.version {
+			return fmt.Errorf("数据库迁移账本不连续：期望版本 %d，实际为 %d", expected.version, applied.Version)
+		}
+		if err := validateMigrationRecord(applied, expected); err != nil {
+			return err
+		}
+		if err := validateCanonicalMigrationPhysicalSchema(tx, applied.Version); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -818,8 +952,14 @@ func MigrateSchema(db *gorm.DB) error {
 		if err := normalizeLegacyEcommerceMigrations(tx); err != nil {
 			return err
 		}
-		if err := normalizeUpstreamReferralMigration(tx); err != nil {
+		normalizedUpstream, err := normalizeUpstreamMigrations(tx)
+		if err != nil {
 			return err
+		}
+		if !normalizedUpstream {
+			if err := validateCanonicalMigrationPrefix(tx); err != nil {
+				return err
+			}
 		}
 		plan, err := migrationsForDatabase(tx)
 		if err != nil {

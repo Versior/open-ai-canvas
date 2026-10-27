@@ -293,6 +293,9 @@ func TestMigrateSchemaV35UpgradesExistingDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := db.Migrator().CreateIndex(&model.User{}, "IsPromoter"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Migrator().DropColumn(&model.EmailVerificationCode{}, "attempts"); err != nil {
 		t.Fatal(err)
 	}

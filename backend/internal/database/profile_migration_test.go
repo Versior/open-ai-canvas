@@ -86,6 +86,9 @@ func TestAvatarPresetMigrationUpgradesV51WithoutChangingUsersOrBlobs(t *testing.
 	if err := db.Migrator().DropColumn(&model.User{}, "AvatarPreset"); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Migrator().CreateIndex(&model.User{}, "IsPromoter"); err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Delete(&schemaMigration{}, "version = ?", 52).Error; err != nil {
 		t.Fatal(err)
 	}
