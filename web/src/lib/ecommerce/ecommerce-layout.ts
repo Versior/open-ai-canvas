@@ -123,7 +123,7 @@ export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
         layout: {
             name: "底部信息条",
             blocks: blocks([
-                { field: "headline", anchor: "bottom-left", size: 8, bold: true },
+                { field: "headline", anchor: "bottom-left", size: 8, bold: true, inset: 15 },
                 { field: "subhead", anchor: "bottom-left", size: 4, color: "#4A4A4A", bold: false, inset: 6 },
                 { field: "price", anchor: "bottom-right", size: 9, color: "#C8341F", bold: true },
             ]).map((block, index) => (index === 1 ? { ...block, inset: 6 } : index === 2 ? block : block)),

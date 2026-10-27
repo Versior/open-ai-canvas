@@ -13,12 +13,15 @@ import type { CanvasShortDramaProgress } from "@/lib/canvas/canvas-short-drama";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useCanvasThemeStore } from "@/stores/canvas/use-canvas-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
+import type { CanvasWorkspaceMode } from "@/types/canvas";
 import { CanvasShortcutsModal } from "./canvas-shortcuts-modal";
 
 export type CanvasProjectView = "canvas" | "assets";
 
 type CanvasTopBarProps = {
     ecommerce?: boolean;
+    workspaceMode?: CanvasWorkspaceMode;
+    onWorkspaceModeChange?: (mode: CanvasWorkspaceMode) => void;
     view: CanvasProjectView;
     onViewChange: (view: CanvasProjectView) => void;
     title: string;
@@ -50,6 +53,8 @@ type CanvasTopBarProps = {
 
 export function CanvasTopBar({
     ecommerce = false,
+    workspaceMode,
+    onWorkspaceModeChange,
     view,
     onViewChange,
     title,
@@ -195,6 +200,20 @@ export function CanvasTopBar({
                 <CanvasViewSwitch view={view} onChange={onViewChange} dockStyle={dockStyle} activeBg={theme.toolbar.activeBg} color={theme.node.text} />
 
                 <div className="canvas-topbar-cluster canvas-topbar-tools-cluster pointer-events-auto flex items-center gap-2" style={dockStyle}>
+                    {ecommerce && workspaceMode && onWorkspaceModeChange ? (
+                        <CanvasTopBarTooltip label={workspaceMode === "simple" ? "进入专业画布" : "返回快捷创作"}>
+                            <Button
+                                type="text"
+                                className="canvas-topbar-action !h-10 !rounded-xl !px-3 !font-medium"
+                                style={{ color: theme.node.text, background: workspaceMode === "professional" ? theme.toolbar.activeBg : undefined }}
+                                aria-label={workspaceMode === "simple" ? "快捷创作，切换到专业画布" : "专业画布，返回快捷创作"}
+                                aria-pressed={workspaceMode === "professional"}
+                                onClick={() => onWorkspaceModeChange(workspaceMode === "simple" ? "professional" : "simple")}
+                            >
+                                {workspaceMode === "simple" ? "快捷创作" : "专业画布"}
+                            </Button>
+                        </CanvasTopBarTooltip>
+                    ) : null}
                     {onOpenModelLibrary ? (
                         <CanvasTopBarTooltip label="管理模特库">
                             <Button type="text" className="canvas-topbar-action !h-10 !w-10 !min-w-10 !p-0" style={{ color: theme.node.text }} icon={<UserRound className="size-4" />} onClick={onOpenModelLibrary} aria-label="管理模特库" />

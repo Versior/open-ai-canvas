@@ -1,5 +1,5 @@
 import { ChevronDown, Clapperboard, Film, LoaderCircle, ShieldAlert, Trash2, Wand2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
@@ -10,15 +10,22 @@ import {
     ECOMMERCE_VIDEO_LANGUAGES,
     ECOMMERCE_VIDEO_MOTIONS,
     ECOMMERCE_VIDEO_SPECS,
+    ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE,
+    applyEcommerceVideoCreativePlan,
+    buildEcommerceVideoCreativePlanPrompt,
     createEcommerceVideo,
     createEcommerceVideoShot,
     ecommerceVideoBlocked,
+    ecommerceVideoCreativePlanNotes,
+    ecommerceVideoCreativePlanRequest,
+    ecommerceVideoCreativePlanSourceSignature,
     ecommerceVideoFirstFrameRule,
     ecommerceVideoIssues,
     ecommerceVideoPrompt,
     ecommerceVideoSeconds,
     ecommerceVideoShotsFromImages,
     ecommerceVideoSpec,
+    parseEcommerceVideoCreativePlan,
     type EcommerceVideo,
     type EcommerceVideoKind,
     type EcommerceVideoLanguage,
@@ -29,7 +36,6 @@ import {
     ECOMMERCE_VIDEO_REPLICA_ASPECTS,
     ECOMMERCE_VIDEO_REPLICA_MODES,
     ECOMMERCE_VIDEO_REPLICA_NEVER,
-    buildEcommerceVideoTeardownPrompt,
     createEcommerceVideoReplica,
     ecommerceVideoReplicaBeatCount,
     type EcommerceVideoReplica,
@@ -73,10 +79,12 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
     const [editing, setEditing] = useState(false);
     const [activeShotId, setActiveShotId] = useState<string | null>(null);
     const [generating, setGenerating] = useState(false);
+    const importedCreativePlanRef = useRef("");
 
     const video: EcommerceVideo = node.metadata?.ecommerceVideo || createEcommerceVideo(node.title || "未命名视频");
     const editable = Boolean(updateMetadata);
     const images = upstream.filter(isImageNode);
+    const product = upstream.find((item) => item.type === CanvasNodeType.Product);
     const referenceVideo = upstream.find(isVideoNode);
     const spec = ecommerceVideoSpec(video.platform);
     const seconds = ecommerceVideoSeconds(video);
@@ -86,6 +94,20 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
     const replica = video.replica;
 
     const imageById = useMemo(() => new Map(images.map((image) => [image.id, image])), [images]);
+    const creativePlanResult = [...upstream].reverse().find((item) => item.type === CanvasNodeType.Text && item.title === ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE);
+    const creativePlanResultContent = creativePlanResult?.metadata?.status === "success" ? creativePlanResult.metadata.content?.trim() || "" : "";
+    const creativePlanResultValue = useMemo(() => parseEcommerceVideoCreativePlan(creativePlanResultContent), [creativePlanResultContent]);
+    const creativePlanSourceSignature = ecommerceVideoCreativePlanSourceSignature({ target: node, referenceVideo, product, productImages: images });
+    const creativePlanResultSource = creativePlanResult?.metadata?.ecommerceVideoCreativePlanSource;
+    const creativePlanResultStale = Boolean(
+        creativePlanResultContent &&
+            (!creativePlanResultSource ||
+                creativePlanResultSource.targetNodeId !== node.id ||
+                creativePlanResultSource.referenceVideoId !== referenceVideo?.id ||
+                creativePlanResultSource.signature !== creativePlanSourceSignature),
+    );
+    const editableCreativePlan = useMemo(() => parseEcommerceVideoCreativePlan(replica?.notes), [replica?.notes]);
+    const editableCreativePlanStale = Boolean(replica?.planSourceSignature && replica.planSourceSignature !== creativePlanSourceSignature);
     const usableShots = video.shots.filter((shot) => shot.imageNodeId);
     const activeShot = video.shots.find((shot) => shot.id === activeShotId) || usableShots[0];
 
@@ -94,13 +116,26 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
     const patchShot = (id: string, next: Partial<EcommerceVideo["shots"][number]>) => commitShots(video.shots.map((shot) => (shot.id === id ? { ...shot, ...next } : shot)));
     const patchReplica = (next: Partial<EcommerceVideoReplica>) => patch({ replica: { ...(replica || createEcommerceVideoReplica(video.name)), ...next } });
 
-    /** 应用模板：按骨架铺镜头，并把骨架的 purpose 写进字幕位。 */
+    useEffect(() => {
+        if (!updateMetadata || !creativePlanResultValue || creativePlanResultStale || !creativePlanResultContent || replica?.notes.trim() || importedCreativePlanRef.current === creativePlanResultContent) return;
+        importedCreativePlanRef.current = creativePlanResultContent;
+        patchReplica({ notes: ecommerceVideoCreativePlanNotes(creativePlanResultValue), planSourceSignature: creativePlanSourceSignature });
+    }, [creativePlanResultContent, creativePlanResultStale, creativePlanResultValue, creativePlanSourceSignature, replica?.notes, updateMetadata]);
+
+    const applyCreativePlan = () => {
+        if (!editableCreativePlan || editableCreativePlanStale) return;
+        const next = applyEcommerceVideoCreativePlan(video, editableCreativePlan, images.map((image) => image.id));
+        commitShots(next.shots);
+        setActiveShotId(next.shots[0]?.id || null);
+    };
+
+    /** 应用模板：按骨架铺镜头，并保留每一段真正要完成的画面任务。 */
     const applyTemplate = (templateId: string) => {
         const picked = ecommerceVideoTemplate(templateId as never);
         if (!picked) return;
         const beats = ecommerceVideoTemplateBeats(picked, video.platform, spec?.maxSeconds || 60);
         const shots = beats.map((beat, index) => ({
-            ...createEcommerceVideoShot(images[index % Math.max(1, images.length)]?.id || ""),
+            ...createEcommerceVideoShot(images[index % Math.max(1, images.length)]?.id || "", beat.purpose),
             seconds: beat.seconds,
             motion: beat.motion as EcommerceVideoMotion,
             caption: beat.label,
@@ -112,7 +147,7 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
     const totalWeight = Math.max(1, usableShots.reduce((total, shot) => total + Math.max(0.5, shot.seconds), 0));
 
     return (
-        <div className="ecom-card" style={{ color: theme.node.text }}>
+        <div className="ecom-card ecom-video-card" style={{ color: theme.node.text }}>
             <header className="ecom-card-header">
                 <div className="ecom-card-kicker">
                     <span className="ecom-card-mark"><Film className="size-3.5" /></span>
@@ -130,7 +165,7 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
             />
 
             {usableShots.length ? (
-                <div className="ecom-video-timeline" role="list" aria-label="镜头时间轴">
+                <div className="ecom-video-timeline" role="group" aria-label="镜头时间轴">
                     {usableShots.map((shot, index) => {
                         const image = imageById.get(shot.imageNodeId);
                         const motion = ECOMMERCE_VIDEO_MOTIONS.find((item) => item.id === shot.motion);
@@ -138,7 +173,6 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
                             <button
                                 key={shot.id}
                                 type="button"
-                                role="listitem"
                                 className="ecom-video-cell"
                                 aria-pressed={activeShot?.id === shot.id}
                                 style={{ flexGrow: Math.max(0.5, shot.seconds) / totalWeight }}
@@ -278,18 +312,40 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
                                 <button
                                     type="button"
                                     className="ecom-action ecom-action-primary"
-                                    onClick={() => reversePromptFromNode?.(referenceVideo, buildEcommerceVideoTeardownPrompt({ aspects: replica?.aspects }))}
+                                    onClick={() => reversePromptFromNode?.(referenceVideo, ecommerceVideoCreativePlanRequest(node.id, buildEcommerceVideoCreativePlanPrompt({ aspects: replica?.aspects, platform: video.platform, language: video.language })))}
                                 >
                                     <Wand2 className="size-3" />
                                     拆解这段视频的结构
                                 </button>
                                 <textarea
                                     className="ecom-field-input thin-scrollbar"
-                                    rows={3}
+                                    rows={6}
                                     value={replica?.notes || ""}
-                                    placeholder="结构笔记：第 1–3 秒痛点，第 3 秒切商品，第 4–8 秒演示…"
-                                    onChange={(event) => patchReplica({ notes: event.target.value })}
+                                    placeholder="Creative Plan 会在拆解成功后写到这里；你可以先改 Hook、节奏、字幕和 CTA，再确认应用。"
+                                    onChange={(event) => patchReplica({ notes: event.target.value, planSourceSignature: undefined })}
                                 />
+                                {creativePlanResultContent && !creativePlanResultValue ? <span className="ecom-card-subtitle">拆解结果不是完整 Creative Plan，请回到结果节点重试。</span> : null}
+                                {creativePlanResultStale || editableCreativePlanStale ? <span className="ecom-card-subtitle">方案已过期：商品、参考视频、平台或语言已变化，请重新拆解。</span> : null}
+                                {creativePlanResultValue && !creativePlanResultStale ? (
+                                    <button type="button" className="ecom-action" onClick={() => patchReplica({ notes: ecommerceVideoCreativePlanNotes(creativePlanResultValue), planSourceSignature: creativePlanSourceSignature })}>
+                                        载入最新拆解
+                                    </button>
+                                ) : null}
+                                <button
+                                    type="button"
+                                    className="ecom-action ecom-action-primary"
+                                    disabled={!editableCreativePlan || editableCreativePlanStale}
+                                    aria-describedby={!editableCreativePlan || editableCreativePlanStale ? `ecommerce-video-creative-plan-reason-${node.id}` : undefined}
+                                    title={editableCreativePlan && !editableCreativePlanStale ? `确认后替换当前镜头表，共 ${editableCreativePlan.shots.length} 镜` : editableCreativePlanStale ? "商品、参考视频、平台或语言已变化，请重新拆解" : "先完成拆解或把 Creative Plan 修正为有效 JSON"}
+                                    onClick={applyCreativePlan}
+                                >
+                                    确认应用为镜头表{editableCreativePlan ? `（${editableCreativePlan.shots.length} 镜）` : ""}
+                                </button>
+                                {!editableCreativePlan || editableCreativePlanStale ? (
+                                    <span id={`ecommerce-video-creative-plan-reason-${node.id}`} className="ecom-card-subtitle" style={{ whiteSpace: "normal" }}>
+                                        {editableCreativePlanStale ? "商品、参考视频、平台或语言已变化，请重新拆解" : "先完成拆解或把 Creative Plan 修正为有效 JSON"}
+                                    </span>
+                                ) : null}
                                 <div className="ecom-replica-never">
                                     <span className="ecom-replica-never-title"><ShieldAlert className="size-3" /> 绝对不复刻</span>
                                     {ECOMMERCE_VIDEO_REPLICA_NEVER.map((item) => <span key={item} className="ecom-replica-never-item">{item}</span>)}
@@ -367,7 +423,7 @@ export function EcommerceVideoNodeContent({ node, theme }: EcommerceVideoNodeCon
                                     </select>
                                     <label className="ecom-chip flex items-center gap-1">
                                         时长
-                                        <input type="number" min={0.5} max={30} step={0.5} value={shot.seconds} aria-label="时长（秒）" className="w-10 bg-transparent text-[10px] tabular-nums outline-none" onChange={(event) => patchShot(shot.id, { seconds: Number(event.target.value) || shot.seconds })} />
+                                        <input type="number" min={0.5} max={30} step={0.5} value={shot.seconds} aria-label="时长（秒）" className="ecom-video-duration-input w-10 bg-transparent tabular-nums outline-none" onChange={(event) => patchShot(shot.id, { seconds: Number(event.target.value) || shot.seconds })} />
                                         s
                                     </label>
                                     <button type="button" className="ecom-chip" aria-label={`删除第 ${index + 1} 镜`} onClick={() => commitShots(video.shots.filter((item) => item.id !== shot.id))}>

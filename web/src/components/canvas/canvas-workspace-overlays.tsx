@@ -33,7 +33,7 @@ import { aceternityMotion } from "@/lib/aceternity-motion";
 import { canvasOverlayBounds, observeCanvasOverlayBounds, placeCanvasNodePanel, updateCanvasNodePanelBounds } from "@/lib/canvas/canvas-overlay-layout";
 import { subscribeCanvasGraphicsViewportPreview, subscribeCanvasNodeDragPreview, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import { CanvasNodeType, type CanvasCreatableNodeType, type CanvasNodeData, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasCreatableNodeType, type CanvasNodeData, type CanvasWorkspaceMode, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
 import { useCanvasNodeResizeMotion } from "./canvas-node-resize-motion";
 
 export type PendingConnectionCreate = {
@@ -236,6 +236,7 @@ export function CanvasConnectionCreateMenu({
     containerRef,
     canCreateDrawing,
     canvasKind = "freeform",
+    workspaceMode = "professional",
     getDisabledReason,
     onCreate,
     onClose,
@@ -250,6 +251,7 @@ export function CanvasConnectionCreateMenu({
      * 两边是两套工作流，混在一起会把两条流程的入口都搞模糊（见 canvas-kind.ts）。
      */
     canvasKind?: CanvasKind;
+    workspaceMode?: CanvasWorkspaceMode;
     getDisabledReason: (type: CanvasCreatableNodeType, provider?: "runninghub") => string;
     onCreate: (type: CanvasCreatableNodeType, provider?: "runninghub") => void;
     onClose: () => void;
@@ -258,6 +260,9 @@ export function CanvasConnectionCreateMenu({
     const reducedMotion = useReducedMotion();
     const ecommerceCanvas = canvasKind === "ecommerce";
     const menuRef = useRef<HTMLDivElement>(null);
+    const onCloseRef = useRef(onClose);
+    const focusSessionRef = useRef(0);
+    onCloseRef.current = onClose;
     const [activeOption, setActiveOption] = useState<string | null>(null);
     const lastPointerRef = useRef<Position | null>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer("connection-create-menu", "var(--z-modal-overlay)");
@@ -271,6 +276,32 @@ export function CanvasConnectionCreateMenu({
     useLayoutEffect(() => {
         bringToFront();
     }, [bringToFront]);
+
+    useLayoutEffect(() => {
+        const menu = menuRef.current;
+        if (!menu) return;
+        const ownerDocument = menu.ownerDocument;
+        const focusSession = ++focusSessionRef.current;
+        const activeElement = ownerDocument.activeElement;
+        const previousFocus = activeElement instanceof HTMLElement && activeElement !== ownerDocument.body ? activeElement : null;
+        const firstAvailableOption = menu.querySelector<HTMLElement>('[data-create-option]:not([aria-disabled="true"])');
+        (firstAvailableOption || menu).focus({ preventScroll: true });
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                onCloseRef.current();
+            }
+        };
+        ownerDocument.addEventListener("keydown", closeOnEscape, true);
+        return () => {
+            ownerDocument.removeEventListener("keydown", closeOnEscape, true);
+            const focusAtClose = ownerDocument.activeElement;
+            queueMicrotask(() => {
+                if (focusSessionRef.current === focusSession && previousFocus?.isConnected && (ownerDocument.activeElement === focusAtClose || ownerDocument.activeElement === ownerDocument.body)) previousFocus.focus({ preventScroll: true });
+            });
+        };
+    }, []);
 
     useLayoutEffect(() => {
         const container = containerRef.current;
@@ -294,13 +325,9 @@ export function CanvasConnectionCreateMenu({
             className="thin-scrollbar absolute origin-top-left overflow-x-hidden overflow-y-auto rounded-[var(--r-2xl)] border p-2"
             data-canvas-no-zoom
             data-connection-create-menu
+            role="dialog"
+            tabIndex={-1}
             aria-label="创建下一步"
-            onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                    event.stopPropagation();
-                    onClose();
-                }
-            }}
             style={{ width: menuWidth, maxHeight: Math.max(120, viewportSize.height - 84), left: initialPosition.left, top: initialPosition.top, zIndex, background: theme.spatial.elevated, borderColor: theme.toolbar.border, color: theme.node.text }}
             onMouseDown={(event) => event.stopPropagation()}
             onPointerDownCapture={bringToFront}
@@ -350,15 +377,17 @@ export function CanvasConnectionCreateMenu({
                         />
                     </>
                 )}
-                <ConnectionCreateOption
-                    expanded={activeOption === "批量创作表"}
-                    motionEnabled={!reducedMotion}
-                    icon={<Table2 className="size-4" />}
-                    title="批量创作表"
-                    description="汇总多张图片，批量执行换装或创意生图"
-                    disabledReason={getDisabledReason(CanvasNodeType.BatchTable)}
-                    onClick={() => onCreate(CanvasNodeType.BatchTable)}
-                />
+                {!ecommerceCanvas || workspaceMode !== "simple" ? (
+                    <ConnectionCreateOption
+                        expanded={activeOption === "批量创作表"}
+                        motionEnabled={!reducedMotion}
+                        icon={<Table2 className="size-4" />}
+                        title="批量创作表"
+                        description="汇总多张图片，批量执行换装或创意生图"
+                        disabledReason={getDisabledReason(CanvasNodeType.BatchTable)}
+                        onClick={() => onCreate(CanvasNodeType.BatchTable)}
+                    />
+                ) : null}
                 <ConnectionCreateOption
                     expanded={activeOption === "图片生成"}
                     motionEnabled={!reducedMotion}
@@ -368,15 +397,17 @@ export function CanvasConnectionCreateMenu({
                     disabledReason={getDisabledReason(CanvasNodeType.Image)}
                     onClick={() => onCreate(CanvasNodeType.Image)}
                 />
-                <ConnectionCreateOption
-                    expanded={activeOption === "生成配置"}
-                    motionEnabled={!reducedMotion}
-                    icon={<WorkflowIcon className="size-4" />}
-                    title="生成配置"
-                    description="选择模型，或使用已启用的工作流插件"
-                    disabledReason={getDisabledReason(CanvasNodeType.Config)}
-                    onClick={() => onCreate(CanvasNodeType.Config)}
-                />
+                {!ecommerceCanvas || workspaceMode !== "simple" ? (
+                    <ConnectionCreateOption
+                        expanded={activeOption === "生成配置"}
+                        motionEnabled={!reducedMotion}
+                        icon={<WorkflowIcon className="size-4" />}
+                        title="生成配置"
+                        description="选择模型，或使用已启用的工作流插件"
+                        disabledReason={getDisabledReason(CanvasNodeType.Config)}
+                        onClick={() => onCreate(CanvasNodeType.Config)}
+                    />
+                ) : null}
                 {canCreateDrawing ? (
                     <ConnectionCreateOption
                         expanded={activeOption === "绘图"}
@@ -397,15 +428,17 @@ export function CanvasConnectionCreateMenu({
                     disabledReason={getDisabledReason(CanvasNodeType.Video)}
                     onClick={() => onCreate(CanvasNodeType.Video)}
                 />
-                <ConnectionCreateOption
-                    expanded={activeOption === "音频参考"}
-                    motionEnabled={!reducedMotion}
-                    icon={<Music2 className="size-4" />}
-                    title="音频参考"
-                    description="连接文本或角色卡，创建音频生成节点"
-                    disabledReason={getDisabledReason(CanvasNodeType.Audio)}
-                    onClick={() => onCreate(CanvasNodeType.Audio)}
-                />
+                {!ecommerceCanvas && workspaceMode !== "simple" ? (
+                    <ConnectionCreateOption
+                        expanded={activeOption === "音频参考"}
+                        motionEnabled={!reducedMotion}
+                        icon={<Music2 className="size-4" />}
+                        title="音频参考"
+                        description="连接文本或角色卡，创建音频生成节点"
+                        disabledReason={getDisabledReason(CanvasNodeType.Audio)}
+                        onClick={() => onCreate(CanvasNodeType.Audio)}
+                    />
+                ) : null}
                 <ConnectionCreateOption
                     expanded={activeOption === "转换"}
                     motionEnabled={!reducedMotion}
@@ -417,13 +450,14 @@ export function CanvasConnectionCreateMenu({
                 />
                 <span aria-hidden className="mx-1 my-0.5 h-px" style={{ background: "color-mix(in srgb, currentColor 12%, transparent)" }} />
                 {ecommerceCanvas
-                    ? (
-                          [
-                              { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
-                              { label: "画面制作", types: [CanvasNodeType.EcommerceStudio, CanvasNodeType.ShotRecipe, CanvasNodeType.Layout, CanvasNodeType.Infographic, CanvasNodeType.Aplus, CanvasNodeType.EcommerceVideo] },
-                              { label: "参考分析", types: [CanvasNodeType.Replica, CanvasNodeType.Teardown] },
-                              { label: "修改交付", types: [CanvasNodeType.Revision, CanvasNodeType.Delivery] },
-                          ] as const
+                    ? (workspaceMode === "simple"
+                          ? ([{ label: "商品信息", types: [CanvasNodeType.Product] }] as const)
+                          : ([
+                                { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
+                                { label: "画面制作", types: [CanvasNodeType.EcommerceStudio, CanvasNodeType.ShotRecipe, CanvasNodeType.Layout, CanvasNodeType.Infographic, CanvasNodeType.Aplus, CanvasNodeType.EcommerceVideo] },
+                                { label: "参考分析", types: [CanvasNodeType.Replica, CanvasNodeType.Teardown] },
+                                { label: "修改交付", types: [CanvasNodeType.Revision, CanvasNodeType.Delivery] },
+                            ] as const)
                       ).map((group) => (
                           <div key={group.label}>
                               <ConnectionCreateGroupLabel label={group.label} />

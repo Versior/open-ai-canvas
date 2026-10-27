@@ -199,7 +199,7 @@ test("real executor submits and queries distinct backend tasks for two suite rou
             queue.tick();
         });
         expect(requests).toHaveLength(round * 5);
-        expect(requests.slice(-5).map((request) => request.prompt)).toEqual(Array.from({ length: 5 }, (_, index) => "Round " + round + " image " + index));
+        expect(requests.slice(-5).map((request) => request.prompt?.split("\n\n").at(-1))).toEqual(Array.from({ length: 5 }, (_, index) => "Round " + round + " image " + index));
         expect(queue.api().nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.content)).toHaveLength(round * 5);
         expect(queue.api().nodes[0].metadata?.generationBatches?.every((batch) => batch.status === "completed")).toBe(true);
     }

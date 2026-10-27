@@ -1,11 +1,20 @@
 import { describe, expect, test } from "bun:test";
 
+import { canvasConnectionError } from "@/lib/canvas/canvas-connection-policy";
+import { getNodeAcceptedInputKinds } from "@/lib/canvas/node-registry";
+import { defaultConfig } from "@/stores/use-config-store";
+import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
+
 import {
     ECOMMERCE_VIDEO_KINDS,
     ECOMMERCE_VIDEO_LANGUAGES,
+    applyEcommerceVideoCreativePlan,
+    buildEcommerceVideoCreativePlanPrompt,
     createEcommerceVideo,
     createEcommerceVideoShot,
+    ecommerceVideoCreativePlanSourceSignature,
     ecommerceVideoPrompt,
+    parseEcommerceVideoCreativePlan,
 } from "@/lib/ecommerce/ecommerce-video";
 import {
     ECOMMERCE_VIDEO_REPLICA_NEVER,
@@ -22,6 +31,21 @@ import {
     ecommerceVideoTemplateSeconds,
     ecommerceVideoTemplatesForPlatform,
 } from "@/lib/ecommerce/ecommerce-video-templates";
+
+describe("ecommerce video inputs", () => {
+    test("accepts image, text and video inputs without allowing audio", () => {
+        const target: CanvasNodeData = { id: "ecommerce-video", type: CanvasNodeType.EcommerceVideo, position: { x: 0, y: 0 } };
+        const source = (type: CanvasNodeType): CanvasNodeData => ({ id: type, type, position: { x: 0, y: 0 } });
+        const nodes = [source(CanvasNodeType.Image), source(CanvasNodeType.Text), source(CanvasNodeType.Video), source(CanvasNodeType.Audio), target];
+        const errorFrom = (type: CanvasNodeType) => canvasConnectionError(defaultConfig, nodes, [], { fromNodeId: type, toNodeId: target.id });
+
+        expect(getNodeAcceptedInputKinds(CanvasNodeType.EcommerceVideo)).toEqual(["image", "text", "video"]);
+        expect(errorFrom(CanvasNodeType.Image)).toBe("");
+        expect(errorFrom(CanvasNodeType.Text)).toBe("");
+        expect(errorFrom(CanvasNodeType.Video)).toBe("");
+        expect(errorFrom(CanvasNodeType.Audio)).not.toBe("");
+    });
+});
 
 describe("viral video replica", () => {
     test("the never-copy list leads with music — audio fingerprinting is stricter than image", () => {
@@ -58,6 +82,75 @@ describe("viral video replica", () => {
         // 画面本来就要换掉，描述画面对复刻毫无用处
         expect(prompt).toContain("不要描述画面内容");
         expect(prompt).toContain("不要复述字幕原文");
+    });
+
+    test("a structured creative plan is parsed before explicit application replaces shots", () => {
+        const video = createEcommerceVideo("复刻草案");
+        const raw = `\`\`\`json
+{
+  "hook": "前 2 秒点明痛点",
+  "rhythm": "2 秒 Hook 后切 3 秒演示",
+  "shots": [
+    { "startSeconds": 0, "endSeconds": 2, "purpose": "痛点 Hook", "motion": "push", "caption": "每天都在浪费时间？", "transition": "cut" },
+    { "startSeconds": 2, "endSeconds": 5, "purpose": "商品演示与 CTA", "motion": "pan-right", "caption": "现在就试试", "transition": "fade" }
+  ],
+  "cta": "现在就试试"
+}
+\`\`\``;
+
+        const plan = parseEcommerceVideoCreativePlan(raw);
+        expect(plan).toEqual({
+            hook: "前 2 秒点明痛点",
+            rhythm: "2 秒 Hook 后切 3 秒演示",
+            shots: [
+                { startSeconds: 0, endSeconds: 2, purpose: "痛点 Hook", motion: "push", caption: "每天都在浪费时间？", transition: "cut" },
+                { startSeconds: 2, endSeconds: 5, purpose: "商品演示与 CTA", motion: "pan-right", caption: "现在就试试", transition: "fade" },
+            ],
+            cta: "现在就试试",
+        });
+        expect(video.shots).toEqual([]);
+
+        const applied = applyEcommerceVideoCreativePlan(video, plan!, ["image-1", "image-2"]);
+        expect(applied.shots.map(({ imageNodeId, seconds, motion, description, caption, transition }) => ({ imageNodeId, seconds, motion, description, caption, transition }))).toEqual([
+            { imageNodeId: "image-1", seconds: 2, motion: "push", description: "痛点 Hook", caption: "每天都在浪费时间？", transition: "cut" },
+            { imageNodeId: "image-2", seconds: 3, motion: "pan-right", description: "商品演示与 CTA", caption: "现在就试试", transition: "fade" },
+        ]);
+    });
+
+    test("creative-plan shots must start at zero and form one continuous timeline", () => {
+        const plan = (shots: unknown[]) => JSON.stringify({ hook: "Hook", rhythm: "快节奏", shots, cta: "立即购买" });
+        const shot = (startSeconds: number, endSeconds: number) => ({ startSeconds, endSeconds, purpose: "镜头任务", motion: "push", caption: "字幕", transition: "cut" });
+
+        expect(parseEcommerceVideoCreativePlan(plan([shot(1, 2)]))).toBeUndefined();
+        expect(parseEcommerceVideoCreativePlan(plan([shot(0, 2), shot(1.5, 3)]))).toBeUndefined();
+        expect(parseEcommerceVideoCreativePlan(plan([shot(0, 2), shot(2.5, 3)]))).toBeUndefined();
+    });
+
+    test("the creative-plan request requires platform-aware JSON without inheriting competitor facts", () => {
+        const prompt = buildEcommerceVideoCreativePlanPrompt({ aspects: ["rhythm"], platform: "douyin", language: "en" });
+        expect(prompt).toContain('"hook"');
+        expect(prompt).toContain('"rhythm"');
+        expect(prompt).toContain('"shots"');
+        expect(prompt).toContain('"caption"');
+        expect(prompt).toContain('"cta"');
+        expect(prompt).toContain("只输出一个 JSON 对象");
+        expect(prompt).toContain("目标平台：抖音");
+        expect(prompt).toContain("目标语言：英语");
+        expect(prompt).toContain("禁止继承参考视频的品牌、价格、参数、人物、字幕、音乐或商品事实");
+    });
+
+    test("creative-plan source signatures change with every source but never persist media URLs or bytes", () => {
+        const target: CanvasNodeData = { id: "video-target", type: CanvasNodeType.EcommerceVideo, position: { x: 0, y: 0 }, metadata: { ecommerceVideo: { ...createEcommerceVideo(), platform: "douyin", language: "en" } } };
+        const reference: CanvasNodeData = { id: "reference", type: CanvasNodeType.Video, position: { x: 0, y: 0 }, metadata: { content: "https://cdn.example.test/reference.mp4?token=secret" } };
+        const product: CanvasNodeData = { id: "product", type: CanvasNodeType.Product, position: { x: 0, y: 0 }, metadata: { productProfile: { name: "保温杯", category: "杯具", appearance: "白色", marks: "YINGCE", forbidden: "不可改色", audience: "通勤", facts: "210g", price: "99 元", views: {} } } };
+        const image: CanvasNodeData = { id: "product-image", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, metadata: { content: "data:image/png;base64,raw-product-bytes" } };
+        const signature = ecommerceVideoCreativePlanSourceSignature({ target, referenceVideo: reference, product, productImages: [image] });
+
+        expect(signature).not.toContain("secret");
+        expect(signature).not.toContain("raw-product-bytes");
+        expect(ecommerceVideoCreativePlanSourceSignature({ target: { ...target, metadata: { ...target.metadata, ecommerceVideo: { ...target.metadata!.ecommerceVideo!, language: "ja" } } }, referenceVideo: reference, product, productImages: [image] })).not.toBe(signature);
+        expect(ecommerceVideoCreativePlanSourceSignature({ target, referenceVideo: { ...reference, metadata: { content: "/other.mp4" } }, product, productImages: [image] })).not.toBe(signature);
+        expect(ecommerceVideoCreativePlanSourceSignature({ target, referenceVideo: reference, product: { ...product, metadata: { ...product.metadata, productProfile: { ...product.metadata!.productProfile!, facts: "300g" } } }, productImages: [image] })).not.toBe(signature);
     });
 
     test("only the checked aspects are asked about", () => {
@@ -102,6 +195,12 @@ describe("video template library", () => {
         expect(template.beats[0].label).toBe("痛点");
         expect(template.beats[0].purpose).toContain("不要提商品");
         expect(template.logic).toContain("先共情再给方案");
+    });
+
+    test("a template beat keeps its purpose in the final generation prompt", () => {
+        const shot = createEcommerceVideoShot("img-1", "说出买家正在遇到的问题，不要提商品");
+        const prompt = ecommerceVideoPrompt({ ...createEcommerceVideo("痛点视频"), templateId: "pain-point", shots: [{ ...shot, caption: "痛点" }] });
+        expect(prompt).toContain("镜头目的：说出买家正在遇到的问题，不要提商品");
     });
 
     test("TVC runs opposite to the hook-driven templates", () => {

@@ -53,6 +53,8 @@ type FileNodeUploadOptions = {
     batch?: { onLocalOnly: () => void };
 };
 
+type CanvasUploadTarget = { nodeId?: string; position?: Position } | { createTargetNode: () => string | undefined };
+
 const SILENT_UPLOAD_PROGRESS: CanvasUploadProgress = { update: () => {}, done: () => {}, fail: () => {} };
 const NODE_STATUS_SUCCESS = "success" as const;
 // 同时上传的文件数：足以重叠网络等待与素材同步，又不会一次性抢满后端上传限流。
@@ -101,7 +103,7 @@ export function useCanvasUpload({
     const { message } = App.useApp();
     const queryClient = useQueryClient();
     const imageInputRef = useRef<HTMLInputElement>(null);
-    const uploadTargetRef = useRef<{ nodeId?: string; position?: Position } | null>(null);
+    const uploadTargetRef = useRef<CanvasUploadTarget | null>(null);
     const assetInsertPositionRef = useRef<Position | null>(null);
     const uploadStatusIdRef = useRef(0);
     const statusTimersRef = useRef<Set<number>>(new Set());
@@ -379,6 +381,14 @@ export function useCanvasUpload({
         imageInputRef.current?.click();
     }, [nodesRef]);
 
+    const requestDeferredImageUpload = useCallback((createTargetNode: () => string | undefined) => {
+        const input = imageInputRef.current;
+        if (!input) return;
+        uploadTargetRef.current = { createTargetNode };
+        input.accept = "image/*";
+        input.click();
+    }, []);
+
     const closeUploadModal = useCallback(() => {
         uploadTargetRef.current = null;
         setUploadModalOpen(false);
@@ -390,7 +400,8 @@ export function useCanvasUpload({
             message.warning("请选择图片、视频、音频或 TXT / Markdown 文件");
             return false;
         }
-        const center = uploadTargetRef.current?.position || getCanvasCenter();
+        const target = uploadTargetRef.current;
+        const center = (target && "position" in target ? target.position : undefined) || getCanvasCenter();
         const total = supportedFiles.length;
         const columns = Math.min(BATCH_UPLOAD_COLUMNS, total);
         const originX = center.x - ((columns - 1) * BATCH_UPLOAD_COLUMN_GAP) / 2;
@@ -596,13 +607,22 @@ export function useCanvasUpload({
     }, [createFileNode, createTextNodeFromClipboard, getCanvasCenter, message, nodesRef, replaceNodeMedia, selectedNodeIdsRef]);
 
     const handleImageInputChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
         const target = uploadTargetRef.current;
+        uploadTargetRef.current = null;
+        const file = event.target.files?.[0];
         try {
-            if (!file || !uploadNodeType(file)) return;
+            const fileType = file && uploadNodeType(file);
+            if (!file || !fileType) return;
+            if (target && "createTargetNode" in target) {
+                if (fileType !== CanvasNodeType.Image) return;
+                const nodeId = target.createTargetNode();
+                if (!nodeId) return;
+                await replaceNodeMedia(nodeId, file);
+                return;
+            }
             if (target?.nodeId) {
                 const targetNode = nodesRef.current.find((node) => node.id === target.nodeId);
-                const compatible = targetNode && (targetNode.type === uploadNodeType(file)
+                const compatible = targetNode && (targetNode.type === fileType
                     || ![CanvasNodeType.Image, CanvasNodeType.Video, CanvasNodeType.Audio, CanvasNodeType.Text].includes(targetNode.type as CanvasNodeType));
                 if (!compatible) {
                     message.warning("请选择与当前节点相同类型的媒体文件");
@@ -614,7 +634,6 @@ export function useCanvasUpload({
             const position = target?.position || getCanvasCenter();
             await createFileNode(file, position);
         } finally {
-            uploadTargetRef.current = null;
             event.target.value = "";
         }
     }, [createFileNode, getCanvasCenter, message, nodesRef, replaceNodeMedia]);
@@ -839,6 +858,7 @@ export function useCanvasUpload({
         pasteAssistantImage,
         pasteSystemClipboard,
         replaceNodeMedia,
+        requestDeferredImageUpload,
         startUploadStatus,
         uploadModalOpen,
         uploadStatus,

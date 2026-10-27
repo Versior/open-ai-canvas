@@ -183,7 +183,7 @@ export function ecommerceCanvasTitle(existingTitles: string[]) {
  */
 export function ecommerceSuiteNodes(product: CanvasNodeData, flow: EcommerceOneClickFlow, rows: EcommerceSuiteRow[], existingSlotIds: Set<string>, createId: () => string, slotIds?: string[]) {
     const wanted = slotIds?.length ? new Set(slotIds) : undefined;
-    const missing = rows.filter((row) => !existingSlotIds.has(row.slotId) && (!wanted || wanted.has(row.slotId)));
+    const missing = rows.filter((row) => row.enabled !== false && !existingSlotIds.has(row.slotId) && (!wanted || wanted.has(row.slotId)));
     if (!missing.length) return { nodes: [] as CanvasNodeData[], connections: [] as CanvasConnection[] };
     const nodes: CanvasNodeData[] = [];
     const connections: CanvasConnection[] = [];
@@ -196,7 +196,14 @@ export function ecommerceSuiteNodes(product: CanvasNodeData, flow: EcommerceOneC
         const image = createCanvasNode(
             CanvasNodeType.Image,
             { x: startX + (index % columns) * SIBLING_GAP, y: outputY + Math.floor(index / columns) * 320 },
-            { content: "", status: "idle", ecommerceShotId: row.slotId, ecommerceAspectRatio: aspectRatio },
+            {
+                content: "",
+                status: "idle",
+                ecommerceShotId: row.slotId,
+                ecommerceAspectRatio: aspectRatio,
+                ...(row.copy ? { ecommerceCopy: row.copy } : {}),
+                ...(row.layout ? { ecommerceLayout: row.layout } : {}),
+            },
         );
         image.title = row.title;
         nodes.push(image);
@@ -252,7 +259,7 @@ export function ecommerceSuiteTargets(
     // 会让槽位对不上，然后一个节点都调不动。
     if (suite?.flow !== flow.id) return empty;
     const wanted = slotIds?.length ? new Set(slotIds) : undefined;
-    const rows = suite.rows.filter((row) => row.prompt.trim() && (!wanted || wanted.has(row.slotId)));
+    const rows = suite.rows.filter((row) => row.enabled !== false && row.prompt.trim() && (!wanted || wanted.has(row.slotId)));
     if (!rows.length) return empty;
 
     // **按槽位在全画布认领，不只看连接。** 只看连接的话，连接被删过一次、

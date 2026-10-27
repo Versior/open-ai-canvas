@@ -1,12 +1,12 @@
 import { App } from "antd";
 import { ArrowUpRight, Image as ImageIcon, Plus, Replace, Unplug, UserRound, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { useNodeConnections, useNodeInputs } from "@/components/canvas/canvas-node-graph-context";
 import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
-import { createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
-import { connectedStyleReferenceNodes, effectiveProductViews } from "@/lib/ecommerce/ecommerce-canvas";
+import { createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS, type EcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
+import { connectedStyleReferenceNodes, ecommerceProductReferenceSignature, effectiveProductViews } from "@/lib/ecommerce/ecommerce-canvas";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
 import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
 import { ecommerceModelById, ecommerceModelRefCount } from "@/lib/ecommerce/ecommerce-models";
@@ -18,14 +18,22 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import "./canvas-ecommerce-node-card.css";
 
+type ProductProfileDraftField = "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts" | "price";
+type ProductProfileDraftResult = Partial<Pick<EcommerceProductProfile, Exclude<ProductProfileDraftField, "price">>> & { unsure?: string };
+type ProductProfileDraft = Pick<EcommerceProductProfile, ProductProfileDraftField> & { unsure?: string; evidenceSignature: string };
+
 export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     const actions = useCanvasNodeActions();
     const setting = useEcommerceSettings((state) => state.setting);
-    const { updateMetadata, upload } = actions;
+    const { updateMetadata, upload, updateEcommerceInputAnchor } = actions;
     const inputs = useNodeInputs(node.id);
     const connections = useNodeConnections(node.id);
     const { message } = App.useApp();
     const [modelPickerOpen, setModelPickerOpen] = useState(false);
+    const [profileDraft, setProfileDraft] = useState<ProductProfileDraft>();
+    const [identifying, setIdentifying] = useState(false);
+    const cardRef = useRef<HTMLDivElement>(null);
+    const inputAnchorsRef = useRef(new Map<string, { y: number; x: number }>());
     const models = useEcommerceModelLibrary((state) => state.models);
     const hydrateModels = useEcommerceModelLibrary((state) => state.hydrate);
     const touchModel = useEcommerceModelLibrary((state) => state.touchModel);
@@ -34,6 +42,11 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
     }, [hydrateModels, message]);
 
     const profile = node.metadata?.productProfile || createEcommerceProductProfile(node.title || "商品");
+    const evidenceSignature = useMemo(() => ecommerceProductReferenceSignature(node, inputs, connections), [node, inputs, connections]);
+    const evidenceSignatureRef = useRef(evidenceSignature);
+    const profileRef = useRef(profile);
+    evidenceSignatureRef.current = evidenceSignature;
+    profileRef.current = profile;
     const views = effectiveProductViews(profile, inputs, connections, node.id);
     const inputById = new Map(inputs.map((item) => [item.id, item]));
     const referenceIds = new Set(connectedStyleReferenceNodes(node.id, inputs, connections).map((item) => item.id));
@@ -42,6 +55,10 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
     const productImages = inputs.filter((item) => item.type === CanvasNodeType.Image && !referenceIds.has(item.id) && (item.metadata?.content || item.metadata?.storageKey));
     const editable = Boolean(updateMetadata);
     const model = ecommerceModelById(node.metadata?.ecommerceModelId, models);
+    const profileSummary = [profile.category, profile.appearance]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join(" · ");
     const openSuite = (flow: (typeof ECOMMERCE_ONE_CLICK_FLOWS)[number]["id"]) => {
         if (!setting.enabled || !setting.flows[flow].enabled) {
             message.warning("管理员已停用此创作用途");
@@ -49,6 +66,72 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
         }
         actions.openEcommerceTable?.(node, flow);
     };
+    const identifyProduct = async () => {
+        if (identifying || !actions.draftEcommerceProfile) return;
+        setProfileDraft(undefined);
+        setIdentifying(true);
+        const requestedEvidence = evidenceSignatureRef.current;
+        try {
+            const draft = (await actions.draftEcommerceProfile(node)) as ProductProfileDraftResult | undefined;
+            if (!draft) return;
+            if (requestedEvidence !== evidenceSignatureRef.current) {
+                message.warning("商品图片已变化，请重新识别");
+                return;
+            }
+            const currentProfile = profileRef.current;
+            setProfileDraft({
+                category: draft.category ?? "",
+                appearance: draft.appearance ?? "",
+                marks: draft.marks ?? "",
+                forbidden: draft.forbidden ?? "",
+                audience: draft.audience ?? "",
+                facts: draft.facts ?? "",
+                price: currentProfile.price,
+                unsure: draft.unsure ?? "",
+                evidenceSignature: requestedEvidence,
+            });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "商品识别失败");
+        } finally {
+            setIdentifying(false);
+        }
+    };
+    const confirmProfileDraft = () => {
+        if (!profileDraft || !updateMetadata) return;
+        if (profileDraft.evidenceSignature !== evidenceSignatureRef.current) {
+            setProfileDraft(undefined);
+            message.warning("商品图片已变化，请重新识别");
+            return;
+        }
+        const currentProfile = profileRef.current;
+        updateMetadata(node.id, {
+            productProfile: {
+                ...currentProfile,
+                category: profileDraft.category.trim(),
+                appearance: profileDraft.appearance.trim(),
+                marks: profileDraft.marks.trim(),
+                forbidden: profileDraft.forbidden.trim(),
+                audience: profileDraft.audience.trim(),
+                facts: profileDraft.facts.trim(),
+                price: profileDraft.price.trim(),
+            },
+        });
+        setProfileDraft(undefined);
+    };
+    const editProductProfile = () => {
+        const currentProfile = profileRef.current;
+        setProfileDraft({
+            category: currentProfile.category,
+            appearance: currentProfile.appearance,
+            marks: currentProfile.marks,
+            forbidden: currentProfile.forbidden,
+            audience: currentProfile.audience,
+            facts: currentProfile.facts,
+            price: currentProfile.price,
+            evidenceSignature: evidenceSignatureRef.current,
+        });
+    };
+    const updateProfileDraft = (key: ProductProfileDraftField, value: string) => setProfileDraft((current) => (current ? { ...current, [key]: value } : current));
     const addInput = (handle: string) => actions.addEcommerceInput?.(node, handle);
     const referenceEdges = connections.filter((edge) => edge.toNodeId === node.id && referenceIds.has(edge.fromNodeId));
     const referenceHandles = new Set(connections.filter((edge) => edge.toNodeId === node.id).map((edge) => edge.toHandleId));
@@ -65,9 +148,57 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
     });
     let nextReference = 0;
     while (referenceHandles.has(`visual-reference:${nextReference}`)) nextReference += 1;
+    const anchorLayout = [...ECOMMERCE_PRODUCT_VIEWS.map((view) => `product-view:${view.id}`), ...referenceSlots.map(({ handle, image }) => `${handle}:${image.id}`), `visual-reference:${nextReference}`].join("|");
+    useEffect(() => {
+        const card = cardRef.current;
+        const wrapper = card?.closest<HTMLElement>("[data-node-id]");
+        if (!editable || !updateEcommerceInputAnchor || !card || !wrapper) return;
+        const slots = [...card.querySelectorAll<HTMLElement>("[data-ecommerce-input]")];
+        let frame = 0;
+        const measure = () => {
+            frame = 0;
+            const nodeRect = wrapper.getBoundingClientRect();
+            if (!nodeRect.width || !nodeRect.height) return;
+            const activeHandles = new Set<string>();
+            for (const slot of slots) {
+                const handle = slot.dataset.ecommerceInput;
+                const pin = slot.querySelector<HTMLElement>(".ecom-input-pin");
+                if (!handle || !pin) continue;
+                activeHandles.add(handle);
+                const pinRect = pin.getBoundingClientRect();
+                if (!pinRect.width || !pinRect.height || pin.checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) === false) continue;
+                const y = Math.min(1, Math.max(0, (pinRect.top + pinRect.height / 2 - nodeRect.top) / nodeRect.height));
+                const x = Math.min(1, Math.max(0, (pinRect.left + pinRect.width / 2 - nodeRect.left) / nodeRect.width));
+                const previous = inputAnchorsRef.current.get(handle);
+                if (previous && Math.abs(previous.y - y) < 0.0001 && Math.abs(previous.x - x) < 0.0001) continue;
+                inputAnchorsRef.current.set(handle, { y, x });
+                updateEcommerceInputAnchor(node.id, handle, y, x);
+            }
+            for (const handle of inputAnchorsRef.current.keys()) {
+                if (!activeHandles.has(handle)) inputAnchorsRef.current.delete(handle);
+            }
+        };
+        const schedule = () => {
+            if (!frame) frame = requestAnimationFrame(measure);
+        };
+        const observer = new ResizeObserver(schedule);
+        observer.observe(wrapper);
+        for (const slot of slots) {
+            observer.observe(slot);
+            const pin = slot.querySelector<HTMLElement>(".ecom-input-pin");
+            if (pin) observer.observe(pin);
+        }
+        wrapper.addEventListener("scroll", schedule, true);
+        schedule();
+        return () => {
+            observer.disconnect();
+            wrapper.removeEventListener("scroll", schedule, true);
+            if (frame) cancelAnimationFrame(frame);
+        };
+    }, [anchorLayout, editable, node.id, updateEcommerceInputAnchor]);
 
     return (
-        <div className="ecom-card ecom-product-card" style={{ color: theme.node.text }} onMouseDown={stopCanvasDragFromInteractive}>
+        <div ref={cardRef} className="ecom-card ecom-product-card" data-canvas-no-zoom data-canvas-wheel-scroll style={{ color: theme.node.text }} onMouseDown={stopCanvasDragFromInteractive}>
             <header className="ecom-card-header">
                 <EcommerceNodeTitle node={node} fallback="商品" />
                 <span className="ecom-card-status">{productImages.length} 张商品图</span>
@@ -85,51 +216,159 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
                     </button>
                 </div>
             ) : null}
-            <section className="ecom-input-section" aria-label="商品视图">
-                <h4>商品视图</h4>
-                <div className="ecom-input-grid">
-                    {ECOMMERCE_PRODUCT_VIEWS.map((view) => (
-                        <ProductInputSlot key={view.id} product={node} handle={`product-view:${view.id}`} label={view.label} image={inputById.get(views[view.id] || "")} editable={editable} onAdd={() => addInput(`product-view:${view.id}`)} />
-                    ))}
-                </div>
-            </section>
-            <section className="ecom-input-section" aria-label="参考图">
-                <h4>
-                    参考图 <span>{references.length}</span>
-                </h4>
-                <div className="ecom-input-grid ecom-reference-grid">
-                    {referenceSlots.map(({ image, handle }, index) => {
-                        return <ProductInputSlot key={image.id} product={node} handle={handle} label={`参考 ${index + 1}`} image={image} editable={editable} onAdd={() => upload?.(image)} />;
-                    })}
-                    <ProductInputSlot product={node} handle={`visual-reference:${nextReference}`} label="添加参考" editable={editable} onAdd={() => addInput(`visual-reference:${nextReference}`)} />
-                </div>
-            </section>
-            <div className="ecom-product-model-row">
-                <button type="button" className="ecom-model-pick" disabled={!editable || !setting.modelLibraryEnabled} onClick={() => setModelPickerOpen(true)}>
-                    <UserRound className="size-4" />
-                    <span className="truncate">{model?.name || "选择模特"}</span>
-                    {model ? <span className="ecom-model-pick-hint">{ecommerceModelRefCount(model)} 张参考图</span> : null}
-                </button>
-                {node.metadata?.ecommerceModelId && editable ? (
-                    <button type="button" className="ecom-input-icon" title="取消模特" aria-label="取消模特" onClick={() => updateMetadata?.(node.id, { ecommerceModelId: undefined })}>
-                        <X className="size-4" />
+            <ol className="ecom-product-guide" aria-label="快捷创作流程">
+                <li className="ecom-product-step">
+                    <div className="ecom-product-step-heading">
+                        <span className="ecom-product-step-number">1</span>
+                        <div>
+                            <h4>商品素材</h4>
+                            <p>先上传正面图，其他视角按需补充</p>
+                        </div>
+                    </div>
+                    <div className="ecom-input-grid">
+                        {ECOMMERCE_PRODUCT_VIEWS.map((view) => (
+                            <ProductInputSlot key={view.id} product={node} handle={`product-view:${view.id}`} label={view.label} image={inputById.get(views[view.id] || "")} editable={editable} onAdd={() => addInput(`product-view:${view.id}`)} />
+                        ))}
+                    </div>
+                    <details className="ecom-product-advanced">
+                        <summary>
+                            补充素材与模特 <span>{references.length ? `${references.length} 张参考图` : "可选"}</span>
+                        </summary>
+                        <div className="ecom-product-advanced-body">
+                            <section className="ecom-input-section" aria-label="参考图">
+                                <h4>
+                                    参考图 <span>{references.length}</span>
+                                </h4>
+                                <div className="ecom-input-grid ecom-reference-grid">
+                                    {referenceSlots.map(({ image, handle }, index) => {
+                                        return <ProductInputSlot key={image.id} product={node} handle={handle} label={`参考 ${index + 1}`} image={image} editable={editable} onAdd={() => upload?.(image)} />;
+                                    })}
+                                    <ProductInputSlot product={node} handle={`visual-reference:${nextReference}`} label="添加参考" editable={editable} onAdd={() => addInput(`visual-reference:${nextReference}`)} />
+                                </div>
+                            </section>
+                            <div className="ecom-product-model-row">
+                                <button type="button" className="ecom-model-pick" disabled={!editable || !setting.modelLibraryEnabled} onClick={() => setModelPickerOpen(true)}>
+                                    <UserRound className="size-4" />
+                                    <span className="truncate">{model?.name || "选择模特"}</span>
+                                    {model ? <span className="ecom-model-pick-hint">{ecommerceModelRefCount(model)} 张参考图</span> : null}
+                                </button>
+                                {node.metadata?.ecommerceModelId && editable ? (
+                                    <button type="button" className="ecom-input-icon" title="取消模特" aria-label="取消模特" onClick={() => updateMetadata?.(node.id, { ecommerceModelId: undefined })}>
+                                        <X className="size-4" />
+                                    </button>
+                                ) : null}
+                            </div>
+                        </div>
+                    </details>
+                </li>
+                <li className="ecom-product-step">
+                    <div className="ecom-product-step-heading">
+                        <span className="ecom-product-step-number">2</span>
+                        <div>
+                            <h4>确认商品</h4>
+                            <p>{profileSummary || "让 AI 从实拍中识别品类与外观"}</p>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        className="ecom-product-identify"
+                        aria-label="AI 识别商品信息"
+                        disabled={!editable || !productImages.length || !actions.draftEcommerceProfile || identifying || Boolean(profileDraft)}
+                        onClick={() => void identifyProduct()}
+                    >
+                        <span>{identifying ? "正在识别商品…" : "AI 识别商品信息"}</span>
+                        <small role="status" aria-live="polite">
+                            {identifying ? "正在分析图片，请稍候" : "生成待核对草稿"}
+                        </small>
                     </button>
-                ) : null}
-            </div>
-            <div className="ecom-oneclick-row">
-                <button type="button" className="ecom-oneclick" disabled={!editable || !setting.enabled || !ecommerceCapabilitySettings(setting).planning.enabled || !actions.openEcommerceStudio} onClick={() => actions.openEcommerceStudio?.(node)}>
-                    <span className="ecom-oneclick-name">电商生图台</span>
-                    <ArrowUpRight className="size-3.5" aria-hidden="true" />
-                </button>
-                {ECOMMERCE_ONE_CLICK_FLOWS.map((flow) => {
-                    return (
-                        <button key={flow.id} type="button" className="ecom-oneclick" disabled={!editable || !setting.enabled || !setting.flows[flow.id].enabled || !actions.openEcommerceTable} onClick={() => openSuite(flow.id)}>
-                            <span className="ecom-oneclick-name">{flow.name.replace(/^一键/, "")}</span>
+                    {node.metadata?.productProfile && editable ? (
+                        <button type="button" className="ecom-action" aria-label="编辑商品信息" disabled={identifying} onClick={editProductProfile}>
+                            编辑商品信息
+                        </button>
+                    ) : null}
+                    {profileDraft ? (
+                        <section className="ecom-product-draft" aria-label="本次识别草稿，请核对后应用">
+                            <p className="ecom-product-draft-note">{profileDraft.unsure ? "模型推测：" + profileDraft.unsure + "。未识别字段留空；价格沿用已有手填值。" : "仅显示本次识别结果；未识别字段留空，价格沿用已有手填值。"}</p>
+                            <div className="ecom-product-draft-grid">
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">品类</span>
+                                    <input className="ecom-field-input" aria-label="草稿品类" value={profileDraft.category ?? ""} onChange={(event) => updateProfileDraft("category", event.target.value)} />
+                                </label>
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">外观</span>
+                                    <textarea className="ecom-field-input" aria-label="草稿外观" rows={2} value={profileDraft.appearance ?? ""} onChange={(event) => updateProfileDraft("appearance", event.target.value)} />
+                                </label>
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">标识</span>
+                                    <textarea className="ecom-field-input" aria-label="草稿标识" rows={2} value={profileDraft.marks ?? ""} onChange={(event) => updateProfileDraft("marks", event.target.value)} />
+                                </label>
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">禁止项</span>
+                                    <textarea className="ecom-field-input" aria-label="草稿禁止项" rows={2} value={profileDraft.forbidden ?? ""} onChange={(event) => updateProfileDraft("forbidden", event.target.value)} />
+                                </label>
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">目标人群与场景（建议）</span>
+                                    <textarea className="ecom-field-input" aria-label="草稿目标人群与场景" rows={2} value={profileDraft.audience ?? ""} onChange={(event) => updateProfileDraft("audience", event.target.value)} />
+                                </label>
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">卖点与依据（可见事实）</span>
+                                    <textarea className="ecom-field-input" aria-label="草稿卖点与依据" rows={2} value={profileDraft.facts ?? ""} onChange={(event) => updateProfileDraft("facts", event.target.value)} />
+                                </label>
+                                <label className="ecom-field">
+                                    <span className="ecom-field-label">真实价格（手动填写）</span>
+                                    <input className="ecom-field-input" aria-label="草稿真实价格" value={profileDraft.price ?? ""} onChange={(event) => updateProfileDraft("price", event.target.value)} />
+                                </label>
+                            </div>
+                            <div className="ecom-action-row ecom-product-draft-actions">
+                                <button type="button" className="ecom-action" aria-label="放弃商品草稿" onClick={() => setProfileDraft(undefined)}>
+                                    放弃草稿
+                                </button>
+                                <button type="button" className="ecom-action ecom-action-primary" aria-label="确认并应用商品草稿" onClick={confirmProfileDraft}>
+                                    确认并应用
+                                </button>
+                            </div>
+                        </section>
+                    ) : null}
+                </li>
+                <li className="ecom-product-step">
+                    <div className="ecom-product-step-heading">
+                        <span className="ecom-product-step-number">3</span>
+                        <div>
+                            <h4>选择用途</h4>
+                            <p>选择用途并进入创作表，完成生成与交付</p>
+                        </div>
+                    </div>
+                    <div className="ecom-oneclick-row">
+                        {ECOMMERCE_ONE_CLICK_FLOWS.map((flow) => {
+                            const disabledByAdmin = !setting.enabled || !setting.flows[flow.id].enabled;
+                            return (
+                                <button key={flow.id} type="button" className="ecom-oneclick" disabled={!editable || disabledByAdmin || !actions.openEcommerceTable} onClick={() => openSuite(flow.id)}>
+                                    <span className="ecom-oneclick-copy">
+                                        <span className="ecom-oneclick-name">{flow.name.replace(/^一键/, "")}</span>
+                                        <span className="ecom-oneclick-hint">{disabledByAdmin ? "管理员已停用此用途" : flow.hint}</span>
+                                    </span>
+                                    <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                                </button>
+                            );
+                        })}
+                    </div>
+                </li>
+                {actions.openEcommerceStudio ? (
+                    <li className="ecom-product-step">
+                        <div className="ecom-product-step-heading">
+                            <span className="ecom-product-step-number">4</span>
+                            <div>
+                                <h4>生成交付</h4>
+                                <p>在创作表中确认提示词，再批量生成与交付</p>
+                            </div>
+                        </div>
+                        <button type="button" className="ecom-oneclick ecom-studio-link" disabled={!editable || !setting.enabled || !ecommerceCapabilitySettings(setting).planning.enabled} onClick={() => actions.openEcommerceStudio?.(node)}>
+                            <span className="ecom-oneclick-name">电商生图台</span>
                             <ArrowUpRight className="size-3.5" aria-hidden="true" />
                         </button>
-                    );
-                })}
-            </div>
+                    </li>
+                ) : null}
+            </ol>
             <CanvasEcommerceModelLibraryModal
                 open={modelPickerOpen}
                 activeModelId={node.metadata?.ecommerceModelId}
@@ -145,13 +384,10 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
 
 function ProductInputSlot({ product, handle, label, image, editable, onAdd }: { product: CanvasNodeData; handle: string; label: string; image?: CanvasNodeData; editable: boolean; onAdd: () => void }) {
     const actions = useCanvasNodeActions();
-    const slotRef = useRef<HTMLDivElement>(null);
-    const pinRef = useRef<HTMLButtonElement>(null);
-    const lastAnchor = useRef<{ handle: string; y: number; x: number } | null>(null);
-    const updateAnchor = actions.updateEcommerceInputAnchor;
+
     const content = image?.metadata?.content || "";
     const storageKey = image?.metadata?.storageKey;
-    const imageKey = `${image?.id || ""}:${storageKey || ""}:${content}`;
+    const imageKey = useMemo(() => [storageKey, content] as const, [storageKey, content]);
     const [resolved, setResolved] = useState({ key: imageKey, url: content });
     const src = resolved.key === imageKey ? resolved.url : content;
     const hasImage = Boolean(content || storageKey);
@@ -170,43 +406,9 @@ function ProductInputSlot({ product, handle, label, image, editable, onAdd }: { 
             cancelled = true;
         };
     }, [content, imageKey, storageKey]);
-    useEffect(() => {
-        const slot = slotRef.current;
-        const pin = pinRef.current;
-        const wrapper = slot?.closest<HTMLElement>("[data-node-id]");
-        if (!editable || !updateAnchor || !slot || !pin || !wrapper) return;
-        lastAnchor.current = null;
-        let frame = 0;
-        const measure = () => {
-            frame = 0;
-            const nodeRect = wrapper.getBoundingClientRect();
-            const pinRect = pin.getBoundingClientRect();
-            if (!nodeRect.width || !nodeRect.height) return;
-            const y = Math.min(1, Math.max(0, (pinRect.top + pinRect.height / 2 - nodeRect.top) / nodeRect.height));
-            const x = Math.min(1, Math.max(0, (pinRect.left + pinRect.width / 2 - nodeRect.left) / nodeRect.width));
-            const previous = lastAnchor.current;
-            if (previous?.handle === handle && Math.abs(previous.y - y) < 0.0001 && Math.abs(previous.x - x) < 0.0001) return;
-            lastAnchor.current = { handle, y, x };
-            updateAnchor(product.id, handle, y, x);
-        };
-        const schedule = () => {
-            if (!frame) frame = requestAnimationFrame(measure);
-        };
-        const observer = new ResizeObserver(schedule);
-        observer.observe(wrapper);
-        observer.observe(slot);
-        observer.observe(pin);
-        wrapper.addEventListener("scroll", schedule, true);
-        schedule();
-        return () => {
-            observer.disconnect();
-            wrapper.removeEventListener("scroll", schedule, true);
-            if (frame) cancelAnimationFrame(frame);
-        };
-    }, [editable, handle, image?.id, product.id, updateAnchor]);
+
     return (
         <div
-            ref={slotRef}
             className="ecom-input-slot"
             data-filled={hasImage || undefined}
             data-ecommerce-input={editable ? handle : undefined}
@@ -228,13 +430,15 @@ function ProductInputSlot({ product, handle, label, image, editable, onAdd }: { 
             <span className="ecom-input-label">{label}</span>
             {editable ? (
                 <button
-                    ref={pinRef}
                     type="button"
                     className="ecom-input-pin"
                     title={`连接到${label}`}
                     aria-label={`连接到${label}`}
                     onPointerDown={(event) => {
                         if (event.button === 0) actions.connectEcommerceInput?.(event, product.id, handle);
+                    }}
+                    onClick={(event) => {
+                        if (event.detail === 0) actions.connectEcommerceInput?.(event as unknown as React.PointerEvent, product.id, handle);
                     }}
                 >
                     <Plus className="size-3" />

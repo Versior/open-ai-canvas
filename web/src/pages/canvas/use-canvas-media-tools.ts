@@ -47,6 +47,7 @@ import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { fitImageNodeSize, fitNodeSize, preserveImageNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { isEcommerceNode } from "@/lib/ecommerce/ecommerce-canvas";
+import { ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE, ecommerceVideoCreativePlanSourceSignature, parseEcommerceVideoCreativePlanRequest } from "@/lib/ecommerce/ecommerce-video";
 import { ecommerceMaterialNodes, ecommerceMaterialPlan, ecommerceShotSetOutputs } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { compositeEmotionImage, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
 import { DEFAULT_PORTRAIT_TEXTURE_SETTINGS } from "@/lib/canvas/canvas-portrait-texture";
@@ -191,6 +192,7 @@ export function useCanvasMediaTools({
                 } catch (error) {
                     message.warning(`媒体节点已创建，但素材库写入失败：${error instanceof Error ? error.message : "未知错误"}`);
                 }
+                ensureCurrent?.();
             }
             if (assetIds.size > 0) {
                 ensureCurrent?.();
@@ -207,18 +209,46 @@ export function useCanvasMediaTools({
     );
 
     /**
-     * 从图片节点反推提示词：建一个指令文本节点 + 一个结果节点，并把两者连到图上。
+     * 从图片或视频节点反推提示词：建一个指令文本节点 + 一个结果节点，并把两者连到媒体上。
      *
      * prompt 可传——不传走通用的生图提示词反推；传了就按传进来的指令走
      * （竞品拆解就是这样用的：同一张图，问的是结构而不是提示词）。
      */
     const createImageReversePromptNodes = useCallback(
         (node: CanvasNodeData, prompt?: string) => {
-            if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
-                message.warning("图片节点为空，无法反推提示词");
+            const mediaType = node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : "";
+            if (!mediaType || (!node.metadata?.content && !node.metadata?.storageKey)) {
+                message.warning(`${mediaType || "媒体"}节点为空，无法反推提示词`);
                 return;
             }
-            const instruction = prompt?.trim() || IMAGE_PROMPT_REVERSE;
+            const ecommerceVideoRequest = parseEcommerceVideoCreativePlanRequest(prompt);
+            const ecommerceVideoTarget = ecommerceVideoRequest ? nodesRef.current.find((item) => item.id === ecommerceVideoRequest.targetNodeId && item.type === CanvasNodeType.EcommerceVideo) : undefined;
+            const ecommerceVideoTargetId = ecommerceVideoTarget?.id;
+            const targetInputIds = new Set(ecommerceVideoTargetId ? connectionsRef.current.filter((connection) => connection.toNodeId === ecommerceVideoTargetId).map((connection) => connection.fromNodeId) : []);
+            const targetInputs = ecommerceVideoTargetId ? nodesRef.current.filter((item) => targetInputIds.has(item.id)) : [];
+            const productImages = targetInputs.filter((item) => item.type === CanvasNodeType.Image && Boolean(item.metadata?.content || item.metadata?.storageKey)).slice(0, 4);
+            const product = targetInputs.find((item) => item.type === CanvasNodeType.Product);
+            const productProfile = product?.metadata?.productProfile;
+            const ecommerceVideoCreativePlanSource = ecommerceVideoTarget
+                ? {
+                      targetNodeId: ecommerceVideoTarget.id,
+                      referenceVideoId: node.id,
+                      signature: ecommerceVideoCreativePlanSourceSignature({ target: ecommerceVideoTarget, referenceVideo: node, product, productImages }),
+                  }
+                : undefined;
+            const productFacts = productProfile
+                ? [
+                      productProfile.name.trim() && `商品名：${productProfile.name.trim()}`,
+                      productProfile.category.trim() && `品类：${productProfile.category.trim()}`,
+                      productProfile.appearance.trim() && `外观：${productProfile.appearance.trim()}`,
+                      productProfile.marks.trim() && `标识：${productProfile.marks.trim()}`,
+                      productProfile.forbidden.trim() && `禁止宣称与禁止改动：${productProfile.forbidden.trim()}`,
+                      productProfile.audience.trim() && `目标人群与使用场景：${productProfile.audience.trim()}`,
+                      productProfile.facts.trim() && `卖点与依据：${productProfile.facts.trim()}`,
+                      productProfile.price.trim() && `价格：${productProfile.price.trim()}`,
+                  ].filter(Boolean)
+                : [];
+            const instruction = [ecommerceVideoRequest?.prompt || prompt?.trim() || IMAGE_PROMPT_REVERSE, productFacts.length ? `【已确认商品资料】\n${productFacts.join("\n")}` : ""].filter(Boolean).join("\n\n");
             const gap = 96;
             const textSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
             const resultSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
@@ -236,19 +266,26 @@ export function useCanvasMediaTools({
                         generationMode: "text",
                         model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel,
                         count: 1,
-                        composerContent: "参考图片：@图片1\n任务说明：@文本1",
+                        composerContent: [`参考${mediaType}：@${mediaType}1`, productImages.length ? `商品图片：${productImages.map((_, index) => `@图片${index + 1}`).join(" ")}` : "", "任务说明：@文本1"].filter(Boolean).join("\n"),
+                        ecommerceVideoCreativePlanSource,
                     },
                 ),
-                title: "反推提示词结果",
+                title: ecommerceVideoTargetId ? ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE : "反推提示词结果",
             };
             setNodes((current) => [...current, textNode, resultNode]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: resultNode.id }, { id: nanoid(), fromNodeId: textNode.id, toNodeId: resultNode.id }]);
+            setConnections((current) => [
+                ...current,
+                { id: nanoid(), fromNodeId: node.id, toNodeId: resultNode.id },
+                { id: nanoid(), fromNodeId: textNode.id, toNodeId: resultNode.id },
+                ...productImages.map((image) => ({ id: nanoid(), fromNodeId: image.id, toNodeId: resultNode.id })),
+                ...(ecommerceVideoTargetId ? [{ id: nanoid(), fromNodeId: resultNode.id, toNodeId: ecommerceVideoTargetId }] : []),
+            ]);
             setSelectedNodeIds(new Set([resultNode.id]));
             setSelectedConnectionId(null);
             setDialogNodeId(resultNode.id);
             setContextMenu(null);
         },
-        [effectiveConfig.model, effectiveConfig.textModel, message, setConnections, setContextMenu, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
+        [connectionsRef, effectiveConfig.model, effectiveConfig.textModel, message, nodesRef, setConnections, setContextMenu, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );
 
     const openPortraitTextureEditor = useCallback(
@@ -854,10 +891,12 @@ export function useCanvasMediaTools({
         async (node: CanvasNodeData, longImageDataUrl: string, pieces: { index: number; top: number; height: number; dataUrl: string }[], fileNames: string[], validateSource?: () => void) => {
             if (!pieces.length) return;
             const scope = getActiveUserScope();
+            const sourceNameSignature = JSON.stringify([node.title, node.metadata?.productProfile?.name]);
             const ensureCurrentSource = () => {
                 if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消长图交付");
                 const source = nodesRef.current.find((item) => item.id === node.id);
                 if (!source || source.metadata?.locked) throw new Error("来源节点已删除或锁定，已取消长图交付");
+                if (sourceNameSignature !== JSON.stringify([source.title, source.metadata?.productProfile?.name])) throw new Error("来源标题或商品名称已变化，已取消长图交付");
                 validateSource?.();
             };
             ensureCurrentSource();
@@ -887,11 +926,20 @@ export function useCanvasMediaTools({
                         metadata: { ...imageMetadata(image), prompt: node.metadata?.prompt },
                     }) satisfies CanvasNodeData,
             );
+            const childNodeIds = new Set(childNodes.map((child) => child.id));
+            ensureCurrentSource();
             setNodes((current) => [...current, ...childNodes]);
             setConnections((current) => [...current, ...childNodes.map((child) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: child.id }))]);
-            setSelectedNodeIds(new Set(childNodes.map((child) => child.id)));
+            setSelectedNodeIds(childNodeIds);
             setSelectedConnectionId(null);
-            await persistMediaNodes(childNodes, ensureCurrentSource);
+            try {
+                await persistMediaNodes(childNodes, ensureCurrentSource);
+            } catch (error) {
+                setNodes((current) => current.filter((item) => !childNodeIds.has(item.id)));
+                setConnections((current) => current.filter((connection) => !childNodeIds.has(connection.fromNodeId) && !childNodeIds.has(connection.toNodeId)));
+                setSelectedNodeIds((current) => new Set([...current].filter((id) => !childNodeIds.has(id))));
+                throw error;
+            }
         },
         [nodesRef, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );

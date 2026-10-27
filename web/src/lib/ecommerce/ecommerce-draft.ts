@@ -28,6 +28,9 @@ export function buildEcommerceProfileDraftPrompt() {
         "appearance | 颜色、材质、图案、结构，用「；」分隔",
         "marks | 商品或包装上的 Logo、文字，逐字抄下来并说明位置；看不清就留空",
         "forbidden | 为了让下一张图保持一致，明确不能变的东西",
+        "audience | 从可见使用线索建议目标人群与场景；没有线索就留空，并在 unsure 标明这是建议",
+        "facts | 可用于卖点的可见事实，格式「卖点：依据」，多条用「；」分隔；每条都要写出图中可见的依据",
+        "price | 必须留空，价格只能由用户手动填写",
         "unsure | 上面哪几条是推测而不是直接看见的（没有就写「无」）",
         "",
         "商品锁定块是后面所有图的依据，写错一条整批图都会跑，所以推测的那几条一定要在 unsure 里点出来。",
@@ -41,14 +44,16 @@ export function buildEcommerceProfileDraftPrompt() {
  * 认不出来的行跳过——档案里那几个字段在卡片上都看得见，填没填一眼就知道，
  * 报错会让整次读图白跑。
  */
-export function parseEcommerceProfileDraft(text: string): Partial<Pick<EcommerceProductProfile, "category" | "appearance" | "marks" | "forbidden">> & { unsure?: string } {
-    const fields: Record<string, "category" | "appearance" | "marks" | "forbidden"> = {
+export function parseEcommerceProfileDraft(text: string): Partial<Pick<EcommerceProductProfile, "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts">> & { unsure?: string } {
+    const fields: Record<string, "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts"> = {
         category: "category", "品类": "category",
         appearance: "appearance", "外观": "appearance",
         marks: "marks", "标识": "marks",
         forbidden: "forbidden", "禁止": "forbidden", "禁止项": "forbidden",
+        audience: "audience", "人群": "audience", "目标人群": "audience", "目标人群与场景": "audience",
+        facts: "facts", "卖点": "facts", "卖点与依据": "facts",
     };
-    const result: Partial<Pick<EcommerceProductProfile, "category" | "appearance" | "marks" | "forbidden">> & { unsure?: string } = {};
+    const result: Partial<Pick<EcommerceProductProfile, "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts">> & { unsure?: string } = {};
     for (const rawLine of text.split("\n")) {
         const line = rawLine.replace(/^[\s>*\-•\d.、)]+/, "").trim();
         if (!line) continue;

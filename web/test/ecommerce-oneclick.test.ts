@@ -12,12 +12,14 @@ import {
     ecommerceSuiteRowId,
     ecommerceSuiteRows,
     ecommerceSuiteSkeleton,
+    reconcileEcommerceSuiteDraftRows,
     parseEcommerceSuiteDraft,
 } from "@/lib/ecommerce/ecommerce-suite";
 import { ecommerceShotPreset } from "@/lib/ecommerce/ecommerce-recipes";
 import { ecommerceSuiteNodes, ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
-import { parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
+import { ECOMMERCE_LAYOUT_PRESETS } from "@/lib/ecommerce/ecommerce-layout";
+import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
@@ -97,17 +99,13 @@ describe("套图表：一张图一条提示词", () => {
         expect(new Set(rows.map((row) => row.prompt)).size).toBe(rows.length);
     });
 
-    test("铺底里不留「不生成任何文字」——那是本地叠字那套留下的说法", () => {
-        // 照抄那句会得到一张干净但没字的图，而用户以为自己已经点过「铺底」了。
-        // 而且它不报错，用户只会觉得模型没听话。
-        // 预设里另有「不预留文案位」——那是这一张真的不该有字（细节、使用中），保留原样。
-        for (const flow of ECOMMERCE_ONE_CLICK_FLOWS) {
-            for (const row of ecommerceSuiteFromPresets(flow)) {
-                expect(row.prompt).not.toContain("不生成任何文字");
-            }
+    test("铺底提示词只规划无字底图，标题价格和 CTA 不交给图片模型", () => {
+        const rows = ECOMMERCE_ONE_CLICK_FLOWS.flatMap(ecommerceSuiteFromPresets);
+        expect(rows.some((row) => row.prompt.includes("不生成任何文字"))).toBe(true);
+        for (const row of rows) {
+            expect(row.prompt).not.toContain("图上文字以这条提示词里逐字引号的内容为准");
+            expect(row.prompt).not.toContain("不要自己编字");
         }
-        // 留了文案位的行必须换成「以逐字引号为准」的说法
-        expect(ecommerceSuiteFromPresets(ecommerceOneClickFlow("detail")!).some((row) => row.prompt.includes("不要自己编字"))).toBe(true);
     });
 
     test("四个入口的拍法预设全部存在——缺一个就会退化成只剩一句职责", () => {
@@ -126,10 +124,92 @@ describe("套图表：一张图一条提示词", () => {
         expect(ecommerceSuiteMissing(partial, rows.length)).toBe(1);
         expect(ecommerceSuiteReady(partial)).toBe(false);
     });
+
+    test("跳过行不参与分析清单、缺失统计和就绪判断，旧行仍默认启用", () => {
+        const flow = ecommerceOneClickFlow("main")!;
+        const rows = [
+            { slotId: "main-skip", title: "跳过", duty: "不分析", prompt: "", enabled: false },
+            { slotId: "main-keep", title: "保留", duty: "要分析", prompt: "已写提示词" },
+        ];
+        const suite = { flow: flow.id, rows, source: "draft" as const, updatedAt: "" };
+        const prompt = ecommerceSuiteDraftPrompt(flow, undefined, rows);
+        expect(prompt).not.toContain("main-skip");
+        expect(prompt).toContain("main-keep | 保留 | 要分析");
+        expect(ecommerceSuiteMissing(suite, rows.length)).toBe(0);
+        expect(ecommerceSuiteReady(suite)).toBe(true);
+        expect(parseEcommerceSuiteDraft("main-1 | 主图 | 真实展示 | 白底商品", flow)?.[0].enabled).toBeUndefined();
+    });
+
+    test("重新分析只接受请求快照里的启用槽位与顺序，并保留跳过行", () => {
+        const previous = [
+            { slotId: "main-1", title: "旧主图", duty: "旧职责", prompt: "旧主图提示词", resultNodeId: "result-1" },
+            { slotId: "main-2", title: "已跳过", duty: "保留职责", prompt: "保留提示词", enabled: false, resultNodeId: "result-2" },
+            { slotId: "main-3", title: "旧场景", duty: "旧职责", prompt: "旧场景提示词", resultNodeId: "result-3" },
+        ];
+        const parsed = [
+            { slotId: "main-1", title: "新主图", duty: "新职责 1", prompt: "新提示词 1" },
+            { slotId: "main-3", title: "新场景", duty: "新职责 3", prompt: "新提示词 3" },
+        ];
+
+        expect(reconcileEcommerceSuiteDraftRows(previous, parsed)).toEqual([{ ...parsed[0], resultNodeId: "result-1" }, previous[1], { ...parsed[1], resultNodeId: "result-3" }]);
+    });
+
+    test("旧四段或两段分析结果不会清空用户已经编辑的文案与版式", () => {
+        const flow = ecommerceOneClickFlow("main")!;
+        const previous = parseEcommerceSuiteDraft("main-1 | 旧标题 | 旧职责 | 用户标题 | 用户副文案 | ¥199 | 立即购买 | poster | 旧底图提示词", flow)![0];
+
+        for (const legacy of [parseEcommerceSuiteDraft("main-1 | 新标题 | 新职责 | 新底图提示词", flow)![0], parseEcommerceSuiteDraft("main-1 | 新底图提示词", flow)![0]]) {
+            const reconciled = reconcileEcommerceSuiteDraftRows([previous], [legacy]);
+            expect(reconciled?.[0].copy).toEqual(previous.copy);
+            expect(reconciled?.[0].layout).toEqual(previous.layout);
+        }
+    });
+
+    test("模型漏行、换序或改槽位时拒绝整份结果，不能据此删掉用户屏次", () => {
+        const previous = [
+            { slotId: "main-1", title: "主图", duty: "旧职责", prompt: "旧提示词" },
+            { slotId: "main-2", title: "跳过", duty: "保留", prompt: "保留", enabled: false },
+            { slotId: "main-3", title: "场景", duty: "旧职责", prompt: "旧提示词" },
+        ];
+        const row = (slotId: string) => ({ slotId, title: "新标题", duty: "新职责", prompt: "新提示词" });
+
+        expect(reconcileEcommerceSuiteDraftRows(previous, [row("main-1")])).toBeUndefined();
+        expect(reconcileEcommerceSuiteDraftRows(previous, [row("main-3"), row("main-1")])).toBeUndefined();
+        expect(reconcileEcommerceSuiteDraftRows(previous, [row("main-1"), row("main-new")])).toBeUndefined();
+        expect(reconcileEcommerceSuiteDraftRows(previous, [row("main-1"), row("main-2"), row("main-3")])).toBeUndefined();
+    });
 });
 
 describe("分析结果的解析", () => {
     const flow = () => ecommerceOneClickFlow("detail")!;
+
+    test("九段新格式把文案、版式与无字底图提示词拆开，最后一段可以带竖线", () => {
+        const parsed = parseEcommerceSuiteDraft("detail-1 | 痛点共情 | 说出买家正在遇到的问题 | 通勤一路温热 | 真空杯体，随手带走 | | 立即了解 | poster | 商品居中，暖窗光 | 右侧留白", flow());
+
+        expect(parsed).toHaveLength(1);
+        expect(parsed![0].copy).toEqual({ headline: "通勤一路温热", subhead: "真空杯体，随手带走", price: "", cta: "立即了解" });
+        expect(parsed![0].layout?.name).toBe("海报居中");
+        expect(parsed![0].prompt).toBe("商品居中，暖窗光 | 右侧留白");
+        expect(reconcileEcommerceSuiteDraftRows([{ ...ecommerceSuiteSkeleton(flow())[0], resultNodeId: "result-1" }], parsed!)).toEqual([{ ...parsed![0], resultNodeId: "result-1" }]);
+    });
+
+    test("版式只接受当前版式库里的 preset，未知 preset 拒绝整批", () => {
+        for (const preset of ECOMMERCE_LAYOUT_PRESETS) {
+            const parsed = parseEcommerceSuiteDraft(`detail-1 | 标题 | 职责 | 主标题 | 副文案 | ¥199 | 去看看 | ${preset.id} | 无字底图`, flow());
+            expect(parsed?.[0].layout?.name).toBe(preset.layout.name);
+        }
+        expect(parseEcommerceSuiteDraft("detail-1 | 标题 | 职责 | 主标题 | 副文案 | | 去看看 | invented-layout | 无字底图", flow())).toBeUndefined();
+        expect(parseEcommerceSuiteDraft(["detail-1 | 标题 | 职责 | 主标题 | 副文案 | ¥199 | 去看看 | poster | 无字底图", "detail-2 | 标题 | 职责 | 主标题 | 副文案 | ¥299 | 去看看 | invented-layout | 无字底图"].join("\n"), flow())).toBeUndefined();
+    });
+
+    test("中文和下划线未知版式不会降级成旧四段提示词", () => {
+        for (const [price, unknownPreset] of [
+            ["¥199", "未知版式"],
+            ["", "custom_layout"],
+        ]) {
+            expect(parseEcommerceSuiteDraft(`detail-1 | 标题 | 职责 | 主标题 | 副文案 | ${price} | 去看看 | ${unknownPreset} | 无字底图`, flow())).toBeUndefined();
+        }
+    });
 
     test("四段一行：槽位 | 标题 | 职责 | 完整提示词", () => {
         const parsed = parseEcommerceSuiteDraft("detail-1 | 痛点共情 | 说出买家正在遇到的问题 | 商品居中摆放在纯白背景，45 度俯拍，柔光箱从左前方打光，右上角一行字「12 小时还热着」", flow());
@@ -138,6 +218,16 @@ describe("分析结果的解析", () => {
         expect(parsed![0].title).toBe("痛点共情");
         expect(parsed![0].duty).toBe("说出买家正在遇到的问题");
         expect(parsed![0].prompt).toContain("12 小时还热着");
+    });
+
+    test("旧四段提示词即使含五个以上竖线也按旧格式完整保留", () => {
+        const prompt = "商品居中 | 45 度俯拍 | 左前柔光 | 暖灰背景 | 右侧留白 | 景深自然";
+        const parsed = parseEcommerceSuiteDraft(`detail-1 | 痛点共情 | 说出问题 | ${prompt}`, flow());
+
+        expect(parsed).toHaveLength(1);
+        expect(parsed![0].prompt).toBe(prompt);
+        expect(parsed![0].copy).toBeUndefined();
+        expect(parsed![0].layout).toBeUndefined();
     });
 
     test("旧的两段格式也吃——用户手里那套自定义提示词可能还在用", () => {
@@ -149,7 +239,7 @@ describe("分析结果的解析", () => {
         expect(parsed![0].duty.trim()).toBeTruthy();
     });
 
-    test("模型返回几行就是几行——屏数不固定，可以由提示词要求", () => {
+    test("解析器可读任意行数，结构契约由合并阶段校验", () => {
         const six = ["痛点", "卖点", "场景", "细节", "参数", "售后"].map((name, index) => `detail-${index + 1} | ${name} | 这一屏解决${name} | 提示词${index + 1}`).join("\n");
         const parsed = parseEcommerceSuiteDraft(six, flow());
         expect(parsed).toHaveLength(6);
@@ -170,6 +260,13 @@ describe("分析结果的解析", () => {
     test("提示词里本来就有竖线时不会被切碎", () => {
         const parsed = parseEcommerceSuiteDraft("detail-1 | 三分构图 | 画面感 | 左三分构图 | 商品在右，文字在左", flow());
         expect(parsed![0].prompt).toBe("左三分构图 | 商品在右，文字在左");
+    });
+
+    test("导演要求图片模型只画无字底图，文案单独按九段格式输出", () => {
+        const prompt = ecommerceSuiteDraftPrompt(flow(), undefined, ecommerceSuiteSkeleton(flow()));
+        expect(ECOMMERCE_SUITE_DIRECTOR_PROMPT).toContain("无文字、Logo 和水印");
+        expect(prompt).toContain("主标题 | 副文案 | 价格 | 行动引导 | 版式 preset | 无字底图提示词");
+        expect(prompt).toContain("文案独立输出");
     });
 
     test("模型写解释的那几行不会当成屏次——id 不是短标识符就跳过", () => {
@@ -204,6 +301,14 @@ describe("铺产物节点", () => {
         expect(nodes).toHaveLength(1);
         expect(nodes[0].metadata?.ecommerceShotId).toBe("detail-5");
         expect(connections).toHaveLength(1);
+    });
+
+    test("生成节点保存本次行文案与版式快照", () => {
+        const flow = ecommerceOneClickFlow("detail")!;
+        const row = parseEcommerceSuiteDraft("detail-1 | 标题 | 职责 | 主标题 | 副文案 | | 立即了解 | poster | 无字底图", flow)![0];
+        const { nodes } = ecommerceSuiteNodes(product(), flow, [row], new Set(), counter());
+        expect(nodes[0].metadata?.ecommerceCopy).toEqual(row.copy);
+        expect(nodes[0].metadata?.ecommerceLayout).toEqual(row.layout);
     });
 
     test("单张出图时那一行已经有节点就不铺，返回空", () => {
@@ -344,6 +449,23 @@ describe("出图调动计划", () => {
         expect(plan.nodeIds).toEqual([]);
     });
 
+    test("跳过行不进入出图调动计划，旧行继续生成", () => {
+        const flow = ecommerceOneClickFlow("main")!;
+        const suite = {
+            flow: flow.id,
+            source: "draft" as const,
+            updatedAt: "",
+            rows: [
+                { slotId: "main-1", title: "跳过", duty: "不生成", prompt: "不要生成", enabled: false },
+                { slotId: "main-2", title: "保留", duty: "继续生成", prompt: "白底商品" },
+            ],
+        };
+        const plan = ecommerceSuiteTargets(product(), flow, suite, { nodes: [], connections: [] }, {}, counter());
+        expect(plan.rows.map((row) => row.slotId)).toEqual(["main-2"]);
+        expect(plan.spawned.map((node) => node.metadata?.ecommerceShotId)).toEqual(["main-2"]);
+        expect(ecommerceSuiteNodes(product(), flow, suite.rows, new Set(), counter()).nodes.map((node) => node.metadata?.ecommerceShotId)).toEqual(["main-2"]);
+    });
+
     test("每一张都连到商品节点——约束链要能把商品锁定带下去", () => {
         const plan = ecommerceSuiteTargets(product(), ecommerceOneClickFlow("seed")!, suiteOf("seed"), { nodes: [], connections: [] }, {}, counter());
         expect(plan.connections).toHaveLength(4);
@@ -386,15 +508,16 @@ describe("套图面板的接线", () => {
         expect(project).toMatch(/enqueueGenerationBatch\(\s*productNode\.id,\s*"batch_image"/);
         // 提示词写进节点自己的 prompt：点开那一屏能看见它、能改它、能单独重出
         expect(project).toContain("prompt, composerContent: prompt");
-        // 按槽位复用已铺的节点，重出不在画布上再堆一遍
-        expect(project).toContain("...plan.spawned.map((item) => ({ ...item, metadata: { ...item.metadata, ecommerceRunId: runId } }))");
+        // 新节点先补运行与输入快照，再一次性写入画布。
+        expect(project).toContain("const preparedSpawned = spawnedWithRun.map((item) => {");
+        expect(project).toContain("...preparedSpawned,");
         expect(preset).toContain("reuse: [],");
     });
 
     test("批量生图提交后重新选择整批输出，避免聚焦首张时虚拟化卸载其余节点", () => {
         const generation = project.slice(project.indexOf("const generateEcommerceSuite = useCallback("), project.indexOf("// \u52a8\u4f5c Context", project.indexOf("const generateEcommerceSuite = useCallback(")));
         const viewport = readFileSync(new URL("../src/pages/canvas/use-canvas-viewport-controller.ts", import.meta.url), "utf8");
-        expect(generation).toMatch(/setNodes\(\(current\) => \[[\s\S]*?\.\.\.plan\.spawned\.map\([\s\S]*?ecommerceRunId: runId[\s\S]*?\]\);/);
+        expect(generation).toMatch(/const preparedSpawned = spawnedWithRun\.map\([\s\S]*?setNodes\(\(current\) => \[[\s\S]*?\.\.\.preparedSpawned[\s\S]*?\]\);/);
         expect(generation).toMatch(/focusCanvasImageNodes\(nodeIds\);[\s\S]*?batchId = enqueueGenerationBatch/);
         expect(viewport).toMatch(/const focusCanvasImageNodes = useCallback\([\s\S]*?getCanvasNodesBounds\(targets\)[\s\S]*?viewportForBounds\(bounds, size/);
     });
@@ -418,8 +541,9 @@ describe("套图面板的接线", () => {
         // 于是每一张都拿到空提示词，调度器把整批标成「生成提示词为空」——用户看到的是
         // 节点铺了一地、一个都不出图，批量生成和单张出图都是这样。
         // 现在这件事由 ecommerceSuiteTargets 保证（见「出图调动计划」那一组），
-        // 页面层只负责把 plan.spawned 原样追加进去。
-        expect(project).toContain("...plan.spawned.map((item) => ({ ...item, metadata: { ...item.metadata, ecommerceRunId: runId } }))");
+        // 页面层补齐本次运行与输入快照后，再把 preparedSpawned 追加进去。
+        expect(project).toContain("const preparedSpawned = spawnedWithRun.map((item) => {");
+        expect(project).toContain("...preparedSpawned,");
         expect(project).toMatch(/connectEcommerceTableOutputs\(\s*ecommerceSuiteTargets\(/);
     });
 
@@ -435,8 +559,8 @@ describe("套图面板的接线", () => {
     test("单张出图：面板每行一个按钮，只出那一张", () => {
         expect(panel).toContain("onGenerateOne");
         expect(panel).toContain("ecom-suite-row-run");
-        // 没有提示词的行不给按——出了也是一张空图
-        expect(panel).toContain('disabled={!hasPrompt || generating || status === "loading"}');
+        // 跳过、没有提示词、生图模型不兼容，或已有任一批次在运行时不给按。
+        expect(panel).toContain("disabled={!enabled || !hasPrompt || batchBusy || !imageModelReady}");
         expect(project).toContain("generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows)");
         // 单张出图或关闭自动装订时清除旧失败计划，不触发装订。
         expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } }");
@@ -453,7 +577,7 @@ describe("套图面板的接线", () => {
     });
 
     test("一条提示词都没有时不给「只出有的」——那等于出 0 张，面板关掉什么都没发生", () => {
-        expect(panel).toContain("const empty = missing >= total;");
+        expect(panel).toContain("const empty = generationCount === 0;");
         expect(panel).toContain('okText: empty ? "去补提示词" : "只出有的"');
         // 空表时确认框里不该有 onOk：点了只关弹窗，留在面板里
         expect(panel).toContain('...(empty ? { cancelButtonProps: { style: { display: "none" } } } : { cancelText: "回去补", onOk: generateDraft })');
@@ -490,8 +614,13 @@ describe("套图面板的接线", () => {
         expect(project).toContain("rasterizeEcommerceDetailPage");
         expect(project).toContain("bindingRef");
         // 缺屏就不装订——缺屏的长图交出去比不交更糟
-        expect(project).toContain("ecommerceBindingImages(plan, nodes)");
+        expect(project).toContain("ecommerceBindingImages(plan, nodesRef.current)");
         expect(project).toContain("if (!ready) continue");
+        // 装订读取当前创作表，用 slotId 对齐当前启用顺序；异步交付继续校验同一份来源
+        expect(project).toContain("const enabledRows = suite.rows.filter((row) => row.enabled !== false)");
+        expect(project).toContain("new Map(plan.slotIds.map((slotId, index) => [slotId, ready[index]]))");
+        expect(project).toContain("currentSourceSignature() !== sourceSignature");
+        expect(project).toContain("result.fileNames, validatePlan");
     });
 
     test("本地叠字那套从一键流程里去掉了", () => {
@@ -508,7 +637,8 @@ describe("整组统一与结构可调", () => {
     test("屏次与职责可改，张数可增删——九屏只是起点", () => {
         // 面板那两列从静态文字改成输入框
         expect(panel).toContain("setDraftRows((current) => current.map");
-        expect(panel).toContain("onRowsChange(draftRows)");
+        expect(panel).toContain("const commitDraftRows = () =>");
+        expect(panel).toContain("onRowsChange(latest)");
         expect(panel).toContain("moveDraftRow(current, row.slotId, -1)");
         expect(panel).toContain("onAddRow");
         expect(panel).toContain("onRemoveRow");
@@ -524,10 +654,12 @@ describe("整组统一与结构可调", () => {
         expect(panel).toContain("moveDraftRow(current, row.slotId, 1)");
     });
 
-    test("屏数可以由提示词要求——模型返回几行就是几行", () => {
+    test("模型必须照请求快照返回槽位；改屏数先改表格或计划张数", () => {
         const flow = ecommerceOneClickFlow("detail")!;
         const prompt = ecommerceSuiteDraftPrompt(flow, undefined, ecommerceSuiteRows(flow, undefined));
-        expect(prompt).toContain("你返回几行，这一套就是几行");
+        expect(prompt).toContain("不得增删、换序或改槽位 id");
+        expect(prompt).toContain("调整屏数必须先由用户修改表格或计划张数");
+        expect(prompt).not.toContain("你返回几行，这一套就是几行");
         // 表里的屏次与职责进了提示词，模型知道现在是怎么分的
         expect(prompt).toContain("【这一套现在按这几屏走】");
     });
@@ -644,12 +776,13 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(draft).toContain("unsure");
     });
 
-    test("分析提示词要求「一条里说清四件事」", () => {
+    test("分析提示词要求底图与文案分层", () => {
         const prompt = ecommerceSuiteDraftPrompt(ecommerceOneClickFlow("detail")!, undefined, ecommerceSuiteRows(ecommerceOneClickFlow("detail")!, undefined));
         expect(prompt).toContain("画面主体与状态");
         expect(prompt).toContain("场景与背景");
         expect(prompt).toContain("光线与镜头");
-        expect(prompt).toContain("图上文字");
+        expect(prompt).toContain("文案独立输出");
+        expect(prompt).toContain("无文字、Logo 和水印");
         expect(prompt).toContain("不要把同一套描述复制到每一张");
     });
 
@@ -669,7 +802,7 @@ describe("读图起草：图必须真的递进模型", () => {
             expect(prompt).toContain(screen.slotId);
             expect(prompt).toContain(screen.duty);
         }
-        expect(prompt).toContain("【输出格式】每行一条，四段竖线分隔");
+        expect(prompt).toContain("【输出格式】每行一条，九段竖线分隔");
     });
 
     test("空串代表没改过——回到默认那一份", () => {
@@ -718,32 +851,39 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(project).toContain("return Boolean(batchId);");
     });
 
-    test("阻止重复提交、默认不自动装订，并要求显式选择分析和生图模型", () => {
+    test("阻止重复提交、默认不自动装订，并传递最新草稿", () => {
         const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
         const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
         expect(node).toContain("generationInFlight.current");
         expect(node).toContain("ecommerceAutoBind === true");
-        expect(panel).toContain("分析模型");
-        expect(node).toContain("ecommerceAnalysisModel");
-        expect(node).toContain("ecommerceImageModel");
         expect(node).toContain("const [generating, setGenerating] = useState(false)");
         expect(node).toContain("autoBind={node.metadata?.ecommerceAutoBind === true}");
-        expect(project).toContain("未选择分析模型");
-        expect(project).toContain("未选择生图模型");
         expect(project).toContain("rowsOverride?: EcommerceSuiteRow[]");
-        expect(panel).toContain("onGenerate(draftRows)");
+        expect(panel).toContain("const latest = commitDraftRows()");
+        expect(panel).toContain("onGenerate(latest)");
     });
 
-    test("图上文字要逐字写出来并用引号包住——不让模型自己发挥", () => {
-        expect(suite).toContain("逐字用引号写进提示词");
+    test("图上文字独立输出，不烧进底图提示词", () => {
+        expect(suite).toContain("文案独立输出");
+        expect(suite).not.toContain("逐字用引号写进提示词");
     });
 
     test("档案草稿按行解析，容忍序号与全角竖线", () => {
-        const parsed = parseEcommerceProfileDraft("1. category｜保温杯\n- appearance | 哑光黑；304 不锈钢\nmarks | 杯身中部 THERMO\nunsure | 材质是推测的");
+        const parsed = parseEcommerceProfileDraft("1. category｜保温杯\n- appearance | 哑光黑；304 不锈钢\nmarks | 杯身中部 THERMO\naudience | 通勤携带；办公室饮水\nfacts | 便于携带：杯盖顶部有可见提手\nunsure | 材质和人群是推测的");
         expect(parsed.category).toBe("保温杯");
         expect(parsed.appearance).toBe("哑光黑；304 不锈钢");
         expect(parsed.marks).toBe("杯身中部 THERMO");
-        expect(parsed.unsure).toBe("材质是推测的");
+        expect(parsed.audience).toBe("通勤携带；办公室饮水");
+        expect(parsed.facts).toBe("便于携带：杯盖顶部有可见提手");
+        expect(parsed.unsure).toBe("材质和人群是推测的");
+    });
+
+    test("商品识别只允许可见卖点依据，并明确价格必须手填", () => {
+        const prompt = buildEcommerceProfileDraftPrompt();
+        expect(prompt).toContain("facts |");
+        expect(prompt).toContain("每条都要写出图中可见的依据");
+        expect(prompt).toContain("price |");
+        expect(prompt).toContain("必须留空");
     });
 
     test("「无」「看不清」这类占位不当成内容写进档案", () => {

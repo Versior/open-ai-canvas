@@ -1,3 +1,5 @@
+import type { CanvasWorkspaceMode } from "@/types/canvas";
+
 /**
  * 画布的种类。
  *
@@ -19,6 +21,10 @@ export type CanvasKind = "freeform" | "ecommerce";
 /** 缺省是自由画布：老数据没有 kind 字段，它们是自由画布。 */
 export function resolveCanvasKind(kind: CanvasKind | undefined): CanvasKind {
     return kind === "ecommerce" ? "ecommerce" : "freeform";
+}
+
+export function defaultCanvasWorkspaceMode(kind: CanvasKind | undefined): CanvasWorkspaceMode {
+    return resolveCanvasKind(kind) === "ecommerce" ? "simple" : "professional";
 }
 
 export function isEcommerceCanvas(kind: CanvasKind | undefined) {

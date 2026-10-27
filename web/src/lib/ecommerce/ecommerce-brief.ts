@@ -17,14 +17,23 @@ export function ecommerceBriefRows(flow: EcommerceOneClickFlow, rows: EcommerceS
     const count = brief?.imageCount;
     if (count === undefined) return rows;
     if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error("计划张数须为 1–30 张");
-    const result = rows.slice(0, count);
+    const result: EcommerceSuiteRow[] = [];
+    let enabledCount = 0;
+    for (const row of rows) {
+        if (row.enabled === false) result.push(row);
+        else if (enabledCount < count) {
+            result.push(row);
+            enabledCount++;
+        }
+    }
     const used = new Set(rows.map((row) => row.slotId));
     let sequence = 1;
-    while (result.length < count) {
+    while (enabledCount < count) {
         while (used.has(`${flow.id}-extra-${sequence}`)) sequence++;
         const slotId = `${flow.id}-extra-${sequence++}`;
         used.add(slotId);
-        result.push({ slotId, title: `第 ${result.length + 1} 张`, duty: "按商品事实与本套用途规划", prompt: "" });
+        result.push({ slotId, title: `第 ${enabledCount + 1} 张`, duty: "按商品事实与本套用途规划", prompt: "" });
+        enabledCount++;
     }
     return result;
 }

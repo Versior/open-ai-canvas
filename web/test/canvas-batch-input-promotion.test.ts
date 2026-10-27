@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { createCanvasBatchInputSnapshot } from "@/lib/canvas/canvas-batch-input-snapshot";
 import { batchOutputResultPending, batchRowInputChanged, batchRowInputSignature } from "@/lib/canvas/canvas-batch-references";
+import { createEcommerceVideo, ecommerceVideoCreativePlanSourceSignature } from "@/lib/ecommerce/ecommerce-video";
 import { ensureRemoteResourceReferences } from "@/services/user-data-sync-media";
 import { CanvasNodeType, type CanvasBatchTableData, type CanvasNodeData } from "@/types/canvas";
 
@@ -118,6 +119,92 @@ describe("batch signatures across resource promotion", () => {
         expect(rowChanged(remote.nodes)).toBe(true);
     });
 
+    test("ecommerce result signatures retain source identity after resource promotion", async () => {
+        const state = fixture();
+        const signature = JSON.stringify([
+            "商品主图 prompt",
+            [[state.image.id, localKey, "200x300", "image/png", "opaque"]],
+            "image-model",
+            "1:1",
+            "high",
+            "2K",
+            "{}",
+            "disabled",
+        ]);
+        state.output.metadata!.batchResultInputSignature = signature;
+        state.table.rows[0].generatedInputSignature = signature;
+
+        const remote = await ensureRemoteResourceReferences({ nodes: state.nodes }, new Map([[localKey, remoteKey]]));
+        const outputSignature = remote.nodes.find((node) => node.id === "result")!.metadata!.batchResultInputSignature!;
+        const rowSignature = remote.nodes.find((node) => node.id === "table")!.metadata!.batchTable!.rows[0].generatedInputSignature!;
+
+        expect(JSON.parse(outputSignature)).toEqual([
+            "商品主图 prompt",
+            [[state.image.id, remoteKey, "200x300", "image/png", "opaque"]],
+            "image-model",
+            "1:1",
+            "high",
+            "2K",
+            "{}",
+            "disabled",
+        ]);
+        expect(rowSignature).toBe(outputSignature);
+        expect(outputSignature).not.toContain("blob:");
+        expect(outputSignature).not.toContain("data:");
+    });
+    test("video Creative Plans stay current when local references are promoted to resources", async () => {
+        const referenceKey = "video-reference:scope:reference";
+        const remoteReferenceKey = "resource:reference";
+        const productKey = "image:scope:product";
+        const remoteProductKey = "resource:product";
+        const reference: CanvasNodeData = {
+            id: "reference-video",
+            type: CanvasNodeType.Video,
+            position: { x: 0, y: 0 },
+            metadata: { content: "blob:reference", storageKey: referenceKey },
+        };
+        const product: CanvasNodeData = {
+            id: "product",
+            type: CanvasNodeType.Product,
+            position: { x: 0, y: 0 },
+            metadata: { productProfile: { name: "保温杯", category: "杯具", appearance: "白色", marks: "", forbidden: "", audience: "通勤", facts: "210g", price: "99 元", views: {} } },
+        };
+        const productImage: CanvasNodeData = {
+            id: "product-image",
+            type: CanvasNodeType.Image,
+            position: { x: 0, y: 0 },
+            metadata: { content: "blob:product", storageKey: productKey },
+        };
+        const target: CanvasNodeData = {
+            id: "video-target",
+            type: CanvasNodeType.EcommerceVideo,
+            position: { x: 0, y: 0 },
+            metadata: { ecommerceVideo: createEcommerceVideo("复刻视频") },
+        };
+        target.metadata!.ecommerceVideo!.replica = { referenceVideoNodeId: reference.id, aspects: ["rhythm"], notes: "{}", extraExclude: "" };
+        const signature = ecommerceVideoCreativePlanSourceSignature({ target, referenceVideo: reference, product, productImages: [productImage] });
+        target.metadata!.ecommerceVideo!.replica.planSourceSignature = signature;
+        const result: CanvasNodeData = {
+            id: "creative-plan",
+            type: CanvasNodeType.Text,
+            position: { x: 0, y: 0 },
+            metadata: { ecommerceVideoCreativePlanSource: { targetNodeId: target.id, referenceVideoId: reference.id, signature } },
+        };
+
+        const remote = await ensureRemoteResourceReferences(
+            { nodes: [reference, product, productImage, target, result] },
+            new Map([
+                [referenceKey, remoteReferenceKey],
+                [productKey, remoteProductKey],
+            ]),
+        );
+        const node = (id: string) => remote.nodes.find((item) => item.id === id)!;
+        const expected = ecommerceVideoCreativePlanSourceSignature({ target: node(target.id), referenceVideo: node(reference.id), product: node(product.id), productImages: [node(productImage.id)] });
+
+        expect(node(target.id).metadata!.ecommerceVideo!.replica!.planSourceSignature).toBe(expected);
+        expect(node(result.id).metadata!.ecommerceVideoCreativePlanSource!.signature).toBe(expected);
+        expect(expected).not.toBe(signature);
+    });
     test("unknown legacy signatures stay intact instead of being replaced by current inputs", async () => {
         const state = fixture();
         state.output.metadata!.batchResultInputSignature = "legacy-signature";

@@ -1,9 +1,61 @@
 import { nanoid } from "nanoid";
+import { canvasGenerationInputPrompt } from "@/lib/canvas/canvas-generation-input-prompt";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
+import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
+import { nodeGenerationPrompt, synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
+import type { AiConfig } from "@/stores/use-config-store";
 import { ecommerceOneClickFlow, type EcommerceOneClickFlowId } from "./ecommerce-oneclick";
+import { resolveEcommerceTableModels } from "./ecommerce-model-defaults";
+import type { EcommerceModel } from "./ecommerce-models";
 import { ecommerceSuiteRows, type EcommerceSuite, type EcommerceSuiteRow } from "./ecommerce-suite";
 import type { EcommerceSuiteTargets } from "./ecommerce-canvas-preset";
+import { ecommerceMediaIdentity, mergeEcommercePrompt, resolveEcommerceInputs } from "./ecommerce-canvas";
+
+export type EcommerceResultSourceSignature = (row: EcommerceSuiteRow, node: CanvasNodeData) => string | undefined;
+
+/** Inputs that can alter one generated image. Batch count and local copy/layout do not. */
+export function ecommerceGenerationSourceSignature(input: {
+    source: CanvasNodeData;
+    row: EcommerceSuiteRow;
+    target: CanvasNodeData;
+    nodes: CanvasNodeData[];
+    connections: CanvasConnection[];
+    config: AiConfig;
+    customModels?: EcommerceModel[];
+}) {
+    const { source, row, target, nodes, connections, config, customModels = [] } = input;
+    const { imageModel } = resolveEcommerceTableModels(config, { imageModel: source.metadata?.ecommerceImageModel });
+    if (!imageModel) return undefined;
+    const prepared = synchronizeGenerationSpec(target, {
+        prompt: row.prompt,
+        composerContent: row.prompt,
+        model: imageModel,
+        ...(source.metadata?.ecommerceImageSize?.trim() ? { size: source.metadata.ecommerceImageSize.trim() } : {}),
+        ...(source.metadata?.ecommerceImageQuality?.trim() ? { quality: source.metadata.ecommerceImageQuality.trim() } : {}),
+    });
+    const graphNodes = nodes.some((node) => node.id === prepared.id) ? nodes.map((node) => (node.id === prepared.id ? prepared : node)) : [...nodes, prepared];
+    const ecommerce = resolveEcommerceInputs(prepared.id, graphNodes, connections, customModels);
+    const generation = buildGenerationConfig(config, prepared, "image");
+    const nodeById = new Map(graphNodes.map((node) => [node.id, node]));
+    return JSON.stringify([
+        mergeEcommercePrompt(ecommerce.prompt, canvasGenerationInputPrompt(prepared, "image", nodeGenerationPrompt(prepared))),
+        ecommerce.referenceImages.map((reference) => {
+            const identity = ecommerceMediaIdentity(nodeById.get(reference.id));
+            return [reference.id, reference.storageKey || identity?.[1] || "", identity?.[2] || "", reference.type || identity?.[3] || "", identity?.[4] || ""];
+        }),
+        generation.model?.trim() || "",
+        generation.size?.trim() || "",
+        generation.quality?.trim() || "",
+        generation.imageResolution?.trim() || "",
+        generation.imageParameters?.trim() || "",
+        generation.transparentBackground?.trim() || "",
+    ]);
+}
+
+export function ecommerceResultSourceCurrent(node: CanvasNodeData, expected: string | undefined) {
+    return Boolean(expected && node.metadata?.batchResultInputSignature === expected);
+}
 
 export function ecommerceSuiteMetadata(metadata: CanvasNodeMetadata | undefined, suite: EcommerceSuite): CanvasNodeMetadata {
     // The canvas canonicalizer treats sibling paths with shared prefixes as cycles.
@@ -26,7 +78,7 @@ export function ecommerceTableMetadata(product: CanvasNodeData, flowId: Ecommerc
         ecommerceBrief: product.metadata?.ecommerceBrief,
         ecommerceAnalysisSkillsByFlow: product.metadata?.ecommerceAnalysisSkillsByFlow,
         ecommerceAutoBind: product.metadata?.ecommerceAutoBind,
-        batchTable: { operation: "product", concurrency: 10, rows: suite.rows.map((row) => ({ id: row.slotId, enabled: true, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })) },
+        batchTable: { operation: "product", concurrency: 10, rows: suite.rows.map((row) => ({ id: row.slotId, enabled: row.enabled !== false, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })) },
     };
 }
 
@@ -65,7 +117,13 @@ export function syncEcommerceTables(nodes: CanvasNodeData[], connections: Canvas
             const suite = node.metadata.ecommerceSuite;
             if (!suite) return node;
             const rows = node.metadata.batchTable?.rows;
-            if (rows?.length === suite.rows.length && rows.every((row, index) => row.id === suite.rows[index].slotId && row.prompt === suite.rows[index].prompt && row.cells?.title === suite.rows[index].title && row.cells?.duty === suite.rows[index].duty))
+            if (
+                rows?.length === suite.rows.length &&
+                rows.every(
+                    (row, index) =>
+                        row.id === suite.rows[index].slotId && row.enabled === (suite.rows[index].enabled !== false) && row.prompt === suite.rows[index].prompt && row.cells?.title === suite.rows[index].title && row.cells?.duty === suite.rows[index].duty,
+                )
+            )
                 return node;
             changed = true;
             return {
@@ -76,7 +134,7 @@ export function syncEcommerceTables(nodes: CanvasNodeData[], connections: Canvas
                         operation: "product" as const,
                         concurrency: 10,
                         ...node.metadata.batchTable,
-                        rows: suite.rows.map((row) => ({ id: row.slotId, enabled: true, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })),
+                        rows: suite.rows.map((row) => ({ id: row.slotId, enabled: row.enabled !== false, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })),
                     },
                 },
             };
@@ -89,7 +147,7 @@ export function syncEcommerceTables(nodes: CanvasNodeData[], connections: Canvas
         if (node.metadata?.batchTable?.rows.length)
             metadata.ecommerceSuite = {
                 ...metadata.ecommerceSuite!,
-                rows: node.metadata.batchTable.rows.map((row, i) => ({ slotId: row.id, title: String(row.cells?.title || "第 " + (i + 1) + " 张"), duty: String(row.cells?.duty || ""), prompt: row.prompt })),
+                rows: node.metadata.batchTable.rows.map((row, i) => ({ slotId: row.id, enabled: row.enabled, title: String(row.cells?.title || "第 " + (i + 1) + " 张"), duty: String(row.cells?.duty || ""), prompt: row.prompt })),
             };
         changed = true;
         return { ...node, metadata: { ...node.metadata, ...metadata } };
@@ -110,7 +168,7 @@ export function ecommerceTableSource(node: CanvasNodeData, nodes: CanvasNodeData
 }
 
 /** Only this table's connected image outputs can be adopted or exported. */
-export function ecommerceTableResults(rows: EcommerceSuiteRow[], outputs: CanvasNodeData[], flowId: string) {
+export function ecommerceTableResults(rows: EcommerceSuiteRow[], outputs: CanvasNodeData[], flowId: string, sourceSignature?: EcommerceResultSourceSignature) {
     const candidates = new Map<string, CanvasNodeData[]>();
     for (const node of outputs) {
         const slot = node.metadata?.ecommerceShotId;
@@ -118,32 +176,44 @@ export function ecommerceTableResults(rows: EcommerceSuiteRow[], outputs: Canvas
         candidates.set(slot, [...(candidates.get(slot) || []), node]);
     }
     const selected = new Map<string, CanvasNodeData>();
+    const stale = new Map<string, CanvasNodeData[]>();
     for (const row of rows) {
         const images = candidates.get(row.slotId) || [];
-        const node = row.resultNodeId ? images.find((item) => item.id === row.resultNodeId) : [...images].reverse().find((item) => item.metadata?.storageKey && item.metadata.status !== "loading" && item.metadata.status !== "error") || images.at(-1);
+        const current = sourceSignature ? images.filter((item) => ecommerceResultSourceCurrent(item, sourceSignature(row, item))) : images;
+        if (sourceSignature) stale.set(row.slotId, images.filter((item) => !current.includes(item)));
+        const node = row.resultNodeId ? current.find((item) => item.id === row.resultNodeId) : [...current].reverse().find((item) => item.metadata?.storageKey && item.metadata.status !== "loading" && item.metadata.status !== "error") || current.at(-1);
         if (node) selected.set(row.slotId, node);
     }
-    return { candidates, selected };
+    return { candidates, selected, stale };
 }
 
-export function ecommerceSelectedOutputs(table: CanvasNodeData, rows: EcommerceSuiteRow[], nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    if (!rows.length) throw new Error("创作表没有可装订的行");
+export function ecommerceSelectedOutputs(table: CanvasNodeData, rows: EcommerceSuiteRow[], nodes: CanvasNodeData[], connections: CanvasConnection[], sourceSignature?: EcommerceResultSourceSignature) {
+    const enabledRows = rows.filter((row) => row.enabled !== false);
+    if (!enabledRows.length) throw new Error("创作表没有可装订的行");
     const downstream = new Set(connections.filter((edge) => edge.fromNodeId === table.id).map((edge) => edge.toNodeId));
     const { selected } = ecommerceTableResults(
-        rows,
+        enabledRows,
         nodes.filter((node) => downstream.has(node.id)),
         table.metadata?.ecommerceFlowId || "",
+        sourceSignature,
     );
-    return rows.map((row, index) => {
+    return enabledRows.map((row, index) => {
         const image = selected.get(row.slotId);
-        if (!image?.metadata?.storageKey || image.metadata.status === "loading" || image.metadata.status === "error") throw new Error(`第 ${index + 1} 张尚无有效采用结果`);
+        if (!image?.metadata?.storageKey || image.metadata.status === "loading" || image.metadata.status === "error") {
+            const chosen = row.resultNodeId ? nodes.find((node) => node.id === row.resultNodeId) : undefined;
+            if (chosen && sourceSignature && !ecommerceResultSourceCurrent(chosen, sourceSignature(row, chosen))) throw new Error(`第 ${index + 1} 张来自旧方案，请重新生成`);
+            throw new Error(`第 ${index + 1} 张尚无有效采用结果`);
+        }
         return image;
     });
 }
 
 /** A completed analysis belongs to the exact brief, product facts and reference assets it read. */
-export function ecommerceAnalysisSnapshot(source: CanvasNodeData, product: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const inputs = connections.filter((edge) => edge.toNodeId === product.id || edge.toNodeId === source.id);
+export function ecommerceAnalysisSnapshot(source: CanvasNodeData, product: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[], analysisModel?: string, skillIds?: string[]) {
+    const inputs = connections
+        .filter((edge) => edge.toNodeId === product.id || edge.toNodeId === source.id)
+        .map(({ fromNodeId, toNodeId, fromHandleId, toHandleId, relation, storyboardRowId }) => ({ fromNodeId, toNodeId, fromHandleId, toHandleId, relation, storyboardRowId }))
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
     return JSON.stringify([
         source.id,
         source.metadata?.locked,
@@ -153,11 +223,10 @@ export function ecommerceAnalysisSnapshot(source: CanvasNodeData, product: Canva
         product.id,
         product.metadata?.locked,
         product.metadata?.productProfile,
+        analysisModel?.trim(),
+        [...(skillIds || [])].sort(),
         inputs,
-        inputs.map((edge) => {
-            const input = nodes.find((item) => item.id === edge.fromNodeId);
-            return [input?.id, input?.metadata?.storageKey, input?.metadata?.content];
-        }),
+        inputs.map((edge) => ecommerceMediaIdentity(nodes.find((item) => item.id === edge.fromNodeId))),
     ]);
 }
 

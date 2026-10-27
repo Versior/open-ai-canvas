@@ -947,6 +947,17 @@ input.ecom-card-title-input {
     border-radius: 8px;
 }
 
+.ecom-video-duration-input {
+    font-size: 12px;
+}
+
+.ecom-video-card .ecom-action:focus-visible,
+.ecom-video-card .ecom-chip:focus-visible,
+.ecom-video-card .ecom-video-duration-input:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+}
+
 /* 改稿卡：版本链。当前版是实心行，其余是描边——一眼看出在改哪一版 */
 .ecom-revision-stage {
     position: relative;
@@ -1912,6 +1923,153 @@ input.ecom-card-title-input {
     font-size: 12px;
 }
 
+.ecom-product-guide {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.ecom-product-step {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--muted) 45%, transparent);
+}
+
+.ecom-product-step-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.ecom-product-step-heading > div {
+    min-width: 0;
+}
+
+.ecom-product-step-number {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--foreground);
+    color: var(--background);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ecom-product-step-heading h4,
+.ecom-product-step-heading p {
+    margin: 0;
+}
+
+.ecom-product-step-heading h4 {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.ecom-product-step-heading p {
+    margin-top: 1px;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.ecom-product-identify {
+    display: flex;
+    min-height: 34px;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: min(var(--r-md), 8px);
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ecom-product-identify small {
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.ecom-product-identify:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--accent-foreground);
+}
+
+.ecom-product-identify:disabled {
+    cursor: default;
+    opacity: 0.55;
+}
+
+.ecom-product-draft {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: min(var(--r-md), 8px);
+    background: var(--background);
+}
+
+.ecom-product-draft-note {
+    margin: 0;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.ecom-product-draft-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+.ecom-product-draft-actions .ecom-action {
+    flex: 1 1 0;
+    justify-content: center;
+}
+
+.ecom-product-advanced {
+    border-top: 1px solid var(--border);
+    color: var(--muted-foreground);
+}
+
+.ecom-product-advanced summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding-top: var(--space-2);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.ecom-product-advanced summary span {
+    font-size: 12px;
+}
+
+.ecom-product-advanced-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    color: var(--foreground);
+}
+
 .ecom-input-section {
     display: flex;
     flex-direction: column;
@@ -2060,6 +2218,8 @@ input.ecom-card-title-input {
 .ecom-input-icon:focus-visible,
 .ecom-input-pin:focus-visible,
 .ecom-input-preview:focus-visible,
+.ecom-product-identify:focus-visible,
+.ecom-product-advanced summary:focus-visible,
 .ecom-product-card .ecom-model-pick:focus-visible,
 .ecom-product-card .ecom-oneclick:focus-visible {
     outline: 2px solid var(--foreground);
@@ -2095,12 +2255,21 @@ input.ecom-card-title-input {
 }
 
 .ecom-product-card .ecom-oneclick {
-    min-height: 40px;
+    min-height: 68px;
     flex-direction: row;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     background: transparent;
     border-radius: min(var(--r-md), 8px);
+}
+
+.ecom-product-card .ecom-oneclick-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+    text-align: left;
 }
 
 .ecom-product-card .ecom-oneclick-name {
@@ -2114,6 +2283,12 @@ input.ecom-card-title-input {
     font-size: 12px;
 }
 
+.ecom-product-card .ecom-studio-link {
+    width: 100%;
+    min-height: 40px;
+    align-items: center;
+}
+
 @container (max-width: 360px) {
     .ecom-input-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2121,6 +2296,11 @@ input.ecom-card-title-input {
 
     .ecom-product-model-row .ecom-model-pick {
         flex-wrap: wrap;
+    }
+
+    .ecom-product-card .ecom-oneclick-row,
+    .ecom-product-draft-grid {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -2134,9 +2314,42 @@ input.ecom-card-title-input {
         pointer-events: auto;
     }
 
+    .ecom-product-card .ecom-action,
+    .ecom-product-identify {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .ecom-video-card .ecom-action,
+    .ecom-video-card .ecom-chip,
+    .ecom-video-card .ecom-video-template,
+    .ecom-video-card .ecom-video-cell,
+    .ecom-video-card .ecom-video-duration-input {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .ecom-product-advanced summary {
+        min-height: 44px;
+    }
+
     .ecom-input-icon,
     .ecom-input-pin {
-        width: 32px;
-        height: 32px;
+        width: 44px;
+        height: 44px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .ecom-video-card :where(.ecom-video-cell, .ecom-video-gauge-fill, .ecom-chip, .ecom-action, .ecom-video-template) {
+        transition: none;
+    }
+
+    .ecom-video-card .ecom-card-footer-action svg {
+        transition: none !important;
+    }
+
+    .ecom-video-card .animate-spin {
+        animation: none;
     }
 }

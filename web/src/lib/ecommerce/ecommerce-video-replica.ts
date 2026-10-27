@@ -54,6 +54,8 @@ export type EcommerceVideoReplica = {
     aspects: EcommerceVideoReplicaAspect[];
     /** 从参考视频里读出来的结构笔记：几段、每段几秒、切在哪。 */
     notes: string;
+    /** The source fingerprint is kept only for plans imported from AI results; manual edits clear it. */
+    planSourceSignature?: string;
     /** 额外不复刻项。 */
     extraExclude: string;
 };

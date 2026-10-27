@@ -5,11 +5,15 @@ import { useNodeConnections, useNodeInputs, useDownstreamNodes } from "@/compone
 import { CanvasEcommerceSuitePanel } from "@/components/canvas/canvas-ecommerce-suite-panel";
 import { useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
 import { ecommerceOneClickFlow, type EcommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
+import { resolveEcommerceTableModels } from "@/lib/ecommerce/ecommerce-model-defaults";
 import { ecommerceSuiteMoveRow, ecommerceSuiteRowId, ecommerceSuiteRows, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
+import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { ecommerceTableResults, ecommerceSuiteMetadata } from "@/lib/ecommerce/ecommerce-table";
+import { ecommerceGenerationSourceSignature, ecommerceTableResults, ecommerceSuiteMetadata, type EcommerceResultSourceSignature } from "@/lib/ecommerce/ecommerce-table";
+import { connectedStyleReferenceNodes, ecommerceProductReferenceImages, resolveEcommerceInputs } from "@/lib/ecommerce/ecommerce-canvas";
 
 export function CanvasEcommerceTableNodeContent({ node, readOnly = false }: { node: CanvasNodeData; readOnly?: boolean }) {
     return readOnly ? <ReadOnlyEcommerceTable node={node} /> : <EditableEcommerceTable node={node} />;
@@ -48,10 +52,25 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
     const actions = useCanvasNodeActions();
     const { updateMetadata, draftEcommerceSuite, generateEcommerceSuite, reverseEcommerceSuite, bindEcommerceSuite } = actions;
     const setting = useEcommerceSettings((state) => state.setting);
+    const customModels = useEcommerceModelLibrary((state) => state.models);
+    const config = useEffectiveConfig();
     const inputs = useNodeInputs(node.id);
     const connections = useNodeConnections(node.id);
     const downstream = useDownstreamNodes(node.id);
     const product = inputs.find((item) => item.type === CanvasNodeType.Product && connections.some((edge) => edge.fromNodeId === item.id && edge.toNodeId === node.id));
+    const activeGenerationNodeIds = new Set(
+        (product?.metadata?.generationBatches || [])
+            .flatMap((batch) => batch.items)
+            .filter((item) => item.status === "waiting" || item.status === "submitting" || item.status === "queued" || item.status === "running")
+            .map((item) => item.nodeId),
+    );
+    const productInputs = useNodeInputs(product?.id || "");
+    const productConnections = useNodeConnections(product?.id || "");
+    const analysisReferenceImageCount = product ? ecommerceProductReferenceImages(product, productInputs, productConnections).length + connectedStyleReferenceNodes(product.id, productInputs, productConnections).length : 0;
+    const generationReferenceImageCount = product
+        ? resolveEcommerceInputs(node.id, [...new Map([node, ...inputs, ...productInputs].map((item) => [item.id, item])).values()], [...new Map([...connections, ...productConnections].map((edge) => [edge.id, edge])).values()], customModels)
+              .referenceImages.length
+        : 0;
     const { message } = App.useApp();
     const [analyzing, setAnalyzing] = useState(false);
     const [generating, setGenerating] = useState(false);
@@ -59,16 +78,27 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
     const generationInFlight = useRef(false);
     const { skills, loading: skillsLoading, error: skillsError, refresh: refreshSkills } = useSkillRuntimeCatalog();
     const activeFlow = ecommerceOneClickFlow(node.metadata?.ecommerceFlowId) || ecommerceOneClickFlow("main")!;
+    const models = resolveEcommerceTableModels(config, { analysisModel: node.metadata?.ecommerceAnalysisModel, imageModel: node.metadata?.ecommerceImageModel });
+    const analysisModel = node.metadata?.ecommerceAnalysisModel?.trim() || models.analysisModel;
+    const signatureNodes = [...new Map([node, ...inputs, ...productInputs].map((item) => [item.id, item])).values()];
+    const signatureConnections = [...new Map([...connections, ...productConnections].map((edge) => [edge.id, edge])).values()];
+    const sourceSignature: EcommerceResultSourceSignature = (row, candidate) =>
+        ecommerceGenerationSourceSignature({ source: node, row, target: candidate, nodes: [...signatureNodes, candidate], connections: signatureConnections, config, customModels });
     const suite = node.metadata?.ecommerceSuite;
     const currentSuite = (flow: EcommerceOneClickFlow): EcommerceSuite => node.metadata?.ecommerceSuitesByFlow?.[flow.id] || (suite?.flow === flow.id ? suite : { flow: flow.id, rows: ecommerceSuiteRows(flow, undefined), source: "draft", updatedAt: "" });
-    const results = ecommerceTableResults(currentSuite(activeFlow).rows, downstream, activeFlow.id);
+    const results = ecommerceTableResults(currentSuite(activeFlow).rows, downstream, activeFlow.id, sourceSignature);
     const changeRows = (update: (rows: EcommerceSuiteRow[], flow: EcommerceOneClickFlow) => EcommerceSuiteRow[]) => {
         if (node.metadata?.locked) return false;
         const current = currentSuite(activeFlow);
         const next = { ...current, rows: update(current.rows, activeFlow), updatedAt: new Date().toISOString() };
         updateMetadata?.(node.id, {
             ...ecommerceSuiteMetadata(node.metadata, next),
-            batchTable: { operation: "product", concurrency: 10, ...node.metadata?.batchTable, rows: next.rows.map((row) => ({ id: row.slotId, enabled: true, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })) },
+            batchTable: {
+                operation: "product",
+                concurrency: 10,
+                ...node.metadata?.batchTable,
+                rows: next.rows.map((row) => ({ id: row.slotId, enabled: row.enabled !== false, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })),
+            },
         });
     };
     const patchSuiteRow = (slotId: string, patch: Partial<Pick<EcommerceSuiteRow, "title" | "duty" | "prompt">>) => changeRows((rows) => rows.map((row) => (row.slotId === slotId ? { ...row, ...patch } : row)));
@@ -77,8 +107,8 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
         analysisInFlight.current = true;
         setAnalyzing(true);
         try {
-            if (reverse) await reverseEcommerceSuite?.(node, activeFlow.id, node.metadata?.ecommerceAnalysisModel || undefined);
-            else await draftEcommerceSuite?.(node, activeFlow.id, node.metadata?.ecommerceAnalysisModel || undefined, rows);
+            if (reverse) await reverseEcommerceSuite?.(node, activeFlow.id, analysisModel || undefined);
+            else await draftEcommerceSuite?.(node, activeFlow.id, analysisModel || undefined, rows);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "分析失败");
         } finally {
@@ -114,8 +144,12 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
                     rows={currentSuite(activeFlow).rows}
                     nodeBySlot={results.selected}
                     candidatesBySlot={results.candidates}
-                    analysisModel={node.metadata?.ecommerceAnalysisModel || ""}
-                    imageModel={node.metadata?.ecommerceImageModel || ""}
+                    activeGenerationNodeIds={activeGenerationNodeIds}
+                    sourceSignature={sourceSignature}
+                    analysisModel={models.analysisModel}
+                    analysisReferenceImageCount={analysisReferenceImageCount}
+                    generationReferenceImageCount={generationReferenceImageCount}
+                    imageModel={models.imageModel}
                     imageSize={node.metadata?.ecommerceImageSize || ""}
                     imageQuality={node.metadata?.ecommerceImageQuality || ""}
                     templates={setting.templates}

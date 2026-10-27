@@ -227,6 +227,39 @@ export function ecommerceProductReferenceImages(product: CanvasNodeData, nodes: 
     });
 }
 
+const inlineMediaIdentities = new WeakMap<object, { content: string; token: string }>();
+const inlineMediaIdentitiesByContent = new Map<string, string>();
+// shortcut: retain 32 legacy inline values for exact clone matching; persisted media use storageKey.
+const INLINE_MEDIA_IDENTITY_CACHE_SIZE = 32;
+let nextInlineMediaIdentity = 0;
+
+function inlineMediaIdentity(node: CanvasNodeData) {
+    const metadata = node.metadata;
+    const content = metadata?.content;
+    if (!metadata || !content || metadata.storageKey) return "";
+    const cached = inlineMediaIdentities.get(metadata);
+    if (cached?.content === content) return cached.token;
+    let token = inlineMediaIdentitiesByContent.get(content);
+    if (!token) {
+        token = `inline:${++nextInlineMediaIdentity}`;
+        inlineMediaIdentitiesByContent.set(content, token);
+        if (inlineMediaIdentitiesByContent.size > INLINE_MEDIA_IDENTITY_CACHE_SIZE) inlineMediaIdentitiesByContent.delete(inlineMediaIdentitiesByContent.keys().next().value!);
+    }
+    inlineMediaIdentities.set(metadata, { content, token });
+    return token;
+}
+
+/** Lightweight exact media identity; signed URLs and inline bytes never enter snapshots. */
+export function ecommerceMediaIdentity(node: CanvasNodeData | undefined) {
+    if (!node) return null;
+    return [node.id, node.metadata?.storageKey || "", node.metadata?.assetId || "", node.metadata?.mimeType || "", inlineMediaIdentity(node)] as const;
+}
+
+/** Stable identity for the exact product pixels submitted to analysis; UI labels are intentionally excluded. */
+export function ecommerceProductReferenceSignature(product: CanvasNodeData, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const profile = product.metadata?.productProfile || createEcommerceProductProfile(product.title || "商品");
+    return JSON.stringify(productViewNodes(profile, nodes, connections, product.id).map(ecommerceMediaIdentity));
+}
 export function ecommerceReferenceImageGuide(images: Pick<ReferenceImage, "name">[]) {
     if (!images.length) return "";
     return ["【输入图片对应关系】以下编号按本次实际提交的图片顺序：", ...images.map((image, index) => `第 ${index + 1} 张：${image.name}`)].join("\n");
@@ -294,8 +327,10 @@ export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], 
         shotId,
         sellingPoints: upstream.sellingPoints?.metadata?.sellingPoints,
         // 文案的覆盖链：**这一屏自己的** → 独立的文案节点。
-        // 一键流程按屏写的文字不在这里——它写在那一张的提示词里（ecommerceSuite）。
+        // 一键套图把这一屏文案留给本地排版，不让图片模型烧进底图。
         copy: target?.metadata?.ecommerceCopy || upstream.copy?.metadata?.ecommerceCopy,
+        // 一键套图的文案由本地确定性排版；图片模型只能生成无字底图。
+        renderCopyText: target?.metadata?.ecommerceProductId && target.metadata.ecommerceFlowId ? false : undefined,
         style: upstream.style?.metadata?.ecommerceStyle,
         styleReferenceNames: styleReferences.map((node) => node.title || node.id),
         imageDrivenStyle: Boolean(upstream.product),

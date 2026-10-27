@@ -243,7 +243,7 @@ export function CanvasToolbar({
     };
 
     const items = resolveToolbarEntries("main", ctx, prefs ?? defaultToolbarPrefs("main"));
-    if (canvasKind === "ecommerce" && onOpenEcommerceWorkbench) items.push({ id: "ecommerce-studio", label: "添加电商生图台", icon: <Images />, onClick: onOpenEcommerceWorkbench });
+    if (canvasKind === "ecommerce" && workspaceMode !== "simple" && onOpenEcommerceWorkbench) items.push({ id: "ecommerce-studio", label: "添加电商生图台", icon: <Images />, onClick: onOpenEcommerceWorkbench });
 
     // 中央空白起点与主工具栏共用同一份命令解析，避免素材类型和插件节点逐渐分叉。
     const createCommands = useCanvasCreateCommands(ctx, runAddAction);

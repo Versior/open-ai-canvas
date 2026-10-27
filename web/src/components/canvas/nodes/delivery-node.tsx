@@ -1,6 +1,6 @@
 import { App } from "antd";
 import { ChevronDown, Download, Layers, LoaderCircle, PackageCheck, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
@@ -60,6 +60,14 @@ export function DeliveryNodeContent({ node, theme }: DeliveryNodeContentProps) {
     const delivery: EcommerceDelivery = node.metadata?.ecommerceDelivery || createEcommerceDelivery(node.title || "未命名交付");
     const editable = Boolean(updateMetadata);
     const images = upstream.filter(isImageNode);
+    const sourceSignature = JSON.stringify([
+        delivery.targets[0]?.platformId || "taobao",
+        delivery.code,
+        delivery.version,
+        images.map((image) => [image.id, image.metadata?.storageKey, image.metadata?.content, image.metadata?.taskId]),
+    ]);
+    const latestSourceSignature = useRef(sourceSignature);
+    latestSourceSignature.current = sourceSignature;
 
     const { message } = App.useApp();
 
@@ -91,14 +99,22 @@ export function DeliveryNodeContent({ node, theme }: DeliveryNodeContentProps) {
     const stitchDetailPage = async () => {
         if (!exportEcommerceDetailPage || !images.length) return;
         setStitching(true);
+        const requestedSourceSignature = sourceSignature;
+        const validateSource = () => {
+            if (latestSourceSignature.current !== requestedSourceSignature) throw new Error("交付内容已变化，请重新合成");
+        };
         try {
             const urls: string[] = [];
             for (const image of images) {
+                validateSource();
                 urls.push(await imageToDataUrl({ url: image.metadata?.content, storageKey: image.metadata?.storageKey, name: image.title }));
+                validateSource();
             }
             const platform = (delivery.targets[0]?.platformId as EcommerceSlicePlatform) || "taobao";
             const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform, code: delivery.code, version: delivery.version });
-            await exportEcommerceDetailPage(node, result.longImage.dataUrl, result.pieces, result.fileNames);
+            validateSource();
+            await exportEcommerceDetailPage(node, result.longImage.dataUrl, result.pieces, result.fileNames, validateSource);
+            validateSource();
             const adjusted = result.plan.pieces.filter((piece) => piece.adjustedFrom !== undefined).length;
             if (result.plan.conflicts.length) {
                 message.warning(`长图 ${result.longImage.height}px 已切成 ${result.pieces.length} 片；有 ${result.plan.conflicts.length} 个切点挪不动，可能切穿商品，请人工核对`);

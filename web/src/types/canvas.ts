@@ -351,6 +351,7 @@ export type CanvasMediaVersion = {
 };
 
 export type CanvasNodeMetadata = {
+    ecommerceVideoCreativePlanSource?: { targetNodeId: string; referenceVideoId: string; signature: string };
     ecommerceStudio?: {
         brief: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchBrief;
         plan?: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchPlan;

@@ -18,6 +18,8 @@ function nodeCommand(type: CanvasNodeType, rest: Omit<AddNodeMenuCommand, "id" |
  * 宁可少显示，也不该把电商节点漏进自由画布。
  */
 const ecommerceOnly = (ctx: AddNodeMenuContext) => ctx.canvasKind === "ecommerce";
+const professionalEcommerceOnly = (ctx: AddNodeMenuContext) => ecommerceOnly(ctx) && ctx.workspaceMode !== "simple";
+const outsideSimpleEcommerce = (ctx: AddNodeMenuContext) => !ecommerceOnly(ctx) || ctx.workspaceMode !== "simple";
 
 /** 影视侧的节点与工作台不进电商画布：预演台是 3D 场景，对商品不适用。 */
 const filmOnly = (ctx: AddNodeMenuContext) => ctx.canvasKind !== "ecommerce";
@@ -34,12 +36,12 @@ export const addNodeMenuCommands: AddNodeMenuCommand[] = [
     nodeCommand(CanvasNodeType.Image, { defaultOrder: 50, run: (ctx) => ctx.handlers.onAddImage() }),
     { id: "project-character", label: "角色卡", icon: <UserRound />, section: "node", defaultOrder: 55, applicable: filmOnly, run: (ctx) => ctx.handlers.onOpenProjectCharacters() },
     nodeCommand(CanvasNodeType.Video, { defaultOrder: 60, run: (ctx) => ctx.handlers.onAddVideo() }),
-    nodeCommand(CanvasNodeType.BatchTable, { defaultOrder: 66, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.BatchTable) }),
-    nodeCommand(CanvasNodeType.EcommerceStudio, { defaultOrder: 67, applicable: ecommerceOnly, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.EcommerceStudio) }),
+    nodeCommand(CanvasNodeType.BatchTable, { defaultOrder: 66, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.BatchTable) }),
+    nodeCommand(CanvasNodeType.EcommerceStudio, { defaultOrder: 67, applicable: professionalEcommerceOnly, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.EcommerceStudio) }),
     // 商品与创作表承担套图主流程；专业节点按需添加，不自动铺满画布。
+    nodeCommand(CanvasNodeType.Product, { defaultOrder: 100, applicable: ecommerceOnly, group: "商品信息", run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.Product) }),
     ...(
         [
-            [CanvasNodeType.Product, "商品信息"],
             [CanvasNodeType.SellingPoint, "商品信息"],
             [CanvasNodeType.Copy, "商品信息"],
             [CanvasNodeType.Style, "商品信息"],
@@ -53,7 +55,7 @@ export const addNodeMenuCommands: AddNodeMenuCommand[] = [
             [CanvasNodeType.Revision, "修改交付"],
             [CanvasNodeType.Delivery, "修改交付"],
         ] as const
-    ).map(([type, group], index) => nodeCommand(type, { defaultOrder: 100 + index, applicable: ecommerceOnly, group, run: (ctx) => ctx.handlers.onAddExtensionNode(type) })),
+    ).map(([type, group], index) => nodeCommand(type, { defaultOrder: 101 + index, applicable: professionalEcommerceOnly, group, run: (ctx) => ctx.handlers.onAddExtensionNode(type) })),
     nodeCommand(CanvasNodeType.MediaConversion, { badge: "本地", defaultOrder: 65, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.MediaConversion) }),
     // 预演台落在节点分区，但它开的是导演工作台、不是某种画布节点，故不走注册表。
     { id: "previs", label: "预演台", icon: <Layers3 />, badge: "3D", section: "node", defaultOrder: 70, applicable: (ctx) => ctx.workspaceMode !== "simple" && filmOnly(ctx), run: (ctx) => ctx.handlers.onOpenPrevis() },

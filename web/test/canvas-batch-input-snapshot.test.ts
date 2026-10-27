@@ -35,6 +35,25 @@ describe("batch image input snapshot", () => {
         expect(context.referenceImages[0].dataUrl).toBe("");
     });
 
+    test("套图批次提交只让图片模型生成无字底图，文案留给本地排版", () => {
+        const target = output("商品居中，柔和棚拍光，顶部留白");
+        target.metadata = {
+            ...target.metadata,
+            ecommerceProductId: "product",
+            ecommerceFlowId: "main",
+            ecommerceShotId: "main-1",
+            ecommerceCopy: { headline: "轻盈随行", subhead: "通勤不费力", price: "¥199", cta: "立即购买" },
+        };
+        const product: CanvasNodeData = { ...input(), id: "product", type: CanvasNodeType.Product, metadata: { productProfile: createEcommerceProductProfile("通勤包") } };
+        const snapshot = createCanvasBatchInputSnapshot(target, [product, target], [{ id: "product-output", fromNodeId: product.id, toNodeId: target.id }], []);
+        const prompt = snapshot.context.prompt;
+
+        expect(prompt).toContain("只生成无文字、无 Logo、无水印的商品底图");
+        expect(prompt).toContain("标题、副文案、价格与行动引导由本地确定性排版添加");
+        expect(prompt).not.toContain("以下文字要出现在画面上");
+        expect(prompt).not.toContain("逐字准确");
+    });
+
     test("排队后源图旋转、替换或删除，执行仍传入入队时的资源版本", async () => {
         const original = input();
         const target = output();

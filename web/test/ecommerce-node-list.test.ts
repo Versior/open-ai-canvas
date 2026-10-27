@@ -240,10 +240,9 @@ describe("添加节点菜单按分组呈现", () => {
     const menu = readFileSync(new URL("../src/components/canvas/canvas-create-menu.tsx", import.meta.url), "utf8");
     const commands = readFileSync(new URL("../src/lib/canvas/tool-registry/definitions/add-node-menu-tools.tsx", import.meta.url), "utf8");
 
-    test("专业电商节点按用途开放，仍只在电商画布出现", async () => {
+    test("快捷创作只保留商品入口，专业模式开放完整电商节点", async () => {
         const { addNodeMenuCommands } = await import("../src/lib/canvas/tool-registry/definitions/add-node-menu-tools");
-        const types = [
-            CanvasNodeType.Product,
+        const professionalTypes = [
             CanvasNodeType.ShotRecipe,
             CanvasNodeType.SellingPoint,
             CanvasNodeType.Copy,
@@ -257,16 +256,39 @@ describe("添加节点菜单按分组呈现", () => {
             CanvasNodeType.EcommerceVideo,
             CanvasNodeType.Aplus,
         ];
+        const applicable = (type: CanvasNodeType, context: { canvasKind: "ecommerce" | "freeform"; workspaceMode: "simple" | "professional" }) => {
+            const command = addNodeMenuCommands.find((item) => item.id === type)!;
+            return command.applicable?.(context as never) ?? true;
+        };
+
+        expect(applicable(CanvasNodeType.Product, { canvasKind: "ecommerce", workspaceMode: "simple" })).toBe(true);
+        expect(applicable(CanvasNodeType.Product, { canvasKind: "ecommerce", workspaceMode: "professional" })).toBe(true);
+        expect(applicable(CanvasNodeType.Product, { canvasKind: "freeform", workspaceMode: "simple" })).toBe(false);
+
         const created: string[] = [];
-        for (const type of types) {
+        for (const type of professionalTypes) {
             const command = addNodeMenuCommands.find((item) => item.id === type)!;
             expect(command).toBeDefined();
-            expect(command.applicable?.({ canvasKind: "ecommerce" } as never)).toBe(true);
-            expect(command.applicable?.({ canvasKind: "free" } as never)).toBe(false);
+            expect(applicable(type, { canvasKind: "ecommerce", workspaceMode: "professional" })).toBe(true);
+            expect(applicable(type, { canvasKind: "ecommerce", workspaceMode: "simple" })).toBe(false);
+            expect(applicable(type, { canvasKind: "freeform", workspaceMode: "professional" })).toBe(false);
             command.run({ handlers: { onAddExtensionNode: (value: string) => created.push(value) } } as never);
         }
-        expect(created).toEqual(types);
-        expect(new Set(addNodeMenuCommands.filter((item) => types.includes(item.id as CanvasNodeType)).map((item) => item.group))).toEqual(new Set(["商品信息", "画面制作", "参考分析", "修改交付"]));
+        expect(applicable(CanvasNodeType.EcommerceStudio, { canvasKind: "ecommerce", workspaceMode: "professional" })).toBe(true);
+        expect(applicable(CanvasNodeType.EcommerceStudio, { canvasKind: "ecommerce", workspaceMode: "simple" })).toBe(false);
+        expect(created).toEqual(professionalTypes);
+        expect(new Set(addNodeMenuCommands.filter((item) => professionalTypes.includes(item.id as CanvasNodeType)).map((item) => item.group))).toEqual(new Set(["商品信息", "画面制作", "参考分析", "修改交付"]));
+    });
+
+    test("快捷电商隐藏批量创作表，但自由画布入口不受影响", async () => {
+        const { addNodeMenuCommands } = await import("../src/lib/canvas/tool-registry/definitions/add-node-menu-tools");
+        const command = addNodeMenuCommands.find((item) => item.id === CanvasNodeType.BatchTable)!;
+        const applicable = (canvasKind: "ecommerce" | "freeform", workspaceMode: "simple" | "professional") => command.applicable?.({ canvasKind, workspaceMode } as never) ?? true;
+
+        expect(applicable("ecommerce", "simple")).toBe(false);
+        expect(applicable("ecommerce", "professional")).toBe(true);
+        expect(applicable("freeform", "simple")).toBe(true);
+        expect(applicable("freeform", "professional")).toBe(true);
     });
 
     test("无分组的通用节点排到最后，不会出现两个同名的「创作节点」段", () => {

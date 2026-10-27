@@ -235,7 +235,7 @@ const BUILTIN_NODE_TRAITS = {
     // 改稿吃一张成品图，吐版本链；不产出媒体，往下游走文字约束。
     [CanvasNodeType.Revision]: { label: "改稿", icon: <History />, minSize: { width: 400, height: 500 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
     // 电商视频吃一套图，产出视频——所以 inputKind 记 video，下游能把它当视频素材用。
-    [CanvasNodeType.EcommerceVideo]: { label: "电商视频", icon: <Clapperboard />, minSize: { width: 520, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "video", resourceKind: () => null },
+    [CanvasNodeType.EcommerceVideo]: { label: "电商视频", icon: <Clapperboard />, minSize: { width: 520, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text", "video"], inputKind: "video", resourceKind: () => null },
     // A+ 内容吃商品与卖点，自己出每一块的画面；不产出媒体，往下游走文字约束。
     [CanvasNodeType.Aplus]: { label: "A+ 内容", icon: <Layers />, minSize: { width: 440, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "image", resourceKind: () => null },
 } satisfies Record<string, Omit<CanvasNodeDefinition, "type" | "defaultTitle" | "defaultSize" | "defaultMetadata">>;

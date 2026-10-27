@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { canvasConnectionError } from "../src/lib/canvas/canvas-connection-policy";
 import { createCanvasNode } from "../src/lib/canvas/canvas-project-domain";
-import { defaultConfig } from "../src/stores/use-config-store";
-import { CanvasNodeType } from "../src/types/canvas";
-import { connectEcommerceTableOutputs, ecommerceTableSource, openEcommerceTable, syncEcommerceTables, ecommerceTableResults, ecommerceAnalysisSnapshot, ecommerceSelectedOutputs } from "../src/lib/ecommerce/ecommerce-table";
+import { createModelChannel, defaultConfig, encodeChannelModel } from "../src/stores/use-config-store";
+import { CanvasNodeType, type CanvasConnection } from "../src/types/canvas";
+import { connectEcommerceTableOutputs, ecommerceGenerationSourceSignature, ecommerceTableMetadata, ecommerceTableSource, openEcommerceTable, syncEcommerceTables, ecommerceTableResults, ecommerceAnalysisSnapshot, ecommerceSelectedOutputs } from "../src/lib/ecommerce/ecommerce-table";
 import { ecommerceSuiteTargets } from "../src/lib/ecommerce/ecommerce-canvas-preset";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "../src/lib/ecommerce/ecommerce-oneclick";
 import { syncBatchColumnReferences } from "../src/lib/canvas/canvas-batch-references";
@@ -12,6 +12,11 @@ import { getConnectionTargetAnchor } from "../src/lib/canvas/canvas-project-doma
 import { upstreamEcommerceNodes } from "../src/lib/ecommerce/ecommerce-canvas";
 import { ecommerceSuiteMetadata } from "../src/lib/ecommerce/ecommerce-table";
 import { canvasPersistentNodes } from "../src/lib/canvas/canvas-persistent-nodes";
+import { createEcommerceProductProfile } from "../src/lib/ecommerce/ecommerce-contract";
+import type { EcommerceModel } from "../src/lib/ecommerce/ecommerce-models";
+import { defaultImageCapabilityConfig } from "../src/lib/model-capabilities";
+import { projectImageParameters } from "../src/lib/image-parameters";
+import { synchronizeGenerationSpec } from "../src/lib/canvas/generation-contract";
 
 test("template and analysis suite writes survive actual canvas persistence comparison", () => {
     const before = createCanvasNode(CanvasNodeType.BatchTable, { x: 0, y: 0 });
@@ -73,6 +78,30 @@ test("manually connecting a product activates the workflow without replacing edi
     expect(getConnectionTargetAnchor(settled[1], { nodeId: product.id, handleType: "source" }).y).toBe(settled[1].position.y + settled[1].height / 2);
 });
 
+test("creation tables preserve skipped rows in both synchronization directions", () => {
+    const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
+    const suite = {
+        flow: "main",
+        source: "draft" as const,
+        updatedAt: "",
+        rows: [
+            { slotId: "main-1", title: "Skip", duty: "Skip it", prompt: "", enabled: false },
+            { slotId: "main-2", title: "Keep", duty: "Keep it", prompt: "Draw product" },
+        ],
+    };
+    const owned = { ...product, metadata: { ...product.metadata, ecommerceSuitesByFlow: { main: suite } } };
+    const metadata = ecommerceTableMetadata(owned, "main");
+    expect(metadata.batchTable?.rows.map((row) => row.enabled)).toEqual([false, true]);
+
+    const stale = createCanvasNode(CanvasNodeType.BatchTable, { x: 900, y: 0 }, { ...metadata, batchTable: { ...metadata.batchTable!, rows: metadata.batchTable!.rows.map((row) => ({ ...row, enabled: true })) } });
+    const synced = syncEcommerceTables([owned, stale], []);
+    expect(synced[1].metadata?.batchTable?.rows.map((row) => row.enabled)).toEqual([false, true]);
+
+    const plain = createCanvasNode(CanvasNodeType.BatchTable, { x: 900, y: 500 }, { batchTable: { operation: "creative", concurrency: 3, rows: [{ id: "mine", enabled: false, inputNodeIds: [], prompt: "Keep this prompt" }] } });
+    const connected = syncEcommerceTables([product, plain], [{ id: "product", fromNodeId: product.id, toNodeId: plain.id }]);
+    expect(connected[1].metadata?.ecommerceSuite?.rows[0].enabled).toBe(false);
+});
+
 test("table outputs retain product constraints and a later run does not cover earlier results", () => {
     const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
     const { table, nodes, connections } = openEcommerceTable([product], [], product.id, "main");
@@ -117,6 +146,68 @@ test("adopted outputs remain selected across new runs and missing selections nev
     expect(ecommerceTableResults(rows, [first], "detail").candidates.size).toBe(0);
 });
 
+test("suite results are selectable only for the current generation source", () => {
+    const row = { slotId: "hero", title: "Hero", duty: "Show", prompt: "Current prompt", copy: { headline: "A", subhead: "", cta: "", price: "" }, layout: { name: "Layout A", blocks: [] } };
+    const signature = "current-generation-source";
+    const image = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "hero", ecommerceFlowId: "main", storageKey: "image:result", batchResultInputSignature: signature });
+    const source = (currentRow: typeof row) => (currentRow.prompt === row.prompt ? signature : "changed-generation-source");
+
+    expect(ecommerceTableResults([row], [image], "main", (current) => source(current as typeof row)).selected.get("hero")?.id).toBe(image.id);
+    expect(ecommerceTableResults([{ ...row, prompt: "Changed" }], [image], "main", (current) => source(current as typeof row)).selected.has("hero")).toBe(false);
+    expect(ecommerceTableResults([{ ...row, resultNodeId: image.id, prompt: "Changed" }], [image], "main", (current) => source(current as typeof row)).selected.has("hero")).toBe(false);
+    expect(source({ ...row, copy: { ...row.copy, headline: "B" }, layout: { name: "Layout B", blocks: [] } })).toBe(signature);
+});
+
+test("generation source signature follows compiled product and model inputs but ignores local composition", () => {
+    const row = { slotId: "hero", title: "Hero", duty: "Show", prompt: "Clean product hero", copy: { headline: "A", subhead: "", cta: "", price: "" }, layout: { name: "Layout A", blocks: [] } };
+    const imageCapability = projectImageParameters(defaultImageCapabilityConfig("openai-image", "image-model"), [
+        { name: "size", label: "Size", type: "string", values: ["1:1", "4:5"], default: "1:1" },
+        { name: "quality", label: "Quality", type: "string", values: ["low", "high"], default: "low" },
+        { name: "imageResolution", label: "Resolution", type: "string", values: ["auto", "2K"], default: "auto" },
+        { name: "transparentBackground", label: "Transparent", type: "boolean", default: false },
+        { name: "count", label: "Count", type: "integer", min: 1, max: 4, default: 1 },
+        { name: "style", label: "Style", type: "string", values: ["plain", "vivid"], default: "plain" },
+    ]);
+    const channel = createModelChannel({
+        id: "images",
+        models: ["image-model", "other-model"],
+        modelCosts: ["image-model", "other-model"].map((model) => ({ model, capability: "image" as const, protocol: "openai-image" as const, capabilityConfig: { version: 1 as const, image: imageCapability }, billingMode: "fixed_request" as const, unitPriceMicrocredits: 1 })),
+    });
+    const imageModel = encodeChannelModel(channel.id, "image-model");
+    const otherModel = encodeChannelModel(channel.id, "other-model");
+    const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 }, { productProfile: createEcommerceProductProfile("Black mug"), ecommerceModelId: "model-a" });
+    const source = createCanvasNode(CanvasNodeType.BatchTable, { x: 0, y: 0 }, { ecommerceImageModel: imageModel, ecommerceImageSize: "1:1", ecommerceImageQuality: "low" });
+    const reference = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { storageKey: "product:front", assetId: "asset-front", content: "https://signed.example/private.png?token=secret" });
+    const target = synchronizeGenerationSpec(createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { prompt: row.prompt, ecommerceShotId: row.slotId, ecommerceProductId: product.id, ecommerceFlowId: "main" }), { model: imageModel });
+    const connections: CanvasConnection[] = [
+        { id: "front", fromNodeId: reference.id, toNodeId: product.id, toHandleId: "product-view:front" },
+        { id: "product-output", fromNodeId: product.id, toNodeId: target.id },
+        { id: "table-output", fromNodeId: source.id, toNodeId: target.id, relation: "batch-output" },
+    ];
+    const models: EcommerceModel[] = [
+        { id: "model-a", name: "Model A", kind: "custom", refs: ["model:a:front"], tags: [], createdAt: "", lastUsedAt: "" },
+        { id: "model-b", name: "Model B", kind: "custom", refs: ["model:b:front"], tags: [], createdAt: "", lastUsedAt: "" },
+    ];
+    const config = { ...defaultConfig, channels: [channel], imageModel, imageModels: [imageModel, otherModel] };
+    const signature = (currentProduct = product, currentRow = row, currentModels = models, currentSource = source, currentTarget = target, currentConfig = config) =>
+        ecommerceGenerationSourceSignature({ source: currentSource, row: currentRow, target: currentTarget, nodes: [currentSource, currentProduct, reference, currentTarget], connections, config: currentConfig, customModels: currentModels });
+    const initial = signature();
+
+    expect(signature({ ...product, metadata: { ...product.metadata, productProfile: { ...product.metadata!.productProfile!, appearance: "Glossy red" } } })).not.toBe(initial);
+    expect(signature({ ...product, metadata: { ...product.metadata, ecommerceModelId: "model-b" } })).not.toBe(initial);
+    expect(signature(product, row, [{ ...models[0], refs: ["model:a:side"] }, models[1]])).not.toBe(initial);
+    expect(signature(product, row, models, { ...source, metadata: { ...source.metadata, ecommerceImageModel: otherModel } })).not.toBe(initial);
+    expect(signature(product, row, models, { ...source, metadata: { ...source.metadata, ecommerceImageSize: "4:5" } })).not.toBe(initial);
+    expect(signature(product, row, models, { ...source, metadata: { ...source.metadata, ecommerceImageQuality: "high" } })).not.toBe(initial);
+    expect(signature(product, row, models, source, synchronizeGenerationSpec(target, { transparentBackground: "true" }))).not.toBe(initial);
+    expect(signature(product, row, models, source, synchronizeGenerationSpec(target, { imageResolution: "2K" }))).not.toBe(initial);
+    expect(signature(product, row, models, source, synchronizeGenerationSpec(target, { imageParameters: JSON.stringify({ style: "vivid" }) }))).not.toBe(initial);
+    expect(signature(product, row, models, source, { ...target, metadata: { ...target.metadata, cameraControl: { enabled: true, camera: "arri_alexa_mini_lf", lens: "cooke_s7i", focalLength: 50, aperture: 2.8 } } })).not.toBe(initial);
+    expect(signature(product, row, models, source, synchronizeGenerationSpec(target, { count: 4 }))).toBe(initial);
+    expect(signature(product, { ...row, copy: { ...row.copy, headline: "B" }, layout: { name: "Layout B", blocks: [] } })).toBe(initial);
+    expect(initial).not.toContain("token=secret");
+});
+
 test("binding uses row order and direct selected outputs, refusing disconnected or missing images", () => {
     const table = createCanvasNode(CanvasNodeType.BatchTable, { x: 0, y: 0 }, { ecommerceFlowId: "detail" });
     const a = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "a", ecommerceFlowId: "detail", storageKey: "image:a" });
@@ -128,14 +219,60 @@ test("binding uses row order and direct selected outputs, refusing disconnected 
     expect(() => ecommerceSelectedOutputs(table, [], [a, b], edges)).toThrow("没有");
 });
 
-test("analysis snapshot detects product/reference changes but ignores canvas positions", () => {
+test("binding ignores skipped rows and still requires at least one enabled row", () => {
+    const table = createCanvasNode(CanvasNodeType.BatchTable, { x: 0, y: 0 }, { ecommerceFlowId: "detail" });
+    const image = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "keep", ecommerceFlowId: "detail", storageKey: "image:keep" });
+    const rows = [
+        { slotId: "skip", title: "Skip", duty: "", prompt: "", enabled: false },
+        { slotId: "keep", title: "Keep", duty: "", prompt: "Draw" },
+    ];
+    const edges = [{ id: "keep", fromNodeId: table.id, toNodeId: image.id }];
+    expect(ecommerceSelectedOutputs(table, rows, [image], edges).map((node) => node.id)).toEqual([image.id]);
+    expect(() => ecommerceSelectedOutputs(table, [rows[0]], [image], edges)).toThrow("没有");
+});
+
+test("analysis snapshot ignores canvas positions, connection rendering details and input order", () => {
+    const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
+    const front = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { storageKey: "image:front" });
+    const back = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { storageKey: "image:back" });
+    const edges: CanvasConnection[] = [
+        { id: "front", fromNodeId: front.id, toNodeId: product.id, toHandleId: "product-view:front", relation: "batch-input", fromAnchorRatio: 0.1, toAnchorRatio: 0.2, toAnchorXRatio: 0.3 },
+        { id: "back", fromNodeId: back.id, toNodeId: product.id, toHandleId: "product-view:back", relation: "batch-input", fromAnchorRatio: 0.4, toAnchorRatio: 0.5, toAnchorXRatio: 0.6 },
+    ];
+    const nodes = [product, front, back];
+    const snapshot = ecommerceAnalysisSnapshot(product, product, nodes, edges);
+    const renderedDifferently = [...edges].reverse().map((edge, index) => ({ ...edge, id: `replacement-${index}`, fromAnchorRatio: index + 0.2, toAnchorRatio: index + 0.3, toAnchorXRatio: index + 0.4 }));
+    expect(ecommerceAnalysisSnapshot({ ...product, position: { x: 100, y: 100 } }, product, nodes, renderedDifferently)).toBe(snapshot);
+});
+
+test("analysis snapshot detects semantic connection and reference asset changes", () => {
     const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
     const image = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { storageKey: "image:first" });
-    const edges = [{ id: "ref", fromNodeId: image.id, toNodeId: product.id }];
-    const snapshot = ecommerceAnalysisSnapshot(product, product, [product, image], edges);
-    expect(ecommerceAnalysisSnapshot({ ...product, position: { x: 100, y: 100 } }, product, [product, image], edges)).toBe(snapshot);
-    expect(ecommerceAnalysisSnapshot(product, product, [product, { ...image, metadata: { storageKey: "image:changed" } }], edges)).not.toBe(snapshot);
-    expect(ecommerceAnalysisSnapshot(product, product, [product, image], [])).not.toBe(snapshot);
+    const other = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { storageKey: "image:other" });
+    const edge: CanvasConnection = { id: "ref", fromNodeId: image.id, toNodeId: product.id, toHandleId: "product-view:front", relation: "batch-input" };
+    const nodes = [product, image, other];
+    const snapshot = ecommerceAnalysisSnapshot(product, product, nodes, [edge]);
+    expect(ecommerceAnalysisSnapshot(product, product, nodes, [{ ...edge, fromNodeId: other.id }])).not.toBe(snapshot);
+    expect(ecommerceAnalysisSnapshot(product, product, nodes, [{ ...edge, toHandleId: "product-view:back" }])).not.toBe(snapshot);
+    expect(ecommerceAnalysisSnapshot(product, product, nodes, [{ ...edge, relation: "storyboard-asset-reference" }])).not.toBe(snapshot);
+    expect(ecommerceAnalysisSnapshot(product, product, [product, { ...image, metadata: { storageKey: "image:changed" } }, other], [edge])).not.toBe(snapshot);
+    expect(ecommerceAnalysisSnapshot(product, product, nodes, [])).not.toBe(snapshot);
     const edited = { ...product, metadata: { ...product.metadata, locked: true } };
-    expect(ecommerceAnalysisSnapshot(product, edited, [edited, image], edges)).not.toBe(snapshot);
+    expect(ecommerceAnalysisSnapshot(product, edited, [edited, image, other], [edge])).not.toBe(snapshot);
+
+    const content = `data:image/png;base64,${"private-pixels".repeat(100)}`;
+    const legacy = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { content });
+    const legacyEdges = [{ id: "legacy", fromNodeId: legacy.id, toNodeId: product.id }];
+    const legacySnapshot = ecommerceAnalysisSnapshot(product, product, [product, legacy], legacyEdges);
+    expect(legacySnapshot).not.toContain(content);
+    expect(ecommerceAnalysisSnapshot(product, product, [product, { ...legacy, position: { x: 200, y: 200 } }], legacyEdges)).toBe(legacySnapshot);
+    expect(ecommerceAnalysisSnapshot(product, product, [product, { ...legacy, metadata: { content: `${content}-changed` } }], legacyEdges)).not.toBe(legacySnapshot);
+});
+test("analysis snapshot rejects changed models or skills while normalizing skill order", () => {
+    const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
+    const initial = ecommerceAnalysisSnapshot(product, product, [product], [], "channel::vision-a", ["skill-b", "skill-a"]);
+
+    expect(ecommerceAnalysisSnapshot(product, product, [product], [], "channel::vision-a", ["skill-a", "skill-b"])).toBe(initial);
+    expect(ecommerceAnalysisSnapshot(product, product, [product], [], "channel::vision-b", ["skill-a", "skill-b"])).not.toBe(initial);
+    expect(ecommerceAnalysisSnapshot(product, product, [product], [], "channel::vision-a", ["skill-a"])).not.toBe(initial);
 });

@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { Window } from "happy-dom";
 import { createImageUploadPlaceholder, createFileUploadPlaceholder, interruptFileUpload, readUploadImageSize, uploadNodeType, uploadPercent, uploadVeilOpacity } from "../src/lib/canvas/canvas-file-upload";
-import { CanvasNodeType } from "../src/types/canvas";
+import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 import { isCanvasImageSourceNode } from "../src/lib/canvas/canvas-image-source";
 import { CanvasFileUploadContent } from "../src/components/canvas/canvas-file-upload-content";
 import { CanvasNodeActionContext } from "../src/components/canvas/canvas-node-action-context";
@@ -12,6 +13,86 @@ import { canvasThemes } from "../src/lib/canvas-theme";
 const file = { name: "photo.png", size: 1234, type: "image/png" };
 const placeholder = () => createImageUploadPlaceholder("upload", file, { x: 100, y: 200 }, { width: 1920, height: 1080 });
 const read = (path: string) => readFileSync(resolve(import.meta.dir, "../src", path), "utf8").replace(/\r\n/g, "\n");
+
+let uploadDom: Window | undefined;
+const uploadDomOriginals = new Map<string, PropertyDescriptor | undefined>();
+
+async function mountCanvasUpload() {
+    if (!uploadDom) {
+        uploadDom = new Window({ url: "http://localhost/" });
+        for (const [key, value] of Object.entries({
+            window: uploadDom,
+            document: uploadDom.document,
+            navigator: uploadDom.navigator,
+            HTMLElement: uploadDom.HTMLElement,
+            Element: uploadDom.Element,
+            Node: uploadDom.Node,
+            SVGElement: uploadDom.SVGElement,
+            getComputedStyle: uploadDom.getComputedStyle.bind(uploadDom),
+            IS_REACT_ACT_ENVIRONMENT: true,
+        })) {
+            uploadDomOriginals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+            Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+        }
+    }
+    const { act } = await import("react");
+    const { createRoot } = await import("react-dom/client");
+    const { App } = await import("antd");
+    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+    const { useCanvasUpload } = await import("../src/pages/canvas/use-canvas-upload");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const nodesRef = { current: [] as CanvasNodeData[] };
+    let controller!: ReturnType<typeof useCanvasUpload>;
+    const setNodes = (next: React.SetStateAction<CanvasNodeData[]>) => {
+        nodesRef.current = typeof next === "function" ? next(nodesRef.current) : next;
+    };
+    const noop = () => {};
+    function Harness() {
+        controller = useCanvasUpload({
+            canvasId: "canvas-upload-test",
+            nodesRef,
+            selectedNodeIdsRef: { current: new Set() },
+            getCanvasCenter: () => ({ x: 0, y: 0 }),
+            screenToCanvas: (x, y) => ({ x, y }),
+            setNodes,
+            setSelectedNodeIds: noop,
+            setSelectedConnectionId: noop,
+            setContextMenu: noop,
+            setDialogNodeId: noop,
+        });
+        return <input ref={controller.imageInputRef} type="file" onChange={controller.handleImageInputChange} />;
+    }
+    await act(async () => root.render(
+        <QueryClientProvider client={new QueryClient()}>
+            <App><Harness /></App>
+        </QueryClientProvider>,
+    ));
+    const input = host.querySelector("input")!;
+    const change = async (selected?: File) => {
+        Object.defineProperty(input, "files", { configurable: true, value: selected ? [selected] : [] });
+        await act(async () => controller.handleImageInputChange({ target: input } as React.ChangeEvent<HTMLInputElement>));
+    };
+    return {
+        controller,
+        input,
+        nodesRef,
+        change,
+        dispose: async () => {
+            await act(async () => root.unmount());
+            host.remove();
+        },
+    };
+}
+
+afterAll(() => {
+    uploadDom?.happyDOM.abort();
+    for (const [key, value] of uploadDomOriginals) {
+        if (value) Object.defineProperty(globalThis, key, value);
+        else Reflect.deleteProperty(globalThis, key);
+    }
+});
 
 describe("图片上传占位", () => {
     for (const [width, height] of [[1920, 1080], [900, 1600], [800, 800], [4000, 500]]) {
@@ -93,6 +174,80 @@ describe("图片上传占位", () => {
         expect(create).toContain("original?.metadata?.content");
         expect(read("components/canvas/canvas-upload-modal.tsx").replace(/\r\n/g, "\n")).toContain("onClose();\n            await pendingUpload;");
         expect(read("styles/globals.css")).toContain("prefers-reduced-motion: reduce");
+    });
+});
+
+describe("延迟图片上传目标", () => {
+    const deferredRequest = (controller: unknown) => (controller as {
+        requestDeferredImageUpload: (createTargetNode: () => string | undefined) => void;
+    }).requestDeferredImageUpload;
+
+    test("打开选择器时不创建节点，取消选择也不调用创建回调", async () => {
+        const fixture = await mountCanvasUpload();
+        let clicks = 0;
+        let creates = 0;
+        fixture.input.addEventListener("click", () => { clicks += 1; });
+        try {
+            deferredRequest(fixture.controller)(() => {
+                creates += 1;
+                return undefined;
+            });
+            expect(fixture.input.accept).toBe("image/*");
+            expect(clicks).toBe(1);
+            expect(creates).toBe(0);
+            expect(fixture.nodesRef.current).toEqual([]);
+        } finally {
+            await fixture.dispose();
+        }
+    });
+
+    test("非图片和不支持的文件不创建延迟目标", async () => {
+        const fixture = await mountCanvasUpload();
+        let creates = 0;
+        try {
+            for (const file of [
+                new File(["note"], "note.txt", { type: "text/plain" }),
+                new File(["data"], "archive.bin", { type: "application/octet-stream" }),
+            ]) {
+                deferredRequest(fixture.controller)(() => {
+                    creates += 1;
+                    return undefined;
+                });
+                await fixture.change(file);
+            }
+            expect(creates).toBe(0);
+            expect(fixture.nodesRef.current).toEqual([]);
+        } finally {
+            await fixture.dispose();
+        }
+    });
+
+    test("合法图片只在 change 后创建一次，undefined 结果不上传且不会清掉后续目标", async () => {
+        const fixture = await mountCanvasUpload();
+        const image = new File(["image"], "product.png", { type: "image/png" });
+        let firstCreates = 0;
+        let secondCreates = 0;
+        try {
+            deferredRequest(fixture.controller)(() => {
+                firstCreates += 1;
+                deferredRequest(fixture.controller)(() => {
+                    secondCreates += 1;
+                    return undefined;
+                });
+                return undefined;
+            });
+            await fixture.change(image);
+            expect(firstCreates).toBe(1);
+            expect(secondCreates).toBe(0);
+            expect(fixture.nodesRef.current).toEqual([]);
+
+            await fixture.change(image);
+            expect(firstCreates).toBe(1);
+            expect(secondCreates).toBe(1);
+            expect(fixture.nodesRef.current).toEqual([]);
+        } finally {
+            await fixture.dispose();
+        }
     });
 });
 

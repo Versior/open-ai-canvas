@@ -10,8 +10,28 @@ import { ecommerceSliceFileName, ecommerceSlicePlan, ecommerceSliceSpec, type Ec
 
 /** 与界面一致的无衬线栈，导出结果与预览观感一致。 */
 const FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif';
+const MAX_CANVAS_EDGE = 32767;
+const MAX_CANVAS_PIXELS = 32_000_000;
+const MAX_LONG_IMAGE_PIXELS = 16_000_000;
 
 export type EcommerceRasterSize = { width: number; height: number };
+
+function assertSafeCanvasSize(size: EcommerceRasterSize, message: string, maxPixels = MAX_CANVAS_PIXELS) {
+    if (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width > MAX_CANVAS_EDGE || size.height > MAX_CANVAS_EDGE || size.width * size.height > maxPixels) throw new Error(message);
+}
+
+function releaseCanvas(canvas: HTMLCanvasElement) {
+    canvas.width = 0;
+    canvas.height = 0;
+}
+
+function canvasToPngDataUrl(canvas: HTMLCanvasElement) {
+    try {
+        return canvas.toDataURL("image/png");
+    } finally {
+        releaseCanvas(canvas);
+    }
+}
 
 /** 按画幅算出导出尺寸。长边固定，短边按比例，避免不同画幅分辨率差太多。 */
 export function ecommerceExportSize(ratio: string, longSide = 1600): EcommerceRasterSize {
@@ -29,6 +49,11 @@ function loadImage(url: string): Promise<HTMLImageElement> {
         image.src = url;
     });
 }
+function releaseImage(image: HTMLImageElement) {
+    image.onload = null;
+    image.onerror = null;
+    image.removeAttribute?.("src");
+}
 
 /** 按 cover 规则把图铺满画布，保持比例、裁掉溢出。 */
 function drawCover(context: CanvasRenderingContext2D, image: HTMLImageElement, size: EcommerceRasterSize) {
@@ -38,19 +63,26 @@ function drawCover(context: CanvasRenderingContext2D, image: HTMLImageElement, s
     context.drawImage(image, (size.width - width) / 2, (size.height - height) / 2, width, height);
 }
 
-/** 按换行符和宽度把文字切成行。中英文混排按字符宽度逐字累加。 */
+/** 按换行符和宽度把文字切成行。英文先按单词换行，超长词与中文再逐字兜底。 */
 function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: number) {
     return text.split("\n").flatMap((paragraph) => {
         if (!paragraph) return [""];
         const lines: string[] = [];
         let current = "";
-        for (const char of paragraph) {
-            const next = current + char;
-            if (current && context.measureText(next).width > maxWidth) {
-                lines.push(current);
-                current = char;
-            } else {
+        for (const word of paragraph.split(/\s+/)) {
+            const next = current ? `${current} ${word}` : word;
+            if (context.measureText(next).width <= maxWidth) {
                 current = next;
+                continue;
+            }
+            if (current) lines.push(current);
+            current = "";
+            for (const char of word) {
+                if (current && context.measureText(current + char).width > maxWidth) {
+                    lines.push(current);
+                    current = "";
+                }
+                current += char;
             }
         }
         if (current) lines.push(current);
@@ -124,14 +156,21 @@ export type RasterizeEcommerceLayoutInput = {
  * 没有上游图时按纯色背景出图——文案本身就是完整交付物的情况（比如纯文字促销图）也走得通。
  */
 export async function rasterizeEcommerceLayout({ imageUrl, layout, copy, size, background = "#FFFFFF" }: RasterizeEcommerceLayoutInput): Promise<string> {
+    assertSafeCanvasSize(size, "成品图超过浏览器安全合成尺寸，请缩小图片");
     const canvas = document.createElement("canvas");
     canvas.width = size.width;
     canvas.height = size.height;
     const context = canvas.getContext("2d");
     if (!context) throw new Error("当前浏览器无法合成图片");
 
-    if (imageUrl) drawCover(context, await loadImage(imageUrl), size);
-    else {
+    if (imageUrl) {
+        const image = await loadImage(imageUrl);
+        try {
+            drawCover(context, image, size);
+        } finally {
+            releaseImage(image);
+        }
+    } else {
         context.fillStyle = background;
         context.fillRect(0, 0, size.width, size.height);
     }
@@ -141,7 +180,36 @@ export async function rasterizeEcommerceLayout({ imageUrl, layout, copy, size, b
         drawBlock(context, placeBlock(context, block, copy[block.field].trim(), size), size);
     }
 
-    return canvas.toDataURL("image/png");
+    return canvasToPngDataUrl(canvas);
+}
+
+export type RasterizeEcommerceCompositionInput = {
+    imageUrl: string;
+    copy?: EcommerceCopy;
+    layout?: EcommerceLayout;
+    size?: EcommerceRasterSize;
+    background?: string;
+};
+
+/** Legacy rows remain byte-for-byte unchanged; composed rows keep the source image dimensions by default. */
+export async function rasterizeEcommerceComposition(input: RasterizeEcommerceCompositionInput): Promise<string> {
+    if (!input.copy || !input.layout) return input.imageUrl;
+    let size = input.size;
+    if (!size) {
+        const source = await loadImage(input.imageUrl);
+        try {
+            size = { width: source.naturalWidth, height: source.naturalHeight };
+        } finally {
+            releaseImage(source);
+        }
+    }
+    return rasterizeEcommerceLayout({
+        imageUrl: input.imageUrl,
+        copy: input.copy,
+        layout: input.layout,
+        size,
+        background: input.background,
+    });
 }
 
 /**
@@ -175,23 +243,28 @@ export type EcommerceLongImageResult = {
     screens: { top: number; height: number }[];
 };
 
-export async function rasterizeEcommerceLongImage(input: EcommerceLongImageInput): Promise<EcommerceLongImageResult> {
+async function rasterizeEcommerceLongImageCanvas(input: EcommerceLongImageInput) {
     const urls = input.imageUrls.filter(Boolean);
     if (!urls.length) throw new Error("没有可拼接的图");
     const gap = Math.max(0, input.gap ?? 8);
     const background = input.background || "#FFFFFF";
-    const images = await Promise.all(urls.map(loadImage));
-    const width = Math.max(1, Math.round(input.width || images[0].naturalWidth || 800));
+    const sourceSizes: EcommerceRasterSize[] = [];
+    for (const url of urls) {
+        const image = await loadImage(url);
+        sourceSizes.push({ width: image.naturalWidth, height: image.naturalHeight });
+        releaseImage(image);
+    }
+    const width = Math.max(1, Math.round(input.width || sourceSizes[0].width || 800));
     const screens: { top: number; height: number }[] = [];
     let cursor = 0;
-    for (const image of images) {
-        const scale = width / (image.naturalWidth || width);
-        const height = Math.max(1, Math.round((image.naturalHeight || width) * scale));
+    for (const size of sourceSizes) {
+        const scale = width / (size.width || width);
+        const height = Math.max(1, Math.round((size.height || width) * scale));
         screens.push({ top: cursor, height });
         cursor += height + gap;
     }
     const totalHeight = Math.max(1, cursor - gap);
-    if (!Number.isFinite(width) || !Number.isFinite(totalHeight) || width > 32767 || totalHeight > 32767 || width * totalHeight > 32_000_000) throw new Error("长图超过浏览器安全合成尺寸，请减少屏数或降低导出宽度");
+    assertSafeCanvasSize({ width, height: totalHeight }, "长图超过浏览器安全合成尺寸，请减少屏数或降低导出宽度", MAX_LONG_IMAGE_PIXELS);
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = totalHeight;
@@ -199,11 +272,26 @@ export async function rasterizeEcommerceLongImage(input: EcommerceLongImageInput
     if (!context) throw new Error("无法创建合成画布");
     context.fillStyle = background;
     context.fillRect(0, 0, width, totalHeight);
-    images.forEach((image, index) => {
-        const screen = screens[index];
-        context.drawImage(image, 0, screen.top, width, screen.height);
-    });
-    return { dataUrl: canvas.toDataURL("image/png"), width, height: totalHeight, screens };
+    try {
+        for (let index = 0; index < urls.length; index += 1) {
+            const image = await loadImage(urls[index]);
+            try {
+                const screen = screens[index];
+                context.drawImage(image, 0, screen.top, width, screen.height);
+            } finally {
+                releaseImage(image);
+            }
+        }
+        return { canvas, width, height: totalHeight, screens };
+    } catch (error) {
+        releaseCanvas(canvas);
+        throw error;
+    }
+}
+
+export async function rasterizeEcommerceLongImage(input: EcommerceLongImageInput): Promise<EcommerceLongImageResult> {
+    const { canvas, ...result } = await rasterizeEcommerceLongImageCanvas(input);
+    return { dataUrl: canvasToPngDataUrl(canvas), ...result };
 }
 
 /**
@@ -233,14 +321,14 @@ export type EcommerceDetailPageResult = {
     fileNames: string[];
 };
 
-async function cropPiece(image: HTMLImageElement, top: number, height: number, width: number): Promise<string> {
+async function cropPiece(image: CanvasImageSource, top: number, height: number, width: number): Promise<string> {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = Math.max(1, Math.round(height));
     const context = canvas.getContext("2d");
     if (!context) throw new Error("无法创建切图画布");
     context.drawImage(image, 0, top, width, height, 0, 0, width, height);
-    return canvas.toDataURL("image/png");
+    return canvasToPngDataUrl(canvas);
 }
 
 export async function rasterizeEcommerceDetailPage(input: {
@@ -255,34 +343,38 @@ export async function rasterizeEcommerceDetailPage(input: {
 }): Promise<EcommerceDetailPageResult> {
     const spec = ecommerceSliceSpec(input.platform);
     if (!spec) throw new Error("请选择支持的长图切片规格");
-    const longImage = await rasterizeEcommerceLongImage({
+    const { canvas, ...longImageSize } = await rasterizeEcommerceLongImageCanvas({
         imageUrls: input.imageUrls,
         width: input.width || spec.width,
         gap: input.gap,
         background: input.background,
     });
-    // 屏与屏之间的接缝即切点候选；保护区间用每屏自身的区间，
-    // 这样切点只会落在屏边界，不会切穿某一屏里的商品。
-    const plan = ecommerceSlicePlan({
-        totalHeight: longImage.height,
-        platform: input.platform,
-        protected: longImage.screens.map((screen, index) => ({ id: `screen-${index + 1}`, top: screen.top, height: screen.height, label: `第 ${index + 1} 屏` })),
-    });
-    if (plan.conflicts.length || plan.overTotalHeight || plan.pieces.some((piece) => piece.height > spec.maxSliceHeight || piece.height < spec.minSliceHeight)) throw new Error("图片无法满足当前平台的切片尺寸与安全切点，请在交付节点调整");
-    const stitched = await loadImage(longImage.dataUrl);
-    const pieces: EcommerceDetailPagePiece[] = [];
-    const fileNames: string[] = [];
-    for (const piece of plan.pieces) {
-        pieces.push({ index: piece.index, top: piece.top, height: piece.height, dataUrl: await cropPiece(stitched, piece.top, piece.height, longImage.width) });
-        fileNames.push(
-            ecommerceSliceFileName({
-                code: input.code?.trim() || "详情页",
-                index: piece.index,
-                total: plan.pieces.length,
-                version: input.version,
-                extension: "png",
-            }),
-        );
+    try {
+        // 屏与屏之间的接缝即切点候选；保护区间用每屏自身的区间，
+        // 这样切点只会落在屏边界，不会切穿某一屏里的商品。
+        const plan = ecommerceSlicePlan({
+            totalHeight: longImageSize.height,
+            platform: input.platform,
+            protected: longImageSize.screens.map((screen, index) => ({ id: `screen-${index + 1}`, top: screen.top, height: screen.height, label: `第 ${index + 1} 屏` })),
+        });
+        if (plan.conflicts.length || plan.overTotalHeight || plan.pieces.some((piece) => piece.height > spec.maxSliceHeight || piece.height < spec.minSliceHeight)) throw new Error("图片无法满足当前平台的切片尺寸与安全切点，请在交付节点调整");
+        const longImage = { dataUrl: canvas.toDataURL("image/png"), ...longImageSize };
+        const pieces: EcommerceDetailPagePiece[] = [];
+        const fileNames: string[] = [];
+        for (const piece of plan.pieces) {
+            pieces.push({ index: piece.index, top: piece.top, height: piece.height, dataUrl: await cropPiece(canvas, piece.top, piece.height, longImage.width) });
+            fileNames.push(
+                ecommerceSliceFileName({
+                    code: input.code?.trim() || "详情页",
+                    index: piece.index,
+                    total: plan.pieces.length,
+                    version: input.version,
+                    extension: "png",
+                }),
+            );
+        }
+        return { longImage, plan, pieces, fileNames };
+    } finally {
+        releaseCanvas(canvas);
     }
-    return { longImage, plan, pieces, fileNames };
 }

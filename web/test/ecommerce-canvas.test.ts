@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { connectedImageNodes, effectiveProductViews, isEcommerceNode, mergeEcommercePrompt, productViewNodes, resolveEcommerceInputs, upstreamEcommerceNodes } from "@/lib/ecommerce/ecommerce-canvas";
+import { connectedImageNodes, ecommerceProductReferenceSignature, effectiveProductViews, isEcommerceNode, mergeEcommercePrompt, productViewNodes, resolveEcommerceInputs, upstreamEcommerceNodes } from "@/lib/ecommerce/ecommerce-canvas";
 import { createEcommerceCopy, createEcommerceProductProfile, createEcommerceSellingPoint, createEcommerceShot, createEcommerceShotSet, createEcommerceStyle } from "@/lib/ecommerce/ecommerce-contract";
 import { createEcommerceModel } from "@/lib/ecommerce/ecommerce-models";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
@@ -172,6 +172,28 @@ describe("商品实拍接进参考图：连线就是在指定「这是这个商�
         expect(picked.map((node) => node.id)).toEqual(["front", "side"]);
     });
 
+    test("商品媒体身份签名不保存 URL/data URL，并对持久资源和旧内联资源保持准确", () => {
+        const edges = [connect("persisted", "product-1")];
+        const persisted = { ...photo("persisted"), metadata: { content: "https://signed.example/private-token", storageKey: "image:u:persisted", assetId: "asset-1" } };
+        const signature = ecommerceProductReferenceSignature(productNode, [productNode, persisted], edges);
+        expect(signature).not.toContain(persisted.metadata.content);
+        expect(ecommerceProductReferenceSignature(productNode, [productNode, { ...persisted, metadata: { ...persisted.metadata, content: "https://signed.example/refreshed-token" } }], edges)).toBe(signature);
+        expect(ecommerceProductReferenceSignature(productNode, [productNode, { ...persisted, metadata: { ...persisted.metadata, assetId: "asset-2" } }], edges)).not.toBe(signature);
+
+        const content = `data:image/png;base64,${"legacy-pixels".repeat(100)}`;
+        const legacy = { ...photo("legacy"), metadata: { content } };
+        const legacyEdges = [connect("legacy", "product-1")];
+        const legacySignature = ecommerceProductReferenceSignature(productNode, [productNode, legacy], legacyEdges);
+        expect(legacySignature).not.toContain(content);
+        expect(ecommerceProductReferenceSignature(productNode, [productNode, { ...legacy, position: { x: 100, y: 100 } }], legacyEdges)).toBe(legacySignature);
+        expect(ecommerceProductReferenceSignature(productNode, [productNode, { ...legacy, metadata: { ...legacy.metadata } }], legacyEdges)).toBe(legacySignature);
+        expect(ecommerceProductReferenceSignature(productNode, [productNode, { ...legacy, metadata: { content: `${content}-changed` } }], legacyEdges)).not.toBe(legacySignature);
+        const mutableMetadata = { content };
+        const mutable = { ...legacy, metadata: mutableMetadata };
+        const mutableSignature = ecommerceProductReferenceSignature(productNode, [productNode, mutable], legacyEdges);
+        mutableMetadata.content = `${content}-mutated`;
+        expect(ecommerceProductReferenceSignature(productNode, [productNode, mutable], legacyEdges)).not.toBe(mutableSignature);
+    });
     test("生成时商品实拍进参考图，模特参考图按 storageKey 一起进", () => {
         const model = createEcommerceModel("小美", ["image:u:model-a"]);
         const graph = [productNode, front, { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceModelId: model.id }), id: "target-1" }];

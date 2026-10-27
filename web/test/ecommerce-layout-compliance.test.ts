@@ -39,6 +39,20 @@ describe("ecommerce layout", () => {
         expect(String(style.transform)).toContain("translate");
     });
 
+    test("bottom bar keeps its headline above the subhead in the DOM overlay", () => {
+        const layout = createEcommerceLayoutFromPreset("bottom-bar")!;
+        const headline = layout.blocks.find((block) => block.field === "headline")!;
+        const subhead = layout.blocks.find((block) => block.field === "subhead")!;
+        const size = { width: 400, height: 600 };
+        const shortSide = Math.min(size.width, size.height);
+        const headlineStyle = ecommerceLayoutBlockStyle(headline, size) as Record<string, string | number>;
+        const subheadStyle = ecommerceLayoutBlockStyle(subhead, size) as Record<string, string | number>;
+        const subheadHeight = ((subhead.size * 1.25 + (subhead.plate ? subhead.inset * 0.44 : 0)) / 100) * shortSide;
+
+        expect(headlineStyle.bottom).not.toBe(subheadStyle.bottom);
+        expect(Number(headlineStyle.bottom)).toBeGreaterThanOrEqual(Number(subheadStyle.bottom) + subheadHeight);
+    });
+
     test("only blocks whose copy is filled are drawn", () => {
         const layout = createEcommerceLayoutFromPreset("bottom-bar")!;
         const copy = { ...createEcommerceCopy(), headline: "一次装够一天的水" };

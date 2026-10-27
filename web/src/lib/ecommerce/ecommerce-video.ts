@@ -1,4 +1,12 @@
-import { ecommerceVideoReplicaBlock, type EcommerceVideoReplica } from "./ecommerce-video-replica";
+import { canvasBatchInputToken } from "@/lib/canvas/canvas-batch-input-signature";
+import type { CanvasNodeData } from "@/types/canvas";
+
+import {
+    buildEcommerceVideoTeardownPrompt,
+    ecommerceVideoReplicaBlock,
+    type EcommerceVideoReplica,
+    type EcommerceVideoReplicaAspect,
+} from "./ecommerce-video-replica";
 
 /**
  * 电商视频——主图视频、轮播视频、卖点视频。
@@ -113,14 +121,16 @@ export type EcommerceVideoShot = {
     /** 秒。 */
     seconds: number;
     motion: EcommerceVideoMotion;
+    /** 这个镜头要完成的画面任务；旧数据没有时按空处理。 */
+    description?: string;
     /** 字幕。空则不显示。 */
     caption: string;
     /** 转场：硬切最常用，叠化用于换场景。 */
     transition: "cut" | "fade";
 };
 
-export function createEcommerceVideoShot(imageNodeId = ""): EcommerceVideoShot {
-    return { id: `vshot-${Math.random().toString(36).slice(2, 10)}`, imageNodeId, seconds: 3, motion: "push", caption: "", transition: "cut" };
+export function createEcommerceVideoShot(imageNodeId = "", description = ""): EcommerceVideoShot {
+    return { id: `vshot-${Math.random().toString(36).slice(2, 10)}`, imageNodeId, seconds: 3, motion: "push", description, caption: "", transition: "cut" };
 }
 
 export type EcommerceVideo = {
@@ -161,6 +171,135 @@ export const ECOMMERCE_VIDEO_LANGUAGES: { id: EcommerceVideoLanguage; name: stri
 
 export function createEcommerceVideo(name = "未命名视频"): EcommerceVideo {
     return { name, kind: "main", platform: "taobao", shots: [], music: "", burnCaptions: true, language: "zh" };
+}
+
+export const ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE = "视频复刻 Creative Plan";
+
+export type EcommerceVideoCreativePlan = {
+    hook: string;
+    rhythm: string;
+    shots: Array<{
+        startSeconds: number;
+        endSeconds: number;
+        purpose: string;
+        motion: EcommerceVideoMotion;
+        caption: string;
+        transition: "cut" | "fade";
+    }>;
+    cta: string;
+};
+
+/** 让模型返回可校验、可编辑、可确认应用的 Creative Plan。 */
+export function buildEcommerceVideoCreativePlanPrompt(input?: { aspects?: EcommerceVideoReplicaAspect[]; platform?: EcommerceVideoPlatform; language?: EcommerceVideoLanguage }) {
+    const platform = ECOMMERCE_VIDEO_SPECS.find((item) => item.id === input?.platform)?.name;
+    const language = ECOMMERCE_VIDEO_LANGUAGES.find((item) => item.id === input?.language)?.name;
+    return [
+        buildEcommerceVideoTeardownPrompt(input),
+        "",
+        platform ? `目标平台：${platform}` : "",
+        language ? `目标语言：${language}` : "",
+        "在结构拆解基础上，为我们的商品改写一份 Creative Plan。不要复述参考视频原字幕；caption 必须是可替换的新字幕草稿。",
+        "参考视频只能贡献节奏、切点、构图和运镜；禁止继承参考视频的品牌、价格、参数、人物、字幕、音乐或商品事实。",
+        "只输出一个 JSON 对象，不要 Markdown 解释。字段必须完整：",
+        '{"hook":"前 3 秒如何抓人","rhythm":"整体节奏与切点","shots":[{"startSeconds":0,"endSeconds":3,"purpose":"镜头任务","motion":"push","caption":"新字幕草稿","transition":"cut"}],"cta":"结尾行动号召"}',
+        `motion 只能是 ${ECOMMERCE_VIDEO_MOTIONS.map((item) => item.id).join(" / ")}；transition 只能是 cut / fade。`,
+        "第一镜必须落实 hook，最后一镜必须落实 CTA；时间必须连续递增。",
+    ].filter(Boolean).join("\n");
+}
+
+function ecommerceVideoCreativePlanMediaToken(node: CanvasNodeData | undefined) {
+    if (!node) return "";
+    const metadata = node.metadata;
+    const identity = metadata?.currentMediaVersionId || metadata?.assetId || metadata?.taskId || metadata?.storageKey || metadata?.content || "";
+    return identity ? canvasBatchInputToken(node.id, identity) : node.id;
+}
+
+/** Stable fingerprint for every input that can change a Creative Plan, without persisting media URLs or bytes. */
+export function ecommerceVideoCreativePlanSourceSignature(input: { target: CanvasNodeData; referenceVideo?: CanvasNodeData; product?: CanvasNodeData; productImages?: CanvasNodeData[] }) {
+    const video = input.target.metadata?.ecommerceVideo || createEcommerceVideo(input.target.title);
+    const profile = input.product?.metadata?.productProfile;
+    return JSON.stringify([
+        input.target.id,
+        video.platform,
+        video.language,
+        [...(video.replica?.aspects || [])].sort(),
+        ecommerceVideoCreativePlanMediaToken(input.referenceVideo),
+        input.product?.id || "",
+        profile ? [profile.name, profile.category, profile.appearance, profile.marks, profile.forbidden, profile.audience, profile.facts, profile.price] : [],
+        (input.productImages || []).slice(0, 4).map(ecommerceVideoCreativePlanMediaToken),
+    ]);
+}
+
+const ECOMMERCE_VIDEO_REQUEST_PREFIX = "<!-- yingce:ecommerce-video-teardown:";
+
+/** 在不扩张公共动作接口的前提下，把回填目标随拆解指令交给现有通用反推链路。 */
+export function ecommerceVideoCreativePlanRequest(targetNodeId: string, prompt: string) {
+    return `${ECOMMERCE_VIDEO_REQUEST_PREFIX}${encodeURIComponent(targetNodeId)} -->\n${prompt.trim()}`;
+}
+
+export function parseEcommerceVideoCreativePlanRequest(value: string | undefined) {
+    if (!value?.startsWith(ECOMMERCE_VIDEO_REQUEST_PREFIX)) return undefined;
+    const end = value.indexOf(" -->\n");
+    if (end < 0) return undefined;
+    try {
+        const targetNodeId = decodeURIComponent(value.slice(ECOMMERCE_VIDEO_REQUEST_PREFIX.length, end)).trim();
+        const prompt = value.slice(end + 5).trim();
+        return targetNodeId && prompt ? { targetNodeId, prompt } : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/** 只接受完整、有限且时间递增的计划，避免半截模型输出污染镜头表。 */
+export function parseEcommerceVideoCreativePlan(value: string | undefined): EcommerceVideoCreativePlan | undefined {
+    const source = value?.trim();
+    if (!source) return undefined;
+    const start = source.indexOf("{");
+    const end = source.lastIndexOf("}");
+    if (start < 0 || end <= start) return undefined;
+    try {
+        const raw = JSON.parse(source.slice(start, end + 1)) as Record<string, unknown>;
+        const hook = typeof raw.hook === "string" ? raw.hook.trim() : "";
+        const rhythm = typeof raw.rhythm === "string" ? raw.rhythm.trim() : "";
+        const cta = typeof raw.cta === "string" ? raw.cta.trim() : "";
+        if (!hook || !rhythm || !cta || !Array.isArray(raw.shots) || !raw.shots.length || raw.shots.length > 60) return undefined;
+        const motions = new Set<EcommerceVideoMotion>(ECOMMERCE_VIDEO_MOTIONS.map((item) => item.id));
+        const shots = raw.shots.map((item) => {
+            if (!item || typeof item !== "object") return undefined;
+            const shot = item as Record<string, unknown>;
+            const startSeconds = Number(shot.startSeconds);
+            const endSeconds = Number(shot.endSeconds);
+            const purpose = typeof shot.purpose === "string" ? shot.purpose.trim() : "";
+            const motion = shot.motion as EcommerceVideoMotion;
+            const caption = typeof shot.caption === "string" ? shot.caption.trim() : "";
+            const transition = shot.transition;
+            if (!Number.isFinite(startSeconds) || startSeconds < 0 || !Number.isFinite(endSeconds) || endSeconds <= startSeconds || endSeconds > 600 || !purpose || !motions.has(motion) || (transition !== "cut" && transition !== "fade")) return undefined;
+            return { startSeconds, endSeconds, purpose, motion, caption, transition };
+        });
+        if (shots.some((shot) => !shot)) return undefined;
+        const timeline = shots as EcommerceVideoCreativePlan["shots"];
+        if (timeline[0].startSeconds !== 0 || timeline.some((shot, index) => index > 0 && Math.abs(shot.startSeconds - timeline[index - 1].endSeconds) > 0.001)) return undefined;
+        return { hook, rhythm, shots: timeline, cta };
+    } catch {
+        return undefined;
+    }
+}
+
+export function ecommerceVideoCreativePlanNotes(plan: EcommerceVideoCreativePlan) {
+    return JSON.stringify(plan, null, 2);
+}
+
+/** 用户确认后才调用；只替换镜头表，商品素材优先沿用当前逐镜绑定。 */
+export function applyEcommerceVideoCreativePlan(video: EcommerceVideo, plan: EcommerceVideoCreativePlan, imageNodeIds: string[]) {
+    const images = imageNodeIds.filter(Boolean);
+    const shots = plan.shots.map((item, index) => ({
+        ...createEcommerceVideoShot(video.shots[index]?.imageNodeId || images[index % images.length] || "", item.purpose),
+        seconds: Math.max(0.5, Math.round((item.endSeconds - item.startSeconds) * 10) / 10),
+        motion: item.motion,
+        caption: item.caption,
+        transition: item.transition,
+    }));
+    return { ...video, shots };
 }
 
 export function ecommerceVideoSeconds(video: EcommerceVideo | undefined) {
@@ -276,6 +415,7 @@ export function ecommerceVideoPrompt(video: EcommerceVideo | undefined) {
         if (!shot.imageNodeId) return;
         const motion = ECOMMERCE_VIDEO_MOTIONS.find((item) => item.id === shot.motion)?.name || "静止";
         const parts = [`第 ${index + 1} 镜：${shot.seconds} 秒`, `运镜：${motion}`];
+        if (shot.description?.trim()) parts.push(`镜头目的：${shot.description.trim()}`);
         if (shot.transition === "fade") parts.push("转场：叠化");
         if (shot.caption.trim()) parts.push(`字幕内容：「${shot.caption.trim()}」（由后期添加，不要画进画面）`);
         lines.push(parts.join("；"));

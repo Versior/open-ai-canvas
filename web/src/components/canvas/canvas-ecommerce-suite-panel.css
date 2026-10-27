@@ -212,6 +212,12 @@
 .ecom-suite-row-move:focus-visible,
 .ecom-suite-row-remove:focus-visible,
 .ecom-suite-row-run:focus-visible,
+.ecom-suite-row-toggle:focus-visible,
+.ecom-suite-candidate:focus-visible,
+.ecom-suite-candidate-view:focus-visible,
+.ecom-suite-copy-toggle:focus-visible,
+.ecom-suite-layout-preset:focus-visible,
+.ecom-suite-missing-plan button:focus-visible,
 .ecom-suite-add-row:focus-visible {
     outline: 2px solid var(--foreground);
     outline-offset: 2px;
@@ -587,6 +593,381 @@ label.ecom-suite-ghost.hidden,
     display: none;
 }
 
+.ecom-suite-storyboard {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-3);
+    overflow: auto;
+    padding: 0 var(--space-5) var(--space-3);
+    overscroll-behavior: contain;
+}
+
+.ecom-suite-story-card {
+    display: grid;
+    grid-template-areas:
+        "head result"
+        "duty result"
+        "prompt prompt"
+        "copy copy";
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 42%);
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--foreground) 2%, transparent);
+}
+
+.ecom-suite-story-card[data-disabled="true"] {
+    opacity: 0.58;
+}
+
+.ecom-suite-story-card > .ecom-suite-screen {
+    grid-area: head;
+    padding: 0;
+}
+
+.ecom-suite-story-card .ecom-suite-row-move,
+.ecom-suite-story-card .ecom-suite-row-remove {
+    width: 28px;
+    height: 28px;
+    opacity: 1;
+}
+
+.ecom-suite-row-toggle {
+    min-width: 52px;
+    min-height: 28px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ecom-suite-row-toggle[aria-checked="true"] {
+    border-color: color-mix(in srgb, var(--foreground) 34%, transparent);
+    background: color-mix(in srgb, var(--foreground) 8%, transparent);
+    color: var(--foreground);
+}
+
+.ecom-suite-story-duty {
+    display: flex;
+    grid-area: duty;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.ecom-suite-story-duty .ecom-suite-duty {
+    min-height: 62px;
+    border-color: color-mix(in srgb, var(--foreground) 12%, transparent);
+    color: var(--foreground);
+    font-size: 12px;
+}
+
+.ecom-suite-story-prompt {
+    grid-area: prompt;
+}
+
+.ecom-suite-missing-plan {
+    display: flex;
+    grid-area: prompt;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 8px 10px;
+    border: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent);
+    border-radius: var(--r-sm);
+    background: color-mix(in srgb, var(--foreground) 3%, transparent);
+    color: var(--muted-foreground);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ecom-suite-missing-plan button {
+    min-height: 32px;
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--background);
+    color: var(--foreground);
+    font: inherit;
+    cursor: pointer;
+}
+
+.ecom-suite-story-result {
+    display: grid;
+    grid-area: result;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: var(--space-2);
+    align-content: start;
+    min-width: 0;
+}
+
+.ecom-suite-story-preview {
+    position: relative;
+    display: grid;
+    justify-self: center;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+.ecom-suite-story-preview img,
+.ecom-suite-candidate-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.ecom-suite-candidates {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+}
+
+.ecom-suite-candidate-card {
+    display: grid;
+    width: 64px;
+    min-width: 0;
+    gap: 4px;
+}
+
+.ecom-suite-candidate-preview {
+    position: relative;
+    display: grid;
+    width: 64px;
+    height: 64px;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--background);
+    color: var(--muted-foreground);
+}
+
+.ecom-suite-candidate-preview .ant-image {
+    width: 100%;
+    height: 100%;
+}
+
+.ecom-suite-candidate-view {
+    position: absolute;
+    z-index: 1;
+    inset: auto 3px 3px;
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--background) 82%, transparent);
+    color: var(--foreground);
+    font-size: 8px;
+    line-height: 1.2;
+    backdrop-filter: blur(4px);
+    cursor: pointer;
+}
+
+.ecom-suite-candidate {
+    width: 64px;
+    min-height: 26px;
+    padding: 3px 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--background);
+    color: var(--muted-foreground);
+    font-size: 9px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ecom-suite-candidate-card .ecom-suite-candidate {
+    width: 100%;
+}
+
+.ecom-suite-candidate-card[data-selected="true"] .ecom-suite-candidate-preview,
+.ecom-suite-candidate[aria-pressed="true"] {
+    border-color: var(--foreground);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+.ecom-suite-candidate:disabled {
+    cursor: default;
+    opacity: 0.42;
+}
+
+.ecom-suite-candidate-auto {
+    height: 64px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.ecom-suite-story-result .ecom-suite-row-run {
+    position: static;
+    grid-column: 1 / -1;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    opacity: 1;
+}
+
+.ecom-suite-story-result .ecom-suite-row-run:disabled {
+    opacity: 0.45;
+}
+
+.ecom-suite-result-missing {
+    color: var(--muted-foreground);
+    font-size: 10px;
+}
+
+.ecom-suite-result-error {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    padding: 6px;
+    color: var(--destructive);
+    font-size: 10px;
+    line-height: 1.3;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.ecom-suite-result-error small {
+    max-width: 100%;
+    font-size: 9px;
+    font-weight: 500;
+}
+
+.ecom-suite-layout-overlay {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.ecom-suite-copy-section {
+    display: grid;
+    grid-area: copy;
+    min-width: 0;
+    gap: var(--space-2);
+}
+
+.ecom-suite-copy-toggle {
+    display: flex;
+    width: 100%;
+    min-height: 36px;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 7px 10px;
+    border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--foreground);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ecom-suite-copy-toggle > span:last-child {
+    color: var(--muted-foreground);
+    font-size: 10px;
+}
+
+.ecom-suite-copy-section .ecom-suite-copy-editor {
+    grid-area: auto;
+}
+
+.ecom-suite-copy-editor {
+    display: grid;
+    grid-area: copy;
+    min-width: 0;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-3) 0 0;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+
+.ecom-suite-grid-row .ecom-suite-copy-editor {
+    grid-area: auto;
+    grid-column: 1 / -1;
+}
+
+.ecom-suite-copy-editor legend {
+    padding: 0;
+    color: var(--foreground);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.ecom-suite-copy-fields {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+.ecom-suite-copy-fields label {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.ecom-suite-copy-fields input {
+    width: 100%;
+    min-width: 0;
+    min-height: 32px;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--background);
+    color: var(--foreground);
+    font-size: 12px;
+}
+
+.ecom-suite-layout-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.ecom-suite-layout-preset {
+    min-height: 32px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted-foreground);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.ecom-suite-layout-preset[aria-pressed="true"] {
+    border-color: color-mix(in srgb, var(--foreground) 40%, transparent);
+    background: color-mix(in srgb, var(--foreground) 9%, transparent);
+    color: var(--foreground);
+}
+
 @media (max-width: 760px) {
     .ecom-suite-head,
     .ecom-suite-bar,
@@ -601,6 +982,7 @@ label.ecom-suite-ghost.hidden,
     }
 
     .ecom-suite-grid,
+    .ecom-suite-storyboard,
     .ecom-suite-director {
         padding-left: var(--space-3);
         padding-right: var(--space-3);
@@ -643,6 +1025,64 @@ label.ecom-suite-ghost.hidden,
     .ecom-suite-row-move,
     .ecom-suite-row-run:not(:disabled) {
         opacity: 1;
+    }
+
+    .ecom-suite-story-card {
+        grid-template-areas:
+            "head"
+            "duty"
+            "result"
+            "prompt"
+            "copy";
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .ecom-suite-story-result {
+        grid-template-columns: 112px minmax(0, 1fr);
+    }
+
+    .ecom-suite-copy-fields {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px), (pointer: coarse) {
+    .ecom-suite-story-card .ecom-suite-row-move,
+    .ecom-suite-story-card .ecom-suite-row-remove,
+    .ecom-suite-row-move,
+    .ecom-suite-row-remove {
+        width: 44px;
+        height: 44px;
+        opacity: 1;
+    }
+
+    .ecom-suite-row-toggle,
+    .ecom-suite-row-run {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .ecom-suite-copy-toggle,
+    .ecom-suite-candidate {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .ecom-suite-layout-preset,
+    .ecom-suite-copy-fields input,
+    .ecom-suite-missing-plan button {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .ecom-suite-primary,
+    .ecom-suite-ghost,
+    .ecom-suite-icon,
+    .ecom-suite-library-link,
+    .ecom-suite-add-row,
+    .ecom-suite-result-select,
+    .ecom-suite-screen-input {
+        min-height: 44px;
     }
 }
 

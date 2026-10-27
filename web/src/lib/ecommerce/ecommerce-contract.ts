@@ -297,9 +297,8 @@ export type EcommercePromptSources = {
     /**
      * 文案是否交给模型直接渲染。
      *
-     * **电商画布里默认交给模型**——一条提示词里同时给画面和文字，模型一次画完。
-     * 传 false 只在一种情况下有意义：文字必须逐字准确、错一个字就是事故
-     * （价格、认证编号），那时改走本地按像素合成。
+     * 省略时保留专业画布的旧合同；一键套图传 false，只生成底图，
+     * 标题、价格与行动引导由本地确定性排版添加。
      */
     renderCopyText?: boolean;
     /** 模特库里的模特：锁住「图上的人是谁」。见 ecommerce-models.ts。 */
@@ -321,10 +320,14 @@ export function ecommerceSellingPointsBlock(points: EcommerceSellingPoint[] | un
  * 文案块。
  *
  * renderText 决定模型是「画上去」还是「留出位置」：
- * - true（电商画布的默认）：文字与画面一起交给模型，一条提示词画完，不用二次合成
- * - false：模型只留位，文字由本地按像素叠——只在文字必须逐字准确时用
- *   （价格、认证编号，错一个字就是事故）
+ * - true：保留专业画布的旧行为，由图片模型直接渲染文字
+ * - false：图片模型只留位，文字由本地确定性排版添加
  */
+function ecommerceBackgroundOnlyBlock(enabled: boolean) {
+    if (!enabled) return "";
+    return "【无字底图合同】图片模型只生成无文字、无 Logo、无水印的商品底图。标题、副文案、价格与行动引导由本地确定性排版添加；只需预留对应空间，不得在图中渲染或仿造这些内容。";
+}
+
 export function ecommerceCopyBlock(copy: EcommerceCopy | undefined, renderText = true) {
     if (!copy) return "";
     const lines: string[] = [];
@@ -391,6 +394,7 @@ export function compileEcommercePrompt(sources: EcommercePromptSources) {
         ecommerceStyleBlock(sources.style),
         ecommerceUniformBlock(sources.uniformPrompt, sources.styleReferenceNames, sources.imageDrivenStyle),
         ecommerceSellingPointsBlock(sources.sellingPoints),
+        ecommerceBackgroundOnlyBlock(sources.renderCopyText === false),
         ecommerceCopyBlock(sources.copy, sources.renderCopyText),
         ecommerceShotSetBlock(sources.shotSet, sources.shotId),
     ].filter(Boolean).join("\n\n");
