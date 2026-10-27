@@ -6,16 +6,15 @@ import { latchCanvasConnectionApproach, type CanvasConnectionApproach } from "@/
 import type { PendingConnectionCreate } from "@/components/canvas/canvas-workspace-overlays";
 import { getNodeSpec } from "@/constant/canvas";
 import { batchSourceRestriction, buildBatchConnectionCreateRequest, hasBatchConnectionCandidate, planBatchConnections, type CanvasBatchConnectionPreview } from "@/lib/canvas/canvas-batch-connection";
-import { batchReferenceHandleAtY } from "@/lib/canvas/canvas-batch-table";
 import { batchCellConnectionError, batchCellHandle, parseBatchCellHandle, type BatchScroll } from "@/lib/canvas/canvas-batch-references";
 import { connectedNodeCenterFromEdgeDrop } from "@/lib/canvas/canvas-connected-node-placement";
 import { canvasConnectionError, connectionInputSummary } from "@/lib/canvas/canvas-connection-policy";
 import { isEcommerceInputHandle, withEcommerceInputConnection } from "@/lib/ecommerce/ecommerce-canvas";
+import { resolveCanvasConnectionTarget, type CanvasConnectionDropTarget as ConnectionDropTarget } from "@/lib/canvas/canvas-connection-hit";
 import { audioModelForConnectionInput } from "@/lib/model-selection";
-import { attachNodeToStoryboardRow, createCanvasNode, getConnectionTargetAnchor, isHiddenBatchChild, normalizeConnection, storyboardHandleAtY, storyboardPromptTemplateMetadata, storyboardRowFromHandle } from "@/lib/canvas/canvas-project-domain";
+import { attachNodeToStoryboardRow, createCanvasNode, normalizeConnection, storyboardPromptTemplateMetadata, storyboardRowFromHandle } from "@/lib/canvas/canvas-project-domain";
 import { createCanvasDrawingFromImage } from "@/lib/canvas/canvas-drawing-storage";
 import { isDrawingEngineAvailable, type CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
-import { isFrameNode, isNodeHiddenByCollapsedFrame } from "@/lib/canvas/canvas-frame";
 import { normalizeRunningHubCapability, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata, type ConnectionHandle, type ContextMenuState, type Position, type ViewportTransform } from "@/types/canvas";
@@ -58,7 +57,6 @@ type ConnectionDropTarget = {
     anchorXRatio?: number;
     isNearNode: boolean;
 };
-
 type BatchConnectionDropTarget = ConnectionDropTarget;
 
 // LibTV's 80px world-space quick-add zone renders at roughly 110px on the
@@ -532,6 +530,19 @@ export function useCanvasConnectionController({
                 }
             });
         return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
+        return resolveCanvasConnectionTarget({
+            nodes: nodesRef.current,
+            current,
+            point: screenToCanvas(clientX, clientY),
+            radius: CONNECTION_SNAP_RADIUS / Math.max(viewportRef.current.k, 0.05),
+            bodyNodeId: nodeAtPoint(clientX, clientY),
+            scriptScrollTopById,
+            batchScrollById,
+            canConnect: (node) => {
+                const normalized = node.id === current.nodeId ? null : normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType);
+                return Boolean(normalized && !canvasConnectionError(config, nodesRef.current, connectionsRef.current, normalized));
+            },
+        });
     }, [batchScrollById, config, connectionsRef, nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
 
     const getBatchConnectionDropTarget = useCallback((clientX: number, clientY: number, sourceNodeIds: string[]): BatchConnectionDropTarget => {
@@ -579,6 +590,16 @@ export function useCanvasConnectionController({
                 }
             });
         return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
+        return resolveCanvasConnectionTarget({
+            nodes: nodesRef.current,
+            current: { nodeId: source.id, handleType: "source" },
+            point: screenToCanvas(clientX, clientY),
+            radius: CONNECTION_SNAP_RADIUS / Math.max(viewportRef.current.k, 0.05),
+            bodyNodeId: nodeAtPoint(clientX, clientY),
+            scriptScrollTopById,
+            batchScrollById,
+            canConnect: (node) => hasBatchConnectionCandidate(sourceNodeIds, node.id, nodesRef.current),
+        });
     }, [batchScrollById, nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
 
     const startBatchConnection = useCallback((event: ReactPointerEvent, sourceNodeIds: string[]) => {
@@ -759,8 +780,6 @@ export function useCanvasConnectionController({
         setMouseWorld(screenToCanvas(event.clientX, event.clientY));
         setConnecting({ nodeId, handleType, handleId, anchorRatio, anchorXRatio });
         setConnectionTargetNodeId(null);
-        setConnectionTargetAnchorRatio(undefined);
-        setConnectionTargetHandleId(undefined);
         setSelectedConnectionId(null);
     }, [clearBatchConnection, closeConnectionCreateMenu, commitBatchConnection, connectNodes, screenToCanvas, setConnecting, setSelectedConnectionId]);
 
@@ -945,4 +964,8 @@ function batchCellAtPoint(clientX: number, clientY: number) {
     const rowId = element?.dataset.rowId;
     const columnId = element?.dataset.columnId;
     return tableId && rowId && columnId ? { tableId, rowId, columnId } : undefined;
+}
+
+function nodeAtPoint(clientX: number, clientY: number) {
+    return document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>(".node-element[data-node-id]")?.dataset.nodeId || null;
 }

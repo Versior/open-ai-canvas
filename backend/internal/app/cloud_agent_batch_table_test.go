@@ -129,6 +129,7 @@ func TestCloudAgentBatchTableToolsAreScopedAndStructured(t *testing.T) {
 		t.Fatalf("batch table edit schema missing the product operation: %+v", operationEnum)
 	}
 	actionEnum, _ := properties["action"].(map[string]any)["enum"].([]string)
+	actionEnum, _ := properties["action"].(map[string]any)["enum"].([]any)
 	foundGlobalPrompt := false
 	for _, action := range actionEnum {
 		if action == "set_global_prompt" {
@@ -180,13 +181,19 @@ func TestCloudAgentCanReadAndEditBatchTableRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := applyCloudAgentBatchTableMutation(s.repo, "user", canvas.ID, call, policy)
+	recorder, recordedPreview := cloudAgentCaptureMutationPreview()
+	result, err := applyCloudAgentBatchTableMutation(s.repo, "user", canvas.ID, call, policy, recorder)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resultMap := result.(map[string]any)
 	if resultMap["snapshotHash"] == "" {
 		t.Fatal("batch table edit did not return a new snapshot")
+	}
+	appliedPreview := resultMap["preview"].(cloudAgentApprovalPreview)
+	assertCloudAgentAppliedPreview(t, appliedPreview, appliedPreview.Items[0].Summary)
+	if recorded, ok := recordedPreview(); !ok || recorded.Description != appliedPreview.Description || recorded.Status != appliedPreview.Status {
+		t.Fatalf("batch table mutation event preview diverged from tool result: result=%+v recorded=%+v", appliedPreview, recorded)
 	}
 
 	state := &cloudAgentRuntime{Request: CloudAgentRequest{CanvasID: canvas.ID}}

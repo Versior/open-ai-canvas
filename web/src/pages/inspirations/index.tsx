@@ -181,6 +181,41 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
         return counts;
     }, [resolved, hiddenItems]);
 
+    /** 图片 / 视频 / 文本是库里的两大主类（文本较少），按当前视图与来源统计数量。 */
+    const modeCounts = useMemo(() => {
+        const counts: Record<ModeFilter, number> = { all: 0, image: 0, video: 0, text: 0 };
+        const pool = view === "hidden" ? hiddenItems : resolved;
+        const favoriteSet = new Set(favorites);
+        for (const item of pool) {
+            if (view === "favorites" && !favoriteSet.has(catalogIdOf(item))) continue;
+            if (source !== "all" && (item.sourceId ?? "original") !== source) continue;
+            counts.all += 1;
+            counts[item.mode] += 1;
+        }
+        return counts;
+    }, [view, resolved, hiddenItems, favorites, source]);
+
+    const modeOptions = useMemo(
+        () =>
+            (
+                [
+                    { label: "全部", value: "all" },
+                    { label: "图片", value: "image" },
+                    { label: "视频", value: "video" },
+                    { label: "文本", value: "text" },
+                ] as const
+            ).map((option) => ({
+                value: option.value,
+                label: (
+                    <>
+                        <span>{option.label}</span>
+                        {catalog ? <span className="inspiration-mode-count app-segmented-count">{modeCounts[option.value].toLocaleString("zh-CN")}</span> : null}
+                    </>
+                ),
+                title: catalog ? `${option.label} ${modeCounts[option.value]} 条` : option.label,
+            })),
+        [catalog, modeCounts],
+    );
     const visible = useMemo(() => {
         const pool = view === "hidden" ? hiddenItems : resolved;
         const ranks = recommendationRanks.current;
@@ -345,9 +380,10 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                 ) : (
                     <WorkspaceState
                         icon="empty"
-                        title={view === "favorites" ? "还没有收藏" : view === "hidden" ? "没有隐藏的条目" : "没有符合条件的灵感"}
+                        kind={hasFilters ? "no-results" : "first-use"}
+                        title={hasFilters && search.trim() ? `没有找到与“${search.trim()}”相关的灵感` : view === "favorites" ? "还没有收藏" : view === "hidden" ? "没有隐藏的条目" : "没有符合条件的灵感"}
                         description={view === "favorites" ? "点卡片右上角的爱心，把喜欢的创意留在这里。" : "试试其他类型、分类或关键词。"}
-                        action={hasFilters ? <Button onClick={resetFilters}>重置筛选</Button> : undefined}
+                        action={hasFilters ? <Button onClick={resetFilters}>清除筛选</Button> : undefined}
                     />
                 )}
             </div>

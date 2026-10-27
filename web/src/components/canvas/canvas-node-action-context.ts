@@ -126,6 +126,8 @@ export type CanvasNodeActionContextValue = {
      */
     exportEcommerceDetailPage?: (node: CanvasNodeData, longImageDataUrl: string, pieces: { index: number; top: number; height: number; dataUrl: string }[], fileNames: string[], validateSource?: () => void) => Promise<void> | void;
     extractLayerMaterials?: (node: CanvasNodeData) => Promise<void> | void;
+    /** 打开媒体版本面板；只读页面不提供，节点角标随之隐藏。 */
+    openMediaVersions?: (node: CanvasNodeData) => void;
 };
 
 export const CanvasNodeActionContext = createContext<CanvasNodeActionContextValue>({});

@@ -5,6 +5,8 @@ import { LayoutTemplate, Search, WandSparkles } from "lucide-react";
 import { canvasThemes } from "@/lib/canvas-theme";
 import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { CANVAS_BUILTIN_PRESETS, ECOMMERCE_BUILTIN_PRESETS, type CanvasPromptPreset } from "@/lib/prompts";
+import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
+import { CANVAS_BUILTIN_PRESETS, type CanvasPromptPreset } from "@/lib/prompts";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasGenerationMode } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -41,6 +43,7 @@ export function CanvasPresetPicker({
     const [internalOpen, setInternalOpen] = useState(false);
     const [query, setQuery] = useState("");
     const actualOpen = open ?? internalOpen;
+    const popoverRef = usePopoverAnchorAlign(actualOpen);
     const setOpen = (next: boolean) => {
         if (!next) setQuery("");
         setInternalOpen(next);
@@ -96,7 +99,7 @@ export function CanvasPresetPicker({
                                 <WandSparkles className="size-3.5" />
                             </span>
                             <span className="min-w-0 flex-1">
-                                <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: theme.node.text }}>
+                                <span className="flex items-center gap-2 text-xs font-semibold" style={{ color: theme.node.text }}>
                                     <span className="truncate">{preset.name}</span>
                                     <span className="shrink-0 text-[var(--fs-micro)] font-medium" style={{ color: theme.accent.primary }}>
                                         {preset.source === "skill" ? "技能" : "预设"}
@@ -119,6 +122,7 @@ export function CanvasPresetPicker({
 
     return (
         <Popover
+            ref={popoverRef}
             open={actualOpen}
             onOpenChange={setOpen}
             trigger="click"
@@ -129,7 +133,7 @@ export function CanvasPresetPicker({
         >
             <button
                 type="button"
-                className={`canvas-preset-picker-trigger ${appearance === "quiet" ? "canvas-node-composer-header-action" : ""} inline-flex shrink-0 items-center justify-center gap-1 rounded-lg transition focus-visible:outline-none ${compact ? "size-6" : dense ? "h-6 px-1.5" : "h-7 px-2"}`}
+                className={`canvas-preset-picker-trigger ${appearance === "quiet" ? "canvas-node-composer-header-action" : ""} inline-flex shrink-0 items-center justify-center gap-1 rounded-lg transition focus-visible:outline-none ${compact ? "size-6" : dense ? "h-6 px-2" : "h-7 px-2"}`}
                 style={appearance === "quiet" ? undefined : { background: theme.accent.primarySoft, color: theme.accent.primary }}
                 title={appearance === "quiet" ? "提示词模板" : "打开提示词预设"}
                 aria-label={appearance === "quiet" ? "提示词模板" : "打开提示词预设"}

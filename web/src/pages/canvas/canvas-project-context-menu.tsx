@@ -36,6 +36,7 @@ type CanvasProjectContextMenuProps = {
     onUseAsStyleReference?: (node: CanvasNodeData) => void;
     onOpenModelLibrary?: () => void;
     onViewMedia: (node: CanvasNodeData) => void;
+    onOpenVersions: (node: CanvasNodeData) => void;
     onEditText: (node: CanvasNodeData) => void;
     onOpenDrawing: (node: CanvasNodeData) => void;
     onGenerateImage: (node: CanvasNodeData) => void;
@@ -48,6 +49,8 @@ type CanvasProjectContextMenuProps = {
     onCopySelection: () => void;
     onDeleteSelection: () => void;
     onSendToAgent: () => void;
+    downloadableSelectionCount: number;
+    onDownloadSelection: () => void;
 };
 
 export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props }: CanvasProjectContextMenuProps) {
@@ -101,6 +104,9 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
             onViewMedia={() => {
                 if (node) props.onViewMedia(node);
             }}
+            onOpenVersions={() => {
+                if (node) props.onOpenVersions(node);
+            }}
             onEditText={() => {
                 if (node) props.onEditText(node);
             }}
@@ -125,6 +131,8 @@ export function CanvasProjectContextMenu({ menu, node, screenToCanvas, ...props 
             onCopySelection={props.onCopySelection}
             onDeleteSelection={props.onDeleteSelection}
             onSendToAgent={props.onSendToAgent}
+            downloadableSelectionCount={props.downloadableSelectionCount}
+            onDownloadSelection={props.onDownloadSelection}
         />
     );
 }
