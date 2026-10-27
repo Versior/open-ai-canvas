@@ -188,113 +188,6 @@ func cloudAgentAllToolSchemas() []map[string]any {
 			"keyword":  str("按关键词搜正文。空格分隔多个词，命中任一个都算"),
 			"limit":    map[string]any{"type": "integer", "minimum": 1, "maximum": 30},
 		})
-	if req.PermissionMode != "read_only" {
-		add("remember_lesson",
-			"把本轮真的跑通的路线记到你自己的个人记忆。只在本轮确有会改变画布或生成结果的工具成功执行时可用。写通用做法，不要复述具体对象。记下来后要等你在「设置 → Agent 记忆」批准才会在以后的会话生效。",
-			map[string]any{
-				"topic":     str("短标识，便于检索，如 video.duration / storyboard.row-connect"),
-				"category":  map[string]any{"type": "string", "enum": cloudAgentLessonCategoryKeys(), "description": "这条经验最贴近的环节（受控枚举，拿不准用 other）"},
-				"situation": str("什么情况下适用（一句话）"),
-				"lesson":    str("可选：一句话做法。说不清就用 steps"),
-				"steps": map[string]any{"type": "array", "maxItems": 12, "items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"tool":   str("工具名"),
-						"action": str("这一步做什么"),
-						"note":   str("可选：坑或前提"),
-					},
-					"required": []string{"tool", "action"}, "additionalProperties": false,
-				}},
-				"source": str("可选：来自哪个工具/模型/契约"),
-			},
-			"topic", "category", "situation")
-	}
-	if req.PermissionMode != "read_only" && len(req.ContextScope) > 0 {
-		add("image_layer_split", "将图片按用户指定对象拆分为独立透明图层。参数与 generate_media 的图片生成参数一致，但 mode 固定为 image；所有权限模式都会先创建草稿并进入界面独立审批，用户批准后才提交生成任务。", map[string]any{
-			"prompt": str("需要拆分的对象与透明背景要求"), "logicalModelId": str("selection.logicalModelId"), "channelId": str("selection.channelId"), "channelModelKey": str("selection.channelModelKey"),
-			"size": str(cloudAgentMediaSizeDescription), "imageResolution": str("model_list 档位；未启用时省略"), "quality": str("模型支持的质量档位"), "snapshotHash": str("最近画布读取返回的 mediaSnapshotHash，可省略"), "nodeId": str("新的结果节点ID"), "title": str("结果节点名称"), "referenceNodeIds": map[string]any{"type": "array", "maxItems": 16, "items": str("源图片节点ID")},
-		}, "prompt", "nodeId", "title", "referenceNodeIds")
-		cloudAgentDeclareMediaModelSelection(tools[len(tools)-1], false)
-		add("model_list", "按 mode 和真实 referenceNodeIds 筛选当前模型、能力和价格；空列表不可生成。同条件复用，变化再查。复制 selection，不猜ID；规格默认交执行器解析。", map[string]any{"mode": map[string]any{"type": "string", "enum": cloudAgentGenerationModeNames()}, "referenceNodeIds": map[string]any{"type": "array", "maxItems": 16, "items": str("真实媒体参考节点ID；文生媒体传[]")}})
-	}
-	if req.PermissionMode != "read_only" && len(req.ContextScope) > 0 {
-		add("canvas_create_storyboard", "创建带真实镜头行的结构化分镜脚本节点，写入前按权限模式进入现有画布审批。仅在多镜头、连续性、逐镜审查/生成或后续维护确有价值时使用；单画面快速试验优先轻量节点。必须提交结构化 rows，不能用普通 content 或 Markdown 伪装分镜。", map[string]any{
-			"snapshotHash": str("最近一次画布读取返回的 snapshotHash"),
-			"nodeId":       str("当前画布内新的稳定分镜节点ID"),
-			"title":        str("分镜脚本标题"),
-			"rows":         map[string]any{"type": "array", "minItems": 1, "maxItems": maxCloudAgentStoryboardRows, "items": cloudAgentStoryboardRowSchema()},
-			"x":            map[string]any{"type": "number"},
-			"y":            map[string]any{"type": "number"},
-		}, "snapshotHash", "nodeId", "title", "rows")
-		add("canvas_edit_storyboard", "追加、修改或删除分镜脚本中的单个镜头行。必须先用 canvas_read_storyboard 读取最新 snapshotHash 和真实 rowId；append 不传 rowId，update/remove 必须传。patch 只允许镜头文本与时长，不能修改素材绑定、媒体节点ID、任务状态、资源URL或任意 metadata。", map[string]any{
-			"snapshotHash": str("最近一次 canvas_read_storyboard 返回的 snapshotHash（这个分镜节点的版本；其它节点的改动不影响它）"),
-			"nodeId":       str("真实分镜脚本节点ID"),
-			"action":       map[string]any{"type": "string", "enum": []string{"append", "update", "remove"}},
-			"rowId":        str("update/remove 使用 canvas_read_storyboard 返回的真实 rowId；append 留空"),
-			"patch":        cloudAgentStoryboardPatchSchema(),
-		}, "snapshotHash", "nodeId", "action")
-		add("canvas_create_character", "把画布上就绪的形象图片（可加声音音频）打包成角色卡：写入角色库并在画布放置角色卡节点，按权限审批。已有同名角色卡先复用；definition 只填有依据的设定。", cloudAgentCharacterCreateSchema(), "nodeId", "name", "imageNodeId")
-		add("canvas_edit_batch_table", "操作批量创作表：增改删行、切换 try_on/creative/product、设1/5/10并发、增删参考图列或设全局提示词。先读 canvas_read_batch_table 获取最新 snapshotHash/rowId。行 patch 仅允许 enabled、inputNodeIds、prompt；prompt 可用返回的 @参考图1 等 mentionToken 指代本行图片。append 未传 inputNodeIds 继承上一行参考图；图片ID必须来自当前画布。禁止写 outputNodeId、任务状态、URL、storageKey、metadata。本工具只改计划，不提交收费生成。", map[string]any{
-			"snapshotHash": str("最近一次 canvas_read_batch_table 返回的 snapshotHash（这个表节点的版本；其它节点的改动不影响它）"),
-			"nodeId":       str("真实批量创作表节点ID"),
-			"action":       map[string]any{"type": "string", "enum": []string{"append", "update", "remove", "set_operation", "set_concurrency", "add_reference_column", "remove_reference_column", "set_global_prompt"}},
-			"rowId":        str("update/remove 使用 canvas_read_batch_table 返回的真实 rowId；其他操作留空"),
-			"patch":        cloudAgentBatchTablePatchSchema(),
-			"operation":    map[string]any{"type": "string", "enum": []string{"try_on", "creative", "product"}},
-			"concurrency":  map[string]any{"type": "integer", "enum": []int{1, 5, 10}},
-			"globalPrompt": str("set_global_prompt 使用；非空时覆盖各任务提示词，空字符串清除全局提示词"),
-		}, "snapshotHash", "nodeId", "action")
-		opProperties := map[string]any{
-			"type":         map[string]any{"type": "string", "enum": []string{"add_node", "update_node", "connect_nodes"}, "description": "必填的操作类型；新增节点必须传 add_node，nodeType 不能代替本字段"},
-			"id":           str("节点或连线唯一ID"),
-			"nodeType":     map[string]any{"type": "string", "enum": cloudAgentNodeTypeNames()},
-			"title":        str("标题；更新操作可选"),
-			"content":      str("文本正文或媒体提示词；更新操作可选"),
-			"patch":        cloudAgentPatchSchema(),
-			"fromNodeId":   str("连线来源节点ID"),
-			"toNodeId":     str("连线目标节点ID"),
-			"fromHandleId": str("分镜来源 handle：row:<rowId> 或 storyboard:context"),
-			"toHandleId":   str("分镜目标 handle：row:<rowId> 或 storyboard:context"),
-			"x":            map[string]any{"type": "number"},
-			"y":            map[string]any{"type": "number"},
-		}
-		opItem := map[string]any{
-			"type":                 "object",
-			"properties":           opProperties,
-			"required":             []string{"type", "id"},
-			"additionalProperties": false,
-			"oneOf": []map[string]any{
-				{"properties": map[string]any{"type": map[string]any{"const": "add_node"}}, "required": []string{"nodeType"}},
-				{"properties": map[string]any{"type": map[string]any{"const": "update_node"}}, "required": []string{"patch"}},
-				{"properties": map[string]any{"type": map[string]any{"const": "connect_nodes"}}, "required": []string{"fromNodeId", "toNodeId"}},
-			},
-		}
-		add("canvas_apply_ops", "创建空白节点、编辑或连线；先读画布传 snapshotHash，生成用 generate_media。每次最多20项，禁止删除、任意 metadata 和媒体 URL。必填字段见 schema；add_node 可用 x/y，省略自动排位；update_node 按能力填 patch，可用 x/y 或视频首尾帧。镜头绑定示例：资产→分镜 {\"toHandleId\":\"row:<rowId>\"}；输出示例：分镜→图片/视频 {\"fromHandleId\":\"row:<rowId>\"}；rowId 取读取结果，不是镜头编号；整表用 storyboard:context。连线不改变已提交任务输入；来源须 canSource，目标须 canTarget 且接受来源 inputKind。批量排位用 canvas_arrange_nodes。", map[string]any{"snapshotHash": str("canvas_get_state返回的snapshotHash"), "ops": map[string]any{"type": "array", "maxItems": 20, "items": opItem}}, "snapshotHash", "ops")
-		add("canvas_arrange_nodes", "整理节点位置：只改坐标，不改内容、不改/建连线、不增删；先读并传 snapshotHash。mode 默认 auto（有连线按依赖，否则按媒体类型分区）；groups 为横向分带（label 展示名，可覆盖组 mode）。省略 nodeIds 整理全部可整理节点（跳过锁定、容器、批次子节点、已归属背板）；align 对齐/等距，dryRun 仅预演；最多50节点；单节点用 update_node x/y。", map[string]any{
-			"snapshotHash": str("最近一次画布读取的 snapshotHash"),
-			"nodeIds":      map[string]any{"type": "array", "maxItems": cloudAgentArrangeMaxNodes, "items": str("节点ID；省略=全部可整理")},
-			"mode":         map[string]any{"type": "string", "enum": []any{"auto", "flow", "byType", "row", "column", "grid"}, "description": "auto=有连线按依赖否则按类型；flow=按依赖分层；byType=按类型分区；row/column/grid=线性或网格"},
-			"groups": map[string]any{"type": "array", "maxItems": cloudAgentArrangeMaxGroups, "items": map[string]any{
-				"type": "object", "properties": map[string]any{
-					"label":   str("分组展示名"),
-					"nodeIds": map[string]any{"type": "array", "maxItems": cloudAgentArrangeMaxNodes, "items": str("节点ID")},
-					"mode":    map[string]any{"type": "string", "enum": []any{"byType", "flow", "row", "column", "grid"}},
-				}, "required": []string{"nodeIds"}, "additionalProperties": false,
-			}},
-			"align":  map[string]any{"type": "string", "enum": []any{"left", "centerX", "right", "top", "centerY", "bottom", "distributeX", "distributeY"}},
-			"gap":    map[string]any{"type": "number", "minimum": 0, "maximum": cloudAgentArrangeMaxGap, "description": "分带间距（像素）"},
-			"dryRun": map[string]any{"type": "boolean", "description": "true 只预演不写入"},
-		}, "snapshotHash")
-	}
-	if req.PermissionMode != "read_only" && len(req.ContextScope) > 0 {
-		add("generate_media", "创作媒体：给出提示词和真实参考，执行器创建草稿、连线、解析默认并报价审批，批准后提交。无需先建节点。规格默认继承；用户要求改变时用 configurationChange，勿为构图或风格擅改规格。已有任务/成品不可覆盖。sourceNodeId=文本，referenceNodeIds=媒体；角色卡同时取设定和三视图，仅取设定用 sourceNodeId，勿重复。临时参考只用工具ID。提交前按回执有界纠正；已提交失败不得自动重提或换模型。", map[string]any{
-			"mode": map[string]any{"type": "string", "enum": cloudAgentGenerationModeNames()}, "prompt": str("完整提示词；媒体按 referenceNodeIds 各类型分别编号 @图片1/@视频1/@音频1，文本来源不计数。漏标签由服务端补齐，不推断用途"),
-			"logicalModelId": str("selection.logicalModelId；与channelId/channelModelKey互斥"), "channelId": str("selection.channelId"), "channelModelKey": str("selection.channelModelKey"),
-			"durationSeconds": map[string]any{"type": "integer", "minimum": 0}, "size": str(cloudAgentMediaSizeDescription), "imageResolution": str("model_list 档位；未启用时省略"), "quality": str("按本回合 model_list 返回的 image.quality 或 video.resolutions 取值；视频输出分辨率保持目录返回的大小写"), "videoGenerateAudio": map[string]any{"type": "boolean", "description": "是否生成音频，仅视频可用"},
-			"videoStartFrameNodeId": str("视频首帧图片ID，须在 referenceNodeIds 中"),
-			"videoEndFrameNodeId":   str("视频尾帧图片ID，须在 referenceNodeIds 中"),
-			"configurationChange": map[string]any{
-				"type": "object", "description": "用户要求改规格时传；值填顶层，其余继承，仍须审批。",
 	add("remember_lesson",
 		"把本轮真的跑通的路线记到你自己的个人记忆。只在本轮确有会改变画布或生成结果的工具成功执行时可用。写通用做法，不要复述具体对象。记下来后要等你在「设置 → Agent 记忆」批准才会在以后的会话生效。",
 		map[string]any{
@@ -336,13 +229,13 @@ func cloudAgentAllToolSchemas() []map[string]any {
 		"patch":        cloudAgentStoryboardPatchSchema(),
 	}, "snapshotHash", "nodeId", "action")
 	add("canvas_create_character", "把画布上就绪的形象图片（可加声音音频）打包成角色卡：写入角色库并在画布放置角色卡节点，按权限审批。已有同名角色卡先复用；definition 只填有依据的设定。", cloudAgentCharacterCreateSchema(), "nodeId", "name", "imageNodeId")
-	add("canvas_edit_batch_table", "操作批量创作表：增改删行、切换 try_on/creative、设1/5/10并发、增删参考图列或设全局提示词。先读 canvas_read_batch_table 获取最新 snapshotHash/rowId。行 patch 仅允许 enabled、inputNodeIds、prompt；prompt 可用返回的 @参考图1 等 mentionToken 指代本行图片。append 未传 inputNodeIds 继承上一行参考图；图片ID必须来自当前画布。禁止写 outputNodeId、任务状态、URL、storageKey、metadata。本工具只改计划，不提交收费生成。", map[string]any{
+	add("canvas_edit_batch_table", "操作批量创作表：增改删行、切换 try_on/creative/product、设1/5/10并发、增删参考图列或设全局提示词。先读 canvas_read_batch_table 获取最新 snapshotHash/rowId。行 patch 仅允许 enabled、inputNodeIds、prompt；prompt 可用返回的 @参考图1 等 mentionToken 指代本行图片。append 未传 inputNodeIds 继承上一行参考图；图片ID必须来自当前画布。禁止写 outputNodeId、任务状态、URL、storageKey、metadata。本工具只改计划，不提交收费生成。", map[string]any{
 		"snapshotHash": str("最近一次 canvas_read_batch_table 返回的 snapshotHash（这个表节点的版本；其它节点的改动不影响它）"),
 		"nodeId":       str("真实批量创作表节点ID"),
 		"action":       map[string]any{"type": "string", "enum": []string{"append", "update", "remove", "set_operation", "set_concurrency", "add_reference_column", "remove_reference_column", "set_global_prompt"}},
 		"rowId":        str("update/remove 使用 canvas_read_batch_table 返回的真实 rowId；其他操作留空"),
 		"patch":        cloudAgentBatchTablePatchSchema(),
-		"operation":    map[string]any{"type": "string", "enum": []string{"try_on", "creative"}},
+		"operation":    map[string]any{"type": "string", "enum": []string{"try_on", "creative", "product"}},
 		"concurrency":  map[string]any{"type": "integer", "enum": []int{1, 5, 10}},
 		"globalPrompt": str("set_global_prompt 使用；非空时覆盖各任务提示词，空字符串清除全局提示词"),
 	}, "snapshotHash", "nodeId", "action")

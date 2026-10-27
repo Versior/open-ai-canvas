@@ -1598,7 +1598,7 @@
   },
   {
     "function": {
-      "description": "操作批量创作表：增改删行、切换 try_on/creative、设1/5/10并发、增删参考图列或设全局提示词。先读 canvas_read_batch_table 获取最新 snapshotHash/rowId。行 patch 仅允许 enabled、inputNodeIds、prompt；prompt 可用返回的 @参考图1 等 mentionToken 指代本行图片。append 未传 inputNodeIds 继承上一行参考图；图片ID必须来自当前画布。禁止写 outputNodeId、任务状态、URL、storageKey、metadata。本工具只改计划，不提交收费生成。",
+      "description": "操作批量创作表：增改删行、切换 try_on/creative/product、设1/5/10并发、增删参考图列或设全局提示词。先读 canvas_read_batch_table 获取最新 snapshotHash/rowId。行 patch 仅允许 enabled、inputNodeIds、prompt；prompt 可用返回的 @参考图1 等 mentionToken 指代本行图片。append 未传 inputNodeIds 继承上一行参考图；图片ID必须来自当前画布。禁止写 outputNodeId、任务状态、URL、storageKey、metadata。本工具只改计划，不提交收费生成。",
       "name": "canvas_edit_batch_table",
       "parameters": {
         "additionalProperties": false,
@@ -1635,7 +1635,8 @@
           "operation": {
             "enum": [
               "try_on",
-              "creative"
+              "creative",
+              "product"
             ],
             "type": "string"
           },
@@ -1742,11 +1743,25 @@
                   "enum": [
                     "audio",
                     "batch-table",
+                    "ecommerce-aplus",
+                    "ecommerce-copy",
+                    "ecommerce-delivery",
+                    "ecommerce-infographic",
+                    "ecommerce-layout",
+                    "ecommerce-replica",
+                    "ecommerce-revision",
+                    "ecommerce-studio",
+                    "ecommerce-style",
+                    "ecommerce-teardown",
+                    "ecommerce-video",
                     "file",
                     "frame",
                     "image",
                     "markdown",
+                    "product",
                     "script",
+                    "selling-point",
+                    "shot-recipe",
                     "text",
                     "video"
                   ],
@@ -1756,12 +1771,128 @@
                   "additionalProperties": false,
                   "minProperties": 1,
                   "properties": {
+                    "appearance": {
+                      "maxLength": 2000,
+                      "type": "string"
+                    },
+                    "archetype": {
+                      "maxLength": 20,
+                      "type": "string"
+                    },
+                    "aspectRatio": {
+                      "maxLength": 10,
+                      "type": "string"
+                    },
+                    "back": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "category": {
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "code": {
+                      "maxLength": 60,
+                      "type": "string"
+                    },
                     "content": {
                       "maxLength": 16000,
                       "type": "string"
                     },
+                    "cta": {
+                      "maxLength": 100,
+                      "type": "string"
+                    },
+                    "detail": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "extraExclude": {
+                      "maxLength": 500,
+                      "type": "string"
+                    },
+                    "fidelity": {
+                      "maxLength": 10,
+                      "type": "string"
+                    },
+                    "footer": {
+                      "maxLength": 300,
+                      "type": "string"
+                    },
+                    "forbidden": {
+                      "maxLength": 1000,
+                      "type": "string"
+                    },
+                    "front": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "global": {
+                      "maxLength": 800,
+                      "type": "string"
+                    },
+                    "headline": {
+                      "maxLength": 200,
+                      "type": "string"
+                    },
+                    "kind": {
+                      "maxLength": 20,
+                      "type": "string"
+                    },
+                    "marks": {
+                      "maxLength": 1000,
+                      "type": "string"
+                    },
+                    "mood": {
+                      "maxLength": 300,
+                      "type": "string"
+                    },
+                    "music": {
+                      "maxLength": 100,
+                      "type": "string"
+                    },
+                    "name": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "notes": {
+                      "maxLength": 1200,
+                      "type": "string"
+                    },
+                    "packaging": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "platform": {
+                      "maxLength": 20,
+                      "type": "string"
+                    },
+                    "price": {
+                      "maxLength": 100,
+                      "type": "string"
+                    },
+                    "side": {
+                      "maxLength": 80,
+                      "type": "string"
+                    },
+                    "subhead": {
+                      "maxLength": 200,
+                      "type": "string"
+                    },
                     "title": {
                       "maxLength": 240,
+                      "type": "string"
+                    },
+                    "tone": {
+                      "maxLength": 300,
+                      "type": "string"
+                    },
+                    "typography": {
+                      "maxLength": 300,
+                      "type": "string"
+                    },
+                    "version": {
+                      "maxLength": 10,
                       "type": "string"
                     },
                     "videoEndFrameNodeId": {

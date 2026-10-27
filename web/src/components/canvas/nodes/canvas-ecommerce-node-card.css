@@ -211,7 +211,6 @@ input.ecom-card-title-input {
     width: 8px;
     height: 8px;
     border-top: 2px solid color-mix(in srgb, currentColor 70%, transparent);
-    border-left: 2px solid color-mix(in srgb, currentColor 70%, transparent);
     border-top-left-radius: 3px;
 }
 

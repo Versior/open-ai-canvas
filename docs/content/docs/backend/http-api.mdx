@@ -11,7 +11,7 @@ description: 信封、错误码与 OpenAPI
 
 GET /api/canvas-projects 的分页查询可传 kind=freeform 或 ecommerce，在用户归属约束内先分类再计数和分页，摘要包含 kind。缺省 kind 保留全部查询，旧画布没有 kind 时归自由画布。
 
-画布操作同步在 `create_canvas.patch.kind` 和 `set_field(field=kind)` 中保存分类，显式值只接受 `freeform` 或 `ecommerce`，无效值返回 400；变更使用真实 `beforeValue` 校验并发冲突。Schema 59 会一次性补齐分类缺失且含内置电商节点的历史画布，明确分类不受影响。
+画布操作同步在 `create_canvas.patch.kind` 和 `set_field(field=kind)` 中保存分类，显式值只接受 `freeform` 或 `ecommerce`，无效值返回 400；变更使用真实 `beforeValue` 校验并发冲突。Schema 73 会一次性补齐分类缺失且含内置电商节点的历史画布，明确分类不受影响。
 
 管理页为 `/admin/settings/ecommerce`。普通登录用户只能读取已发布模特；管理配置、上传和上一版读取在 service 层校验管理员权限。
 

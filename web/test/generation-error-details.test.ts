@@ -7,12 +7,11 @@ describe("safe upstream error details", () => {
         const message = `模型服务拒绝了请求，请检查模型和参数；上游：${detail}`;
         expect(generationErrorMessage(new Error(message))).toBe("模型服务拒绝了请求，请检查模型和参数");
     });
-    test("does not replace a safe upstream message with a generic HTTP hint", () => {
+    test("keeps HTTP-specific hints and a generic non-HTTP unavailable fallback", () => {
         const message = `模型服务暂时不可用（HTTP 500）；上游：${detail}`;
         expect(generationErrorMessage(message)).toBe("模型服务处理失败（HTTP 500），请稍后重试。");
         expect(generationErrorMessage("模型服务暂时不可用（HTTP 500）")).toBe("模型服务处理失败（HTTP 500），请稍后重试。");
-        expect(generationErrorMessage(message)).toBe("模型服务暂时不可用，请稍后再试。");
-        expect(generationErrorMessage("模型服务暂时不可用（HTTP 500）")).toBe("模型服务暂时不可用，请稍后再试。");
+        expect(generationErrorMessage({ reason: "unavailable" })).toBe("模型服务暂时不可用，请稍后再试。");
     });
     test("keeps details when moderation metadata is stored", () => {
         const message = `内容审核未通过；上游：${detail}`;

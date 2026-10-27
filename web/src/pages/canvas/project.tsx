@@ -359,7 +359,7 @@ function CanvasViewportPage() {
     const [titleDraft, setTitleDraft] = useState("");
     const [shortcutRequestNonce, setShortcutRequestNonce] = useState(0);
     const [cinematicAgentEntry, setCinematicAgentEntry] = useState(false);
-    const { assistantOpen, closeAgent, openAgent: openAssistant } = useCanvasAssistantVisibility();
+    const { closeAgent, openAgent: openAssistant } = useCanvasAssistantVisibility();
     const agentMentionReferences = useMemo(() => buildCanvasAgentMentionReferences(nodes), [nodes]);
 
     const { tasks: activeTasks } = useCanvasActiveTasks(projectId, projectLoaded);
@@ -3948,36 +3948,6 @@ ${instruction.trim()}`
                                         onLayers={openLayerDecomposition}
                                         onFocus={focusCanvasNode}
                                         onAssets={() => openCanvasAssetLibrary()}
-                                    />
-                                    <CanvasCloudAgentPanel
-                                        canvasId={projectId}
-                                        domainProjectId={currentProject?.projectId}
-                                        canvasNodes={nodes}
-                                        runningNodeId={runningNodeId}
-                                        nodeCount={nodes.length}
-                                        selectedNodeIds={Array.from(selectedNodeIds)}
-                                        references={agentMentionReferences}
-                                        prefillRequest={agentPrefillRequest}
-                                        open={assistantOpen}
-                                        onOpen={openAgent}
-                                        onCollapse={closeAgent}
-                                        onFocusNode={(nodeId) => {
-                                            const currentNodes = nodesRef.current;
-                                            const target = currentNodes.find((node) => node.id === nodeId);
-                                            if (!target) {
-                                                message.info("该节点已删除或尚未同步到画布");
-                                                return;
-                                            }
-
-                                            const parent = target.parentId ? currentNodes.find((node) => node.id === target.parentId) : null;
-                                            if (parent?.metadata?.frame?.collapsed) toggleFrameCollapsed(parent.id);
-
-                                            const batchRootId = target.metadata?.batchRootId;
-                                            const batchRoot = batchRootId ? currentNodes.find((node) => node.id === batchRootId) : null;
-                                            if (batchRoot && isHiddenBatchChild(target, currentNodes) && !batchRoot.metadata?.imageBatchExpanded) toggleBatchExpanded(batchRoot.id);
-
-                                            focusCanvasNode(nodeId);
-                                        }}
                                     />
                                 </div>
                             </div>

@@ -70,6 +70,7 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 				return nil, err
 			}
 		}
+	}
 	// 视频处理（kind=processing）以源视频为主体，不要求 prompt；提示词由服务端生成，
 	// 源时长、帧率档和处理参数在这里按资源记录与后台配置重算。
 	processing, err := s.prepareVideoProcessingTask(userID, normalizedInput)

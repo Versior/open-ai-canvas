@@ -81,7 +81,7 @@ test("real grid consumes density rather than the old fixed column calculation", 
 
 test("menu surfaces are explicitly scoped and old account inner overrides are removed", () => {
     const css = readFileSync(new URL("../src/styles/workspace-menus.css", import.meta.url), "utf8");
-    const globals = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8");
+    const globals = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain("@layer utilities");
     expect(css).toContain(".workspace-account-popover .ant-popover-container");
     expect(css).toContain("border: 0 !important");

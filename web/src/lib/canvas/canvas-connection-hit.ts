@@ -34,7 +34,7 @@ export function resolveCanvasConnectionTarget({
     const handleFor = (node: CanvasNodeData) =>
         node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, point.y, scriptScrollTopById[node.id] || 0) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, point.y, radius) : undefined;
     const targetFor = (node: CanvasNodeData, handleId = handleFor(node)): CanvasConnectionDropTarget => {
-        const missingHandle = (node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !handleId;
+        const missingHandle = (node.type === CanvasNodeType.Script || (node.type === CanvasNodeType.BatchTable && !node.metadata?.ecommerceFlowId)) && !handleId;
         return { nodeId: !missingHandle && canConnect(node) ? node.id : null, handleId, isNearNode: true };
     };
     // DOM 命中已经包含置顶、选中层级和卡片变换；不可连接的可见主体也阻止穿透。

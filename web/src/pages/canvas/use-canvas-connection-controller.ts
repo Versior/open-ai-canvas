@@ -50,13 +50,7 @@ export type ConnectionReplaceHover = {
     clientY: number;
 };
 
-type ConnectionDropTarget = {
-    nodeId: string | null;
-    handleId?: string;
-    anchorRatio?: number;
-    anchorXRatio?: number;
-    isNearNode: boolean;
-};
+type EcommerceConnectionDropTarget = ConnectionDropTarget & { anchorXRatio?: number };
 type BatchConnectionDropTarget = ConnectionDropTarget;
 
 // LibTV's 80px world-space quick-add zone renders at roughly 110px on the
@@ -466,7 +460,7 @@ export function useCanvasConnectionController({
         return canvasConnectionError(config, pendingNodes, connectionsRef.current, connection);
     }, [config, connectionsRef, nodesRef, runtimeStatuses]);
 
-    const getConnectionDropTarget = useCallback((clientX: number, clientY: number, current: ConnectionHandle): ConnectionDropTarget => {
+    const getConnectionDropTarget = useCallback((clientX: number, clientY: number, current: ConnectionHandle): EcommerceConnectionDropTarget => {
         const slot = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-ecommerce-input]");
         const slotNodeId = slot?.dataset.productNodeId;
         if (slot && slotNodeId && current.handleType === "source" && slotNodeId !== current.nodeId) {
@@ -488,48 +482,6 @@ export function useCanvasConnectionController({
             const error = batchCellConnectionError(nodesRef.current, current.nodeId, cell.tableId, handleId);
             return { nodeId: error ? null : cell.tableId, handleId, isNearNode: true };
         }
-        const world = screenToCanvas(clientX, clientY);
-        const scale = Math.max(viewportRef.current.k, 0.05);
-        const handleRadius = CONNECTION_SNAP_RADIUS / scale;
-        let isNearNode = false;
-        let bestNodeId: string | null = null;
-        let bestHandleId: string | undefined;
-        let bestAnchorRatio: number | undefined;
-        let bestPriority = Number.POSITIVE_INFINITY;
-
-        [...nodesRef.current]
-            .filter((node) => !isHiddenBatchChild(node, nodesRef.current) && !isNodeHiddenByCollapsedFrame(node, nodesRef.current) && !isFrameNode(node))
-            .reverse()
-            .forEach((node) => {
-                const scrollTop = scriptScrollTopById[node.id] || 0;
-                const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
-                if ((node.type === CanvasNodeType.Script || (node.type === CanvasNodeType.BatchTable && !node.metadata?.ecommerceFlowId)) && !targetHandleId) return;
-                // Ordinary nodes expose one centered input/output port. Only
-                // storyboard rows have a meaningful vertical target position.
-                const targetAnchorRatio = undefined;
-                const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop, batchScrollById?.[node.id]);
-                const dx = world.x - anchor.x;
-                const dy = world.y - anchor.y;
-                // Do not treat the node body or a rectangular padding band as a
-                // connection target. LibTV snaps only inside the circular
-                // quick-add area centred on the corresponding side handle.
-                const hitsSnapZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!hitsSnapZone) return;
-                isNearNode = true;
-                const normalized = node.id === current.nodeId ? null : normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType);
-                if (!normalized) return;
-                if (isEcommerceInputHandle(current.handleId) && node.type !== CanvasNodeType.Image) return;
-                const candidate = { id: "candidate", ...normalized, toHandleId: current.handleType === "target" ? current.handleId : targetHandleId };
-                const remaining = isEcommerceInputHandle(candidate.toHandleId) ? withEcommerceInputConnection(connectionsRef.current, candidate).filter((item) => item.id !== candidate.id) : connectionsRef.current;
-                if (canvasConnectionError(config, nodesRef.current, remaining, normalized)) return;
-                if (1 < bestPriority) {
-                    bestNodeId = node.id;
-                    bestHandleId = targetHandleId;
-                    bestAnchorRatio = targetAnchorRatio;
-                    bestPriority = 1;
-                }
-            });
-        return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
         return resolveCanvasConnectionTarget({
             nodes: nodesRef.current,
             current,
@@ -540,7 +492,13 @@ export function useCanvasConnectionController({
             batchScrollById,
             canConnect: (node) => {
                 const normalized = node.id === current.nodeId ? null : normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType);
-                return Boolean(normalized && !canvasConnectionError(config, nodesRef.current, connectionsRef.current, normalized));
+                if (!normalized) return false;
+                const ecommerceHandle = current.handleType === "target" && isEcommerceInputHandle(current.handleId) ? current.handleId : undefined;
+                if (ecommerceHandle && (node.type !== CanvasNodeType.Image || nodesRef.current.find((item) => item.id === current.nodeId)?.type !== CanvasNodeType.Product)) return false;
+                const candidate = ecommerceHandle ? { ...normalized, toHandleId: ecommerceHandle } : normalized;
+                const edge = { id: "candidate", ...candidate };
+                const remaining = ecommerceHandle ? withEcommerceInputConnection(connectionsRef.current, edge).filter((item) => item.id !== edge.id) : connectionsRef.current;
+                return !canvasConnectionError(config, nodesRef.current, remaining, candidate);
             },
         });
     }, [batchScrollById, config, connectionsRef, nodesRef, screenToCanvas, scriptScrollTopById, viewportRef]);
@@ -557,39 +515,6 @@ export function useCanvasConnectionController({
             .find((node): node is CanvasNodeData => Boolean(node && !batchSourceRestriction(node)));
         if (!source) return { nodeId: null, isNearNode: false };
 
-        const world = screenToCanvas(clientX, clientY);
-        const scale = Math.max(viewportRef.current.k, 0.05);
-        const handleRadius = CONNECTION_SNAP_RADIUS / scale;
-        let isNearNode = false;
-        let bestNodeId: string | null = null;
-        let bestHandleId: string | undefined;
-        let bestAnchorRatio: number | undefined;
-        let bestPriority = Number.POSITIVE_INFINITY;
-        const current: ConnectionHandle = { nodeId: source.id, handleType: "source" };
-
-        [...nodesRef.current]
-            .filter((node) => !isHiddenBatchChild(node, nodesRef.current) && !isNodeHiddenByCollapsedFrame(node, nodesRef.current) && !isFrameNode(node))
-            .reverse()
-            .forEach((node) => {
-                const scrollTop = scriptScrollTopById[node.id] || 0;
-                const targetHandleId = node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, world.y, scrollTop) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, world.y, handleRadius) : undefined;
-                if ((node.type === CanvasNodeType.Script || (node.type === CanvasNodeType.BatchTable && !node.metadata?.ecommerceFlowId)) && !targetHandleId) return;
-                const targetAnchorRatio = undefined;
-                const anchor = getConnectionTargetAnchor(node, current, targetHandleId, scrollTop, batchScrollById?.[node.id]);
-                const dx = world.x - anchor.x;
-                const dy = world.y - anchor.y;
-                const hitsSnapZone = dx * dx + dy * dy <= handleRadius * handleRadius;
-                if (!hitsSnapZone) return;
-                isNearNode = true;
-                if (!hasBatchConnectionCandidate(sourceNodeIds, node.id, nodesRef.current)) return;
-                if (1 < bestPriority) {
-                    bestNodeId = node.id;
-                    bestHandleId = targetHandleId;
-                    bestAnchorRatio = targetAnchorRatio;
-                    bestPriority = 1;
-                }
-            });
-        return { nodeId: bestNodeId, handleId: bestHandleId, anchorRatio: bestAnchorRatio, isNearNode };
         return resolveCanvasConnectionTarget({
             nodes: nodesRef.current,
             current: { nodeId: source.id, handleType: "source" },

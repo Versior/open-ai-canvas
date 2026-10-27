@@ -124,7 +124,6 @@ export function CanvasChooseImageStylePicker({
                             </div>
                         ) : (
                         <>
-                        <div className="asset-filters border-b border-border/70 px-2 py-1.5">
                         <div className="asset-filters border-b border-border/70 px-2 py-2">
                             <div className="asset-filter-row">
                                 <div className="col-feed-tabs shrink-0">

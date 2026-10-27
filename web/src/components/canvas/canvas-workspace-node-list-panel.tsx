@@ -169,7 +169,6 @@ const CanvasNodeListItem = memo(function CanvasNodeListItem({ node, config, acti
                             {summary.flag === "block" ? <AlertTriangle className="size-2.5" /> : <span className="size-1.5 rounded-full bg-current" />}
                         </span>
                     ) : null}
-                <span className="flex min-w-0 items-center gap-2">
                     <span className="min-w-0 truncate text-xs font-medium leading-4 text-foreground" title={node.title}>
                         {node.title || getNodeListLabel(node.type)}
                     </span>
@@ -190,10 +189,6 @@ const CanvasNodeListItem = memo(function CanvasNodeListItem({ node, config, acti
                             <span>失败</span>
                         </span>
                     ) : null}
-                <span className="mt-0.5 block truncate text-[var(--fs-label)] leading-3 text-foreground/45" title={materialSummary}>
-                    {materialSummary}
-                </span>
-                <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[var(--fs-label)] leading-3 text-foreground/40">
                     <Clock3 className="size-2.5 shrink-0" />
                     <span className="mt-0.5 block text-[var(--fs-label)] tabular-nums text-foreground/35" title={fullTime(times.updatedAt)}>
                         {times.updatedLabel}

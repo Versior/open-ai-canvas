@@ -97,7 +97,6 @@ export function generationErrorMessage(error: unknown) {
         if (hasHttpStatus(raw, 503)) return "模型服务暂时不可用（HTTP 503），请稍后重试。";
         if (hasHttpStatus(raw, 502)) return "模型服务网关异常（HTTP 502），请稍后重试。";
         if (hasHttpStatus(raw, 500)) return "模型服务处理失败（HTTP 500），请稍后重试。";
-        if (hasHttpStatus(raw, 500, 502, 503, 504)) return REASON_MESSAGES.unavailable;
         if (containsInfrastructureDetails(raw)) return NETWORK_ERROR_MESSAGE;
     }
     if (isModelCapabilityFailure(displayMessage)) return MODEL_CAPABILITY_ERROR_MESSAGE;

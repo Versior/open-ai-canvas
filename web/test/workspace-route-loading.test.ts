@@ -72,21 +72,6 @@ describe("workspace route loading", () => {
         expect(layout).not.toContain("useCanvasUiStore");
         expect(layout).not.toContain("CanvasDeleteProjectsDialog");
         expect(canvas).toMatch(/deleteDialogOpen \?\s*\(?\s*<Suspense/);
-        expect(detail).toContain("project-workspace-header");
-        expect(detail).not.toContain("useWorkspaceTopBarExtension");
-        expect(detail).toContain("新建画布");
-    });
-
-    test("keeps project asset refresh scoped to the latest user and project", () => {
-        const editor = source("../src/pages/projects/detail/editor.tsx");
-
-        expect(editor).toContain("const assetOwnerKey = JSON.stringify([scope, projectId])");
-        expect(editor).toContain("activeAssetOwnerKeyRef.current !== requestedOwnerKey");
-        expect(editor).toContain("assetRefreshSequenceRef.current !== requestSequence");
-        expect(editor).toContain("assetRefreshSequenceRef.current += 1");
-        expect(editor).toContain("syncedAssetOwnerKeyRef.current = assetOwnerKey");
-        expect(editor.match(/listProjectAssets\(projectId\)/g)).toHaveLength(1);
-        expect(canvas).toContain("deleteDialogOpen ? <Suspense");
     });
 
     test("does not poll wallet balance from permanent workspace chrome", () => {

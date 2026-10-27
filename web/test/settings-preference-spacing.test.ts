@@ -14,7 +14,7 @@ test("settings page drops the page header copy and audio preference blocks", () 
 });
 
 test("wallet tabs and preference blocks keep a visible gap from neighboring surfaces", () => {
-    const css = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8");
+    const css = readFileSync(resolve(import.meta.dir, "../src/styles/globals.css"), "utf8").replaceAll("\r\n", "\n");
     // 标签栏自身不留上下外边距：上方间距来自页头底部 12px 内边距，下方来自内容区 12px 外边距。
     const rule = (selector: string) => css.split(`\n${selector} {`)[1]?.split("}")[0] ?? "";
     expect(rule(".workspace-wallet-header")).toContain("padding: 20px 56px 12px 24px;");

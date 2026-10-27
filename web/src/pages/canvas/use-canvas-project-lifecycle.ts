@@ -237,94 +237,6 @@ export function useCanvasProjectLifecycle({
         };
     }, [projectLoaded]);
 
-    useEffect(
-        () =>
-            subscribeAgentCanvasRefresh((project, previous, source) => {
-                if (!projectLoaded || project.id !== projectId) return;
-                if (source === "sync") {
-                    const fallbackTheme = useCanvasThemeStore.getState().theme;
-                    const editor = {
-                        ...(previous || project),
-                        nodes: nodesRef.current,
-                        connections: connectionsRef.current,
-                        chatSessions: chatSessionsRef.current,
-                        activeChatId: activeChatIdRef.current,
-                        appearance: canvasAppearance,
-                        backgroundMode,
-                        showImageInfo,
-                    };
-                    const merged = previous ? rebaseCanvasLocalEdits(previous, project, editor) : project;
-                    const appearance = merged.appearance ? normalizeCanvasAppearance(merged.appearance, fallbackTheme) : canvasAppearanceForTheme(fallbackTheme);
-                    const snapshot: CanvasHistorySnapshot = {
-                        nodes: merged.nodes,
-                        connections: merged.connections,
-                        chatSessions: merged.chatSessions || [],
-                        activeChatId: merged.activeChatId || null,
-                        canvasAppearance: appearance,
-                        backgroundMode: merged.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
-                        showImageInfo: merged.showImageInfo || false,
-                    };
-                    observedContentRef.current = {
-                        ...snapshot,
-                        nodes: project.nodes,
-                        connections: project.connections,
-                        chatSessions: project.chatSessions || [],
-                        activeChatId: project.activeChatId || null,
-                        canvasAppearance: project.appearance ? normalizeCanvasAppearance(project.appearance, fallbackTheme) : canvasAppearanceForTheme(fallbackTheme),
-                        backgroundMode: project.backgroundMode || DEFAULT_CANVAS_BACKGROUND_MODE,
-                        showImageInfo: project.showImageInfo || false,
-                    };
-                    nodesRef.current = snapshot.nodes;
-                    connectionsRef.current = snapshot.connections;
-                    chatSessionsRef.current = snapshot.chatSessions;
-                    activeChatIdRef.current = snapshot.activeChatId;
-                    setNodes(snapshot.nodes);
-                    setConnections(snapshot.connections);
-                    setChatSessions(snapshot.chatSessions);
-                    setActiveChatId(snapshot.activeChatId);
-                    setCanvasAppearance(snapshot.canvasAppearance);
-                    setBackgroundMode(snapshot.backgroundMode);
-                    setShowImageInfo(snapshot.showImageInfo);
-                    setLoadError("");
-                    return;
-                }
-                // Merge only server-changed fields so dragging/editing other nodes can
-                // continue while Agent media tasks complete. Same-field conflicts fail.
-                const merged = previous ? mergeAgentCanvasEditor(previous, project, nodesRef.current, connectionsRef.current) : project;
-                if (observedContentRef.current) {
-                    const observed = observedContentRef.current;
-                    // Advance only the observed server fields; edits in live refs still
-                    // differ from this baseline and must be persisted by the effect below.
-                    const baseline = previous ? mergeAgentCanvasEditor(previous, project, observed.nodes, observed.connections) : project;
-                    observedContentRef.current = { ...observed, nodes: baseline.nodes, connections: baseline.connections };
-                }
-                nodesRef.current = merged.nodes;
-                connectionsRef.current = merged.connections;
-                setNodes(merged.nodes);
-                setConnections(merged.connections);
-                const previousIds = new Set(previous?.nodes.map((node) => node.id));
-                const created = project.nodes.filter((node) => !previousIds.has(node.id));
-                if (created.length) setAgentCreatedNodes({ projectId: project.id, nodes: created });
-            }),
-        [
-            projectId,
-            projectLoaded,
-            nodesRef,
-            connectionsRef,
-            chatSessionsRef,
-            activeChatIdRef,
-            canvasAppearance,
-            backgroundMode,
-            showImageInfo,
-            setNodes,
-            setConnections,
-            setChatSessions,
-            setActiveChatId,
-            setCanvasAppearance,
-            setBackgroundMode,
-            setShowImageInfo,
-        ],
-    );
     useEffect(() => subscribeAgentCanvasRefresh((project, previous, source) => {
         if (!projectLoaded || project.id !== projectId) return;
         if (source === "sync") {
@@ -408,7 +320,7 @@ export function useCanvasProjectLifecycle({
                 agentActive = Boolean(status.agent);
                 canvasEditLeases.status(projectId, status, token);
                 const current = useCanvasStore.getState().openProject(projectId);
-                if (current && status.revision !== current.revision) await refreshCanvasAfterAgent(projectId, "sync");
+                if (current && (!Number.isSafeInteger(current.revision) || status.revision > current.revision!)) await refreshCanvasAfterAgent(projectId, "sync");
             },
             undefined,
             {
@@ -425,25 +337,6 @@ export function useCanvasProjectLifecycle({
             stop();
             clearInterval(leaseTimer);
         };
-        const stop = startCanvasSyncPolling(async (signal) => {
-            if (scope !== getActiveUserScope()) return;
-            const token = canvasEditLeases.statusToken(projectId);
-            const status = await getCanvasSyncStatus(projectId, signal);
-            if (signal.aborted || scope !== getActiveUserScope()) return;
-            agentActive = Boolean(status.agent);
-            canvasEditLeases.status(projectId, status, token);
-            const current = useCanvasStore.getState().openProject(projectId);
-            // Agent 运行时 SSE 增量会先把本地 revision 推前；轮询响应落后时不应再拉整份快照。
-            if (current && (!Number.isSafeInteger(current.revision) || status.revision > current.revision!)) await refreshCanvasAfterAgent(projectId, "sync");
-        }, undefined, {
-            interval: () => connected && !agentActive ? 30000 : 2000,
-            listen: (wake) => subscribeCanvasRealtime(projectId, (state, event) => {
-                const disconnected = connected && !state.connected;
-                connected = state.connected;
-                if (event === "invalidate" || disconnected) wake();
-            }),
-        });
-        return () => { stop(); clearInterval(leaseTimer); };
     }, [projectId, projectLoaded, sessionHydrated, userId]);
 
     useEffect(() => {

@@ -7,7 +7,6 @@ import { STORYBOARD_HEADER_HEIGHT, STORYBOARD_ROW_HEIGHT, storyboardTableHeight 
 import { batchReferenceHandleY } from "@/lib/canvas/canvas-batch-table";
 import { batchCellAnchor, parseBatchCellHandle, type BatchScroll } from "@/lib/canvas/canvas-batch-references";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type ConnectionHandle, type Position } from "@/types/canvas";
-import type { CanvasConnection, CanvasNodeData, ConnectionHandle, Position } from "@/types/canvas";
 import { useCanvasVisualNode } from "./canvas-node-resize-motion";
 
 export const ConnectionPath = React.memo(function ConnectionPath({
@@ -135,7 +134,6 @@ export function canvasConnectionPath(connection: CanvasConnection, from: CanvasN
     return { pathD: `M ${startX} ${startY} C ${startX + curvature} ${startY}, ${endX - curvature} ${endY}, ${endX} ${endY}`, startX, startY, endX, endY };
 }
 
-export function activeConnectionPath(node: CanvasNodeData | undefined, handle: ConnectionHandle, mouseWorld: Position, target?: CanvasNodeData, nodeScrollTop = 0, targetHandleId?: string, nodeBatchScroll?: BatchScroll, targetBatchScroll?: BatchScroll, targetScrollTop = 0, targetAnchorRatio?: number, targetAnchorXRatio?: number) {
 export function activeConnectionPath(node: CanvasNodeData | undefined, handle: ConnectionHandle, mouseWorld: Position, nodeScrollTop = 0, nodeBatchScroll?: BatchScroll) {
     if (!node) return "";
     const nodeCell = batchCellAnchor(node, handle.handleId, nodeBatchScroll);
@@ -145,15 +143,6 @@ export function activeConnectionPath(node: CanvasNodeData | undefined, handle: C
     const productInput = node.type === CanvasNodeType.Product && (handle.handleId?.startsWith("product-view:") || handle.handleId?.startsWith("visual-reference:"));
     const endX = handle.handleType === "source" ? mouseWorld.x : nodeCell?.x ?? node.position.x + (productInput ? node.width * (handle.anchorXRatio ?? 0) : 0);
     const endY = handle.handleType === "source" ? mouseWorld.y : nodeCell?.y ?? (productInput ? node.position.y + node.height * (handle.anchorRatio ?? 0.5) : connectionHandleY(node, handle.handleId, nodeScrollTop));
-    const snappedStartX = handle.handleType === "target" && target ? target.position.x + target.width : startX;
-    const snappedStartY = handle.handleType === "target" && target ? connectionHandleY(target) : startY;
-    const targetProductInput = target?.type === CanvasNodeType.Product && (targetHandleId?.startsWith("product-view:") || targetHandleId?.startsWith("visual-reference:"));
-    const snappedEndX = handle.handleType === "source" && target ? targetCell?.x ?? target.position.x + (targetProductInput ? target.width * (targetAnchorXRatio ?? 0) : 0) : endX;
-    const snappedEndY = handle.handleType === "source" && target ? targetCell?.y ?? (targetProductInput ? target.position.y + target.height * (targetAnchorRatio ?? 0.5) : connectionHandleY(target, targetHandleId, targetScrollTop)) : endY;
-    const distance = Math.abs(snappedEndX - snappedStartX);
-    return `M ${snappedStartX} ${snappedStartY} C ${snappedStartX + distance * 0.5} ${snappedStartY}, ${snappedEndX - distance * 0.5} ${snappedEndY}, ${snappedEndX} ${snappedEndY}`;
-    const endX = handle.handleType === "source" ? mouseWorld.x : nodeCell?.x ?? node.position.x;
-    const endY = handle.handleType === "source" ? mouseWorld.y : nodeCell?.y ?? connectionHandleY(node, handle.handleId, nodeScrollTop);
     // 悬停目标由卡片反馈；松手前的自由端始终跟随指针。
     const distance = Math.abs(endX - startX);
     return `M ${startX} ${startY} C ${startX + distance * 0.5} ${startY}, ${endX - distance * 0.5} ${endY}, ${endX} ${endY}`;

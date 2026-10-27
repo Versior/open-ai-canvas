@@ -57,7 +57,7 @@ function PromptSkillModal({ open, initial, onClose, onPick }: { open: boolean; i
         setSkillId(initial?.skillId || "");
         setPath(initial?.path || "");
     }, [initial, open]);
-    const skillsQuery = useQuery({ queryKey: ["skills", "added"], queryFn: listAddedSkills, enabled: open, staleTime: 30_000 });
+    const skillsQuery = useQuery({ queryKey: ["skills", "added"], queryFn: () => listAddedSkills(), enabled: open, staleTime: 30_000 });
     const skills = useMemo(() => (skillsQuery.data?.skills || []).filter((skill) => !keyword.trim() || `${skill.skillName} ${skill.description}`.toLowerCase().includes(keyword.trim().toLowerCase())), [keyword, skillsQuery.data]);
     const skill = skillsQuery.data?.skills.find((item) => item.skillId === skillId);
     const filesQuery = useQuery({ queryKey: ["skills", skillId, "files"], queryFn: () => listSkillFiles(skillId), enabled: open && Boolean(skillId), staleTime: 60_000 });

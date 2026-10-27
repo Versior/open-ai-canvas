@@ -1,22 +1,23 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { preconnect } from "react-dom";
 import { fillablePrompt } from "@/lib/inspirations/resolve";
-import { App, Button, Input } from "antd";
-import { ChevronDown, Play, RotateCcw, Search, SlidersHorizontal } from "lucide-react";
+import { App, Button, Dropdown, Input } from "antd";
+import { ChevronDown, Download, Heart, Import, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { WorkspaceErrorState, WorkspaceLoadingState, WorkspaceState } from "@/components/layout/workspace-state";
 import { Select } from "@/components/ui/base/select";
+import { Tooltip } from "@/components/ui/base/tooltip";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { catalogIdOf, inspirationSources, type CreationInspiration, type InspirationSourceId } from "@/lib/inspirations/catalog";
 import { bindCanvasVideoHoverPreview } from "@/lib/canvas/canvas-video-hover-preview";
-import { resolveInspirations } from "@/lib/inspirations/resolve";
+import { isCustomInspiration, resolveInspirations } from "@/lib/inspirations/resolve";
 import { loadInspirationCatalog, type InspirationCatalog } from "@/services/inspiration-catalog";
-import { useInspirationStore } from "@/stores/use-inspiration-store";
+import { useInspirationStore, type InspirationDraft } from "@/stores/use-inspiration-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { InspirationCover, InspirationDetailModal } from "./inspiration-detail-modal";
-import type { InspirationCategoryChoice } from "./inspiration-editor-modal";
+import { InspirationEditorModal, type InspirationCategoryChoice } from "./inspiration-editor-modal";
 import "./inspirations.css";
 
 const LibTVGalleryContent = lazy(() => import("@/pages/inspiration").then((module) => ({ default: module.LibTVGalleryContent })));
@@ -46,8 +47,21 @@ const MODE_OPTIONS = [
     { label: "文本", value: "text" },
 ] as const;
 
+function exportFileName() {
+    return `yingce-inspirations-${new Date().toISOString().slice(0, 10)}.json`;
+}
+
+function downloadText(text: string, fileName: string) {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+}
+
 export function InspirationHall({ onUse, creationMode, embedded = false }: { onUse: (item: CreationInspiration) => void; creationMode?: CreationInspiration["mode"]; embedded?: boolean }) {
-    const { message } = App.useApp();
+    const { message, modal } = App.useApp();
     const inspirationSourcesVisible = useUserStore((state) => state.features.inspirationSourcesVisible);
 
     const custom = useInspirationStore((state) => state.custom);
@@ -55,6 +69,13 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
     const hidden = useInspirationStore((state) => state.hidden);
     const favorites = useInspirationStore((state) => state.favorites);
     const hydrated = useInspirationStore((state) => state.hydrated);
+    const createEntry = useInspirationStore((state) => state.createEntry);
+    const updateEntry = useInspirationStore((state) => state.updateEntry);
+    const removeEntry = useInspirationStore((state) => state.removeEntry);
+    const restoreEntry = useInspirationStore((state) => state.restoreEntry);
+    const toggleFavorite = useInspirationStore((state) => state.toggleFavorite);
+    const exportPayload = useInspirationStore((state) => state.exportPayload);
+    const importPayload = useInspirationStore((state) => state.importPayload);
 
     const [catalog, setCatalog] = useState<InspirationCatalog | null>(null);
     const [shouldLoadCatalog, setShouldLoadCatalog] = useState(false);
@@ -77,6 +98,9 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
     const pageSize = 30;
 
     const [detail, setDetail] = useState<CreationInspiration | null>(null);
+    const [editorOpen, setEditorOpen] = useState(false);
+    const [editing, setEditing] = useState<CreationInspiration | null>(null);
+    const importRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const section = sectionRef.current;
@@ -278,6 +302,67 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
         [message],
     );
 
+    const handleDelete = useCallback(
+        (item: CreationInspiration) => {
+            const id = catalogIdOf(item);
+            const customItem = isCustomInspiration(id);
+            modal.confirm({
+                className: "workspace-modal workspace-modal-compact",
+                title: customItem ? "删除这条灵感？" : "从库中隐藏这条灵感？",
+                content: customItem ? `「${item.title}」会从本地灵感库移除，此操作不可撤销。` : `「${item.title}」来自外部目录，隐藏后可在“已隐藏”视图中找到。`,
+                okText: customItem ? "删除" : "隐藏",
+                okButtonProps: { danger: true },
+                cancelText: "保留",
+                onOk: () => {
+                    removeEntry(id);
+                    setDetail((current) => (current && catalogIdOf(current) === id ? null : current));
+                    message.success(customItem ? "已删除" : "已隐藏");
+                },
+            });
+        },
+        [message, modal, removeEntry],
+    );
+
+    const handleSubmit = useCallback(
+        (draft: InspirationDraft) => {
+            if (editing) {
+                const id = catalogIdOf(editing);
+                updateEntry(id, draft);
+                setDetail((current) => (current && catalogIdOf(current) === id ? { ...current, ...draft } : current));
+                setEditing(null);
+                message.success("已保存修改");
+                return;
+            }
+            createEntry(draft);
+            setSource("all");
+            setModeFilter("all");
+            setCategory("all");
+            setView("all");
+            setSort("default");
+            setSearch("");
+            setPage(1);
+            message.success("灵感已创建");
+        },
+        [createEntry, editing, message, updateEntry],
+    );
+
+    const handleExport = useCallback(() => {
+        downloadText(exportPayload(), exportFileName());
+        message.success("已导出本地改动（自建条目 / 改写 / 隐藏 / 收藏）");
+    }, [exportPayload, message]);
+
+    const handleImportFile = useCallback(
+        async (file: File) => {
+            try {
+                const result = importPayload(await file.text());
+                message.success(`导入完成：新增 ${result.created}，覆盖 ${result.updated}${result.skipped ? `，跳过 ${result.skipped} 条无效数据` : ""}`);
+            } catch (error) {
+                message.error(error instanceof Error ? error.message : "导入失败");
+            }
+        },
+        [importPayload, message],
+    );
+
     const advancedFilterCount = Number(source !== "all") + Number(category !== "all") + Number(view !== "all") + Number(sort !== "default");
     const hasFilters = Boolean(advancedFilterCount || modeFilter !== "all" || search.trim());
     const resetFilters = () => {
@@ -301,6 +386,34 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                     筛选{advancedFilterCount ? ` · ${advancedFilterCount}` : ""}
                     <ChevronDown className={filtersOpen ? "is-open" : undefined} aria-hidden="true" />
                 </Button>
+                <div className="inspiration-hall-actions">
+                    <Button
+                        disabled={!hydrated}
+                        icon={<Plus className="size-4" />}
+                        onClick={() => {
+                            setEditing(null);
+                            setEditorOpen(true);
+                        }}
+                    >
+                        新建灵感
+                    </Button>
+                    <Dropdown
+                        trigger={["click"]}
+                        placement="bottomRight"
+                        menu={{
+                            items: [
+                                { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
+                                { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
+                            ],
+                            onClick: ({ key }) => {
+                                if (key === "import") importRef.current?.click();
+                                if (key === "export") handleExport();
+                            },
+                        }}
+                    >
+                        <Button type="text" icon={<MoreHorizontal className="size-4" />} aria-label="更多灵感管理操作" title="更多操作" />
+                    </Dropdown>
+                </div>
             </div> : null}
 
             {!embedded && filtersOpen ? (
@@ -368,7 +481,27 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                                     <InspirationCard
                                         key={id}
                                         item={item}
+                                        favorite={!embedded && favorites.includes(id)}
+                                        hidden={!embedded && view === "hidden"}
                                         onOpen={() => setDetail(item)}
+                                        onToggleFavorite={embedded ? undefined : () => toggleFavorite(id)}
+                                        onRestore={
+                                            embedded
+                                                ? undefined
+                                                : () => {
+                                                      restoreEntry(id);
+                                                      message.success("灵感已恢复显示");
+                                                  }
+                                        }
+                                        onEdit={
+                                            embedded
+                                                ? undefined
+                                                : () => {
+                                                      setEditing(item);
+                                                      setEditorOpen(true);
+                                                  }
+                                        }
+                                        onDelete={embedded ? undefined : () => handleDelete(item)}
                                     />
                                 );
                             })}
@@ -388,11 +521,48 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                 )}
             </div>
 
+            {!embedded ? (
+                <input
+                    ref={importRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) void handleImportFile(file);
+                    }}
+                />
+            ) : null}
+
             <InspirationDetailModal
                 item={detail}
+                favorite={!embedded && detail ? favorites.includes(catalogIdOf(detail)) : false}
+                categoryLabel={embedded ? undefined : categoryLabel}
                 onClose={() => setDetail(null)}
                 onUse={handleUse}
                 onCopy={handleCopy}
+                onToggleFavorite={embedded ? undefined : (item) => toggleFavorite(catalogIdOf(item))}
+                onEdit={
+                    embedded
+                        ? undefined
+                        : (item) => {
+                              setDetail(null);
+                              setEditing(item);
+                              setEditorOpen(true);
+                          }
+                }
+                onDelete={embedded ? undefined : handleDelete}
+            />
+            <InspirationEditorModal
+                open={editorOpen}
+                item={editing}
+                categoryOptions={categoryChoices}
+                onClose={() => {
+                    setEditorOpen(false);
+                    setEditing(null);
+                }}
+                onSubmit={handleSubmit}
             />
         </section>
     );
@@ -400,15 +570,30 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
 
 export function InspirationCard({
     item,
+    favorite = false,
+    hidden = false,
     onOpen,
+    onToggleFavorite,
+    onRestore,
+    onEdit,
+    onDelete,
 }: {
     item: CreationInspiration;
+    favorite?: boolean;
+    hidden?: boolean;
     onOpen: () => void;
+    onToggleFavorite?: () => void;
+    onRestore?: () => void;
+    onEdit?: () => void;
+    onDelete?: () => void;
 }) {
     const [previewProgress, setPreviewProgress] = useState<number | null>(null);
     const [coverRatio, setCoverRatio] = useState(4 / 3);
+    const [menuOpen, setMenuOpen] = useState(false);
     const cardRef = useRef<HTMLElement>(null);
     const coverRef = useRef<HTMLSpanElement>(null);
+    const managed = Boolean(onToggleFavorite || onRestore || onEdit || onDelete);
+    const favoriteLabel = favorite ? "取消收藏" : "收藏";
     useEffect(() => {
         const card = cardRef.current;
         const content = card?.firstElementChild;
@@ -460,6 +645,47 @@ export function InspirationCard({
                     </span>
                 </span>
             </button>
+            {managed ? (
+                <div className={`inspiration-card-actions${favorite || menuOpen ? " is-visible" : ""}`}>
+                    {onToggleFavorite ? (
+                        <Tooltip title={favoriteLabel}>
+                            <button type="button" data-icon-only className="inspiration-card-action" aria-label={`${favoriteLabel}：${item.title}`} aria-pressed={favorite} onClick={onToggleFavorite}>
+                                <span aria-hidden="true">
+                                    <Heart className="size-3.5" fill={favorite ? "currentColor" : "none"} />
+                                </span>
+                            </button>
+                        </Tooltip>
+                    ) : null}
+                    {hidden && onRestore ? (
+                        <Tooltip title="恢复显示">
+                            <button type="button" data-icon-only className="inspiration-card-action" aria-label={`恢复显示：${item.title}`} onClick={onRestore}>
+                                <span aria-hidden="true">
+                                    <RotateCcw className="size-3.5" />
+                                </span>
+                            </button>
+                        </Tooltip>
+                    ) : onEdit || onDelete ? (
+                        <Dropdown
+                            trigger={["click"]}
+                            placement="bottomRight"
+                            open={menuOpen}
+                            onOpenChange={setMenuOpen}
+                            menu={{
+                                items: [
+                                    ...(onEdit ? [{ key: "edit", icon: <Pencil className="size-3.5" />, label: "编辑", onClick: onEdit }] : []),
+                                    ...(onDelete ? [{ key: "delete", icon: <Trash2 className="size-3.5" />, label: isCustomInspiration(catalogIdOf(item)) ? "删除" : "隐藏", danger: true, onClick: onDelete }] : []),
+                                ],
+                            }}
+                        >
+                            <button type="button" data-icon-only className="inspiration-card-action" aria-label={`更多灵感操作：${item.title}`} aria-haspopup="menu" aria-expanded={menuOpen}>
+                                <span aria-hidden="true">
+                                    <MoreHorizontal className="size-3.5" />
+                                </span>
+                            </button>
+                        </Dropdown>
+                    ) : null}
+                </div>
+            ) : null}
         </article>
     );
 }

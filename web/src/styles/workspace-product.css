@@ -732,12 +732,6 @@
     to { opacity: 1; transform: translateX(0); }
 }
 
-.creation-floating-prompt { position: absolute; z-index: 40; top: var(--space-3); left: 50%; display: flex; width: min(720px, calc(100% - var(--space-8))); min-height: var(--space-12); align-items: center; gap: var(--space-3); border: var(--stroke-1) solid var(--user-border); border-radius: var(--r-lg); padding: var(--space-1-half) var(--space-2) var(--space-1-half) var(--space-4); background: var(--user-surface-raised); color: var(--user-ink); box-shadow: 0 var(--space-1) var(--space-3) color-mix(in srgb, var(--user-ink) 6%, transparent); }
-.creation-floating-prompt:focus-within { border-color: var(--btn-outline-hover-border); }
-.creation-floating-prompt input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--user-ink); font-size: var(--fs-body); }
-.creation-floating-prompt input::placeholder { color: var(--user-ink-soft); }
-.creation-floating-prompt button { display: inline-flex; height: calc(var(--space-8) + var(--space-1)); flex: 0 0 auto; align-items: center; justify-content: center; gap: var(--space-1); padding-inline: var(--space-2); border: 0; border-radius: var(--r-md); background: transparent; color: var(--user-ink-muted); font-size: var(--fs-caption); white-space: nowrap; cursor: pointer; }
-.creation-floating-prompt button:hover { background: var(--user-surface-hover); color: var(--user-ink); }
 .creation-floating-prompt { position: absolute; z-index: 40; top: 14px; left: 50%; display: flex; width: min(860px, calc(100% - 96px)); min-height: 72px; align-items: center; gap: 16px; border: 1px solid var(--user-border); border-radius: 16px; padding: 8px 12px 8px 24px; background: var(--user-surface-raised); color: var(--user-accent); box-shadow: 0 16px 42px color-mix(in srgb, var(--user-ink) 12%, transparent); }
 .creation-floating-prompt > svg { width: 22px; height: 22px; flex: 0 0 22px; }
 .creation-floating-prompt input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--user-ink); font-size: 16px; }
@@ -745,7 +739,7 @@
 .creation-floating-prompt button { display: grid; width: 46px; height: 46px; flex: 0 0 46px; place-items: center; border: 0; border-radius: 16px; background: var(--user-accent-soft); color: var(--user-accent); transition: transform var(--user-motion), background var(--user-motion); }
 .creation-floating-prompt button:hover { background: var(--user-surface-hover);}
 .creation-floating-prompt button:focus-visible { outline: 2px solid var(--user-accent); outline-offset: 2px; }
-.creation-floating-prompt button svg { width: var(--space-4); height: var(--space-4); }
+.creation-floating-prompt button svg { width: 19px; height: 19px; }
 .app-user-workspace .creation-chat-composer.is-thread { display: flex; flex-direction: column; }
 .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-tabs {
     display: grid;
@@ -788,7 +782,6 @@
 .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-brand { width: 100%; }
 .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-model-pane { border: 0; margin: 0; padding: 0; }
 
-@media (max-width: 720px) { .creation-floating-prompt { top: var(--space-2); width: calc(100% - var(--space-6)); } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-two-pane { grid-template-columns: minmax(0, 1fr); min-height: 0; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-brand-rail { display: none; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-tabs { height: 30px; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-button { height: 26px; min-height: 26px; padding: 0 6px; font-size: 10px; } }
 @media (max-width: 720px) { .creation-floating-prompt { top: 8px; width: calc(100% - 24px); min-height: 60px; gap: 8px; padding: 8px 8px 8px 16px; border-radius: 16px; } .creation-floating-prompt input { font-size: 14px; } .creation-floating-prompt button { width: 40px; height: 40px; flex-basis: 40px; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-two-pane { grid-template-columns: minmax(0, 1fr); min-height: 0; } .creation-model-picker-surface .creation-model-picker-menu.is-model-list .canvas-model-picker-brand-rail { display: none; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-tabs { height: 30px; } .app-user-workspace .creation-chat-composer.is-thread .creation-chat-dock .creation-mode-button { height: 26px; min-height: 26px; padding: 0 8px; font-size: 11px; } }
 
 /* Shared controls: one size system and one state vocabulary. */

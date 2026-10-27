@@ -1,12 +1,10 @@
 import { isValidElement, type ReactNode } from "react";
-import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, Sun, Upload, UserRound, Scaling, WandSparkles } from "lucide-react";
-import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, SquareDashed, Sun, Upload, Scaling, WandSparkles } from "lucide-react";
+import { Brush, Camera, Clapperboard, Contrast, Copy, FastForward, FileText, Globe2, Grid2x2, Grid3x3, Layers3, Lock, LockOpen, Maximize2, Package, PencilLine, PersonStanding, Crop, Rewind, ScanFace, SlidersHorizontal, Smile, SquareDashed, Sun, Upload, UserRound, Scaling, WandSparkles } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 import type { NodeToolbarGroup } from "@/lib/canvas/tool-registry";
 
-type ImageNodeActionToolId = "saveAsModel" | "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "maskEdit" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "previs" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
-type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "regionEdit" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "previs" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
+type ImageNodeActionToolId = "saveAsModel" | "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotation" | "annotationEdit" | "textEdit" | "regionEdit" | "removeBackground" | "layerDecomposition" | "emotion" | "portraitTexture" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "lighting" | "panorama" | "view" | "previs" | "multi_camera_nine_grid" | "story_pitch_four_grid" | "character_face_three_view" | "product_three_view" | "storyboard_25_grid" | "character_three_view_generation" | "cinematic_light_correction" | "image_projection_after_3s" | "image_projection_before_5s";
 
 type ImageToolHandlers = {
     onUpload: (node: CanvasNodeData) => void;
@@ -277,34 +275,6 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onCrop(node),
     },
     {
-        id: "saveAsModel",
-        section: "素材",
-        label: "存为模特",
-        description: "把这张图存进模特库，之后同一款商品的每张图都用它锁住同一个人",
-        icon: () => <UserRound className="size-3.5" />,
-        group: "more",
-        order: 46,
-        ecommerceOnly: true,
-        run: (node, handlers) => handlers.onSaveAsModel?.(node),
-    },
-    {
-        id: "replace",
-        label: "替换图片",
-        icon: () => <Upload className="size-3.5" />,
-        group: "more",
-        section: "素材",
-        order: 45,
-        run: (node, handlers) => handlers.onUpload(node),
-    },
-    {
-        id: "resize",
-        label: "锁定宽高比",
-        section: "节点管理",
-        active: (node) => !node.metadata?.freeResize,
-        icon: (node) => (node.metadata?.freeResize ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />),
-        group: "more",
-        order: 70,
-        run: (node, handlers) => handlers.onToggleFreeResize(node),
         id: "upscale",
         label: "调整尺寸",
         section: "构图与尺寸",
@@ -360,6 +330,17 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         section: "素材",
         order: 45,
         run: (node, handlers) => handlers.onUpload(node),
+    },
+    {
+        id: "saveAsModel",
+        section: "素材",
+        label: "存为模特",
+        description: "把这张图存进模特库，之后同一款商品的每张图都用它锁住同一个人",
+        icon: () => <UserRound className="size-3.5" />,
+        group: "more",
+        order: 46,
+        ecommerceOnly: true,
+        run: (node, handlers) => handlers.onSaveAsModel?.(node),
     },
     {
         id: "copyPrompt",

@@ -518,12 +518,6 @@ export function useCanvasNodeOperations({
         [commitNodes, message, nodesRef],
     );
 
-    const copyNodesToClipboard = useCallback(
-        (targetIds: Set<string>) => {
-            if (!targetIds.size) return;
-            const copyIds = new Set(targetIds);
-            nodesRef.current.forEach((node) => {
-                if (targetIds.has(node.id) && isFrameNode(node)) getFrameChildIds(node.id, nodesRef.current).forEach((childId) => copyIds.add(childId));
     // 版本切换改写节点媒体，与正文编辑一样受锁定和编辑租约约束。
     const canEditMediaVersions = useCallback((node: CanvasNodeData | undefined): node is CanvasNodeData => {
         const block = mediaVersionAdoptBlock(node);

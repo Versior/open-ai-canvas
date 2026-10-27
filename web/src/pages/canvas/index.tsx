@@ -70,12 +70,15 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
         () =>
             userId
                 ? libraryQuery.data?.pages.flatMap((page) => page.projects) || []
-                : localProjects.filter((project) => (project.kind === "ecommerce") === ecommerce).map((project) => ({ ...project, nodeCount: project.nodes.length, previewNodes: project.nodes.slice(0, 4) })),
+                : localProjects
+                      .filter((project) => (project.kind === "ecommerce") === ecommerce)
+                      .map((project) => ({
+                          ...project,
+                          nodeCount: project.nodes.length,
+                          previewNodes: project.nodes.filter((node) => node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video).slice(0, 4),
+                      })),
         [libraryQuery.data, localProjects, userId, ecommerce],
     );
-    const projects = useMemo<CanvasLibrarySummary[]>(() => userId
-        ? libraryQuery.data?.pages.flatMap((page) => page.projects) || []
-        : localProjects.map((project) => ({ ...project, nodeCount: project.nodes.length, previewNodes: project.nodes.filter((node) => node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video).slice(0, 4) })), [libraryQuery.data, localProjects, userId]);
     const totalProjects = userId ? libraryQuery.data?.pages[0]?.total || 0 : projects.length;
     const importProject = useCanvasStore((state) => state.importProject);
     const allSelectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
@@ -515,9 +518,6 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
                 ) : null}
 
                 {userId && libraryQuery.isError ? (
-                    <div role="alert">
-                        画布列表读取失败<Button onClick={() => void libraryQuery.refetch()}>重试</Button>
-                    </div>
                     <WorkspaceErrorState compact title="画布列表读取失败" description={libraryQuery.error instanceof Error ? libraryQuery.error.message : "请检查网络后重试。"} actionLabel="重试" onRetry={() => void libraryQuery.refetch()} />
                 ) : !hydrated || (userId && libraryQuery.isPending) ? (
                     <WorkspaceLoadingState label="正在恢复画布" detail="读取本地缓存与账号同步状态" />
@@ -534,24 +534,26 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
                             />
                         ))}
                     </CollectionGrid>
+                ) : keyword || projectFilter !== "all" ? (
+                    <WorkspaceNoResultsState
+                        icon="canvas"
+                        query={keyword}
+                        onClear={() => {
+                            setKeyword("");
+                            setProjectFilter("all");
+                        }}
+                    />
                 ) : (
                     <WorkspaceState
                         icon="canvas"
-                        title={keyword || projectFilter !== "all" ? "没有匹配的画布" : ecommerce ? "创建第一张电商画布" : "让第一个想法落在画布上"}
-                        description={keyword || projectFilter !== "all" ? "换一个画布名称或重置筛选条件。" : ecommerce ? "从商品实拍开始，规划画面并制作套图。" : "图片、分镜和灵感，都可以在这里自由组织。"}
+                        title={ecommerce ? "创建第一张电商画布" : "让第一个想法落在画布上"}
+                        description={ecommerce ? "从商品实拍开始，规划画面并制作套图。" : "图片、分镜和灵感，都可以在这里自由组织。"}
                         action={
-                            !keyword && projectFilter === "all" ? (
-                                <Button icon={<Plus />} disabled={!hydrated || creating} onClick={() => void createAndEnter()}>
-                                    {ecommerce ? "新建电商画布" : "新建画布"}
-                                </Button>
-                            ) : undefined
+                            <Button type="primary" icon={<Plus />} disabled={!hydrated || creating} title={hydrated ? undefined : "正在恢复本地画布，完成后可新建"} onClick={() => void createAndEnter()}>
+                                {ecommerce ? "新建电商画布" : "新建画布"}
+                            </Button>
                         }
                     />
-                    keyword || projectFilter !== "all" ? (
-                        <WorkspaceNoResultsState icon="canvas" query={keyword} onClear={() => { setKeyword(""); setProjectFilter("all"); }} />
-                    ) : (
-                        <WorkspaceState icon="canvas" title="让第一个想法落在画布上" description="图片、分镜和灵感，都可以在这里自由组织。" action={<Button type="primary" icon={<Plus />} disabled={!hydrated} title={hydrated ? undefined : "正在恢复本地画布，完成后可新建"} onClick={createAndEnter}>新建画布</Button>} />
-                    )
                 )}
                 {/* 无限滚动哨兵：只在加载中显示安静的 spinner、失败时给重试；全部加载后不再输出总数文案。 */}
                 {hydrated && visibleProjects.length && (hasMore || libraryQuery.isFetchNextPageError) ? (

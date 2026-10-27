@@ -33,6 +33,13 @@ const resourceThumbnailChecksum = "sha256:resource-thumbnail-v41-20260927"
 const workbenchToolsMigrationName = "workbench_tools_and_presets"
 const workbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v54-20261014"
 const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v51-20261014"
+const ecommercePrivateLibraryMigrationName = "ecommerce_private_library"
+const ecommercePrivateLibraryMigrationChecksum = "sha256:ecommerce-private-library-v58"
+const restoreEcommerceCanvasKindMigrationName = "restore_ecommerce_canvas_kind"
+const restoreEcommerceCanvasKindMigrationChecksum = "sha256:restore-ecommerce-canvas-kind-v59"
+const referralCenterMigrationName = "referral_center"
+const upstreamReferralCenterMigrationChecksum = "sha256:referral-center-v72-20261027"
+const referralCenterMigrationChecksum = "sha256:referral-center-v74-20261027"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -257,9 +264,9 @@ var schemaMigrations = []migration{
 	}},
 	{version: 71, name: "drama_segment_mode", checksum: "sha256:drama-segment-mode-v71-20261026", apply: migrateDramaSegmentMode},
 	// 电商二开先占用 72/73，上游推广中心顺延到 74；checksum 里的 v58/v59 是历史命名，不要改。
-	{version: 72, name: "ecommerce_private_library", checksum: "sha256:ecommerce-private-library-v58", apply: func(tx *gorm.DB) error { return tx.AutoMigrate(&model.EcommerceLibrary{}) }},
-	{version: 73, name: "restore_ecommerce_canvas_kind", checksum: "sha256:restore-ecommerce-canvas-kind-v59", apply: migrateEcommerceCanvasKind},
-	{version: 74, name: "referral_center", checksum: "sha256:referral-center-v74-20261027", apply: migrateReferralCenter},
+	{version: 72, name: ecommercePrivateLibraryMigrationName, checksum: ecommercePrivateLibraryMigrationChecksum, apply: func(tx *gorm.DB) error { return tx.AutoMigrate(&model.EcommerceLibrary{}) }},
+	{version: 73, name: restoreEcommerceCanvasKindMigrationName, checksum: restoreEcommerceCanvasKindMigrationChecksum, apply: migrateEcommerceCanvasKind},
+	{version: 74, name: referralCenterMigrationName, checksum: referralCenterMigrationChecksum, apply: migrateReferralCenter},
 }
 
 // migrateReferralCenter 增加推广人标记和推广码、绑定、返佣三张表；旧用户默认不是推广人。
@@ -687,6 +694,99 @@ func normalizeLegacyWorkbenchMigration(tx *gorm.DB) error {
 
 const workbenchToolsMigrationVersion int64 = 54
 
+func normalizeLegacyEcommerceMigrations(tx *gorm.DB) error {
+	relocations := []struct {
+		from, to       int64
+		name, checksum string
+	}{
+		{58, 72, ecommercePrivateLibraryMigrationName, ecommercePrivateLibraryMigrationChecksum},
+		{59, 73, restoreEcommerceCanvasKindMigrationName, restoreEcommerceCanvasKindMigrationChecksum},
+	}
+
+	var first schemaMigration
+	if err := tx.First(&first, "version = ?", relocations[0].from).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("读取旧电商迁移记录：%w", err)
+	}
+	if first.Name != relocations[0].name || first.Checksum != relocations[0].checksum {
+		return nil
+	}
+
+	for _, item := range relocations {
+		var applied schemaMigration
+		if err := tx.First(&applied, "version = ?", item.from).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return fmt.Errorf("旧电商迁移账本缺少记录 %d（%s）", item.from, item.name)
+			}
+			return fmt.Errorf("读取旧电商迁移记录 %d：%w", item.from, err)
+		}
+		if err := validateMigrationRecord(applied, migration{version: item.from, name: item.name, checksum: item.checksum}); err != nil {
+			return err
+		}
+	}
+	var later schemaMigration
+	if err := tx.Where("version > ?", relocations[len(relocations)-1].from).Order("version asc").First(&later).Error; err == nil {
+		return fmt.Errorf("数据库使用旧电商迁移账本，但已存在后续迁移记录 %d；拒绝自动改写迁移账本", later.Version)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("读取旧电商迁移后的记录：%w", err)
+	}
+	if !tx.Migrator().HasTable(&model.EcommerceLibrary{}) || !tx.Migrator().HasTable(&model.CanvasProject{}) {
+		return fmt.Errorf("数据库记录了旧电商迁移，但电商素材库或画布表不存在；请从备份恢复后再升级")
+	}
+
+	for _, item := range relocations {
+		result := tx.Model(&schemaMigration{}).
+			Where("version = ? AND name = ? AND checksum = ?", item.from, item.name, item.checksum).
+			Update("version", item.to)
+		if result.Error != nil {
+			return fmt.Errorf("迁移旧电商账本记录 %d 到 %d：%w", item.from, item.to, result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("迁移旧电商账本记录 %d 到 %d 影响 %d 行，拒绝继续启动", item.from, item.to, result.RowsAffected)
+		}
+	}
+	return nil
+}
+
+func normalizeUpstreamReferralMigration(tx *gorm.DB) error {
+	var applied schemaMigration
+	if err := tx.First(&applied, "version = ?", 72).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("读取上游推广中心迁移记录：%w", err)
+	}
+	if applied.Name != referralCenterMigrationName {
+		return nil
+	}
+	if err := validateMigrationRecord(applied, migration{version: 72, name: referralCenterMigrationName, checksum: upstreamReferralCenterMigrationChecksum}); err != nil {
+		return err
+	}
+	var target schemaMigration
+	if err := tx.First(&target, "version = ?", 74).Error; err == nil {
+		return fmt.Errorf("迁移上游推广中心账本前发现版本 74 已被占用")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("检查推广中心迁移目标版本：%w", err)
+	}
+	for _, table := range []any{&model.ReferralProfile{}, &model.ReferralBinding{}, &model.ReferralCommission{}} {
+		if !tx.Migrator().HasTable(table) {
+			return fmt.Errorf("数据库记录了上游推广中心迁移，但推广中心表不完整；请从备份恢复后再升级")
+		}
+	}
+	result := tx.Model(&schemaMigration{}).
+		Where("version = ? AND name = ? AND checksum = ?", 72, referralCenterMigrationName, upstreamReferralCenterMigrationChecksum).
+		Updates(map[string]any{"version": 74, "checksum": referralCenterMigrationChecksum})
+	if result.Error != nil {
+		return fmt.Errorf("迁移上游推广中心账本记录到版本 74：%w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("迁移上游推广中心账本记录到版本 74 影响 %d 行，拒绝继续启动", result.RowsAffected)
+	}
+	return nil
+}
+
 func migrateSchemaV56(tx *gorm.DB) error {
 	if err := tx.AutoMigrate(&model.ApiCallLog{}, &model.Task{}, &model.CreditLedgerEntry{}); err != nil {
 		return fmt.Errorf("迁移 SQL 性能索引：%w", err)
@@ -713,6 +813,12 @@ func MigrateSchema(db *gorm.DB) error {
 			return fmt.Errorf("初始化数据库迁移记录：%w", err)
 		}
 		if err := normalizeLegacyWorkbenchMigration(tx); err != nil {
+			return err
+		}
+		if err := normalizeLegacyEcommerceMigrations(tx); err != nil {
+			return err
+		}
+		if err := normalizeUpstreamReferralMigration(tx); err != nil {
 			return err
 		}
 		plan, err := migrationsForDatabase(tx)
@@ -909,9 +1015,8 @@ func migrateDramaSegmentRevision(tx *gorm.DB) error {
 	return tx.Model(&model.DramaJob{}).Where("status IN ?", []string{"queued", "running"}).Updates(map[string]any{"status": "canceled", "error": "任务合同升级，原任务保留，需人工核对", "finished_at": time.Now()}).Error
 }
 
-
 func migrateEcommerceCanvasKind(tx *gorm.DB) error {
-	// ?????????????????????????????
+	// 仅修复旧同步协议遗漏的分类；明确分类不改，标题不作为判据。
 	types := []string{"product", "ecommerce-studio", "shot-recipe", "selling-point", "ecommerce-copy", "ecommerce-style", "ecommerce-layout", "ecommerce-infographic", "ecommerce-replica", "ecommerce-teardown", "ecommerce-delivery", "ecommerce-revision", "ecommerce-video", "ecommerce-aplus"}
 	if tx.Dialector.Name() == "postgres" {
 		return tx.Exec(`UPDATE canvas_projects SET payload_json = jsonb_set(payload_json::jsonb, '{kind}', '"ecommerce"'::jsonb)::text, revision = COALESCE(revision, 0) + 1

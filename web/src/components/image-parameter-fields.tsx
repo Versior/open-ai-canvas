@@ -262,9 +262,6 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                     <div className="space-y-1.5 text-xs">
                                         <label className="block space-y-1.5">
                                             <span>支持值（可自定义，留空允许自由输入）</span>
-                                    <div className="space-y-2 text-xs">
-                                        <label className="block space-y-2">
-                                            <span>支持值{!definition.values?.length ? "（留空允许自由输入）" : ""}</span>
                                             <Select
                                                 className="w-full"
                                                 ariaLabel={`${field.label}支持值`}
@@ -336,7 +333,6 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                     </label>
                                 ) : null}
                                 <div className="space-y-1.5 text-xs">
-                                <div className="space-y-2 text-xs">
                                     <span>默认值</span>
                                     <ImageParameterInput field={field} value={field.default} disabled={disabled} onChange={(value) => update(field.name, { default: value })} />
                                 </div>

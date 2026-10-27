@@ -164,7 +164,6 @@ export function CanvasLeaferGraphicsLayer(props: CanvasLeaferGraphicsLayerProps)
         const overlay = overlayRef.current;
         if (!overlay) return;
         syncOverlayContent(overlay, props, viewportRef.current.k);
-    }, [props.batchConnectionPreview, props.connectingParams, props.connectionTargetAnchorRatio, props.connectionTargetNodeId, props.connectionTargetHandleId, props.mouseWorld, props.nodeById, props.scriptScrollTopById, props.batchScrollById, props.connectionTargetAnchorXRatio, props.selectedNodeBounds, props.selectionBox, props.theme]);
     }, [props.selectedNodeBounds, props.selectionBox, props.theme]);
 
     useLayoutEffect(() => {
@@ -344,51 +343,6 @@ function syncOverlayContent(scene: OverlayScene, props: CanvasLeaferGraphicsLaye
         syncSelectionBounds(scene.selectionBounds, liveSelectedNodeBounds(bounds, scene.dragPreview), viewportScale);
         scene.selectionBounds.stroke = props.theme.node.label;
     }
-
-    const connecting = props.connectingParams;
-    scene.draft.visible = Boolean(connecting);
-    if (connecting) {
-        scene.draft.set({
-            path: activeConnectionPath(
-                props.nodeById.get(connecting.nodeId),
-                connecting,
-                props.mouseWorld,
-                props.connectionTargetNodeId ? props.nodeById.get(props.connectionTargetNodeId) : undefined,
-                props.scriptScrollTopById[connecting.nodeId] || 0,
-                props.connectionTargetHandleId,
-                props.batchScrollById?.[connecting.nodeId],
-                props.connectionTargetNodeId ? props.batchScrollById?.[props.connectionTargetNodeId] : undefined,
-                props.connectionTargetNodeId ? props.scriptScrollTopById[props.connectionTargetNodeId] || 0 : 0,
-                props.connectionTargetAnchorRatio,
-                props.connectionTargetAnchorXRatio,
-            ),
-            stroke: props.theme.accent.primary,
-            strokeCap: "round",
-            opacity: 0.72,
-        });
-    }
-
-    scene.batchDrafts.removeAll(true);
-    const batch = props.batchConnectionPreview;
-    scene.batchDrafts.visible = Boolean(batch);
-    if (!batch) return;
-    const target = batch.targetNodeId ? props.nodeById.get(batch.targetNodeId) : undefined;
-    const stroke = batch.status === "invalid" ? props.theme.accent.danger : batch.status === "partial" ? props.theme.node.activeStroke : props.theme.accent.primary;
-    batch.sourceNodeIds.forEach((sourceNodeId) => {
-        const source = props.nodeById.get(sourceNodeId);
-        if (!source) return;
-        const handle: ConnectionHandle = { nodeId: source.id, handleType: "source" };
-        scene.batchDrafts.add(new Path({
-            path: activeConnectionPath(source, handle, batch.mouseWorld, target, props.scriptScrollTopById[source.id] || 0, batch.targetHandleId, props.batchScrollById?.[source.id], target ? props.batchScrollById?.[target.id] : undefined, target ? props.scriptScrollTopById[target.id] || 0 : 0),
-            stroke,
-            strokeWidth: 1.4,
-            strokeScaleFixed: true,
-            strokeCap: "round",
-            dashPattern: [8, 8],
-            opacity: 0.72,
-            hittable: false,
-        }));
-    });
 }
 
 function syncSelection(rect: Rect, selection: SelectionBox, theme: CanvasTheme) {

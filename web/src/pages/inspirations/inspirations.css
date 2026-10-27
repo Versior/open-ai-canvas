@@ -127,6 +127,7 @@
 .inspiration-hall-modes button:focus-visible {
     outline: var(--stroke-2) solid var(--control-focus-ring);
     outline-offset: var(--space-half);
+}
 .inspiration-mode-count {
     color: var(--user-ink-soft);
     font-size: var(--fs-caption);
@@ -306,6 +307,62 @@
 .inspiration-card:hover .inspiration-card-cover img {
     transform: scale(1.025);
 }
+
+.inspiration-card-actions {
+    position: absolute;
+    z-index: 2;
+    top: var(--space-4);
+    right: var(--space-4);
+    display: flex;
+    gap: var(--space-1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--user-motion);
+}
+
+.inspiration-card-actions.is-visible,
+.inspiration-card:hover .inspiration-card-actions,
+.inspiration-card:focus-within .inspiration-card-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.inspiration-card-action {
+    display: grid;
+    place-items: center;
+    width: var(--space-8);
+    height: var(--space-8);
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--user-surface-raised);
+    color: var(--user-ink);
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+        background-color var(--user-motion),
+        color var(--user-motion);
+}
+
+.inspiration-card-action > span {
+    display: inline-flex;
+}
+
+.inspiration-card-action:hover,
+.inspiration-card-action[aria-expanded="true"] {
+    background: var(--user-surface-hover);
+}
+
+.inspiration-card-action[aria-pressed="true"] {
+    color: var(--control-selected-fg);
+    background: var(--control-selected-bg);
+}
+
+.inspiration-card-action:focus-visible {
+    outline: var(--stroke-2) solid var(--control-focus-ring);
+    outline-offset: var(--space-half);
+}
+
 .inspiration-card-cover video[data-canvas-hover-preview] {
     position: absolute;
     inset: 0;
@@ -625,6 +682,18 @@
     }
     .inspiration-hall-filters {
         grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .inspiration-card-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .inspiration-card-action,
+    .inspiration-icon-button {
+        width: var(--space-10);
+        height: var(--space-10);
     }
 }
 

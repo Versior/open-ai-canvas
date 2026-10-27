@@ -117,7 +117,7 @@ func TestCloudAgentBatchTableToolsAreScopedAndStructured(t *testing.T) {
 	if properties["globalPrompt"] == nil {
 		t.Fatal("batch table edit schema missing globalPrompt")
 	}
-	operationEnum, _ := properties["operation"].(map[string]any)["enum"].([]string)
+	operationEnum, _ := properties["operation"].(map[string]any)["enum"].([]any)
 	foundProduct := false
 	for _, operation := range operationEnum {
 		if operation == "product" {
@@ -128,7 +128,6 @@ func TestCloudAgentBatchTableToolsAreScopedAndStructured(t *testing.T) {
 	if !foundProduct {
 		t.Fatalf("batch table edit schema missing the product operation: %+v", operationEnum)
 	}
-	actionEnum, _ := properties["action"].(map[string]any)["enum"].([]string)
 	actionEnum, _ := properties["action"].(map[string]any)["enum"].([]any)
 	foundGlobalPrompt := false
 	for _, action := range actionEnum {

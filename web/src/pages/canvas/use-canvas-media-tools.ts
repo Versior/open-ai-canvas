@@ -75,17 +75,10 @@ import { resolveImageRequestSize } from "@/services/api/image-validation";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
 import type { GenerationTask } from "@/services/api/task-center";
 
-function normalizeMaskEditQuality(quality: string | undefined, size: string | undefined) {
-    const value = String(quality || "")
-        .trim()
-        .toLowerCase();
 function normalizeRegionEditQuality(quality: string | undefined, size: string | undefined) {
     const value = String(quality || "").trim().toLowerCase();
     if (value && value !== "auto" && value !== "any") return value;
-    const match = String(size || "")
-        .trim()
-        .toLowerCase()
-        .match(/^(\d+)x(\d+)$/);
+    const match = String(size || "").trim().toLowerCase().match(/^(\d+)x(\d+)$/);
     if (!match) return quality || "auto";
     const pixels = Number(match[1]) * Number(match[2]);
     return pixels <= 2_000_000 ? "1k" : pixels <= 4_300_000 ? "2k" : pixels <= 8_294_400 ? "4k" : quality || "auto";
@@ -473,7 +466,15 @@ export function useCanvasMediaTools({
                 try {
                     const result = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node: audioNode, source: "canvas-manual" });
                     setNodes((current) => current.map((item) => (item.id === audioNodeId ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item)));
-                    progress.done(result.linkedToProject ? "声音已提取并加入素材库与项目资产" : "声音已提取并加入素材库");
+                    progress.done(
+                        result.syncPending
+                            ? domainProjectId
+                                ? "声音已保存到本地，云端项目资产正在自动同步"
+                                : "声音已保存到本地，云端素材正在自动同步"
+                            : result.linkedToProject
+                              ? "声音已提取并加入素材库与项目资产"
+                              : "声音已提取并加入素材库",
+                    );
                 } catch (assetError) {
                     progress.done(`声音已提取并生成音频节点，素材库写入失败：${assetError instanceof Error ? assetError.message : "未知错误"}`);
                 }
@@ -481,19 +482,6 @@ export function useCanvasMediaTools({
                 const details = error instanceof Error ? error.message : "音频提取失败";
                 progress.fail(details);
                 message.error(details);
-                const result = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node: audioNode, source: "canvas-manual" });
-                setNodes((current) => current.map((item) => (item.id === audioNodeId ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item)));
-                progress.done(
-                    result.syncPending
-                        ? domainProjectId
-                            ? "声音已保存到本地，云端项目资产正在自动同步"
-                            : "声音已保存到本地，云端素材正在自动同步"
-                        : result.linkedToProject
-                          ? "声音已提取并加入素材库与项目资产"
-                          : "声音已提取并加入素材库",
-                );
-            } catch (assetError) {
-                progress.done(`声音已提取并生成音频节点，素材库写入失败：${assetError instanceof Error ? assetError.message : "未知错误"}`);
             }
         },
         [domainProjectId, message, projectId, setConnections, setSelectedConnectionId, setSelectedNodeIds, setNodes, startUploadStatus],
@@ -954,33 +942,6 @@ export function useCanvasMediaTools({
         [message, persistMediaNodes, setConnections, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );
 
-    const maskEditImageNode = useCallback(
-        async (node: CanvasNodeData, payload: CanvasImageMaskEditPayload) => {
-            if (!node.metadata?.content) return;
-            const baseGenerationConfig = buildGenerationConfig(effectiveConfig, node, "image");
-            const selectedModel = payload.generationConfig?.imageModel || payload.generationConfig?.model || baseGenerationConfig.model;
-            const modelDefaults = defaultImageParamsForModel(baseGenerationConfig, selectedModel);
-            const selectedImageProfile = modelCapabilityConfigFor(baseGenerationConfig, selectedModel).image;
-            if (!selectedImageProfile?.references.maskSupported) {
-                message.error("当前图片模型不支持局部重绘蒙版，请选择支持蒙版编辑的模型");
-                return;
-            }
-            const generationConfig = {
-                ...baseGenerationConfig,
-                ...payload.generationConfig,
-                model: selectedModel,
-                imageModel: selectedModel,
-                quality: normalizeMaskEditQuality(
-                    payload.generationConfig?.quality || node.metadata?.quality || baseGenerationConfig.quality || modelDefaults.quality,
-                    payload.generationConfig?.size || node.metadata?.size || baseGenerationConfig.size || modelDefaults.size,
-                ),
-                count: String(payload.generationConfig?.count || 1),
-                // 原图像素尺寸不是模型的输出尺寸合同；非高级设置时使用模型默认尺寸，避免把节点尺寸误发给上游。
-                size: payload.generationConfig?.size || node.metadata?.size || modelDefaults.size,
-            };
-            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
-                navigateToSettings({ continueCreation: true });
-                return;
     const regionEditImageNode = useCallback(async (node: CanvasNodeData, payload: CanvasImageRegionEditPayload) => {
         if (!node.metadata?.content) return;
         const baseGenerationConfig = buildGenerationConfig(effectiveConfig, node, "image");
@@ -1129,154 +1090,15 @@ export function useCanvasMediaTools({
             } else if (representativeError && targets.length) {
                 message.warning(representativeError);
             }
-            const userPrompt = payload.prompt.trim();
-            const prompt = `只修改蒙版透明区域，其他区域保持不变。${userPrompt}`;
-            const source = nodeReferenceImage(node);
-            if (!source) return;
-            const styleExecution = resolveImageEditStyle(node, prompt, generationConfig);
-            if (!styleExecution) return;
-            const { prompt: effectivePrompt, metadata: styleMetadata } = styleExecution;
-            const requestedCount = Math.max(1, Number(generationConfig.count) || 1);
-            const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, requestedCount, [source]);
-            setMaskEditNodeId(null);
-            const rootId = nanoid();
-            const childIds = requestedCount > 1 ? Array.from({ length: requestedCount }, () => nanoid()) : [];
-            const targetIds = requestedCount > 1 ? childIds : [rootId];
-            const imageSize = { width: node.width, height: node.height };
-            const preferredPosition = { x: node.position.x + node.width + 96, y: node.position.y };
-            const rootPosition = findAvailableGenerationGroupPosition(nodesRef.current, preferredPosition, imageGenerationGroupSize(imageSize, imageSize, childIds.length));
-            const rootNode: CanvasNodeData = {
-                id: rootId,
-                type: CanvasNodeType.Image,
-                title: userPrompt.slice(0, 32) || "局部编辑结果",
-                position: rootPosition,
-                width: node.width,
-                height: node.height,
-                metadata: {
-                    ...canvasGenerationPromptMetadata(userPrompt, effectivePrompt),
-                    status: NODE_STATUS_LOADING,
-                    isBatchRoot: requestedCount > 1,
-                    batchChildIds: requestedCount > 1 ? childIds : undefined,
-                    batchFailedCount: requestedCount > 1 ? 0 : undefined,
-                    imageBatchExpanded: requestedCount > 1 ? true : undefined,
-                    ...generationMetadata,
-                    ...styleMetadata,
-                },
-            };
-            const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
-                id,
-                type: CanvasNodeType.Image,
-                title: `${userPrompt.slice(0, 28) || "局部编辑结果"} · ${index + 1}`,
-                position: imageGenerationChildPosition(rootNode.position, rootNode.width, imageSize, index),
-                width: node.width,
-                height: node.height,
-                metadata: {
-                    ...canvasGenerationPromptMetadata(userPrompt, effectivePrompt),
-                    status: NODE_STATUS_LOADING,
-                    batchRootId: rootId,
-                    ...generationMetadata,
-                    ...styleMetadata,
-                },
+            setNodes((current) => current.map((item) => {
+                if (item.id !== rootId || requestedCount <= 1) return item;
+                return reconcileImageBatchRoot(item, current);
             }));
-            setRunningNodeId(rootId);
-            setNodes((current) => [...current, rootNode, ...childNodes]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: rootId }, ...childIds.map((childId) => ({ id: nanoid(), fromNodeId: rootId, toNodeId: childId }))]);
-            setSelectedNodeIds(new Set([rootId, ...childIds]));
-            setSelectedConnectionId(null);
-            setDialogNodeId(rootId);
-            const controller = startGenerationRequest(rootId, node.id, rootId);
-            targetIds.forEach((targetId) => startGenerationRequest(targetId, node.id, rootId, controller));
-            const taskIds = new Map<string, string>();
-            let representativeError: string | undefined;
-            try {
-                await Promise.all(
-                    targetIds.map(async (targetId) => {
-                        try {
-                            await runCanvasGenerationTaskToConsumer(
-                                {
-                                    projectId,
-                                    nodeId: targetId,
-                                    mode: "image",
-                                    prompt: effectivePrompt,
-                                    config: { ...generationConfig, count: "1" },
-                                    referenceImages: [source],
-                                    mask: { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl },
-                                    signal: controller.signal,
-                                    metadata: { sourceNodeId: node.id, edit: "mask", ...styleMetadata },
-                                },
-                                {
-                                    bindTask: (task) => {
-                                        taskIds.set(targetId, task.id);
-                                        bindGenerationTask(targetId, task);
-                                    },
-                                    consumeTask: (task) => applyGenerationTaskResult(targetId, task),
-                                },
-                            );
-                        } catch (error) {
-                            if (controller.signal.aborted || isGenerationCanceled(error)) return;
-                            const details = generationErrorMessage(error);
-                            representativeError = details;
-                            if (!isCanvasGenerationDurableAckError(error)) {
-                                setNodes((current) => current.map((item) => (item.id === targetId && item.metadata?.taskId === taskIds.get(targetId) ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : item)));
-                            }
-                        } finally {
-                            finishGenerationRequest(targetId, controller);
-                        }
-                    }),
-                );
-                if (controller.signal.aborted) {
-                    setNodes((current) => {
-                        const cancelled = cancelIncompleteImageBatch(rootId, childIds, current, []);
-                        if (cancelled.removedIds.length) {
-                            const removed = new Set(cancelled.removedIds);
-                            setConnections((connections) => connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)));
-                        }
-                        return cancelled.nodes.map((item) => {
-                            if (item.id !== rootId) return item;
-                            if (item.metadata?.content) return item;
-                            return { ...item, metadata: { ...item.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } };
-                        });
-                    });
-                    return;
-                }
-                const targets = nodesRef.current.filter((item) => targetIds.includes(item.id) && item.metadata?.taskId === taskIds.get(item.id) && (requestedCount === 1 || item.metadata?.batchRootId === rootId));
-                const hasSuccess = targets.some((item) => item.metadata?.status === NODE_STATUS_SUCCESS && item.metadata.assetId);
-                const failureCount = targets.filter((item) => item.metadata?.status === NODE_STATUS_ERROR).length;
-                if (failureCount > 0) {
-                    message.error(hasSuccess ? "部分局部编辑失败" : representativeError || "局部编辑失败");
-                } else if (representativeError && targets.length) {
-                    message.warning(representativeError);
-                }
-                setNodes((current) =>
-                    current.map((item) => {
-                        if (item.id !== rootId || requestedCount <= 1) return item;
-                        return reconcileImageBatchRoot(item, current);
-                    }),
-                );
-            } finally {
-                if (requestedCount > 1) finishGenerationRequest(rootId, controller);
-                setRunningNodeId(null);
-            }
-        },
-        [
-            applyGenerationTaskResult,
-            bindGenerationTask,
-            effectiveConfig,
-            finishGenerationRequest,
-            isAiConfigReady,
-            message,
-            nodesRef,
-            projectId,
-            resolveImageEditStyle,
-            setConnections,
-            setDialogNodeId,
-            setNodes,
-            setRunningNodeId,
-            setSelectedConnectionId,
-            setSelectedNodeIds,
-            startGenerationRequest,
-        ],
-    );
+        } finally {
+            if (requestedCount > 1) finishGenerationRequest(rootId, controller);
+            setRunningNodeId(null);
+        }
+    }, [applyGenerationTaskResult, bindGenerationTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, nodesRef, projectId, resolveImageEditStyle, setConnections, setDialogNodeId, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest]);
 
     const editImageNode = useCallback(
         async (node: CanvasNodeData, payload: CanvasImageEditPayload) => {

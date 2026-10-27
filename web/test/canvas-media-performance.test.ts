@@ -58,7 +58,7 @@ describe("large canvas media rendering", () => {
     });
 
     test("decodes canvas images synchronously so zoom re-rasterization never paints blank frames", () => {
-        const retainedImageSource = canvasNodeContentSource.match(/export function RetainedCanvasImage[\s\S]*?\n}\n/)?.[0] || "";
+        const retainedImageSource = canvasNodeContentSource.match(/export function RetainedCanvasImage[\s\S]*?\r?\n}\r?\n/)?.[0] || "";
         expect(retainedImageSource).toContain('decoding="sync"');
         expect(retainedImageSource).not.toContain('decoding="async"');
     });

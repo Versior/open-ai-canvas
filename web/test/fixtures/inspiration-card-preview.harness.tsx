@@ -100,6 +100,21 @@ test("real cards show only media with an overlaid title and load only after hove
     expect(cover.hasAttribute("data-hover-preview-state")).toBe(false);
 });
 
+test("managed hidden cards expose a working restore action", async () => {
+    let restored = false;
+    await act(async () => {
+        root.render(
+            <div className="inspiration-gallery">
+                <InspirationCard item={item} favorite={false} hidden onOpen={noop} onToggleFavorite={noop} onRestore={() => { restored = true; }} onEdit={noop} onDelete={noop} />
+            </div>,
+        );
+    });
+    const restore = host.querySelector(`[aria-label="\u6062\u590d\u663e\u793a\uff1a${item.title}"]`) as HTMLElement | null;
+    expect(restore).not.toBeNull();
+    await act(async () => restore!.click());
+    expect(restored).toBe(true);
+});
+
 test("only one real card previews and error, offscreen, background and unmount release it", async () => {
     const [first, second] = await render([item, { ...item, id: "seedance:second" }]);
     enter(first); await wait();
@@ -362,8 +377,8 @@ test("standalone inspiration switches to canvas works and opens details without 
     await act(async () => root.render(<QueryClientProvider client={client}><MemoryRouter initialEntries={["/inspiration?view=prompt"]}><App><InspirationsPage /></App></MemoryRouter></QueryClientProvider>));
     const buttons = host.querySelectorAll(".inspirations-view-switch button");
     expect(buttons[0].getAttribute("aria-pressed")).toBe("true");
-    expect(host.textContent).not.toContain("新建灵感");
-    expect(host.querySelector('[aria-label="更多灵感管理操作"]')).toBeNull();
+    expect(host.textContent).toContain("新建灵感");
+    expect(host.querySelector('[aria-label="更多灵感管理操作"]')).not.toBeNull();
     expect(host.querySelector("h2#inspiration-hall-title")).toBeNull();
     await act(async () => (buttons[1] as HTMLElement).click());
     for (let attempt = 0; attempt < 30 && !host.querySelector(".library-item"); attempt++) {

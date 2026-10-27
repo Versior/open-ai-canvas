@@ -18939,7 +18939,6 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap { box-shadow: 0 
 .app-user-workspace .creation-featured-card.is-featured-hero .creation-featured-media { flex: 1 1 auto; min-height: 0; aspect-ratio: auto; }
 .app-user-workspace .creation-featured-card.is-featured-hero .creation-featured-media img { position: absolute; inset: 0; }
 .app-user-workspace .creation-featured-card:not(.is-featured-hero) .creation-featured-media { aspect-ratio: 1.55 / 1; }
-.app-user-workspace .creation-featured-card:not(.is-featured-hero) .creation-featured-copy { padding: 12px 14px 14px; }
 .app-user-workspace .creation-featured-layout > .creation-featured-card:nth-child(4) { grid-column: span 2; min-height: clamp(160px, 14vw, 210px); flex-direction: row; }
 .app-user-workspace .creation-featured-layout > .creation-featured-card:nth-child(4) .creation-featured-media { width: 48%; height: 100%; flex: 0 0 48%; aspect-ratio: auto; }
 .app-user-workspace .creation-featured-layout > .creation-featured-card:nth-child(4) .creation-featured-media img { position: absolute; inset: 0; }

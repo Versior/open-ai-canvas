@@ -6,7 +6,6 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { CANVAS_BUILTIN_PRESETS, ECOMMERCE_BUILTIN_PRESETS, type CanvasPromptPreset } from "@/lib/prompts";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
-import { CANVAS_BUILTIN_PRESETS, type CanvasPromptPreset } from "@/lib/prompts";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasGenerationMode } from "@/types/canvas";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
