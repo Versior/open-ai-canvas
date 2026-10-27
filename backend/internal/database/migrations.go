@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 73
+const CurrentSchemaVersion int64 = 74
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -256,9 +256,25 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.ResourceOffloadJob{})
 	}},
 	{version: 71, name: "drama_segment_mode", checksum: "sha256:drama-segment-mode-v71-20261026", apply: migrateDramaSegmentMode},
-	// ????????????????????? 58/59????? 72/73???????????????v58/v59 ?????????
+	// 电商二开先占用 72/73，上游推广中心顺延到 74；checksum 里的 v58/v59 是历史命名，不要改。
 	{version: 72, name: "ecommerce_private_library", checksum: "sha256:ecommerce-private-library-v58", apply: func(tx *gorm.DB) error { return tx.AutoMigrate(&model.EcommerceLibrary{}) }},
 	{version: 73, name: "restore_ecommerce_canvas_kind", checksum: "sha256:restore-ecommerce-canvas-kind-v59", apply: migrateEcommerceCanvasKind},
+	{version: 74, name: "referral_center", checksum: "sha256:referral-center-v74-20261027", apply: migrateReferralCenter},
+}
+
+// migrateReferralCenter 增加推广人标记和推广码、绑定、返佣三张表；旧用户默认不是推广人。
+func migrateReferralCenter(tx *gorm.DB) error {
+	if !tx.Migrator().HasColumn(&model.User{}, "IsPromoter") {
+		if err := tx.Migrator().AddColumn(&model.User{}, "IsPromoter"); err != nil {
+			return err
+		}
+	}
+	if !tx.Migrator().HasIndex(&model.User{}, "IsPromoter") {
+		if err := tx.Migrator().CreateIndex(&model.User{}, "IsPromoter"); err != nil {
+			return err
+		}
+	}
+	return tx.AutoMigrate(&model.ReferralProfile{}, &model.ReferralBinding{}, &model.ReferralCommission{})
 }
 
 // migrateDramaSegmentMode 把旧的剧情段目标秒数改写为新的切段模式：大于 0 的是用户指定的固定时长，0 表示按模型上限，即智能。
