@@ -82,6 +82,46 @@ process.exitCode = 1;
 	}
 }
 
+func TestRunPassesWritableTempDirectory(t *testing.T) {
+	tempRoot := t.TempDir()
+	t.Setenv("TMPDIR", tempRoot)
+	t.Setenv("TEMP", tempRoot)
+	t.Setenv("TMP", tempRoot)
+	fakeRuntime(t, `
+import * as os from "node:os";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
+
+const tempRoot = os.tmpdir();
+let dir = "";
+try {
+  dir = await mkdtemp(join(tempRoot, "agent-runtime-test-"));
+  for (const name of ["TMPDIR", "TEMP", "TMP"]) {
+    if (!process.env[name] || resolve(process.env[name]) !== resolve(tempRoot)) {
+      throw new Error(name + " does not point to os.tmpdir()");
+    }
+  }
+  await rm(dir, { recursive: true });
+  try {
+    await access(dir);
+    throw new Error("temporary directory was not removed");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  dir = "";
+} catch (error) {
+  if (dir) await rm(dir, { recursive: true, force: true });
+  process.stdout.write(JSON.stringify({ event: "runtime_error", message: String(error.message || error) }) + "\n");
+  process.exitCode = 1;
+}
+`)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := Run(ctx, ProcessRequest{Model: map[string]any{"id": "m"}}, noopBridge()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // 子进程只能拿到白名单环境变量，拿不到数据库连接等密钥。
 func TestRunDoesNotLeakBackendEnvironment(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://secret")

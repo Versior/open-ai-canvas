@@ -238,6 +238,20 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 		if input == nil || input.Image == nil {
 			return nil, BadAuthRequest("请配置图片模型能力参数")
 		}
+		// 旧 OpenAI Images 配置要在插件投影写入 Parameters 前补齐换算表。
+		if input.Image.Parameters == nil && strings.TrimSpace(protocol) == string(model.ChannelInterfaceOpenAIImage) {
+			legacyDefaultTier := len(input.Image.Size.Presets) == 0 &&
+				strings.TrimSpace(input.Image.Size.DefaultTier) == "" &&
+				!input.Image.Resolution.Supported
+			if fillMissingImageSizePresets(input.Image, protocol) && legacyDefaultTier {
+				for _, preset := range input.Image.Size.Presets {
+					if preset.Tier == "1k" {
+						input.Image.Size.DefaultTier = "1k"
+						break
+					}
+				}
+			}
+		}
 		if len(registries) > 0 && registries[0] != nil {
 			if adapter, ok := registries[0].Resolve(protocol); ok && adapter.Metadata().ImageParameters != nil {
 				if err := resolveImageCapabilityParameters(input.Image, adapter.Metadata().ImageParameters, modelName); err != nil {
@@ -255,7 +269,6 @@ func NormalizeModelCapabilityConfigForModel(capability string, protocol string, 
 			normalizeLegacyImageResolutionConfig(protocol, input.Image)
 			input.Image.ResolutionUsesQuality = strings.TrimSpace(protocol) == string(model.ChannelInterfaceGeminiImage)
 		}
-		// 旧配置缺换算表时按声明的档位与比例补齐后再校验，保存即把旧线路归一化成当前形态。
 		if input.Image.Parameters == nil {
 			fillMissingImageSizePresets(input.Image, protocol)
 		}

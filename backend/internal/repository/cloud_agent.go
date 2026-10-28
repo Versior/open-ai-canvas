@@ -243,8 +243,13 @@ func (r *Repository) MutateCloudAgent(userID, id string, revision int64, fn func
 		if q.RowsAffected != 1 {
 			return ErrCreationConflict
 		}
-		run, err := New(tx).CloudAgent(userID, id)
+		run := new(model.CloudAgentExecution)
+		err := tx.First(run, "id = ? AND user_id = ?", id, userID).Error
 		if err != nil {
+			return err
+		}
+		scoped := New(tx)
+		if err = scoped.hydrateCloudAgent(run); err != nil {
 			return err
 		}
 		previousEvents := run.EventCount
@@ -256,7 +261,7 @@ func (r *Repository) MutateCloudAgent(userID, id string, revision int64, fn func
 		for _, message := range run.Transcript {
 			previousMessages[fmt.Sprintf("%s:%d", message.Kind, message.Sequence)] = message.MessageJSON
 		}
-		if err = fn(run, New(tx)); err != nil {
+		if err = fn(run, scoped); err != nil {
 			return err
 		}
 		if run.EventCount < previousEvents {

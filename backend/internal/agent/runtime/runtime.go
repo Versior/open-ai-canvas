@@ -85,12 +85,16 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 	cmd := exec.CommandContext(ctx, "node", "--max-old-space-size="+nodeMemoryMB(), filepath.Join(runtimeDir, "agent-runtime.mjs"))
 	cmd.Dir = runtimeDir
 	cmd.Stdin = strings.NewReader(string(payload))
+	tempDir := os.TempDir()
 	// 环境变量白名单：只传 Node 运行所需的最少变量。HOME 与会话、工作目录
 	// 由运行时自己建的临时隔离目录提供，不使用服务端数据目录。
 	cmd.Env = []string{
 		"PATH=" + os.Getenv("PATH"),
 		"NODE_ENV=production",
 		"PI_OFFLINE=1",
+		"TMPDIR=" + tempDir,
+		"TEMP=" + tempDir,
+		"TMP=" + tempDir,
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

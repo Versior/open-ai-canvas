@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 )
 
 func TestImageSizePresetsValidationAndRoundTrip(t *testing.T) {
@@ -94,6 +95,157 @@ func TestResolveImageTaskSizeUsesRouteEncodingForDeclaredAlias(t *testing.T) {
 	}
 	if got := resolveImageTaskSize(profile, string(model.ChannelInterfaceOpenAIImage), "32:18", "1k"); got != "1824x1024" {
 		t.Fatalf("pixel route got %q, want declared pixel size 1824x1024", got)
+	}
+}
+
+func TestNormalizeOpenAIImageLegacyConfigBackfillsPresetsBeforeParameterProjection(t *testing.T) {
+	adapter := imageParameterTestAdapter(t, "openai-images", "openai-image")
+	registry, err := protocol.NewRegistry(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := DefaultModelCapabilityConfigForModel("openai-image", "gpt-image-2")
+	config.Image.Parameters = nil
+	config.Image.Size.Presets = nil
+
+	normalized, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "gpt-image-2", config, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, preset := range normalized.Image.Size.Presets {
+		if preset.Tier == "1k" && preset.Ratio == "3:4" && preset.Size == "1024x1360" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("legacy pixel preset was not backfilled before projection: %#v", normalized.Image.Size.Presets)
+	}
+	if normalized.Image.Size.DefaultTier != "1k" || normalized.Image.Parameters == nil || normalized.Image.Resolution.Supported {
+		t.Fatalf("legacy defaults were not migrated explicitly: %#v", normalized.Image)
+	}
+}
+
+func TestValidateTaskCapabilityMigratesLegacyOpenAIImageAutoSize(t *testing.T) {
+	svc, db := newChannelModelTestService(t)
+	legacy := DefaultModelCapabilityConfigForModel("openai-image", "gpt-image-2")
+	legacy.Image.Parameters = nil
+	legacy.Image.Size.Presets = nil
+	legacy.Image.Size.DefaultTier = ""
+	encoded, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel := &model.ModelChannel{ID: "legacy-openai", Scope: model.ChannelScopeSystem, Enabled: true, Name: "Legacy OpenAI"}
+	channelModel := &model.ChannelModel{
+		ID:                   "legacy-gpt-image-2",
+		ChannelID:            channel.ID,
+		ModelKey:             "gpt-image-2",
+		ProviderModelKey:     "gpt-image-2",
+		Capability:           "image",
+		Protocol:             model.ChannelInterfaceOpenAIImage,
+		Enabled:              true,
+		CapabilityConfigJSON: string(encoded),
+	}
+	if err := db.Create(channel).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(channelModel).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	input := map[string]any{
+		"mode":   "image",
+		"prompt": "A simple product photo.",
+		"config": map[string]any{
+			"channelId":       channel.ID,
+			"model":           channelModel.ModelKey,
+			"interfaceType":   "openai-image",
+			"size":            "3:4",
+			"quality":         "auto",
+			"imageResolution": "auto",
+			"count":           "1",
+		},
+	}
+	if err := svc.ValidateTaskCapability(input); err != nil {
+		t.Fatalf("legacy auto request failed validation: %v", err)
+	}
+	if got := input["config"].(map[string]any)["size"]; got != "1024x1360" {
+		t.Fatalf("config.size = %v; want 1024x1360", got)
+	}
+	config := input["config"].(map[string]any)
+	if got := config["quality"]; got != "auto" {
+		t.Fatalf("config.quality = %v; want auto", got)
+	}
+	parameters, ok := config["imageParameters"].(map[string]any)
+	if !ok || parameters["size"] != "1024x1360" {
+		t.Fatalf("config.imageParameters = %#v; want resolved size", config["imageParameters"])
+	}
+}
+
+func TestNormalizeOpenAIImageDoesNotOverrideExplicitSizeTier(t *testing.T) {
+	adapter := imageParameterTestAdapter(t, "openai-images", "openai-image")
+	registry, err := protocol.NewRegistry(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := DefaultModelCapabilityConfigForModel("openai-image", "gpt-image-2")
+	config.Image.Parameters = nil
+	config.Image.Size.Presets = nil
+	config.Image.Size.DefaultTier = "2k"
+
+	normalized, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "gpt-image-2", config, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Image.Size.DefaultTier != "2k" {
+		t.Fatalf("explicit default tier = %q; want 2k", normalized.Image.Size.DefaultTier)
+	}
+}
+
+func TestNormalizeOpenAIImageLegacyHighQualityStillDefaultsSizeTo1K(t *testing.T) {
+	adapter := imageParameterTestAdapter(t, "openai-images", "openai-image")
+	registry, err := protocol.NewRegistry(adapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := DefaultModelCapabilityConfigForModel("openai-image", "gpt-image-2")
+	config.Image.Parameters = nil
+	config.Image.Size.Presets = nil
+	config.Image.Size.DefaultTier = ""
+	config.Image.Quality.Default = "high"
+
+	normalized, err := NormalizeModelCapabilityConfigForModel("image", "openai-image", "gpt-image-2", config, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.Image.Quality.Default != "high" || normalized.Image.Size.DefaultTier != "1k" {
+		t.Fatalf("legacy defaults = quality %q, size tier %q; want high and 1k", normalized.Image.Quality.Default, normalized.Image.Size.DefaultTier)
+	}
+	if got := resolveImageTaskSize(normalized.Image, "openai-image", "3:4", "high"); got != "1024x1360" {
+		t.Fatalf("resolved size = %q; want 1024x1360", got)
+	}
+}
+
+func TestNormalizeLegacyPixelImageWithoutPluginBackfillsPresets(t *testing.T) {
+	config := DefaultModelCapabilityConfigForModel("custom-image", "legacy-image")
+	config.Image.Parameters = nil
+	config.Image.Size.Presets = nil
+
+	normalized, err := NormalizeModelCapabilityConfigForModel("image", "custom-image", "legacy-image", config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, preset := range normalized.Image.Size.Presets {
+		if preset.Tier == "1k" && preset.Ratio == "3:4" && preset.Size == "1024x1360" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("legacy non-plugin pixel presets were not backfilled: %#v", normalized.Image.Size.Presets)
 	}
 }
 
