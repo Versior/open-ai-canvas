@@ -57,6 +57,11 @@ export type CanvasNodeActionContextValue = {
     draftWithAgent?: (node: CanvasNodeData, instruction: string) => void;
     /** 创建或定位当前商品、用途对应的已连线创作表。 */
     openEcommerceTable?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId) => void;
+    openEcommerceTableFromOutline?: (
+        teardownNode: CanvasNodeData,
+        productNode: CanvasNodeData,
+        rows: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[],
+    ) => void;
     /**
      * 电商创作：按创作表出图。
      *
@@ -68,7 +73,7 @@ export type CanvasNodeActionContextValue = {
      * 为什么节点在出图时才铺：上一版点一下先铺九屏，用户看到的是一堆还没出图的
      * 空方块，还得自己在画布上找哪块对应哪张。过程是那张表，不是画布上的方块。
      */
-    generateEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[], rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<boolean> | boolean;
+    generateEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[], rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[], completeSuite?: boolean) => Promise<boolean> | boolean;
     /**
      * 电商创作：分析商品，为这一套的每一张写一条完整的出图提示词。
      *
@@ -79,7 +84,12 @@ export type CanvasNodeActionContextValue = {
      * `analysisModel` 是面板上选的分析模型：分析要读图、出图不用，
      * 两者常常不是同一个模型，而全局配置只有一个。
      */
-    draftEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string, rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<unknown> | void;
+    draftEcommerceSuite?: (
+        node: CanvasNodeData,
+        flowId: EcommerceOneClickFlowId,
+        analysisModel?: string,
+        rows?: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[],
+    ) => Promise<import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[] | undefined> | void;
     reverseEcommerceSuite?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string) => Promise<unknown> | void;
     bindEcommerceSuite?: (node: CanvasNodeData, rows: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => Promise<void>;
     /**

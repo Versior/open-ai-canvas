@@ -3,7 +3,19 @@ import { canvasConnectionError } from "../src/lib/canvas/canvas-connection-polic
 import { createCanvasNode } from "../src/lib/canvas/canvas-project-domain";
 import { createModelChannel, defaultConfig, encodeChannelModel } from "../src/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection } from "../src/types/canvas";
-import { connectEcommerceTableOutputs, ecommerceGenerationSourceSignature, ecommerceTableMetadata, ecommerceTableSource, openEcommerceTable, syncEcommerceTables, ecommerceTableResults, ecommerceAnalysisSnapshot, ecommerceSelectedOutputs } from "../src/lib/ecommerce/ecommerce-table";
+import {
+    connectEcommerceTableOutputs,
+    detachEcommerceTableOutputConnections,
+    ecommerceGenerationSourceSignature,
+    ecommerceTableMetadata,
+    ecommerceTableSource,
+    openEcommerceTable,
+    replaceEcommerceTableOutlineRows,
+    syncEcommerceTables,
+    ecommerceTableResults,
+    ecommerceAnalysisSnapshot,
+    ecommerceSelectedOutputs,
+} from "../src/lib/ecommerce/ecommerce-table";
 import { ecommerceSuiteTargets } from "../src/lib/ecommerce/ecommerce-canvas-preset";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "../src/lib/ecommerce/ecommerce-oneclick";
 import { syncBatchColumnReferences } from "../src/lib/canvas/canvas-batch-references";
@@ -17,6 +29,8 @@ import type { EcommerceModel } from "../src/lib/ecommerce/ecommerce-models";
 import { defaultImageCapabilityConfig } from "../src/lib/model-capabilities";
 import { projectImageParameters } from "../src/lib/image-parameters";
 import { synchronizeGenerationSpec } from "../src/lib/canvas/generation-contract";
+import { canGenerateImageInPlace } from "../src/lib/canvas/canvas-generation-layout";
+import { mediaVersionFieldsBeforeReplace } from "../src/lib/canvas/canvas-media-versions";
 
 test("template and analysis suite writes survive actual canvas persistence comparison", () => {
     const before = createCanvasNode(CanvasNodeType.BatchTable, { x: 0, y: 0 });
@@ -46,6 +60,82 @@ test("four purposes create separate connected tables and reopening preserves edi
     expect(repaired.table.metadata?.ecommerceImageModel).toBe("chosen-model");
 });
 
+test("outline rows replace stale detail-page rows without resetting table settings", () => {
+    const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
+    const { table } = openEcommerceTable([product], [], product.id, "detail");
+    const staleRow = {
+        slotId: "old-row",
+        enabled: true,
+        title: "Old title",
+        duty: "Old duty",
+        prompt: "Old prompt",
+        resultNodeId: "old-result",
+        copy: { headline: "Old", subhead: "Old", cta: "Old", price: "99" },
+        layout: { name: "Old layout", blocks: [] },
+    };
+    const existing = {
+        ...table,
+        metadata: {
+            ...table.metadata,
+            ecommerceSuite: { flow: "detail", source: "preset" as const, updatedAt: "old", rows: [staleRow] },
+            ecommerceSuitesByFlow: {
+                ...table.metadata?.ecommerceSuitesByFlow,
+                detail: { flow: "detail", source: "preset" as const, updatedAt: "old", rows: [staleRow] },
+            },
+            ecommerceAnalysisModel: "vision-model",
+            ecommerceImageModel: "image-model",
+            ecommerceImageSize: "1024x1536",
+            ecommerceImageQuality: "hd",
+            ecommerceAnalysisSkillsByFlow: { detail: ["skill-a"] },
+            batchTable: {
+                ...table.metadata!.batchTable!,
+                concurrency: 3,
+                globalPrompt: "keep this",
+                rows: [{ id: "old-row", enabled: true, inputNodeIds: [], prompt: "Old prompt", cells: { title: "Old title", duty: "Old duty" }, outputNodeId: "old-result", generatedInputSignature: "old-signature", inputChanged: true }],
+            },
+        },
+    };
+    const rows = [
+        {
+            slotId: "detail-1",
+            enabled: false,
+            title: "Pain point",
+            duty: "Explain the problem",
+            prompt: "",
+            stance: "differentiate" as const,
+            resultNodeId: "discard-result",
+            copy: { headline: "Discard", subhead: "", cta: "", price: "" },
+            layout: { name: "Discard layout", blocks: [] },
+        },
+    ];
+
+    const updated = replaceEcommerceTableOutlineRows(existing, rows);
+    const cleanRows = [{ slotId: "detail-1", enabled: false, title: "Pain point", duty: "Explain the problem", prompt: "", stance: "differentiate" }];
+
+    expect(updated.metadata?.ecommerceSuite?.rows).toEqual(cleanRows);
+    expect(updated.metadata?.ecommerceSuite?.source).toBe("draft");
+    expect(updated.metadata?.ecommerceSuitesByFlow?.detail?.rows).toEqual(cleanRows);
+    expect(updated.metadata?.batchTable?.rows).toEqual([{ id: "detail-1", enabled: false, inputNodeIds: [], prompt: "", cells: { title: "Pain point", duty: "Explain the problem" } }]);
+    expect(updated.metadata?.ecommerceAnalysisModel).toBe("vision-model");
+    expect(updated.metadata?.ecommerceImageModel).toBe("image-model");
+    expect(updated.metadata?.ecommerceImageSize).toBe("1024x1536");
+    expect(updated.metadata?.ecommerceImageQuality).toBe("hd");
+    expect(updated.metadata?.ecommerceAnalysisSkillsByFlow).toEqual({ detail: ["skill-a"] });
+    expect(updated.metadata?.batchTable?.concurrency).toBe(3);
+    expect(updated.metadata?.batchTable?.globalPrompt).toBe("keep this");
+    expect(existing.metadata.ecommerceSuite.rows[0].resultNodeId).toBe("old-result");
+});
+
+test("outline replacement detaches only the target table outputs", () => {
+    const connections: CanvasConnection[] = [
+        { id: "target-output", fromNodeId: "detail-table", toNodeId: "old-image", relation: "batch-output" },
+        { id: "other-output", fromNodeId: "other-table", toNodeId: "other-image", relation: "batch-output" },
+        { id: "target-context", fromNodeId: "detail-table", toNodeId: "note" },
+        { id: "product-input", fromNodeId: "product", toNodeId: "detail-table" },
+    ];
+
+    expect(detachEcommerceTableOutputConnections(connections, "detail-table")).toEqual(connections.slice(1));
+});
 test("product ownership and lock checks reject writes, while ordinary image tables remain usable", () => {
     const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
     const other = { ...product, id: "other-product" };
@@ -102,7 +192,7 @@ test("creation tables preserve skipped rows in both synchronization directions",
     expect(connected[1].metadata?.ecommerceSuite?.rows[0].enabled).toBe(false);
 });
 
-test("table outputs retain product constraints and a later run does not cover earlier results", () => {
+test("table outputs retain product constraints and a later run reuses the formal result with media history", () => {
     const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
     const { table, nodes, connections } = openEcommerceTable([product], [], product.id, "main");
     const suite = { flow: "main", source: "draft" as const, updatedAt: "", rows: [{ slotId: "main-1", title: "Hero", duty: "Show", prompt: "Draw product" }] };
@@ -113,17 +203,53 @@ test("table outputs retain product constraints and a later run does not cover ea
         nodes,
     );
     expect(first.connections.some((edge) => edge.fromNodeId === table.id && edge.relation === "batch-output")).toBe(true);
-    const allNodes = [...nodes, ...first.spawned];
+    const formal = { ...first.spawned[0], metadata: { ...first.spawned[0].metadata, storageKey: "image:old", status: "success" as const } };
+    const allNodes = [...nodes, formal];
     const allEdges = [...connections, ...first.connections];
-    expect(upstreamEcommerceNodes(first.nodeIds[0], allNodes, allEdges).product?.id).toBe(product.id);
+    expect(upstreamEcommerceNodes(formal.id, allNodes, allEdges).product?.id).toBe(product.id);
     const second = connectEcommerceTableOutputs(
         ecommerceSuiteTargets(product, ECOMMERCE_ONE_CLICK_FLOWS[1], suite, { nodes: allNodes, connections: allEdges }, {}, () => "edge-" + ++sequence),
         table,
         allNodes,
     );
-    expect(second.spawned[0].position.y).toBeGreaterThanOrEqual(first.spawned[0].position.y + first.spawned[0].height);
-    expect(first.spawned[0].position.x).toBeGreaterThan(table.position.x + table.width);
-    expect(second.spawned[0].metadata?.prompt).toBe("Draw product");
+    expect(formal.position.x).toBeGreaterThan(table.position.x + table.width);
+    expect(formal.metadata?.generationResultPlacement).toBe("replace-node");
+    expect(canGenerateImageInPlace(formal)).toBe(true);
+    expect(mediaVersionFieldsBeforeReplace(formal).mediaVersions?.[0].media.storageKey).toBe("image:old");
+    expect(second.spawned).toEqual([]);
+    expect(second.reuse).toEqual([{ slotId: "main-1", nodeId: formal.id, prompt: "Draw product" }]);
+    expect(second.nodeIds).toEqual([formal.id]);
+});
+
+test("reused formal outputs restore missing table edges without duplicating existing slot edges", () => {
+    const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
+    const { table, nodes, connections } = openEcommerceTable([product], [], product.id, "main");
+    const rows = [
+        { slotId: "main-1", title: "Hero", duty: "Show", prompt: "Draw hero" },
+        { slotId: "main-2", title: "Benefit", duty: "Explain", prompt: "Draw benefit" },
+    ];
+    const first = createCanvasNode(CanvasNodeType.Image, { x: 1400, y: 0 }, { ecommerceShotId: rows[0].slotId, ecommerceProductId: product.id, ecommerceFlowId: "main" });
+    const second = createCanvasNode(CanvasNodeType.Image, { x: 1800, y: 0 }, { ecommerceShotId: rows[1].slotId, ecommerceProductId: product.id, ecommerceFlowId: "main" });
+    let sequence = 0;
+    const plan = ecommerceSuiteTargets(product, ECOMMERCE_ONE_CLICK_FLOWS[1], { flow: "main", source: "draft", updatedAt: "", rows }, { nodes: [...nodes, first, second], connections }, {}, () => `edge-${++sequence}`);
+    const connected = connectEcommerceTableOutputs(
+        {
+            ...plan,
+            connections: [
+                ...plan.connections,
+                { id: "existing-a", fromNodeId: table.id, toNodeId: first.id, relation: "batch-output", storyboardRowId: rows[0].slotId },
+                { id: "duplicate-a", fromNodeId: table.id, toNodeId: first.id, relation: "batch-output", storyboardRowId: rows[0].slotId },
+            ],
+        },
+        table,
+        [...nodes, first, second],
+    );
+
+    expect(connected.spawned).toEqual([]);
+    expect(connected.connections.filter((edge) => edge.fromNodeId === table.id && edge.relation === "batch-output").map((edge) => [edge.toNodeId, edge.storyboardRowId])).toEqual([
+        [first.id, "main-1"],
+        [second.id, "main-2"],
+    ]);
 });
 
 test("a product can connect to a creation table while unrelated text remains rejected", () => {
@@ -171,7 +297,14 @@ test("generation source signature follows compiled product and model inputs but 
     const channel = createModelChannel({
         id: "images",
         models: ["image-model", "other-model"],
-        modelCosts: ["image-model", "other-model"].map((model) => ({ model, capability: "image" as const, protocol: "openai-image" as const, capabilityConfig: { version: 1 as const, image: imageCapability }, billingMode: "fixed_request" as const, unitPriceMicrocredits: 1 })),
+        modelCosts: ["image-model", "other-model"].map((model) => ({
+            model,
+            capability: "image" as const,
+            protocol: "openai-image" as const,
+            capabilityConfig: { version: 1 as const, image: imageCapability },
+            billingMode: "fixed_request" as const,
+            unitPriceMicrocredits: 1,
+        })),
     });
     const imageModel = encodeChannelModel(channel.id, "image-model");
     const otherModel = encodeChannelModel(channel.id, "other-model");

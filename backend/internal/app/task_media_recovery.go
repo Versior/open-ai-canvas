@@ -191,7 +191,7 @@ func (s *Service) materializeTaskMedia(ctx context.Context, task *model.Task, co
 	default:
 		return nil, &mediaRecoveryError{stage: task.MediaStage, retryable: true, cause: errMediaRecoveryBusy}
 	}
-	if _, err := s.mediaTaskProject(task); err != nil {
+	if _, err := s.optionalMediaTaskProject(task); err != nil {
 		return nil, &mediaRecoveryError{stage: "register", cause: err}
 	}
 	items := make([]interface{}, 0, len(checkpoint.Items))

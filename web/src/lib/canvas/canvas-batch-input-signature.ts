@@ -68,6 +68,21 @@ export function rebaseCanvasBatchInputSignatures<T>(before: T, prepared: T, uplo
             ? JSON.stringify([...signature.slice(0, 4), reference, ...signature.slice(5, 7), images])
             : value;
     };
+    const rewriteTeardownPlanSignature = (value: string) => {
+        let signature: unknown;
+        try {
+            signature = JSON.parse(value);
+        } catch {
+            return value;
+        }
+        if (!Array.isArray(signature) || (signature.length !== 3 && signature.length !== 5) || typeof signature[0] !== "string" || !Array.isArray(signature[1]) || typeof signature[2] !== "string") return value;
+        if (signature.length === 5 && (typeof signature[3] !== "string" || typeof signature[4] !== "string")) return value;
+        const reference = tokens.get(signature[2]);
+        if (!reference) return value;
+        const next = [...signature];
+        next[2] = reference;
+        return JSON.stringify(next);
+    };
     const rewriteSignature = (value: string) => {
         let signature: unknown;
         try {
@@ -106,13 +121,17 @@ export function rebaseCanvasBatchInputSignatures<T>(before: T, prepared: T, uplo
         }
         const current = value as Record<string, unknown>;
         const creativePlanSource = typeof current.targetNodeId === "string" && typeof current.referenceVideoId === "string";
+        const teardownPlanSource = typeof current.targetNodeId === "string" && typeof current.referenceImageId === "string";
+        const teardownDraft = Array.isArray(current.findings) && Array.isArray(current.outline) && typeof current.sourceSignature === "string";
         const entries = Object.entries(current).map(([key, child]) => {
             const next =
-                typeof child === "string" && (key === "planSourceSignature" || (key === "signature" && creativePlanSource))
-                    ? rewriteCreativePlanSignature(child)
-                    : signatureFields.has(key) && typeof child === "string"
-                      ? rewriteSignature(child)
-                      : rewrite(child);
+                typeof child === "string" && ((key === "signature" && teardownPlanSource) || (key === "sourceSignature" && teardownDraft))
+                    ? rewriteTeardownPlanSignature(child)
+                    : typeof child === "string" && (key === "planSourceSignature" || (key === "signature" && creativePlanSource))
+                      ? rewriteCreativePlanSignature(child)
+                      : signatureFields.has(key) && typeof child === "string"
+                        ? rewriteSignature(child)
+                        : rewrite(child);
             return [key, next] as const;
         });
         return entries.some(([key, child]) => child !== current[key]) ? Object.fromEntries(entries) : value;

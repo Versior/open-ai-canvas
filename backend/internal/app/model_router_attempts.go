@@ -81,6 +81,9 @@ func (s *Service) beginTaskRouteAttempt(task *model.Task) (*model.RouteAttempt, 
 			return s.switchTaskToNextRoute(task, attempts)
 		}
 	}
+	if len(attempts) == 0 && task.RouteRun <= 1 && task.Attempts > 1 && strings.TrimSpace(task.ProviderRequestID) == "" {
+		return nil, routeDispatchUncertainError{"旧任务已尝试执行但缺少提交记录，为避免重复扣费已停止自动重发"}
+	}
 	if task.LogicalModelID == "" {
 		return s.createDirectTaskAttempt(task)
 	}

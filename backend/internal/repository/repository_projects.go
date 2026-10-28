@@ -16,6 +16,9 @@ import (
 // ErrProjectNameConflict 表示同一用户下的项目名称已被占用。
 var ErrProjectNameConflict = errors.New("project name conflict")
 
+// ErrProjectNotActive closes the race between a status check and a project write.
+var ErrProjectNotActive = fmt.Errorf("project is not active: %w", gorm.ErrRecordNotFound)
+
 func (r *Repository) Projects(userID string) ([]model.Project, error) {
 	var projects []model.Project
 	err := r.db.Where("user_id = ?", userID).Order("updated_at desc").Find(&projects).Error
@@ -41,6 +44,65 @@ func (r *Repository) ProjectForUser(userID string, id string) (*model.Project, e
 		return nil, err
 	}
 	return &project, nil
+}
+
+// requireActiveTaskProject locks the task scope before task admission. The
+// preliminary reads only resolve whether the legacy projectId names a canvas or
+// a production project; the conditional no-op writes are the authoritative
+// ownership/status check and serialize with archive/delete writes.
+func (r *Repository) requireActiveTaskProject(userID string, canvasOrProjectID string) error {
+	if canvasOrProjectID == "" {
+		return nil
+	}
+	var canvas model.CanvasProject
+	canvasErr := r.db.Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Take(&canvas).Error
+	if canvasErr != nil && !errors.Is(canvasErr, gorm.ErrRecordNotFound) {
+		return canvasErr
+	}
+	var project model.Project
+	projectErr := r.db.Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Take(&project).Error
+	if projectErr != nil && !errors.Is(projectErr, gorm.ErrRecordNotFound) {
+		return projectErr
+	}
+	if canvasErr == nil && projectErr == nil {
+		return ErrProjectNotActive
+	}
+	if canvasErr == nil {
+		if canvas.ProjectID != "" {
+			locked := r.db.Model(&model.Project{}).
+				Where("id = ? AND user_id = ? AND status = ?", canvas.ProjectID, userID, model.ProjectStatusActive).
+				UpdateColumn("revision", gorm.Expr("revision"))
+			if locked.Error != nil {
+				return locked.Error
+			}
+			if locked.RowsAffected != 1 {
+				return ErrProjectNotActive
+			}
+		}
+		locked := r.db.Model(&model.CanvasProject{}).
+			Where("id = ? AND user_id = ? AND project_id = ?", canvas.ID, userID, canvas.ProjectID).
+			UpdateColumn("revision", gorm.Expr("revision"))
+		if locked.Error != nil {
+			return locked.Error
+		}
+		if locked.RowsAffected != 1 {
+			return ErrProjectNotActive
+		}
+		return nil
+	}
+	if projectErr != nil {
+		return ErrProjectNotActive
+	}
+	locked := r.db.Model(&model.Project{}).
+		Where("id = ? AND user_id = ? AND status = ?", project.ID, userID, model.ProjectStatusActive).
+		UpdateColumn("revision", gorm.Expr("revision"))
+	if locked.Error != nil {
+		return locked.Error
+	}
+	if locked.RowsAffected != 1 {
+		return ErrProjectNotActive
+	}
+	return nil
 }
 
 func (r *Repository) CreateProject(project *model.Project) error {
@@ -497,8 +559,20 @@ func (r *Repository) LinkProjectAsset(asset *model.Asset, version *model.AssetVe
 		if result.RowsAffected != 1 {
 			return gorm.ErrRecordNotFound
 		}
-		return tx.Model(&model.Project{}).Where("id = ?", link.ProjectID).Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": time.Now()}).Error
+		projectUpdated := tx.Model(&model.Project{}).
+			Where("id = ? AND status = ?", link.ProjectID, model.ProjectStatusActive).
+			Updates(map[string]any{"revision": gorm.Expr("revision + 1"), "updated_at": time.Now()})
+		if projectUpdated.Error != nil {
+			return projectUpdated.Error
+		}
+		if projectUpdated.RowsAffected != 1 {
+			return ErrProjectNotActive
+		}
+		return nil
 	})
+	if err != nil {
+		return false, err
+	}
 	return createdLink, err
 }
 

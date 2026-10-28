@@ -58,6 +58,58 @@ describe("canvas generation copy metadata", () => {
         expect(source.metadata?.generationEffectKeys).toEqual(["attach-node:source-task:source:0"]);
     });
 
+    test("复制套图产物时只移除正式槽位身份，保留图片、文案与排版", () => {
+        const source: CanvasNodeData = {
+            id: "official-result",
+            type: CanvasNodeType.Image,
+            title: "详情页首屏",
+            position: { x: 0, y: 0 },
+            width: 340,
+            height: 240,
+            metadata: {
+                content: "official.png",
+                prompt: "用户修改后的首屏提示词",
+                ecommerceProductId: "product-1",
+                ecommerceFlowId: "detail",
+                ecommerceShotId: "detail-1",
+                ecommerceRunId: "run-1",
+                ecommerceCopy: { headline: "轻盈保温", subhead: "通勤随行", cta: "立即查看", price: "¥99" },
+                ecommerceLayout: { name: "用户版式", blocks: [] },
+            },
+        };
+
+        const copied = isolateCopiedNodeMetadata(
+            source,
+            new Map([
+                [source.id, "copy-result"],
+                ["product-1", "product-copy"],
+            ]),
+        );
+
+        expect(copied.ecommerceProductId).toBeUndefined();
+        expect(copied.ecommerceFlowId).toBeUndefined();
+        expect(copied.ecommerceShotId).toBeUndefined();
+        expect(copied.ecommerceRunId).toBeUndefined();
+        expect(copied.content).toBe("official.png");
+        expect(copied.prompt).toBe("用户修改后的首屏提示词");
+        expect(copied.ecommerceCopy).toEqual(source.metadata?.ecommerceCopy);
+        expect(copied.ecommerceLayout).toEqual(source.metadata?.ecommerceLayout);
+    });
+
+    test("preserves a standalone ecommerce shot marker on ordinary copied media", () => {
+        const source: CanvasNodeData = {
+            id: "material",
+            type: CanvasNodeType.Image,
+            title: "Material",
+            position: { x: 0, y: 0 },
+            metadata: { content: "material.png", ecommerceShotId: "detail-1" },
+        };
+
+        const copied = isolateCopiedNodeMetadata(source, new Map([[source.id, "material-copy"]]));
+
+        expect(copied.ecommerceShotId).toBe("detail-1");
+    });
+
     test("复制到副本的入边继续解析为同一张参考图", () => {
         const reference: CanvasNodeData = {
             id: "reference",
@@ -86,6 +138,12 @@ describe("canvas generation copy metadata", () => {
 });
 
 describe("batch table copy references", () => {
+    const suite = {
+        flow: "main",
+        source: "draft" as const,
+        updatedAt: "",
+        rows: [{ slotId: "row-1", title: "主图", duty: "展示商品", prompt: "保持人物一致", resultNodeId: "result" }],
+    };
     const table: CanvasNodeData = {
         id: "table",
         type: CanvasNodeType.BatchTable,
@@ -94,6 +152,9 @@ describe("batch table copy references", () => {
         width: 1280,
         height: 560,
         metadata: {
+            ecommerceProductId: "product",
+            ecommerceSuite: suite,
+            ecommerceSuitesByFlow: { main: suite },
             batchTable: {
                 operation: "creative",
                 concurrency: 2,
@@ -125,23 +186,30 @@ describe("batch table copy references", () => {
         const metadata = isolateCopiedNodeMetadata(table, new Map([["table", "table-copy"]]));
         const copied = metadata.batchTable!;
 
+        expect(metadata.ecommerceProductId).toBe("product");
         expect(copied.referenceMode).toBe("cells");
         expect(copied.rows[0].inputNodeIds).toEqual(["portrait-image", "", "portrait-image"]);
         expect(copied.rows[0].textNodeIds).toEqual(["note"]);
         expect(copied.rows[0].outputNodeId).toBeUndefined();
         expect(copied.rows[0].generatedInputSignature).toBeUndefined();
+        expect(metadata.ecommerceSuite?.rows[0].resultNodeId).toBeUndefined();
+        expect(metadata.ecommerceSuitesByFlow?.main?.rows[0].resultNodeId).toBeUndefined();
         expect(table.metadata?.batchTable?.rows[0].outputNodeId).toBe("result");
         expect(table.metadata?.batchTable?.rows[0].generatedInputSignature).toBe("old-generation");
+        expect(table.metadata?.ecommerceSuite?.rows[0].resultNodeId).toBe("result");
+        expect(table.metadata?.ecommerceSuitesByFlow?.main?.rows[0].resultNodeId).toBe("result");
     });
 
     test("同时复制表、素材和结果后，列位置、格子与输出归属全部指向同组副本", () => {
         const idMap = new Map([
             ["table", "table-copy"],
+            ["product", "product-copy"],
             ["portrait-image", "portrait-copy"],
             ["note", "note-copy"],
             ["result", "result-copy"],
         ]);
-        const copied = isolateCopiedNodeMetadata(table, idMap).batchTable!;
+        const copiedMetadata = isolateCopiedNodeMetadata(table, idMap);
+        const copied = copiedMetadata.batchTable!;
         const result: CanvasNodeData = {
             id: "result",
             type: CanvasNodeType.Image,
@@ -149,17 +217,34 @@ describe("batch table copy references", () => {
             position: { x: 1400, y: 0 },
             width: 340,
             height: 240,
-            metadata: { content: "result.png", batchSourceNodeId: "table", batchRowId: "row-1", batchOperation: "creative", batchInputNodeIds: ["portrait-image", "", "portrait-image"] },
+            metadata: {
+                content: "result.png",
+                batchSourceNodeId: "table",
+                batchRowId: "row-1",
+                batchOperation: "creative",
+                batchInputNodeIds: ["portrait-image", "", "portrait-image"],
+                ecommerceProductId: "product",
+                ecommerceFlowId: "main",
+                ecommerceShotId: "row-1",
+                ecommerceRunId: "run-1",
+            },
         };
         const copiedResult = isolateCopiedNodeMetadata(result, idMap);
 
+        expect(copiedMetadata.ecommerceProductId).toBe("product-copy");
         expect(copied.rows[0].id).toBe("row-1");
         expect(copied.referenceColumns?.map((column) => column.id)).toEqual(["portrait", "scene", "style"]);
         expect(copied.rows[0].inputNodeIds).toEqual(["portrait-copy", "", "portrait-copy"]);
         expect(copied.rows[0].textNodeIds).toEqual(["note-copy"]);
         expect(copied.rows[0].outputNodeId).toBe("result-copy");
+        expect(copiedMetadata.ecommerceSuite?.rows[0].resultNodeId).toBe("result-copy");
+        expect(copiedMetadata.ecommerceSuitesByFlow?.main?.rows[0].resultNodeId).toBe("result-copy");
         expect(copiedResult.batchSourceNodeId).toBe("table-copy");
         expect(copiedResult.batchRowId).toBe("row-1");
+        expect(copiedResult.ecommerceProductId).toBe("product-copy");
+        expect(copiedResult.ecommerceFlowId).toBe("main");
+        expect(copiedResult.ecommerceShotId).toBe("row-1");
+        expect(copiedResult.ecommerceRunId).toBeUndefined();
         expect(copiedResult.batchInputNodeIds).toEqual(["portrait-copy", "", "portrait-copy"]);
 
         copied.referenceColumns![0].label = "副本人物";
@@ -178,13 +263,27 @@ describe("batch table copy references", () => {
             position: { x: 0, y: 0 },
             width: 340,
             height: 240,
-            metadata: { content: "result.png", batchSourceNodeId: "table", batchRowId: "row-1", batchOperation: "creative", batchInputNodeIds: ["portrait-image"] },
+            metadata: {
+                content: "result.png",
+                batchSourceNodeId: "table",
+                batchRowId: "row-1",
+                batchOperation: "creative",
+                batchInputNodeIds: ["portrait-image"],
+                ecommerceProductId: "product",
+                ecommerceFlowId: "main",
+                ecommerceShotId: "row-1",
+                ecommerceRunId: "run-1",
+            },
         };
         const copied = isolateCopiedNodeMetadata(result, new Map([["result", "result-copy"]]));
 
         expect(copied.batchSourceNodeId).toBeUndefined();
         expect(copied.batchRowId).toBeUndefined();
         expect(copied.batchOperation).toBeUndefined();
+        expect(copied.ecommerceProductId).toBeUndefined();
+        expect(copied.ecommerceFlowId).toBeUndefined();
+        expect(copied.ecommerceShotId).toBeUndefined();
+        expect(copied.ecommerceRunId).toBeUndefined();
         expect(copied.batchInputNodeIds).toEqual(["portrait-image"]);
         expect(copied.content).toBe("result.png");
     });

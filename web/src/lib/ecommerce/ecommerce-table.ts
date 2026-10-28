@@ -15,15 +15,7 @@ import { ecommerceMediaIdentity, mergeEcommercePrompt, resolveEcommerceInputs } 
 export type EcommerceResultSourceSignature = (row: EcommerceSuiteRow, node: CanvasNodeData) => string | undefined;
 
 /** Inputs that can alter one generated image. Batch count and local copy/layout do not. */
-export function ecommerceGenerationSourceSignature(input: {
-    source: CanvasNodeData;
-    row: EcommerceSuiteRow;
-    target: CanvasNodeData;
-    nodes: CanvasNodeData[];
-    connections: CanvasConnection[];
-    config: AiConfig;
-    customModels?: EcommerceModel[];
-}) {
+export function ecommerceGenerationSourceSignature(input: { source: CanvasNodeData; row: EcommerceSuiteRow; target: CanvasNodeData; nodes: CanvasNodeData[]; connections: CanvasConnection[]; config: AiConfig; customModels?: EcommerceModel[] }) {
     const { source, row, target, nodes, connections, config, customModels = [] } = input;
     const { imageModel } = resolveEcommerceTableModels(config, { imageModel: source.metadata?.ecommerceImageModel });
     if (!imageModel) return undefined;
@@ -57,9 +49,46 @@ export function ecommerceResultSourceCurrent(node: CanvasNodeData, expected: str
     return Boolean(expected && node.metadata?.batchResultInputSignature === expected);
 }
 
+export function detachEcommerceTableOutputConnections(connections: CanvasConnection[], tableId: string) {
+    return connections.filter((edge) => edge.fromNodeId !== tableId || edge.relation !== "batch-output");
+}
+
 export function ecommerceSuiteMetadata(metadata: CanvasNodeMetadata | undefined, suite: EcommerceSuite): CanvasNodeMetadata {
     // The canvas canonicalizer treats sibling paths with shared prefixes as cycles.
     return { ecommerceSuite: structuredClone(suite), ecommerceSuitesByFlow: structuredClone({ ...metadata?.ecommerceSuitesByFlow, [suite.flow]: suite }) };
+}
+
+/** Replace a detail-page table skeleton while preserving its model and table settings. */
+export function replaceEcommerceTableOutlineRows(table: CanvasNodeData, rows: EcommerceSuiteRow[]): CanvasNodeData {
+    const cleanRows = rows.map(({ slotId, enabled, title, duty, prompt, stance }) => ({
+        slotId,
+        ...(enabled === undefined ? {} : { enabled }),
+        title,
+        duty,
+        prompt,
+        ...(stance ? { stance } : {}),
+    }));
+    const currentSuite = table.metadata?.ecommerceSuitesByFlow?.detail || (table.metadata?.ecommerceSuite?.flow === "detail" ? table.metadata.ecommerceSuite : undefined);
+    const suite: EcommerceSuite = {
+        ...(currentSuite || {}),
+        flow: "detail",
+        rows: cleanRows,
+        source: "draft",
+        updatedAt: new Date().toISOString(),
+    };
+    return {
+        ...table,
+        metadata: {
+            ...table.metadata,
+            ...ecommerceSuiteMetadata(table.metadata, suite),
+            batchTable: {
+                operation: "product",
+                concurrency: 10,
+                ...table.metadata?.batchTable,
+                rows: cleanRows.map((row) => ({ id: row.slotId, enabled: row.enabled !== false, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })),
+            },
+        },
+    };
 }
 
 export function ecommerceTableMetadata(product: CanvasNodeData, flowId: EcommerceOneClickFlowId): CanvasNodeMetadata {
@@ -180,7 +209,11 @@ export function ecommerceTableResults(rows: EcommerceSuiteRow[], outputs: Canvas
     for (const row of rows) {
         const images = candidates.get(row.slotId) || [];
         const current = sourceSignature ? images.filter((item) => ecommerceResultSourceCurrent(item, sourceSignature(row, item))) : images;
-        if (sourceSignature) stale.set(row.slotId, images.filter((item) => !current.includes(item)));
+        if (sourceSignature)
+            stale.set(
+                row.slotId,
+                images.filter((item) => !current.includes(item)),
+            );
         const node = row.resultNodeId ? current.find((item) => item.id === row.resultNodeId) : [...current].reverse().find((item) => item.metadata?.storageKey && item.metadata.status !== "loading" && item.metadata.status !== "error") || current.at(-1);
         if (node) selected.set(row.slotId, node);
     }
@@ -231,8 +264,24 @@ export function ecommerceAnalysisSnapshot(source: CanvasNodeData, product: Canva
 }
 
 /** Put a new run beside its table without covering previous results. Product edges carry generation constraints. */
-export function connectEcommerceTableOutputs(plan: EcommerceSuiteTargets, table: CanvasNodeData, nodes: CanvasNodeData[]): EcommerceSuiteTargets {
-    if (table.type !== CanvasNodeType.BatchTable || !plan.spawned.length) return plan;
+export function connectEcommerceTableOutputs(plan: EcommerceSuiteTargets, table: CanvasNodeData, nodes: CanvasNodeData[], existingConnections: CanvasConnection[] = []): EcommerceSuiteTargets {
+    if (table.type !== CanvasNodeType.BatchTable) return plan;
+    const batchOutputKeys = new Set(existingConnections.filter((edge) => edge.relation === "batch-output").map((edge) => `${edge.fromNodeId}\u0000${edge.toNodeId}\u0000${edge.storyboardRowId || ""}`));
+    const connections = plan.connections.filter((edge) => {
+        if (edge.relation !== "batch-output") return true;
+        const key = `${edge.fromNodeId}\u0000${edge.toNodeId}\u0000${edge.storyboardRowId || ""}`;
+        if (batchOutputKeys.has(key)) return false;
+        batchOutputKeys.add(key);
+        return true;
+    });
+    plan.nodeIds.forEach((id, index) => {
+        const storyboardRowId = plan.rows[index]?.slotId;
+        const key = `${table.id}\u0000${id}\u0000${storyboardRowId || ""}`;
+        if (batchOutputKeys.has(key)) return;
+        batchOutputKeys.add(key);
+        connections.push({ id: nanoid(), fromNodeId: table.id, toNodeId: id, relation: "batch-output", storyboardRowId });
+    });
+    if (!plan.spawned.length) return { ...plan, connections };
     const columns = Math.min(5, plan.spawned.length);
     const width = Math.max(...plan.spawned.map((node) => node.width));
     const height = Math.max(...plan.spawned.map((node) => node.height));
@@ -246,6 +295,6 @@ export function connectEcommerceTableOutputs(plan: EcommerceSuiteTargets, table:
     return {
         ...plan,
         spawned: plan.spawned.map((node, index) => ({ ...node, position: { x: x + (index % columns) * (width + 80), y: y + Math.floor(index / columns) * (height + 60) } })),
-        connections: [...plan.connections, ...plan.nodeIds.map((id, index) => ({ id: nanoid(), fromNodeId: table.id, toNodeId: id, relation: "batch-output" as const, storyboardRowId: plan.rows[index]?.slotId }))],
+        connections,
     };
 }

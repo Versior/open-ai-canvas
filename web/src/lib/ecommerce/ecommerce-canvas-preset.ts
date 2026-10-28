@@ -55,10 +55,7 @@ export function createEcommerceStyleReference(product: CanvasNodeData, existing:
  */
 export type EcommerceMaterialPlan = EcommerceDeliverableSet;
 
-export const ECOMMERCE_MATERIAL_PLANS: EcommerceMaterialPlan[] = [
-    ECOMMERCE_SINGLE_SLOT,
-    ...ECOMMERCE_ALL_DELIVERABLE_SETS,
-];
+export const ECOMMERCE_MATERIAL_PLANS: EcommerceMaterialPlan[] = [ECOMMERCE_SINGLE_SLOT, ...ECOMMERCE_ALL_DELIVERABLE_SETS];
 
 export function ecommerceMaterialPlan(id: string) {
     return ECOMMERCE_MATERIAL_PLANS.find((plan) => plan.id === id);
@@ -253,6 +250,7 @@ export function ecommerceSuiteTargets(
     patch: { model?: string; size?: string; quality?: string },
     createId: () => string,
     slotIds?: string[],
+    batchSourceNodeId?: string,
 ): EcommerceSuiteTargets {
     const empty: EcommerceSuiteTargets = { rows: [], reuse: [], spawned: [], connections: [], reconnect: [], nodeIds: [] };
     // 表要认自己那一套：商品节点上只存一份 suite，跨入口（详情页 → 主图）读串了
@@ -262,30 +260,45 @@ export function ecommerceSuiteTargets(
     const rows = suite.rows.filter((row) => row.enabled !== false && row.prompt.trim() && (!wanted || wanted.has(row.slotId)));
     if (!rows.length) return empty;
 
-    // **按槽位在全画布认领，不只看连接。** 只看连接的话，连接被删过一次、
-    // 或上一次铺节点时连接没落盘，重出就会在画布上再堆一遍一模一样的九张——
-    // 用户看到的是「重复出一样的图」。认领靠的是槽位这个稳定标识，连接缺了补上就是。
-    const { nodes: spawnedRaw, connections } = ecommerceSuiteNodes(product, flow, rows, new Set(), createId, rows.map((row) => row.slotId));
+    // 商品、流程和槽位共同标识一张产物；创作表还必须只认回自己生成的结果。
+    const sourceTableId = batchSourceNodeId || canvas.nodes.find((node) => node.type === CanvasNodeType.BatchTable && (node.metadata?.ecommerceSuite === suite || node.metadata?.ecommerceSuitesByFlow?.[flow.id] === suite))?.id;
+    const reusableBySlot = new Map<string, CanvasNodeData>();
+    for (const node of canvas.nodes) {
+        const slotId = node.metadata?.ecommerceShotId;
+        if (node.type === CanvasNodeType.Image && slotId && node.metadata?.ecommerceProductId === product.id && node.metadata.ecommerceFlowId === flow.id && (!sourceTableId || node.metadata.batchSourceNodeId === sourceTableId))
+            reusableBySlot.set(slotId, node);
+    }
+    const reuse = rows.flatMap((row) => {
+        const node = reusableBySlot.get(row.slotId);
+        return node ? [{ slotId: row.slotId, nodeId: node.id, prompt: row.prompt.trim() }] : [];
+    });
+    const { nodes: spawnedRaw, connections } = ecommerceSuiteNodes(
+        product,
+        flow,
+        rows,
+        new Set(reuse.map((item) => item.slotId)),
+        createId,
+        rows.map((row) => row.slotId),
+    );
     const promptBySlot = new Map(rows.map((row) => [row.slotId, row.prompt.trim()]));
     const productOutputs = new Set(canvas.connections.filter((edge) => edge.fromNodeId === product.id).map((edge) => edge.toNodeId));
     const spawned = spawnedRaw.map((item) => {
         const prompt = item.metadata?.ecommerceShotId ? promptBySlot.get(item.metadata.ecommerceShotId) : undefined;
-        const slotId = item.metadata?.ecommerceShotId;
-        const priorRuns = slotId ? canvas.nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.ecommerceShotId === slotId && (node.metadata?.ecommerceProductId === product.id || productOutputs.has(node.id))).length : 0;
-        return { ...item, position: { ...item.position, y: item.position.y + priorRuns * 360 }, metadata: { ...item.metadata, ecommerceProductId: product.id, ecommerceFlowId: flow.id, ...(prompt ? { prompt, composerContent: prompt } : {}), ...patch } };
+        return { ...item, metadata: { ...item.metadata, ecommerceProductId: product.id, ecommerceFlowId: flow.id, generationResultPlacement: "replace-node" as const, ...(prompt ? { prompt, composerContent: prompt } : {}), ...patch } };
     });
+    const spawnedBySlot = new Map(spawned.map((node) => [node.metadata?.ecommerceShotId, node.id]));
+    const reusedBySlot = new Map(reuse.map((item) => [item.slotId, item.nodeId]));
+    const reconnect = reuse.filter((item) => !productOutputs.has(item.nodeId)).map((item) => ({ id: createId(), fromNodeId: product.id, toNodeId: item.nodeId }));
 
     return {
         rows,
-        reuse: [],
+        reuse,
         spawned,
         connections,
-        reconnect: [],
-        nodeIds: spawned.map((item) => item.id),
+        reconnect,
+        nodeIds: rows.map((row) => reusedBySlot.get(row.slotId) || spawnedBySlot.get(row.slotId)).filter((id): id is string => Boolean(id)),
     };
 }
-
-
 
 /**
  * 从拍法节点补齐这一组图。
@@ -313,10 +326,14 @@ export function ecommerceShotSetOutputs(recipe: CanvasNodeData, claimedShotIds: 
     const startX = recipe.position.x - ((columns - 1) * SIBLING_GAP) / 2;
     const outputY = recipe.position.y + 300;
     missing.forEach((shot, index) => {
-        const image = createCanvasNode(CanvasNodeType.Image, {
-            x: startX + (index % columns) * SIBLING_GAP,
-            y: outputY + Math.floor(index / columns) * 300,
-        }, { content: "", status: "idle", ecommerceShotId: shot.id });
+        const image = createCanvasNode(
+            CanvasNodeType.Image,
+            {
+                x: startX + (index % columns) * SIBLING_GAP,
+                y: outputY + Math.floor(index / columns) * 300,
+            },
+            { content: "", status: "idle", ecommerceShotId: shot.id },
+        );
         image.title = shot.title.trim() || "未命名";
         nodes.push(image);
         connections.push({ id: createId(), fromNodeId: recipe.id, toNodeId: image.id });

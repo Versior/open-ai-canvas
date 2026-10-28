@@ -19,6 +19,9 @@ import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import type { CanvasNodeTypeId, CanvasToolMode, CanvasWorkspaceMode } from "@/types/canvas";
 import type { AddNodeMenuContext } from "@/lib/canvas/tool-registry";
 
+const SIMPLE_ECOMMERCE_TOOL_IDS = new Set(["tool-undo", "tool-redo", "tool-add", "tool-assets"]);
+const SIMPLE_ECOMMERCE_CREATE_IDS = new Set(["product", "upload", "assets"]);
+
 export function CanvasToolbar({
     selectedCount,
     canvasKind,
@@ -242,11 +245,14 @@ export function CanvasToolbar({
         handlers,
     };
 
-    const items = resolveToolbarEntries("main", ctx, prefs ?? defaultToolbarPrefs("main"));
-    if (canvasKind === "ecommerce" && workspaceMode !== "simple" && onOpenEcommerceWorkbench) items.push({ id: "ecommerce-studio", label: "添加电商生图台", icon: <Images />, onClick: onOpenEcommerceWorkbench });
+    const isSimpleEcommerce = canvasKind === "ecommerce" && workspaceMode === "simple";
+    let items = resolveToolbarEntries("main", ctx, prefs ?? defaultToolbarPrefs("main"));
+    if (isSimpleEcommerce) items = items.filter((item) => SIMPLE_ECOMMERCE_TOOL_IDS.has(item.id));
+    else if (canvasKind === "ecommerce" && workspaceMode !== "simple" && onOpenEcommerceWorkbench) items.push({ id: "ecommerce-studio", label: "添加电商生图台", icon: <Images />, onClick: onOpenEcommerceWorkbench });
 
     // 中央空白起点与主工具栏共用同一份命令解析，避免素材类型和插件节点逐渐分叉。
-    const createCommands = useCanvasCreateCommands(ctx, runAddAction);
+    const allCreateCommands = useCanvasCreateCommands(ctx, runAddAction);
+    const createCommands = isSimpleEcommerce ? allCreateCommands.filter((command) => SIMPLE_ECOMMERCE_CREATE_IDS.has(command.id)) : allCreateCommands;
 
     return (
         <div

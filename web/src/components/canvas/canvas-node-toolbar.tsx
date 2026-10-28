@@ -22,7 +22,7 @@ import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata, type CanvasWorkspaceMode, type Position, type ViewportTransform } from "@/types/canvas";
 import type { CanvasKind } from "@/lib/canvas/canvas-kind";
-import { buildImageToolbarTools } from "./canvas-image-toolbar-tools";
+import { buildImageToolbarTools, isSimpleEcommerceImageToolbarTool } from "./canvas-image-toolbar-tools";
 import { CanvasGridSplitPicker } from "./canvas-grid-split-picker";
 import { useCanvasNodeResizeMotion } from "./canvas-node-resize-motion";
 
@@ -167,6 +167,7 @@ export function CanvasNodeToolbar({
     const themeName = useActiveTheme();
     const theme = canvasThemes[themeName];
     const simpleMode = workspaceMode === "simple";
+    const simpleEcommerce = canvasKind === "ecommerce" && simpleMode;
     const resizeMotion = useCanvasNodeResizeMotion();
 
     useEffect(() => {
@@ -282,7 +283,7 @@ export function CanvasNodeToolbar({
         }
         copyText(prompt, "提示词已复制");
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onAnnotationEdit, onTextEdit, onRegionEdit, onRemoveBackground, onLayerDecomposition, onEmotion, onPortraitTexture, onCrop, onUpscale, onSuperResolve, onAngle, onLighting, onPanorama, onPrevis, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt, onSaveAsModel, onNineGrid }, { ecommerce: canvasKind === "ecommerce" });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onAnnotationEdit, onTextEdit, onRegionEdit, onRemoveBackground, onLayerDecomposition, onEmotion, onPortraitTexture, onCrop, onUpscale, onSuperResolve, onAngle, onLighting, onPanorama, onPrevis, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt, onSaveAsModel, onNineGrid }, { ecommerce: canvasKind === "ecommerce", simpleEcommerce });
 
     // 构建 ToolContext——供注册表解析工具
     const nodeHoverHandlers = {
@@ -335,9 +336,11 @@ export function CanvasNodeToolbar({
             onClick: () => tool.run(nodeHoverCtx),
         };
     });
-    const allTools: ToolbarTool[] = hasImage && !simpleMode
-        ? [...registryToolbarTools, ...imageTools]
-        : registryToolbarTools;
+    const allTools: ToolbarTool[] = simpleEcommerce && isImage
+        ? [...registryToolbarTools.filter((tool) => isSimpleEcommerceImageToolbarTool(tool.id)), ...(hasImage ? imageTools : [])]
+        : hasImage && !simpleMode
+          ? [...registryToolbarTools, ...imageTools]
+          : registryToolbarTools;
     const compact = layoutLevel >= 1;
     const narrow = layoutLevel >= 2;
     const inGroup = (group: NodeToolbarGroup) => allTools.filter((tool) => tool.group === group).sort(compareToolbarTools);

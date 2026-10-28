@@ -35,6 +35,7 @@ type CanvasNodeProps = {
     isFocusRelated: boolean;
     isConnectionTarget: boolean;
     isConnecting?: boolean;
+    connectionInteractionEnabled?: boolean;
     connectionApproach?: Position;
     forceInputMounted?: boolean;
     showImageInfo: boolean;
@@ -84,6 +85,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     isFocusRelated,
     isConnectionTarget,
     isConnecting = false,
+    connectionInteractionEnabled = true,
     connectionApproach,
     forceInputMounted = false,
     showImageInfo,
@@ -139,7 +141,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const showVersionBadge = !readOnly && Boolean(openMediaVersions) && hasMediaVersionHistory(data);
     const showStatusTrack = Boolean(resourceLabel || data.metadata?.locked || isBatchRoot || (isBatchChild && !readOnly) || (hasMediaContent && !readOnly) || showVersionBadge);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
-    const showConnectionRails = !isConnecting && (hovered || isSelected || isFocusRelated);
+    const showConnectionRails = connectionInteractionEnabled && !isConnecting && (hovered || isSelected || isFocusRelated);
     const effectiveRenderLOD: CanvasNodeRenderLOD = renderLOD === "full" || hovered || isEditingContent || isEditingTitle || mediaActive ? "full" : renderLOD;
     const showChrome = effectiveRenderLOD === "full";
     const nodeState = isFocusRelated ? "focus" : isConnectionTarget ? "target" : isSelected ? "selected" : isRelated && !isBatchChild ? "related" : "idle";
@@ -427,6 +429,7 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.isFocusRelated === next.isFocusRelated &&
         previous.isConnectionTarget === next.isConnectionTarget &&
         previous.isConnecting === next.isConnecting &&
+        previous.connectionInteractionEnabled === next.connectionInteractionEnabled &&
         previous.connectionApproach?.x === next.connectionApproach?.x &&
         previous.connectionApproach?.y === next.connectionApproach?.y &&
         previous.forceInputMounted === next.forceInputMounted &&

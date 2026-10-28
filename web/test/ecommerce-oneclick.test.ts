@@ -21,6 +21,9 @@ import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contrac
 import { ECOMMERCE_LAYOUT_PRESETS } from "@/lib/ecommerce/ecommerce-layout";
 import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
+import { isolateCopiedNodeMetadata } from "@/lib/canvas/canvas-node-copy";
+import { canGenerateImageInPlace } from "@/lib/canvas/canvas-generation-layout";
+import { mediaVersionFieldsBeforeReplace } from "@/lib/canvas/canvas-media-versions";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 const product = (metadata: CanvasNodeData["metadata"] = {}): CanvasNodeData => ({
@@ -388,41 +391,97 @@ describe("出图调动计划", () => {
         }
     });
 
-    test("重复生图保留旧图，并为同一槽位创建新节点", () => {
-        // 只看连接的话，连接被删过一次、或上一次铺节点时连接没落盘，重出就会在画布上
-        // 再堆一遍一模一样的九张，用户看到的是「重复出一样的图」。
+    test("同一商品、流程和槽位连续生成时复用原节点", () => {
         const flow = ecommerceOneClickFlow("detail")!;
-        const already = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3" }), id: "img-1" };
-        const plan = ecommerceSuiteTargets(product(), flow, suiteOf(), { nodes: [already], connections: [] }, {}, counter());
-        expect(plan.spawned).toHaveLength(9);
-        const replacement = plan.spawned.find((node) => node.metadata?.ecommerceShotId === "detail-3");
-        expect(replacement).toBeDefined();
-        expect(replacement?.id).not.toBe("img-1");
-        expect(replacement?.position.y).toBeGreaterThan(already.position.y);
-        expect(plan.reuse).toEqual([]);
+        const suite = suiteOf();
+        const already = {
+            ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3", ecommerceProductId: "product-1", ecommerceFlowId: "detail", storageKey: "image:old" }),
+            id: "img-1",
+        };
+        const link = { id: "l1", fromNodeId: "product-1", toNodeId: "img-1" };
+        const plan = ecommerceSuiteTargets(product(), flow, suite, { nodes: [already], connections: [link] }, {}, counter());
+        expect(plan.spawned).toHaveLength(8);
+        expect(plan.reuse).toEqual([{ slotId: "detail-3", nodeId: "img-1", prompt: suite.rows[2].prompt }]);
         expect(plan.nodeIds).toHaveLength(9);
+        expect(plan.nodeIds[2]).toBe("img-1");
         expect(plan.reconnect).toEqual([]);
     });
 
     test("已经连到商品节点的不用补边", () => {
         const flow = ecommerceOneClickFlow("detail")!;
-        const already = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3" }), id: "img-1" };
+        const already = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3", ecommerceProductId: "product-1", ecommerceFlowId: "detail" }), id: "img-1" };
         const link = { id: "l1", fromNodeId: "product-1", toNodeId: "img-1" };
         const plan = ecommerceSuiteTargets(product(), flow, suiteOf(), { nodes: [already], connections: [link] }, {}, counter());
-        expect(plan.spawned).toHaveLength(9);
+        expect(plan.spawned).toHaveLength(8);
         expect(plan.reconnect).toEqual([]);
     });
 
-    test("repeat generation creates a distinct image node below the previous result", () => {
+    test("复用节点缺少商品连接时补回约束边", () => {
+        const flow = ecommerceOneClickFlow("detail")!;
+        const already = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3", ecommerceProductId: "product-1", ecommerceFlowId: "detail" }), id: "img-1" };
+        const plan = ecommerceSuiteTargets(product(), flow, suiteOf(), { nodes: [already], connections: [] }, {}, counter(), ["detail-3"]);
+        expect(plan.spawned).toEqual([]);
+        expect(plan.reconnect).toEqual([{ id: "c1", fromNodeId: "product-1", toNodeId: "img-1" }]);
+    });
+
+    test("同槽位但商品或流程不同不会误复用", () => {
+        const flow = ecommerceOneClickFlow("detail")!;
+        const otherProduct = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3", ecommerceProductId: "product-2", ecommerceFlowId: "detail" }), id: "other-product" };
+        const otherFlow = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3", ecommerceProductId: "product-1", ecommerceFlowId: "main" }), id: "other-flow" };
+        const plan = ecommerceSuiteTargets(product(), flow, suiteOf(), { nodes: [otherProduct, otherFlow], connections: [] }, {}, counter(), ["detail-3"]);
+        expect(plan.reuse).toEqual([]);
+        expect(plan.spawned).toHaveLength(1);
+        expect(plan.nodeIds).not.toContain("other-product");
+        expect(plan.nodeIds).not.toContain("other-flow");
+    });
+
+    test("单张重复生成也复用原节点，不增加节点数", () => {
         const flow = ecommerceOneClickFlow("detail")!;
         const suite = suiteOf();
         const first = ecommerceSuiteTargets(product(), flow, suite, { nodes: [], connections: [] }, {}, counter(), ["detail-3"]);
         const previous = first.spawned.find((node) => node.metadata?.ecommerceShotId === "detail-3")!;
+        expect(previous.metadata?.generationResultPlacement).toBe("replace-node");
         const next = ecommerceSuiteTargets(product(), flow, suite, { nodes: [previous], connections: first.connections }, {}, counter(), ["detail-3"]);
-        const replacement = next.spawned.find((node) => node.metadata?.ecommerceShotId === "detail-3")!;
-        expect(replacement.id).not.toBe(previous.id);
-        expect(replacement.position.y).toBeGreaterThan(previous.position.y);
-        expect(next.reuse).toEqual([]);
+        expect(next.spawned).toEqual([]);
+        expect(next.reuse).toEqual([{ slotId: "detail-3", nodeId: previous.id, prompt: suite.rows[2].prompt }]);
+        expect(next.nodeIds).toEqual([previous.id]);
+    });
+
+    test("复制正式产物后重出仍复用原节点，不覆盖用户副本", () => {
+        const flow = ecommerceOneClickFlow("detail")!;
+        const suite = suiteOf();
+        const first = ecommerceSuiteTargets(product(), flow, suite, { nodes: [], connections: [] }, {}, counter(), ["detail-3"]);
+        const official = first.spawned[0];
+        const copied: CanvasNodeData = {
+            ...official,
+            id: "user-copy",
+            metadata: {
+                ...isolateCopiedNodeMetadata(official, new Map([[official.id, "user-copy"]])),
+                content: "user-edited.png",
+                prompt: "用户改过的副本文案",
+            },
+        };
+        const copiedBefore = structuredClone(copied);
+
+        const next = ecommerceSuiteTargets(product(), flow, suite, { nodes: [official, copied], connections: first.connections }, {}, counter(), ["detail-3"]);
+
+        expect(next.reuse).toEqual([{ slotId: "detail-3", nodeId: official.id, prompt: suite.rows[2].prompt }]);
+        expect(next.nodeIds).toEqual([official.id]);
+        expect(copied).toEqual(copiedBefore);
+    });
+
+    test("整套连续生成仍只有一套节点，旧图进入媒体版本历史", () => {
+        const flow = ecommerceOneClickFlow("detail")!;
+        const suite = suiteOf();
+        const first = ecommerceSuiteTargets(product(), flow, suite, { nodes: [], connections: [] }, {}, counter());
+        const completed = first.spawned.map((node, index) => ({ ...node, metadata: { ...node.metadata, storageKey: `image:old-${index}`, status: "success" as const } }));
+        const next = ecommerceSuiteTargets(product(), flow, suite, { nodes: completed, connections: first.connections }, {}, counter());
+
+        expect(first.spawned).toHaveLength(9);
+        expect(next.spawned).toEqual([]);
+        expect(next.nodeIds).toEqual(first.nodeIds);
+        expect(canGenerateImageInPlace(completed[0])).toBe(true);
+        expect(mediaVersionFieldsBeforeReplace(completed[0]).mediaVersions?.[0].media.storageKey).toBe("image:old-0");
     });
 
     test("单张出图只动那一行", () => {
@@ -534,6 +593,7 @@ describe("套图面板的接线", () => {
         // 它的 prompt 和 options 会盖住 metadata 里的同名字段——那样「重出」用的还是
         // 上一版提示词、上一版尺寸，用户改了表却看不出任何变化。
         expect(project).toContain("synchronizeGenerationSpec(item, { prompt, composerContent: prompt");
+        expect(project).toContain('generationResultPlacement: "replace-node"');
     });
 
     test("新铺的节点也要拿到自己的提示词——那段循环只走画布上已有的节点", () => {
@@ -561,7 +621,7 @@ describe("套图面板的接线", () => {
         expect(panel).toContain("ecom-suite-row-run");
         // 跳过、没有提示词、生图模型不兼容，或已有任一批次在运行时不给按。
         expect(panel).toContain("disabled={!enabled || !hasPrompt || batchBusy || !imageModelReady}");
-        expect(project).toContain("generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows)");
+        expect(project).toContain("generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows, completeSuite)");
         // 单张出图或关闭自动装订时清除旧失败计划，不触发装订。
         expect(project).toContain("if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } }");
     });

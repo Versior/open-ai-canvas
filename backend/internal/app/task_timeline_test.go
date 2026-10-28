@@ -101,6 +101,9 @@ func seedResource(t *testing.T, db *gorm.DB, id string, userID string, mime stri
 func TestCreateTimelineTranscriptionTaskQueues(t *testing.T) {
 	svc, db := newTimelineTaskTestService(t)
 	seedResource(t, db, "res-video-1", "usr-create-test", "video/mp4")
+	if err := db.Create(&model.Project{ID: "prj-1", UserID: "usr-create-test", Name: "test", Status: model.ProjectStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	task, err := svc.CreateTimelineTranscriptionTask("usr-create-test", TimelineTranscriptionCreateRequest{ResourceID: "res-video-1", Language: "zh", ProjectID: "prj-1"})
 	if err != nil {

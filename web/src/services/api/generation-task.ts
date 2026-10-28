@@ -15,6 +15,7 @@ import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 import { buildBackendToolRequests, type ResponseFunctionTool, type ResponseInputMessage, type ToolChoice, type ToolResponseResult } from "@/services/api/image";
 import { assertAgentExchangeBudget } from "@/lib/canvas/agent-context-budget";
+import { getActiveUserScope } from "@/lib/user-scope";
 
 export { logicalModelIDForConfig };
 
@@ -43,6 +44,7 @@ type BackendGenerationTaskOptions = {
     textHistory?: Array<{ role: "user" | "assistant" | "system"; content: string }>;
     mask?: ReferenceImage;
     signal?: AbortSignal;
+    expectedUserScope?: string;
     metadata?: Record<string, unknown>;
     onTaskUpdate?: (task: GenerationTask) => void;
     onTextDelta?: (text: string) => void;
@@ -86,6 +88,7 @@ export async function runBackendGenerationTask(
         textHistory = [],
         mask,
         signal,
+        expectedUserScope,
         metadata,
         onTaskUpdate,
         onTextDelta,
@@ -100,23 +103,42 @@ export async function runBackendGenerationTask(
     throwIfAborted(signal);
     assertClientPromptLimit(mode, prompt, config, metadata);
     assertBackendRuntimeConfigured(config, mode);
-    const prepared = await prepareGenerationReferences({ config, mode, referenceImages, referenceVideos, referenceAudios, mask });
+    const options = captureGenerationBoundary({
+        projectId,
+        mode,
+        prompt,
+        config,
+        referenceImages,
+        referenceVideos,
+        referenceAudios,
+        textHistory,
+        mask,
+        signal,
+        expectedUserScope,
+        metadata,
+        onTaskUpdate,
+        onTextDelta,
+        streamText,
+        enableThinking,
+        clientOperationId,
+        retryOf,
+        attemptGroupId,
+    });
+    const prepared = await prepareGenerationReferences(options);
     throwIfAborted(signal);
-    return createAndWaitGenerationTask({ projectId, mode, prompt, config, referenceImages, referenceVideos, referenceAudios, textHistory, signal, metadata, onTaskUpdate, onTextDelta, streamText, enableThinking, clientOperationId, retryOf, attemptGroupId }, prepared, dependencies);
+    return createAndWaitGenerationTask(options, prepared, dependencies);
 }
 
 // 分镜等后台生产流程只需要可靠提交任务；任务状态与产物由项目工作区轮询和
 // 后端自动回填负责，不能让页面 mutation 一直等待供应商完成。
-export async function submitBackendGenerationTask(
-    options: BackendGenerationTaskOptions,
-    dependencies: GenerationTaskDependencies = defaultDependencies,
-): Promise<GenerationTask> {
-    throwIfAborted(options.signal);
-    assertClientPromptLimit(options.mode, options.prompt, options.config, options.metadata);
-    assertBackendRuntimeConfigured(options.config, options.mode);
-    const prepared = await prepareGenerationReferences(options);
-    throwIfAborted(options.signal);
-    return createBackendGenerationTask(options, prepared, dependencies);
+export async function submitBackendGenerationTask(options: BackendGenerationTaskOptions, dependencies: GenerationTaskDependencies = defaultDependencies): Promise<GenerationTask> {
+    const scopedOptions = captureGenerationBoundary(options);
+    throwIfAborted(scopedOptions.signal);
+    assertClientPromptLimit(scopedOptions.mode, scopedOptions.prompt, scopedOptions.config, scopedOptions.metadata);
+    assertBackendRuntimeConfigured(scopedOptions.config, scopedOptions.mode);
+    const prepared = await prepareGenerationReferences(scopedOptions);
+    throwIfAborted(scopedOptions.signal);
+    return createBackendGenerationTask(scopedOptions, prepared, dependencies);
 }
 
 type BackendToolGenerationOptions = {
@@ -185,17 +207,18 @@ export async function runBackendToolGenerationTask(options: BackendToolGeneratio
 
 export async function runBackendGenerationTaskBatch(options: BackendGenerationTaskOptions & { count: number }, dependencies: GenerationTaskDependencies = defaultDependencies) {
     const count = Math.max(1, Math.min(15, Math.floor(Number(options.count)) || 1));
-    throwIfAborted(options.signal);
-    assertClientPromptLimit(options.mode, options.prompt, options.config, options.metadata);
-    if (options.retryContextsByBatchIndex && options.retryContextsByBatchIndex.length !== count) throw new Error("生成重试批次任务数量不匹配");
-    const prepared = await prepareGenerationReferences(options);
-    throwIfAborted(options.signal);
+    const scopedOptions = captureGenerationBoundary(options);
+    throwIfAborted(scopedOptions.signal);
+    assertClientPromptLimit(scopedOptions.mode, scopedOptions.prompt, scopedOptions.config, scopedOptions.metadata);
+    if (scopedOptions.retryContextsByBatchIndex && scopedOptions.retryContextsByBatchIndex.length !== count) throw new Error("生成重试批次任务数量不匹配");
+    const prepared = await prepareGenerationReferences(scopedOptions);
+    throwIfAborted(scopedOptions.signal);
     return Promise.allSettled(
         Array.from({ length: count }, (_, batchIndex) =>
             createAndWaitGenerationTask(
                 {
-                    ...options,
-                    metadata: { ...options.metadata, batchIndex, batchCount: count },
+                    ...scopedOptions,
+                    metadata: { ...scopedOptions.metadata, batchIndex, batchCount: count },
                 },
                 prepared,
                 dependencies,
@@ -206,13 +229,16 @@ export async function runBackendGenerationTaskBatch(options: BackendGenerationTa
 
 function generationOperation(options: BackendGenerationTaskOptions) {
     if (options.mode !== "video") return options.mode;
-    return resolveVideoOperation({
-        textCount: 0,
-        imageCount: options.referenceImages?.length ?? 0,
-        videoCount: options.referenceVideos?.length ?? 0,
-        audioCount: options.referenceAudios?.length ?? 0,
-        characterCount: 0,
-    }, options.metadata?.videoEditOperation as string | undefined);
+    return resolveVideoOperation(
+        {
+            textCount: 0,
+            imageCount: options.referenceImages?.length ?? 0,
+            videoCount: options.referenceVideos?.length ?? 0,
+            audioCount: options.referenceAudios?.length ?? 0,
+            characterCount: 0,
+        },
+        options.metadata?.videoEditOperation as string | undefined,
+    );
 }
 
 export function isGenerationTaskCancelled(error: unknown, signal?: AbortSignal) {
@@ -230,6 +256,15 @@ function throwIfAborted(signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 }
 
+function captureGenerationBoundary(options: BackendGenerationTaskOptions): BackendGenerationTaskOptions {
+    return { ...options, expectedUserScope: options.expectedUserScope ?? getActiveUserScope() };
+}
+
+function assertGenerationBoundary({ signal, expectedUserScope }: Pick<BackendGenerationTaskOptions, "signal" | "expectedUserScope">) {
+    throwIfAborted(signal);
+    if (expectedUserScope && getActiveUserScope() !== expectedUserScope) throw new DOMException("账号已切换，已取消生成", "AbortError");
+}
+
 function assertClientPromptLimit(mode: BackendGenerationMode, prompt: string, config: AiConfig, metadata?: Record<string, unknown>) {
     if (mode !== "image" || metadata?.promptTemplateOperation || (config.taskWorkflowProvider || "model") !== "model") return;
     const requestConfig = resolveModelRequestConfig(config, config.model);
@@ -244,13 +279,21 @@ async function prepareGenerationReferences({
     referenceVideos = [],
     referenceAudios = [],
     mask,
-}: Pick<BackendGenerationTaskOptions, "config" | "mode" | "referenceImages" | "referenceVideos" | "referenceAudios" | "mask">): Promise<PreparedGenerationReferences> {
+    signal,
+    expectedUserScope,
+}: Pick<BackendGenerationTaskOptions, "config" | "mode" | "referenceImages" | "referenceVideos" | "referenceAudios" | "mask" | "signal" | "expectedUserScope">): Promise<PreparedGenerationReferences> {
+    const boundary = { signal, expectedUserScope };
+    assertGenerationBoundary(boundary);
     // asset:// 仅视频生成可用；Agent Plan Seedream 与 Seedance 共用 /api/plan/v3，不能按 BaseURL 误判。
     const preferArkAssetUrl = mode === "video" && usesArkVideoAssetReference(config);
-    const preparedImages = await Promise.all(referenceImages.map((image) => prepareBackendImageReference(image, preferArkAssetUrl)));
-    const preparedVideos = await Promise.all(referenceVideos.map(prepareBackendMediaReference));
-    const preparedAudios = await Promise.all(referenceAudios.map(prepareBackendMediaReference));
-    const preparedMask = mask ? await prepareBackendImageReference(mask, false) : undefined;
+    const preparedImages = await Promise.all(referenceImages.map((image) => prepareBackendImageReference(image, preferArkAssetUrl, boundary)));
+    assertGenerationBoundary(boundary);
+    const preparedVideos = await Promise.all(referenceVideos.map((media) => prepareBackendMediaReference(media, boundary)));
+    assertGenerationBoundary(boundary);
+    const preparedAudios = await Promise.all(referenceAudios.map((media) => prepareBackendMediaReference(media, boundary)));
+    assertGenerationBoundary(boundary);
+    const preparedMask = mask ? await prepareBackendImageReference(mask, false, boundary) : undefined;
+    assertGenerationBoundary(boundary);
     return { referenceImages: preparedImages, referenceVideos: preparedVideos, referenceAudios: preparedAudios, mask: preparedMask };
 }
 
@@ -266,23 +309,42 @@ function usesArkVideoAssetReference(config: AiConfig) {
 async function createAndWaitGenerationTask(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences, dependencies: GenerationTaskDependencies) {
     const task = await createBackendGenerationTask(options, prepared, dependencies);
     const { signal, onTaskUpdate, onTextDelta } = options;
-    const completed = await dependencies.waitTask(task.id, { signal, initialTask: task, onTaskUpdate, onTextDelta });
+    const completed = await dependencies.waitTask(task.id, {
+        signal,
+        initialTask: task,
+        onTaskUpdate: onTaskUpdate
+            ? (updatedTask) => {
+                  assertGenerationBoundary(options);
+                  onTaskUpdate(updatedTask);
+              }
+            : undefined,
+        onTextDelta: onTextDelta
+            ? (text) => {
+                  assertGenerationBoundary(options);
+                  onTextDelta(text);
+              }
+            : undefined,
+    });
+    assertGenerationBoundary(options);
     return parseBackendGenerationResult(completed);
 }
 
 async function createBackendGenerationTask(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences, dependencies: GenerationTaskDependencies) {
+    assertGenerationBoundary(options);
     const task = await dependencies.createTask(backendGenerationTaskInput(options, prepared));
+    assertGenerationBoundary(options);
     options.onTaskUpdate?.(task);
     return task;
 }
 
 export async function prepareBackendGenerationTask(options: BackendGenerationTaskOptions): Promise<CreateTaskInput> {
-    throwIfAborted(options.signal);
-    assertClientPromptLimit(options.mode, options.prompt, options.config, options.metadata);
-    assertBackendRuntimeConfigured(options.config, options.mode);
-    const prepared = await prepareGenerationReferences(options);
-    throwIfAborted(options.signal);
-    return backendGenerationTaskInput(options, prepared);
+    const scopedOptions = captureGenerationBoundary(options);
+    throwIfAborted(scopedOptions.signal);
+    assertClientPromptLimit(scopedOptions.mode, scopedOptions.prompt, scopedOptions.config, scopedOptions.metadata);
+    assertBackendRuntimeConfigured(scopedOptions.config, scopedOptions.mode);
+    const prepared = await prepareGenerationReferences(scopedOptions);
+    throwIfAborted(scopedOptions.signal);
+    return backendGenerationTaskInput(scopedOptions, prepared);
 }
 
 function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepared: PreparedGenerationReferences): CreateTaskInput {
@@ -330,45 +392,69 @@ function generationMetadata(config: AiConfig, metadata?: Record<string, unknown>
     }
     const protocol = modelCost?.protocol || channel.interfaceType;
     if (!protocol) return metadata;
-    const existing = metadata?.providerOptions && typeof metadata.providerOptions === "object" && !Array.isArray(metadata.providerOptions)
-        ? metadata.providerOptions as Record<string, unknown>
-        : {};
-    const namespace = existing[protocol] && typeof existing[protocol] === "object" && !Array.isArray(existing[protocol])
-        ? existing[protocol] as Record<string, unknown>
-        : {};
+    const existing = metadata?.providerOptions && typeof metadata.providerOptions === "object" && !Array.isArray(metadata.providerOptions) ? (metadata.providerOptions as Record<string, unknown>) : {};
+    const namespace = existing[protocol] && typeof existing[protocol] === "object" && !Array.isArray(existing[protocol]) ? (existing[protocol] as Record<string, unknown>) : {};
     const defaults = modelCost?.defaultOptions && typeof modelCost.defaultOptions === "object" ? modelCost.defaultOptions : {};
     if (!Object.keys(defaults).length && !Object.keys(namespace).length) return metadata;
     return { ...metadata, providerOptions: { ...existing, [protocol]: { ...defaults, ...namespace } } };
 }
 
-async function prepareBackendMediaReference(media: ReferenceVideo | ReferenceAudio) {
+async function prepareBackendMediaReference(media: ReferenceVideo | ReferenceAudio, boundary: Pick<BackendGenerationTaskOptions, "signal" | "expectedUserScope">) {
+    assertGenerationBoundary(boundary);
     if (resourceIdFromStorageKey(media.storageKey)) return backendMediaReference(media, { storageKey: media.storageKey });
     const url = media.url || "";
     if (/^https?:\/\//i.test(url)) return backendMediaReference(media, { url });
     let blob: Blob | null = null;
-    if (media.storageKey) blob = await getMediaBlob(media.storageKey);
-    if (!blob && (url.startsWith("blob:") || url.startsWith("data:"))) blob = await (await fetch(url)).blob();
+    if (media.storageKey) {
+        blob = await getMediaBlob(media.storageKey);
+        assertGenerationBoundary(boundary);
+    }
+    if (!blob && (url.startsWith("blob:") || url.startsWith("data:"))) {
+        const response = await fetch(url, { signal: boundary.signal });
+        assertGenerationBoundary(boundary);
+        blob = await response.blob();
+        assertGenerationBoundary(boundary);
+    }
     if (!blob) throw new Error("参考媒体尚未保存，请重新上传后再生成");
     try {
         const kind: "video" | "audio" | "file" = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
-        const resource = await uploadResourceFile(blob, kind, { fileName: media.name, width: "width" in media ? media.width : undefined, height: "height" in media ? media.height : undefined, durationMs: media.durationMs });
+        const resource = await uploadResourceFile(blob, kind, { fileName: media.name, width: "width" in media ? media.width : undefined, height: "height" in media ? media.height : undefined, durationMs: media.durationMs }, undefined, {
+            expectedScope: boundary.expectedUserScope,
+            signal: boundary.signal,
+        });
+        assertGenerationBoundary(boundary);
         return backendMediaReference(media, { storageKey: resourceStorageKey(resource.id), type: resource.mimeType || media.type || blob.type });
     } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        assertGenerationBoundary(boundary);
         throw new Error(error instanceof Error ? `参考媒体上传失败：${error.message}` : "参考媒体上传失败");
     }
 }
 
-async function prepareBackendImageReference(image: ReferenceImage, preferArkAssetUrl = false) {
+async function prepareBackendImageReference(image: ReferenceImage, preferArkAssetUrl: boolean, boundary: Pick<BackendGenerationTaskOptions, "signal" | "expectedUserScope">) {
+    assertGenerationBoundary(boundary);
     if (preferArkAssetUrl && image.arkAssetId) return backendImageReference(image, { url: `asset://${image.arkAssetId}` });
     if (resourceIdFromStorageKey(image.storageKey)) return backendImageReference(image, { storageKey: image.storageKey });
     const sourceUrl = image.url || image.dataUrl;
     if (/^https?:\/\//i.test(sourceUrl)) return backendImageReference(image, { url: sourceUrl });
-    const blob = image.storageKey ? await getImageBlob(image.storageKey) : sourceUrl ? await (await fetch(sourceUrl)).blob() : null;
+    let blob: Blob | null = null;
+    if (image.storageKey) {
+        blob = await getImageBlob(image.storageKey);
+        assertGenerationBoundary(boundary);
+    } else if (sourceUrl) {
+        const response = await fetch(sourceUrl, { signal: boundary.signal });
+        assertGenerationBoundary(boundary);
+        blob = await response.blob();
+        assertGenerationBoundary(boundary);
+    }
     if (!blob) throw new Error("参考图片尚未保存，请重新上传后再生成");
     try {
-        const resource = await uploadResourceFile(blob, "image", { fileName: image.name });
+        const resource = await uploadResourceFile(blob, "image", { fileName: image.name }, undefined, { expectedScope: boundary.expectedUserScope, signal: boundary.signal });
+        assertGenerationBoundary(boundary);
         return backendImageReference(image, { storageKey: resourceStorageKey(resource.id), type: resource.mimeType || image.type || blob.type });
     } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        assertGenerationBoundary(boundary);
         throw new Error(error instanceof Error ? `参考图片上传失败：${error.message}` : "参考图片上传失败");
     }
 }
@@ -502,11 +588,12 @@ function logicalCapabilityOptions(config: AiConfig, mode: BackendGenerationMode)
     }
     const channel = resolveModelChannel(config, config.model);
     const spec = channel.modelCosts?.find((item) => item.model === modelOptionName(config.model))?.logicalCapabilitySpec;
-    const candidates: Record<string, unknown> = mode === "image"
-        ? { size: config.size, quality: omittedImageQuality(config.quality), transparentBackground: config.transparentBackground === "true", count: Number(config.count) }
-        : mode === "video"
-            ? { size: config.size, videoSeconds: Number(config.videoSeconds), vquality: config.vquality, videoGenerateAudio: config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" }
-            : mode === "audio"
+    const candidates: Record<string, unknown> =
+        mode === "image"
+            ? { size: config.size, quality: omittedImageQuality(config.quality), transparentBackground: config.transparentBackground === "true", count: Number(config.count) }
+            : mode === "video"
+              ? { size: config.size, videoSeconds: Number(config.videoSeconds), vquality: config.vquality, videoGenerateAudio: config.videoGenerateAudio === "true", videoWatermark: config.videoWatermark === "true" }
+              : mode === "audio"
                 ? { audioVoice: config.audioVoice, audioFormat: config.audioFormat, audioSpeed: Number(config.audioSpeed), audioLanguage: config.audioLanguage, audioDialect: config.audioDialect }
                 : {};
     const filtered = Object.fromEntries(Object.entries(candidates).filter(([key]) => Boolean(spec?.options?.[key])));
@@ -516,7 +603,9 @@ function logicalCapabilityOptions(config: AiConfig, mode: BackendGenerationMode)
 }
 
 function omittedImageQuality(value: string | undefined) {
-    const normalized = String(value || "").trim().toLowerCase();
+    const normalized = String(value || "")
+        .trim()
+        .toLowerCase();
     return normalized === "auto" || normalized === "any" ? undefined : value;
 }
 
@@ -531,7 +620,10 @@ function normalizeBackendText(value: unknown): string | undefined {
     if (typeof value === "string") return value;
     if (value === null || value === undefined) return undefined;
     if (Array.isArray(value)) {
-        const text = value.map((item) => normalizeBackendText(item)).filter((item): item is string => Boolean(item)).join("");
+        const text = value
+            .map((item) => normalizeBackendText(item))
+            .filter((item): item is string => Boolean(item))
+            .join("");
         return text || undefined;
     }
     if (typeof value === "object") {

@@ -52,6 +52,34 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, task)
 	})
+	r.POST("/social-video/imports", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		policy, available := loadRuntimePolicy(c, svc)
+		if !available || !enforceRateLimit(c, "social-video-imports:"+user.ID, policy.Request.TaskCreatePerMinute, time.Minute) {
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
+		var req service.SocialVideoImportRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				fail(c, http.StatusRequestEntityTooLarge, errors.New("请求正文不能超过 4 KiB"))
+				return
+			}
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		task, err := svc.CreateSocialVideoImportTask(user.ID, c.GetHeader("X-Idempotency-Key"), req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, task)
+	})
 	r.POST("/timeline/transcriptions", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

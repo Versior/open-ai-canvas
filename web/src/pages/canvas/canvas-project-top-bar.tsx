@@ -90,14 +90,15 @@ export function CanvasTopBar({
     const { availableMicrocredits, refreshing } = useWalletBalance(user?.id, creditsEnabled);
     const titleRef = useRef<HTMLDivElement>(null);
     const [shortcutsOpen, setShortcutsOpen] = useState(false);
+    const showProfessionalControls = !ecommerce || workspaceMode !== "simple";
 
     const handleShortDramaGuideToggle = () => {
         shortDramaGuide?.onToggle();
     };
 
     useEffect(() => {
-        if (shortcutRequestNonce > 0) setShortcutsOpen(true);
-    }, [shortcutRequestNonce]);
+        if (showProfessionalControls && shortcutRequestNonce > 0) setShortcutsOpen(true);
+    }, [shortcutRequestNonce, showProfessionalControls]);
 
     useEffect(() => {
         if (!isTitleEditing) return;
@@ -132,7 +133,7 @@ export function CanvasTopBar({
                                     { key: "save", icon: <Save className="size-4" />, label: <MenuLabel text="保存" shortcut="⌘ S" />, onClick: () => void onSave() },
                                     { type: "divider" },
                                     { key: "import", icon: <Upload className="size-4" />, label: "导入素材", onClick: onImportImage },
-                                    { key: "search", icon: <Search className="size-4" />, label: <MenuLabel text="搜索节点" shortcut="⌘ F" />, onClick: onOpenSearch },
+                                    ...(showProfessionalControls ? [{ key: "search", icon: <Search className="size-4" />, label: <MenuLabel text="搜索节点" shortcut="⌘ F" />, onClick: onOpenSearch }] : []),
                                     { type: "divider" },
                                     { key: "undo", disabled: !canUndo, icon: <Undo2 className="size-4" />, label: <MenuLabel text="撤销" shortcut="⌘ Z" />, onClick: onUndo },
                                     { key: "redo", disabled: !canRedo, icon: <Redo2 className="size-4" />, label: <MenuLabel text="重做" shortcut="⌘ ⇧ Z / ⌘ Y" />, onClick: onRedo },
@@ -214,37 +215,41 @@ export function CanvasTopBar({
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}
-                    {onOpenModelLibrary ? (
+                    {showProfessionalControls && onOpenModelLibrary ? (
                         <CanvasTopBarTooltip label="管理模特库">
                             <Button type="text" className="canvas-topbar-action !h-10 !w-10 !min-w-10 !p-0" style={{ color: theme.node.text }} icon={<UserRound className="size-4" />} onClick={onOpenModelLibrary} aria-label="管理模特库" />
                         </CanvasTopBarTooltip>
                     ) : null}
-                    <CanvasTopBarTooltip label="搜索画布节点">
-                        <Button
-                            type="text"
-                            className="canvas-topbar-action !hidden !h-10 !w-10 !min-w-10 !rounded-xl !p-0 lg:!inline-flex"
-                            style={{ color: theme.node.text }}
-                            icon={<Search className="size-4" />}
-                            onClick={onOpenSearch}
-                            aria-label="搜索画布节点"
-                        />
-                    </CanvasTopBarTooltip>
-                    <CanvasTopBarTooltip label="导入第三方画布">
-                        <Dropdown
-                            trigger={["click"]}
-                            placement="bottomRight"
-                            menu={{
-                                items: [
-                                    { key: "libtv", icon: <CopyPlus className="size-4" />, label: "导入 LibTV 画布", onClick: onImportLibTV },
-                                    { key: "tapnow", icon: <CloudDownload className="size-4" />, label: "导入 TapNow 画布", onClick: onImportTapNow },
-                                ],
-                            }}
-                        >
-                            <Button type="text" className="canvas-topbar-action canvas-topbar-import-button !h-10 !rounded-xl !px-2 !font-medium" style={{ color: theme.node.text }} icon={<CloudDownload className="size-4" />} aria-label="导入第三方画布">
-                                <span className="hidden lg:inline">导入第三方画布</span>
-                            </Button>
-                        </Dropdown>
-                    </CanvasTopBarTooltip>
+                    {showProfessionalControls ? (
+                        <CanvasTopBarTooltip label="搜索画布节点">
+                            <Button
+                                type="text"
+                                className="canvas-topbar-action !hidden !h-10 !w-10 !min-w-10 !rounded-xl !p-0 lg:!inline-flex"
+                                style={{ color: theme.node.text }}
+                                icon={<Search className="size-4" />}
+                                onClick={onOpenSearch}
+                                aria-label="搜索画布节点"
+                            />
+                        </CanvasTopBarTooltip>
+                    ) : null}
+                    {showProfessionalControls ? (
+                        <CanvasTopBarTooltip label="导入第三方画布">
+                            <Dropdown
+                                trigger={["click"]}
+                                placement="bottomRight"
+                                menu={{
+                                    items: [
+                                        { key: "libtv", icon: <CopyPlus className="size-4" />, label: "导入 LibTV 画布", onClick: onImportLibTV },
+                                        { key: "tapnow", icon: <CloudDownload className="size-4" />, label: "导入 TapNow 画布", onClick: onImportTapNow },
+                                    ],
+                                }}
+                            >
+                                <Button type="text" className="canvas-topbar-action canvas-topbar-import-button !h-10 !rounded-xl !px-2 !font-medium" style={{ color: theme.node.text }} icon={<CloudDownload className="size-4" />} aria-label="导入第三方画布">
+                                    <span className="hidden lg:inline">导入第三方画布</span>
+                                </Button>
+                            </Dropdown>
+                        </CanvasTopBarTooltip>
+                    ) : null}
                     {user && creditsEnabled ? (
                         <CanvasTopBarTooltip label="打开积分中心">
                             <button
@@ -259,9 +264,11 @@ export function CanvasTopBar({
                             </button>
                         </CanvasTopBarTooltip>
                     ) : null}
-                    <CanvasTopBarTooltip label="进入专注模式（Shift + Ctrl/Cmd + F）">
-                        <Button type="text" className="canvas-topbar-action !h-10 !w-10 !min-w-10 !rounded-xl !p-0" style={{ color: theme.node.text }} icon={<Focus className="size-4" />} onClick={onEnterFocusMode} aria-label="进入专注模式" />
-                    </CanvasTopBarTooltip>
+                    {showProfessionalControls ? (
+                        <CanvasTopBarTooltip label="进入专注模式（Shift + Ctrl/Cmd + F）">
+                            <Button type="text" className="canvas-topbar-action !h-10 !w-10 !min-w-10 !rounded-xl !p-0" style={{ color: theme.node.text }} icon={<Focus className="size-4" />} onClick={onEnterFocusMode} aria-label="进入专注模式" />
+                        </CanvasTopBarTooltip>
+                    ) : null}
                     {shortDramaGuide ? (
                         <CanvasTopBarTooltip label={shortDramaGuide.collapsed ? "展开短剧流程" : "收起短剧流程"}>
                             <Button
@@ -282,7 +289,7 @@ export function CanvasTopBar({
                     </CanvasTopBarTooltip>
                 </div>
             </div>
-            <CanvasShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+            {showProfessionalControls && shortcutsOpen ? <CanvasShortcutsModal open onClose={() => setShortcutsOpen(false)} /> : null}
         </>
     );
 }

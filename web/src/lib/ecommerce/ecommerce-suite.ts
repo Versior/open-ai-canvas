@@ -32,6 +32,8 @@ export type EcommerceSuiteRow = {
      * 出图时原样交给图片模型；商品锁定与模特锁定由编译时自动前置。
      */
     prompt: string;
+    /** 竞品大纲的采用方式；普通创作表行可以没有。 */
+    stance?: "follow" | "differentiate";
     /** 与底图分离的可编辑文案。旧数据可以没有。 */
     copy?: EcommerceCopy;
     /** 分析时选定的排版快照。旧数据可以没有。 */
@@ -345,6 +347,7 @@ export function reconcileEcommerceSuiteDraftRows(previousRows: EcommerceSuiteRow
             ...(copy ? { copy } : {}),
             ...(layout ? { layout } : {}),
             enabled: previous.enabled,
+            stance: previous.stance,
             resultNodeId: previous.resultNodeId,
         };
     });

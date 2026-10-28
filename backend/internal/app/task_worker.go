@@ -178,6 +178,22 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		return terminal.handleAlreadyCancelled(*latest)
 	}
 
+	// Creation and manual retry admission can precede execution by a long time.
+	// Re-read mutable project state before any task-specific executor or model route.
+	if err := s.ensureTaskProjectActive(task.UserID, task.ProjectID); err != nil {
+		var admissionErr *AppError
+		if !errors.As(err, &admissionErr) {
+			return err
+		}
+		recoverable, uncertain, evidenceErr := s.currentTaskSubmissionState(task)
+		if evidenceErr != nil {
+			return errors.Join(err, evidenceErr)
+		}
+		if !recoverable {
+			return terminal.markPreparationFailure(task, "项目不可用", err, uncertain, "项目已删除或归档，上游请求未发出")
+		}
+	}
+
 	// 时间线转写由本地 whisper.cpp 执行，不经计费与模型渠道路由，
 	// 在进入通用生成流程前按类型分叉到独立执行器。
 	if task.Type == model.TaskTypeTimelineTranscription {
@@ -186,13 +202,14 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	if task.Type == model.TaskTypeTimelineRender {
 		return w.processTimelineRender(task, ctx)
 	}
+	if task.Type == model.TaskTypeSocialVideoImport {
+		return w.processSocialVideoImport(task, ctx)
+	}
 	if task.MediaRecoveryJSON != "" {
 		result, recoveryErr := s.resumeTaskMedia(ctx, task)
 		return s.finishTaskMediaRecovery(task, result, recoveryErr)
 	}
 
-	// Creation and manual retry admission can precede execution by a long time.
-	// Re-read the feature policy before preparing or dispatching a model route.
 	decryptedInput, err := s.decryptTaskInputJSON(task.InputJSON)
 	if err != nil {
 		return err
@@ -202,21 +219,7 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 		return err
 	}
 	if err := s.requireCustomChannelsForTaskInput(admissionInput); err != nil {
-		// A reclaimed task may already have submitted upstream. Keep the existing
-		// review path for that evidence; only an unsent reservation is refundable.
-		attempts, readErr := s.repo.RouteAttempts(task.ID, task.RouteRun)
-		uncertain := readErr != nil || task.ProviderRequestID != "" || s.taskBilling().BillingFailureRequiresReview(task.BillingOrderID, task.ID, err)
-		for _, attempt := range attempts {
-			if attempt.DispatchState == "accepted" || attempt.DispatchState == "submission_unknown" {
-				uncertain = true
-			}
-		}
-		// Legacy tasks without an explicit new retry run retain their conservative
-		// submission handling, as in createDirectTaskAttempt.
-		if len(attempts) == 0 && task.RouteRun <= 1 && task.Attempts > 1 {
-			uncertain = true
-		}
-		return terminal.markPreparationFailure(task, "渠道不可用", errors.Join(err, readErr), uncertain, "自定义渠道已关闭，上游请求未发出")
+		return s.markTaskPreparationFailure(task, terminal, "渠道不可用", err, "自定义渠道已关闭，上游请求未发出")
 	}
 
 	s.markAgentMemoryCompactRunning(*task)
@@ -342,6 +345,42 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	return terminal.handleSuccess(task)
 }
 
+func (s *Service) currentTaskSubmissionState(task *model.Task) (recoverable bool, uncertain bool, err error) {
+	if task.MediaRecoveryJSON != "" || task.ProviderRequestID != "" {
+		return true, true, nil
+	}
+	attempts, err := s.repo.RouteAttempts(task.ID, task.RouteRun)
+	if err != nil {
+		return false, true, err
+	}
+	for _, attempt := range attempts {
+		if attempt.DispatchState == "accepted" || attempt.DispatchState == "submission_unknown" {
+			return attempt.ProviderRequestID != "", true, nil
+		}
+	}
+	// Legacy retries did not persist route-attempt evidence. Their billing still
+	// needs review, but there is no upstream request ID or checkpoint to recover.
+	if len(attempts) == 0 && task.RouteRun <= 1 && task.Attempts > 1 {
+		return false, true, nil
+	}
+	return false, false, nil
+}
+
+func (s *Service) taskSubmissionMayExist(task *model.Task, billing taskBillingLifecycle, cause error) (bool, error) {
+	_, uncertain, err := s.currentTaskSubmissionState(task)
+	if uncertain || err != nil {
+		return uncertain, err
+	}
+	return billing.BillingFailureRequiresReview(task.BillingOrderID, task.ID, cause), nil
+}
+
+func (s *Service) markTaskPreparationFailure(task *model.Task, terminal *taskTerminalCoordinator, stage string, err error, refundReason string) error {
+	// A reclaimed task may already have submitted upstream. Only a reservation
+	// with no dispatch evidence can be refunded safely.
+	uncertain, readErr := s.taskSubmissionMayExist(task, terminal.billing, err)
+	return terminal.markPreparationFailure(task, stage, errors.Join(err, readErr), uncertain, refundReason)
+}
+
 func taskUsesUpstreamReportedProgress(taskType string) bool {
 	return taskType == "canvas_image" || taskType == "canvas_video" || strings.HasPrefix(taskType, "video_")
 }
@@ -397,6 +436,8 @@ func taskExecutionTimeoutWithPolicy(taskType string, policy RuntimeTaskPolicy) t
 	case taskType == model.TaskTypeTimelineRender:
 		// 渲染是整条时间线的重编码，耗时随长度线性增长。
 		return 60 * time.Minute
+	case taskType == model.TaskTypeSocialVideoImport:
+		return 10 * time.Minute
 	default:
 		return time.Duration(policy.DefaultTimeoutMinutes) * time.Minute
 	}

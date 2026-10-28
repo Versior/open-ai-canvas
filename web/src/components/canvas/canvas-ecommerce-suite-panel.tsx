@@ -81,7 +81,7 @@ export type EcommerceSuitePanelProps = {
     onAutoBindChange: (value: boolean) => void;
     /** 清空表里所有提示词——结构留着，只把每行的提示词抹掉。 */
     onClearPrompts: () => void;
-    onAnalyze: (rows: EcommerceSuiteRow[]) => void;
+    onAnalyze: (rows: EcommerceSuiteRow[]) => Promise<EcommerceSuiteRow[] | undefined> | EcommerceSuiteRow[] | undefined;
     onReverse?: () => void;
     onBind?: (rows: EcommerceSuiteRow[]) => Promise<unknown>;
     /** 改某一行的一格：标题 / 职责 / 提示词。 */
@@ -90,7 +90,7 @@ export type EcommerceSuitePanelProps = {
     onAddRow: () => void;
     onRemoveRow: (slotId: string) => void;
     /** 出整张表。 */
-    onGenerate: (rows?: EcommerceSuiteRow[]) => void | Promise<unknown>;
+    onGenerate: (rows?: EcommerceSuiteRow[], slotIds?: string[]) => boolean | void | Promise<boolean | void>;
     /** 只出某一张——不传就出整张表。 */
     onGenerateOne: (slotId: string, rows?: EcommerceSuiteRow[]) => void | Promise<unknown>;
     /** 把某一行往前（-1）或往后（+1）挪一格。顺序决定叙事，也决定长图接法。 */
@@ -189,9 +189,12 @@ export function CanvasEcommerceSuitePanel({
     const [binding, setBinding] = useState(false);
     const [templateName, setTemplateName] = useState("");
     const [savingTemplate, setSavingTemplate] = useState(false);
+    const [firstVersionRunning, setFirstVersionRunning] = useState(false);
+    const firstVersionInFlight = useRef(false);
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [expandedDesignSlotId, setExpandedDesignSlotId] = useState<string>();
     const [focusedPromptSlotId, setFocusedPromptSlotId] = useState<string>();
+    const [detailSlotId, setDetailSlotId] = useState<string>();
     const showAdvanced = showProfessionalControls || advancedOpen;
     const privateTemplates = useEcommerceTemplateLibrary((state) => state.templates);
     const templateScope = useEcommerceTemplateLibrary((state) => state.scope);
@@ -204,6 +207,8 @@ export function CanvasEcommerceSuitePanel({
     const [promptOpen, setPromptOpen] = useState(false);
     const [localRows, setLocalRows] = useState(rows);
     const draftRows = localRows;
+    const detailQuickView = flow.id === "detail" && !showProfessionalControls;
+    const activeDetailSlotId = draftRows.some((row) => row.slotId === detailSlotId) ? detailSlotId : draftRows[0]?.slotId;
     const latestDraftRows = useRef(rows);
     const pendingCopyCommit = useRef(false);
     const copyCommitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -248,9 +253,11 @@ export function CanvasEcommerceSuitePanel({
         clearCopyCommitTimer();
         copyCommitTimer.current = setTimeout(commitPendingCopy, 250);
     };
+    const commitPendingCopyRef = useRef(commitPendingCopy);
+    commitPendingCopyRef.current = commitPendingCopy;
     useEffect(
         () => () => {
-            clearCopyCommitTimer();
+            commitPendingCopyRef.current();
         },
         [],
     );
@@ -319,6 +326,10 @@ export function CanvasEcommerceSuitePanel({
         const metadata = nodeBySlot.get(row.slotId)?.metadata;
         return metadata?.storageKey && metadata.status !== "loading" && metadata.status !== "error";
     }).length;
+    const unfinishedRows = enabledRows.filter((row) => {
+        const metadata = nodeBySlot.get(row.slotId)?.metadata;
+        return !metadata?.storageKey || metadata.status === "loading" || metadata.status === "error";
+    });
     const busySlotIds = new Set(
         enabledRows
             .filter((row) => {
@@ -339,6 +350,7 @@ export function CanvasEcommerceSuitePanel({
     }).length;
     const batchBusy = generating || Boolean(activeGenerationNodeIds?.size) || busyCount > 0;
     const batchLabel = generationCount === 0 ? "补充生成方案" : busyCount > 0 ? `正在生成 ${Math.min(completedInCurrentRun, generationCount)}/${generationCount}` : batchBusy ? `正在生成 ${generationCount} 张…` : `批量生成 ${generationCount} 张`;
+    const firstVersionLabel = firstVersionRunning ? "正在准备第一版…" : batchBusy ? batchLabel : generated === enabledTotal && enabledTotal > 0 ? "第一版已完成" : generated ? `生成剩余 ${unfinishedRows.length} 张` : "生成第一版";
 
     // 参数浮层读的是完整配置：模型换成面板上选的那个，尺寸/画质用节点上存的。
     // 少了这一步，浮层会按全局模型算能力，面板上选了另一个模型就看不到它的档位。
@@ -377,6 +389,32 @@ export function CanvasEcommerceSuitePanel({
     const generateDraftOne = (slotId: string) => {
         const latest = commitDraftRows();
         void onGenerateOne(slotId, latest);
+    };
+    const generateFirstVersion = async () => {
+        if (firstVersionInFlight.current || batchBusy || !enabledTotal || !imageModelReady) return;
+        const original = commitDraftRows();
+        const needsAnalysis = original.some((row) => row.enabled !== false && !row.prompt.trim());
+        if (needsAnalysis && !analysisModelReady) return;
+        firstVersionInFlight.current = true;
+        setFirstVersionRunning(true);
+        try {
+            let planned = original;
+            if (needsAnalysis) {
+                const analyzed = await onAnalyze(original);
+                if (!analyzed) return;
+                const analyzedBySlot = new Map(analyzed.map((row) => [row.slotId, row]));
+                planned = original.map((row) => (row.prompt.trim() ? row : analyzedBySlot.get(row.slotId) || row));
+                if (planned.some((row) => row.enabled !== false && !row.prompt.trim())) return;
+                replaceDraftRows(planned);
+                onRowsChange(planned);
+            }
+            const pendingSlotIds = planned.filter((row) => row.enabled !== false && unfinishedRows.some((pending) => pending.slotId === row.slotId)).map((row) => row.slotId);
+            if (!pendingSlotIds.length) return;
+            await onGenerate(planned, pendingSlotIds.length === planned.filter((row) => row.enabled !== false).length ? undefined : pendingSlotIds);
+        } finally {
+            firstVersionInFlight.current = false;
+            setFirstVersionRunning(false);
+        }
     };
 
     const confirmGenerate = () => {
@@ -485,7 +523,7 @@ export function CanvasEcommerceSuitePanel({
                 ) : null}
                 <button
                     type="button"
-                    className="ecom-suite-primary"
+                    className={showProfessionalControls ? "ecom-suite-primary" : "ecom-suite-ghost"}
                     disabled={analyzing || !analysisModelReady}
                     onClick={() => {
                         commitDraftRows();
@@ -713,7 +751,7 @@ export function CanvasEcommerceSuitePanel({
                 </div>
             ) : null}
 
-            <div className={showProfessionalControls ? "ecom-suite-grid thin-scrollbar" : "ecom-suite-storyboard thin-scrollbar"}>
+            <div className={showProfessionalControls ? "ecom-suite-grid thin-scrollbar" : detailQuickView ? "ecom-suite-detail-workspace" : "ecom-suite-storyboard thin-scrollbar"}>
                 {showProfessionalControls ? (
                     <div className="ecom-suite-grid-head">
                         <span>屏次</span>
@@ -722,284 +760,363 @@ export function CanvasEcommerceSuitePanel({
                         <span>结果</span>
                     </div>
                 ) : null}
-                {draftRows.map((row, index) => {
-                    const node = nodeBySlot.get(row.slotId);
-                    const status = node?.metadata?.status;
-                    const hasPrompt = Boolean(row.prompt.trim());
-                    const label = row.title.trim() || row.slotId;
-                    const enabled = row.enabled !== false;
-                    const candidates = candidatesBySlot?.get(row.slotId) || [];
-                    const candidateIsStale = (candidate: CanvasNodeData) => Boolean(sourceSignature && !ecommerceResultSourceCurrent(candidate, sourceSignature(row, candidate)));
-                    const rowBusy = busySlotIds.has(row.slotId);
-                    const designedCopy = row.copy ?? { headline: "", subhead: "", cta: "", price: "" };
-                    const designedLayout = row.layout ?? createEcommerceLayoutFromPreset(ecommerceOneClickLayoutPreset(flow.id, row.slotId))!;
-                    const designedRow = { ...row, copy: designedCopy, layout: designedLayout };
-                    const visibleBlocks = ecommerceLayoutVisibleBlocks(designedRow.layout, designedRow.copy);
-                    const previewSize = ecommerceSuitePreviewSize(node, imageSize);
-                    const hasAdoptedImage = Boolean(node && (node.metadata?.storageKey || node.metadata?.content) && status !== "loading" && status !== "error");
-                    const rowActionLabel = rowBusy ? "生成中" : status === "error" ? "重试" : hasAdoptedImage ? "重出" : "生成";
-                    const copyEditorId = `ecom-suite-copy-${row.slotId}`;
-                    const copyEditor = (
-                        <fieldset id={copyEditorId} className="ecom-suite-copy-editor" aria-label={`${label} 文案与版式`}>
-                            <legend>文案与版式</legend>
-                            <div className="ecom-suite-copy-fields">
-                                <label>
-                                    <span>主标题</span>
-                                    <input
-                                        value={designedRow.copy.headline}
-                                        aria-label={`${label} 主标题`}
-                                        onChange={(event) => updateCopyDraft(row.slotId, "headline", event.target.value, designedCopy, designedLayout)}
-                                        onBlur={commitPendingCopy}
-                                    />
-                                </label>
-                                <label>
-                                    <span>副文案</span>
-                                    <input value={designedRow.copy.subhead} aria-label={`${label} 副文案`} onChange={(event) => updateCopyDraft(row.slotId, "subhead", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
-                                </label>
-                                <label>
-                                    <span>行动引导</span>
-                                    <input value={designedRow.copy.cta} aria-label={`${label} 行动引导`} onChange={(event) => updateCopyDraft(row.slotId, "cta", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
-                                </label>
-                                <label>
-                                    <span>价格</span>
-                                    <input value={designedRow.copy.price} aria-label={`${label} 价格`} onChange={(event) => updateCopyDraft(row.slotId, "price", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
-                                </label>
-                            </div>
-                            <div className="ecom-suite-layout-presets" role="group" aria-label={`${label} 版式预设`}>
-                                {ECOMMERCE_LAYOUT_PRESETS.map((preset) => (
+                {detailQuickView ? (
+                    <>
+                        <nav className="ecom-suite-detail-nav thin-scrollbar" aria-label="详情页屏次">
+                            {draftRows.map((row, index) => {
+                                const label = row.title.trim() || row.slotId;
+                                const node = nodeBySlot.get(row.slotId);
+                                const status = node?.metadata?.status;
+                                const state = row.enabled === false ? "已跳过" : status === "loading" ? "生成中" : status === "error" ? "失败" : node?.metadata?.storageKey ? "已生成" : "待生成";
+                                return (
                                     <button
-                                        key={preset.id}
+                                        key={row.slotId}
                                         type="button"
-                                        className="ecom-suite-layout-preset"
-                                        aria-label={`使用版式：${preset.layout.name}`}
-                                        aria-pressed={designedRow.layout?.name === preset.layout.name}
-                                        title={preset.hint}
-                                        onClick={() => {
-                                            const layout = createEcommerceLayoutFromPreset(preset.id);
-                                            if (layout) updateDesignRow(row.slotId, (current) => ({ ...current, copy: current.copy ?? designedCopy, layout }));
-                                        }}
+                                        aria-label={`编辑第 ${index + 1} 屏：${label}`}
+                                        aria-current={activeDetailSlotId === row.slotId ? "page" : undefined}
+                                        data-status={status || "idle"}
+                                        onClick={() => setDetailSlotId(row.slotId)}
                                     >
-                                        {preset.layout.name}
+                                        <span className="tabular-nums">{String(index + 1).padStart(2, "0")}</span>
+                                        <span>
+                                            <strong>{label}</strong>
+                                            <small>{state}</small>
+                                        </span>
                                     </button>
-                                ))}
-                            </div>
-                        </fieldset>
-                    );
-                    return (
-                        <div
-                            key={row.slotId}
-                            className={showProfessionalControls ? "ecom-suite-grid-row" : "ecom-suite-story-card"}
-                            data-empty={hasPrompt ? undefined : "true"}
-                            data-disabled={enabled ? undefined : "true"}
-                            role="group"
-                            aria-label={`第 ${index + 1} 屏：${label}`}
-                        >
-                            <span className="ecom-suite-screen">
-                                {!showProfessionalControls ? (
-                                    <button
-                                        type="button"
-                                        className="ecom-suite-row-toggle"
-                                        role="switch"
-                                        aria-label={`启用这一屏：${label}`}
-                                        aria-checked={enabled}
-                                        onClick={() => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, enabled: !enabled } : item)))}
-                                    >
-                                        {enabled ? "启用" : "已跳过"}
-                                    </button>
-                                ) : null}
-                                <b className="tabular-nums">{String(index + 1).padStart(2, "0")}</b>
-                                {/* 屏次可改。行业套路只是起手式——用户按自己的结构改，
+                                );
+                            })}
+                        </nav>
+                        <section className="ecom-suite-detail-preview thin-scrollbar" aria-label="连续详情页预览">
+                            {draftRows
+                                .filter((row) => row.enabled !== false)
+                                .map((row, index) => {
+                                    const node = nodeBySlot.get(row.slotId);
+                                    const status = node?.metadata?.status;
+                                    const label = row.title.trim() || row.slotId;
+                                    const copy = row.copy ?? { headline: "", subhead: "", cta: "", price: "" };
+                                    const layout = row.layout ?? createEcommerceLayoutFromPreset(ecommerceOneClickLayoutPreset(flow.id, row.slotId))!;
+                                    const visibleBlocks = ecommerceLayoutVisibleBlocks(layout, copy);
+                                    const previewSize = ecommerceSuitePreviewSize(node, imageSize, SUITE_DETAIL_PREVIEW_EDGE);
+                                    const hasImage = Boolean(node && (node.metadata?.storageKey || node.metadata?.content) && status !== "loading" && status !== "error");
+                                    return (
+                                        <button
+                                            key={row.slotId}
+                                            type="button"
+                                            className="ecom-suite-detail-preview-page"
+                                            aria-label={`在编辑区打开第 ${index + 1} 屏：${label}`}
+                                            aria-current={activeDetailSlotId === row.slotId ? "true" : undefined}
+                                            data-disabled={row.enabled === false ? "true" : undefined}
+                                            onClick={() => setDetailSlotId(row.slotId)}
+                                        >
+                                            <span className="ecom-suite-detail-preview-label">
+                                                {String(index + 1).padStart(2, "0")} · {label}
+                                            </span>
+                                            <span className="ecom-suite-detail-preview-artboard" style={previewSize}>
+                                                {status === "loading" ? <LoaderCircle className="size-4 animate-spin" /> : <SuiteThumb node={node} />}
+                                                {hasImage && visibleBlocks.length ? (
+                                                    <span className="ecom-suite-layout-overlay ecom-suite-detail-overlay" aria-hidden="true">
+                                                        {visibleBlocks.map((block) => (
+                                                            <span key={block.id} data-layout-field={block.field} style={ecommerceLayoutBlockStyle(block, previewSize)}>
+                                                                {copy[block.field].trim()}
+                                                            </span>
+                                                        ))}
+                                                    </span>
+                                                ) : null}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                        </section>
+                    </>
+                ) : null}
+                <div className={detailQuickView ? "ecom-suite-detail-editor thin-scrollbar" : "ecom-suite-row-list"} aria-label={detailQuickView ? "当前屏编辑" : undefined}>
+                    {draftRows.map((row, index) => {
+                        const node = nodeBySlot.get(row.slotId);
+                        const status = node?.metadata?.status;
+                        const hasPrompt = Boolean(row.prompt.trim());
+                        const label = row.title.trim() || row.slotId;
+                        const enabled = row.enabled !== false;
+                        const candidates = candidatesBySlot?.get(row.slotId) || [];
+                        const candidateIsStale = (candidate: CanvasNodeData) => Boolean(sourceSignature && !ecommerceResultSourceCurrent(candidate, sourceSignature(row, candidate)));
+                        const rowBusy = busySlotIds.has(row.slotId);
+                        const designedCopy = row.copy ?? { headline: "", subhead: "", cta: "", price: "" };
+                        const designedLayout = row.layout ?? createEcommerceLayoutFromPreset(ecommerceOneClickLayoutPreset(flow.id, row.slotId))!;
+                        const designedRow = { ...row, copy: designedCopy, layout: designedLayout };
+                        const visibleBlocks = ecommerceLayoutVisibleBlocks(designedRow.layout, designedRow.copy);
+                        const previewSize = ecommerceSuitePreviewSize(node, imageSize);
+                        const hasAdoptedImage = Boolean(node && (node.metadata?.storageKey || node.metadata?.content) && status !== "loading" && status !== "error");
+                        const rowActionLabel = rowBusy ? "生成中" : status === "error" ? "重试" : hasAdoptedImage ? "重出" : "生成";
+                        const copyEditorId = `ecom-suite-copy-${row.slotId}`;
+                        const copyEditor = (
+                            <fieldset id={copyEditorId} className="ecom-suite-copy-editor" aria-label={`${label} 文案与版式`}>
+                                <legend>文案与版式</legend>
+                                <div className="ecom-suite-copy-fields">
+                                    <label>
+                                        <span>主标题</span>
+                                        <input value={designedRow.copy.headline} aria-label={`${label} 主标题`} onChange={(event) => updateCopyDraft(row.slotId, "headline", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
+                                    </label>
+                                    <label>
+                                        <span>副文案</span>
+                                        <input value={designedRow.copy.subhead} aria-label={`${label} 副文案`} onChange={(event) => updateCopyDraft(row.slotId, "subhead", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
+                                    </label>
+                                    <label>
+                                        <span>行动引导</span>
+                                        <input value={designedRow.copy.cta} aria-label={`${label} 行动引导`} onChange={(event) => updateCopyDraft(row.slotId, "cta", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
+                                    </label>
+                                    <label>
+                                        <span>价格</span>
+                                        <input value={designedRow.copy.price} aria-label={`${label} 价格`} onChange={(event) => updateCopyDraft(row.slotId, "price", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
+                                    </label>
+                                </div>
+                                <div className="ecom-suite-layout-presets" role="group" aria-label={`${label} 版式预设`}>
+                                    {ECOMMERCE_LAYOUT_PRESETS.map((preset) => (
+                                        <button
+                                            key={preset.id}
+                                            type="button"
+                                            className="ecom-suite-layout-preset"
+                                            aria-label={`使用版式：${preset.layout.name}`}
+                                            aria-pressed={designedRow.layout?.name === preset.layout.name}
+                                            title={preset.hint}
+                                            onClick={() => {
+                                                const layout = createEcommerceLayoutFromPreset(preset.id);
+                                                if (layout) updateDesignRow(row.slotId, (current) => ({ ...current, copy: current.copy ?? designedCopy, layout }));
+                                            }}
+                                        >
+                                            {preset.layout.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </fieldset>
+                        );
+                        return (
+                            <div
+                                key={row.slotId}
+                                className={showProfessionalControls ? "ecom-suite-grid-row" : "ecom-suite-story-card"}
+                                data-empty={hasPrompt ? undefined : "true"}
+                                data-disabled={enabled ? undefined : "true"}
+                                role="group"
+                                aria-label={`第 ${index + 1} 屏：${label}`}
+                                hidden={detailQuickView && row.slotId !== activeDetailSlotId}
+                            >
+                                <span className="ecom-suite-screen">
+                                    {!showProfessionalControls ? (
+                                        <button
+                                            type="button"
+                                            className="ecom-suite-row-toggle"
+                                            role="switch"
+                                            aria-label={`启用这一屏：${label}`}
+                                            aria-checked={enabled}
+                                            onClick={() => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, enabled: !enabled } : item)))}
+                                        >
+                                            {enabled ? "启用" : "已跳过"}
+                                        </button>
+                                    ) : null}
+                                    <b className="tabular-nums">{String(index + 1).padStart(2, "0")}</b>
+                                    {/* 屏次可改。行业套路只是起手式——用户按自己的结构改，
                                         加行删行就是改屏数，不必接受别人给的九屏。 */}
-                                <input
-                                    className="ecom-suite-screen-input"
-                                    value={row.title}
-                                    placeholder="这一屏叫什么"
-                                    aria-label={`第 ${index + 1} 屏的标题`}
-                                    onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, title: event.target.value } : item)))}
-                                />
-                                <button type="button" className="ecom-suite-row-move" disabled={index === 0} title="往前挪一格" aria-label={`把「${label}」往前挪一格`} onClick={() => updateDraftRows((current) => moveDraftRow(current, row.slotId, -1))}>
-                                    <ArrowUp className="size-3" />
-                                </button>
-                                <button
-                                    type="button"
-                                    className="ecom-suite-row-move"
-                                    disabled={index === draftRows.length - 1}
-                                    title="往后挪一格"
-                                    aria-label={`把「${label}」往后挪一格`}
-                                    onClick={() => updateDraftRows((current) => moveDraftRow(current, row.slotId, 1))}
-                                >
-                                    <ArrowDown className="size-3" />
-                                </button>
-                                <button
-                                    type="button"
-                                    className="ecom-suite-row-remove"
-                                    disabled={draftRows.length === 1}
-                                    title={draftRows.length === 1 ? "至少保留一屏" : `删掉这一屏：${label}`}
-                                    aria-label={`删掉这一屏：${label}`}
-                                    onClick={() => updateDraftRows((current) => (current.length > 1 ? current.filter((item) => item.slotId !== row.slotId) : current))}
-                                >
-                                    <X className="size-3" />
-                                </button>
-                            </span>
-                            {showProfessionalControls ? (
-                                <textarea
-                                    className="ecom-suite-duty thin-scrollbar"
-                                    rows={2}
-                                    value={row.duty}
-                                    placeholder="这一张要解决什么"
-                                    aria-label={`${label} 要解决什么`}
-                                    onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, duty: event.target.value } : item)))}
-                                />
-                            ) : (
-                                <label className="ecom-suite-story-duty">
-                                    <span>这一张解决什么</span>
+                                    <input
+                                        className="ecom-suite-screen-input"
+                                        value={row.title}
+                                        placeholder="这一屏叫什么"
+                                        aria-label={`第 ${index + 1} 屏的标题`}
+                                        onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, title: event.target.value } : item)))}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="ecom-suite-row-move"
+                                        disabled={index === 0}
+                                        title="往前挪一格"
+                                        aria-label={`把「${label}」往前挪一格`}
+                                        onClick={() => updateDraftRows((current) => moveDraftRow(current, row.slotId, -1))}
+                                    >
+                                        <ArrowUp className="size-3" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="ecom-suite-row-move"
+                                        disabled={index === draftRows.length - 1}
+                                        title="往后挪一格"
+                                        aria-label={`把「${label}」往后挪一格`}
+                                        onClick={() => updateDraftRows((current) => moveDraftRow(current, row.slotId, 1))}
+                                    >
+                                        <ArrowDown className="size-3" />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="ecom-suite-row-remove"
+                                        disabled={draftRows.length === 1}
+                                        title={draftRows.length === 1 ? "至少保留一屏" : `删掉这一屏：${label}`}
+                                        aria-label={`删掉这一屏：${label}`}
+                                        onClick={() => updateDraftRows((current) => (current.length > 1 ? current.filter((item) => item.slotId !== row.slotId) : current))}
+                                    >
+                                        <X className="size-3" />
+                                    </button>
+                                </span>
+                                {showProfessionalControls ? (
                                     <textarea
                                         className="ecom-suite-duty thin-scrollbar"
                                         rows={2}
                                         value={row.duty}
-                                        placeholder="例如：快速建立商品认知，突出核心卖点"
+                                        placeholder="这一张要解决什么"
                                         aria-label={`${label} 要解决什么`}
                                         onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, duty: event.target.value } : item)))}
                                     />
-                                </label>
-                            )}
-                            {showAdvanced ? (
-                                <textarea
-                                    className={showProfessionalControls ? "ecom-suite-prompt thin-scrollbar" : "ecom-suite-prompt ecom-suite-story-prompt thin-scrollbar"}
-                                    rows={3}
-                                    value={row.prompt}
-                                    placeholder="这一张要画什么——主体与状态、场景与背景、光线与镜头、图上文字。点「分析商品」让模型读图来写，或者自己填。"
-                                    aria-label={`${label} 提示词`}
-                                    autoFocus={focusedPromptSlotId === row.slotId}
-                                    onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, prompt: event.target.value } : item)))}
-                                />
-                            ) : null}
-                            {!showProfessionalControls && !showAdvanced && enabled && !hasPrompt ? (
-                                <div className="ecom-suite-missing-plan" role="status">
-                                    <span>缺少生成方案</span>
-                                    <button type="button" aria-label={`手动填写生成方案：${label}`} onClick={() => focusPrompt(row.slotId)}>
-                                        手动填写
-                                    </button>
-                                </div>
-                            ) : null}
-                            <div className={showProfessionalControls ? "ecom-suite-result" : "ecom-suite-story-result"} data-status={status || "idle"}>
-                                {showProfessionalControls ? (
-                                    <>
-                                        {status === "loading" ? <LoaderCircle className="size-3.5 animate-spin" /> : <SuiteThumb node={node} />}
-                                        {candidates.length ? (
-                                            <select
-                                                className="ecom-suite-result-select"
-                                                aria-label={`${label} 采用结果`}
-                                                value={row.resultNodeId || ""}
-                                                onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, resultNodeId: event.target.value || undefined } : item)))}
-                                            >
-                                                <option value="">最近成功结果</option>
-                                                {row.resultNodeId && !candidates.some((item) => item.id === row.resultNodeId) ? (
-                                                    <option value={row.resultNodeId} disabled>
-                                                        已选结果已移除
-                                                    </option>
-                                                ) : null}
-                                                {candidates.map((candidate, candidateIndex) => (
-                                                    <option key={candidate.id} value={candidate.id} disabled={!candidate.metadata?.storageKey || candidate.metadata.status === "loading" || candidate.metadata.status === "error" || candidateIsStale(candidate)}>
-                                                        版本 {candidateIndex + 1} · {candidateIsStale(candidate) ? "旧方案，请重新生成" : candidate.metadata?.status === "loading" ? "生成中" : candidate.metadata?.status === "error" ? "失败" : candidate.title || "图片"}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        ) : row.resultNodeId ? (
-                                            <span>已选结果已移除</span>
-                                        ) : null}
-                                    </>
                                 ) : (
-                                    <>
-                                        <div className="ecom-suite-story-preview" style={previewSize}>
-                                            {status === "loading" ? <LoaderCircle className="size-4 animate-spin" /> : <SuiteThumb node={node} />}
-                                            {hasAdoptedImage && visibleBlocks.length ? (
-                                                <div className="ecom-suite-layout-overlay" aria-hidden="true">
-                                                    {visibleBlocks.map((block) => (
-                                                        <span key={block.id} data-layout-field={block.field} style={ecommerceLayoutBlockStyle(block, previewSize)}>
-                                                            {designedRow.copy?.[block.field].trim()}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                        {candidates.length ? (
-                                            <div className="ecom-suite-candidates" role="group" aria-label={`${label} 候选结果`}>
-                                                <button
-                                                    type="button"
-                                                    className="ecom-suite-candidate ecom-suite-candidate-auto"
-                                                    aria-label={`自动采用最新成功结果：${label}`}
-                                                    aria-pressed={!row.resultNodeId}
-                                                    onClick={() => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, resultNodeId: undefined } : item)))}
-                                                >
-                                                    自动
-                                                </button>
-                                                {candidates.map((candidate, candidateIndex) => {
-                                                    const stale = candidateIsStale(candidate);
-                                                    const unusable = !candidate.metadata?.storageKey || candidate.metadata.status === "loading" || candidate.metadata.status === "error" || stale;
-                                                    return (
-                                                        <div key={candidate.id} className="ecom-suite-candidate-card" data-selected={row.resultNodeId === candidate.id ? "true" : undefined}>
-                                                            <div className="ecom-suite-candidate-preview">
-                                                                <SuiteThumb node={candidate} previewLabel={`查看大图：版本 ${candidateIndex + 1} · ${candidate.title || "图片"}`} />
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                className="ecom-suite-candidate"
-                                                                aria-label={`采用版本 ${candidateIndex + 1}：${candidate.title || "图片"}`}
-                                                                aria-pressed={row.resultNodeId === candidate.id}
-                                                                disabled={unusable}
-                                                                onClick={() => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, resultNodeId: candidate.id } : item)))}
-                                                            >
-                                                                {stale ? "旧方案" : candidate.metadata?.status === "loading" ? "生成中" : candidate.metadata?.status === "error" ? "失败" : `采用 ${candidateIndex + 1}`}
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : row.resultNodeId ? (
-                                            <span className="ecom-suite-result-missing">已选结果已移除</span>
-                                        ) : null}
-                                    </>
+                                    <label className="ecom-suite-story-duty">
+                                        <span>这一张解决什么</span>
+                                        <textarea
+                                            className="ecom-suite-duty thin-scrollbar"
+                                            rows={2}
+                                            value={row.duty}
+                                            placeholder="例如：快速建立商品认知，突出核心卖点"
+                                            aria-label={`${label} 要解决什么`}
+                                            onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, duty: event.target.value } : item)))}
+                                        />
+                                    </label>
                                 )}
-                                <button
-                                    type="button"
-                                    className="ecom-suite-row-run"
-                                    disabled={!enabled || !hasPrompt || batchBusy || !imageModelReady}
-                                    title={!enabled ? "这一屏已跳过" : rowBusy ? "这一屏正在生成" : batchBusy ? "已有生成任务正在进行" : imageModelError || (hasPrompt ? `只出这一张：${label}` : "这一张还没有提示词")}
-                                    aria-label={`${rowActionLabel}：${label}`}
-                                    aria-busy={rowBusy}
-                                    onClick={() => generateDraftOne(row.slotId)}
-                                >
-                                    {rowBusy ? <LoaderCircle className="size-3 animate-spin" /> : <ImagePlus className="size-3" />}
-                                    {rowActionLabel}
-                                </button>
-                            </div>
-                            {showProfessionalControls ? (
-                                copyEditor
-                            ) : (
-                                <div className="ecom-suite-copy-section">
+                                {showAdvanced ? (
+                                    <textarea
+                                        className={showProfessionalControls ? "ecom-suite-prompt thin-scrollbar" : "ecom-suite-prompt ecom-suite-story-prompt thin-scrollbar"}
+                                        rows={3}
+                                        value={row.prompt}
+                                        placeholder="这一张要画什么——主体与状态、场景与背景、光线与镜头、图上文字。点「分析商品」让模型读图来写，或者自己填。"
+                                        aria-label={`${label} 提示词`}
+                                        autoFocus={focusedPromptSlotId === row.slotId}
+                                        onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, prompt: event.target.value } : item)))}
+                                    />
+                                ) : null}
+                                {!showProfessionalControls && !showAdvanced && enabled && !hasPrompt ? (
+                                    <div className="ecom-suite-missing-plan" role="status">
+                                        <span>缺少生成方案</span>
+                                        <button type="button" aria-label={`手动填写生成方案：${label}`} onClick={() => focusPrompt(row.slotId)}>
+                                            手动填写
+                                        </button>
+                                    </div>
+                                ) : null}
+                                <div className={showProfessionalControls ? "ecom-suite-result" : "ecom-suite-story-result"} data-status={status || "idle"}>
+                                    {showProfessionalControls ? (
+                                        <>
+                                            {status === "loading" ? <LoaderCircle className="size-3.5 animate-spin" /> : <SuiteThumb node={node} />}
+                                            {candidates.length ? (
+                                                <select
+                                                    className="ecom-suite-result-select"
+                                                    aria-label={`${label} 采用结果`}
+                                                    value={row.resultNodeId || ""}
+                                                    onChange={(event) => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, resultNodeId: event.target.value || undefined } : item)))}
+                                                >
+                                                    <option value="">最近成功结果</option>
+                                                    {row.resultNodeId && !candidates.some((item) => item.id === row.resultNodeId) ? (
+                                                        <option value={row.resultNodeId} disabled>
+                                                            已选结果已移除
+                                                        </option>
+                                                    ) : null}
+                                                    {candidates.map((candidate, candidateIndex) => (
+                                                        <option
+                                                            key={candidate.id}
+                                                            value={candidate.id}
+                                                            disabled={!candidate.metadata?.storageKey || candidate.metadata.status === "loading" || candidate.metadata.status === "error" || candidateIsStale(candidate)}
+                                                        >
+                                                            版本 {candidateIndex + 1} ·{" "}
+                                                            {candidateIsStale(candidate) ? "旧方案，请重新生成" : candidate.metadata?.status === "loading" ? "生成中" : candidate.metadata?.status === "error" ? "失败" : candidate.title || "图片"}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            ) : row.resultNodeId ? (
+                                                <span>已选结果已移除</span>
+                                            ) : null}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="ecom-suite-story-preview" style={previewSize}>
+                                                {status === "loading" ? <LoaderCircle className="size-4 animate-spin" /> : <SuiteThumb node={node} />}
+                                                {hasAdoptedImage && visibleBlocks.length ? (
+                                                    <div className="ecom-suite-layout-overlay" aria-hidden="true">
+                                                        {visibleBlocks.map((block) => (
+                                                            <span key={block.id} data-layout-field={block.field} style={ecommerceLayoutBlockStyle(block, previewSize)}>
+                                                                {designedRow.copy?.[block.field].trim()}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            {candidates.length ? (
+                                                <div className="ecom-suite-candidates" role="group" aria-label={`${label} 候选结果`}>
+                                                    <button
+                                                        type="button"
+                                                        className="ecom-suite-candidate ecom-suite-candidate-auto"
+                                                        aria-label={`自动采用最新成功结果：${label}`}
+                                                        aria-pressed={!row.resultNodeId}
+                                                        onClick={() => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, resultNodeId: undefined } : item)))}
+                                                    >
+                                                        自动
+                                                    </button>
+                                                    {candidates.map((candidate, candidateIndex) => {
+                                                        const stale = candidateIsStale(candidate);
+                                                        const unusable = !candidate.metadata?.storageKey || candidate.metadata.status === "loading" || candidate.metadata.status === "error" || stale;
+                                                        return (
+                                                            <div key={candidate.id} className="ecom-suite-candidate-card" data-selected={row.resultNodeId === candidate.id ? "true" : undefined}>
+                                                                <div className="ecom-suite-candidate-preview">
+                                                                    <SuiteThumb node={candidate} previewLabel={`查看大图：版本 ${candidateIndex + 1} · ${candidate.title || "图片"}`} />
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="ecom-suite-candidate"
+                                                                    aria-label={`采用版本 ${candidateIndex + 1}：${candidate.title || "图片"}`}
+                                                                    aria-pressed={row.resultNodeId === candidate.id}
+                                                                    disabled={unusable}
+                                                                    onClick={() => setDraftRows((current) => current.map((item) => (item.slotId === row.slotId ? { ...item, resultNodeId: candidate.id } : item)))}
+                                                                >
+                                                                    {stale ? "旧方案" : candidate.metadata?.status === "loading" ? "生成中" : candidate.metadata?.status === "error" ? "失败" : `采用 ${candidateIndex + 1}`}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ) : row.resultNodeId ? (
+                                                <span className="ecom-suite-result-missing">已选结果已移除</span>
+                                            ) : null}
+                                        </>
+                                    )}
                                     <button
                                         type="button"
-                                        className="ecom-suite-copy-toggle"
-                                        aria-label={`${label} 文案与版式`}
-                                        aria-expanded={expandedDesignSlotId === row.slotId}
-                                        aria-controls={copyEditorId}
-                                        onClick={() => setExpandedDesignSlotId((current) => (current === row.slotId ? undefined : row.slotId))}
+                                        className="ecom-suite-row-run"
+                                        disabled={!enabled || !hasPrompt || batchBusy || !imageModelReady}
+                                        title={!enabled ? "这一屏已跳过" : rowBusy ? "这一屏正在生成" : batchBusy ? "已有生成任务正在进行" : imageModelError || (hasPrompt ? `只出这一张：${label}` : "这一张还没有提示词")}
+                                        aria-label={`${rowActionLabel}：${label}`}
+                                        aria-busy={rowBusy}
+                                        onClick={() => generateDraftOne(row.slotId)}
                                     >
-                                        <span>文案与版式</span>
-                                        <span>{expandedDesignSlotId === row.slotId ? "收起" : "展开"}</span>
+                                        {rowBusy ? <LoaderCircle className="size-3 animate-spin" /> : <ImagePlus className="size-3" />}
+                                        {rowActionLabel}
                                     </button>
-                                    {expandedDesignSlotId === row.slotId ? copyEditor : null}
                                 </div>
-                            )}
-                        </div>
-                    );
-                })}
-                {/* 加一屏：这一套出几张由用户定，不是行业套路定 */}
-                <button type="button" className="ecom-suite-add-row" onClick={() => updateDraftRows((current) => [...current, { slotId: ecommerceSuiteRowId(flow, current), title: "", duty: "", prompt: "" }])}>
-                    <Plus className="size-3" />
-                    加一屏
-                </button>
+                                {showProfessionalControls ? (
+                                    copyEditor
+                                ) : (
+                                    <div className="ecom-suite-copy-section">
+                                        <button
+                                            type="button"
+                                            className="ecom-suite-copy-toggle"
+                                            aria-label={`${label} 文案与版式`}
+                                            aria-expanded={expandedDesignSlotId === row.slotId}
+                                            aria-controls={copyEditorId}
+                                            onClick={() => setExpandedDesignSlotId((current) => (current === row.slotId ? undefined : row.slotId))}
+                                        >
+                                            <span>文案与版式</span>
+                                            <span>{expandedDesignSlotId === row.slotId ? "收起" : "展开"}</span>
+                                        </button>
+                                        {expandedDesignSlotId === row.slotId ? copyEditor : null}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {/* 加一屏：这一套出几张由用户定，不是行业套路定 */}
+                    <button type="button" className="ecom-suite-add-row" onClick={() => updateDraftRows((current) => [...current, { slotId: ecommerceSuiteRowId(flow, current), title: "", duty: "", prompt: "" }])}>
+                        <Plus className="size-3" />
+                        加一屏
+                    </button>
+                </div>
             </div>
 
             <footer className="ecom-suite-foot">
@@ -1141,14 +1258,20 @@ export function CanvasEcommerceSuitePanel({
                 <button
                     type="button"
                     className="ecom-suite-primary"
-                    aria-label={batchLabel}
-                    aria-busy={batchBusy}
-                    disabled={analyzing || batchBusy || (generationCount > 0 && !imageModelReady)}
-                    onClick={confirmGenerate}
+                    aria-label={showProfessionalControls ? batchLabel : firstVersionLabel.replace("…", "")}
+                    aria-busy={batchBusy || firstVersionRunning}
+                    disabled={
+                        analyzing ||
+                        batchBusy ||
+                        firstVersionRunning ||
+                        (!showProfessionalControls && (!enabledTotal || generated === enabledTotal || !imageModelReady || (missing > 0 && !analysisModelReady))) ||
+                        (showProfessionalControls && generationCount > 0 && !imageModelReady)
+                    }
+                    onClick={showProfessionalControls ? confirmGenerate : () => void generateFirstVersion()}
                     title={(generationCount > 0 && imageModelError) || "按这张表批量提交出图任务"}
                 >
-                    {batchBusy ? <LoaderCircle className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
-                    {batchLabel}
+                    {batchBusy || firstVersionRunning ? <LoaderCircle className="size-3.5 animate-spin" /> : <ImagePlus className="size-3.5" />}
+                    {showProfessionalControls ? batchLabel : firstVersionLabel}
                 </button>
             </footer>
         </div>
@@ -1172,12 +1295,13 @@ function moveDraftRow(rows: EcommerceSuiteRow[], slotId: string, delta: number) 
 }
 
 const SUITE_PREVIEW_EDGE = 112;
+const SUITE_DETAIL_PREVIEW_EDGE = 280;
 
-function ecommerceSuitePreviewSize(node: CanvasNodeData | undefined, requestedSize: string) {
+function ecommerceSuitePreviewSize(node: CanvasNodeData | undefined, requestedSize: string, edge = SUITE_PREVIEW_EDGE) {
     const natural = node?.metadata?.naturalWidth && node.metadata.naturalHeight ? { width: node.metadata.naturalWidth, height: node.metadata.naturalHeight } : undefined;
-    const requested = imageNodeSizeFromRatio(node?.metadata?.size || requestedSize, SUITE_PREVIEW_EDGE, SUITE_PREVIEW_EDGE);
-    const source = natural || requested || (node && node.width > 0 && node.height > 0 ? node : undefined) || { width: SUITE_PREVIEW_EDGE, height: SUITE_PREVIEW_EDGE };
-    const scale = SUITE_PREVIEW_EDGE / Math.max(source.width, source.height);
+    const requested = imageNodeSizeFromRatio(node?.metadata?.size || requestedSize, edge, edge);
+    const source = natural || requested || (node && node.width > 0 && node.height > 0 ? node : undefined) || { width: edge, height: edge };
+    const scale = edge / Math.max(source.width, source.height);
     return { width: source.width * scale, height: source.height * scale };
 }
 

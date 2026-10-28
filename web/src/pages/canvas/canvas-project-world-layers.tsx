@@ -32,6 +32,7 @@ type CanvasProjectWorldLayersProps = {
     batchScrollById?: Record<string, BatchScroll>;
     connectionTargetNodeId: string | null;
     isConnecting: boolean;
+    connectionInteractionEnabled: boolean;
     connectionApproach: CanvasConnectionApproach;
     nodeById: Map<string, CanvasNodeData>;
     /** 视口内与缓冲区候选节点；屏外部分由本层分帧挂载。 */
@@ -126,8 +127,9 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
     };
     return (
         <>
-            <svg
-                className="absolute overflow-visible"
+            {props.connectionInteractionEnabled ? (
+                <svg
+                    className="absolute overflow-visible"
                 viewBox={`${props.connectionLayerBounds.left} ${props.connectionLayerBounds.top} ${props.connectionLayerBounds.width} ${props.connectionLayerBounds.height}`}
                 style={{ left: props.connectionLayerBounds.left, top: props.connectionLayerBounds.top, width: props.connectionLayerBounds.width, height: props.connectionLayerBounds.height, pointerEvents: "none", zIndex: 0 }}
             >
@@ -149,7 +151,8 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
                         onContextMenu={(event) => props.onConnectionContextMenu(event, connection.id)}
                     />
                 ))}
-            </svg>
+                </svg>
+            ) : null}
 
             {orderedVisibleNodes.map((node) =>
                 isFrameNode(node) ? (
@@ -184,6 +187,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
                         isFocusRelated={props.activeNodeId === node.id}
                         isConnectionTarget={props.connectionTargetNodeId === node.id || props.batchConnectionPreview?.targetNodeId === node.id}
                         isConnecting={props.isConnecting}
+                        connectionInteractionEnabled={props.connectionInteractionEnabled}
                         connectionApproach={props.connectionApproach?.nodeId === node.id ? props.connectionApproach.point : undefined}
                         forceInputMounted={Boolean(props.batchConnectionPreview)}
                         batchCount={props.batchChildCountById.get(node.id) || 0}
@@ -236,7 +240,7 @@ export const CanvasProjectWorldLayers = memo(function CanvasProjectWorldLayers(p
                         height: props.selectedNodeBounds.height + 24 / viewportScale,
                     }}
                 >
-                    {props.batchSourceNodeIds.length > 0 ? (
+                    {props.connectionInteractionEnabled && props.batchSourceNodeIds.length > 0 ? (
                         <BatchConnectionHandle
                             scale={viewportScale}
                             count={props.batchSourceNodeIds.length}

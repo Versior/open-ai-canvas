@@ -372,9 +372,15 @@ const imageToolDefinitions: ImageToolDefinition[] = [
     },
 ];
 
-export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers, options?: { ecommerce?: boolean }) {
+const simpleEcommerceImageToolbarToolIds = new Set(["regionEdit", "textEdit", "lighting", "removeBackground", "angle", "crop", "upscale", "view", "replace", "uploadImage", "retry", "download", "mediaVersions"]);
+
+export function isSimpleEcommerceImageToolbarTool(id: string) {
+    return simpleEcommerceImageToolbarToolIds.has(id);
+}
+
+export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers, options?: { ecommerce?: boolean; simpleEcommerce?: boolean }) {
     return imageToolDefinitions
-        .filter((tool) => !tool.ecommerceOnly || options?.ecommerce)
+        .filter((tool) => (!tool.ecommerceOnly || options?.ecommerce) && (!options?.simpleEcommerce || isSimpleEcommerceImageToolbarTool(tool.id)))
         .map((tool) => ({
             id: tool.id,
             label: resolveToolText(tool.label, node),

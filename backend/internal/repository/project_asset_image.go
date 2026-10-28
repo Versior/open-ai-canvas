@@ -36,6 +36,16 @@ func (r *Repository) ProjectAssetImageReferences(userID string, assetIDs []strin
 func (r *Repository) CommitProjectAssetImage(projectID string, expectedVersionID string, asset *model.Asset, version *model.AssetVersion, representation *model.AssetRepresentation) (bool, error) {
 	applied := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id").
+			Where("id = ? AND status = ?", projectID, model.ProjectStatusActive).
+			First(&project).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrProjectNotActive
+			}
+			return err
+		}
 		var existing int64
 		if err := tx.Model(&model.AssetRepresentation{}).Where("task_id = ? AND role = ?", representation.TaskID, "primary").Count(&existing).Error; err != nil {
 			return err

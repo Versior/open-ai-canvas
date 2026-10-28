@@ -1,24 +1,31 @@
 import { ChevronDown, Plus, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
-import { useUpstreamNodes } from "@/components/canvas/canvas-node-graph-context";
+import { useNodeInputs } from "@/components/canvas/canvas-node-graph-context";
 import {
     ECOMMERCE_TEARDOWN_DIMENSIONS,
-    buildEcommerceTeardownPrompt,
+    ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE,
+    applyEcommerceTeardownDraft,
+    buildEcommerceTeardownPlanPrompt,
     createEcommerceTeardown,
+    createEcommerceTeardownDraft,
     createEcommerceTeardownFinding,
     createEcommerceTeardownOutlineRow,
     ecommerceTeardownDimensionLabel,
-    ecommerceTeardownSourceNode,
+    ecommerceTeardownOutlineToSuiteRows,
+    ecommerceTeardownPlanRequest,
+    ecommerceTeardownPlanSourceSignature,
+    parseEcommerceTeardownPlan,
     type EcommerceTeardown,
     type EcommerceTeardownDimension,
+    type EcommerceTeardownDraft,
     type EcommerceTeardownOutlineRow,
 } from "@/lib/ecommerce/ecommerce-teardown";
 import { getNodeResourceKind } from "@/lib/canvas/node-registry";
 import type { CanvasTheme } from "@/lib/canvas-theme";
-import type { CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 import "./canvas-ecommerce-node-card.css";
 
 type TeardownNodeContentProps = {
@@ -29,6 +36,17 @@ type TeardownNodeContentProps = {
 /** 竞品图的判定：必须是带内容的图片节点。 */
 function isImageNode(node: CanvasNodeData) {
     return getNodeResourceKind(node) === "image" && Boolean(node.metadata?.content || node.metadata?.storageKey);
+}
+
+type TeardownPlanSource = {
+    targetNodeId: string;
+    referenceImageId: string;
+    productNodeId?: string;
+    signature: string;
+};
+
+function teardownPlanSource(node: CanvasNodeData | undefined) {
+    return (node?.metadata as (CanvasNodeMetadata & { ecommerceTeardownPlanSource?: TeardownPlanSource }) | undefined)?.ecommerceTeardownPlanSource;
 }
 
 /**
@@ -44,16 +62,42 @@ function isImageNode(node: CanvasNodeData) {
  * 反着来那一栏是关键：拆解的目的从来不是照抄，是找差异化的位置。
  */
 export function TeardownNodeContent({ node, theme }: TeardownNodeContentProps) {
-    const { updateMetadata, reversePromptFromNode } = useCanvasNodeActions();
-    const upstream = useUpstreamNodes(node.id);
+    const { updateMetadata, reversePromptFromNode, openEcommerceTableFromOutline } = useCanvasNodeActions();
+    const inputs = useNodeInputs(node.id);
     const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState<EcommerceTeardownDraft>();
 
     const teardown: EcommerceTeardown = node.metadata?.ecommerceTeardown || createEcommerceTeardown(node.title || "未命名拆解");
     const editable = Boolean(updateMetadata);
-    const source = upstream.find(isImageNode);
+    const source = inputs.find(isImageNode);
+    const product = inputs.find((item) => item.type === CanvasNodeType.Product);
+    const planResult = [...inputs].reverse().find((item) => item.type === CanvasNodeType.Text && item.title === ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE);
+    const planResultContent = planResult?.metadata?.status === "success" ? planResult.metadata.content?.trim() || "" : "";
+    const parsedPlan = useMemo(() => parseEcommerceTeardownPlan(planResultContent, teardown.dimensions), [planResultContent, teardown.dimensions]);
+    const currentSourceSignature = source ? ecommerceTeardownPlanSourceSignature({ target: node, referenceImage: source, product }) : "";
+    const resultSource = teardownPlanSource(planResult);
+    const resultStale = Boolean(
+        planResultContent &&
+            (!resultSource ||
+                resultSource.targetNodeId !== node.id ||
+                resultSource.referenceImageId !== source?.id ||
+                resultSource.productNodeId !== product?.id ||
+                resultSource.signature !== currentSourceSignature),
+    );
+    const currentDraftSourceSignature = JSON.stringify([currentSourceSignature, planResult?.id || "", planResultContent]);
+    const draftStale = Boolean(draft && draft.sourceSignature !== currentDraftSourceSignature);
 
     const patch = (next: Partial<EcommerceTeardown>) => updateMetadata?.(node.id, { ecommerceTeardown: { ...teardown, ...next } });
     const commitOutline = (next: EcommerceTeardownOutlineRow[]) => patch({ outline: next });
+    const loadDraft = () => {
+        if (!parsedPlan || resultStale) return;
+        setDraft(createEcommerceTeardownDraft(parsedPlan, currentDraftSourceSignature));
+    };
+    const applyDraft = () => {
+        if (!draft || draftStale) return;
+        patch(applyEcommerceTeardownDraft(teardown, draft));
+        setDraft(undefined);
+    };
 
     const findings = teardown.findings.filter((finding) => finding.finding.trim());
     const outline = teardown.outline.filter((row) => row.title.trim());
@@ -192,14 +236,51 @@ export function TeardownNodeContent({ node, theme }: TeardownNodeContentProps) {
                 <button
                     type="button"
                     className="ecom-action ecom-action-primary"
-                    disabled={!reversePromptFromNode || !source}
-                    title={source ? "助手读这张竞品图，按维度给出结构结论，并列出我方大纲" : "先连一张竞品图"}
-                    onClick={() => source && reversePromptFromNode?.(source, buildEcommerceTeardownPrompt(teardown))}
+                    disabled={!reversePromptFromNode || !source || !teardown.dimensions.length}
+                    title={!source ? "先连一张竞品图" : !teardown.dimensions.length ? "至少选择一个拆解维度" : "助手读这张竞品图，按维度给出结构结论，并列出我方大纲"}
+                    onClick={() => source && teardown.dimensions.length && reversePromptFromNode?.(source, ecommerceTeardownPlanRequest(node.id, buildEcommerceTeardownPlanPrompt(teardown)))}
                 >
                     <Search className="size-3" />
                     拆解这张竞品图
                 </button>
+                <button
+                    type="button"
+                    className="ecom-action"
+                    disabled={!openEcommerceTableFromOutline || !product || !outline.length}
+                    title={!product ? "先连接目标商品" : !outline.length ? "先完成我方详情页大纲" : "写入已有详情页创作表前会再次确认是否替换"}
+                    onClick={() => product && openEcommerceTableFromOutline?.(node, product, ecommerceTeardownOutlineToSuiteRows(outline))}
+                >
+                    写入详情页创作表
+                </button>
             </div>
+
+            {planResultContent ? (
+                <>
+                    {resultStale || draftStale ? (
+                        <span className="ecom-card-subtitle" style={{ whiteSpace: "normal" }}>方案已过期：商品、竞品图、拆解维度或拆解结果已变化，请重新载入或拆解。</span>
+                    ) : !parsedPlan ? (
+                        <span className="ecom-card-subtitle" style={{ whiteSpace: "normal" }}>拆解结果不是完整方案，请回到结果节点修正 JSON 或重试。</span>
+                    ) : draft ? (
+                        <span className="ecom-card-subtitle" style={{ whiteSpace: "normal" }}>已载入草稿：{draft.findings.length} 条结论 / {draft.outline.length} 屏。确认前不会覆盖当前内容。</span>
+                    ) : (
+                        <span className="ecom-card-subtitle" style={{ whiteSpace: "normal" }}>已收到结构化方案。先载入草稿检查，再确认替换当前内容。</span>
+                    )}
+                    <div className="ecom-action-row">
+                        <button type="button" className="ecom-action" disabled={!parsedPlan || resultStale} onClick={loadDraft}>
+                            载入最新拆解
+                        </button>
+                        <button
+                            type="button"
+                            className="ecom-action ecom-action-primary"
+                            disabled={!draft || draftStale}
+                            title={draft && !draftStale ? "确认后替换当前结论与大纲" : draftStale ? "商品、竞品图、拆解维度或拆解结果已变化，请重新载入或拆解" : "先载入有效的最新拆解"}
+                            onClick={applyDraft}
+                        >
+                            确认应用{draft ? `（${draft.findings.length} 条 / ${draft.outline.length} 屏）` : ""}
+                        </button>
+                    </div>
+                </>
+            ) : null}
 
             <footer className="ecom-card-footer">
                 <span>{outline.length ? <><b>{follow}</b>/<b>{outline.length}</b> 屏跟着做</> : "还没有大纲"}</span>

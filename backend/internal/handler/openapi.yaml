@@ -2458,6 +2458,48 @@ paths:
           $ref: "#/components/responses/Envelope"
         "400":
           $ref: "#/components/responses/Error"
+  /social-video/imports:
+    post:
+      tags: [tasks]
+      summary: 从抖音或 TikTok 分享链接异步导入单个视频
+      description: 需要登录。服务端展开受控短链、下载并校验不超过 3 分钟的视频，成功后将资源信息写入任务 resultJson。相同用户使用相同幂等键和请求参数时返回原任务。
+      parameters:
+        - in: header
+          name: X-Idempotency-Key
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+          description: 客户端为一次导入生成的稳定幂等键；重试原请求时必须复用
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SocialVideoImportRequest"
+      responses:
+        "200":
+          description: 已创建或复用异步导入任务
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
   /tasks/{id}/recover-media:
     post:
       tags: [tasks]
@@ -2573,6 +2615,37 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    SocialVideoImportRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: 抖音或 TikTok 单视频 URL，也可以是只包含一个视频 URL 的分享文本
+        projectId:
+          type: string
+          description: 可选；关联的当前用户活动项目 ID
+    Task:
+      type: object
+      required: [id, type, status, stage, progress, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        type: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled, text_replay] }
+        stage: { type: string }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        provider: { type: string }
+        model: { type: string }
+        resultJson:
+          type: string
+          description: 成功时为 JSON 字符串；社交视频导入包含 platform、canonicalId、title、resourceId、width、height、durationMs、mimeType、size
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     EcommerceSetting:
       type: object
       required: [enabled, modelLibraryEnabled, autoBindEnabled, flows, models, templates, revision]
@@ -3108,7 +3181,7 @@ components:
           properties:
             code:
               type: integer
-              enum: [400, 401, 403, 404, 409, 429, 500, 502, 503, 504, 40301, 40302, 40901, 42901]
+              enum: [400, 401, 403, 404, 409, 413, 429, 500, 502, 503, 504, 40301, 40302, 40901, 42901]
             data:
               nullable: true
             reason:

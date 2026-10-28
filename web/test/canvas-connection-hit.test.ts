@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { resolveCanvasConnectionTarget } from "../src/lib/canvas/canvas-connection-hit";
+import { createCanvasConnectionHitIndexCache, resolveCanvasConnectionTarget } from "../src/lib/canvas/canvas-connection-hit";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 
 const front: CanvasNodeData = { id: "front", title: "前景", type: CanvasNodeType.Text, position: { x: 100, y: 200 }, width: 400, height: 300 };
@@ -45,4 +45,43 @@ test("script headers without row ports block fall-through to the node behind", (
     const result = resolveCanvasConnectionTarget({ ...options, nodes: [{ ...front, type: CanvasNodeType.Script }, back], point: { x: 300, y: 210 } });
     expect(result.nodeId).toBeNull();
     expect(result.isNearNode).toBe(true);
+});
+
+test("indexed candidates include the exact snap-radius boundary without a result cap", () => {
+    const nodes = Array.from({ length: 800 }, (_, index) => ({ ...front, id: `node-${index}` }));
+    const cache = createCanvasConnectionHitIndexCache();
+    const point = { x: front.position.x - options.radius, y: front.position.y + front.height / 2 };
+    const candidateNodes = cache.query(nodes, point, options.radius);
+
+    expect(candidateNodes).toHaveLength(nodes.length);
+    expect(resolveCanvasConnectionTarget({ ...options, nodes, candidateNodes, bodyNodeId: null, point }).nodeId).toBe(nodes.at(-1)?.id);
+});
+
+test("connection hit index returns the latest node objects", () => {
+    const cache = createCanvasConnectionHitIndexCache();
+    cache.query([front], options.point, options.radius);
+    const latest = { ...front, title: "latest" };
+
+    expect(cache.query([latest], options.point, options.radius)).toEqual([latest]);
+    expect(cache.query([latest], options.point, options.radius)[0]).toBe(latest);
+});
+
+test("connection hit index always includes the DOM body node", () => {
+    const cache = createCanvasConnectionHitIndexCache();
+
+    expect(cache.query([front], { x: 10_000, y: 10_000 }, options.radius, front.id)).toEqual([front]);
+});
+
+test("DOM body priority and hidden-node checks keep using the complete node list", () => {
+    const hiddenRoot = { ...front, id: "root", position: { x: 10_000, y: 10_000 }, metadata: { imageBatchExpanded: false } };
+    const hiddenChild = { ...front, id: "child", metadata: { batchRootId: hiddenRoot.id } };
+    expect(resolveCanvasConnectionTarget({ ...options, nodes: [front, back], candidateNodes: [back, front] }).nodeId).toBe(front.id);
+    expect(resolveCanvasConnectionTarget({ ...options, nodes: [hiddenRoot, hiddenChild], candidateNodes: [hiddenChild], bodyNodeId: null })).toEqual({ nodeId: null, isNearNode: false });
+});
+
+test("damaged node geometry falls back to the complete node list", () => {
+    const nodes = [front, { ...back, width: Number.NaN }];
+    const cache = createCanvasConnectionHitIndexCache();
+
+    expect(cache.query(nodes, options.point, options.radius)).toBe(nodes);
 });

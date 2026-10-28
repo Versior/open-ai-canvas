@@ -435,6 +435,9 @@ func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, nor
 	if err := validateTaskType(taskType); err != nil {
 		return nil, err
 	}
+	if err := s.ensureTaskProjectActive(userID, req.ProjectID); err != nil {
+		return nil, err
+	}
 	task := model.Task{
 		ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, ProjectID: req.ProjectID,
 		Type: taskType, Status: model.TaskStatusTextReplay, Stage: "文本持久化（前端自管）", Progress: 5,

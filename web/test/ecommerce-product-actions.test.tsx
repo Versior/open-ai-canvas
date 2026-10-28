@@ -68,6 +68,12 @@ const recognizedProfile = {
     facts: "便于携带：杯盖顶部有可见提手",
     unsure: "材质和目标人群由图片推测",
 };
+const copyReadyProfile = {
+    ...createEcommerceProductProfile("Test product"),
+    category: "保温杯",
+    audience: "通勤携带；办公室饮水",
+    facts: "便于携带：杯盖顶部有可见提手",
+};
 type RecognizedProfileDraft = Partial<typeof recognizedProfile>;
 
 function modelFixture(id: string) {
@@ -131,7 +137,9 @@ async function mountProduct(
     rows = initialRows,
     models: { analysisModel?: string; imageModel?: string } = { analysisModel: configuredModels.analysisOverride, imageModel: configuredModels.imageOverride },
     profileDraft: RecognizedProfileDraft | Promise<RecognizedProfileDraft> | ((node: CanvasNodeData) => RecognizedProfileDraft | Promise<RecognizedProfileDraft>) = recognizedProfile,
-    initialProfile = createEcommerceProductProfile("Test product"),
+    initialProfile = copyReadyProfile,
+    initialFlow: string | false = "详情页",
+    withProductImage = true,
 ) {
     const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
     const originalAct = Object.getOwnPropertyDescriptor(globalThis, "IS_REACT_ACT_ENVIRONMENT");
@@ -186,8 +194,8 @@ async function mountProduct(
     let next = deferred();
     let productTree: ReactNode;
     let panelTree: ReactNode;
-    let currentNodes = [product, image];
-    let currentEdges = [{ id: "front", fromNodeId: image.id, toNodeId: product.id, toHandleId: "product-view:front" }];
+    let currentNodes = withProductImage ? [product, image] : [product];
+    let currentEdges = withProductImage ? [{ id: "front", fromNodeId: image.id, toNodeId: product.id, toHandleId: "product-view:front" }] : [];
     let currentNode = product;
     let activeId = "";
     let panelProps: EcommerceSuitePanelProps | undefined;
@@ -318,7 +326,7 @@ async function mountProduct(
     }
     const batchButton = () => control(panelTree, (props) => props.title === "按这张表批量提交出图任务");
     const productControl = (label: string) => control(productTree, (props) => props["aria-label"] === label);
-    const open = async (flowName?: string) => {
+    const clickFlow = async (flowName?: string) => {
         await act(async () => {
             const candidates: ReactElement<ControlProps>[] = [];
             const walk = (tree: ReactNode) => {
@@ -332,10 +340,13 @@ async function mountProduct(
             if (!candidate) throw new Error("Flow button missing");
             candidate.props.onClick!();
         });
+    };
+    const open = async (flowName?: string) => {
+        await clickFlow(flowName);
         expect(panelProps?.open).toBe(true);
     };
-    await open();
-    expect(panelProps?.skillsLoading).toBe(false);
+    if (initialFlow) await open(initialFlow);
+    if (initialFlow) expect(panelProps?.skillsLoading).toBe(false);
     expect(useEcommerceModelLibrary.getState().hydrated).toBe(true);
     expect(warnings).toEqual([]);
     expect(errors).toEqual([]);
@@ -347,6 +358,7 @@ async function mountProduct(
         errors,
         warnings,
         open,
+        clickFlow,
         batchButton,
         isOpen: () => Boolean(panelProps?.open),
         tables: () => currentNodes.filter((node) => node.type === CanvasNodeType.BatchTable),
@@ -396,6 +408,10 @@ async function mountProduct(
             });
         },
         hasProductControl: (label: string) => Boolean(findElement(productTree, (element) => element.props["aria-label"] === label)),
+        productText: () => {
+            const text = (tree: ReactNode): string => (typeof tree === "string" || typeof tree === "number" ? String(tree) : React.isValidElement<ControlProps>(tree) ? React.Children.toArray(tree.props.children).map(text).join("") : "");
+            return text(productTree);
+        },
         changeProductImage: async (patch: { id?: string; title?: string; content?: string }) => {
             await act(async () => {
                 const edge = currentEdges.find((item) => item.toNodeId === product.id && item.toHandleId?.startsWith("product-view:"));
@@ -408,6 +424,13 @@ async function mountProduct(
                 };
                 currentNodes = currentNodes.map((item) => (item.id === currentImage.id ? nextImage : item));
                 if (patch.id) currentEdges = currentEdges.map((item) => (item === edge ? { ...item, fromNodeId: patch.id! } : item));
+                rerender();
+            });
+        },
+        removeProductImage: async () => {
+            await act(async () => {
+                currentEdges = currentEdges.filter((item) => item.fromNodeId !== image.id);
+                currentNodes = currentNodes.filter((item) => item.id !== image.id);
                 rerender();
             });
         },
@@ -429,6 +452,61 @@ async function mountProduct(
         },
     };
 }
+
+for (const flow of ["详情页", "种草秀"]) {
+    test(`${flow} 缺少已核实事实时展开商品资料并阻止进入创作表`, async () => {
+        const profile = { ...createEcommerceProductProfile("Test product"), category: "保温杯" };
+        const product = await mountProduct(initialRows, undefined, recognizedProfile, profile, false);
+
+        await product.clickFlow(flow);
+
+        expect(product.tables()).toHaveLength(0);
+        expect(product.warnings).toEqual(["请先补充商品资料：卖点与依据、目标人群与场景"]);
+        expect(product.hasProductControl("本次识别草稿，请核对后应用")).toBe(true);
+        expect(product.productText()).toContain("当前用途还缺：卖点与依据、目标人群与场景");
+    });
+}
+
+test("主图缺少有依据卖点时展开商品资料并阻止进入创作表", async () => {
+    const profile = { ...createEcommerceProductProfile("Test product"), category: "保温杯" };
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, profile, false);
+
+    await product.clickFlow("主图");
+
+    expect(product.tables()).toHaveLength(0);
+    expect(product.warnings).toEqual(["请先补充商品资料：卖点与依据、目标人群与场景"]);
+    expect(product.productText()).toContain("当前用途还缺：卖点与依据、目标人群与场景");
+});
+
+test("主图缺少品类时展开商品资料并明确缺失项", async () => {
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, createEcommerceProductProfile("Test product"), false);
+
+    await product.clickFlow("主图");
+
+    expect(product.tables()).toHaveLength(0);
+    expect(product.warnings).toEqual(["请先补充商品资料：品类、卖点与依据、目标人群与场景"]);
+    expect(product.productText()).toContain("当前用途还缺：品类、卖点与依据、目标人群与场景");
+});
+
+test("主图缺少商品视觉证据时不进入创作表", async () => {
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, copyReadyProfile, false, false);
+
+    await product.clickFlow("主图");
+
+    expect(product.tables()).toHaveLength(0);
+    expect(product.warnings).toEqual(["请先补充商品资料：商品视觉证据"]);
+    expect(product.productText()).toContain("当前用途还缺：商品视觉证据");
+});
+
+test("模特上身缺少商品视觉证据时不进入创作表", async () => {
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, copyReadyProfile, false, false);
+
+    await product.clickFlow("模特上身");
+
+    expect(product.tables()).toHaveLength(0);
+    expect(product.warnings).toEqual(["请先补充商品资料：商品视觉证据"]);
+    expect(product.productText()).toContain("当前用途还缺：商品视觉证据");
+});
 
 test("AI product identification keeps an editable draft local until confirmation", async () => {
     const product = await mountProduct();
@@ -462,7 +540,7 @@ test("AI product identification keeps an editable draft local until confirmation
     expect(product.hasProductControl("草稿品类")).toBe(false);
 });
 
-test("partial AI profile drafts clear unrecognized fields and preserve only the manual price", async () => {
+test("partial AI profile drafts preserve confirmed fields and only replace them with meaningful values", async () => {
     const initialProfile = {
         ...createEcommerceProductProfile("Test product"),
         category: "旧品类",
@@ -473,15 +551,15 @@ test("partial AI profile drafts clear unrecognized fields and preserve only the 
         facts: "旧卖点：旧依据",
         price: "99 元",
     };
-    const product = await mountProduct(initialRows, undefined, { category: "保温杯" }, initialProfile);
+    const product = await mountProduct(initialRows, undefined, { category: "保温杯", appearance: "   " }, initialProfile);
 
     await product.identify();
     expect(product.productControl("草稿品类").value).toBe("保温杯");
-    expect(product.productControl("草稿外观").value).toBe("");
-    expect(product.productControl("草稿标识").value).toBe("");
-    expect(product.productControl("草稿禁止项").value).toBe("");
-    expect(product.productControl("草稿目标人群与场景").value).toBe("");
-    expect(product.productControl("草稿卖点与依据").value).toBe("");
+    expect(product.productControl("草稿外观").value).toBe("银色金属杯身");
+    expect(product.productControl("草稿标识").value).toBe("旧 LOGO");
+    expect(product.productControl("草稿禁止项").value).toBe("不要改变杯盖");
+    expect(product.productControl("草稿目标人群与场景").value).toBe("旧人群");
+    expect(product.productControl("草稿卖点与依据").value).toBe("旧卖点：旧依据");
     expect(product.productControl("草稿真实价格").value).toBe("99 元");
 
     await product.editProductDraft("草稿标识", "新 LOGO");
@@ -489,11 +567,7 @@ test("partial AI profile drafts clear unrecognized fields and preserve only the 
     expect(product.product().metadata?.productProfile).toEqual({
         ...initialProfile,
         category: "保温杯",
-        appearance: "",
         marks: "新 LOGO",
-        forbidden: "",
-        audience: "",
-        facts: "",
     });
 });
 
@@ -633,6 +707,56 @@ test("table never falls back when a non-empty explicit model no longer matches i
     expect(product.reverseCalls).toEqual([]);
 });
 
+test("已存在的详情页创作表在商品事实被清空后也阻止分析和生产", async () => {
+    const product = await mountProduct();
+    await product.clickProduct("编辑商品信息");
+    await product.editProductDraft("草稿目标人群与场景", "");
+    await product.editProductDraft("草稿卖点与依据", "");
+    await product.clickProduct("确认并应用商品草稿");
+
+    await product.analyze();
+    await product.submit();
+
+    expect(product.draftCalls).toEqual([]);
+    expect(product.calls).toEqual([]);
+    expect(product.warnings).toEqual(["请先回到商品节点补充商品资料：卖点与依据、目标人群与场景", "请先回到商品节点补充商品资料：卖点与依据、目标人群与场景"]);
+});
+
+test("已存在的主图创作表在商品事实被清空后也阻止分析和生产", async () => {
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, copyReadyProfile, "主图");
+    await act(async () => product.props().onRowsChange(product.props().rows.map((row, index) => (index ? row : { ...row, prompt: "Verified prompt" }))));
+    await product.clickProduct("编辑商品信息");
+    await product.editProductDraft("草稿目标人群与场景", "");
+    await product.editProductDraft("草稿卖点与依据", "");
+    await product.clickProduct("确认并应用商品草稿");
+
+    await product.analyze();
+    await product.submit();
+    await act(async () => {
+        product.confirmation()!.onOk!();
+    });
+
+    expect(product.draftCalls).toEqual([]);
+    expect(product.calls).toEqual([]);
+    expect(product.warnings).toEqual(["请先回到商品节点补充商品资料：卖点与依据、目标人群与场景", "请先回到商品节点补充商品资料：卖点与依据、目标人群与场景"]);
+});
+
+test("已存在的模特上身创作表在商品图被移除后也阻止分析和生产", async () => {
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, copyReadyProfile, "模特上身");
+    await act(async () => product.props().onRowsChange(product.props().rows.map((row, index) => (index ? row : { ...row, prompt: "Verified prompt" }))));
+    await product.removeProductImage();
+
+    await product.analyze();
+    await product.submit();
+    await act(async () => {
+        product.confirmation()!.onOk!();
+    });
+
+    expect(product.draftCalls).toEqual([]);
+    expect(product.calls).toEqual([]);
+    expect(product.warnings).toEqual(["请先回到商品节点补充商品资料：商品视觉证据", "请先回到商品节点补充商品资料：商品视觉证据"]);
+});
+
 test("switching purposes creates separate connected tables and preserves edits", async () => {
     const product = await mountProduct();
     await editHero(product);
@@ -660,7 +784,7 @@ for (const outcome of [true, false, new Error("Queue unavailable")]) {
         expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(editedRows);
         await product.submit();
         expect(product.calls).toHaveLength(1);
-        expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", undefined, editedRows]);
+        expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", undefined, editedRows, true]);
         expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(editedRows);
         expect(product.isOpen()).toBe(true);
         expect(product.props().generating).toBe(true);
@@ -704,7 +828,7 @@ test("partial-generation confirmation forwards the current draft, not the modal 
         { slotId: "detail-2", title: "Detail", duty: "Show the texture", prompt: "" },
     ];
     expect(product.calls).toHaveLength(1);
-    expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", undefined, expected]);
+    expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", undefined, expected, true]);
     expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(expected);
     expect(product.isOpen()).toBe(true);
     await product.settle(true);
@@ -721,7 +845,7 @@ test("single-row generation forwards its slot and reordered draft, and suppresse
         { slotId: "detail-1", title: "Edited hero", duty: "Show the edited composition", prompt: "Edited hero prompt" },
     ];
     expect(product.calls).toHaveLength(1);
-    expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", ["detail-1"], expected]);
+    expect(product.calls[0]).toEqual([expect.objectContaining({ type: CanvasNodeType.BatchTable }), "detail", ["detail-1"], expected, false]);
     expect(product.node().metadata?.ecommerceSuite?.rows).toEqual(expected);
     await product.click("生成：Detail");
     expect(product.calls).toHaveLength(1);

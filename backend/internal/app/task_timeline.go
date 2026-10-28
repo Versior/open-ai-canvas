@@ -202,6 +202,9 @@ func (s *Service) CreateTimelineTranscriptionTask(userID string, req TimelineTra
 	if s.IsDraining() {
 		return nil, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受新的生成任务", Retryable: true}
 	}
+	if err := s.ensureTaskProjectActive(userID, req.ProjectID); err != nil {
+		return nil, err
+	}
 	if err := s.RequireFeature(FeatureTimelineTranscription); err != nil {
 		return nil, err
 	}
@@ -265,6 +268,9 @@ type timelineRenderResult struct {
 func (s *Service) CreateTimelineRenderTask(userID string, req TimelineRenderCreateRequest) (*model.Task, error) {
 	if s.IsDraining() {
 		return nil, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受新的生成任务", Retryable: true}
+	}
+	if err := s.ensureTaskProjectActive(userID, req.ProjectID); err != nil {
+		return nil, err
 	}
 	plan := buildRenderPlan(req.Timeline)
 	if !plan.HasMedia {

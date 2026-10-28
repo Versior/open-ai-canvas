@@ -28,14 +28,14 @@ export const addNodeMenuCommands: AddNodeMenuCommand[] = [
     // 项目级动作不占用节点网格，创作节点保持统一排列。
     { id: "style", label: "项目画风", icon: <Palette />, section: "project", defaultOrder: 10, applicable: (ctx) => !ctx.isProjectLinked && filmOnly(ctx), run: (ctx) => ctx.handlers.onChooseStyle() },
     // 创作节点
-    nodeCommand(CanvasNodeType.Text, { defaultOrder: 10, run: (ctx) => ctx.handlers.onAddText() }),
-    nodeCommand(CanvasNodeType.Drawing, { defaultOrder: 20, run: (ctx) => ctx.handlers.onAddDrawing() }),
+    nodeCommand(CanvasNodeType.Text, { defaultOrder: 10, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddText() }),
+    nodeCommand(CanvasNodeType.Drawing, { defaultOrder: 20, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddDrawing() }),
     nodeCommand(CanvasNodeType.Script, { badge: "核心", defaultOrder: 30, applicable: filmOnly, run: (ctx) => ctx.handlers.onAddScript() }),
     nodeCommand(CanvasNodeType.Frame, { defaultOrder: 40, applicable: (ctx) => ctx.workspaceMode !== "simple", run: (ctx) => ctx.handlers.onAddFrame() }),
-    { id: "folder", label: "文件夹", icon: <Folder />, badge: "6 款", section: "node", defaultOrder: 45, run: (ctx) => ctx.handlers.onAddFolder() },
-    nodeCommand(CanvasNodeType.Image, { defaultOrder: 50, run: (ctx) => ctx.handlers.onAddImage() }),
+    { id: "folder", label: "文件夹", icon: <Folder />, badge: "6 款", section: "node", defaultOrder: 45, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddFolder() },
+    nodeCommand(CanvasNodeType.Image, { defaultOrder: 50, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddImage() }),
     { id: "project-character", label: "角色卡", icon: <UserRound />, section: "node", defaultOrder: 55, applicable: filmOnly, run: (ctx) => ctx.handlers.onOpenProjectCharacters() },
-    nodeCommand(CanvasNodeType.Video, { defaultOrder: 60, run: (ctx) => ctx.handlers.onAddVideo() }),
+    nodeCommand(CanvasNodeType.Video, { defaultOrder: 60, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddVideo() }),
     nodeCommand(CanvasNodeType.BatchTable, { defaultOrder: 66, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.BatchTable) }),
     nodeCommand(CanvasNodeType.EcommerceStudio, { defaultOrder: 67, applicable: professionalEcommerceOnly, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.EcommerceStudio) }),
     // 商品与创作表承担套图主流程；专业节点按需添加，不自动铺满画布。
@@ -56,7 +56,7 @@ export const addNodeMenuCommands: AddNodeMenuCommand[] = [
             [CanvasNodeType.Delivery, "修改交付"],
         ] as const
     ).map(([type, group], index) => nodeCommand(type, { defaultOrder: 101 + index, applicable: professionalEcommerceOnly, group, run: (ctx) => ctx.handlers.onAddExtensionNode(type) })),
-    nodeCommand(CanvasNodeType.MediaConversion, { badge: "本地", defaultOrder: 65, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.MediaConversion) }),
+    nodeCommand(CanvasNodeType.MediaConversion, { badge: "本地", defaultOrder: 65, applicable: outsideSimpleEcommerce, run: (ctx) => ctx.handlers.onAddExtensionNode(CanvasNodeType.MediaConversion) }),
     // 预演台落在节点分区，但它开的是导演工作台、不是某种画布节点，故不走注册表。
     { id: "previs", label: "预演台", icon: <Layers3 />, badge: "3D", section: "node", defaultOrder: 70, applicable: (ctx) => ctx.workspaceMode !== "simple" && filmOnly(ctx), run: (ctx) => ctx.handlers.onOpenPrevis() },
     nodeCommand(CanvasNodeType.Audio, { defaultOrder: 80, applicable: (ctx) => ctx.workspaceMode !== "simple" && filmOnly(ctx), run: (ctx) => ctx.handlers.onAddAudio() }),

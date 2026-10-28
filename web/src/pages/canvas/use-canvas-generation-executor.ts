@@ -16,6 +16,7 @@ import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution
 import { generationFailureMetadata } from "@/lib/generation-error";
 import { modelCompatibilityError, modelGroupReferenceLimits, modelPromptLengthError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
 import { navigateToSettings } from "@/lib/settings-navigation";
+import { getActiveUserScope } from "@/lib/user-scope";
 import type { Skill } from "@/services/api/skills";
 import { skillRuntime } from "@/services/skill-runtime";
 import { loadPromptMentionedAssets } from "@/services/user-data-sync";
@@ -53,6 +54,7 @@ const NODE_STATUS_ERROR = "error" as const;
 
 export type CanvasNodeGenerationOptions = {
     controller?: AbortController;
+    userScope?: string;
     waitForTaskCapacity?: boolean;
     context?: { conversationId?: string; messageId?: string };
     retryContext?: { retryOf: string; attemptGroupId: string; clientOperationId: string };
@@ -83,6 +85,7 @@ export function useCanvasGenerationExecutor({
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const submissionLocksRef = useRef(new Map<string, Promise<unknown>>());
+    const preparationOwnersRef = useRef(new WeakMap<object, AbortController>());
     const confirmDuplicateSubmission = useCallback(
         () =>
             new Promise<boolean>((resolve) => {
@@ -100,20 +103,30 @@ export function useCanvasGenerationExecutor({
     );
 
     return useCallback(
-        (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string, options?: CanvasNodeGenerationOptions) =>
-            runCanvasGenerationSubmissionOnce(
+        (nodeId: string, mode: CanvasNodeGenerationMode, prompt: string, options?: CanvasNodeGenerationOptions) => {
+            const expectedUserScope = options?.userScope ?? getActiveUserScope();
+            return runCanvasGenerationSubmissionOnce(
                 submissionLocksRef.current,
                 nodeId,
                 async () => {
+                    let requestController = options?.controller;
+                    const assertUserScope = () => {
+                        if (getActiveUserScope() === expectedUserScope) return;
+                        requestController?.abort();
+                        throw new DOMException("Account changed during generation", "AbortError");
+                    };
+                    assertUserScope();
                     const sourceNode = nodesRef.current.find((node) => node.id === nodeId);
                     const failPreflight = (error: unknown) => {
                         const failure = generationFailureMetadata(error, prompt);
                         message.error(failure.errorDetails);
                         if (!options?.waitForTaskCapacity) return;
-                        setNodes((current) => current.map((node) => {
-                            if (node.id !== nodeId || node.metadata?.content || node.metadata?.taskId) return node;
-                            return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } };
-                        }));
+                        setNodes((current) =>
+                            current.map((node) => {
+                                if (node.id !== nodeId || node.metadata?.content || node.metadata?.taskId) return node;
+                                return { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } };
+                            }),
+                        );
                     };
                     if (isCanvasNodeGenerating(sourceNode)) {
                         message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
@@ -161,291 +174,316 @@ export function useCanvasGenerationExecutor({
                     const markSourceStatus = !sourceNode?.metadata?.content && !editingTextNode;
                     let generationPrompt = options?.inputSnapshot?.context.prompt ?? canvasGenerationInputPrompt(sourceNode, mode, prompt);
                     const customModels = useEcommerceModelLibrary.getState().models;
-                    const ecommerceInputs: EcommerceGenerationInputs = mode === "image" && !options?.inputSnapshot
-                        ? resolveEcommerceInputs(nodeId, nodesRef.current, connectionsRef.current, customModels)
-                        : { sources: {}, prompt: "", referenceImages: [] };
+                    const ecommerceInputs: EcommerceGenerationInputs = mode === "image" && !options?.inputSnapshot ? resolveEcommerceInputs(nodeId, nodesRef.current, connectionsRef.current, customModels) : { sources: {}, prompt: "", referenceImages: [] };
                     if (ecommerceInputs.prompt) generationPrompt = mergeEcommercePrompt(ecommerceInputs.prompt, generationPrompt);
                     const isPreparingEmptyImage = mode === "image" && sourceNode?.type === CanvasNodeType.Image && !sourceNode.metadata?.content;
                     const preparationController = startGenerationRequest(nodeId, nodeId, nodeId, options?.controller);
-                    setRunningNodeId(nodeId);
-                    if (markSourceStatus)
+                    requestController = preparationController;
+                    const ownPreparationMetadata = <T extends object>(metadata: T) => {
+                        preparationOwnersRef.current.set(metadata, preparationController);
+                        return metadata;
+                    };
+                    const finishOwnedPreparation = () => {
+                        const currentMetadata = nodesRef.current.find((node) => node.id === nodeId)?.metadata;
+                        const ownsNodeState = Boolean(currentMetadata && preparationOwnersRef.current.get(currentMetadata) === preparationController);
+                        const superseded = preparationController.signal.aborted && getActiveUserScope() === expectedUserScope && !ownsNodeState;
+                        finishGenerationRequest(nodeId, preparationController);
+                        if (superseded) return;
+                        setRunningNodeId((current) => (current === nodeId ? null : current));
                         setNodes((current) =>
-                            current.map((node) =>
-                                node.id === nodeId
-                                    ? {
-                                          ...node,
-                                          metadata: {
-                                              ...node.metadata,
-                                              ...canvasGenerationPromptMetadata(prompt, prompt),
-                                              status: NODE_STATUS_LOADING,
-                                              taskStage: "正在准备参考素材",
-                                              taskProgress: 0,
-                                              taskCreatedAt: new Date().toISOString(),
-                                              errorDetails: undefined,
-                                              generationErrorCode: undefined,
-                                              resourceReloadAvailable: undefined,
-                                              failedPromptFingerprint: undefined,
-                                          },
-                                      }
-                                    : node,
-                            ),
+                            current.map((node) => {
+                                if (node.id !== nodeId || !node.metadata || preparationOwnersRef.current.get(node.metadata) !== preparationController || node.metadata.status !== NODE_STATUS_LOADING || node.metadata.taskId) return node;
+                                const metadata = { ...node.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined };
+                                delete metadata.taskId;
+                                delete metadata.taskStatus;
+                                delete metadata.taskProgress;
+                                delete metadata.taskStage;
+                                delete metadata.taskCreatedAt;
+                                delete metadata.taskUpdatedAt;
+                                delete metadata.taskStartedAt;
+                                delete metadata.taskCompletedAt;
+                                delete metadata.taskDurationMs;
+                                return { ...node, metadata };
+                            }),
                         );
-
-                    let rawGenerationContext: Awaited<ReturnType<typeof hydrateNodeGenerationContext>>;
-                    // AutoDL/其他声明式视频协议需要结构化参考素材；只有普通
-                    // 模型视频接口才把提示词视为纯文本输入。
-                    const usesWorkflowProvider = Boolean(mode !== "text" && generationConfig.taskWorkflowProvider && generationConfig.taskWorkflowProvider !== "model");
-                    // 普通视频协议只保留输入框文本（显式 @文本 引用仍会展开为真实内容）；声明式工作流还要保留连接媒体。
-                    const promptOnly = mode === "video" && !usesWorkflowProvider;
+                    };
                     try {
-                        const contextPrompt = editingTextNode ? buildTextRewritePrompt(sourceTextContent, prompt) : generationPrompt;
-                        // 批量快照已在入队时解析过引用；其余路径先补齐提示词引用的素材，再用最新列表解析。
-                        const contextAssets = options?.inputSnapshot ? assets : await loadPromptMentionedAssets(contextPrompt);
-                        const baseContext = resolveCanvasBatchInputContext(options?.inputSnapshot, () => buildNodeGenerationContext(
-                            nodeId,
-                            nodesRef.current,
-                            connectionsRef.current,
-                            contextPrompt,
-                            contextAssets,
-                            promptOnly,
-                        ));
-                        const requirements = generationModelRequirements(mode, baseContext, sourceNode, generationConfig, true);
-                        generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, requirements);
-                        const compatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, requirements);
-                        if (compatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${compatibilityError}`);
-                        const referenceLimits = usesWorkflowProvider ? undefined : modelGroupReferenceLimits(effectiveConfig, generationConfig.model, mode, requirements);
-                        rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, mode, mode === "video" && Boolean(referenceLimits?.maxAudios), !promptOnly, referenceLimits, false);
-                        // 商品实拍 + 模特参考图补进参考图。
-                        //
-                        // 它们都不在连线上：用户连的是商品节点/选了模特，不是图片节点。
-                        // 而这两样恰恰是「同一件商品」「同一个人」的全部依据——
-                        // 少了它们，模型会照着文字描述自己编一个商品、编一个人。
-                        if (ecommerceInputs.referenceImages.length) {
-                            const evidenceImages = ecommerceInputs.referenceImages
-                                .filter((image) => image.storageKey || image.url || image.dataUrl)
-                                .filter((image) => !rawGenerationContext.referenceImages.some((existing) => existing.id === image.id));
-                            if (evidenceImages.length) rawGenerationContext = { ...rawGenerationContext, referenceImages: [...rawGenerationContext.referenceImages, ...evidenceImages], imageCount: rawGenerationContext.imageCount + evidenceImages.length };
-                            rawGenerationContext = { ...rawGenerationContext, prompt: mergeEcommercePrompt(rawGenerationContext.prompt, ecommerceReferenceImageGuide(rawGenerationContext.referenceImages)) };
-                        }
-                        const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
-                        generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, hydratedRequirements);
-                        const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);
-                        if (hydratedCompatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${hydratedCompatibilityError}`);
-                    } catch (error) {
-                        failPreflight(error);
-                        return;
-                    }
+                        setRunningNodeId(nodeId);
+                        if (markSourceStatus)
+                            setNodes((current) =>
+                                current.map((node) =>
+                                    node.id === nodeId
+                                        ? {
+                                              ...node,
+                                              metadata: ownPreparationMetadata({
+                                                  ...node.metadata,
+                                                  ...canvasGenerationPromptMetadata(prompt, prompt),
+                                                  status: NODE_STATUS_LOADING,
+                                                  taskStage: "正在准备参考素材",
+                                                  taskProgress: 0,
+                                                  taskCreatedAt: new Date().toISOString(),
+                                                  errorDetails: undefined,
+                                                  generationErrorCode: undefined,
+                                                  resourceReloadAvailable: undefined,
+                                                  failedPromptFingerprint: undefined,
+                                              }),
+                                          }
+                                        : node,
+                                ),
+                            );
 
-                    let skillExecution: Awaited<ReturnType<typeof skillRuntime.prepare<"canvas">>>;
-                    try {
-                        skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: rawGenerationContext.prompt, skills: addedSkills });
-                    } catch (error) {
-                        failPreflight(error);
-                        return;
-                    }
-                    let effectivePrompt = skillExecution.prompt.trim();
-                    let styleMetadata = {};
-                    if (mode === "image") {
+                        let rawGenerationContext: Awaited<ReturnType<typeof hydrateNodeGenerationContext>>;
+                        // AutoDL/其他声明式视频协议需要结构化参考素材；只有普通
+                        // 模型视频接口才把提示词视为纯文本输入。
+                        const usesWorkflowProvider = Boolean(mode !== "text" && generationConfig.taskWorkflowProvider && generationConfig.taskWorkflowProvider !== "model");
+                        // 普通视频协议只保留输入框文本（显式 @文本 引用仍会展开为真实内容）；声明式工作流还要保留连接媒体。
+                        const promptOnly = mode === "video" && !usesWorkflowProvider;
                         try {
-                            const styleRuntime = resolveCanvasStyleExecution(nodesRef.current, sourceNode, effectivePrompt, generationConfig, mode);
-                            if (styleRuntime) {
-                                effectivePrompt = styleRuntime.prompt;
-                                styleMetadata = { styleProfileJson: styleRuntime.profileJson, styleExecutionPlan: styleRuntime.plan };
+                            const contextPrompt = editingTextNode ? buildTextRewritePrompt(sourceTextContent, prompt) : generationPrompt;
+                            // 批量快照已在入队时解析过引用；其余路径先补齐提示词引用的素材，再用最新列表解析。
+                            const contextAssets = options?.inputSnapshot ? assets : await loadPromptMentionedAssets(contextPrompt);
+                            const baseContext = resolveCanvasBatchInputContext(options?.inputSnapshot, () => buildNodeGenerationContext(nodeId, nodesRef.current, connectionsRef.current, contextPrompt, contextAssets, promptOnly));
+                            const requirements = generationModelRequirements(mode, baseContext, sourceNode, generationConfig, true);
+                            generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, requirements);
+                            const compatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, requirements);
+                            if (compatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${compatibilityError}`);
+                            const referenceLimits = usesWorkflowProvider ? undefined : modelGroupReferenceLimits(effectiveConfig, generationConfig.model, mode, requirements);
+                            rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, mode, mode === "video" && Boolean(referenceLimits?.maxAudios), !promptOnly, referenceLimits, false);
+                            // 商品实拍 + 模特参考图补进参考图。
+                            //
+                            // 它们都不在连线上：用户连的是商品节点/选了模特，不是图片节点。
+                            // 而这两样恰恰是「同一件商品」「同一个人」的全部依据——
+                            // 少了它们，模型会照着文字描述自己编一个商品、编一个人。
+                            if (ecommerceInputs.referenceImages.length) {
+                                const evidenceImages = ecommerceInputs.referenceImages.filter((image) => image.storageKey || image.url || image.dataUrl).filter((image) => !rawGenerationContext.referenceImages.some((existing) => existing.id === image.id));
+                                if (evidenceImages.length)
+                                    rawGenerationContext = { ...rawGenerationContext, referenceImages: [...rawGenerationContext.referenceImages, ...evidenceImages], imageCount: rawGenerationContext.imageCount + evidenceImages.length };
+                                rawGenerationContext = { ...rawGenerationContext, prompt: mergeEcommercePrompt(rawGenerationContext.prompt, ecommerceReferenceImageGuide(rawGenerationContext.referenceImages)) };
                             }
+                            const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
+                            generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, hydratedRequirements);
+                            const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);
+                            if (hydratedCompatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${hydratedCompatibilityError}`);
                         } catch (error) {
                             failPreflight(error);
                             return;
                         }
-                    }
-                    const promptLengthError = mode === "video" ? modelPromptLengthError(generationConfig, generationConfig.model, mode, effectivePrompt) : "";
-                    if (promptLengthError) {
-                        failPreflight(new Error(promptLengthError));
-                        return;
-                    }
-                    const generationContext = { ...rawGenerationContext, prompt: effectivePrompt };
-                    if (mode === "audio" && generationContext.characterReferences.length) {
-                        if (generationContext.characterReferences.length !== 1) {
-                            message.error("角色配音一次只能引用一个角色卡");
-                            finishGenerationRequest(nodeId, preparationController);
-                            setRunningNodeId(null);
+
+                        let skillExecution: Awaited<ReturnType<typeof skillRuntime.prepare<"canvas">>>;
+                        try {
+                            skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: rawGenerationContext.prompt, skills: addedSkills });
+                        } catch (error) {
+                            failPreflight(error);
                             return;
                         }
-                        const voice = generationContext.resolvedCharacterVoices[0];
-                        if (!voice) {
-                            message.error("角色尚未绑定可用声音，无法创建角色配音任务");
-                            finishGenerationRequest(nodeId, preparationController);
-                            setRunningNodeId(null);
+                        let effectivePrompt = skillExecution.prompt.trim();
+                        let styleMetadata = {};
+                        if (mode === "image") {
+                            try {
+                                const styleRuntime = resolveCanvasStyleExecution(nodesRef.current, sourceNode, effectivePrompt, generationConfig, mode);
+                                if (styleRuntime) {
+                                    effectivePrompt = styleRuntime.prompt;
+                                    styleMetadata = { styleProfileJson: styleRuntime.profileJson, styleExecutionPlan: styleRuntime.plan };
+                                }
+                            } catch (error) {
+                                failPreflight(error);
+                                return;
+                            }
+                        }
+                        const promptLengthError = mode === "video" ? modelPromptLengthError(generationConfig, generationConfig.model, mode, effectivePrompt) : "";
+                        if (promptLengthError) {
+                            failPreflight(new Error(promptLengthError));
                             return;
                         }
-                        generationConfig = { ...generationConfig, audioVoice: voice.voiceKey, audioInstructions: [voice.instructions, generationConfig.audioInstructions].filter(Boolean).join("；") };
-                    }
-                    if (!effectivePrompt && (mode === "text" || mode === "audio")) {
-                        finishGenerationRequest(nodeId, preparationController);
-                        setRunningNodeId(null);
-                        return;
-                    }
+                        const generationContext = { ...rawGenerationContext, prompt: effectivePrompt };
+                        if (mode === "audio" && generationContext.characterReferences.length) {
+                            if (generationContext.characterReferences.length !== 1) {
+                                message.error("角色配音一次只能引用一个角色卡");
+                                return;
+                            }
+                            const voice = generationContext.resolvedCharacterVoices[0];
+                            if (!voice) {
+                                message.error("角色尚未绑定可用声音，无法创建角色配音任务");
+                                return;
+                            }
+                            generationConfig = { ...generationConfig, audioVoice: voice.voiceKey, audioInstructions: [voice.instructions, generationConfig.audioInstructions].filter(Boolean).join("；") };
+                        }
+                        if (!effectivePrompt && (mode === "text" || mode === "audio")) {
+                            return;
+                        }
 
-                    const requestFingerprint = canvasGenerationRequestFingerprint({
-                        nodeId,
-                        mode,
-                        prompt: effectivePrompt,
-                        model: generationConfig.model,
-                        options: modelRequestOptions(generationConfig, mode),
-                        workflow:
-                            generationConfig.taskWorkflowProvider && generationConfig.taskWorkflowProvider !== "model"
-                                ? {
-                                      provider: generationConfig.taskWorkflowProvider,
-                                      workflowId: generationConfig.runningHub.workflowId,
-                                      workflowKind: generationConfig.runningHub.selectedKind,
-                                      parameters: sourceNode?.metadata?.workflowParameters,
-                                  }
-                                : undefined,
-                        operation: sourceNode?.metadata?.videoEditOperation,
-                        audioInstructions: generationConfig.audioInstructions,
-                        audioEmotionControlMethod: generationConfig.audioEmotionControlMethod,
-                        audioEmotionRandom: generationConfig.audioEmotionRandom,
-                        audioEmotionHappy: generationConfig.audioEmotionHappy,
-                        audioEmotionAngry: generationConfig.audioEmotionAngry,
-                        audioEmotionSad: generationConfig.audioEmotionSad,
-                        audioEmotionAfraid: generationConfig.audioEmotionAfraid,
-                        audioEmotionDisgusted: generationConfig.audioEmotionDisgusted,
-                        audioEmotionMelancholic: generationConfig.audioEmotionMelancholic,
-                        audioEmotionSurprised: generationConfig.audioEmotionSurprised,
-                        audioEmotionCalm: generationConfig.audioEmotionCalm,
-                        promptTemplateOperation: sourceNode?.metadata?.promptTemplateOperation,
-                        promptTemplateVariables: sourceNode?.metadata?.promptTemplateVariables,
-                        context: generationContext,
-                    });
-                    const duplicateConfirmationRequired = !options?.skipDuplicateConfirmation && !options?.retryContext && sourceNode?.metadata?.lastGenerationRequestFingerprint === requestFingerprint;
-                    if (duplicateConfirmationRequired && !(await confirmDuplicateSubmission())) {
-                        finishGenerationRequest(nodeId, preparationController);
-                        setRunningNodeId(null);
-                        return;
-                    }
-
-                    const controller = preparationController;
-                    if (controller.signal.aborted) {
-                        finishGenerationRequest(nodeId, controller);
-                        setRunningNodeId(null);
-                        return;
-                    }
-                    if (isPreparingEmptyImage) {
-                        setNodes((current) =>
-                            current.map((node) =>
-                                node.id === nodeId
+                        const requestFingerprint = canvasGenerationRequestFingerprint({
+                            nodeId,
+                            mode,
+                            prompt: effectivePrompt,
+                            model: generationConfig.model,
+                            options: modelRequestOptions(generationConfig, mode),
+                            workflow:
+                                generationConfig.taskWorkflowProvider && generationConfig.taskWorkflowProvider !== "model"
                                     ? {
-                                          ...node,
-                                          metadata: {
-                                              ...node.metadata,
-                                              prompt,
-                                              composerContent: prompt,
-                                              status: NODE_STATUS_LOADING,
-                                              taskStage: "正在准备生成任务",
-                                              taskProgress: 0,
-                                              taskCreatedAt: new Date().toISOString(),
-                                              errorDetails: undefined,
-                                              generationErrorCode: undefined,
-                                              resourceReloadAvailable: undefined,
-                                              failedPromptFingerprint: undefined,
-                                          },
+                                          provider: generationConfig.taskWorkflowProvider,
+                                          workflowId: generationConfig.runningHub.workflowId,
+                                          workflowKind: generationConfig.runningHub.selectedKind,
+                                          parameters: sourceNode?.metadata?.workflowParameters,
                                       }
-                                    : node,
-                            ),
-                        );
-                    }
+                                    : undefined,
+                            operation: sourceNode?.metadata?.videoEditOperation,
+                            audioInstructions: generationConfig.audioInstructions,
+                            audioEmotionControlMethod: generationConfig.audioEmotionControlMethod,
+                            audioEmotionRandom: generationConfig.audioEmotionRandom,
+                            audioEmotionHappy: generationConfig.audioEmotionHappy,
+                            audioEmotionAngry: generationConfig.audioEmotionAngry,
+                            audioEmotionSad: generationConfig.audioEmotionSad,
+                            audioEmotionAfraid: generationConfig.audioEmotionAfraid,
+                            audioEmotionDisgusted: generationConfig.audioEmotionDisgusted,
+                            audioEmotionMelancholic: generationConfig.audioEmotionMelancholic,
+                            audioEmotionSurprised: generationConfig.audioEmotionSurprised,
+                            audioEmotionCalm: generationConfig.audioEmotionCalm,
+                            promptTemplateOperation: sourceNode?.metadata?.promptTemplateOperation,
+                            promptTemplateVariables: sourceNode?.metadata?.promptTemplateVariables,
+                            context: generationContext,
+                        });
+                        const duplicateConfirmationRequired = !options?.skipDuplicateConfirmation && !options?.retryContext && sourceNode?.metadata?.lastGenerationRequestFingerprint === requestFingerprint;
+                        if (duplicateConfirmationRequired && !(await confirmDuplicateSubmission())) {
+                            return;
+                        }
 
-                    // 已有内容节点只是本次生成的来源；任务状态归新目标所有，不能覆盖已成功结果。
-                    const statusPrompt = sourceNode?.type === CanvasNodeType.Config ? effectivePrompt : prompt;
-                    if (markSourceStatus)
-                        setNodes((current) =>
-                            current.map((node) =>
-                                node.id === nodeId
-                                    ? {
-                                          ...node,
-                                          metadata: { ...node.metadata, ...canvasGenerationPromptMetadata(prompt, statusPrompt), status: NODE_STATUS_LOADING, errorDetails: undefined, generationErrorCode: undefined, resourceReloadAvailable: undefined, failedPromptFingerprint: undefined },
-                                      }
-                                    : node,
-                            ),
-                        );
-
-                    let pendingNodeIds: string[] = [];
-                    const execution = {
-                        projectId,
-                        nodeId,
-                        sourceNode,
-                        canvasNodes: nodesRef.current,
-                        canvasConnections: connectionsRef.current,
-                        prompt,
-                        effectivePrompt,
-                        generationConfig,
-                        generationContext,
-                        controller,
-                        editingTextNode,
-                        styleMetadata,
-                        skillMetadata: skillExecution.metadata,
-                        taskContext: options?.context,
-                        retryContext: options?.retryContext,
-                        setNodes,
-                        setConnections,
-                        setSelectedNodeIds,
-                        setSelectedConnectionId,
-                        setDialogNodeId,
-                        startGenerationRequest,
-                        finishGenerationRequest,
-                        bindGenerationTask: (targetNodeId: string, task: GenerationTask) => {
-                            bindGenerationTask(targetNodeId, task);
-                            setNodes((current) => {
-                                const source = current.find((node) => node.id === nodeId);
-                                if (!source || source.metadata?.lastGenerationRequestFingerprint === requestFingerprint) return current;
-                                return current.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, lastGenerationRequestFingerprint: requestFingerprint } } : node));
-                            });
-                            options?.onTaskUpdate?.(task);
-                        },
-                        applyGenerationTaskResult,
-                        showError: (content: string) => message.error(content),
-                        registerPendingNodeIds: (nodeIds: string[]) => {
-                            pendingNodeIds = nodeIds;
-                        },
-                    };
-
-                    try {
-                        if (mode === "image") await executeImageGeneration(execution);
-                        else if (mode === "video") await executeVideoGeneration(execution);
-                        else if (mode === "audio") await executeAudioGeneration(execution);
-                        else await executeTextGeneration(execution);
-                    } catch (error) {
-                        if (isGenerationCanceled(error)) return;
-                        const failure = generationFailureMetadata(error, prompt);
-                        if (options?.waitForTaskCapacity && isGenerationTaskCapacityError(error)) {
+                        const controller = preparationController;
+                        if (controller.signal.aborted) {
+                            return;
+                        }
+                        if (isPreparingEmptyImage) {
                             setNodes((current) =>
-                                current.map((node) => {
-                                    if (node.id !== nodeId && !pendingNodeIds.includes(node.id)) return node;
-                                    const metadata = { ...(node.metadata || {}), status: NODE_STATUS_IDLE, errorDetails: undefined };
-                                    delete metadata.taskId;
-                                    delete metadata.taskStatus;
-                                    delete metadata.taskProgress;
-                                    delete metadata.taskStage;
-                                    delete metadata.taskCreatedAt;
-                                    delete metadata.taskUpdatedAt;
-                                    delete metadata.taskStartedAt;
-                                    delete metadata.taskCompletedAt;
-                                    delete metadata.taskDurationMs;
-                                    return { ...node, metadata };
-                                }),
+                                current.map((node) =>
+                                    node.id === nodeId
+                                        ? {
+                                              ...node,
+                                              metadata: ownPreparationMetadata({
+                                                  ...node.metadata,
+                                                  prompt,
+                                                  composerContent: prompt,
+                                                  status: NODE_STATUS_LOADING,
+                                                  taskStage: "正在准备生成任务",
+                                                  taskProgress: 0,
+                                                  taskCreatedAt: new Date().toISOString(),
+                                                  errorDetails: undefined,
+                                                  generationErrorCode: undefined,
+                                                  resourceReloadAvailable: undefined,
+                                                  failedPromptFingerprint: undefined,
+                                              }),
+                                          }
+                                        : node,
+                                ),
                             );
-                            return;
                         }
-                        message.error(failure.errorDetails);
-                        setNodes((current) =>
-                            current.map((node) => (node.id === nodeId || pendingNodeIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } }) : node)),
-                        );
+
+                        // 已有内容节点只是本次生成的来源；任务状态归新目标所有，不能覆盖已成功结果。
+                        const statusPrompt = sourceNode?.type === CanvasNodeType.Config ? effectivePrompt : prompt;
+                        if (markSourceStatus)
+                            setNodes((current) =>
+                                current.map((node) =>
+                                    node.id === nodeId
+                                        ? {
+                                              ...node,
+                                              metadata: ownPreparationMetadata({
+                                                  ...node.metadata,
+                                                  ...canvasGenerationPromptMetadata(prompt, statusPrompt),
+                                                  status: NODE_STATUS_LOADING,
+                                                  errorDetails: undefined,
+                                                  generationErrorCode: undefined,
+                                                  resourceReloadAvailable: undefined,
+                                                  failedPromptFingerprint: undefined,
+                                              }),
+                                          }
+                                        : node,
+                                ),
+                            );
+
+                        let pendingNodeIds: string[] = [];
+                        const execution = {
+                            projectId,
+                            nodeId,
+                            sourceNode,
+                            canvasNodes: nodesRef.current,
+                            canvasConnections: connectionsRef.current,
+                            prompt,
+                            effectivePrompt,
+                            generationConfig,
+                            generationContext,
+                            controller,
+                            expectedUserScope,
+                            editingTextNode,
+                            styleMetadata,
+                            skillMetadata: skillExecution.metadata,
+                            taskContext: options?.context,
+                            retryContext: options?.retryContext,
+                            setNodes,
+                            setConnections,
+                            setSelectedNodeIds,
+                            setSelectedConnectionId,
+                            setDialogNodeId,
+                            startGenerationRequest,
+                            finishGenerationRequest,
+                            bindGenerationTask: (targetNodeId: string, task: GenerationTask) => {
+                                assertUserScope();
+                                bindGenerationTask(targetNodeId, task);
+                                setNodes((current) => {
+                                    const source = current.find((node) => node.id === nodeId);
+                                    if (!source || source.metadata?.lastGenerationRequestFingerprint === requestFingerprint) return current;
+                                    return current.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, lastGenerationRequestFingerprint: requestFingerprint } } : node));
+                                });
+                                options?.onTaskUpdate?.(task);
+                            },
+                            applyGenerationTaskResult: async (targetNodeId: string, task: GenerationTask) => {
+                                assertUserScope();
+                                await applyGenerationTaskResult(targetNodeId, task);
+                            },
+                            showError: (content: string) => message.error(content),
+                            registerPendingNodeIds: (nodeIds: string[]) => {
+                                pendingNodeIds = nodeIds;
+                            },
+                        };
+
+                        try {
+                            assertUserScope();
+                            if (mode === "image") await executeImageGeneration(execution);
+                            else if (mode === "video") await executeVideoGeneration(execution);
+                            else if (mode === "audio") await executeAudioGeneration(execution);
+                            else await executeTextGeneration(execution);
+                        } catch (error) {
+                            if (isGenerationCanceled(error)) return;
+                            const failure = generationFailureMetadata(error, prompt);
+                            if (options?.waitForTaskCapacity && isGenerationTaskCapacityError(error)) {
+                                setNodes((current) =>
+                                    current.map((node) => {
+                                        if (node.id !== nodeId && !pendingNodeIds.includes(node.id)) return node;
+                                        const metadata = { ...(node.metadata || {}), status: NODE_STATUS_IDLE, errorDetails: undefined };
+                                        delete metadata.taskId;
+                                        delete metadata.taskStatus;
+                                        delete metadata.taskProgress;
+                                        delete metadata.taskStage;
+                                        delete metadata.taskCreatedAt;
+                                        delete metadata.taskUpdatedAt;
+                                        delete metadata.taskStartedAt;
+                                        delete metadata.taskCompletedAt;
+                                        delete metadata.taskDurationMs;
+                                        return { ...node, metadata };
+                                    }),
+                                );
+                                return;
+                            }
+                            message.error(failure.errorDetails);
+                            setNodes((current) =>
+                                current.map((node) => (node.id === nodeId || pendingNodeIds.includes(node.id) ? (node.id === nodeId && !markSourceStatus ? node : { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, ...failure } }) : node)),
+                            );
+                        }
                     } finally {
-                        finishGenerationRequest(nodeId, controller);
-                        setRunningNodeId(null);
+                        finishOwnedPreparation();
                     }
                 },
                 () => message.info({ key: `canvas-generation-submission-${nodeId}`, content: "该节点已有生成请求正在提交或执行，请勿重复点击" }),
-            ),
+            );
+        },
         [
             addedSkills,
             applyGenerationTaskResult,
@@ -469,7 +507,6 @@ export function useCanvasGenerationExecutor({
         ],
     );
 }
-
 
 function generationModelRequirements(
     mode: CanvasNodeGenerationMode,

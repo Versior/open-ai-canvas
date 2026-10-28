@@ -5,6 +5,7 @@ import { useNodeConnections, useNodeInputs, useDownstreamNodes } from "@/compone
 import { CanvasEcommerceSuitePanel } from "@/components/canvas/canvas-ecommerce-suite-panel";
 import { useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
 import { ecommerceOneClickFlow, type EcommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
+import { ecommerceCopySourceIssues } from "@/lib/ecommerce/ecommerce-contract";
 import { resolveEcommerceTableModels } from "@/lib/ecommerce/ecommerce-model-defaults";
 import { ecommerceSuiteMoveRow, ecommerceSuiteRowId, ecommerceSuiteRows, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
@@ -66,7 +67,8 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
     );
     const productInputs = useNodeInputs(product?.id || "");
     const productConnections = useNodeConnections(product?.id || "");
-    const analysisReferenceImageCount = product ? ecommerceProductReferenceImages(product, productInputs, productConnections).length + connectedStyleReferenceNodes(product.id, productInputs, productConnections).length : 0;
+    const productReferenceImageCount = product ? ecommerceProductReferenceImages(product, productInputs, productConnections).length : 0;
+    const analysisReferenceImageCount = productReferenceImageCount + (product ? connectedStyleReferenceNodes(product.id, productInputs, productConnections).length : 0);
     const generationReferenceImageCount = product
         ? resolveEcommerceInputs(node.id, [...new Map([node, ...inputs, ...productInputs].map((item) => [item.id, item])).values()], [...new Map([...connections, ...productConnections].map((edge) => [edge.id, edge])).values()], customModels)
               .referenceImages.length
@@ -78,12 +80,19 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
     const generationInFlight = useRef(false);
     const { skills, loading: skillsLoading, error: skillsError, refresh: refreshSkills } = useSkillRuntimeCatalog();
     const activeFlow = ecommerceOneClickFlow(node.metadata?.ecommerceFlowId) || ecommerceOneClickFlow("main")!;
+    const admitSuiteAction = () => {
+        const issues = ["main", "detail", "seed"].includes(activeFlow.id) ? ecommerceCopySourceIssues(product?.metadata?.productProfile) : [];
+        if (["main", "detail", "seed", "wear"].includes(activeFlow.id) && !productReferenceImageCount) issues.push("商品视觉证据");
+        if (!issues.length) return true;
+        actions.focusNode?.(product?.id || node.id);
+        message.warning(`请先回到商品节点补充商品资料：${issues.join("、")}`);
+        return false;
+    };
     const models = resolveEcommerceTableModels(config, { analysisModel: node.metadata?.ecommerceAnalysisModel, imageModel: node.metadata?.ecommerceImageModel });
     const analysisModel = node.metadata?.ecommerceAnalysisModel?.trim() || models.analysisModel;
     const signatureNodes = [...new Map([node, ...inputs, ...productInputs].map((item) => [item.id, item])).values()];
     const signatureConnections = [...new Map([...connections, ...productConnections].map((edge) => [edge.id, edge])).values()];
-    const sourceSignature: EcommerceResultSourceSignature = (row, candidate) =>
-        ecommerceGenerationSourceSignature({ source: node, row, target: candidate, nodes: [...signatureNodes, candidate], connections: signatureConnections, config, customModels });
+    const sourceSignature: EcommerceResultSourceSignature = (row, candidate) => ecommerceGenerationSourceSignature({ source: node, row, target: candidate, nodes: [...signatureNodes, candidate], connections: signatureConnections, config, customModels });
     const suite = node.metadata?.ecommerceSuite;
     const currentSuite = (flow: EcommerceOneClickFlow): EcommerceSuite => node.metadata?.ecommerceSuitesByFlow?.[flow.id] || (suite?.flow === flow.id ? suite : { flow: flow.id, rows: ecommerceSuiteRows(flow, undefined), source: "draft", updatedAt: "" });
     const results = ecommerceTableResults(currentSuite(activeFlow).rows, downstream, activeFlow.id, sourceSignature);
@@ -103,12 +112,16 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
     };
     const patchSuiteRow = (slotId: string, patch: Partial<Pick<EcommerceSuiteRow, "title" | "duty" | "prompt">>) => changeRows((rows) => rows.map((row) => (row.slotId === slotId ? { ...row, ...patch } : row)));
     const analyze = async (rows: EcommerceSuiteRow[], reverse = false) => {
-        if (node.metadata?.locked || analysisInFlight.current) return;
+        if (node.metadata?.locked || analysisInFlight.current || !admitSuiteAction()) return;
         analysisInFlight.current = true;
         setAnalyzing(true);
         try {
-            if (reverse) await reverseEcommerceSuite?.(node, activeFlow.id, analysisModel || undefined);
-            else await draftEcommerceSuite?.(node, activeFlow.id, analysisModel || undefined, rows);
+            if (reverse) {
+                await reverseEcommerceSuite?.(node, activeFlow.id, analysisModel || undefined);
+                return;
+            }
+            const analysis = draftEcommerceSuite?.(node, activeFlow.id, analysisModel || undefined, rows);
+            return analysis ? await analysis : undefined;
         } catch (error) {
             message.error(error instanceof Error ? error.message : "分析失败");
         } finally {
@@ -116,13 +129,13 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
             setAnalyzing(false);
         }
     };
-    const generate = async (slotId?: string, rows?: EcommerceSuiteRow[]) => {
-        if (node.metadata?.locked) return false;
+    const generate = async (slotIds?: string[], rows?: EcommerceSuiteRow[], completeSuite = false) => {
+        if (node.metadata?.locked || !admitSuiteAction()) return false;
         if (generationInFlight.current) return false;
         generationInFlight.current = true;
         setGenerating(true);
         try {
-            const enqueued = await generateEcommerceSuite?.(node, activeFlow.id, slotId ? [slotId] : undefined, rows);
+            const enqueued = await generateEcommerceSuite?.(node, activeFlow.id, slotIds, rows, completeSuite);
 
             return Boolean(enqueued);
         } catch (error) {
@@ -170,7 +183,7 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
                     onSkillIdsChange={(value) => updateMetadata?.(node.id, { ecommerceAnalysisSkillsByFlow: { ...node.metadata?.ecommerceAnalysisSkillsByFlow, [activeFlow.id]: value } })}
                     onAutoBindChange={(value) => updateMetadata?.(node.id, { ecommerceAutoBind: value })}
                     onClearPrompts={() => changeRows((rows) => rows.map((row) => ({ ...row, prompt: "" })))}
-                    onAnalyze={(rows) => void analyze(rows)}
+                    onAnalyze={(rows) => analyze(rows)}
                     onRowChange={patchSuiteRow}
                     onReverse={
                         reverseEcommerceSuite
@@ -189,8 +202,8 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
                         }
                         changeRows((rows) => rows.filter((row) => row.slotId !== id));
                     }}
-                    onGenerate={(rows) => void generate(undefined, rows)}
-                    onGenerateOne={(id, rows) => void generate(id, rows)}
+                    onGenerate={(rows, slotIds) => generate(slotIds, rows, true)}
+                    onGenerateOne={(id, rows) => generate([id], rows, false)}
                     onMoveRow={(id, delta) => changeRows((rows) => ecommerceSuiteMoveRow(rows, id, delta))}
                     onClose={() => {}}
                 />

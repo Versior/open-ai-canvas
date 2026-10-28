@@ -12,7 +12,10 @@
  *
  * 所以拆解节点的产出不是图，是结构：结论 + 我方大纲。大纲能一键铺成拍摄清单。
  */
+import { canvasBatchInputToken } from "@/lib/canvas/canvas-batch-input-signature";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+
+import type { EcommerceSuiteRow } from "./ecommerce-suite";
 
 /** 拆解维度。取自行业里的「五个维度」方法论，加上证据与信任两块。 */
 export type EcommerceTeardownDimension =
@@ -59,6 +62,132 @@ export type EcommerceTeardown = {
     outline: EcommerceTeardownOutlineRow[];
 };
 
+export type EcommerceTeardownPlan = {
+    findings: Array<Omit<EcommerceTeardownFinding, "id">>;
+    outline: Array<Omit<EcommerceTeardownOutlineRow, "id">>;
+};
+
+export type EcommerceTeardownDraft = Pick<EcommerceTeardown, "findings" | "outline"> & { sourceSignature: string };
+
+export const ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE = "详情页复刻方案";
+
+const ECOMMERCE_TEARDOWN_PLAN_REQUEST_PREFIX = "<!-- yingce:ecommerce-teardown-plan:";
+const ECOMMERCE_TEARDOWN_PLAN_MAX_FINDINGS = 30;
+const ECOMMERCE_TEARDOWN_PLAN_MAX_SCREENS = 30;
+const ECOMMERCE_TEARDOWN_PLAN_MAX_TITLE_LENGTH = 120;
+const ECOMMERCE_TEARDOWN_PLAN_MAX_TEXT_LENGTH = 1000;
+const ecommerceTeardownDimensionIds = new Set<EcommerceTeardownDimension>(ECOMMERCE_TEARDOWN_DIMENSIONS.map((item) => item.id));
+
+export function ecommerceTeardownPlanRequest(targetNodeId: string, prompt: string) {
+    return `${ECOMMERCE_TEARDOWN_PLAN_REQUEST_PREFIX}${encodeURIComponent(targetNodeId)} -->\n${prompt.trim()}`;
+}
+
+export function parseEcommerceTeardownPlanRequest(value: string | undefined) {
+    if (!value?.startsWith(ECOMMERCE_TEARDOWN_PLAN_REQUEST_PREFIX)) return undefined;
+    const end = value.indexOf(" -->\n");
+    if (end < 0) return undefined;
+    try {
+        const targetNodeId = decodeURIComponent(value.slice(ECOMMERCE_TEARDOWN_PLAN_REQUEST_PREFIX.length, end)).trim();
+        const prompt = value.slice(end + 5).trim();
+        return targetNodeId && prompt ? { targetNodeId, prompt } : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function ecommerceTeardownPlanText(value: unknown, maxLength: number) {
+    if (typeof value !== "string") return undefined;
+    const text = value.trim();
+    return text && text.length <= maxLength ? text : undefined;
+}
+
+/** Accept only a complete bounded plan so partial model output never replaces user edits. */
+export function parseEcommerceTeardownPlan(value: string | undefined, selectedDimensions: EcommerceTeardownDimension[]): EcommerceTeardownPlan | undefined {
+    const selected = new Set(selectedDimensions);
+    if (!selectedDimensions.length || selected.size !== selectedDimensions.length) return undefined;
+    const source = value?.trim();
+    if (!source) return undefined;
+    const start = source.indexOf("{");
+    const end = source.lastIndexOf("}");
+    if (start < 0 || end <= start) return undefined;
+    try {
+        const raw = JSON.parse(source.slice(start, end + 1)) as Record<string, unknown>;
+        if (!raw || typeof raw !== "object" || Array.isArray(raw) || !Array.isArray(raw.findings) || !Array.isArray(raw.outline)) return undefined;
+        if (raw.findings.length > ECOMMERCE_TEARDOWN_PLAN_MAX_FINDINGS || raw.outline.length > ECOMMERCE_TEARDOWN_PLAN_MAX_SCREENS || (!raw.findings.length && !raw.outline.length)) return undefined;
+        const findings = raw.findings.map((item) => {
+            if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+            const finding = item as Record<string, unknown>;
+            const dimension = finding.dimension;
+            const text = ecommerceTeardownPlanText(finding.finding, ECOMMERCE_TEARDOWN_PLAN_MAX_TEXT_LENGTH);
+            return typeof dimension === "string" && ecommerceTeardownDimensionIds.has(dimension as EcommerceTeardownDimension) && text
+                ? { dimension: dimension as EcommerceTeardownDimension, finding: text }
+                : undefined;
+        });
+        const outline = raw.outline.map((item) => {
+            if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+            const row = item as Record<string, unknown>;
+            const title = ecommerceTeardownPlanText(row.title, ECOMMERCE_TEARDOWN_PLAN_MAX_TITLE_LENGTH);
+            const brief = ecommerceTeardownPlanText(row.brief, ECOMMERCE_TEARDOWN_PLAN_MAX_TEXT_LENGTH);
+            const stance = row.stance;
+            return title && brief && (stance === "follow" || stance === "differentiate") ? { title, brief, stance } : undefined;
+        });
+        if (findings.some((item) => !item) || outline.some((item) => !item)) return undefined;
+        const findingDimensions = findings.map((item) => item!.dimension);
+        if (findingDimensions.some((dimension) => !selected.has(dimension)) || new Set(findingDimensions).size !== findingDimensions.length || findingDimensions.length !== selected.size) return undefined;
+        return { findings: findings as EcommerceTeardownPlan["findings"], outline: outline as EcommerceTeardownPlan["outline"] };
+    } catch {
+        return undefined;
+    }
+}
+
+/** Create an editable proposal; applying it remains a separate explicit action. */
+export function createEcommerceTeardownDraft(plan: EcommerceTeardownPlan, sourceSignature: string): EcommerceTeardownDraft {
+    const draftToken = canvasBatchInputToken("teardown-draft", JSON.stringify([sourceSignature, plan]));
+    return {
+        sourceSignature,
+        findings: plan.findings.map((finding, index) => ({ ...finding, id: `${draftToken}:finding:${index + 1}` })),
+        outline: plan.outline.map((row, index) => ({ ...row, id: `${draftToken}:row:${index + 1}` })),
+    };
+}
+
+export function applyEcommerceTeardownDraft(teardown: EcommerceTeardown, draft: EcommerceTeardownDraft): EcommerceTeardown {
+    return {
+        ...teardown,
+        findings: draft.findings.map((finding) => ({ ...finding })),
+        outline: draft.outline.map((row) => ({ ...row })),
+    };
+}
+
+function canvasMediaSignatureToken(node: CanvasNodeData | undefined) {
+    if (!node) return "";
+    const metadata = node.metadata;
+    const identity = metadata?.currentMediaVersionId || metadata?.assetId || metadata?.taskId || metadata?.storageKey || metadata?.content || "";
+    return identity ? canvasBatchInputToken(node.id, identity) : node.id;
+}
+
+/** Fingerprint plan inputs without retaining media URLs, access tokens, data URLs or bytes. */
+export function ecommerceTeardownPlanSourceSignature(input: { target: CanvasNodeData; referenceImage?: CanvasNodeData; product?: CanvasNodeData }) {
+    const dimensions = input.target.metadata?.ecommerceTeardown?.dimensions || createEcommerceTeardown(input.target.title).dimensions;
+    const profile = input.product?.metadata?.productProfile;
+    const profileToken = profile
+        ? canvasBatchInputToken(input.product!.id, JSON.stringify([profile.name, profile.category, profile.appearance, profile.marks, profile.forbidden, profile.audience, profile.facts, profile.price]))
+        : "";
+    return JSON.stringify([input.target.id, [...new Set(dimensions)].sort(), canvasMediaSignatureToken(input.referenceImage), input.product?.id || "", profileToken]);
+}
+
+export function ecommerceTeardownOutlineToSuiteRows(
+    outline: ReadonlyArray<Pick<EcommerceTeardownOutlineRow, "title" | "brief" | "stance">>,
+): Array<EcommerceSuiteRow & { stance: EcommerceTeardownOutlineRow["stance"] }> {
+    return outline.slice(0, ECOMMERCE_TEARDOWN_PLAN_MAX_SCREENS).map((row, index) => ({
+        slotId: `detail-${index + 1}`,
+        enabled: true,
+        title: row.title.trim(),
+        duty: row.stance === "differentiate" ? `差异化处理，不照搬竞品结构：${row.brief.trim()}` : row.brief.trim(),
+        prompt: "",
+        stance: row.stance,
+    }));
+}
+
 export function createEcommerceTeardownFinding(dimension: EcommerceTeardownDimension = "structure", finding = ""): EcommerceTeardownFinding {
     return { id: `finding-${Math.random().toString(36).slice(2, 10)}`, dimension, finding };
 }
@@ -86,25 +215,28 @@ export function ecommerceTeardownDimensionLabel(dimension: EcommerceTeardownDime
  * 交给视觉模型读竞品图，按勾选的维度逐条输出。刻意要求「只描述结构，不要复述文案」——
  * 复述竞品原文会把别人的文案带进我们的提示词，那是抄袭。
  *
- * 每行带上维度名（`页面结构：…`），模型返回的结论才能被逐条对回维度；
- * 只给问题不给标签，回来的是一段散文，人还得自己拆。
+ * 维度随严格 JSON 一起返回，模型结论才能被逐条对回维度；完整校验后先成为草稿，
+ * 只有用户明确采用时才覆盖当前可编辑内容。
  */
-export function buildEcommerceTeardownPrompt(teardown: EcommerceTeardown) {
+export function buildEcommerceTeardownPlanPrompt(teardown: EcommerceTeardown) {
     const asks = ECOMMERCE_TEARDOWN_DIMENSIONS
         .filter((dimension) => teardown.dimensions.includes(dimension.id))
         .map((dimension) => `- ${dimension.label}：${dimension.ask}`);
     return [
         "请分析这张电商详情页/主图，只拆解它的**结构**，不要复述它的文案。",
-        "",
-        "按以下维度逐条回答，每条一行，格式为「维度：结论」：",
+        "按以下维度提炼 findings：",
         ...asks,
-        "",
-        "最后另起一段，给出我们可以照做的页面大纲：每行一屏，格式为「屏号 标题：这一屏解决什么」。",
-        "",
-        "注意：不要抄它的文案原文，只描述它讲了什么、按什么顺序讲。",
+        "再为我们的商品给出可编辑的页面 outline；不要抄它的文案原文，只描述每屏任务。",
+        "只输出一个 JSON 对象，不要 Markdown 解释。字段必须完整：",
+        '{"findings":[{"dimension":"structure","finding":"结构结论"}],"outline":[{"title":"屏标题","brief":"这一屏解决什么","stance":"follow"}]}',
+        `dimension 只能是 ${ECOMMERCE_TEARDOWN_DIMENSIONS.map((item) => item.id).join(" / ")}。`,
+        "stance 只能是 follow / differentiate；outline 最多 30 屏。",
     ].join("\n");
 }
 
+export function buildEcommerceTeardownPrompt(teardown: EcommerceTeardown) {
+    return buildEcommerceTeardownPlanPrompt(teardown);
+}
 /**
  * 把拆解结论编译成给生成链路的约束。
  *

@@ -31,6 +31,7 @@ export type CanvasGenerationExecution = CanvasGenerationExecutorDependencies & {
     generationConfig: AiConfig;
     generationContext: NodeGenerationContext;
     controller: AbortController;
+    expectedUserScope: string;
     editingTextNode: boolean;
     styleMetadata: { styleProfileJson?: string; styleExecutionPlan?: StyleExecutionPlan };
     skillMetadata: SkillRuntimeMetadata;

@@ -8,6 +8,7 @@ import { batchOutputResultPending } from "@/lib/canvas/canvas-batch-references";
 import { buildGenerationConfig, createGenerationRetryContext, generationTaskMetadata, resetGenerationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
 import { generationErrorMessage, unchangedModeratedPrompt } from "@/lib/generation-error";
 import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { listGenerationTasks } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -71,7 +72,12 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                 return;
             }
             if (!targets.length) return;
-            const activeNodeIds = new Set((sourceNode.metadata?.generationBatches || []).flatMap((batch) => batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status)).map((item) => item.nodeId)));
+            const userScope = getActiveUserScope();
+            const activeNodeIds = new Set(
+                (sourceNode.metadata?.generationBatches || [])
+                    .filter((batch) => batch.userScope === userScope)
+                    .flatMap((batch) => batch.items.filter((item) => ["waiting", "submitting", "queued", "running"].includes(item.status)).map((item) => item.nodeId)),
+            );
             const availableTargets = targets.filter((target) => !activeNodeIds.has(target.nodeId));
             if (!availableTargets.length) {
                 message.info("所选镜头已在生成批次中");
@@ -85,8 +91,11 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                     const node = nodeById.get(target.nodeId);
                     if (!node) throw new Error("任务目标节点已不存在，请重新生成");
                     return {
-                        id: nanoid(), ...target, status: "waiting" as const, retryCount: 0,
-                        inputSnapshot: mode === "batch_image" ? target.inputSnapshot ?? createCanvasBatchInputSnapshot(node, nodesRef.current, connectionsRef.current, assets, useEcommerceModelLibrary.getState().models) : undefined,
+                        id: nanoid(),
+                        ...target,
+                        status: "waiting" as const,
+                        retryCount: 0,
+                        inputSnapshot: mode === "batch_image" ? (target.inputSnapshot ?? createCanvasBatchInputSnapshot(node, nodesRef.current, connectionsRef.current, assets, useEcommerceModelLibrary.getState().models)) : undefined,
                     };
                 });
             } catch (error) {
@@ -96,6 +105,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             const batch: CanvasGenerationBatch = {
                 id: nanoid(),
                 projectId,
+                userScope,
                 sourceNodeId,
                 mode,
                 status: "queued",
@@ -178,19 +188,56 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
         });
     }, [projectId, setNodes]);
 
+    const failBatchesOutsideScope = useCallback(
+        (activeScope: string) => {
+            for (const [key, controller] of controllersRef.current) {
+                const batchId = key.split(":", 1)[0];
+                const batch = nodesRef.current.flatMap((node) => node.metadata?.generationBatches || []).find((candidate) => candidate.id === batchId);
+                if (!batch || batch.userScope !== activeScope) controller.abort();
+            }
+            setNodes((current) =>
+                current.map((sourceNode) => {
+                    let changed = false;
+                    const batches = sourceNode.metadata?.generationBatches?.map((batch) => {
+                        if (batch.projectId !== projectId || batch.userScope === activeScope) return batch;
+                        let batchChanged = false;
+                        const items = batch.items.map((item) => {
+                            if (["succeeded", "failed", "cancelled"].includes(item.status)) return item;
+                            changed = true;
+                            batchChanged = true;
+                            return { ...item, status: "failed" as const, errorDetails: "\u8d26\u53f7\u5df2\u5207\u6362\uff0c\u5df2\u505c\u6b62\u539f\u8d26\u53f7\u7684\u751f\u6210\u6279\u6b21" };
+                        });
+                        if (!batchChanged) return batch;
+                        const nextBatch = { ...batch, items, updatedAt: new Date().toISOString() };
+                        return { ...nextBatch, status: generationBatchStatus(nextBatch) };
+                    });
+                    return changed ? { ...sourceNode, metadata: { ...sourceNode.metadata, generationBatches: batches } } : sourceNode;
+                }),
+            );
+        },
+        [nodesRef, projectId, setNodes],
+    );
     // 仅查询当前画布的活跃任务来安排批次，跨画布并发仍由后端创建任务时原子校验。
     const scheduleWaitingItems = useCallback(async () => {
         if (!projectLoaded || schedulingRef.current) return;
         schedulingRef.current = true;
+        const schedulingScope = getActiveUserScope();
         try {
+            failBatchesOutsideScope(schedulingScope);
             // 没有当前画布的等待项时无需查询任务中心，避免空画布持续轮询。
             const hasWaitingItems = nodesRef.current.some((sourceNode) =>
-                (sourceNode.metadata?.generationBatches || []).some((batch) => batch.projectId === projectId && batch.status !== "completed" && batch.status !== "cancelled" && batch.items.some((item) => item.status === "waiting")),
+                (sourceNode.metadata?.generationBatches || []).some(
+                    (batch) => batch.projectId === projectId && batch.userScope === schedulingScope && batch.status !== "completed" && batch.status !== "cancelled" && batch.items.some((item) => item.status === "waiting"),
+                ),
             );
             if (!hasWaitingItems) return;
 
             const tasks = await listGenerationTasks(100, { projectId, activeOnly: true }).catch(() => null);
             if (!tasks) return;
+            if (getActiveUserScope() !== schedulingScope) {
+                failBatchesOutsideScope(getActiveUserScope());
+                return;
+            }
             // Awaiting capacity can outlive node edits, deletion or queue cancellation.
             const currentNodes = nodesRef.current;
             const activeTaskCount = tasks.filter((task) => task.status === "queued" || task.status === "running").length;
@@ -209,10 +256,8 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             const candidates: Array<{ batch: CanvasGenerationBatch; item: CanvasGenerationBatchItem; node: CanvasNodeData }> = [];
             for (const sourceNode of currentNodes) {
                 for (const batch of sourceNode.metadata?.generationBatches || []) {
-                    if (batch.projectId !== projectId || batch.status === "completed" || batch.status === "cancelled") continue;
-                    let batchAvailableSlots = batch.concurrency
-                        ? Math.max(0, batch.concurrency - batch.items.filter((item) => ["submitting", "queued", "running"].includes(item.status)).length)
-                        : Number.POSITIVE_INFINITY;
+                    if (batch.projectId !== projectId || batch.userScope !== schedulingScope || batch.status === "completed" || batch.status === "cancelled") continue;
+                    let batchAvailableSlots = batch.concurrency ? Math.max(0, batch.concurrency - batch.items.filter((item) => ["submitting", "queued", "running"].includes(item.status)).length) : Number.POSITIVE_INFINITY;
                     for (const item of batch.items) {
                         if (item.status !== "waiting" || availableSlots <= 0 || batchAvailableSlots <= 0) continue;
                         const node = nodeById.get(item.nodeId);
@@ -227,6 +272,10 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             }
 
             for (const { batch, item, node } of candidates) {
+                if (getActiveUserScope() !== batch.userScope) {
+                    failBatchesOutsideScope(getActiveUserScope());
+                    continue;
+                }
                 const key = batchItemKey(batch.id, item.id);
                 if (controllersRef.current.has(key)) continue;
                 const generationMode: CanvasNodeGenerationMode = batch.mode === "storyboard_video" ? "video" : "image";
@@ -252,8 +301,15 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                 const controller = new AbortController();
                 controllersRef.current.set(key, controller);
                 updateBatch(batch.sourceNodeId, batch.id, (current) => withUpdatedItem(current, item.id, { status: "submitting", errorDetails: undefined }));
+                if (getActiveUserScope() !== batch.userScope) {
+                    controller.abort();
+                    controllersRef.current.delete(key);
+                    failBatchesOutsideScope(getActiveUserScope());
+                    continue;
+                }
                 void handleGenerateNode(node.id, generationMode, prompt, {
                     controller,
+                    userScope: batch.userScope,
                     waitForTaskCapacity: true,
                     skipDuplicateConfirmation: true,
                     inputSnapshot: item.inputSnapshot,
@@ -269,7 +325,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
         } finally {
             schedulingRef.current = false;
         }
-    }, [activeTaskLimit, effectiveConfig, handleGenerateNode, isAiConfigReady, nodesRef, projectId, projectLoaded, reconcileBatches, updateBatch]);
+    }, [activeTaskLimit, effectiveConfig, failBatchesOutsideScope, handleGenerateNode, isAiConfigReady, nodesRef, projectId, projectLoaded, reconcileBatches, updateBatch]);
 
     const retryFailedBatchItems = useCallback(
         (sourceNodeId: string, batchId: string, itemId?: string) => {
@@ -283,9 +339,8 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                 return unchangedModeratedPrompt(node?.metadata, item.inputSnapshot?.prompt ?? (node ? nodeGenerationPrompt(node) : ""));
             });
             const retryableItems = failedItems.filter((item) => !blockedItems.includes(item));
-            if (blockedItems.length) message.warning(blockedItems.some((item) => item.inputSnapshot)
-                ? `${blockedItems.length} 个任务未通过内容审核；重试保留原输入，请在表格中修改后重新生成`
-                : `${blockedItems.length} 个镜头未通过内容审核，请先修改提示词`);
+            if (blockedItems.length)
+                message.warning(blockedItems.some((item) => item.inputSnapshot) ? `${blockedItems.length} 个任务未通过内容审核；重试保留原输入，请在表格中修改后重新生成` : `${blockedItems.length} 个镜头未通过内容审核，请先修改提示词`);
             if (!retryableItems.length) return;
             const retry = async () => {
                 const retryContexts = new Map<string, Awaited<ReturnType<typeof createGenerationRetryContext>>>();
@@ -363,9 +418,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                 onOk: () => {
                     const latestNodeById = new Map(nodesRef.current.map((node) => [node.id, node]));
                     const latestBatch = findBatch(nodesRef.current, sourceNodeId, batchId);
-                    const latestStoppableItems = latestBatch
-                        ? latestBatch.items.filter((item) => item.status === "waiting" && stoppableItems.some((candidate) => candidate.id === item.id) && !latestNodeById.get(item.nodeId)?.metadata?.taskId)
-                        : [];
+                    const latestStoppableItems = latestBatch ? latestBatch.items.filter((item) => item.status === "waiting" && stoppableItems.some((candidate) => candidate.id === item.id) && !latestNodeById.get(item.nodeId)?.metadata?.taskId) : [];
                     const stoppableIds = new Set(latestStoppableItems.map((item) => item.id));
                     updateBatch(sourceNodeId, batchId, (current) => {
                         const items = current.items.map((item) => (stoppableIds.has(item.id) ? { ...item, status: "cancelled" as const, errorDetails: undefined } : item));

@@ -5,6 +5,7 @@ import { saveAs } from "file-saver";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { nodeReferenceImage } from "@/lib/canvas/canvas-project-generation";
 import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
+import { ecommerceCopySourceIssues } from "@/lib/ecommerce/ecommerce-contract";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { fitImageNodeSize } from "@/lib/canvas/canvas-node-size";
 import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
@@ -21,7 +22,15 @@ import { ecommerceStudioShotSignature, ecommerceStudioExportSelection, ecommerce
 import { assertEcommerceStudioReview, ecommerceStudioPlanReviewSignature, ecommerceStudioDeliveryReviewSignature } from "@/lib/ecommerce/ecommerce-studio";
 import { inspectPatternSeams } from "@/lib/ecommerce/ecommerce-pattern-pixels";
 import { ecommerceStudioSources, ecommerceStudioSourceSignature, ecommerceStudioImageRole } from "@/lib/ecommerce/ecommerce-studio";
-import { ecommerceWorkbenchPrompt, validateEcommerceWorkbenchBrief, validateEcommercePlanningCount, parseEcommerceWorkbenchPlan, ecommerceActionCapability, type EcommerceCapability, type EcommerceWorkbenchRequest } from "@/lib/ecommerce/ecommerce-capabilities";
+import {
+    ecommerceWorkbenchPrompt,
+    validateEcommerceWorkbenchBrief,
+    validateEcommercePlanningCount,
+    parseEcommerceWorkbenchPlan,
+    ecommerceActionCapability,
+    type EcommerceCapability,
+    type EcommerceWorkbenchRequest,
+} from "@/lib/ecommerce/ecommerce-capabilities";
 import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { useEcommerceTemplateLibrary } from "@/stores/use-ecommerce-template-library";
@@ -118,6 +127,11 @@ export function useEcommerceWorkbench(options: Options) {
                 if (!request.resumeReceiptId && (request.generateAfterPlanning || request.action === "studio-generate")) ecommerceImageSettings(config, request.imageModel || config.imageModel || config.model, request.brief);
                 if (request.action === "planning") validateEcommercePlanningCount(request.brief);
                 const sources = ecommerceStudioSources(request.sourceIds, nodesRef.current, connectionsRef.current);
+                if (request.action === "listing" || request.action === "pipeline") {
+                    const products = sources.filter((node) => node.type === CanvasNodeType.Product);
+                    const issues = [...new Set((products.length ? products : [undefined]).flatMap((product) => ecommerceCopySourceIssues(product?.metadata?.productProfile)))];
+                    if (issues.length) throw new Error(`商品资料还缺：${issues.join("、")}。请回到商品节点补充后再生成 Listing。`);
+                }
                 const images = sources.filter((node): node is CanvasNodeData => node?.type === CanvasNodeType.Image && Boolean(node.metadata?.storageKey || node.metadata?.content));
                 if (images.some((node) => node.metadata?.status === "loading" || node.metadata?.status === "error")) throw new Error("请使用已成功的图片");
                 const hasProduct = sources.some((node) => node.type === CanvasNodeType.Product);
@@ -153,13 +167,33 @@ export function useEcommerceWorkbench(options: Options) {
                 const origin = studio ? { x: studio.position.x + studio.width / 2, y: studio.position.y + studio.height / 2 } : center();
                 const previousReceipt = request.resumeReceiptId ? nodesRef.current.find((node) => node.id === request.resumeReceiptId && !node.metadata?.locked) : undefined;
                 let previousWork = previousReceipt?.metadata?.ecommerceWorkbench;
-                const readLegacyPlan = Boolean(previousWork && !previousWork.inputSignature && !previousWork.studioSignature && request.action === "planning" && !request.generateAfterPlanning && previousWork.steps.length === 1 && previousWork.steps[0].id === "planning" && previousWork.steps[0].taskId);
+                const readLegacyPlan = Boolean(
+                    previousWork &&
+                    !previousWork.inputSignature &&
+                    !previousWork.studioSignature &&
+                    request.action === "planning" &&
+                    !request.generateAfterPlanning &&
+                    previousWork.steps.length === 1 &&
+                    previousWork.steps[0].id === "planning" &&
+                    previousWork.steps[0].taskId,
+                );
                 const previousSignature = previousWork?.studioSignature ? ecommerceStudioExecutionSignature(JSON.parse(previousWork.studioSignature)) : previousWork?.studioSignature;
                 const requestSignature = (value: EcommerceWorkbenchRequest | undefined) => canonicalize({ ...value, resumeReceiptId: undefined, rerunFrom: undefined, retryFailed: undefined, restoreStudioInputs: undefined });
-                if (request.resumeReceiptId && (!previousWork || previousWork.request?.action !== request.action || (!readLegacyPlan && (previousWork.inputSignature !== ecommerceStudioInputSignature(request.sourceIds, nodesRef.current, connectionsRef.current) || previousSignature !== studioSnapshot)) || requestSignature(previousWork.request) !== requestSignature(request))) throw new Error("执行输入或配置已变化。可恢复上次参数并读取已有任务；若要保留当前参数，请重新执行");
+                if (
+                    request.resumeReceiptId &&
+                    (!previousWork ||
+                        previousWork.request?.action !== request.action ||
+                        (!readLegacyPlan && (previousWork.inputSignature !== ecommerceStudioInputSignature(request.sourceIds, nodesRef.current, connectionsRef.current) || previousSignature !== studioSnapshot)) ||
+                        requestSignature(previousWork.request) !== requestSignature(request))
+                )
+                    throw new Error("执行输入或配置已变化。可恢复上次参数并读取已有任务；若要保留当前参数，请重新执行");
                 if (request.retryFailed && (!previousWork || readLegacyPlan)) throw new Error("旧记录缺少输入快照，请核对后重新执行，不能直接重试");
                 if (restoredInputs && studio) {
-                    setNodes((current) => current.map((node) => node.id === studio!.id ? { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...restoredInputs, adoptedResults: node.metadata?.ecommerceStudio?.adoptedResults, deliveryReview: undefined } } } : node));
+                    setNodes((current) =>
+                        current.map((node) =>
+                            node.id === studio!.id ? { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...restoredInputs, adoptedResults: node.metadata?.ecommerceStudio?.adoptedResults, deliveryReview: undefined } } } : node,
+                        ),
+                    );
                     studio = nodesRef.current.find((node) => node.id === request.studioId)!;
                 }
                 if (request.rerunFrom) {
@@ -170,7 +204,16 @@ export function useEcommerceWorkbench(options: Options) {
                     if (order.slice(0, start).some((id) => !previousWork!.steps.some((step) => step.id === id && step.status === "succeeded"))) throw new Error("前置步骤尚未完成，请从更早的步骤重跑");
                     previousWork = { ...previousWork, steps: previousWork.steps.filter((step) => order.indexOf(step.id) >= 0 && order.indexOf(step.id) < start) };
                 }
-                const work = { capability, brief: structuredClone(request.brief), sourceIds: [...request.sourceIds], request: structuredClone(request), inputSignature: ecommerceStudioInputSignature(request.sourceIds, nodesRef.current, connectionsRef.current), studioSignature: studioSnapshot, startedAt: new Date().toISOString(), steps: previousWork?.steps || [] };
+                const work = {
+                    capability,
+                    brief: structuredClone(request.brief),
+                    sourceIds: [...request.sourceIds],
+                    request: structuredClone(request),
+                    inputSignature: ecommerceStudioInputSignature(request.sourceIds, nodesRef.current, connectionsRef.current),
+                    studioSignature: studioSnapshot,
+                    startedAt: new Date().toISOString(),
+                    steps: previousWork?.steps || [],
+                };
                 receipt = previousReceipt || studio || createCanvasNode(CanvasNodeType.Text, origin, {});
                 if (deliveryAction) savedExecution = receipt.metadata;
                 receiptIdRef.current = receipt.id;
@@ -227,7 +270,14 @@ export function useEcommerceWorkbench(options: Options) {
                         const targetId = existing.nodeIds?.[0];
                         if (!targetId || !nodesRef.current.some((node) => node.id === targetId && !node.metadata?.locked)) throw new Error("原任务结果节点已删除或锁定，不能恢复；请到任务中心核对");
                         patchStep(step, { status: "running", error: undefined });
-                        const task = await waitForGenerationTask(existing.taskId, { signal: controller.signal, onTaskUpdate: (task) => { activeTask = task; checkSources(); if (!inlinePlan) bindTask(targetId, task); } });
+                        const task = await waitForGenerationTask(existing.taskId, {
+                            signal: controller.signal,
+                            onTaskUpdate: (task) => {
+                                activeTask = task;
+                                checkSources();
+                                if (!inlinePlan) bindTask(targetId, task);
+                            },
+                        });
                         checkSources();
                         if (task.projectId && task.projectId !== projectId) throw new Error("原任务不属于当前画布，不能恢复");
                         if (readLegacyPlan && task.type !== "canvas_text") throw new Error("原任务不是规划文本任务，不能读取");
@@ -239,8 +289,23 @@ export function useEcommerceWorkbench(options: Options) {
                         return { text: mode === "text" ? parseBackendGenerationResult(task).text || "" : "", node };
                     }
                     patchStep(step, { status: "running" });
-                    const pending = mode === "image" && shotIndex !== undefined && studio?.metadata?.ecommerceStudio?.plan ? nodesRef.current.find((node) => node.type === CanvasNodeType.Image && node.metadata?.status === "idle" && !node.metadata.taskId && node.metadata.ecommerceStudioOutput?.studioId === studio!.id && node.metadata.ecommerceStudioOutput.shotIndex === shotIndex && node.metadata.ecommerceStudioOutput.signature === ecommerceStudioShotSignature(studio!.metadata!.ecommerceStudio!.plan!, shotIndex, request.brief)) : undefined;
-                    const target = inlinePlan ? studio! : pending ? { ...pending, metadata: { ...pending.metadata, prompt, model: request.imageModel, status: "loading" as const } } : createCanvasNode(mode === "text" ? CanvasNodeType.Text : CanvasNodeType.Image, resultPosition(), { prompt, status: "loading", model: mode === "text" ? request.textModel : request.imageModel, count: 1 });
+                    const pending =
+                        mode === "image" && shotIndex !== undefined && studio?.metadata?.ecommerceStudio?.plan
+                            ? nodesRef.current.find(
+                                  (node) =>
+                                      node.type === CanvasNodeType.Image &&
+                                      node.metadata?.status === "idle" &&
+                                      !node.metadata.taskId &&
+                                      node.metadata.ecommerceStudioOutput?.studioId === studio!.id &&
+                                      node.metadata.ecommerceStudioOutput.shotIndex === shotIndex &&
+                                      node.metadata.ecommerceStudioOutput.signature === ecommerceStudioShotSignature(studio!.metadata!.ecommerceStudio!.plan!, shotIndex, request.brief),
+                              )
+                            : undefined;
+                    const target = inlinePlan
+                        ? studio!
+                        : pending
+                          ? { ...pending, metadata: { ...pending.metadata, prompt, model: request.imageModel, status: "loading" as const } }
+                          : createCanvasNode(mode === "text" ? CanvasNodeType.Text : CanvasNodeType.Image, resultPosition(), { prompt, status: "loading", model: mode === "text" ? request.textModel : request.imageModel, count: 1 });
                     if (studio?.metadata?.ecommerceStudio?.plan && shotIndex !== undefined) {
                         target.title = studio.metadata.ecommerceStudio.plan.shots[shotIndex].title;
                         target.metadata = {
@@ -283,7 +348,7 @@ export function useEcommerceWorkbench(options: Options) {
                         skillMetadata = prepared.metadata;
                         checkSources();
                     }
-                    if (pending) setNodes((current) => current.map((node) => node.id === target.id ? target : node));
+                    if (pending) setNodes((current) => current.map((node) => (node.id === target.id ? target : node)));
                     else if (!inlinePlan) addResult(target);
                     patchStep(step, { nodeIds: [target.id], taskId: undefined });
                     let completed: GenerationTask | undefined;
@@ -318,7 +383,8 @@ export function useEcommerceWorkbench(options: Options) {
                     } catch (error) {
                         let detail = error instanceof Error ? error.message : "执行失败";
                         if (controller.signal.aborted) detail = "已停止后续生成；正在核对已提交任务";
-                        if (!inlinePlan && scope === getActiveUserScope() && epoch === epochRef.current) setNodes((current) => current.map((node) => (node.id === target.id ? { ...node, metadata: { ...node.metadata, status: "error", errorDetails: detail } } : node)));
+                        if (!inlinePlan && scope === getActiveUserScope() && epoch === epochRef.current)
+                            setNodes((current) => current.map((node) => (node.id === target.id ? { ...node, metadata: { ...node.metadata, status: "error", errorDetails: detail } } : node)));
                         throw new Error(detail);
                     }
                 };
@@ -333,16 +399,36 @@ export function useEcommerceWorkbench(options: Options) {
                     if (studio) {
                         const studioId = studio.id;
                         const samePlan = Boolean(previousWork && canonicalize(studio.metadata?.ecommerceStudio?.plan) === canonicalize(plan));
-                        setNodes((current) => current.map((node) => node.id === studioId ? { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...node.metadata?.ecommerceStudio, brief: structuredClone(request.brief), plan, textModel: request.textModel, imageModel: request.imageModel, ...(samePlan ? {} : { planReview: undefined, deliveryReview: undefined, adoptedResults: {} }) } } } : node));
+                        setNodes((current) =>
+                            current.map((node) =>
+                                node.id === studioId
+                                    ? {
+                                          ...node,
+                                          metadata: {
+                                              ...node.metadata,
+                                              ecommerceStudio: {
+                                                  ...node.metadata?.ecommerceStudio,
+                                                  brief: structuredClone(request.brief),
+                                                  plan,
+                                                  textModel: request.textModel,
+                                                  imageModel: request.imageModel,
+                                                  ...(samePlan ? {} : { planReview: undefined, deliveryReview: undefined, adoptedResults: {} }),
+                                              },
+                                          },
+                                      }
+                                    : node,
+                            ),
+                        );
                         studio = nodesRef.current.find((node) => node.id === studioId)!;
                         studioSnapshot = ecommerceStudioExecutionSignature(studio.metadata?.ecommerceStudio);
-                        setNodes((current) => current.map((node) => node.id === receipt!.id ? { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { ...node.metadata!.ecommerceWorkbench!, studioSignature: studioSnapshot } } } : node));
+                        setNodes((current) => current.map((node) => (node.id === receipt!.id ? { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { ...node.metadata!.ecommerceWorkbench!, studioSignature: studioSnapshot } } } : node)));
                     }
                     patchStep(request.action, { status: "succeeded", nodeIds: [result.node.id] }, !studio ? JSON.stringify(plan, null, 2) : readLegacyPlan ? "已读取原规划；旧记录没有输入快照，请核对当前商品与方案后生成" : "方案已写入生图台");
                     if (request.generateAfterPlanning) {
                         if (!studio) throw new Error("请从生图台执行规划并生成图片");
                         if (!request.brief.reviewRequired) {
-                            for (const [index, shot] of plan.shots.entries()) await ai("image", shot.prompt! + "\n整套视觉规范：" + plan.style + "\n已核实事实：" + request.brief.facts + "\n禁止项：" + request.brief.forbidden, "shot-" + (index + 1), images, index);
+                            for (const [index, shot] of plan.shots.entries())
+                                await ai("image", shot.prompt! + "\n整套视觉规范：" + plan.style + "\n已核实事实：" + request.brief.facts + "\n禁止项：" + request.brief.forbidden, "shot-" + (index + 1), images, index);
                         } else patchStep(request.action, { status: "succeeded" }, "方案已创建；请在画面方案中确认审核后生成整组");
                     }
                 } else if (request.action === "studio-generate") {
@@ -364,7 +450,15 @@ export function useEcommerceWorkbench(options: Options) {
                     const ids = request.resultIds || [];
                     if (!ids.length || new Set(ids).size !== ids.length) throw new Error("请先勾选需要的图片");
                     const outputs = ids.map((id) => {
-                        const output = nodesRef.current.find((node) => node.id === id && !node.metadata?.locked && node.type === CanvasNodeType.Image && node.metadata?.status === "success" && node.metadata.storageKey && connectionsRef.current.some((edge) => edge.fromNodeId === studio!.id && edge.toNodeId === id));
+                        const output = nodesRef.current.find(
+                            (node) =>
+                                node.id === id &&
+                                !node.metadata?.locked &&
+                                node.type === CanvasNodeType.Image &&
+                                node.metadata?.status === "success" &&
+                                node.metadata.storageKey &&
+                                connectionsRef.current.some((edge) => edge.fromNodeId === studio!.id && edge.toNodeId === id),
+                        );
                         if (!output) throw new Error("选中的图片已删除、锁定或尚未生成完成");
                         if (output.metadata?.ecommerceStudioOutput) validateEcommerceStudioResultInputs(output, nodesRef.current, connectionsRef.current);
                         return output;
@@ -376,20 +470,40 @@ export function useEcommerceWorkbench(options: Options) {
                             for (const output of outputs) {
                                 if (!output.metadata?.ecommerceCandidate) continue;
                                 const next = { ...output, position: findAvailableGenerationGroupPosition(placed, resultPosition(), output), metadata: { ...output.metadata, ecommerceCandidate: undefined } };
-                                placed.push(next); replacements.set(next.id, next);
+                                placed.push(next);
+                                replacements.set(next.id, next);
                             }
                             return current.map((node) => replacements.get(node.id) || node);
                         });
                         setSelectedNodeIds(new Set(ids));
                     } else {
-                        if (!Number.isInteger(request.composeWidth ?? 800) || (request.composeWidth ?? 800) < 320 || (request.composeWidth ?? 800) > 2400 || !Number.isInteger(request.composeGap ?? 0) || (request.composeGap ?? 0) < 0 || (request.composeGap ?? 0) > 200) throw new Error("长图宽度须为 320–2400px，间距须为 0–200px 的整数");
+                        if (
+                            !Number.isInteger(request.composeWidth ?? 800) ||
+                            (request.composeWidth ?? 800) < 320 ||
+                            (request.composeWidth ?? 800) > 2400 ||
+                            !Number.isInteger(request.composeGap ?? 0) ||
+                            (request.composeGap ?? 0) < 0 ||
+                            (request.composeGap ?? 0) > 200
+                        )
+                            throw new Error("长图宽度须为 320–2400px，间距须为 0–200px 的整数");
                         const outputSnapshot = canonicalize(outputs.map((node) => [node.id, node.metadata?.storageKey, node.metadata?.status]));
                         const checkOutputs = () => {
                             checkSources();
-                            if (canonicalize(ids.map((id) => { const node = nodesRef.current.find((item) => item.id === id && !item.metadata?.locked); return [node?.id, node?.metadata?.storageKey, node?.metadata?.status]; })) !== outputSnapshot) throw new Error("所选图片已变化，请重新合成");
+                            if (
+                                canonicalize(
+                                    ids.map((id) => {
+                                        const node = nodesRef.current.find((item) => item.id === id && !item.metadata?.locked);
+                                        return [node?.id, node?.metadata?.storageKey, node?.metadata?.status];
+                                    }),
+                                ) !== outputSnapshot
+                            )
+                                throw new Error("所选图片已变化，请重新合成");
                         };
                         const urls: string[] = [];
-                        for (const output of outputs) { urls.push(await imageToDataUrl({ storageKey: output.metadata?.storageKey, url: output.metadata?.content })); checkOutputs(); }
+                        for (const output of outputs) {
+                            urls.push(await imageToDataUrl({ storageKey: output.metadata?.storageKey, url: output.metadata?.content }));
+                            checkOutputs();
+                        }
                         const composed = await rasterizeEcommerceLongImage({ imageUrls: urls, width: request.composeWidth || 800, gap: request.composeGap ?? 0 });
                         checkOutputs();
                         const blob = await (await fetch(composed.dataUrl, { signal: controller.signal })).blob();
@@ -420,7 +534,13 @@ export function useEcommerceWorkbench(options: Options) {
                     const delivery = request.action === "review-delivery";
                     if (!delivery && studio.metadata?.ecommerceStudio?.plan?.shots.some((shot) => !shot.title.trim() || !shot.duty.trim() || !shot.prompt?.trim())) throw new Error("请补全每张画面的职责与提示词后审核");
                     const signature = delivery ? ecommerceStudioDeliveryReviewSignature(studio, nodesRef.current, connectionsRef.current) : ecommerceStudioPlanReviewSignature(studio, nodesRef.current, connectionsRef.current);
-                    setNodes((current) => current.map((node) => node.id === studioId ? { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...node.metadata!.ecommerceStudio!, [delivery ? "deliveryReview" : "planReview"]: { signature, reviewedAt: new Date().toISOString() } } } } : node));
+                    setNodes((current) =>
+                        current.map((node) =>
+                            node.id === studioId
+                                ? { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...node.metadata!.ecommerceStudio!, [delivery ? "deliveryReview" : "planReview"]: { signature, reviewedAt: new Date().toISOString() } } } }
+                                : node,
+                        ),
+                    );
                     patchStep(request.action, { status: "succeeded" }, delivery ? "当前采用结果已人工确认" : "当前方案已人工确认");
                 } else if (request.action === "apply-plan" || request.action === "save-template") {
                     const planNode = sources.find((node) => node.metadata?.content && node.type === CanvasNodeType.Text);
@@ -482,10 +602,14 @@ export function useEcommerceWorkbench(options: Options) {
                     const url = await resolveImageUrl(pattern.storageKey);
                     const raster = await loadRasterImage(url);
                     checkSources();
-                    const node = addResult({ ...createCanvasNode(CanvasNodeType.Image, resultPosition(), { storageKey: pattern.storageKey, content: url, status: "success" }), ...fitImageNodeSize(raster.naturalWidth, raster.naturalHeight), title: pattern.name });
+                    const node = addResult({
+                        ...createCanvasNode(CanvasNodeType.Image, resultPosition(), { storageKey: pattern.storageKey, content: url, status: "success" }),
+                        ...fitImageNodeSize(raster.naturalWidth, raster.naturalHeight),
+                        title: pattern.name,
+                    });
                     const asset = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node, source: "canvas-manual" });
                     checkSources();
-                    setNodes((current) => current.map((item) => item.id === node.id ? { ...item, metadata: { ...item.metadata, assetId: asset.assetId } } : item));
+                    setNodes((current) => current.map((item) => (item.id === node.id ? { ...item, metadata: { ...item.metadata, assetId: asset.assetId } } : item)));
                     patchStep(request.action, { status: "succeeded", nodeIds: [node.id] }, "私人花型已添加到画布");
                 } else if (request.action.startsWith("pattern-")) {
                     await ai("image", ecommerceWorkbenchPrompt(request.action as "pattern-extract", request.brief), request.action);
@@ -512,7 +636,7 @@ export function useEcommerceWorkbench(options: Options) {
                     const priorPrint = previousWork?.steps.find((step) => step.id === "print-pack" && step.status === "succeeded");
                     const previousOutput = priorPrint?.nodeIds?.[0] ? nodesRef.current.find((node) => node.id === priorPrint.nodeIds![0] && node.metadata?.storageKey && node.metadata.status === "success") : undefined;
                     if (priorPrint && !previousOutput) throw new Error("原印刷产物已删除或不可用，请重新执行规格包");
-                    const output = previousOutput || await localImage(result.image, request.brief.name + " · 300DPI");
+                    const output = previousOutput || (await localImage(result.image, request.brief.name + " · 300DPI"));
                     patchStep("print-pack", { status: "succeeded", nodeIds: [output.id] });
                     if (request.action === "pipeline") {
                         const listing = await ai("text", ecommerceWorkbenchPrompt("listing", request.brief), "listing");
@@ -538,7 +662,9 @@ export function useEcommerceWorkbench(options: Options) {
                     try {
                         const cancelled = await cancelGenerationTask(activeTask.id);
                         error = new Error(cancelled.providerCancelStatus === "confirmed" ? "已停止后续生成，上游已确认取消" : "已停止后续生成，已请求取消当前任务；上游尚未确认，已提交任务仍可能计费，请到任务中心核对");
-                    } catch { error = new Error("已停止后续生成；上游取消未确认，请到任务中心核对，已提交任务仍可能计费"); }
+                    } catch {
+                        error = new Error("已停止后续生成；上游取消未确认，请到任务中心核对，已提交任务仍可能计费");
+                    }
                 }
                 if (receipt) {
                     const detail = error instanceof Error ? error.message : "执行失败";
@@ -547,8 +673,16 @@ export function useEcommerceWorkbench(options: Options) {
                 }
                 throw error;
             } finally {
-                if (receipt && scope === getActiveUserScope() && epoch === epochRef.current) setNodes((current) => current.map((node) => node.id === receipt!.id && node.metadata?.ecommerceWorkbench ? { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { ...node.metadata.ecommerceWorkbench, finishedAt: new Date().toISOString(), stopped: controller.signal.aborted } } } : node));
-                if (deliveryAction && receipt && savedExecution && scope === getActiveUserScope() && epoch === epochRef.current) setNodes((current) => current.map((node) => node.id === receipt!.id ? { ...node, metadata: { ...node.metadata, status: savedExecution!.status, ecommerceWorkbench: savedExecution!.ecommerceWorkbench } } : node));
+                if (receipt && scope === getActiveUserScope() && epoch === epochRef.current)
+                    setNodes((current) =>
+                        current.map((node) =>
+                            node.id === receipt!.id && node.metadata?.ecommerceWorkbench
+                                ? { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { ...node.metadata.ecommerceWorkbench, finishedAt: new Date().toISOString(), stopped: controller.signal.aborted } } }
+                                : node,
+                        ),
+                    );
+                if (deliveryAction && receipt && savedExecution && scope === getActiveUserScope() && epoch === epochRef.current)
+                    setNodes((current) => current.map((node) => (node.id === receipt!.id ? { ...node, metadata: { ...node.metadata, status: savedExecution!.status, ecommerceWorkbench: savedExecution!.ecommerceWorkbench } } : node)));
                 if (controllerRef.current === controller) {
                     controllerRef.current = null;
                     receiptIdRef.current = null;
@@ -558,8 +692,15 @@ export function useEcommerceWorkbench(options: Options) {
         },
         [projectId, domainProjectId, nodesRef, connectionsRef, setNodes, setConnections, setSelectedNodeIds, center, applyResult, bindTask, config],
     );
-    return { run, busy, stop: () => {
-        controllerRef.current?.abort();
-        setNodes((current) => current.map((node) => node.id === receiptIdRef.current && node.metadata?.ecommerceWorkbench ? { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { ...node.metadata.ecommerceWorkbench, stopped: true } } } : node));
-    }, isRunning: (nodeId: string) => Boolean(controllerRef.current && receiptIdRef.current === nodeId) };
+    return {
+        run,
+        busy,
+        stop: () => {
+            controllerRef.current?.abort();
+            setNodes((current) =>
+                current.map((node) => (node.id === receiptIdRef.current && node.metadata?.ecommerceWorkbench ? { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { ...node.metadata.ecommerceWorkbench, stopped: true } } } : node)),
+            );
+        },
+        isRunning: (nodeId: string) => Boolean(controllerRef.current && receiptIdRef.current === nodeId),
+    };
 }

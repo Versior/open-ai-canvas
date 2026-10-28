@@ -305,6 +305,7 @@ type (
 	RuntimeTaskPolicy                      = app.RuntimeTaskPolicy
 	Service                                = app.Service
 	ShotRevisionInput                      = app.ShotRevisionInput
+	SocialVideoImportRequest               = app.SocialVideoImportRequest
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory
 	SkillLibraryCategoryList               = app.SkillLibraryCategoryList

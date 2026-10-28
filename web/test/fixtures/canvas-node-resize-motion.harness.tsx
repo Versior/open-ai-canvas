@@ -76,6 +76,102 @@ const noop = () => {};
 const target: CanvasNodeData = { id: "target", type: CanvasNodeType.Image, title: "目标", position: { x: 1300, y: 200 }, width: 520, height: 520 };
 const connection = { id: "connection", fromNodeId: "image", toNodeId: target.id };
 
+test("pointer resize previews once per frame and commits only on pointerup", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    let node: CanvasNodeData = { id: "resize", type: CanvasNodeType.Image, title: "Resize", position: { x: 100, y: 200 }, width: 520, height: 520, metadata: { size: "1:1" } };
+    const commits: Array<[string, number, number, { x: number; y: number } | undefined]> = [];
+    let contentRenders = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 1;
+    const originalRequestAnimationFrame = window.requestAnimationFrame;
+    const originalCancelAnimationFrame = window.cancelAnimationFrame;
+    const flushFrames = () => {
+        const pending = [...frames.values()];
+        frames.clear();
+        pending.forEach((callback) => callback(performance.now()));
+    };
+    try {
+        const render = () =>
+            root.render(
+                <CanvasNodeResizeMotionProvider nodes={[node]}>
+                    <Profiler id="resize-content" onRender={() => contentRenders++}>
+                        <CanvasNode
+                            data={node}
+                            scale={0.5}
+                            isSelected
+                            isRelated={false}
+                            isFocusRelated={false}
+                            isConnectionTarget={false}
+                            showImageInfo={false}
+                            onMouseDown={noop}
+                            onHoverStart={noop}
+                            onHoverEnd={noop}
+                            onConnectStart={noop}
+                            onResize={(...args) => commits.push(args)}
+                            onContentChange={noop}
+                            onContextMenu={noop}
+                        />
+                    </Profiler>
+                    <svg>
+                        <ConnectionPath connection={{ ...connection, fromNodeId: node.id }} from={node} to={target} active={false} onSelect={noop} />
+                    </svg>
+                </CanvasNodeResizeMotionProvider>,
+            );
+        await act(async () => render());
+        window.requestAnimationFrame = (callback) => {
+            const id = nextFrame++;
+            frames.set(id, callback);
+            return id;
+        };
+        window.cancelAnimationFrame = (id) => frames.delete(id);
+
+        const box = host.querySelector<HTMLElement>("[data-node-id=resize]")!;
+        const handle = box.querySelector<HTMLElement>("[data-resize-corner=bottom-right]")!;
+        const path = () => host.querySelector("[data-connection-id=connection]")!.getAttribute("d");
+        const rendersBeforeGesture = contentRenders;
+        await act(async () => handle.dispatchEvent(new dom.PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 7, pointerType: "touch", clientX: 0, clientY: 0 })));
+        frames.clear();
+        await act(async () => {
+            handle.dispatchEvent(new dom.PointerEvent("pointermove", { bubbles: true, pointerId: 7, pointerType: "touch", clientX: 20, clientY: 10 }));
+            handle.dispatchEvent(new dom.PointerEvent("pointermove", { bubbles: true, pointerId: 7, pointerType: "touch", clientX: 40, clientY: 20 }));
+        });
+        expect(frames).toHaveLength(1);
+        expect(commits).toHaveLength(0);
+
+        await act(async () => flushFrames());
+        const preview = { ...node, width: 600, height: 600 };
+        expect(box.style.width).toBe("600px");
+        expect(box.style.height).toBe("600px");
+        expect(path()).toBe(canvasConnectionPath({ ...connection, fromNodeId: node.id }, preview, target).pathD);
+        expect(contentRenders).toBe(rendersBeforeGesture);
+        expect(commits).toHaveLength(0);
+
+        await act(async () => {
+            handle.dispatchEvent(new dom.PointerEvent("pointermove", { bubbles: true, pointerId: 7, pointerType: "touch", clientX: 45, clientY: 25 }));
+            handle.dispatchEvent(new dom.PointerEvent("pointerup", { bubbles: true, pointerId: 7, pointerType: "touch", clientX: 50, clientY: 30 }));
+        });
+        expect(frames).toHaveLength(0);
+        expect(commits).toEqual([[node.id, 620, 620, node.position]]);
+        expect(box.style.width).toBe("620px");
+        expect(box.style.height).toBe("620px");
+
+        node = { ...node, position: { x: 120, y: 220 }, width: 700, height: 700 };
+        await act(async () => render());
+        expect(commits).toHaveLength(1);
+        expect(box.style.transform).toBe("translate(120px, 220px)");
+        expect(box.style.width).toBe("700px");
+        expect(box.style.height).toBe("700px");
+        expect(path()).toBe(canvasConnectionPath({ ...connection, fromNodeId: node.id }, node, target).pathD);
+    } finally {
+        window.requestAnimationFrame = originalRequestAnimationFrame;
+        window.cancelAnimationFrame = originalCancelAnimationFrame;
+        if (host.childNodes.length) await act(async () => root.unmount());
+        host.remove();
+    }
+});
+
 test("真实节点 DOM 与 SVG 连线同步；中断、禁用动效和卸载清理", async () => {
     const host = document.createElement("div");
     document.body.append(host);

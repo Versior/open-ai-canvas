@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -108,8 +109,9 @@ type Service struct {
 	modelAvailabilityCache   map[publicModelAvailabilityKey]*PublicModelAvailability
 	modelAvailabilityAt      time.Time
 	// dramaTaskHook 只在测试中替换短剧调度的任务提交，生产路径始终走 CreateTask 准入。
-	dramaTailFrameHook func(userID, resourceID string) (string, error)
-	dramaTaskHook      func(userID string, req CreateTaskRequest, timeline *renderProject) (*model.Task, error)
+	dramaTailFrameHook      func(userID, resourceID string) (string, error)
+	dramaTaskHook           func(userID string, req CreateTaskRequest, timeline *renderProject) (*model.Task, error)
+	socialVideoURLValidator func(string) (*url.URL, error)
 }
 
 const taskWorkerConcurrency = 3

@@ -257,6 +257,7 @@ export type CanvasGenerationBatchItem = {
 export type CanvasGenerationBatch = {
     id: string;
     projectId: string;
+    userScope?: string;
     sourceNodeId: string;
     mode: CanvasGenerationBatchMode;
     status: CanvasGenerationBatchStatus;
@@ -352,6 +353,7 @@ export type CanvasMediaVersion = {
 
 export type CanvasNodeMetadata = {
     ecommerceVideoCreativePlanSource?: { targetNodeId: string; referenceVideoId: string; signature: string };
+    ecommerceTeardownPlanSource?: { targetNodeId: string; referenceImageId: string; productNodeId?: string; signature: string };
     ecommerceStudio?: {
         brief: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchBrief;
         plan?: import("@/lib/ecommerce/ecommerce-capabilities").EcommerceWorkbenchPlan;

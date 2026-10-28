@@ -15,18 +15,10 @@ import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/ty
 import type { ReferenceImage } from "@/types/image";
 import { compileEcommercePrompt, createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS, type EcommercePromptSources } from "./ecommerce-contract";
 import { ecommerceModelById, ecommerceModelRefs, type EcommerceModel } from "./ecommerce-models";
+import { ECOMMERCE_REPLICA_PRODUCT_HANDLE, ECOMMERCE_REPLICA_REFERENCE_HANDLE, ecommerceReplicaInputIssue, ecommerceReplicaInputNodes } from "./ecommerce-replica";
 
 /** 电商节点的类型，用于识别上游。 */
-const ECOMMERCE_NODE_TYPES = new Set<string>([
-    CanvasNodeType.Product,
-    CanvasNodeType.ShotRecipe,
-    CanvasNodeType.SellingPoint,
-    CanvasNodeType.Copy,
-    CanvasNodeType.Style,
-    CanvasNodeType.Replica,
-    CanvasNodeType.Teardown,
-    CanvasNodeType.Aplus,
-]);
+const ECOMMERCE_NODE_TYPES = new Set<string>([CanvasNodeType.Product, CanvasNodeType.ShotRecipe, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style, CanvasNodeType.Replica, CanvasNodeType.Teardown, CanvasNodeType.Aplus]);
 
 export function isEcommerceNode(node: CanvasNodeData) {
     return ECOMMERCE_NODE_TYPES.has(node.type);
@@ -123,13 +115,19 @@ export function connectedProductImageNodes(nodeId: string, nodes: CanvasNodeData
     return connectedImageNodes(nodeId, nodes, connections).filter((node) => !ids.has(node.id));
 }
 
-export function isEcommerceInputHandle(handle?: string) {
-    return Boolean(handle?.startsWith("product-view:") || handle?.startsWith("visual-reference:"));
+export function isEcommerceInputHandle(handle?: string, targetType?: CanvasNodeData["type"]) {
+    const productHandle = Boolean(handle?.startsWith("product-view:") || handle?.startsWith("visual-reference:"));
+    const replicaHandle = handle === ECOMMERCE_REPLICA_REFERENCE_HANDLE || handle === ECOMMERCE_REPLICA_PRODUCT_HANDLE;
+    if (targetType === CanvasNodeType.Product) return productHandle;
+    if (targetType === CanvasNodeType.Replica) return replicaHandle;
+    if (targetType) return false;
+    return productHandle || replicaHandle;
 }
 
 export function withEcommerceInputConnection(connections: CanvasConnection[], edge: CanvasConnection) {
     if (!isEcommerceInputHandle(edge.toHandleId)) return [...connections, edge];
-    return [...connections.filter((item) => !(item.toNodeId === edge.toNodeId && (item.toHandleId === edge.toHandleId || item.fromNodeId === edge.fromNodeId))), edge];
+    const productHandle = isEcommerceInputHandle(edge.toHandleId, CanvasNodeType.Product);
+    return [...connections.filter((item) => !(item.toNodeId === edge.toNodeId && (item.toHandleId === edge.toHandleId || (productHandle && item.fromNodeId === edge.fromNodeId)))), edge];
 }
 
 export function withImageAsEcommerceReference(connections: CanvasConnection[], imageId: string, productIds: string[]) {
@@ -345,10 +343,21 @@ export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], 
             ...(upstream.product ? ecommerceProductReferenceImages(upstream.product, nodes, connections) : []),
             ...styleReferences.map((node) => ({ ...productViewReferenceImage(node), name: `视觉参考：${node.title || node.id}` })),
             ...ecommerceModelReferenceImages(model),
+            ...ecommerceReplicaReferenceImages(upstream.replica, nodes, connections),
         ],
     };
 }
 
+function ecommerceReplicaReferenceImages(replica: CanvasNodeData | undefined, nodes: CanvasNodeData[], connections: CanvasConnection[]): ReferenceImage[] {
+    if (!replica) return [];
+    const inputs = ecommerceReplicaInputNodes(replica.id, nodes, connections);
+    if (ecommerceReplicaInputIssue(inputs) || inputs.referenceImages.length !== 1 || inputs.productImages.length !== 1) return [];
+    const referenceRole = replica.metadata?.ecommerceReplica?.purpose === "compose" ? "参考图（场景）" : "参考图（结构）";
+    return inputs.ordered.map(({ node, role }) => ({
+        ...productViewReferenceImage(node),
+        name: `${role === "product" ? "商品图（主体）" : referenceRole}：${node.title || node.id}`,
+    }));
+}
 /** 商品实拍按画布图节点读，走通用解析（绘图/调色节点也在这里被正确处理）。 */
 function productViewReferenceImage(node: CanvasNodeData): ReferenceImage {
     return {

@@ -3,6 +3,7 @@ import { Window } from "happy-dom";
 import type { Dispatch, SetStateAction } from "react";
 
 import { buildNodeGenerationContext } from "../src/components/canvas/canvas-node-generation";
+import { ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE, createEcommerceTeardown, ecommerceTeardownPlanRequest } from "../src/lib/ecommerce/ecommerce-teardown";
 import { ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE, ecommerceVideoCreativePlanRequest, ecommerceVideoCreativePlanSourceSignature } from "../src/lib/ecommerce/ecommerce-video";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../src/types/canvas";
 
@@ -143,6 +144,60 @@ describe("媒体反推节点", () => {
                 [source.id, result.id],
                 [fixture.nodesRef.current[1].id, result.id],
             ]);
+        } finally {
+            await fixture.dispose();
+        }
+    }, 15_000);
+    test("详情页拆解生成结构化结果并回连目标节点", async () => {
+        const source = sourceNode(CanvasNodeType.Image);
+        const fixture = await mountMediaTools(source);
+        const target: CanvasNodeData = {
+            id: "teardown-target",
+            type: CanvasNodeType.Teardown,
+            title: "竞品详情页",
+            position: { x: 900, y: 200 },
+            metadata: { ecommerceTeardown: { ...createEcommerceTeardown("竞品详情页"), dimensions: ["structure", "evidence"] } },
+        };
+        const product: CanvasNodeData = {
+            id: "confirmed-product",
+            type: CanvasNodeType.Product,
+            title: "轻量保温杯",
+            position: { x: 500, y: 100 },
+            metadata: {
+                productProfile: {
+                    name: "轻量保温杯",
+                    category: "保温杯",
+                    appearance: "雾白色杯身",
+                    marks: "YINGCE 标识",
+                    forbidden: "不得改变杯盖结构",
+                    audience: "通勤人群",
+                    facts: "净重 210g",
+                    price: "99 元",
+                    views: {},
+                },
+            },
+        };
+        fixture.nodesRef.current.push(product, target);
+        fixture.connectionsRef.current.push({ id: "product-to-teardown", fromNodeId: product.id, toNodeId: target.id });
+        try {
+            fixture.controller.createImageReversePromptNodes(source, ecommerceTeardownPlanRequest(target.id, "只输出 Teardown Plan JSON"));
+            const instruction = fixture.nodesRef.current.at(-2)!;
+            const result = fixture.nodesRef.current.at(-1)!;
+            const sourceMetadata = result.metadata as typeof result.metadata & {
+                ecommerceTeardownPlanSource?: { targetNodeId: string; referenceImageId: string; productNodeId?: string; signature: string };
+            };
+
+            expect(instruction.metadata?.content).not.toContain("yingce:ecommerce-teardown-plan");
+            expect(instruction.metadata?.content).toContain("只输出 Teardown Plan JSON");
+            expect(instruction.metadata?.content).toContain("商品名：轻量保温杯");
+            expect(result.title).toBe(ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE);
+            expect(sourceMetadata?.ecommerceTeardownPlanSource).toEqual({
+                targetNodeId: target.id,
+                referenceImageId: source.id,
+                productNodeId: product.id,
+                signature: expect.any(String),
+            });
+            expect(fixture.connectionsRef.current.map(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId])).toContainEqual([result.id, target.id]);
         } finally {
             await fixture.dispose();
         }

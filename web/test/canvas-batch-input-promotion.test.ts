@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { createCanvasBatchInputSnapshot } from "@/lib/canvas/canvas-batch-input-snapshot";
 import { batchOutputResultPending, batchRowInputChanged, batchRowInputSignature } from "@/lib/canvas/canvas-batch-references";
 import { createEcommerceVideo, ecommerceVideoCreativePlanSourceSignature } from "@/lib/ecommerce/ecommerce-video";
+import { createEcommerceTeardown, createEcommerceTeardownDraft, ecommerceTeardownPlanSourceSignature } from "@/lib/ecommerce/ecommerce-teardown";
 import { ensureRemoteResourceReferences } from "@/services/user-data-sync-media";
 import { CanvasNodeType, type CanvasBatchTableData, type CanvasNodeData } from "@/types/canvas";
 
@@ -203,6 +204,71 @@ describe("batch signatures across resource promotion", () => {
 
         expect(node(target.id).metadata!.ecommerceVideo!.replica!.planSourceSignature).toBe(expected);
         expect(node(result.id).metadata!.ecommerceVideoCreativePlanSource!.signature).toBe(expected);
+        expect(expected).not.toBe(signature);
+    });
+    test("teardown plan metadata and drafts stay current when a reference image is promoted", async () => {
+        const referenceKey = "image:scope:detail-reference";
+        const remoteReferenceKey = "resource:detail-reference";
+        const reference: CanvasNodeData = {
+            id: "detail-reference",
+            type: CanvasNodeType.Image,
+            position: { x: 0, y: 0 },
+            metadata: { content: "blob:detail-reference", storageKey: referenceKey },
+        };
+        const product: CanvasNodeData = {
+            id: "confirmed-product",
+            type: CanvasNodeType.Product,
+            position: { x: 0, y: 0 },
+            metadata: {
+                productProfile: {
+                    name: "轻量保温杯",
+                    category: "杯具",
+                    appearance: "雾白色杯身",
+                    marks: "YINGCE",
+                    forbidden: "不得改变杯盖结构",
+                    audience: "通勤人群",
+                    facts: "净重 210g",
+                    price: "99 元",
+                    views: {},
+                },
+            },
+        };
+        const target: CanvasNodeData = {
+            id: "teardown-target",
+            type: CanvasNodeType.Teardown,
+            position: { x: 0, y: 0 },
+            metadata: { ecommerceTeardown: { ...createEcommerceTeardown("竞品详情"), dimensions: ["structure", "evidence"] } },
+        };
+        const signature = ecommerceTeardownPlanSourceSignature({ target, referenceImage: reference, product });
+        const draft = createEcommerceTeardownDraft(
+            {
+                findings: [
+                    { dimension: "structure", finding: "六屏，由痛点进入证据。" },
+                    { dimension: "evidence", finding: "第三屏用实测数据支撑。" },
+                ],
+                outline: [{ title: "痛点开场", brief: "让目标用户认出自己的问题。", stance: "follow" }],
+            },
+            signature,
+        );
+        const result: CanvasNodeData = {
+            id: "teardown-plan",
+            type: CanvasNodeType.Text,
+            position: { x: 0, y: 0 },
+            metadata: {
+                ecommerceTeardownPlanSource: { targetNodeId: target.id, referenceImageId: reference.id, productNodeId: product.id, signature },
+                pluginData: { teardownDraft: draft },
+            },
+        };
+
+        const remote = await ensureRemoteResourceReferences({ nodes: [reference, product, target, result] }, new Map([[referenceKey, remoteReferenceKey]]));
+        const node = (id: string) => remote.nodes.find((item) => item.id === id)!;
+        const expected = ecommerceTeardownPlanSourceSignature({ target: node(target.id), referenceImage: node(reference.id), product: node(product.id) });
+        const rebasedDraft = node(result.id).metadata!.pluginData!.teardownDraft as typeof draft;
+
+        expect(node(result.id).metadata!.ecommerceTeardownPlanSource!.signature).toBe(expected);
+        expect(rebasedDraft.sourceSignature).toBe(expected);
+        expect(rebasedDraft.findings).toEqual(draft.findings);
+        expect(rebasedDraft.outline).toEqual(draft.outline);
         expect(expected).not.toBe(signature);
     });
     test("unknown legacy signatures stay intact instead of being replaced by current inputs", async () => {

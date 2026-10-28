@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -145,27 +146,50 @@ func (s *Service) saveTaskCompletionWithinStorageQuota(task *model.Task, resultJ
 		register = func(repo *repository.Repository) error {
 			writer := &Service{repo: repo, dataDir: s.dataDir}
 			if visualImage {
-				var result map[string]interface{}
-				if err := json.Unmarshal(resultJSON, &result); err != nil {
-					return err
-				}
-				if _, err := writer.finalizeProjectAssetImageTask(*task, result); err != nil {
-					return err
-				}
-				encoded, err := json.Marshal(result)
+				projectID, err := writer.optionalMediaTaskProject(&completed)
 				if err != nil {
 					return err
 				}
-				if err := validateTaskDataGrowthQuotaWithPolicy(usage, taskDelta+int64(len(encoded)-len(resultJSON)), policy.Resource); err != nil {
-					return err
+				if projectID != "" || task.ProjectID == "" {
+					var result map[string]interface{}
+					if err := json.Unmarshal(resultJSON, &result); err != nil {
+						return err
+					}
+					if _, err := writer.finalizeProjectAssetImageTask(*task, result); err != nil {
+						return err
+					}
+					encoded, err := json.Marshal(result)
+					if err != nil {
+						return err
+					}
+					if err := validateTaskDataGrowthQuotaWithPolicy(usage, taskDelta+int64(len(encoded)-len(resultJSON)), policy.Resource); err != nil {
+						return err
+					}
+					completed.ResultJSON = string(encoded)
 				}
-				completed.ResultJSON = string(encoded)
 			}
 			if task.MediaRecoveryJSON == "" {
 				return nil
 			}
-			if err := writer.RegisterTaskOutputFromTask(completed); err != nil {
+			projectID, err := writer.optionalMediaTaskProject(&completed)
+			if err != nil {
 				return err
+			}
+			if projectID != "" {
+				registerErr := repo.Transaction(func(registerRepo *repository.Repository) error {
+					registerWriter := &Service{repo: registerRepo, dataDir: s.dataDir}
+					currentProjectID, projectErr := registerWriter.optionalMediaTaskProject(&completed)
+					if projectErr != nil {
+						return projectErr
+					}
+					if currentProjectID == "" {
+						return repository.ErrProjectNotActive
+					}
+					return registerWriter.RegisterTaskOutputFromTask(completed)
+				})
+				if registerErr != nil && !errors.Is(registerErr, repository.ErrProjectNotActive) {
+					return registerErr
+				}
 			}
 			return writer.registerRecoveredMediaAssets(completed)
 		}

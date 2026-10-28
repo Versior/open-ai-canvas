@@ -649,27 +649,31 @@ func (s *Service) ensureTaskProjectActive(userID string, canvasOrProjectID strin
 	if id == "" {
 		return nil
 	}
-	if canvas, err := s.repo.CanvasProjectForUser(userID, id); err == nil {
+	canvas, canvasErr := s.repo.CanvasProjectForUser(userID, id)
+	if canvasErr != nil && !errors.Is(canvasErr, gorm.ErrRecordNotFound) {
+		return canvasErr
+	}
+	project, projectErr := s.repo.ProjectForUser(userID, id)
+	if projectErr != nil && !errors.Is(projectErr, gorm.ErrRecordNotFound) {
+		return projectErr
+	}
+	if canvasErr == nil && projectErr == nil {
+		return BadAuthRequest("任务归属 ID 有歧义")
+	}
+	if canvasErr == nil {
 		if canvas.ProjectID == "" {
 			return nil
 		}
-		project, projectErr := s.repo.ProjectForUser(userID, canvas.ProjectID)
+		project, projectErr = s.repo.ProjectForUser(userID, canvas.ProjectID)
 		if projectErr != nil {
+			if errors.Is(projectErr, gorm.ErrRecordNotFound) {
+				return NotFound("任务所属画布或项目不存在或无权访问")
+			}
 			return projectErr
 		}
-		if project.Status == model.ProjectStatusArchived {
-			return BadAuthRequest("项目已归档，无法创建生成任务")
-		}
-		return nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
 	}
-	project, err := s.repo.ProjectForUser(userID, id)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		return err
+	if projectErr != nil {
+		return NotFound("任务所属画布或项目不存在或无权访问")
 	}
 	if project.Status == model.ProjectStatusArchived {
 		return BadAuthRequest("项目已归档，无法创建生成任务")

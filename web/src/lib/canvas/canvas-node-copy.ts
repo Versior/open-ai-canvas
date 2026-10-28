@@ -28,6 +28,12 @@ function remapReferenceIds(nodeIds: string[] | undefined, idMap: ReadonlyMap<str
     return nodeIds ? Array.from(new Set(nodeIds.map((nodeId) => idMap.get(nodeId) || nodeId))) : undefined;
 }
 
+function copyEcommerceSuite(suite: NonNullable<CanvasNodeMetadata["ecommerceSuite"]>, idMap: ReadonlyMap<string, string>) {
+    const copied = structuredClone(suite);
+    for (const row of copied.rows) row.resultNodeId = remapOwnedNodeId(row.resultNodeId, idMap);
+    return copied;
+}
+
 function copyStoryboardRow(row: StoryboardRow, idMap: ReadonlyMap<string, string>): StoryboardRow {
     const imageNodeId = remapOwnedNodeId(row.imageNodeId, idMap);
     const videoNodeId = remapOwnedNodeId(row.videoNodeId, idMap);
@@ -93,6 +99,16 @@ export function isolateCopiedNodeMetadata(node: CanvasNodeData, idMap: ReadonlyM
     delete metadata.versionOfNodeId;
     delete metadata.versionLabel;
     delete metadata.versionPrimary;
+    if (metadata.ecommerceProductId) metadata.ecommerceProductId = remapReferenceId(metadata.ecommerceProductId, idMap);
+
+    // 整套复制时产物继续归属副本表格；单独复制产物则解除正式槽位身份。
+    const keepsEcommerceSlot = Boolean(node.metadata?.batchSourceNodeId && idMap.has(node.metadata.batchSourceNodeId));
+    if (!keepsEcommerceSlot && metadata.ecommerceProductId && metadata.ecommerceFlowId && metadata.ecommerceShotId) {
+        delete metadata.ecommerceProductId;
+        delete metadata.ecommerceFlowId;
+        delete metadata.ecommerceShotId;
+    }
+    delete metadata.ecommerceRunId;
 
     // 副本从当前媒体重新开始自己的版本历史。
     delete metadata.mediaVersions;
@@ -135,6 +151,12 @@ export function isolateCopiedNodeMetadata(node: CanvasNodeData, idMap: ReadonlyM
               referenceNodeIds: remapReferenceIds(node.metadata.storyboard.referenceNodeIds, idMap) || [],
           }
         : undefined;
+    if (node.type === CanvasNodeType.BatchTable) {
+        if (node.metadata?.ecommerceSuite) metadata.ecommerceSuite = copyEcommerceSuite(node.metadata.ecommerceSuite, idMap);
+        if (node.metadata?.ecommerceSuitesByFlow) {
+            metadata.ecommerceSuitesByFlow = Object.fromEntries(Object.entries(node.metadata.ecommerceSuitesByFlow).map(([flowId, suite]) => [flowId, suite ? copyEcommerceSuite(suite, idMap) : suite])) as CanvasNodeMetadata["ecommerceSuitesByFlow"];
+        }
+    }
     metadata.batchTable = node.metadata?.batchTable
         ? {
               ...node.metadata.batchTable,

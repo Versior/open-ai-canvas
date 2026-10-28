@@ -32,6 +32,7 @@ export async function runBackendCanvasGenerationTask(
         referenceAudios = [],
         mask,
         signal,
+        expectedUserScope,
         metadata,
         onTaskCreated,
         clientOperationId,
@@ -48,6 +49,7 @@ export async function runBackendCanvasGenerationTask(
         referenceAudios?: ReferenceAudio[];
         mask?: ReferenceImage;
         signal?: AbortSignal;
+        expectedUserScope?: string;
         metadata?: Record<string, unknown>;
         onTaskCreated?: (task: GenerationTask) => void;
         clientOperationId?: string;
@@ -68,6 +70,7 @@ export async function runBackendCanvasGenerationTask(
             referenceAudios,
             mask,
             signal,
+            expectedUserScope,
             metadata: { nodeId, ...(mode === "video" && !metadata?.videoEditOperation ? { videoEditOperation: "image_to_video" } : {}), ...metadata },
             onTaskUpdate: onTaskCreated,
             clientOperationId,

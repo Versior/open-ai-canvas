@@ -11,6 +11,7 @@ import { CanvasNodeGraphContext } from "../src/components/canvas/canvas-node-gra
 import { ModelPicker } from "../src/components/model-picker";
 import { SkillRuntimePicker } from "../src/components/skills/skill-runtime-picker";
 import { createCanvasNodeGraph } from "../src/lib/canvas/canvas-node-graph";
+import { createEcommerceProductProfile } from "../src/lib/ecommerce/ecommerce-contract";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "../src/lib/ecommerce/ecommerce-oneclick";
 import { ECOMMERCE_LAYOUT_PRESETS, createEcommerceLayoutFromPreset, ecommerceLayoutBlockStyle } from "../src/lib/ecommerce/ecommerce-layout";
 import { defaultModelCapabilityConfig } from "../src/lib/model-capabilities";
@@ -98,6 +99,7 @@ async function mountPanel(workspaceMode?: CanvasWorkspaceMode) {
         onClearPrompts() {},
         onAnalyze(rows) {
             analyzed.push(rows);
+            return undefined;
         },
         onRowChange() {},
         onRowsChange(rows) {
@@ -279,7 +281,7 @@ test("generation uses the actual reference count and blocks an incompatible imag
     expect(picker.requirements.input.imageCount).toBe(3);
     expect(String(panel.find((props) => props.role === "alert" && String(props.children).includes("最多支持 1 张参考图")).children)).toContain("最多支持 1 张参考图");
     expect(panel.find((props) => props["aria-label"] === "生成：First")).toMatchObject({ disabled: true, title: "最多支持 1 张参考图" });
-    expect(panel.find((props) => props["aria-label"] === "批量生成 1 张")).toMatchObject({ disabled: true, title: "最多支持 1 张参考图" });
+    expect(panel.find((props) => props["aria-label"] === "生成第一版")).toMatchObject({ disabled: true, title: "最多支持 1 张参考图" });
 });
 
 test("table exposes recovery props and every active product batch item", async () => {
@@ -306,6 +308,7 @@ test("table exposes recovery props and every active product batch item", async (
         position: { x: 0, y: 0 },
         metadata: {
             ecommerceModelId: "model-a",
+            productProfile: { ...createEcommerceProductProfile("Product"), category: "服装", audience: "通勤人群", facts: "耐磨：面料测试" },
             generationBatches: [
                 {
                     id: "batch",
@@ -421,7 +424,7 @@ test("simple workspace presents storyboard cards and hides prompt and skills unt
 
     expect(panel.countType(SkillRuntimePicker)).toBe(0);
     expect(() => panel.find((props) => props["aria-label"] === "First 提示词")).toThrow();
-    expect(panel.find((props) => String(props.className).includes("ecom-suite-storyboard"))).toBeDefined();
+    expect(panel.find((props) => props.className === "ecom-suite-detail-workspace")).toBeDefined();
 
     await act(async () => {
         panel.find((props) => props["aria-label"] === "打开高级设置").onClick();
@@ -430,6 +433,35 @@ test("simple workspace presents storyboard cards and hides prompt and skills unt
     expect(panel.countType(SkillRuntimePicker)).toBe(1);
     expect(panel.countType(ModelPicker)).toBe(2);
     expect(panel.find((props) => props["aria-label"] === "First 提示词").value).toBe("Old prompt");
+});
+
+test("simple detail flow keeps skipped screens editable but out of the continuous preview", async () => {
+    const panel = await mountPanel("simple");
+    await panel.rerender({
+        rows: [
+            { slotId: "first", title: "First", duty: "Hero", prompt: "Old prompt" },
+            { slotId: "second", title: "Second", duty: "Detail", prompt: "", enabled: false },
+        ],
+    });
+
+    expect(panel.find((props) => props.className === "ecom-suite-detail-workspace")).toBeDefined();
+    expect(panel.find((props) => props["aria-label"] === "详情页屏次")).toBeDefined();
+    expect(panel.find((props) => props["aria-label"] === "连续详情页预览")).toBeDefined();
+    expect(panel.find((props) => props["aria-label"] === "当前屏编辑")).toBeDefined();
+    expect(panel.count((props) => String(props.className).includes("ecom-suite-detail-preview-page"))).toBe(1);
+    expect(panel.count((props) => String(props["aria-label"]).startsWith("编辑第 "))).toBe(2);
+    expect(() => panel.find((props) => props["aria-label"] === "在编辑区打开第 2 屏：Second")).toThrow();
+    expect(panel.find((props) => props["aria-label"] === "编辑第 1 屏：First")["aria-current"]).toBe("page");
+    expect(panel.find((props) => props["aria-label"] === "第 1 屏：First").hidden).toBe(false);
+    expect(panel.find((props) => props["aria-label"] === "第 2 屏：Second").hidden).toBe(true);
+
+    await act(async () => {
+        panel.find((props) => props["aria-label"] === "编辑第 2 屏：Second").onClick();
+    });
+
+    expect(panel.find((props) => props["aria-label"] === "编辑第 2 屏：Second")["aria-current"]).toBe("page");
+    expect(panel.find((props) => props["aria-label"] === "第 1 屏：First").hidden).toBe(true);
+    expect(panel.find((props) => props["aria-label"] === "第 2 屏：Second").hidden).toBe(false);
 });
 
 test("storyboard screen switch keeps its accessible name and reports the enabled state", async () => {
@@ -468,6 +500,7 @@ test("mobile and coarse-pointer storyboard controls keep 44px touch targets", as
     const css = (await Bun.file(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.css", import.meta.url)).text()).replace(/\s+/g, " ");
     expect(css).toContain('.ecom-suite-row-toggle[aria-checked="true"]');
     expect(css).toContain("@media (max-width: 760px), (pointer: coarse)");
+    expect(css).toContain("grid-template-columns: 160px minmax(320px, 1fr) minmax(300px, 360px)");
     expect(css).toMatch(/\.ecom-suite-story-card \.ecom-suite-row-move, \.ecom-suite-story-card \.ecom-suite-row-remove, \.ecom-suite-row-move, \.ecom-suite-row-remove \{ width: 44px; height: 44px; opacity: 1; \}/);
     expect(css).toMatch(/\.ecom-suite-row-toggle, \.ecom-suite-row-run \{ min-width: 44px; min-height: 44px; \}/);
     expect(css).toMatch(/\.ecom-suite-missing-plan \{ [^}]*grid-area: prompt; [^}]*\}/);
@@ -477,7 +510,21 @@ test("mobile and coarse-pointer storyboard controls keep 44px touch targets", as
     expect(css).toMatch(/\.ecom-suite-result-error \{ [^}]*overflow-wrap: anywhere; [^}]*\}/);
 });
 
-test("simple workspace skips a screen without deleting its prompt and confirms the actual generation range", async () => {
+test("storyboard copy stays readable and primary desktop controls keep 40px targets", async () => {
+    const css = (await Bun.file(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.css", import.meta.url)).text()).replace(/\s+/g, " ");
+
+    expect(css).not.toMatch(/font-size: (?:9|10)px;/);
+    expect(css).toMatch(/\.ecom-suite-story-card \.ecom-suite-row-move, \.ecom-suite-story-card \.ecom-suite-row-remove \{ [^}]*width: 40px; height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-row-toggle \{ [^}]*min-height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-story-result \.ecom-suite-row-run \{ [^}]*min-height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-candidate \{ [^}]*min-height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-copy-toggle \{ [^}]*min-height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-copy-fields input \{ [^}]*min-height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-layout-preset \{ [^}]*min-height: 40px;/);
+    expect(css).toMatch(/\.ecom-suite-missing-plan button \{ [^}]*min-height: 40px;/);
+});
+
+test("simple workspace skips a screen without deleting its prompt and generates the enabled range", async () => {
     const panel = await mountPanel("simple");
     await panel.rerender({ imageSize: "1024x1536", imageQuality: "hd", generationReferenceImageCount: 3, autoBind: true });
 
@@ -487,26 +534,14 @@ test("simple workspace skips a screen without deleting its prompt and confirms t
     });
 
     expect(panel.find((props) => props["aria-label"] === "生成摘要").children).toBe("将生成 1 张 · 已跳过 1 张 · 缺少提示词 0 张");
-    expect(panel.find((props) => props["aria-label"] === "批量生成 1 张")).toBeDefined();
+    expect(panel.find((props) => props["aria-label"] === "生成第一版")).toBeDefined();
     await act(async () => {
         panel.find((props) => props["aria-label"] === "打开高级设置").onClick();
     });
     expect(panel.find((props) => props["aria-label"] === "First 提示词").value).toBe("Old prompt");
 
     await act(async () => {
-        panel.find((props) => props["aria-label"] === "批量生成 1 张").onClick();
-    });
-    expect(panel.confirmation()).toMatchObject({ title: "确认生成 1 张？", okText: "生成 1 张" });
-    expect(String(panel.confirmation()?.content)).toContain("本次范围：第 1 屏");
-    expect(String(panel.confirmation()?.content)).toContain("已跳过：第 2 屏");
-    expect(String(panel.confirmation()?.content)).toContain("出图模型：image");
-    expect(String(panel.confirmation()?.content)).toContain("尺寸：1024x1536");
-    expect(String(panel.confirmation()?.content)).toContain("画质：hd");
-    expect(String(panel.confirmation()?.content)).toContain("参考图：3 张");
-    expect(String(panel.confirmation()?.content)).toContain("自动拼接详情长图：是");
-    expect(String(panel.confirmation()?.content)).toContain("费用以模型渠道结算为准");
-    await act(async () => {
-        panel.confirmation()!.onOk!();
+        panel.find((props) => props["aria-label"] === "生成第一版").onClick();
     });
     expect(panel.submitted).toEqual([
         [
@@ -869,17 +904,106 @@ test("missing quick-mode plans offer a focused manual prompt editor", async () =
     expect(panel.find((props) => props["aria-label"] === "First 提示词").autoFocus).toBe(true);
 });
 
-test("zero-ready quick mode names the recovery action and its confirmation focuses the missing plan", async () => {
+test("zero-ready quick mode starts analysis instead of opening a dead-end confirmation", async () => {
     const panel = await mountPanel("simple");
     await panel.rerender({ rows: [{ slotId: "first", title: "First", duty: "Hero", prompt: "" }] });
     const batch = panel.find((props) => props.title === "按这张表批量提交出图任务");
 
-    expect(batch["aria-label"]).toBe("补充生成方案");
-    expect(React.Children.toArray(batch.children)).toContain("补充生成方案");
+    expect(batch["aria-label"]).toBe("生成第一版");
+    expect(React.Children.toArray(batch.children)).toContain("生成第一版");
     await act(async () => batch.onClick());
-    expect(panel.confirmation()?.onOk).toBeDefined();
-    await act(async () => panel.confirmation()!.onOk!());
-    expect(panel.find((props) => props["aria-label"] === "First 提示词").autoFocus).toBe(true);
+    expect(panel.analyzed).toEqual([[{ slotId: "first", title: "First", duty: "Hero", prompt: "" }]]);
+    expect(panel.submitted).toHaveLength(0);
+});
+
+test("quick first version waits for analysis, preserves planned rows, and submits once", async () => {
+    const panel = await mountPanel("simple");
+    const ready = {
+        slotId: "first",
+        title: "First",
+        duty: "Human direction",
+        prompt: "Keep this plan",
+        copy: { headline: "Keep copy", subhead: "", cta: "", price: "" },
+        layout: createEcommerceLayoutFromPreset("poster")!,
+    };
+    const missing = { slotId: "second", title: "Second", duty: "Detail", prompt: "" };
+    const analyzed = [
+        { ...ready, duty: "AI rewrite", prompt: "AI replacement" },
+        { ...missing, prompt: "New detail plan" },
+    ];
+    let finishAnalysis!: (rows: EcommerceSuitePanelProps["rows"]) => void;
+    let analysisCalls = 0;
+    const generated: unknown[][] = [];
+    await panel.rerender({
+        rows: [ready, missing],
+        onAnalyze: async () => {
+            analysisCalls += 1;
+            return await new Promise<EcommerceSuitePanelProps["rows"]>((resolve) => {
+                finishAnalysis = resolve;
+            });
+        },
+        onGenerate: (...args) => {
+            generated.push(args);
+            return true;
+        },
+    });
+
+    const firstVersion = panel.find((props) => props.title === "按这张表批量提交出图任务");
+    expect(firstVersion["aria-label"]).toBe("生成第一版");
+    await act(async () => {
+        firstVersion.onClick();
+        firstVersion.onClick();
+        await Promise.resolve();
+    });
+    expect(analysisCalls).toBe(1);
+    expect(generated).toHaveLength(0);
+    expect(panel.find((props) => props.title === "按这张表批量提交出图任务").disabled).toBe(true);
+
+    await act(async () => {
+        finishAnalysis(analyzed);
+        await Promise.resolve();
+        await Promise.resolve();
+    });
+
+    expect(generated).toEqual([[[ready, analyzed[1]], undefined]]);
+});
+
+test("quick first version generates only unfinished slots and stops when analysis fails", async () => {
+    const panel = await mountPanel("simple");
+    const rows = [
+        { slotId: "first", title: "First", duty: "Hero", prompt: "Ready" },
+        { slotId: "second", title: "Second", duty: "Detail", prompt: "Ready" },
+    ];
+    const firstResult: CanvasNodeData = {
+        id: "first-result",
+        type: CanvasNodeType.Image,
+        title: "First result",
+        position: { x: 0, y: 0 },
+        metadata: { ecommerceShotId: "first", ecommerceFlowId: "detail", storageKey: "image:first", status: "success" },
+    };
+    const generated: unknown[][] = [];
+    await panel.rerender({
+        rows,
+        nodeBySlot: new Map([["first", firstResult]]),
+        onGenerate: (...args) => {
+            generated.push(args);
+            return true;
+        },
+    });
+
+    const remaining = panel.find((props) => props.title === "按这张表批量提交出图任务");
+    expect(remaining["aria-label"]).toBe("生成剩余 1 张");
+    await act(async () => remaining.onClick());
+    expect(generated).toEqual([[rows, ["second"]]]);
+
+    generated.length = 0;
+    await panel.rerender({
+        rows: [{ ...rows[0], prompt: "" }],
+        nodeBySlot: new Map(),
+        onAnalyze: async () => undefined,
+    });
+    await act(async () => panel.find((props) => props.title === "按这张表批量提交出图任务").onClick());
+    expect(generated).toHaveLength(0);
 });
 
 test("active output nodes lock batch resubmission and report real progress", async () => {
@@ -1103,7 +1227,8 @@ test("adopted 3:4 and 4:5 images preview in their real frame and scale the layou
         const preview = panel.find((props) => props.className === "ecom-suite-story-preview");
         expect(preview.style.width).toBeCloseTo(expectedWidth);
         expect(preview.style.height).toBeCloseTo(112);
-        expect(panel.find((props) => props["data-layout-field"] === "headline").style).toEqual(ecommerceLayoutBlockStyle(headline, preview.style));
+        const continuousPreview = panel.find((props) => props.className === "ecom-suite-detail-preview-artboard");
+        expect(panel.find((props) => props["data-layout-field"] === "headline").style).toEqual(ecommerceLayoutBlockStyle(headline, continuousPreview.style));
     }
 });
 
@@ -1165,6 +1290,26 @@ test("embedded copy editing debounces one metadata commit instead of persisting 
     });
     expect(panel.saved).toHaveLength(1);
     expect(panel.saved[0]?.[0]).toMatchObject({ copy: { headline: "新品首发" } });
+});
+
+test("unmount flushes the latest copy draft before the debounce expires", async () => {
+    const panel = await mountPanel("simple");
+    await panel.rerender({
+        embedded: true,
+        rows: [{ slotId: "first", title: "First", duty: "Hero", prompt: "Background only", copy: { headline: "", subhead: "", cta: "", price: "" }, layout: createEcommerceLayoutFromPreset("bottom-bar")! }],
+    });
+    await openQuickDesign(panel);
+
+    await act(async () => {
+        panel.find((props) => props["aria-label"] === "First 主标题").onChange({ target: { value: "最后输入" } });
+    });
+    expect(panel.saved).toEqual([]);
+
+    await unmount?.();
+    unmount = undefined;
+
+    expect(panel.saved).toHaveLength(1);
+    expect(panel.saved[0]?.[0]).toMatchObject({ copy: { headline: "最后输入" } });
 });
 
 test("sorting flushes the latest copy draft without dropping the last character", async () => {
@@ -1240,6 +1385,7 @@ test("analysis receives the edited duties and latest rows", async () => {
     await panel.rerender({
         onAnalyze: (rows) => {
             analyzed = rows;
+            return undefined;
         },
     });
     await act(async () => {

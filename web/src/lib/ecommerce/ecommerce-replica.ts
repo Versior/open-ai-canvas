@@ -15,6 +15,99 @@
  */
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
+export const ECOMMERCE_REPLICA_REFERENCE_HANDLE = "replica-reference";
+export const ECOMMERCE_REPLICA_PRODUCT_HANDLE = "replica-product";
+
+export type EcommerceReplicaInputs = {
+    ordered: { node: CanvasNodeData; role: "reference" | "product" }[];
+    referenceImages: CanvasNodeData[];
+    productImages: CanvasNodeData[];
+    unassignedImages: CanvasNodeData[];
+    unassignedConnections: CanvasConnection[];
+};
+
+/** 为角色唯一可确定的旧版复刻连线补槽位；有歧义时保持原样交给用户处理。 */
+export function migrateLegacyEcommerceReplicaConnections(nodes: CanvasNodeData[], connections: CanvasConnection[]) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const assignments = new Map<CanvasConnection, string>();
+
+    for (const replica of nodes) {
+        if (replica.type !== CanvasNodeType.Replica) continue;
+        const incoming = connections.filter((connection) => {
+            const source = byId.get(connection.fromNodeId);
+            return connection.toNodeId === replica.id && connection.relation !== "batch-output" && source?.type === CanvasNodeType.Image && Boolean(source.metadata?.content || source.metadata?.storageKey);
+        });
+        const references = incoming.filter((connection) => connection.toHandleId === ECOMMERCE_REPLICA_REFERENCE_HANDLE);
+        const products = incoming.filter((connection) => connection.toHandleId === ECOMMERCE_REPLICA_PRODUCT_HANDLE);
+        const legacy = incoming.filter((connection) => !connection.toHandleId);
+        const unknown = incoming.some((connection) => connection.toHandleId && connection.toHandleId !== ECOMMERCE_REPLICA_REFERENCE_HANDLE && connection.toHandleId !== ECOMMERCE_REPLICA_PRODUCT_HANDLE);
+        if (unknown || references.length > 1 || products.length > 1 || !legacy.length) continue;
+
+        if (!references.length && !products.length && (legacy.length === 1 || legacy.length === 2) && new Set(legacy.map((connection) => connection.fromNodeId)).size === legacy.length) {
+            assignments.set(legacy[0], ECOMMERCE_REPLICA_REFERENCE_HANDLE);
+            if (legacy[1]) assignments.set(legacy[1], ECOMMERCE_REPLICA_PRODUCT_HANDLE);
+            continue;
+        }
+
+        if (legacy.length !== 1 || references.length + products.length !== 1) continue;
+        const assigned = references[0] || products[0];
+        if (assigned.fromNodeId === legacy[0].fromNodeId) continue;
+        assignments.set(legacy[0], references.length ? ECOMMERCE_REPLICA_PRODUCT_HANDLE : ECOMMERCE_REPLICA_REFERENCE_HANDLE);
+    }
+
+    return assignments.size ? connections.map((connection) => (assignments.has(connection) ? { ...connection, toHandleId: assignments.get(connection) } : connection)) : connections;
+}
+
+export function ecommerceReplicaInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): EcommerceReplicaInputs {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const ordered: EcommerceReplicaInputs["ordered"] = [];
+    const unassignedImages: CanvasNodeData[] = [];
+    const unassignedConnections: CanvasConnection[] = [];
+    const unassignedIds = new Set<string>();
+
+    for (const connection of connections) {
+        if (connection.toNodeId !== nodeId || connection.relation === "batch-output") continue;
+        const image = byId.get(connection.fromNodeId);
+        if (image?.type !== CanvasNodeType.Image || !(image.metadata?.content || image.metadata?.storageKey)) continue;
+        const role = connection.toHandleId === ECOMMERCE_REPLICA_REFERENCE_HANDLE ? "reference" : connection.toHandleId === ECOMMERCE_REPLICA_PRODUCT_HANDLE ? "product" : undefined;
+        if (role) ordered.push({ node: image, role });
+        else {
+            unassignedConnections.push(connection);
+            if (!unassignedIds.has(image.id)) {
+                unassignedIds.add(image.id);
+                unassignedImages.push(image);
+            }
+        }
+    }
+
+    return {
+        ordered,
+        referenceImages: ordered.filter((input) => input.role === "reference").map((input) => input.node),
+        productImages: ordered.filter((input) => input.role === "product").map((input) => input.node),
+        unassignedImages,
+        unassignedConnections,
+    };
+}
+
+export function ecommerceReplicaInputIssue(inputs: EcommerceReplicaInputs) {
+    if (inputs.unassignedImages.length) return "旧画布连线未标注用途，请断开后分别接到参考图和商品图槽位";
+    if (inputs.referenceImages.length > 1) return "参考图槽位连接了多张图片，请只保留一张";
+    if (inputs.productImages.length > 1) return "商品图槽位连接了多张图片，请只保留一张";
+    if (inputs.referenceImages[0]?.id && inputs.referenceImages[0].id === inputs.productImages[0]?.id) return "参考图和商品图不能使用同一张图片";
+    return "";
+}
+
+export function ecommerceReplicaImageRoleBlock(replica: EcommerceReplica, inputs: EcommerceReplicaInputs) {
+    if (ecommerceReplicaInputIssue(inputs) || inputs.referenceImages.length !== 1 || inputs.productImages.length !== 1) return "";
+    const referenceRole = replica.purpose === "compose" ? "参考图（场景）" : "参考图（结构）";
+    const lines = inputs.ordered.map((input, index) =>
+        input.role === "product"
+            ? `第 ${index + 1} 张：商品图（主体），锁定本次商品的形状、材质、颜色与标识。`
+            : `第 ${index + 1} 张：${referenceRole}，${replica.purpose === "compose" ? "保留场景并让商品自然融入。" : "只借鉴构图、布光和版式，不复制其中的商品与文案。"}`,
+    );
+    return ["【输入图片角色】以下编号按本次实际提交的图片顺序：", ...lines].join("\n");
+}
+
 /** 可以从参考图里复刻的维度。勾选哪些，提示词就写哪些。 */
 export type EcommerceReplicaAspect = "composition" | "lighting" | "palette" | "layout" | "props" | "mood";
 
@@ -48,12 +141,7 @@ export const ECOMMERCE_REPLICA_FIDELITIES: { id: EcommerceReplicaFidelity; label
  * 这不是建议，是硬边界：抄这几样是侵权，而且平台有图像指纹稽查。
  * 做成常量而不是可编辑字段——用户把它清空不该是「设置」，是「事故」。
  */
-export const ECOMMERCE_REPLICA_NEVER = [
-    "参考图中的品牌标识、Logo 与店铺水印",
-    "参考图中的模特面孔与可辨识的人物形象",
-    "参考图中的原创文案、字体设计与图形元素",
-    "参考图本身的画面内容（不是把参考图换个商品贴上去）",
-] as const;
+export const ECOMMERCE_REPLICA_NEVER = ["参考图中的品牌标识、Logo 与店铺水印", "参考图中的模特面孔与可辨识的人物形象", "参考图中的原创文案、字体设计与图形元素", "参考图本身的画面内容（不是把参考图换个商品贴上去）"] as const;
 
 /**
  * 这张参考图是「别人的爆款」还是「自己的场景素材」。
@@ -127,20 +215,14 @@ export function ecommerceReplicaBlock(replica: EcommerceReplica | undefined) {
     // 溶图：参考图是场景底，商品要融进去。这里的要求是「尽量贴合」，
     // 与复刻的「不要照搬」正好相反，所以整块单独写。
     if (replicaValue.purpose === "compose") {
-        const composeLines: string[] = [
-            "参考图是**场景底图**（自己的实景或图库素材），把它完整保留下来，只把商品放进去。",
-            "商品必须自然地存在于这个场景里，不是贴上去的。以下每一项都要对上：",
-            ...COMPOSE_REQUIREMENTS.map((item) => `- ${item}`),
-        ];
+        const composeLines: string[] = ["参考图是**场景底图**（自己的实景或图库素材），把它完整保留下来，只把商品放进去。", "商品必须自然地存在于这个场景里，不是贴上去的。以下每一项都要对上：", ...COMPOSE_REQUIREMENTS.map((item) => `- ${item}`)];
         if (replicaValue.extraExclude.trim()) composeLines.push(`不要出现：${replicaValue.extraExclude.trim()}`);
         if (replicaValue.notes.trim()) composeLines.push(`场景笔记：${replicaValue.notes.trim()}`);
         return [`【溶图合成】${replicaValue.name.trim() || "未命名溶图"}`, ...composeLines].join("\n");
     }
 
     const aspects = ECOMMERCE_REPLICA_ASPECTS.filter((aspect) => replicaValue.aspects.includes(aspect.id)).map((aspect) => aspect.label);
-    const lines: string[] = [
-        "参考图给的是**爆款公式**，不是画面。只复刻结构关系，不搬运画面内容。",
-    ];
+    const lines: string[] = ["参考图给的是**爆款公式**，不是画面。只复刻结构关系，不搬运画面内容。"];
     if (aspects.length) lines.push(`复刻维度：${aspects.join("、")}`);
     // 边界必须排在强度前面：模型读到「贴近」会倾向于照抄，边界立在它前面才拦得住
     lines.push("绝对不复刻：");
@@ -151,8 +233,8 @@ export function ecommerceReplicaBlock(replica: EcommerceReplica | undefined) {
     return [`【复刻参考】${replicaValue.name.trim() || "未命名复刻"}`, ...lines].join("\n");
 }
 
-/** 复刻节点上游的参考图——只认第一张，多张参考会互相打架。 */
+/** 复刻节点的参考图——只认显式标注为参考图的唯一连线。 */
 export function ecommerceReplicaReferenceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const fromIds = connections.filter((connection) => connection.toNodeId === nodeId && connection.relation !== "batch-output").map((connection) => connection.fromNodeId);
-    return nodes.find((node) => fromIds.includes(node.id) && node.type === CanvasNodeType.Image && (node.metadata?.content || node.metadata?.storageKey));
+    const inputs = ecommerceReplicaInputNodes(nodeId, nodes, connections);
+    return ecommerceReplicaInputIssue(inputs) || inputs.referenceImages.length !== 1 ? undefined : inputs.referenceImages[0];
 }

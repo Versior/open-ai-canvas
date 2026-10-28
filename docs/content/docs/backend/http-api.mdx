@@ -5,6 +5,41 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 社交视频异步导入
+
+OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环境实际调用时必须带该前缀。例如规范中的 `/social-video/imports` 对外是 `POST /api/social-video/imports`，任务查询是 `GET /api/tasks/:id`。
+
+`POST /api/social-video/imports` 需要登录 Cookie、`Content-Type: application/json` 和请求头 `X-Idempotency-Key`。幂等键长度为 8–128 个字符；同一账号以相同键重试相同请求会返回原任务，相同键改换链接或项目返回 409。请求正文最多 4 KiB：
+
+```json
+{
+  "url": "https://www.douyin.com/video/7391234567890123456",
+  "projectId": "可选的当前账号活动项目 ID"
+}
+```
+
+`url` 也可以是只包含一个视频 URL 的分享文本。成功响应仍使用 `{ code, data, msg }` 信封，`data` 是 `type="social_video_import"` 的异步 Task，初始状态通常为 `queued`。客户端使用返回的 `data.id` 查询 `GET /api/tasks/:id`，并根据 `status`、`stage`、`progress`、`error` 更新进度；任务成功时 `status=succeeded`，`resultJson` 是 JSON 字符串，解析后的结构为：
+
+```json
+{
+  "platform": "douyin",
+  "canonicalId": "7391234567890123456",
+  "title": "商品展示",
+  "resourceId": "resource-id",
+  "width": 1080,
+  "height": 1920,
+  "durationMs": 15000,
+  "mimeType": "video/mp4",
+  "size": 12345678
+}
+```
+
+`resourceId` 指向已入库的标准视频资源。该任务不调用模型渠道、不计模型费用；前端取得资源后创建普通 Video 节点，后续拆解复刻复用既有电商视频节点。
+
+导入只接受抖音和 TikTok 的 HTTPS 单视频地址或受控短链：禁止 URL 认证信息、片段和非 443 端口，分享文本必须且只能包含一个 URL；最终视频不超过 3 分钟，文件不超过 `min(ResourceUploadMB, 50 MiB)`。短链每次跳转都会重新校验平台域名、单视频路径与出站安全规则，最终提取器必须与链接平台一致；playlist、多条目、多个下载文件、符号链接和无有效视频流的结果都会拒绝。下载在隔离配置目录中通过非 shell 子进程执行，任务最长 10 分钟，并在下载中和入库前复查大小、时长及项目活动状态。
+
+同步请求可能返回 400（链接、幂等键、项目或任务额度无效）、401（未登录）、409（幂等键冲突）、413（正文超过 4 KiB）或 429（创建任务限流）；已入队后的平台解析、下载、校验或入库失败体现在 Task 的 `status=failed` 与脱敏 `error` 中。
+
 ## 电商画布配置与公共模特
 
 管理员只读接口 GET /api/admin/settings/ecommerce/defaults 返回 data.defaults：cap:能力标识及 detail/main/wear/seed 对应 worker 实际内置规则。响应禁止缓存，普通用户无权读取，不修改自定义覆盖或 revision。

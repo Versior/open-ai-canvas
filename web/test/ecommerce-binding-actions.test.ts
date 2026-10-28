@@ -8,6 +8,7 @@ import { connectEcommerceTableOutputs, ecommerceSelectedOutputs, ecommerceTableS
 import { ecommerceSuiteTargets } from "../src/lib/ecommerce/ecommerce-canvas-preset";
 import { synchronizeGenerationSpec } from "../src/lib/canvas/generation-contract";
 import { buildGenerationConfig } from "../src/lib/canvas/canvas-project-generation";
+import { resetGenerationTaskMetadata } from "../src/lib/canvas/canvas-task-state";
 import { createCanvasBatchInputSnapshot } from "../src/lib/canvas/canvas-batch-input-snapshot";
 import { connectedStyleReferenceNodes, ecommerceProductReferenceImages } from "../src/lib/ecommerce/ecommerce-canvas";
 import { createCanvasNode } from "../src/lib/canvas/canvas-project-domain";
@@ -29,7 +30,9 @@ const generationCode = new Bun.Transpiler({ loader: "tsx" }).transformSync(page.
 function bindingFixture(status: "running" | "failed" = "failed") {
     const product = createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 });
     const opened = openEcommerceTable([product], [], product.id, "detail");
-    const images = ["hero", "detail"].map((slot) => createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { status: "success", storageKey: slot, content: `/${slot}.png`, ecommerceShotId: slot, ecommerceFlowId: "detail", ecommerceRunId: "run", batchResultInputSignature: "source-signature" }));
+    const images = ["hero", "detail"].map((slot) =>
+        createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { status: "success", storageKey: slot, content: `/${slot}.png`, ecommerceShotId: slot, ecommerceFlowId: "detail", ecommerceRunId: "run", batchResultInputSignature: "source-signature" }),
+    );
     const rows = images.map((image) => ({ slotId: image.metadata!.ecommerceShotId!, title: "", duty: "", prompt: "Show product", resultNodeId: image.id }));
     const table = { ...opened.table, metadata: { ...opened.table.metadata, ecommerceImageModel: "image", ecommerceSuite: { flow: "detail", source: "draft" as const, updatedAt: "", rows } } };
     product.metadata = { ...product.metadata, ecommerceOneClick: { flow: "detail", nodeIds: images.map((image) => image.id), slotIds: rows.map((row) => row.slotId), runId: "run", status } };
@@ -70,6 +73,7 @@ function bindingFixture(status: "running" | "failed" = "failed") {
         ecommerceProductReferenceImages,
         connectedStyleReferenceNodes,
         buildGenerationConfig,
+        resetGenerationTaskMetadata,
         ecommerceBindingImages,
         ecommerceBindingKey,
         finishEcommerceBinding,
@@ -112,7 +116,13 @@ function bindingFixture(status: "running" | "failed" = "failed") {
     };
     const generate = () => {
         const context = { ...dependencies, bindingRef, ecommerceResultSourceSignature: () => "suite-signature" };
-        return new Function(...Object.keys(context), `${generationCode}\nreturn generateEcommerceSuite;`)(...Object.values(context)) as (node: CanvasNodeData, flow: string) => Promise<boolean>;
+        return new Function(...Object.keys(context), `${generationCode}\nreturn generateEcommerceSuite;`)(...Object.values(context)) as (
+            node: CanvasNodeData,
+            flow: string,
+            slotIds?: string[],
+            rows?: typeof rows,
+            completeSuite?: boolean,
+        ) => Promise<boolean>;
     };
     return { product, table, rows, images, nodesRef, bindingRef, dependencies, exportEcommerceDetailPage, rasterizeEcommerceComposition, rasterizeEcommerceDetailPage, render, generate, runAutoBind: () => autoBind() };
 }
@@ -171,6 +181,25 @@ test("automatic binding follows the current enabled suite rows by slot instead o
         { imageUrl: "data:hero", copy: heroCopy, layout: heroLayout },
     ]);
     expect(f.rasterizeEcommerceDetailPage.mock.calls[0][0].imageUrls).toEqual(["composed:data:detail", "composed:data:hero"]);
+});
+
+test("terminal image states fail automatic binding and release single-image retry", async () => {
+    for (const terminal of [{ status: "error" as const }, { taskStatus: "failed" as const }, { taskStatus: "cancelled" as const }]) {
+        const f = bindingFixture("running");
+        const successfulImage = f.nodesRef.current[2];
+        f.nodesRef.current[3] = { ...f.images[1], metadata: { ...f.images[1].metadata, ...terminal } };
+
+        f.render();
+        f.runAutoBind();
+
+        expect(f.nodesRef.current[0].metadata?.ecommerceOneClick?.status).toBe("failed");
+        expect(f.nodesRef.current[2]).toBe(successfulImage);
+        expect(f.rasterizeEcommerceDetailPage).not.toHaveBeenCalled();
+        expect(await f.generate()(f.table, "detail", ["detail"])).toBe(true);
+        expect(f.dependencies.enqueueGenerationBatch).toHaveBeenCalledTimes(1);
+        expect(f.nodesRef.current[0].metadata?.ecommerceOneClick).toBeUndefined();
+        expect(f.nodesRef.current[2]).toBe(successfulImage);
+    }
 });
 
 test("automatic binding abandons a stale suite during export without overwriting the current plan", async () => {
@@ -315,6 +344,36 @@ test("a fresh automatic suite replaces only the failed plan with its new run and
     expect(plan.status).toBe("running");
     expect(plan.nodeIds).toEqual(f.nodesRef.current.slice(4).map((node) => node.id));
     expect(f.nodesRef.current.slice(4).every((node) => node.metadata?.ecommerceRunId === plan.runId)).toBe(true);
+});
+
+test("generating the remaining screen keeps every ready screen in the automatic binding plan", async () => {
+    const f = bindingFixture();
+    f.nodesRef.current[1].metadata!.ecommerceAutoBind = true;
+    f.nodesRef.current = f.nodesRef.current.map((node) =>
+        node.type === CanvasNodeType.Image
+            ? {
+                  ...node,
+                  metadata: {
+                      ...node.metadata,
+                      ecommerceProductId: f.product.id,
+                      batchSourceNodeId: f.table.id,
+                      batchResultInputSignature: "suite-signature",
+                  },
+              }
+            : node,
+    );
+
+    expect(await f.generate()(f.table, "detail", ["detail"], f.rows, true)).toBe(true);
+
+    const plan = f.nodesRef.current[0].metadata!.ecommerceOneClick!;
+    expect(plan.slotIds).toEqual(["hero", "detail"]);
+    expect(plan.nodeIds).toEqual(f.images.map((image) => image.id));
+    expect(f.dependencies.enqueueGenerationBatch.mock.calls[0]?.[2]).toEqual([expect.objectContaining({ nodeId: f.images[1].id })]);
+    expect(f.nodesRef.current.find((node) => node.id === f.images[0].id)?.metadata).toMatchObject({
+        storageKey: "hero",
+        ecommerceRunId: plan.runId,
+        batchResultInputSignature: "suite-signature",
+    });
 });
 
 test("active manual stitching blocks a fresh suite even after it has cleared the old plan", async () => {

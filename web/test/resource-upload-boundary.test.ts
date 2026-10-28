@@ -79,3 +79,85 @@ describe("资源直传失败分类", () => {
         expect(resource.id).toBe("res-1");
     });
 });
+
+describe("resource upload account boundary", () => {
+    test("does not send a request when expected account scope is already stale", async () => {
+        const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+        const previous = apiClient.defaults.adapter;
+        let currentScope = "account-b";
+        let requests = 0;
+        Object.defineProperty(globalThis, "window", {
+            configurable: true,
+            value: { localStorage: { getItem: () => currentScope, setItem: (_key: string, value: string) => (currentScope = value) } },
+        });
+        apiClient.defaults.adapter = async (config) => {
+            requests += 1;
+            return { config, status: 200, statusText: "OK", headers: {}, data: { code: 0, data: { resource: { id: "unexpected" } } } };
+        };
+        try {
+            const upload = uploadResourceFile(new Blob(["x"]), "image", undefined, undefined, { expectedScope: "account-a" });
+            await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+            expect(requests).toBe(0);
+        } finally {
+            apiClient.defaults.adapter = previous;
+            if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+            else delete (globalThis as { window?: unknown }).window;
+        }
+    });
+
+    test("rejects a completed response when the account changed in flight", async () => {
+        const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+        const previous = apiClient.defaults.adapter;
+        let currentScope = "account-a";
+        let requests = 0;
+        Object.defineProperty(globalThis, "window", {
+            configurable: true,
+            value: { localStorage: { getItem: () => currentScope, setItem: (_key: string, value: string) => (currentScope = value) } },
+        });
+        apiClient.defaults.adapter = async (config) => {
+            requests += 1;
+            currentScope = "account-b";
+            return { config, status: 200, statusText: "OK", headers: {}, data: { code: 0, data: { resource: { id: "account-a-resource" } } } };
+        };
+        try {
+            const upload = uploadResourceFile(new Blob(["x"]), "image", undefined, undefined, { expectedScope: "account-a" });
+            await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+            expect(requests).toBe(1);
+        } finally {
+            apiClient.defaults.adapter = previous;
+            if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+            else delete (globalThis as { window?: unknown }).window;
+        }
+    });
+
+    test("checks the account again before each chunk request", async () => {
+        const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+        const previous = apiClient.defaults.adapter;
+        let currentScope = "account-a";
+        const requests: string[] = [];
+        Object.defineProperty(globalThis, "window", {
+            configurable: true,
+            value: { localStorage: { getItem: () => currentScope, setItem: (_key: string, value: string) => (currentScope = value) } },
+        });
+        apiClient.defaults.adapter = async (config) => {
+            requests.push(config.url || "");
+            currentScope = "account-b";
+            return {
+                config,
+                status: 200,
+                statusText: "OK",
+                headers: {},
+                data: { code: 0, data: { uploadId: "session", chunkSize: 32 << 20, chunkCount: 2 } },
+            };
+        };
+        try {
+            const upload = uploadResourceFile(new Blob([new Uint8Array(51 << 20)]), "video", undefined, undefined, { expectedScope: "account-a" });
+            await expect(upload).rejects.toMatchObject({ name: "AbortError" });
+            expect(requests).toEqual(["/resources/uploads"]);
+        } finally {
+            apiClient.defaults.adapter = previous;
+            if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+            else delete (globalThis as { window?: unknown }).window;
+        }
+    });
+});

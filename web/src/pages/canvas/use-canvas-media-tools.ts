@@ -47,6 +47,7 @@ import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { fitImageNodeSize, fitNodeSize, preserveImageNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { isEcommerceNode } from "@/lib/ecommerce/ecommerce-canvas";
+import { ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE, ecommerceTeardownPlanSourceSignature, parseEcommerceTeardownPlanRequest } from "@/lib/ecommerce/ecommerce-teardown";
 import { ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE, ecommerceVideoCreativePlanSourceSignature, parseEcommerceVideoCreativePlanRequest } from "@/lib/ecommerce/ecommerce-video";
 import { ecommerceMaterialNodes, ecommerceMaterialPlan, ecommerceShotSetOutputs } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { compositeEmotionImage, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
@@ -77,9 +78,14 @@ import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
 import type { GenerationTask } from "@/services/api/task-center";
 
 function normalizeRegionEditQuality(quality: string | undefined, size: string | undefined) {
-    const value = String(quality || "").trim().toLowerCase();
+    const value = String(quality || "")
+        .trim()
+        .toLowerCase();
     if (value && value !== "auto" && value !== "any") return value;
-    const match = String(size || "").trim().toLowerCase().match(/^(\d+)x(\d+)$/);
+    const match = String(size || "")
+        .trim()
+        .toLowerCase()
+        .match(/^(\d+)x(\d+)$/);
     if (!match) return quality || "auto";
     const pixels = Number(match[1]) * Number(match[2]);
     return pixels <= 2_000_000 ? "1k" : pixels <= 4_300_000 ? "2k" : pixels <= 8_294_400 ? "4k" : quality || "auto";
@@ -224,9 +230,13 @@ export function useCanvasMediaTools({
             const ecommerceVideoRequest = parseEcommerceVideoCreativePlanRequest(prompt);
             const ecommerceVideoTarget = ecommerceVideoRequest ? nodesRef.current.find((item) => item.id === ecommerceVideoRequest.targetNodeId && item.type === CanvasNodeType.EcommerceVideo) : undefined;
             const ecommerceVideoTargetId = ecommerceVideoTarget?.id;
-            const targetInputIds = new Set(ecommerceVideoTargetId ? connectionsRef.current.filter((connection) => connection.toNodeId === ecommerceVideoTargetId).map((connection) => connection.fromNodeId) : []);
-            const targetInputs = ecommerceVideoTargetId ? nodesRef.current.filter((item) => targetInputIds.has(item.id)) : [];
-            const productImages = targetInputs.filter((item) => item.type === CanvasNodeType.Image && Boolean(item.metadata?.content || item.metadata?.storageKey)).slice(0, 4);
+            const ecommerceTeardownRequest = parseEcommerceTeardownPlanRequest(prompt);
+            const ecommerceTeardownTarget = ecommerceTeardownRequest ? nodesRef.current.find((item) => item.id === ecommerceTeardownRequest.targetNodeId && item.type === CanvasNodeType.Teardown) : undefined;
+            const ecommerceTeardownTargetId = ecommerceTeardownTarget?.id;
+            const structuredTargetId = ecommerceVideoTargetId || ecommerceTeardownTargetId;
+            const targetInputIds = new Set(structuredTargetId ? connectionsRef.current.filter((connection) => connection.toNodeId === structuredTargetId).map((connection) => connection.fromNodeId) : []);
+            const targetInputs = structuredTargetId ? nodesRef.current.filter((item) => targetInputIds.has(item.id)) : [];
+            const productImages = ecommerceVideoTargetId ? targetInputs.filter((item) => item.type === CanvasNodeType.Image && Boolean(item.metadata?.content || item.metadata?.storageKey)).slice(0, 4) : [];
             const product = targetInputs.find((item) => item.type === CanvasNodeType.Product);
             const productProfile = product?.metadata?.productProfile;
             const ecommerceVideoCreativePlanSource = ecommerceVideoTarget
@@ -234,6 +244,14 @@ export function useCanvasMediaTools({
                       targetNodeId: ecommerceVideoTarget.id,
                       referenceVideoId: node.id,
                       signature: ecommerceVideoCreativePlanSourceSignature({ target: ecommerceVideoTarget, referenceVideo: node, product, productImages }),
+                  }
+                : undefined;
+            const ecommerceTeardownPlanSource = ecommerceTeardownTarget
+                ? {
+                      targetNodeId: ecommerceTeardownTarget.id,
+                      referenceImageId: node.id,
+                      productNodeId: product?.id,
+                      signature: ecommerceTeardownPlanSourceSignature({ target: ecommerceTeardownTarget, referenceImage: node, product }),
                   }
                 : undefined;
             const productFacts = productProfile
@@ -248,7 +266,7 @@ export function useCanvasMediaTools({
                       productProfile.price.trim() && `价格：${productProfile.price.trim()}`,
                   ].filter(Boolean)
                 : [];
-            const instruction = [ecommerceVideoRequest?.prompt || prompt?.trim() || IMAGE_PROMPT_REVERSE, productFacts.length ? `【已确认商品资料】\n${productFacts.join("\n")}` : ""].filter(Boolean).join("\n\n");
+            const instruction = [ecommerceVideoRequest?.prompt || ecommerceTeardownRequest?.prompt || prompt?.trim() || IMAGE_PROMPT_REVERSE, productFacts.length ? `【已确认商品资料】\n${productFacts.join("\n")}` : ""].filter(Boolean).join("\n\n");
             const gap = 96;
             const textSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
             const resultSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
@@ -257,20 +275,22 @@ export function useCanvasMediaTools({
                 ...createCanvasNode(CanvasNodeType.Text, { x: node.position.x + node.width + gap + textSpec.width / 2, y: centerY }, { content: instruction, prompt: instruction, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
                 title: prompt ? "拆解指令" : "反推提示词",
             };
+            const resultMetadata = {
+                content: "",
+                generationMode: "text" as const,
+                model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel,
+                count: 1,
+                composerContent: [`参考${mediaType}：@${mediaType}1`, productImages.length ? `商品图片：${productImages.map((_, index) => `@图片${index + 1}`).join(" ")}` : "", "任务说明：@文本1"].filter(Boolean).join("\n"),
+                ecommerceVideoCreativePlanSource,
+                ecommerceTeardownPlanSource,
+            };
             const resultNode = {
                 ...createCanvasNode(
                     CanvasNodeType.Text,
                     { x: textNode.position.x + textNode.width + gap + resultSpec.width / 2, y: centerY },
-                    {
-                        content: "",
-                        generationMode: "text",
-                        model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel,
-                        count: 1,
-                        composerContent: [`参考${mediaType}：@${mediaType}1`, productImages.length ? `商品图片：${productImages.map((_, index) => `@图片${index + 1}`).join(" ")}` : "", "任务说明：@文本1"].filter(Boolean).join("\n"),
-                        ecommerceVideoCreativePlanSource,
-                    },
+                    resultMetadata,
                 ),
-                title: ecommerceVideoTargetId ? ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE : "反推提示词结果",
+                title: ecommerceTeardownTargetId ? ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE : ecommerceVideoTargetId ? ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE : "反推提示词结果",
             };
             setNodes((current) => [...current, textNode, resultNode]);
             setConnections((current) => [
@@ -278,7 +298,7 @@ export function useCanvasMediaTools({
                 { id: nanoid(), fromNodeId: node.id, toNodeId: resultNode.id },
                 { id: nanoid(), fromNodeId: textNode.id, toNodeId: resultNode.id },
                 ...productImages.map((image) => ({ id: nanoid(), fromNodeId: image.id, toNodeId: resultNode.id })),
-                ...(ecommerceVideoTargetId ? [{ id: nanoid(), fromNodeId: resultNode.id, toNodeId: ecommerceVideoTargetId }] : []),
+                ...(structuredTargetId ? [{ id: nanoid(), fromNodeId: resultNode.id, toNodeId: structuredTargetId }] : []),
             ]);
             setSelectedNodeIds(new Set([resultNode.id]));
             setSelectedConnectionId(null);
@@ -503,15 +523,7 @@ export function useCanvasMediaTools({
                 try {
                     const result = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node: audioNode, source: "canvas-manual" });
                     setNodes((current) => current.map((item) => (item.id === audioNodeId ? { ...item, metadata: { ...item.metadata, assetId: result.assetId } } : item)));
-                    progress.done(
-                        result.syncPending
-                            ? domainProjectId
-                                ? "声音已保存到本地，云端项目资产正在自动同步"
-                                : "声音已保存到本地，云端素材正在自动同步"
-                            : result.linkedToProject
-                              ? "声音已提取并加入素材库与项目资产"
-                              : "声音已提取并加入素材库",
-                    );
+                    progress.done(result.syncPending ? (domainProjectId ? "声音已保存到本地，云端项目资产正在自动同步" : "声音已保存到本地，云端素材正在自动同步") : result.linkedToProject ? "声音已提取并加入素材库与项目资产" : "声音已提取并加入素材库");
                 } catch (assetError) {
                     progress.done(`声音已提取并生成音频节点，素材库写入失败：${assetError instanceof Error ? assetError.message : "未知错误"}`);
                 }
@@ -905,7 +917,7 @@ export function useCanvasMediaTools({
             const uploaded = [];
             for (const output of outputs) {
                 ensureCurrentSource();
-                const image = await uploadImage(output.dataUrl);
+                const image = await uploadImage(output.dataUrl, undefined, undefined, { expectedScope: scope });
                 ensureCurrentSource();
                 uploaded.push({ output, image, size: fitNodeSize(image.width || 720, image.height || 720) });
             }
@@ -990,163 +1002,193 @@ export function useCanvasMediaTools({
         [message, persistMediaNodes, setConnections, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );
 
-    const regionEditImageNode = useCallback(async (node: CanvasNodeData, payload: CanvasImageRegionEditPayload) => {
-        if (!node.metadata?.content) return;
-        const baseGenerationConfig = buildGenerationConfig(effectiveConfig, node, "image");
-        const selectedModel = payload.generationConfig?.imageModel || payload.generationConfig?.model || baseGenerationConfig.model;
-        const modelDefaults = defaultImageParamsForModel(baseGenerationConfig, selectedModel);
-        const selectedImageProfile = modelCapabilityConfigFor(baseGenerationConfig, selectedModel).image;
-        const maxReferenceImages = selectedImageProfile?.references.maxImages ?? 0;
-        if (!payload.regions.length) {
-            message.warning("请先框选需要修改的区域");
-            return;
-        }
-        if (maxReferenceImages < 1) {
-            message.error("当前图片模型不支持参考图编辑，请选择支持图片编辑的模型");
-            return;
-        }
-        // 能收两张参考图时附带编号标注图；支持蒙版时再用蒙版锁住框外像素。坐标始终写进提示词，单图模型也能定位。
-        const useAnnotatedReference = maxReferenceImages >= 2;
-        const useMask = Boolean(selectedImageProfile?.references.maskSupported);
-        const generationConfig = {
-            ...baseGenerationConfig,
-            ...payload.generationConfig,
-            model: selectedModel,
-            imageModel: selectedModel,
-            quality: normalizeRegionEditQuality(payload.generationConfig?.quality || node.metadata?.quality || baseGenerationConfig.quality || modelDefaults.quality, payload.generationConfig?.size || node.metadata?.size || baseGenerationConfig.size || modelDefaults.size),
-            count: String(payload.generationConfig?.count || 1),
-            // 原图像素尺寸不是模型的输出尺寸合同；非高级设置时使用模型默认尺寸，避免把节点尺寸误发给上游。
-            size: payload.generationConfig?.size || node.metadata?.size || modelDefaults.size,
-        };
-        if (!isAiConfigReady(generationConfig, generationConfig.model)) {
-            navigateToSettings({ continueCreation: true });
-            return;
-        }
-        const userPrompt = payload.prompt.trim();
-        const prompt = buildRegionEditPrompt({ prompt: userPrompt, regions: payload.regions, size: payload.size, annotatedReference: useAnnotatedReference, mask: useMask });
-        const source = nodeReferenceImage(node);
-        if (!source) return;
-        const annotatedReference = { id: `${node.id}-regions`, name: "regions.jpg", type: "image/jpeg", dataUrl: payload.annotatedDataUrl };
-        const referenceImages = useAnnotatedReference ? [source, annotatedReference] : [source];
-        const mask = useMask ? { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl } : undefined;
-        const styleExecution = resolveImageEditStyle(node, prompt, generationConfig);
-        if (!styleExecution) return;
-        const { prompt: effectivePrompt, metadata: styleMetadata } = styleExecution;
-        const requestedCount = Math.max(1, Number(generationConfig.count) || 1);
-        const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, requestedCount, referenceImages);
-        setRegionEditNodeId(null);
-        const rootId = nanoid();
-        const childIds = requestedCount > 1 ? Array.from({ length: requestedCount }, () => nanoid()) : [];
-        const targetIds = requestedCount > 1 ? childIds : [rootId];
-        const imageSize = { width: node.width, height: node.height };
-        const preferredPosition = { x: node.position.x + node.width + 96, y: node.position.y };
-        const rootPosition = findAvailableGenerationGroupPosition(nodesRef.current, preferredPosition, imageGenerationGroupSize(imageSize, imageSize, childIds.length));
-        const rootNode: CanvasNodeData = {
-            id: rootId,
-            type: CanvasNodeType.Image,
-            title: userPrompt.slice(0, 32) || "区域编辑结果",
-            position: rootPosition,
-            width: node.width,
-            height: node.height,
-            metadata: {
-                ...canvasGenerationPromptMetadata(userPrompt, effectivePrompt),
-                status: NODE_STATUS_LOADING,
-                isBatchRoot: requestedCount > 1,
-                batchChildIds: requestedCount > 1 ? childIds : undefined,
-                batchFailedCount: requestedCount > 1 ? 0 : undefined,
-                imageBatchExpanded: requestedCount > 1 ? true : undefined,
-                ...generationMetadata,
-                ...styleMetadata,
-            },
-        };
-        const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
-            id,
-            type: CanvasNodeType.Image,
-            title: `${userPrompt.slice(0, 28) || "区域编辑结果"} · ${index + 1}`,
-            position: imageGenerationChildPosition(rootNode.position, rootNode.width, imageSize, index),
-            width: node.width,
-            height: node.height,
-            metadata: {
-                ...canvasGenerationPromptMetadata(userPrompt, effectivePrompt),
-                status: NODE_STATUS_LOADING,
-                batchRootId: rootId,
-                ...generationMetadata,
-                ...styleMetadata,
-            },
-        }));
-        setRunningNodeId(rootId);
-        setNodes((current) => [...current, rootNode, ...childNodes]);
-        setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: rootId }, ...childIds.map((childId) => ({ id: nanoid(), fromNodeId: rootId, toNodeId: childId }))]);
-        setSelectedNodeIds(new Set([rootId, ...childIds]));
-        setSelectedConnectionId(null);
-        setDialogNodeId(rootId);
-        const controller = startGenerationRequest(rootId, node.id, rootId);
-        targetIds.forEach((targetId) => startGenerationRequest(targetId, node.id, rootId, controller));
-        const taskIds = new Map<string, string>();
-        let representativeError: string | undefined;
-        try {
-            await Promise.all(targetIds.map(async (targetId) => {
-                try {
-                    await runCanvasGenerationTaskToConsumer({
-                        projectId,
-                        nodeId: targetId,
-                        mode: "image",
-                        prompt: effectivePrompt,
-                        config: { ...generationConfig, count: "1" },
-                        referenceImages,
-                        mask,
-                        signal: controller.signal,
-                        metadata: { sourceNodeId: node.id, edit: "region", regionCount: payload.regions.length, annotationReference: useAnnotatedReference || undefined, ...styleMetadata },
-                    }, {
-                        bindTask: (task) => {
-                            taskIds.set(targetId, task.id);
-                            bindGenerationTask(targetId, task);
-                        },
-                        consumeTask: (task) => applyGenerationTaskResult(targetId, task),
-                    });
-                } catch (error) {
-                    if (controller.signal.aborted || isGenerationCanceled(error)) return;
-                    const details = generationErrorMessage(error);
-                    representativeError = details;
-                    if (!isCanvasGenerationDurableAckError(error)) {
-                        setNodes((current) => current.map((item) => (item.id === targetId && item.metadata?.taskId === taskIds.get(targetId) ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : item)));
-                    }
-                } finally {
-                    finishGenerationRequest(targetId, controller);
-                }
-            }));
-            if (controller.signal.aborted) {
-                setNodes((current) => {
-                    const cancelled = cancelIncompleteImageBatch(rootId, childIds, current, []);
-                    if (cancelled.removedIds.length) {
-                        const removed = new Set(cancelled.removedIds);
-                        setConnections((connections) => connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)));
-                    }
-                    return cancelled.nodes.map((item) => {
-                        if (item.id !== rootId) return item;
-                        if (item.metadata?.content) return item;
-                        return { ...item, metadata: { ...item.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } };
-                    });
-                });
+    const regionEditImageNode = useCallback(
+        async (node: CanvasNodeData, payload: CanvasImageRegionEditPayload) => {
+            if (!node.metadata?.content) return;
+            const baseGenerationConfig = buildGenerationConfig(effectiveConfig, node, "image");
+            const selectedModel = payload.generationConfig?.imageModel || payload.generationConfig?.model || baseGenerationConfig.model;
+            const modelDefaults = defaultImageParamsForModel(baseGenerationConfig, selectedModel);
+            const selectedImageProfile = modelCapabilityConfigFor(baseGenerationConfig, selectedModel).image;
+            const maxReferenceImages = selectedImageProfile?.references.maxImages ?? 0;
+            if (!payload.regions.length) {
+                message.warning("请先框选需要修改的区域");
                 return;
             }
-            const targets = nodesRef.current.filter((item) => targetIds.includes(item.id) && item.metadata?.taskId === taskIds.get(item.id) && (requestedCount === 1 || item.metadata?.batchRootId === rootId));
-            const hasSuccess = targets.some((item) => item.metadata?.status === NODE_STATUS_SUCCESS && item.metadata.assetId);
-            const failureCount = targets.filter((item) => item.metadata?.status === NODE_STATUS_ERROR).length;
-            if (failureCount > 0) {
-                message.error(hasSuccess ? "部分区域编辑失败" : representativeError || "区域编辑失败");
-            } else if (representativeError && targets.length) {
-                message.warning(representativeError);
+            if (maxReferenceImages < 1) {
+                message.error("当前图片模型不支持参考图编辑，请选择支持图片编辑的模型");
+                return;
             }
-            setNodes((current) => current.map((item) => {
-                if (item.id !== rootId || requestedCount <= 1) return item;
-                return reconcileImageBatchRoot(item, current);
+            // 能收两张参考图时附带编号标注图；支持蒙版时再用蒙版锁住框外像素。坐标始终写进提示词，单图模型也能定位。
+            const useAnnotatedReference = maxReferenceImages >= 2;
+            const useMask = Boolean(selectedImageProfile?.references.maskSupported);
+            const generationConfig = {
+                ...baseGenerationConfig,
+                ...payload.generationConfig,
+                model: selectedModel,
+                imageModel: selectedModel,
+                quality: normalizeRegionEditQuality(
+                    payload.generationConfig?.quality || node.metadata?.quality || baseGenerationConfig.quality || modelDefaults.quality,
+                    payload.generationConfig?.size || node.metadata?.size || baseGenerationConfig.size || modelDefaults.size,
+                ),
+                count: String(payload.generationConfig?.count || 1),
+                // 原图像素尺寸不是模型的输出尺寸合同；非高级设置时使用模型默认尺寸，避免把节点尺寸误发给上游。
+                size: payload.generationConfig?.size || node.metadata?.size || modelDefaults.size,
+            };
+            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                navigateToSettings({ continueCreation: true });
+                return;
+            }
+            const userPrompt = payload.prompt.trim();
+            const prompt = buildRegionEditPrompt({ prompt: userPrompt, regions: payload.regions, size: payload.size, annotatedReference: useAnnotatedReference, mask: useMask });
+            const source = nodeReferenceImage(node);
+            if (!source) return;
+            const annotatedReference = { id: `${node.id}-regions`, name: "regions.jpg", type: "image/jpeg", dataUrl: payload.annotatedDataUrl };
+            const referenceImages = useAnnotatedReference ? [source, annotatedReference] : [source];
+            const mask = useMask ? { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl } : undefined;
+            const styleExecution = resolveImageEditStyle(node, prompt, generationConfig);
+            if (!styleExecution) return;
+            const { prompt: effectivePrompt, metadata: styleMetadata } = styleExecution;
+            const requestedCount = Math.max(1, Number(generationConfig.count) || 1);
+            const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, requestedCount, referenceImages);
+            setRegionEditNodeId(null);
+            const rootId = nanoid();
+            const childIds = requestedCount > 1 ? Array.from({ length: requestedCount }, () => nanoid()) : [];
+            const targetIds = requestedCount > 1 ? childIds : [rootId];
+            const imageSize = { width: node.width, height: node.height };
+            const preferredPosition = { x: node.position.x + node.width + 96, y: node.position.y };
+            const rootPosition = findAvailableGenerationGroupPosition(nodesRef.current, preferredPosition, imageGenerationGroupSize(imageSize, imageSize, childIds.length));
+            const rootNode: CanvasNodeData = {
+                id: rootId,
+                type: CanvasNodeType.Image,
+                title: userPrompt.slice(0, 32) || "区域编辑结果",
+                position: rootPosition,
+                width: node.width,
+                height: node.height,
+                metadata: {
+                    ...canvasGenerationPromptMetadata(userPrompt, effectivePrompt),
+                    status: NODE_STATUS_LOADING,
+                    isBatchRoot: requestedCount > 1,
+                    batchChildIds: requestedCount > 1 ? childIds : undefined,
+                    batchFailedCount: requestedCount > 1 ? 0 : undefined,
+                    imageBatchExpanded: requestedCount > 1 ? true : undefined,
+                    ...generationMetadata,
+                    ...styleMetadata,
+                },
+            };
+            const childNodes: CanvasNodeData[] = childIds.map((id, index) => ({
+                id,
+                type: CanvasNodeType.Image,
+                title: `${userPrompt.slice(0, 28) || "区域编辑结果"} · ${index + 1}`,
+                position: imageGenerationChildPosition(rootNode.position, rootNode.width, imageSize, index),
+                width: node.width,
+                height: node.height,
+                metadata: {
+                    ...canvasGenerationPromptMetadata(userPrompt, effectivePrompt),
+                    status: NODE_STATUS_LOADING,
+                    batchRootId: rootId,
+                    ...generationMetadata,
+                    ...styleMetadata,
+                },
             }));
-        } finally {
-            if (requestedCount > 1) finishGenerationRequest(rootId, controller);
-            setRunningNodeId(null);
-        }
-    }, [applyGenerationTaskResult, bindGenerationTask, effectiveConfig, finishGenerationRequest, isAiConfigReady, message, nodesRef, projectId, resolveImageEditStyle, setConnections, setDialogNodeId, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest]);
+            setRunningNodeId(rootId);
+            setNodes((current) => [...current, rootNode, ...childNodes]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: rootId }, ...childIds.map((childId) => ({ id: nanoid(), fromNodeId: rootId, toNodeId: childId }))]);
+            setSelectedNodeIds(new Set([rootId, ...childIds]));
+            setSelectedConnectionId(null);
+            setDialogNodeId(rootId);
+            const controller = startGenerationRequest(rootId, node.id, rootId);
+            targetIds.forEach((targetId) => startGenerationRequest(targetId, node.id, rootId, controller));
+            const taskIds = new Map<string, string>();
+            let representativeError: string | undefined;
+            try {
+                await Promise.all(
+                    targetIds.map(async (targetId) => {
+                        try {
+                            await runCanvasGenerationTaskToConsumer(
+                                {
+                                    projectId,
+                                    nodeId: targetId,
+                                    mode: "image",
+                                    prompt: effectivePrompt,
+                                    config: { ...generationConfig, count: "1" },
+                                    referenceImages,
+                                    mask,
+                                    signal: controller.signal,
+                                    metadata: { sourceNodeId: node.id, edit: "region", regionCount: payload.regions.length, annotationReference: useAnnotatedReference || undefined, ...styleMetadata },
+                                },
+                                {
+                                    bindTask: (task) => {
+                                        taskIds.set(targetId, task.id);
+                                        bindGenerationTask(targetId, task);
+                                    },
+                                    consumeTask: (task) => applyGenerationTaskResult(targetId, task),
+                                },
+                            );
+                        } catch (error) {
+                            if (controller.signal.aborted || isGenerationCanceled(error)) return;
+                            const details = generationErrorMessage(error);
+                            representativeError = details;
+                            if (!isCanvasGenerationDurableAckError(error)) {
+                                setNodes((current) => current.map((item) => (item.id === targetId && item.metadata?.taskId === taskIds.get(targetId) ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : item)));
+                            }
+                        } finally {
+                            finishGenerationRequest(targetId, controller);
+                        }
+                    }),
+                );
+                if (controller.signal.aborted) {
+                    setNodes((current) => {
+                        const cancelled = cancelIncompleteImageBatch(rootId, childIds, current, []);
+                        if (cancelled.removedIds.length) {
+                            const removed = new Set(cancelled.removedIds);
+                            setConnections((connections) => connections.filter((connection) => !removed.has(connection.fromNodeId) && !removed.has(connection.toNodeId)));
+                        }
+                        return cancelled.nodes.map((item) => {
+                            if (item.id !== rootId) return item;
+                            if (item.metadata?.content) return item;
+                            return { ...item, metadata: { ...item.metadata, status: NODE_STATUS_IDLE, errorDetails: undefined } };
+                        });
+                    });
+                    return;
+                }
+                const targets = nodesRef.current.filter((item) => targetIds.includes(item.id) && item.metadata?.taskId === taskIds.get(item.id) && (requestedCount === 1 || item.metadata?.batchRootId === rootId));
+                const hasSuccess = targets.some((item) => item.metadata?.status === NODE_STATUS_SUCCESS && item.metadata.assetId);
+                const failureCount = targets.filter((item) => item.metadata?.status === NODE_STATUS_ERROR).length;
+                if (failureCount > 0) {
+                    message.error(hasSuccess ? "部分区域编辑失败" : representativeError || "区域编辑失败");
+                } else if (representativeError && targets.length) {
+                    message.warning(representativeError);
+                }
+                setNodes((current) =>
+                    current.map((item) => {
+                        if (item.id !== rootId || requestedCount <= 1) return item;
+                        return reconcileImageBatchRoot(item, current);
+                    }),
+                );
+            } finally {
+                if (requestedCount > 1) finishGenerationRequest(rootId, controller);
+                setRunningNodeId(null);
+            }
+        },
+        [
+            applyGenerationTaskResult,
+            bindGenerationTask,
+            effectiveConfig,
+            finishGenerationRequest,
+            isAiConfigReady,
+            message,
+            nodesRef,
+            projectId,
+            resolveImageEditStyle,
+            setConnections,
+            setDialogNodeId,
+            setNodes,
+            setRunningNodeId,
+            setSelectedConnectionId,
+            setSelectedNodeIds,
+            startGenerationRequest,
+        ],
+    );
 
     const editImageNode = useCallback(
         async (node: CanvasNodeData, payload: CanvasImageEditPayload) => {
@@ -2214,58 +2256,80 @@ export function useCanvasMediaTools({
         ],
     );
 
-    const openVideoEnhance = useCallback((node: CanvasNodeData) => {
-        if (!node.metadata?.storageKey && !node.metadata?.content) {
-            message.warning("视频节点为空，无法画质增强");
-            return;
-        }
-        if (!listVideoEnhanceModels(effectiveConfig).length) {
-            message.warning("管理员尚未配置可用的画质增强模型");
-            return;
-        }
-        setHoveredNodeId(null);
-        setToolbarNodeId(null);
-        setEnhanceDialogNodeId(node.id);
-    }, [effectiveConfig, message, setHoveredNodeId, setToolbarNodeId]);
+    const openVideoEnhance = useCallback(
+        (node: CanvasNodeData) => {
+            if (!node.metadata?.storageKey && !node.metadata?.content) {
+                message.warning("视频节点为空，无法画质增强");
+                return;
+            }
+            if (!listVideoEnhanceModels(effectiveConfig).length) {
+                message.warning("管理员尚未配置可用的画质增强模型");
+                return;
+            }
+            setHoveredNodeId(null);
+            setToolbarNodeId(null);
+            setEnhanceDialogNodeId(node.id);
+        },
+        [effectiveConfig, message, setHoveredNodeId, setToolbarNodeId],
+    );
 
     // 画质增强：在源节点右侧创建 loading 视频节点并连线，后端任务完成后由统一结果回写填充。
-    const enhanceVideoNode = useCallback(async (node: CanvasNodeData, params: VideoEnhanceParams) => {
-        setEnhanceDialogNodeId(null);
-        const source = videoEnhanceSourceReference(node);
-        const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
-        const childId = nanoid();
-        const videoEnhance = { sourceNodeId: node.id, model: params.model, resolution: params.resolution, fps: params.fps, bitrateLevel: params.bitrateLevel, bitrate: params.bitrate };
-        setRunningNodeId(childId);
-        setNodes((current) => [...current, {
-            id: childId,
-            type: CanvasNodeType.Video,
-            title: `${node.title || "视频"} · 画质增强 ${params.resolution.toUpperCase()}`,
-            position: { x: node.position.x + node.width + 96, y: node.position.y },
-            width: spec.width,
-            height: spec.height,
-            metadata: { prompt: `画质增强（${params.resolution}）`, status: NODE_STATUS_LOADING, generationMode: "video", model: params.model, vquality: params.resolution, videoEditOperation: VIDEO_ENHANCE_OPERATION, videoEnhance, taskCreatedAt: new Date().toISOString() },
-        }]);
-        setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
-        setSelectedNodeIds(new Set([childId]));
-        setSelectedConnectionId(null);
-        const controller = startGenerationRequest(childId, node.id, childId);
-        let taskId: string | undefined;
-        try {
-            await runCanvasGenerationTaskToConsumer(
-                videoEnhanceTaskInput({ config: effectiveConfig, params, source, sourceNodeId: node.id, projectId, nodeId: childId, signal: controller.signal }),
-                { bindTask: (task) => { taskId = task.id; bindGenerationTask(childId, task); }, consumeTask: (task) => applyGenerationTaskResult(childId, task) },
-            );
-        } catch (error) {
-            if (!controller.signal.aborted && !isGenerationCanceled(error)) {
-                const details = generationErrorMessage(error);
-                message.error(details);
-                if (!isCanvasGenerationDurableAckError(error)) setNodes((current) => current.map((item) => item.id === childId && item.metadata?.taskId === taskId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : item));
+    const enhanceVideoNode = useCallback(
+        async (node: CanvasNodeData, params: VideoEnhanceParams) => {
+            setEnhanceDialogNodeId(null);
+            const source = videoEnhanceSourceReference(node);
+            const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+            const childId = nanoid();
+            const videoEnhance = { sourceNodeId: node.id, model: params.model, resolution: params.resolution, fps: params.fps, bitrateLevel: params.bitrateLevel, bitrate: params.bitrate };
+            setRunningNodeId(childId);
+            setNodes((current) => [
+                ...current,
+                {
+                    id: childId,
+                    type: CanvasNodeType.Video,
+                    title: `${node.title || "视频"} · 画质增强 ${params.resolution.toUpperCase()}`,
+                    position: { x: node.position.x + node.width + 96, y: node.position.y },
+                    width: spec.width,
+                    height: spec.height,
+                    metadata: {
+                        prompt: `画质增强（${params.resolution}）`,
+                        status: NODE_STATUS_LOADING,
+                        generationMode: "video",
+                        model: params.model,
+                        vquality: params.resolution,
+                        videoEditOperation: VIDEO_ENHANCE_OPERATION,
+                        videoEnhance,
+                        taskCreatedAt: new Date().toISOString(),
+                    },
+                },
+            ]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setSelectedConnectionId(null);
+            const controller = startGenerationRequest(childId, node.id, childId);
+            let taskId: string | undefined;
+            try {
+                await runCanvasGenerationTaskToConsumer(videoEnhanceTaskInput({ config: effectiveConfig, params, source, sourceNodeId: node.id, projectId, nodeId: childId, signal: controller.signal }), {
+                    bindTask: (task) => {
+                        taskId = task.id;
+                        bindGenerationTask(childId, task);
+                    },
+                    consumeTask: (task) => applyGenerationTaskResult(childId, task),
+                });
+            } catch (error) {
+                if (!controller.signal.aborted && !isGenerationCanceled(error)) {
+                    const details = generationErrorMessage(error);
+                    message.error(details);
+                    if (!isCanvasGenerationDurableAckError(error))
+                        setNodes((current) => current.map((item) => (item.id === childId && item.metadata?.taskId === taskId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: details } } : item)));
+                }
+            } finally {
+                finishGenerationRequest(childId, controller);
+                setRunningNodeId(null);
             }
-        } finally {
-            finishGenerationRequest(childId, controller);
-            setRunningNodeId(null);
-        }
-    }, [applyGenerationTaskResult, bindGenerationTask, effectiveConfig, finishGenerationRequest, message, projectId, setConnections, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest]);
+        },
+        [applyGenerationTaskResult, bindGenerationTask, effectiveConfig, finishGenerationRequest, message, projectId, setConnections, setNodes, setRunningNodeId, setSelectedConnectionId, setSelectedNodeIds, startGenerationRequest],
+    );
 
     return {
         enhanceDialogNodeId,

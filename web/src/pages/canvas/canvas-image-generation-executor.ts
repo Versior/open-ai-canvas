@@ -33,6 +33,7 @@ export async function executeImageGeneration(
         generationConfig,
         generationContext,
         controller,
+        expectedUserScope,
         projectId,
         setNodes,
         setConnections,
@@ -216,6 +217,7 @@ export async function executeImageGeneration(
                         config: { ...generationConfig, count: "1" },
                         referenceImages,
                         signal: controller.signal,
+                        expectedUserScope,
                         metadata: {
                             sourceNodeId: nodeId,
                             ...taskContext,

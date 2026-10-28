@@ -3,6 +3,7 @@ import { batchReferenceHandleAtY } from "./canvas-batch-table";
 import type { BatchScroll } from "./canvas-batch-references";
 import { getConnectionTargetAnchor, isHiddenBatchChild, storyboardHandleAtY } from "./canvas-project-domain";
 import { isFrameNode, isNodeHiddenByCollapsedFrame } from "./canvas-frame";
+import { buildCanvasSpatialIndex, canvasNodeBounds, type CanvasSpatialIndex } from "./canvas-spatial-index";
 
 export type CanvasConnectionDropTarget = {
     nodeId: string | null;
@@ -11,8 +12,43 @@ export type CanvasConnectionDropTarget = {
     isNearNode: boolean;
 };
 
+export type CanvasConnectionHitIndexCache = {
+    query: (nodes: CanvasNodeData[], point: Position, radius: number, bodyNodeId?: string | null) => CanvasNodeData[];
+};
+
+/** Keeps the spatial index on immutable node snapshots while resolving IDs to current node objects. */
+export function createCanvasConnectionHitIndexCache(): CanvasConnectionHitIndexCache {
+    let source: CanvasNodeData[] | null = null;
+    let index: CanvasSpatialIndex<string> = buildCanvasSpatialIndex([]);
+    let nodeById = new Map<string, CanvasNodeData>();
+    let requiresFullScan = false;
+
+    return {
+        query(nodes, point, radius, bodyNodeId) {
+            if (source !== nodes) {
+                source = nodes;
+                nodeById = new Map(nodes.map((node) => [node.id, node]));
+                requiresFullScan = nodes.some((node) => !isIndexableNode(node));
+                index = requiresFullScan ? buildCanvasSpatialIndex([]) : buildCanvasSpatialIndex(nodes.map((node) => ({ id: node.id, bounds: canvasNodeBounds(node), value: node.id })));
+            }
+            if (requiresFullScan || !Number.isFinite(point.x) || !Number.isFinite(point.y) || !Number.isFinite(radius) || radius < 0) return nodes;
+
+            // Spatial bounds use exclusive edges; a tiny expansion keeps anchors exactly at radius eligible for the circular check below.
+            const padding = radius + 0.01;
+            const candidateIds = index.query({ left: point.x - padding, top: point.y - padding, right: point.x + padding, bottom: point.y + padding });
+            if (bodyNodeId && nodeById.has(bodyNodeId) && !candidateIds.includes(bodyNodeId)) candidateIds.push(bodyNodeId);
+            return candidateIds.map((id) => nodeById.get(id)).filter((node): node is CanvasNodeData => Boolean(node));
+        },
+    };
+}
+
+function isIndexableNode(node: CanvasNodeData) {
+    return Boolean(node.id) && [node.position.x, node.position.y, node.width, node.height].every(Number.isFinite) && node.width > 0 && node.height > 0;
+}
+
 export function resolveCanvasConnectionTarget({
     nodes,
+    candidateNodes = nodes,
     current,
     point,
     radius,
@@ -22,6 +58,7 @@ export function resolveCanvasConnectionTarget({
     canConnect,
 }: {
     nodes: CanvasNodeData[];
+    candidateNodes?: CanvasNodeData[];
     current: ConnectionHandle;
     point: Position;
     radius: number;
@@ -30,7 +67,8 @@ export function resolveCanvasConnectionTarget({
     batchScrollById?: Record<string, BatchScroll>;
     canConnect: (node: CanvasNodeData) => boolean;
 }): CanvasConnectionDropTarget {
-    const candidates = nodes.filter((node) => !isHiddenBatchChild(node, nodes) && !isNodeHiddenByCollapsedFrame(node, nodes) && !isFrameNode(node));
+    const isEligible = (node: CanvasNodeData) => !isHiddenBatchChild(node, nodes) && !isNodeHiddenByCollapsedFrame(node, nodes) && !isFrameNode(node);
+    const candidates = candidateNodes.filter(isEligible);
     const handleFor = (node: CanvasNodeData) =>
         node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, point.y, scriptScrollTopById[node.id] || 0) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, point.y, radius) : undefined;
     const targetFor = (node: CanvasNodeData, handleId = handleFor(node)): CanvasConnectionDropTarget => {

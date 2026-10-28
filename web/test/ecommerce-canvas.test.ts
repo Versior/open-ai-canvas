@@ -1,9 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { connectedImageNodes, ecommerceProductReferenceSignature, effectiveProductViews, isEcommerceNode, mergeEcommercePrompt, productViewNodes, resolveEcommerceInputs, upstreamEcommerceNodes } from "@/lib/ecommerce/ecommerce-canvas";
+import {
+    connectedImageNodes,
+    ecommerceProductReferenceSignature,
+    ecommerceReferenceImageGuide,
+    effectiveProductViews,
+    isEcommerceNode,
+    mergeEcommercePrompt,
+    productViewNodes,
+    resolveEcommerceInputs,
+    upstreamEcommerceNodes,
+} from "@/lib/ecommerce/ecommerce-canvas";
+import { ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { createEcommerceCopy, createEcommerceProductProfile, createEcommerceSellingPoint, createEcommerceShot, createEcommerceShotSet, createEcommerceStyle } from "@/lib/ecommerce/ecommerce-contract";
 import { createEcommerceModel } from "@/lib/ecommerce/ecommerce-models";
+import { ecommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
+import { connectEcommerceTableOutputs } from "@/lib/ecommerce/ecommerce-table";
+import { ECOMMERCE_REPLICA_PRODUCT_HANDLE, ECOMMERCE_REPLICA_REFERENCE_HANDLE, createEcommerceReplica } from "@/lib/ecommerce/ecommerce-replica";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
@@ -31,10 +45,7 @@ describe("ecommerce canvas wiring", () => {
     const side = imageNode("img-side", "侧面图");
     const target = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, {}), id: "target-1" };
     const nodes = [product, shot, styleNode, pointNode, copyNode, front, side, target];
-    const connections = [
-        connect("product-1", "target-1"), connect("shot-1", "target-1"), connect("style-1", "target-1"),
-        connect("points-1", "target-1"), connect("copy-1", "target-1"),
-    ];
+    const connections = [connect("product-1", "target-1"), connect("shot-1", "target-1"), connect("style-1", "target-1"), connect("points-1", "target-1"), connect("copy-1", "target-1")];
 
     test("recognises exactly the five ecommerce constraint nodes", () => {
         for (const node of [product, shot, styleNode, pointNode, copyNode]) expect(isEcommerceNode(node)).toBe(true);
@@ -67,6 +78,23 @@ describe("ecommerce canvas wiring", () => {
         expect(mergeEcommercePrompt("", "只用自己的提示词")).toBe("只用自己的提示词");
     });
 
+    test("passes replica slot images downstream and labels their final positions after direct images", () => {
+        const replicaProduct = imageNode("replica-product", "自家商品");
+        const replicaReference = imageNode("replica-reference", "爆款参考");
+        const direct = imageNode("direct", "普通连线图");
+        const replica = { ...createCanvasNode(CanvasNodeType.Replica, { x: 0, y: 0 }, { ecommerceReplica: createEcommerceReplica() }), id: "replica-1" };
+        const graph = [replicaProduct, replicaReference, direct, replica, target];
+        const edges: CanvasConnection[] = [
+            { ...connect(replicaProduct.id, replica.id), toHandleId: ECOMMERCE_REPLICA_PRODUCT_HANDLE },
+            { ...connect(replicaReference.id, replica.id), toHandleId: ECOMMERCE_REPLICA_REFERENCE_HANDLE },
+            connect(replica.id, target.id),
+            connect(direct.id, target.id),
+        ];
+
+        const inputs = resolveEcommerceInputs(target.id, graph, edges);
+        expect(inputs.referenceImages.map((image) => image.id)).toEqual([replicaProduct.id, replicaReference.id]);
+        expect(ecommerceReferenceImageGuide([{ name: direct.title! }, ...inputs.referenceImages])).toContain(["第 2 张：商品图（主体）：自家商品", "第 3 张：参考图（结构）：爆款参考"].join("\n"));
+    });
     test("旧商品拍摄方案不再覆盖逐张确认的提示词", () => {
         const legacyProduct = { ...product, metadata: { ...product.metadata, ecommerceShotSet: shotSet } };
         const inputs = resolveEcommerceInputs("target-1", [legacyProduct, target], [connect("product-1", "target-1")]);
@@ -106,12 +134,7 @@ describe("ecommerce canvas wiring", () => {
 
     test("keeps walking through a longer constraint chain", () => {
         const chained = [product, pointNode, styleNode, shot, target];
-        const chain = [
-            connect("product-1", "points-1"),
-            connect("points-1", "style-1"),
-            connect("style-1", "shot-1"),
-            connect("shot-1", "target-1"),
-        ];
+        const chain = [connect("product-1", "points-1"), connect("points-1", "style-1"), connect("style-1", "shot-1"), connect("shot-1", "target-1")];
         const found = upstreamEcommerceNodes("target-1", chained, chain);
         expect([found.product?.id, found.sellingPoints?.id, found.style?.id, found.recipe?.id]).toEqual(["product-1", "points-1", "style-1", "shot-1"]);
     });
@@ -218,6 +241,46 @@ describe("输入框为空也能提交", () => {
     });
 
     test("判据由页面给，面板自己不遍历图", () => {
-        expect(project).toContain("ecommercePromptAvailable={canvasKind === \"ecommerce\" && Boolean(resolveEcommerceInputs(panelNode.id, nodesRef.current, connectionsRef.current).prompt)}");
+        expect(project).toContain('ecommercePromptAvailable={canvasKind === "ecommerce" && Boolean(resolveEcommerceInputs(panelNode.id, nodesRef.current, connectionsRef.current).prompt)}');
     });
+});
+
+test("复制的创作表只复用归属自己的套图产物", () => {
+    const product = { ...createCanvasNode(CanvasNodeType.Product, { x: 0, y: 0 }), id: "product" };
+    const suite = {
+        flow: "main",
+        source: "draft" as const,
+        updatedAt: "",
+        rows: [{ slotId: "main-1", title: "主图", duty: "展示商品", prompt: "生成主图" }],
+    };
+    const table = { ...createCanvasNode(CanvasNodeType.BatchTable, { x: 500, y: 0 }, { ecommerceProductId: product.id, ecommerceFlowId: "main", ecommerceSuite: suite }), id: "table-copy" };
+    const current = { ...imageNode("current-result", "副本产物"), metadata: { ecommerceProductId: product.id, ecommerceFlowId: "main", ecommerceShotId: "main-1", batchSourceNodeId: table.id } };
+    const original = { ...imageNode("original-result", "原表产物"), metadata: { ecommerceProductId: product.id, ecommerceFlowId: "main", ecommerceShotId: "main-1", batchSourceNodeId: "table-original" } };
+    const flow = ecommerceOneClickFlow("main")!;
+
+    const reuse = ecommerceSuiteTargets(product, flow, suite, { nodes: [product, table, current, original], connections: [] }, {}, () => "edge", undefined, table.id);
+    expect(reuse.reuse).toEqual([{ slotId: "main-1", nodeId: current.id, prompt: "生成主图" }]);
+
+    const withoutOwnedResult = ecommerceSuiteTargets(product, flow, suite, { nodes: [product, table, original], connections: [] }, {}, () => "edge", undefined, table.id);
+    expect(withoutOwnedResult.reuse).toEqual([]);
+    expect(withoutOwnedResult.spawned).toHaveLength(1);
+});
+
+test("创作表重复认领同一产物时不再追加 batch-output 边", () => {
+    const table = { ...createCanvasNode(CanvasNodeType.BatchTable, { x: 0, y: 0 }), id: "table" };
+    const output = imageNode("output", "主图");
+    const plan = {
+        rows: [{ slotId: "main-1", title: "主图", duty: "展示商品", prompt: "生成主图" }],
+        reuse: [{ slotId: "main-1", nodeId: output.id, prompt: "生成主图" }],
+        spawned: [],
+        connections: [],
+        reconnect: [],
+        nodeIds: [output.id],
+    };
+
+    const first = connectEcommerceTableOutputs(plan, table, [table, output]);
+    const second = connectEcommerceTableOutputs(plan, table, [table, output], first.connections);
+
+    expect(first.connections.filter((edge) => edge.relation === "batch-output")).toHaveLength(1);
+    expect(second.connections.filter((edge) => edge.relation === "batch-output")).toEqual([]);
 });

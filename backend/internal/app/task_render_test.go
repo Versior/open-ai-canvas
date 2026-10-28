@@ -65,6 +65,9 @@ func seedRunningRenderTask(t *testing.T, db *gorm.DB, inputJSON string) *model.T
 
 func TestCreateTimelineRenderTaskQueues(t *testing.T) {
 	svc, db := newTimelineTaskTestService(t)
+	if err := db.Create(&model.Project{ID: "prj-render", UserID: "usr-render-test", Name: "test", Status: model.ProjectStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	task, err := svc.CreateTimelineRenderTask("usr-render-test", TimelineRenderCreateRequest{
 		ProjectID: "prj-render",

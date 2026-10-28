@@ -226,8 +226,8 @@ const BUILTIN_NODE_TRAITS = {
     // 信息图输出的是合成好的成品图，所以 inputKind 记 image——它和排版节点一样，
     // 下游可以直接拿它当参考图或素材用。
     [CanvasNodeType.Infographic]: { label: "信息图", icon: <Table2 />, minSize: { width: 420, height: 520 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "image", resourceKind: () => null },
-    // 复刻需要两张图：参考图给结构（image 入边），产品图从商品节点走约束链。
-    [CanvasNodeType.Replica]: { label: "爆款复刻", icon: <Copy />, minSize: { width: 360, height: 440 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
+    // 复刻固定吃两张图：参考图给结构，商品图给主体，由 handle 明确区分。
+    [CanvasNodeType.Replica]: { label: "爆款复刻", icon: <Copy />, minSize: { width: 360, height: 440 }, showInCreateMenu: true, acceptsInputKind: "image", maxInputCount: 2, inputKind: "text", resourceKind: () => null },
     // 拆解吃竞品图，吐结构大纲；大纲往下游走文字约束。
     [CanvasNodeType.Teardown]: { label: "竞品拆解", icon: <Search />, minSize: { width: 420, height: 480 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
     // 交付是这条链的终点：汇总上游的图，不产出媒体，也不该再往下接生成节点。

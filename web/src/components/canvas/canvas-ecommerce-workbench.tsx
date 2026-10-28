@@ -9,6 +9,7 @@ import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
 import { DEFAULT_ECOMMERCE_BRIEF, ecommerceActionCapability, ECOMMERCE_CAPABILITIES, ECOMMERCE_IMAGE_TYPES, patchEcommerceWorkbenchBrief, type EcommerceCapability, type EcommerceWorkbenchBrief } from "@/lib/ecommerce/ecommerce-capabilities";
 import type { EcommerceWorkbenchAction, EcommerceWorkbenchRequest } from "@/lib/ecommerce/ecommerce-capabilities";
+import { ecommerceCopySourceIssues } from "@/lib/ecommerce/ecommerce-contract";
 import { CanvasNodeType, type CanvasNodeData, type CanvasConnection } from "@/types/canvas";
 import { EcommerceTemplateCatalogDetails } from "./ecommerce-template-catalog";
 import { EcommerceSavedTemplatePicker } from "./ecommerce-saved-template-picker";
@@ -69,7 +70,10 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
     };
     useEffect(() => {
         if (open) {
-            void useEcommercePatternLibrary.getState().hydrate().catch((error) => setError(error instanceof Error ? error.message : "花型库读取失败"));
+            void useEcommercePatternLibrary
+                .getState()
+                .hydrate()
+                .catch((error) => setError(error instanceof Error ? error.message : "花型库读取失败"));
             setCapability(initialCapability);
             const studio = nodes.find((node) => node.id === studioId);
             const saved = studio?.metadata?.ecommerceStudio;
@@ -89,6 +93,14 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
     const patch = (change: Partial<EcommerceWorkbenchBrief>) => setBrief((current) => patchEcommerceWorkbenchBrief(current, change));
     const run = async (action: EcommerceWorkbenchAction, generateAfterPlanning = false) => {
         setError("");
+        if (action === "listing" || action === "pipeline") {
+            const products = sources.map((id) => nodes.find((node) => node.id === id)).filter((node): node is CanvasNodeData => node?.type === CanvasNodeType.Product);
+            const issues = [...new Set((products.length ? products : [undefined]).flatMap((product) => ecommerceCopySourceIssues(product?.metadata?.productProfile)))];
+            if (issues.length) {
+                setError(`商品资料还缺：${issues.join("、")}。请回到商品节点补充后再生成 Listing。`);
+                return;
+            }
+        }
         try {
             await onRun({ studioId, action, brief, sourceIds: sources, textModel, imageModel, from, to, tolerance, widthCm, heightCm, layout, layerVisibility: visibility, printSpecId, patternId, generateAfterPlanning });
             message.success(generateAfterPlanning && !brief.reviewRequired ? "整组图片已生成，结果已连接到生图台" : "操作完成，结果与步骤记录已写入画布");
@@ -119,48 +131,48 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
                 ) : null}
                 <fieldset disabled={busy}>
                     <div className="ecommerce-workbench-source-group">
-                    <h3>输入素材</h3>
-                    <label>
-                        名称
-                        <Input aria-label="工作台项目名称" value={brief.name} maxLength={100} onChange={(event) => patch({ name: event.target.value })} placeholder="商品、花型或模特名称" />
-                    </label>
-                    <label>
-                        输入素材（按选择顺序使用）
-                        <Select
-                            aria-label="工作台输入素材"
-                            mode="multiple"
-                            value={sources}
-                            onChange={setSources}
-                            options={nodes
-                                .filter((node) => [CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Product].includes(node.type as CanvasNodeType))
-                                .map((node) => ({ value: node.id, label: (node.title || node.type) + " · " + node.id.slice(-6) }))}
-                        />
-                    </label>
-                    <div className="ecommerce-workbench-sources">
-                        {sources.map((id, index) => {
-                            const node = nodes.find((node) => node.id === id);
-                            return (
-                                <div key={id}>
-                                    <span>
-                                        {index + 1}. {node?.title || id}
-                                    </span>
-                                    <Button
-                                        size="small"
-                                        disabled={!index}
-                                        onClick={() =>
-                                            setSources((current) => {
-                                                const next = [...current];
-                                                [next[index - 1], next[index]] = [next[index], next[index - 1]];
-                                                return next;
-                                            })
-                                        }
-                                    >
-                                        上移
-                                    </Button>
-                                </div>
-                            );
-                        })}
-                    </div>
+                        <h3>输入素材</h3>
+                        <label>
+                            名称
+                            <Input aria-label="工作台项目名称" value={brief.name} maxLength={100} onChange={(event) => patch({ name: event.target.value })} placeholder="商品、花型或模特名称" />
+                        </label>
+                        <label>
+                            输入素材（按选择顺序使用）
+                            <Select
+                                aria-label="工作台输入素材"
+                                mode="multiple"
+                                value={sources}
+                                onChange={setSources}
+                                options={nodes
+                                    .filter((node) => [CanvasNodeType.Image, CanvasNodeType.Text, CanvasNodeType.Product].includes(node.type as CanvasNodeType))
+                                    .map((node) => ({ value: node.id, label: (node.title || node.type) + " · " + node.id.slice(-6) }))}
+                            />
+                        </label>
+                        <div className="ecommerce-workbench-sources">
+                            {sources.map((id, index) => {
+                                const node = nodes.find((node) => node.id === id);
+                                return (
+                                    <div key={id}>
+                                        <span>
+                                            {index + 1}. {node?.title || id}
+                                        </span>
+                                        <Button
+                                            size="small"
+                                            disabled={!index}
+                                            onClick={() =>
+                                                setSources((current) => {
+                                                    const next = [...current];
+                                                    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                                                    return next;
+                                                })
+                                            }
+                                        >
+                                            上移
+                                        </Button>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
                     <details open={["planning", "listing", "pipeline"].includes(capability)}>
                         <summary>商品与发布信息</summary>
@@ -187,18 +199,18 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
                     </label>
                     {!["print-pack", "layers"].includes(capability) ? (
                         <details>
-                        <summary>模型设置</summary>
-                        <div className="ecommerce-workbench-grid">
-                            <label>
-                                分析模型
-                                <ModelPicker config={config} capability="text" value={textModel || config.model} onChange={setTextModel} fullWidth />
-                            </label>
-                            <label>
-                                图片模型
-                                <ModelPicker config={config} capability="image" value={imageModel || config.imageModel || config.model} onChange={setImageModel} fullWidth />
-                            </label>
-                        </div>
-                        <EcommerceImageSettings config={config} model={imageModel || config.imageModel || config.model} brief={brief} disabled={busy} onChange={patch} />
+                            <summary>模型设置</summary>
+                            <div className="ecommerce-workbench-grid">
+                                <label>
+                                    分析模型
+                                    <ModelPicker config={config} capability="text" value={textModel || config.model} onChange={setTextModel} fullWidth />
+                                </label>
+                                <label>
+                                    图片模型
+                                    <ModelPicker config={config} capability="image" value={imageModel || config.imageModel || config.model} onChange={setImageModel} fullWidth />
+                                </label>
+                            </div>
+                            <EcommerceImageSettings config={config} model={imageModel || config.imageModel || config.model} brief={brief} disabled={busy} onChange={patch} />
                         </details>
                     ) : null}
                     {capability === "planning" ? <EcommerceSavedTemplatePicker disabled={busy} onApply={(template) => patch({ template, count: template.shots.length })} /> : null}
@@ -227,7 +239,11 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
                                 <p>每个已选图型至少一张，剩余张数按商品需求分配；新增图型超过总张数时会同步增加张数。</p>
                             </label>
                             <div className="ecommerce-workbench-actions">
-                                {studioId ? <Button className="ecommerce-command" disabled={busy || !setting.enabled || !ecommerceCapabilitySettings(setting).planning.enabled} onClick={() => void run("planning", true)}>规划并生成图片 · {brief.count} 张</Button> : null}
+                                {studioId ? (
+                                    <Button className="ecommerce-command" disabled={busy || !setting.enabled || !ecommerceCapabilitySettings(setting).planning.enabled} onClick={() => void run("planning", true)}>
+                                        规划并生成图片 · {brief.count} 张
+                                    </Button>
+                                ) : null}
                                 {command("AI 规划方案", "planning", true)}
                                 {command("采用方案创建生图台", "apply-plan")}
                                 {command("方案保存为模板", "save-template")}
@@ -263,8 +279,29 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
                     ) : null}
                     {capability === "pattern" ? (
                         <>
-                            <label>我的花型<Select aria-label="选择私人花型" value={patternId || undefined} placeholder="选择已保存花型" options={patterns.map((pattern) => ({ value: pattern.id, label: pattern.name }))} onChange={setPatternId} /></label>
-                            <div className="ecommerce-workbench-actions">{command("选中图片保存为花型", "save-pattern")}{command("已选花型添加到画布", "add-pattern")}<Button disabled={busy || !patternId} onClick={() => void useEcommercePatternLibrary.getState().remove(patternId).then(() => { setPatternId(""); message.success("已从本机花型库移除，图片文件保留"); }).catch((error) => setError(error instanceof Error ? error.message : "移除失败"))}>移除已选花型</Button></div>
+                            <label>
+                                我的花型
+                                <Select aria-label="选择私人花型" value={patternId || undefined} placeholder="选择已保存花型" options={patterns.map((pattern) => ({ value: pattern.id, label: pattern.name }))} onChange={setPatternId} />
+                            </label>
+                            <div className="ecommerce-workbench-actions">
+                                {command("选中图片保存为花型", "save-pattern")}
+                                {command("已选花型添加到画布", "add-pattern")}
+                                <Button
+                                    disabled={busy || !patternId}
+                                    onClick={() =>
+                                        void useEcommercePatternLibrary
+                                            .getState()
+                                            .remove(patternId)
+                                            .then(() => {
+                                                setPatternId("");
+                                                message.success("已从本机花型库移除，图片文件保留");
+                                            })
+                                            .catch((error) => setError(error instanceof Error ? error.message : "移除失败"))
+                                    }
+                                >
+                                    移除已选花型
+                                </Button>
+                            </div>
                             <div className="ecommerce-workbench-actions">
                                 {command("从商品图提取花型", "pattern-extract")}
                                 {command("花型起稿", "pattern-draft")}
@@ -291,16 +328,33 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
                     {capability === "listing" ? command("根据事实与图片生成 Listing", "listing", true) : null}
                     {["print-pack", "pipeline"].includes(capability) ? (
                         <>
-                            <label>印刷品类<Select aria-label="印刷品类" value={printSpecId} onChange={setPrintSpecId} options={[{ value: "", label: "自定义尺寸" }, ...ECOMMERCE_PRINT_SPECS.map((spec) => ({ value: spec.id, label: spec.label }))]} /></label>
+                            <label>
+                                印刷品类
+                                <Select aria-label="印刷品类" value={printSpecId} onChange={setPrintSpecId} options={[{ value: "", label: "自定义尺寸" }, ...ECOMMERCE_PRINT_SPECS.map((spec) => ({ value: spec.id, label: spec.label }))]} />
+                            </label>
                             {printSpecId ? <p>按品类输出固定 300DPI 规格与实物示意；示意图不是实拍。量产前以目标机型、尺码与工厂模板为准。</p> : null}
                             <div className="ecommerce-workbench-grid">
                                 <label>
                                     宽度 cm
-                                    <InputNumber disabled={Boolean(printSpecId)} aria-label="印刷宽度" min={0.1} max={138} value={printSpecId ? (ECOMMERCE_PRINT_SPECS.find((item) => item.id === printSpecId)?.width || 0) / 300 * 2.54 : widthCm} onChange={(value) => setWidthCm(value || 1)} />
+                                    <InputNumber
+                                        disabled={Boolean(printSpecId)}
+                                        aria-label="印刷宽度"
+                                        min={0.1}
+                                        max={138}
+                                        value={printSpecId ? ((ECOMMERCE_PRINT_SPECS.find((item) => item.id === printSpecId)?.width || 0) / 300) * 2.54 : widthCm}
+                                        onChange={(value) => setWidthCm(value || 1)}
+                                    />
                                 </label>
                                 <label>
                                     高度 cm
-                                    <InputNumber disabled={Boolean(printSpecId)} aria-label="印刷高度" min={0.1} max={138} value={printSpecId ? (ECOMMERCE_PRINT_SPECS.find((item) => item.id === printSpecId)?.height || 0) / 300 * 2.54 : heightCm} onChange={(value) => setHeightCm(value || 1)} />
+                                    <InputNumber
+                                        disabled={Boolean(printSpecId)}
+                                        aria-label="印刷高度"
+                                        min={0.1}
+                                        max={138}
+                                        value={printSpecId ? ((ECOMMERCE_PRINT_SPECS.find((item) => item.id === printSpecId)?.height || 0) / 300) * 2.54 : heightCm}
+                                        onChange={(value) => setHeightCm(value || 1)}
+                                    />
                                 </label>
                                 <label>
                                     版式
@@ -383,9 +437,60 @@ export function CanvasEcommerceWorkbench({ studioId, initialCapability = "planni
                                 >
                                     复用配置
                                 </Button>
-                                {work.request && work.steps.some((step) => step.taskId) ? <Button size="small" disabled={busy} onClick={() => void onRun({ ...structuredClone(work.request!), resumeReceiptId: node.id, retryFailed: false }).then(() => message.success("已有任务与后续步骤已完成")).catch((error) => setError(error instanceof Error ? error.message : "恢复失败"))}>恢复原任务</Button> : null}
-                                {work.request && work.inputSignature && work.steps.some((step) => step.taskId) && work.steps.some((step) => step.status === "failed") ? <Button size="small" disabled={busy} onClick={() => void onRun({ ...structuredClone(work.request!), resumeReceiptId: node.id, retryFailed: true }).then(() => message.success("失败步骤已重试，后续步骤已完成")).catch((error) => setError(error instanceof Error ? error.message : "重试失败"))}>重试失败步骤并继续</Button> : null}
-                                {work.request?.action === "pipeline" ? <div className="ecommerce-workbench-actions">{(["seams", "print-pack", "listing"] as const).map((step, index) => <Button key={step} size="small" disabled={busy || work.steps.some((item) => item.status === "running")} onClick={() => modal.confirm({ title: "从" + ["验缝", "规格包", "Listing"][index] + "重新执行？", content: "本步骤及其下游记录将失效，已有结果图片保留。Listing 会提交新的模型任务并可能计费。", okText: "重新执行", cancelText: "取消", onOk: () => onRun({ ...structuredClone(work.request!), resumeReceiptId: node.id, rerunFrom: step }).then(() => message.success("步骤与下游已重新执行")).catch((error) => { setError(error instanceof Error ? error.message : "重跑失败"); throw error; }) })}>从{["验缝", "规格包", "Listing"][index]}重跑</Button>)}</div> : null}
+                                {work.request && work.steps.some((step) => step.taskId) ? (
+                                    <Button
+                                        size="small"
+                                        disabled={busy}
+                                        onClick={() =>
+                                            void onRun({ ...structuredClone(work.request!), resumeReceiptId: node.id, retryFailed: false })
+                                                .then(() => message.success("已有任务与后续步骤已完成"))
+                                                .catch((error) => setError(error instanceof Error ? error.message : "恢复失败"))
+                                        }
+                                    >
+                                        恢复原任务
+                                    </Button>
+                                ) : null}
+                                {work.request && work.inputSignature && work.steps.some((step) => step.taskId) && work.steps.some((step) => step.status === "failed") ? (
+                                    <Button
+                                        size="small"
+                                        disabled={busy}
+                                        onClick={() =>
+                                            void onRun({ ...structuredClone(work.request!), resumeReceiptId: node.id, retryFailed: true })
+                                                .then(() => message.success("失败步骤已重试，后续步骤已完成"))
+                                                .catch((error) => setError(error instanceof Error ? error.message : "重试失败"))
+                                        }
+                                    >
+                                        重试失败步骤并继续
+                                    </Button>
+                                ) : null}
+                                {work.request?.action === "pipeline" ? (
+                                    <div className="ecommerce-workbench-actions">
+                                        {(["seams", "print-pack", "listing"] as const).map((step, index) => (
+                                            <Button
+                                                key={step}
+                                                size="small"
+                                                disabled={busy || work.steps.some((item) => item.status === "running")}
+                                                onClick={() =>
+                                                    modal.confirm({
+                                                        title: "从" + ["验缝", "规格包", "Listing"][index] + "重新执行？",
+                                                        content: "本步骤及其下游记录将失效，已有结果图片保留。Listing 会提交新的模型任务并可能计费。",
+                                                        okText: "重新执行",
+                                                        cancelText: "取消",
+                                                        onOk: () =>
+                                                            onRun({ ...structuredClone(work.request!), resumeReceiptId: node.id, rerunFrom: step })
+                                                                .then(() => message.success("步骤与下游已重新执行"))
+                                                                .catch((error) => {
+                                                                    setError(error instanceof Error ? error.message : "重跑失败");
+                                                                    throw error;
+                                                                }),
+                                                    })
+                                                }
+                                            >
+                                                从{["验缝", "规格包", "Listing"][index]}重跑
+                                            </Button>
+                                        ))}
+                                    </div>
+                                ) : null}
                             </article>
                         );
                     })}

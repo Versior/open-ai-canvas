@@ -24,10 +24,12 @@ test("项目按画布和项目解析模式，并提供可逆的顶栏切换", ()
 
     expect(project).toContain("defaultCanvasWorkspaceMode(canvasKind)");
     expect(project).toContain("workspaceModeOverride?.projectId === projectId");
+    expect(project).toContain("readCanvasWorkspaceModePreference(projectId)");
+    expect(project).toContain("persistCanvasWorkspaceModePreference(projectId, mode)");
     expect(topBar).toContain("workspaceMode={workspaceMode}");
     expect(topBar).toContain("onWorkspaceModeChange={changeWorkspaceMode}");
-    expect(project).toContain('openEcommerceStudio: canvasKind === "ecommerce" && workspaceMode === "professional"');
-    expect(project).toContain('openEcommerceWorkbench: canvasKind === "ecommerce" && workspaceMode === "professional"');
+    expect(project).toMatch(/openEcommerceStudio:\s*canvasKind === "ecommerce" && workspaceMode === "professional"/);
+    expect(project).toMatch(/openEcommerceWorkbench:\s*canvasKind === "ecommerce" && workspaceMode === "professional"/);
     expect(project).toMatch(/canvasKind === "ecommerce" && workspaceMode === "professional" \?\s*\(\s*<CanvasEcommerceWorkbench/);
     expect(project).toMatch(/useLayoutEffect\(\(\) => \{\s*setEcommerceWorkbenchOpen\(false\);\s*setEcommerceWorkbenchStudioId\(undefined\);\s*\}, \[projectId\]\);/);
 });
@@ -140,5 +142,43 @@ test("真实顶栏展示当前电商模式并切换到另一模式", async () =>
     } finally {
         await act(async () => root.unmount());
         host.remove();
+    }
+});
+
+test("ecommerce workspace mode persists per project, validates values, and is SSR safe", async () => {
+    const project = source("pages/canvas/project.tsx");
+    const helperStart = project.indexOf("const ECOMMERCE_WORKSPACE_MODE_STORAGE_PREFIX");
+    const helperEnd = project.indexOf("\nfunction visibleGenerationBatch", helperStart);
+
+    expect(helperStart).toBeGreaterThanOrEqual(0);
+    expect(helperEnd).toBeGreaterThan(helperStart);
+    if (helperStart < 0 || helperEnd <= helperStart) return;
+
+    const fragment = `${project.slice(helperStart, helperEnd)}\nexport { readCanvasWorkspaceModePreference, persistCanvasWorkspaceModePreference };`;
+    const javascript = new Bun.Transpiler({ loader: "tsx" }).transformSync(fragment);
+    const helpers = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`) as {
+        readCanvasWorkspaceModePreference: (projectId: string) => CanvasWorkspaceMode | null;
+        persistCanvasWorkspaceModePreference: (projectId: string, mode: CanvasWorkspaceMode) => void;
+    };
+
+    localStorage.clear();
+    expect(helpers.readCanvasWorkspaceModePreference("product-a")).toBeNull();
+    helpers.persistCanvasWorkspaceModePreference("product-a", "professional");
+    expect(localStorage.getItem("yingce:canvas-workspace-mode:product-a")).toBe("professional");
+    expect(helpers.readCanvasWorkspaceModePreference("product-a")).toBe("professional");
+    expect(helpers.readCanvasWorkspaceModePreference("product-b")).toBeNull();
+    helpers.persistCanvasWorkspaceModePreference("product-b", "simple");
+    expect(helpers.readCanvasWorkspaceModePreference("product-b")).toBe("simple");
+
+    localStorage.setItem("yingce:canvas-workspace-mode:product-a", "invalid");
+    expect(helpers.readCanvasWorkspaceModePreference("product-a")).toBeNull();
+
+    const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Reflect.deleteProperty(globalThis, "window");
+    try {
+        expect(helpers.readCanvasWorkspaceModePreference("product-a")).toBeNull();
+        expect(() => helpers.persistCanvasWorkspaceModePreference("product-a", "simple")).not.toThrow();
+    } finally {
+        if (windowDescriptor) Object.defineProperty(globalThis, "window", windowDescriptor);
     }
 });

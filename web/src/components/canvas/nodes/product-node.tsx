@@ -5,7 +5,7 @@ import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-con
 import { useNodeConnections, useNodeInputs } from "@/components/canvas/canvas-node-graph-context";
 import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
-import { createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS, type EcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
+import { createEcommerceProductProfile, ecommerceCopySourceIssues, ECOMMERCE_PRODUCT_VIEWS, type EcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
 import { connectedStyleReferenceNodes, ecommerceProductReferenceSignature, effectiveProductViews } from "@/lib/ecommerce/ecommerce-canvas";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
 import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
@@ -20,7 +20,7 @@ import "./canvas-ecommerce-node-card.css";
 
 type ProductProfileDraftField = "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts" | "price";
 type ProductProfileDraftResult = Partial<Pick<EcommerceProductProfile, Exclude<ProductProfileDraftField, "price">>> & { unsure?: string };
-type ProductProfileDraft = Pick<EcommerceProductProfile, ProductProfileDraftField> & { unsure?: string; evidenceSignature: string };
+type ProductProfileDraft = Pick<EcommerceProductProfile, ProductProfileDraftField> & { unsure?: string; issues?: string[]; evidenceSignature: string };
 
 export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     const actions = useCanvasNodeActions();
@@ -59,9 +59,30 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
         .map((value) => value.trim())
         .filter(Boolean)
         .join(" · ");
+    const editProductProfile = (issues?: string[]) => {
+        const currentProfile = profileRef.current;
+        setProfileDraft({
+            category: currentProfile.category,
+            appearance: currentProfile.appearance,
+            marks: currentProfile.marks,
+            forbidden: currentProfile.forbidden,
+            audience: currentProfile.audience,
+            facts: currentProfile.facts,
+            price: currentProfile.price,
+            issues,
+            evidenceSignature: evidenceSignatureRef.current,
+        });
+    };
     const openSuite = (flow: (typeof ECOMMERCE_ONE_CLICK_FLOWS)[number]["id"]) => {
         if (!setting.enabled || !setting.flows[flow].enabled) {
             message.warning("管理员已停用此创作用途");
+            return;
+        }
+        const issues = ["main", "detail", "seed"].includes(flow) ? ecommerceCopySourceIssues(profile) : [];
+        if (["main", "detail", "seed", "wear"].includes(flow) && !productImages.length) issues.push("商品视觉证据");
+        if (issues.length) {
+            editProductProfile(issues);
+            message.warning(`请先补充商品资料：${issues.join("、")}`);
             return;
         }
         actions.openEcommerceTable?.(node, flow);
@@ -79,13 +100,14 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
                 return;
             }
             const currentProfile = profileRef.current;
+            const recognized = (value: string | undefined, current: string) => (value?.trim() ? value : current);
             setProfileDraft({
-                category: draft.category ?? "",
-                appearance: draft.appearance ?? "",
-                marks: draft.marks ?? "",
-                forbidden: draft.forbidden ?? "",
-                audience: draft.audience ?? "",
-                facts: draft.facts ?? "",
+                category: recognized(draft.category, currentProfile.category),
+                appearance: recognized(draft.appearance, currentProfile.appearance),
+                marks: recognized(draft.marks, currentProfile.marks),
+                forbidden: recognized(draft.forbidden, currentProfile.forbidden),
+                audience: recognized(draft.audience, currentProfile.audience),
+                facts: recognized(draft.facts, currentProfile.facts),
                 price: currentProfile.price,
                 unsure: draft.unsure ?? "",
                 evidenceSignature: requestedEvidence,
@@ -118,19 +140,7 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
         });
         setProfileDraft(undefined);
     };
-    const editProductProfile = () => {
-        const currentProfile = profileRef.current;
-        setProfileDraft({
-            category: currentProfile.category,
-            appearance: currentProfile.appearance,
-            marks: currentProfile.marks,
-            forbidden: currentProfile.forbidden,
-            audience: currentProfile.audience,
-            facts: currentProfile.facts,
-            price: currentProfile.price,
-            evidenceSignature: evidenceSignatureRef.current,
-        });
-    };
+
     const updateProfileDraft = (key: ProductProfileDraftField, value: string) => setProfileDraft((current) => (current ? { ...current, [key]: value } : current));
     const addInput = (handle: string) => actions.addEcommerceInput?.(node, handle);
     const referenceEdges = connections.filter((edge) => edge.toNodeId === node.id && referenceIds.has(edge.fromNodeId));
@@ -282,13 +292,19 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
                         </small>
                     </button>
                     {node.metadata?.productProfile && editable ? (
-                        <button type="button" className="ecom-action" aria-label="编辑商品信息" disabled={identifying} onClick={editProductProfile}>
+                        <button type="button" className="ecom-action" aria-label="编辑商品信息" disabled={identifying} onClick={() => editProductProfile()}>
                             编辑商品信息
                         </button>
                     ) : null}
                     {profileDraft ? (
                         <section className="ecom-product-draft" aria-label="本次识别草稿，请核对后应用">
-                            <p className="ecom-product-draft-note">{profileDraft.unsure ? "模型推测：" + profileDraft.unsure + "。未识别字段留空；价格沿用已有手填值。" : "仅显示本次识别结果；未识别字段留空，价格沿用已有手填值。"}</p>
+                            <p className="ecom-product-draft-note">
+                                {profileDraft.issues?.length
+                                    ? `当前用途还缺：${profileDraft.issues.join("、")}。请补充后确认应用。`
+                                    : profileDraft.unsure
+                                      ? "模型推测：" + profileDraft.unsure + "。未识别字段沿用已有值；价格沿用已有手填值。"
+                                      : "未识别字段沿用已有值；价格沿用已有手填值。请核对后应用。"}
+                            </p>
                             <div className="ecom-product-draft-grid">
                                 <label className="ecom-field">
                                     <span className="ecom-field-label">品类</span>

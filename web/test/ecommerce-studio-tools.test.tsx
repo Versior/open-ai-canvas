@@ -51,7 +51,10 @@ test("studio tools open all eight matching workbench tabs and locked controls ca
     let node: CanvasNodeData = { id: "studio", type: CanvasNodeType.EcommerceStudio, title: "Studio", position: { x: 0, y: 0 }, metadata: { ecommerceStudio: { brief: { ...structuredClone(DEFAULT_ECOMMERCE_BRIEF), name: "Product" } } } };
     const product: CanvasNodeData = { id: "product", type: CanvasNodeType.Product, position: { x: 0, y: 0 }, metadata: { productProfile: createEcommerceProductProfile("Product") } };
     const photo: CanvasNodeData = { id: "photo", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, metadata: { storageKey: "test-photo", status: "success" } };
-    const edges = [{ id: "photo-product", fromNodeId: photo.id, toNodeId: product.id, toHandleId: "product-view:front" }, { id: "product-studio", fromNodeId: product.id, toNodeId: node.id }];
+    const edges = [
+        { id: "photo-product", fromNodeId: photo.id, toNodeId: product.id, toHandleId: "product-view:front" },
+        { id: "product-studio", fromNodeId: product.id, toNodeId: node.id },
+    ];
     let outputs: CanvasNodeData[] = [];
     const focused: string[] = [];
     let nodeTree: ReactNode, panelTree: ReactNode;
@@ -73,7 +76,10 @@ test("studio tools open all eight matching workbench tabs and locked controls ca
             connections: edges,
             selectedIds: new Set(),
             busy: false,
-            onRun: async (request) => { requests.push(request); return node.id; },
+            onRun: async (request) => {
+                requests.push(request);
+                return node.id;
+            },
             onStop() {},
             onLayers() {},
             onFocus() {},
@@ -94,8 +100,13 @@ test("studio tools open all eight matching workbench tabs and locked controls ca
                         node = { ...node, metadata: { ...node.metadata, ...metadata } };
                         refresh();
                     },
-                    runEcommerceWorkbench: async (request) => { requests.push(request); return node.id; },
-                    focusNode: (id) => { focused.push(id); },
+                    runEcommerceWorkbench: async (request) => {
+                        requests.push(request);
+                        return node.id;
+                    },
+                    focusNode: (id) => {
+                        focused.push(id);
+                    },
                     openEcommerceWorkbench: (source, next = "planning") => {
                         expect(source.id).toBe("studio");
                         opened.push(next);
@@ -139,6 +150,24 @@ test("studio tools open all eight matching workbench tabs and locked controls ca
         }
         expect(opened).toEqual(ECOMMERCE_CAPABILITIES.map((item) => item.id));
         await act(async () => {
+            tool("Listing 文案")!.props.onClick!();
+        });
+        const requestsBeforeListing = requests.length;
+        await act(async () => {
+            find(panelTree, (element) => element.props.children === "根据事实与图片生成 Listing")!.props.onClick!();
+            await Promise.resolve();
+        });
+        expect(requests).toHaveLength(requestsBeforeListing);
+        expect(find(panelTree, (element) => element.props.children === "商品资料还缺：品类、卖点与依据、目标人群与场景。请回到商品节点补充后再生成 Listing。")).toBeDefined();
+        product.metadata!.productProfile = { ...createEcommerceProductProfile("Product"), category: "保温杯", audience: "通勤人群", facts: "容量 500ml：包装规格可核实" };
+        await act(async () => refresh());
+        await act(async () => {
+            find(panelTree, (element) => element.props.children === "根据事实与图片生成 Listing")!.props.onClick!();
+            await Promise.resolve();
+        });
+        expect(requests.at(-1)?.action).toBe("listing");
+        requests.length = 0;
+        await act(async () => {
             find(nodeTree, (element) => element.type === "button" && element.props.children === "商品信息")!.props.onClick!();
         });
         const nameInput = () => find(nodeTree, (element) => element.props.value === node.metadata!.ecommerceStudio!.brief.name && Boolean(element.props.onChange));
@@ -148,22 +177,45 @@ test("studio tools open all eight matching workbench tabs and locked controls ca
         expect(writes).toBe(1);
         const generate = find(nodeTree, (element) => Array.isArray(element.props.children) && element.props.children[0] === "规划并生成图片 · ");
         expect(generate?.props.disabled).toBe(false);
-        await act(async () => { generate!.props.onClick!(); });
+        await act(async () => {
+            generate!.props.onClick!();
+        });
         expect(requests[0]?.action).toBe("planning");
         expect(requests[0]?.generateAfterPlanning).toBe(true);
         expect(requests[0]?.sourceIds).toEqual(["product"]);
-        node = { ...node, metadata: { ...node.metadata, ecommerceWorkbench: { capability: "planning", brief: node.metadata!.ecommerceStudio!.brief, sourceIds: ["product"], inputSignature: "current-input", request: requests[0], steps: [{ id: "planning", status: "failed", taskId: "old-task", error: "bad json" }] } } };
-        await act(async () => { refresh(); });
+        node = {
+            ...node,
+            metadata: {
+                ...node.metadata,
+                ecommerceWorkbench: {
+                    capability: "planning",
+                    brief: node.metadata!.ecommerceStudio!.brief,
+                    sourceIds: ["product"],
+                    inputSignature: "current-input",
+                    request: requests[0],
+                    steps: [{ id: "planning", status: "failed", taskId: "old-task", error: "bad json" }],
+                },
+            },
+        };
+        await act(async () => {
+            refresh();
+        });
         const resume = find(nodeTree, (element) => element.props.children === "恢复已有任务与后续步骤");
         expect(resume).toBeDefined();
-        await act(async () => { resume!.props.onClick!(); });
+        await act(async () => {
+            resume!.props.onClick!();
+        });
         expect(requests[1]).toEqual({ ...requests[0], resumeReceiptId: node.id, retryFailed: false });
         const retry = find(nodeTree, (element) => element.props.children === "重试失败步骤并继续");
-        await act(async () => { retry!.props.onClick!(); });
+        await act(async () => {
+            retry!.props.onClick!();
+        });
         expect(requests[2]).toEqual({ ...requests[0], resumeReceiptId: node.id, retryFailed: true });
         const imageTypes = ECOMMERCE_IMAGE_TYPES.slice(0, 7).map(([, label]) => label);
         const typePicker = find(nodeTree, (element) => element.type === Checkbox.Group && Array.isArray(element.props.value) && element.props.value.includes("商品主图"));
-        await act(async () => { (typePicker!.props.onChange as unknown as (values: string[]) => void)(imageTypes); });
+        await act(async () => {
+            (typePicker!.props.onChange as unknown as (values: string[]) => void)(imageTypes);
+        });
         expect(node.metadata!.ecommerceStudio!.brief.count).toBe(7);
         expect(find(nodeTree, (element) => element.type === InputNumber && element.props.value === 7)).toBeDefined();
         await act(async () => {
@@ -176,30 +228,51 @@ test("studio tools open all eight matching workbench tabs and locked controls ca
         expect(find(nodeTree, (element) => element.props.id === "studio-studio-results")?.props.hidden).toBe(false);
         expect(find(nodeTree, (element) => element.props.id === "studio-studio-plan")?.props.hidden).toBe(true);
         expect(find(nodeTree, (element) => element.props.children === "导出采用结果与清单")?.props.disabled).toBe(true);
-        await act(async () => { tool(ECOMMERCE_CAPABILITIES[0].name)!.props.onClick!(); });
+        await act(async () => {
+            tool(ECOMMERCE_CAPABILITIES[0].name)!.props.onClick!();
+        });
         const panelTypePicker = find(panelTree, (element) => element.type === Checkbox.Group && Array.isArray(element.props.value) && element.props.value.includes("商品主图"));
-        await act(async () => { (panelTypePicker!.props.onChange as unknown as (values: string[]) => void)(ECOMMERCE_IMAGE_TYPES.slice(0, 8).map(([, label]) => label)); });
+        await act(async () => {
+            (panelTypePicker!.props.onChange as unknown as (values: string[]) => void)(ECOMMERCE_IMAGE_TYPES.slice(0, 8).map(([, label]) => label));
+        });
         expect(find(panelTree, (element) => element.type === InputNumber && element.props.value === 8)).toBeDefined();
         const panelGenerate = find(panelTree, (element) => Array.isArray(element.props.children) && element.props.children[0] === "规划并生成图片 · " && element.props.children[1] === 8);
-        await act(async () => { panelGenerate!.props.onClick!(); });
+        await act(async () => {
+            panelGenerate!.props.onClick!();
+        });
         expect(requests.at(-1)?.brief.count).toBe(8);
         expect(requests.at(-1)?.brief.imageTypes.length).toBe(8);
         const plan = { name: "Product", style: "Studio", shots: [{ title: "主图", duty: "展示外观", prompt: "White background" }] };
         node = { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...node.metadata!.ecommerceStudio!, plan } } };
-        outputs = ["old", "latest"].map((id) => ({ id, type: CanvasNodeType.Image, position: { x: 0, y: 0 }, metadata: { status: "success", storageKey: id + "-image", ecommerceStudioOutput: { studioId: node.id, shotIndex: 0, signature: ecommerceStudioShotSignature(plan, 0, node.metadata!.ecommerceStudio!.brief) } } }));
-        await act(async () => { refresh(); });
+        outputs = ["old", "latest"].map((id) => ({
+            id,
+            type: CanvasNodeType.Image,
+            position: { x: 0, y: 0 },
+            metadata: { status: "success", storageKey: id + "-image", ecommerceStudioOutput: { studioId: node.id, shotIndex: 0, signature: ecommerceStudioShotSignature(plan, 0, node.metadata!.ecommerceStudio!.brief) } },
+        }));
+        await act(async () => {
+            refresh();
+        });
         expect(find(nodeTree, (element) => element.type === CachedResourceImage && (element.props as { storageKey?: string }).storageKey === "latest-image")).toBeDefined();
         const preview = () => find(nodeTree, (element) => (element.props as { "aria-label"?: string })["aria-label"] === "定位第 1 张结果");
-        await act(async () => { preview()!.props.onClick!(); });
+        await act(async () => {
+            preview()!.props.onClick!();
+        });
         expect(focused).toEqual(["latest"]);
         const adoption = find(nodeTree, (element) => (element.props as { "aria-label"?: string })["aria-label"] === "第 1 张采用结果");
-        await act(async () => { (adoption!.props.onChange as unknown as (id: string) => void)("old"); });
-        await act(async () => { preview()!.props.onClick!(); });
+        await act(async () => {
+            (adoption!.props.onChange as unknown as (id: string) => void)("old");
+        });
+        await act(async () => {
+            preview()!.props.onClick!();
+        });
         expect(focused.at(-1)).toBe("old");
         expect(node.metadata!.ecommerceStudio!.adoptedResults?.["0"]).toBe("old");
         expect(find(nodeTree, (element) => element.props.children === "导出采用结果与清单")?.props.disabled).toBe(false);
         node = { ...node, metadata: { ...node.metadata, ecommerceStudio: { ...node.metadata!.ecommerceStudio!, adoptedResults: { "0": "missing" } } } };
-        await act(async () => { refresh(); });
+        await act(async () => {
+            refresh();
+        });
         expect(preview()?.props.disabled).toBe(true);
         expect(find(nodeTree, (element) => element.props.children === "采用版本已失效")).toBeDefined();
         expect(find(nodeTree, (element) => element.props.children === "导出采用结果与清单")?.props.disabled).toBe(true);

@@ -443,3 +443,229 @@ func TestMediaRecoveryAudioKeepsAllReturnedResults(t *testing.T) {
 		t.Fatal("legacy singular audio result missing")
 	}
 }
+
+func TestMediaRecoveryPersistsUserAssetWithoutUnavailableProjectLinks(t *testing.T) {
+	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
+	for _, projectState := range []string{"deleted", "archived", "ambiguous"} {
+		t.Run(projectState, func(t *testing.T) {
+			s, db := newMediaRecoveryTestService(t)
+			if err := os.WriteFile(filepath.Join(s.dataDir, ".settings-key"), bytes.Repeat([]byte{1}, 32), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			picture := mediaTestPNG(t)
+			requests := make([]string, 0, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests = append(requests, r.Method+" "+r.URL.Path)
+				if r.Method != http.MethodGet || r.URL.Path != "/result" {
+					w.WriteHeader(http.StatusMethodNotAllowed)
+					return
+				}
+				w.Header().Set("Content-Type", "image/png")
+				_, _ = w.Write(picture)
+			}))
+			defer server.Close()
+
+			project := model.Project{ID: "media-project-" + projectState, UserID: "media-user", Name: projectState, Status: model.ProjectStatusActive}
+			if err := db.Create(&project).Error; err != nil {
+				t.Fatal(err)
+			}
+			input, err := json.Marshal(map[string]any{
+				"mode": "image", "prompt": "test",
+				"config":          map[string]any{"baseUrl": server.URL},
+				"workflowStepId":  "step-removed-with-project",
+				"domainProjectId": project.ID,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			expires := time.Now().Add(time.Hour)
+			task := model.Task{
+				ID: newID(), UserID: project.UserID, ProjectID: project.ID,
+				Type: "canvas_image", Status: model.TaskStatusRunning, InputJSON: string(input),
+				BillingOrderID: "media-order-" + projectState,
+				LeaseOwner:     "worker-a", LeaseExpiresAt: &expires, Attempts: 1, RouteRun: 1, CreatedAt: time.Now(),
+			}
+			if err := db.Create(&model.CreditAccount{UserID: task.UserID, AvailableMicrocredits: 1000}).Error; err != nil {
+				t.Fatal(err)
+			}
+			order := &model.BillingOrder{
+				ID: task.BillingOrderID, UserID: task.UserID, TaskID: task.ID,
+				IdempotencyKey: task.ID, Status: model.BillingStatusReserved, AmountMicrocredits: 100,
+			}
+			if err := s.repo.CreateTaskWithCreditReservation(&task, order, 10); err != nil {
+				t.Fatal(err)
+			}
+			checkpoint := &mediaCheckpoint{
+				Mode: "image", StartedAt: time.Now(),
+				Items: []mediaCheckpointItem{{Reference: protocol.MediaReference{URL: server.URL + "/result", MIMEType: "image/png"}}},
+			}
+			if err := s.saveMediaCheckpoint(&task, checkpoint, "download"); err != nil {
+				t.Fatal(err)
+			}
+			switch projectState {
+			case "deleted":
+				err = db.Delete(&model.Project{}, "id = ?", project.ID).Error
+			case "archived":
+				err = db.Model(&model.Project{}).Where("id = ?", project.ID).Update("status", model.ProjectStatusArchived).Error
+			case "ambiguous":
+				err = db.Create(&model.CanvasProject{ID: project.ID, UserID: project.UserID, ProjectID: project.ID, Title: "ambiguous", PayloadJSON: `{}`}).Error
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.taskWorker().processClaimedTask(&task, nil); err != nil {
+				t.Fatal(err)
+			}
+			if len(requests) != 1 || requests[0] != http.MethodGet+" /result" {
+				t.Fatalf("upstream requests = %v, want one result GET", requests)
+			}
+			stored, err := s.repo.Task(task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.Status != model.TaskStatusSucceeded || stored.MediaStage != "completed" {
+				t.Fatalf("task status=%q mediaStage=%q, want succeeded/completed", stored.Status, stored.MediaStage)
+			}
+			for name, query := range map[string]*gorm.DB{
+				"resource":           db.Model(&model.Resource{}).Where("user_id = ?", task.UserID),
+				"asset":              db.Model(&model.Asset{}).Where("user_id = ?", task.UserID),
+				"project asset link": db.Model(&model.ProjectAssetLink{}).Where("project_id = ?", project.ID),
+				"shot artifact":      db.Model(&model.ShotArtifact{}).Where("project_id = ?", project.ID),
+			} {
+				var count int64
+				if err := query.Count(&count).Error; err != nil {
+					t.Fatal(err)
+				}
+				want := int64(0)
+				if name == "resource" || name == "asset" {
+					want = 1
+				}
+				if count != want {
+					t.Fatalf("%s count=%d, want %d", name, count, want)
+				}
+			}
+			storedOrder, err := s.repo.BillingOrder(order.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var account model.CreditAccount
+			if err := db.First(&account, "user_id = ?", task.UserID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if storedOrder.Status != model.BillingStatusSettled || account.AvailableMicrocredits != 900 || account.ReservedMicrocredits != 0 {
+				t.Fatalf("billing status=%s available=%d reserved=%d, want settled/900/0", storedOrder.Status, account.AvailableMicrocredits, account.ReservedMicrocredits)
+			}
+			var reserveCount, consumeCount, refundCount int64
+			if err := db.Model(&model.CreditLedgerEntry{}).Where("billing_order_id = ? AND type = ?", order.ID, model.CreditLedgerReserve).Count(&reserveCount).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&model.CreditLedgerEntry{}).Where("billing_order_id = ? AND type = ?", order.ID, model.CreditLedgerConsume).Count(&consumeCount).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&model.CreditLedgerEntry{}).Where("billing_order_id = ? AND type = ?", order.ID, model.CreditLedgerRefund).Count(&refundCount).Error; err != nil {
+				t.Fatal(err)
+			}
+			if reserveCount != 1 || consumeCount != 1 || refundCount != 0 {
+				t.Fatalf("ledger reserve=%d consume=%d refund=%d, want 1/1/0", reserveCount, consumeCount, refundCount)
+			}
+		})
+	}
+}
+func TestMediaRecoveryFallsBackToLibraryWhenProjectArchivesDuringCompletionRegistration(t *testing.T) {
+	s, db := newMediaRecoveryTestService(t)
+	if err := os.WriteFile(filepath.Join(s.dataDir, ".settings-key"), bytes.Repeat([]byte{2}, 32), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project := model.Project{ID: "media-project-registration-race", UserID: "media-user", Name: "registration race", Status: model.ProjectStatusActive}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatal(err)
+	}
+	input, err := json.Marshal(map[string]any{
+		"mode": "image", "prompt": "test",
+		"workflowStepId":  "step-that-must-not-register",
+		"domainProjectId": project.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Hour)
+	task := &model.Task{
+		ID: newID(), UserID: project.UserID, ProjectID: project.ID,
+		Type: "canvas_image", Status: model.TaskStatusRunning, InputJSON: string(input),
+		LeaseOwner: "worker-a", LeaseExpiresAt: &expires, Attempts: 1, RouteRun: 1, CreatedAt: time.Now(),
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	temp, err := s.stageInlineMedia(mediaTestPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := &mediaCheckpoint{Mode: "image", StartedAt: time.Now(), Items: []mediaCheckpointItem{{TempName: temp, MIMEType: "image/png"}}}
+	if err := s.saveMediaCheckpoint(task, checkpoint, "local_save"); err != nil {
+		t.Fatal(err)
+	}
+	output, err := s.materializeTaskMedia(context.Background(), task, providerConfig{}, checkpoint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	callbackName := "test:archive_project_during_media_completion"
+	archived := false
+	if err := db.Callback().Query().After("gorm:query").Register(callbackName, func(tx *gorm.DB) {
+		if archived || tx.Statement.Schema == nil || tx.Statement.Schema.Table != "projects" {
+			return
+		}
+		archived = true
+		if updateErr := tx.Session(&gorm.Session{NewDB: true}).Model(&model.Project{}).Where("id = ?", project.ID).Update("status", model.ProjectStatusArchived).Error; updateErr != nil {
+			tx.AddError(updateErr)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Callback().Query().Remove(callbackName) })
+
+	if err := s.saveTaskCompletionWithinStorageQuota(task, encoded, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if !archived {
+		t.Fatal("project archive hook was not reached")
+	}
+	stored, err := s.repo.Task(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != model.TaskStatusSucceeded {
+		t.Fatalf("task status=%q, want succeeded", stored.Status)
+	}
+	var storedProject model.Project
+	if err := db.First(&storedProject, "id = ?", project.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if storedProject.Status != model.ProjectStatusArchived {
+		t.Fatalf("project status=%q, want archived", storedProject.Status)
+	}
+	for name, query := range map[string]*gorm.DB{
+		"resource":           db.Model(&model.Resource{}).Where("user_id = ?", task.UserID),
+		"asset":              db.Model(&model.Asset{}).Where("user_id = ?", task.UserID),
+		"project asset link": db.Model(&model.ProjectAssetLink{}).Where("project_id = ?", project.ID),
+		"shot artifact":      db.Model(&model.ShotArtifact{}).Where("project_id = ?", project.ID),
+	} {
+		var count int64
+		if err := query.Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		want := int64(0)
+		if name == "resource" || name == "asset" {
+			want = 1
+		}
+		if count != want {
+			t.Fatalf("%s count=%d, want %d", name, count, want)
+		}
+	}
+}

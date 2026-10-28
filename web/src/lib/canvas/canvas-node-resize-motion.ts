@@ -8,6 +8,7 @@ type ResizeMotion = { geometry: NodeGeometry; target: NodeGeometry; stop: () => 
 export function createCanvasNodeResizeMotion(startAnimation: StartAnimation) {
     let previous = new Map<string, CanvasNodeData>();
     const active = new Map<string, ResizeMotion>();
+    const previews = new Map<string, NodeGeometry>();
     const listeners = new Map<string, Set<() => void>>();
     const frameListeners = new Set<(nodeId: string) => void>();
 
@@ -24,11 +25,23 @@ export function createCanvasNodeResizeMotion(startAnimation: StartAnimation) {
     };
     const finishAll = () => {
         for (const nodeId of active.keys()) finish(nodeId);
+        for (const nodeId of previews.keys()) {
+            previews.delete(nodeId);
+            emit(nodeId);
+        }
     };
 
     return {
         sync(nodes: CanvasNodeData[], enabled: boolean) {
             const next = new Map(nodes.map((node) => [node.id, node]));
+            for (const [nodeId, preview] of previews) {
+                const node = next.get(nodeId);
+                const before = previous.get(nodeId);
+                const matches = Boolean(node && sameGeometry(preview, node));
+                const stale = Boolean(node && before && !matches && !sameGeometry(before, node));
+                if (!node || matches || stale) previews.delete(nodeId);
+                if (stale) emit(nodeId);
+            }
             for (const nodeId of active.keys()) {
                 if (!enabled || !next.has(nodeId)) finish(nodeId);
             }
@@ -67,11 +80,25 @@ export function createCanvasNodeResizeMotion(startAnimation: StartAnimation) {
             previous = next;
         },
         getGeometry(nodeId: string) {
-            return active.get(nodeId)?.geometry;
+            return previews.get(nodeId) || active.get(nodeId)?.geometry;
         },
         resolveNode(node: CanvasNodeData): CanvasNodeData {
-            const geometry = active.get(node.id)?.geometry;
+            const geometry = previews.get(node.id) || active.get(node.id)?.geometry;
             return geometry ? { ...node, ...geometry } : node;
+        },
+        setPreview(nodeId: string, geometry: NodeGeometry) {
+            const running = active.get(nodeId);
+            if (running) {
+                active.delete(nodeId);
+                running.stop();
+            }
+            const preview = previews.get(nodeId);
+            if (preview && sameGeometry(preview, geometry)) return;
+            previews.set(nodeId, geometry);
+            emit(nodeId);
+        },
+        clearPreview(nodeId: string) {
+            if (previews.delete(nodeId)) emit(nodeId);
         },
         subscribeNode(nodeId: string, listener: () => void) {
             const subscriptions = listeners.get(nodeId) || new Set<() => void>();

@@ -12,9 +12,8 @@
  * 出哪几张、每张什么职责、用哪个版式、画幅多大、最后怎么装订。
  * 清单是纯数据，执行在页面层（分析提示词、铺节点、批量生成、装订）。
  *
- * **画面和文字不分开，一条提示词一起交给模型。** 每张要画什么、图上出现哪几个字，
- * 都写在那一张的提示词里（见 ecommerce-suite.ts）。本地叠字那套已经拆掉了：
- * 模型画不准汉字是它的问题，让用户逐屏核对文字再交给它，比在图上再盖一层字强。
+ * **画面和文字分开。** 图片模型只生成无字底图；标题、副标题、价格和 CTA 独立保存，
+ * 再由浏览器按选定版式确定性叠字。预览与导出共用这条排版链，用户可继续改文案和版式。
  */
 import { ECOMMERCE_DETAIL_PAGE_SET, ECOMMERCE_MAIN_IMAGE_SET, ECOMMERCE_MODEL_WEARING_SET, ECOMMERCE_SEED_CONTENT_SET, type EcommerceDeliverableSet } from "./ecommerce-deliverables";
 
