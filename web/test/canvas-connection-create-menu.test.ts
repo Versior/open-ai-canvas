@@ -1,31 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { createElement, createRef, type ComponentType } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-
-import { CanvasConnectionCreateMenu } from "../src/components/canvas/canvas-workspace-overlays";
 
 const component = readFileSync(new URL("../src/components/canvas/canvas-workspace-overlays.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8");
-
-function renderConnectionMenu(canvasKind: "ecommerce" | "freeform", workspaceMode: "simple" | "professional") {
-    const Menu = CanvasConnectionCreateMenu as unknown as ComponentType<Record<string, unknown>>;
-    return renderToStaticMarkup(
-        createElement(Menu, {
-            pending: { connection: {}, position: { x: 40, y: 40 } },
-            viewport: { x: 0, y: 0, k: 1 },
-            viewportSize: { width: 1280, height: 800 },
-            containerRef: createRef<HTMLDivElement>(),
-            canCreateDrawing: true,
-            canvasKind,
-            workspaceMode,
-            getDisabledReason: () => "",
-            onCreate: () => {},
-            onClose: () => {},
-        }),
-    );
-}
 
 test("connection menu omits the header and provides descriptions for every option", () => {
     expect(component).not.toContain("引用当前节点");
@@ -63,33 +41,6 @@ test("电商节点与影视节点互不进对方的画布", () => {
 
     // 缺省按自由画布处理：宁可少显示电商节点，也不该把它们漏进自由画布
     expect(component).toContain('canvasKind = "freeform"');
-});
-
-test("连接后菜单在快捷电商只保留商品入口，专业与自由画布不受误伤", () => {
-    const simple = renderConnectionMenu("ecommerce", "simple");
-    expect(simple).toContain('aria-label="商品"');
-    expect(simple).not.toContain('aria-label="卖点"');
-    expect(simple).not.toContain('aria-label="电商生图台"');
-    expect(simple).not.toContain('aria-label="批量创作表"');
-    expect(simple).not.toContain('aria-label="生成配置"');
-    expect(simple).not.toContain('aria-label="音频参考"');
-
-    const professional = renderConnectionMenu("ecommerce", "professional");
-    expect(professional).toContain('aria-label="商品"');
-    expect(professional).toContain('aria-label="卖点"');
-    expect(professional).toContain('aria-label="电商生图台"');
-    expect(professional).toContain('aria-label="批量创作表"');
-    expect(professional).toContain('aria-label="生成配置"');
-    expect(professional).not.toContain('aria-label="音频参考"');
-
-    const freeform = renderConnectionMenu("freeform", "simple");
-    expect(freeform).not.toContain('aria-label="商品"');
-    expect(freeform).toContain('aria-label="批量创作表"');
-    expect(freeform).toContain('aria-label="生成配置"');
-    expect(freeform).not.toContain('aria-label="音频参考"');
-
-    const freeformProfessional = renderConnectionMenu("freeform", "professional");
-    expect(freeformProfessional).toContain('aria-label="音频参考"');
 });
 
 test("add-node menu 与右键菜单同样按画布种类和模式分流", () => {

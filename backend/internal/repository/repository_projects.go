@@ -47,27 +47,31 @@ func (r *Repository) ProjectForUser(userID string, id string) (*model.Project, e
 }
 
 // requireActiveTaskProject locks the task scope before task admission. The
-// preliminary reads only resolve whether the legacy projectId names a canvas or
-// a production project; the conditional no-op writes are the authoritative
-// ownership/status check and serialize with archive/delete writes.
+// first conditional write prevents SQLite transactions from racing while both
+// upgrade an earlier read into a write; later writes are the authoritative
+// ownership/status checks and serialize with archive/delete writes.
 func (r *Repository) requireActiveTaskProject(userID string, canvasOrProjectID string) error {
 	if canvasOrProjectID == "" {
 		return nil
 	}
-	var canvas model.CanvasProject
-	canvasErr := r.db.Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Take(&canvas).Error
-	if canvasErr != nil && !errors.Is(canvasErr, gorm.ErrRecordNotFound) {
-		return canvasErr
+	lockedCanvas := r.db.Model(&model.CanvasProject{}).
+		Where("id = ? AND user_id = ?", canvasOrProjectID, userID).
+		UpdateColumn("revision", gorm.Expr("revision"))
+	if lockedCanvas.Error != nil {
+		return lockedCanvas.Error
 	}
-	var project model.Project
-	projectErr := r.db.Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Take(&project).Error
-	if projectErr != nil && !errors.Is(projectErr, gorm.ErrRecordNotFound) {
-		return projectErr
-	}
-	if canvasErr == nil && projectErr == nil {
-		return ErrProjectNotActive
-	}
-	if canvasErr == nil {
+	if lockedCanvas.RowsAffected == 1 {
+		var canvas model.CanvasProject
+		if err := r.db.Select("id", "project_id").Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Take(&canvas).Error; err != nil {
+			return err
+		}
+		var projectCount int64
+		if err := r.db.Model(&model.Project{}).Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Count(&projectCount).Error; err != nil {
+			return err
+		}
+		if projectCount != 0 {
+			return ErrProjectNotActive
+		}
 		if canvas.ProjectID != "" {
 			locked := r.db.Model(&model.Project{}).
 				Where("id = ? AND user_id = ? AND status = ?", canvas.ProjectID, userID, model.ProjectStatusActive).
@@ -79,22 +83,10 @@ func (r *Repository) requireActiveTaskProject(userID string, canvasOrProjectID s
 				return ErrProjectNotActive
 			}
 		}
-		locked := r.db.Model(&model.CanvasProject{}).
-			Where("id = ? AND user_id = ? AND project_id = ?", canvas.ID, userID, canvas.ProjectID).
-			UpdateColumn("revision", gorm.Expr("revision"))
-		if locked.Error != nil {
-			return locked.Error
-		}
-		if locked.RowsAffected != 1 {
-			return ErrProjectNotActive
-		}
 		return nil
 	}
-	if projectErr != nil {
-		return ErrProjectNotActive
-	}
 	locked := r.db.Model(&model.Project{}).
-		Where("id = ? AND user_id = ? AND status = ?", project.ID, userID, model.ProjectStatusActive).
+		Where("id = ? AND user_id = ? AND status = ?", canvasOrProjectID, userID, model.ProjectStatusActive).
 		UpdateColumn("revision", gorm.Expr("revision"))
 	if locked.Error != nil {
 		return locked.Error

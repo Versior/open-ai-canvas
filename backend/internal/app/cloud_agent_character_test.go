@@ -20,7 +20,7 @@ func seedCloudAgentCharacter(t *testing.T, db *gorm.DB, canvasID string) map[str
 		},
 	}
 	for _, item := range []any{
-		&model.Project{ID: "character-project", UserID: "user", Name: "短剧"},
+		&model.Project{ID: "character-project", UserID: "user", Name: "短剧", Status: model.ProjectStatusActive},
 		&model.Asset{ID: "character-asset", UserID: "user", Category: model.AssetCategoryCharacter, Kind: "entity", Title: "扶颦", Status: model.AssetVersionStatusConfirmed, PrimaryVersionID: "character-v2"},
 		&model.ProjectAssetLink{ID: "character-link", ProjectID: "character-project", AssetID: "character-asset"},
 		&model.AssetVersion{ID: "character-v1", AssetID: "character-asset", Version: 1, Status: model.AssetVersionStatusConfirmed, DefinitionJSON: `{"appearance":"第一版红衣"}`},

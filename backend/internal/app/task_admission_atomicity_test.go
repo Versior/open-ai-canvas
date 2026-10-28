@@ -50,7 +50,7 @@ func TestCreateTextReplayTaskRejectsForeignProject(t *testing.T) {
 	}
 }
 
-func TestWorkerRejectsProjectRemovedAfterAdmissionBeforePersistence(t *testing.T) {
+func TestWorkerRejectsProjectRemovedAfterTaskPersistence(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		mutate func(*gorm.DB) error
@@ -77,10 +77,6 @@ func TestWorkerRejectsProjectRemovedAfterAdmissionBeforePersistence(t *testing.T
 			if err := service.ensureTaskProjectActive("user-a", project.ID); err != nil {
 				t.Fatalf("initial admission: %v", err)
 			}
-			if err := test.mutate(db); err != nil {
-				t.Fatal(err)
-			}
-
 			expires := time.Now().Add(time.Minute)
 			task := model.Task{
 				ID: "task-race", UserID: "user-a", ProjectID: project.ID,
@@ -95,6 +91,9 @@ func TestWorkerRejectsProjectRemovedAfterAdmissionBeforePersistence(t *testing.T
 				IdempotencyKey: task.ID, Status: model.BillingStatusReserved, AmountMicrocredits: 100,
 			}
 			if err := service.repo.CreateTaskWithCreditReservation(&task, order, 10); err != nil {
+				t.Fatal(err)
+			}
+			if err := test.mutate(db); err != nil {
 				t.Fatal(err)
 			}
 

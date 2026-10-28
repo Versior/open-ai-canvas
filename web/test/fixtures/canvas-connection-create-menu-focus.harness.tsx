@@ -35,6 +35,8 @@ mock.module("motion/react", () => ({
 const { createRoot } = await import("react-dom/client");
 const { CanvasConnectionCreateMenu } = await import("../../src/components/canvas/canvas-workspace-overlays");
 const { CanvasNodeType } = await import("../../src/types/canvas");
+type CanvasKind = import("../../src/types/canvas").CanvasKind;
+type CanvasWorkspaceMode = import("../../src/types/canvas").CanvasWorkspaceMode;
 
 afterAll(() => {
     dom.happyDOM.abort();
@@ -59,7 +61,7 @@ function setupSurface() {
     return { host, canvas, trigger, outside, root };
 }
 
-function MenuHarness({ canvas, allDisabled = false, onClose }: { canvas: HTMLDivElement; allDisabled?: boolean; onClose: () => void }) {
+function MenuHarness({ canvas, allDisabled = false, canvasKind = "freeform", workspaceMode = "professional", onClose }: { canvas: HTMLDivElement; allDisabled?: boolean; canvasKind?: CanvasKind; workspaceMode?: CanvasWorkspaceMode; onClose: () => void }) {
     const [open, setOpen] = useState(true);
     const close = useCallback(() => {
         onClose();
@@ -73,12 +75,46 @@ function MenuHarness({ canvas, allDisabled = false, onClose }: { canvas: HTMLDiv
             viewportSize={{ width: 1280, height: 800 }}
             containerRef={{ current: canvas } as RefObject<HTMLDivElement>}
             canCreateDrawing={false}
+            canvasKind={canvasKind}
+            workspaceMode={workspaceMode}
             getDisabledReason={(type) => (allDisabled || type === CanvasNodeType.Text ? "暂不可用" : "")}
             onCreate={() => {}}
             onClose={close}
         />
     );
 }
+
+test("连接后菜单在快捷电商只保留商品入口，专业与自由画布不受误伤", async () => {
+    const surface = setupSurface();
+    const labels = () => new Set(Array.from(surface.host.querySelectorAll<HTMLElement>("[data-create-option]"), (option) => option.getAttribute("aria-label")));
+    const render = async (canvasKind: CanvasKind, workspaceMode: CanvasWorkspaceMode) => {
+        await act(async () => surface.root.render(<MenuHarness key={`${canvasKind}-${workspaceMode}`} canvas={surface.canvas} canvasKind={canvasKind} workspaceMode={workspaceMode} onClose={() => {}} />));
+        return labels();
+    };
+    try {
+        const simple = await render("ecommerce", "simple");
+        expect(simple.has("商品")).toBe(true);
+        for (const label of ["卖点", "电商生图台", "批量创作表", "生成配置", "音频参考"]) expect(simple.has(label)).toBe(false);
+
+        const professional = await render("ecommerce", "professional");
+        for (const label of ["商品", "卖点", "电商生图台", "批量创作表", "生成配置"]) expect(professional.has(label)).toBe(true);
+        expect(professional.has("音频参考")).toBe(false);
+
+        const freeform = await render("freeform", "simple");
+        expect(freeform.has("商品")).toBe(false);
+        expect(freeform.has("批量创作表")).toBe(true);
+        expect(freeform.has("生成配置")).toBe(true);
+        expect(freeform.has("音频参考")).toBe(false);
+
+        expect((await render("freeform", "professional")).has("音频参考")).toBe(true);
+    } finally {
+        await act(async () => surface.root.unmount());
+        surface.host.remove();
+        surface.canvas.remove();
+        surface.trigger.remove();
+        surface.outside.remove();
+    }
+});
 
 test("连接创建弹层接管焦点，Escape 在焦点移出后仍关闭并恢复触发焦点", async () => {
     const surface = setupSurface();
