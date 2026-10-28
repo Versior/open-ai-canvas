@@ -156,7 +156,7 @@ test("ecommerce workspace mode persists per project, validates values, and is SS
 
     const fragment = `${project.slice(helperStart, helperEnd)}\nexport { readCanvasWorkspaceModePreference, persistCanvasWorkspaceModePreference };`;
     const javascript = new Bun.Transpiler({ loader: "tsx" }).transformSync(fragment);
-    const helpers = await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`) as {
+    const helpers = (await import(`data:text/javascript;base64,${Buffer.from(javascript).toString("base64")}`)) as {
         readCanvasWorkspaceModePreference: (projectId: string) => CanvasWorkspaceMode | null;
         persistCanvasWorkspaceModePreference: (projectId: string, mode: CanvasWorkspaceMode) => void;
     };

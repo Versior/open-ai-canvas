@@ -2,12 +2,7 @@ import { expect, test } from "bun:test";
 import type { Root } from "react-dom/client";
 import type { CanvasNodeActionContextValue } from "../src/components/canvas/canvas-node-action-context";
 
-import {
-    ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE,
-    createEcommerceTeardown,
-    ecommerceTeardownPlanSourceSignature,
-    parseEcommerceTeardownPlanRequest,
-} from "../src/lib/ecommerce/ecommerce-teardown";
+import { ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE, createEcommerceTeardown, ecommerceTeardownPlanSourceSignature, parseEcommerceTeardownPlanRequest } from "../src/lib/ecommerce/ecommerce-teardown";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata } from "../src/types/canvas";
 
 const plan = JSON.stringify({

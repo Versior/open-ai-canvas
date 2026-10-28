@@ -166,4 +166,5 @@ describe("ecommerce teardown structured plan", () => {
         const parsed = [{ slotId: "detail-1", title: "新标题", duty: "新职责", prompt: "新提示" }];
 
         expect(reconcileEcommerceSuiteDraftRows(previous, parsed)?.[0].stance).toBe("differentiate");
-    });});
+    });
+});

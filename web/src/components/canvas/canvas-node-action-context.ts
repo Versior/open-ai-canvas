@@ -57,11 +57,7 @@ export type CanvasNodeActionContextValue = {
     draftWithAgent?: (node: CanvasNodeData, instruction: string) => void;
     /** 创建或定位当前商品、用途对应的已连线创作表。 */
     openEcommerceTable?: (node: CanvasNodeData, flowId: EcommerceOneClickFlowId) => void;
-    openEcommerceTableFromOutline?: (
-        teardownNode: CanvasNodeData,
-        productNode: CanvasNodeData,
-        rows: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[],
-    ) => void;
+    openEcommerceTableFromOutline?: (teardownNode: CanvasNodeData, productNode: CanvasNodeData, rows: import("@/lib/ecommerce/ecommerce-suite").EcommerceSuiteRow[]) => void;
     /**
      * 电商创作：按创作表出图。
      *

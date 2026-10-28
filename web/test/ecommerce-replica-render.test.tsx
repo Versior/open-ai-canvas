@@ -7,7 +7,15 @@ import { ReplicaNodeContent } from "../src/components/canvas/nodes/replica-node"
 import { createCanvasNodeGraph } from "../src/lib/canvas/canvas-node-graph";
 import { canvasThemes } from "../src/lib/canvas-theme";
 import { isEcommerceInputHandle, withEcommerceInputConnection } from "../src/lib/ecommerce/ecommerce-canvas";
-import { ECOMMERCE_REPLICA_PRODUCT_HANDLE, ECOMMERCE_REPLICA_REFERENCE_HANDLE, createEcommerceReplica, ecommerceReplicaImageRoleBlock, ecommerceReplicaInputIssue, ecommerceReplicaInputNodes, migrateLegacyEcommerceReplicaConnections } from "../src/lib/ecommerce/ecommerce-replica";
+import {
+    ECOMMERCE_REPLICA_PRODUCT_HANDLE,
+    ECOMMERCE_REPLICA_REFERENCE_HANDLE,
+    createEcommerceReplica,
+    ecommerceReplicaImageRoleBlock,
+    ecommerceReplicaInputIssue,
+    ecommerceReplicaInputNodes,
+    migrateLegacyEcommerceReplicaConnections,
+} from "../src/lib/ecommerce/ecommerce-replica";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../src/types/canvas";
 
 const replica: CanvasNodeData = { id: "replica", type: CanvasNodeType.Replica, title: "Replica", position: { x: 0, y: 0 }, width: 460, height: 560 };
