@@ -13,7 +13,7 @@
  * 实际裁像素由调用方走 canvas 完成，这里只算方案——算方案是可以测的，裁像素不能。
  */
 
-export type EcommerceSlicePlatform = "taobao" | "jd" | "pdd" | "douyin";
+export type EcommerceSlicePlatform = "generic" | "taobao" | "jd" | "pdd" | "douyin";
 
 export type EcommerceSliceSpec = {
     id: EcommerceSlicePlatform;
@@ -30,6 +30,7 @@ export type EcommerceSliceSpec = {
 };
 
 export const ECOMMERCE_SLICE_SPECS: EcommerceSliceSpec[] = [
+    { id: "generic", name: "通用详情页", width: 750, maxSliceHeight: 1500, minSliceHeight: 200, note: "750px 宽、单张不超过 1500px 的通用导出策略，不是任何平台审核硬规则；上架前必须按真实目标平台复核" },
     { id: "taobao", name: "淘宝 / 天猫", width: 750, maxSliceHeight: 1100, minSliceHeight: 200, note: "普通店 750px 宽，天猫 790px；单张高建议 800–1200，不超过 1100 最稳" },
     { id: "jd", name: "京东", width: 790, maxSliceHeight: 1200, minSliceHeight: 200, note: "PC 790px / 移动 750px" },
     { id: "pdd", name: "拼多多", width: 750, maxSliceHeight: 1500, minSliceHeight: 200, note: "宽 480–1200，单张高 ≤1500" },

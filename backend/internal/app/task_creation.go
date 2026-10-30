@@ -405,6 +405,16 @@ func normalizeTaskInput(input map[string]any) (map[string]any, error) {
 	if snapshot, ok := normalized["canvasSnapshot"]; ok {
 		normalized["canvasSnapshot"] = compactPersistedValue(snapshot)
 	}
+	// metadata.ecommerceTextMode 是从输入冻结下来的枚举，只认精确的 model / local。
+	// 其余取值或类型在这里删除，缺省时不补默认值；同层其他 metadata 一律不动。
+	if metadata, ok := normalized["metadata"].(map[string]any); ok {
+		if value, exists := metadata["ecommerceTextMode"]; exists {
+			mode, isString := value.(string)
+			if !isString || (mode != "model" && mode != "local") {
+				delete(metadata, "ecommerceTextMode")
+			}
+		}
+	}
 	return normalized, nil
 }
 

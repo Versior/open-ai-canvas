@@ -30,7 +30,7 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 		// A terminal failed run must remain readable even if its durable runtime
 		// blob was damaged. Do not invent permissions or approval state; expose
 		// only the identity available from the original task input.
-		state = cloudAgentRuntime{Request: initial.Request, ParentID: initial.ParentID, CreativeAnchor: initial.CreativeAnchor, Skills: initial.Skills, SkillVersions: initial.SkillVersions, SkillHints: initial.SkillHints, Memory: initial.Memory, Profile: initial.Profile, TaskIDs: []string{task.ID}, Events: []CloudAgentEvent{}}
+		state = cloudAgentRuntime{Request: initial.Request, ParentID: initial.ParentID, CreativeAnchor: initial.CreativeAnchor, Skills: initial.Skills, SkillReferences: initial.SkillReferences, SkillVersions: initial.SkillVersions, SkillHints: initial.SkillHints, Memory: initial.Memory, Profile: initial.Profile, TaskIDs: []string{task.ID}, Events: []CloudAgentEvent{}}
 	}
 	out := agentRunOutput(task, initial)
 	out.ConversationID = run.ConversationID

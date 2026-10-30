@@ -22,9 +22,17 @@ import { ecommercePlatformGuidance } from "../src/lib/ecommerce/ecommerce-platfo
 test("only the selected supported platform guidance enters planning", () => {
     const brief = { ...structuredClone(DEFAULT_ECOMMERCE_BRIEF), name: "Cup", platform: "Amazon" };
     expect(ecommerceWorkbenchPrompt("planning", brief)).toContain("纯白 #FFFFFF");
+    expect(ecommerceWorkbenchPrompt("planning", brief)).toContain("第 2–9 位放场景、卖点、尺寸、细节、对比、包装");
     expect(ecommerceWorkbenchPrompt("planning", brief)).not.toContain("生活场景优先");
-    expect(ecommercePlatformGuidance("custom marketplace")).toBe("");
-    for (const platform of ["淘宝", "天猫", "京东", "拼多多", "抖音", "Amazon", "亚马逊", "Shopify"]) expect(ecommercePlatformGuidance(platform)).toContain("仅用于画面规划");
+    expect(ecommercePlatformGuidance("custom marketplace")).toContain("尚未专属适配");
+    for (const platform of ["淘宝", "天猫", "京东", "拼多多", "抖音", "小红书", "Amazon", "亚马逊", "Shopify", "TikTok Shop"]) {
+        const guidance = ecommercePlatformGuidance(platform);
+        expect(guidance).toContain("硬规则");
+        expect(guidance).toContain("创作偏好");
+        expect(guidance).toContain("禁止项");
+        expect(guidance).toContain("仅用于画面规划");
+    }
+    expect(ecommercePlatformGuidance("小红书")).not.toBe(ecommercePlatformGuidance("TikTok Shop"));
 });
 
 test("studio export keeps explicit adopted results and rejects changed plans or missing adopted versions", () => {
@@ -127,6 +135,14 @@ test("product entry creates a connected studio and reopening preserves its plan"
     expect(() => openEcommerceStudio([{ ...product, metadata: { locked: true } }], [], product.id)).toThrow("锁定");
 });
 
+test("legacy placeholder names do not enter a new studio brief", () => {
+    const legacy = { ...product, title: "未命名商品", metadata: { productProfile: { ...createEcommerceProductProfile("Test product"), name: "未命名商品" } } };
+
+    const studio = openEcommerceStudio([legacy], [], legacy.id).studio;
+
+    expect(studio.metadata?.ecommerceStudio?.brief.name).toBe("商品");
+    expect(JSON.stringify(studio.metadata?.ecommerceStudio?.brief)).not.toContain("未命名商品");
+});
 test("product inputs expand and deduplicate real photos while separating style references", () => {
     const sources = ecommerceStudioSources([product.id, image.id], [image, style, product], edges);
     expect(sources.map((node) => node.id)).toEqual(["product", "photo", "style"]);

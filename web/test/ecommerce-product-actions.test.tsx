@@ -60,12 +60,24 @@ const editedRows: EcommerceSuiteRow[] = [
     { slotId: "detail-2", title: "Detail", duty: "Show the texture", prompt: "Original detail prompt" },
 ];
 const recognizedProfile = {
+    name: "星云随行杯",
+    englishBrandName: "NEBULA",
+    chineseBrandName: "星云",
+    logoText: "杯身正面 NEBULA",
+    brandStyle: "深蓝银色；几何无衬线；金属质感",
     category: "保温杯",
+    productModel: "NX-500",
     appearance: "哑光黑色杯身",
+    functions: "盛装饮品；便携提拿",
     marks: "杯身中部 THERMO",
     forbidden: "不要改变杯盖结构",
+    parameters: [{ name: "容量", value: "500 mL", source: "包装正面可见" }],
+    sellingPoints: [{ type: "功能卖点", content: "500 mL 容量", visualization: "参数与杯体同屏" }],
     audience: "通勤携带；办公室饮水",
+    painPoints: "普通水杯不便手提",
+    purchaseReasons: "容量与提环结构",
     facts: "便于携带：杯盖顶部有可见提手",
+    detailPageSuggestions: [{ screen: "第1屏", theme: "品牌主视觉", visual: "商品居中并保留原始 Logo", copy: "品牌与产品名" }],
     unsure: "材质和目标人群由图片推测",
 };
 const copyReadyProfile = {
@@ -346,7 +358,6 @@ async function mountProduct(
         expect(panelProps?.open).toBe(true);
     };
     if (initialFlow) await open(initialFlow);
-    if (initialFlow) expect(panelProps?.skillsLoading).toBe(false);
     expect(useEcommerceModelLibrary.getState().hydrated).toBe(true);
     expect(warnings).toEqual([]);
     expect(errors).toEqual([]);
@@ -514,12 +525,25 @@ test("AI product identification keeps an editable draft local until confirmation
     await product.identify();
     expect(product.profileCalls.map((node) => node.id)).toEqual(["product"]);
     expect(product.product().metadata).toEqual(metadataBeforeDraft);
+    expect(product.productControl("草稿产品名称").value).toBe("星云随行杯");
+    expect(product.productControl("草稿英文品牌名").value).toBe("NEBULA");
+    expect(product.productControl("草稿中文品牌名").value).toBe("星云");
+    expect(product.productControl("草稿 LOGO 文字").value).toBe("杯身正面 NEBULA");
+    expect(product.productControl("草稿品牌风格").value).toBe("深蓝银色；几何无衬线；金属质感");
     expect(product.productControl("草稿品类").value).toBe("保温杯");
+    expect(product.productControl("草稿产品型号").value).toBe("NX-500");
     expect(product.productControl("草稿外观").value).toBe("哑光黑色杯身");
+    expect(product.productControl("草稿主要功能").value).toBe("盛装饮品；便携提拿");
     expect(product.productControl("草稿标识").value).toBe("杯身中部 THERMO");
     expect(product.productControl("草稿禁止项").value).toBe("不要改变杯盖结构");
     expect(product.productControl("草稿目标人群与场景").value).toBe("通勤携带；办公室饮水");
+    expect(product.productControl("草稿参数与来源").value).toBe("容量 | 500 mL | 包装正面可见");
+    expect(product.productControl("草稿五类卖点").value).toBe("功能卖点 | 500 mL 容量 | 参数与杯体同屏");
+    expect(product.productControl("草稿目标人群与场景").value).toBe("通勤携带；办公室饮水");
+    expect(product.productControl("草稿使用痛点").value).toBe("普通水杯不便手提");
+    expect(product.productControl("草稿购买理由").value).toBe("容量与提环结构");
     expect(product.productControl("草稿卖点与依据").value).toBe("便于携带：杯盖顶部有可见提手");
+    expect(product.productControl("草稿逐屏建议").value).toBe("第1屏 | 品牌主视觉 | 商品居中并保留原始 Logo | 品牌与产品名");
     expect(product.productControl("草稿真实价格").value).toBe("");
     expect(product.hasProductControl("本次识别草稿，请核对后应用")).toBe(true);
 
@@ -527,13 +551,24 @@ test("AI product identification keeps an editable draft local until confirmation
     await product.editProductDraft("草稿真实价格", "129 元");
     await product.clickProduct("确认并应用商品草稿");
     expect(product.product().metadata?.productProfile).toMatchObject({
-        name: "Test product",
+        name: "星云随行杯",
+        englishBrandName: "NEBULA",
+        chineseBrandName: "星云",
+        logoText: "杯身正面 NEBULA",
+        brandStyle: "深蓝银色；几何无衬线；金属质感",
         category: "随行杯",
+        productModel: "NX-500",
         appearance: "哑光黑色杯身",
+        functions: "盛装饮品；便携提拿",
         marks: "杯身中部 THERMO",
         forbidden: "不要改变杯盖结构",
+        parameters: [{ name: "容量", value: "500 mL", source: "包装正面可见" }],
+        sellingPoints: [{ type: "功能卖点", content: "500 mL 容量", visualization: "参数与杯体同屏" }],
         audience: "通勤携带；办公室饮水",
+        painPoints: "普通水杯不便手提",
+        purchaseReasons: "容量与提环结构",
         facts: "便于携带：杯盖顶部有可见提手",
+        detailPageSuggestions: [{ screen: "第1屏", theme: "品牌主视觉", visual: "商品居中并保留原始 Logo", copy: "品牌与产品名" }],
         price: "129 元",
     });
     expect(product.product().metadata?.productProfile).not.toHaveProperty("unsure");
@@ -569,6 +604,27 @@ test("partial AI profile drafts preserve confirmed fields and only replace them 
         category: "保温杯",
         marks: "新 LOGO",
     });
+});
+
+test("legacy placeholder product names open blank and cannot be persisted again", async () => {
+    const initialProfile = { ...copyReadyProfile, name: "未命名商品" };
+    const product = await mountProduct(initialRows, undefined, recognizedProfile, initialProfile, false);
+
+    await product.clickProduct("编辑商品信息");
+    expect(product.productControl("草稿产品名称").value).toBe("");
+    await product.editProductDraft("草稿产品名称", "  未命名商品  ");
+    await product.clickProduct("确认并应用商品草稿");
+
+    expect(product.product().metadata?.productProfile?.name).toBe("");
+});
+
+test("AI identification does not restore the legacy placeholder when no name is recognized", async () => {
+    const initialProfile = { ...copyReadyProfile, name: "未命名商品" };
+    const product = await mountProduct(initialRows, undefined, { category: "保温杯" }, initialProfile, false);
+
+    await product.identify();
+
+    expect(product.productControl("草稿产品名称").value).toBe("");
 });
 
 test("discarding an old draft allows a new identification that rejects replaced image evidence", async () => {

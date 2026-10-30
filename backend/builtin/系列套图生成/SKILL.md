@@ -1,6 +1,6 @@
 ---
 name: "系列套图生成"
-description: "本技能用于将用户提供的母版提示词、参考图、产品图、角色设定、品牌资料、Logo、IP形象或视觉方向，抽象为稳定的系列视觉母体，并通过母版分析、风格锁定、动态配置卡、系列变量矩阵、提示词预览、图片生成、质检重试与高清处理，最终生成一组风格统一但变量清晰的系列图片。当用户提到「把这个提示词扩成一组图」「生成系列套图」「按母版风格生成多张图」「同一风格不同角色/场景/构图」「根据参考图做一组统一图片」「同款风格的产品图/海报/IP套图」时调用。本技能默认最终交付图片；如用户明确只要提示词，则只输出提示词，不调用图片生成工具。"
+description: "本技能用于将用户提供的母版提示词、参考图、产品图、角色设定、品牌资料、Logo、IP形象或视觉方向，抽象为稳定的系列视觉母体，并通过母版分析、风格锁定、动态配置卡、系列变量矩阵、提示词预览、图片生成、质检重试与高清处理，最终生成一组风格统一但变量清晰的系列图片。当用户提到「把这个提示词扩成一组图」「生成系列套图」「按母版风格生成多张图」「同一风格不同角色/场景/构图」「根据参考图做一组统一图片」「同款风格的产品图/海报/IP套图」时调用。画布电商任务同样适用：电商详情页、十屏详情页、主图、套图、卖点规划、产品身份锁与事实边界。本技能默认最终交付图片；如用户明确只要提示词，则只输出提示词，不调用图片生成工具。"
 metadata:
   version: "1.0.0"
   author: "渊静-中意"
@@ -14,9 +14,54 @@ metadata:
   initialLikeCount: 117
   initialAddedCount: 808
   authorAvatarUrl: "https://p3-faceu-img-sign.byteimg.com/tos-cn-i-tb4s082cfz/a85057135bdf47f2a19cc1251bad8c6c~tplv-resize:200:200.image?lk3s=4eecb9e8&x-expires=1788245864&x-signature=nCOgNQVyIGQWkNYdLmNghc5Gde4%3D"
-  extraInfo: ""
+  extraInfo: "电商详情页 十屏详情页 主图 套图 卖点规划 产品身份锁 事实边界 商品文案 转化"
   showcaseMedia: [{"type":"image","showcase_uri":"tos-cn-i-tb4s082cfz/dd608e5f4a284956a1e422bfaa523394","showcase_url":"https://p26-dreamina-sign.byteimg.com/tos-cn-i-tb4s082cfz/dd608e5f4a284956a1e422bfaa523394~tplv-tb4s082cfz-resize:0:0.image?lk3s=28a09430&x-expires=1817189864&x-signature=dw%2FB67Ef%2FzumgZrWRTcHw388474%3D"},{"type":"image","showcase_uri":"tos-cn-i-tb4s082cfz/65dfda4fb6524e24b7aac84c812e317a","showcase_url":"https://p26-dreamina-sign.byteimg.com/tos-cn-i-tb4s082cfz/65dfda4fb6524e24b7aac84c812e317a~tplv-tb4s082cfz-resize:0:0.image?lk3s=28a09430&x-expires=1817189864&x-signature=eN%2BxWkYx57oPIppgpxixmYDalSI%3D"},{"type":"image","showcase_uri":"tos-cn-i-tb4s082cfz/d5b8d47202584daba7ad7a16cb8a3165","showcase_url":"https://p26-dreamina-sign.byteimg.com/tos-cn-i-tb4s082cfz/d5b8d47202584daba7ad7a16cb8a3165~tplv-tb4s082cfz-resize:0:0.image?lk3s=28a09430&x-expires=1817189864&x-signature=06xfH5Ozls2EjSUrSrT7E3oqDXU%3D"}]
 ---
+
+## 电商短分支（画布任务先读本节）
+
+> 本节覆盖第 1 章工具表。即梦工具名（generate_form_for_info_collection、text2image、image2image、foreground_segmentation、image_super_resolution、creation_agent_search）**在本仓库不存在**，照抄必然失败。画布电商任务只按本节执行；只有用户明确要「系列套图」方法论且不涉及画布时，才把下文当方法参考。
+
+### 适用与检索
+
+电商详情页、十屏、主图、套图、卖点、产品身份锁、事实边界。
+
+### 1. 产品身份锁
+
+先建档，再谈画面。产品原图是外观、颜色、材质、结构、包装与比例的**唯一**依据；参考图和竞品图只影响版式、构图、文案层级、视觉风格，不得改变商品本体。
+
+不可变项：外轮廓与比例、包装朝向、主辅色与材质反光、Logo／标签／按钮／接口／开合件的位置与数量。
+
+没有产品原图时只做参考拆解，明确请用户补图，不得输出可上线主图。型号冲突时缩小适用范围并标注，不得把错误型号的外观当成当前商品事实。
+
+### 2. 事实闸门
+
+每屏文案只能来自四处：用户确认、图片清晰可见、可靠文档直接支持、已核验的平台规则。
+
+不造无依据的价格与宣称：功效性能、材质工艺耐用性、尺寸容量功率兼容、认证检测、销量评价排名、售后物流赠品促销，没有依据就不写；价格只在卖家给出确认值时使用，没有就留空。
+
+信息不足就标「未识别」或「待补充」并向用户提问。**这两个占位词不得入画，也不得成为图上文字。**
+
+### 3. 槽位与主题
+
+槽位、标题、顺序都听调用方。用户给的每一行是一个槽位，逐字保留槽位 id 与顺序；用户删空、改删或关掉的屏不自动补回，也不自行新增。
+
+只有没有传入行计划时，详情页才默认十屏、3:4、每屏一个主题、每屏一个商业目标。主题按商品品类与已确认事实确定，不套固定清单。一屏一图，不写「参考上一屏」。
+
+### 4. 文字与第九段
+
+文字模式由渲染配置决定，不得自行切换：
+
+- `model`：图片模型直接画字，`row.copy` 的 headline／subhead／price／cta 逐字进画面。
+- `local`：图片模型只出无字底图并留位，文字由本地叠字一次；不改底图、不事后重画整套。
+
+`row.copy` 是图上营销文字的**唯一**来源。第九段生图提示词只写画面构成、产品摆放、视觉风格与负面描述；标题、副标题、卖点模块只说位置、字号层级与模块形态，不重复任何文案文字。七项最终字段由前端共享编译器 `compileEcommercePrompt` 合成。
+
+### 5. 边界
+
+本节只是只读规划增强：补齐缺口用提问，读参考资料用 `skill_read_file`，出图交给既有流程的 `generate_media`。不规定执行顺序，不自动生图、不自动生视频、不自动 OCR 复核。
+
+交付前逐屏核对：身份锁是否保持、宣称与价格是否有据、比例是否合平台、占位词是否清除。
 
 ## 0. 角色定位
 

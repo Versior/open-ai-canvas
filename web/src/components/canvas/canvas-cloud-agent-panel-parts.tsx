@@ -15,7 +15,7 @@ import { Live2DAvatar } from "./live2d-avatar";
 import { agentAvatarBundleFileURL, live2DModelURL } from "@/services/api/appearance";
 import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
 import { FluidOrb } from "@/components/ui/fluid-orb";
-import { ArrowLeft, Check, CircleDot, Clock3, Download, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RotateCcw, Settings2, ShieldCheck, Trash2, X, Blocks } from "lucide-react";
+import { ArrowLeft, Check, CircleDot, Clock3, Download, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RotateCcw, Settings2, ShieldCheck, Trash2, X, Sparkles } from "lucide-react";
 import { Button, Input, Popover } from "antd";
 import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
 import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
@@ -588,7 +588,6 @@ export function AgentConversation({
     approvalSubmitting,
     nodeCount,
     installedSkillCount,
-    onChooseSkill,
     onOpenSkillRecommendations,
     onDraftPrompt,
     onFocusNode,
@@ -612,7 +611,6 @@ export function AgentConversation({
     nodeCount: number | null;
     /** null 表示技能库还没读到，此时不提示安装推荐，避免闪现。 */
     installedSkillCount: number | null;
-    onChooseSkill: () => void;
     onOpenSkillRecommendations: () => void;
     onDraftPrompt: (prompt: string) => void;
     onFocusNode?: (nodeId: string) => void;
@@ -678,9 +676,7 @@ export function AgentConversation({
                 followRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
             }}
         >
-            {!messages.length ? (
-                <AgentWelcome appearance={appearance} nodeCount={nodeCount} installedSkillCount={installedSkillCount} onChooseSkill={onChooseSkill} onOpenSkillRecommendations={onOpenSkillRecommendations} onDraftPrompt={onDraftPrompt} />
-            ) : null}
+            {!messages.length ? <AgentWelcome appearance={appearance} nodeCount={nodeCount} installedSkillCount={installedSkillCount} onOpenSkillRecommendations={onOpenSkillRecommendations} onDraftPrompt={onDraftPrompt} /> : null}
             <div ref={contentRef} className="agent-conversation-messages">
                 {segments.map((segment, index) =>
                     segment.kind === "operations" ? (
@@ -741,9 +737,6 @@ export function ComposerControls({
     theme,
     onModelChange,
     onPermissionChange,
-    skillsOpen,
-    onSkillsOpenChange,
-    selectedSkillCount,
 }: {
     config: ReturnType<typeof useEffectiveConfig>;
     selectedModel: string;
@@ -751,9 +744,6 @@ export function ComposerControls({
     theme: CanvasTheme;
     onModelChange: (model: string) => void;
     onPermissionChange: (mode: AgentPermissionMode) => void;
-    skillsOpen: boolean;
-    onSkillsOpenChange: (open: boolean) => void;
-    selectedSkillCount: number;
 }) {
     const permissionVisual = agentPermissionVisual(permissionMode);
     const PermissionIcon = permissionVisual.icon;
@@ -783,19 +773,14 @@ export function ComposerControls({
                     <PermissionIcon className="size-3.5" style={{ color: permissionVisual.color }} aria-hidden="true" />
                 </button>
             </Dropdown>
-            <button
-                type="button"
+            <span
                 className="flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-[var(--fs-label)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/25"
-                style={{ color: selectedSkillCount ? theme.accent.primary : theme.node.muted, background: skillsOpen ? theme.node.fill : "transparent" }}
-                aria-label={`打开 Skills 技能库${selectedSkillCount ? `，本对话已固定 ${selectedSkillCount} 个` : ""}`}
-                aria-expanded={skillsOpen}
-                aria-haspopup="dialog"
-                title={selectedSkillCount ? `本对话已固定 ${selectedSkillCount} 个技能；其他已安装技能 Agent 会按任务自动查找` : "已安装的技能 Agent 会按任务自动查找"}
-                onClick={() => onSkillsOpenChange(true)}
+                style={{ color: theme.node.muted }}
+                title="Agent 会根据任务自动搜索技能广场并按需读取"
             >
-                <Blocks className="size-3.5" />
-                <span className="max-w-28 truncate">Skills({selectedSkillCount})</span>
-            </button>
+                <Sparkles className="size-3.5" />
+                <span className="max-w-28 truncate">Skills 自动匹配</span>
+            </span>
         </div>
     );
 }

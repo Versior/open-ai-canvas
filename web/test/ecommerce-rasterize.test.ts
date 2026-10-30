@@ -121,6 +121,40 @@ test("composition keeps legacy images unchanged and otherwise uses the source na
     }
 });
 
+test("composition returns the source URL untouched when the layout renders no visible copy", async () => {
+    const originals = Object.fromEntries(["Image", "document"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+    let loads = 0;
+    let canvases = 0;
+    class TestImage {
+        naturalWidth = 640;
+        naturalHeight = 480;
+        onload?: () => void;
+        set src(_value: string) {
+            loads += 1;
+            queueMicrotask(() => this.onload?.());
+        }
+    }
+    Object.defineProperty(globalThis, "Image", { configurable: true, value: TestImage });
+    Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: {
+            createElement: () => {
+                canvases += 1;
+                return { width: 0, height: 0, getContext: () => ({ drawImage() {}, fillRect() {}, fillText() {}, measureText: (text: string) => ({ width: text.length * 10 }), fillStyle: "", font: "", textBaseline: "" }), toDataURL: () => "data:image/png,transcoded" };
+            },
+        },
+    });
+    try {
+        const layout = { name: "空字", blocks: [{ id: "headline", field: "headline" as const, anchor: "top-left" as const, size: 8, color: "#000000", plate: "", align: "left" as const, inset: 6, bold: true }] };
+        expect(await rasterizeEcommerceComposition({ imageUrl: "image:untouched", copy: { headline: "", subhead: "", cta: "", price: "" }, layout })).toBe("image:untouched");
+        expect({ loads, canvases }).toEqual({ loads: 0, canvases: 0 });
+    } finally {
+        for (const [key, descriptor] of Object.entries(originals)) {
+            if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+            else Reflect.deleteProperty(globalThis, key);
+        }
+    }
+});
 test("composition rejects oversized source pixels before creating a canvas", async () => {
     const originals = Object.fromEntries(["Image", "document"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
     let canvasCreates = 0;
@@ -147,7 +181,8 @@ test("composition rejects oversized source pixels before creating a canvas", asy
             rasterizeEcommerceComposition({
                 imageUrl: "oversized-source",
                 copy: { headline: "Title", subhead: "", cta: "", price: "" },
-                layout: { name: "test", blocks: [] },
+                // 必须有真会画出来的字，否则会先走「无字原样返回」，测不到尺寸守卫。
+                layout: { name: "test", blocks: [{ id: "headline", field: "headline" as const, anchor: "top-left" as const, size: 8, color: "#000000", plate: "", align: "left" as const, inset: 6, bold: true }] },
             }),
         ).rejects.toThrow("\u5b89\u5168\u5408\u6210\u5c3a\u5bf8");
         expect(canvasCreates).toBe(0);

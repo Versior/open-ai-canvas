@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -493,6 +494,10 @@ func publishSettingsKey(path string, key []byte, link func(string, string) error
 		return err
 	}
 	defer dir.Close()
+	if runtime.GOOS == "windows" {
+		// Windows does not support syncing directory handles; the file itself was synced above.
+		return nil
+	}
 	return dir.Sync()
 }
 

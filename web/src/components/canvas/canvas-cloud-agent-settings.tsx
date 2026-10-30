@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Button, Checkbox, Input } from "antd";
-import { ArrowLeft, BookMarked, Check, ChevronRight, Cpu, Gauge, LockKeyhole, PlugZap, Search, ShieldCheck, Sparkles, Wrench, Blocks, CirclePlay } from "lucide-react";
+import { Button, Input } from "antd";
+import { ArrowLeft, Blocks, BookMarked, Check, ChevronRight, CirclePlay, Cpu, Gauge, LockKeyhole, PlugZap, Search, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { Switch } from "@/components/ui/base/switch";
@@ -36,7 +36,6 @@ type AgentSettingsProps = {
     nodeCount: number | null;
     installedSkills: Skill[];
     marketSkills: Skill[];
-    selectedSkillIds: string[];
     skillSearch: string;
     skillsLoading: boolean;
     skillHasMore: boolean;
@@ -48,7 +47,6 @@ type AgentSettingsProps = {
     onPermissionChange: (mode: AgentPermissionMode) => void;
     onContextToggle: (value: AgentContextKey) => void;
     onSkillSearch: (value: string) => void;
-    onSkillToggle: (skillId: string) => void;
     onSkillInstall: (skill: Skill) => Promise<void>;
     /** 切换已安装技能能否被 Agent 自动发现；失败时由调用方提示并保留原状态。 */
     onSkillAgentModeChange: (skill: Skill, mode: SkillAgentMode) => Promise<void>;
@@ -87,7 +85,7 @@ export function CanvasCloudAgentSettings(props: AgentSettingsProps) {
             <header data-agent-drag-handle className="agent-panel-header flex shrink-0 items-center gap-2">
                 <Button type="text" shape="circle" icon={<ArrowLeft className="size-4" />} onClick={section === "home" ? props.onBack : goHome} aria-label={section === "home" ? "返回对话" : "返回设置"} />
                 <div className="min-w-0 flex-1"><div className="text-sm font-semibold">{title}</div><div className="mt-0.5 text-[var(--fs-label)] opacity-40">{section === "home" ? "只影响下一次新运行" : sectionSubtitle(section)}</div></div>
-                {section !== "home" ? <span className="rounded-full px-2 py-1 text-[var(--fs-label)] opacity-50" style={{ background: theme.node.fill }}>{section === "skills" ? `${props.selectedSkillIds.length} 已固定` : "当前 Agent"}</span> : null}
+                {section !== "home" ? <span className="rounded-full px-2 py-1 text-[var(--fs-label)] opacity-50" style={{ background: theme.node.fill }}>{section === "skills" ? "自动匹配" : "当前 Agent"}</span> : null}
             </header>
 
             {section === "home" ? <SettingsHome props={props} theme={theme} onOpen={setSection} /> : null}
@@ -137,7 +135,7 @@ function SettingsHome({ props, theme, onOpen }: { props: AgentSettingsProps; the
                     <SettingRow theme={theme} icon={<Cpu className="size-4" />} title="上下文" summary={props.nodeCount === null ? "未绑定画布" : `${props.nodeCount} 个节点 · ${props.contextScope.length} 个范围`} onClick={() => onOpen("context")} />
                     <SettingRow theme={theme} icon={<BookMarked className="size-4" />} title="长期偏好" summary={profileSummary(props.profileView)} onClick={() => onOpen("profile")} />
                     <SettingRow theme={theme} icon={<BookMarked className="size-4" />} title="个人记忆" summary="Agent 在对话中自己记住和改写，可随时撤销；只属于你" onClick={() => onOpen("memories")} />
-                    <SettingRow theme={theme} icon={<Blocks className="size-4" />} title="Skills · 用户技能库" summary={skillsSummary(props.installedSkills, props.selectedSkillIds)} onClick={() => onOpen("skills")} />
+                    <SettingRow theme={theme} icon={<Blocks className="size-4" />} title="Skills · 用户技能库" summary={skillsSummary(props.installedSkills)} onClick={() => onOpen("skills")} />
                     <SettingRow theme={theme} icon={<Wrench className="size-4" />} title="工具与连接" summary="画布、技能参考文件、生成任务" onClick={() => onOpen("mcp")} />
                     <SettingRow theme={theme} icon={<Gauge className="size-4" />} title="预算" summary={`每轮最多 ${props.maxCredits || "未设置"} 积分 · 固定计价模型`} onClick={() => onOpen("budget")} />
                 </div>
@@ -158,7 +156,6 @@ function SkillsWorkspace({ props, theme, tab, onTabChange }: { props: AgentSetti
     const [modeSavingId, setModeSavingId] = useState("");
     const query = props.skillSearch.trim().toLocaleLowerCase();
     const source = tab === "installed" ? props.installedSkills.filter((skill) => `${skill.skillName} ${skill.description || ""}`.toLocaleLowerCase().includes(query)) : props.marketSkills;
-    const pinLimitReached = props.selectedSkillIds.length >= AGENT_PINNED_SKILL_LIMIT;
     const changeMode = async (skill: Skill, auto: boolean) => {
         if (modeSavingId) return;
         setModeSavingId(skill.skillId);
@@ -185,25 +182,21 @@ function SkillsWorkspace({ props, theme, tab, onTabChange }: { props: AgentSetti
                 </button>
                 <Input prefix={<Search className="size-4" style={{ color: theme.node.muted }} />} value={props.skillSearch} onChange={(event) => props.onSkillSearch(event.target.value)} placeholder={tab === "market" ? "搜索 Skill 市场" : "筛选已安装 Skill"} aria-label="搜索 Skills" className="mt-3 !h-10 !rounded-xl" />
                 <p className="mt-3 text-xs leading-5" style={{ color: theme.node.muted }}>
-                    {tab === "market" ? "装好后 Agent 会在任务需要时自己查找并使用。" : `开启「自动」的技能，Agent 会按任务自己查找；勾选「固定」会在本对话优先使用，最多 ${AGENT_PINNED_SKILL_LIMIT} 个。`}
+                    {tab === "market" ? "装好后 Agent 会在任务需要时自己查找并使用。" : "Agent 按任务自动搜索并读取技能；「自动」的技能可被主动发现，「仅手动」只在你点名时使用。"}
                 </p>
             </div>
             <div className="canvas-agent-settings-scroll thin-scrollbar min-h-0 min-w-0 flex-1 space-y-1 overflow-y-auto p-4 pt-2">
                 {props.skillsLoading && !source.length ? <div className="py-8 text-center text-xs" style={{ color: theme.node.muted }}>正在读取技能…</div> : null}
                 {source.map((skill) => {
-                    const pinned = props.selectedSkillIds.includes(skill.skillId);
                     return (
                         <SkillRow
                             key={skill.skillId}
                             skill={skill}
                             theme={theme}
-                            pinned={pinned}
-                            pinDisabled={!pinned && pinLimitReached}
                             installed={skill.isAdded}
                             installedView={tab === "installed"}
                             modeSaving={modeSavingId === skill.skillId}
                             modeDisabled={Boolean(modeSavingId) && modeSavingId !== skill.skillId}
-                            onTogglePin={() => props.onSkillToggle(skill.skillId)}
                             onModeChange={(auto) => void changeMode(skill, auto)}
                             onInstall={() => void props.onSkillInstall(skill)}
                         />
@@ -220,10 +213,10 @@ function SkillsWorkspace({ props, theme, tab, onTabChange }: { props: AgentSetti
     );
 }
 
-function skillsSummary(installed: Skill[], pinnedIds: string[]) {
+function skillsSummary(installed: Skill[]) {
     if (!installed.length) return "还没有安装技能 · 可按行业安装推荐";
     const auto = installed.filter((skill) => skill.agentMode !== "manual").length;
-    return `${installed.length} 个已安装 · ${auto} 个可自动使用${pinnedIds.length ? ` · 固定 ${pinnedIds.length} 个` : ""}`;
+    return `${installed.length} 个已安装 · ${auto} 个可自动使用`;
 }
 
 type ProfileDraft = Pick<AgentProfileLayer, "content" | "revision" | "hash"> & { dirty: boolean };
@@ -327,19 +320,16 @@ function ProfileError({ message, onRetry, theme }: { message: string; onRetry: (
 type SkillRowProps = {
     skill: Skill;
     theme: CanvasTheme;
-    pinned: boolean;
-    pinDisabled: boolean;
     installed: boolean;
-    /** 已安装页显示「固定」和「自动」；市场页只显示安装按钮。 */
+    /** 已安装页显示「自动」开关；市场页只显示安装按钮。 */
     installedView: boolean;
     modeSaving: boolean;
     modeDisabled: boolean;
-    onTogglePin: () => void;
     onModeChange: (auto: boolean) => void;
     onInstall: () => void;
 };
 
-function SkillRow({ skill, theme, pinned, pinDisabled, installed, installedView, modeSaving, modeDisabled, onTogglePin, onModeChange, onInstall }: SkillRowProps) {
+function SkillRow({ skill, theme, installed, installedView, modeSaving, modeDisabled, onModeChange, onInstall }: SkillRowProps) {
     const auto = skill.agentMode !== "manual";
     return (
         <div className="canvas-agent-skill-row flex min-w-0 items-start gap-3 rounded-xl p-3 transition-colors">
@@ -353,9 +343,6 @@ function SkillRow({ skill, theme, pinned, pinDisabled, installed, installedView,
                             <Switch size="sm" checked={auto} loading={modeSaving} disabled={modeDisabled} onChange={onModeChange} aria-label={`允许 Agent 自动使用 ${skill.skillName}`} />
                             <span aria-hidden="true">{auto ? "自动" : "仅手动"}</span>
                         </span>
-                        <Checkbox checked={pinned} disabled={pinDisabled} onChange={onTogglePin} aria-label={`在本对话固定 ${skill.skillName}`}>
-                            <span className="text-xs" style={{ color: theme.node.muted }} title={pinDisabled ? `最多固定 ${AGENT_PINNED_SKILL_LIMIT} 个技能` : undefined}>固定</span>
-                        </Checkbox>
                     </div>
                 ) : null}
             </div>
@@ -393,7 +380,7 @@ function TabButton({ active, label, onClick, theme }: { active: boolean; label: 
 function SettingLabel({ label, hint }: { label: string; hint?: string }) { return <div className="mb-2 flex items-center justify-between text-xs font-semibold"><span>{label}</span>{hint ? <span className="text-[var(--fs-label)] font-normal opacity-40">{hint}</span> : null}</div>; }
 function BudgetInput({ label, hint, value, onChange, theme }: { label: string; hint: string; value: string; onChange: (value: string) => void; theme: CanvasTheme }) { return <label className="block"><span className="flex items-center justify-between text-xs font-medium"><span>{label}</span><span className="text-[var(--fs-label)] opacity-40">{hint}</span></span><Input size="large" value={value} onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" className="mt-2 !rounded-lg" style={{ background: theme.node.fill }} /></label>; }
 function sectionTitle(section: SettingsSection) { return section === "profile" ? "长期偏好" : section === "memories" ? "个人记忆" : section === "skills" ? "Skills" : section === "mcp" ? "MCP 与工具" : section === "context" ? "上下文" : "预算"; }
-function sectionSubtitle(section: SettingsSection) { return section === "profile" ? "用户、项目和画布的长期行为偏好" : section === "memories" ? "只属于你；Agent 自动整理，可撤销" : section === "skills" ? "已安装的技能 Agent 会按任务自动选用" : section === "mcp" ? "云端工具与连接状态" : section === "context" ? "控制 Agent 能读取的范围" : "控制本轮积分与生成消耗"; }
+function sectionSubtitle(section: SettingsSection) { return section === "profile" ? "用户、项目和画布的长期行为偏好" : section === "memories" ? "只属于你，批准后才会注入会话" : section === "skills" ? "浏览、安装和管理；运行时自动匹配" : section === "mcp" ? "云端工具与连接状态" : section === "context" ? "控制 Agent 能读取的范围" : "控制本轮积分与生成消耗"; }
 
 export function agentPermissionLabel(mode: AgentPermissionMode) { return permissionOptions.find((option) => option.value === mode)?.label || "请求审批"; }
 export function agentPermissionVisual(mode: AgentPermissionMode) { const option = permissionOptions.find((item) => item.value === mode) || permissionOptions[0]; return { color: option.color, soft: `${option.color}1f`, icon: option.icon }; }

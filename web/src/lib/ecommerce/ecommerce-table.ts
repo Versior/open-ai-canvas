@@ -1,24 +1,34 @@
-import { nanoid } from "nanoid";
+﻿import { nanoid } from "nanoid";
+import { canonicalize } from "json-canonicalize";
 import { canvasGenerationInputPrompt } from "@/lib/canvas/canvas-generation-input-prompt";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
-import { nodeGenerationPrompt, synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
+import { synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
+import { CanvasNodeType, type CanvasBatchRow, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ecommerceOneClickFlow, type EcommerceOneClickFlowId } from "./ecommerce-oneclick";
 import { resolveEcommerceTableModels } from "./ecommerce-model-defaults";
 import type { EcommerceModel } from "./ecommerce-models";
-import { ecommerceSuiteRows, type EcommerceSuite, type EcommerceSuiteRow } from "./ecommerce-suite";
+import { CURRENT_ECOMMERCE_SUITE_SCHEMA_VERSION, ecommerceSuiteRows, migrateLegacyEcommerceSuite, type EcommerceSuite, type EcommerceSuiteRow } from "./ecommerce-suite";
 import type { EcommerceSuiteTargets } from "./ecommerce-canvas-preset";
 import { ecommerceMediaIdentity, mergeEcommercePrompt, resolveEcommerceInputs } from "./ecommerce-canvas";
 
 export type EcommerceResultSourceSignature = (row: EcommerceSuiteRow, node: CanvasNodeData) => string | undefined;
 
-/** Inputs that can alter one generated image. Batch count and local copy/layout do not. */
+/**
+ * Inputs that can alter one generated image.
+ *
+ * Batch count never matters, and纯本地排版（layout）也不影响底图。但详情页让模型画字，
+ * 文案是画面的一部分——所以文案必须进签名，否则改了标题还能把旧图当成当前结果。
+ */
 export function ecommerceGenerationSourceSignature(input: { source: CanvasNodeData; row: EcommerceSuiteRow; target: CanvasNodeData; nodes: CanvasNodeData[]; connections: CanvasConnection[]; config: AiConfig; customModels?: EcommerceModel[] }) {
     const { source, row, target, nodes, connections, config, customModels = [] } = input;
     const { imageModel } = resolveEcommerceTableModels(config, { imageModel: source.metadata?.ecommerceImageModel });
     if (!imageModel) return undefined;
+    // 详情页的新合同行由图片模型画字：文案与版式都是画面的一部分，一起进底图与签名。
+    // 其他用途走本地叠字，文案和版式都不进底图，改了只需重新合成。
+    const flowId = target.metadata?.ecommerceFlowId || source.metadata?.ecommerceFlowId;
+    const modelDrawsText = row.imagePromptContractVersion === 1 && flowId === "detail";
     const prepared = synchronizeGenerationSpec(target, {
         prompt: row.prompt,
         composerContent: row.prompt,
@@ -26,12 +36,27 @@ export function ecommerceGenerationSourceSignature(input: { source: CanvasNodeDa
         ...(source.metadata?.ecommerceImageSize?.trim() ? { size: source.metadata.ecommerceImageSize.trim() } : {}),
         ...(source.metadata?.ecommerceImageQuality?.trim() ? { quality: source.metadata.ecommerceImageQuality.trim() } : {}),
     });
-    const graphNodes = nodes.some((node) => node.id === prepared.id) ? nodes.map((node) => (node.id === prepared.id ? prepared : node)) : [...nodes, prepared];
-    const ecommerce = resolveEcommerceInputs(prepared.id, graphNodes, connections, customModels);
+    // 画布图里可能还是旧节点：source（表）与 target（产物）都要换成调用方传进来的那一份，
+    // 否则解析仍按旧表读平台/设置，签名和真实请求就会各说一套。
+    const graphNodes = nodes.map((node) => (node.id === prepared.id ? prepared : node.id === source.id ? source : node));
+    if (!graphNodes.some((node) => node.id === source.id)) graphNodes.push(source);
+    if (!graphNodes.some((node) => node.id === prepared.id)) graphNodes.push(prepared);
+    // 传入的行是真相：画布表里存的可能还是旧行，读那边会让签名对文案不敏感。
+    // 文案与版式只有一个来源——这条 rowsOverride，不是先写进 prepared 再让下游回读：
+    // prepared 上的 ecommerceCopy/ecommerceLayout 没人读，写了也只是看起来在生效。
+    // 只有文案真进底图时才覆盖；本地叠字的用途保持原读取路径，不无故让旧结果失效。
+    const ecommerce = resolveEcommerceInputs(prepared.id, graphNodes, connections, customModels, modelDrawsText ? [row] : undefined);
     const generation = buildGenerationConfig(config, prepared, "image");
     const nodeById = new Map(graphNodes.map((node) => [node.id, node]));
+    // 尾巴只取**当前行**的画面段：真实请求准备节点时就把行提示词写进了 prepared.prompt（project.tsx），
+    // 快照再从 prepared 上读回来拼。签名若改读 target 自己那份，产物节点还挂着旧画面 A 时，
+    // 用户刚把画面改成 B 就会拿 A 去拼——两端各读一份，同源当场破裂。
+    // 相机的附加段仍按 prepared 补，这是请求侧 canvasGenerationInputPrompt 的同一段逻辑。
+    // 合并必须走请求侧同一个入口、同一个第三参数，两处各写一套必然一处去重一处保留。
     return JSON.stringify([
-        mergeEcommercePrompt(ecommerce.prompt, canvasGenerationInputPrompt(prepared, "image", nodeGenerationPrompt(prepared))),
+        // 与 project.tsx 准备节点、快照取提示词同一口径：都先 trim 掉表格里敲进去的尾空白，
+        // 否则相机段会把空白夹在中间，trim 不掉，签名比真实请求多几个空格。
+        mergeEcommercePrompt(ecommerce.prompt, canvasGenerationInputPrompt(prepared, "image", row.prompt.trim()), { visualPrompt: ecommerce.sources.visualPrompt }),
         ecommerce.referenceImages.map((reference) => {
             const identity = ecommerceMediaIdentity(nodeById.get(reference.id));
             return [reference.id, reference.storageKey || identity?.[1] || "", identity?.[2] || "", reference.type || identity?.[3] || "", identity?.[4] || ""];
@@ -53,9 +78,17 @@ export function detachEcommerceTableOutputConnections(connections: CanvasConnect
     return connections.filter((edge) => edge.fromNodeId !== tableId || edge.relation !== "batch-output");
 }
 
+/**
+ * 补上当前版本号，但**不补行**：写出入口只记录用户确认过的结构，加屏只发生在真正的加载迁移里。
+ */
+function versionedEcommerceSuite(suite: EcommerceSuite) {
+    return suite.schemaVersion === undefined ? { ...suite, schemaVersion: CURRENT_ECOMMERCE_SUITE_SCHEMA_VERSION } : suite;
+}
+
 export function ecommerceSuiteMetadata(metadata: CanvasNodeMetadata | undefined, suite: EcommerceSuite): CanvasNodeMetadata {
+    const current = versionedEcommerceSuite(suite);
     // The canvas canonicalizer treats sibling paths with shared prefixes as cycles.
-    return { ecommerceSuite: structuredClone(suite), ecommerceSuitesByFlow: structuredClone({ ...metadata?.ecommerceSuitesByFlow, [suite.flow]: suite }) };
+    return { ecommerceSuite: structuredClone(current), ecommerceSuitesByFlow: structuredClone({ ...metadata?.ecommerceSuitesByFlow, [current.flow]: current }) };
 }
 
 /** Replace a detail-page table skeleton while preserving its model and table settings. */
@@ -96,10 +129,13 @@ export function ecommerceTableMetadata(product: CanvasNodeData, flowId: Ecommerc
     const suite: EcommerceSuite =
         product.metadata?.ecommerceSuitesByFlow?.[flowId] ||
         (product.metadata?.ecommerceSuite?.flow === flowId ? product.metadata.ecommerceSuite : { flow: flowId, rows: ecommerceSuiteRows(flow, undefined), source: "draft", updatedAt: new Date().toISOString() });
+    // 读商品上的旧套图就是一次加载：结构升级发生在这里。两份表示都从迁移后的行派生，
+    // 否则首次建表会得到「套装十行、表格九行」的错位。
+    const current = migrateLegacyEcommerceSuite(suite);
     return {
         ecommerceProductId: product.id,
         ecommerceFlowId: flowId,
-        ecommerceSuite: suite,
+        ecommerceSuite: versionedEcommerceSuite(current),
         ecommerceAnalysisModel: product.metadata?.ecommerceAnalysisModel,
         ecommerceImageModel: product.metadata?.ecommerceImageModel,
         ecommerceImageSize: product.metadata?.ecommerceImageSize,
@@ -107,7 +143,7 @@ export function ecommerceTableMetadata(product: CanvasNodeData, flowId: Ecommerc
         ecommerceBrief: product.metadata?.ecommerceBrief,
         ecommerceAnalysisSkillsByFlow: product.metadata?.ecommerceAnalysisSkillsByFlow,
         ecommerceAutoBind: product.metadata?.ecommerceAutoBind,
-        batchTable: { operation: "product", concurrency: 10, rows: suite.rows.map((row) => ({ id: row.slotId, enabled: row.enabled !== false, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })) },
+        batchTable: { operation: "product", concurrency: 10, rows: current.rows.map((row) => ({ id: row.slotId, enabled: row.enabled !== false, inputNodeIds: [], prompt: row.prompt, cells: { title: row.title, duty: row.duty } })) },
     };
 }
 
@@ -137,28 +173,38 @@ export function openEcommerceTable(nodes: CanvasNodeData[], connections: CanvasC
     return { nodes, connections, table };
 }
 
+/** Batch rows already mirror the suite: same ids, order, skip flags, prompts and cells. */
+function rowsMirrorSuite(rows: CanvasBatchRow[] | undefined, suite: EcommerceSuite) {
+    return (
+        rows?.length === suite.rows.length &&
+        rows.every((row, index) => row.id === suite.rows[index].slotId && row.enabled === (suite.rows[index].enabled !== false) && row.prompt === suite.rows[index].prompt && row.cells?.title === suite.rows[index].title && row.cells?.duty === suite.rows[index].duty)
+    );
+}
+
 /** A manually connected product activates the same workflow as the product buttons. */
 export function syncEcommerceTables(nodes: CanvasNodeData[], connections: CanvasConnection[]) {
     let changed = false;
     const next = nodes.map((node) => {
         if (node.type !== CanvasNodeType.BatchTable || node.metadata?.locked) return node;
         if (node.metadata?.ecommerceFlowId) {
-            const suite = node.metadata.ecommerceSuite;
-            if (!suite) return node;
+            const flowId = node.metadata.ecommerceFlowId as EcommerceOneClickFlowId;
+            // A suite written for another flow is corrupt data: leave it alone rather than index a second flow here.
+            const direct = node.metadata.ecommerceSuite?.flow === flowId ? node.metadata.ecommerceSuite : undefined;
+            const indexed = node.metadata.ecommerceSuitesByFlow?.[flowId];
+            // Two representations that disagree are ambiguous data: leave both untouched so no edit is silently discarded.
+            if (direct && indexed && canonicalize(direct) !== canonicalize(indexed)) return node;
+            const source = direct || indexed;
+            if (!source) return node;
+            const suite = versionedEcommerceSuite(migrateLegacyEcommerceSuite(source));
             const rows = node.metadata.batchTable?.rows;
-            if (
-                rows?.length === suite.rows.length &&
-                rows.every(
-                    (row, index) =>
-                        row.id === suite.rows[index].slotId && row.enabled === (suite.rows[index].enabled !== false) && row.prompt === suite.rows[index].prompt && row.cells?.title === suite.rows[index].title && row.cells?.duty === suite.rows[index].duty,
-                )
-            )
-                return node;
+            // Already current: no migration, both representations are separate copies and rows mirror the suite.
+            if (direct && indexed && direct !== indexed && canonicalize(suite) === canonicalize(source) && rowsMirrorSuite(rows, suite)) return node;
             changed = true;
             return {
                 ...node,
                 metadata: {
                     ...node.metadata,
+                    ...ecommerceSuiteMetadata(node.metadata, suite),
                     batchTable: {
                         operation: "product" as const,
                         concurrency: 10,

@@ -169,12 +169,15 @@ func (s *Service) processCanvasGenerationTask(ctx context.Context, userID string
 	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil {
 		return nil, err
 	}
-	if _, private := input.Metadata["ecommerceAnalysisFlow"]; private {
+	if ecommercePrivateInstruction(input.Metadata) {
 		defer func() {
 			if taskError != nil {
 				taskError = privateEcommerceAnalysisError(taskError)
 			}
 		}()
+	}
+	if err := s.applyEcommerceAutoSkills(userID, &input); err != nil {
+		return nil, err
 	}
 	if input.Mode == "text" && input.Config.CapabilityConfig != nil && input.Config.CapabilityConfig.Text != nil {
 		// The same capability contract drives provider output limits, billing

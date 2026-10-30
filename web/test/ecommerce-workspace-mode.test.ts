@@ -80,6 +80,7 @@ test("真实顶栏展示当前电商模式并切换到另一模式", async () =>
     document.body.append(host);
     const root = createRoot(host);
     const changes: CanvasWorkspaceMode[] = [];
+    let modelLibraryOpens = 0;
     const noop = () => {};
     const render = async (workspaceMode: CanvasWorkspaceMode) => {
         await act(async () =>
@@ -116,6 +117,7 @@ test("真实顶栏展示当前电商模式并切换到另一模式", async () =>
                             onShare: noop,
                             shortcutRequestNonce: 0,
                             onOpenSearch: noop,
+                            onOpenModelLibrary: () => modelLibraryOpens++,
                             onEnterFocusMode: noop,
                         }),
                     ),
@@ -130,6 +132,9 @@ test("真实顶栏展示当前电商模式并切换到另一模式", async () =>
         const simple = modeButton("快捷创作，切换到专业画布");
         expect(simple.textContent).toContain("快捷创作");
         expect(simple.getAttribute("aria-pressed")).toBe("false");
+        const modelLibrary = modeButton("管理模特库");
+        await act(async () => modelLibrary.click());
+        expect(modelLibraryOpens).toBe(1);
         await act(async () => simple.click());
         expect(changes).toEqual(["professional"]);
 

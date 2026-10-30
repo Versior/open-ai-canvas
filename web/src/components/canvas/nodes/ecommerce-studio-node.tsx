@@ -7,7 +7,6 @@ import { CanvasNodeGraphContext, useNodeInputs, useDownstreamNodes } from "../ca
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
 import { ModelPicker } from "@/components/model-picker";
 import { EcommerceImageSettings } from "../ecommerce-image-settings";
-import { SkillRuntimePicker, useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
 import { EcommerceChoiceInput, ECOMMERCE_BRIEF_CHOICES } from "../ecommerce-choice-input";
 import { ECOMMERCE_CAPABILITIES } from "@/lib/ecommerce/ecommerce-capabilities";
 import { EcommerceTemplateCatalogDetails } from "../ecommerce-template-catalog";
@@ -30,7 +29,6 @@ export function EcommerceStudioNodeContent({ node, theme }: { node: CanvasNodeDa
     const { updateMetadata, runEcommerceWorkbench, stopEcommerceWorkbench, isEcommerceWorkbenchRunning, openEcommerceWorkbench, focusNode, viewImage } = useCanvasNodeActions();
     const { message } = App.useApp();
     const config = useEffectiveConfig();
-    const skills = useSkillRuntimeCatalog();
     const upstream = useNodeInputs(node.id);
     const graph = useContext(CanvasNodeGraphContext);
     const downstream = useDownstreamNodes(node.id);
@@ -262,26 +260,13 @@ export function EcommerceStudioNodeContent({ node, theme }: { node: CanvasNodeDa
                             </div>
                         </details>
                         <details>
-                            <summary>模型与分析技能</summary>
+                            <summary>模型设置</summary>
                             <div className="ecommerce-studio-grid">
                                 <label>
                                     分析模型
                                     <ModelPicker config={config} capability="text" value={studio.textModel || config.textModel} onChange={(textModel) => patch({ textModel })} fullWidth />
                                 </label>
                             </div>
-                            <label>
-                                分析 Skills（可选）
-                                <SkillRuntimePicker
-                                    skills={skills.skills}
-                                    loading={skills.loading}
-                                    value={studio.skillIds || []}
-                                    onChange={(skillIds) => {
-                                        if (!locked) patch({ skillIds });
-                                    }}
-                                    ariaLabel="生图台分析技能"
-                                />
-                            </label>
-                            {skills.error ? <p role="alert">{skills.error}</p> : null}
                         </details>
                         <details>
                             <summary>套图模板{brief.template ? ` · ${brief.template.name}` : " · 可选"}</summary>

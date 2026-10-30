@@ -48,8 +48,10 @@ describe("batch image input snapshot", () => {
         const snapshot = createCanvasBatchInputSnapshot(target, [product, target], [{ id: "product-output", fromNodeId: product.id, toNodeId: target.id }], []);
         const prompt = snapshot.context.prompt;
 
-        expect(prompt).toContain("只生成无文字、无 Logo、无水印的商品底图");
-        expect(prompt).toContain("标题、副文案、价格与行动引导由本地确定性排版添加");
+        // 合同文案改过两轮，断言只认「模型不画文案」这件事本身，不锁死句子。
+        expect(prompt).toContain("【无字底图合同】");
+        expect(prompt).toContain("图片模型只需预留对应空间，不要自行生成额外文案");
+        expect(prompt).toContain("由本地确定性排版添加");
         expect(prompt).not.toContain("以下文字要出现在画面上");
         expect(prompt).not.toContain("逐字准确");
     });

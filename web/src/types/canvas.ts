@@ -222,10 +222,26 @@ export type StoryboardData = {
     referenceNodeIds: string[];
 };
 
+/** 电商文字归属：model 由图片模型把确认文案画进画面，local 生成无字底图后本地叠字。 */
+export type EcommerceTextMode = "model" | "local";
+
+/** 成功媒体实际采用的文字模式，绑定到产出它的资源；缺失即 unknown。 */
+export type EcommerceResultTextMode = {
+    mode: EcommerceTextMode;
+    sourceStorageKey: string;
+};
+
 /** 批量创作入队时的输入，保留资源版本；队列重试继续使用同一份输入。 */
 export type CanvasBatchInputSnapshot = {
     version: 1;
     prompt: string;
+    /**
+     * 入队时冻结的电商文字模式。model 由图片模型画字，local 走本地叠字。
+     * 缺失表示入队时无法确定（旧快照/非电商），重试不得回读当前 store 猜测。
+     */
+    ecommerceTextMode?: EcommerceTextMode;
+    /** 入队时该行不能新生成的原因；空/缺失 = 可以。执行阶段原样消费，不重算。 */
+    ecommerceIssue?: string;
     context: {
         prompt: string;
         referenceImages: ReferenceImage[];
@@ -336,7 +352,25 @@ export type CanvasSkillSnapshot = {
 /** 媒体字段沿用 metadata 原字段名，资源引用扫描和本地缓存清理可直接识别 storageKey/content。 */
 export type CanvasMediaVersionMedia = Pick<
     CanvasNodeMetadata,
-    "content" | "storageKey" | "previewContent" | "mimeType" | "bytes" | "durationMs" | "hasAudio" | "waveform" | "waveformVersion" | "naturalWidth" | "naturalHeight" | "videoPreview" | "imageRotation" | "assetId"
+    | "content"
+    | "storageKey"
+    | "previewContent"
+    | "mimeType"
+    | "bytes"
+    | "durationMs"
+    | "hasAudio"
+    | "waveform"
+    | "waveformVersion"
+    | "naturalWidth"
+    | "naturalHeight"
+    | "videoPreview"
+    | "imageRotation"
+    | "assetId"
+    | "ecommerceResultTextMode"
+    // 签名属于这一次媒体本身：切回旧版本时必须连同输入/结果签名成对回滚，
+    // 否则旧图会被当成当前方案的结果。两者一起进、一起出。
+    | "batchInputSignature"
+    | "batchResultInputSignature"
 >;
 
 export type CanvasMediaVersionGeneration = Pick<CanvasNodeMetadata, "prompt" | "model" | "producedModel" | "size" | "quality" | "seconds" | "references" | "taskId" | "taskDurationMs">;
@@ -812,6 +846,11 @@ export type CanvasNodeMetadata = {
     batchInputSignature?: string;
     /** 只有成功媒体写入后才记录，等待或失败时保持空缺。 */
     batchResultInputSignature?: string;
+    /**
+     * 成功媒体实际采用的电商文字模式，绑定产出它的资源。
+     * 只由该任务的入队输入与结果 storageKey 共同决定；缺失即 unknown。
+     */
+    ecommerceResultTextMode?: EcommerceResultTextMode;
     frame?: {
         collapsed: boolean;
         expandedWidth: number;

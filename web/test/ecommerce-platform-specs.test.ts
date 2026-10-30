@@ -10,10 +10,57 @@ import {
     ecommercePlatform,
     ecommerceRoleSpec,
     ecommerceSpecBlocked,
+    ecommercePlatformChoiceTier,
+    ecommercePlatformChoiceLabel,
+    resolveEcommercePlatformId,
 } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { ecommerceDiagramBoxes, ecommerceShotDiagram } from "@/lib/ecommerce/ecommerce-shot-diagram";
+import { ECOMMERCE_BRIEF_CHOICES, ecommerceChoiceOptions } from "@/components/canvas/ecommerce-choice-input";
 
 describe("platform specs", () => {
+    test("resolves platform ids from ids, display names and common aliases", () => {
+        expect([
+            "淘宝",
+            "天猫",
+            "淘宝 / 天猫",
+            "京东",
+            "拼多多",
+            "抖店",
+            "小红书",
+            "Amazon",
+            "Shopify",
+            "独立站",
+            "TikTok Shop",
+        ].map(resolveEcommercePlatformId)).toEqual(["taobao", "taobao", "taobao", "jd", "pdd", "douyin", "xiaohongshu", "amazon", "shopify", "shopify", "tiktokshop"]);
+        expect(resolveEcommercePlatformId("custom marketplace")).toBeUndefined();
+        expect(resolveEcommercePlatformId()).toBeUndefined();
+    });
+
+    test("platform choices say whether they carry built-in specs, and other choices say nothing", () => {
+        // 有内置角色的算专属规格，其余（快手、1688、eBay……）只走通用建议
+        for (const value of ["淘宝", "天猫", "京东", "Amazon", "TikTok Shop", "独立站"]) expect(ecommercePlatformChoiceTier(value)).toBe("专属规格");
+        for (const value of ["快手", "微信小店", "1688", "得物", "eBay", "Temu", "SHEIN", "我自己的小店", ""]) expect(ecommercePlatformChoiceTier(value)).toBe("通用建议");
+    });
+
+    test("platform dropdown labels carry the tier while the stored value stays untouched", () => {
+        expect(ecommercePlatformChoiceLabel("淘宝")).toBe("淘宝 · 专属规格");
+        expect(ecommercePlatformChoiceLabel("快手")).toBe("快手 · 通用建议");
+        // 用户自己填的平台不清空、不改写
+        expect(ecommercePlatformChoiceLabel("我自己的小店")).toBe("我自己的小店 · 通用建议");
+        expect(ecommercePlatformChoiceLabel("")).toBe("");
+    });
+
+    test("only the platform field annotates its dropdown; market and language stay as they are", () => {
+        // 平台候选：显示文案带口径，提交值仍是原文
+        expect(ecommerceChoiceOptions(["淘宝", "快手"], "", true)).toEqual([
+            { value: "淘宝", label: "淘宝 · 专属规格" },
+            { value: "快手", label: "快手 · 通用建议" },
+        ]);
+        // 市场与语言一字不加，过滤行为不变
+        expect(ecommerceChoiceOptions(["中国", "美国"], "美", false)).toEqual([{ value: "美国", label: "美国" }]);
+        expect(ecommerceChoiceOptions(ECOMMERCE_BRIEF_CHOICES.language, "", false).map((option) => option.label)).toEqual([...ECOMMERCE_BRIEF_CHOICES.language]);
+    });
+
     test("covers both the domestic and the overseas platforms this product ships to", () => {
         expect(ECOMMERCE_PLATFORMS.map((platform) => platform.id)).toEqual(["taobao", "jd", "pdd", "douyin", "xiaohongshu", "amazon", "walmart", "etsy", "tiktokshop", "shopify"]);
         for (const platform of ECOMMERCE_PLATFORMS) {
@@ -56,7 +103,7 @@ describe("platform specs", () => {
         // 没标 generated 就不报——测不了的项不能靠猜
         expect(checkImageAgainstSpec({ platformId: "tiktokshop", role: "main", facts: { width: 1200, height: 1200 } })).toEqual([]);
         const generated = checkImageAgainstSpec({ platformId: "tiktokshop", role: "main", facts: { width: 1200, height: 1200, audit: { generated: true } } });
-        expect(ecommerceSpecBlocked(generated)).toBe(true);
+        expect(generated).toHaveLength(1);
         expect(generated[0].message).toContain("AI-generated");
     });
 
@@ -66,7 +113,7 @@ describe("platform specs", () => {
         const portrait = checkImageAgainstSpec({ platformId: "amazon", role: "video", facts: { width: 1080, height: 1920 } });
         expect(portrait).toEqual([]);
         const square = checkImageAgainstSpec({ platformId: "amazon", role: "video", facts: { width: 1080, height: 1080 } });
-        expect(ecommerceSpecBlocked(square)).toBe(true);
+        expect(square).toHaveLength(1);
         expect(square[0].message).toContain("16:9 或 9:16");
     });
 
@@ -87,10 +134,13 @@ describe("platform specs", () => {
         }
     });
 
-    test("undersized images are blocked, not warned", () => {
+    test("undersized images are reported against the built-in spec without claiming platform approval", () => {
         const issues = checkImageAgainstSpec({ platformId: "taobao", role: "main", facts: { width: 600, height: 600 } });
-        expect(ecommerceSpecBlocked(issues)).toBe(true);
-        expect(issues[0].message).toContain("800");
+        // 600×600 比例仍是 1:1，只差在宽高两条
+        expect(issues).toHaveLength(2);
+        // 没有可核验出处，只算建议；但仍要说清差在哪
+        expect(issues.every((issue) => issue.level === "warn")).toBe(true);
+        expect(issues.map((issue) => issue.message).join(" ")).toContain("800");
         expect(issues[0].scope).toContain("淘宝");
     });
 
@@ -108,7 +158,8 @@ describe("platform specs", () => {
         // 没检测就不报——不能用猜测填满报告
         expect(checkImageAgainstSpec({ platformId: "taobao", role: "white", facts: { width: 800, height: 800 } })).toEqual([]);
         const dirty = checkImageAgainstSpec({ platformId: "taobao", role: "white", facts: { width: 800, height: 800, audit: { whiteEdgeRatio: 0.42, cornerColor: "#8A8A8A" } } });
-        expect(ecommerceSpecBlocked(dirty)).toBe(true);
+        expect(dirty).toHaveLength(1);
+        expect(dirty[0].level).toBe("warn");
         expect(dirty[0].message).toContain("#8A8A8A");
     });
 
@@ -122,15 +173,16 @@ describe("platform specs", () => {
 
     test("douyin's first main image forbids any text at all", () => {
         const issues = checkImageAgainstSpec({ platformId: "douyin", role: "main", facts: { width: 800, height: 800, audit: { textRatio: 0.03 } } });
-        expect(ecommerceSpecBlocked(issues)).toBe(true);
+        expect(issues).toHaveLength(1);
         expect(issues[0].message).toContain("不允许出现文字");
     });
 
-    test("taobao allows a little text but blocks past double the limit", () => {
+    test("taobao allows a little text but reports both the over-limit and the far-over-limit case", () => {
         const warned = checkImageAgainstSpec({ platformId: "taobao", role: "main", facts: { width: 800, height: 800, audit: { textRatio: 0.15 } } });
         expect(warned[0].level).toBe("warn");
         const blocked = checkImageAgainstSpec({ platformId: "taobao", role: "main", facts: { width: 800, height: 800, audit: { textRatio: 0.25 } } });
-        expect(blocked[0].level).toBe("block");
+        expect(blocked[0].level).toBe("warn");
+        expect(blocked[0].message).toContain("文字面积");
     });
 
     test("one image can be checked against several platforms at once", () => {
@@ -145,6 +197,32 @@ describe("platform specs", () => {
         expect(aspectRatioLabel(1200, 1200)).toBe("1:1");
         expect(aspectRatioLabel(750, 1000)).toBe("3:4");
         expect(aspectRatioLabel(0, 100)).toBe("");
+    });
+
+    test("decimal and non-exact ratios pass within the project's own 1% tolerance", () => {
+        // 1200×628 是 Amazon 品牌推广图的标准尺寸，1.91:1 是小数比例，按最简整数比永远对不上
+        expect(checkImageAgainstSpec({ platformId: "amazon", role: "ad", facts: { width: 1200, height: 628 } })).toEqual([]);
+        // 小红书封面 1242×1660 化简是 621:830，与 3:4 只差 0.24%，在 1% 容差内算通过
+        expect(checkImageAgainstSpec({ platformId: "xiaohongshu", role: "cover", facts: { width: 1242, height: 1660 } })).toEqual([]);
+        // 容差不是放水：4:3 对 1:1 差 33%，照样报出来（未核验所以是提醒，不是拦截）
+        const wrong = checkImageAgainstSpec({ platformId: "jd", role: "main", facts: { width: 1200, height: 900 } });
+        expect(wrong.map((issue) => issue.message).join(" ")).toContain("比例 4:3");
+    });
+
+    test("no slot carries both ratio and allowedRatios, so the ratio check never double-blocks", () => {
+        for (const platform of ECOMMERCE_PLATFORMS) {
+            for (const spec of Object.values(platform.roles)) expect(Boolean(spec!.ratio && spec!.allowedRatios?.length)).toBe(false);
+        }
+    });
+
+    test("unusable dimensions are never treated as a pass", () => {
+        for (const [width, height] of [[Number.NaN, 628], [Number.POSITIVE_INFINITY, 628], [1200, 0]]) {
+            const issues = checkImageAgainstSpec({ platformId: "amazon", role: "ad", facts: { width, height } });
+            expect(issues.length).toBeGreaterThan(0);
+            expect(issues.every((issue) => issue.level === "warn")).toBe(true);
+            // 交付清单会原样抄这句话，NaN 不能漏到用户眼前
+            expect(issues.map((issue) => issue.message).join(" ")).not.toContain("NaN");
+        }
     });
 
     test("unknown platform or role produces no issues instead of crashing", () => {

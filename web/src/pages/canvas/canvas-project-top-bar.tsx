@@ -220,7 +220,7 @@ export function CanvasTopBar({
                             </Button>
                         </CanvasTopBarTooltip>
                     ) : null}
-                    {showProfessionalControls && onOpenModelLibrary ? (
+                    {onOpenModelLibrary ? (
                         <CanvasTopBarTooltip label="管理模特库">
                             <Button type="text" className="canvas-topbar-action !h-10 !w-10 !min-w-10 !p-0" style={{ color: theme.node.text }} icon={<UserRound className="size-4" />} onClick={onOpenModelLibrary} aria-label="管理模特库" />
                         </CanvasTopBarTooltip>

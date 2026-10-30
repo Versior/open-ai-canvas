@@ -391,7 +391,8 @@ describe("A+ content", () => {
 
 describe("detail page slicing", () => {
     test("each platform carries its own width and slice ceiling", () => {
-        expect(ECOMMERCE_SLICE_SPECS.map((spec) => spec.id)).toEqual(["taobao", "jd", "pdd", "douyin"]);
+        expect(ECOMMERCE_SLICE_SPECS.map((spec) => spec.id)).toEqual(["generic", "taobao", "jd", "pdd", "douyin"]);
+        expect(ecommerceSliceSpec("generic")!.note).toContain("不是任何平台审核硬规则");
         expect(ecommerceSliceSpec("taobao")!.maxSliceHeight).toBe(1100);
         expect(ecommerceSliceSpec("douyin")!.maxTotalHeight).toBe(16000);
     });

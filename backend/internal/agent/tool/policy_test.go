@@ -60,3 +60,21 @@ func TestCacheableToolsAreReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestMarketplaceSkillDiscoveryRunsOutsideCheckpointTransaction(t *testing.T) {
+	if !Of(SkillSearch).OutsideTransaction {
+		t.Fatal("skill_search performs catalog and package IO inside the checkpoint transaction")
+	}
+}
+
+// 技能工具的可见性只由服务端推导的 Scope.Skills 决定，不由模型或预装状态决定。
+func TestSkillVisibilityFollowsServerScope(t *testing.T) {
+	for _, name := range []string{SkillReadFile, SkillSearch} {
+		if Of(name).Allowed(Scope{Canvas: true, IncludeProfile: true}) {
+			t.Errorf("%s exposed without server-derived skills scope", name)
+		}
+		if !Of(name).Allowed(Scope{Canvas: true, IncludeProfile: true, Skills: true}) {
+			t.Errorf("%s hidden despite server-derived skills scope", name)
+		}
+	}
+}

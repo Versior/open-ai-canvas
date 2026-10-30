@@ -48,7 +48,9 @@ test("delivery uses original dimensions and bytes, independent of canvas resizin
     expect(entry).toMatchObject({ width: 2048, height: 2048, bytes: 123456, issues: [] });
     expect(buildEcommerceDeliveryEntry({ ...image, width: 900, height: 600 }, delivery, target, 1)).toEqual(entry);
     const oversized = buildEcommerceDeliveryEntry({ ...image, metadata: { ...image.metadata, bytes: 20 * 1024 * 1024 } }, delivery, createEcommerceDeliveryTarget("amazon", "main"), 1);
-    expect(oversized.issues.some((issue) => issue.level === "block" && issue.message.includes("文件"))).toBe(true);
+    // 内置文件上限没有可核验的官方出处，按合同只能提醒；真拦要有来源+日期+适用范围
+    expect(oversized.issues.some((issue) => issue.level === "warn" && issue.message.includes("文件"))).toBe(true);
+    expect(ecommerceDeliverySummary([oversized]).blocked).toBe(0);
 });
 
 test("missing image measurements and visual checks never turn into a green pass", () => {
@@ -60,6 +62,7 @@ test("missing image measurements and visual checks never turn into a green pass"
     expect(ecommerceDeliverySummary([entry]).clean).toBe(0);
     expect(ecommerceDeliveryCsv([entry])).toContain("未检测");
     expect(ecommerceDeliveryCsv([entry])).not.toContain("NaN");
+    expect(ecommerceDeliveryCsv([entry])).not.toContain("无法判定");
 });
 
 test("another product with the same slot does not shift the current product outputs", () => {

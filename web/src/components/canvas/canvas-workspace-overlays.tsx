@@ -451,7 +451,11 @@ export function CanvasConnectionCreateMenu({
                 <span aria-hidden className="mx-1 my-0.5 h-px" style={{ background: "color-mix(in srgb, currentColor 12%, transparent)" }} />
                 {ecommerceCanvas
                     ? (workspaceMode === "simple"
-                          ? ([{ label: "商品信息", types: [CanvasNodeType.Product] }] as const)
+                          ? ([
+                                { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
+                                { label: "画面制作", types: [CanvasNodeType.Layout, CanvasNodeType.Infographic] },
+                                { label: "修改交付", types: [CanvasNodeType.Delivery] },
+                            ] as const)
                           : ([
                                 { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
                                 { label: "画面制作", types: [CanvasNodeType.EcommerceStudio, CanvasNodeType.ShotRecipe, CanvasNodeType.Layout, CanvasNodeType.Infographic, CanvasNodeType.Aplus, CanvasNodeType.EcommerceVideo] },

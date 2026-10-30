@@ -274,6 +274,30 @@ describe("媒体反推节点", () => {
             await fixture.dispose();
         }
     }, 15_000);
+    test("电商视频拆解不把历史占位商品名交给模型", async () => {
+        const source = sourceNode(CanvasNodeType.Video);
+        const fixture = await mountMediaTools(source);
+        const target: CanvasNodeData = { id: "legacy-video-target", type: CanvasNodeType.EcommerceVideo, position: { x: 900, y: 200 } };
+        const product: CanvasNodeData = {
+            id: "legacy-product",
+            type: CanvasNodeType.Product,
+            title: "未命名商品",
+            position: { x: 500, y: 100 },
+            metadata: { productProfile: { name: "未命名商品", category: "保温杯", appearance: "雾白色杯身", marks: "", forbidden: "", audience: "", facts: "", price: "", views: {} } },
+        };
+        fixture.nodesRef.current.push(product, target);
+        fixture.connectionsRef.current.push({ id: "legacy-product-to-video", fromNodeId: product.id, toNodeId: target.id });
+        try {
+            fixture.controller.createImageReversePromptNodes(source, ecommerceVideoCreativePlanRequest(target.id, "只输出 Creative Plan JSON"));
+            const result = fixture.nodesRef.current.at(-1)!;
+            const context = buildNodeGenerationContext(result.id, fixture.nodesRef.current, fixture.connectionsRef.current, result.metadata?.composerContent || "", []);
+
+            expect(context.prompt).toContain("品类：保温杯");
+            expect(context.prompt).not.toContain("未命名商品");
+        } finally {
+            await fixture.dispose();
+        }
+    }, 15_000);
     test("仅有 storageKey 的视频仍作为真实视频引用进入拆解链路", async () => {
         const source = sourceNode(CanvasNodeType.Video);
         source.metadata = { storageKey: "video:stored-only", mimeType: "video/mp4" };

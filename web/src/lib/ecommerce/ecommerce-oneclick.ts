@@ -4,7 +4,7 @@
  * 这个模块存在的理由，是前面几版都踩过的同一个坑：
  * **把「一步能做完的事」拆成十几个节点让用户自己接。**
  *
- * 铺九屏、连文案、连排版、逐张点生成、等九张出完、再逐张叠字、再拼长图、再切片——
+ * 铺十屏、连文案、连排版、逐张点生成、等整套出完、再拼长图、再切片——
  * 每一步都「可配置」，合起来就是一条没人走得完的流水线。行业里真正在用的工具
  * 只有一个按钮：给它商品图，它给你一整套能上传的片。
  *
@@ -12,8 +12,8 @@
  * 出哪几张、每张什么职责、用哪个版式、画幅多大、最后怎么装订。
  * 清单是纯数据，执行在页面层（分析提示词、铺节点、批量生成、装订）。
  *
- * **画面和文字分开。** 图片模型只生成无字底图；标题、副标题、价格和 CTA 独立保存，
- * 再由浏览器按选定版式确定性叠字。预览与导出共用这条排版链，用户可继续改文案和版式。
+ * 详情页把确认文案与画面一起交给图片模型；结构化文案与版式仍独立保存，作为本地编辑和排版回退。
+ * 其他入口可继续按平台要求生成无字底图。
  */
 import { ECOMMERCE_DETAIL_PAGE_SET, ECOMMERCE_MAIN_IMAGE_SET, ECOMMERCE_MODEL_WEARING_SET, ECOMMERCE_SEED_CONTENT_SET, type EcommerceDeliverableSet } from "./ecommerce-deliverables";
 
@@ -34,7 +34,7 @@ export const ECOMMERCE_ONE_CLICK_FLOWS: EcommerceOneClickFlow[] = [
     {
         id: "detail",
         name: "一键详情页",
-        hint: "九屏金字塔，从痛点共情到售后保障；出完拼长图并按平台切片",
+        hint: "十屏商业详情页，从品牌主视觉到购买理由总结；出完拼长图并按平台切片",
         set: ECOMMERCE_DETAIL_PAGE_SET,
         bind: true,
     },
@@ -68,13 +68,12 @@ export function ecommerceOneClickFlow(id: string | undefined) {
 /**
  * 每一屏用哪个版式。
  *
- * 详情页九屏不能全用同一个版式：首屏是海报（标题居中、要抓人），
- * 收尾是承诺条（压底、要稳），中间八屏才是常规的单屏版式。
- * 一律用 `detail-screen` 会让九屏看起来像同一张图复制了九遍。
+ * 详情页十屏不能全用同一个版式：首屏是海报，收尾是压底版式，
+ * 中间各屏再按商品、平台与主题动态规划。
  */
 const LAYOUT_BY_SLOT: Record<string, string> = {
     "detail-1": "poster",
-    "detail-9": "bottom-bar",
+    "detail-10": "bottom-bar",
     // 种草封面是内容流的门面：文字让在侧面，商品不占满，像随手拍的
     "seed-1": "side-notes",
 };

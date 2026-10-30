@@ -100,6 +100,13 @@ func cloudAgentReadCacheKeyForState(repo *repository.Repository, userID string, 
 			if version := state.SkillVersions[args.SkillID]; version != "" {
 				return fmt.Sprintf("%s:skill-version:%s", key, version)
 			}
+			// 参考技能不在 SkillVersions 里。它的可见性由冻结的版本 + 内容哈希共同决定：
+			// 只带版本号时，广场技能在运行中被更新/下架后旧缓存仍会命中，绕过复核。
+			for _, ref := range state.SkillReferences {
+				if ref.ID == args.SkillID && ref.Version != "" {
+					return fmt.Sprintf("%s:skill-ref:%s:%s", key, ref.Version, ref.Hash)
+				}
+			}
 		}
 	}
 	return key

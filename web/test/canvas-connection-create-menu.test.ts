@@ -54,7 +54,7 @@ test("add-node menu 与右键菜单同样按画布种类和模式分流", () => 
     expect(commands).toContain("applicable: professionalEcommerceOnly, group");
     expect(context).toContain("canvasKind={canvasKind}");
     expect(context).toContain("canvasKind,");
-    expect(toolbar).toContain('canvasKind === "ecommerce" && workspaceMode !== "simple" && onOpenEcommerceWorkbench');
+    expect(toolbar).toContain('canvasKind === "ecommerce" && onOpenEcommerceWorkbench');
     // 影视侧的反向门禁
     expect(commands).toMatch(/nodeCommand\(CanvasNodeType\.Script, \{[^}]*applicable: filmOnly/);
     expect(commands).toContain("filmOnly(ctx)");
@@ -115,11 +115,12 @@ test("only the active option expands; stationary pointer retargeting cannot swit
     expect(component).toContain('event.key === "Escape"');
 });
 
-test("连线菜单按分组呈现，不再是一条平铺长列", () => {
+test("连线菜单按分组呈现，快捷电商保留核心业务节点", () => {
     expect(component).toContain('<ConnectionCreateGroupLabel label="通用" />');
-    // 电商侧只剩商品节点，一组标题就够；原来的四组随十二个节点一起去掉了
-    expect(component).not.toContain('<ConnectionCreateGroupLabel label="商品与约束" />');
-    expect(component).not.toContain('<ConnectionCreateGroupLabel label="成片与交付" />');
+    const simpleStart = component.indexOf('workspaceMode === "simple"');
+    const simpleBranch = component.slice(simpleStart, component.indexOf(": ([", simpleStart));
+    for (const type of ["Product", "SellingPoint", "Copy", "Style", "Layout", "Infographic", "Delivery"]) expect(simpleBranch).toContain(`CanvasNodeType.${type}`);
+    for (const type of ["Script", "ShotRecipe", "Replica", "Teardown", "Revision", "EcommerceVideo", "Aplus"]) expect(simpleBranch).not.toContain(`CanvasNodeType.${type}`);
 });
 
 test("连接创建菜单管理弹层焦点和 Escape", () => {

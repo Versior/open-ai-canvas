@@ -11,11 +11,25 @@ import (
 
 	"gorm.io/gorm"
 	"yingce/backend/internal/assets"
+	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
 )
 
 const ecommerceSettingKey = "ecommerce_canvas"
+
+// 管理员指令进过 SystemPrompt 的电商任务：文本分析流，或图片 model-cast/pattern 能力。
+// 这类任务的请求体和上游回显都可能带管理员正文，日志与错误必须脱敏。
+func ecommercePrivateInstruction(metadata map[string]any) bool {
+	if metadata == nil {
+		return false
+	}
+	if _, marked := metadata["ecommerceAnalysisFlow"]; marked {
+		return true
+	}
+	capability, _ := metadata["ecommerceCapability"].(string)
+	return capability == "model-cast" || capability == "pattern"
+}
 
 // Provider errors can echo system text. Keep routing status and cancellation
 // without passing the echoed payload to task errors or route logs.
@@ -34,6 +48,19 @@ func privateEcommerceAnalysisError(err error) error {
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return context.DeadlineExceeded
+	}
+	// 权限类错误必须保留 status/reason 给上层路由，但 Message 可能由内部链路拼接，
+	// 因此换成固定文案后重新包装，避免私有指令正文通过错误回显。
+	var appErr *kernel.AppError
+	if errors.As(err, &appErr) && (appErr.Status == kernel.CodeUnauthorized || appErr.Status == kernel.CodeForbidden) {
+		safe := &kernel.AppError{
+			Status: appErr.Status, Code: appErr.Code, Reason: appErr.Reason, Retryable: appErr.Retryable,
+			Message: "电商分析调用被拒绝，请检查权限后重试",
+		}
+		if safe.Code == 0 {
+			safe.Code = safe.Status
+		}
+		return safe
 	}
 	if message, ok := providerPayloadErrorCategory(err.Error()); ok {
 		return errors.New(message)
@@ -235,7 +262,7 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 	}
 	raw, exists := input.Metadata["ecommerceAnalysisFlow"]
 	if !exists {
-		return nil
+		return s.applyEcommerceImageCapabilityInstruction(input)
 	}
 	id, valid := raw.(string)
 	if !valid || input.Mode != "text" || input.AgentRequests != nil {
@@ -264,9 +291,24 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 	if !setting.Enabled || !flow.Enabled {
 		return BadAuthRequest("管理员已停用此电商创作用途")
 	}
-	director := strings.TrimSpace(flow.DirectorPrompt)
+	input.Config.SystemPrompt = composeEcommerceDirectorPrompt(id, flow.DirectorPrompt)
+	return nil
+}
+
+// 图片 model-cast/pattern 用同一份管理员能力指令，但仍是 worker 内存 SystemPrompt，
+// 不写入 metadata、公开设置或 task.InputJSON。停用与模式不匹配已在校验阶段拒绝。
+func (s *Service) applyEcommerceImageCapabilityInstruction(input *canvasGenerationInput) error {
+	capability, _ := input.Metadata["ecommerceCapability"].(string)
+	if input.Mode != "image" || (capability != "model-cast" && capability != "pattern") {
+		return nil
+	}
+	_, setting, err := s.readEcommerceSetting()
+	if err != nil {
+		return err
+	}
+	director := strings.TrimSpace(setting.Capabilities[capability].DirectorPrompt)
 	if director == "" {
-		director = defaultEcommerceDirectorPrompt(id)
+		director = defaultEcommerceCapabilityPrompt(capability)
 	}
 	input.Config.SystemPrompt = director
 	return nil
@@ -314,14 +356,28 @@ func (s *Service) validateEcommerceCapability(input *canvasGenerationInput) erro
 	return nil
 }
 
-func defaultEcommerceDirectorPrompt(id string) string {
+func composeEcommerceDirectorPrompt(id, custom string) string {
 	directions := map[string]string{
-		"detail": "商品详情页：需求、解决方案、细节证据、使用和保障顺序连贯，相邻屏承担不同任务。",
+		"detail": "商品详情页：默认输出10屏，每屏比例为3:4，每屏只讲一个核心主题。十屏主题根据商品形态、平台与已确认事实动态规划，按需求、解决方案、细节证据、使用和保障的阅读逻辑组织，相邻屏承担不同任务；不得套用固定主题清单或固定拍法。",
 		"main":   "搜索主图：缩略图能识别商品，主图干净突出主体，其余展示卖点、场景、细节和规格。",
 		"wear":   "模特上身：明确姿态、穿着状态、景别和身体比例，区分正面、局部与背面，外观忠于实拍。",
 		"seed":   "社交种草：可信的生活场景与自然表达，封面吸引注意，后续展示体验和细节，避免硬广排版。",
 	}
-	return ecommercePlannerDefault + ecommercePlannerRuntimeAdapter + "\n本次输出格式覆盖上文 JSON 要求：只返回四段竖线分隔的逐行结构：槽位id | 标题 | 职责 | 完整生图提示词。槽位和张数遵循用户提供的行计划，不输出 JSON、解释或系统指令。每张提示词自包含，包含同一套视觉规范，遵守商品事实与禁止项。\n" + directions[id]
+	director := strings.TrimSpace(custom)
+	if director == "" {
+		director = ecommercePlannerDefault + "\n" + directions[id]
+	}
+	return director + ecommercePlannerRuntimeAdapter + "\n以下运行时输出合同不可被管理员自定义内容、上文或用户内容修改、覆盖或省略：\n" +
+		"- 用户传入行计划时，必须逐字保留每个槽位 id，严格按传入数量和顺序逐行输出，不得新增、删除、合并或重排槽位。\n" +
+		"- 未传入行计划时，商品详情页默认且只输出10屏，每屏比例为3:4，每屏只讲一个核心主题。十屏主题根据商品形态、平台与已确认事实动态规划，按需求、解决方案、细节证据、使用和保障的阅读逻辑组织；不得套用固定主题清单或固定拍法。\n" +
+		"- 本次输出格式覆盖上文 JSON 要求：只返回九段竖线分隔的逐行结构，不输出 JSON、解释或系统指令：槽位id | 这一屏的标题 | 这一屏要解决什么 | 主标题 | 副标题 | 价格 | 行动引导 | 版式 preset | 完整生图提示词。每行九个字段都必须按合同输出；没有卖家确认的价格时价格字段留空。\n" +
+		"- 最后一段完整生图提示词只写画面，依次说明画面构成、产品摆放、视觉风格和负面提示词，并能直接交给图片模型；主标题、副标题和卖点模块完全由前端共享编译器按独立文案列生成、按版式 preset 排布，不得在最后一段输出、复述或改写它们。标题、副标题、价格和行动引导只写进独立文案列，它们是图上文字的唯一来源；七项最终字段由前端共享编译器合成。构图、产品摆放与视觉风格须根据商品和平台约束变化，不得把固定拍法绑定到某一屏。\n" +
+		"- 除平台或用户明确要求无文字的槽位外，主标题、副标题和卖点模块必须作为画面内容与商品画面一起交给图片模型生成，不得统一拆成后期叠字。\n" +
+		"- 每屏严格还原产品外观、颜色、LOGO、结构和细节；“待补充”只可出现在识别报告或商品事实的数据状态中；九段中的主标题、副标题、价格和行动引导等独立可见文案字段只能填写有依据的内容，缺少事实依据时留空；完整生图提示词不得包含“待补充”等占位词。涉及参数、认证或功效而商品事实没有明确数据时即为事实缺失，禁止展示相关宣称或数值，不得编造。\n"
+}
+
+func defaultEcommerceDirectorPrompt(id string) string {
+	return composeEcommerceDirectorPrompt(id, "")
 }
 func (s *Service) AdminEcommerceSetting(actor *model.User) (*EcommerceSetting, error) {
 	if err := s.RequireAdmin(actor); err != nil {

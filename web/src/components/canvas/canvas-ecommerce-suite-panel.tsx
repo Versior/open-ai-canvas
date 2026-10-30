@@ -1,12 +1,10 @@
 import { App, Image as AntImage } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Eraser, FileText, ImagePlus, LoaderCircle, Plus, Sparkles, X, RefreshCw, Library } from "lucide-react";
+import { ArrowDown, ArrowUp, Eraser, FileText, ImagePlus, LoaderCircle, Plus, Sparkles, X } from "lucide-react";
 import { Link } from "react-router";
 
 import { AppModal } from "@/components/ui/product/app-modal";
-import { SkillRuntimePicker } from "@/components/skills/skill-runtime-picker";
 import { EcommerceChoiceInput, ECOMMERCE_BRIEF_CHOICES } from "./ecommerce-choice-input";
-import type { Skill } from "@/services/api/skills";
 import { ModelPicker } from "@/components/model-picker";
 import { CanvasImageSettingsPopover } from "@/components/canvas/canvas-image-settings-popover";
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
@@ -14,6 +12,7 @@ import { ecommerceOneClickLayoutPreset, type EcommerceOneClickFlow } from "@/lib
 import { ecommerceSuiteRowId, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import { ECOMMERCE_LAYOUT_PRESETS, createEcommerceLayoutFromPreset, ecommerceLayoutBlockStyle, ecommerceLayoutVisibleBlocks } from "@/lib/ecommerce/ecommerce-layout";
 import { resolveImageUrl } from "@/services/image-storage";
+import { ecommerceResultTextMode } from "@/lib/ecommerce/ecommerce-rasterize";
 import { selectableModelsByCapability, useEffectiveConfig, type AiConfig } from "@/stores/use-config-store";
 import type { EcommerceBrief } from "@/lib/ecommerce/ecommerce-brief";
 import { ECOMMERCE_SLICE_SPECS, type EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
@@ -63,13 +62,6 @@ export type EcommerceSuitePanelProps = {
     onBriefChange?: (value: EcommerceBrief) => void;
     templates?: EcommerceSuiteTemplate[];
     autoBindAvailable?: boolean;
-    /** 分析时注入哪几个技能。空数组就是不用。 */
-    skillIds: string[];
-    /** 可选的技能——用户「已加入」的整库。 */
-    availableSkills: Skill[];
-    skillsLoading: boolean;
-    skillsError?: string;
-    onRefreshSkills?: () => void;
     /** 出完自动拼长图并按平台切片。 */
     autoBind: boolean;
     analyzing: boolean;
@@ -77,7 +69,6 @@ export type EcommerceSuitePanelProps = {
     onAnalysisModelChange: (model: string) => void;
     onImageModelChange: (model: string) => void;
     onImageOptionChange: (key: "size" | "quality", value: string) => void;
-    onSkillIdsChange: (skillIds: string[]) => void;
     onAutoBindChange: (value: boolean) => void;
     /** 清空表里所有提示词——结构留着，只把每行的提示词抹掉。 */
     onClearPrompts: () => void;
@@ -134,18 +125,12 @@ export function CanvasEcommerceSuitePanel({
     onBriefChange,
     templates = [],
     autoBindAvailable = true,
-    skillIds,
-    availableSkills,
-    skillsLoading,
-    skillsError,
-    onRefreshSkills,
     autoBind,
     analyzing,
     generating = false,
     onAnalysisModelChange,
     onImageModelChange,
     onImageOptionChange,
-    onSkillIdsChange,
     onAutoBindChange,
     onClearPrompts,
     onAnalyze,
@@ -283,6 +268,7 @@ export function CanvasEcommerceSuitePanel({
                 node?.metadata?.ecommerceRunId || null,
                 node?.metadata?.batchInputSignature || null,
                 node?.metadata?.batchResultInputSignature || null,
+                ecommerceResultTextMode(node) || null,
             ];
         }),
     );
@@ -308,7 +294,7 @@ export function CanvasEcommerceSuitePanel({
                     JSON.stringify(previousDesign.layout) === JSON.stringify(nextDesign.layout)
                 );
             });
-        // Model and skill changes can recreate equivalent rows without changing the draft.
+        // Model changes can recreate equivalent rows without changing the draft.
         if (!sameRows || previous.open !== open) {
             discardPendingCopyCommit();
             replaceDraftRows(rows);
@@ -484,7 +470,7 @@ export function CanvasEcommerceSuitePanel({
                         className="ecom-suite-ghost"
                         aria-label={advancedOpen ? "关闭高级设置" : "打开高级设置"}
                         aria-expanded={advancedOpen}
-                        title={advancedOpen ? "收起模型、Skills 和完整提示词" : "调整模型、Skills 和完整提示词"}
+                        title={advancedOpen ? "收起模型和完整提示词" : "调整模型和完整提示词"}
                         onClick={() => setAdvancedOpen((value) => !value)}
                     >
                         高级设置
@@ -552,38 +538,6 @@ export function CanvasEcommerceSuitePanel({
                     <FileText className="size-3.5" />
                     补充信息
                 </button>
-                {/* 技能：用户库里攒的写法，按品类挑几个注入这次分析。
-                        默认不选——库里可能二十个，全塞进去会把提示词顶爆。 */}
-                {showAdvanced ? (
-                    <div className="ecom-suite-skills">
-                        <fieldset disabled={analyzing} aria-label="分析 Skills 设置" style={{ display: "contents" }}>
-                            <label className="ecom-suite-field">
-                                <span>Skills</span>
-                                <SkillRuntimePicker
-                                    skills={availableSkills}
-                                    loading={skillsLoading}
-                                    value={skillIds}
-                                    onChange={onSkillIdsChange}
-                                    className="!h-7 !w-48 !min-w-0 !text-[var(--fs-tiny)]"
-                                    placeholder={skillsLoading ? "读取技能库…" : "不使用技能"}
-                                    ariaLabel="本次分析使用的技能"
-                                />
-                            </label>
-                        </fieldset>
-                        <button type="button" className="ecom-suite-icon" title="刷新 Skills 库" aria-label="刷新 Skills 库" disabled={analyzing || skillsLoading || !onRefreshSkills} onClick={onRefreshSkills}>
-                            <RefreshCw className={`size-3.5${skillsLoading ? " animate-spin" : ""}`} />
-                        </button>
-                        <Link className="ecom-suite-library-link" to="/skills" target="_blank" rel="noopener noreferrer" title="打开技能库管理并添加更多技能">
-                            <Library className="size-3.5" />
-                            技能库
-                        </Link>
-                    </div>
-                ) : null}
-                {showAdvanced && skillsError ? (
-                    <span role="alert" className="ecom-suite-error">
-                        {skillsError}
-                    </span>
-                ) : null}
             </div>
 
             {promptOpen ? (
@@ -795,9 +749,11 @@ export function CanvasEcommerceSuitePanel({
                                     const label = row.title.trim() || row.slotId;
                                     const copy = row.copy ?? { headline: "", subhead: "", cta: "", price: "" };
                                     const layout = row.layout ?? createEcommerceLayoutFromPreset(ecommerceOneClickLayoutPreset(flow.id, row.slotId))!;
-                                    const visibleBlocks = ecommerceLayoutVisibleBlocks(layout, copy);
+                                    // 导出与装订只认行里真实存在的 copy+layout；缺一个就不叠字，预览也必须一样，否则预览有字、交付白板。
+                                    const visibleBlocks = row.copy && row.layout ? ecommerceLayoutVisibleBlocks(layout, copy) : [];
                                     const previewSize = ecommerceSuitePreviewSize(node, imageSize, SUITE_DETAIL_PREVIEW_EDGE);
                                     const hasImage = Boolean(node && (node.metadata?.storageKey || node.metadata?.content) && status !== "loading" && status !== "error");
+                                    const textMode = ecommerceResultTextMode(node);
                                     return (
                                         <button
                                             key={row.slotId}
@@ -813,7 +769,7 @@ export function CanvasEcommerceSuitePanel({
                                             </span>
                                             <span className="ecom-suite-detail-preview-artboard" style={previewSize}>
                                                 {status === "loading" ? <LoaderCircle className="size-4 animate-spin" /> : <SuiteThumb node={node} />}
-                                                {hasImage && visibleBlocks.length ? (
+                                                {hasImage && visibleBlocks.length && textMode === "local" ? (
                                                     <span className="ecom-suite-layout-overlay ecom-suite-detail-overlay" aria-hidden="true">
                                                         {visibleBlocks.map((block) => (
                                                             <span key={block.id} data-layout-field={block.field} style={ecommerceLayoutBlockStyle(block, previewSize)}>
@@ -842,14 +798,27 @@ export function CanvasEcommerceSuitePanel({
                         const designedCopy = row.copy ?? { headline: "", subhead: "", cta: "", price: "" };
                         const designedLayout = row.layout ?? createEcommerceLayoutFromPreset(ecommerceOneClickLayoutPreset(flow.id, row.slotId))!;
                         const designedRow = { ...row, copy: designedCopy, layout: designedLayout };
-                        const visibleBlocks = ecommerceLayoutVisibleBlocks(designedRow.layout, designedRow.copy);
+                        // 同详情的口径：只在 copy 与 layout 都落盘时才敢把字画到预览上。
+                        const visibleBlocks = row.copy && row.layout ? ecommerceLayoutVisibleBlocks(designedRow.layout, designedRow.copy) : [];
                         const previewSize = ecommerceSuitePreviewSize(node, imageSize);
                         const hasAdoptedImage = Boolean(node && (node.metadata?.storageKey || node.metadata?.content) && status !== "loading" && status !== "error");
+                        const textMode = ecommerceResultTextMode(node);
+                        // model 结果的字烧在像素里：文案/版式改了就只标记待重生成，不再往旧图上盖新字。
+                        const copyStale =
+                            hasAdoptedImage &&
+                            textMode === "model" &&
+                            Boolean(node?.metadata?.ecommerceCopy || node?.metadata?.ecommerceLayout) &&
+                            (JSON.stringify(node?.metadata?.ecommerceCopy) !== JSON.stringify(designedCopy) || JSON.stringify(node?.metadata?.ecommerceLayout) !== JSON.stringify(designedLayout));
                         const rowActionLabel = rowBusy ? "生成中" : status === "error" ? "重试" : hasAdoptedImage ? "重出" : "生成";
                         const copyEditorId = `ecom-suite-copy-${row.slotId}`;
                         const copyEditor = (
-                            <fieldset id={copyEditorId} className="ecom-suite-copy-editor" aria-label={`${label} 文案与版式`}>
+                            <fieldset id={copyEditorId} className="ecom-suite-copy-editor" aria-label={`${label} 文案与版式`} data-copy-stale={copyStale ? "true" : undefined}>
                                 <legend>文案与版式</legend>
+                                {copyStale ? (
+                                    <p className="ecom-suite-copy-stale" role="status">
+                                        这一张的字已经画进图里，改文案或版式后需要重新生成才生效。
+                                    </p>
+                                ) : null}
                                 <div className="ecom-suite-copy-fields">
                                     <label>
                                         <span>主标题</span>
@@ -857,7 +826,14 @@ export function CanvasEcommerceSuitePanel({
                                     </label>
                                     <label>
                                         <span>副文案</span>
-                                        <input value={designedRow.copy.subhead} aria-label={`${label} 副文案`} onChange={(event) => updateCopyDraft(row.slotId, "subhead", event.target.value, designedCopy, designedLayout)} onBlur={commitPendingCopy} />
+                                        {/* 卖点常是一行一条，换行必须原样留给叠字与提示词。 */}
+                                        <textarea
+                                            rows={2}
+                                            value={designedRow.copy.subhead}
+                                            aria-label={`${label} 副文案`}
+                                            onChange={(event) => updateCopyDraft(row.slotId, "subhead", event.target.value, designedCopy, designedLayout)}
+                                            onBlur={commitPendingCopy}
+                                        />
                                     </label>
                                     <label>
                                         <span>行动引导</span>
@@ -1029,7 +1005,7 @@ export function CanvasEcommerceSuitePanel({
                                         <>
                                             <div className="ecom-suite-story-preview" style={previewSize}>
                                                 {status === "loading" ? <LoaderCircle className="size-4 animate-spin" /> : <SuiteThumb node={node} />}
-                                                {hasAdoptedImage && visibleBlocks.length ? (
+                                                {hasAdoptedImage && visibleBlocks.length && textMode === "local" ? (
                                                     <div className="ecom-suite-layout-overlay" aria-hidden="true">
                                                         {visibleBlocks.map((block) => (
                                                             <span key={block.id} data-layout-field={block.field} style={ecommerceLayoutBlockStyle(block, previewSize)}>

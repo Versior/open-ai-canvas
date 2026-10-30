@@ -13,9 +13,12 @@
  */
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
-import { compileEcommercePrompt, createEcommerceProductProfile, ECOMMERCE_PRODUCT_VIEWS, type EcommercePromptSources } from "./ecommerce-contract";
+import { compileEcommercePrompt, createEcommerceProductProfile, ecommerceTailOutsideVisualSchema, ECOMMERCE_PRODUCT_VIEWS, type EcommerceCopy, type EcommercePromptSources } from "./ecommerce-contract";
+import { ecommercePlatformGuidance } from "./ecommerce-platform-guidance";
 import { ecommerceModelById, ecommerceModelRefs, type EcommerceModel } from "./ecommerce-models";
+import type { EcommerceOneClickFlowId } from "./ecommerce-oneclick";
 import { ECOMMERCE_REPLICA_PRODUCT_HANDLE, ECOMMERCE_REPLICA_REFERENCE_HANDLE, ecommerceReplicaInputIssue, ecommerceReplicaInputNodes } from "./ecommerce-replica";
+import type { EcommerceSuiteRow } from "./ecommerce-suite";
 
 /** 电商节点的类型，用于识别上游。 */
 const ECOMMERCE_NODE_TYPES = new Set<string>([CanvasNodeType.Product, CanvasNodeType.ShotRecipe, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style, CanvasNodeType.Replica, CanvasNodeType.Teardown, CanvasNodeType.Aplus]);
@@ -283,11 +286,71 @@ export function ecommerceModelReferenceImages(model: EcommerceModel | undefined)
 
 export type EcommerceGenerationInputs = {
     sources: EcommercePromptSources;
-    /** 编译出的提示词；没有上游电商节点时为空串。 */
+    /**
+     * 最终提示词（已含当前平台规则）；没有上游电商节点、也没有平台信息时为空串。
+     *
+     * 平台段在这里就拼好，不给下游留第二条路径：任何调用方只要用上这个 prompt，
+     * 平台规则就一定在。
+     */
     prompt: string;
     /** 商品实拍与模特参考图，供调用方接进参考图列表。 */
     referenceImages: ReferenceImage[];
+    /**
+     * 这一张用到的文案，以及它是从哪儿来的。
+     *
+     * `row` = 当前表行（即时草稿也算），`node` = 产物节点自己的旧数据，`none` = 没有。
+     * 空值必须能被区分出来：表行被用户清空之后不能再悄悄回退到节点旧值，
+     * 否则「我明明删了字，出图还带着」会再犯一次。
+     */
+    copy: { value?: EcommerceCopy; source: "row" | "node" | "none" };
+    /** 由文案通道推出的文字模式；无电商上下文时 undefined。 */
+    textMode?: EcommerceTextMode;
+    /**
+     * 这一行为什么不能新生成；空 = 可以。
+     *
+     * 只在读到表行时才有结论——判据是那一行自己的 `imagePromptContractVersion`，
+     * 节点上没有这份数据。单图执行与批量生成都读这里，判据不各写一份。
+     */
+    issue?: string;
 };
+
+/** 图上文字的来源模式：模型直接画字，还是本地叠字一次。 */
+export type EcommerceTextMode = "model" | "local";
+
+/** 严格映射，不做默认值补全——没有电商上下文就该是 undefined。 */
+export function ecommerceTextModeOf(renderCopyText: boolean | undefined): EcommerceTextMode | undefined {
+    if (renderCopyText === true) return "model";
+    if (renderCopyText === false) return "local";
+    return undefined;
+}
+
+/** 没有新合同版本号的详情行——读得出来，但不能直接拿去生成。 */
+export const ECOMMERCE_LEGACY_DETAIL_PROMPT_ERROR = "旧版详情行未按新合同规划，请重新规划后再生成";
+
+/** 占位事实进了文案或提示词——这些词不能入画。 */
+export const ECOMMERCE_PROMPT_PLACEHOLDER_ERROR = "这一行还含占位事实，请补齐依据或删掉占位词后再生成";
+
+/** 认领了详情行，却在画布上找不到它——不能当作「没有电商上下文」放行。 */
+export const ECOMMERCE_MISSING_DETAIL_ROW_ERROR = "这一张认领的详情行已不存在，请回到创作表重新规划后再生成";
+
+const ECOMMERCE_PLACEHOLDER = /(待补充|未识别|暂未提供|暂无|不予填写)/;
+
+/**
+ * 这一行能不能拿去新生成。`""` = 可以，其他 = 给用户看的拒绝原因。
+ *
+ * 只做「读」的校验，不改数据：旧自由文本要能原样显示、原样预览，
+ * 但新合同要求文案只走 `copy`，所以这种行必须回到规划阶段重新拆。
+ *
+ * 详情行只认 `imagePromptContractVersion === 1`。没有版本号的旧行不猜安全——
+ * 「看着像纯画面」也可能是被截断的自由文本，猜错的代价是把营销文案画进图里。
+ * 提交前调用它做硬校验，比在生成时才炸更容易解释。
+ */
+export function ecommerceRowPromptIssue(row: EcommerceSuiteRow, flowId = "detail"): string {
+    const copyText = [row.copy?.headline, row.copy?.subhead, row.copy?.price, row.copy?.cta].filter(Boolean).join("\n");
+    if (ECOMMERCE_PLACEHOLDER.test(copyText) || ECOMMERCE_PLACEHOLDER.test(row.prompt)) return ECOMMERCE_PROMPT_PLACEHOLDER_ERROR;
+    if (flowId === "detail" && row.imagePromptContractVersion !== 1) return ECOMMERCE_LEGACY_DETAIL_PROMPT_ERROR;
+    return "";
+}
 
 /**
  * 这个节点用的是哪位模特。
@@ -313,22 +376,46 @@ export function resolveEcommerceModel(node: CanvasNodeData | undefined, customMo
  * 清单位置有两处：独立的拍法节点（用户自己排的），或商品节点上的 `ecommerceShotSet`
  * （一键流程按行业套路生成的，不铺拍法节点）。前者优先——用户手排的那张是他核对过的。
  */
-export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], customModels: EcommerceModel[] = []): EcommerceGenerationInputs {
+export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[], customModels: EcommerceModel[] = [], rowsOverride?: EcommerceSuiteRow[]): EcommerceGenerationInputs {
     const upstream = upstreamEcommerceNodes(nodeId, nodes, connections);
     const target = nodes.find((node) => node.id === nodeId);
     const model = resolveEcommerceModel(target, customModels, resolveEcommerceModel(upstream.product, customModels));
     const styleReferences = upstream.product ? connectedStyleReferenceNodes(upstream.product.id, nodes, connections) : [];
     const shotId = target?.metadata?.ecommerceShotId;
+    const flowId = target?.metadata?.ecommerceFlowId;
+    // 平台按「表 → 商品」读：表上的补充信息最贴近这一次投放，商品节点是它的默认值。
+    // 每次解析都重读，不在分析时把平台冻进行里——用户之后改平台，重出就该按新平台。
+    const table = target?.metadata?.batchSourceNodeId ? nodes.find((node) => node.id === target.metadata!.batchSourceNodeId && node.type === CanvasNodeType.BatchTable) : undefined;
+    const platform = (table?.metadata?.ecommerceBrief?.platform || table?.metadata?.ecommercePlatform || upstream.product?.metadata?.ecommercePlatform)?.trim();
+    // 没填平台就整段省略：凭空塞一段「未指定平台」只会把每个签名都改一遍。
+    const platformGuidance = platform ? ecommercePlatformGuidance(platform, flowId as EcommerceOneClickFlowId | undefined) : "";
+    // 文案的唯一真相是**当前表行**：调用方刚改过、还没落盘的那一份（rowsOverride）优先，
+    // 其次是这张产物认领的创作表里那一行。表行没有时，才退回节点自己的旧数据。
+    const row = shotId ? (rowsOverride ?? suiteRowsFor(target, nodes))?.find((item) => item.slotId === shotId) : undefined;
+    const nodeCopy = target?.metadata?.ecommerceCopy || upstream.copy?.metadata?.ecommerceCopy;
+    const copy: EcommerceGenerationInputs["copy"] = row ? { value: row.copy, source: "row" } : nodeCopy ? { value: nodeCopy, source: "node" } : { source: "none" };
+    // 详情页认领了某一行却读不到它（表被删、行被删、表串了流程）：这不是「没有电商上下文」，
+    // 而是这一张不该被生出来。旧节点上的文案只留给预览，绝不能顶进新生成的提示词——
+    // 否则用户删掉的那一行旧营销文字会照样画回图上。
+    const missingDetailRow = Boolean(shotId) && !row && flowId === "detail";
+    const issue = row ? ecommerceRowPromptIssue(row, flowId || "detail") : missingDetailRow ? ECOMMERCE_MISSING_DETAIL_ROW_ERROR : "";
+    // 只有新合同详情行才把画面段交给编译器；旧行没有这个字段，绝不能靠提示词里
+    // 的长相去猜它「看起来只写画面」。
+    const detailContractRow = row?.imagePromptContractVersion === 1 && (flowId || "detail") === "detail" ? row : undefined;
     const sources: EcommercePromptSources = {
         profile: upstream.product ? upstream.product.metadata?.productProfile || createEcommerceProductProfile(upstream.product.title || "商品") : undefined,
         shotSet: upstream.recipe?.metadata?.shotSet,
         shotId,
         sellingPoints: upstream.sellingPoints?.metadata?.sellingPoints,
-        // 文案的覆盖链：**这一屏自己的** → 独立的文案节点。
-        // 一键套图把这一屏文案留给本地排版，不让图片模型烧进底图。
-        copy: target?.metadata?.ecommerceCopy || upstream.copy?.metadata?.ecommerceCopy,
-        // 一键套图的文案由本地确定性排版；图片模型只能生成无字底图。
-        renderCopyText: target?.metadata?.ecommerceProductId && target.metadata.ecommerceFlowId ? false : undefined,
+        // 结构化文案既供详情页随画面生成，也保留给本地编辑与排版回退。
+        // 认领不到详情行时留空：旧节点文案可以预览，但不参与新生成。
+        copy: missingDetailRow ? undefined : copy.value,
+        // 版式只在「模型画字」时进提示词（见 compileEcommercePrompt），
+        // 本地叠字的用途读它只会白改签名。
+        layout: row?.layout,
+        visualPrompt: detailContractRow?.prompt,
+        // 详情页让图片模型把确认文案与画面一次生成；其他一键入口仍可按平台要求走无字底图。
+        renderCopyText: target?.metadata?.ecommerceProductId && flowId ? flowId === "detail" : undefined,
         style: upstream.style?.metadata?.ecommerceStyle,
         styleReferenceNames: styleReferences.map((node) => node.title || node.id),
         imageDrivenStyle: Boolean(upstream.product),
@@ -336,16 +423,44 @@ export function resolveEcommerceInputs(nodeId: string, nodes: CanvasNodeData[], 
         teardown: upstream.teardown?.metadata?.ecommerceTeardown,
         model,
     };
+    const compiledPrompt = compileEcommercePrompt(sources);
+    // 平台规则与编译结果在这里合成唯一一份最终提示词——下游没有第二个拼接点，
+    // 也就不会有人漏掉它。平台只约束画面，不产生营销文案，copy 唯一来源不变。
+    // 编译结果是空的时候连平台段也不拼：没有电商上下文就不该凭空多出一段约束。
+    const finalPrompt = compiledPrompt ? [platformGuidance, compiledPrompt].filter(Boolean).join("\n\n") : "";
     return {
         sources,
-        prompt: compileEcommercePrompt(sources),
+        prompt: finalPrompt,
         referenceImages: [
             ...(upstream.product ? ecommerceProductReferenceImages(upstream.product, nodes, connections) : []),
             ...styleReferences.map((node) => ({ ...productViewReferenceImage(node), name: `视觉参考：${node.title || node.id}` })),
             ...ecommerceModelReferenceImages(model),
             ...ecommerceReplicaReferenceImages(upstream.replica, nodes, connections),
         ],
+        copy,
+        textMode: ecommerceTextModeOf(sources.renderCopyText),
+        ...(issue ? { issue } : {}),
     };
+}
+
+const ECOMMERCE_SUITE_FLOW_IDS = ["detail", "main", "wear", "seed"] as const;
+
+/**
+ * 这张产物所属创作表的那一份套图。
+ *
+ * 认表靠 `batchSourceNodeId`（生成准备时写死的表 id），并核对流程归属——
+ * 同一张画布上详情页和主图各有一张表，只按 id 认会串表。
+ */
+function suiteRowsFor(target: CanvasNodeData | undefined, nodes: CanvasNodeData[]): EcommerceSuiteRow[] | undefined {
+    const tableId = target?.metadata?.batchSourceNodeId;
+    const flowId = target?.metadata?.ecommerceFlowId;
+    if (!tableId || !flowId) return undefined;
+    const table = nodes.find((node) => node.id === tableId && node.type === CanvasNodeType.BatchTable);
+    if (!table || table.metadata?.ecommerceFlowId !== flowId) return undefined;
+    const flow = ECOMMERCE_SUITE_FLOW_IDS.find((id) => id === flowId);
+    const indexed = flow ? table.metadata?.ecommerceSuitesByFlow?.[flow] : undefined;
+    if (indexed?.flow === flowId) return indexed.rows;
+    return table.metadata?.ecommerceSuite?.flow === flowId ? table.metadata.ecommerceSuite.rows : undefined;
 }
 
 function ecommerceReplicaReferenceImages(replica: CanvasNodeData | undefined, nodes: CanvasNodeData[], connections: CanvasConnection[]): ReferenceImage[] {
@@ -378,8 +493,19 @@ function productViewReferenceImage(node: CanvasNodeData): ReferenceImage {
  *
  * 顺序固定：约束在前、节点自己的提示词在后。节点提示词是用户临时想补的一句，
  * 放在后面才不会把锁定块顶掉。
+ *
+ * `context.visualPrompt` 是**存在性**判定，不是真假判定：`undefined` = 这条路径没有画面段，
+ * 尾部原样保留；明确给了（哪怕是空串）= 这一行按画面 schema 走，尾部只留 schema 之外的话。
+ * 用 truthy 判断会让「用户把画面段清空了」退回旧行为，旧营销行正好从尾巴上回来。
  */
-export function mergeEcommercePrompt(ecommercePrompt: string, nodePrompt: string) {
-    const parts = [ecommercePrompt.trim(), nodePrompt.trim()].filter(Boolean);
+export function mergeEcommercePrompt(ecommercePrompt: string, nodePrompt: string, context?: { visualPrompt?: string }) {
+    const visual = context?.visualPrompt?.trim();
+    let tail = nodePrompt.trim();
+    // 只移除已经编译的同一段原文，保留随后追加的相机、质感及用户补充。
+    if (visual && tail.startsWith(visual) && (tail.length === visual.length || /^\s/.test(tail.slice(visual.length)))) {
+        tail = tail.slice(visual.length).trim();
+    }
+    if (visual !== undefined) tail = ecommerceTailOutsideVisualSchema(tail);
+    const parts = [ecommercePrompt.trim(), tail].filter(Boolean);
     return parts.join("\n\n");
 }

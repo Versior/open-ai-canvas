@@ -2,8 +2,12 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"yingce/backend/internal/model"
 )
 
 // skill_search 的契约测试：注册、分词打分、索引兜底、边界与空集。
@@ -36,12 +40,73 @@ func TestCloudAgentPolicyRegistersSkillSearchAlongsideReadFile(t *testing.T) {
 	if !names["skill_read_file"] || !names["skill_search"] {
 		t.Fatalf("skill tools not registered together: %v", names)
 	}
-	// 无技能时两个工具都不该出现
-	for _, tool := range cloudAgentTools(CloudAgentRequest{}) {
-		fn := tool["function"].(map[string]any)
-		if fn["name"] == "skill_search" || fn["name"] == "skill_read_file" {
-			t.Fatalf("skill tool leaked without skills: %v", fn["name"])
+}
+
+func TestCloudAgentSkillSearchDiscoversVisibleMarketplaceSkillsWithoutInstalling(t *testing.T) {
+	s, _, _, _ := creationTestService(t)
+	publicSkill, err := s.CreateSkill("publisher", SkillMutationRequest{
+		SkillName:   "ecommerce-detail-page",
+		Description: "根据商品图片分析卖点并规划电商详情页",
+		Instruction: "# 电商详情页\n\n先识别商品，再规划详情页。",
+		Tag:         "ecommerce",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateSkill, err := s.CreateSkill("other-user", SkillMutationRequest{
+		SkillName:   "private-ecommerce-secret",
+		Description: "不应跨用户出现的私有电商技能",
+		Instruction: "# Private",
+		Tag:         "ecommerce",
+		IsPrivate:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownSkill, err := s.CreateSkill("user", SkillMutationRequest{
+		SkillName:   "my-product-copy",
+		Description: "为商品提炼文案和购买理由",
+		Instruction: "# 商品文案",
+		Tag:         "ecommerce",
+		IsPrivate:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state := &cloudAgentRuntime{}
+	call := cloudAgentCall{ID: "search-1"}
+	call.Function.Name = "skill_search"
+	call.Function.Arguments = `{"keyword":"商品 电商 详情页 文案","limit":10}`
+	result, err := cloudAgentReadTool(nil, "user", state, call, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(result)
+	text := string(encoded)
+	if !strings.Contains(text, publicSkill.SkillID) || !strings.Contains(text, ownSkill.SkillID) {
+		t.Fatalf("visible marketplace skills were not discovered: %s", text)
+	}
+	if strings.Contains(text, privateSkill.SkillID) {
+		t.Fatalf("another user's private skill leaked: %s", text)
+	}
+	if len(state.Skills) != 0 {
+		t.Fatalf("marketplace references must not enter the pinned skill list: %+v", state.Skills)
+	}
+	if len(state.SkillReferences) == 0 || len(state.SkillReferences) > cloudAgentSkillReferenceMax {
+		t.Fatalf("unexpected frozen reference count: %d", len(state.SkillReferences))
+	}
+	for _, skill := range state.SkillReferences {
+		if skill.Version == "" || skill.Hash == "" {
+			t.Fatalf("marketplace skill was not frozen: %+v", skill)
 		}
+	}
+	publicAfter, err := s.SkillDetail("user", publicSkill.SkillID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if publicAfter.IsAdded {
+		t.Fatal("automatic discovery must not install the skill into the user's library")
 	}
 }
 
@@ -102,11 +167,14 @@ func TestCloudAgentSkillSearchClampsLimitAndDegradesNoHit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 零命中降级：返回已启用技能索引而不是空列表——「没搜到」不该被模型
-	// 解读成「没有适用技能」后直接放弃技能裸做任务。
+	// 零命中降级：返回本轮可用技能索引而不是空列表——「没搜到」不该被模型
+	// 解读成「没有适用技能」后直接放弃技能裸做任务。降级条目没有 score。
 	degraded := result["matches"].([]map[string]any)
 	if len(degraded) != 1 {
 		t.Fatalf("zero-hit query must return one indexed skill at limit 1, got %v", result["matches"])
+	}
+	if _, scored := degraded[0]["score"]; scored {
+		t.Fatalf("degraded index entries must not carry a score: %v", degraded[0])
 	}
 	if result["total"].(int) != 3 {
 		t.Fatalf("expected total 3 on degraded index, got %v", result["total"])
@@ -124,8 +192,41 @@ func TestCloudAgentSkillSearchEmptySkillsReturnsGuidance(t *testing.T) {
 	if len(result["matches"].([]map[string]any)) != 0 {
 		t.Fatal("expected empty matches without skills")
 	}
-	if guidance, _ := result["guidance"].(string); !strings.Contains(guidance, "没有可用的已安装技能") || !strings.Contains(guidance, "skill_market_search") {
+	if guidance, _ := result["guidance"].(string); !strings.Contains(guidance, "没有检索到可用技能") || !strings.Contains(guidance, "skill_market_search") {
 		t.Fatalf("guidance mismatch: %q", guidance)
+	}
+}
+
+func TestCloudAgentMarketplaceSearchDoesNotFreezeUnrelatedOrUnscopedSkills(t *testing.T) {
+	s, _, _, _ := creationTestService(t)
+	created, err := s.CreateSkill("publisher", SkillMutationRequest{
+		SkillName:   "ecommerce-detail-page",
+		Description: "根据商品图片分析卖点并规划电商详情页",
+		Instruction: "# 电商详情页",
+		Tag:         "ecommerce",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, keyword := range []string{"", "量子纠缠炒菜"} {
+		state := &cloudAgentRuntime{}
+		result, err := s.cloudAgentSearchMarketplaceSkills("user", state, keyword, 4)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if matches := result["matches"].([]map[string]any); len(matches) != 0 {
+			t.Fatalf("keyword %q returned unrelated skills: %v", keyword, matches)
+		}
+		if len(state.Skills) != 0 {
+			t.Fatalf("keyword %q froze unrelated skills: %+v", keyword, state.Skills)
+		}
+	}
+	detail, err := s.SkillDetail("user", created.SkillID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.IsAdded {
+		t.Fatal("no-hit discovery must not install a marketplace skill")
 	}
 }
 
@@ -353,5 +454,119 @@ func TestCloudAgentSkillSearchMatchesNaturalPhraseViaGrams(t *testing.T) {
 	}
 	if matches[0]["skillId"] != "s2" {
 		t.Fatalf("expected shortform-drama-playbook first, got %v", matches[0]["skillId"])
+	}
+}
+
+// 回归：目录只取第 1 页时，排在 80 条之后的候选永远搜不到。
+// 默认排序是 popular（initial_added_count + updated_at desc），把噪声技能排到前面、
+// 真候选排到最后，验证 skill_search 能翻页命中它。
+func TestCloudAgentMarketplaceSearchPagesBeyondFirstCatalogPage(t *testing.T) {
+	s, db, _, _ := creationTestService(t)
+	noiseIDs := make([]string, 0, cloudAgentSkillCatalogLimit+5)
+	for index := 0; index < cloudAgentSkillCatalogLimit+5; index++ {
+		noise, err := s.CreateSkill("publisher", SkillMutationRequest{
+			SkillName:   fmt.Sprintf("garden-noise-%d", index),
+			Description: "园艺植物的日常养护与浇水节奏",
+			Instruction: "# 园艺",
+			Tag:         "others",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		noiseIDs = append(noiseIDs, noise.SkillID)
+	}
+	candidate, err := s.CreateSkill("publisher", SkillMutationRequest{
+		SkillName:   "paged-catalog-candidate",
+		Description: "电商详情页 zebra-pagination-candidate 卖点规划",
+		Instruction: "# 翻页候选\n\n先识别商品再规划详情页。",
+		Tag:         "ecommerce",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := s.CreateSkill("other-user", SkillMutationRequest{
+		SkillName:   "hidden-zebra-pagination-candidate",
+		Description: "他人私有 zebra-pagination-candidate 不应出现",
+		Instruction: "# Private",
+		Tag:         "ecommerce",
+		IsPrivate:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 固定排序位置，避免依赖测试执行时间戳。
+	if err := db.Model(&model.Skill{}).Where("id IN ?", noiseIDs).
+		UpdateColumns(map[string]any{"sort_weight": 100, "updated_at": time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Skill{}).Where("id IN ?", []string{candidate.SkillID, hidden.SkillID}).
+		UpdateColumns(map[string]any{"sort_weight": 0, "updated_at": time.Now().Add(-24 * time.Hour)}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	state := &cloudAgentRuntime{}
+	result, err := s.cloudAgentSearchMarketplaceSkills("user", state, "zebra-pagination-candidate", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(result)
+	text := string(encoded)
+	if !strings.Contains(text, candidate.SkillID) {
+		t.Fatalf("candidate beyond the first catalog page was not found: %s", text)
+	}
+	if strings.Contains(text, hidden.SkillID) {
+		t.Fatalf("another user's private skill leaked: %s", text)
+	}
+	if len(state.Skills) != 0 {
+		t.Fatalf("marketplace references must not enter the pinned skill list: %+v", state.Skills)
+	}
+	if len(state.SkillReferences) == 0 {
+		t.Fatal("matched skill was not frozen into runtime state")
+	}
+	for _, skill := range state.SkillReferences {
+		if skill.Version == "" || skill.Hash == "" {
+			t.Fatalf("marketplace skill was not frozen: %+v", skill)
+		}
+	}
+}
+
+// 空页却声明 HasMore=true 属于分页自相矛盾：必须报错，不能静默返回不完整目录。
+func TestCloudAgentSkillCatalogRejectsContradictoryPage(t *testing.T) {
+	pages := []*SkillList{
+		{Skills: []SkillItem{{SkillID: "a"}}, HasMore: true},
+		{Skills: nil, HasMore: true},
+	}
+	calls := 0
+	_, err := cloudAgentSkillCatalogPages(func(page int) (*SkillList, error) {
+		calls++
+		if page > len(pages) {
+			t.Fatalf("翻页越界，page=%d", page)
+		}
+		return pages[page-1], nil
+	})
+	if err == nil {
+		t.Fatal("空页 + HasMore 必须返回明确错误")
+	}
+	if calls != 2 {
+		t.Fatalf("翻页次数 = %d, want 2", calls)
+	}
+}
+
+func TestCloudAgentSkillCatalogStopsOnlyWhenHasMoreIsFalse(t *testing.T) {
+	pages := []*SkillList{
+		{Skills: []SkillItem{{SkillID: "a"}}, HasMore: true},
+		{Skills: []SkillItem{{SkillID: "b"}}, HasMore: true},
+		{Skills: []SkillItem{{SkillID: "c"}}, HasMore: false},
+	}
+	calls := 0
+	items, err := cloudAgentSkillCatalogPages(func(page int) (*SkillList, error) {
+		calls++
+		return pages[page-1], nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 || len(items) != 3 || items[2].SkillID != "c" {
+		t.Fatalf("翻页结果 calls=%d items=%d", calls, len(items))
 	}
 }

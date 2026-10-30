@@ -3,14 +3,16 @@ import { readFileSync } from "node:fs";
 import { nanoid } from "nanoid";
 import { ecommerceBindingImages, ecommerceBindingKey, finishEcommerceBinding } from "../src/lib/ecommerce/ecommerce-binding";
 import { ecommerceBriefSlicePlatform } from "../src/lib/ecommerce/ecommerce-brief";
-import { ecommerceOneClickFlow } from "../src/lib/ecommerce/ecommerce-oneclick";
-import { connectEcommerceTableOutputs, ecommerceSelectedOutputs, ecommerceTableSource, openEcommerceTable } from "../src/lib/ecommerce/ecommerce-table";
+import { ecommerceOneClickFlow, ecommerceOneClickScreens } from "../src/lib/ecommerce/ecommerce-oneclick";
+import { connectEcommerceTableOutputs, ecommerceSelectedOutputs, ecommerceSuiteMetadata, ecommerceTableSource, openEcommerceTable } from "../src/lib/ecommerce/ecommerce-table";
 import { ecommerceSuiteTargets } from "../src/lib/ecommerce/ecommerce-canvas-preset";
+import { ecommerceResultTextMode } from "../src/lib/ecommerce/ecommerce-rasterize";
 import { synchronizeGenerationSpec } from "../src/lib/canvas/generation-contract";
 import { buildGenerationConfig } from "../src/lib/canvas/canvas-project-generation";
 import { resetGenerationTaskMetadata } from "../src/lib/canvas/canvas-task-state";
 import { createCanvasBatchInputSnapshot } from "../src/lib/canvas/canvas-batch-input-snapshot";
-import { connectedStyleReferenceNodes, ecommerceProductReferenceImages } from "../src/lib/ecommerce/ecommerce-canvas";
+import { connectedStyleReferenceNodes, ecommerceProductReferenceImages, ecommerceRowPromptIssue } from "../src/lib/ecommerce/ecommerce-canvas";
+import type { EcommerceSuiteRow } from "../src/lib/ecommerce/ecommerce-suite";
 import { createCanvasNode } from "../src/lib/canvas/canvas-project-domain";
 import { DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
@@ -33,8 +35,8 @@ function bindingFixture(status: "running" | "failed" = "failed") {
     const images = ["hero", "detail"].map((slot) =>
         createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { status: "success", storageKey: slot, content: `/${slot}.png`, ecommerceShotId: slot, ecommerceFlowId: "detail", ecommerceRunId: "run", batchResultInputSignature: "source-signature" }),
     );
-    const rows = images.map((image) => ({ slotId: image.metadata!.ecommerceShotId!, title: "", duty: "", prompt: "Show product", resultNodeId: image.id }));
-    const table = { ...opened.table, metadata: { ...opened.table.metadata, ecommerceImageModel: "image", ecommerceSuite: { flow: "detail", source: "draft" as const, updatedAt: "", rows } } };
+    const rows: EcommerceSuiteRow[] = images.map((image) => ({ slotId: image.metadata!.ecommerceShotId!, title: "", duty: "", prompt: "Show product", imagePromptContractVersion: 1, resultNodeId: image.id }));
+    const table = { ...opened.table, metadata: { ...opened.table.metadata, ecommerceImageModel: "fixture::image", ecommerceSuite: { flow: "detail", source: "draft" as const, updatedAt: "", rows } } };
     product.metadata = { ...product.metadata, ecommerceOneClick: { flow: "detail", nodeIds: images.map((image) => image.id), slotIds: rows.map((row) => row.slotId), runId: "run", status } };
     const nodesRef = { current: [product, table, ...images] };
     const connectionsRef = { current: [...opened.connections, ...images.map((image) => ({ id: image.id, fromNodeId: table.id, toNodeId: image.id }))] };
@@ -67,10 +69,14 @@ function bindingFixture(status: "running" | "failed" = "failed") {
         projectLoaded: true,
         ecommerceTableSource,
         ecommerceOneClickFlow,
+        ecommerceOneClickScreens,
+        DEFAULT_ECOMMERCE_BRIEF: {},
+        ecommerceImageSettings: (_config: unknown, _model: string, brief: { aspectRatio?: string }) => ({ size: `mapped-${brief.aspectRatio}` }),
         ecommerceBriefSlicePlatform,
         ecommerceSelectedOutputs,
         ecommerceGenerationSourceSignature: () => "source-signature",
         ecommerceProductReferenceImages,
+        ecommerceRowPromptIssue,
         connectedStyleReferenceNodes,
         buildGenerationConfig,
         resetGenerationTaskMetadata,
@@ -81,6 +87,7 @@ function bindingFixture(status: "running" | "failed" = "failed") {
         nanoid,
         connectEcommerceTableOutputs,
         ecommerceSuiteTargets,
+        ecommerceSuiteMetadata,
         synchronizeGenerationSpec,
         setConnections: (update: (current: typeof connectionsRef.current) => typeof connectionsRef.current) => {
             connectionsRef.current = update(connectionsRef.current);
@@ -99,13 +106,14 @@ function bindingFixture(status: "running" | "failed" = "failed") {
         imageToDataUrl: async ({ storageKey }: { storageKey: string }) => `data:${storageKey}`,
         ecommerceSliceSpec: () => ({}),
         rasterizeEcommerceComposition,
+        ecommerceResultTextMode,
         rasterizeEcommerceDetailPage,
         exportEcommerceDetailPage,
         generationErrorMessage: (error: Error) => error.message,
-        effectiveConfig: { ...defaultConfig, imageModel: "default-image" },
+        effectiveConfig: { ...defaultConfig, imageModel: "fixture::default-image" },
         resolveEcommerceTableModels: mock((_config: unknown, overrides: { imageModel?: string }) => ({
             analysisModel: "",
-            imageModel: overrides.imageModel === "deleted-image" ? "" : overrides.imageModel || "default-image",
+            imageModel: overrides.imageModel === "deleted-image" ? "" : overrides.imageModel || "fixture::default-image",
         })),
         message: { success: mock(() => {}), error: mock(() => {}), warning: mock(() => {}) },
     };
@@ -138,6 +146,7 @@ test("failed automatic binding permits stitching the adopted images and clears t
 
 test("manual binding composes each adopted image from its suite row before stitching", async () => {
     const f = bindingFixture();
+    for (const image of f.images) Object.assign(image.metadata!, { ecommerceResultTextMode: { mode: "local", sourceStorageKey: image.metadata!.storageKey } });
     const copy = { headline: "轻盈防晒", subhead: "UPF50+", cta: "", price: "" };
     const layout = { name: "详情屏", blocks: [] };
     Object.assign(f.rows[0], { copy, layout });
@@ -151,6 +160,7 @@ test("manual binding composes each adopted image from its suite row before stitc
 
 test("automatic binding follows the current enabled suite rows by slot instead of stale image metadata", async () => {
     const f = bindingFixture("running");
+    for (const image of f.images) Object.assign(image.metadata!, { ecommerceResultTextMode: { mode: "local", sourceStorageKey: image.metadata!.storageKey } });
     const detailCopy = { headline: "Current detail", subhead: "", cta: "", price: "" };
     const detailLayout = { name: "Current detail layout", blocks: [] };
     const heroCopy = { headline: "Current hero", subhead: "", cta: "", price: "" };
@@ -181,6 +191,71 @@ test("automatic binding follows the current enabled suite rows by slot instead o
         { imageUrl: "data:hero", copy: heroCopy, layout: heroLayout },
     ]);
     expect(f.rasterizeEcommerceDetailPage.mock.calls[0][0].imageUrls).toEqual(["composed:data:detail", "composed:data:hero"]);
+});
+
+for (const automatic of [false, true]) {
+    for (const mode of ["model", "local", "unknown", "mismatched", "invalid"] as const) {
+        test(`${automatic ? "automatic" : "manual"} binding uses ${mode} result ownership rather than its detail flow`, async () => {
+            const f = bindingFixture(automatic ? "running" : "failed");
+            for (const image of f.images) {
+                if (mode !== "unknown") {
+                    Object.assign(image.metadata!, {
+                        ecommerceResultTextMode: { mode: mode === "mismatched" ? "local" : mode, sourceStorageKey: mode === "mismatched" ? "another-resource" : image.metadata!.storageKey },
+                    });
+                }
+            }
+            for (const row of f.rows) Object.assign(row, { copy: { headline: "Current copy", subhead: "", cta: "", price: "" }, layout: { name: "Current layout", blocks: [] } });
+            f.dependencies.rasterizeEcommerceComposition = mock(async ({ imageUrl }: { imageUrl: string }) => `composed:${imageUrl}`);
+
+            if (automatic) {
+                f.render();
+                f.runAutoBind();
+                for (let i = 0; i < 20; i++) await Promise.resolve();
+            } else {
+                await f.render()(f.table, f.rows);
+            }
+
+            expect(f.dependencies.rasterizeEcommerceComposition).toHaveBeenCalledTimes(mode === "local" ? 2 : 0);
+            expect(f.rasterizeEcommerceDetailPage.mock.calls[0][0].imageUrls).toEqual(mode === "local" ? ["composed:data:hero", "composed:data:detail"] : ["data:hero", "data:detail"]);
+            expect(f.exportEcommerceDetailPage).toHaveBeenCalledTimes(1);
+        });
+    }
+}
+
+for (const automatic of [false, true]) {
+    test(`${automatic ? "automatic" : "manual"} binding rejects a result text-mode change during media loading`, async () => {
+        const f = bindingFixture(automatic ? "running" : "failed");
+        for (const image of f.images) Object.assign(image.metadata!, { ecommerceResultTextMode: { mode: "local", sourceStorageKey: image.metadata!.storageKey } });
+        f.dependencies.imageToDataUrl = async ({ storageKey }) => {
+            const current = f.nodesRef.current[2];
+            f.nodesRef.current[2] = { ...current, metadata: { ...current.metadata, ecommerceResultTextMode: { mode: "model", sourceStorageKey: "hero" } } };
+            return `data:${storageKey}`;
+        };
+
+        if (automatic) {
+            f.render();
+            f.runAutoBind();
+            for (let i = 0; i < 20; i++) await Promise.resolve();
+            expect(f.nodesRef.current[0].metadata?.ecommerceOneClick?.status).toBe("failed");
+        } else {
+            await expect(f.render()(f.table, f.rows)).rejects.toThrow("已变化");
+        }
+
+        expect(f.exportEcommerceDetailPage).not.toHaveBeenCalled();
+        expect(ecommerceResultTextMode(f.nodesRef.current[2])).toBe("model");
+        expect(f.bindingRef.current.size).toBe(0);
+    });
+}
+
+test("automatic binding uses the generic slice strategy for an unsupported marketplace", async () => {
+    const f = bindingFixture("running");
+    f.nodesRef.current[1] = { ...f.table, metadata: { ...f.table.metadata, ecommerceBrief: { platform: "Amazon" } } };
+
+    f.render();
+    f.runAutoBind();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(f.rasterizeEcommerceDetailPage.mock.calls[0][0].platform).toBe("generic");
 });
 
 test("terminal image states fail automatic binding and release single-image retry", async () => {
@@ -320,7 +395,7 @@ test("suite without an image model override inherits the effective global defaul
     expect(await f.generate()(f.table, "detail")).toBe(true);
     expect(f.dependencies.resolveEcommerceTableModels).toHaveBeenCalledWith(f.dependencies.effectiveConfig, { imageModel: undefined });
     expect(f.dependencies.enqueueGenerationBatch).toHaveBeenCalledTimes(1);
-    expect(f.nodesRef.current.slice(4).every((node) => node.metadata?.model === "default-image")).toBe(true);
+    expect(f.nodesRef.current.slice(4).every((node) => node.metadata?.model === "fixture::default-image")).toBe(true);
 });
 
 test("an unavailable explicit suite image model never falls back to the global default", async () => {
@@ -376,6 +451,134 @@ test("generating the remaining screen keeps every ready screen in the automatic 
     });
 });
 
+test("regenerating a reused screen synchronizes and clears its current copy and layout", async () => {
+    const f = bindingFixture();
+    const currentCopy = { headline: "Current headline", subhead: "Current subhead", cta: "Buy now", price: "" };
+    const currentLayout = { name: "Current layout", blocks: [] };
+    f.nodesRef.current = f.nodesRef.current.map((node) =>
+        node.id === f.images[0].id
+            ? {
+                  ...node,
+                  title: "Stale title",
+                  metadata: {
+                      ...node.metadata,
+                      ecommerceProductId: f.product.id,
+                      ecommerceFlowId: "detail",
+                      batchSourceNodeId: f.table.id,
+                      ecommerceCopy: { headline: "Stale", subhead: "", cta: "", price: "" },
+                      ecommerceLayout: { name: "Stale layout", blocks: [] },
+                  },
+              }
+            : node,
+    );
+    const row = { ...f.rows[0], title: "Current title", prompt: "Current prompt", copy: currentCopy, layout: currentLayout };
+
+    expect(await f.generate()(f.table, "detail", ["hero"], [row])).toBe(true);
+    expect(f.nodesRef.current.find((node) => node.id === f.images[0].id)).toMatchObject({
+        title: "Current title",
+        metadata: { ecommerceCopy: currentCopy, ecommerceLayout: currentLayout },
+    });
+
+    const cleared = { ...row, title: "Title without overlay", prompt: "Prompt without overlay", copy: undefined, layout: undefined };
+    expect(await f.generate()(f.table, "detail", ["hero"], [cleared])).toBe(true);
+    const reused = f.nodesRef.current.find((node) => node.id === f.images[0].id)!;
+    expect(reused.title).toBe("Title without overlay");
+    expect(reused.metadata?.ecommerceCopy).toBeUndefined();
+    expect(reused.metadata?.ecommerceLayout).toBeUndefined();
+});
+
+test("reused suite outputs freeze the current row before enqueue and ignore later edits", async () => {
+    const f = bindingFixture();
+    const staleCopy = { headline: "Stale headline", subhead: "", cta: "", price: "" };
+    Object.assign(f.rows[0], { imagePromptContractVersion: 1, copy: staleCopy });
+    f.nodesRef.current = f.nodesRef.current.map((node) =>
+        node.id === f.images[0].id
+            ? { ...node, metadata: { ...node.metadata, ecommerceProductId: f.product.id, batchSourceNodeId: f.table.id, ecommerceCopy: staleCopy } }
+            : node,
+    );
+    const row = {
+        ...f.rows[0],
+        imagePromptContractVersion: 1 as const,
+        prompt: "Current product on a plain background",
+        copy: { headline: "Fresh headline", subhead: "First benefit\nSecond benefit", cta: "", price: "" },
+        layout: { name: "Current layout", blocks: [] },
+    };
+
+    expect(await f.generate()(f.table, "detail", [row.slotId], [row])).toBe(true);
+    const queued = f.dependencies.enqueueGenerationBatch.mock.calls[0]?.[2]?.[0];
+    expect(queued?.nodeId).toBe(f.images[0].id);
+    expect(queued?.inputSnapshot).toBeDefined();
+    const snapshot = queued!.inputSnapshot!;
+    expect(snapshot.context.prompt).toContain("Fresh headline");
+    expect(snapshot.context.prompt).toContain("First benefit");
+    expect(snapshot.context.prompt).not.toContain("Stale headline");
+    expect(snapshot.prompt).toBe("Current product on a plain background");
+
+    row.copy.headline = "Edited after enqueue";
+    row.prompt = "Edited visual after enqueue";
+    const result = f.nodesRef.current.find((node) => node.id === f.images[0].id)!;
+    result.metadata!.ecommerceCopy!.headline = "Another live edit";
+    expect(snapshot.context.prompt).toContain("Fresh headline");
+    expect(snapshot.context.prompt).not.toContain("Edited after enqueue");
+    expect(snapshot.context.prompt).not.toContain("Another live edit");
+    expect(snapshot.prompt).toBe("Current product on a plain background");
+});
+
+test("a reused screen snapshots an explicit copy clear instead of stale node or table text", async () => {
+    const f = bindingFixture();
+    const staleCopy = { headline: "Stale headline to remove", subhead: "", cta: "", price: "" };
+    Object.assign(f.rows[0], { imagePromptContractVersion: 1, copy: staleCopy });
+    f.nodesRef.current = f.nodesRef.current.map((node) =>
+        node.id === f.images[0].id
+            ? { ...node, metadata: { ...node.metadata, ecommerceProductId: f.product.id, batchSourceNodeId: f.table.id, ecommerceCopy: staleCopy } }
+            : node,
+    );
+    const row = { ...f.rows[0], imagePromptContractVersion: 1 as const, copy: undefined, layout: undefined };
+
+    expect(await f.generate()(f.table, "detail", [row.slotId], [row])).toBe(true);
+    const snapshot = f.dependencies.enqueueGenerationBatch.mock.calls[0]?.[2]?.[0]?.inputSnapshot;
+    expect(snapshot).toBeDefined();
+    expect(snapshot!.context.prompt).not.toContain("Stale headline to remove");
+});
+
+test("a reused screen snapshot failure leaves its successful media and plan untouched", async () => {
+    const f = bindingFixture();
+    f.nodesRef.current = f.nodesRef.current.map((node) =>
+        node.id === f.images[0].id ? { ...node, metadata: { ...node.metadata, ecommerceProductId: f.product.id, batchSourceNodeId: f.table.id } } : node,
+    );
+    const before = structuredClone(f.nodesRef.current);
+    f.dependencies.createCanvasBatchInputSnapshot = () => {
+        throw new Error("Reference resource not persisted");
+    };
+
+    await expect(f.generate()(f.table, "detail", [f.rows[0].slotId], [f.rows[0]])).rejects.toThrow("Reference resource not persisted");
+    expect(f.nodesRef.current).toEqual(before);
+    expect(f.dependencies.enqueueGenerationBatch).not.toHaveBeenCalled();
+});
+
+test("suite generation rejects legacy detail copy before changing results or enqueueing", async () => {
+    const f = bindingFixture();
+    const rows = f.rows.map((row) => ({ ...row, imagePromptContractVersion: undefined, prompt: "主标题：旧文案；画面：商品实拍" }));
+    const before = f.nodesRef.current;
+
+    await expect(f.generate()(f.table, "detail", undefined, rows)).rejects.toThrow("重新规划");
+
+    expect(f.nodesRef.current).toBe(before);
+    expect(f.dependencies.enqueueGenerationBatch).not.toHaveBeenCalled();
+    expect(f.nodesRef.current[2].metadata?.storageKey).toBe("hero");
+});
+
+test("suite generation rejects placeholder copy before changing results or enqueueing", async () => {
+    const f = bindingFixture();
+    const rows = f.rows.map((row) => ({ ...row, copy: { headline: "待补充", subhead: "", cta: "", price: "" } }));
+    const before = f.nodesRef.current;
+
+    await expect(f.generate()(f.table, "detail", undefined, rows)).rejects.toThrow("占位");
+
+    expect(f.nodesRef.current).toBe(before);
+    expect(f.dependencies.enqueueGenerationBatch).not.toHaveBeenCalled();
+});
+
 test("active manual stitching blocks a fresh suite even after it has cleared the old plan", async () => {
     const f = bindingFixture();
     f.nodesRef.current[0].metadata!.ecommerceOneClick = undefined;
@@ -402,8 +605,8 @@ function generationRollbackFixture() {
     const spawned = createCanvasNode(CanvasNodeType.Image, { x: 100, y: 100 }, { ecommerceShotId: "new-slot", prompt: "new prompt" });
     const plan: ReturnType<typeof ecommerceSuiteTargets> = {
         rows: [
-            { slotId: "hero", title: "Hero", duty: "Sell", prompt: "new reused prompt" },
-            { slotId: "new-slot", title: "Detail", duty: "Explain", prompt: "new prompt" },
+            { slotId: "hero", title: "Hero", duty: "Sell", prompt: "new reused prompt", imagePromptContractVersion: 1 },
+            { slotId: "new-slot", title: "Detail", duty: "Explain", prompt: "new prompt", imagePromptContractVersion: 1 },
         ],
         reuse: [{ slotId: "hero", nodeId: reused.id, prompt: "new reused prompt" }],
         spawned: [spawned],
@@ -424,6 +627,7 @@ test("empty suite enqueue rolls back only the prepared generation state", async 
     expect(await fixture.generate()(fixture.table, "detail")).toBe(false);
 
     expect(fixture.nodesRef.current.find((node) => node.id === fixture.product.id)?.metadata?.ecommerceOneClick).toEqual(fixture.previousPlan);
+    expect(fixture.nodesRef.current.find((node) => node.id === fixture.reused.id)?.title).toBe(fixture.reused.title);
     expect(fixture.nodesRef.current.find((node) => node.id === fixture.reused.id)?.metadata).toMatchObject({
         prompt: "old prompt",
         composerContent: "old composer",

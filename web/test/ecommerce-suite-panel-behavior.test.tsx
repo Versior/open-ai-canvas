@@ -9,7 +9,6 @@ import { CanvasEcommerceTableNodeContent } from "../src/components/canvas/canvas
 import { CanvasNodeActionContext } from "../src/components/canvas/canvas-node-action-context";
 import { CanvasNodeGraphContext } from "../src/components/canvas/canvas-node-graph-context";
 import { ModelPicker } from "../src/components/model-picker";
-import { SkillRuntimePicker } from "../src/components/skills/skill-runtime-picker";
 import { createCanvasNodeGraph } from "../src/lib/canvas/canvas-node-graph";
 import { createEcommerceProductProfile } from "../src/lib/ecommerce/ecommerce-contract";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "../src/lib/ecommerce/ecommerce-oneclick";
@@ -82,9 +81,6 @@ async function mountPanel(workspaceMode?: CanvasWorkspaceMode) {
         imageModel: "image",
         imageSize: "",
         imageQuality: "",
-        skillIds: [],
-        availableSkills: [],
-        skillsLoading: false,
         autoBind: false,
         analyzing: false,
         onAnalysisModelChange(model) {
@@ -94,7 +90,6 @@ async function mountPanel(workspaceMode?: CanvasWorkspaceMode) {
             imageModels.push(model);
         },
         onImageOptionChange() {},
-        onSkillIdsChange() {},
         onAutoBindChange() {},
         onClearPrompts() {},
         onAnalyze(rows) {
@@ -415,14 +410,12 @@ test("professional workspace keeps model and image controls", async () => {
     const panel = await mountPanel("professional");
     expect(panel.countType(ModelPicker)).toBe(2);
     expect(panel.countType(CanvasImageSettingsPopover)).toBe(1);
-    expect(panel.countType(SkillRuntimePicker)).toBe(1);
     expect(panel.find((props) => props["aria-label"] === "First 提示词").value).toBe("Old prompt");
 });
 
-test("simple workspace presents storyboard cards and hides prompt and skills until advanced settings open", async () => {
+test("simple workspace presents storyboard cards and hides prompt until advanced settings open", async () => {
     const panel = await mountPanel("simple");
 
-    expect(panel.countType(SkillRuntimePicker)).toBe(0);
     expect(() => panel.find((props) => props["aria-label"] === "First 提示词")).toThrow();
     expect(panel.find((props) => props.className === "ecom-suite-detail-workspace")).toBeDefined();
 
@@ -430,7 +423,6 @@ test("simple workspace presents storyboard cards and hides prompt and skills unt
         panel.find((props) => props["aria-label"] === "打开高级设置").onClick();
     });
 
-    expect(panel.countType(SkillRuntimePicker)).toBe(1);
     expect(panel.countType(ModelPicker)).toBe(2);
     expect(panel.find((props) => props["aria-label"] === "First 提示词").value).toBe("Old prompt");
 });
@@ -781,7 +773,7 @@ test("export cancels stale rows or selected outputs before saving the ZIP", asyn
             type: CanvasNodeType.Image,
             title: "First",
             position: { x: 0, y: 0 },
-            metadata: { ecommerceShotId: "first", ecommerceFlowId: "detail", ecommerceRunId: "run:first", taskId: "task:first", taskStatus: "succeeded", storageKey: "image:first", status: "success" },
+            metadata: { ecommerceShotId: "first", ecommerceFlowId: "detail", ecommerceRunId: "run:first", taskId: "task:first", taskStatus: "succeeded", storageKey: "image:first", status: "success", ecommerceResultTextMode: { mode: "local", sourceStorageKey: "image:first" } },
         };
         const second: CanvasNodeData = { id: "second-node", type: CanvasNodeType.Image, title: "Second", position: { x: 0, y: 0 }, metadata: { ecommerceShotId: "second", ecommerceFlowId: "detail", storageKey: "image:second", status: "success" } };
         const baseNodes = new Map([
@@ -859,6 +851,15 @@ test("export cancels stale rows or selected outputs before saving the ZIP", asyn
                 rows: baseRows,
                 nodes: new Map([
                     ["first", { ...first, metadata: { ...first.metadata, ecommerceRunId: "run:replacement" } }],
+                    ["second", second],
+                ]),
+            },
+            {
+                // 结果图的文字模式一变，之前那层字该不该叠就变了，导出必须整批作废。
+                name: "result text mode",
+                rows: baseRows,
+                nodes: new Map([
+                    ["first", { ...first, metadata: { ...first.metadata, ecommerceResultTextMode: { mode: "model" as const, sourceStorageKey: "image:first" } } }],
                     ["second", second],
                 ]),
             },
@@ -1179,7 +1180,13 @@ test("designed rows overlay deterministic copy only on the adopted large preview
         type: CanvasNodeType.Image,
         title: "Designed",
         position: { x: 0, y: 0 },
-        metadata: { ecommerceShotId: "first", ecommerceFlowId: "detail", storageKey: "image:designed", status: "success" },
+        metadata: {
+            ecommerceShotId: "first",
+            ecommerceFlowId: "detail",
+            storageKey: "image:designed",
+            status: "success",
+            ecommerceResultTextMode: { mode: "local", sourceStorageKey: "image:designed" },
+        },
     };
     await panel.rerender({
         rows: [
@@ -1217,7 +1224,15 @@ test("adopted 3:4 and 4:5 images preview in their real frame and scale the layou
             position: { x: 0, y: 0 },
             width: naturalWidth,
             height: naturalHeight,
-            metadata: { ecommerceShotId: "first", ecommerceFlowId: "detail", storageKey: `image:${id}`, status: "success", naturalWidth, naturalHeight },
+            metadata: {
+                ecommerceShotId: "first",
+                ecommerceFlowId: "detail",
+                storageKey: `image:${id}`,
+                status: "success",
+                naturalWidth,
+                naturalHeight,
+                ecommerceResultTextMode: { mode: "local", sourceStorageKey: `image:${id}` },
+            },
         };
         await panel.rerender({
             rows: [{ slotId: "first", title: "First", duty: "Hero", prompt: "Background only", copy: { headline: "Fresh collection", subhead: "", cta: "", price: "" }, layout }] as EcommerceSuitePanelProps["rows"],
@@ -1398,26 +1413,6 @@ test("analysis receives the edited duties and latest rows", async () => {
     expect(panel.saved.at(-1)).toEqual(analyzed);
 });
 
-test("changing skill selection with equivalent upstream rows preserves local edits", async () => {
-    const panel = await mountPanel();
-    await act(async () => {
-        panel.find((p) => p["aria-label"] === "第 1 屏的标题").onChange({ target: { value: "Edited title" } });
-    });
-    await panel.rerender({
-        skillIds: ["chosen"],
-        rows: [
-            { slotId: "first", title: "First", duty: "Hero", prompt: "Old prompt" },
-            { slotId: "second", title: "Second", duty: "Detail", prompt: "" },
-        ],
-    });
-    expect(panel.find((p) => p["aria-label"] === "第 1 屏的标题").value).toBe("Edited title");
-});
-
-test("skill selector exposes its supplied accessible label", () => {
-    const html = renderToStaticMarkup(<SkillRuntimePicker skills={[]} value={[]} onChange={() => {}} ariaLabel="Analysis skills" />);
-    expect(html).toContain('aria-label="Analysis skills"');
-});
-
 test("new analysis rows replace the previous local draft", async () => {
     const panel = await mountPanel();
     await act(async () => {
@@ -1503,11 +1498,91 @@ test("selecting a template preserves edits until confirmed and saves its snapsho
     expect(panel.find((p) => p["aria-label"] === "Hero 提示词").value).toBe("");
     expect(brief).toEqual({ template, imageCount: 1, style: "Warm light" });
 });
-test("analysis locks model and skill controls until the run ends", async () => {
+test("analysis locks model controls until the run ends and exposes no skill controls", async () => {
     const panel = await mountPanel("professional");
     await panel.rerender({ analyzing: true });
 
     expect(panel.find((props) => props["aria-label"] === "分析模型设置").disabled).toBe(true);
-    expect(panel.find((props) => props["aria-label"] === "分析 Skills 设置").disabled).toBe(true);
-    expect(panel.find((props) => props["aria-label"] === "刷新 Skills 库").disabled).toBe(true);
+    expect(panel.count((props) => String(props["aria-label"] || "").includes("Skills"))).toBe(0);
+});
+
+const designedCopy = { headline: "轻盈防晒", subhead: "UPF50+\n冰感速干", cta: "立即选购", price: "¥199" };
+
+function resultNode(mode: string | undefined, sourceStorageKey = "image:result", extraMetadata: Record<string, unknown> = {}): CanvasNodeData {
+    const metadata: Record<string, unknown> = { ecommerceShotId: "first", ecommerceFlowId: "detail", storageKey: "image:result", status: "success", ...extraMetadata };
+    if (mode !== undefined) metadata.ecommerceResultTextMode = { mode, sourceStorageKey };
+    return { id: "result", type: CanvasNodeType.Image, title: "Result", position: { x: 0, y: 0 }, metadata: metadata as CanvasNodeData["metadata"] };
+}
+
+test("both previews overlay copy only for local results, and one overlay per preview", async () => {
+    for (const [mode, expectedOverlays] of [
+        ["local", 2],
+        ["model", 0],
+        ["unknown", 0],
+        [undefined, 0],
+    ] as [string | undefined, number][]) {
+        const panel = await mountPanel("simple");
+        await panel.rerender({
+            rows: [{ slotId: "first", title: "First", duty: "Hero", prompt: "Ready", copy: designedCopy, layout: createEcommerceLayoutFromPreset("top-banner")! }] as EcommerceSuitePanelProps["rows"],
+            nodeBySlot: new Map([["first", resultNode(mode)]]),
+            candidatesBySlot: new Map([["first", [resultNode(mode)]]]),
+        });
+        const overlays = panel.count((props) => String(props.className || "").includes("ecom-suite-layout-overlay"));
+        expect({ mode, overlays }).toEqual({ mode, overlays: expectedOverlays });
+    }
+});
+
+test("rows without a saved layout or copy never paint preview text the export would drop", async () => {
+    const panel = await mountPanel("simple");
+    await panel.rerender({
+        rows: [
+            { slotId: "first", title: "First", duty: "Hero", prompt: "Ready", copy: designedCopy },
+            { slotId: "second", title: "Second", duty: "Detail", prompt: "Ready", layout: createEcommerceLayoutFromPreset("top-banner")! },
+        ] as EcommerceSuitePanelProps["rows"],
+        nodeBySlot: new Map([["first", resultNode("local")], ["second", resultNode("local")]]),
+        candidatesBySlot: new Map([["first", [resultNode("local")]], ["second", [resultNode("local")]]]),
+    });
+    expect(panel.count((props) => String(props.className || "").includes("ecom-suite-layout-overlay"))).toBe(0);
+});
+test("editing the subhead keeps newlines and the next generation reads the latest text without a blur", async () => {
+    const panel = await mountPanel("simple");
+    const generated: unknown[] = [];
+    await panel.rerender({
+        rows: [{ slotId: "first", title: "First", duty: "Hero", prompt: "Ready", copy: designedCopy, layout: createEcommerceLayoutFromPreset("bottom-bar")! }] as EcommerceSuitePanelProps["rows"],
+        nodeBySlot: new Map([["first", resultNode("model")]]),
+        onGenerateOne: (_slotId, rows) => {
+            generated.push(rows);
+        },
+    });
+    await openQuickDesign(panel);
+
+    const subhead = panel.find((props) => props["aria-label"] === "First 副文案");
+    expect(panel.element((props) => props["aria-label"] === "First 副文案").type).toBe("textarea");
+    expect(subhead.value).toBe("UPF50+\n冰感速干");
+
+    await act(async () => {
+        subhead.onChange({ target: { value: "UPF50+\n冰感速干\n轻若无物" } });
+    });
+    await act(async () => {
+        panel.find((props) => props["aria-label"] === "重出：First").onClick();
+    });
+    expect(generated.at(-1)?.[0]).toMatchObject({ copy: { subhead: "UPF50+\n冰感速干\n轻若无物" } });
+});
+
+test("model results flag stale copy and layout instead of painting new text over old pixels", async () => {
+    const layout = createEcommerceLayoutFromPreset("bottom-bar")!;
+    const panel = await mountPanel("simple");
+    const unchanged = resultNode("model", "image:result", { ecommerceCopy: designedCopy, ecommerceLayout: layout });
+    await panel.rerender({
+        rows: [{ slotId: "first", title: "First", duty: "Hero", prompt: "Ready", copy: designedCopy, layout }] as EcommerceSuitePanelProps["rows"],
+        nodeBySlot: new Map([["first", unchanged]]),
+    });
+    expect(panel.count((props) => props["data-copy-stale"] === "true")).toBe(0);
+
+    await openQuickDesign(panel);
+    await act(async () => {
+        panel.find((props) => props["aria-label"] === "First 主标题").onChange({ target: { value: "换了标题" } });
+    });
+    expect(panel.count((props) => props["data-copy-stale"] === "true")).toBe(1);
+    expect(panel.count((props) => props.className === "ecom-suite-layout-overlay")).toBe(0);
 });

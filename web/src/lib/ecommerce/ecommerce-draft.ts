@@ -14,61 +14,176 @@
  * 那段字逐字来自他的确认。把模型从图里猜的结论直接写进去，比留空更危险：
  * 生成出来的图会带着一个没人确认过的「事实」，而且越生成越跑。
  */
-import type { EcommerceProductProfile } from "./ecommerce-contract";
+import type { EcommerceDetailPageSuggestion, EcommerceProductParameter, EcommerceProductProfile, EcommerceProductSellingPoint } from "./ecommerce-contract";
 
-/** 读商品图，起草商品档案。 */
+type EcommerceProductProfileDraftScalar =
+    | "name"
+    | "englishBrandName"
+    | "chineseBrandName"
+    | "logoText"
+    | "brandStyle"
+    | "category"
+    | "productModel"
+    | "appearance"
+    | "functions"
+    | "marks"
+    | "forbidden"
+    | "audience"
+    | "painPoints"
+    | "purchaseReasons"
+    | "facts";
+
+export type EcommerceProductProfileDraft = Partial<Pick<EcommerceProductProfile, EcommerceProductProfileDraftScalar>> & {
+    parameters?: EcommerceProductParameter[];
+    sellingPoints?: EcommerceProductSellingPoint[];
+    detailPageSuggestions?: EcommerceDetailPageSuggestion[];
+    unsure?: string;
+};
+
+/** 读商品图，起草可核对的结构化商品报告。 */
 export function buildEcommerceProfileDraftPrompt() {
     return [
-        "读随附的商品实拍，起草商品档案。图就在这次请求里，直接看图，不要说自己看不到。",
+        "请仔细分析随附的商品实拍，自动提取产品信息，并输出结构化识别报告。图就在这次请求里，直接看图，不要说自己看不到。",
+        "只把图片中明确可见或用户资料明确提供的内容写成事实；推测写入不确定项。参数、认证、功效没有明确证据时写‘未识别，不要编造’或‘待补充’，绝不补数字、认证或效果。",
+        "严格记录产品外观、颜色、LOGO、结构和细节，供后续商品锁逐字保留。不要照搬参考图，只学习参考图的信息层级、氛围和排版逻辑。",
         "",
-        "只写你**从图里能看见**的东西。看不见的一律留空——留空比编造好。",
+        "严格使用下面的 Markdown 标题和表格，不要输出代码块或表格外解释：",
+        "# 产品信息智能提取报告",
         "",
-        "【输出格式】每行一条，竖线分隔，不要输出任何其他内容（不要序号、不要解释、不要代码块）：",
-        "category | 这件商品是什么，例如「保温杯」「连衣裙」",
-        "appearance | 颜色、材质、图案、结构，用「；」分隔",
-        "marks | 商品或包装上的 Logo、文字，逐字抄下来并说明位置；看不清就留空",
-        "forbidden | 为了让下一张图保持一致，明确不能变的东西",
-        "audience | 从可见使用线索建议目标人群与场景；没有线索就留空，并在 unsure 标明这是建议",
-        "facts | 可用于卖点的可见事实，格式「卖点：依据」，多条用「；」分隔；每条都要写出图中可见的依据",
-        "price | 必须留空，价格只能由用户手动填写",
-        "unsure | 上面哪几条是推测而不是直接看见的（没有就写「无」）",
+        "一、品牌信息识别",
+        "| 项目 | 识别结果 | 备注 |",
+        "| --- | --- | --- |",
+        "| 英文品牌名 | 识别值或‘未识别，不要编造’ | 可见位置或来源 |",
+        "| 中文品牌名 | 识别值或‘未识别，不要编造’ | 可见位置或来源 |",
+        "| LOGO文字 | 逐字抄录或‘未识别，不要编造’ | 位置、字体、颜色 |",
+        "| 品牌风格 | 字体、图标、配色、材质感 | 只写可见特征 |",
         "",
-        "商品锁定块是后面所有图的依据，写错一条整批图都会跑，所以推测的那几条一定要在 unsure 里点出来。",
+        "二、产品类型判断",
+        "| 项目 | 识别结果 | 备注 |",
+        "| --- | --- | --- |",
+        "| 产品类目 | 所属类目或‘未识别，不要编造’ | 判断依据 |",
+        "| 产品名称 | 具体名称或‘未识别，不要编造’ | 文字来源 |",
+        "| 产品型号 | 型号或‘未识别，不要编造’ | 可见位置 |",
+        "| 外观特点 | 颜色、材质、图案、结构和细节 | 逐项写清 |",
+        "| 主要功能 | 只写结构或资料能支持的功能 | 不推测功效 |",
+        "| 其他标识 | 包装文字、铭牌等 | 逐字抄录并写位置 |",
+        "| 禁止项 | 后续生成绝不能改变的外观、颜色、LOGO、结构和细节 | 商品一致性要求 |",
+        "",
+        "三、核心参数识别",
+        "| 参数 | 数值 | 来源/备注 |",
+        "| --- | --- | --- |",
+        "| 每个实际相关参数单独一行 | 明确数值，否则‘未识别，不要编造’ | 图片位置或用户资料来源 |",
+        "",
+        "四、核心卖点提取",
+        "| 卖点类型 | 卖点内容 | 可视化表达建议 |",
+        "| --- | --- | --- |",
+        "| 功能卖点 | 有证据的内容，否则‘待补充’ | 与该商品相关的画面建议 |",
+        "| 体验卖点 | 有证据的内容，否则‘待补充’ | 与该商品相关的画面建议 |",
+        "| 设计卖点 | 有证据的内容，否则‘待补充’ | 与该商品相关的画面建议 |",
+        "| 场景卖点 | 有证据的内容，否则‘待补充’ | 与该商品相关的画面建议 |",
+        "| 人群卖点 | 有证据的内容，否则‘待补充’ | 与该商品相关的画面建议 |",
+        "| 卖点与依据 | 格式‘卖点：可核实依据’，多条用‘；’分隔；无依据写‘待补充’ | 不得把推测写成事实 |",
+        "",
+        "五、适用人群与购买动机",
+        "| 项目 | 识别结果 | 备注 |",
+        "| --- | --- | --- |",
+        "| 主要目标用户 | 目标用户或‘待补充’ | 说明是可见事实还是建议 |",
+        "| 使用痛点 | 有依据的痛点或‘待补充’ | 不夸大 |",
+        "| 购买理由 | 由已核实卖点支持的理由或‘待补充’ | 不编造 |",
+        "",
+        "六、详情页结构建议",
+        "| 屏数 | 主题 | 画面建议 | 文案方向 |",
+        "| --- | --- | --- | --- |",
+        "| 第1屏起逐屏列出 | 每屏只讲一个核心主题 | 根据商品证据动态建议构图、摆放和视觉风格，不固定每屏拍法 | 只基于已核实事实；参数、认证、功效缺失时写‘待补充’ |",
+        "",
+        "不确定项 | 汇总所有推测、未识别项和待补充证据；没有就写‘无’",
+        "价格不要从图片猜测，也不要输出到报告。",
     ].join("\n");
 }
 
-/**
- * 把模型读图写回的档案解析成字段。
- *
- * 容忍度和文案解析一样高：模型会加序号、会换全角竖线、会写「category：」前缀。
- * 认不出来的行跳过——档案里那几个字段在卡片上都看得见，填没填一眼就知道，
- * 报错会让整次读图白跑。
- */
-export function parseEcommerceProfileDraft(text: string): Partial<Pick<EcommerceProductProfile, "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts">> & { unsure?: string } {
-    const fields: Record<string, "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts"> = {
-        category: "category", "品类": "category",
-        appearance: "appearance", "外观": "appearance",
-        marks: "marks", "标识": "marks",
+const PRODUCT_SELLING_POINT_TYPES = new Set<EcommerceProductSellingPoint["type"]>(["功能卖点", "体验卖点", "设计卖点", "场景卖点", "人群卖点"]);
+
+/** 把模型输出的 Markdown 报告或旧版竖线草稿解析成商品档案字段。 */
+export function parseEcommerceProfileDraft(text: string): EcommerceProductProfileDraft {
+    const fields: Record<string, EcommerceProductProfileDraftScalar> = {
+        name: "name", "产品名称": "name", "商品名称": "name",
+        englishbrandname: "englishBrandName", "英文品牌名": "englishBrandName",
+        chinesebrandname: "chineseBrandName", "中文品牌名": "chineseBrandName",
+        logotext: "logoText", logo: "logoText", "logo文字": "logoText", "LOGO文字": "logoText",
+        brandstyle: "brandStyle", "品牌风格": "brandStyle", "品牌视觉风格": "brandStyle",
+        category: "category", "品类": "category", "产品类目": "category", "产品所属类目": "category",
+        productmodel: "productModel", "产品型号": "productModel", "型号": "productModel",
+        appearance: "appearance", "外观": "appearance", "外观特点": "appearance",
+        functions: "functions", "主要功能": "functions", "功能判断": "functions", "产品主要功能": "functions",
+        marks: "marks", "标识": "marks", "其他标识": "marks",
         forbidden: "forbidden", "禁止": "forbidden", "禁止项": "forbidden",
-        audience: "audience", "人群": "audience", "目标人群": "audience", "目标人群与场景": "audience",
+        audience: "audience", "人群": "audience", "目标人群": "audience", "目标人群与场景": "audience", "主要目标用户": "audience",
+        painpoints: "painPoints", "使用痛点": "painPoints", "痛点": "painPoints",
+        purchasereasons: "purchaseReasons", "购买理由": "purchaseReasons",
         facts: "facts", "卖点": "facts", "卖点与依据": "facts",
     };
-    const result: Partial<Pick<EcommerceProductProfile, "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts">> & { unsure?: string } = {};
-    for (const rawLine of text.split("\n")) {
-        const line = rawLine.replace(/^[\s>*\-•\d.、)]+/, "").trim();
+    const result: EcommerceProductProfileDraft = {};
+    const parameters: EcommerceProductParameter[] = [];
+    const sellingPoints: EcommerceProductSellingPoint[] = [];
+    const detailPageSuggestions: EcommerceDetailPageSuggestion[] = [];
+    let section: "" | "brand" | "product" | "parameters" | "sellingPoints" | "audience" | "detail" = "";
+    const clean = (value: string) => value.replace(/[`*]/g, "").trim();
+    const missing = (value: string) => /^(无|没有|看不清|留空|未知|未识别[，,、：:]?不要编造|待补充)$/.test(value.trim());
+
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
         if (!line) continue;
-        const parts = line.split(/[|｜]/).map((part) => part.trim());
-        if (parts.length < 2) continue;
-        const key = parts[0].replace(/[`*]/g, "").replace(/[:：]\s*$/, "").trim().toLowerCase();
-        const value = parts.slice(1).join(" | ").replace(/[`*]/g, "").replace(/^(无|没有|看不清|留空)$/, "").trim();
-        if (key === "unsure" || key === "推测" || key === "不确定") {
-            if (value) result.unsure = value;
+        const heading = line.replace(/^[#\s]+/, "").replace(/[：:]$/, "");
+        if (heading.includes("品牌信息")) section = "brand";
+        else if (heading.includes("产品类型")) section = "product";
+        else if (heading.includes("核心参数")) section = "parameters";
+        else if (heading.includes("核心卖点")) section = "sellingPoints";
+        else if (heading.includes("适用人群")) section = "audience";
+        else if (heading.includes("详情页结构")) section = "detail";
+
+        const parts = line.replace(/^[>\s*•\d.、)\-]+/, "").split(/[|｜]/).map(clean);
+        if (parts[0] === "") parts.shift();
+        if (parts.at(-1) === "") parts.pop();
+        if (parts.length < 2 || parts.every((part) => /^:?-{2,}:?$/.test(part))) continue;
+        const rawKey = parts[0].replace(/[:：]\s*$/, "").trim();
+        const key = rawKey.toLowerCase();
+        if (["项目", "参数", "卖点类型", "屏数"].includes(rawKey)) continue;
+
+        if (section === "parameters" && rawKey !== "parameter" && rawKey !== "参数项") {
+            parameters.push({ name: rawKey, value: parts[1] || "", source: parts.slice(2).join(" | ") });
             continue;
         }
-        const field = fields[key] || fields[parts[0].replace(/[`*]/g, "").trim()];
-        if (!field || !value) continue;
-        result[field] = value;
+        if (key === "parameter" || rawKey === "参数项") {
+            if (parts[1]) parameters.push({ name: parts[1], value: parts[2] || "", source: parts.slice(3).join(" | ") });
+            continue;
+        }
+        if (section === "sellingPoints" && PRODUCT_SELLING_POINT_TYPES.has(rawKey as EcommerceProductSellingPoint["type"])) {
+            sellingPoints.push({ type: rawKey as EcommerceProductSellingPoint["type"], content: parts[1] || "", visualization: parts.slice(2).join(" | ") });
+            continue;
+        }
+        if (key === "sellingpoint" && PRODUCT_SELLING_POINT_TYPES.has(parts[1] as EcommerceProductSellingPoint["type"])) {
+            sellingPoints.push({ type: parts[1] as EcommerceProductSellingPoint["type"], content: parts[2] || "", visualization: parts.slice(3).join(" | ") });
+            continue;
+        }
+        if (section === "detail" && /^第?\d+屏?$/.test(rawKey)) {
+            detailPageSuggestions.push({ screen: rawKey, theme: parts[1] || "", visual: parts[2] || "", copy: parts.slice(3).join(" | ") });
+            continue;
+        }
+        if (key === "screensuggestion" || key === "screen") {
+            if (parts[1]) detailPageSuggestions.push({ screen: parts[1], theme: parts[2] || "", visual: parts[3] || "", copy: parts.slice(4).join(" | ") });
+            continue;
+        }
+        const value = parts[1] || "";
+        if (key === "unsure" || rawKey === "推测" || rawKey === "不确定" || rawKey === "不确定项") {
+            if (value && value !== "无") result.unsure = value;
+            continue;
+        }
+        const field = fields[key] || fields[rawKey];
+        if (field && value && !missing(value)) result[field] = value;
     }
+    if (parameters.length) result.parameters = parameters;
+    if (sellingPoints.length) result.sellingPoints = sellingPoints;
+    if (detailPageSuggestions.length) result.detailPageSuggestions = detailPageSuggestions;
     return result;
 }
 

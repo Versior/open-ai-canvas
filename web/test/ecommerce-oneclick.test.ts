@@ -17,7 +17,7 @@ import {
 } from "@/lib/ecommerce/ecommerce-suite";
 import { ecommerceShotPreset } from "@/lib/ecommerce/ecommerce-recipes";
 import { ecommerceSuiteNodes, ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
-import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
+import { createEcommerceCopy, createEcommerceProductProfile, ecommerceSevenItemBlock } from "@/lib/ecommerce/ecommerce-contract";
 import { ECOMMERCE_LAYOUT_PRESETS } from "@/lib/ecommerce/ecommerce-layout";
 import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
@@ -34,10 +34,18 @@ const product = (metadata: CanvasNodeData["metadata"] = {}): CanvasNodeData => (
 describe("四个套图入口", () => {
     test("详情页 / 主图 / 模特上身 / 种草秀，各自对应一套行业标准交付物", () => {
         expect(ECOMMERCE_ONE_CLICK_FLOWS.map((flow) => flow.id)).toEqual(["detail", "main", "wear", "seed"]);
+        // 旧画布持久化的是这个 id；十屏升级只改内容，不在没有迁移器时破坏兼容键。
         expect(ecommerceOneClickFlow("detail")?.set.id).toBe("detail-nine");
         expect(ecommerceOneClickFlow("main")?.set.id).toBe("main-five");
         expect(ecommerceOneClickFlow("seed")?.set.id).toBe("seed-content");
         expect(ecommerceOneClickFlow("nope")).toBeUndefined();
+    });
+
+    test("详情页默认十屏按商品信息结构起稿，但构图与摆放由商品和平台动态决定", () => {
+        const screens = ecommerceOneClickScreens(ecommerceOneClickFlow("detail")!);
+        expect(screens).toHaveLength(10);
+        expect(screens.map((screen) => screen.title.replace(/^[^·]*·\s*/, ""))).toEqual(["品牌主视觉", "核心卖点一", "核心卖点二", "核心卖点三", "多场景展示", "产品细节", "参数可视化", "适用人群", "品质背书", "购买理由总结"]);
+        expect(screens.every((screen) => screen.duty.includes("动态决定画面构成和产品摆放"))).toBe(true);
     });
 
     test("只有详情页要装订成长图——其余三套是发内容、上架的图，不是长图", () => {
@@ -66,9 +74,9 @@ describe("四个套图入口", () => {
         expect(ecommerceOneClickScreens(ecommerceOneClickFlow("seed")!).every((screen) => screen.aspectRatio === "4:5")).toBe(true);
     });
 
-    test("首屏用海报版式、收尾用压底版式——全用一个版式看起来像同一张复制了九遍", () => {
+    test("首屏用海报版式、收尾用压底版式——全用一个版式看起来像同一张复制了十遍", () => {
         expect(ecommerceOneClickLayoutPreset("detail", "detail-1")).toBe("poster");
-        expect(ecommerceOneClickLayoutPreset("detail", "detail-9")).toBe("bottom-bar");
+        expect(ecommerceOneClickLayoutPreset("detail", "detail-10")).toBe("bottom-bar");
         expect(ecommerceOneClickLayoutPreset("detail", "detail-5")).toBe("detail-screen");
         expect(ecommerceOneClickLayoutPreset("seed", "seed-1")).toBe("side-notes");
     });
@@ -97,18 +105,35 @@ describe("套图表：一张图一条提示词", () => {
         }
     });
 
-    test("铺底不是把同一句话复制九遍——九屏的职责不同，提示词必须不同", () => {
+    test("铺底不是把同一句话复制十遍——十屏的职责不同，提示词必须不同", () => {
         const rows = ecommerceSuiteFromPresets(ecommerceOneClickFlow("detail")!);
         expect(new Set(rows.map((row) => row.prompt)).size).toBe(rows.length);
     });
 
-    test("铺底提示词只规划无字底图，标题价格和 CTA 不交给图片模型", () => {
-        const rows = ECOMMERCE_ONE_CLICK_FLOWS.flatMap(ecommerceSuiteFromPresets);
-        expect(rows.some((row) => row.prompt.includes("不生成任何文字"))).toBe(true);
+    test("详情页铺底只写画面四段，编译后才是可出图的完整七项", () => {
+        const rows = ecommerceSuiteFromPresets(ecommerceOneClickFlow("detail")!);
         for (const row of rows) {
-            expect(row.prompt).not.toContain("图上文字以这条提示词里逐字引号的内容为准");
-            expect(row.prompt).not.toContain("不要自己编字");
+            // 第九段就是画面段：营销三项不在里面，否则文案会绕过 copy 自己长出来。
+            for (const field of ["画面构成：", "产品摆放：", "视觉风格：", "负面提示词："]) expect(row.prompt).toContain(field);
+            for (const field of ["主标题：", "副标题：", "卖点模块："]) expect(row.prompt).not.toContain(field);
+            expect(row.prompt).toContain("严格还原产品外观、颜色、LOGO、结构和细节");
+            expect(row.prompt).not.toContain("待补充");
+            expect(row.prompt).not.toContain("不生成任何文字");
+            expect(row.imagePromptContractVersion).toBe(1);
+
+            // 编译之后才是出图用的七项：画面四段来自这一行，营销三项来自 copy。
+            const compiled = ecommerceSevenItemBlock({ visualPrompt: row.prompt, copy: { ...createEcommerceCopy(), headline: "通勤一路温热" } });
+            const order = ["画面构成：", "产品摆放：", "主标题：", "副标题：", "卖点模块：", "视觉风格：", "负面提示词："].map((label) => compiled.indexOf(label));
+            expect(order.every((index) => index >= 0)).toBe(true);
+            expect([...order].sort((a, b) => a - b)).toEqual(order);
+            expect(compiled).toContain("主标题：通勤一路温热");
+            expect(compiled).not.toContain("待补充");
         }
+    });
+
+    test("非详情页入口仍可使用无字底图合同，避免主图平台规则被顺手改坏", () => {
+        const rows = ECOMMERCE_ONE_CLICK_FLOWS.filter((flow) => flow.id !== "detail").flatMap(ecommerceSuiteFromPresets);
+        expect(rows.some((row) => row.prompt.includes("不生成任何文字"))).toBe(true);
     });
 
     test("四个入口的拍法预设全部存在——缺一个就会退化成只剩一句职责", () => {
@@ -154,7 +179,39 @@ describe("套图表：一张图一条提示词", () => {
             { slotId: "main-3", title: "新场景", duty: "新职责 3", prompt: "新提示词 3" },
         ];
 
-        expect(reconcileEcommerceSuiteDraftRows(previous, parsed)).toEqual([{ ...parsed[0], resultNodeId: "result-1" }, previous[1], { ...parsed[1], resultNodeId: "result-3" }]);
+        // 结构归用户、内容归模型：启用槽位与顺序照请求快照校验，跳过行原位保留；
+        // 屏名与职责是用户核对过的信息结构，重新分析只刷新提示词。
+        const reconciled = reconcileEcommerceSuiteDraftRows(previous, parsed)!;
+        expect(reconciled.map((row) => row.slotId)).toEqual(["main-1", "main-2", "main-3"]);
+        expect(reconciled[1]).toEqual(previous[1]);
+        expect(reconciled[0]).toEqual({ ...parsed[0], title: "旧主图", duty: "旧职责", resultNodeId: "result-1" });
+        expect(reconciled[2]).toEqual({ ...parsed[1], title: "旧场景", duty: "旧职责", resultNodeId: "result-3" });
+    });
+
+    test("未动过的默认骨架采纳模型给的动态主题，改过的屏名与职责仍归用户", () => {
+        const flow = ecommerceOneClickFlow("detail")!;
+        const untouched = ecommerceSuiteSkeleton(flow)[0];
+        const edited = { ...ecommerceSuiteSkeleton(flow)[1], title: "我改的屏名", duty: "我改的职责" };
+        const generated = { ...ecommerceSuiteSkeleton(flow)[2], prompt: "已经出过图的提示词" };
+        const parsed = [
+            { slotId: untouched.slotId, title: "通勤保温场景", duty: "用真实通勤痛点开场", prompt: "画面构成：A" },
+            { slotId: edited.slotId, title: "模型想改掉的名字", duty: "模型想改掉的职责", prompt: "画面构成：B" },
+            { slotId: generated.slotId, title: "模型想改掉的名字", duty: "模型想改掉的职责", prompt: "画面构成：C" },
+        ];
+
+        const reconciled = reconcileEcommerceSuiteDraftRows([untouched, edited, generated], parsed)!;
+        // 默认骨架 + 空提示词 = 用户还没表态，主题听模型的
+        expect(reconciled[0].title).toBe("通勤保温场景");
+        expect(reconciled[0].duty).toBe("用真实通勤痛点开场");
+        expect(reconciled[0].prompt).toBe("画面构成：A");
+        // 用户亲手改过的结构不动，只刷新内容
+        expect(reconciled[1].title).toBe("我改的屏名");
+        expect(reconciled[1].duty).toBe("我改的职责");
+        expect(reconciled[1].prompt).toBe("画面构成：B");
+        // 已经有提示词的行是完成品，主题不再跟着模型漂
+        expect(reconciled[2].title).toBe(generated.title);
+        expect(reconciled[2].duty).toBe(generated.duty);
+        expect(reconciled[2].prompt).toBe("画面构成：C");
     });
 
     test("旧四段或两段分析结果不会清空用户已经编辑的文案与版式", () => {
@@ -186,13 +243,14 @@ describe("套图表：一张图一条提示词", () => {
 describe("分析结果的解析", () => {
     const flow = () => ecommerceOneClickFlow("detail")!;
 
-    test("九段新格式把文案、版式与无字底图提示词拆开，最后一段可以带竖线", () => {
-        const parsed = parseEcommerceSuiteDraft("detail-1 | 痛点共情 | 说出买家正在遇到的问题 | 通勤一路温热 | 真空杯体，随手带走 | | 立即了解 | poster | 商品居中，暖窗光 | 右侧留白", flow());
+    test("九段合同保留 copy/layout，并把七类详情字段完整收进最后 Prompt", () => {
+        const completePrompt = "画面构成：3:4 竖版暖窗光 | 产品摆放：商品居中 | 主标题：通勤一路温热 | 副标题：真空杯体，随手带走 | 卖点模块：杯盖提手 | 视觉风格：暖色商业详情页 | 负面提示词：错色、LOGO 错误";
+        const parsed = parseEcommerceSuiteDraft(`detail-1 | 痛点共情 | 说出买家正在遇到的问题 | 通勤一路温热 | 真空杯体，随手带走 | | 立即了解 | poster | ${completePrompt}`, flow());
 
         expect(parsed).toHaveLength(1);
         expect(parsed![0].copy).toEqual({ headline: "通勤一路温热", subhead: "真空杯体，随手带走", price: "", cta: "立即了解" });
         expect(parsed![0].layout?.name).toBe("海报居中");
-        expect(parsed![0].prompt).toBe("商品居中，暖窗光 | 右侧留白");
+        expect(parsed![0].prompt).toBe(completePrompt);
         expect(reconcileEcommerceSuiteDraftRows([{ ...ecommerceSuiteSkeleton(flow())[0], resultNodeId: "result-1" }], parsed!)).toEqual([{ ...parsed![0], resultNodeId: "result-1" }]);
     });
 
@@ -238,7 +296,7 @@ describe("分析结果的解析", () => {
         expect(parsed).toHaveLength(1);
         expect(parsed![0].prompt).toBe("商品居中，纯白背景，正面平视");
         // 标题与职责退回行业套路给的那一份
-        expect(parsed![0].title).toBe("痛点共情");
+        expect(parsed![0].title).toBe("品牌主视觉");
         expect(parsed![0].duty.trim()).toBeTruthy();
     });
 
@@ -265,11 +323,74 @@ describe("分析结果的解析", () => {
         expect(parsed![0].prompt).toBe("左三分构图 | 商品在右，文字在左");
     });
 
-    test("导演要求图片模型只画无字底图，文案单独按九段格式输出", () => {
+    test("详情页分析提示词完整序列化商品识别报告字段", () => {
+        const profile = {
+            ...createEcommerceProductProfile("随行杯"),
+            englishBrandName: "THERMO",
+            chineseBrandName: "暖行",
+            logoText: "THERMO，杯身正面",
+            brandStyle: "无衬线字体；薄荷绿配色；磨砂材质感",
+            category: "保温杯",
+            productModel: "T500",
+            appearance: "薄荷绿杯身",
+            functions: "保温；便携",
+            parameters: [
+                { name: "容量", value: "500 mL", source: "包装正面" },
+                { name: "材质", value: "304 不锈钢", source: "杯底铭牌" },
+            ],
+            sellingPoints: [
+                { type: "功能卖点" as const, content: "长效保温", visualization: "温度时间轴" },
+                { type: "体验卖点" as const, content: "单手开盖", visualization: "通勤手持" },
+                { type: "设计卖点" as const, content: "提手杯盖", visualization: "结构特写" },
+                { type: "场景卖点" as const, content: "办公室与通勤", visualization: "双场景切换" },
+                { type: "人群卖点" as const, content: "适合上班族", visualization: "人物使用" },
+            ],
+            audience: "通勤上班族",
+            painPoints: "普通杯具携带不便",
+            purchaseReasons: "有提手且容量清晰",
+            detailPageSuggestions: [{ screen: "第1屏", theme: "品牌主视觉", visual: "商品居中，薄荷绿背景", copy: "轻装随行" }],
+        };
+        const prompt = ecommerceSuiteDraftPrompt(flow(), profile, ecommerceSuiteSkeleton(flow()));
+
+        for (const expected of [
+            "英文品牌名：THERMO",
+            "中文品牌名：暖行",
+            "LOGO文字：THERMO，杯身正面",
+            "品牌视觉风格：无衬线字体；薄荷绿配色；磨砂材质感",
+            "产品型号：T500",
+            "主要功能：保温；便携",
+            "容量：500 mL（来源：包装正面）",
+            "材质：304 不锈钢（来源：杯底铭牌）",
+            "功能卖点：长效保温（可视化：温度时间轴）",
+            "体验卖点：单手开盖（可视化：通勤手持）",
+            "设计卖点：提手杯盖（可视化：结构特写）",
+            "场景卖点：办公室与通勤（可视化：双场景切换）",
+            "人群卖点：适合上班族（可视化：人物使用）",
+            "使用痛点：普通杯具携带不便",
+            "购买理由：有提手且容量清晰",
+            "第1屏 | 品牌主视觉 | 商品居中，薄荷绿背景 | 轻装随行",
+        ]) {
+            expect(prompt).toContain(expected);
+        }
+    });
+
+    test("详情页规划忽略历史占位商品名但保留真实商品名", () => {
+        const legacy = { ...createEcommerceProductProfile("未命名商品"), category: "保温杯" };
+        const rows = ecommerceSuiteSkeleton(flow());
+
+        expect(ecommerceSuiteDraftPrompt(flow(), legacy, rows)).not.toContain("未命名商品");
+        expect(ecommerceSuiteDraftPrompt(flow(), { ...legacy, name: "星云随行杯" }, rows)).toContain("商品名：星云随行杯");
+    });
+
+    test("详情页导演要求文案与画面一次生图，同时保留独立字段作为本地排版回退", () => {
         const prompt = ecommerceSuiteDraftPrompt(flow(), undefined, ecommerceSuiteSkeleton(flow()));
-        expect(ECOMMERCE_SUITE_DIRECTOR_PROMPT).toContain("无文字、Logo 和水印");
-        expect(prompt).toContain("主标题 | 副文案 | 价格 | 行动引导 | 版式 preset | 无字底图提示词");
-        expect(prompt).toContain("文案独立输出");
+        expect(prompt).toContain("完整生图提示词");
+        for (const field of ["画面构成", "产品摆放", "主标题", "副标题", "卖点模块", "视觉风格", "负面提示词"]) expect(prompt).toContain(field);
+        expect(prompt).toContain("严格还原产品外观、颜色、LOGO、结构和细节");
+        expect(prompt).toContain("待补充");
+        expect(prompt).toContain("一起交给图片模型");
+        expect(prompt).toContain("本地编辑和排版回退");
+        expect(prompt).not.toContain("无字底图提示词");
     });
 
     test("模型写解释的那几行不会当成屏次——id 不是短标识符就跳过", () => {
@@ -321,22 +442,22 @@ describe("铺产物节点", () => {
     });
 
     test("几张由表决定，不由行业套路决定", () => {
-        // 用户删到三行就只铺三张，加了行就铺十张——「九屏」只是一个起点。
+        // 用户删到三行就只铺三张，加了行就铺十一张——默认十屏只是一个起点。
         const flow = ecommerceOneClickFlow("detail")!;
         const trimmed = rowsOf().slice(0, 3);
         const three = ecommerceSuiteNodes(product(), flow, trimmed, new Set(), counter());
         expect(three.nodes.map((node) => node.metadata?.ecommerceShotId)).toEqual(trimmed.map((row) => row.slotId));
 
-        const ten = ecommerceSuiteNodes(product(), flow, [...rowsOf(), { slotId: "detail-10", title: "第十屏", duty: "补一屏", prompt: "" }], new Set(), counter());
-        expect(ten.nodes).toHaveLength(10);
-        expect(ten.nodes[9].title).toBe("第十屏");
+        const eleven = ecommerceSuiteNodes(product(), flow, [...rowsOf(), { slotId: "detail-11", title: "第十一屏", duty: "补一屏", prompt: "" }], new Set(), counter());
+        expect(eleven.nodes).toHaveLength(11);
+        expect(eleven.nodes[10].title).toBe("第十一屏");
     });
 
     test("一张都没铺时铺满，每张认领自己那一行、带自己的画幅", () => {
         const flow = ecommerceOneClickFlow("detail")!;
         const { nodes, connections } = ecommerceSuiteNodes(product(), flow, rowsOf(), new Set(), counter());
-        expect(nodes).toHaveLength(9);
-        expect(connections).toHaveLength(9);
+        expect(nodes).toHaveLength(10);
+        expect(connections).toHaveLength(10);
         for (const node of nodes) {
             expect(node.type).toBe(CanvasNodeType.Image);
             expect(node.metadata?.ecommerceAspectRatio).toBe("3:4");
@@ -371,8 +492,8 @@ describe("出图调动计划", () => {
         // 用户看到的是节点铺了一地、一个都不出图。
         const flow = ecommerceOneClickFlow("detail")!;
         const plan = ecommerceSuiteTargets(product(), flow, suiteOf(), { nodes: [], connections: [] }, {}, counter());
-        expect(plan.spawned).toHaveLength(9);
-        expect(plan.nodeIds).toHaveLength(9);
+        expect(plan.spawned).toHaveLength(10);
+        expect(plan.nodeIds).toHaveLength(10);
         const promptBySlot = new Map(plan.rows.map((row) => [row.slotId, row.prompt]));
         for (const node of plan.spawned) {
             const slotId = node.metadata?.ecommerceShotId;
@@ -400,9 +521,9 @@ describe("出图调动计划", () => {
         };
         const link = { id: "l1", fromNodeId: "product-1", toNodeId: "img-1" };
         const plan = ecommerceSuiteTargets(product(), flow, suite, { nodes: [already], connections: [link] }, {}, counter());
-        expect(plan.spawned).toHaveLength(8);
+        expect(plan.spawned).toHaveLength(9);
         expect(plan.reuse).toEqual([{ slotId: "detail-3", nodeId: "img-1", prompt: suite.rows[2].prompt }]);
-        expect(plan.nodeIds).toHaveLength(9);
+        expect(plan.nodeIds).toHaveLength(10);
         expect(plan.nodeIds[2]).toBe("img-1");
         expect(plan.reconnect).toEqual([]);
     });
@@ -412,7 +533,7 @@ describe("出图调动计划", () => {
         const already = { ...createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { ecommerceShotId: "detail-3", ecommerceProductId: "product-1", ecommerceFlowId: "detail" }), id: "img-1" };
         const link = { id: "l1", fromNodeId: "product-1", toNodeId: "img-1" };
         const plan = ecommerceSuiteTargets(product(), flow, suiteOf(), { nodes: [already], connections: [link] }, {}, counter());
-        expect(plan.spawned).toHaveLength(8);
+        expect(plan.spawned).toHaveLength(9);
         expect(plan.reconnect).toEqual([]);
     });
 
@@ -477,7 +598,7 @@ describe("出图调动计划", () => {
         const completed = first.spawned.map((node, index) => ({ ...node, metadata: { ...node.metadata, storageKey: `image:old-${index}`, status: "success" as const } }));
         const next = ecommerceSuiteTargets(product(), flow, suite, { nodes: completed, connections: first.connections }, {}, counter());
 
-        expect(first.spawned).toHaveLength(9);
+        expect(first.spawned).toHaveLength(10);
         expect(next.spawned).toEqual([]);
         expect(next.nodeIds).toEqual(first.nodeIds);
         expect(canGenerateImageInPlace(completed[0])).toBe(true);
@@ -567,8 +688,8 @@ describe("套图面板的接线", () => {
         expect(project).toMatch(/enqueueGenerationBatch\(\s*productNode\.id,\s*"batch_image"/);
         // 提示词写进节点自己的 prompt：点开那一屏能看见它、能改它、能单独重出
         expect(project).toContain("prompt, composerContent: prompt");
-        // 新节点先补运行与输入快照，再一次性写入画布。
-        expect(project).toContain("const preparedSpawned = spawnedWithRun.map((item) => {");
+        // 新建与复用共用准备结果，全部冻结快照后才写入画布。
+        expect(project).toContain("const preparedSpawned = plan.spawned.map((item) => preparedById.get(item.id)!)");
         expect(project).toContain("...preparedSpawned,");
         expect(preset).toContain("reuse: [],");
     });
@@ -576,7 +697,7 @@ describe("套图面板的接线", () => {
     test("批量生图提交后重新选择整批输出，避免聚焦首张时虚拟化卸载其余节点", () => {
         const generation = project.slice(project.indexOf("const generateEcommerceSuite = useCallback("), project.indexOf("// \u52a8\u4f5c Context", project.indexOf("const generateEcommerceSuite = useCallback(")));
         const viewport = readFileSync(new URL("../src/pages/canvas/use-canvas-viewport-controller.ts", import.meta.url), "utf8");
-        expect(generation).toMatch(/const preparedSpawned = spawnedWithRun\.map\([\s\S]*?setNodes\(\(current\) => \[[\s\S]*?\.\.\.preparedSpawned[\s\S]*?\]\);/);
+        expect(generation).toMatch(/const preparedSpawned = plan\.spawned\.map\([\s\S]*?setNodes\(\(current\) => \[[\s\S]*?\.\.\.preparedSpawned[\s\S]*?\]\);/);
         expect(generation).toMatch(/focusCanvasImageNodes\(nodeIds\);[\s\S]*?batchId = enqueueGenerationBatch/);
         expect(viewport).toMatch(/const focusCanvasImageNodes = useCallback\([\s\S]*?getCanvasNodesBounds\(targets\)[\s\S]*?viewportForBounds\(bounds, size/);
     });
@@ -602,7 +723,7 @@ describe("套图面板的接线", () => {
         // 节点铺了一地、一个都不出图，批量生成和单张出图都是这样。
         // 现在这件事由 ecommerceSuiteTargets 保证（见「出图调动计划」那一组），
         // 页面层补齐本次运行与输入快照后，再把 preparedSpawned 追加进去。
-        expect(project).toContain("const preparedSpawned = spawnedWithRun.map((item) => {");
+        expect(project).toContain("const preparedSpawned = plan.spawned.map((item) => preparedById.get(item.id)!)");
         expect(project).toContain("...preparedSpawned,");
         expect(project).toMatch(/connectEcommerceTableOutputs\(\s*ecommerceSuiteTargets\(/);
     });
@@ -654,9 +775,9 @@ describe("套图面板的接线", () => {
     });
 
     test("表要认自己那一套——跨入口读串了会让槽位对不上然后什么都不做", () => {
-        // 判定收在 ecommerceSuiteTargets 里（见「出图调动计划」），页面层把
-        // 商品节点上那份 suite 原样递进去，由它决定要不要用。
-        expect(project).toContain("suiteNode.metadata?.ecommerceSuite,");
+        // 先取本次草稿或当前入口的表，再交给调度计划核对 flow。
+        expect(project).toContain("suiteNode.metadata?.ecommerceSuitesByFlow?.[flowId] || suiteNode.metadata?.ecommerceSuite");
+        expect(project).toMatch(/ecommerceSuiteTargets\(\s*productNode,\s*flow,\s*requestedSuite,/);
         expect(preset).toContain("if (suite?.flow !== flow.id) return empty;");
     });
 
@@ -694,7 +815,7 @@ describe("整组统一与结构可调", () => {
     const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
     const panel = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-suite-panel.tsx", import.meta.url), "utf8");
 
-    test("屏次与职责可改，张数可增删——九屏只是起点", () => {
+    test("屏次与职责可改，张数可增删——十屏只是起点", () => {
         // 面板那两列从静态文字改成输入框
         expect(panel).toContain("setDraftRows((current) => current.map");
         expect(panel).toContain("const commitDraftRows = () =>");
@@ -724,18 +845,18 @@ describe("整组统一与结构可调", () => {
         expect(prompt).toContain("【这一套现在按这几屏走】");
     });
 
-    test("平台 / 语言 / 色彩美学 / 字体风格 / 风格参考图都进分析提示词", () => {
+    test("详情页只注入详情或辅图平台规则，主图规则不会冲突", () => {
         const flow = ecommerceOneClickFlow("detail")!;
         const rows = ecommerceSuiteRows(flow, undefined);
         const prompt = ecommerceSuiteDraftPrompt(flow, undefined, rows, undefined, {
-            platformId: "taobao",
+            platformId: "amazon",
             languageId: "en",
             style: { name: "极简白", palette: ["#FFFFFF", "#1A1A1A"], tone: "中性白", mood: "干净克制", typography: "无衬线，字重对比强" },
             styleReferenceName: "参考图A",
         });
-        expect(prompt).toContain("【投放平台】淘宝 / 天猫");
-        // 平台口径是硬规范，不是审美偏好——写进去是为了让模型一次画对
-        expect(prompt).toContain("主图口径：");
+        expect(prompt).toContain("第 2–9 位放场景、卖点、尺寸、细节、对比、包装");
+        expect(prompt).not.toContain("纯白 RGB(255,255,255)");
+        expect(prompt).not.toContain("主图文字");
         expect(prompt).toContain("【图上文字的语言】");
         expect(prompt).toContain("一律用英文");
         expect(prompt).toContain("【色彩美学】极简白");
@@ -744,6 +865,29 @@ describe("整组统一与结构可调", () => {
         // 参考图要说清是哪一张：那几张图本来就都送进模型了
         expect(prompt).toContain("「参考图A」");
         expect(prompt).toContain("不要复刻它的构图、商品和文字");
+    });
+
+    test("主图、种草和上身流程各自选择匹配的平台角色规则", () => {
+        const prompt = (flowId: "main" | "seed" | "wear", platformId: "amazon" | "xiaohongshu") => {
+            const flow = ecommerceOneClickFlow(flowId)!;
+            return ecommerceSuiteDraftPrompt(flow, undefined, ecommerceSuiteRows(flow, undefined), undefined, { platformId });
+        };
+
+        const main = prompt("main", "amazon");
+        expect(main).toContain("纯白 RGB(255,255,255)");
+        expect(main).not.toContain("第 2–9 位放场景、卖点、尺寸、细节、对比、包装");
+
+        const seedWithCover = prompt("seed", "xiaohongshu");
+        expect(seedWithCover).toContain("1242×1660，文字面积 ≤30%");
+        expect(seedWithCover).not.toContain("商品核心信息避开封面底部 15%");
+
+        const seedWithoutCover = prompt("seed", "amazon");
+        expect(seedWithoutCover).toContain("纯白 RGB(255,255,255)");
+        expect(seedWithoutCover).not.toContain("第 2–9 位放场景、卖点、尺寸、细节、对比、包装");
+
+        const wear = prompt("wear", "amazon");
+        expect(wear).toContain("第 2–9 位放场景、卖点、尺寸、细节、对比、包装");
+        expect(wear).not.toContain("纯白 RGB(255,255,255)");
     });
 
     test("没设任何整组统一时不往提示词里塞空段", () => {
@@ -783,16 +927,12 @@ describe("整组统一与结构可调", () => {
         expect(node).toContain('rows.map((row) => ({ ...row, prompt: "" }))');
     });
 
-    test("分析能选技能，选了才注入", () => {
-        expect(panel).toContain("SkillRuntimePicker");
-        expect(panel).toContain("onSkillIdsChange");
-        expect(node).toContain("ecommerceAnalysisSkills");
-        // 与出图那条链路同一套注入：prepare 把技能正文与关联文件拼进提示词
-        expect(project).toContain("listAddedSkills({ force: true })");
-        expect(project).toContain("selectedSkillIds: skillIds");
-        expect(project).toContain("skillMetadata = skillExecution.metadata");
-        // 没选就不注入——库里可能有二十个，全塞进去会把提示词顶爆
-        expect(project).toContain("if (skillIds?.length) {");
+    test("电商分析不再要求用户手选技能", () => {
+        expect(panel).not.toContain("SkillRuntimePicker");
+        expect(panel).not.toContain("onSkillIdsChange");
+        expect(node).not.toContain("useSkillRuntimeCatalog");
+        expect(project).not.toContain("selectedSkillIds: skillIds");
+        expect(project).not.toContain("if (skillIds?.length) {");
     });
 
     test("按在按钮上不会启动画布拖拽——否则按钮要点两次", () => {
@@ -836,14 +976,12 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(draft).toContain("unsure");
     });
 
-    test("分析提示词要求底图与文案分层", () => {
+    test("详情页分析提示词按商品与平台动态规划完整画面，不复制固定构图", () => {
         const prompt = ecommerceSuiteDraftPrompt(ecommerceOneClickFlow("detail")!, undefined, ecommerceSuiteRows(ecommerceOneClickFlow("detail")!, undefined));
-        expect(prompt).toContain("画面主体与状态");
-        expect(prompt).toContain("场景与背景");
-        expect(prompt).toContain("光线与镜头");
-        expect(prompt).toContain("文案独立输出");
-        expect(prompt).toContain("无文字、Logo 和水印");
+        expect(prompt).toContain("根据商品形态、投放平台、已确认事实和本屏主题动态决定");
+        expect(prompt).toContain("不得把同一构图复制到十屏");
         expect(prompt).toContain("不要把同一套描述复制到每一张");
+        expect(prompt).toContain("只学习参考图的信息层级、氛围和排版逻辑");
     });
 
     test("「怎么写」可以改，「写哪些」改不掉", () => {
@@ -896,11 +1034,10 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(project).toContain("ecommerceAnalysisFlow");
     });
 
-    test("Skills 按四种 flow 独立保存并传入分析", () => {
+    test("电商分析不保存或传递用户手选 Skills", () => {
         const node = readFileSync(new URL("../src/components/canvas/canvas-ecommerce-table-node.tsx", import.meta.url), "utf8");
-        expect(node).toContain("ecommerceAnalysisSkillsByFlow?.[activeFlow.id]");
-        expect(node).toContain("ecommerceAnalysisSkillsByFlow: { ...node.metadata?.ecommerceAnalysisSkillsByFlow, [activeFlow.id]: value }");
-        expect(project).toContain("suiteNode.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId]");
+        expect(node).not.toContain("ecommerceAnalysisSkillsByFlow");
+        expect(project).not.toContain("ecommerceAnalysisSkillsByFlow");
     });
 
     test("生成后创作表保持在画布中", () => {
@@ -923,9 +1060,9 @@ describe("读图起草：图必须真的递进模型", () => {
         expect(panel).toContain("onGenerate(latest)");
     });
 
-    test("图上文字独立输出，不烧进底图提示词", () => {
-        expect(suite).toContain("文案独立输出");
-        expect(suite).not.toContain("逐字用引号写进提示词");
+    test("详情页图上文字写进完整生图提示词，同时保留结构化文案回退", () => {
+        expect(suite).toContain("一起交给图片模型");
+        expect(suite).toContain("本地编辑和排版回退");
     });
 
     test("档案草稿按行解析，容忍序号与全角竖线", () => {
@@ -940,10 +1077,10 @@ describe("读图起草：图必须真的递进模型", () => {
 
     test("商品识别只允许可见卖点依据，并明确价格必须手填", () => {
         const prompt = buildEcommerceProfileDraftPrompt();
-        expect(prompt).toContain("facts |");
-        expect(prompt).toContain("每条都要写出图中可见的依据");
-        expect(prompt).toContain("price |");
-        expect(prompt).toContain("必须留空");
+        expect(prompt).toContain("# 产品信息智能提取报告");
+        expect(prompt).toContain("卖点与依据");
+        expect(prompt).toContain("价格不要从图片猜测");
+        expect(prompt).toContain("不要输出到报告");
     });
 
     test("「无」「看不清」这类占位不当成内容写进档案", () => {

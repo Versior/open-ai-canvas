@@ -16,6 +16,24 @@ const MAX_LONG_IMAGE_PIXELS = 16_000_000;
 
 export type EcommerceRasterSize = { width: number; height: number };
 
+export type EcommerceResultTextMode = "model" | "local";
+
+/**
+ * 这张结果图出图时，字是谁画的——预览、ZIP、装订共用一个判定。
+ *
+ * 只认结果自己带回来的凭证：mode 必须是 model/local，且记录的 storageKey 就是
+ * 现在这张图的 storageKey。缺一半、写错、或图已被替换，都返回 undefined——
+ * 不按 flow 猜，也不默认 local。猜错的两种后果一样难看：模型已画字时再叠一层就是
+ * 双字重影，底图无字时漏叠就是白板交付。
+ */
+export function ecommerceResultTextMode(node: { metadata?: { ecommerceResultTextMode?: { mode?: string; sourceStorageKey?: string }; storageKey?: string } } | undefined): EcommerceResultTextMode | undefined {
+    const credential = node?.metadata?.ecommerceResultTextMode;
+    const storageKey = node?.metadata?.storageKey;
+    if (!credential || !storageKey) return undefined;
+    if (credential.mode !== "model" && credential.mode !== "local") return undefined;
+    return credential.sourceStorageKey === storageKey ? credential.mode : undefined;
+}
+
 function assertSafeCanvasSize(size: EcommerceRasterSize, message: string, maxPixels = MAX_CANVAS_PIXELS) {
     if (!Number.isFinite(size.width) || !Number.isFinite(size.height) || size.width > MAX_CANVAS_EDGE || size.height > MAX_CANVAS_EDGE || size.width * size.height > maxPixels) throw new Error(message);
 }
@@ -191,9 +209,14 @@ export type RasterizeEcommerceCompositionInput = {
     background?: string;
 };
 
-/** Legacy rows remain byte-for-byte unchanged; composed rows keep the source image dimensions by default. */
+/**
+ * Legacy rows remain byte-for-byte unchanged; composed rows keep the source image dimensions by default.
+ *
+ * 版式一个字都排不出来时也原样返回：解码一遍再转码只会掉画质，交付物还是那张图。
+ * 手动装订与自动装订共用这里，所以判据只放一处——调用方不必各自记得检查。
+ */
 export async function rasterizeEcommerceComposition(input: RasterizeEcommerceCompositionInput): Promise<string> {
-    if (!input.copy || !input.layout) return input.imageUrl;
+    if (!input.copy || !input.layout || !ecommerceLayoutVisibleBlocks(input.layout, input.copy).length) return input.imageUrl;
     let size = input.size;
     if (!size) {
         const source = await loadImage(input.imageUrl);

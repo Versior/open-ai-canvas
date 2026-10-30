@@ -67,12 +67,7 @@ func TestCloudAgentReadArgumentFeedbackUsesAdvertisedSchema(t *testing.T) {
 			if result["reason"] != "invalid_tool_arguments" || result["guidance"] == nil {
 				t.Fatalf("missing repair feedback: %s", content)
 			}
-			// Unadvertised tools must not acquire a schema through error feedback.
-			if name == "skill_read_file" {
-				if result["parameters"] != nil {
-					t.Fatal("disabled skill tool acquired a schema")
-				}
-			} else if result["parameters"] == nil {
+			if result["parameters"] == nil {
 				t.Fatal("advertised schema missing from repair feedback")
 			}
 		})

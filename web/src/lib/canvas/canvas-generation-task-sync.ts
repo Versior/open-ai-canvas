@@ -23,15 +23,25 @@ import { composeCanvasImageLayerGroup, decodeAndComposeImageLayers, inspectImage
 import { patchImageLayerBackground } from "@/services/canvas-image-layer-source";
 import { imageLayerTargetName } from "@/lib/canvas/canvas-image-layer-plan";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
-import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata } from "@/types/canvas";
+import { CanvasNodeType, type CanvasGenerationMode, type CanvasNodeData, type CanvasNodeMetadata, type EcommerceResultTextMode } from "@/types/canvas";
 
 export function generationTaskInput(task: GenerationTask) {
     if (!task.inputJson) return null;
     try {
-        return JSON.parse(task.inputJson) as { mode?: CanvasGenerationMode; metadata?: { nodeId?: string; sourceNodeId?: string; domainProjectId?: string; layerDecomposition?: boolean; edit?: string }; prompt?: string };
+        return JSON.parse(task.inputJson) as { mode?: CanvasGenerationMode; metadata?: { nodeId?: string; sourceNodeId?: string; domainProjectId?: string; layerDecomposition?: boolean; edit?: string; ecommerceTextMode?: string }; prompt?: string };
     } catch {
         return null;
     }
+}
+
+/**
+ * 成功媒体采用的电商文字模式：只认这个任务入队时冻结的合法枚举，并绑定实际结果 storageKey。
+ * 缺失、非法或拿不到结果资源一律 unknown，不能回读当前 store 推测。
+ */
+export function ecommerceResultTextModeForTask(task: GenerationTask, storageKey?: string): EcommerceResultTextMode | undefined {
+    const mode = generationTaskInput(task)?.metadata?.ecommerceTextMode;
+    if ((mode !== "model" && mode !== "local") || !storageKey) return undefined;
+    return { mode, sourceStorageKey: storageKey };
 }
 
 export function generationTaskNodeId(task: GenerationTask) {
@@ -124,12 +134,16 @@ function workflowMetadataForResultNode(): Partial<CanvasNodeMetadata> {
 // 原地重生会换 storageKey 但继承旧 assetId，形成「旧素材 + 新资源」配对，云端校验会永久拒绝。
 // 新媒体结果必须清掉旧绑定，交给入库/修复路径按新资源重绑。
 export function applyGeneratedMediaResultMetadata(node: CanvasNodeData, media: CanvasNodeMetadata, extra: Partial<CanvasNodeMetadata> = {}, fallbackModel?: string): CanvasNodeMetadata {
+    const mediaLanded = media.status === "success" && Boolean(media.content || media.storageKey);
     return commitProducedModel(
         {
             ...node.metadata,
             ...workflowMetadataForResultNode(),
             ...media,
             ...extra,
+            // 只有真实落地的成功新媒体才重绑模式：任务没给出合法值就清掉旧标签，不能沿用上一张图的。
+            // 失败、取消、准备中只是状态变化，旧图连同它的模式一起保留——extra 里带空值也不能抹掉。
+            ecommerceResultTextMode: mediaLanded ? ("ecommerceResultTextMode" in extra ? extra.ecommerceResultTextMode : undefined) : node.metadata?.ecommerceResultTextMode,
             ...(batchOutputResultPending(node.metadata) && media.status === "success" && (media.content || media.storageKey)
                 ? {
                       batchResultInputSignature: node.metadata?.batchInputSignature,
@@ -227,7 +241,13 @@ export async function buildGenerationTaskNodeResult(node: CanvasNodeData, task: 
             metadata: applyGeneratedMediaResultMetadata(
                 node,
                 imageMetadata(uploaded),
-                { prompt, ...completedTaskMetadata(task), generationOutputCount: 1, ...(extraction ? { layerExtraction: extraction, status: needsRemoval ? "idle" : "success" } : {}) },
+                {
+                    prompt,
+                    ...completedTaskMetadata(task),
+                    generationOutputCount: 1,
+                    ecommerceResultTextMode: ecommerceResultTextModeForTask(task, uploaded.storageKey),
+                    ...(extraction ? { layerExtraction: extraction, status: needsRemoval ? "idle" : "success" } : {}),
+                },
                 task.model,
             ),
         };

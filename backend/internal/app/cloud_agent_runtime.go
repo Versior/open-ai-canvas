@@ -124,6 +124,10 @@ type cloudAgentRuntime struct {
 	CreativeAnchor cloudAgentCreativeAnchor `json:"creativeAnchor,omitempty"`
 	TextHistory    []providerTextMessage    `json:"textHistory,omitempty"`
 	Skills         []cloudAgentSkill        `json:"skills"`
+	// SkillReferences 是本轮经 skill_search 冻结的广场参考技能（公开或自建，未安装）。
+	// 它们只能按冻结的版本/哈希只读引用，永远不进 SkillVersions 的可读范围，
+	// 也不经工具结果以外的任何通道下发正文。
+	SkillReferences []cloudAgentSkill `json:"skillReferences,omitempty"`
 	// SkillVersions 是本轮可读技能（自动发现 + 固定）的冻结版本；SkillHints / Memory 是每次
 	// 模型请求前重新插入的冻结数据消息。
 	SkillVersions      map[string]string                     `json:"skillVersions,omitempty"`
@@ -265,7 +269,7 @@ func (s *Service) ensureCloudAgentExecution(task *model.Task, initial cloudAgent
 	// not an active model task; validation and recovery use TaskIDs as the run's
 	// immutable task-history anchor. Leaving this nil makes every new Pi run
 	// fail its first checkpoint with "Agent runtime task history is invalid".
-	state := cloudAgentRuntime{Request: initial.Request, Policy: initial.Policy, ParentID: initial.ParentID, Fingerprint: initial.Fingerprint, CreativeAnchor: initial.CreativeAnchor, TextHistory: input.TextHistory, Skills: initial.Skills, SkillVersions: initial.SkillVersions, SkillHints: initial.SkillHints, Memory: initial.Memory, Profile: initial.Profile, Canonical: canonical, ActiveTaskID: "", TaskIDs: []string{task.ID}, Step: 0, Decisions: map[string]string{}, Plan: initial.Plan, ConfirmationRounds: initial.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), initial.ConfirmationFingerprints...), PendingConfirmationFingerprint: "", Events: []CloudAgentEvent{}, StepLimits: limits}
+	state := cloudAgentRuntime{Request: initial.Request, Policy: initial.Policy, ParentID: initial.ParentID, Fingerprint: initial.Fingerprint, CreativeAnchor: initial.CreativeAnchor, TextHistory: input.TextHistory, Skills: initial.Skills, SkillReferences: initial.SkillReferences, SkillVersions: initial.SkillVersions, SkillHints: initial.SkillHints, Memory: initial.Memory, Profile: initial.Profile, Canonical: canonical, ActiveTaskID: "", TaskIDs: []string{task.ID}, Step: 0, Decisions: map[string]string{}, Plan: initial.Plan, ConfirmationRounds: initial.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), initial.ConfirmationFingerprints...), PendingConfirmationFingerprint: "", Events: []CloudAgentEvent{}, StepLimits: limits}
 	if !carrier {
 		state.ActiveTaskID = task.ID
 		state.Step = 1

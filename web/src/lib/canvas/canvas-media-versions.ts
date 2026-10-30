@@ -21,6 +21,11 @@ const MEDIA_KEYS = [
     "videoPreview",
     "imageRotation",
     "assetId",
+    "ecommerceResultTextMode",
+    // 成对：媒体所属的输入/结果签名。旧版本没有时两者都为空，取用时一起清掉，
+    // 避免旧图继承当前方案的签名后被当成「当前行结果」。
+    "batchInputSignature",
+    "batchResultInputSignature",
 ] as const satisfies readonly (keyof CanvasMediaVersionMedia)[];
 
 const GENERATION_KEYS = ["prompt", "model", "producedModel", "size", "quality", "seconds", "references", "taskId", "taskDurationMs"] as const satisfies readonly (keyof CanvasMediaVersionGeneration)[];

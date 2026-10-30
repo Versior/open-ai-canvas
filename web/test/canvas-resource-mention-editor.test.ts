@@ -127,9 +127,9 @@ describe("canvas resource mention editor", () => {
         expect(component).toContain("slash.start + 1 + slash.query.length");
         expect(component).toContain("buildSkillMentionReferences(availableSlashSkills)");
         expect(component).toContain("[/、]([^\\s/、]*)$");
-        // 保留主分支已恢复的固定 Skills 提示，不能因合并旧分支退回失效的外观配置断言。
+        // 面板已取消「每轮固定 Skills」，输入框不再承诺「/」技能菜单，改为说明 Agent 自动匹配。
         expect(source("../src/lib/canvas/agent-appearance.ts")).toContain("用 / 或 、 引用 Skills");
-        expect(moduleGroupSource("components/canvas/canvas-cloud-agent-panel.tsx") + source("../src/components/canvas/canvas-cloud-agent-panel-parts.tsx")).toContain("用 / 或 、 引用 Skills");
+        expect(moduleGroupSource("components/canvas/canvas-cloud-agent-panel.tsx") + source("../src/components/canvas/canvas-cloud-agent-panel-parts.tsx")).toContain("Agent 会自动匹配所需技能");
     });
 
     test("skill chips use one colored icon instead of exposing the serialized token", () => {

@@ -77,13 +77,14 @@ describe("canvas node toolbar model", () => {
         expect(tools.find((tool) => tool.id === "resize")?.active).toBe(false);
     });
 
-    test("simple ecommerce images expose only direct adjustment and delivery tools", () => {
+    test("simple ecommerce images keep prompt, resize, and annotation tools without film tools", () => {
         const node: CanvasNodeData = { id: "image", type: CanvasNodeType.Image, title: "Image", position: { x: 0, y: 0 }, width: 320, height: 180, metadata: { content: "image.png" } };
         const tools = buildImageToolbarTools(node, {} as never, { ecommerce: true, simpleEcommerce: true });
 
-        expect(tools.map((tool) => tool.id)).toEqual(["regionEdit", "textEdit", "lighting", "removeBackground", "angle", "crop", "upscale", "view", "replace"]);
+        expect(tools.map((tool) => tool.id)).toEqual(["regionEdit", "textEdit", "lighting", "removeBackground", "angle", "crop", "upscale", "annotation", "annotationEdit", "view", "replace", "copyPrompt", "reversePrompt", "resize"]);
         expect(["uploadImage", "retry", "download", "mediaVersions"].every(isSimpleEcommerceImageToolbarTool)).toBe(true);
-        expect(["reversePrompt", "layerDecomposition", "split", "previs", "image_projection_after_3s", "resize", "node-lock"].some(isSimpleEcommerceImageToolbarTool)).toBe(false);
+        expect(["copyPrompt", "reversePrompt", "resize", "annotation", "annotationEdit"].every(isSimpleEcommerceImageToolbarTool)).toBe(true);
+        expect(["layerDecomposition", "split", "previs", "image_projection_after_3s", "node-lock"].some(isSimpleEcommerceImageToolbarTool)).toBe(false);
     });
 
     test("keeps video primary actions compact and moves secondary processing into a menu", () => {

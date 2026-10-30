@@ -636,12 +636,13 @@ try {
     assert.ok(captured?.prompt.includes("Verified text from the connected brief"));
     reset();
     nodesRef.current.find((node) => node.id === studio.id)!.metadata!.ecommerceStudio!.skillIds = ["product-analysis"];
+    preparedSkills = ["sentinel"];
     await act(async () => {
         await hook.run({ ...request(), action: "listing" });
     });
-    assert.deepEqual(preparedSkills, ["product-analysis"]);
-    assert.deepEqual(captured?.metadata?.skillIds, ["product-analysis"]);
-    assert.ok(captured?.prompt.includes("selected-skill-context"));
+    // 电商 Skill 由后端自动选择，旧画布保存的手选项不能再触发前端 Skill runtime。
+    assert.deepEqual(preparedSkills, ["sentinel"]);
+    assert.equal(captured?.metadata?.skillIds, undefined);
     reset();
     afterSubmit = () => {
         assert.ok(hook.isRunning(studio.id));

@@ -3,6 +3,7 @@ import { CanvasNodeType, type CanvasNodeData, type CanvasConnection } from "@/ty
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
 import { DEFAULT_ECOMMERCE_BRIEF } from "./ecommerce-capabilities";
+import { normalizeEcommerceProductName } from "./ecommerce-contract";
 import { nanoid } from "nanoid";
 import { canonicalize } from "json-canonicalize";
 import type { EcommerceWorkbenchPlan, EcommerceWorkbenchBrief } from "./ecommerce-capabilities";
@@ -89,7 +90,7 @@ export function openEcommerceStudio(nodes: CanvasNodeData[], connections: Canvas
     if (!product || product.metadata?.locked) throw new Error("商品已删除或锁定");
     const existing = nodes.find((node) => node.type === CanvasNodeType.EcommerceStudio && connections.some((edge) => edge.fromNodeId === productId && edge.toNodeId === node.id && edge.relation !== "batch-output"));
     if (existing) return { nodes, connections, studio: existing };
-    const studio = createCanvasNode(CanvasNodeType.EcommerceStudio, { x: 0, y: 0 }, { ecommerceStudio: { brief: { ...structuredClone(DEFAULT_ECOMMERCE_BRIEF), name: product.metadata?.productProfile?.name || product.title || "商品" } } });
+    const studio = createCanvasNode(CanvasNodeType.EcommerceStudio, { x: 0, y: 0 }, { ecommerceStudio: { brief: { ...structuredClone(DEFAULT_ECOMMERCE_BRIEF), name: normalizeEcommerceProductName(product.metadata?.productProfile?.name) || normalizeEcommerceProductName(product.title) || "商品" } } });
     studio.position = findAvailableGenerationGroupPosition(nodes, { x: product.position.x + product.width + 160, y: product.position.y }, studio);
     return { nodes: [...nodes, studio], connections: [...connections, { id: nanoid(), fromNodeId: product.id, toNodeId: studio.id }], studio };
 }

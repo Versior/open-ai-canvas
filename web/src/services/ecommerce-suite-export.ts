@@ -4,8 +4,8 @@ import { getImageBlob } from "@/services/image-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import type { EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import type { EcommerceCopy } from "@/lib/ecommerce/ecommerce-contract";
-import type { EcommerceLayout } from "@/lib/ecommerce/ecommerce-layout";
-import { rasterizeEcommerceComposition } from "@/lib/ecommerce/ecommerce-rasterize";
+import { ecommerceLayoutVisibleBlocks, type EcommerceLayout } from "@/lib/ecommerce/ecommerce-layout";
+import { ecommerceResultTextMode, rasterizeEcommerceComposition } from "@/lib/ecommerce/ecommerce-rasterize";
 import type { CanvasNodeData } from "@/types/canvas";
 import { queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 
@@ -78,9 +78,11 @@ export async function buildEcommerceSuiteArchive(rows: EcommerceSuiteRow[], node
         if (!original || !["image/png", "image/jpeg", "image/webp"].includes(original.type)) throw new Error(`第 ${index + 1} 张原图缺失或格式不支持`);
         if (totalBytes + original.size > MAX_ARCHIVE_BYTES) throw new Error("套图超过 64MB，请分批导出");
         const { copy, layout } = row;
-        const applied = Boolean(copy && layout);
+        // 只有明确 local 才本地叠字；model 的像素里已有字，unknown 不敢动。
+        // 版式一个字都排不出来时合成只是把原图转一次 PNG，空转还掉画质，按未合成交付。
+        const applied = Boolean(copy && layout) && ecommerceResultTextMode(node) === "local" && ecommerceLayoutVisibleBlocks(layout, copy).length > 0;
         let blob = original;
-        if (copy && layout) {
+        if (copy && layout && applied) {
             blob = await compose(original, copy, layout);
             validateSource();
         }

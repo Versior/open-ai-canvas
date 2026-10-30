@@ -3,7 +3,6 @@ import { useRef, useState } from "react";
 import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-context";
 import { useNodeConnections, useNodeInputs, useDownstreamNodes } from "@/components/canvas/canvas-node-graph-context";
 import { CanvasEcommerceSuitePanel } from "@/components/canvas/canvas-ecommerce-suite-panel";
-import { useSkillRuntimeCatalog } from "@/components/skills/skill-runtime-picker";
 import { ecommerceOneClickFlow, type EcommerceOneClickFlow } from "@/lib/ecommerce/ecommerce-oneclick";
 import { ecommerceCopySourceIssues } from "@/lib/ecommerce/ecommerce-contract";
 import { resolveEcommerceTableModels } from "@/lib/ecommerce/ecommerce-model-defaults";
@@ -78,7 +77,6 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
     const [generating, setGenerating] = useState(false);
     const analysisInFlight = useRef(false);
     const generationInFlight = useRef(false);
-    const { skills, loading: skillsLoading, error: skillsError, refresh: refreshSkills } = useSkillRuntimeCatalog();
     const activeFlow = ecommerceOneClickFlow(node.metadata?.ecommerceFlowId) || ecommerceOneClickFlow("main")!;
     const admitSuiteAction = () => {
         const issues = ["main", "detail", "seed"].includes(activeFlow.id) ? ecommerceCopySourceIssues(product?.metadata?.productProfile) : [];
@@ -169,18 +167,12 @@ function EditableEcommerceTable({ node }: { node: CanvasNodeData }) {
                     brief={node.metadata?.ecommerceBrief}
                     onBriefChange={(value) => updateMetadata?.(node.id, { ecommerceBrief: value })}
                     autoBindAvailable={setting.autoBindEnabled}
-                    skillIds={node.metadata?.ecommerceAnalysisSkillsByFlow?.[activeFlow.id] ?? []}
-                    availableSkills={skills}
-                    skillsLoading={skillsLoading}
-                    skillsError={skillsError}
-                    onRefreshSkills={refreshSkills}
                     autoBind={node.metadata?.ecommerceAutoBind === true}
                     analyzing={analyzing}
                     generating={generating}
                     onAnalysisModelChange={(value) => updateMetadata?.(node.id, { ecommerceAnalysisModel: value })}
                     onImageModelChange={(value) => updateMetadata?.(node.id, { ecommerceImageModel: value })}
                     onImageOptionChange={(key, value) => updateMetadata?.(node.id, key === "size" ? { ecommerceImageSize: value } : { ecommerceImageQuality: value })}
-                    onSkillIdsChange={(value) => updateMetadata?.(node.id, { ecommerceAnalysisSkillsByFlow: { ...node.metadata?.ecommerceAnalysisSkillsByFlow, [activeFlow.id]: value } })}
                     onAutoBindChange={(value) => updateMetadata?.(node.id, { ecommerceAutoBind: value })}
                     onClearPrompts={() => changeRows((rows) => rows.map((row) => ({ ...row, prompt: "" })))}
                     onAnalyze={(rows) => analyze(rows)}

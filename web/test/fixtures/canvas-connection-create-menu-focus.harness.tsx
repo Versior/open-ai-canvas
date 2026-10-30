@@ -84,7 +84,7 @@ function MenuHarness({ canvas, allDisabled = false, canvasKind = "freeform", wor
     );
 }
 
-test("连接后菜单在快捷电商只保留商品入口，专业与自由画布不受误伤", async () => {
+test("连接后菜单在快捷电商保留核心电商节点，专业与自由画布不受误伤", async () => {
     const surface = setupSurface();
     const labels = () => new Set(Array.from(surface.host.querySelectorAll<HTMLElement>("[data-create-option]"), (option) => option.getAttribute("aria-label")));
     const render = async (canvasKind: CanvasKind, workspaceMode: CanvasWorkspaceMode) => {
@@ -93,8 +93,8 @@ test("连接后菜单在快捷电商只保留商品入口，专业与自由画�
     };
     try {
         const simple = await render("ecommerce", "simple");
-        expect(simple.has("商品")).toBe(true);
-        for (const label of ["卖点", "电商生图台", "批量创作表", "生成配置", "音频参考"]) expect(simple.has(label)).toBe(false);
+        for (const label of ["商品", "卖点", "文案", "品牌风格", "排版", "信息图", "交付"]) expect(simple.has(label)).toBe(true);
+        for (const label of ["电商生图台", "批量创作表", "生成配置", "音频参考", "分镜脚本", "拍法", "爆款复刻", "竞品拆解", "改稿", "电商视频", "A+ 内容"]) expect(simple.has(label)).toBe(false);
 
         const professional = await render("ecommerce", "professional");
         for (const label of ["商品", "卖点", "电商生图台", "批量创作表", "生成配置"]) expect(professional.has(label)).toBe(true);

@@ -68,6 +68,35 @@ export function ecommerceLayoutVisibleBlocks(layout: EcommerceLayout | undefined
 }
 
 /**
+ * 版式交给图片模型的写法。
+ *
+ * 只列真正会出现的字：文案是空的块不提，否则模型会替它编一段填进去。
+ * 只有「模型画字」的模式才该看见这一段——本地叠字时版式是排版环节的事，
+ * 写进底图等于改一次位置就要重出一次图。
+ */
+/** 单个文字块的可编辑值，一句话说完——改色、改留白、改粗细都要落到提示词里。 */
+export function ecommerceLayoutBlockHint(block: EcommerceLayoutBlock) {
+    const anchor = ECOMMERCE_LAYOUT_ANCHORS.find((item) => item.id === block.anchor)?.label || block.anchor;
+    const align = block.align === "center" ? "居中" : block.align === "right" ? "右对齐" : "左对齐";
+    const plate = block.plate ? `，字下垫 ${block.plate} 底色保证可读` : "，不垫底色";
+    return `置于${anchor}，${align}，距边约短边 ${block.inset}%，字号约占短边 ${block.size}%，字色 ${block.color}${plate}，${block.bold ? "加粗" : "常规字重"}`;
+}
+
+/** 某一条文案的版式说明；这一条没有版式块时给空串。 */
+export function ecommerceLayoutFieldHint(layout: EcommerceLayout | undefined, copy: EcommerceCopy | undefined, field: keyof EcommerceCopy) {
+    const block = layout?.blocks.find((item) => item.field === field);
+    if (!block || !copy?.[field]?.trim()) return "";
+    return ecommerceLayoutBlockHint(block);
+}
+
+export function ecommerceLayoutPromptBlock(layout: EcommerceLayout | undefined, copy: EcommerceCopy | undefined) {
+    const blocks = ecommerceLayoutVisibleBlocks(layout, copy);
+    if (!layout || !blocks.length) return "";
+    const lines = blocks.map((block) => `- ${ecommerceLayoutFieldLabel(block.field)}：${ecommerceLayoutBlockHint(block)}`);
+    return [`【版式】${layout.name.trim() || "未命名版式"}。下列文字按此位置与层级排出，不要自行换位：`, ...lines].join("\n");
+}
+
+/**
  * 把锚点 + 百分比翻译成绝对定位。
  *
  * 短边取 min(宽, 高)：同一套版式在 1:1 和 9:16 上，字号与留白的观感一致，

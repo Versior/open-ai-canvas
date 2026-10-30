@@ -1,5 +1,7 @@
 import type { EcommerceModel } from "./ecommerce-models";
 import { ecommerceModelLockBlock } from "./ecommerce-models";
+import type { EcommerceLayout } from "./ecommerce-layout";
+import { ecommerceLayoutFieldHint, ecommerceLayoutPromptBlock } from "./ecommerce-layout";
 import type { EcommerceReplica } from "./ecommerce-replica";
 import { ecommerceReplicaBlock } from "./ecommerce-replica";
 import type { EcommerceTeardown } from "./ecommerce-teardown";
@@ -26,20 +28,48 @@ export const ECOMMERCE_PRODUCT_VIEWS: { id: EcommerceProductView; label: string;
     { id: "packaging", label: "包装", hint: "包装形态与包装上的文字" },
 ];
 
+export type EcommerceProductParameter = {
+    name: string;
+    value: string;
+    source: string;
+};
+
+export type EcommerceProductSellingPoint = {
+    type: "功能卖点" | "体验卖点" | "设计卖点" | "场景卖点" | "人群卖点";
+    content: string;
+    visualization: string;
+};
+
+export type EcommerceDetailPageSuggestion = {
+    screen: string;
+    theme: string;
+    visual: string;
+    copy: string;
+};
+
 /**
  * 商品档案——一个商品的持久身份。
  *
- * 四个字段都是用户确认过的事实，不是模型从图里猜的。模型猜出来的必须先标成待确认，
+ * 旧画布只保存基础字段，因此结构化识别报告新增字段保持可选；模型识别结果必须先由用户核对，
  * 确认之后才进提示词。这是整个电商创作的信任基础：用户敢说"这就是我那件商品"。
  */
 export type EcommerceProductProfile = {
-    /** 商品名。只用于展示和节点标题，不进提示词。 */
+    /** 用户核对后的商品名；商品锁仅在已有其他身份事实时使用它。 */
     name: string;
+    englishBrandName?: string;
+    chineseBrandName?: string;
+    /** 商品自带的 Logo 文字及位置，必须与额外广告文字区分。 */
+    logoText?: string;
+    brandStyle?: string;
     /** 品类，例如「保温杯」「连衣裙」。进提示词。 */
     category: string;
+    productModel?: string;
     /** 外观：颜色、材质、图案、结构。一项一行。 */
     appearance: string;
-    /** 标识：Logo、包装文字。逐字保留，含位置。 */
+    functions?: string;
+    parameters?: EcommerceProductParameter[];
+    sellingPoints?: EcommerceProductSellingPoint[];
+    /** 标识：除独立 Logo 字段外的包装文字、铭牌等。逐字保留，含位置。 */
     marks: string;
     /** 禁止项：明确不能出现的变化。 */
     forbidden: string;
@@ -51,6 +81,9 @@ export type EcommerceProductProfile = {
      * 而买家买的是「早上倒的水中午还烫」。
      */
     audience: string;
+    painPoints?: string;
+    purchaseReasons?: string;
+    detailPageSuggestions?: EcommerceDetailPageSuggestion[];
     /**
      * 卖点与可核实的依据，一条一行，格式「卖点：依据」。
      *
@@ -64,8 +97,34 @@ export type EcommerceProductProfile = {
     views: Partial<Record<EcommerceProductView, string>>;
 };
 
-export function createEcommerceProductProfile(name = "未命名商品"): EcommerceProductProfile {
-    return { name, category: "", appearance: "", marks: "", forbidden: "", audience: "", facts: "", price: "", views: {} };
+export function normalizeEcommerceProductName(name?: string) {
+    const normalized = name?.trim() || "";
+    return normalized === "未命名商品" ? "" : normalized;
+}
+
+export function createEcommerceProductProfile(name = ""): EcommerceProductProfile {
+    return {
+        name: normalizeEcommerceProductName(name),
+        englishBrandName: "",
+        chineseBrandName: "",
+        logoText: "",
+        brandStyle: "",
+        category: "",
+        productModel: "",
+        appearance: "",
+        functions: "",
+        parameters: [],
+        sellingPoints: [],
+        marks: "",
+        forbidden: "",
+        audience: "",
+        painPoints: "",
+        purchaseReasons: "",
+        detailPageSuggestions: [],
+        facts: "",
+        price: "",
+        views: {},
+    };
 }
 
 /** 档案填得够不够——空档案不该被当成有效商品放进生成。 */
@@ -106,14 +165,22 @@ export function ecommerceProductViewCount(profile: EcommerceProductProfile | und
 export function ecommerceProductLockBlock(profile: EcommerceProductProfile | undefined) {
     if (!profile) return "";
     const lines: string[] = [];
+    if (profile.chineseBrandName?.trim()) lines.push(`中文品牌：${profile.chineseBrandName.trim()}`);
+    if (profile.englishBrandName?.trim()) lines.push(`英文品牌：${profile.englishBrandName.trim()}`);
+    if (profile.logoText?.trim()) lines.push(`LOGO文字：${profile.logoText.trim()}`);
+    if (profile.brandStyle?.trim()) lines.push(`品牌视觉：${profile.brandStyle.trim()}`);
     if (profile.category.trim()) lines.push(`品类：${profile.category.trim()}`);
+    if (profile.productModel?.trim()) lines.push(`产品型号：${profile.productModel.trim()}`);
     if (profile.appearance.trim()) lines.push(`外观：${profile.appearance.trim()}`);
-    if (profile.marks.trim()) lines.push(`标识：${profile.marks.trim()}`);
+    if (profile.marks.trim()) lines.push(`其他标识：${profile.marks.trim()}`);
     if (profile.forbidden.trim()) lines.push(`禁止：${profile.forbidden.trim()}`);
     if (!lines.length) return "";
+    const name = normalizeEcommerceProductName(profile.name);
+    if (name) lines.unshift(`产品名称：${name}`);
     return [
         "【商品锁定】以下特征必须逐字保留，不得改写、美化、替换、增减或重新设计：",
         ...lines,
+        "严格还原参考图中的产品外观、颜色、LOGO、结构和细节；商品自带的 Logo、品牌名、包装文字与铭牌必须保持原样、位置不变。",
         "商品必须是参考图中的同一件实物，不是相似款。",
     ].join("\n");
 }
@@ -286,6 +353,21 @@ export type EcommercePromptSources = {
     shotId?: string;
     sellingPoints?: EcommerceSellingPoint[];
     copy?: EcommerceCopy;
+    /**
+     * 这一张的版式。
+     *
+     * 只有「模型画字」时才要它：那种模式下位置是画面的一部分，不说清模型就会自己排版。
+     * 本地叠字时版式归排版层，不进底图——否则挪一次位置就得重出一张。
+     */
+    layout?: EcommerceLayout;
+    /**
+     * 新合同详情行的画面段（`row.prompt` 原样）。
+     *
+     * 它是**显式字段**，不是从提示词里猜出来的：调用方只在
+     * `imagePromptContractVersion === 1` 的详情行上填它。带上了就改走七项固定输出，
+     * 文案三项只从 `copy` 取，取不到就写明不生成，绝不回头从事实补字。
+     */
+    visualPrompt?: string;
     style?: EcommerceStyle;
     uniformPrompt?: string;
     styleReferenceNames?: string[];
@@ -297,8 +379,8 @@ export type EcommercePromptSources = {
     /**
      * 文案是否交给模型直接渲染。
      *
-     * 省略时保留专业画布的旧合同；一键套图传 false，只生成底图，
-     * 标题、价格与行动引导由本地确定性排版添加。
+     * 省略或 true 时由图片模型直接渲染文案；只有文字准确性不足时才传 false，
+     * 改由本地确定性排版添加，同时仍保留商品自身的 Logo 与包装文字。
      */
     renderCopyText?: boolean;
     /** 模特库里的模特：锁住「图上的人是谁」。见 ecommerce-models.ts。 */
@@ -313,7 +395,9 @@ export function ecommerceSellingPointsBlock(points: EcommerceSellingPoint[] | un
         // 没依据的卖点要显式标记，让模型知道这是待核实的表述，不是可以展开的事实
         return evidence ? `- ${point.claim.trim()}（依据：${evidence}）` : `- ${point.claim.trim()}（尚未提供依据，不要展开成具体数据、功效或认证）`;
     });
-    return ["【商品卖点】以下主张可以出现在画面信息里，不得编造未列出的卖点：", ...lines].join("\n");
+    // 卖点是**核对用的**，不是加字许可：图上文字只有【文案】一个来源。
+    // 早先写「以下主张可以出现在画面信息里」，等于让模型拿事实自己补标题和参数。
+    return ["【商品卖点】以下事实只用于核对画面是否说得对，图上文字一律以独立文案字段为准；不得据此新增标题、价格、参数、认证或功效文字，也不得编造未列出的卖点：", ...lines].join("\n");
 }
 
 /**
@@ -325,7 +409,7 @@ export function ecommerceSellingPointsBlock(points: EcommerceSellingPoint[] | un
  */
 function ecommerceBackgroundOnlyBlock(enabled: boolean) {
     if (!enabled) return "";
-    return "【无字底图合同】图片模型只生成无文字、无 Logo、无水印的商品底图。标题、副文案、价格与行动引导由本地确定性排版添加；只需预留对应空间，不得在图中渲染或仿造这些内容。";
+    return "【无字底图合同】标题、副文案、价格与行动引导由本地确定性排版添加；图片模型只需预留对应空间，不要自行生成额外文案、第三方 Logo 或水印。商品自身已有的 Logo、品牌名、包装文字和铭牌必须保留，并严格按商品锁定与参考图还原。";
 }
 
 export function ecommerceCopyBlock(copy: EcommerceCopy | undefined, renderText = true) {
@@ -339,7 +423,7 @@ export function ecommerceCopyBlock(copy: EcommerceCopy | undefined, renderText =
     return [
         renderText
             ? "【文案】以下文字要出现在画面上，逐字准确，不得改写、翻译或省略；字号要够大，手机端列表里也能读清："
-            : "【文案】以下文字由排版环节添加，画面只需留出对应位置，不要自行生成任何文字：",
+            : "【文案】以下文字由排版环节添加，画面只需留出对应位置，不要自行生成额外文案；商品自身已有文字仍按商品锁定保留：",
         ...lines,
     ].join("\n");
 }
@@ -370,12 +454,167 @@ export function ecommerceUniformBlock(prompt?: string, referenceNames: string[] 
 }
 
 /**
+ * 新合同行的唯一解析协议。
+ *
+ * 画面只认四个标签；营销文字也认五个标签。两者都按**标签出现的位置**切片，
+ * 所以一行里写成 `画面构成：A；主标题：RAW；产品摆放：B` 时，`RAW` 落在营销段里，
+ * 既不会算进画面构成，也不会算进产品摆放。早先只按行首剔营销行，inline 的
+ * `主标题：…` 会跟着画面段一起进请求——那是这一轮要堵的污染口。
+ */
+const ECOMMERCE_VISUAL_LABELS = ["画面构成", "产品摆放", "视觉风格", "负面提示词"] as const;
+const ECOMMERCE_MARKETING_LABELS = ["主标题", "副标题", "价格", "行动引导", "卖点模块"] as const;
+const ECOMMERCE_LABEL_PATTERN = new RegExp(`(${[...ECOMMERCE_VISUAL_LABELS, ...ECOMMERCE_MARKETING_LABELS].join("|")})\\s*[：:]`, "g");
+
+type EcommercePromptSegment = {
+    kind: "visual" | "marketing" | "text";
+    /** visual / marketing 段的标签名；text 段没有。 */
+    label?: string;
+    /** 标签之后到下一个标签之前的原文。 */
+    content: string;
+};
+
+const ECOMMERCE_VISUAL_LABEL_SET = new Set<string>(ECOMMERCE_VISUAL_LABELS);
+
+/** 按标签把一段文字切成「画面 / 营销 / 无主文本」三段语义，只此一份实现。 */
+function ecommercePromptSegments(text: string): EcommercePromptSegment[] {
+    const marks: { label: string; start: number; end: number }[] = [];
+    for (const match of text.matchAll(ECOMMERCE_LABEL_PATTERN)) {
+        if (match.index === undefined) continue;
+        marks.push({ label: match[1], start: match.index, end: match.index + match[0].length });
+    }
+    const segments: EcommercePromptSegment[] = [];
+    marks.forEach((mark, index) => {
+        const end = index + 1 < marks.length ? marks[index + 1].start : text.length;
+        segments.push({ kind: ECOMMERCE_VISUAL_LABEL_SET.has(mark.label) ? "visual" : "marketing", label: mark.label, content: text.slice(mark.end, end) });
+    });
+    if (!segments.length) segments.push({ kind: "text", content: text });
+    return segments;
+}
+
+/** 段尾那个「；」只是分隔符，不属于内容。 */
+function ecommerceTrimSegment(value: string) {
+    return value.replace(/[；;]\s*$/, "").trim();
+}
+
+/**
+ * 把画面段切成「标签 → 内容」。
+ *
+ * 按标签出现的**位置**切片，而不是写一条带负向断言的正则去吞：后者会回溯，
+ * 让「画面构成」段把下一行「产品摆放：」的前半截也吃进去（实测就是
+ * `COMPOSE_MARK；产品摆`）。逐段切片才能保证每项内容与那一行原文逐字相等。
+ */
+function ecommerceVisualSections(visualPrompt: string) {
+    const sections = new Map<string, string>();
+    let open: string | undefined;
+    const append = (chunk: string) => {
+        if (open) sections.set(open, (sections.get(open) || "") + chunk);
+    };
+    for (const segment of ecommercePromptSegments(visualPrompt)) {
+        if (segment.kind === "marketing") {
+            // 营销段的内容只允许来自 copy：这里整段丢弃。
+            open = undefined;
+            continue;
+        }
+        if (segment.kind === "visual") {
+            // 同名标签只认第一次出现，重复的那一份不并入。
+            open = segment.label && !sections.has(segment.label) ? segment.label : undefined;
+            if (open) sections.set(open, "");
+        }
+        append(segment.content);
+    }
+    for (const [label, value] of sections) sections.set(label, ecommerceTrimSegment(value));
+    return sections;
+}
+
+/**
+ * 剔掉所有显式营销标签的内容——图上文字只有 copy 一个来源。
+ *
+ * 行首、行内一视同仁：`画面构成：A；主标题：RAW；产品摆放：B` 里的 `RAW` 走的是
+ * 同一个营销段判定。只认已声明 schema 的显式标签，不去猜旧自由文本里哪句是营销文案。
+ */
+export function ecommerceDropMarketingLines(text: string) {
+    const kept: string[] = [];
+    let keep = true;
+    for (const segment of ecommercePromptSegments(text)) {
+        if (segment.kind === "marketing") {
+            keep = false;
+            continue;
+        }
+        if (segment.kind === "visual") keep = true;
+        if (keep) kept.push(segment.kind === "visual" ? `${segment.label}：${segment.content}` : segment.content);
+    }
+    return kept
+        .join("")
+        .split("\n")
+        .map((line) => line.replace(/[；;]\s*$/, "").trimEnd())
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+}
+
+/**
+ * 节点提示词里「不属于画面 schema」的那部分——即用户自己补的话。
+ *
+ * 新合同详情行的节点提示词就是画面段原文（七项已经展开过一遍）。只要它带画面标签，
+ * 整段都是重复内容，不能再拼到尾部：里面的 `主标题：…` 会绕过 copy 唯一来源。
+ * 完全不带标签的才算用户补充，照样先剔营销段再拼。
+ */
+export function ecommerceTailOutsideVisualSchema(text: string) {
+    const trimmed = text.trim();
+    if (!trimmed) return "";
+    const segments = ecommercePromptSegments(trimmed);
+    if (segments.some((segment) => segment.kind !== "text")) return "";
+    return ecommerceDropMarketingLines(trimmed);
+}
+
+/**
+ * 详情页新合同的七项最终输出。
+ *
+ * 顺序是固定的：画面构成 → 产品摆放 → 主标题 → 副标题 → 卖点模块 → 视觉风格 → 负面提示词。
+ * 前三项画面来自这一行自己的画面段（显式传入，不猜旧提示词），中间三项营销文字
+ * **只有 `copy` 一个来源**——没给就写明不生成，绝不回头从商品事实里补一句。
+ */
+export function ecommerceSevenItemBlock(sources: EcommercePromptSources) {
+    const visual = (sources.visualPrompt || "").trim();
+    if (!visual) return "";
+    const sections = ecommerceVisualSections(visual);
+    // 四标签一个都没有时，整段就是画面构成（照样先剔掉营销文字行）。
+    const compose = sections.get("画面构成") || (sections.size ? "" : ecommerceDropMarketingLines(visual));
+    const copy = sources.copy;
+    const headline = copy?.headline.trim() || "";
+    // 副文案多行时，第一行是副标题，其余行是卖点模块——这是「卖点用 subhead 多行」的落点。
+    const subheadLines = (copy?.subhead || "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const subhead = subheadLines[0] || "";
+    const sellingLines = subheadLines.slice(1);
+    const price = copy?.price.trim() || "";
+    const cta = copy?.cta.trim() || "";
+
+    // 版式有值就挂在对应文字项后面：位置与层级是画面的一部分，模型画字必须知道。
+    const placed = (field: keyof EcommerceCopy, text: string) => {
+        const hint = ecommerceLayoutFieldHint(sources.layout, copy, field);
+        return hint ? `${text}（${hint}）` : text;
+    };
+    const lines = [
+        `画面构成：${compose || "按本屏主题排布画面层级、场景、光线与留白"}`,
+        `产品摆放：${sections.get("产品摆放") || "按商品形态与本屏主题摆放，不套固定构图"}`,
+        `主标题：${headline ? placed("headline", headline) : "不生成主标题文字"}`,
+        `副标题：${subhead ? placed("subhead", subhead) : "不生成副标题文字"}`,
+        price ? `价格：${placed("price", price)}` : "",
+        cta ? `行动引导：${placed("cta", cta)}` : "",
+        `卖点模块：${sellingLines.length ? sellingLines.join("；") : "不生成卖点文字，只按画面段留出模块形态"}`,
+        `视觉风格：${sections.get("视觉风格") || "跟随商品图与视觉参考，整组统一"}`,
+        `负面提示词：${sections.get("负面提示词") || "商品变形、颜色偏差、LOGO 错字、无依据文案、占位词入画、虚构参数认证功效"}`,
+    ].filter(Boolean);
+    return lines.join("\n");
+}
+
+/**
  * 把各块编译成最终提示词。
  *
  * 顺序固定，从硬到软：
  *   商品锁定（外观不可动）→ 模特锁定（人是谁）→ 复刻参考（结构从哪来）
  *   → 竞品参考（别人的页面顺序）→ 品牌风格（视觉统一）→ 商品卖点（信息依据）
- *   → 文案（文字留位）→ 拍摄方案（怎么拍）
+ *   → 文案（文字留位）→ 版式（字摆在哪儿）→ 拍摄方案（怎么拍）
  *
  * 模特锁定紧跟在商品锁定之后：这两块是同一类东西（不可动的身份），
  * 而且模特比复刻/风格更硬——风格可以换，人不能换。
@@ -386,6 +625,9 @@ export function ecommerceUniformBlock(prompt?: string, referenceNames: string[] 
  * 全部为空就返回空串——调用方据此拦住没有内容的生成。
  */
 export function compileEcommercePrompt(sources: EcommercePromptSources) {
+    // 有显式画面段 = 新合同详情行：走固定七项，文案三项只从 copy 取。
+    const backgroundOnly = sources.renderCopyText === false;
+    const sevenItems = backgroundOnly ? "" : ecommerceSevenItemBlock(sources);
     return [
         ecommerceProductLockBlock(sources.profile),
         ecommerceModelLockBlock(sources.model),
@@ -394,8 +636,9 @@ export function compileEcommercePrompt(sources: EcommercePromptSources) {
         ecommerceStyleBlock(sources.style),
         ecommerceUniformBlock(sources.uniformPrompt, sources.styleReferenceNames, sources.imageDrivenStyle),
         ecommerceSellingPointsBlock(sources.sellingPoints),
-        ecommerceBackgroundOnlyBlock(sources.renderCopyText === false),
-        ecommerceCopyBlock(sources.copy, sources.renderCopyText),
+        sevenItems ? "" : ecommerceBackgroundOnlyBlock(backgroundOnly),
+        sevenItems || ecommerceCopyBlock(sources.copy, sources.renderCopyText),
+        !sevenItems && !backgroundOnly ? ecommerceLayoutPromptBlock(sources.layout, sources.copy) : "",
         ecommerceShotSetBlock(sources.shotSet, sources.shotId),
     ].filter(Boolean).join("\n\n");
 }

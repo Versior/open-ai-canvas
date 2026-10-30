@@ -372,7 +372,7 @@ const imageToolDefinitions: ImageToolDefinition[] = [
     },
 ];
 
-const simpleEcommerceImageToolbarToolIds = new Set(["regionEdit", "textEdit", "lighting", "removeBackground", "angle", "crop", "upscale", "view", "replace", "uploadImage", "retry", "download", "mediaVersions"]);
+const simpleEcommerceImageToolbarToolIds = new Set(["regionEdit", "textEdit", "lighting", "removeBackground", "angle", "crop", "upscale", "annotation", "annotationEdit", "view", "replace", "copyPrompt", "reversePrompt", "resize", "uploadImage", "retry", "download", "mediaVersions"]);
 
 export function isSimpleEcommerceImageToolbarTool(id: string) {
     return simpleEcommerceImageToolbarToolIds.has(id);

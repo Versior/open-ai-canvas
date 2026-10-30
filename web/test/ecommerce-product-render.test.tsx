@@ -174,7 +174,7 @@ test("confirmed product profile opens as an editable draft without rerunning AI"
     useEcommerceModelLibrary.setState({ hydrate: async () => {} });
     const { createRoot } = await import("react-dom/client");
     const profile = {
-        ...createEcommerceProductProfile("测试商品"),
+        name: "测试商品",
         category: "保温杯",
         appearance: "哑光黑色杯身",
         marks: "杯身中部 THERMO",
@@ -182,6 +182,7 @@ test("confirmed product profile opens as an editable draft without rerunning AI"
         audience: "通勤携带",
         facts: "杯盖顶部有提手",
         price: "129",
+        views: {},
     };
     const product: CanvasNodeData = { id: "product", type: CanvasNodeType.Product, title: "测试商品", position: { x: 0, y: 0 }, metadata: { productProfile: profile } };
     const host = document.createElement("div");
@@ -213,12 +214,24 @@ test("confirmed product profile opens as an editable draft without rerunning AI"
         expect(edit).not.toBeNull();
         await act(async () => edit!.click());
         for (const [label, value] of [
+            ["草稿产品名称", "测试商品"],
+            ["草稿英文品牌名", ""],
+            ["草稿中文品牌名", ""],
+            ["草稿 LOGO 文字", ""],
+            ["草稿品牌风格", ""],
             ["草稿品类", "保温杯"],
+            ["草稿产品型号", ""],
             ["草稿外观", "哑光黑色杯身"],
+            ["草稿主要功能", ""],
             ["草稿标识", "杯身中部 THERMO"],
             ["草稿禁止项", "不要改变杯盖结构"],
             ["草稿目标人群与场景", "通勤携带"],
+            ["草稿参数与来源", ""],
+            ["草稿五类卖点", ""],
+            ["草稿使用痛点", ""],
+            ["草稿购买理由", ""],
             ["草稿卖点与依据", "杯盖顶部有提手"],
+            ["草稿逐屏建议", ""],
             ["草稿真实价格", "129"],
         ]) {
             expect(host.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`)?.value).toBe(value);

@@ -1,16 +1,22 @@
-import type { EcommerceOneClickFlow } from "./ecommerce-oneclick";
+import type { EcommerceOneClickFlow, EcommerceOneClickFlowId } from "./ecommerce-oneclick";
 import type { EcommerceSuiteRow } from "./ecommerce-suite";
 import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce";
 import { ecommerceSliceSpec, type EcommerceSlicePlatform } from "./ecommerce-slice";
 import { ecommercePlatformGuidance } from "./ecommerce-platform-guidance";
+import { resolveEcommercePlatformId } from "./ecommerce-platform-specs";
 
 export type EcommerceBrief = { platform?: string; slicePlatform?: EcommerceSlicePlatform; imageCount?: number; sellingPoints?: string; audience?: string; language?: string; forbidden?: string; style?: string; template?: EcommerceSuiteTemplate };
 
 export function ecommerceBriefSlicePlatform(brief?: EcommerceBrief, fallback?: string): EcommerceSlicePlatform {
-    const platform = brief?.slicePlatform || fallback || "taobao";
-    const spec = ecommerceSliceSpec(platform as EcommerceSlicePlatform);
-    if (!spec) throw new Error("请选择支持的长图切片规格");
-    return spec.id;
+    if (brief?.slicePlatform) {
+        const explicit = ecommerceSliceSpec(brief.slicePlatform);
+        if (!explicit) throw new Error("请选择支持的长图切片规格");
+        return explicit.id;
+    }
+    const value = brief?.platform?.trim() || fallback?.trim();
+    if (!value) return "generic";
+    const platformId = resolveEcommercePlatformId(value);
+    return ecommerceSliceSpec((platformId || value) as EcommerceSlicePlatform)?.id || "generic";
 }
 
 export function ecommerceBriefRows(flow: EcommerceOneClickFlow, rows: EcommerceSuiteRow[], brief?: EcommerceBrief) {
@@ -38,7 +44,7 @@ export function ecommerceBriefRows(flow: EcommerceOneClickFlow, rows: EcommerceS
     return result;
 }
 
-export function ecommerceBriefBlock(brief?: EcommerceBrief) {
+export function ecommerceBriefBlock(brief?: EcommerceBrief, flowId?: EcommerceOneClickFlowId) {
     if (!brief) return "";
     const lines = [
         brief.platform && `发布平台：${brief.platform}`,
@@ -49,5 +55,5 @@ export function ecommerceBriefBlock(brief?: EcommerceBrief) {
         brief.forbidden && `禁止宣称与禁止改动：${brief.forbidden}`,
         brief.style && `整套视觉规范（所有画面保持一致）：${brief.style}`,
     ].filter(Boolean);
-    return lines.length ? ["【用户补充信息】", ...lines, ecommercePlatformGuidance(brief.platform)].filter(Boolean).join(String.fromCharCode(10)) : "";
+    return lines.length ? ["【用户补充信息】", ...lines, ecommercePlatformGuidance(brief.platform, flowId)].filter(Boolean).join(String.fromCharCode(10)) : "";
 }

@@ -216,22 +216,21 @@ describe("industry deliverable structure", () => {
         expect(slots[0].duty).toContain("点击率");
     });
 
-    test("the detail page follows the nine-screen pyramid order", () => {
+    test("the detail page follows the ten-screen production order", () => {
         const slots = ECOMMERCE_DETAIL_PAGE_SET.slots;
-        expect(slots).toHaveLength(9);
-        // 先共情痛点，再给量化利益，然后才是背书、卖点、场景、参数、售后——顺序不能乱
-        expect(slots[0].title).toContain("痛点");
-        expect(slots[0].duty).toContain("问题");
-        expect(slots[1].duty).toContain("量化");
-        expect(slots[2].title).toContain("信任");
-        // 这一屏的职责要给出替代写法，而不是「没有依据就不要写」——
-        // 后者会把模型推回「暂未提供」那种废话
-        expect(slots[2].duty).toContain("改写工艺与用料的可见之处");
-        expect(slots[2].duty).toContain("不要写「暂无」");
-        expect(slots[3].title).toContain("核心卖点");
-        expect(slots[5].title).toContain("场景");
-        expect(slots[7].title).toContain("参数");
-        expect(slots[8].title).toContain("售后");
+        expect(slots).toHaveLength(10);
+        expect(slots.map((slot) => slot.title)).toEqual([
+            "详情01 · 品牌主视觉",
+            "详情02 · 核心卖点一",
+            "详情03 · 核心卖点二",
+            "详情04 · 核心卖点三",
+            "详情05 · 多场景展示",
+            "详情06 · 产品细节",
+            "详情07 · 参数可视化",
+            "详情08 · 适用人群",
+            "详情09 · 品质背书",
+            "详情10 · 购买理由总结",
+        ]);
     });
 
     test("every slot names a duty and a real shot preset", () => {
@@ -250,6 +249,6 @@ describe("industry deliverable structure", () => {
     test("the full listing set is the main images plus the detail page plus extras", () => {
         const full = ECOMMERCE_DELIVERABLE_SETS.find((set) => set.id === "full-listing")!;
         expect(full.slots.length).toBe(ECOMMERCE_MAIN_IMAGE_SET.slots.length + ECOMMERCE_DETAIL_PAGE_SET.slots.length + 2);
-        expect(full.slots.filter((slot) => slot.id.startsWith("detail-"))).toHaveLength(9);
+        expect(full.slots.filter((slot) => slot.id.startsWith("detail-"))).toHaveLength(10);
     });
 });

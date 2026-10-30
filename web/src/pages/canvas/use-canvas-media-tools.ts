@@ -47,6 +47,7 @@ import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { fitImageNodeSize, fitNodeSize, preserveImageNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { isEcommerceNode } from "@/lib/ecommerce/ecommerce-canvas";
+import { normalizeEcommerceProductName } from "@/lib/ecommerce/ecommerce-contract";
 import { ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE, ecommerceTeardownPlanSourceSignature, parseEcommerceTeardownPlanRequest } from "@/lib/ecommerce/ecommerce-teardown";
 import { ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE, ecommerceVideoCreativePlanSourceSignature, parseEcommerceVideoCreativePlanRequest } from "@/lib/ecommerce/ecommerce-video";
 import { ecommerceMaterialNodes, ecommerceMaterialPlan, ecommerceShotSetOutputs } from "@/lib/ecommerce/ecommerce-canvas-preset";
@@ -256,7 +257,7 @@ export function useCanvasMediaTools({
                 : undefined;
             const productFacts = productProfile
                 ? [
-                      productProfile.name.trim() && `商品名：${productProfile.name.trim()}`,
+                      normalizeEcommerceProductName(productProfile.name) && `商品名：${normalizeEcommerceProductName(productProfile.name)}`,
                       productProfile.category.trim() && `品类：${productProfile.category.trim()}`,
                       productProfile.appearance.trim() && `外观：${productProfile.appearance.trim()}`,
                       productProfile.marks.trim() && `标识：${productProfile.marks.trim()}`,

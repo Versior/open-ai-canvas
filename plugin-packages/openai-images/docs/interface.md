@@ -21,7 +21,8 @@
 | 统一字段 | 类型 | 必填 | 上游映射 | 说明 |
 | --- | --- | --- | --- | --- |
 | `model` | string | 是 | `model` | 图片模型 ID。 |
-| `prompt` | string | 是 | `prompt` | 图片提示词。 |
+| `prompt` | string | 是 | `prompt` | 图片提示词；没有 `instructions` 时逐字保留，不附加分隔符。 |
+| `instructions` | string | 否 | `prompt` 前缀 | OpenAI Images 没有独立系统字段；只在出站映射时将系统指令与图片提示词用两个换行分隔，不回写任务输入。私有电商指令的请求、响应与错误继续由宿主日志脱敏。 |
 | `images` | media[] | 否 | `provider image/reference fields` | 参考图或编辑源图，role 由业务层确定。 |
 | `imageCount` | integer | 否 | `n/sample_count` | 输出数量。 |
 | `aspectRatio` | string | 否 | `size/aspect_ratio` | 比例或尺寸，语义按协议说明。 |
@@ -39,7 +40,7 @@
 | `create.path` | `"/v1/images/generations"` |
 | `create.contentType` | `"application/json"` |
 | `create.body.model` | `{"$ref":"request.model"}` |
-| `create.body.prompt` | `{"$ref":"request.prompt"}` |
+| `create.body.prompt` | `{"$concat":[{"$if":{"condition":{"$ref":"request.instructions"},"then":{"$concat":[{"$ref":"request.instructions"},"\n\n"]},"else":null}},{"$ref":"request.prompt"}]}` |
 | `create.body.images` | `{"$omitEmpty":{"$if":{"condition":{"$gt":[{"$len":{"$ref":"request.images"}},0]},"then":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$ne":[{"$ref":"media.role"},"mask"]}}},"as":"media","in":{"image_url":{"$ref":"media.value"}}}},"else":null}}}` |
 | `create.body.mask` | `{"$omitEmpty":{"$if":{"condition":{"$gt":[{"$len":{"$filter":{"from":{"$ref":"request.images"},"as":"media","where":{"$eq":[{"$ref":"media.role"},"mask"]}}}},0]},"then":{"image_url":{"$first":{"$map":{"from":{"$filter":{"from":{"$sortByOrder":{"$ref":"request.images"}},"as":"media","where":{"$eq":[{"$ref":"media.role"},"mask"]}}},"as":"media","in":{"$ref":"media.value"}}}}},"else":null}}}` |
 | `create.body.n` | `{"$omitEmpty":{"$if":{"condition":{"$gt":[{"$ref":"request.imageCount"},0]},"then":{"$ref":"request.imageCount"},"else":1}}}` |
@@ -285,7 +286,27 @@
               "$ref": "request.model"
             },
             "prompt": {
-              "$ref": "request.prompt"
+              "$concat": [
+                {
+                  "$if": {
+                    "condition": {
+                      "$ref": "request.instructions"
+                    },
+                    "then": {
+                      "$concat": [
+                        {
+                          "$ref": "request.instructions"
+                        },
+                        "\n\n"
+                      ]
+                    },
+                    "else": null
+                  }
+                },
+                {
+                  "$ref": "request.prompt"
+                }
+              ]
             },
             "images": {
               "$omitEmpty": {

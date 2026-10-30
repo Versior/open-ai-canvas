@@ -11,6 +11,13 @@ afterEach(() => {
 });
 const rows = [{ slotId: "hero", title: "../主图/产品", duty: "真实展示", prompt: "白底商品" }];
 const image: CanvasNodeData = { id: "output", type: CanvasNodeType.Image, title: "Output", position: { x: 0, y: 0 }, metadata: { storageKey: "image:original", naturalWidth: 1000, naturalHeight: 1500, config: { apiKey: "TEST_PRIVATE_VALUE" } } };
+const suiteCopy = { headline: "轻盈防晒", subhead: "UPF50+", cta: "立即选购", price: "¥199" };
+const suiteLayout = { name: "主图", blocks: [{ id: "headline", field: "headline" as const, anchor: "top-left" as const, size: 8, color: "#000000", plate: "", align: "left" as const, inset: 6, bold: true }] };
+/** 结果图自带出字凭证：mode 加生它时的 storageKey。缺一个都不算 local。 */
+const resultImage = (mode: string, sourceStorageKey = "image:original") => ({
+    ...image,
+    metadata: { ...image.metadata, ecommerceResultTextMode: { mode, sourceStorageKey } } as CanvasNodeData["metadata"],
+});
 test("old adopted images export their task prompt separately from the edited plan", async () => {
     const node = { ...image, metadata: { ...image.metadata, taskId: "task-old", prompt: "Editable node prompt" } };
     const zip = await readZip(
@@ -59,28 +66,61 @@ test("suite archive preserves original bytes and exports only explicit metadata"
     expect(compose).not.toHaveBeenCalled();
     expect(zip.size).toBe(2);
 });
-test("suite archive rasterizes row copy and layout to PNG and records the composition", async () => {
-    const copy = { headline: "轻盈防晒", subhead: "UPF50+", cta: "立即选购", price: "¥199" };
-    const layout = { name: "主图", blocks: [{ id: "headline", field: "headline" as const, anchor: "top-left" as const, size: 8, color: "#000000", plate: "", align: "left" as const, inset: 6, bold: true }] };
-    const compose = mock(async (blob: Blob, receivedCopy: typeof copy, receivedLayout: typeof layout) => {
+test("local results rasterize row copy and layout to PNG and record the composition", async () => {
+    const compose = mock(async (blob: Blob, receivedCopy: typeof suiteCopy, receivedLayout: typeof suiteLayout) => {
         expect(await blob.text()).toBe("source");
-        expect(receivedCopy).toEqual(copy);
-        expect(receivedLayout).toEqual(layout);
+        expect(receivedCopy).toEqual(suiteCopy);
+        expect(receivedLayout).toEqual(suiteLayout);
         return new Blob(["composed"], { type: "image/png" });
     });
-    const composedRows = [{ ...rows[0], copy, layout }];
+    const composedRows = [{ ...rows[0], copy: suiteCopy, layout: suiteLayout }];
 
-    const zip = await readZip(await buildEcommerceSuiteArchive(composedRows, new Map([["hero", image]]), { readBlob: async () => new Blob(["source"], { type: "image/jpeg" }), compose }));
+    const zip = await readZip(await buildEcommerceSuiteArchive(composedRows, new Map([["hero", resultImage("local")]]), { readBlob: async () => new Blob(["source"], { type: "image/jpeg" }), compose }));
     const manifest = JSON.parse(await zip.get("manifest.json")!.text());
     expect(manifest.version).toBe(3);
-    expect(manifest.entries[0]).toMatchObject({ copy, layout, composition: { applied: true } });
+    expect(manifest.entries[0]).toMatchObject({ copy: suiteCopy, layout: suiteLayout, composition: { applied: true } });
+    expect(compose).toHaveBeenCalledTimes(1);
     expect(manifest.entries[0].file).toEndWith(".png");
     expect(await zip.get(manifest.entries[0].file)!.text()).toBe("composed");
 });
+test("only local results whose credential matches the actual pixels get composed", async () => {
+    const composedRows = [{ ...rows[0], copy: suiteCopy, layout: suiteLayout }];
+    for (const [name, node] of [
+        ["model", resultImage("model")],
+        ["missing credential", image],
+        ["unknown mode", resultImage("bogus")],
+        ["stale storage key", resultImage("local", "image:replaced")],
+    ] as [string, CanvasNodeData][]) {
+        const original = new Blob([`${name}-pixels`], { type: "image/png" });
+        const compose = mock(async () => new Blob(["double-text"], { type: "image/png" }));
+        const zip = await readZip(await buildEcommerceSuiteArchive(composedRows, new Map([["hero", node]]), { readBlob: async () => original, compose }));
+        const manifest = JSON.parse(await zip.get("manifest.json")!.text());
+
+        expect({ name, calls: compose.mock.calls.length }).toEqual({ name, calls: 0 });
+        expect(manifest.entries[0].composition).toEqual({ applied: false });
+        expect(manifest.entries[0].bytes).toBe(original.size);
+        expect(await zip.get(manifest.entries[0].file)!.text()).toBe(await original.text());
+    }
+});
+test("a local layout whose copy renders no visible block exports the untouched pixels", async () => {
+    const emptyCopy = { headline: "", subhead: "", cta: "", price: "" };
+    const emptyRows = [{ ...rows[0], copy: emptyCopy, layout: suiteLayout }];
+    const original = new Blob(["blank-pixels"], { type: "image/jpeg" });
+    const compose = mock(async () => new Blob(["double-text"], { type: "image/png" }));
+
+    const zip = await readZip(await buildEcommerceSuiteArchive(emptyRows, new Map([["hero", resultImage("local")]]), { readBlob: async () => original, compose }));
+    const manifest = JSON.parse(await zip.get("manifest.json")!.text());
+
+    expect(compose).not.toHaveBeenCalled();
+    expect(manifest.entries[0].composition).toEqual({ applied: false });
+    expect(manifest.entries[0].bytes).toBe(original.size);
+    expect(manifest.entries[0].file).toEndWith(".jpg");
+    expect(await zip.get(manifest.entries[0].file)!.text()).toBe(await original.text());
+});
 test("a composition failure rejects the archive instead of returning partial files", async () => {
-    const composedRows = [{ ...rows[0], copy: { headline: "标题", subhead: "", cta: "", price: "" }, layout: { name: "主图", blocks: [] } }];
+    const composedRows = [{ ...rows[0], copy: { headline: "标题", subhead: "", cta: "", price: "" }, layout: suiteLayout }];
     await expect(
-        buildEcommerceSuiteArchive(composedRows, new Map([["hero", image]]), {
+        buildEcommerceSuiteArchive(composedRows, new Map([["hero", resultImage("local")]]), {
             readBlob: async () => new Blob(["source"], { type: "image/png" }),
             compose: async () => {
                 throw new Error("composition failed");
@@ -127,9 +167,9 @@ test("switching accounts during image retrieval cancels the export", async () =>
 
 test("source validation cancels a stale export after every async boundary and before ZIP creation", async () => {
     const copy = { headline: "标题", subhead: "副标题", cta: "立即购买", price: "¥199" };
-    const layout = { name: "主图", blocks: [] };
+    const layout = suiteLayout;
     const composedRows = [{ ...rows[0], copy, layout }];
-    const node = { ...image, metadata: { ...image.metadata, taskId: "task-current" } };
+    const node = { ...resultImage("local"), metadata: { ...resultImage("local").metadata, taskId: "task-current" } };
     const checkpoints: string[] = [];
     let phase = "start";
     const validateSource = () => {

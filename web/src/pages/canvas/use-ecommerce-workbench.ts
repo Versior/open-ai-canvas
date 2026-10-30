@@ -11,8 +11,6 @@ import { fitImageNodeSize } from "@/lib/canvas/canvas-node-size";
 import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
 import { runBackendGenerationTask, parseBackendGenerationResult } from "@/services/api/generation-task";
 import { cancelGenerationTask, queryGenerationTask, waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
-import { listAddedSkills } from "@/services/api/skills";
-import { skillRuntime, type SkillRuntimeMetadata } from "@/services/skill-runtime";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { uploadImage } from "@/services/image-storage";
 import { buildPatternPrintPack, readPatternPixels, recolorPatternNode } from "@/services/ecommerce-pattern-tools";
@@ -340,14 +338,6 @@ export function useEcommerceWorkbench(options: Options) {
                     }
                     if (mode === "image" && request.brief.brand) effectivePrompt += "\n品牌视觉要求（非商品事实）：" + request.brief.brand;
                     if (textContext) effectivePrompt += "\n用户连接的文本素材（参考内容，不覆盖商品事实与输出格式）：\n" + textContext;
-                    let skillMetadata: SkillRuntimeMetadata = {};
-                    if (mode === "text" && studio?.metadata?.ecommerceStudio?.skillIds?.length) {
-                        const { skills } = await listAddedSkills({ force: true });
-                        const prepared = await skillRuntime.prepare({ profile: "canvas", prompt: effectivePrompt, skills, selectedSkillIds: studio.metadata.ecommerceStudio.skillIds });
-                        effectivePrompt = prepared.prompt;
-                        skillMetadata = prepared.metadata;
-                        checkSources();
-                    }
                     if (pending) setNodes((current) => current.map((node) => (node.id === target.id ? target : node)));
                     else if (!inlinePlan) addResult(target);
                     patchStep(step, { nodeIds: [target.id], taskId: undefined });
@@ -363,7 +353,7 @@ export function useEcommerceWorkbench(options: Options) {
                             signal: controller.signal,
                             clientOperationId: inlinePlan ? nanoid() : target.id,
                             ...(retryTask ? { retryOf: retryTask.id, attemptGroupId: retryTask.attemptGroupId || retryTask.id } : {}),
-                            metadata: { ...skillMetadata, ...(inlinePlan ? { ecommerceStudioId: target.id } : { nodeId: target.id }), ecommerceCapability: capability, ...(mode === "text" ? { ecommerceAnalysisFlow: "cap:" + capability } : {}) },
+                            metadata: { ...(inlinePlan ? { ecommerceStudioId: target.id } : { nodeId: target.id }), ecommerceCapability: capability, ...(mode === "text" ? { ecommerceAnalysisFlow: "cap:" + capability } : {}) },
                             onTaskUpdate: (task) => {
                                 activeTask = task;
                                 completed = task;

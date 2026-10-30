@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"unicode/utf8"
@@ -321,7 +322,7 @@ func cloudAgentHandleSkillSearch(repo *repository.Repository, userID string, sta
 		Keyword string `json:"keyword"`
 		Limit   int    `json:"limit"`
 		// 容忍模型顺手带上的 skillId（对齐 skill_read_file 的参数习惯）：
-		// 检索范围恒为本轮已启用技能，该字段仅接收不生效。
+		// 兼容旧模型顺手带上的字段；技能由关键词在广场自动发现，该字段不生效。
 		SkillID string `json:"skillId,omitempty"`
 	}
 	if err := decodeCloudAgentJSONObject(call.Function.Arguments, &args); err != nil {
@@ -331,11 +332,10 @@ func cloudAgentHandleSkillSearch(repo *repository.Repository, userID string, sta
 	if service == nil {
 		return nil, BadAuthRequest("技能服务不可用")
 	}
-	skills, err := service.cloudAgentSkillPoolForSearch(userID, state)
-	if err != nil {
-		return nil, err
+	if state == nil {
+		return nil, errors.New("Agent 只读工具缺少运行时状态")
 	}
-	return cloudAgentSearchSkills(skills, args.Keyword, args.Limit)
+	return service.cloudAgentSearchSkillsForRun(userID, state, args.Keyword, args.Limit)
 }
 
 func cloudAgentHandleSkillReadFile(repo *repository.Repository, userID string, state *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {
@@ -353,7 +353,10 @@ func cloudAgentHandleSkillReadFile(repo *repository.Repository, userID string, s
 	if service == nil {
 		return nil, BadAuthRequest("技能服务不可用")
 	}
-	return service.cloudAgentReadSkillFile(userID, state, args)
+	if state == nil {
+		return nil, errors.New("Agent 只读工具缺少运行时状态")
+	}
+	return service.cloudAgentReadSkillFileForRun(userID, state, args)
 }
 
 func cloudAgentHandleTaskGet(repo *repository.Repository, userID string, state *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {

@@ -113,7 +113,7 @@ func withProviderAnalytics(ctx context.Context, service *Service, task model.Tas
 		Metadata map[string]any `json:"metadata"`
 	}
 	if json.Unmarshal([]byte(task.InputJSON), &input) == nil {
-		_, metadata.PrivateInstruction = input.Metadata["ecommerceAnalysisFlow"]
+		metadata.PrivateInstruction = ecommercePrivateInstruction(input.Metadata)
 		metadata.ChannelID = firstNonEmpty(input.Config.ChannelID, systemChannelIDFromBaseURL(input.Config.BaseURL))
 		metadata.Model = firstNonEmpty(input.Config.ChannelModelKey, input.Config.Model, metadata.Model)
 		metadata.VideoSeconds, _ = strconv.Atoi(input.Config.VideoSeconds)

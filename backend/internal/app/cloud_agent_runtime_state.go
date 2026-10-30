@@ -152,6 +152,28 @@ func validateCloudAgentRuntime(run *model.CloudAgentExecution, state *cloudAgent
 	if len(state.SkillVersions) > cloudAgentSkillPoolMax+cloudAgentSkillPinnedMax {
 		return errors.New("Agent runtime skill pool is invalid")
 	}
+	if len(state.SkillReferences) > cloudAgentSkillReferenceMax {
+		return errors.New("Agent runtime skill reference pool is invalid")
+	}
+	seenReferences := make(map[string]struct{}, len(state.SkillReferences))
+	for _, ref := range state.SkillReferences {
+		if strings.TrimSpace(ref.ID) == "" || ref.Version == "" || ref.Hash == "" {
+			return errors.New("Agent runtime skill reference is incomplete")
+		}
+		if _, exists := seenReferences[ref.ID]; exists {
+			return errors.New("Agent runtime skill reference pool contains duplicates")
+		}
+		seenReferences[ref.ID] = struct{}{}
+		// 参考技能只冻结路径占位，不存正文：正文必须每次经 skill_read_file 现读。
+		if ref.Instruction != "" {
+			return errors.New("Agent runtime skill reference must not inline instruction")
+		}
+		for _, content := range ref.Files {
+			if content != "" {
+				return errors.New("Agent runtime skill reference must not inline file content")
+			}
+		}
+	}
 	if utf8.RuneCountInString(state.Memory.Text) > agentMemorySnapshotMaxRunes || utf8.RuneCountInString(state.SkillHints) > agentMemorySnapshotMaxRunes {
 		return errors.New("Agent runtime context snapshot is invalid")
 	}

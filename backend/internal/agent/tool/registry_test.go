@@ -100,8 +100,8 @@ func TestScopeAndApprovalDoNotGrantMediaInReadOnlyMode(t *testing.T) {
 	if Of(CanvasGetState).Allowed(Scope{IncludeProfile: true}) {
 		t.Fatal("unbound canvas read allowed")
 	}
-	if Of(SkillReadFile).Allowed(Scope{Canvas: true, IncludeProfile: true}) {
-		t.Fatal("uninstalled skill read allowed")
+	if Of(SkillReadFile).Allowed(Scope{Canvas: true, IncludeProfile: true}) || Of(SkillSearch).Allowed(Scope{Canvas: true, IncludeProfile: true}) {
+		t.Fatal("uninstalled skill tools allowed without server-derived skills scope")
 	}
 	if Of(CanvasInspectImage).Allowed(Scope{Canvas: true, IncludeProfile: true}) {
 		t.Fatal("vision unavailable but inspection exposed")

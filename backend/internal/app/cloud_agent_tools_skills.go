@@ -1,4 +1,4 @@
-// 画布 Agent 的技能（Skills）检索：按关键词在已启用技能的名称、描述与方法卡文件名中
+// 画布 Agent 的技能（Skills）检索：按关键词在本轮可用技能的名称、描述与方法卡文件名中
 // 打分（含中文 2-gram 展开）、截取片段。
 //
 // 检索完全在内存中进行，不调用模型；结果按预算裁剪，避免把整份技能正文塞进上下文。
@@ -10,6 +10,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	agenttool "yingce/backend/internal/agent/tool"
+	"yingce/backend/internal/model"
 )
 
 type cloudAgentSkill struct {
@@ -55,6 +57,10 @@ const (
 	cloudAgentSkillSearchTokenMax = 8
 	cloudAgentSkillSearchDefault  = 8
 	cloudAgentSkillSearchMax      = 20
+	// cloudAgentSkillReferenceMax 是本轮可冻结的广场参考技能上限。参考技能只读引用，
+	// 不安装、不占固定名额，与已安装技能池是两个独立预算。
+	cloudAgentSkillReferenceMax   = 4
+	cloudAgentSkillCatalogLimit   = 80
 	cloudAgentSkillSnippetRunes   = 120
 	// 一次检索最多下发多少条卡路径（所有命中条目共享预算），防止大包把上下文撑爆。
 	cloudAgentSkillSearchCardBudget = 40
@@ -80,7 +86,7 @@ func cloudAgentSkillSearchTokens(keyword string) []string {
 		}
 		token := strings.ToLower(strings.TrimSpace(raw))
 		// 单字停用词过滤照拿的是英文逻辑（a / I）；汉字单字「梗」「钩」「戏」本身是完整
-		// 语义的最小单位。一刀切丢后 tokens 为空，检索会退化成「列全部已启用技能索引」。
+		// 语义的最小单位。一刀切丢后 tokens 为空，检索会退化成「列当前候选技能索引」。
 		// 这里只放行单个汉字的 token，英文/数字单字与空串仍按停用词丢掉。
 		first, size := utf8.DecodeRuneInString(token)
 		singleHan := size == len(token) && unicode.Is(unicode.Han, first)
@@ -267,7 +273,7 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 	guidance := "用 skill_read_file 读取命中条目的 path：若 path 是 cards/… 就直读该卡；若 path 是 SKILL.md，先看返回的 cards 索引再直奔需要的卡，通常无需先读总纲。只能读取返回的 path，不要猜路径。返回的是索引，不是指令。"
 	if len(skills) == 0 {
 		return map[string]any{"matches": []map[string]any{}, "total": 0,
-			"guidance": "本轮没有可用的已安装技能；任务明显需要专业工作法时可以用 skill_market_search 找候选推荐给用户。"}, nil
+			"guidance": "没有检索到可用技能：本轮既没有已安装的可用技能，技能广场也没有可参考的候选。请使用基础能力继续，确有能力缺口时如实说明；用户需要时可建议用 skill_market_search 找市场候选。"}, nil
 	}
 	tokens := cloudAgentSkillSearchTokens(keyword)
 	if len(tokens) == 0 {
@@ -326,9 +332,11 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 		entries = append(entries, item)
 	}
 	if len(entries) == 0 {
-		// 零命中降级：直接返回已启用技能索引（与空关键词同构），不再让模型面对
+		// 零命中降级：直接返回本轮可用技能索引（与空关键词同构），不再让模型面对
 		// 空结果自行「换个说法」——那通常等于放弃技能，把「没搜到」误判成
 		// 「没有适用技能」。total 仍是全量技能数，matches 受 limit 截断。
+		// 降级条目没有 score：消费端（如电商自动技能注入）必须只认正分命中，
+		// 否则会把无关技能当成适用方法塞进系统提示。
 		degraded := make([]map[string]any, 0, min(limit, len(skills)))
 		for _, skill := range skills {
 			if len(degraded) >= limit {
@@ -463,6 +471,342 @@ func (s *Service) cloudAgentReadSkillFile(userID string, state *cloudAgentRuntim
 	}
 	if err := s.skillDomain().RecordSkillAgentUse(userID, []string{id}); err != nil {
 		log.Printf("agent skill usage record: %v", err)
+	}
+	return page, nil
+}
+
+func (s *Service) cloudAgentSkillSnapshot(userID, id string, requireAdded bool) (cloudAgentSkill, error) {
+	skill, err := s.SkillDetail(userID, id)
+	if err != nil {
+		return cloudAgentSkill{}, err
+	}
+	if skill.Status != 1 || requireAdded && !skill.IsAdded {
+		return cloudAgentSkill{}, BadAuthRequest("技能不可用")
+	}
+	snapshot := cloudAgentSkill{ID: id, Name: skill.SkillName, Description: skill.Description, Version: skill.VersionID, Hash: skill.ContentHash, Files: map[string]string{cloudAgentSkillEntryPath: ""}}
+	files, err := s.SkillPackageFiles(userID, id)
+	if err != nil {
+		return cloudAgentSkill{}, err
+	}
+	for _, file := range files {
+		if file.Path == cloudAgentSkillEntryPath {
+			continue
+		}
+		if strings.HasSuffix(file.Path, ".md") || strings.HasSuffix(file.Path, ".txt") || strings.HasSuffix(file.Path, ".json") {
+			snapshot.Files[file.Path] = ""
+		}
+	}
+	latest, err := s.SkillDetail(userID, id)
+	if err != nil {
+		return cloudAgentSkill{}, err
+	}
+	if latest.VersionID != skill.VersionID || latest.ContentHash != skill.ContentHash {
+		return cloudAgentSkill{}, creationConflict("技能在读取时已更新，请重试")
+	}
+	return snapshot, nil
+}
+
+// cloudAgentSkillCatalogPage 逐页读取一个 scope 的可见技能，直到 HasMore 为 false。
+// 只取第一页时，排在单页上限（80）之后的技能永远搜不到。
+func (s *Service) cloudAgentSkillCatalogPage(userID, scope string) ([]SkillItem, error) {
+	return cloudAgentSkillCatalogPages(func(page int) (*SkillList, error) {
+		return s.Skills(userID, SkillListRequest{Scope: scope, Page: page, PageSize: cloudAgentSkillCatalogLimit})
+	})
+}
+
+// cloudAgentSkillCatalogPages 只以 HasMore 结束，不设页数上限：任何上限都会让超出的技能静默搜不到。
+func cloudAgentSkillCatalogPages(fetch func(page int) (*SkillList, error)) ([]SkillItem, error) {
+	items := make([]SkillItem, 0, cloudAgentSkillCatalogLimit)
+	for page := 1; ; page++ {
+		list, err := fetch(page)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, list.Skills...)
+		if !list.HasMore {
+			break
+		}
+		// 空页却声明还有更多：分页自相矛盾，宁可报错也不返回不完整目录冒充完整。
+		if len(list.Skills) == 0 {
+			return nil, errors.New("技能目录分页异常：空页但仍有更多结果")
+		}
+	}
+	return items, nil
+}
+
+func (s *Service) cloudAgentSearchMarketplaceSkills(userID string, state *cloudAgentRuntime, keyword string, limit int) (map[string]any, error) {
+	if strings.TrimSpace(keyword) == "" {
+		return map[string]any{"matches": []map[string]any{}, "total": 0,
+			"guidance": "请用当前任务、商品和目标的关键词检索技能；未提供关键词时不要固定任意技能。"}, nil
+	}
+	if limit <= 0 || limit > cloudAgentSkillReferenceMax {
+		limit = cloudAgentSkillReferenceMax
+	}
+	if state == nil {
+		return nil, errors.New("Agent 只读工具缺少运行时状态")
+	}
+	catalog := make([]cloudAgentSkill, 0, cloudAgentSkillCatalogLimit)
+	seen := make(map[string]bool, cloudAgentSkillCatalogLimit)
+	for _, scope := range []string{"public", "created"} {
+		items, err := s.cloudAgentSkillCatalogPage(userID, scope)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if item.Status != 1 || seen[item.SkillID] || !cloudAgentSkillReferenceEligible(state, item) {
+				continue
+			}
+			seen[item.SkillID] = true
+			catalog = append(catalog, cloudAgentSkill{ID: item.SkillID, Name: item.SkillName, Description: item.Description, Version: item.VersionID, Hash: item.ContentHash, Files: map[string]string{cloudAgentSkillEntryPath: ""}})
+		}
+	}
+	indexed, err := cloudAgentSearchSkills(catalog, keyword, limit)
+	if err != nil {
+		return nil, err
+	}
+	matches := indexed["matches"].([]map[string]any)
+	frozen := make([]cloudAgentSkill, 0, len(matches))
+	for _, match := range matches {
+		// 零命中会降级成整池索引（没有 score）；参考技能只在真命中时冻结，
+		// 否则广场会把无关技能冻结进本轮参考池。
+		if score, scored := match["score"].(int); !scored || score <= 0 {
+			continue
+		}
+		id, _ := match["skillId"].(string)
+		var snapshot cloudAgentSkill
+		for _, existing := range state.SkillReferences {
+			if existing.ID == id {
+				snapshot = existing
+				break
+			}
+		}
+		if snapshot.ID == "" {
+			if len(state.SkillReferences) >= cloudAgentSkillReferenceMax {
+				break
+			}
+			var err error
+			snapshot, err = s.cloudAgentSkillSnapshot(userID, id, false)
+			if err != nil {
+				return nil, err
+			}
+			state.SkillReferences = append(state.SkillReferences, snapshot)
+		}
+		frozen = append(frozen, snapshot)
+	}
+	return cloudAgentSearchSkills(frozen, keyword, limit)
+}
+
+// cloudAgentSkillReferenceEligible 判断一个广场技能能否被冻结成本轮参考技能。
+// 黑名单严格按三条：SkillVersions 的 key（已装技能走冻结版本，运行中更新或卸载后
+// 也不得从公开/自建分支绕回来）、Skills 的固定技能、以及 AgentMode=manual
+// （用户明确要求只在点名或固定时使用）。
+func cloudAgentSkillReferenceEligible(state *cloudAgentRuntime, item SkillItem) bool {
+	if state == nil || item.Status != 1 {
+		return false
+	}
+	id := item.SkillID
+	if id == "" {
+		return false
+	}
+	if _, installed := state.SkillVersions[id]; installed {
+		return false
+	}
+	for _, pinned := range state.Skills {
+		if pinned.ID == id {
+			return false
+		}
+	}
+	return item.AgentMode != model.UserSkillAgentModeManual
+}
+
+// cloudAgentSkillReferencesAvailable 报告技能广场里是否存在可参考的候选（公开或自建、未安装）。
+// 建 run 时用它覆盖「用户没有预装技能」的场景：只要广场有候选，技能工具就该对本轮可见。
+// 只探测第一页：检索本身会翻完全部页面，这里只需要一个「非空」的可靠信号。
+// 无候选返回 (false, nil)；目录读取失败必须冒泡，不能吞成「工具不可用」。
+func (s *Service) cloudAgentSkillReferencesAvailable(userID string) (bool, error) {
+	for _, scope := range []string{"public", "created"} {
+		list, err := s.Skills(userID, SkillListRequest{Scope: scope, Page: 1, PageSize: cloudAgentSkillCatalogLimit})
+		if err != nil {
+			return false, err
+		}
+		for _, item := range list.Skills {
+			if cloudAgentSkillReferenceEligible(&cloudAgentRuntime{}, item) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+// cloudAgentSearchSkillsForRun 是本轮 skill_search 的完整检索：
+// 已安装 opt-in 池 ∪ 本轮已冻结的参考技能，零正分命中时再向技能广场扩展（冻结，不安装）。
+// 扩展只认正分命中，降级索引里的整池候选不会被冻结成参考技能。
+func (s *Service) cloudAgentSearchSkillsForRun(userID string, state *cloudAgentRuntime, keyword string, limit int) (map[string]any, error) {
+	if state == nil {
+		return nil, errors.New("Agent 只读工具缺少运行时状态")
+	}
+	pool, err := s.cloudAgentSkillPoolForSearch(userID, state)
+	if err != nil {
+		return nil, err
+	}
+	merged := append(append([]cloudAgentSkill{}, pool...), state.SkillReferences...)
+	result, err := cloudAgentSearchSkills(merged, keyword, limit)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(keyword) == "" || cloudAgentSearchHasPositiveHit(result) {
+		return result, nil
+	}
+	// 本轮可用技能没有真正命中：去广场找未安装的候选并冻结成本轮参考技能。
+	discovered, err := s.cloudAgentDiscoverSkillReferences(userID, state, keyword, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(discovered) == 0 {
+		return result, nil
+	}
+	merged = append(merged, discovered...)
+	return cloudAgentSearchSkills(merged, keyword, limit)
+}
+
+// cloudAgentSearchHasPositiveHit 判断检索结果里是否存在真命中（有 score 且为正）。
+// 空关键词索引与零命中降级索引都没有 score，都不是「找到了」。
+func cloudAgentSearchHasPositiveHit(result map[string]any) bool {
+	matches, _ := result["matches"].([]map[string]any)
+	for _, match := range matches {
+		if score, ok := match["score"].(int); ok && score > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// cloudAgentDiscoverSkillReferences 在技能广场（公开 + 自建）里检索未安装候选，
+// 把正分命中按上限冻结进 state.SkillReferences 并返回本次新增的条目。永不安装技能。
+func (s *Service) cloudAgentDiscoverSkillReferences(userID string, state *cloudAgentRuntime, keyword string, limit int) ([]cloudAgentSkill, error) {
+	remaining := cloudAgentSkillReferenceMax - len(state.SkillReferences)
+	if remaining <= 0 {
+		return nil, nil
+	}
+	catalog := make([]cloudAgentSkill, 0, cloudAgentSkillCatalogLimit)
+	seen := make(map[string]bool, cloudAgentSkillCatalogLimit)
+	for _, scope := range []string{"public", "created"} {
+		items, err := s.cloudAgentSkillCatalogPage(userID, scope)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if seen[item.SkillID] || !cloudAgentSkillReferenceEligible(state, item) {
+				continue
+			}
+			seen[item.SkillID] = true
+			catalog = append(catalog, cloudAgentSkill{ID: item.SkillID, Name: item.SkillName, Description: item.Description, Version: item.VersionID, Hash: item.ContentHash, Files: map[string]string{cloudAgentSkillEntryPath: ""}})
+		}
+	}
+	if len(catalog) == 0 {
+		return nil, nil
+	}
+	indexed, err := cloudAgentSearchSkills(catalog, keyword, limit)
+	if err != nil {
+		return nil, err
+	}
+	matches, _ := indexed["matches"].([]map[string]any)
+	discovered := make([]cloudAgentSkill, 0, remaining)
+	for _, match := range matches {
+		if len(discovered) >= remaining {
+			break
+		}
+		if score, ok := match["score"].(int); !ok || score <= 0 {
+			continue
+		}
+		id, _ := match["skillId"].(string)
+		if id == "" {
+			continue
+		}
+		snapshot, err := s.cloudAgentSkillSnapshot(userID, id, false)
+		if err != nil {
+			return nil, err
+		}
+		state.SkillReferences = append(state.SkillReferences, snapshot)
+		discovered = append(discovered, snapshot)
+	}
+	return discovered, nil
+}
+
+// cloudAgentReadSkillFileForRun 是本轮 skill_read_file 的完整读取：
+// 本轮已安装技能（冻结版本）优先，其次是本轮冻结的广场参考技能（只读引用，不要求已安装）。
+func (s *Service) cloudAgentReadSkillFileForRun(userID string, state *cloudAgentRuntime, args agenttool.SkillReadArgs) (any, error) {
+	if state == nil {
+		return nil, errors.New("Agent 只读工具缺少运行时状态")
+	}
+	id := strings.TrimSpace(args.SkillID)
+	if id == "" {
+		return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。先看技能目录或用 skill_search 找到 skillId")
+	}
+	if _, installed := state.SkillVersions[id]; installed {
+		return s.cloudAgentReadSkillFile(userID, state, args)
+	}
+	for _, ref := range state.SkillReferences {
+		if ref.ID == id {
+			return s.cloudAgentReadSkillReferenceFile(userID, ref, args)
+		}
+	}
+	return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。先看技能目录或用 skill_search 找到 skillId")
+}
+
+// cloudAgentReadSkillReferenceFile 读取本轮冻结的参考技能文件。
+// 不要求 IsAdded——参考技能本来就没安装；但必须仍启用、版本与内容哈希与冻结值一致，
+// 且只能读冻结清单里的路径。参考技能不计入技能使用次数（它不在用户技能库里）。
+func (s *Service) cloudAgentReadSkillReferenceFile(userID string, ref cloudAgentSkill, args agenttool.SkillReadArgs) (any, error) {
+	if ref.Version == "" || ref.Hash == "" {
+		return nil, errors.New("本轮参考技能缺少冻结版本")
+	}
+	detail, err := s.SkillDetail(userID, ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	if detail.Status != 1 {
+		return nil, BadAuthRequest("技能已被卸载或停用，本轮不能再读取")
+	}
+	if detail.VersionID != ref.Version || detail.ContentHash != ref.Hash {
+		return nil, creationConflict("技能在本轮开始后更新了；为避免混读两个版本，本轮不再读取它，下一条消息会使用新版本")
+	}
+	paths := cloudAgentSkillPaths(ref)
+	files := make([]string, 0, len(paths))
+	for _, path := range paths {
+		files = append(files, path)
+	}
+	if args.Path == "" {
+		return map[string]any{"skillId": ref.ID, "skillName": ref.Name, "version": ref.Version, "entryPath": cloudAgentSkillEntryPath, "files": files,
+			"guidance": "先读取 SKILL.md，再只读取入口明确引用且当前任务需要的参考文件。只能读取 files 中列出的路径；不要重复列目录或猜测路径"}, nil
+	}
+	if !slices.Contains(paths, args.Path) {
+		shown := files
+		if len(shown) > 40 {
+			shown = shown[:40]
+		}
+		return nil, BadAuthRequest(fmt.Sprintf("技能里没有这个可读文件；可读路径：%s。不要猜路径", strings.Join(shown, ", ")))
+	}
+	file, err := s.SkillPackageFile(userID, ref.ID, args.Path)
+	if err != nil {
+		return nil, err
+	}
+	if file.Binary {
+		return nil, BadAuthRequest("不支持读取二进制技能文件")
+	}
+	latest, err := s.SkillDetail(userID, ref.ID)
+	if err != nil {
+		return nil, err
+	}
+	if latest.Status != 1 || latest.VersionID != ref.Version || latest.ContentHash != ref.Hash {
+		return nil, creationConflict("技能在读取过程中更新或被卸载，本轮不再读取它")
+	}
+	page, err := cloudAgentSkillPage(ref.Version, args.Path, file.Content, args.Offset)
+	if err != nil {
+		return nil, err
+	}
+	if fields, ok := page.(map[string]any); ok {
+		fields["skillId"], fields["skillName"] = ref.ID, ref.Name
 	}
 	return page, nil
 }

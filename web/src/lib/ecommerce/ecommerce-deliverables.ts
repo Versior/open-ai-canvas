@@ -1,9 +1,8 @@
 /**
  * 电商交付物的行业标准结构。
  *
- * 这些不是我们编的：主图五张的构成、详情页九屏的顺序，都是行业里跑了很多年的固定套路
- * （淘宝/天猫美工工作规范、9 屏金字塔）。工具应该照搬行业结构，而不是自己发明一套
- * "单张主图 / 基础套图"这种听起来合理、用起来对不上活的分类。
+ * 主图与详情页提供可用的默认信息结构，但实际画面、构图和文案仍要按商品与平台动态规划。
+ * 槽位描述的是信息职责，不是固定构图模板。
  *
  * 一次上新要交的是**一整套**：主图五张 + 详情页八到十二屏 + 若干场景与 SKU 图。
  */
@@ -62,26 +61,25 @@ export const ECOMMERCE_MAIN_IMAGE_SET: EcommerceDeliverableSet = {
     extras: ["sellingPoints", "copy"],
 };
 
-/**
- * 详情页九屏金字塔。
- *
- * 顺序不能乱：先共情痛点，再给量化利益，然后才是卖点与参数。加信任背书后
- * 加购率平均提升 15–25%。超过 14 屏跳出率明显上升，所以默认铺 9 屏。
- */
+const detailDuty = (focus: string) => `${focus}；根据商品形态、投放平台与已确认事实动态决定画面构成和产品摆放，不套固定构图`;
+
+/** 默认十屏只是信息结构；每屏的实际画面必须随商品和投放平台重新规划。 */
 export const ECOMMERCE_DETAIL_PAGE_SET: EcommerceDeliverableSet = {
+    // 旧画布会持久化这个集合 id；改名必须配套数据迁移，所以十屏版本继续沿用兼容键。
     id: "detail-nine",
-    name: "详情页 9 屏",
-    hint: "痛点 → 利益 → 信任 → 卖点 → 场景 → 评价 → 参数 → 售后",
+    name: "详情页 10 屏",
+    hint: "品牌主视觉 → 三项核心卖点 → 场景 → 细节 → 参数 → 人群 → 品质 → 购买理由",
     slots: [
-        { id: "detail-1", title: "详情01 · 痛点共情", duty: "首屏海报，说出买家正在遇到的问题", presetId: "promo-keyvisual" },
-        { id: "detail-2", title: "详情02 · 利益承诺", duty: "把卖点翻成买家能得到什么，要量化（如「保温 12 小时」）", presetId: "selling-point" },
-        { id: "detail-3", title: "详情03 · 信任背书", duty: "检测报告、认证、销量；档案里没有就改写工艺与用料的可见之处，不要写「暂无」", presetId: "spec-compare" },
-        { id: "detail-4", title: "详情04 · 核心卖点", duty: "最强的那一条，占最大版面", presetId: "selling-point" },
-        { id: "detail-5", title: "详情05 · 次强卖点", duty: "第二条与第三条卖点合并展示", presetId: "selling-point" },
-        { id: "detail-6", title: "详情06 · 使用场景", duty: "在真实生活里用起来的样子", presetId: "in-use" },
-        { id: "detail-7", title: "详情07 · 细节工艺", duty: "放大材质与做工，建立品质感", presetId: "macro-craft" },
-        { id: "detail-8", title: "详情08 · 参数规格", duty: "尺寸、容量、材质、型号，一项不编", presetId: "size-guide" },
-        { id: "detail-9", title: "详情09 · 售后保障", duty: "退换、质保、服务承诺；承诺必须真实可履行", presetId: "studio-grey" },
+        { id: "detail-1", title: "详情01 · 品牌主视觉", duty: detailDuty("建立品牌与商品第一印象，每屏只讲这一主题"), presetId: "promo-keyvisual" },
+        { id: "detail-2", title: "详情02 · 核心卖点一", duty: detailDuty("呈现有明确依据的第一核心卖点，每屏只讲这一主题"), presetId: "selling-point" },
+        { id: "detail-3", title: "详情03 · 核心卖点二", duty: detailDuty("呈现有明确依据的第二核心卖点，每屏只讲这一主题"), presetId: "selling-point" },
+        { id: "detail-4", title: "详情04 · 核心卖点三", duty: detailDuty("呈现有明确依据的第三核心卖点，每屏只讲这一主题"), presetId: "selling-point" },
+        { id: "detail-5", title: "详情05 · 多场景展示", duty: detailDuty("选择与商品真实使用方式匹配的场景，每屏只讲这一主题"), presetId: "in-use" },
+        { id: "detail-6", title: "详情06 · 产品细节", duty: detailDuty("放大可见结构、材质与工艺细节，每屏只讲这一主题"), presetId: "macro-craft" },
+        { id: "detail-7", title: "详情07 · 参数可视化", duty: detailDuty("只呈现已确认参数，缺失项标记待补充，每屏只讲这一主题"), presetId: "size-guide" },
+        { id: "detail-8", title: "详情08 · 适用人群", duty: detailDuty("根据已确认场景与需求呈现适用人群，每屏只讲这一主题"), presetId: "lifestyle-home" },
+        { id: "detail-9", title: "详情09 · 品质背书", duty: detailDuty("只使用已确认的认证、工艺或品质依据，缺失项标记待补充，每屏只讲这一主题"), presetId: "spec-compare" },
+        { id: "detail-10", title: "详情10 · 购买理由总结", duty: detailDuty("汇总已确认的购买理由并形成收尾，每屏只讲这一主题"), presetId: "studio-grey" },
     ],
     extras: ["style", "sellingPoints", "copy", "layout", "delivery"],
 };
@@ -95,7 +93,7 @@ export const ECOMMERCE_DETAIL_PAGE_SET: EcommerceDeliverableSet = {
 export const ECOMMERCE_FULL_LISTING_SET: EcommerceDeliverableSet = {
     id: "full-listing",
     name: "整套上新物料",
-    hint: "主图 5 张 + 详情页 9 屏 + 场景与模特图",
+    hint: "主图 5 张 + 详情页 10 屏 + 场景与模特图",
     slots: [
         ...ECOMMERCE_MAIN_IMAGE_SET.slots,
         ...ECOMMERCE_DETAIL_PAGE_SET.slots,

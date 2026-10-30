@@ -5,7 +5,8 @@ import { useCanvasNodeActions } from "@/components/canvas/canvas-node-action-con
 import { useNodeConnections, useNodeInputs } from "@/components/canvas/canvas-node-graph-context";
 import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
 import { EcommerceNodeTitle } from "./canvas-ecommerce-node-title";
-import { createEcommerceProductProfile, ecommerceCopySourceIssues, ECOMMERCE_PRODUCT_VIEWS, type EcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
+import { createEcommerceProductProfile, ecommerceCopySourceIssues, ECOMMERCE_PRODUCT_VIEWS, normalizeEcommerceProductName, type EcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
+import type { EcommerceProductProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { connectedStyleReferenceNodes, ecommerceProductReferenceSignature, effectiveProductViews } from "@/lib/ecommerce/ecommerce-canvas";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
 import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
@@ -18,9 +19,59 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import "./canvas-ecommerce-node-card.css";
 
-type ProductProfileDraftField = "category" | "appearance" | "marks" | "forbidden" | "audience" | "facts" | "price";
-type ProductProfileDraftResult = Partial<Pick<EcommerceProductProfile, Exclude<ProductProfileDraftField, "price">>> & { unsure?: string };
-type ProductProfileDraft = Pick<EcommerceProductProfile, ProductProfileDraftField> & { unsure?: string; issues?: string[]; evidenceSignature: string };
+type ProductProfileDraftField =
+    | "name"
+    | "englishBrandName"
+    | "chineseBrandName"
+    | "logoText"
+    | "brandStyle"
+    | "category"
+    | "productModel"
+    | "appearance"
+    | "functions"
+    | "marks"
+    | "forbidden"
+    | "parameters"
+    | "sellingPoints"
+    | "audience"
+    | "painPoints"
+    | "purchaseReasons"
+    | "facts"
+    | "detailPageSuggestions"
+    | "price";
+
+type ProductProfileDraft = Record<ProductProfileDraftField, string> & { unsure?: string; issues?: string[]; evidenceSignature: string };
+
+const PRODUCT_PROFILE_DRAFT_FIELDS: { key: ProductProfileDraftField; label: string; ariaLabel?: string; rows?: number }[] = [
+    { key: "name", label: "产品名称" },
+    { key: "englishBrandName", label: "英文品牌名" },
+    { key: "chineseBrandName", label: "中文品牌名" },
+    { key: "logoText", label: "LOGO 文字", ariaLabel: "草稿 LOGO 文字", rows: 2 },
+    { key: "brandStyle", label: "品牌风格（字体、图标、配色、材质感）", ariaLabel: "草稿品牌风格", rows: 2 },
+    { key: "category", label: "品类" },
+    { key: "productModel", label: "产品型号" },
+    { key: "appearance", label: "外观", rows: 2 },
+    { key: "functions", label: "主要功能", rows: 2 },
+    { key: "marks", label: "其他标识", ariaLabel: "草稿标识", rows: 2 },
+    { key: "forbidden", label: "禁止项", rows: 2 },
+    { key: "parameters", label: "参数与来源（参数 | 数值 | 来源）", ariaLabel: "草稿参数与来源", rows: 3 },
+    { key: "sellingPoints", label: "五类卖点（类型 | 内容 | 可视化建议）", ariaLabel: "草稿五类卖点", rows: 5 },
+    { key: "audience", label: "目标人群与场景（建议）", ariaLabel: "草稿目标人群与场景", rows: 2 },
+    { key: "painPoints", label: "使用痛点", rows: 2 },
+    { key: "purchaseReasons", label: "购买理由", rows: 2 },
+    { key: "facts", label: "卖点与依据（可见事实）", ariaLabel: "草稿卖点与依据", rows: 2 },
+    { key: "detailPageSuggestions", label: "逐屏建议（屏数 | 主题 | 画面 | 文案）", ariaLabel: "草稿逐屏建议", rows: 5 },
+    { key: "price", label: "真实价格（手动填写）", ariaLabel: "草稿真实价格" },
+];
+
+const profileRows = (rows: string[][]) => rows.map((row) => row.join(" | ")).join("\n");
+const splitProfileRows = (value: string) => value.split(/\r?\n/).map((line) => line.split(/[|｜]/).map((part) => part.trim())).filter((row) => row.some(Boolean));
+const formatParameters = (profile: EcommerceProductProfile) => profileRows((profile.parameters || []).map((item) => [item.name, item.value, item.source]));
+const formatSellingPoints = (profile: EcommerceProductProfile) => profileRows((profile.sellingPoints || []).map((item) => [item.type, item.content, item.visualization]));
+const formatDetailPageSuggestions = (profile: EcommerceProductProfile) => profileRows((profile.detailPageSuggestions || []).map((item) => [item.screen, item.theme, item.visual, item.copy]));
+const parseParameters = (value: string) => splitProfileRows(value).map(([name = "", parameterValue = "", ...source]) => ({ name, value: parameterValue, source: source.join(" | ") })).filter((item) => item.name);
+const parseSellingPoints = (value: string): NonNullable<EcommerceProductProfile["sellingPoints"]> => splitProfileRows(value).map(([type = "", content = "", ...visualization]) => ({ type: type as NonNullable<EcommerceProductProfile["sellingPoints"]>[number]["type"], content, visualization: visualization.join(" | ") })).filter((item) => item.type);
+const parseDetailPageSuggestions = (value: string) => splitProfileRows(value).map(([screen = "", theme = "", visual = "", ...copy]) => ({ screen, theme, visual, copy: copy.join(" | ") })).filter((item) => item.screen);
 
 export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     const actions = useCanvasNodeActions();
@@ -62,13 +113,25 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
     const editProductProfile = (issues?: string[]) => {
         const currentProfile = profileRef.current;
         setProfileDraft({
-            category: currentProfile.category,
-            appearance: currentProfile.appearance,
-            marks: currentProfile.marks,
-            forbidden: currentProfile.forbidden,
-            audience: currentProfile.audience,
-            facts: currentProfile.facts,
-            price: currentProfile.price,
+            name: normalizeEcommerceProductName(currentProfile.name),
+            englishBrandName: currentProfile.englishBrandName ?? "",
+            chineseBrandName: currentProfile.chineseBrandName ?? "",
+            logoText: currentProfile.logoText ?? "",
+            brandStyle: currentProfile.brandStyle ?? "",
+            category: currentProfile.category ?? "",
+            productModel: currentProfile.productModel ?? "",
+            appearance: currentProfile.appearance ?? "",
+            functions: currentProfile.functions ?? "",
+            marks: currentProfile.marks ?? "",
+            forbidden: currentProfile.forbidden ?? "",
+            parameters: formatParameters(currentProfile),
+            sellingPoints: formatSellingPoints(currentProfile),
+            audience: currentProfile.audience ?? "",
+            painPoints: currentProfile.painPoints ?? "",
+            purchaseReasons: currentProfile.purchaseReasons ?? "",
+            facts: currentProfile.facts ?? "",
+            detailPageSuggestions: formatDetailPageSuggestions(currentProfile),
+            price: currentProfile.price ?? "",
             issues,
             evidenceSignature: evidenceSignatureRef.current,
         });
@@ -93,7 +156,7 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
         setIdentifying(true);
         const requestedEvidence = evidenceSignatureRef.current;
         try {
-            const draft = (await actions.draftEcommerceProfile(node)) as ProductProfileDraftResult | undefined;
+            const draft = (await actions.draftEcommerceProfile(node)) as EcommerceProductProfileDraft | undefined;
             if (!draft) return;
             if (requestedEvidence !== evidenceSignatureRef.current) {
                 message.warning("商品图片已变化，请重新识别");
@@ -102,12 +165,26 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
             const currentProfile = profileRef.current;
             const recognized = (value: string | undefined, current: string) => (value?.trim() ? value : current);
             setProfileDraft({
+                name: normalizeEcommerceProductName(draft.name) || normalizeEcommerceProductName(currentProfile.name),
+                englishBrandName: recognized(draft.englishBrandName, currentProfile.englishBrandName ?? ""),
+                chineseBrandName: recognized(draft.chineseBrandName, currentProfile.chineseBrandName ?? ""),
+                logoText: recognized(draft.logoText, currentProfile.logoText ?? ""),
+                brandStyle: recognized(draft.brandStyle, currentProfile.brandStyle ?? ""),
                 category: recognized(draft.category, currentProfile.category),
+                productModel: recognized(draft.productModel, currentProfile.productModel ?? ""),
                 appearance: recognized(draft.appearance, currentProfile.appearance),
+                functions: recognized(draft.functions, currentProfile.functions ?? ""),
                 marks: recognized(draft.marks, currentProfile.marks),
                 forbidden: recognized(draft.forbidden, currentProfile.forbidden),
+                parameters: draft.parameters?.length ? profileRows(draft.parameters.map((item) => [item.name, item.value, item.source])) : formatParameters(currentProfile),
+                sellingPoints: draft.sellingPoints?.length ? profileRows(draft.sellingPoints.map((item) => [item.type, item.content, item.visualization])) : formatSellingPoints(currentProfile),
                 audience: recognized(draft.audience, currentProfile.audience),
+                painPoints: recognized(draft.painPoints, currentProfile.painPoints ?? ""),
+                purchaseReasons: recognized(draft.purchaseReasons, currentProfile.purchaseReasons ?? ""),
                 facts: recognized(draft.facts, currentProfile.facts),
+                detailPageSuggestions: draft.detailPageSuggestions?.length
+                    ? profileRows(draft.detailPageSuggestions.map((item) => [item.screen, item.theme, item.visual, item.copy]))
+                    : formatDetailPageSuggestions(currentProfile),
                 price: currentProfile.price,
                 unsure: draft.unsure ?? "",
                 evidenceSignature: requestedEvidence,
@@ -129,12 +206,24 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
         updateMetadata(node.id, {
             productProfile: {
                 ...currentProfile,
+                name: normalizeEcommerceProductName(profileDraft.name),
+                englishBrandName: profileDraft.englishBrandName.trim(),
+                chineseBrandName: profileDraft.chineseBrandName.trim(),
+                logoText: profileDraft.logoText.trim(),
+                brandStyle: profileDraft.brandStyle.trim(),
                 category: profileDraft.category.trim(),
+                productModel: profileDraft.productModel.trim(),
                 appearance: profileDraft.appearance.trim(),
+                functions: profileDraft.functions.trim(),
                 marks: profileDraft.marks.trim(),
                 forbidden: profileDraft.forbidden.trim(),
+                parameters: parseParameters(profileDraft.parameters),
+                sellingPoints: parseSellingPoints(profileDraft.sellingPoints),
                 audience: profileDraft.audience.trim(),
+                painPoints: profileDraft.painPoints.trim(),
+                purchaseReasons: profileDraft.purchaseReasons.trim(),
                 facts: profileDraft.facts.trim(),
+                detailPageSuggestions: parseDetailPageSuggestions(profileDraft.detailPageSuggestions),
                 price: profileDraft.price.trim(),
             },
         });
@@ -306,34 +395,27 @@ export function ProductNodeContent({ node, theme }: { node: CanvasNodeData; them
                                       : "未识别字段沿用已有值；价格沿用已有手填值。请核对后应用。"}
                             </p>
                             <div className="ecom-product-draft-grid">
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">品类</span>
-                                    <input className="ecom-field-input" aria-label="草稿品类" value={profileDraft.category ?? ""} onChange={(event) => updateProfileDraft("category", event.target.value)} />
-                                </label>
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">外观</span>
-                                    <textarea className="ecom-field-input" aria-label="草稿外观" rows={2} value={profileDraft.appearance ?? ""} onChange={(event) => updateProfileDraft("appearance", event.target.value)} />
-                                </label>
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">标识</span>
-                                    <textarea className="ecom-field-input" aria-label="草稿标识" rows={2} value={profileDraft.marks ?? ""} onChange={(event) => updateProfileDraft("marks", event.target.value)} />
-                                </label>
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">禁止项</span>
-                                    <textarea className="ecom-field-input" aria-label="草稿禁止项" rows={2} value={profileDraft.forbidden ?? ""} onChange={(event) => updateProfileDraft("forbidden", event.target.value)} />
-                                </label>
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">目标人群与场景（建议）</span>
-                                    <textarea className="ecom-field-input" aria-label="草稿目标人群与场景" rows={2} value={profileDraft.audience ?? ""} onChange={(event) => updateProfileDraft("audience", event.target.value)} />
-                                </label>
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">卖点与依据（可见事实）</span>
-                                    <textarea className="ecom-field-input" aria-label="草稿卖点与依据" rows={2} value={profileDraft.facts ?? ""} onChange={(event) => updateProfileDraft("facts", event.target.value)} />
-                                </label>
-                                <label className="ecom-field">
-                                    <span className="ecom-field-label">真实价格（手动填写）</span>
-                                    <input className="ecom-field-input" aria-label="草稿真实价格" value={profileDraft.price ?? ""} onChange={(event) => updateProfileDraft("price", event.target.value)} />
-                                </label>
+                                {PRODUCT_PROFILE_DRAFT_FIELDS.map((field) => (
+                                    <label className="ecom-field" key={field.key}>
+                                        <span className="ecom-field-label">{field.label}</span>
+                                        {field.rows ? (
+                                            <textarea
+                                                className="ecom-field-input"
+                                                aria-label={field.ariaLabel ?? `草稿${field.label}`}
+                                                rows={field.rows}
+                                                value={profileDraft[field.key]}
+                                                onChange={(event) => updateProfileDraft(field.key, event.target.value)}
+                                            />
+                                        ) : (
+                                            <input
+                                                className="ecom-field-input"
+                                                aria-label={field.ariaLabel ?? `草稿${field.label}`}
+                                                value={profileDraft[field.key]}
+                                                onChange={(event) => updateProfileDraft(field.key, event.target.value)}
+                                            />
+                                        )}
+                                    </label>
+                                ))}
                             </div>
                             <div className="ecom-action-row ecom-product-draft-actions">
                                 <button type="button" className="ecom-action" aria-label="放弃商品草稿" onClick={() => setProfileDraft(undefined)}>

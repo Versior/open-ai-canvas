@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AgentWelcome } from "@/components/canvas/canvas-agent-welcome";
 import { AgentChatComposer } from "@/components/canvas/canvas-cloud-agent-chat-ui";
@@ -9,18 +10,30 @@ import { DEFAULT_CANVAS_APPEARANCE, agentCopy } from "@/lib/canvas/agent-appeara
 const noop = () => {};
 
 test("welcome uses the independent assistant name and escapes it as text", () => {
-    const html = renderToStaticMarkup(<AgentWelcome appearance={{ ...DEFAULT_CANVAS_APPEARANCE, agentName: "我的<工作室>" }} nodeCount={2} onChooseSkill={noop} onDraftPrompt={noop} />);
+    const html = renderToStaticMarkup(<AgentWelcome appearance={{ ...DEFAULT_CANVAS_APPEARANCE, agentName: "我的<工作室>" }} nodeCount={2} onDraftPrompt={noop} />);
     expect(html).toContain("在这里，和我的&lt;工作室&gt;让灵感，慢慢成形");
     expect(html).toContain("2 个节点");
-    expect(html.match(/type="button"/g)).toHaveLength(3);
+    expect(html.match(/type="button"/g)).toHaveLength(2);
+    expect(html).toContain("Agent 会按任务自动查找技能");
+    expect(html).not.toContain("选择技能");
     expect(html).not.toContain('disabled=""');
 });
 
 test("empty canvas disables only the canvas-analysis shortcut", () => {
-    const html = renderToStaticMarkup(<AgentWelcome appearance={DEFAULT_CANVAS_APPEARANCE} nodeCount={0} onChooseSkill={noop} onDraftPrompt={noop} />);
+    const html = renderToStaticMarkup(<AgentWelcome appearance={DEFAULT_CANVAS_APPEARANCE} nodeCount={0} onDraftPrompt={noop} />);
     expect(html.match(/disabled=""/g)).toHaveLength(1);
     expect(html).toContain("添加节点后，一起梳理创作思路");
     expect(html).not.toContain("生成前由你确认");
+});
+
+test("agent request leaves skill routing to the backend marketplace search", () => {
+    const panel = readFileSync(new URL("../src/components/canvas/canvas-cloud-agent-panel.tsx", import.meta.url), "utf8");
+    const requestStart = panel.indexOf("const input = {");
+    const requestEnd = panel.indexOf("\n                };", requestStart);
+    expect(requestStart).toBeGreaterThan(-1);
+    expect(requestEnd).toBeGreaterThan(requestStart);
+    expect(panel.slice(requestStart, requestEnd)).not.toContain("skillIds:");
+    expect(panel).not.toContain("<CanvasAgentSkillLibraryModal");
 });
 
 test("assistant template replacement treats names literally", () => {

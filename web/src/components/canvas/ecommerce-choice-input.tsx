@@ -2,6 +2,7 @@ import { AutoComplete } from "antd";
 import { DownOutlined } from "@ant-design/icons";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { GetRef } from "antd";
+import { ecommercePlatformChoiceLabel } from "@/lib/ecommerce/ecommerce-platform-specs";
 
 export const ECOMMERCE_BRIEF_CHOICES = {
     market: ["中国", "美国", "欧洲", "日本", "东南亚"],
@@ -13,6 +14,13 @@ export const ECOMMERCE_BRIEF_CHOICES = {
     style: ["简洁白底", "自然光生活感", "暖色家居", "冷色科技", "克制高级，突出材质"],
     forbidden: ["不改变商品外观", "不出现未经核实的功效", "不添加价格与促销承诺", "不添加文字"],
 } as const;
+
+/** 下拉候选。平台字段多一句口径标注，别的字段一字不改；选项值始终是原文。 */
+export function ecommerceChoiceOptions(choices: readonly string[], query: string, platform: boolean) {
+    return choices
+        .filter((choice) => choice.toLowerCase().includes(query.trim().toLowerCase()))
+        .map((choice) => ({ value: choice, label: platform ? ecommercePlatformChoiceLabel(choice) : choice }));
+}
 
 export function EcommerceChoiceInput({ value, onChange, choices, label, disabled, maxLength = 100 }: { value: string; onChange: (value: string) => void; choices: readonly string[]; label: string; disabled?: boolean; maxLength?: number }) {
     const [query, setQuery] = useState("");
@@ -59,7 +67,7 @@ export function EcommerceChoiceInput({ value, onChange, choices, label, disabled
             open={open && !disabled}
             value={value}
             maxLength={maxLength}
-            options={choices.filter((choice) => choice.toLowerCase().includes(query.trim().toLowerCase())).map((value) => ({ value }))}
+            options={ecommerceChoiceOptions(choices, query, label.includes("平台"))}
             onChange={onChange}
             onSearch={setQuery}
             onFocus={() => setQuery("")}

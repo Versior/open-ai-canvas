@@ -34,13 +34,10 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { loadAssetsForUse } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { skillRuntime, type SkillRuntimeMetadata } from "@/services/skill-runtime";
-import { listAddedSkills } from "@/services/api/skills";
 import { ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
 import { migrateLegacyEcommerceReplicaConnections } from "@/lib/ecommerce/ecommerce-replica";
 import { ecommerceBindingImages, ecommerceBindingKey, finishEcommerceBinding } from "@/lib/ecommerce/ecommerce-binding";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
-import { ecommerceSliceSpec, type EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
 import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { resolveEcommerceTableModels } from "@/lib/ecommerce/ecommerce-model-defaults";
 import { synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
@@ -150,15 +147,18 @@ import { resolveCanvasEmptyStateKind } from "@/lib/canvas/canvas-starter";
 import { failedImageBatchChildren, markImageBatchRetrying, reconcileImageBatchRoot, restoreUnsubmittedImageBatchChild } from "@/lib/canvas/canvas-image-batch-retry";
 import { cinematicStoryboardColumns, createCanvasNode, getInputSummary, isHiddenBatchChild } from "@/lib/canvas/canvas-project-domain";
 import { canSaveCanvasImageAsModel, ecommerceModelPresetPrompt, type EcommerceModelPreset } from "@/lib/ecommerce/ecommerce-models";
-import { ecommerceProductReferenceImages, ecommerceProductReferenceSignature, ecommerceReferenceImageGuide, connectedStyleReferenceNodes, resolveEcommerceInputs, withImageAsEcommerceReference } from "@/lib/ecommerce/ecommerce-canvas";
+import { resolveEcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
+import { ecommerceImageSettings } from "@/lib/ecommerce/ecommerce-image-generation";
+import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities";
+import { ecommerceProductReferenceImages, ecommerceProductReferenceSignature, ecommerceReferenceImageGuide, ecommerceRowPromptIssue, connectedStyleReferenceNodes, resolveEcommerceInputs, withImageAsEcommerceReference } from "@/lib/ecommerce/ecommerce-canvas";
 import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { ecommerceOneClickFlow, ecommerceOneClickScreens, type EcommerceOneClickFlowId } from "@/lib/ecommerce/ecommerce-oneclick";
 import { ecommerceBriefBlock, ecommerceBriefRows, ecommerceBriefSlicePlatform } from "@/lib/ecommerce/ecommerce-brief";
-import { ecommerceSuiteDraftPrompt, ecommerceSuiteRows, parseEcommerceSuiteDraft, reconcileEcommerceSuiteDraftRows, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
+import { ecommerceSuiteDraftPrompt, ecommerceSuiteRows, parseEcommerceSuiteDraft, reconcileEcommerceSuiteDraftRows, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
 import { ecommerceTeardownOutlineToSuiteRows } from "@/lib/ecommerce/ecommerce-teardown";
 import { createEcommerceStyleReference, ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { isEcommerceInputHandle, withEcommerceInputConnection } from "@/lib/ecommerce/ecommerce-canvas";
-import { rasterizeEcommerceComposition, rasterizeEcommerceDetailPage } from "@/lib/ecommerce/ecommerce-rasterize";
+import { ecommerceResultTextMode, rasterizeEcommerceComposition, rasterizeEcommerceDetailPage } from "@/lib/ecommerce/ecommerce-rasterize";
 import { generationErrorMessage } from "@/lib/generation-error";
 import { useEcommerceSuitePrompt } from "@/stores/use-ecommerce-suite-prompt";
 import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
@@ -1904,9 +1904,9 @@ ${instruction.trim()}`
     /**
      * 一键流程的收尾：全屏出完 → 装订成详情页长图并切片。
      *
-     * 装订是纯装配：九屏已经出好了，长图只是按顺序接起来、按平台上限切开。
+     * 装订是纯装配：各屏已经出好了，长图只是按顺序接起来、按平台上限切开。
      * 交给模型做才是错的——它会顺手重画每一屏，商品就不一致了。
-     * 文字与底图分离：每屏先本地合成已确认的文案和版式，再装订成长图。
+     * 只有明确的 local 结果叠字；模型带字和历史未知结果保留原图。
      */
     const bindingRef = useRef(new Set<string>());
     const ecommerceResultSourceSignature = useCallback(
@@ -1931,7 +1931,7 @@ ${instruction.trim()}`
                 const platform = ecommerceBriefSlicePlatform(source.metadata?.ecommerceBrief, source.metadata?.ecommercePlatform || product.metadata?.ecommercePlatform);
                 const outputs = ecommerceSelectedOutputs(source, rows, nodesRef.current, connectionsRef.current, (row, image) => ecommerceResultSourceSignature(source, row, image));
                 const enabledRows = rows.filter((row) => row.enabled !== false);
-                const snapshot = JSON.stringify([product.id, platform, outputs.map((image) => [image.id, image.metadata?.storageKey]), enabledRows.map((row) => [row.slotId, row.copy, row.layout])]);
+                const snapshot = JSON.stringify([product.id, platform, outputs.map((image) => [image.id, image.metadata?.storageKey, ecommerceResultTextMode(image)]), enabledRows.map((row) => [row.slotId, row.copy, row.layout])]);
                 // 手动采用结果后接管等待/失败的自动计划，避免旧计划永久阻塞或重复导出。
                 const pendingPlan = product.metadata?.ecommerceOneClick;
                 if (pendingPlan) setNodes((current) => finishEcommerceBinding(current, product.id, ecommerceBindingKey(product.id, pendingPlan)));
@@ -1939,7 +1939,7 @@ ${instruction.trim()}`
                 for (const [index, image] of outputs.entries()) {
                     const imageUrl = await imageToDataUrl({ url: image.metadata?.content, storageKey: image.metadata?.storageKey, name: image.title });
                     const row = enabledRows[index];
-                    urls.push(await rasterizeEcommerceComposition({ imageUrl, copy: row?.copy, layout: row?.layout }));
+                    urls.push(ecommerceResultTextMode(image) === "local" ? await rasterizeEcommerceComposition({ imageUrl, copy: row?.copy, layout: row?.layout }) : imageUrl);
                 }
                 const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform, code: product.metadata?.productProfile?.name });
                 if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消装订");
@@ -1949,7 +1949,7 @@ ${instruction.trim()}`
                     const selected = ecommerceSelectedOutputs(latest, latest.metadata?.ecommerceSuite?.rows || [], nodesRef.current, connectionsRef.current, (row, image) => ecommerceResultSourceSignature(latest, row, image));
                     const latestRows = (latest.metadata?.ecommerceSuite?.rows || []).filter((row) => row.enabled !== false);
                     const latestPlatform = ecommerceBriefSlicePlatform(latest.metadata?.ecommerceBrief, latest.metadata?.ecommercePlatform || latestProduct.metadata?.ecommercePlatform);
-                    if (snapshot !== JSON.stringify([latestProduct.id, latestPlatform, selected.map((image) => [image.id, image.metadata?.storageKey]), latestRows.map((row) => [row.slotId, row.copy, row.layout])]))
+                    if (snapshot !== JSON.stringify([latestProduct.id, latestPlatform, selected.map((image) => [image.id, image.metadata?.storageKey, ecommerceResultTextMode(image)]), latestRows.map((row) => [row.slotId, row.copy, row.layout])]))
                         throw new Error("商品、切片规格、采用结果、文案、版式或顺序已变化，请重新装订");
                 };
                 validateSelection();
@@ -2010,10 +2010,9 @@ ${instruction.trim()}`
                     const urls: string[] = [];
                     for (const { row, image } of selections) {
                         const imageUrl = await imageToDataUrl({ url: image.metadata?.content, storageKey: image.metadata?.storageKey, name: image.title });
-                        urls.push(await rasterizeEcommerceComposition({ imageUrl, copy: row.copy, layout: row.layout }));
+                        urls.push(ecommerceResultTextMode(image) === "local" ? await rasterizeEcommerceComposition({ imageUrl, copy: row.copy, layout: row.layout }) : imageUrl);
                     }
-                    const platform = (plan.platform || product.metadata?.ecommercePlatform || "taobao") as EcommerceSlicePlatform;
-                    if (!ecommerceSliceSpec(platform)) throw new Error("当前平台不支持自动切片，请选择支持的平台或手动导出");
+                    const platform = ecommerceBriefSlicePlatform(source.metadata?.ecommerceBrief, plan.platform || product.metadata?.ecommercePlatform);
                     const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform, code: product.metadata?.productProfile?.name });
                     if (scope !== getActiveUserScope()) return;
                     const validatePlan = () => {
@@ -2026,7 +2025,13 @@ ${instruction.trim()}`
                             currentImages.length !== ready.length ||
                             ready.some((image, index) => {
                                 const current = currentImages[index];
-                                return current.id !== image.id || current.metadata?.storageKey !== image.metadata?.storageKey || current.metadata?.content !== image.metadata?.content || current.metadata?.taskId !== image.metadata?.taskId;
+                                return (
+                                    current.id !== image.id ||
+                                    current.metadata?.storageKey !== image.metadata?.storageKey ||
+                                    current.metadata?.content !== image.metadata?.content ||
+                                    current.metadata?.taskId !== image.metadata?.taskId ||
+                                    ecommerceResultTextMode(current) !== ecommerceResultTextMode(image)
+                                );
                             })
                         )
                             throw new Error("装订图片已变化，请重新装订");
@@ -2764,25 +2769,10 @@ ${instruction.trim()}`
      * 走 buildGenerationConfig 才能把渠道与能力一起重新解析。
      */
     const runEcommerceTextDraft = useCallback(
-        async (productNode: CanvasNodeData, prompt: string, modelOverride?: string, skillIds?: string[], includeVisualReferences = false, ecommerceAnalysisFlow?: EcommerceOneClickFlowId) => {
+        async (productNode: CanvasNodeData, prompt: string, modelOverride?: string, includeVisualReferences = false, ecommerceAnalysisFlow?: EcommerceOneClickFlowId | "cap:planning", ecommerceCapability?: "planning") => {
             const scope = getActiveUserScope();
             const referenceImages = productReferenceImages(productNode.id, includeVisualReferences);
-            // 技能注入与出图那条链路同一套：`skillRuntime.prepare` 把技能的正文与关联文件
-            // 拼进提示词。**没选就不注入**——用户库里可能有二十个技能，全塞进一次分析
-            // 会把提示词顶爆，而大部分跟这个品类无关。
-            let effectivePrompt = [prompt, ecommerceReferenceImageGuide(referenceImages)].filter(Boolean).join("\n\n");
-            let skillMetadata: SkillRuntimeMetadata = {};
-            if (skillIds?.length) {
-                try {
-                    const { skills } = await listAddedSkills({ force: true });
-                    const skillExecution = await skillRuntime.prepare({ profile: "canvas", prompt: effectivePrompt, skills, selectedSkillIds: skillIds });
-                    effectivePrompt = skillExecution.prompt;
-                    skillMetadata = skillExecution.metadata;
-                } catch (error) {
-                    message.error(error instanceof Error ? error.message : "技能上下文加载失败");
-                    return undefined;
-                }
-            }
+            const effectivePrompt = [prompt, ecommerceReferenceImageGuide(referenceImages)].filter(Boolean).join("\n\n");
             if (getActiveUserScope() !== scope) return undefined;
             const requirements = { capability: "text" as const, input: { textCount: 0, imageCount: referenceImages.length, videoCount: 0, audioCount: 0, characterCount: 0 } };
             let generationConfig: typeof effectiveConfig;
@@ -2804,7 +2794,7 @@ ${instruction.trim()}`
                     prompt: effectivePrompt,
                     referenceImages,
                     streamText: false,
-                    metadata: { ...skillMetadata, nodeId: productNode.id, ...(ecommerceAnalysisFlow ? { ecommerceAnalysisFlow } : {}) },
+                    metadata: { nodeId: productNode.id, ...(ecommerceAnalysisFlow ? { ecommerceAnalysisFlow } : {}), ...(ecommerceCapability ? { ecommerceCapability } : {}) },
                 });
                 return getActiveUserScope() === scope ? result.text || "" : undefined;
             } catch (error) {
@@ -2830,7 +2820,14 @@ ${instruction.trim()}`
             }
             const evidenceSignature = ecommerceProductReferenceSignature(productNode, nodesRef.current, connectionsRef.current);
             const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig).analysisModel;
-            const text = await runEcommerceTextDraft(productNode, buildEcommerceProfileDraftPrompt(), resolvedAnalysisModel);
+            const text = await runEcommerceTextDraft(
+                productNode,
+                buildEcommerceProfileDraftPrompt(),
+                resolvedAnalysisModel,
+                false,
+                "cap:planning",
+                "planning",
+            );
             if (text === undefined) return undefined;
             const latestAnalysisModel = resolveEcommerceTableModels(effectiveConfigRef.current).analysisModel;
             if (resolvedAnalysisModel !== latestAnalysisModel) {
@@ -2878,17 +2875,17 @@ ${instruction.trim()}`
             // 交给模型的是**当前那张表**，不是行业套路给的骨架：用户可能已经删到六屏、
             // 改过职责，或者在自己的提示词里要求了不同的分工。
             const rows = ecommerceBriefRows(flow, rowsOverride || ecommerceSuiteRows(flow, suiteNode.metadata?.ecommerceSuitesByFlow?.[flowId] || suiteNode.metadata?.ecommerceSuite), suiteNode.metadata?.ecommerceBrief);
+            const platformId = resolveEcommercePlatformId(suiteNode.metadata?.ecommerceBrief?.platform || suiteNode.metadata?.ecommercePlatform || productNode.metadata?.ecommercePlatform);
             const uniform = {
+                platformId,
                 styleReferenceNames: connectedStyleReferenceNodes(productNode.id, nodesRef.current, connectionsRef.current).map((item) => item.title || item.id),
             };
-            const skillIds = suiteNode.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId];
             const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig, { analysisModel }).analysisModel;
-            const analysisSnapshot = ecommerceAnalysisSnapshot(suiteNode, productNode, nodesRef.current, connectionsRef.current, resolvedAnalysisModel, skillIds);
+            const analysisSnapshot = ecommerceAnalysisSnapshot(suiteNode, productNode, nodesRef.current, connectionsRef.current, resolvedAnalysisModel);
             const text = await runEcommerceTextDraft(
                 productNode,
-                [ecommerceSuiteDraftPrompt(flow, productNode.metadata?.productProfile, rows, undefined, uniform), ecommerceBriefBlock(suiteNode.metadata?.ecommerceBrief)].filter(Boolean).join("\n\n"),
+                [ecommerceSuiteDraftPrompt(flow, productNode.metadata?.productProfile, rows, undefined, uniform), ecommerceBriefBlock(suiteNode.metadata?.ecommerceBrief, flow.id)].filter(Boolean).join("\n\n"),
                 resolvedAnalysisModel,
-                skillIds,
                 true,
                 flowId,
             );
@@ -2909,8 +2906,8 @@ ${instruction.trim()}`
             if (!latest) return undefined;
             const latestProduct = nodesRef.current.find((item) => item.id === productNode.id);
             const latestAnalysisModel = resolveEcommerceTableModels(effectiveConfigRef.current, { analysisModel: latest.metadata?.ecommerceAnalysisModel }).analysisModel;
-            if (!latestProduct || analysisSnapshot !== ecommerceAnalysisSnapshot(latest, latestProduct, nodesRef.current, connectionsRef.current, latestAnalysisModel, latest.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId])) {
-                message.warning("分析期间模型、Skills、表格、商品资料或参考图已变化，保留当前编辑，请重新分析");
+            if (!latestProduct || analysisSnapshot !== ecommerceAnalysisSnapshot(latest, latestProduct, nodesRef.current, connectionsRef.current, latestAnalysisModel)) {
+                message.warning("分析期间模型、表格、商品资料或参考图已变化，保留当前编辑，请重新分析");
                 return undefined;
             }
             const suite = {
@@ -2929,8 +2926,8 @@ ${instruction.trim()}`
     /**
      * 电商创作：按套图面板里那张表出图。
      *
-     * 一张图一条提示词，原样写进那一行对应的图片节点——**不再靠编译时去拼**。
-     * 商品锁定与模特锁定由 ecommerce 编译链自动前置，提示词是用户核对过的那一份。
+     * 每行的视觉提示词与文案先同步到目标，再由共享编译链冻结完整输入。
+     * 商品锁定与模特锁定由 ecommerce 编译链自动前置。
      *
      * **节点只为真正要出的那几张铺，而且按槽位复用。** 上一版点一下先铺九屏，
      * 用户看到的是一堆还没出图的空方块；重出一次又在旁边堆九个。现在铺节点并进出图，
@@ -2962,14 +2959,18 @@ ${instruction.trim()}`
                 message.warning("未选择生图模型，请先在面板中选择生图模型");
                 return false;
             }
+            const resolvedImageSize = imageSize || ecommerceImageSettings(effectiveConfig, imageModel, { ...DEFAULT_ECOMMERCE_BRIEF, aspectRatio: ecommerceOneClickScreens(flow)[0]?.aspectRatio }).size;
             const completeRun = completeSuite || !slotIds?.length;
+            const requestedSuite: EcommerceSuite | undefined = rowsOverride
+                ? { flow: flow.id, rows: rowsOverride, source: "draft", updatedAt: new Date().toISOString() }
+                : suiteNode.metadata?.ecommerceSuitesByFlow?.[flowId] || suiteNode.metadata?.ecommerceSuite;
             const completePlan = connectEcommerceTableOutputs(
                 ecommerceSuiteTargets(
                     productNode,
                     flow,
-                    rowsOverride ? { flow: flow.id, rows: rowsOverride, source: "draft", updatedAt: new Date().toISOString() } : suiteNode.metadata?.ecommerceSuitesByFlow?.[flowId] || suiteNode.metadata?.ecommerceSuite,
+                    requestedSuite,
                     { nodes: nodesRef.current, connections: connectionsRef.current },
-                    { ...(imageModel ? { model: imageModel } : {}), ...(imageSize ? { size: imageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) },
+                    { ...(imageModel ? { model: imageModel } : {}), ...(resolvedImageSize ? { size: resolvedImageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) },
                     () => nanoid(),
                     completeRun ? undefined : slotIds,
                     suiteNode.id,
@@ -3001,8 +3002,10 @@ ${instruction.trim()}`
                 message.error("这一套的产物节点没能铺出来——刷新页面后重试，或先删掉画布上重名的图片节点");
                 return false;
             }
-            const reuseByNodeId = new Map(plan.reuse.map((item) => [item.nodeId, item.prompt]));
-
+            for (const row of plan.rows) {
+                const issue = ecommerceRowPromptIssue(row, flow.id);
+                if (issue) throw new Error(issue);
+            }
             // 流程状态挂在商品节点上：全屏出完之后要自动装订，得记住这一批是哪几张、
             // 落在哪几个节点上。单张出图不写这个状态——只出一张时不该触发装订。
             //
@@ -3011,34 +3014,52 @@ ${instruction.trim()}`
             // 与用户核对过的那条打架（用户改成俯拍，清单还写着平视）。
             // 清掉而不是不写：早先版本铺下的清单还留在画布上，不清就会一直压着新提示词。
             const nodeIds = plan.nodeIds;
-            const nodeIdSet = new Set(nodeIds);
             const single = !completeRun;
             const autoBind = suiteNode.metadata?.ecommerceAutoBind === true && setting.autoBindEnabled && flow.bind;
             const slicePlatform = !single && autoBind ? ecommerceBriefSlicePlatform(suiteNode.metadata?.ecommerceBrief, suiteNode.metadata?.ecommercePlatform || productNode.metadata?.ecommercePlatform) : undefined;
             const runId = nanoid();
             const bindingNodeIds = completeRun ? completePlan.nodeIds : nodeIds;
             const bindingNodeIdSet = new Set(bindingNodeIds);
-            const shotPatch = { ...(imageModel ? { model: imageModel } : {}), ...(imageSize ? { size: imageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) };
+            const shotPatch = { ...(imageModel ? { model: imageModel } : {}), ...(resolvedImageSize ? { size: resolvedImageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) };
             const rowsByNodeId = new Map(plan.nodeIds.map((id, index) => [id, plan.rows[index]]));
-            const spawnedWithRun = plan.spawned.map((item) => ({ ...item, metadata: { ...item.metadata, ecommerceRunId: runId } }));
             const graphConnections = [...connectionsRef.current, ...plan.connections, ...plan.reconnect];
-            const graphNodes = [...nodesRef.current, ...spawnedWithRun];
-            const preparedSpawned = spawnedWithRun.map((item) => {
-                const row = rowsByNodeId.get(item.id);
-                const signature = row ? ecommerceResultSourceSignature(suiteNode, row, item, graphNodes, graphConnections) : undefined;
+            const reusedIds = new Set(plan.reuse.map((item) => item.nodeId));
+            // 新建和复用先同步当前行，再共同冻结；排队后不再从实时表格取文案。
+            const preparedTargets = [...nodesRef.current.filter((item) => reusedIds.has(item.id)), ...plan.spawned].map((item) => {
+                const row = rowsByNodeId.get(item.id)!;
+                const prompt = row.prompt.trim();
+                const prepared = synchronizeGenerationSpec(item, { prompt, composerContent: prompt, generationResultPlacement: "replace-node", errorDetails: undefined, ...shotPatch });
                 return {
-                    ...item,
+                    ...prepared,
+                    title: row.title,
                     metadata: {
-                        ...item.metadata,
+                        ...resetGenerationTaskMetadata(prepared.metadata),
+                        ecommerceCopy: structuredClone(row.copy),
+                        ecommerceLayout: structuredClone(row.layout),
+                        ecommerceProductId: productNode.id,
+                        ecommerceFlowId: flow.id,
+                        ecommerceShotId: row.slotId,
+                        ecommerceRunId: runId,
                         batchSourceNodeId: suiteNode.id,
-                        batchRowId: row?.slotId,
-                        batchInputSignature: signature,
+                        batchRowId: row.slotId,
                         batchResultInputSignature: undefined,
                     },
                 };
             });
-            const snapshotNodes = [...nodesRef.current, ...preparedSpawned];
-            const snapshots = new Map(preparedSpawned.map((item) => [item.id, createCanvasBatchInputSnapshot(item, snapshotNodes, graphConnections, assets, useEcommerceModelLibrary.getState().models)]));
+            const sourceForGeneration = { ...suiteNode, metadata: { ...suiteNode.metadata, ...ecommerceSuiteMetadata(suiteNode.metadata, requestedSuite!) } };
+            const preparedById = new Map<string, CanvasNodeData>(preparedTargets.map((item) => [item.id, item]));
+            const graphNodes = [
+                ...nodesRef.current.map((item) => (item.id === suiteNode.id ? sourceForGeneration : preparedById.get(item.id) || item)),
+                ...plan.spawned.map((item) => preparedById.get(item.id)!),
+            ];
+            for (const item of preparedTargets) {
+                const row = rowsByNodeId.get(item.id)!;
+                const signature = ecommerceResultSourceSignature(sourceForGeneration, row, item, graphNodes, graphConnections);
+                preparedById.set(item.id, { ...item, metadata: { ...item.metadata, batchInputSignature: signature } });
+            }
+            const snapshotNodes = graphNodes.map((item) => preparedById.get(item.id) || item);
+            const snapshots = new Map([...preparedById.values()].map((item) => [item.id, createCanvasBatchInputSnapshot(item, snapshotNodes, graphConnections, assets, useEcommerceModelLibrary.getState().models)]));
+            const preparedSpawned = plan.spawned.map((item) => preparedById.get(item.id)!);
             const touchedExistingIds = new Set([productNode.id, ...plan.reuse.map((item) => item.nodeId), ...(autoBind && completeRun ? bindingNodeIds : [])]);
             const spawnedIds = new Set(preparedSpawned.map((item) => item.id));
             const nodesBefore = new Map(nodesRef.current.filter((item) => touchedExistingIds.has(item.id)).map((item) => [item.id, item]));
@@ -3060,31 +3081,10 @@ ${instruction.trim()}`
                             },
                         };
                     }
-                    const prompt = reuseByNodeId.get(item.id);
-                    if (!prompt || !nodeIdSet.has(item.id)) {
-                        if (autoBind && completeRun && bindingNodeIdSet.has(item.id)) return { ...item, metadata: { ...item.metadata, ecommerceRunId: runId } };
-                        return item;
-                    }
-                    // 提示词写进节点自己的 prompt：用户点开那一屏能看见它、能改它、能单独重出。
-                    //
-                    // 走 synchronizeGenerationSpec 而不是直接铺 metadata：节点上可能已经有一份
-                    // generationSpec（用户单独生成过，或上一次批量生成写进去的），它的 prompt 和
-                    // options 会盖住 metadata 里的同名字段——那样「重出」用的还是上一版提示词、
-                    // 上一版尺寸，用户改了表却看不出任何变化。
-                    const prepared = synchronizeGenerationSpec(item, { prompt, composerContent: prompt, generationResultPlacement: "replace-node", errorDetails: undefined, ...shotPatch });
-                    const row = rowsByNodeId.get(item.id);
-                    const signature = row ? ecommerceResultSourceSignature(suiteNode, row, prepared, graphNodes, graphConnections) : undefined;
-                    return {
-                        ...prepared,
-                        metadata: {
-                            ...resetGenerationTaskMetadata(prepared.metadata),
-                            ecommerceRunId: runId,
-                            batchSourceNodeId: suiteNode.id,
-                            batchRowId: row?.slotId,
-                            batchInputSignature: signature,
-                            batchResultInputSignature: undefined,
-                        },
-                    };
+                    const prepared = preparedById.get(item.id);
+                    if (prepared) return prepared;
+                    if (autoBind && completeRun && bindingNodeIdSet.has(item.id)) return { ...item, metadata: { ...item.metadata, ecommerceRunId: runId } };
+                    return item;
                 }),
                 // 新铺的节点由 ecommerceSuiteTargets 带上自己的提示词与参数——
                 // 它们进不了上面那个循环（上面只走画布上已有的节点），
@@ -3120,8 +3120,9 @@ ${instruction.trim()}`
                             if (beforeOwns) (restored as Record<string, unknown>)[key] = beforeMetadata[key];
                             else delete (restored as Record<string, unknown>)[key];
                         }
-                        if (!restored) return [item];
-                        return [{ ...item, metadata: Object.keys(restored).length || before.metadata ? restored : undefined }];
+                        const title = item.title === applied.title ? before.title : item.title;
+                        if (!restored && title === item.title) return [item];
+                        return [{ ...item, title, ...(restored ? { metadata: Object.keys(restored).length || before.metadata ? restored : undefined } : {}) }];
                     }),
                 );
                 if (addedConnections.size) setConnections((current) => current.filter((connection) => connectionsBefore.has(connection) || !addedConnections.has(connection)));
@@ -3168,22 +3169,22 @@ ${instruction.trim()}`
                 message.warning("请先选择支持看图的分析模型");
                 return;
             }
-            const skillIds = source.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId];
             const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig, { analysisModel }).analysisModel;
-            const snapshot = ecommerceAnalysisSnapshot(source, product, nodesRef.current, connectionsRef.current, resolvedAnalysisModel, skillIds);
+            const snapshot = ecommerceAnalysisSnapshot(source, product, nodesRef.current, connectionsRef.current, resolvedAnalysisModel);
             const flow = ecommerceOneClickFlow(flowId)!;
             const previousRows = ecommerceSuiteRows(flow, source.metadata?.ecommerceSuitesByFlow?.[flowId] || source.metadata?.ecommerceSuite);
             const count = source.metadata?.ecommerceBrief?.imageCount || refs.length;
             if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error("参考套图张数须为 1–30 张");
             const requestedRows = ecommerceBriefRows(flow, previousRows, { imageCount: count });
+            const platformId = resolveEcommercePlatformId(source.metadata?.ecommerceBrief?.platform || source.metadata?.ecommercePlatform || product.metadata?.ecommercePlatform);
             const prompt = [
-                ecommerceSuiteDraftPrompt(flow, product.metadata?.productProfile, requestedRows),
-                ecommerceBriefBlock(source.metadata?.ecommerceBrief),
+                ecommerceSuiteDraftPrompt(flow, product.metadata?.productProfile, requestedRows, undefined, { platformId }),
+                ecommerceBriefBlock(source.metadata?.ecommerceBrief, flow.id),
                 `根据独立视觉参考图的顺序反推 ${count} 张套图。只借鉴叙事顺序、构图、布光、配色与文字层级，主体始终是当前商品。不得把参考图的参数、认证、价格、品牌、人物身份或卖点当成商品事实。输出可以直接生成的新画面提示词；整套视觉一致。`,
             ]
                 .filter(Boolean)
                 .join(String.fromCharCode(10, 10));
-            const text = await runEcommerceTextDraft(product, prompt, resolvedAnalysisModel, skillIds, true, flowId);
+            const text = await runEcommerceTextDraft(product, prompt, resolvedAnalysisModel, true, flowId);
             if (text === undefined) return;
             const parsed = parseEcommerceSuiteDraft(text, flow);
             if (!parsed) {
@@ -3199,8 +3200,8 @@ ${instruction.trim()}`
             const latest = nodesRef.current.find((item) => item.id === source.id);
             const latestProduct = nodesRef.current.find((item) => item.id === product.id);
             const latestAnalysisModel = latest ? resolveEcommerceTableModels(effectiveConfigRef.current, { analysisModel: latest.metadata?.ecommerceAnalysisModel }).analysisModel : undefined;
-            if (!latest || !latestProduct || ecommerceAnalysisSnapshot(latest, latestProduct, nodesRef.current, connectionsRef.current, latestAnalysisModel, latest.metadata?.ecommerceAnalysisSkillsByFlow?.[flowId]) !== snapshot) {
-                message.warning("分析期间模型、Skills、表格、商品资料或参考图已变化，保留当前编辑，请重试");
+            if (!latest || !latestProduct || ecommerceAnalysisSnapshot(latest, latestProduct, nodesRef.current, connectionsRef.current, latestAnalysisModel) !== snapshot) {
+                message.warning("分析期间模型、表格、商品资料或参考图已变化，保留当前编辑，请重试");
                 return;
             }
             const suite = {

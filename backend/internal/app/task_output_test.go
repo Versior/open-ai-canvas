@@ -148,6 +148,63 @@ func TestTaskSummaryPreservesCanvasNodeWithoutExposingInput(t *testing.T) {
 	}
 }
 
+// 详情读模型只投影 metadata，不投影 config；summary 不携带任何完整输入。
+// ecommerceTextMode 缺失时保持缺失（unknown），不得由读路径补默认值。
+func TestTaskOutputKeepsEcommerceTextModeInDetailOnly(t *testing.T) {
+	for _, mode := range []string{"model", "local", ""} {
+		name := mode
+		if name == "" {
+			name = "missing"
+		}
+		t.Run(name, func(t *testing.T) {
+			metadata := map[string]any{"source": "canvas"}
+			if mode != "" {
+				metadata["ecommerceTextMode"] = mode
+			}
+			inputJSON, err := json.Marshal(map[string]any{
+				"mode":     "image",
+				"metadata": metadata,
+				"config":   map[string]any{"apiKey": "enc:v1:placeholder-ciphertext"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			task := model.Task{ID: "task-mode-" + name, ProjectID: "project-1", Type: "canvas_image", InputJSON: string(inputJSON)}
+
+			detail := taskForOutput(task)
+			var detailInput map[string]any
+			if err := json.Unmarshal([]byte(detail.InputJSON), &detailInput); err != nil {
+				t.Fatalf("detail input is not valid JSON: %v", err)
+			}
+			if _, exists := detailInput["config"]; exists {
+				t.Fatalf("detail exposed provider config: %#v", detailInput)
+			}
+			detailMetadata, _ := detailInput["metadata"].(map[string]any)
+			value, exists := detailMetadata["ecommerceTextMode"]
+			if mode == "" && exists {
+				t.Fatalf("detail invented ecommerceTextMode: %#v", detailMetadata)
+			}
+			if mode != "" && value != mode {
+				t.Fatalf("detail ecommerceTextMode = %#v, want %q", value, mode)
+			}
+
+			encoded, err := json.Marshal(taskSummaryForOutput(task))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var summary map[string]any
+			if err := json.Unmarshal(encoded, &summary); err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"inputJson", "config", "metadata", "apiKey"} {
+				if _, exists := summary[key]; exists {
+					t.Fatalf("summary leaked %s: %s", key, encoded)
+				}
+			}
+		})
+	}
+}
+
 func TestTaskClientContextProjectsChapterOperations(t *testing.T) {
 	characters := taskClientContext(`{"metadata":{"domainProjectId":"project-1","chapterId":"chapter-1","operation":"chapter_character_breakdown"}}`)
 	if characters == nil || characters.DomainProjectID != "project-1" || characters.ChapterID != "chapter-1" || characters.ChapterOperation != "characters" {

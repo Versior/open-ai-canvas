@@ -4677,7 +4677,7 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 已实现：电商项目默认进入快捷模式，普通画布保持专业模式；顶栏可双向切换，快捷模式收起高级电商节点、完整提示词、Skills、复杂模型参数和生图台，且模式与面板状态按项目隔离。
 - 已实现：商品图片识别结果先进入可编辑草稿，用户确认后再写入商品资料；商品实拍或当前分析模型变化后拒绝应用旧识别草稿，套图分析把分析模型、Skills 和参考输入纳入快照，分析期间变化时拒绝回写旧结果；取消选择、非图片或非法文件不会遗留空节点。
 - 已实现：套图故事板支持逐屏启用或跳过、增删与排序、单屏或批量生成、候选预览与采用；跳过不会删除提示词、结果和候选版本，重新分析时保留跳过屏及其原位置。
-- 已实现：标题、副标题、价格和 CTA 与底图独立保存，并提供六种内置版式；图片模型只生成无字、无 Logo、无水印底图，预览与导出统一使用本地确定性文字排版，用户可继续调整文案和版式。
+- 已实现：标题、副标题、价格和 CTA 与视觉提示词独立保存，并提供六种内置版式。详情页 `model` 模式让图片模型同时生成确认文案与画面；只有结果明确标记为 `local` 且与实际资源匹配时，预览、ZIP 与装订才本地叠字一次。历史无标记结果保持原图；两种模式都保留商品自身的 Logo、包装文字和铭牌。
 - 已实现：文案编辑先即时更新本地草稿，再以 `250ms` debounce 持久化；离焦以及关闭、分析、参考套图分析、生成和导出前强制提交待写文案，避免最后一次输入丢失或拿旧文案执行。
 - 已实现：候选预览按图片真实宽高比展示，不再把横图、竖图统一塞进方形缩略框。
 - 已实现：长图合成先按顺序逐张解码尺寸并释放，再按顺序逐张解码绘制并释放；切片直接从同一长图 Canvas 裁切，不再把长图 data URL 重新解码。长图限制单边不超过 `32767` 像素、总像素不超过 `16000000`，成功或失败都会释放图片与 Canvas 资源。
@@ -4687,13 +4687,47 @@ SQLite 与 HTTP recorder 已验证；PostgreSQL 16／17、前端构建及浏览�
 - 已实现：电商视频节点明确只接收图片、文本和视频输入，不接受音频；仅有 `storageKey`、没有内联内容的 storage-only 视频也可用真实 `@视频1` 引用执行结构反推，爆款模板的 `beat.purpose` 会进入最终生成 Prompt。
 - 已实现：单个商品节点的输入锚点共用一套 `ResizeObserver`、捕获阶段滚动监听和 RAF，由一个 RAF 批量测量全部锚点；折叠区的隐藏或零尺寸锚点不会覆盖最后一次有效坐标，商品连接点可用 Enter 或 Space 键触发。
 - 已实现：计划张数仅约束本轮启用生成的屏次；跳过屏继续保留在编辑表中，不再造成模型输出和页面校验数量冲突。
-- 已验证（合并前基线，待合并后刷新）：电商与画布专项测试 `218 pass`、`0 fail`、`1571 expect()`。
-- 已验证（合并前基线，待合并后刷新）：前端完整测试 `3517 pass`、`12 skip`、`0 fail`、`44244 expect()`，共 `3529 tests / 453 files`。
-- 已验证（合并前基线，待合并后刷新）：`bun run typecheck`、`bun run lint`、`bun run build` 通过；构建转换 `15773` 个模块，耗时 `10.07s`。仍有既存的动态导入无法拆包和大于 500 kB chunk 警告。
+- 历史验证记录（合并前基线，不代表本轮结果）：电商与画布专项测试 `218 pass`、`0 fail`、`1571 expect()`。
+- 历史验证记录（合并前基线，不代表本轮结果）：前端完整测试 `3517 pass`、`12 skip`、`0 fail`、`44244 expect()`，共 `3529 tests / 453 files`。
+- 历史验证记录（合并前基线，不代表本轮结果）：`bun run typecheck`、`bun run lint`、`bun run build` 通过；构建转换 `15773` 个模块，耗时 `10.07s`。仍有既存的动态导入无法拆包和大于 500 kB chunk 警告。
+
+本轮续作（2026-10-29）：
+
+- 默认详情页十屏、每屏 `3:4`；只迁移严格匹配的旧九屏骨架，不补回用户删除的行。九段规划仍保留，营销文字只存 `copy`，视觉描述只存 `prompt`，统一编译七项出图提示词；无法无损拆分的旧行仍可预览，重新规划后才能生成。
+- 当前行先同步到准备节点，再计算签名、冻结快照并入队；相机、质感和用户追加要求不被去重逻辑吞掉。请求冻结文字模式，成功媒体按实际 `storageKey` 绑定模式；失败、取消不污染旧图，采用历史版本同时恢复模式和两个来源签名。
+- 自动技能按当前用户可见目录的 `HasMore` 完整分页并去重，尝试前 20 个相关候选，最多注入两份、每份 5000 rune；可选目录或候选故障降级，权限、取消和能力禁用仍拒绝执行。六个本地技能来源与 Hypit 只读核验已记录在 `.workflow/specs/learnings.md`；不整库导入、不接入 Hypit。
+- 平台规则未具备官方来源、核验日期和适用范围时只警告；比例使用项目自定的 1% 相对容差，允许比例列表优先，不削弱详情页自身 `3:4` 合同。快捷工具仅补回 Image/Text，不视为开放全部专业功能。
+- Gemini 图片链路和 OpenAI Images 的生成、编辑链路已用本地模拟上游验证后台图片指令。OpenAI 插件包同步了提示词映射及内嵌文档，无指令时不改变原提示词。真实 `processTask` 回归覆盖用户任务输入不回写、公共返回不含私有指令、成功与上游错误的持久 API 日志脱敏及 HTTP 状态保留；管理员设置仍按原设计持久化。
+- 已知协议边界：其他未映射 `request.instructions` 的声明式图片插件仍不会转发后台图片指令，并非仅仅“尚未测试”。本轮未扩改这些插件，也未验证已部署插件的安装或升级。
+
+本轮实际自动验证：
+
+| 范围与命令 | 结果 |
+| --- | --- |
+| `web/`：`bun.cmd test ecommerce --timeout 120000` | 750 pass / 0 fail，51 个测试文件，退出码 0 |
+| `web/`：`bun.cmd run typecheck`、`bun.cmd run lint`、`bun.cmd run build` | 分别退出码 0；Vite 构建 6.06 秒，保留既存动态导入与大 chunk 警告 |
+| `web/`：`bun.cmd test --timeout 120000` | 3798 pass / 12 skip / 1 fail，469 个测试文件，退出码 1；不是全绿 |
+| `backend/`：`go test ./internal/app -run 'Test.*Ecommerce\|TestCloudAgent(SkillSearch\|SkillCatalog\|MarketplaceSearch\|PolicyRegistersSkillSearch)' -count=1 -timeout=20m` | `ok`，766.574 秒，退出码 0 |
+| `backend/`：`go test ./internal/app -run '^TestEcommerceImageWorker' -count=1 -timeout=15m` | `ok`，172.873 秒，退出码 0 |
+| `backend/`：`go test ./internal/protocol -run '^TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins$' -count=1` | `ok`，1.710 秒，退出码 0 |
+| `backend/`：`go test ./internal/skills -count=1 -timeout=10m` | `ok`，88.771 秒，退出码 0 |
+| `backend/`：`go test ./... -count=1 -timeout=20m` | 退出码 1；`internal/app` 包达到 20 分钟上限，其他有测试的包均输出 `ok`，不能报告全量通过 |
+| `backend/`：`go vet ./...`、`go build ./...` | 分别退出码 0，耗时 15.650 秒和 40.028 秒 |
+| `backend/`：`go test ./internal/app -run '^TestCloudAgentMediaApprovalAllowsMovesButRejectsContentChanges$' -count=1 -timeout=3m` | 超时时正在运行的用例单独复跑 `ok`，19.116 秒，退出码 0；不替代全量回归 |
+| `web/`：`node --input-type=module -`，调用 `@mdx-js/mdx` 的 `compile(..., { format: "mdx" })` | 两篇修改后的 MDX 均输出 `MDX_OK`，退出码 0；不是文档站完整构建 |
+
+前端唯一失败是 `web/test/canvas-resource-mention-editor.test.ts:132` 的旧文案断言：仍期待“用 / 或 、 引用 Skills”，实际组件已是“输入操作指导；用 @ 引用画布节点，Agent 会自动匹配所需技能”。组件与本轮起点备份的 SHA256 相同；未为凑全绿修改这处既有差异。上述日志保存在 Git 忽略的 `.local/ecommerce-continuation-20261029-01/`，不作为发布文件。
+
+后端全量使用 Go 1.27.0（模块声明最低 Go 1.25.0）。`internal/app` 超时时正在运行 `TestCloudAgentMediaApprovalAllowsMovesButRejectsContentChanges/prompt`，父用例仅运行 3 秒；该父用例随后单独复跑通过。这是包级总时限触发，不等于该用例自身运行了 20 分钟，也不能据此认定全部未完成用例正常。
+
+当前工作树没有 `docs/package.json` 或 `docs/node_modules`，无法执行文档站的 `types:check` 或完整构建。文档语法检查改用 `web/` 已安装的 `@mdx-js/mdx`，逐篇编译本轮修改的 `features.mdx` 与 `pending-test.mdx`，不安装依赖；此检查不替代完整文档站验收。
+
+图片隐私专项直接调用 `processTask`，验证其返回值及此时的任务输入和 API 日志；没有走完 `task_worker` 的队列终态、`ResultJSON` 最终落库与计费流程，不能据此宣称这些端到端环节已验收。
 
 仍待验收：
 
 - [ ] 在真实桌面与移动浏览器中检查快捷／专业模式切换、商品识别草稿、故事板、候选预览、六种版式、长图与 ZIP 导出的视觉和交互结果。
 - [ ] 使用真实触屏与屏幕阅读器验收拖拽、排序、折叠区、焦点顺序、状态播报和关键操作的可达性。
-- [ ] 使用付费模型验收真实商品识别、卖点文案、无字底图生成、候选重试、计费幂等与失败恢复。
+- [ ] 使用付费模型验收真实商品识别、卖点文案、详情页文字与画面同出、`local` 无字底图、候选重试、计费幂等与失败恢复。
 - [ ] 在 GitHub Actions 中验收质量工作流与功能分支镜像发布；本地和服务器不构建镜像。
+- [ ] 在目标部署核对实际安装的 OpenAI Images 插件并验收后台图片指令；其他声明式图片插件需要各自补齐指令映射后再验收。本轮未启动开发服务、未付费生成、未部署或发布。

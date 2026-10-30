@@ -82,6 +82,10 @@ type cloudAgentState struct {
 	ConfirmationFingerprints       []string                  `json:"confirmationFingerprints,omitempty"`
 	PendingConfirmationFingerprint string                    `json:"pendingConfirmationFingerprint,omitempty"`
 	Skills                         []cloudAgentSkill         `json:"skills,omitempty"`
+	// SkillReferences 是本轮经 skill_search 检索并冻结的广场参考技能（公开或自建，未安装）。
+	// 与 Skills（用户固定）和 SkillVersions（已安装 opt-in 池）分开保存：参考技能只允许按
+	// 冻结的版本/哈希只读引用，不得进入已安装技能的可读范围。
+	SkillReferences                []cloudAgentSkill         `json:"skillReferences,omitempty"`
 	SkillVersions                  map[string]string         `json:"skillVersions,omitempty"`
 	SkillHints                     string                    `json:"skillHints,omitempty"`
 	Memory                         cloudAgentMemorySnapshot  `json:"memory,omitempty"`
@@ -318,7 +322,7 @@ func (s *Service) cloudAgentTask(userID, id string) (*model.Task, cloudAgentStat
 	if task.ID != cloudAgentID(userID, state.Request.IdempotencyKey) || task.ProjectID != state.Request.CanvasID {
 		return nil, input.Agent, kernel.NotFound("Agent 运行不存在")
 	}
-	input.Agent = cloudAgentState{Version: 1, Request: state.Request, ParentID: state.ParentID, Fingerprint: state.Fingerprint, CreativeAnchor: state.CreativeAnchor, ConfirmationRounds: state.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), state.ConfirmationFingerprints...), PendingConfirmationFingerprint: state.PendingConfirmationFingerprint, Skills: state.Skills, SkillVersions: state.SkillVersions, SkillHints: state.SkillHints, Memory: state.Memory, Profile: state.Profile, Policy: state.Policy}
+	input.Agent = cloudAgentState{Version: 1, Request: state.Request, ParentID: state.ParentID, Fingerprint: state.Fingerprint, CreativeAnchor: state.CreativeAnchor, ConfirmationRounds: state.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), state.ConfirmationFingerprints...), PendingConfirmationFingerprint: state.PendingConfirmationFingerprint, Skills: state.Skills, SkillReferences: state.SkillReferences, SkillVersions: state.SkillVersions, SkillHints: state.SkillHints, Memory: state.Memory, Profile: state.Profile, Policy: state.Policy}
 	return task, input.Agent, nil
 }
 
@@ -522,7 +526,16 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	// 持久化：工具授权每步都从落库状态重建，运行期间不再变化，客户端传入值被忽略。
 	req.VisionEnabled = s.cloudAgentVisionEnabled(req)
 	req.DramaLinked = len(req.ContextScope) != 0 && dramaLinkedCanvas(s.repo, canvas)
+	// 技能工具对本轮可见的条件：有已安装的可自动发现技能，或广场里存在可参考的技能
+	// （公开/自建，不安装）。后者让「用户没有预装技能」时仍能检索参考。
 	req.SkillsEnabled = len(skillPool.Versions) > 0
+	if !req.SkillsEnabled {
+		referencesAvailable, err := s.cloudAgentSkillReferencesAvailable(userID)
+		if err != nil {
+			return nil, err
+		}
+		req.SkillsEnabled = referencesAvailable
+	}
 	req.MemoryMode = memory.Mode
 	canvasSummary := ""
 	if len(req.ContextScope) != 0 {

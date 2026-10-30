@@ -10,7 +10,7 @@ import { buildGenerationConfig, isGenerationCanceled } from "@/lib/canvas/canvas
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
 import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-batch";
 import { canvasGenerationInputPrompt } from "@/lib/canvas/canvas-generation-input-prompt";
-import { resolveCanvasBatchInputContext } from "@/lib/canvas/canvas-batch-input-snapshot";
+import { resolveCanvasBatchInputContext, resolveFrozenEcommerceTextMode } from "@/lib/canvas/canvas-batch-input-snapshot";
 import { buildTextRewritePrompt } from "@/lib/prompts";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { generationFailureMetadata } from "@/lib/generation-error";
@@ -174,8 +174,17 @@ export function useCanvasGenerationExecutor({
                     const markSourceStatus = !sourceNode?.metadata?.content && !editingTextNode;
                     let generationPrompt = options?.inputSnapshot?.context.prompt ?? canvasGenerationInputPrompt(sourceNode, mode, prompt);
                     const customModels = useEcommerceModelLibrary.getState().models;
-                    const ecommerceInputs: EcommerceGenerationInputs = mode === "image" && !options?.inputSnapshot ? resolveEcommerceInputs(nodeId, nodesRef.current, connectionsRef.current, customModels) : { sources: {}, prompt: "", referenceImages: [] };
-                    if (ecommerceInputs.prompt) generationPrompt = mergeEcommercePrompt(ecommerceInputs.prompt, generationPrompt);
+                    const ecommerceInputs: EcommerceGenerationInputs = mode === "image" && !options?.inputSnapshot ? resolveEcommerceInputs(nodeId, nodesRef.current, connectionsRef.current, customModels) : { sources: {}, prompt: "", referenceImages: [], copy: { source: "none" } };
+                    // 有快照就只认快照里冻结的那一份：排队后画布再改，重试也不能跟着漂。
+                    const ecommerceTextMode = mode === "image" ? resolveFrozenEcommerceTextMode(options?.inputSnapshot, () => ecommerceInputs.textMode) : undefined;
+                    const ecommerceIssue = options?.inputSnapshot ? options.inputSnapshot.ecommerceIssue : ecommerceInputs.issue;
+                    // 共享解析只负责标出「这一行不能生成」，拒绝必须在这里真的拦下，
+                    // 否则旧详情行的提示词会照样进模型。
+                    if (ecommerceIssue) {
+                        failPreflight(new Error(ecommerceIssue));
+                        return;
+                    }
+                    if (ecommerceInputs.prompt) generationPrompt = mergeEcommercePrompt(ecommerceInputs.prompt, generationPrompt, { visualPrompt: ecommerceInputs.sources.visualPrompt });
                     const isPreparingEmptyImage = mode === "image" && sourceNode?.type === CanvasNodeType.Image && !sourceNode.metadata?.content;
                     const preparationController = startGenerationRequest(nodeId, nodeId, nodeId, options?.controller);
                     requestController = preparationController;
@@ -417,6 +426,8 @@ export function useCanvasGenerationExecutor({
                             skillMetadata: skillExecution.metadata,
                             taskContext: options?.context,
                             retryContext: options?.retryContext,
+                            ecommerceTextMode,
+                            ecommerceIssue,
                             setNodes,
                             setConnections,
                             setSelectedNodeIds,

@@ -17,6 +17,8 @@ func TestGmailMailboxRegistrationConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&model.User{}, &model.EmailVerificationCode{}); err != nil {
 		t.Fatal(err)
 	}
