@@ -125,6 +125,9 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		{72, referralCenterMigrationName, upstreamReferralCenterMigrationChecksum, migrateReferralCenter, time.Date(2026, 10, 27, 9, 0, 0, 0, time.UTC)},
 		{73, dramaEpisodeSourceFormatMigrationName, dramaEpisodeSourceFormatMigrationChecksum, migrateDramaEpisodeSourceFormat, time.Date(2026, 10, 27, 9, 1, 0, 0, time.UTC)},
 		{74, dramaSegmentReferencesMigrationName, dramaSegmentReferencesMigrationChecksum, migrateDramaSegmentReferences, time.Date(2026, 10, 27, 9, 2, 0, 0, time.UTC)},
+		{75, userGroupsPricingCurrencyMigrationName, userGroupsPricingCurrencyMigrationChecksum, migrateUserGroupsPricingCurrency, time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)},
+		{76, agentMemoryDocumentSkillDiscoveryMigrationName, agentMemoryDocumentSkillDiscoveryMigrationChecksum, migrateAgentMemoryDocumentSkillDiscovery, time.Date(2026, 10, 28, 9, 1, 0, 0, time.UTC)},
+		{77, agentMemoryDocumentColumnsMigrationName, agentMemoryDocumentColumnsMigrationChecksum, migrateAgentMemoryDocumentColumns, time.Date(2026, 10, 28, 9, 2, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -157,7 +160,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 76 {
+	if CurrentSchemaVersion != 79 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -166,6 +169,9 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 74, Name: referralCenterMigrationName, Checksum: referralCenterMigrationChecksum},
 		{Version: 75, Name: dramaEpisodeSourceFormatMigrationName, Checksum: dramaEpisodeSourceFormatMigrationChecksum},
 		{Version: 76, Name: dramaSegmentReferencesMigrationName, Checksum: dramaSegmentReferencesMigrationChecksum},
+		{Version: 77, Name: userGroupsPricingCurrencyMigrationName, Checksum: userGroupsPricingCurrencyMigrationChecksum},
+		{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
+		{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -200,7 +206,7 @@ func TestMigrateSchemaPreservesForkSchema74(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			if err := MigrateSchema(db); err != nil {
@@ -212,6 +218,9 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 74, Name: referralCenterMigrationName, Checksum: referralCenterMigrationChecksum, AppliedAt: applied[72]},
 				{Version: 75, Name: dramaEpisodeSourceFormatMigrationName, Checksum: dramaEpisodeSourceFormatMigrationChecksum, AppliedAt: applied[73]},
 				{Version: 76, Name: dramaSegmentReferencesMigrationName, Checksum: dramaSegmentReferencesMigrationChecksum, AppliedAt: applied[74]},
+				{Version: 77, Name: userGroupsPricingCurrencyMigrationName, Checksum: userGroupsPricingCurrencyMigrationChecksum, AppliedAt: applied[75]},
+				{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, AppliedAt: applied[76]},
+				{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum, AppliedAt: applied[77]},
 			} {
 				requireMigration(t, db, want)
 			}
@@ -316,6 +325,27 @@ func TestMigrateSchemaRejectsUpstreamLedgerWithoutPhysicalSchema(t *testing.T) {
 		{"segment references column", 74, func(db *gorm.DB) error {
 			return db.Migrator().DropColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON")
 		}},
+		{"user group table", 75, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserGroup{}) }},
+		{"memory document table", 76, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.AgentMemoryDocument{}) }},
+		{"memory sequence column", 77, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.AgentMemoryDocument{}, "NextEntrySeq") }},
+		{"user group channel table", 75, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserGroupChannel{}) }},
+		{"user group index", 75, func(db *gorm.DB) error { return db.Migrator().DropIndex(&model.User{}, "UserGroup") }},
+		{"user group column", 75, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.User{}, "UserGroup") }},
+		{"channel model price currency column", 75, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.ChannelModel{}, "PriceCurrency")
+		}},
+		{"topup product currency column", 75, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.TopupProduct{}, "Currency")
+		}},
+		{"billing order user group column", 75, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "UserGroup")
+		}},
+		{"billing order price currency column", 75, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "PriceCurrency")
+		}},
+		{"billing order currency rate column", 75, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "CurrencyRateMicrocredits")
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -342,6 +372,25 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 		{"episode source column", 75, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaEpisode{}, "SourceFormat") }},
 		{"segment references column", 76, func(db *gorm.DB) error {
 			return db.Migrator().DropColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON")
+		}},
+		{"user group table", 77, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserGroup{}) }},
+		{"user group channel table", 77, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserGroupChannel{}) }},
+		{"user group index", 77, func(db *gorm.DB) error { return db.Migrator().DropIndex(&model.User{}, "UserGroup") }},
+		{"user group column", 77, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.User{}, "UserGroup") }},
+		{"channel model price currency column", 77, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.ChannelModel{}, "PriceCurrency")
+		}},
+		{"topup product currency column", 77, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.TopupProduct{}, "Currency")
+		}},
+		{"billing order user group column", 77, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "UserGroup")
+		}},
+		{"billing order price currency column", 77, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "PriceCurrency")
+		}},
+		{"billing order currency rate column", 77, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "CurrencyRateMicrocredits")
 		}},
 	}
 	for _, test := range tests {

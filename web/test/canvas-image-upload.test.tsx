@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Window } from "happy-dom";
 import type { AxiosAdapter } from "axios";
-import { createImageUploadPlaceholder, createFileUploadPlaceholder, interruptFileUpload, readUploadImageSize, uploadNodeType, uploadPercent, uploadVeilOpacity } from "../src/lib/canvas/canvas-file-upload";
+import { createImageUploadPlaceholder, createFileUploadPlaceholder, interruptFileUpload, readUploadImageSize, uploadNodeType, uploadPercent, uploadPreviewClarity, uploadVeilOpacity } from "../src/lib/canvas/canvas-file-upload";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 import { isCanvasImageSourceNode } from "../src/lib/canvas/canvas-image-source";
 import { CanvasFileUploadContent } from "../src/components/canvas/canvas-file-upload-content";
@@ -519,6 +519,12 @@ test("真实进度与遮罩浓度反向关联，不生成未知进度", () => {
     expect(uploadVeilOpacity(0)).toBe(1);
     expect(uploadVeilOpacity(50)).toBeCloseTo(0.55);
     expect(uploadVeilOpacity(100)).toBeCloseTo(0.1);
+    // 清晰原图随进度淡入：起点完全磨砂，前段慢后段快，传完仍保留一点磨砂等待保存。
+    expect(uploadPreviewClarity(undefined)).toBe(0);
+    expect(uploadPreviewClarity(0)).toBe(0);
+    expect(uploadPreviewClarity(50)).toBeLessThan(0.3);
+    expect(uploadPreviewClarity(100)).toBeCloseTo(0.88);
+    expect(uploadPreviewClarity(150)).toBeCloseTo(0.88);
 });
 
 test("统一识别图片、视频、音频、纯文本文件，不误收 PDF 或 Word", () => {
@@ -559,5 +565,54 @@ test("所有资源渲染真实百分比，100% 仍等待保存，磨砂渐淡但
         const complete = renderToStaticMarkup(<CanvasFileUploadContent node={{ ...node, metadata: { ...node.metadata, fileUploadProgress: 100 } }} theme={canvasThemes.dark} />);
         expect(complete).toContain("文件已传输，正在保存与处理");
         expect(complete).toContain('aria-busy="true"');
+    }
+});
+
+test("短剧关联顶栏保留电商模式和专业入口", async () => {
+    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+    const { MemoryRouter } = await import("react-router");
+    const { CanvasTopBar } = await import("../src/pages/canvas/canvas-project-top-bar");
+    const noop = () => {};
+    for (const workspaceMode of ["simple", "professional"] as const) {
+        const html = renderToStaticMarkup(
+            <QueryClientProvider client={new QueryClient()}>
+                <MemoryRouter>
+                    <CanvasTopBar
+                        ecommerce
+                        workspaceMode={workspaceMode}
+                        onWorkspaceModeChange={noop}
+                        view="canvas"
+                        onViewChange={noop}
+                        title="电商画布"
+                        titleDraft="电商画布"
+                        isTitleEditing={false}
+                        onTitleDraftChange={noop}
+                        onStartTitleEditing={noop}
+                        onFinishTitleEditing={noop}
+                        onCancelTitleEditing={noop}
+                        canUndo={false}
+                        canRedo={false}
+                        onCreateProject={noop}
+                        onDeleteProject={noop}
+                        onSave={noop}
+                        onImportImage={noop}
+                        onImportLibTV={noop}
+                        onImportTapNow={noop}
+                        onUndo={noop}
+                        onRedo={noop}
+                        onShare={noop}
+                        shortcutRequestNonce={0}
+                        onOpenSearch={noop}
+                        onOpenModelLibrary={noop}
+                        onEnterFocusMode={noop}
+                        projectContext={{ projectId: "demo drama", projectName: "短剧示例", kind: "drama", nodeCount: 3, selectedCount: 0, chapterLabel: "", shotLabel: "" }}
+                    />
+                </MemoryRouter>
+            </QueryClientProvider>,
+        );
+        expect(html).toContain('href="/projects/demo%20drama"');
+        expect(html).toContain("打开短剧制作台：短剧示例");
+        expect(html).toContain(workspaceMode === "simple" ? 'aria-label="快捷创作，切换到专业画布"' : 'aria-label="专业画布，返回快捷创作"');
+        expect(html.includes('aria-label="管理模特库"')).toBe(workspaceMode === "professional");
     }
 });

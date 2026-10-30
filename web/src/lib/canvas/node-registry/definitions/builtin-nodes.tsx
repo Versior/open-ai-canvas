@@ -1,6 +1,8 @@
 import {
     Aperture,
+    ArrowRightLeft,
     BadgeCheck,
+    Blocks,
     ChartColumn,
     Clapperboard,
     Code,
@@ -22,12 +24,10 @@ import {
     Search,
     Settings2,
     Shapes,
-    Sparkles,
     SwatchBook,
     Table2,
     Type,
     Video,
-    WandSparkles,
 } from "lucide-react";
 
 import { NODE_SPECS } from "@/constant/canvas";
@@ -88,7 +88,7 @@ const BUILTIN_NODE_TRAITS = {
     },
     [CanvasNodeType.Skill]: {
         label: "技能",
-        icon: <Sparkles />,
+        icon: <Blocks />,
         minSize: DEFAULT_MIN_SIZE,
         // 技能节点由技能库插入，不占创建菜单格位。
         showInCreateMenu: false,
@@ -188,7 +188,7 @@ const BUILTIN_NODE_TRAITS = {
     [CanvasNodeType.EcommerceStudio]: { label: "电商生图台", icon: <ImageIcon />, minSize: { width: 540, height: 560 }, showInCreateMenu: true, acceptsInputKind: ["image", "text"], inputKind: "text", resourceKind: () => null },
     [CanvasNodeType.MediaConversion]: {
         label: "转换",
-        icon: <WandSparkles />,
+        icon: <ArrowRightLeft />,
         minSize: { width: 400, height: 360 },
         showInCreateMenu: true,
         resourceKind: (node: CanvasNodeData) => {

@@ -141,6 +141,11 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 			snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "私人电商库", ID: userID, Title: "我的模特与花型", PrimaryJSON: library.PayloadJSON})
 		}
 	}
+	dramaReferences, err := r.DramaResourceReferences(userID, resourceIDs)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Direct = append(snapshot.Direct, dramaReferences...)
 	var leases []model.CloudAgentResourceLease
 	if err := r.db.Where("user_id = ? AND resource_id IN ? AND expires_at > ?", userID, resourceIDs, time.Now()).Find(&leases).Error; err != nil {
 		return snapshot, err

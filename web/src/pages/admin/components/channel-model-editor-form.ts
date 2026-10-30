@@ -9,6 +9,7 @@ import { initializeImageRatioDefaults, resolveImageParameters } from "@/lib/imag
 import { findProtocolWorkflow, resolveWorkflowVideoScreenSpec } from "@/lib/video-screen-specs";
 import { defaultPriceTier, legacyPriceTierToForm, normalizeUpstreamModelKey, priceTierToForm, type PriceTierFormValues } from "./channel-model-price-tier-form";
 import { applyModelMetadataPreset, matchingModelPresets, modelFamilyIdentity, modelMatchScore, presetApplicationError, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
+import type { PriceCurrency } from "@/services/api/user-groups";
 
 export type ChannelModelFormValues = {
     modelKey: string;
@@ -21,6 +22,8 @@ export type ChannelModelFormValues = {
     capability: ModelCapabilityChoice;
     protocol?: string;
     priceTiers: PriceTierFormValues[];
+    /** 售价单位；成本价始终以积分计。 */
+    priceCurrency: PriceCurrency;
     enabled: boolean;
     capabilityConfig?: ModelCapabilityConfig;
 };
@@ -31,7 +34,7 @@ export function copyChannelModelPrices(values: ChannelModelFormValues, source: C
     if (source.capability !== values.capability) throw new Error("请选择相同能力的模型复制价格");
     const tiers = source.priceTiers?.length ? source.priceTiers.map((tier) => priceTierToForm(tier, source.capabilityConfig?.image, source.protocol)) : [legacyPriceTierToForm(source)];
     if (source.protocol !== values.protocol && tiers.some((tier) => tier.matchMode === "advanced")) throw new Error("规格价格需要相同调用协议，请选择同协议模型，或手动配置规格条件");
-    const next = { ...values, priceTiers: tiers.map((tier) => ({ ...structuredClone(tier), providerModelKey: "" })) };
+    const next = { ...values, priceCurrency: source.priceCurrency || "credits", priceTiers: tiers.map((tier) => ({ ...structuredClone(tier), providerModelKey: "" })) };
     validateChannelModelPrices(next);
     return next;
 }
@@ -53,6 +56,7 @@ export function autoConfigureChannelModel(values: ChannelModelFormValues, models
     for (const key of ["displayName", "capability", "protocol", "capabilityConfig", "icon", "priceTiers"] as const) {
         if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(blank[key]) });
     }
+    if (!protectedFields.has("priceTiers") && !protectedFields.has("priceCurrency")) next.priceCurrency = blank.priceCurrency;
     const sources: string[] = [];
     if (template && (!protectedFields.has("capability") || values.capability === template.capability) && (!protectedFields.has("protocol") || values.protocol === template.protocol)) {
         const defaults = initialChannelModelValues(template, protocols);
@@ -63,8 +67,9 @@ export function autoConfigureChannelModel(values: ChannelModelFormValues, models
             }
             if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(defaults[key]) });
         }
-        if (!protectedFields.has("priceTiers") && (!protectedFields.has("protocol") || values.protocol === template.protocol) && (template.priceConfigured || template.priceTiers?.some((tier) => tier.priceConfigured))) {
+        if (!protectedFields.has("priceTiers") && (!protectedFields.has("priceCurrency") || values.priceCurrency === defaults.priceCurrency) && (!protectedFields.has("protocol") || values.protocol === template.protocol) && (template.priceConfigured || template.priceTiers?.some((tier) => tier.priceConfigured))) {
             next.priceTiers = defaults.priceTiers.map((tier) => ({ ...tier, providerModelKey: "" }));
+            next.priceCurrency = defaults.priceCurrency;
             sources.push(`接口和价格参考 ${template.providerModelKey || template.modelKey}`);
         } else sources.push(`接口参考 ${template.providerModelKey || template.modelKey}`);
     }
@@ -118,6 +123,7 @@ export function initialChannelModelValues(item: ChannelModel | null, protocols: 
         capability,
         protocol,
         priceTiers: item ? (item.priceTiers?.length ? item.priceTiers.map((tier) => priceTierToForm(tier, capabilityConfig?.image, protocol)) : [legacyPriceTierToForm(item)]) : [defaultPriceTier()],
+        priceCurrency: item?.priceCurrency || "credits",
         enabled: item?.enabled ?? true,
         capabilityConfig,
     };

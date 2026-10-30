@@ -293,8 +293,12 @@ func TestMigrateSchemaV35UpgradesExistingDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := db.Migrator().CreateIndex(&model.User{}, "IsPromoter"); err != nil {
-		t.Fatal(err)
+	// DropColumn on SQLite rebuilds the whole users table, so every users index
+	// disappears. Restore the ones the simulated old schema already had.
+	for _, index := range []string{"IsPromoter", "UserGroup"} {
+		if err := db.Migrator().CreateIndex(&model.User{}, index); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Migrator().DropColumn(&model.EmailVerificationCode{}, "attempts"); err != nil {
 		t.Fatal(err)

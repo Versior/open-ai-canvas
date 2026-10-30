@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { CanvasCreateCommand } from "../src/components/canvas/canvas-create-menu";
 
 const component = readFileSync(new URL("../src/components/canvas/canvas-workspace-overlays.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8");
@@ -63,10 +64,40 @@ test("add-node submenu uses a four-column medium-size grid", () => {
     const menu = readFileSync(new URL("../src/components/canvas/canvas-create-menu.tsx", import.meta.url), "utf8");
     const context = readFileSync(new URL("../src/components/canvas/canvas-context-menu.tsx", import.meta.url), "utf8");
     const styles = readFileSync(new URL("../src/styles/globals.css", import.meta.url), "utf8");
-    expect(menu).toContain('variant === "node" ? "grid-cols-4"');
-    expect(menu).toContain("size-6 shrink-0");
+    expect(menu).toContain('aria-label={group.title || "创作节点"} className="mt-1 grid grid-cols-4 gap-0.5"');
+    expect(menu).toContain("size-9 shrink-0");
     expect(context).toContain("w-[360px]");
-    expect(styles).toContain("--canvas-create-node-height: var(--space-16)");
+    expect(styles).toContain("--canvas-create-node-height: calc(var(--space-16) + var(--space-3))");
+});
+
+test("add-node submenu keeps ecommerce groups with the unified workflow and resource footer", () => {
+    const menu = readFileSync(new URL("../src/components/canvas/canvas-create-menu.tsx", import.meta.url), "utf8");
+    expect(menu.includes("groupedNodeCommands.map((group) => (")).toBe(true);
+    expect(menu.includes("group.commands.map((command) => (")).toBe(true);
+    expect(menu.includes('aria-label="工作流与导入资源"')).toBe(true);
+    expect(menu.includes("const footerCommands =")).toBe(true);
+    expect(menu.includes("const vars =")).toBe(true);
+});
+
+test("add-node submenu renders ecommerce groups first and keeps the upstream footer", async () => {
+    const [{ createElement }, { renderToStaticMarkup }, { CanvasCreateMenu }] = await Promise.all([import("react"), import("react-dom/server"), import("../src/components/canvas/canvas-create-menu")]);
+    const onClick = () => {};
+    const commands: CanvasCreateCommand[] = [
+        { id: "text", label: "文本", icon: null, section: "node", onClick },
+        { id: "product", label: "商品", icon: null, section: "node", group: "商品与约束", onClick },
+        { id: "upload", label: "上传", icon: null, section: "resource", onClick },
+        { id: "aplus", label: "A+ 内容", icon: null, section: "node", group: "成片与交付", badge: "Beta", onClick },
+        { id: "image", label: "图片", icon: null, section: "node", onClick },
+        { id: "workflow", label: "工作流", icon: null, section: "workflow", onClick },
+    ];
+    const markup = renderToStaticMarkup(createElement(CanvasCreateMenu, { commands }));
+    expect([...markup.matchAll(/role="group" aria-label="([^"]+)"/g)].map((match) => match[1])).toEqual(["商品与约束", "成片与交付", "创作节点", "工作流与导入资源"]);
+    expect(markup).toContain('title="A+ 内容（Beta）"');
+    expect(markup).toContain("--create-track-hover:");
+    expect(markup.indexOf('title="工作流"')).toBeLessThan(markup.indexOf('title="上传"'));
+    const freeformMarkup = renderToStaticMarkup(createElement(CanvasCreateMenu, { commands: commands.filter((command) => command.id === "text" || command.id === "image") }));
+    expect(freeformMarkup).toContain('aria-label="创作节点"');
+    expect(freeformMarkup).not.toContain("<h3");
 });
 
 test("only the active option expands; stationary pointer retargeting cannot switch rows", () => {

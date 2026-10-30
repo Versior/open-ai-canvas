@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 76
+const CurrentSchemaVersion int64 = 79
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -44,6 +44,12 @@ const dramaEpisodeSourceFormatMigrationName = "drama_episode_source_format"
 const dramaEpisodeSourceFormatMigrationChecksum = "sha256:drama-episode-source-format-v73-20261027"
 const dramaSegmentReferencesMigrationName = "drama_segment_references"
 const dramaSegmentReferencesMigrationChecksum = "sha256:drama-segment-references-v74-20261027"
+const userGroupsPricingCurrencyMigrationName = "user_groups_pricing_currency"
+const userGroupsPricingCurrencyMigrationChecksum = "sha256:user-groups-pricing-currency-v75-20261028"
+const agentMemoryDocumentSkillDiscoveryMigrationName = "agent_memory_document_skill_discovery"
+const agentMemoryDocumentSkillDiscoveryMigrationChecksum = "sha256:agent-memory-document-skill-discovery-v76-20261028"
+const agentMemoryDocumentColumnsMigrationName = "agent_memory_document_columns"
+const agentMemoryDocumentColumnsMigrationChecksum = "sha256:agent-memory-document-columns-v77-20261028"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -67,6 +73,24 @@ type migration struct {
 	name     string
 	checksum string
 	apply    func(*gorm.DB) error
+}
+
+// migrationColumn 指向模型上的单个业务列，供迁移补列与账本物理结构校验共用。
+type migrationColumn struct {
+	model any
+	field string
+	label string
+}
+
+// userGroupsPricingCurrencyColumns 是用户分组计价迁移要补齐的业务列。
+// 迁移与账本校验读同一份定义，避免账本已到 77 而列仍缺失。
+var userGroupsPricingCurrencyColumns = []migrationColumn{
+	{&model.User{}, "UserGroup", "users.user_group"},
+	{&model.ChannelModel{}, "PriceCurrency", "channel_models.price_currency"},
+	{&model.TopupProduct{}, "Currency", "topup_products.currency"},
+	{&model.BillingOrder{}, "UserGroup", "billing_orders.user_group"},
+	{&model.BillingOrder{}, "PriceCurrency", "billing_orders.price_currency"},
+	{&model.BillingOrder{}, "CurrencyRateMicrocredits", "billing_orders.currency_rate_microcredits"},
 }
 
 var schemaMigrations = []migration{
@@ -273,6 +297,59 @@ var schemaMigrations = []migration{
 	{version: 74, name: referralCenterMigrationName, checksum: referralCenterMigrationChecksum, apply: migrateReferralCenter},
 	{version: 75, name: dramaEpisodeSourceFormatMigrationName, checksum: dramaEpisodeSourceFormatMigrationChecksum, apply: migrateDramaEpisodeSourceFormat},
 	{version: 76, name: dramaSegmentReferencesMigrationName, checksum: dramaSegmentReferencesMigrationChecksum, apply: migrateDramaSegmentReferences},
+	{version: 77, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum, apply: migrateUserGroupsPricingCurrency},
+	{version: 78, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, apply: migrateAgentMemoryDocumentSkillDiscovery},
+	{version: 79, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum, apply: migrateAgentMemoryDocumentColumns},
+}
+
+// migrateAgentMemoryDocumentColumns 补齐记忆文件的条目序号与修订的工具调用 ID。
+// 上游 v76 在 Fork 中是 v78；早期 v78 不重跑，新库由 v78 建全，这里是空操作。
+func migrateAgentMemoryDocumentColumns(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.AgentMemoryDocument{}, &model.AgentMemoryDocumentRevision{}); err != nil {
+		return err
+	}
+	// 新增列对旧行是 NULL；写成零值，与新建行一致。
+	if err := tx.Model(&model.AgentMemoryDocument{}).Where("next_entry_seq IS NULL").Update("next_entry_seq", 0).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.AgentMemoryDocumentRevision{}).Where("call_id IS NULL").Update("call_id", "").Error
+}
+
+// migrateAgentMemoryDocumentSkillDiscovery 新建用户记忆文件及其修订表，并给用户技能状态补
+// Agent 自动发现模式与读取统计列。旧状态 agent_mode 为空，按 auto 处理，行为与“已安装即可发现”一致。
+func migrateAgentMemoryDocumentSkillDiscovery(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.AgentMemoryDocument{}, &model.AgentMemoryDocumentRevision{}); err != nil {
+		return err
+	}
+	for _, field := range []string{"AgentMode", "AgentUseCount", "AgentLastUsedAt"} {
+		if tx.Migrator().HasColumn(&model.UserSkillState{}, field) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(&model.UserSkillState{}, field); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// migrateUserGroupsPricingCurrency 增加用户分组、分组渠道绑定，以及模型计价货币、充值商品货币和账单分组快照列。
+// 旧用户 user_group 为空（归入 default），旧模型按积分计价，旧商品按人民币计价，计费结果不变。
+func migrateUserGroupsPricingCurrency(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.UserGroup{}, &model.UserGroupChannel{}); err != nil {
+		return err
+	}
+	for _, column := range userGroupsPricingCurrencyColumns {
+		if tx.Migrator().HasColumn(column.model, column.field) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(column.model, column.field); err != nil {
+			return err
+		}
+	}
+	if !tx.Migrator().HasIndex(&model.User{}, "UserGroup") {
+		return tx.Migrator().CreateIndex(&model.User{}, "UserGroup")
+	}
+	return nil
 }
 
 // migrateReferralCenter 增加推广人标记和推广码、绑定、返佣三张表；旧用户默认不是推广人。
@@ -818,6 +895,31 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON") {
 			return fmt.Errorf("短剧参考角色迁移账本与物理结构不一致：缺少 drama_segments.reference_cast_ids_json")
 		}
+	case 77:
+		if !tx.Migrator().HasTable(&model.UserGroup{}) || !tx.Migrator().HasTable(&model.UserGroupChannel{}) {
+			return fmt.Errorf("用户分组迁移账本与物理结构不一致：缺少用户分组表")
+		}
+		for _, column := range userGroupsPricingCurrencyColumns {
+			if !tx.Migrator().HasColumn(column.model, column.field) {
+				return fmt.Errorf("用户分组迁移账本与物理结构不一致：缺少 %s", column.label)
+			}
+		}
+		if !tx.Migrator().HasIndex(&model.User{}, "UserGroup") {
+			return fmt.Errorf("用户分组迁移账本与物理结构不一致：缺少索引 idx_users_user_group")
+		}
+	case 78:
+		if !tx.Migrator().HasTable(&model.AgentMemoryDocument{}) || !tx.Migrator().HasTable(&model.AgentMemoryDocumentRevision{}) {
+			return fmt.Errorf("Agent 记忆文件迁移账本与物理结构不一致：缺少记忆文件表")
+		}
+		for _, field := range []string{"AgentMode", "AgentUseCount", "AgentLastUsedAt"} {
+			if !tx.Migrator().HasColumn(&model.UserSkillState{}, field) {
+				return fmt.Errorf("Agent 技能发现迁移账本与物理结构不一致：缺少 %s", field)
+			}
+		}
+	case 79:
+		if !tx.Migrator().HasColumn(&model.AgentMemoryDocument{}, "NextEntrySeq") || !tx.Migrator().HasColumn(&model.AgentMemoryDocumentRevision{}, "CallID") {
+			return fmt.Errorf("Agent 记忆补列迁移账本与物理结构不一致：缺少条目序号或工具调用 ID")
+		}
 	}
 	return nil
 }
@@ -846,9 +948,12 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{version: 72, name: referralCenterMigrationName, checksum: upstreamReferralCenterMigrationChecksum},
 		{version: 73, name: dramaEpisodeSourceFormatMigrationName, checksum: dramaEpisodeSourceFormatMigrationChecksum},
 		{version: 74, name: dramaSegmentReferencesMigrationName, checksum: dramaSegmentReferencesMigrationChecksum},
+		{version: 75, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum},
+		{version: 76, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
+		{version: 77, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 74 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 77 后仍有记录，拒绝自动重排")
 	}
 	for index, applied := range records {
 		expected := upstream[index]
@@ -859,17 +964,13 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 			return false, err
 		}
 	}
-	if err := validateReferralCenterPhysicalSchema(tx); err != nil {
-		return false, err
-	}
-	if len(records) >= 2 && !tx.Migrator().HasColumn(&model.DramaEpisode{}, "SourceFormat") {
-		return false, fmt.Errorf("上游短剧来源格式迁移账本与物理结构不一致：缺少 drama_episodes.source_format")
-	}
-	if len(records) >= 3 && !tx.Migrator().HasColumn(&model.DramaSegment{}, "ReferenceCastIDsJSON") {
-		return false, fmt.Errorf("上游短剧参考角色迁移账本与物理结构不一致：缺少 drama_segments.reference_cast_ids_json")
+	for _, applied := range records {
+		if err := validateCanonicalMigrationPhysicalSchema(tx, applied.Version+2); err != nil {
+			return false, err
+		}
 	}
 
-	// 逆序搬迁避免完整上游 74 的主键槽位互相碰撞；AppliedAt 不参与更新。
+	// 逆序搬迁避免上游主键槽位互相碰撞；AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]
 		values := map[string]any{"version": applied.Version + 2}

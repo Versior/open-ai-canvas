@@ -60,6 +60,7 @@ export function CanvasToolbar({
     onOpenMyAssets,
     onOpenProjectCharacters,
     onOpenEcommerceWorkbench,
+    compact = false,
 }: {
     selectedCount: number;
     canvasKind: AddNodeMenuContext["canvasKind"];
@@ -98,6 +99,8 @@ export function CanvasToolbar({
     onOpenMyAssets: () => void;
     onOpenProjectCharacters: () => void;
     onOpenEcommerceWorkbench?: () => void;
+    /** 紧凑尺寸：短剧精修画布把视野留给节点。 */
+    compact?: boolean;
 }) {
     const rootRef = useRef<HTMLDivElement>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer("main-toolbar", "var(--z-toolbar)");
@@ -265,7 +268,7 @@ export function CanvasToolbar({
         >
             <AnimatePresence>{addOpen ? <AddNodeMenu x={panelX} theme={theme} commands={createCommands} /> : null}</AnimatePresence>
 
-            <FloatingDock ref={dockRef} items={items} className="canvas-floating-dock pointer-events-auto max-w-full" style={canvasDockStyle(theme)} />
+            <FloatingDock ref={dockRef} items={items} size={compact ? "compact" : "default"} className="canvas-floating-dock pointer-events-auto max-w-full" style={canvasDockStyle(theme)} />
 
             <AnimatePresence>
                 {appearanceOpen ? (

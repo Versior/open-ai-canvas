@@ -22,6 +22,49 @@ test("explicit price copying preserves units and prices without copying source i
     expect(() => copyChannelModelPrices({ ...values, capability: "image" }, template)).toThrow("相同能力");
 });
 
+test("copied and automatically reused prices carry their USD or CNY currency", () => {
+    for (const priceCurrency of ["USD", "CNY"] as const) {
+        const source = { ...template, priceCurrency };
+        const values = { ...initialChannelModelValues(null, protocols), modelKey: preset.id };
+        const copied = copyChannelModelPrices(values, source);
+        const automatic = autoConfigureChannelModel(values, [source], protocols, [preset]).values;
+        for (const result of [copied, automatic]) {
+            expect(result.priceCurrency).toBe(priceCurrency);
+            expect(result.priceTiers[0].inputTokenPrice).toBe(2);
+        }
+        expect(copyChannelModelPrices({ ...values, priceCurrency }, template).priceCurrency).toBe("credits");
+    }
+});
+
+test("automatic pricing never relabels a protected currency or protected prices", () => {
+    const source = { ...template, priceCurrency: "USD" as const };
+    const values = { ...initialChannelModelValues(null, protocols), modelKey: preset.id, priceCurrency: "CNY" as const };
+    const protectedCurrency = autoConfigureChannelModel(values, [source], protocols, [preset], new Set(["priceCurrency"])).values;
+    expect(protectedCurrency.priceCurrency).toBe("CNY");
+    expect(protectedCurrency.priceTiers[0].priceConfigured).toBe(false);
+    expect(protectedCurrency.priceTiers[0].inputTokenPrice).toBe(0);
+    values.priceTiers[0].unitPrice = 19;
+    const protectedPrices = autoConfigureChannelModel(values, [source], protocols, [preset], new Set(["priceTiers"])).values;
+    expect(protectedPrices.priceCurrency).toBe("CNY");
+    expect(protectedPrices.priceTiers).toEqual(values.priceTiers);
+    const sameCurrency = autoConfigureChannelModel({ ...values, priceCurrency: "USD" }, [source], protocols, [preset], new Set(["priceCurrency"])).values;
+    expect(sameCurrency.priceCurrency).toBe("USD");
+    expect(sameCurrency.priceTiers[0].inputTokenPrice).toBe(2);
+});
+
+test("unknown model resets automatic currency and prices together", () => {
+    const matched = autoConfigureChannelModel({ ...initialChannelModelValues(null, protocols), modelKey: preset.id }, [{ ...template, priceCurrency: "USD" }], protocols, [preset]);
+    const unknown = autoConfigureChannelModel({ ...matched.values, modelKey: "unrelated-brand" }, [template], protocols, [preset]).values;
+    expect(unknown.priceCurrency).toBe("credits");
+    expect(unknown.priceTiers[0].priceConfigured).toBe(false);
+});
+
+test("admin price copy updates and protects both the price table and its currency", () => {
+    const editor = readFileSync(new URL("../src/pages/admin/components/channel-model-editor.tsx", import.meta.url), "utf8");
+    expect(editor).toContain('form.setFieldValue("priceCurrency", next.priceCurrency);');
+    expect(editor).toContain('protectedFields.current.add("priceCurrency");');
+});
+
 test("new admin model fills fuzzy metadata and reuses same-channel prices without retaining the old upstream", () => {
     const values = { ...initialChannelModelValues(null, protocols), modelKey: "new-product", providerModelKey: "models/Gemini_2.5_Flash-high" };
     const result = autoConfigureChannelModel(values, [template], protocols, [preset]);

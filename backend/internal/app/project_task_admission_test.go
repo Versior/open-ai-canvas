@@ -80,3 +80,30 @@ func TestEnsureTaskProjectActiveRejectsAmbiguousOwnedID(t *testing.T) {
 		t.Fatalf("ensureTaskProjectActive() error = %#v", appErr)
 	}
 }
+
+func TestEnsureTaskProjectActiveChecksLinkedDramaCanvasBudget(t *testing.T) {
+	service, db := newProjectSettingsTestService(t)
+	if err := db.AutoMigrate(&model.BillingOrder{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range []any{
+		&model.Project{ID: "budget-project", UserID: "user-1", Name: "drama", Status: model.ProjectStatusActive},
+		&model.CanvasProject{ID: "budget-canvas", UserID: "user-1", ProjectID: "budget-project"},
+		&model.DramaProduction{ProjectID: "budget-project", UserID: "user-1", BudgetMicrocredits: 100, SpentMicrocredits: 100},
+	} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	err := service.ensureTaskProjectActive("user-1", "budget-canvas")
+	var appErr *AppError
+	if !errors.As(err, &appErr) || appErr.Reason != ReasonDramaBudget {
+		t.Fatalf("exhausted drama canvas admission = %v, want drama budget error", err)
+	}
+	if err := db.Model(&model.DramaProduction{}).Where("project_id = ?", "budget-project").Update("budget_microcredits", 200).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ensureTaskProjectActive("user-1", "budget-canvas"); err != nil {
+		t.Fatalf("drama canvas with remaining budget: %v", err)
+	}
+}

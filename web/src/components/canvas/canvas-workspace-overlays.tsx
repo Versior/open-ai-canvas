@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import {
     Aperture,
+    ArrowRightLeft,
     BadgeCheck,
     Clapperboard,
     Copy,
@@ -21,7 +22,6 @@ import {
     SwatchBook,
     Table2,
     Video,
-    WandSparkles,
     Workflow as WorkflowIcon,
 } from "lucide-react";
 
@@ -442,7 +442,7 @@ export function CanvasConnectionCreateMenu({
                 <ConnectionCreateOption
                     expanded={activeOption === "转换"}
                     motionEnabled={!reducedMotion}
-                    icon={<WandSparkles className="size-4" />}
+                    icon={<ArrowRightLeft className="size-4" />}
                     title="转换"
                     description="本地处理图片或视频"
                     disabledReason={getDisabledReason(CanvasNodeType.MediaConversion)}

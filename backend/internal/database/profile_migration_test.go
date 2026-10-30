@@ -86,8 +86,12 @@ func TestAvatarPresetMigrationUpgradesV51WithoutChangingUsersOrBlobs(t *testing.
 	if err := db.Migrator().DropColumn(&model.User{}, "AvatarPreset"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Migrator().CreateIndex(&model.User{}, "IsPromoter"); err != nil {
-		t.Fatal(err)
+	// DropColumn on SQLite rebuilds the whole users table, so every users index
+	// disappears. Restore the ones the simulated v51 schema already had.
+	for _, index := range []string{"IsPromoter", "UserGroup"} {
+		if err := db.Migrator().CreateIndex(&model.User{}, index); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := db.Delete(&schemaMigration{}, "version = ?", 52).Error; err != nil {
 		t.Fatal(err)
