@@ -72,25 +72,25 @@ func cloudAgentStepLimit(req CloudAgentRequest) int {
 }
 
 type cloudAgentState struct {
-	Version                        int                       `json:"version"`
-	Request                        CloudAgentRequest         `json:"request"`
-	ParentID                       string                    `json:"parentId"`
-	Fingerprint                    string                    `json:"fingerprint"`
-	CreativeAnchor                 cloudAgentCreativeAnchor  `json:"creativeAnchor,omitempty"`
-	Plan                           []cloudAgentPlanItem      `json:"plan,omitempty"`
-	ConfirmationRounds             int                       `json:"confirmationRounds,omitempty"`
-	ConfirmationFingerprints       []string                  `json:"confirmationFingerprints,omitempty"`
-	PendingConfirmationFingerprint string                    `json:"pendingConfirmationFingerprint,omitempty"`
-	Skills                         []cloudAgentSkill         `json:"skills,omitempty"`
+	Version                        int                      `json:"version"`
+	Request                        CloudAgentRequest        `json:"request"`
+	ParentID                       string                   `json:"parentId"`
+	Fingerprint                    string                   `json:"fingerprint"`
+	CreativeAnchor                 cloudAgentCreativeAnchor `json:"creativeAnchor,omitempty"`
+	Plan                           []cloudAgentPlanItem     `json:"plan,omitempty"`
+	ConfirmationRounds             int                      `json:"confirmationRounds,omitempty"`
+	ConfirmationFingerprints       []string                 `json:"confirmationFingerprints,omitempty"`
+	PendingConfirmationFingerprint string                   `json:"pendingConfirmationFingerprint,omitempty"`
+	Skills                         []cloudAgentSkill        `json:"skills,omitempty"`
 	// SkillReferences 是本轮经 skill_search 检索并冻结的广场参考技能（公开或自建，未安装）。
 	// 与 Skills（用户固定）和 SkillVersions（已安装 opt-in 池）分开保存：参考技能只允许按
 	// 冻结的版本/哈希只读引用，不得进入已安装技能的可读范围。
-	SkillReferences                []cloudAgentSkill         `json:"skillReferences,omitempty"`
-	SkillVersions                  map[string]string         `json:"skillVersions,omitempty"`
-	SkillHints                     string                    `json:"skillHints,omitempty"`
-	Memory                         cloudAgentMemorySnapshot  `json:"memory,omitempty"`
-	Profile                        cloudAgentProfileSnapshot `json:"profile"`
-	Policy                         cloudAgentPolicySnapshot  `json:"policy"`
+	SkillReferences []cloudAgentSkill         `json:"skillReferences,omitempty"`
+	SkillVersions   map[string]string         `json:"skillVersions,omitempty"`
+	SkillHints      string                    `json:"skillHints,omitempty"`
+	Memory          cloudAgentMemorySnapshot  `json:"memory,omitempty"`
+	Profile         cloudAgentProfileSnapshot `json:"profile"`
+	Policy          cloudAgentPolicySnapshot  `json:"policy"`
 }
 
 type CloudAgentRun struct {
