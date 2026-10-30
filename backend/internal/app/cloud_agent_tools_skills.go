@@ -59,9 +59,9 @@ const (
 	cloudAgentSkillSearchMax      = 20
 	// cloudAgentSkillReferenceMax 是本轮可冻结的广场参考技能上限。参考技能只读引用，
 	// 不安装、不占固定名额，与已安装技能池是两个独立预算。
-	cloudAgentSkillReferenceMax   = 4
-	cloudAgentSkillCatalogLimit   = 80
-	cloudAgentSkillSnippetRunes   = 120
+	cloudAgentSkillReferenceMax = 4
+	cloudAgentSkillCatalogLimit = 80
+	cloudAgentSkillSnippetRunes = 120
 	// 一次检索最多下发多少条卡路径（所有命中条目共享预算），防止大包把上下文撑爆。
 	cloudAgentSkillSearchCardBudget = 40
 	// 2-gram 展开后 token 总量上限（含原始 token）：防止超长关键词放大打分开销。
@@ -690,6 +690,11 @@ func (s *Service) cloudAgentDiscoverSkillReferences(userID string, state *cloudA
 	}
 	catalog := make([]cloudAgentSkill, 0, cloudAgentSkillCatalogLimit)
 	seen := make(map[string]bool, cloudAgentSkillCatalogLimit)
+	// 已冻结的参考技能先占位：冻结后技能名/简介一旦被改，旧快照对新关键词 0 分、
+	// 广场新快照正分，就会把同一技能再冻结一次；state 的重复 ID 校验随后拒绝整轮。
+	for _, ref := range state.SkillReferences {
+		seen[ref.ID] = true
+	}
 	for _, scope := range []string{"public", "created"} {
 		items, err := s.cloudAgentSkillCatalogPage(userID, scope)
 		if err != nil {
@@ -754,22 +759,31 @@ func (s *Service) cloudAgentReadSkillFileForRun(userID string, state *cloudAgent
 	return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。先看技能目录或用 skill_search 找到 skillId")
 }
 
+// cloudAgentRevalidateSkillReference 是参考技能的唯一实时可见性边界：冻结快照完整、
+// 技能仍启用、版本与内容哈希仍与冻结值一致。现读与缓存回放共用，冻结 key 不代替复核。
+func (s *Service) cloudAgentRevalidateSkillReference(userID string, ref cloudAgentSkill) error {
+	if ref.Version == "" || ref.Hash == "" {
+		return errors.New("本轮参考技能缺少冻结版本")
+	}
+	detail, err := s.SkillDetail(userID, ref.ID)
+	if err != nil {
+		return err
+	}
+	if detail.Status != 1 {
+		return BadAuthRequest("技能已被卸载或停用，本轮不能再读取")
+	}
+	if detail.VersionID != ref.Version || detail.ContentHash != ref.Hash {
+		return creationConflict("技能在本轮开始后更新了；为避免混读两个版本，本轮不再读取它，下一条消息会使用新版本")
+	}
+	return nil
+}
+
 // cloudAgentReadSkillReferenceFile 读取本轮冻结的参考技能文件。
 // 不要求 IsAdded——参考技能本来就没安装；但必须仍启用、版本与内容哈希与冻结值一致，
 // 且只能读冻结清单里的路径。参考技能不计入技能使用次数（它不在用户技能库里）。
 func (s *Service) cloudAgentReadSkillReferenceFile(userID string, ref cloudAgentSkill, args agenttool.SkillReadArgs) (any, error) {
-	if ref.Version == "" || ref.Hash == "" {
-		return nil, errors.New("本轮参考技能缺少冻结版本")
-	}
-	detail, err := s.SkillDetail(userID, ref.ID)
-	if err != nil {
+	if err := s.cloudAgentRevalidateSkillReference(userID, ref); err != nil {
 		return nil, err
-	}
-	if detail.Status != 1 {
-		return nil, BadAuthRequest("技能已被卸载或停用，本轮不能再读取")
-	}
-	if detail.VersionID != ref.Version || detail.ContentHash != ref.Hash {
-		return nil, creationConflict("技能在本轮开始后更新了；为避免混读两个版本，本轮不再读取它，下一条消息会使用新版本")
 	}
 	paths := cloudAgentSkillPaths(ref)
 	files := make([]string, 0, len(paths))

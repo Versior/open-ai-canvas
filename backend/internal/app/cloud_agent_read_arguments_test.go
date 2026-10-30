@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -44,33 +45,46 @@ func TestCloudAgentReadArgumentsRejectBeforeReadingCanvas(t *testing.T) {
 }
 
 func TestCloudAgentReadArgumentFeedbackUsesAdvertisedSchema(t *testing.T) {
-	req := agentTestRequest()
-	for _, name := range []string{"agent_profile_read", "canvas_list_node_types", "canvas_get_state", "canvas_read_storyboard", "canvas_read_batch_table", "skill_read_file", "task_get"} {
-		t.Run(name, func(t *testing.T) {
-			state := &cloudAgentRuntime{Request: req, Canonical: canonicalAgentRequest{Tools: cloudAgentTools(req)}}
-			call := cloudAgentCall{ID: "read-1"}
-			call.Function.Name = name
-			call.Function.Arguments = `{"private-value-do-not-echo":"private-value-do-not-echo"}`
-			_, err := cloudAgentReadTool(nil, "user", state, call)
-			if err == nil {
-				t.Fatal("unknown argument was accepted")
-			}
-			cloudAgentToolResult("run", state, call, nil, err)
-			content := state.Canonical.Messages[0]["content"].(string)
-			if strings.Contains(content, "private-value-do-not-echo") {
-				t.Fatal("validation feedback leaked model-controlled keys or values")
-			}
-			var result map[string]any
-			if err := json.Unmarshal([]byte(content), &result); err != nil {
-				t.Fatal(err)
-			}
-			if result["reason"] != "invalid_tool_arguments" || result["guidance"] == nil {
-				t.Fatalf("missing repair feedback: %s", content)
-			}
-			if result["parameters"] == nil {
-				t.Fatal("advertised schema missing from repair feedback")
-			}
-		})
+	// skill_read_file 受服务端技能 scope 门禁：关闭时不得被广播。两种 scope 都要覆盖，
+	// 否则「未广播工具拿不到 schema」这条权限回归就失去了守卫。
+	for _, skillsEnabled := range []bool{true, false} {
+		req := agentTestRequest()
+		req.SkillsEnabled = skillsEnabled
+		for _, name := range []string{"agent_profile_read", "canvas_list_node_types", "canvas_get_state", "canvas_read_storyboard", "canvas_read_batch_table", "skill_read_file", "task_get"} {
+			t.Run(fmt.Sprintf("%s/skills=%t", name, skillsEnabled), func(t *testing.T) {
+				state := &cloudAgentRuntime{Request: req, Canonical: canonicalAgentRequest{Tools: cloudAgentTools(req)}}
+				call := cloudAgentCall{ID: "read-1"}
+				call.Function.Name = name
+				call.Function.Arguments = `{"private-value-do-not-echo":"private-value-do-not-echo"}`
+				_, err := cloudAgentReadTool(nil, "user", state, call)
+				if err == nil {
+					t.Fatal("unknown argument was accepted")
+				}
+				cloudAgentToolResult("run", state, call, nil, err)
+				content := state.Canonical.Messages[0]["content"].(string)
+				if strings.Contains(content, "private-value-do-not-echo") {
+					t.Fatal("validation feedback leaked model-controlled keys or values")
+				}
+				var result map[string]any
+				if err := json.Unmarshal([]byte(content), &result); err != nil {
+					t.Fatal(err)
+				}
+				if result["reason"] != "invalid_tool_arguments" || result["guidance"] == nil {
+					t.Fatalf("missing repair feedback: %s", content)
+				}
+				// Unadvertised tools must not acquire a schema through error feedback.
+				unadvertised := name == "skill_read_file" && !skillsEnabled
+				if unadvertised {
+					if result["parameters"] != nil {
+						t.Fatal("disabled skill tool acquired a schema")
+					}
+					return
+				}
+				if result["parameters"] == nil {
+					t.Fatal("advertised schema missing from repair feedback")
+				}
+			})
+		}
 	}
 }
 

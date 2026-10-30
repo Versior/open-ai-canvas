@@ -568,18 +568,18 @@ test("所有资源渲染真实百分比，100% 仍等待保存，磨砂渐淡但
     }
 });
 
-test("短剧关联顶栏保留电商模式和专业入口", async () => {
+test("短剧关联顶栏在快捷与专业模式都保留电商模式、专业入口和模特库入口", async () => {
     const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
     const { MemoryRouter } = await import("react-router");
     const { CanvasTopBar } = await import("../src/pages/canvas/canvas-project-top-bar");
     const noop = () => {};
-    for (const workspaceMode of ["simple", "professional"] as const) {
-        const html = renderToStaticMarkup(
+    const renderTopBar = (props: { workspaceMode: "simple" | "professional"; onOpenModelLibrary?: () => void }) =>
+        renderToStaticMarkup(
             <QueryClientProvider client={new QueryClient()}>
                 <MemoryRouter>
                     <CanvasTopBar
                         ecommerce
-                        workspaceMode={workspaceMode}
+                        workspaceMode={props.workspaceMode}
                         onWorkspaceModeChange={noop}
                         view="canvas"
                         onViewChange={noop}
@@ -603,16 +603,20 @@ test("短剧关联顶栏保留电商模式和专业入口", async () => {
                         onShare={noop}
                         shortcutRequestNonce={0}
                         onOpenSearch={noop}
-                        onOpenModelLibrary={noop}
+                        onOpenModelLibrary={props.onOpenModelLibrary}
                         onEnterFocusMode={noop}
                         projectContext={{ projectId: "demo drama", projectName: "短剧示例", kind: "drama", nodeCount: 3, selectedCount: 0, chapterLabel: "", shotLabel: "" }}
                     />
                 </MemoryRouter>
             </QueryClientProvider>,
         );
+    for (const workspaceMode of ["simple", "professional"] as const) {
+        const html = renderTopBar({ workspaceMode, onOpenModelLibrary: noop });
         expect(html).toContain('href="/projects/demo%20drama"');
         expect(html).toContain("打开短剧制作台：短剧示例");
         expect(html).toContain(workspaceMode === "simple" ? 'aria-label="快捷创作，切换到专业画布"' : 'aria-label="专业画布，返回快捷创作"');
-        expect(html.includes('aria-label="管理模特库"')).toBe(workspaceMode === "professional");
+        // 二开让快捷模式也能管理模特库，该入口不再由 showProfessionalControls 隐藏。
+        expect(html).toContain('aria-label="管理模特库"');
     }
+    expect(renderTopBar({ workspaceMode: "simple" })).not.toContain('aria-label="管理模特库"');
 });

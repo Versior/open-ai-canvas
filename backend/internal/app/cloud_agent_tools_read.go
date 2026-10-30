@@ -97,19 +97,51 @@ func cloudAgentReadCacheKeyForState(repo *repository.Repository, userID string, 
 			SkillID string `json:"skillId"`
 		}
 		if json.Unmarshal([]byte(call.Function.Arguments), &args) == nil {
-			if version := state.SkillVersions[args.SkillID]; version != "" {
+			id := strings.TrimSpace(args.SkillID)
+			if version := state.SkillVersions[id]; version != "" {
 				return fmt.Sprintf("%s:skill-version:%s", key, version)
 			}
-			// 参考技能不在 SkillVersions 里。它的可见性由冻结的版本 + 内容哈希共同决定：
-			// 只带版本号时，广场技能在运行中被更新/下架后旧缓存仍会命中，绕过复核。
+			// 参考技能不在 SkillVersions 里：key 只负责把缓存绑定到冻结快照，
+			// 不承担授权。停用、下架、版本变更由回放前的实时复核拦截。
 			for _, ref := range state.SkillReferences {
-				if ref.ID == args.SkillID && ref.Version != "" {
+				if ref.ID == id && ref.Version != "" {
 					return fmt.Sprintf("%s:skill-ref:%s:%s", key, ref.Version, ref.Hash)
 				}
 			}
 		}
 	}
 	return key
+}
+
+// cloudAgentRevalidateCachedRead 在缓存命中前复核仍会变化的授权边界。
+// 目前只有本轮冻结的广场参考技能需要复核：它的缓存 key 里带着冻结版本，
+// 但停用、下架或版本变更后旧正文不能再回放。已安装技能与非技能读取不受影响。
+func cloudAgentRevalidateCachedRead(userID string, state *cloudAgentRuntime, call cloudAgentCall, service *Service) error {
+	if state == nil || call.Function.Name != agenttool.SkillReadFile {
+		return nil
+	}
+	var args struct {
+		SkillID string `json:"skillId"`
+	}
+	if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
+		return nil
+	}
+	// 现读会对 skillId 做 TrimSpace，回放必须用同一口径匹配，否则「 id 」能绕过复核。
+	id := strings.TrimSpace(args.SkillID)
+	if _, installed := state.SkillVersions[id]; installed {
+		// 已安装技能走冻结版本合同，不放这里复核。
+		return nil
+	}
+	for _, ref := range state.SkillReferences {
+		if ref.ID != id {
+			continue
+		}
+		if service == nil {
+			return BadAuthRequest("技能服务不可用")
+		}
+		return service.cloudAgentRevalidateSkillReference(userID, ref)
+	}
+	return nil
 }
 
 func cloudAgentReadToolCached(repo *repository.Repository, userID string, state *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {
@@ -138,6 +170,12 @@ func cloudAgentReadToolCached(repo *repository.Repository, userID string, state 
 				}
 				delete(state.ToolReadResults, key)
 			} else {
+				// 冻结版本不是授权凭证：参考技能可能在本轮被停用或更新，
+				// 同参缓存命中前必须重新过一边实时可见性边界，失败就按真实错误返回。
+				if err := cloudAgentRevalidateCachedRead(userID, state, call, cloudAgentToolService(services)); err != nil {
+					delete(state.ToolReadResults, key)
+					return nil, err
+				}
 				if state.ToolReadReplays == nil {
 					state.ToolReadReplays = map[string]int{}
 				}
