@@ -349,6 +349,7 @@ function StoreCard({
                     pixelated={pet.pixelated}
                     lookAtPointer={previewing}
                     hovered={previewing}
+                    lazy
                     label={pet.name}
                 />
                 {selected ? <CurrentMark /> : null}
