@@ -6,6 +6,9 @@ export type AgentPetRow = (typeof AGENT_PET_ROWS)[number];
 /** spend：累计消费满门槛即可领取。 */
 export type AgentPetAccess = "free" | "vip" | "paid" | "spend";
 
+/** 正在进行的限时促销；endsAt 为空表示管理员手动结束前一直有效。 */
+export type AgentPetPromotion = { label: string; endsAt: string | null };
+
 export type AgentPet = {
     id: string;
     name: string;
@@ -17,9 +20,14 @@ export type AgentPet = {
     /** 助手状态 → 图集动作的覆盖项；未覆盖的状态用默认映射。 */
     stateRows: Partial<Record<string, AgentPetRow>>;
     access: AgentPetAccess;
+    /** 此刻的售价（促销中为促销价，限时免费为 0）；只对 paid 有值。 */
     priceMicrocredits: number;
+    /** 原价；只对 paid 有值。 */
+    listPriceMicrocredits: number;
+    /** 只在促销进行中时有值。 */
+    promotion: AgentPetPromotion | null;
     owned: boolean;
-    /** 付费形象对当前用户分组免费。 */
+    /** 付费或消费解锁形象对当前用户分组免费。 */
     memberFree: boolean;
     usable: boolean;
     purchasable: boolean;
@@ -27,7 +35,11 @@ export type AgentPet = {
     unlockMicrocredits: number;
     /** 累计消费已达标、尚未领取；选择时自动领取。 */
     claimable: boolean;
-    /** 头顶气泡的说话风格；上传形象为空，使用通用语气。 */
+    /** 商店分类，空为未分类。 */
+    category: string;
+    /** 卡片角标，如“新品”。 */
+    badge: string;
+    /** 头顶气泡的说话风格；为空时使用通用语气。 */
     tone: AgentPetTone | "";
     /** 形象专属台词。 */
     lines: string[];
@@ -46,16 +58,28 @@ export type AgentPetCatalog = {
 
 export type AgentPetPurchaseResult = {
     pet: AgentPet;
+    /** 是否扣了积分；限时免费领取和重复购买为 false。 */
     charged: boolean;
     availableMicrocredits: number;
 };
+
+export type AgentPetPromoState = "none" | "scheduled" | "active" | "ended";
 
 export type AdminAgentPet = AgentPet & {
     source: "builtin" | "upload";
     enabled: boolean;
     groupCodes: string[];
     sortOrder: number;
+    /** 拥有人数（购买或领取）。 */
     ownerCount: number;
+    /** 累计购买收入。 */
+    revenueMicrocredits: number;
+    promoEnabled: boolean;
+    promoLabel: string;
+    promoPriceMicrocredits: number;
+    promoStartsAt: string | null;
+    promoEndsAt: string | null;
+    promoState: AgentPetPromoState;
     updatedAt?: string;
 };
 
@@ -70,6 +94,34 @@ export type AdminAgentPetInput = {
     stateRows: Partial<Record<string, AgentPetRow>>;
     pixelated: boolean;
     sortOrder: number;
+    category: string;
+    badge: string;
+    /** 促销只对积分购买的形象生效；促销价 0 为限时免费。 */
+    promoEnabled: boolean;
+    promoLabel: string;
+    promoPriceMicrocredits: number;
+    promoStartsAt: string | null;
+    promoEndsAt: string | null;
+    /** 说话风格和台词只对上传形象生效。 */
+    tone: AgentPetTone | "";
+    lines: string[];
+};
+
+/** 批量修改：只改提供了的字段。 */
+export type AdminAgentPetBatchInput = {
+    ids: string[];
+    enabled?: boolean;
+    category?: string;
+    badge?: string;
+    access?: { mode: AgentPetAccess; priceMicrocredits?: number; unlockMicrocredits?: number; groupCodes?: string[] };
+    /** enabled 为 false 时结束促销；percent 是原价的百分比（0 为限时免费）。 */
+    promotion?: { enabled: boolean; label?: string; percent?: number; startsAt?: string | null; endsAt?: string | null };
+};
+
+export type AdminAgentPetBatchResult = {
+    pets: AdminAgentPet[];
+    deleted: string[];
+    skipped: Array<{ id: string; name: string; reason: string }>;
 };
 
 export const AGENT_PET_IMPORT_MAX_BYTES = 32 * 1024 * 1024;
@@ -104,6 +156,14 @@ export async function listAdminAgentPets() {
 export async function updateAdminAgentPet(id: string, input: AdminAgentPetInput) {
     const result = await http.put<{ pet: AdminAgentPet }>(`/admin/agent-pets/${encodeURIComponent(id)}`, input);
     return result.pet;
+}
+
+export function batchUpdateAdminAgentPets(input: AdminAgentPetBatchInput) {
+    return http.post<AdminAgentPetBatchResult>("/admin/agent-pets/batch", input);
+}
+
+export function batchDeleteAdminAgentPets(ids: string[]) {
+    return http.post<AdminAgentPetBatchResult>("/admin/agent-pets/batch-delete", { ids });
 }
 
 export async function importAdminAgentPet(file: File) {

@@ -66,19 +66,38 @@ func (r *Repository) AgentPetsByResourceIDs(resourceIDs []string) ([]model.Agent
 	return pets, err
 }
 
-func (r *Repository) AgentPetOwnerCounts() (map[string]int64, error) {
+// SaveAgentPets 在一个事务里保存多条形象配置（批量操作），任一失败整批回滚。
+func (r *Repository) SaveAgentPets(pets []model.AgentPet) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		for index := range pets {
+			if err := tx.Save(&pets[index]).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// AgentPetSale 是一个形象的拥有人数（购买或领取）和购买收入。
+type AgentPetSale struct {
+	Owners              int64
+	RevenueMicrocredits int64
+}
+
+func (r *Repository) AgentPetSales() (map[string]AgentPetSale, error) {
 	var rows []struct {
-		PetID  string
-		Owners int64
+		PetID   string
+		Owners  int64
+		Revenue int64
 	}
-	if err := r.db.Model(&model.UserAgentPet{}).Select("pet_id, COUNT(*) AS owners").Group("pet_id").Scan(&rows).Error; err != nil {
+	if err := r.db.Model(&model.UserAgentPet{}).Select("pet_id, COUNT(*) AS owners, COALESCE(SUM(price_microcredits), 0) AS revenue").Group("pet_id").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
-	counts := make(map[string]int64, len(rows))
+	sales := make(map[string]AgentPetSale, len(rows))
 	for _, row := range rows {
-		counts[row.PetID] = row.Owners
+		sales[row.PetID] = AgentPetSale{Owners: row.Owners, RevenueMicrocredits: row.Revenue}
 	}
-	return counts, nil
+	return sales, nil
 }
 
 func (r *Repository) OwnedAgentPetIDs(userID string) (map[string]bool, error) {
@@ -116,17 +135,18 @@ func (r *Repository) SaveAgentPetSelection(userID string, petID string) error {
 	return r.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "user_id"}}, DoUpdates: clause.AssignmentColumns([]string{"pet_id", "updated_at"})}).Create(&selection).Error
 }
 
-// AgentPetPurchase 是一次购买；Access 和价格必须与用户看到的上架信息一致。
+// AgentPetPurchase 是一次购买。PriceMicrocredits 是用户确认的售价，为 0 时（限时免费）只记拥有、不扣费。
 type AgentPetPurchase struct {
 	UserID            string
 	PetID             string
-	Access            string
 	PriceMicrocredits int64
 	Note              string
+	// Verify 在扣费事务里复核形象的最新配置（上架、开放方式、此刻售价）；返回 false 时整笔取消。
+	Verify func(model.AgentPet) bool
 }
 
-// PurchaseAgentPet 先抢占 (user_id, pet_id) 已购记录再扣积分：重复或并发请求只扣一次，余额不足整笔回滚。
-// 返回 false 表示此前已购买，本次未扣费。
+// PurchaseAgentPet 先抢占 (user_id, pet_id) 拥有记录再扣积分：重复或并发请求只扣一次，余额不足整笔回滚。
+// 返回 false 表示此前已拥有，本次没有新增。
 func (r *Repository) PurchaseAgentPet(purchase AgentPetPurchase) (bool, *model.CreditAccount, error) {
 	var account model.CreditAccount
 	purchased := false
@@ -142,13 +162,20 @@ func (r *Repository) PurchaseAgentPet(purchase AgentPetPurchase) (bool, *model.C
 		if claimed.RowsAffected == 0 {
 			return tx.First(&account, "user_id = ?", purchase.UserID).Error
 		}
-		// 在同一事务里复核上架状态和价格，避免按旧价格扣费。
-		var listed int64
-		if err := tx.Model(&model.AgentPet{}).Where("id = ? AND enabled = ? AND access = ? AND price_microcredits = ?", purchase.PetID, true, purchase.Access, purchase.PriceMicrocredits).Count(&listed).Error; err != nil {
+		// 在同一事务里复核上架状态和售价，避免按旧价格或已结束的促销价扣费。
+		var pet model.AgentPet
+		if err := tx.First(&pet, "id = ?", purchase.PetID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAgentPetUnavailable
+			}
 			return err
 		}
-		if listed != 1 {
+		if purchase.Verify == nil || !purchase.Verify(pet) {
 			return ErrAgentPetUnavailable
+		}
+		purchased = true
+		if purchase.PriceMicrocredits == 0 {
+			return tx.First(&account, "user_id = ?", purchase.UserID).Error
 		}
 		debited := tx.Model(&model.CreditAccount{}).Where("user_id = ? AND available_microcredits >= ?", purchase.UserID, purchase.PriceMicrocredits).Updates(map[string]any{
 			"available_microcredits": gorm.Expr("available_microcredits - ?", purchase.PriceMicrocredits),
@@ -178,7 +205,6 @@ func (r *Repository) PurchaseAgentPet(purchase AgentPetPurchase) (bool, *model.C
 		if err := tx.Create(&entry).Error; err != nil {
 			return err
 		}
-		purchased = true
 		return tx.Model(&model.UserAgentPet{}).Where("user_id = ? AND pet_id = ?", purchase.UserID, purchase.PetID).Update("ledger_entry_id", entry.ID).Error
 	})
 	return purchased, &account, err

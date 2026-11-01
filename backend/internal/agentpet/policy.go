@@ -1,9 +1,11 @@
 package agentpet
 
 import (
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"yingce/backend/internal/kernel"
 )
@@ -31,6 +33,30 @@ const (
 	maxLines     = 4
 	maxLineRunes = 40
 )
+
+// NormalizeVoice 校验上传形象的说话风格和专属台词。风格为空表示通用（前端按温柔语气说话）；
+// 台词去掉空行，最多 4 句、每句不超过 40 个字。
+func NormalizeVoice(tone string, lines []string) (string, []string, error) {
+	tone = strings.TrimSpace(tone)
+	if tone != "" && !slices.Contains(Tones, tone) {
+		return "", nil, kernel.BadAuthRequest("请选择有效的说话风格")
+	}
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = CleanText(line, maxLineRunes+1)
+		if line == "" {
+			continue
+		}
+		if utf8.RuneCountInString(line) > maxLineRunes {
+			return "", nil, kernel.BadAuthRequest(fmt.Sprintf("每句台词不超过 %d 个字", maxLineRunes))
+		}
+		result = append(result, line)
+	}
+	if len(result) > maxLines {
+		return "", nil, kernel.BadAuthRequest(fmt.Sprintf("专属台词最多 %d 句", maxLines))
+	}
+	return tone, result, nil
+}
 
 var groupCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
 

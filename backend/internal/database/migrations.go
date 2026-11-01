@@ -932,8 +932,10 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 				return fmt.Errorf("智能体形象迁移账本与物理结构不一致：缺少形象库、已购或选择表")
 			}
 		}
-		if !tx.Migrator().HasColumn(&model.AgentPet{}, "UnlockMicrocredits") {
-			return fmt.Errorf("智能体形象迁移账本与物理结构不一致：缺少 agent_pets.unlock_microcredits")
+		for _, field := range []string{"UnlockMicrocredits", "Tone", "LinesJSON", "Category", "Badge", "PromoEnabled", "PromoLabel", "PromoPriceMicrocredits", "PromoStartsAt", "PromoEndsAt"} {
+			if !tx.Migrator().HasColumn(&model.AgentPet{}, field) {
+				return fmt.Errorf("智能体形象迁移账本与物理结构不一致：agent_pets 缺少 %s 列", field)
+			}
 		}
 	}
 	return nil

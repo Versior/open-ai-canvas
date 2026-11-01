@@ -168,6 +168,46 @@ func RegisterAgentPetRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"pet": pet})
 	})
+	r.POST("/admin/agent-pets/batch", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req service.AdminAgentPetBatchInput
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, errAgentPetRequestInvalid)
+			return
+		}
+		result, err := svc.BatchUpdateAdminAgentPets(actor, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
+	r.POST("/admin/agent-pets/batch-delete", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req struct {
+			IDs []string `json:"ids"`
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+		if err := c.ShouldBindJSON(&req); err != nil {
+			fail(c, http.StatusBadRequest, errAgentPetRequestInvalid)
+			return
+		}
+		result, err := svc.BatchDeleteAdminAgentPets(actor, req.IDs)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
+	})
 	r.DELETE("/admin/agent-pets/:id", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

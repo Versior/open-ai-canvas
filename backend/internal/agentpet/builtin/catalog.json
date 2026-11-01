@@ -7,6 +7,7 @@
     "file": "pingo.webp",
     "pixelated": false,
     "sortOrder": 10,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "我只是一只慢吞吞的小企鹅，但会一直陪着你。",
@@ -21,6 +22,7 @@
     "file": "polin.webp",
     "pixelated": false,
     "sortOrder": 20,
+    "category": "萌物",
     "tone": "sunny",
     "lines": [
       "我是一颗花粉，最懂怎么让想法发芽！",
@@ -35,6 +37,7 @@
     "file": "woogi.webp",
     "pixelated": false,
     "sortOrder": 30,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "蓝宝石在发光，说明好运要来了。",
@@ -49,6 +52,7 @@
     "file": "woogi-pixel.webp",
     "pixelated": true,
     "sortOrder": 40,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "像素世界也有温度，我陪你一格一格完成。",
@@ -63,6 +67,7 @@
     "file": "rupet.webp",
     "pixelated": false,
     "sortOrder": 50,
+    "category": "机器人",
     "tone": "robot",
     "lines": [
       "ruPet 在线，随时待命。",
@@ -77,6 +82,7 @@
     "file": "longbao.webp",
     "pixelated": false,
     "sortOrder": 60,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "本龙宝在此，祥云护体，灵感满满。",
@@ -91,6 +97,7 @@
     "file": "iris.webp",
     "pixelated": false,
     "sortOrder": 70,
+    "category": "人物",
     "tone": "sunny",
     "lines": [
       "双手已就位，键盘冲冲冲！",
@@ -105,6 +112,7 @@
     "file": "georgie.webp",
     "pixelated": false,
     "sortOrder": 80,
+    "category": "狗狗",
     "tone": "puppy",
     "lines": [
       "我会安安静静陪着你。",
@@ -119,6 +127,7 @@
     "file": "didi.webp",
     "pixelated": false,
     "sortOrder": 90,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "我从布包里探头看看你做得怎么样了。",
@@ -133,6 +142,7 @@
     "file": "mimi.webp",
     "pixelated": true,
     "sortOrder": 100,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "咪咪在旁边打个盹，你忙完叫我。",
@@ -147,6 +157,7 @@
     "file": "sentinel-raven.webp",
     "pixelated": true,
     "sortOrder": 110,
+    "category": "小动物",
     "tone": "robot",
     "lines": [
       "每个设计在被证明可靠之前，我都保持怀疑。",
@@ -161,6 +172,7 @@
     "file": "vika.webp",
     "pixelated": false,
     "sortOrder": 120,
+    "category": "人物",
     "tone": "mystic",
     "lines": [
       "咖啡已续杯，魔法书也翻到下一页了。",
@@ -175,6 +187,7 @@
     "file": "natalie.webp",
     "pixelated": true,
     "sortOrder": 130,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "先坐端正，再开始工作。",
@@ -189,6 +202,7 @@
     "file": "rita.webp",
     "pixelated": true,
     "sortOrder": 140,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "小碎步跑来看看你。",
@@ -203,6 +217,7 @@
     "file": "luna.webp",
     "pixelated": false,
     "sortOrder": 150,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "后腿一蹬，灵感蹦出来啦。",
@@ -217,6 +232,7 @@
     "file": "tabby.webp",
     "pixelated": true,
     "sortOrder": 160,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "呼噜呼噜，今天也要元气满满。",
@@ -231,6 +247,7 @@
     "file": "penguin-fisher.webp",
     "pixelated": true,
     "sortOrder": 170,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "今天钓到的点子，分你一半。",
@@ -245,6 +262,7 @@
     "file": "snow-leopard.webp",
     "pixelated": true,
     "sortOrder": 180,
+    "category": "小动物",
     "tone": "kitty",
     "lines": [
       "雪豹宝宝巡逻中，一切正常。",
@@ -259,6 +277,7 @@
     "file": "huahua.webp",
     "pixelated": true,
     "sortOrder": 190,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "胖胖的花花冷静分析：先喝口水。",
@@ -273,6 +292,7 @@
     "file": "maimai.webp",
     "pixelated": true,
     "sortOrder": 200,
+    "category": "狗狗",
     "tone": "puppy",
     "lines": [
       "墨镜戴好，麦麦今天也很酷！",
@@ -287,6 +307,7 @@
     "file": "kerno.webp",
     "pixelated": true,
     "sortOrder": 210,
+    "category": "机器人",
     "tone": "robot",
     "lines": [
       "内核温度正常，可以放心开工。",
@@ -301,6 +322,7 @@
     "file": "capybara-lulu.webp",
     "pixelated": false,
     "sortOrder": 220,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "慢慢来，噜噜一直很淡定。",
@@ -315,6 +337,7 @@
     "file": "ollie.webp",
     "pixelated": false,
     "sortOrder": 230,
+    "category": "萌物",
     "tone": "sunny",
     "lines": [
       "欧利今天也油光满面！",
@@ -329,6 +352,7 @@
     "file": "dooli.webp",
     "pixelated": true,
     "sortOrder": 240,
+    "category": "萌物",
     "tone": "sunny",
     "lines": [
       "砖块准备好了，今天盖点什么？",
@@ -343,6 +367,7 @@
     "file": "ajin.webp",
     "pixelated": false,
     "sortOrder": 250,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "火苗很暖，我会一直在。",
@@ -357,6 +382,7 @@
     "file": "panda-pixel.webp",
     "pixelated": true,
     "sortOrder": 260,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "累了就靠过来，我毛很软。",
@@ -371,6 +397,7 @@
     "file": "hippo-lulu.webp",
     "pixelated": false,
     "sortOrder": 270,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "露露的嘴巴超大，能装下所有好点子！",
@@ -385,6 +412,7 @@
     "file": "diandian.webp",
     "pixelated": true,
     "sortOrder": 280,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "点点眯一会儿，你忙你的。",
@@ -399,6 +427,7 @@
     "file": "hakonyan.webp",
     "pixelated": false,
     "sortOrder": 290,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "纸箱是我的城堡，桌面是你的。",
@@ -413,6 +442,7 @@
     "file": "border-collie.webp",
     "pixelated": false,
     "sortOrder": 300,
+    "category": "狗狗",
     "tone": "puppy",
     "lines": [
       "边牧智商在线，任务交给我盯！",
@@ -427,6 +457,7 @@
     "file": "matcha-dandan.webp",
     "pixelated": false,
     "sortOrder": 310,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "蛋蛋抱抱你，今天辛苦啦。",
@@ -441,6 +472,7 @@
     "file": "kiri.webp",
     "pixelated": false,
     "sortOrder": 320,
+    "category": "萌物",
     "tone": "gentle",
     "lines": [
       "我飘在这儿，不挡你视线。",
@@ -455,6 +487,7 @@
     "file": "robot-expressive.webp",
     "pixelated": false,
     "sortOrder": 330,
+    "category": "机器人",
     "tone": "robot",
     "lines": [
       "表情模块加载完毕：微笑。",
@@ -469,6 +502,7 @@
     "file": "bubbles.webp",
     "pixelated": false,
     "sortOrder": 340,
+    "category": "狗狗",
     "tone": "puppy",
     "lines": [
       "泡泡的马甲是红色战袍！",
@@ -483,6 +517,7 @@
     "file": "pebble.webp",
     "pixelated": false,
     "sortOrder": 350,
+    "category": "萌物",
     "tone": "gentle",
     "lines": [
       "稳稳的，像块石头一样。",
@@ -497,6 +532,7 @@
     "file": "blobfish.webp",
     "pixelated": false,
     "sortOrder": 360,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "我看起来委屈，其实很开心。",
@@ -511,6 +547,7 @@
     "file": "opossum.webp",
     "pixelated": false,
     "sortOrder": 370,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "背手踱步，思考人生。",
@@ -525,6 +562,7 @@
     "file": "polis.webp",
     "pixelated": false,
     "sortOrder": 380,
+    "category": "机器人",
     "tone": "robot",
     "lines": [
       "根据我的预测，今天会有好结果。",
@@ -539,6 +577,7 @@
     "file": "mochi-gray.webp",
     "pixelated": false,
     "sortOrder": 390,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "圆眼睛盯着你，快夸我可爱。",
@@ -553,6 +592,7 @@
     "file": "luna-hood.webp",
     "pixelated": true,
     "sortOrder": 400,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "兜帽戴好，专注模式启动。",
@@ -567,6 +607,7 @@
     "file": "blue-abyssinian.webp",
     "pixelated": false,
     "sortOrder": 410,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "小布鲁的项圈今天也亮晶晶。",
@@ -581,6 +622,7 @@
     "file": "hoodie-cat.webp",
     "pixelated": false,
     "sortOrder": 420,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "卫衣太大了，但很有安全感。",
@@ -595,6 +637,7 @@
     "file": "sun-conure.webp",
     "pixelated": false,
     "sortOrder": 430,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "叽叽！今天的颜色要鲜艳一点！",
@@ -609,6 +652,7 @@
     "file": "tuanzi.webp",
     "pixelated": false,
     "sortOrder": 440,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "橘猫团子，体重保密。",
@@ -623,6 +667,7 @@
     "file": "wenbit.webp",
     "pixelated": false,
     "sortOrder": 450,
+    "category": "萌物",
     "tone": "gentle",
     "lines": [
       "贝雷帽一戴，艺术感就来了。",
@@ -637,6 +682,7 @@
     "file": "zhubao.webp",
     "pixelated": false,
     "sortOrder": 460,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "竹宝吃饱了，可以陪你干活啦。",
@@ -651,6 +697,7 @@
     "file": "baby-dragon.webp",
     "pixelated": false,
     "sortOrder": 470,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "小龙在云端为你祈福。",
@@ -665,6 +712,7 @@
     "file": "ginger.webp",
     "pixelated": false,
     "sortOrder": 480,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "奶声奶气地叫一声，给你打气。",
@@ -679,6 +727,7 @@
     "file": "husky.webp",
     "pixelated": false,
     "sortOrder": 490,
+    "category": "狗狗",
     "tone": "puppy",
     "lines": [
       "嗷呜——精力满格！",
@@ -693,6 +742,7 @@
     "file": "mochi-cream.webp",
     "pixelated": false,
     "sortOrder": 500,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "奶油色的毛今天也很蓬松。",
@@ -707,6 +757,7 @@
     "file": "tiger-cub.webp",
     "pixelated": false,
     "sortOrder": 510,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "嗷！小老虎给你壮胆！",
@@ -721,6 +772,7 @@
     "file": "niuniu.webp",
     "pixelated": false,
     "sortOrder": 520,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "卷毛是天生的，可爱也是。",
@@ -735,6 +787,7 @@
     "file": "bianbit.webp",
     "pixelated": true,
     "sortOrder": 530,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "黑猫不说话，只陪着你。",
@@ -749,6 +802,7 @@
     "file": "piaopiao.webp",
     "pixelated": false,
     "sortOrder": 540,
+    "category": "奇幻",
     "tone": "sunny",
     "lines": [
       "叮！小白飘飘有个主意！",
@@ -763,6 +817,7 @@
     "file": "borrow-badger.webp",
     "pixelated": false,
     "sortOrder": 550,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "东西交给我保管，放心。",
@@ -777,6 +832,7 @@
     "file": "build-bot.webp",
     "pixelated": false,
     "sortOrder": 560,
+    "category": "机器人",
     "tone": "robot",
     "lines": [
       "构建进度：正在努力。",
@@ -791,6 +847,7 @@
     "file": "cache-squirrel.webp",
     "pixelated": false,
     "sortOrder": 570,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "好东西要囤起来，好点子也是！",
@@ -805,6 +862,7 @@
     "file": "ci-phoenix.webp",
     "pixelated": false,
     "sortOrder": 580,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "跌倒了没关系，浴火再来。",
@@ -819,6 +877,7 @@
     "file": "context-cat.webp",
     "pixelated": false,
     "sortOrder": 590,
+    "category": "猫咪",
     "tone": "kitty",
     "lines": [
       "你说过的我都记着。",
@@ -833,6 +892,7 @@
     "file": "database-mole.webp",
     "pixelated": false,
     "sortOrder": 600,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "东西都码整齐了，随时来取。",
@@ -847,6 +907,7 @@
     "file": "design-finch.webp",
     "pixelated": false,
     "sortOrder": 610,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "这个间距，再挪两像素会更好！",
@@ -861,6 +922,7 @@
     "file": "feature-hydra.webp",
     "pixelated": false,
     "sortOrder": 620,
+    "category": "奇幻",
     "tone": "mystic",
     "lines": [
       "三个脑袋三个想法，先选一个吧。",
@@ -875,6 +937,7 @@
     "file": "fixture-fox.webp",
     "pixelated": false,
     "sortOrder": 630,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "样本摆好啦，随时开测！",
@@ -889,6 +952,7 @@
     "file": "gecko.webp",
     "pixelated": false,
     "sortOrder": 640,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "多线程模式启动！",
@@ -903,6 +967,7 @@
     "file": "lemur.webp",
     "pixelated": false,
     "sortOrder": 650,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "卡顿？我闻到了！",
@@ -917,6 +982,7 @@
     "file": "lantern.webp",
     "pixelated": false,
     "sortOrder": 660,
+    "category": "萌物",
     "tone": "gentle",
     "lines": [
       "小灯亮着，你不会迷路。",
@@ -931,6 +997,7 @@
     "file": "mammoth.webp",
     "pixelated": false,
     "sortOrder": 670,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "再乱的线团，我都能慢慢理开。",
@@ -945,6 +1012,7 @@
     "file": "bonsai.webp",
     "pixelated": false,
     "sortOrder": 680,
+    "category": "萌物",
     "tone": "mystic",
     "lines": [
       "少一点，往往更好。",
@@ -959,6 +1027,7 @@
     "file": "no-knight.webp",
     "pixelated": false,
     "sortOrder": 690,
+    "category": "人物",
     "tone": "sunny",
     "lines": [
       "不！先把手头这件做完！",
@@ -973,6 +1042,7 @@
     "file": "patch-panda.webp",
     "pixelated": false,
     "sortOrder": 700,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "哪里不对，补一补就好。",
@@ -987,6 +1057,7 @@
     "file": "prompt-parrot.webp",
     "pixelated": false,
     "sortOrder": 710,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "提示词再具体一点点，效果会更好！",
@@ -1001,6 +1072,7 @@
     "file": "pangolin.webp",
     "pixelated": false,
     "sortOrder": 720,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "一片一片来，慢就是快。",
@@ -1015,6 +1087,7 @@
     "file": "queue-crab.webp",
     "pixelated": false,
     "sortOrder": 730,
+    "category": "小动物",
     "tone": "sunny",
     "lines": [
       "排队的任务我数着呢！",
@@ -1029,6 +1102,7 @@
     "file": "tortoise.webp",
     "pixelated": false,
     "sortOrder": 740,
+    "category": "小动物",
     "tone": "gentle",
     "lines": [
       "慢一点，稳一点，也能赢。",

@@ -24,15 +24,17 @@ func TestAgentPetRoutesAndOpenAPI(t *testing.T) {
 	router := gin.New()
 	RegisterAgentPetRoutes(router.Group("/api"), &service.Service{})
 	wanted := map[string]bool{
-		"GET /api/agent-pets":                 false,
-		"GET /api/agent-pets/selection":       false,
-		"PUT /api/agent-pets/selection":       false,
-		"POST /api/agent-pets/:id/purchase":   false,
-		"GET /api/agent-pets/:id/spritesheet": false,
-		"GET /api/admin/agent-pets":           false,
-		"POST /api/admin/agent-pets/import":   false,
-		"PUT /api/admin/agent-pets/:id":       false,
-		"DELETE /api/admin/agent-pets/:id":    false,
+		"GET /api/agent-pets":                     false,
+		"GET /api/agent-pets/selection":           false,
+		"PUT /api/agent-pets/selection":           false,
+		"POST /api/agent-pets/:id/purchase":       false,
+		"GET /api/agent-pets/:id/spritesheet":     false,
+		"GET /api/admin/agent-pets":               false,
+		"POST /api/admin/agent-pets/import":       false,
+		"POST /api/admin/agent-pets/batch":        false,
+		"POST /api/admin/agent-pets/batch-delete": false,
+		"PUT /api/admin/agent-pets/:id":           false,
+		"DELETE /api/admin/agent-pets/:id":        false,
 	}
 	for _, route := range router.Routes() {
 		if _, exists := wanted[route.Method+" "+route.Path]; exists {
@@ -53,7 +55,7 @@ func TestAgentPetRoutesAndOpenAPI(t *testing.T) {
 	for path, methods := range map[string][]string{
 		"/agent-pets": {"get"}, "/agent-pets/selection": {"get", "put"}, "/agent-pets/{id}/purchase": {"post"},
 		"/agent-pets/{id}/spritesheet": {"get"}, "/admin/agent-pets": {"get"}, "/admin/agent-pets/import": {"post"},
-		"/admin/agent-pets/{id}": {"put", "delete"},
+		"/admin/agent-pets/{id}": {"put", "delete"}, "/admin/agent-pets/batch": {"post"}, "/admin/agent-pets/batch-delete": {"post"},
 	} {
 		for _, method := range methods {
 			if spec.Paths[path][method] == nil {
