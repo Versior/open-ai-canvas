@@ -1,27 +1,28 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button } from "antd";
-import { Check, Crown, Eye, LoaderCircle, MessageCircleHeart, RotateCcw, Sparkles } from "lucide-react";
+import { Check, Crown, Eye, Gift, LoaderCircle, MessageCircleHeart, RotateCcw, Sparkles } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useState, type ReactNode } from "react";
 
 import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
 import { Switch } from "@/components/ui/base/switch";
 import { FluidOrb } from "@/components/ui/fluid-orb";
+import { AppModal } from "@/components/ui/product/app-modal";
 import { formatCredits } from "@/constant/credits";
-import { agentPetCatalogQueryKey, publishActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import { agentPetCatalogQueryKey, publishActiveAgentPet, useApplyAgentPet } from "@/hooks/use-active-agent-pet";
 import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AGENT_PET_ASPECT } from "@/lib/canvas/agent-pet";
 import { openWorkspaceWallet } from "@/lib/workspace-wallet";
 import { agentPetSpritesheetURL, getAgentPetCatalog, purchaseAgentPet, selectAgentPet, type AgentPet } from "@/services/api/agent-pets";
 import { ApiError } from "@/services/api/request";
-import { useAgentPetBubbleStore } from "@/stores/use-agent-pet-bubble-store";
+import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const PREVIEW_HEIGHT = 96;
 const PREVIEW_WIDTH = Math.round(PREVIEW_HEIGHT * AGENT_PET_ASPECT);
 
-/** Agent 设置里的“助手形象”：浏览、购买和切换智能体形象。只影响当前用户自己的显示。 */
+/** “助手形象”：浏览、购买、领取和切换智能体形象（Agent 设置与右键菜单的形象商店共用）。只影响当前用户自己的显示。 */
 export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
     const reducedMotion = Boolean(useReducedMotion());
     const userId = useUserStore((state) => state.user?.id || "");
@@ -34,21 +35,14 @@ export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
     const [confirmId, setConfirmId] = useState("");
     const [previewId, setPreviewId] = useState("");
     const selectedId = catalog.data?.selectedPetId ?? "";
-    const chatter = useAgentPetBubbleStore((state) => state.chatter);
-    const setChatter = useAgentPetBubbleStore((state) => state.setChatter);
+    const chatter = useAgentPetPrefsStore((state) => state.chatter);
+    const setChatter = useAgentPetPrefsStore((state) => state.setChatter);
+    const applyPet = useApplyAgentPet();
 
     const apply = async (pet: AgentPet | null) => {
         setBusyId(pet?.id ?? "");
-        try {
-            const selected = await selectAgentPet(pet?.id ?? "");
-            publishActiveAgentPet(queryClient, userId, selected);
-            message.success(selected ? `已换成「${selected.name}」` : "已恢复默认形象");
-        } catch (cause) {
-            message.error(cause instanceof Error ? cause.message : "形象切换失败，请稍后重试");
-            void catalog.refetch();
-        } finally {
-            setBusyId(null);
-        }
+        await applyPet(pet);
+        setBusyId(null);
     };
 
     const buy = async (pet: AgentPet) => {
@@ -95,11 +89,14 @@ export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
 
     const pets = catalog.data.pets;
     const balance = wallet.availableMicrocredits;
+    const consumed = catalog.data.consumedMicrocredits;
+    const hasSpendPets = pets.some((pet) => pet.access === "spend");
     return (
         <div className="canvas-agent-settings-scroll thin-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
             <p className="mb-3 text-xs leading-5" style={{ color: theme.node.muted }}>
                 形象只对你自己显示。带「视线」标记的形象待机时会看向鼠标。
                 {creditsEnabled && balance !== null ? ` 当前可用 ${formatCredits(balance, 2)} 积分。` : ""}
+                {hasSpendPets ? ` 累计已消费 ${formatCredits(consumed, 2)} 积分，消费满门槛即可免费领取对应形象。` : ""}
             </p>
             <label className="mb-3 flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: theme.node.fill }}>
                 <MessageCircleHeart className="size-4 shrink-0" style={{ color: theme.accent.primary }} aria-hidden="true" />
@@ -152,13 +149,22 @@ export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
                                 />
                             }
                         >
+                            {pet.access === "spend" && !pet.owned && !pet.memberFree ? <SpendProgress theme={theme} consumed={consumed} unlock={pet.unlockMicrocredits} /> : null}
                             {selected ? (
                                 <Button size="small" block disabled icon={<Check className="size-3.5" />}>
                                     使用中
                                 </Button>
+                            ) : pet.claimable ? (
+                                <Button size="small" block icon={<Gift className="size-3.5" />} loading={busyId === pet.id} disabled={busyId !== null} onClick={() => void apply(pet)}>
+                                    领取并使用
+                                </Button>
                             ) : pet.usable ? (
                                 <Button size="small" block loading={busyId === pet.id} disabled={busyId !== null} onClick={() => void apply(pet)}>
                                     使用
+                                </Button>
+                            ) : pet.access === "spend" ? (
+                                <Button size="small" block disabled title={`累计消费满 ${formatCredits(pet.unlockMicrocredits, 2)} 积分即可领取`}>
+                                    还差 {formatCredits(Math.max(0, pet.unlockMicrocredits - consumed), 2)} 积分
                                 </Button>
                             ) : pet.purchasable && confirmId === pet.id ? (
                                 <div className="flex gap-1">
@@ -197,6 +203,23 @@ export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
     );
 }
 
+/** 右键菜单里的「形象商店」：弹窗里的同一个形象列表。 */
+export function AgentPetStoreModal({ theme, open, onClose }: { theme: CanvasTheme; open: boolean; onClose: () => void }) {
+    return (
+        <AppModal open={open} title={null} footer={null} centered width="min(600px, calc(100vw - 24px))" onCancel={onClose} flush aria-label="形象商店">
+            <div className="flex h-[min(680px,calc(100dvh-96px))] min-h-0 flex-col" style={{ color: theme.node.text, background: theme.node.panel }}>
+                <header className="shrink-0 border-b px-4 py-3 pr-12" style={{ borderColor: theme.node.stroke }}>
+                    <h2 className="text-sm font-semibold">形象商店</h2>
+                    <p className="mt-0.5 text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
+                        免费、会员专享、积分购买或累计消费解锁
+                    </p>
+                </header>
+                <AgentPetPicker theme={theme} />
+            </div>
+        </AppModal>
+    );
+}
+
 function petBadges(pet: AgentPet) {
     const badges: string[] = [];
     if (pet.spriteVersion === 2) badges.push("视线");
@@ -204,8 +227,30 @@ function petBadges(pet: AgentPet) {
     else if (pet.memberFree) badges.push("会员免费");
     else if (pet.access === "vip") badges.push("VIP");
     else if (pet.access === "paid") badges.push(`${formatCredits(pet.priceMicrocredits, 2)} 积分`);
+    else if (pet.access === "spend") badges.push(pet.claimable ? "可领取" : `消费满 ${formatCredits(pet.unlockMicrocredits, 2)}`);
     else badges.push("免费");
     return badges;
+}
+
+/** 累计消费解锁的进度条；只统计已结算的模型调用消费，购买形象不计入。 */
+function SpendProgress({ theme, consumed, unlock }: { theme: CanvasTheme; consumed: number; unlock: number }) {
+    const ratio = unlock > 0 ? Math.min(1, consumed / unlock) : 1;
+    const text = `已消费 ${formatCredits(Math.min(consumed, unlock), 2)} / ${formatCredits(unlock, 2)} 积分`;
+    return (
+        <div
+            className="mb-1.5 h-1 overflow-hidden rounded-full"
+            style={{ background: theme.toolbar.itemHover }}
+            role="progressbar"
+            aria-label="累计消费进度"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(ratio * 100)}
+            aria-valuetext={text}
+            title={`${text}（只统计模型调用，购买形象不计入）`}
+        >
+            <div className="h-full rounded-full" style={{ width: `${ratio * 100}%`, background: theme.accent.primary }} />
+        </div>
+    );
 }
 
 function PetCard({

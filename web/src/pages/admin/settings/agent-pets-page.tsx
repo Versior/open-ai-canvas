@@ -16,7 +16,7 @@ import { agentPetInput, AgentPetEditor } from "./components/agent-pet-editor";
 const THUMB_HEIGHT = 56;
 const THUMB_WIDTH = Math.round(THUMB_HEIGHT * AGENT_PET_ASPECT);
 
-/** 智能体样式：管理用户可更换的形象库（上架、免费 / VIP / 积分购买、状态动作）。 */
+/** 智能体样式：管理用户可更换的形象库（上架、免费 / VIP / 积分购买 / 累计消费解锁、状态动作）。 */
 export default function AgentPetsSettingsPage() {
     const { message } = App.useApp();
     const [pets, setPets] = useState<AdminAgentPet[]>([]);
@@ -154,10 +154,10 @@ export default function AgentPetsSettingsPage() {
                 render: (_, pet) => {
                     const names = pet.groupCodes.map((code) => groupNames.get(code) || code).join("、");
                     if (pet.access === "vip") return <AdminStatusBadge label={`VIP 专享 · ${names || "未选分组"}`} tone="warning" />;
-                    if (pet.access === "paid") {
+                    if (pet.access === "paid" || pet.access === "spend") {
                         return (
                             <div className="text-xs leading-5">
-                                <AdminStatusBadge label={`${formatCredits(pet.priceMicrocredits, 2)} 积分`} tone="success" />
+                                <AdminStatusBadge label={pet.access === "paid" ? `${formatCredits(pet.priceMicrocredits, 2)} 积分` : `累计消费满 ${formatCredits(pet.unlockMicrocredits, 2)} 积分`} tone="success" />
                                 {names ? <div className="text-foreground/45">会员免费：{names}</div> : null}
                             </div>
                         );
@@ -165,7 +165,7 @@ export default function AgentPetsSettingsPage() {
                     return <AdminStatusBadge label="免费" tone="neutral" />;
                 },
             },
-            { key: "owners", title: "已购", dataIndex: "ownerCount", width: 80, align: "center", render: (value: number) => <span className="tabular-nums">{value}</span> },
+            { key: "owners", title: "已拥有", dataIndex: "ownerCount", width: 80, align: "center", render: (value: number) => <span className="tabular-nums">{value}</span> },
             { key: "sort", title: "排序", dataIndex: "sortOrder", width: 80, align: "center", render: (value: number) => <span className="tabular-nums">{value}</span> },
             {
                 key: "actions",
@@ -186,7 +186,7 @@ export default function AgentPetsSettingsPage() {
                                           icon: <Trash2 className="size-3.5" />,
                                           danger: true,
                                           disabled: pet.ownerCount > 0,
-                                          confirm: { title: `删除形象「${pet.name}」？`, description: "删除后不可恢复；已有用户购买的形象不能删除，可以下架。", okText: "确认删除" },
+                                          confirm: { title: `删除形象「${pet.name}」？`, description: "删除后不可恢复；已有用户购买或领取的形象不能删除，可以下架。", okText: "确认删除" },
                                           onClick: () => remove(pet),
                                       },
                                   ]

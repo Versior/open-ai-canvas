@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AgentPetSprite } from "../src/components/canvas/agent-pet-sprite";
-import { agentPetFrameDuration, agentPetLookCell, agentPetRowForState, agentPetSheetRows, agentPetTopRow, countAgentPetFrames, DEFAULT_AGENT_PET_FRAMES } from "../src/lib/canvas/agent-pet";
+import { agentPetFrameDuration, agentPetLauncherHeight, agentPetLookCell, agentPetRowForState, agentPetSheetRows, agentPetTopRow, countAgentPetFrames, DEFAULT_AGENT_PET_FRAMES } from "../src/lib/canvas/agent-pet";
 
 describe("agent pet atlas math", () => {
     test("look directions start at 12 o'clock and go clockwise across rows 9 and 10", () => {
@@ -46,6 +46,19 @@ describe("agent pet atlas math", () => {
         const filled = new Set(["0:0", "1:0", "2:0", "0:1", "2:1", "0:3", "1:3", "2:3", "3:3", "4:3", "5:3", "6:3", "7:3"]);
         const counts = countAgentPetFrames((column, row) => filled.has(`${column}:${row}`), 4);
         expect(counts).toEqual([3, 1, 8, 8]);
+    });
+
+    test("launcher size follows the site setting unless the user picks a size", () => {
+        const desktop = { width: 1440, height: 900 };
+        // 跟随站点：不超过图集单格；离开画布编辑器封顶 120。
+        expect(agentPetLauncherHeight("auto", 260, desktop, true)).toBe(208);
+        expect(agentPetLauncherHeight("auto", 160, desktop, false)).toBe(120);
+        // 选了档位：画布外也按所选高度，只受视口约束。
+        expect(agentPetLauncherHeight("s", 260, desktop, true)).toBe(96);
+        expect(agentPetLauncherHeight("xl", 120, desktop, false)).toBe(208);
+        expect(agentPetLauncherHeight("xl", 120, { width: 390, height: 240 }, false)).toBe(180);
+        // 损坏的偏好按跟随站点处理。
+        expect(agentPetLauncherHeight("huge" as never, 160, desktop, true)).toBe(160);
     });
 });
 
