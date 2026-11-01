@@ -247,6 +247,7 @@ export const zhCN = {
             adjust: "积分调整",
             change: "积分账户变动",
             arkAssetGroup: "方舟素材组",
+            agentPetPurchase: "购买形象",
         },
         topup: {
             kinds: {

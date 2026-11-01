@@ -4,6 +4,7 @@ import "yingce/backend/internal/app"
 
 const (
 	AgentAvatarBundleMaxBytes          = app.AgentAvatarBundleMaxBytes
+	AgentPetImportMaxBytes             = app.AgentPetImportMaxBytes
 	Live2DMaxBytes                     = app.Live2DMaxBytes
 	AnnouncementImageMaxBytes          = app.AnnouncementImageMaxBytes
 	AppearanceAssetDarkLogo            = app.AppearanceAssetDarkLogo

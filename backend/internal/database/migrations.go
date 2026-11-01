@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 87
+const CurrentSchemaVersion int64 = 88
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -34,6 +34,8 @@ const resourceThumbnailChecksum = "sha256:resource-thumbnail-v41-20260927"
 const workbenchToolsMigrationName = "workbench_tools_and_presets"
 const workbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v54-20261014"
 const legacyWorkbenchToolsMigrationChecksum = "sha256:workbench-tools-presets-v51-20261014"
+const agentPetSkinsMigrationName = "agent_pet_skins"
+const agentPetSkinsMigrationChecksum = "sha256:agent-pet-skins-v80-20261101"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -293,6 +295,10 @@ var schemaMigrations = []migration{
 	{version: 87, name: "inspiration_feed", checksum: "sha256:inspiration-feed-v87-20261105", apply: func(tx *gorm.DB) error {
 		// 灵感上新：定时同步的上游灵感条目，只建新表；开关与同步记录存 system_settings。
 		return tx.AutoMigrate(&model.InspirationFeedEntry{})
+	}},
+	// Fork 自有：智能体形象库、用户已购形象和当前选择，排在上游迁移之后；上游再有新迁移时需顺延。
+	{version: 88, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{})
 	}},
 }
 

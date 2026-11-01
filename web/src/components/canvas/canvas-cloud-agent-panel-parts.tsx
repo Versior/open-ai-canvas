@@ -16,6 +16,10 @@ import { cn } from "@/lib/utils";
 import { Live2DAvatar } from "./live2d-avatar";
 import { agentAvatarBundleFileURL, live2DModelURL } from "@/services/api/appearance";
 import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
+import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import { AGENT_PET_ASPECT, AGENT_PET_CELL_HEIGHT } from "@/lib/canvas/agent-pet";
+import { agentPetSpritesheetURL } from "@/services/api/agent-pets";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import { ArrowDown, ArrowLeft, Check, Clock3, Download, Ellipsis, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RefreshCw, Scaling, Settings2, ShieldCheck, Trash2, X, Blocks } from "lucide-react";
 import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
@@ -65,12 +69,18 @@ export const AgentLauncher = memo(function AgentLauncher({
     const appearance = useAppearanceStore((state) => state.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
     const appearanceResolved = useAppearanceStore((state) => state.resolved);
     const appearanceRevision = useAppearanceStore((state) => state.appearance.revision);
-    const live = appearance.avatarType === "live2d" && Boolean(appearance.live2dResourceId && appearance.live2dEntry);
+    // 用户选择的形象优先于站点默认形象；图集加载失败时回到默认形象。
+    const { pet: selectedPet, pending: petPending } = useActiveAgentPet();
+    const [failedPetId, setFailedPetId] = useState("");
+    const pet = selectedPet && selectedPet.id !== failedPetId ? selectedPet : null;
+    const [petHovered, setPetHovered] = useState(false);
+    const bundleActive = appearance.avatarType === "bundle" && !pet;
+    const live = !pet && appearance.avatarType === "live2d" && Boolean(appearance.live2dResourceId && appearance.live2dEntry);
     const avatarState = agentAvatarStateForRunStatus(status);
     const bundleManifestURL = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, appearanceRevision) : "/doll/avatar.json";
     const [bundleManifestState, setBundleManifestState] = useState<{ url: string; manifest: AgentAvatarBundleManifest | null } | null>(null);
     useEffect(() => {
-        if (appearance.avatarType !== "bundle") {
+        if (!bundleActive) {
             setBundleManifestState(null);
             return;
         }
@@ -87,13 +97,13 @@ export const AgentLauncher = memo(function AgentLauncher({
             }
         })();
         return () => controller.abort();
-    }, [appearance.avatarType, bundleManifestURL]);
+    }, [bundleActive, bundleManifestURL]);
     const currentBundleManifestState = bundleManifestState?.url === bundleManifestURL ? bundleManifestState : null;
     const bundleManifest = currentBundleManifestState?.manifest ?? null;
-    const bundleManifestLoading = appearance.avatarType === "bundle" && currentBundleManifestState === null;
+    const bundleManifestLoading = bundleActive && currentBundleManifestState === null;
     const clip = bundleManifest ? agentAvatarClipForState(appearance, avatarState, bundleManifest) : "";
     const clipFile = bundleManifest?.clips[clip] || "";
-    const mediaURL = appearance.avatarType === "bundle" && clipFile ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, clipFile, false, appearanceRevision) : `/doll/${encodeURIComponent(clipFile)}`) : "";
+    const mediaURL = bundleActive && clipFile ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, clipFile, false, appearanceRevision) : `/doll/${encodeURIComponent(clipFile)}`) : "";
     const [mediaError, setMediaError] = useState(false);
     useEffect(() => setMediaError(false), [mediaURL]);
     const [live2DError, setLive2DError] = useState("");
@@ -115,19 +125,22 @@ export const AgentLauncher = memo(function AgentLauncher({
         }
     };
     const media = Boolean(mediaURL && !mediaError);
-    const aspectRatio = live ? 0.75 : bundleManifest ? bundleManifest.width / bundleManifest.height : appearance.avatarType === "bundle" ? 480 / 432 : 1;
-    const largeAvatar = live || media || bundleManifestLoading;
+    const aspectRatio = pet ? AGENT_PET_ASPECT : live ? 0.75 : bundleManifest ? bundleManifest.width / bundleManifest.height : appearance.avatarType === "bundle" ? 480 / 432 : 1;
+    const largeAvatar = Boolean(pet) || petPending || live || media || bundleManifestLoading;
     const inCanvasEditor = Boolean(useMatch("/canvas/:id"));
     // 收起后只留小圆球入口：不加载 Live2D / 动画，也不挡画布。位置以右下角为锚点，收起展开不跳位。
     const keepsAvatarSize = largeAvatar && !collapsed;
-    const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? resolveAgentLauncherAvatarHeight(appearance.avatarHeight, aspectRatio, viewport, inCanvasEditor) : 76;
+    // 宠物图集单格 208px 高，超过原始尺寸只会变糊。
+    const preferredHeight = pet ? Math.min(appearance.avatarHeight, AGENT_PET_CELL_HEIGHT) : appearance.avatarHeight;
+    const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? resolveAgentLauncherAvatarHeight(preferredHeight, aspectRatio, viewport, inCanvasEditor) : 76;
     const width = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? Math.round(height * aspectRatio) : 76;
     const { position, dragging, handlers } = useAgentLauncherPosition(onOpen, width, height);
     const { onClick, onKeyDown, onDoubleClick, ...pointerHandlers } = handlers;
     // 大形象的外框大多是透明像素：外框不接收指针，只有身体热区可点、可拖，透明处的点击落到下面的页面。
     // 键盘聚焦与激活仍在按钮上；小圆球和默认 76px 入口整块可点。
-    const bodyHitOnly = keepsAvatarSize && (live || media);
+    const bodyHitOnly = keepsAvatarSize && (live || media || Boolean(pet));
     const hitInset = bodyHitOnly ? AGENT_LAUNCHER_HIT_INSET : null;
+    const petHoverHandlers = pet ? { onPointerEnter: () => setPetHovered(true), onPointerLeave: () => setPetHovered(false) } : null;
     const showToggle = !hidden && (largeAvatar || collapsed);
     return (
         <>
@@ -141,7 +154,7 @@ export const AgentLauncher = memo(function AgentLauncher({
                     collapsed && "is-collapsed",
                     bodyHitOnly && "is-body-hit",
                     keepsAvatarSize && live && "canvas-agent-launcher-live2d",
-                    keepsAvatarSize && media && "canvas-agent-launcher-media",
+                    keepsAvatarSize && (media || Boolean(pet)) && "canvas-agent-launcher-media",
                 )}
                 style={{ ...position, width, height, color: theme.node.text, "--canvas-agent-launcher-shadow": theme.spatial.shadow, ...(hidden ? { display: "none" } : null) } as CSSProperties}
                 aria-hidden={hidden || undefined}
@@ -156,9 +169,30 @@ export const AgentLauncher = memo(function AgentLauncher({
                 whileTap={reducedMotion || dragging ? undefined : { scale: 0.96 }}
                 transition={{ duration: reducedMotion ? 0 : 0.18 }}
             >
-                {hitInset ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} /> : null}
+                {hitInset ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} {...petHoverHandlers} /> : null}
                 {collapsed ? (
                     <FluidOrb size={30} color="#7164f6" />
+                ) : pet ? (
+                    <AgentPetSprite
+                        src={agentPetSpritesheetURL(pet)}
+                        version={pet.spriteVersion}
+                        state={avatarState}
+                        stateRows={pet.stateRows}
+                        width={width}
+                        height={height}
+                        paused={hidden}
+                        reducedMotion={reducedMotion}
+                        pixelated={pet.pixelated}
+                        dragging={dragging}
+                        offsetRight={position.right}
+                        hovered={petHovered}
+                        onError={() => setFailedPetId(pet.id)}
+                    />
+                ) : petPending ? (
+                    <span role="status" aria-busy="true">
+                        <LoaderCircle className={reducedMotion ? "size-6" : "size-6 motion-safe:animate-spin"} aria-hidden="true" />
+                        <span className="sr-only">正在加载助手形象</span>
+                    </span>
                 ) : live ? (
                     <Live2DAvatar
                         url={live2DModelURL(appearance.live2dResourceId, appearance.live2dEntry)}

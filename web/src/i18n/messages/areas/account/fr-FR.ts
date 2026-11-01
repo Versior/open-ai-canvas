@@ -254,6 +254,7 @@ export const frFR: DeepStringRecord<typeof zhCN> = {
             adjust: "Ajustement de crédits",
             change: "Mouvement du compte de crédits",
             arkAssetGroup: "Groupe de ressources Ark",
+            agentPetPurchase: "Achat d'apparence d'agent",
         },
         topup: {
             kinds: {

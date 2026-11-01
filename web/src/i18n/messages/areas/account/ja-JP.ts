@@ -254,6 +254,7 @@ export const jaJP: DeepStringRecord<typeof zhCN> = {
             adjust: "クレジット調整",
             change: "クレジットアカウントの変動",
             arkAssetGroup: "Ark 素材グループ",
+            agentPetPurchase: "エージェントの外見を購入",
         },
         topup: {
             kinds: {

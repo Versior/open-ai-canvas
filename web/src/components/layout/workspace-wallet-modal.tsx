@@ -442,7 +442,9 @@ function WalletLedgerRow({ entry }: { entry: CreditLedgerEntry }) {
                 ? t("account.wallet.ledger.redeem")
                 : entry.type === "referral_commission"
                   ? t("account.wallet.ledger.referral")
-                  : note || t("account.wallet.ledger.adjust");
+                  : entry.type === "agent_pet_purchase"
+                    ? t("account.wallet.ledger.agentPetPurchase")
+                    : note || t("account.wallet.ledger.adjust");
     return (
         <article className="workspace-wallet-ledger-row">
             <span className={cn("workspace-wallet-ledger-icon", positive ? "is-income" : "is-consume")}>{positive ? <Coins /> : <CreditCard />}</span>

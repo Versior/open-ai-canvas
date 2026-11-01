@@ -252,6 +252,7 @@ export const koKR: DeepStringRecord<typeof zhCN> = {
             adjust: "크레딧 조정",
             change: "크레딧 계정 변동",
             arkAssetGroup: "Ark 소재 그룹",
+            agentPetPurchase: "에이전트 외형 구매",
         },
         topup: {
             kinds: {

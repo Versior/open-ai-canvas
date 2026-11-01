@@ -1,0 +1,182 @@
+[
+  {
+    "id": "pingo",
+    "name": "小企鹅 Pingo",
+    "description": "软乎乎的帝企鹅宝宝，好奇又温柔，动作慢悠悠。",
+    "spriteVersion": 2,
+    "file": "pingo.webp",
+    "pixelated": false,
+    "sortOrder": 10
+  },
+  {
+    "id": "polin",
+    "name": "花粉球波林",
+    "description": "一颗金色花粉，好奇又执着，把每个任务都当成发芽的机会。",
+    "spriteVersion": 2,
+    "file": "polin.webp",
+    "pixelated": false,
+    "sortOrder": 20
+  },
+  {
+    "id": "woogi",
+    "name": "呜吉",
+    "description": "白色小狐灵，蓝色耳尖和尾巴，胸前挂着一颗蓝宝石。",
+    "spriteVersion": 2,
+    "file": "woogi.webp",
+    "pixelated": false,
+    "sortOrder": 30
+  },
+  {
+    "id": "woogi-pixel",
+    "name": "像素呜吉",
+    "description": "呜吉的像素版本，适合配合像素清晰显示。",
+    "spriteVersion": 2,
+    "file": "woogi-pixel.webp",
+    "pixelated": true,
+    "sortOrder": 40
+  },
+  {
+    "id": "rupet",
+    "name": "机器人 ruPet",
+    "description": "好奇友善的小机器人，会眨眼挥手，也会转头看你的鼠标。",
+    "spriteVersion": 2,
+    "file": "rupet.webp",
+    "pixelated": false,
+    "sortOrder": 50
+  },
+  {
+    "id": "longbao",
+    "name": "龙宝",
+    "description": "灵动友善的 Q 版中国龙，青绿龙身配金色龙角和红色鬃毛。",
+    "spriteVersion": 2,
+    "file": "longbao.webp",
+    "pixelated": false,
+    "sortOrder": 60
+  },
+  {
+    "id": "iris",
+    "name": "艾瑞丝",
+    "description": "活力满满的漫画风少女，Agent 工作时双手飞快敲键盘。",
+    "spriteVersion": 2,
+    "file": "iris.webp",
+    "pixelated": false,
+    "sortOrder": 70
+  },
+  {
+    "id": "georgie",
+    "name": "乔治",
+    "description": "安静的垂耳蝴蝶犬，陪你专注工作，反应总是轻轻的。",
+    "spriteVersion": 2,
+    "file": "georgie.webp",
+    "pixelated": false,
+    "sortOrder": 80
+  },
+  {
+    "id": "didi",
+    "name": "迪迪",
+    "description": "橘白相间的小虎斑猫，从蓝色布包里探出脑袋。",
+    "spriteVersion": 2,
+    "file": "didi.webp",
+    "pixelated": false,
+    "sortOrder": 90
+  },
+  {
+    "id": "mimi",
+    "name": "咪咪",
+    "description": "银色虎斑美短猫，安安静静陪在一旁。",
+    "spriteVersion": 2,
+    "file": "mimi.webp",
+    "pixelated": true,
+    "sortOrder": 100
+  },
+  {
+    "id": "sentinel-raven",
+    "name": "哨兵渡鸦",
+    "description": "严格的架构审查官：设计没被证明可靠之前，先当它有问题。",
+    "spriteVersion": 2,
+    "file": "sentinel-raven.webp",
+    "pixelated": true,
+    "sortOrder": 110
+  },
+  {
+    "id": "vika",
+    "name": "魔女维卡",
+    "description": "银发小魔女，干活时安静看书，跳跃和出错时端起咖啡抿一口。",
+    "spriteVersion": 1,
+    "file": "vika.webp",
+    "pixelated": false,
+    "sortOrder": 120
+  },
+  {
+    "id": "natalie",
+    "name": "娜塔莉",
+    "description": "优雅的三花猫，坐得端端正正，偶尔有点小迷糊，会坐着给自己理毛。",
+    "spriteVersion": 1,
+    "file": "natalie.webp",
+    "pixelated": true,
+    "sortOrder": 130
+  },
+  {
+    "id": "rita",
+    "name": "丽塔",
+    "description": "玳瑁虎斑小猫，好动好奇又黏人，总爱迈着小碎步跑来跑去。",
+    "spriteVersion": 1,
+    "file": "rita.webp",
+    "pixelated": true,
+    "sortOrder": 140
+  },
+  {
+    "id": "luna",
+    "name": "露娜",
+    "description": "白灰相间的狮子兔，耳朵灵动，跑起来后腿一蹬一蹬。",
+    "spriteVersion": 1,
+    "file": "luna.webp",
+    "pixelated": false,
+    "sortOrder": 150
+  },
+  {
+    "id": "tabby",
+    "name": "小虎斑",
+    "description": "圆滚滚的棕色虎斑猫。",
+    "spriteVersion": 1,
+    "file": "tabby.webp",
+    "pixelated": true,
+    "sortOrder": 160
+  },
+  {
+    "id": "penguin-fisher",
+    "name": "钓鱼企鹅",
+    "description": "背着鱼竿的小企鹅，最爱钓鱼。",
+    "spriteVersion": 1,
+    "file": "penguin-fisher.webp",
+    "pixelated": true,
+    "sortOrder": 170
+  },
+  {
+    "id": "snow-leopard",
+    "name": "雪豹宝宝",
+    "description": "毛茸茸的雪豹幼崽。",
+    "spriteVersion": 1,
+    "file": "snow-leopard.webp",
+    "pixelated": true,
+    "sortOrder": 180
+  },
+  {
+    "id": "huahua",
+    "name": "花花",
+    "description": "胖嘟嘟的像素三花猫，自带冷静程序员气质。",
+    "spriteVersion": 1,
+    "file": "huahua.webp",
+    "pixelated": true,
+    "sortOrder": 190
+  },
+  {
+    "id": "maimai",
+    "name": "麦麦",
+    "description": "爱玩 AI 的白色比熊犬，戴着小墨镜和橙色领结，又酷又萌。",
+    "spriteVersion": 1,
+    "file": "maimai.webp",
+    "pixelated": true,
+    "sortOrder": 200
+  }
+]
