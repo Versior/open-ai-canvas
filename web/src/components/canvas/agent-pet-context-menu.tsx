@@ -350,6 +350,7 @@ function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: 
                                         reducedMotion={reducedMotion}
                                         pixelated={pet.pixelated}
                                         lookAtPointer={false}
+                                        lazy
                                     />
                                 )}
                             </span>

@@ -40,6 +40,8 @@ export type AgentPetSpriteProps = {
     hovered?: boolean;
     /** v2 图集在待机时看向鼠标。 */
     lookAtPointer?: boolean;
+    /** 列表缩略图用：接近可视区域才加载图集，避免打开商店或后台时一次下载、解码整个形象库。 */
+    lazy?: boolean;
     label?: string;
     className?: string;
     onError?: () => void;
@@ -64,13 +66,17 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     offsetRight = 0,
     hovered = false,
     lookAtPointer = true,
+    lazy = false,
     label,
     className,
     onError,
 }: AgentPetSpriteProps) {
     const element = useRef<HTMLSpanElement>(null);
     const rows = agentPetSheetRows(version);
-    const { frames } = useAgentPetSheetMetrics(src, version, onError);
+    // 已经检测过的图集在缓存里，直接显示，切换筛选时不闪一下空白。
+    const near = useNearViewport(element, lazy && !cachedAgentPetMetrics(src));
+    const sheet = near ? src : "";
+    const { frames } = useAgentPetSheetMetrics(sheet, version, onError);
 
     const documentHidden = useDocumentHidden();
     const still = paused || reducedMotion || documentHidden;
@@ -124,7 +130,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     const style: CSSProperties = {
         width,
         height,
-        backgroundImage: `url(${JSON.stringify(src)})`,
+        backgroundImage: sheet ? `url(${JSON.stringify(sheet)})` : undefined,
         backgroundRepeat: "no-repeat",
         backgroundSize: `${width * AGENT_PET_COLUMNS}px ${height * rows}px`,
         backgroundPosition: `${-cell.column * width}px ${-cell.row * height}px`,
@@ -156,6 +162,40 @@ export function useAgentPetSheetMetrics(src: string, version: 1 | 2, onError?: (
         };
     }, [src, rows]);
     return metrics;
+}
+
+/** deferred 时等元素接近最近的滚动容器（没有则视口）再返回 true，之后一直保持 true。 */
+function useNearViewport(element: { current: HTMLElement | null }, deferred: boolean) {
+    const [near, setNear] = useState(false);
+    const waiting = deferred && !near;
+    useEffect(() => {
+        if (!waiting) return;
+        const target = element.current;
+        if (!target || typeof IntersectionObserver === "undefined") {
+            setNear(true);
+            return;
+        }
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (!entries.some((entry) => entry.isIntersecting)) return;
+                setNear(true);
+                observer.disconnect();
+            },
+            { root: scrollContainer(target), rootMargin: "200px" },
+        );
+        observer.observe(target);
+        return () => observer.disconnect();
+    }, [element, waiting]);
+    return !waiting;
+}
+
+/** 最近的纵向滚动容器。以它为 root，预加载边距才会在商店弹窗、右键菜单的滚动区里生效。 */
+function scrollContainer(element: HTMLElement) {
+    for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+        const { overflowY } = getComputedStyle(node);
+        if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) return node;
+    }
+    return null;
 }
 
 function useDocumentHidden() {
