@@ -109,7 +109,7 @@ export type EcommerceWorkbenchBrief = {
     count: number;
     identity: string;
     poses: string[];
-    template?: import("@/services/api/ecommerce").EcommerceSuiteTemplate;
+    template?: import("@/services/api/ecommerce-canvas").EcommerceSuiteTemplate;
     generationMode?: "standard" | "product-protected";
     reviewRequired?: boolean;
     brand?: string;

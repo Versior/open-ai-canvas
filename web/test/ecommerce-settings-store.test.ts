@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { DEFAULT_ECOMMERCE_SETTING, type EcommerceSetting } from "../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, type EcommerceSetting } from "../src/services/api/ecommerce-canvas";
 import { apiClient } from "../src/services/api/request";
 import { useEcommerceSettings } from "../src/stores/use-ecommerce-settings";
 import { getActiveUserScope } from "../src/lib/user-scope";

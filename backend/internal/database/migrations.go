@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 79
+const CurrentSchemaVersion int64 = 80
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -38,6 +38,8 @@ const ecommercePrivateLibraryMigrationChecksum = "sha256:ecommerce-private-libra
 const restoreEcommerceCanvasKindMigrationName = "restore_ecommerce_canvas_kind"
 const restoreEcommerceCanvasKindMigrationChecksum = "sha256:restore-ecommerce-canvas-kind-v59"
 const referralCenterMigrationName = "referral_center"
+const ecommerceAgentKnowledgeMigrationName = "ecommerce_agent_and_knowledge"
+const ecommerceAgentKnowledgeMigrationChecksum = "sha256:ecommerce-agent-and-knowledge-v78-20261101"
 const upstreamReferralCenterMigrationChecksum = "sha256:referral-center-v72-20261027"
 const referralCenterMigrationChecksum = "sha256:referral-center-v74-20261027"
 const dramaEpisodeSourceFormatMigrationName = "drama_episode_source_format"
@@ -300,6 +302,8 @@ var schemaMigrations = []migration{
 	{version: 77, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum, apply: migrateUserGroupsPricingCurrency},
 	{version: 78, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, apply: migrateAgentMemoryDocumentSkillDiscovery},
 	{version: 79, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum, apply: migrateAgentMemoryDocumentColumns},
+	// 上游 PR #939 的 78 号迁移（电商 Agent 与知识库）。名称和校验和与上游一致，Fork 顺延到 80。
+	{version: 80, name: ecommerceAgentKnowledgeMigrationName, checksum: ecommerceAgentKnowledgeMigrationChecksum, apply: migrateEcommerceFeature},
 }
 
 // migrateAgentMemoryDocumentColumns 补齐记忆文件的条目序号与修订的工具调用 ID。
@@ -920,6 +924,15 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasColumn(&model.AgentMemoryDocument{}, "NextEntrySeq") || !tx.Migrator().HasColumn(&model.AgentMemoryDocumentRevision{}, "CallID") {
 			return fmt.Errorf("Agent 记忆补列迁移账本与物理结构不一致：缺少条目序号或工具调用 ID")
 		}
+	case 80:
+		for _, table := range []any{&model.EcommerceProject{}, &model.EcommerceKnowledgeSource{}, &model.EcommerceKnowledgeEntry{}, &model.EcommerceCreativeRecommendation{}, &model.EcommerceAgentAnalysis{}, &model.EcommerceAgentRun{}, &model.EcommerceAgentPage{}, &model.EcommerceAgentCanvasVersion{}} {
+			if !tx.Migrator().HasTable(table) {
+				return fmt.Errorf("电商 Agent 迁移账本与物理结构不一致：缺少电商 Agent 或知识库表")
+			}
+		}
+		if !tx.Migrator().HasIndex(&model.EcommerceKnowledgeEntry{}, "idx_ecommerce_knowledge_domain") {
+			return fmt.Errorf("电商知识库迁移账本与物理结构不一致：缺少索引 idx_ecommerce_knowledge_domain")
+		}
 	}
 	return nil
 }
@@ -951,9 +964,10 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{version: 75, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum},
 		{version: 76, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
 		{version: 77, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum},
+		{version: 78, name: ecommerceAgentKnowledgeMigrationName, checksum: ecommerceAgentKnowledgeMigrationChecksum},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 77 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 78 后仍有记录，拒绝自动重排")
 	}
 	for index, applied := range records {
 		expected := upstream[index]

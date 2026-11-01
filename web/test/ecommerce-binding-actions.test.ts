@@ -14,7 +14,7 @@ import { createCanvasBatchInputSnapshot } from "../src/lib/canvas/canvas-batch-i
 import { connectedStyleReferenceNodes, ecommerceProductReferenceImages, ecommerceRowPromptIssue } from "../src/lib/ecommerce/ecommerce-canvas";
 import type { EcommerceSuiteRow } from "../src/lib/ecommerce/ecommerce-suite";
 import { createCanvasNode } from "../src/lib/canvas/canvas-project-domain";
-import { DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce-canvas";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 import { defaultConfig } from "../src/stores/use-config-store";
 

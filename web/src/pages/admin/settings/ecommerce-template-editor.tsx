@@ -2,7 +2,7 @@ import { App, Button, Input } from "antd";
 import { useState } from "react";
 import { parseEcomgenTemplate } from "@/lib/ecommerce/ecomgen-template";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
-import type { EcommerceFlowId, EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import type { EcommerceFlowId, EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 import { Switch } from "../ui/controls";
 import { EcommerceTemplateCatalogDetails } from "@/components/canvas/ecommerce-template-catalog";
 

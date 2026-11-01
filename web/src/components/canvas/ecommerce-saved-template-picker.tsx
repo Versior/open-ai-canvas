@@ -2,7 +2,7 @@ import { Button, Select } from "antd";
 import { useEffect, useState } from "react";
 import { useEcommerceTemplateLibrary } from "@/stores/use-ecommerce-template-library";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
-import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 
 export function EcommerceSavedTemplatePicker({ disabled, onApply }: { disabled?: boolean; onApply: (template: EcommerceSuiteTemplate) => void }) {
     const templates = useEcommerceTemplateLibrary((state) => state.templates);

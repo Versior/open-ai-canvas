@@ -1,6 +1,6 @@
 import type { EcommerceOneClickFlow, EcommerceOneClickFlowId } from "./ecommerce-oneclick";
 import type { EcommerceSuiteRow } from "./ecommerce-suite";
-import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 import { ecommerceSliceSpec, type EcommerceSlicePlatform } from "./ecommerce-slice";
 import { ecommercePlatformGuidance } from "./ecommerce-platform-guidance";
 import { resolveEcommercePlatformId } from "./ecommerce-platform-specs";

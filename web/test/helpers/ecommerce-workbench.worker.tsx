@@ -4,7 +4,7 @@ import React, { act } from "react";
 import { reconciler } from "@react-three/fiber";
 import { CanvasNodeType, type CanvasNodeData, type CanvasConnection } from "../../src/types/canvas";
 import { DEFAULT_ECOMMERCE_BRIEF, studioWorkbenchRequest } from "../../src/lib/ecommerce/ecommerce-capabilities";
-import { DEFAULT_ECOMMERCE_SETTING } from "../../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING } from "../../src/services/api/ecommerce-canvas";
 import { createEcommerceProductProfile } from "../../src/lib/ecommerce/ecommerce-contract";
 import type { GenerationTask } from "../../src/services/api/task-center";
 

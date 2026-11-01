@@ -4,13 +4,15 @@ import { lazyAdminPage } from "@/pages/admin/admin-page-loader";
 
 import { RequireAuth } from "@/components/auth/require-auth";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
-import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadEcommercePage, loadInspirationPage, loadProjectCreatePage, loadProjectDetailPage, loadProjectsPage, loadSkillWorkbenchPage } from "@/lib/workspace-route-modules";
+import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadEcommerceCanvasPage, loadInspirationPage, loadProjectCreatePage, loadProjectDetailPage, loadProjectsPage, loadSkillWorkbenchPage } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
+const EcommercePage = lazy(() => import("@/pages/ecommerce"));
+const EcommerceKnowledgePage = lazyAdminPage(() => import("@/pages/admin/ecommerce-knowledge-page"));
 const AnalyticsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnalyticsPage })));
 const AnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AnnouncementsPage })));
 const BannerAnnouncementsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.BannerAnnouncementsPage })));
@@ -50,7 +52,7 @@ const LoginPage = lazy(() => import("@/pages/auth/login"));
 const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
-const EcommercePage = lazy(loadEcommercePage);
+const EcommerceCanvasPage = lazy(loadEcommerceCanvasPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const CreatePage = lazy(loadCreatePage);
@@ -138,6 +140,7 @@ export const router = createBrowserRouter([
             { path: "/", element: deferred(<CreatePage />) },
             { path: "/create", element: deferred(<CreatePage />) },
             { path: "/inspirations", element: <LegacyInspirationsRedirect /> },
+            { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
             {
                 path: "/toolbox/image",
                 element: (
@@ -224,7 +227,8 @@ export const router = createBrowserRouter([
             },
             { path: "/projects/:projectId/*", element: <Navigate to=".." relative="path" replace /> },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
-            { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
+            // 旧版电商画布列表：/ecommerce 由电商 Agent 工作区接管，存量电商画布从这里进入。
+            { path: "/ecommerce/canvas", element: <RequireAuth>{deferred(<EcommerceCanvasPage />)}</RequireAuth> },
             {
                 path: "/canvas/:id",
                 element: (
@@ -255,6 +259,7 @@ export const router = createBrowserRouter([
                     { path: "banner-announcements", element: <BannerAnnouncementsPage /> },
                     { path: "agent-lessons", element: <AgentLessonsPage /> },
                     { path: "resources", element: <StorageResourcesPage /> },
+                    { path: "ecommerce-knowledge", element: <EcommerceKnowledgePage /> },
                     { path: "credit-operations", element: <CreditOperationsPage /> },
                     { path: "redemption-codes", element: <RedemptionCodesPage /> },
                     { path: "referral", element: <AdminReferralPage /> },

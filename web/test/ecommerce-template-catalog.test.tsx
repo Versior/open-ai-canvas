@@ -3,7 +3,7 @@ import React, { act, type ReactNode, type ReactElement } from "react";
 import { reconciler } from "@react-three/fiber";
 import { EcommerceTemplateCatalog } from "../src/components/canvas/ecommerce-template-catalog";
 import { apiClient } from "../src/services/api/request";
-import type { EcommerceSuiteTemplate } from "../src/services/api/ecommerce";
+import type { EcommerceSuiteTemplate } from "../src/services/api/ecommerce-canvas";
 
 type Props = { children?: ReactNode; "aria-label"?: string; "aria-pressed"?: boolean; disabled?: boolean; onClick?: () => void; onChange?: (event: { target: { value: string } }) => void };
 function find(tree: ReactNode, predicate: (props: Props) => boolean): Props | undefined {

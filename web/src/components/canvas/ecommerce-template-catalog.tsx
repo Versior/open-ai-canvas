@@ -1,6 +1,6 @@
 import { Button, Input } from "antd";
 import { useEffect, useState } from "react";
-import { getEcommerceCatalog, getEcommerceCatalogTemplate, type EcommerceCatalogEntry, type EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import { getEcommerceCatalog, getEcommerceCatalogTemplate, type EcommerceCatalogEntry, type EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 import "./ecommerce-template-catalog.css";
 
 export function EcommerceTemplateCatalogDetails({ title = "浏览项目内置套图库", ...props }: { title?: string; disabled?: boolean; onApply: (template: EcommerceSuiteTemplate) => void; applyLabel?: string }) {

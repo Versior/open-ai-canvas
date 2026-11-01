@@ -391,7 +391,7 @@ export function useCanvasProjectLifecycle({
     }, [message, navigate, projectId]);
 
     const deleteCurrentProject = useCallback(async () => {
-        const listPath = useCanvasStore.getState().projects.find((project) => project.id === projectId)?.kind === "ecommerce" ? "/ecommerce" : "/canvas";
+        const listPath = useCanvasStore.getState().projects.find((project) => project.id === projectId)?.kind === "ecommerce" ? "/ecommerce/canvas" : "/canvas";
         const drawingIds = nodesRef.current.flatMap((node) => (node.type === "drawing" && node.metadata?.drawingId ? [node.metadata.drawingId] : []));
         try {
             await deleteCanvasProjectsWithRemoteSync([projectId]);

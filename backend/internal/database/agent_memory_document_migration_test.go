@@ -34,7 +34,8 @@ func TestAgentMemoryDocumentColumnsMigrationRepairsEarlyV78Tables(t *testing.T) 
 	if err := db.Exec("INSERT INTO agent_memory_documents (user_id, entries_json, revision, hash, char_count, mode, capacity) VALUES ('early-user', '[]', 1, '', 0, 'auto', 5000)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("DELETE FROM schema_migrations WHERE version = 79").Error; err != nil {
+	// 早期库停在 v78：之后的账本记录（v79 及合入电商 Agent 后的 v80）都还不存在。
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version >= 79").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := MigrateSchema(db); err != nil {

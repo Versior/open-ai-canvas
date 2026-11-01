@@ -128,6 +128,7 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		{75, userGroupsPricingCurrencyMigrationName, userGroupsPricingCurrencyMigrationChecksum, migrateUserGroupsPricingCurrency, time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)},
 		{76, agentMemoryDocumentSkillDiscoveryMigrationName, agentMemoryDocumentSkillDiscoveryMigrationChecksum, migrateAgentMemoryDocumentSkillDiscovery, time.Date(2026, 10, 28, 9, 1, 0, 0, time.UTC)},
 		{77, agentMemoryDocumentColumnsMigrationName, agentMemoryDocumentColumnsMigrationChecksum, migrateAgentMemoryDocumentColumns, time.Date(2026, 10, 28, 9, 2, 0, 0, time.UTC)},
+		{78, ecommerceAgentKnowledgeMigrationName, ecommerceAgentKnowledgeMigrationChecksum, migrateEcommerceFeature, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -160,7 +161,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 79 {
+	if CurrentSchemaVersion != 80 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -172,6 +173,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 77, Name: userGroupsPricingCurrencyMigrationName, Checksum: userGroupsPricingCurrencyMigrationChecksum},
 		{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
 		{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum},
+		{Version: 80, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -206,7 +208,7 @@ func TestMigrateSchemaPreservesForkSchema74(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			if err := MigrateSchema(db); err != nil {
@@ -221,6 +223,7 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 77, Name: userGroupsPricingCurrencyMigrationName, Checksum: userGroupsPricingCurrencyMigrationChecksum, AppliedAt: applied[75]},
 				{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, AppliedAt: applied[76]},
 				{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum, AppliedAt: applied[77]},
+				{Version: 80, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum, AppliedAt: applied[78]},
 			} {
 				requireMigration(t, db, want)
 			}

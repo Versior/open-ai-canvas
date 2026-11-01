@@ -29,7 +29,7 @@ import {
     type EcommerceCapability,
     type EcommerceWorkbenchRequest,
 } from "@/lib/ecommerce/ecommerce-capabilities";
-import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
+import { ecommerceCapabilitySettings } from "@/services/api/ecommerce-canvas";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { useEcommerceTemplateLibrary } from "@/stores/use-ecommerce-template-library";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";

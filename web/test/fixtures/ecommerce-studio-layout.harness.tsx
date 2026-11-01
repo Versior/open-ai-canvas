@@ -10,7 +10,7 @@ import { CanvasEcommerceWorkbench } from "@/components/canvas/canvas-ecommerce-w
 import { CanvasNodeGraphContext } from "@/components/canvas/canvas-node-graph-context";
 import { createCanvasNodeGraph } from "@/lib/canvas/canvas-node-graph";
 import type { EcommerceCapability } from "@/lib/ecommerce/ecommerce-capabilities";
-import { DEFAULT_ECOMMERCE_SETTING } from "@/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING } from "@/services/api/ecommerce-canvas";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";

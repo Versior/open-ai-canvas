@@ -1,4 +1,4 @@
-import { parseEcommerceSetting, DEFAULT_ECOMMERCE_SETTING, type EcommerceFlowId, type EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import { parseEcommerceSetting, DEFAULT_ECOMMERCE_SETTING, type EcommerceFlowId, type EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 import type { EcommerceSuiteRow } from "./ecommerce-suite";
 import { nanoid } from "nanoid";
 

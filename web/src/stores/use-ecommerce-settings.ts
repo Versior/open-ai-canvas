@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DEFAULT_ECOMMERCE_SETTING, ECOMMERCE_FLOW_IDS, getEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, ECOMMERCE_FLOW_IDS, getEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce-canvas";
 import { getActiveUserScope } from "@/lib/user-scope";
 type State = { setting: EcommerceSetting; scope: string; loadedAt: number; load: () => Promise<EcommerceSetting>; commit: (setting: EcommerceSetting) => void };
 export const useEcommerceSettings = create<State>((set, get) => {

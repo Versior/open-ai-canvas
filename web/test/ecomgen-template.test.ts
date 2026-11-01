@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { parseEcomgenTemplate, ecommerceTemplateRows } from "../src/lib/ecommerce/ecomgen-template";
-import { parseEcommerceSetting, DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce";
+import { parseEcommerceSetting, DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce-canvas";
 import { ecommerceBriefBlock } from "../src/lib/ecommerce/ecommerce-brief";
 
 const suite = {

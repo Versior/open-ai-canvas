@@ -16,7 +16,7 @@ import { canvasConnectionError } from "../src/lib/canvas/canvas-connection-polic
 import { defaultConfig } from "../src/stores/use-config-store";
 import { hasEmbeddedEcommerceControls } from "../src/lib/canvas/canvas-image-source";
 import { DEFAULT_ECOMMERCE_BRIEF, ecommerceWorkbenchPrompt } from "../src/lib/ecommerce/ecommerce-capabilities";
-import { DEFAULT_ECOMMERCE_SETTING, parseEcommerceSetting } from "../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, parseEcommerceSetting } from "../src/services/api/ecommerce-canvas";
 import { ecommercePlatformGuidance } from "../src/lib/ecommerce/ecommerce-platform-guidance";
 
 test("only the selected supported platform guidance enters planning", () => {

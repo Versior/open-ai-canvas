@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { localForageStorageForScope } from "@/lib/localforage-storage";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { canonicalize } from "json-canonicalize";
-import { DEFAULT_ECOMMERCE_SETTING, parseEcommerceSetting, type EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, parseEcommerceSetting, type EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 
 const key = "ecommerce-template-library";
 type TemplateLibrary = {

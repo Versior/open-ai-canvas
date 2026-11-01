@@ -21,7 +21,7 @@ import (
 func TestEcommerceRoutesRequireAuthentication(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	RegisterEcommerceRoutes(router.Group("/api"), &service.Service{})
+	RegisterEcommerceCanvasRoutes(router.Group("/api"), &service.Service{})
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/ecommerce/settings"}, {"GET", "/api/admin/settings/ecommerce"},
 		{"GET", "/api/admin/settings/ecommerce/defaults"},
@@ -57,7 +57,7 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 	svc := service.New(repository.New(db), dir)
 	t.Cleanup(func() { svc.Close(); sqlDB, _ := db.DB(); sqlDB.Close() })
 	router := gin.New()
-	RegisterEcommerceRoutes(router.Group("/api"), svc)
+	RegisterEcommerceCanvasRoutes(router.Group("/api"), svc)
 	cookie := "fixture-session.fixture-token"
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/admin/settings/ecommerce"}, {"PUT", "/api/admin/settings/ecommerce"},
@@ -158,7 +158,7 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 func TestEcommercePrivateLibraryRoutesRemoved(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	RegisterEcommerceRoutes(router.Group("/api"), &service.Service{})
+	RegisterEcommerceCanvasRoutes(router.Group("/api"), &service.Service{})
 	for _, method := range []string{http.MethodGet, http.MethodPut} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest(method, "/api/ecommerce/library", nil))

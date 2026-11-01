@@ -13,7 +13,7 @@ import { stopCanvasDragFromInteractive } from "@/lib/canvas/node-interaction";
 import { ecommerceModelById, ecommerceModelRefCount } from "@/lib/ecommerce/ecommerce-models";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
-import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
+import { ecommerceCapabilitySettings } from "@/services/api/ecommerce-canvas";
 import { resolveImageUrl } from "@/services/image-storage";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";

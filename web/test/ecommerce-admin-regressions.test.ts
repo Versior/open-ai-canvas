@@ -3,7 +3,7 @@ import { ecommerceBindingImages, ecommerceBindingKey, finishEcommerceBinding } f
 import { buildEcommerceDeliveryEntry, createEcommerceDelivery, createEcommerceDeliveryTarget, ecommerceDeliveryCsv, ecommerceDeliverySummary } from "../src/lib/ecommerce/ecommerce-delivery";
 import { ecommerceCanvasPreset, ecommerceSuiteTargets } from "../src/lib/ecommerce/ecommerce-canvas-preset";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "../src/lib/ecommerce/ecommerce-oneclick";
-import { DEFAULT_ECOMMERCE_SETTING, ecommerceSettingsEqual, parseEcommerceSetting } from "../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, ecommerceSettingsEqual, parseEcommerceSetting } from "../src/services/api/ecommerce-canvas";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 
 test("auto binding waits for current successful images, preserving the requested order", () => {

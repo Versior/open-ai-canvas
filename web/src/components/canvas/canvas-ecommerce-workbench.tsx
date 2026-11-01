@@ -6,7 +6,7 @@ import { EcommerceImageSettings } from "./ecommerce-image-settings";
 import { EcommerceChoiceInput, ECOMMERCE_BRIEF_CHOICES } from "./ecommerce-choice-input";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
-import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
+import { ecommerceCapabilitySettings } from "@/services/api/ecommerce-canvas";
 import { DEFAULT_ECOMMERCE_BRIEF, ecommerceActionCapability, ECOMMERCE_CAPABILITIES, ECOMMERCE_IMAGE_TYPES, patchEcommerceWorkbenchBrief, type EcommerceCapability, type EcommerceWorkbenchBrief } from "@/lib/ecommerce/ecommerce-capabilities";
 import type { EcommerceWorkbenchAction, EcommerceWorkbenchRequest } from "@/lib/ecommerce/ecommerce-capabilities";
 import { ecommerceCopySourceIssues } from "@/lib/ecommerce/ecommerce-contract";

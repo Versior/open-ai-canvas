@@ -16,7 +16,7 @@ import { resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { useEcommerceModelLibrary, type EcommerceModelPatch } from "@/stores/use-ecommerce-model-library";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
-import { ecommercePublicImageUrl, type PublicEcommerceModel } from "@/services/api/ecommerce";
+import { ecommercePublicImageUrl, type PublicEcommerceModel } from "@/services/api/ecommerce-canvas";
 import "./canvas-ecommerce-model-library.css";
 
 type ModelLibraryModalProps = {

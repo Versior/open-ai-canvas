@@ -14,7 +14,7 @@ import { CachedResourceImage } from "../src/components/cached-resource-image";
 import { canvasThemes } from "../src/lib/canvas-theme";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 import { apiClient } from "../src/services/api/request";
-import { DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce-canvas";
 import { useEcommerceSettings } from "../src/stores/use-ecommerce-settings";
 
 type Props = { children?: ReactNode; activeKey?: string; disabled?: boolean; onClick?: () => void; onChange?: (event: { target: { value: string } }) => void; value?: string; id?: string; hidden?: boolean; "aria-pressed"?: boolean };

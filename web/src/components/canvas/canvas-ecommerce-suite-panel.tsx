@@ -18,7 +18,7 @@ import type { EcommerceBrief } from "@/lib/ecommerce/ecommerce-brief";
 import { ECOMMERCE_SLICE_SPECS, type EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
 import { ecommerceTemplateRows } from "@/lib/ecommerce/ecomgen-template";
 import { EcommerceTemplateCatalogDetails } from "./ecommerce-template-catalog";
-import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce";
+import type { EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 import { buildEcommerceSuiteArchive } from "@/services/ecommerce-suite-export";
 import { ecommerceResultSourceCurrent, ecommerceTableResults, type EcommerceResultSourceSignature } from "@/lib/ecommerce/ecommerce-table";
 import { useEcommerceTemplateLibrary } from "@/stores/use-ecommerce-template-library";

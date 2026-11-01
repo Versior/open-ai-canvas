@@ -5,15 +5,15 @@ import { RefreshCw, Save, Undo2, Plus, Trash2 } from "lucide-react";
 import { AdminPageFrame } from "../components/admin-shell";
 import { SettingsSectionCard, AdminStatusBadge } from "../components/admin-ui";
 import { Switch } from "../ui/controls";
-import { ECOMMERCE_FLOW_IDS, ecommercePublicImageUrl, ecommerceSettingsEqual, getAdminEcommerceSetting, getPreviousEcommerceSetting, saveAdminEcommerceSetting, uploadEcommerceModelImage, type EcommerceSetting } from "@/services/api/ecommerce";
+import { ECOMMERCE_FLOW_IDS, ecommercePublicImageUrl, ecommerceSettingsEqual, getAdminEcommerceSetting, getPreviousEcommerceSetting, saveAdminEcommerceSetting, uploadEcommerceModelImage, type EcommerceSetting } from "@/services/api/ecommerce-canvas";
 import { resourceFileUrl } from "@/services/api/resources";
 import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { EcommerceTemplateEditor } from "./ecommerce-template-editor";
 import "./ecommerce-settings-page.css";
 import { ECOMMERCE_CAPABILITIES, type EcommerceCapability } from "@/lib/ecommerce/ecommerce-capabilities";
-import { ecommerceCapabilitySettings } from "@/services/api/ecommerce";
-import { getAdminEcommerceDefaults } from "@/services/api/ecommerce";
+import { ecommerceCapabilitySettings } from "@/services/api/ecommerce-canvas";
+import { getAdminEcommerceDefaults } from "@/services/api/ecommerce-canvas";
 import { ECOMMERCE_PRINT_SPECS } from "@/lib/ecommerce/ecommerce-print-specs";
 
 export default function EcommerceSettingsPage() {

@@ -3,7 +3,7 @@ import React, { act, type ReactNode, type ReactElement } from "react";
 import { reconciler } from "@react-three/fiber";
 import { App } from "antd";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { DEFAULT_ECOMMERCE_SETTING, type EcommerceSetting } from "../src/services/api/ecommerce";
+import { DEFAULT_ECOMMERCE_SETTING, type EcommerceSetting } from "../src/services/api/ecommerce-canvas";
 import { apiClient } from "../src/services/api/request";
 import { useEcommerceSettings } from "../src/stores/use-ecommerce-settings";
 Object.defineProperty(globalThis, "__APP_VERSION__", { configurable: true, value: "test" });
