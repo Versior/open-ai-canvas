@@ -86,10 +86,13 @@ func TestEnsureTaskProjectActiveChecksLinkedDramaCanvasBudget(t *testing.T) {
 	if err := db.AutoMigrate(&model.BillingOrder{}); err != nil {
 		t.Fatal(err)
 	}
+	// 作品花费按计费订单汇总：关联画布上已结算的订单计入作品预算。
 	for _, record := range []any{
 		&model.Project{ID: "budget-project", UserID: "user-1", Name: "drama", Status: model.ProjectStatusActive},
 		&model.CanvasProject{ID: "budget-canvas", UserID: "user-1", ProjectID: "budget-project"},
-		&model.DramaProduction{ProjectID: "budget-project", UserID: "user-1", BudgetMicrocredits: 100, SpentMicrocredits: 100},
+		&model.DramaProduction{ProjectID: "budget-project", UserID: "user-1", BudgetMicrocredits: 100},
+		&model.BillingOrder{ID: "budget-order", UserID: "user-1", TaskID: "budget-task", IdempotencyKey: "task:budget-task", AmountMicrocredits: 100, ActualAmountMicrocredits: 100, Status: model.BillingStatusSettled},
+		&model.Task{ID: "budget-task", UserID: "user-1", ProjectID: "budget-canvas", Type: "canvas_video", Status: model.TaskStatusSucceeded, BillingOrderID: "budget-order"},
 	} {
 		if err := db.Create(record).Error; err != nil {
 			t.Fatal(err)

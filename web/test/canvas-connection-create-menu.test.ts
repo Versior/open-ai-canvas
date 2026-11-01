@@ -11,28 +11,27 @@ test("connection menu omits the header and provides descriptions for every optio
     expect(component).not.toContain(">创建下一步</span>");
     expect(component).not.toContain("ChevronRight");
     expect(component).not.toContain("absolute inset-x-8 top-0 h-px");
-    const options = component.match(/<ConnectionCreateOption\b[\s\S]*?\n\s*\/>/g) || [];
-    // 通用选项加上通过注册表渲染的电商选项。
-    expect(options).toHaveLength(10);
-    for (const option of options) expect(option).toMatch(/description=(?:"[^"]+"|\{`[^`]+`\})/);
-    expect(component).toContain('title="批量创作表"');
-    expect(component).toContain("onCreate(CanvasNodeType.BatchTable)");
-    expect(component).toContain("onCreate(type)");
+    const list = component.slice(component.indexOf("const CONNECTION_CREATE_OPTIONS"), component.indexOf("export function CanvasConnectionCreateMenu("));
+    const options = list.match(/\{ type: CanvasNodeType\.\w+, title: "[^"]+", description: "[^"]+"/g) || [];
+    expect(options).toHaveLength(9);
+    expect(list).toContain('title: "批量创作表"');
+    expect(list).toContain("type: CanvasNodeType.BatchTable");
+    expect(component).toContain("onCreate(option.type)");
+    // 电商选项通过注册表渲染，同样带说明。
+    expect(component).toContain("description: `添加并连接${getNodeLabel(type)}`");
 });
 
 test("电商节点与影视节点互不进对方的画布", () => {
     // 两边不是同一个产品的子集，是两套工作流：自由画布上摆「商品」节点会让人
     // 以为要先填商品档案，电商画布上摆「分镜脚本」会让人以为要写剧本。
     // 判据只有一个来源——这张画布的 kind。
-    const filmStart = component.indexOf("ecommerceCanvas ? null : (");
-    const filmBlock = component.slice(filmStart, component.indexOf("</>", filmStart));
-    expect(filmBlock).toContain('title="文本生成"');
-    expect(filmBlock).toContain('title="分镜脚本"');
-    // 影视块里不能出现任何电商节点
-    expect(filmBlock).not.toContain("CanvasNodeType.Product");
+    const visibility = component.slice(component.indexOf("function connectionCreateOptionVisible("), component.indexOf("function ConnectionCreateGroupLabel("));
+    expect(visibility).toContain("type === CanvasNodeType.Text || type === CanvasNodeType.Script) return !ecommerceCanvas");
+    // 影视门禁里不能出现任何电商节点
+    expect(visibility).not.toContain("CanvasNodeType.Product");
 
-    const ecommerceStart = component.indexOf("{ecommerceCanvas", component.indexOf("onCreate(CanvasNodeType.MediaConversion)"));
-    const ecommerceBlock = component.slice(ecommerceStart, component.indexOf(": null}", ecommerceStart));
+    const ecommerceBlock = component.slice(component.indexOf("const ECOMMERCE_CONNECTION_GROUPS"), component.indexOf("function ecommerceConnectionGroups("));
+    expect(component).toContain("const ecommerceGroups = ecommerceCanvas ? ecommerceConnectionGroups(workspaceMode) : [];");
     expect(ecommerceBlock).toContain("CanvasNodeType.Product");
     for (const type of ["ShotRecipe", "SellingPoint", "Copy", "Style", "Layout", "Infographic", "Replica", "Teardown", "Delivery", "Revision", "EcommerceVideo", "Aplus"]) {
         expect(ecommerceBlock).toContain(`CanvasNodeType.${type}`);
@@ -100,16 +99,21 @@ test("add-node submenu renders ecommerce groups first and keeps the upstream foo
     expect(freeformMarkup).not.toContain("<h3");
 });
 
-test("only the active option expands; stationary pointer retargeting cannot switch rows", () => {
-    const descriptionRule = css.match(/\.canvas-connection-create-description \{([^}]+)\}/)?.[1] || "";
-    expect(descriptionRule).toContain("grid-template-rows: 0fr");
-    expect(descriptionRule).not.toContain("min-height");
+test("hover never changes row height; descriptions live in a fixed-height detail area", () => {
     const option = component.slice(component.indexOf("function ConnectionCreateOption("), component.indexOf("function clamp("));
     expect(option).not.toContain("motion.button");
-    expect(css).toContain('.canvas-connection-create-option[data-expanded="true"]');
+    // 行高固定、行内不再渲染说明，悬停只换高亮。
+    expect(option).toContain("flex h-10 w-full");
+    expect(option).not.toContain("description}</span>");
+    expect(css).not.toContain(".canvas-connection-create-description");
+    const detailRule = css.match(/\.canvas-connection-create-detail \{([^}]+)\}/)?.[1] || "";
+    expect(detailRule).toContain("height:");
+    expect(detailRule).toContain("flex-shrink: 0");
+    expect(css).toContain("-webkit-line-clamp: 2");
+    expect(component).toContain('className="canvas-connection-create-detail" aria-hidden="true"');
     expect(component).toContain("previous?.x === event.clientX && previous.y === event.clientY");
     expect(component).not.toContain("SpotlightSurface");
-    expect(css).toContain('.canvas-connection-create-option[data-motion="reduced"]');
+    expect(css).toContain('.canvas-connection-create-detail[data-motion="reduced"]');
     expect(component).toContain("aria-disabled={Boolean(disabledReason)}");
     expect(component).toContain("if (!disabledReason) onClick()");
     expect(component).toContain('event.key === "Escape"');
@@ -117,8 +121,8 @@ test("only the active option expands; stationary pointer retargeting cannot swit
 
 test("连线菜单按分组呈现，快捷电商保留核心业务节点", () => {
     expect(component).toContain('<ConnectionCreateGroupLabel label="通用" />');
-    const simpleStart = component.indexOf('workspaceMode === "simple"');
-    const simpleBranch = component.slice(simpleStart, component.indexOf(": ([", simpleStart));
+    const simpleStart = component.indexOf("simple: [", component.indexOf("const ECOMMERCE_CONNECTION_GROUPS"));
+    const simpleBranch = component.slice(simpleStart, component.indexOf("professional: [", simpleStart));
     for (const type of ["Product", "SellingPoint", "Copy", "Style", "Layout", "Infographic", "Delivery"]) expect(simpleBranch).toContain(`CanvasNodeType.${type}`);
     for (const type of ["Script", "ShotRecipe", "Replica", "Teardown", "Revision", "EcommerceVideo", "Aplus"]) expect(simpleBranch).not.toContain(`CanvasNodeType.${type}`);
 });

@@ -171,6 +171,7 @@ import { deriveStoryboardPipelineProgress } from "@/lib/canvas/canvas-storyboard
 import { CanvasOperationChangeToast, CanvasMergeStatusToast, CanvasUploadStatusToast } from "./canvas-project-feedback";
 import { buildGenerationConfig, getGenerationCount } from "@/lib/canvas/canvas-project-generation";
 import { createCanvasBatchInputSnapshot } from "@/lib/canvas/canvas-batch-input-snapshot";
+import { canvasReferenceImageDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { cancelGenerationTask } from "@/services/api/task-center";
 import { CanvasTopBar, type CanvasProjectView } from "./canvas-project-top-bar";
 import { CanvasAssetView } from "@/components/canvas/canvas-asset-view";
@@ -3491,6 +3492,7 @@ ${instruction.trim()}`
                     onClose={() => setDialogNodeId(null)}
                     onNodeMouseDown={handleNodeMouseDown}
                     workspaceMode={workspaceMode}
+                    referenceImageSize={canvasReferenceImageDimensions(panelNode.id, nodesRef.current, connectionsRef.current)}
                     onImageSettingsOpenChange={(open) => {
                         setNodeImageSettingsOpen(open);
                         if (open) setToolbarNodeId(null);
@@ -4700,6 +4702,8 @@ ${instruction.trim()}`
                                     open={Boolean(timelineNode)}
                                     nodes={nodes}
                                     timeline={currentProject?.timeline || null}
+                                    selectedNodeIds={selectedNodeIds}
+                                    dramaAspectRatio={drama.active ? drama.summary?.production.settings.aspectRatio : undefined}
                                     onClose={() => setTimelineNodeId(null)}
                                     onOpenSubtitleDialog={(subNodeId) => {
                                         setTimelineNodeId(null);

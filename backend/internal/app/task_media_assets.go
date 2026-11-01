@@ -167,11 +167,7 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 			return err
 		}
 		if projectID != "" {
-			position, err := s.repo.NextProjectAssetPosition(projectID, "")
-			if err != nil {
-				return err
-			}
-			_, err = s.repo.LinkProjectAsset(asset, nil, &model.ProjectAssetLink{ID: newID(), ProjectID: projectID, AssetID: assetID, Position: position, CreatedAt: now})
+			err := s.linkAssetToProject(asset, projectID, now)
 			if errors.Is(err, repository.ErrProjectNotActive) {
 				delete(metadata, "projectIds")
 				payload, err = json.Marshal(assetPayload)
@@ -191,4 +187,14 @@ func (s *Service) registerRecoveredMediaAssets(task model.Task) error {
 		}
 	}
 	return nil
+}
+
+// linkAssetToProject 把素材挂到项目素材库根目录末尾；链接已存在时 LinkProjectAsset 不做修改（幂等）。
+func (s *Service) linkAssetToProject(asset *model.Asset, projectID string, now time.Time) error {
+	position, err := s.repo.NextProjectAssetPosition(projectID, "")
+	if err != nil {
+		return err
+	}
+	_, err = s.repo.LinkProjectAsset(asset, nil, &model.ProjectAssetLink{ID: newID(), ProjectID: projectID, AssetID: asset.ID, Position: position, CreatedAt: now})
+	return err
 }

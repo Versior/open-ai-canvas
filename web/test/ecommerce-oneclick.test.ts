@@ -732,7 +732,7 @@ describe("套图面板的接线", () => {
         // 批次调度那条路接了，单次提交这条路也要接——节点状态会停在「提交中」，
         // 用户看到的是点了没反应。
         const executor = readFileSync(new URL("../src/pages/canvas/use-canvas-generation-executor.ts", import.meta.url), "utf8");
-        expect(executor).toContain("generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode);");
+        expect(executor).toContain("generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, undefined, false, referenceImageSize);");
         expect(executor).toMatch(/catch \(error\) \{\s*failPreflight\(error\);\s*return;/);
         expect(executor).toContain("generationFailureMetadata(error, prompt)");
     });
