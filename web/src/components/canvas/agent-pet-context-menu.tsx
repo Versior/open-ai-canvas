@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, ChevronRight, Eye, Gift, LoaderCircle, Maximize2, MessageCircleHeart, MessageSquareQuote, MessageSquareText, Minus, PawPrint, RotateCcw, Shirt, Sparkles, Store } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Eye, Gift, LoaderCircle, Maximize2, MessageCircleHeart, MessageSquareQuote, MessageSquareText, Minus, MoveDiagonal2, PawPrint, RotateCcw, Shirt, Smile, Store } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 
@@ -21,7 +21,7 @@ const MENU_MARGIN = 12;
 const HERO_HEIGHT = 64;
 const TILE_HEIGHT = 46;
 const ITEM_SELECTOR = "[data-agent-pet-menu-item]:not(:disabled)";
-/** 大小档位图标：脚印越来越大，自动档用星光。 */
+/** 大小档位图标：脚印越来越大，自动档用斜向双箭头。 */
 const SIZE_ICON_PX: Record<string, number> = { s: 10, m: 12, l: 14, xl: 17 };
 
 export type AgentPetMenuPoint = { x: number; y: number };
@@ -176,7 +176,7 @@ export function AgentPetContextMenu({ theme, point, pet, agentName, petShown, co
                                             title={option.height ? `${option.height}px 高` : "跟随站点设置，离开画布时自动缩小"}
                                             onClick={() => setSize(option.id)}
                                         >
-                                            {option.height ? <PawPrint aria-hidden="true" style={{ width: SIZE_ICON_PX[option.id], height: SIZE_ICON_PX[option.id] }} /> : <Sparkles aria-hidden="true" style={{ width: 13, height: 13 }} />}
+                                            {option.height ? <PawPrint aria-hidden="true" style={{ width: SIZE_ICON_PX[option.id], height: SIZE_ICON_PX[option.id] }} /> : <MoveDiagonal2 aria-hidden="true" style={{ width: 13, height: 13 }} />}
                                             {option.label}
                                         </button>
                                     ))}
@@ -210,7 +210,7 @@ function Hero({ pet, agentName, collapsed, reducedMotion, theme }: { pet: AgentP
         return (
             <div className="agent-pet-menu-hero agent-pet-stage">
                 <span className="grid size-12 shrink-0 place-items-center self-center rounded-xl" style={{ background: theme.node.fill, color: theme.accent.primary }}>
-                    <Sparkles className="size-5" aria-hidden="true" />
+                    <Smile className="size-5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0 self-center">
                     <span className="block truncate text-sm font-semibold">{agentName}</span>
@@ -315,7 +315,7 @@ function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: 
                 <div ref={grid} className="agent-pet-menu-grid">
                     <button type="button" data-agent-pet-menu-item className="agent-pet-menu-pet agent-pet-toned" aria-current={!selectedId || undefined} aria-label="默认形象" disabled={busyId !== null} onClick={() => void choose(null)}>
                         <span className="agent-pet-stage" style={{ placeItems: "center" }}>
-                            {busyId === "" ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : <Sparkles className="size-5" style={{ color: theme.accent.primary }} aria-hidden="true" />}
+                            {busyId === "" ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : <Smile className="size-5" style={{ color: theme.accent.primary }} aria-hidden="true" />}
                         </span>
                         {!selectedId ? <TileMark icon={<Check />} /> : null}
                         <span>默认</span>
