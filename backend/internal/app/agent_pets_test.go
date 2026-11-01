@@ -227,6 +227,64 @@ func TestAgentPetCatalogAccessSelectionAndPurchase(t *testing.T) {
 	}
 }
 
+func TestAgentPetSpendUnlockClaim(t *testing.T) {
+	svc, db, _, admin := newAppearanceTestService(t)
+	user := &model.User{ID: "pet-spender", Username: "pet-spender", Role: model.UserRoleUser, Status: model.UserStatusActive}
+	if err := db.Create(user).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateAdminAgentPet(admin, "woogi", AdminAgentPetInput{Name: "呜吉", Enabled: true, Access: "spend"}); err == nil {
+		t.Fatal("spend pet without threshold accepted")
+	}
+	if _, err := svc.UpdateAdminAgentPet(admin, "woogi", AdminAgentPetInput{Name: "呜吉", Enabled: true, Access: "spend", UnlockMicrocredits: 10_000_000, PriceMicrocredits: 99}); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := svc.AgentPetCatalog(user)
+	if err != nil || catalog.ConsumedMicrocredits != 0 {
+		t.Fatalf("catalog = %+v, %v", catalog, err)
+	}
+	if pet := findAgentPetView(t, catalog.Pets, "woogi"); pet.Usable || pet.Claimable || pet.Purchasable || pet.UnlockMicrocredits != 10_000_000 || pet.PriceMicrocredits != 0 {
+		t.Fatalf("locked spend pet = %+v", pet)
+	}
+	_, err = svc.SelectAgentPet(user, "woogi")
+	if appErr := requireAgentPetStatus(t, err, http.StatusForbidden); appErr.Message != "累计消费满 10 积分即可领取" {
+		t.Fatalf("locked message = %q", appErr.Message)
+	}
+	_, err = svc.PurchaseAgentPet(user, "woogi", 0)
+	requireAgentPetStatus(t, err, http.StatusBadRequest)
+
+	// 已结算的模型调用计入累计消费；未结算的不算。
+	for _, order := range []model.BillingOrder{
+		{ID: "spend-1", UserID: user.ID, IdempotencyKey: "spend-1", Status: model.BillingStatusSettled, ActualAmountMicrocredits: 6_000_000},
+		{ID: "spend-2", UserID: user.ID, IdempotencyKey: "spend-2", Status: model.BillingStatusSettled, ActualAmountMicrocredits: 4_500_000},
+		{ID: "spend-3", UserID: user.ID, IdempotencyKey: "spend-3", Status: model.BillingStatusReserved, ActualAmountMicrocredits: 50_000_000},
+	} {
+		if err := db.Create(&order).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	catalog, err = svc.AgentPetCatalog(user)
+	if err != nil || catalog.ConsumedMicrocredits != 10_500_000 {
+		t.Fatalf("consumed = %+v, %v", catalog, err)
+	}
+	if pet := findAgentPetView(t, catalog.Pets, "woogi"); !pet.Usable || !pet.Claimable || pet.Owned {
+		t.Fatalf("unlocked spend pet = %+v", pet)
+	}
+	if pet, err := svc.SelectAgentPet(user, "woogi"); err != nil || !pet.Owned || pet.Claimable {
+		t.Fatalf("claim = %+v, %v", pet, err)
+	}
+	// 领取后提高门槛不影响已领取的用户。
+	if _, err := svc.UpdateAdminAgentPet(admin, "woogi", AdminAgentPetInput{Name: "呜吉", Enabled: true, Access: "spend", UnlockMicrocredits: 999_000_000}); err != nil {
+		t.Fatal(err)
+	}
+	if pet, err := svc.AgentPetSelection(user); err != nil || pet == nil || pet.ID != "woogi" || !pet.Owned {
+		t.Fatalf("selection after threshold raise = %+v, %v", pet, err)
+	}
+	if entries, total, err := svc.repo.CreditLedger(user.ID, "", 10, 0); err != nil || total != 0 || len(entries) != 0 {
+		t.Fatalf("claim must not charge: %d %v", total, err)
+	}
+}
+
 func TestAgentPetImportReferencesAndDelete(t *testing.T) {
 	svc, db, _, admin := newAppearanceTestService(t)
 	user := &model.User{ID: "pet-buyer", Username: "pet-buyer", Role: model.UserRoleUser, Status: model.UserStatusActive}

@@ -4,7 +4,7 @@ import type { AgentAvatarState } from "@/lib/canvas/agent-appearance";
 import { agentPetBubbleDuration, agentPetGreeting, agentPetIdleLine, agentPetPersona, agentPetStateLine } from "@/lib/canvas/agent-pet-lines";
 import { loadAgentPetReminderContext } from "@/services/agent-pet-reminders";
 import type { AgentPet } from "@/services/api/agent-pets";
-import { useAgentPetBubbleStore } from "@/stores/use-agent-pet-bubble-store";
+import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 export type AgentPetBubbleMessage = { id: string; text: string; sticky: boolean };
@@ -21,11 +21,11 @@ let messageSeq = 0;
  * 决定头顶气泡说什么、什么时候说：
  * - 待审批时一直提示（不受闲聊开关影响），点击可收起；
  * - 打开页面后问候一次，之后每 4–7 分钟随机说一句（时间、灵感、未完成项目、贴心话、专属台词）；
- * - 运行开始、完成、失败等状态变化时说一句；悬停时偶尔说一句；
+ * - 运行开始、完成、失败等状态变化时说一句；悬停时偶尔说一句；右键「说句话」时马上说一句；
  * - 面板打开、形象收起或页面隐藏时不说话。
  */
 export function useAgentPetChatter({ pet, state, approvalPending, active, hovered }: { pet: AgentPet | null; state: AgentAvatarState; approvalPending: boolean; active: boolean; hovered: boolean }) {
-    const chatter = useAgentPetBubbleStore((store) => store.chatter);
+    const chatter = useAgentPetPrefsStore((store) => store.chatter);
     const userId = useUserStore((store) => store.user?.id || "");
     const shortDramaEnabled = useUserStore((store) => store.features.shortDramaEnabled);
     const petId = pet?.id ?? "";
@@ -58,6 +58,11 @@ export function useAgentPetChatter({ pet, state, approvalPending, active, hovere
         window.clearTimeout(hideTimer.current);
         setMessage(null);
     }, []);
+    // 用户主动要求说话：不受闲聊开关限制，但不顶掉待审批提示。
+    const speak = useCallback(() => {
+        if (!persona || !active || messageRef.current?.sticky) return;
+        show(agentPetIdleLine(persona, { now: new Date(), recent: recent.current, kinds: ["signature", "care", "tip", "time"] }).text);
+    }, [persona, active, show]);
 
     useEffect(() => () => window.clearTimeout(hideTimer.current), []);
     useEffect(() => {
@@ -139,5 +144,5 @@ export function useAgentPetChatter({ pet, state, approvalPending, active, hovere
         setMessage(null);
     }, [active]);
 
-    return { message: active ? message : null, dismiss };
+    return { message: active ? message : null, dismiss, speak };
 }

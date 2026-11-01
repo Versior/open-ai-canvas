@@ -6,7 +6,7 @@
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
-import { type CSSProperties, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
@@ -17,11 +17,14 @@ import { Live2DAvatar } from "./live2d-avatar";
 import { agentAvatarBundleFileURL, live2DModelURL } from "@/services/api/appearance";
 import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
 import { AgentPetBubble } from "@/components/canvas/agent-pet-bubble";
+import { AgentPetContextMenu, type AgentPetMenuPoint } from "@/components/canvas/agent-pet-context-menu";
+import { AgentPetStoreModal } from "@/components/canvas/agent-pet-picker";
 import { AgentPetSprite, useAgentPetSheetMetrics } from "@/components/canvas/agent-pet-sprite";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
-import { AGENT_PET_ASPECT, AGENT_PET_CELL_HEIGHT } from "@/lib/canvas/agent-pet";
+import { AGENT_PET_ASPECT, agentPetLauncherHeight } from "@/lib/canvas/agent-pet";
 import { agentPetSpritesheetURL } from "@/services/api/agent-pets";
+import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import { ArrowDown, ArrowLeft, Check, Clock3, Download, Ellipsis, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RefreshCw, Scaling, Settings2, ShieldCheck, Trash2, X, Blocks } from "lucide-react";
 import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
@@ -76,6 +79,18 @@ export const AgentLauncher = memo(function AgentLauncher({
     const [failedPetId, setFailedPetId] = useState("");
     const pet = selectedPet && selectedPet.id !== failedPetId ? selectedPet : null;
     const [petHovered, setPetHovered] = useState(false);
+    const petSize = useAgentPetPrefsStore((state) => state.size);
+    // 右键菜单（换形象、商店、大小、气泡等）；键盘菜单键 / Shift+F10 也能打开。
+    const launcherRef = useRef<HTMLButtonElement>(null);
+    const [menuPoint, setMenuPoint] = useState<AgentPetMenuPoint | null>(null);
+    const [storeOpen, setStoreOpen] = useState(false);
+    const closeMenu = useCallback((restoreFocus: boolean) => {
+        setMenuPoint(null);
+        if (restoreFocus) launcherRef.current?.focus({ preventScroll: true });
+    }, []);
+    useEffect(() => {
+        if (hidden) setMenuPoint(null);
+    }, [hidden]);
     const bundleActive = appearance.avatarType === "bundle" && !pet;
     const live = !pet && appearance.avatarType === "live2d" && Boolean(appearance.live2dResourceId && appearance.live2dEntry);
     const avatarState = agentAvatarStateForRunStatus(status);
@@ -132,9 +147,8 @@ export const AgentLauncher = memo(function AgentLauncher({
     const inCanvasEditor = Boolean(useMatch("/canvas/:id"));
     // 收起后只留小圆球入口：不加载 Live2D / 动画，也不挡画布。位置以右下角为锚点，收起展开不跳位。
     const keepsAvatarSize = largeAvatar && !collapsed;
-    // 宠物图集单格 208px 高，超过原始尺寸只会变糊。
-    const preferredHeight = pet ? Math.min(appearance.avatarHeight, AGENT_PET_CELL_HEIGHT) : appearance.avatarHeight;
-    const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? resolveAgentLauncherAvatarHeight(preferredHeight, aspectRatio, viewport, inCanvasEditor) : 76;
+    const avatarHeight = pet ? agentPetLauncherHeight(petSize, appearance.avatarHeight, viewport, inCanvasEditor) : resolveAgentLauncherAvatarHeight(appearance.avatarHeight, aspectRatio, viewport, inCanvasEditor);
+    const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? avatarHeight : 76;
     const width = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? Math.round(height * aspectRatio) : 76;
     const { position, dragging, handlers } = useAgentLauncherPosition(onOpen, width, height);
     const { onClick, onKeyDown, onDoubleClick, ...pointerHandlers } = handlers;
@@ -147,14 +161,22 @@ export const AgentLauncher = memo(function AgentLauncher({
     const petShown = Boolean(pet) && !collapsed;
     const petSheetURL = pet ? agentPetSpritesheetURL(pet) : "";
     const petMetrics = useAgentPetSheetMetrics(petSheetURL, pet?.spriteVersion ?? 1);
-    const { message: petMessage, dismiss: dismissPetMessage } = useAgentPetChatter({ pet, state: avatarState, approvalPending, active: petShown && !hidden, hovered: petHovered });
+    const { message: petMessage, dismiss: dismissPetMessage, speak: petSpeak } = useAgentPetChatter({ pet, state: avatarState, approvalPending, active: petShown && !hidden, hovered: petHovered });
     const showToggle = !hidden && (largeAvatar || collapsed);
+    const openMenu = (event: ReactMouseEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        // 键盘打开时可能没有指针坐标，菜单贴着入口中心打开。
+        const rect = event.currentTarget.getBoundingClientRect();
+        setMenuPoint({ x: event.clientX || rect.left + rect.width / 2, y: event.clientY || rect.top + rect.height / 2 });
+    };
     return (
         <>
             <motion.button
+                ref={launcherRef}
                 type="button"
                 aria-label={`打开${appearance.agentName}`}
-                title={live && live2DError ? live2DError : `${approvalPending ? "Agent 等待你的审批" : "打开 Agent 助手"} · 拖动可调整位置，聚焦后可用方向键移动`}
+                title={live && live2DError ? live2DError : `${approvalPending ? "Agent 等待你的审批" : "打开 Agent 助手"} · 拖动可调整位置，聚焦后可用方向键移动 · 右键可换形象、调大小`}
                 className={cn(
                     "canvas-agent-launcher fixed z-[var(--z-panel-floating)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/35",
                     dragging && "is-dragging",
@@ -172,6 +194,7 @@ export const AgentLauncher = memo(function AgentLauncher({
                 onClick={onClick}
                 onKeyDown={onKeyDown}
                 onDoubleClick={onDoubleClick}
+                onContextMenu={openMenu}
                 whileHover={reducedMotion || dragging ? undefined : { scale: 1.035 }}
                 whileTap={reducedMotion || dragging ? undefined : { scale: 0.96 }}
                 transition={{ duration: reducedMotion ? 0 : 0.18 }}
@@ -257,6 +280,22 @@ export const AgentLauncher = memo(function AgentLauncher({
                     {collapsed ? <Maximize2 className="size-3" aria-hidden="true" /> : <Minus className="size-3" aria-hidden="true" />}
                 </button>
             ) : null}
+            {menuPoint && !hidden ? (
+                <AgentPetContextMenu
+                    theme={theme}
+                    point={menuPoint}
+                    title={pet?.name || appearance.agentName}
+                    petShown={petShown}
+                    collapsed={collapsed}
+                    approvalPending={approvalPending}
+                    onOpenAgent={onOpen}
+                    onOpenStore={() => setStoreOpen(true)}
+                    onSpeak={petSpeak}
+                    onToggleCollapsed={toggleCollapsed}
+                    onClose={closeMenu}
+                />
+            ) : null}
+            <AgentPetStoreModal theme={theme} open={storeOpen} onClose={() => setStoreOpen(false)} />
         </>
     );
 });

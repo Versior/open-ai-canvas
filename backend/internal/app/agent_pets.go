@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,16 +39,21 @@ type AgentPetView struct {
 	MemberFree        bool              `json:"memberFree"`
 	Usable            bool              `json:"usable"`
 	Purchasable       bool              `json:"purchasable"`
+	// UnlockMicrocredits 是累计消费解锁的门槛（仅 spend）；Claimable 表示已达标、使用时自动领取。
+	UnlockMicrocredits int64 `json:"unlockMicrocredits"`
+	Claimable          bool  `json:"claimable"`
 	// Tone 与 Lines 用于头顶气泡：内置形象有专属风格和台词，上传形象为空，由前端使用通用语气。
 	Tone  string   `json:"tone"`
 	Lines []string `json:"lines"`
 }
 
 // AgentPetCatalog 是用户的形象列表；SelectedPetID 为空表示使用站点默认形象。
+// ConsumedMicrocredits 是用户累计消费（已结算的模型调用积分），用于累计消费解锁。
 type AgentPetCatalog struct {
-	Pets           []AgentPetView `json:"pets"`
-	SelectedPetID  string         `json:"selectedPetId"`
-	CreditsEnabled bool           `json:"creditsEnabled"`
+	Pets                 []AgentPetView `json:"pets"`
+	SelectedPetID        string         `json:"selectedPetId"`
+	CreditsEnabled       bool           `json:"creditsEnabled"`
+	ConsumedMicrocredits int64          `json:"consumedMicrocredits"`
 }
 
 type AgentPetPurchaseResult struct {
@@ -135,7 +141,8 @@ func newAgentPetEntry(row model.AgentPet, revision string, stored bool) (agentPe
 	if groups == nil {
 		groups = []string{}
 	}
-	return agentPetEntry{pet: row, access: agentpet.Access{Mode: row.Access, PriceMicrocredits: row.PriceMicrocredits, GroupCodes: groups}, stateRows: rows, revision: revision, stored: stored, lines: []string{}}, nil
+	access := agentpet.Access{Mode: row.Access, PriceMicrocredits: row.PriceMicrocredits, UnlockMicrocredits: row.UnlockMicrocredits, GroupCodes: groups}
+	return agentPetEntry{pet: row, access: access, stateRows: rows, revision: revision, stored: stored, lines: []string{}}, nil
 }
 
 func uploadedAgentPetRevision(resourceID string) string {
@@ -154,32 +161,46 @@ func findAgentPetEntry(entries []agentPetEntry, id string) (agentPetEntry, bool)
 	return agentPetEntry{}, false
 }
 
-func (entry agentPetEntry) userView(groupCode string, owned bool, creditsEnabled bool) AgentPetView {
-	entitlement := agentpet.Entitle(entry.access, groupCode, owned)
-	price := int64(0)
-	if entry.access.Mode == agentpet.AccessPaid {
+func (entry agentPetEntry) userView(groupCode string, owned bool, creditsEnabled bool, consumed int64) AgentPetView {
+	entitlement := agentpet.Entitle(entry.access, groupCode, owned, consumed)
+	price, unlock := int64(0), int64(0)
+	switch entry.access.Mode {
+	case agentpet.AccessPaid:
 		price = entry.access.PriceMicrocredits
+	case agentpet.AccessSpend:
+		unlock = entry.access.UnlockMicrocredits
 	}
 	return AgentPetView{
-		ID:                entry.pet.ID,
-		Name:              entry.pet.Name,
-		Description:       entry.pet.Description,
-		SpriteVersion:     entry.pet.SpriteVersion,
-		Revision:          entry.revision,
-		Pixelated:         entry.pet.Pixelated,
-		StateRows:         entry.stateRows,
-		Access:            entry.access.Mode,
-		PriceMicrocredits: price,
-		Owned:             owned,
-		MemberFree:        entitlement.MemberFree,
-		Usable:            entitlement.Usable,
-		Purchasable:       entitlement.Purchasable && entry.pet.Enabled && creditsEnabled,
-		Tone:              entry.tone,
-		Lines:             entry.lines,
+		ID:                 entry.pet.ID,
+		Name:               entry.pet.Name,
+		Description:        entry.pet.Description,
+		SpriteVersion:      entry.pet.SpriteVersion,
+		Revision:           entry.revision,
+		Pixelated:          entry.pet.Pixelated,
+		StateRows:          entry.stateRows,
+		Access:             entry.access.Mode,
+		PriceMicrocredits:  price,
+		Owned:              owned,
+		MemberFree:         entitlement.MemberFree,
+		Usable:             entitlement.Usable,
+		Purchasable:        entitlement.Purchasable && entry.pet.Enabled && creditsEnabled,
+		UnlockMicrocredits: unlock,
+		Claimable:          entitlement.Claimable,
+		Tone:               entry.tone,
+		Lines:              entry.lines,
 	}
 }
 
-// AgentPetCatalog 返回已上架的形象和用户已购买的形象（已下架的已购形象仍可使用）。
+// userConsumedMicrocredits 与后台用户列表的“已消费”一致：已结算模型调用的实际扣费。
+func (s *Service) userConsumedMicrocredits(userID string) (int64, error) {
+	totals, err := s.repo.UserCreditTotals([]string{userID})
+	if err != nil {
+		return 0, err
+	}
+	return totals[userID].ConsumedMicrocredits, nil
+}
+
+// AgentPetCatalog 返回已上架的形象和用户已拥有（购买或领取）的形象（已下架的已拥有形象仍可使用）。
 func (s *Service) AgentPetCatalog(actor *model.User) (*AgentPetCatalog, error) {
 	if actor == nil {
 		return nil, Unauthorized("请先登录")
@@ -200,13 +221,17 @@ func (s *Service) AgentPetCatalog(actor *model.User) (*AgentPetCatalog, error) {
 	if err != nil {
 		return nil, err
 	}
+	consumed, err := s.userConsumedMicrocredits(actor.ID)
+	if err != nil {
+		return nil, err
+	}
 	groupCode := normalizeUserGroupCode(actor.UserGroup)
-	catalog := &AgentPetCatalog{Pets: []AgentPetView{}, CreditsEnabled: creditsEnabled}
+	catalog := &AgentPetCatalog{Pets: []AgentPetView{}, CreditsEnabled: creditsEnabled, ConsumedMicrocredits: consumed}
 	for _, entry := range entries {
 		if !entry.pet.Enabled && !owned[entry.pet.ID] {
 			continue
 		}
-		view := entry.userView(groupCode, owned[entry.pet.ID], creditsEnabled)
+		view := entry.userView(groupCode, owned[entry.pet.ID], creditsEnabled, consumed)
 		catalog.Pets = append(catalog.Pets, view)
 		// 失去资格（如分组变化、形象下架）的选择按默认形象处理，资格恢复后自动生效。
 		if view.ID == selected && view.Usable {
@@ -248,10 +273,20 @@ func (s *Service) SelectAgentPet(actor *model.User, petID string) (*AgentPetView
 			continue
 		}
 		if !pet.Usable {
-			if pet.Access == agentpet.AccessVIP {
+			switch pet.Access {
+			case agentpet.AccessVIP:
 				return nil, Forbidden("该形象为 VIP 专享")
+			case agentpet.AccessSpend:
+				return nil, Forbidden(fmt.Sprintf("累计消费满 %s 积分即可领取", formatAgentPetCredits(pet.UnlockMicrocredits)))
 			}
 			return nil, Forbidden("请先购买该形象")
+		}
+		// 累计消费达标的形象在第一次使用时领取，之后门槛调整也不影响。
+		if pet.Claimable {
+			if err := s.repo.ClaimAgentPet(actor.ID, petID); err != nil {
+				return nil, err
+			}
+			pet.Owned, pet.Claimable = true, false
 		}
 		if err := s.repo.SaveAgentPetSelection(actor.ID, petID); err != nil {
 			return nil, err
@@ -283,12 +318,14 @@ func (s *Service) PurchaseAgentPet(actor *model.User, petID string, expectedPric
 	}
 	groupCode := normalizeUserGroupCode(actor.UserGroup)
 	if !owned[entry.pet.ID] {
-		entitlement := agentpet.Entitle(entry.access, groupCode, false)
+		entitlement := agentpet.Entitle(entry.access, groupCode, false, 0)
 		switch {
 		case entitlement.MemberFree:
 			return nil, BadAuthRequest("你所在的分组可以免费使用该形象，无需购买")
 		case entry.access.Mode == agentpet.AccessVIP:
 			return nil, Forbidden("该形象为 VIP 专享，不能购买")
+		case entry.access.Mode == agentpet.AccessSpend:
+			return nil, BadAuthRequest(fmt.Sprintf("累计消费满 %s 积分即可领取，无需购买", formatAgentPetCredits(entry.access.UnlockMicrocredits)))
 		case !entitlement.Purchasable:
 			return nil, BadAuthRequest("免费形象无需购买")
 		case expectedPrice != entry.access.PriceMicrocredits:
@@ -313,11 +350,17 @@ func (s *Service) PurchaseAgentPet(actor *model.User, petID string, expectedPric
 	case err != nil:
 		return nil, err
 	}
-	return &AgentPetPurchaseResult{Pet: entry.userView(groupCode, true, true), Charged: charged, AvailableMicrocredits: account.AvailableMicrocredits}, nil
+	return &AgentPetPurchaseResult{Pet: entry.userView(groupCode, true, true, 0), Charged: charged, AvailableMicrocredits: account.AvailableMicrocredits}, nil
+}
+
+// formatAgentPetCredits 把微积分格式化为最多两位小数的积分数。
+func formatAgentPetCredits(microcredits int64) string {
+	value := strconv.FormatFloat(float64(microcredits)/float64(CreditScale), 'f', 2, 64)
+	return strings.TrimSuffix(strings.TrimSuffix(value, "0"), ".0")
 }
 
 // AgentPetSpritesheet 返回图集。已上架的形象所有登录用户可读（用于商店预览），
-// 已下架的只有已购用户和管理员可读。
+// 已下架的只有已拥有的用户和管理员可读。
 func (s *Service) AgentPetSpritesheet(actor *model.User, petID string) (*AgentPetSheet, error) {
 	if actor == nil {
 		return nil, Unauthorized("请先登录")

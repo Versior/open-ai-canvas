@@ -1008,11 +1008,12 @@ paths:
                   msg: {type: string}
                   data:
                     type: object
-                    required: [pets, selectedPetId, creditsEnabled]
+                    required: [pets, selectedPetId, creditsEnabled, consumedMicrocredits]
                     properties:
                       pets: {type: array, items: {$ref: "#/components/schemas/AgentPet"}}
                       selectedPetId: {type: string}
                       creditsEnabled: {type: boolean}
+                      consumedMicrocredits: {type: integer, format: int64, description: 累计消费（已结算的模型调用积分），用于累计消费解锁}
         "401": {$ref: "#/components/responses/Error"}
   /agent-pets/selection:
     get:
@@ -1035,6 +1036,7 @@ paths:
     put:
       tags: [agent]
       summary: 切换当前形象；petId 为空字符串时恢复站点默认形象
+      description: 累计消费已达标（claimable）的形象在这里自动领取，之后调整门槛不影响已领取的用户。
       requestBody:
         required: true
         content:
@@ -1091,7 +1093,7 @@ paths:
     get:
       tags: [agent]
       summary: 读取形象图集（WebP 或 PNG，8 列 × 9/11 行，单格 192×208）
-      description: 已上架的形象所有登录用户可读；已下架的只有已购用户和管理员可读。v 等于当前 revision 时长期缓存，支持 If-None-Match。
+      description: 已上架的形象所有登录用户可读；已下架的只有已拥有（购买或领取）的用户和管理员可读。v 等于当前 revision 时长期缓存，支持 If-None-Match。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
         - {in: query, name: v, schema: {type: string}}
@@ -1103,7 +1105,7 @@ paths:
   /admin/agent-pets:
     get:
       tags: [admin]
-      summary: 列出形象库（内置和上传），含开放方式与购买人数
+      summary: 列出形象库（内置和上传），含开放方式与拥有人数（购买或领取）
       responses:
         "200":
           description: 成功信封 data.pets
@@ -1143,7 +1145,7 @@ paths:
     put:
       tags: [admin]
       summary: 保存形象配置（名称、简介、上架、开放方式、价格、分组、状态映射、像素清晰、排序）
-      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用。
+      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用；spend 累计消费门槛须大于 0，达标后免费领取，所选分组免费使用。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       requestBody:
@@ -1152,13 +1154,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, enabled, access, priceMicrocredits, groupCodes, stateRows, pixelated, sortOrder]
+              required: [name, enabled, access, priceMicrocredits, unlockMicrocredits, groupCodes, stateRows, pixelated, sortOrder]
               properties:
                 name: {type: string, maxLength: 40}
                 description: {type: string, maxLength: 200}
                 enabled: {type: boolean}
-                access: {type: string, enum: [free, vip, paid]}
-                priceMicrocredits: {type: integer, format: int64}
+                access: {type: string, enum: [free, vip, paid, spend]}
+                priceMicrocredits: {type: integer, format: int64, description: paid 的价格}
+                unlockMicrocredits: {type: integer, format: int64, description: spend 的累计消费门槛}
                 groupCodes: {type: array, items: {type: string}}
                 stateRows: {type: object, additionalProperties: {type: string}}
                 pixelated: {type: boolean}
@@ -1171,7 +1174,7 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
     delete:
       tags: [admin]
-      summary: 删除上传的形象；内置形象只能下架，已有人购买的形象返回 409
+      summary: 删除上传的形象；内置形象只能下架，已有人购买或领取的形象返回 409
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       responses:
@@ -3669,7 +3672,7 @@ components:
   schemas:
     AgentPet:
       type: object
-      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, owned, memberFree, usable, purchasable, tone, lines]
+      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, unlockMicrocredits, owned, memberFree, usable, purchasable, claimable, tone, lines]
       properties:
         id: {type: string}
         name: {type: string}
@@ -3678,12 +3681,14 @@ components:
         revision: {type: string, description: 图集缓存版本}
         pixelated: {type: boolean}
         stateRows: {type: object, additionalProperties: {type: string, enum: [idle, running-right, running-left, waving, jumping, failed, waiting, running, review]}, description: 助手状态到图集动作的覆盖项}
-        access: {type: string, enum: [free, vip, paid]}
+        access: {type: string, enum: [free, vip, paid, spend]}
         priceMicrocredits: {type: integer, format: int64, description: 仅 paid 时大于 0}
+        unlockMicrocredits: {type: integer, format: int64, description: 仅 spend 时大于 0，累计消费达到即可领取}
         owned: {type: boolean}
         memberFree: {type: boolean, description: 付费形象对当前用户分组免费}
         usable: {type: boolean}
         purchasable: {type: boolean}
+        claimable: {type: boolean, description: 累计消费已达标、尚未领取；选择时自动领取}
         tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 头顶气泡的说话风格；上传形象为空，前端用通用语气}
         lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 形象专属台词}
     AdminAgentPet:

@@ -15,6 +15,7 @@ type EditorValues = {
     enabled: boolean;
     access: AgentPetAccess;
     priceCredits: number | null;
+    unlockCredits: number | null;
     groupCodes: string[];
     pixelated: boolean;
     sortOrder: number;
@@ -25,6 +26,7 @@ const ACCESS_OPTIONS: Array<{ value: AgentPetAccess; label: string }> = [
     { value: "free", label: "免费" },
     { value: "vip", label: "VIP 专享" },
     { value: "paid", label: "积分购买" },
+    { value: "spend", label: "消费解锁" },
 ];
 
 /** 后台和用户端保存同一份完整配置；表格里的上架开关也走这里。 */
@@ -35,6 +37,7 @@ export function agentPetInput(pet: AdminAgentPet, patch: Partial<AdminAgentPetIn
         enabled: pet.enabled,
         access: pet.access,
         priceMicrocredits: pet.priceMicrocredits,
+        unlockMicrocredits: pet.unlockMicrocredits,
         groupCodes: pet.groupCodes,
         stateRows: pet.stateRows,
         pixelated: pet.pixelated,
@@ -60,6 +63,7 @@ export function AgentPetEditor({ open, pet, groups, onClose, onSaved }: { open: 
             enabled: pet.enabled,
             access: pet.access,
             priceCredits: pet.priceMicrocredits ? pet.priceMicrocredits / 1_000_000 : null,
+            unlockCredits: pet.unlockMicrocredits ? pet.unlockMicrocredits / 1_000_000 : null,
             groupCodes: pet.groupCodes,
             pixelated: pet.pixelated,
             sortOrder: pet.sortOrder,
@@ -101,6 +105,7 @@ export function AgentPetEditor({ open, pet, groups, onClose, onSaved }: { open: 
                 enabled: values.enabled,
                 access: values.access,
                 priceMicrocredits: values.access === "paid" ? Math.round((values.priceCredits || 0) * 1_000_000) : 0,
+                unlockMicrocredits: values.access === "spend" ? Math.round((values.unlockCredits || 0) * 1_000_000) : 0,
                 groupCodes: values.access === "free" ? [] : values.groupCodes || [],
                 stateRows,
                 pixelated: values.pixelated,
@@ -185,12 +190,22 @@ export function AgentPetEditor({ open, pet, groups, onClose, onSaved }: { open: 
                                 <InputNumber min={0.01} max={1_000_000} precision={2} step={1} className="!w-48" />
                             </Form.Item>
                         ) : null}
-                        {access === "vip" || access === "paid" ? (
+                        {access === "spend" ? (
+                            <Form.Item
+                                name="unlockCredits"
+                                label="累计消费门槛（积分）"
+                                rules={[{ required: true, message: "请填写累计消费门槛" }]}
+                                extra="与用户列表的“已消费”同一口径：只统计已结算的模型调用，购买形象不计入。达标后用户第一次选择时领取，之后调高门槛也不影响已领取的用户。"
+                            >
+                                <InputNumber min={0.01} max={1_000_000} precision={2} step={10} className="!w-48" />
+                            </Form.Item>
+                        ) : null}
+                        {access === "vip" || access === "paid" || access === "spend" ? (
                             <Form.Item
                                 name="groupCodes"
                                 label={access === "vip" ? "可使用的分组" : "免费使用的分组（可选）"}
                                 rules={access === "vip" ? [{ required: true, type: "array", min: 1, message: "VIP 专享至少选择一个分组" }] : undefined}
-                                extra={access === "vip" ? "只有这些分组的用户能使用，其他用户看到“VIP 专享”。" : "这些分组的用户无需购买即可使用。"}
+                                extra={access === "vip" ? "只有这些分组的用户能使用，其他用户看到“VIP 专享”。" : access === "spend" ? "这些分组的用户不受消费门槛限制，直接可用。" : "这些分组的用户无需购买即可使用。"}
                             >
                                 <Select mode="multiple" allowClear showSearch optionFilterProp="label" options={groupOptions} placeholder="选择用户分组" />
                             </Form.Item>

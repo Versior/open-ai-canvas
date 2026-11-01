@@ -169,47 +169,59 @@ func TestReadUploadPackages(t *testing.T) {
 }
 
 func TestAccessPolicy(t *testing.T) {
-	if _, err := NormalizeAccess(AccessVIP, 0, nil); err == nil {
+	if _, err := NormalizeAccess(AccessVIP, 0, 0, nil); err == nil {
 		t.Fatal("vip without groups accepted")
 	}
-	if _, err := NormalizeAccess(AccessPaid, 0, nil); err == nil {
+	if _, err := NormalizeAccess(AccessPaid, 0, 0, nil); err == nil {
 		t.Fatal("paid without price accepted")
 	}
-	if _, err := NormalizeAccess(AccessPaid, MaxPriceMicrocredits+1, nil); err == nil {
+	if _, err := NormalizeAccess(AccessPaid, MaxPriceMicrocredits+1, 0, nil); err == nil {
 		t.Fatal("price above limit accepted")
 	}
-	if _, err := NormalizeAccess("gift", 0, nil); err == nil {
+	if _, err := NormalizeAccess("gift", 0, 0, nil); err == nil {
 		t.Fatal("unknown access accepted")
 	}
-	if _, err := NormalizeAccess(AccessFree, 0, []string{"Bad Code"}); err == nil {
+	if _, err := NormalizeAccess(AccessFree, 0, 0, []string{"Bad Code"}); err == nil {
 		t.Fatal("invalid group code accepted")
 	}
-	free, err := NormalizeAccess(AccessFree, 99, []string{"vip"})
+	free, err := NormalizeAccess(AccessFree, 99, 99, []string{"vip"})
 	if err != nil || free.PriceMicrocredits != 0 || len(free.GroupCodes) != 0 {
 		t.Fatalf("free access keeps price or groups: %+v %v", free, err)
 	}
-	paid, err := NormalizeAccess(AccessPaid, 5_000_000, []string{" SVIP ", "vip", "vip"})
+	paid, err := NormalizeAccess(AccessPaid, 5_000_000, 0, []string{" SVIP ", "vip", "vip"})
 	if err != nil || strings.Join(paid.GroupCodes, ",") != "svip,vip" {
 		t.Fatalf("paid groups = %+v %v", paid, err)
 	}
-	vip, _ := NormalizeAccess(AccessVIP, 0, []string{"vip"})
+	vip, _ := NormalizeAccess(AccessVIP, 0, 0, []string{"vip"})
+	if _, err := NormalizeAccess(AccessSpend, 0, 0, nil); err == nil {
+		t.Fatal("spend without threshold accepted")
+	}
+	spend, err := NormalizeAccess(AccessSpend, 7, 100_000_000, []string{"svip"})
+	if err != nil || spend.PriceMicrocredits != 0 || spend.UnlockMicrocredits != 100_000_000 {
+		t.Fatalf("spend access = %+v %v", spend, err)
+	}
 	cases := []struct {
 		name   string
 		access Access
 		group  string
 		owned  bool
+		spent  int64
 		want   Entitlement
 	}{
-		{"free", free, "default", false, Entitlement{Usable: true}},
-		{"vip member", vip, "vip", false, Entitlement{Usable: true}},
-		{"vip outsider", vip, "default", false, Entitlement{}},
-		{"vip outsider who bought before", vip, "default", true, Entitlement{Usable: true}},
-		{"paid member", paid, "svip", false, Entitlement{Usable: true, MemberFree: true}},
-		{"paid outsider", paid, "default", false, Entitlement{Purchasable: true}},
-		{"paid owner", paid, "default", true, Entitlement{Usable: true}},
+		{"free", free, "default", false, 0, Entitlement{Usable: true}},
+		{"vip member", vip, "vip", false, 0, Entitlement{Usable: true}},
+		{"vip outsider", vip, "default", false, 0, Entitlement{}},
+		{"vip outsider who bought before", vip, "default", true, 0, Entitlement{Usable: true}},
+		{"paid member", paid, "svip", false, 0, Entitlement{Usable: true, MemberFree: true}},
+		{"paid outsider", paid, "default", false, 0, Entitlement{Purchasable: true}},
+		{"paid owner", paid, "default", true, 0, Entitlement{Usable: true}},
+		{"spend below threshold", spend, "default", false, 99_999_999, Entitlement{}},
+		{"spend reached", spend, "default", false, 100_000_000, Entitlement{Usable: true, Claimable: true}},
+		{"spend claimed", spend, "default", true, 0, Entitlement{Usable: true}},
+		{"spend member", spend, "svip", false, 0, Entitlement{Usable: true, MemberFree: true}},
 	}
 	for _, tc := range cases {
-		if got := Entitle(tc.access, tc.group, tc.owned); got != tc.want {
+		if got := Entitle(tc.access, tc.group, tc.owned, tc.spent); got != tc.want {
 			t.Errorf("%s: got %+v want %+v", tc.name, got, tc.want)
 		}
 	}

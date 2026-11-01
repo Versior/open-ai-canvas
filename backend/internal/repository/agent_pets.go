@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrAgentPetOwned       = errors.New("已有用户购买该形象，不能删除，可以改为下架")
+	ErrAgentPetOwned       = errors.New("已有用户购买或领取该形象，不能删除，可以改为下架")
 	ErrAgentPetUnavailable = errors.New("形象已下架或价格已变化，请刷新后重试")
 )
 
@@ -36,7 +36,7 @@ func (r *Repository) SaveAgentPet(pet *model.AgentPet) error {
 	return r.db.Save(pet).Error
 }
 
-// DeleteAgentPet 只删除没有人购买过的形象，并清掉指向它的当前选择。
+// DeleteAgentPet 只删除没有人购买或领取过的形象，并清掉指向它的当前选择。
 func (r *Repository) DeleteAgentPet(id string) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var owners int64
@@ -101,6 +101,11 @@ func (r *Repository) AgentPetSelection(userID string) (string, error) {
 		return "", nil
 	}
 	return selection.PetID, err
+}
+
+// ClaimAgentPet 记录无需付费即可拥有的形象（累计消费达标后领取）；重复领取没有副作用。
+func (r *Repository) ClaimAgentPet(userID string, petID string) error {
+	return r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.UserAgentPet{UserID: userID, PetID: petID, CreatedAt: time.Now()}).Error
 }
 
 func (r *Repository) SaveAgentPetSelection(userID string, petID string) error {

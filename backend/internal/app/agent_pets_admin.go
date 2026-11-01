@@ -32,20 +32,21 @@ type AdminAgentPetView struct {
 
 // AdminAgentPetInput 是后台保存一个形象的完整配置。
 type AdminAgentPetInput struct {
-	Name              string            `json:"name"`
-	Description       string            `json:"description"`
-	Enabled           bool              `json:"enabled"`
-	Access            string            `json:"access"`
-	PriceMicrocredits int64             `json:"priceMicrocredits"`
-	GroupCodes        []string          `json:"groupCodes"`
-	StateRows         map[string]string `json:"stateRows"`
-	Pixelated         bool              `json:"pixelated"`
-	SortOrder         int               `json:"sortOrder"`
+	Name               string            `json:"name"`
+	Description        string            `json:"description"`
+	Enabled            bool              `json:"enabled"`
+	Access             string            `json:"access"`
+	PriceMicrocredits  int64             `json:"priceMicrocredits"`
+	UnlockMicrocredits int64             `json:"unlockMicrocredits"`
+	GroupCodes         []string          `json:"groupCodes"`
+	StateRows          map[string]string `json:"stateRows"`
+	Pixelated          bool              `json:"pixelated"`
+	SortOrder          int               `json:"sortOrder"`
 }
 
 func (entry agentPetEntry) adminView(owners int64) AdminAgentPetView {
 	view := AdminAgentPetView{
-		AgentPetView: entry.userView("", false, true),
+		AgentPetView: entry.userView("", false, true, 0),
 		Source:       entry.pet.Source,
 		Enabled:      entry.pet.Enabled,
 		GroupCodes:   entry.access.GroupCodes,
@@ -55,6 +56,7 @@ func (entry agentPetEntry) adminView(owners int64) AdminAgentPetView {
 	}
 	view.Usable = true
 	view.Purchasable = false
+	view.Claimable = false
 	return view
 }
 
@@ -111,7 +113,7 @@ func (s *Service) UpdateAdminAgentPet(actor *model.User, id string, input AdminA
 	if name == "" {
 		return nil, BadAuthRequest("请填写形象名称")
 	}
-	access, err := agentpet.NormalizeAccess(input.Access, input.PriceMicrocredits, input.GroupCodes)
+	access, err := agentpet.NormalizeAccess(input.Access, input.PriceMicrocredits, input.UnlockMicrocredits, input.GroupCodes)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +136,7 @@ func (s *Service) UpdateAdminAgentPet(actor *model.User, id string, input AdminA
 	next.Enabled = input.Enabled
 	next.Access = access.Mode
 	next.PriceMicrocredits = access.PriceMicrocredits
+	next.UnlockMicrocredits = access.UnlockMicrocredits
 	next.GroupCodesJSON = string(groupsJSON)
 	next.StateRowsJSON = string(rowsJSON)
 	next.Pixelated = input.Pixelated
@@ -242,7 +245,7 @@ func (s *Service) ImportAgentPet(actor *model.User, header *multipart.FileHeader
 	return s.adminAgentPet(pet.ID)
 }
 
-// DeleteAdminAgentPet 删除上传的形象；内置形象只能下架，已有人购买的形象不能删除。
+// DeleteAdminAgentPet 删除上传的形象；内置形象只能下架，已有人购买或领取的形象不能删除。
 // 图集资源不再被引用后由资源清理流程回收。
 func (s *Service) DeleteAdminAgentPet(actor *model.User, id string) error {
 	if err := s.RequireAdmin(actor); err != nil {

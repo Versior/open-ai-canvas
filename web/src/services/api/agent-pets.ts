@@ -3,7 +3,8 @@ import { apiBaseURL, http } from "./request";
 /** 图集前 9 行的动作，下标即行号。 */
 export const AGENT_PET_ROWS = ["idle", "running-right", "running-left", "waving", "jumping", "failed", "waiting", "running", "review"] as const;
 export type AgentPetRow = (typeof AGENT_PET_ROWS)[number];
-export type AgentPetAccess = "free" | "vip" | "paid";
+/** spend：累计消费满门槛即可领取。 */
+export type AgentPetAccess = "free" | "vip" | "paid" | "spend";
 
 export type AgentPet = {
     id: string;
@@ -22,6 +23,10 @@ export type AgentPet = {
     memberFree: boolean;
     usable: boolean;
     purchasable: boolean;
+    /** 累计消费解锁的门槛（仅 spend）。 */
+    unlockMicrocredits: number;
+    /** 累计消费已达标、尚未领取；选择时自动领取。 */
+    claimable: boolean;
     /** 头顶气泡的说话风格；上传形象为空，使用通用语气。 */
     tone: AgentPetTone | "";
     /** 形象专属台词。 */
@@ -35,6 +40,8 @@ export type AgentPetCatalog = {
     /** 空字符串表示使用站点默认形象。 */
     selectedPetId: string;
     creditsEnabled: boolean;
+    /** 累计消费（已结算的模型调用积分），用于累计消费解锁。 */
+    consumedMicrocredits: number;
 };
 
 export type AgentPetPurchaseResult = {
@@ -58,6 +65,7 @@ export type AdminAgentPetInput = {
     enabled: boolean;
     access: AgentPetAccess;
     priceMicrocredits: number;
+    unlockMicrocredits: number;
     groupCodes: string[];
     stateRows: Partial<Record<string, AgentPetRow>>;
     pixelated: boolean;

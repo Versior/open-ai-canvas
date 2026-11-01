@@ -651,7 +651,7 @@ function sectionSubtitle(section: SettingsSection) {
               : section === "context"
                 ? "控制 Agent 能读取的范围"
                 : section === "pet"
-                  ? "免费、会员专享或用积分购买"
+                  ? "免费、会员专享、积分购买或消费解锁"
                   : "控制本轮积分与生成消耗";
 }
 
