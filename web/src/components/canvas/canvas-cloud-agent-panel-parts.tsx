@@ -16,8 +16,10 @@ import { cn } from "@/lib/utils";
 import { Live2DAvatar } from "./live2d-avatar";
 import { agentAvatarBundleFileURL, live2DModelURL } from "@/services/api/appearance";
 import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
-import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
+import { AgentPetBubble } from "@/components/canvas/agent-pet-bubble";
+import { AgentPetSprite, useAgentPetSheetMetrics } from "@/components/canvas/agent-pet-sprite";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
 import { AGENT_PET_ASPECT, AGENT_PET_CELL_HEIGHT } from "@/lib/canvas/agent-pet";
 import { agentPetSpritesheetURL } from "@/services/api/agent-pets";
 import { FluidOrb } from "@/components/ui/fluid-orb";
@@ -139,6 +141,11 @@ export const AgentLauncher = memo(function AgentLauncher({
     const bodyHitOnly = keepsAvatarSize && (live || media || Boolean(pet));
     const hitInset = bodyHitOnly ? AGENT_LAUNCHER_HIT_INSET : null;
     const petHoverHandlers = pet ? { onPointerEnter: () => setPetHovered(true), onPointerLeave: () => setPetHovered(false) } : null;
+    // 宠物形象不显示状态圆点、入口文字和待审批角标，改由头顶云朵气泡说话。
+    const petShown = Boolean(pet) && !collapsed;
+    const petSheetURL = pet ? agentPetSpritesheetURL(pet) : "";
+    const petMetrics = useAgentPetSheetMetrics(petSheetURL, pet?.spriteVersion ?? 1);
+    const { message: petMessage, dismiss: dismissPetMessage } = useAgentPetChatter({ pet, state: avatarState, approvalPending, active: petShown && !hidden, hovered: petHovered });
     const showToggle = !hidden && (largeAvatar || collapsed);
     return (
         <>
@@ -172,7 +179,7 @@ export const AgentLauncher = memo(function AgentLauncher({
                     <FluidOrb size={30} color="#7164f6" />
                 ) : pet ? (
                     <AgentPetSprite
-                        src={agentPetSpritesheetURL(pet)}
+                        src={petSheetURL}
                         version={pet.spriteVersion}
                         state={avatarState}
                         stateRows={pet.stateRows}
@@ -211,15 +218,24 @@ export const AgentLauncher = memo(function AgentLauncher({
                 ) : (
                     <FluidOrb size={60} color="#7164f6" />
                 )}
-                {appearance.launcherLabel && !collapsed ? <span className="canvas-agent-launcher-label">{appearance.launcherLabel}</span> : null}
+                {appearance.launcherLabel && !collapsed && !petShown ? <span className="canvas-agent-launcher-label">{appearance.launcherLabel}</span> : null}
                 {live && live2DError ? (
                     <span className="sr-only" role="status">
                         {live2DError}
                     </span>
                 ) : null}
-                <span className={cn("canvas-agent-launcher-status", approvalPending && "is-pending")} style={{ "--canvas-agent-status-color": statusColor } as CSSProperties} />
-                {approvalPending ? <span className="canvas-agent-launcher-badge">待审批</span> : null}
+                {petShown ? null : <span className={cn("canvas-agent-launcher-status", approvalPending && "is-pending")} style={{ "--canvas-agent-status-color": statusColor } as CSSProperties} />}
+                {approvalPending && !petShown ? <span className="canvas-agent-launcher-badge">待审批</span> : null}
             </motion.button>
+            {petShown && !hidden && petMessage ? (
+                <AgentPetBubble
+                    key={petMessage.id}
+                    text={petMessage.text}
+                    anchor={{ left: viewport.width - position.right - width, top: viewport.height - position.bottom - height, width, height, headTop: petMetrics.headTop }}
+                    viewport={viewport}
+                    onDismiss={dismissPetMessage}
+                />
+            ) : null}
             {showToggle ? (
                 <button
                     type="button"

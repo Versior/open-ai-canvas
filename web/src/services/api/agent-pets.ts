@@ -22,7 +22,13 @@ export type AgentPet = {
     memberFree: boolean;
     usable: boolean;
     purchasable: boolean;
+    /** 头顶气泡的说话风格；上传形象为空，使用通用语气。 */
+    tone: AgentPetTone | "";
+    /** 形象专属台词。 */
+    lines: string[];
 };
+
+export type AgentPetTone = "gentle" | "kitty" | "puppy" | "robot" | "mystic" | "sunny";
 
 export type AgentPetCatalog = {
     pets: AgentPet[];

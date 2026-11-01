@@ -38,6 +38,9 @@ type AgentPetView struct {
 	MemberFree        bool              `json:"memberFree"`
 	Usable            bool              `json:"usable"`
 	Purchasable       bool              `json:"purchasable"`
+	// Tone 与 Lines 用于头顶气泡：内置形象有专属风格和台词，上传形象为空，由前端使用通用语气。
+	Tone  string   `json:"tone"`
+	Lines []string `json:"lines"`
 }
 
 // AgentPetCatalog 是用户的形象列表；SelectedPetID 为空表示使用站点默认形象。
@@ -67,6 +70,8 @@ type agentPetEntry struct {
 	stateRows map[string]string
 	revision  string
 	stored    bool
+	tone      string
+	lines     []string
 }
 
 // agentPetLibrary 返回全部形象：内置形象未配置时按默认值（未上架、免费），上传形象以数据库为准。
@@ -95,6 +100,7 @@ func (s *Service) agentPetLibrary() ([]agentPetEntry, error) {
 		if err != nil {
 			return nil, err
 		}
+		entry.tone, entry.lines = builtin.Tone, builtin.Lines
 		entries = append(entries, entry)
 	}
 	// 内置目录里已移除的形象即使留有配置也不再出现。
@@ -129,7 +135,7 @@ func newAgentPetEntry(row model.AgentPet, revision string, stored bool) (agentPe
 	if groups == nil {
 		groups = []string{}
 	}
-	return agentPetEntry{pet: row, access: agentpet.Access{Mode: row.Access, PriceMicrocredits: row.PriceMicrocredits, GroupCodes: groups}, stateRows: rows, revision: revision, stored: stored}, nil
+	return agentPetEntry{pet: row, access: agentpet.Access{Mode: row.Access, PriceMicrocredits: row.PriceMicrocredits, GroupCodes: groups}, stateRows: rows, revision: revision, stored: stored, lines: []string{}}, nil
 }
 
 func uploadedAgentPetRevision(resourceID string) string {
@@ -168,6 +174,8 @@ func (entry agentPetEntry) userView(groupCode string, owned bool, creditsEnabled
 		MemberFree:        entitlement.MemberFree,
 		Usable:            entitlement.Usable,
 		Purchasable:       entitlement.Purchasable && entry.pet.Enabled && creditsEnabled,
+		Tone:              entry.tone,
+		Lines:             entry.lines,
 	}
 }
 

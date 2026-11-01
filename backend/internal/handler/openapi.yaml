@@ -2975,7 +2975,7 @@ components:
   schemas:
     AgentPet:
       type: object
-      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, owned, memberFree, usable, purchasable]
+      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, owned, memberFree, usable, purchasable, tone, lines]
       properties:
         id: {type: string}
         name: {type: string}
@@ -2990,6 +2990,8 @@ components:
         memberFree: {type: boolean, description: 付费形象对当前用户分组免费}
         usable: {type: boolean}
         purchasable: {type: boolean}
+        tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 头顶气泡的说话风格；上传形象为空，前端用通用语气}
+        lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 形象专属台词}
     AdminAgentPet:
       allOf:
         - $ref: "#/components/schemas/AgentPet"

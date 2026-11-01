@@ -91,25 +91,40 @@ export function countAgentPetFrames(filled: (column: number, row: number) => boo
     return counts;
 }
 
-const DETECT_SCALE = 4;
-const frameCache = new Map<string, number[]>();
-const pendingFrames = new Map<string, Promise<number[]>>();
+/** 待机第一行里最靠上的不透明像素相对单格高度的位置，用来把头顶气泡贴在头上方。 */
+export const DEFAULT_AGENT_PET_HEAD_TOP = 0.12;
 
-export function cachedAgentPetFrames(src: string) {
-    return frameCache.get(src) ?? null;
+export type AgentPetSheetMetrics = { frames: readonly number[]; headTop: number };
+
+/** 待机行各帧最靠上的不透明像素所在行（0 起），没有像素时返回 null。 */
+export function agentPetTopRow(filled: (column: number, y: number) => boolean, frames: number, cellHeight: number) {
+    for (let y = 0; y < cellHeight; y += 1) {
+        for (let column = 0; column < frames; column += 1) {
+            if (filled(column, y)) return y;
+        }
+    }
+    return null;
 }
 
-/** 浏览器里读一次图集透明度（缩小 4 倍采样），结果按 URL 缓存；读不到像素时用规范帧数。 */
-export function detectAgentPetFrames(src: string, rows: number): Promise<number[]> {
-    const cached = frameCache.get(src);
+const DETECT_SCALE = 4;
+const metricsCache = new Map<string, AgentPetSheetMetrics>();
+const pendingMetrics = new Map<string, Promise<AgentPetSheetMetrics>>();
+
+export function cachedAgentPetMetrics(src: string) {
+    return metricsCache.get(src) ?? null;
+}
+
+/** 浏览器里读一次图集透明度（缩小 4 倍采样），得到各行帧数和头顶位置并按 URL 缓存；读不到像素时用规范值。 */
+export function detectAgentPetMetrics(src: string, rows: number): Promise<AgentPetSheetMetrics> {
+    const cached = metricsCache.get(src);
     if (cached) return Promise.resolve(cached);
-    const pending = pendingFrames.get(src);
+    const pending = pendingMetrics.get(src);
     if (pending) return pending;
-    const promise = new Promise<number[]>((resolve, reject) => {
+    const promise = new Promise<AgentPetSheetMetrics>((resolve, reject) => {
         const image = new Image();
         image.decoding = "async";
         image.onload = () => {
-            let counts = [...DEFAULT_AGENT_PET_FRAMES, AGENT_PET_COLUMNS, AGENT_PET_COLUMNS].slice(0, rows);
+            let metrics: AgentPetSheetMetrics = { frames: [...DEFAULT_AGENT_PET_FRAMES, AGENT_PET_COLUMNS, AGENT_PET_COLUMNS].slice(0, rows), headTop: DEFAULT_AGENT_PET_HEAD_TOP };
             try {
                 const cellWidth = AGENT_PET_CELL_WIDTH / DETECT_SCALE;
                 const cellHeight = AGENT_PET_CELL_HEIGHT / DETECT_SCALE;
@@ -120,28 +135,40 @@ export function detectAgentPetFrames(src: string, rows: number): Promise<number[
                 if (context) {
                     context.drawImage(image, 0, 0, canvas.width, canvas.height);
                     const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-                    counts = countAgentPetFrames((column, row) => {
+                    const opaque = (x: number, y: number) => pixels[(y * canvas.width + x) * 4 + 3] > 16;
+                    const frames = countAgentPetFrames((column, row) => {
                         for (let y = row * cellHeight; y < (row + 1) * cellHeight; y += 1) {
                             for (let x = column * cellWidth; x < (column + 1) * cellWidth; x += 1) {
-                                if (pixels[(y * canvas.width + x) * 4 + 3] > 16) return true;
+                                if (opaque(x, y)) return true;
                             }
                         }
                         return false;
                     }, rows);
+                    const top = agentPetTopRow(
+                        (column, y) => {
+                            for (let x = column * cellWidth; x < (column + 1) * cellWidth; x += 1) {
+                                if (opaque(x, y)) return true;
+                            }
+                            return false;
+                        },
+                        frames[0] ?? 1,
+                        cellHeight,
+                    );
+                    metrics = { frames, headTop: top === null ? DEFAULT_AGENT_PET_HEAD_TOP : top / cellHeight };
                 }
             } catch (error) {
-                console.warn("形象图集帧数检测失败，使用规范帧数", error);
+                console.warn("形象图集检测失败，使用规范帧数", error);
             }
-            frameCache.set(src, counts);
-            pendingFrames.delete(src);
-            resolve(counts);
+            metricsCache.set(src, metrics);
+            pendingMetrics.delete(src);
+            resolve(metrics);
         };
         image.onerror = () => {
-            pendingFrames.delete(src);
+            pendingMetrics.delete(src);
             reject(new Error("形象图集加载失败"));
         };
         image.src = src;
     });
-    pendingFrames.set(src, promise);
+    pendingMetrics.set(src, promise);
     return promise;
 }

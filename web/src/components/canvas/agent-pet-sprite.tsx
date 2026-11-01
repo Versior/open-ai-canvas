@@ -1,7 +1,19 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { AgentAvatarState } from "@/lib/canvas/agent-appearance";
-import { AGENT_PET_COLUMNS, agentPetFrameDuration, agentPetLookCell, agentPetRowForState, agentPetRowIndex, agentPetSheetRows, cachedAgentPetFrames, DEFAULT_AGENT_PET_FRAMES, detectAgentPetFrames } from "@/lib/canvas/agent-pet";
+import {
+    AGENT_PET_COLUMNS,
+    agentPetFrameDuration,
+    agentPetLookCell,
+    agentPetRowForState,
+    agentPetRowIndex,
+    agentPetSheetRows,
+    cachedAgentPetMetrics,
+    DEFAULT_AGENT_PET_FRAMES,
+    DEFAULT_AGENT_PET_HEAD_TOP,
+    detectAgentPetMetrics,
+    type AgentPetSheetMetrics,
+} from "@/lib/canvas/agent-pet";
 import { cn } from "@/lib/utils";
 import type { AgentPetRow } from "@/services/api/agent-pets";
 
@@ -58,22 +70,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
 }: AgentPetSpriteProps) {
     const element = useRef<HTMLSpanElement>(null);
     const rows = agentPetSheetRows(version);
-    const [frames, setFrames] = useState<readonly number[]>(() => cachedAgentPetFrames(src) ?? DEFAULT_AGENT_PET_FRAMES);
-    const onErrorRef = useRef(onError);
-    useEffect(() => {
-        onErrorRef.current = onError;
-    }, [onError]);
-    useEffect(() => {
-        let active = true;
-        setFrames(cachedAgentPetFrames(src) ?? DEFAULT_AGENT_PET_FRAMES);
-        detectAgentPetFrames(src, rows).then(
-            (counts) => active && setFrames(counts),
-            () => active && onErrorRef.current?.(),
-        );
-        return () => {
-            active = false;
-        };
-    }, [src, rows]);
+    const { frames } = useAgentPetSheetMetrics(src, version, onError);
 
     const documentHidden = useDocumentHidden();
     const still = paused || reducedMotion || documentHidden;
@@ -135,6 +132,31 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     };
     return <span ref={element} className={cn("agent-pet-sprite block shrink-0", className)} style={style} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true} data-pet-row={look ? "look" : activeRow} />;
 });
+
+const DEFAULT_METRICS: AgentPetSheetMetrics = { frames: DEFAULT_AGENT_PET_FRAMES, headTop: DEFAULT_AGENT_PET_HEAD_TOP };
+
+/** 图集帧数与头顶位置；同一 URL 只检测一次，加载失败时调用 onError。 */
+export function useAgentPetSheetMetrics(src: string, version: 1 | 2, onError?: () => void) {
+    const rows = agentPetSheetRows(version);
+    const [metrics, setMetrics] = useState<AgentPetSheetMetrics>(() => cachedAgentPetMetrics(src) ?? DEFAULT_METRICS);
+    const onErrorRef = useRef(onError);
+    useEffect(() => {
+        onErrorRef.current = onError;
+    }, [onError]);
+    useEffect(() => {
+        let active = true;
+        setMetrics(cachedAgentPetMetrics(src) ?? DEFAULT_METRICS);
+        if (!src) return;
+        detectAgentPetMetrics(src, rows).then(
+            (next) => active && setMetrics(next),
+            () => active && onErrorRef.current?.(),
+        );
+        return () => {
+            active = false;
+        };
+    }, [src, rows]);
+    return metrics;
+}
 
 function useDocumentHidden() {
     const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { AgentPetSprite } from "../src/components/canvas/agent-pet-sprite";
-import { agentPetFrameDuration, agentPetLookCell, agentPetRowForState, agentPetSheetRows, countAgentPetFrames, DEFAULT_AGENT_PET_FRAMES } from "../src/lib/canvas/agent-pet";
+import { agentPetFrameDuration, agentPetLookCell, agentPetRowForState, agentPetSheetRows, agentPetTopRow, countAgentPetFrames, DEFAULT_AGENT_PET_FRAMES } from "../src/lib/canvas/agent-pet";
 
 describe("agent pet atlas math", () => {
     test("look directions start at 12 o'clock and go clockwise across rows 9 and 10", () => {
@@ -33,6 +33,13 @@ describe("agent pet atlas math", () => {
         expect(agentPetFrameDuration("idle", 5, 7)).toBe(140);
         expect(agentPetFrameDuration("idle", 6, 7)).toBe(320);
         expect(agentPetFrameDuration("waving", 3, 4)).toBe(280);
+    });
+
+    test("head top is the highest opaque row across the idle frames", () => {
+        const opaque = new Set(["1:9", "0:12", "2:6"]);
+        expect(agentPetTopRow((column, y) => opaque.has(`${column}:${y}`), 2, 52)).toBe(9);
+        expect(agentPetTopRow((column, y) => opaque.has(`${column}:${y}`), 3, 52)).toBe(6);
+        expect(agentPetTopRow(() => false, 3, 52)).toBeNull();
     });
 
     test("frame counts use leading filled cells and fall back for empty rows", () => {

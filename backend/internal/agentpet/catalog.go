@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // 内置形象随程序发布，运行时不访问任何外部站点。NOTICE.md 是素材的授权记录，只随程序分发，不在界面展示。
@@ -24,6 +26,9 @@ type Builtin struct {
 	File          string `json:"file"`
 	Pixelated     bool   `json:"pixelated"`
 	SortOrder     int    `json:"sortOrder"`
+	// Tone 决定头顶气泡的说话风格，Lines 是这个形象专属的台词。
+	Tone  string   `json:"tone"`
+	Lines []string `json:"lines"`
 	// Revision 是图集内容摘要，用作浏览器缓存版本。
 	Revision string `json:"-"`
 }
@@ -100,6 +105,14 @@ func loadBuiltins() ([]Builtin, error) {
 		}
 		if sheet.Version != item.SpriteVersion {
 			return nil, fmt.Errorf("内置形象 %s 声明 v%d，图集是 v%d", item.ID, item.SpriteVersion, sheet.Version)
+		}
+		if !slices.Contains(Tones, item.Tone) || len(item.Lines) == 0 || len(item.Lines) > maxLines {
+			return nil, fmt.Errorf("内置形象 %s 的说话风格或台词无效", item.ID)
+		}
+		for _, line := range item.Lines {
+			if line == "" || utf8.RuneCountInString(line) > maxLineRunes {
+				return nil, fmt.Errorf("内置形象 %s 的台词为空或过长", item.ID)
+			}
 		}
 		sum := sha256.Sum256(data)
 		item.Revision = hex.EncodeToString(sum[:8])

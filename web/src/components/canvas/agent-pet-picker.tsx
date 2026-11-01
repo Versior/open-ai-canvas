@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button } from "antd";
-import { Check, Crown, Eye, LoaderCircle, RotateCcw, Sparkles } from "lucide-react";
+import { Check, Crown, Eye, LoaderCircle, MessageCircleHeart, RotateCcw, Sparkles } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useState, type ReactNode } from "react";
 
 import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
+import { Switch } from "@/components/ui/base/switch";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import { formatCredits } from "@/constant/credits";
 import { agentPetCatalogQueryKey, publishActiveAgentPet } from "@/hooks/use-active-agent-pet";
@@ -14,6 +15,7 @@ import { AGENT_PET_ASPECT } from "@/lib/canvas/agent-pet";
 import { openWorkspaceWallet } from "@/lib/workspace-wallet";
 import { agentPetSpritesheetURL, getAgentPetCatalog, purchaseAgentPet, selectAgentPet, type AgentPet } from "@/services/api/agent-pets";
 import { ApiError } from "@/services/api/request";
+import { useAgentPetBubbleStore } from "@/stores/use-agent-pet-bubble-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 const PREVIEW_HEIGHT = 96;
@@ -32,6 +34,8 @@ export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
     const [confirmId, setConfirmId] = useState("");
     const [previewId, setPreviewId] = useState("");
     const selectedId = catalog.data?.selectedPetId ?? "";
+    const chatter = useAgentPetBubbleStore((state) => state.chatter);
+    const setChatter = useAgentPetBubbleStore((state) => state.setChatter);
 
     const apply = async (pet: AgentPet | null) => {
         setBusyId(pet?.id ?? "");
@@ -97,6 +101,16 @@ export function AgentPetPicker({ theme }: { theme: CanvasTheme }) {
                 形象只对你自己显示。带「视线」标记的形象待机时会看向鼠标。
                 {creditsEnabled && balance !== null ? ` 当前可用 ${formatCredits(balance, 2)} 积分。` : ""}
             </p>
+            <label className="mb-3 flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: theme.node.fill }}>
+                <MessageCircleHeart className="size-4 shrink-0" style={{ color: theme.accent.primary }} aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-medium">头顶气泡</span>
+                    <span className="mt-0.5 block text-[var(--fs-label)] leading-4" style={{ color: theme.node.muted }}>
+                        形象会提醒时间和未完成的项目，也会说说灵感和贴心话；待审批提醒始终显示
+                    </span>
+                </span>
+                <Switch checked={chatter} onChange={setChatter} aria-label="头顶气泡" />
+            </label>
             <div className="grid grid-cols-2 gap-2">
                 <PetCard theme={theme} selected={!selectedId} title="默认形象" description="使用站点设置的助手形象" preview={<FluidOrb size={56} color="#7164f6" />}>
                     {selectedId ? (
