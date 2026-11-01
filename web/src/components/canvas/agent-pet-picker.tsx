@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button } from "antd";
-import { Bot, Cat, Check, Crown, Dog, Eye, Flame, Gift, Heart, LoaderCircle, Lock, MessageCircleHeart, RotateCcw, ShoppingBag, Sparkles, Sun, Timer, Wallet, WandSparkles, type LucideIcon } from "lucide-react";
+import { Bot, Cat, Check, Coins, Crown, Dog, Eye, Flame, Gift, Heart, LoaderCircle, Lock, MessageCircleHeart, Moon, RotateCcw, ShoppingBag, Store, Sun, Timer, Wallet, type LucideIcon } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
@@ -26,7 +26,7 @@ import "./agent-pet-store.css";
 const PREVIEW_HEIGHT = 112;
 const PREVIEW_WIDTH = Math.round(PREVIEW_HEIGHT * AGENT_PET_ASPECT);
 
-export const AGENT_PET_TONE_ICONS: Record<AgentPetTone, LucideIcon> = { gentle: Heart, kitty: Cat, puppy: Dog, robot: Bot, mystic: WandSparkles, sunny: Sun };
+export const AGENT_PET_TONE_ICONS: Record<AgentPetTone, LucideIcon> = { gentle: Heart, kitty: Cat, puppy: Dog, robot: Bot, mystic: Moon, sunny: Sun };
 
 /** 把画布主题写进商店与右键菜单共用的 --pet-* 变量。 */
 export function agentPetThemeVars(theme: CanvasTheme) {
@@ -145,7 +145,7 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                 ) : null}
                 {hasSpendPets ? (
                     <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1" style={{ background: theme.node.fill }} title="只统计已结算的模型调用，购买形象不计入">
-                        <Sparkles className="size-3.5" aria-hidden="true" />
+                        <Coins className="size-3.5" aria-hidden="true" />
                         累计消费{" "}
                         <b className="tabular-nums" style={{ color: theme.node.text }}>
                             {formatCredits(consumed, 2)}
@@ -271,7 +271,7 @@ export function AgentPetStoreModal({ theme, open, onClose }: { theme: CanvasThem
             <div className="flex h-[min(720px,calc(100dvh-80px))] min-h-0 flex-col" style={{ color: theme.node.text, background: theme.node.panel }}>
                 <header className="flex shrink-0 items-center gap-3 border-b px-5 py-3.5 pr-12" style={{ borderColor: theme.node.stroke }}>
                     <span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: theme.node.fill, color: theme.accent.primary }}>
-                        <Sparkles className="size-4.5" aria-hidden="true" />
+                        <Store className="size-4.5" aria-hidden="true" />
                     </span>
                     <span className="min-w-0">
                         <h2 className="text-base font-semibold leading-6">形象商店</h2>
