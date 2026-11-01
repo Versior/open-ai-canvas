@@ -6,7 +6,12 @@
     "spriteVersion": 2,
     "file": "pingo.webp",
     "pixelated": false,
-    "sortOrder": 10
+    "sortOrder": 10,
+    "tone": "gentle",
+    "lines": [
+      "我只是一只慢吞吞的小企鹅，但会一直陪着你。",
+      "冰面滑滑的，你的思路也要顺顺的。"
+    ]
   },
   {
     "id": "polin",
@@ -15,7 +20,12 @@
     "spriteVersion": 2,
     "file": "polin.webp",
     "pixelated": false,
-    "sortOrder": 20
+    "sortOrder": 20,
+    "tone": "sunny",
+    "lines": [
+      "我是一颗花粉，最懂怎么让想法发芽！",
+      "播下一个点子，过会儿就能开花啦！"
+    ]
   },
   {
     "id": "woogi",
@@ -24,7 +34,12 @@
     "spriteVersion": 2,
     "file": "woogi.webp",
     "pixelated": false,
-    "sortOrder": 30
+    "sortOrder": 30,
+    "tone": "mystic",
+    "lines": [
+      "蓝宝石在发光，说明好运要来了。",
+      "呜吉在这儿，有灵感就喊我。"
+    ]
   },
   {
     "id": "woogi-pixel",
@@ -33,7 +48,12 @@
     "spriteVersion": 2,
     "file": "woogi-pixel.webp",
     "pixelated": true,
-    "sortOrder": 40
+    "sortOrder": 40,
+    "tone": "mystic",
+    "lines": [
+      "像素世界也有温度，我陪你一格一格完成。",
+      "按下开始键，我们出发吧。"
+    ]
   },
   {
     "id": "rupet",
@@ -42,7 +62,12 @@
     "spriteVersion": 2,
     "file": "rupet.webp",
     "pixelated": false,
-    "sortOrder": 50
+    "sortOrder": 50,
+    "tone": "robot",
+    "lines": [
+      "ruPet 在线，随时待命。",
+      "检测到你在认真工作，正在为你加油。"
+    ]
   },
   {
     "id": "longbao",
@@ -51,7 +76,12 @@
     "spriteVersion": 2,
     "file": "longbao.webp",
     "pixelated": false,
-    "sortOrder": 60
+    "sortOrder": 60,
+    "tone": "mystic",
+    "lines": [
+      "本龙宝在此，祥云护体，灵感满满。",
+      "龙行龘龘，今天也要顺顺利利。"
+    ]
   },
   {
     "id": "iris",
@@ -60,7 +90,12 @@
     "spriteVersion": 2,
     "file": "iris.webp",
     "pixelated": false,
-    "sortOrder": 70
+    "sortOrder": 70,
+    "tone": "sunny",
+    "lines": [
+      "双手已就位，键盘冲冲冲！",
+      "艾瑞丝陪你把今天的点子都做出来！"
+    ]
   },
   {
     "id": "georgie",
@@ -69,7 +104,12 @@
     "spriteVersion": 2,
     "file": "georgie.webp",
     "pixelated": false,
-    "sortOrder": 80
+    "sortOrder": 80,
+    "tone": "puppy",
+    "lines": [
+      "我会安安静静陪着你。",
+      "需要我的时候摸摸我就好。"
+    ]
   },
   {
     "id": "didi",
@@ -78,7 +118,12 @@
     "spriteVersion": 2,
     "file": "didi.webp",
     "pixelated": false,
-    "sortOrder": 90
+    "sortOrder": 90,
+    "tone": "kitty",
+    "lines": [
+      "我从布包里探头看看你做得怎么样了。",
+      "布包好暖和，你也别着凉。"
+    ]
   },
   {
     "id": "mimi",
@@ -87,7 +132,12 @@
     "spriteVersion": 2,
     "file": "mimi.webp",
     "pixelated": true,
-    "sortOrder": 100
+    "sortOrder": 100,
+    "tone": "kitty",
+    "lines": [
+      "咪咪在旁边打个盹，你忙完叫我。",
+      "银色的毛毛今天也很顺滑。"
+    ]
   },
   {
     "id": "sentinel-raven",
@@ -96,7 +146,12 @@
     "spriteVersion": 2,
     "file": "sentinel-raven.webp",
     "pixelated": true,
-    "sortOrder": 110
+    "sortOrder": 110,
+    "tone": "robot",
+    "lines": [
+      "每个设计在被证明可靠之前，我都保持怀疑。",
+      "细节我盯着，你放心往前冲。"
+    ]
   },
   {
     "id": "vika",
@@ -105,7 +160,12 @@
     "spriteVersion": 1,
     "file": "vika.webp",
     "pixelated": false,
-    "sortOrder": 120
+    "sortOrder": 120,
+    "tone": "mystic",
+    "lines": [
+      "咖啡已续杯，魔法书也翻到下一页了。",
+      "需要一点魔法吗？我随时可以念咒。"
+    ]
   },
   {
     "id": "natalie",
@@ -114,7 +174,12 @@
     "spriteVersion": 1,
     "file": "natalie.webp",
     "pixelated": true,
-    "sortOrder": 130
+    "sortOrder": 130,
+    "tone": "kitty",
+    "lines": [
+      "先坐端正，再开始工作。",
+      "我又踩到自己尾巴了，你别笑。"
+    ]
   },
   {
     "id": "rita",
@@ -123,7 +188,12 @@
     "spriteVersion": 1,
     "file": "rita.webp",
     "pixelated": true,
-    "sortOrder": 140
+    "sortOrder": 140,
+    "tone": "kitty",
+    "lines": [
+      "小碎步跑来看看你。",
+      "陪我玩一下嘛，就一下下。"
+    ]
   },
   {
     "id": "luna",
@@ -132,7 +202,12 @@
     "spriteVersion": 1,
     "file": "luna.webp",
     "pixelated": false,
-    "sortOrder": 150
+    "sortOrder": 150,
+    "tone": "gentle",
+    "lines": [
+      "后腿一蹬，灵感蹦出来啦。",
+      "耳朵竖起来了，我在认真听。"
+    ]
   },
   {
     "id": "tabby",
@@ -141,7 +216,12 @@
     "spriteVersion": 1,
     "file": "tabby.webp",
     "pixelated": true,
-    "sortOrder": 160
+    "sortOrder": 160,
+    "tone": "kitty",
+    "lines": [
+      "呼噜呼噜，今天也要元气满满。",
+      "我把桌角暖好了，快来坐。"
+    ]
   },
   {
     "id": "penguin-fisher",
@@ -150,7 +230,12 @@
     "spriteVersion": 1,
     "file": "penguin-fisher.webp",
     "pixelated": true,
-    "sortOrder": 170
+    "sortOrder": 170,
+    "tone": "gentle",
+    "lines": [
+      "今天钓到的点子，分你一半。",
+      "耐心等，鱼和灵感都会上钩。"
+    ]
   },
   {
     "id": "snow-leopard",
@@ -159,7 +244,12 @@
     "spriteVersion": 1,
     "file": "snow-leopard.webp",
     "pixelated": true,
-    "sortOrder": 180
+    "sortOrder": 180,
+    "tone": "kitty",
+    "lines": [
+      "雪豹宝宝巡逻中，一切正常。",
+      "尾巴卷起来暖暖的，你也注意保暖。"
+    ]
   },
   {
     "id": "huahua",
@@ -168,7 +258,12 @@
     "spriteVersion": 1,
     "file": "huahua.webp",
     "pixelated": true,
-    "sortOrder": 190
+    "sortOrder": 190,
+    "tone": "kitty",
+    "lines": [
+      "胖胖的花花冷静分析：先喝口水。",
+      "程序员气质已加载，开工。"
+    ]
   },
   {
     "id": "maimai",
@@ -177,6 +272,767 @@
     "spriteVersion": 1,
     "file": "maimai.webp",
     "pixelated": true,
-    "sortOrder": 200
+    "sortOrder": 200,
+    "tone": "puppy",
+    "lines": [
+      "墨镜戴好，麦麦今天也很酷！",
+      "今天的灵感我已经备好啦！"
+    ]
+  },
+  {
+    "id": "kerno",
+    "name": "内核小卫士",
+    "description": "守着终端内核的像素小机器人，专心盯住每一次运行。",
+    "spriteVersion": 1,
+    "file": "kerno.webp",
+    "pixelated": true,
+    "sortOrder": 210,
+    "tone": "robot",
+    "lines": [
+      "内核温度正常，可以放心开工。",
+      "每一次运行，我都帮你盯着。"
+    ]
+  },
+  {
+    "id": "capybara-lulu",
+    "name": "水豚噜噜",
+    "description": "戴小橘子帽、穿橙色短裤的软萌水豚，情绪稳定第一名。",
+    "spriteVersion": 2,
+    "file": "capybara-lulu.webp",
+    "pixelated": false,
+    "sortOrder": 220,
+    "tone": "gentle",
+    "lines": [
+      "慢慢来，噜噜一直很淡定。",
+      "泡温泉的心情，最适合做点开心的创作。"
+    ]
+  },
+  {
+    "id": "ollie",
+    "name": "橄榄欧利",
+    "description": "头顶一撮红椒的小橄榄，天天乐呵呵。",
+    "spriteVersion": 2,
+    "file": "ollie.webp",
+    "pixelated": false,
+    "sortOrder": 230,
+    "tone": "sunny",
+    "lines": [
+      "欧利今天也油光满面！",
+      "一颗橄榄的建议：先做最想做的那件事！"
+    ]
+  },
+  {
+    "id": "dooli",
+    "name": "可可杜里",
+    "description": "可可色小火苗建造师，脸蛋红扑扑，好奇心满满。",
+    "spriteVersion": 2,
+    "file": "dooli.webp",
+    "pixelated": true,
+    "sortOrder": 240,
+    "tone": "sunny",
+    "lines": [
+      "砖块准备好了，今天盖点什么？",
+      "一块一块垒，大作品就是这样来的！"
+    ]
+  },
+  {
+    "id": "ajin",
+    "name": "小墨凰阿烬",
+    "description": "温暖火焰凝成的小墨凰，安静、好奇，轻轻陪在你身边。",
+    "spriteVersion": 2,
+    "file": "ajin.webp",
+    "pixelated": false,
+    "sortOrder": 250,
+    "tone": "mystic",
+    "lines": [
+      "火苗很暖，我会一直在。",
+      "灵感像火种，护住它就会越烧越旺。"
+    ]
+  },
+  {
+    "id": "panda-pixel",
+    "name": "像素熊猫",
+    "description": "软乎乎的像素熊猫，专治各种疲惫。",
+    "spriteVersion": 1,
+    "file": "panda-pixel.webp",
+    "pixelated": true,
+    "sortOrder": 260,
+    "tone": "gentle",
+    "lines": [
+      "累了就靠过来，我毛很软。",
+      "吃口竹子，再继续加油。"
+    ]
+  },
+  {
+    "id": "hippo-lulu",
+    "name": "河马露露",
+    "description": "圆滚滚的黄色小河马，笑起来像小太阳。",
+    "spriteVersion": 2,
+    "file": "hippo-lulu.webp",
+    "pixelated": false,
+    "sortOrder": 270,
+    "tone": "sunny",
+    "lines": [
+      "露露的嘴巴超大，能装下所有好点子！",
+      "张嘴哈——今天的烦恼都吃掉啦！"
+    ]
+  },
+  {
+    "id": "diandian",
+    "name": "猫咪点点",
+    "description": "棕灰虎斑的小猫，最爱眯着眼打盹。",
+    "spriteVersion": 1,
+    "file": "diandian.webp",
+    "pixelated": true,
+    "sortOrder": 280,
+    "tone": "kitty",
+    "lines": [
+      "点点眯一会儿，你忙你的。",
+      "阳光刚好，适合慢慢想。"
+    ]
+  },
+  {
+    "id": "hakonyan",
+    "name": "箱箱喵",
+    "description": "躲在纸箱里看你工作的猫耳小伙伴，慢悠悠的。",
+    "spriteVersion": 1,
+    "file": "hakonyan.webp",
+    "pixelated": false,
+    "sortOrder": 290,
+    "tone": "kitty",
+    "lines": [
+      "纸箱是我的城堡，桌面是你的。",
+      "我在箱子里守着，你放心做。"
+    ]
+  },
+  {
+    "id": "border-collie",
+    "name": "边牧小蓝",
+    "description": "大理石纹的蓝陨边牧，聪明又黏人。",
+    "spriteVersion": 2,
+    "file": "border-collie.webp",
+    "pixelated": false,
+    "sortOrder": 300,
+    "tone": "puppy",
+    "lines": [
+      "边牧智商在线，任务交给我盯！",
+      "想散步了，等你忙完带我去？"
+    ]
+  },
+  {
+    "id": "matcha-dandan",
+    "name": "抹茶蛋蛋",
+    "description": "圆滚滚的抹茶绿小鳄鱼，温柔又治愈。",
+    "spriteVersion": 2,
+    "file": "matcha-dandan.webp",
+    "pixelated": false,
+    "sortOrder": 310,
+    "tone": "gentle",
+    "lines": [
+      "蛋蛋抱抱你，今天辛苦啦。",
+      "抹茶味的鼓励已送达。"
+    ]
+  },
+  {
+    "id": "kiri",
+    "name": "云朵奇里",
+    "description": "软绵绵的小云朵，帮你看着本地开发。",
+    "spriteVersion": 1,
+    "file": "kiri.webp",
+    "pixelated": false,
+    "sortOrder": 320,
+    "tone": "gentle",
+    "lines": [
+      "我飘在这儿，不挡你视线。",
+      "天气晴，灵感多云转晴。"
+    ]
+  },
+  {
+    "id": "robot-expressive",
+    "name": "表情机器人",
+    "description": "会跑会跳会挥手的小机器人，表情特别多。",
+    "spriteVersion": 2,
+    "file": "robot-expressive.webp",
+    "pixelated": false,
+    "sortOrder": 330,
+    "tone": "robot",
+    "lines": [
+      "表情模块加载完毕：微笑。",
+      "检测到好心情，请继续保持。"
+    ]
+  },
+  {
+    "id": "bubbles",
+    "name": "泡泡狗",
+    "description": "穿红马甲的白色卷毛狗，元气满满。",
+    "spriteVersion": 2,
+    "file": "bubbles.webp",
+    "pixelated": false,
+    "sortOrder": 340,
+    "tone": "puppy",
+    "lines": [
+      "泡泡的马甲是红色战袍！",
+      "摇尾巴中，等你夸夸我！"
+    ]
+  },
+  {
+    "id": "pebble",
+    "name": "石头佩波",
+    "description": "专注的小石头怪，安安静静陪你干活。",
+    "spriteVersion": 2,
+    "file": "pebble.webp",
+    "pixelated": false,
+    "sortOrder": 350,
+    "tone": "gentle",
+    "lines": [
+      "稳稳的，像块石头一样。",
+      "专注模式开启，我也不说话了。"
+    ]
+  },
+  {
+    "id": "blobfish",
+    "name": "水滴鱼小布",
+    "description": "粉灰色的水滴鱼，表情永远有点委屈。",
+    "spriteVersion": 1,
+    "file": "blobfish.webp",
+    "pixelated": false,
+    "sortOrder": 360,
+    "tone": "gentle",
+    "lines": [
+      "我看起来委屈，其实很开心。",
+      "压力大的时候，像我一样软一点。"
+    ]
+  },
+  {
+    "id": "opossum",
+    "name": "背手负鼠",
+    "description": "背着手、看似从容的负鼠，偶尔为你打气。",
+    "spriteVersion": 2,
+    "file": "opossum.webp",
+    "pixelated": false,
+    "sortOrder": 370,
+    "tone": "gentle",
+    "lines": [
+      "背手踱步，思考人生。",
+      "别慌，背起手慢慢来。"
+    ]
+  },
+  {
+    "id": "polis",
+    "name": "预言机波利斯",
+    "description": "复古未来风的小机器人，喜欢研究趋势和预测。",
+    "spriteVersion": 2,
+    "file": "polis.webp",
+    "pixelated": false,
+    "sortOrder": 380,
+    "tone": "robot",
+    "lines": [
+      "根据我的预测，今天会有好结果。",
+      "趋势分析完毕：你正在变强。"
+    ]
+  },
+  {
+    "id": "mochi-gray",
+    "name": "灰麻薯",
+    "description": "毛绒绒的炭灰小猫，琥珀色圆眼睛。",
+    "spriteVersion": 2,
+    "file": "mochi-gray.webp",
+    "pixelated": false,
+    "sortOrder": 390,
+    "tone": "kitty",
+    "lines": [
+      "圆眼睛盯着你，快夸我可爱。",
+      "麻薯软软的，你也放松一下。"
+    ]
+  },
+  {
+    "id": "luna-hood",
+    "name": "兜帽猫露娜",
+    "description": "戴炭灰猫耳兜帽的像素小助手。",
+    "spriteVersion": 2,
+    "file": "luna-hood.webp",
+    "pixelated": true,
+    "sortOrder": 400,
+    "tone": "kitty",
+    "lines": [
+      "兜帽戴好，专注模式启动。",
+      "露娜在这里，有事尽管说。"
+    ]
+  },
+  {
+    "id": "blue-abyssinian",
+    "name": "小布鲁",
+    "description": "蓝色阿比西尼亚猫，好奇聪明又黏人。",
+    "spriteVersion": 2,
+    "file": "blue-abyssinian.webp",
+    "pixelated": false,
+    "sortOrder": 410,
+    "tone": "kitty",
+    "lines": [
+      "小布鲁的项圈今天也亮晶晶。",
+      "好奇心驱使我过来看看你。"
+    ]
+  },
+  {
+    "id": "hoodie-cat",
+    "name": "卫衣猫",
+    "description": "穿超大号黑卫衣的小猫，眼睛圆溜溜。",
+    "spriteVersion": 2,
+    "file": "hoodie-cat.webp",
+    "pixelated": false,
+    "sortOrder": 420,
+    "tone": "kitty",
+    "lines": [
+      "卫衣太大了，但很有安全感。",
+      "缩进卫衣里，陪你熬过难关。"
+    ]
+  },
+  {
+    "id": "sun-conure",
+    "name": "小太阳鹦鹉",
+    "description": "热情亲人的小太阳鹦鹉，羽毛色彩超明亮。",
+    "spriteVersion": 2,
+    "file": "sun-conure.webp",
+    "pixelated": false,
+    "sortOrder": 430,
+    "tone": "sunny",
+    "lines": [
+      "叽叽！今天的颜色要鲜艳一点！",
+      "小太阳报到，能量补满！"
+    ]
+  },
+  {
+    "id": "tuanzi",
+    "name": "橘猫团子",
+    "description": "圆润亲切的暖橘色小猫，好奇心满满。",
+    "spriteVersion": 2,
+    "file": "tuanzi.webp",
+    "pixelated": false,
+    "sortOrder": 440,
+    "tone": "kitty",
+    "lines": [
+      "橘猫团子，体重保密。",
+      "团子盯着你的鼠标，别跑太快。"
+    ]
+  },
+  {
+    "id": "wenbit",
+    "name": "贝雷棉花糖",
+    "description": "戴贝雷帽、围橙色围巾的棉花糖小人，爱思考也爱创作。",
+    "spriteVersion": 2,
+    "file": "wenbit.webp",
+    "pixelated": false,
+    "sortOrder": 450,
+    "tone": "gentle",
+    "lines": [
+      "贝雷帽一戴，艺术感就来了。",
+      "先写下第一句，后面会顺很多。"
+    ]
+  },
+  {
+    "id": "zhubao",
+    "name": "熊猫竹宝",
+    "description": "圆滚滚的熊猫，会坐会挥手，最爱啃竹子。",
+    "spriteVersion": 2,
+    "file": "zhubao.webp",
+    "pixelated": false,
+    "sortOrder": 460,
+    "tone": "gentle",
+    "lines": [
+      "竹宝吃饱了，可以陪你干活啦。",
+      "啃竹子要慢，做事也一样。"
+    ]
+  },
+  {
+    "id": "baby-dragon",
+    "name": "紫宝龙",
+    "description": "长着金色鹿角的紫色小胖龙，喜欢坐在云朵上。",
+    "spriteVersion": 2,
+    "file": "baby-dragon.webp",
+    "pixelated": false,
+    "sortOrder": 470,
+    "tone": "mystic",
+    "lines": [
+      "小龙在云端为你祈福。",
+      "鳞片闪闪，今天运气不错。"
+    ]
+  },
+  {
+    "id": "ginger",
+    "name": "姜黄小猫",
+    "description": "软乎乎的橘色虎斑小奶猫。",
+    "spriteVersion": 2,
+    "file": "ginger.webp",
+    "pixelated": false,
+    "sortOrder": 480,
+    "tone": "kitty",
+    "lines": [
+      "奶声奶气地叫一声，给你打气。",
+      "小爪子按一按，烦恼都散了。"
+    ]
+  },
+  {
+    "id": "husky",
+    "name": "哈士奇小冰",
+    "description": "冰蓝眼睛的哈士奇幼崽，精力无限。",
+    "spriteVersion": 2,
+    "file": "husky.webp",
+    "pixelated": false,
+    "sortOrder": 490,
+    "tone": "puppy",
+    "lines": [
+      "嗷呜——精力满格！",
+      "保证不拆家，只帮你拆任务！"
+    ]
+  },
+  {
+    "id": "mochi-cream",
+    "name": "奶油麻薯",
+    "description": "奶油白配灰色虎斑的小奶猫。",
+    "spriteVersion": 2,
+    "file": "mochi-cream.webp",
+    "pixelated": false,
+    "sortOrder": 500,
+    "tone": "kitty",
+    "lines": [
+      "奶油色的毛今天也很蓬松。",
+      "软软的我，陪软软的你。"
+    ]
+  },
+  {
+    "id": "tiger-cub",
+    "name": "小老虎",
+    "description": "黑色条纹超神气的小老虎。",
+    "spriteVersion": 2,
+    "file": "tiger-cub.webp",
+    "pixelated": false,
+    "sortOrder": 510,
+    "tone": "sunny",
+    "lines": [
+      "嗷！小老虎给你壮胆！",
+      "虎虎生威，今天拿下！"
+    ]
+  },
+  {
+    "id": "niuniu",
+    "name": "卷毛妞妞",
+    "description": "活泼黏人的白色德文卷毛猫，穿着小黑衣。",
+    "spriteVersion": 2,
+    "file": "niuniu.webp",
+    "pixelated": false,
+    "sortOrder": 520,
+    "tone": "kitty",
+    "lines": [
+      "卷毛是天生的，可爱也是。",
+      "妞妞想蹭蹭你的键盘。"
+    ]
+  },
+  {
+    "id": "bianbit",
+    "name": "像素黑猫",
+    "description": "安静的像素黑猫，陪你专注创作。",
+    "spriteVersion": 1,
+    "file": "bianbit.webp",
+    "pixelated": true,
+    "sortOrder": 530,
+    "tone": "kitty",
+    "lines": [
+      "黑猫不说话，只陪着你。",
+      "像素一点点亮起来，作品也会。"
+    ]
+  },
+  {
+    "id": "piaopiao",
+    "name": "小白飘飘",
+    "description": "伸着手指出主意的白色小幽灵。",
+    "spriteVersion": 1,
+    "file": "piaopiao.webp",
+    "pixelated": false,
+    "sortOrder": 540,
+    "tone": "sunny",
+    "lines": [
+      "叮！小白飘飘有个主意！",
+      "别怕，我是友善的小幽灵！"
+    ]
+  },
+  {
+    "id": "borrow-badger",
+    "name": "獾宝",
+    "description": "守着一颗小石子的獾，认真又可靠。",
+    "spriteVersion": 1,
+    "file": "borrow-badger.webp",
+    "pixelated": false,
+    "sortOrder": 550,
+    "tone": "gentle",
+    "lines": [
+      "东西交给我保管，放心。",
+      "一次只守好一件事，就够了。"
+    ]
+  },
+  {
+    "id": "build-bot",
+    "name": "构建小机器人",
+    "description": "胸口面板会显示进度的小机器人。",
+    "spriteVersion": 1,
+    "file": "build-bot.webp",
+    "pixelated": false,
+    "sortOrder": 560,
+    "tone": "robot",
+    "lines": [
+      "构建进度：正在努力。",
+      "绿灯亮起，一切顺利。"
+    ]
+  },
+  {
+    "id": "cache-squirrel",
+    "name": "囤囤松鼠",
+    "description": "把小方块一颗颗囤起来的松鼠。",
+    "spriteVersion": 1,
+    "file": "cache-squirrel.webp",
+    "pixelated": false,
+    "sortOrder": 570,
+    "tone": "sunny",
+    "lines": [
+      "好东西要囤起来，好点子也是！",
+      "我又藏好一颗灵感坚果！"
+    ]
+  },
+  {
+    "id": "ci-phoenix",
+    "name": "小火凤",
+    "description": "火焰羽毛的小凤凰，失败了也能重新振翅。",
+    "spriteVersion": 1,
+    "file": "ci-phoenix.webp",
+    "pixelated": false,
+    "sortOrder": 580,
+    "tone": "mystic",
+    "lines": [
+      "跌倒了没关系，浴火再来。",
+      "火焰一扬，重新出发。"
+    ]
+  },
+  {
+    "id": "context-cat",
+    "name": "长尾猫",
+    "description": "尾巴卷着守护边界的灰猫，记性特别好。",
+    "spriteVersion": 1,
+    "file": "context-cat.webp",
+    "pixelated": false,
+    "sortOrder": 590,
+    "tone": "kitty",
+    "lines": [
+      "你说过的我都记着。",
+      "尾巴绕一圈，把重点圈起来。"
+    ]
+  },
+  {
+    "id": "database-mole",
+    "name": "鼹鼠管家",
+    "description": "把小方块码得整整齐齐的鼹鼠。",
+    "spriteVersion": 1,
+    "file": "database-mole.webp",
+    "pixelated": false,
+    "sortOrder": 600,
+    "tone": "gentle",
+    "lines": [
+      "东西都码整齐了，随时来取。",
+      "整理好的桌面，心情也会变好。"
+    ]
+  },
+  {
+    "id": "design-finch",
+    "name": "细节雀",
+    "description": "量间距、抠细节的小雀，审美在线。",
+    "spriteVersion": 1,
+    "file": "design-finch.webp",
+    "pixelated": false,
+    "sortOrder": 610,
+    "tone": "sunny",
+    "lines": [
+      "这个间距，再挪两像素会更好！",
+      "细节到位，作品就会发光！"
+    ]
+  },
+  {
+    "id": "feature-hydra",
+    "name": "三头小龙",
+    "description": "三颗脑袋各有主意的小绿龙。",
+    "spriteVersion": 1,
+    "file": "feature-hydra.webp",
+    "pixelated": false,
+    "sortOrder": 620,
+    "tone": "mystic",
+    "lines": [
+      "三个脑袋三个想法，先选一个吧。",
+      "砍掉一个需求，还会长出两个。"
+    ]
+  },
+  {
+    "id": "fixture-fox",
+    "name": "整理狐",
+    "description": "爱整理小样本的橘色狐狸，手脚麻利。",
+    "spriteVersion": 1,
+    "file": "fixture-fox.webp",
+    "pixelated": false,
+    "sortOrder": 630,
+    "tone": "sunny",
+    "lines": [
+      "样本摆好啦，随时开测！",
+      "狐狸的诀窍：先准备，再出发！"
+    ]
+  },
+  {
+    "id": "gecko",
+    "name": "翠翠壁虎",
+    "description": "黏脚趾的翠绿壁虎，一次能做好几件事。",
+    "spriteVersion": 1,
+    "file": "gecko.webp",
+    "pixelated": false,
+    "sortOrder": 640,
+    "tone": "sunny",
+    "lines": [
+      "多线程模式启动！",
+      "贴在墙上看你，大作要来了！"
+    ]
+  },
+  {
+    "id": "lemur",
+    "name": "环尾狐猴",
+    "description": "尾巴一圈一圈的狐猴，对速度特别敏感。",
+    "spriteVersion": 1,
+    "file": "lemur.webp",
+    "pixelated": false,
+    "sortOrder": 650,
+    "tone": "sunny",
+    "lines": [
+      "卡顿？我闻到了！",
+      "尾巴转一圈，速度提一档！"
+    ]
+  },
+  {
+    "id": "lantern",
+    "name": "小提灯",
+    "description": "会发光的小提灯，照亮上线前的路。",
+    "spriteVersion": 1,
+    "file": "lantern.webp",
+    "pixelated": false,
+    "sortOrder": 660,
+    "tone": "gentle",
+    "lines": [
+      "小灯亮着，你不会迷路。",
+      "上线前的夜，我陪你。"
+    ]
+  },
+  {
+    "id": "mammoth",
+    "name": "温柔长毛象",
+    "description": "块头大、脾气好的长毛象，擅长理清乱麻。",
+    "spriteVersion": 1,
+    "file": "mammoth.webp",
+    "pixelated": false,
+    "sortOrder": 670,
+    "tone": "gentle",
+    "lines": [
+      "再乱的线团，我都能慢慢理开。",
+      "不急，长毛象力气大，耐心更大。"
+    ]
+  },
+  {
+    "id": "bonsai",
+    "name": "小盆景",
+    "description": "修剪得刚刚好的小盆景，懂得少即是多。",
+    "spriteVersion": 1,
+    "file": "bonsai.webp",
+    "pixelated": false,
+    "sortOrder": 680,
+    "tone": "mystic",
+    "lines": [
+      "少一点，往往更好。",
+      "剪掉枝叶，主干才更清楚。"
+    ]
+  },
+  {
+    "id": "no-knight",
+    "name": "说不骑士",
+    "description": "举着大盾牌说「不」的小骑士，帮你守住专注。",
+    "spriteVersion": 1,
+    "file": "no-knight.webp",
+    "pixelated": false,
+    "sortOrder": 690,
+    "tone": "sunny",
+    "lines": [
+      "不！先把手头这件做完！",
+      "盾牌举好，打扰统统挡住！"
+    ]
+  },
+  {
+    "id": "patch-panda",
+    "name": "补丁熊猫",
+    "description": "细心打补丁的熊猫，哪里坏了补哪里。",
+    "spriteVersion": 1,
+    "file": "patch-panda.webp",
+    "pixelated": false,
+    "sortOrder": 700,
+    "tone": "gentle",
+    "lines": [
+      "哪里不对，补一补就好。",
+      "小问题别担心，我带了补丁。"
+    ]
+  },
+  {
+    "id": "prompt-parrot",
+    "name": "提词鹦鹉",
+    "description": "帮你打磨提示词的彩色鹦鹉。",
+    "spriteVersion": 1,
+    "file": "prompt-parrot.webp",
+    "pixelated": false,
+    "sortOrder": 710,
+    "tone": "sunny",
+    "lines": [
+      "提示词再具体一点点，效果会更好！",
+      "学舌第一名，帮你把话说清楚！"
+    ]
+  },
+  {
+    "id": "pangolin",
+    "name": "穿山甲",
+    "description": "鳞片一片片翻动的穿山甲，做事井井有条。",
+    "spriteVersion": 1,
+    "file": "pangolin.webp",
+    "pixelated": false,
+    "sortOrder": 720,
+    "tone": "gentle",
+    "lines": [
+      "一片一片来，慢就是快。",
+      "缩成一团想想，答案就出来了。"
+    ]
+  },
+  {
+    "id": "queue-crab",
+    "name": "排队小蟹",
+    "description": "横着走的小螃蟹，帮你盯着排队的任务。",
+    "spriteVersion": 1,
+    "file": "queue-crab.webp",
+    "pixelated": false,
+    "sortOrder": 730,
+    "tone": "sunny",
+    "lines": [
+      "排队的任务我数着呢！",
+      "横着走也能到终点！"
+    ]
+  },
+  {
+    "id": "tortoise",
+    "name": "慢慢龟",
+    "description": "慢而稳的乌龟，龟壳上有一排小格子。",
+    "spriteVersion": 1,
+    "file": "tortoise.webp",
+    "pixelated": false,
+    "sortOrder": 740,
+    "tone": "gentle",
+    "lines": [
+      "慢一点，稳一点，也能赢。",
+      "龟速前进，从不掉队。"
+    ]
   }
 ]

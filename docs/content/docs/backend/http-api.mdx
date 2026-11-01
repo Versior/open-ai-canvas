@@ -339,7 +339,7 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 
 形象图集是 Codex 宠物格式：8 列，单格 192×208；v1 为 1536×1872（9 个动作），v2 为 1536×2288（另有 16 个视线方向）。图集全部存在本服务器，运行时不访问外部站点。所有接口要求登录；`/admin/...` 在 service 层校验管理员。
 
-- `GET /agent-pets`：返回 `{ pets, selectedPetId, creditsEnabled }`。列表包含已上架形象和当前用户已购买的形象（下架后已购用户仍可见可用）。每项字段为 `id`、`name`、`description`、`spriteVersion`、`revision`（图集缓存版本）、`pixelated`、`stateRows`（状态到动作的覆盖项）、`access`（`free|vip|paid`）、`priceMicrocredits`，以及当前用户的 `owned`、`memberFree`（付费形象对其分组免费）、`usable`、`purchasable`。`selectedPetId` 为空表示使用站点默认形象；失去资格的选择也返回空。
+- `GET /agent-pets`：返回 `{ pets, selectedPetId, creditsEnabled }`。列表包含已上架形象和当前用户已购买的形象（下架后已购用户仍可见可用）。每项字段为 `id`、`name`、`description`、`spriteVersion`、`revision`（图集缓存版本）、`pixelated`、`stateRows`（状态到动作的覆盖项）、`access`（`free|vip|paid`）、`priceMicrocredits`，以及当前用户的 `owned`、`memberFree`（付费形象对其分组免费）、`usable`、`purchasable`；`tone`（头顶气泡说话风格 `gentle|kitty|puppy|robot|mystic|sunny`，上传形象为空串）和 `lines`（形象专属台词，最多 4 句，上传形象为空数组）。`selectedPetId` 为空表示使用站点默认形象；失去资格的选择也返回空。
 - `GET /agent-pets/selection`：返回 `data.pet`，未选择或已不可用时为 `null`。
 - `PUT /agent-pets/selection`：请求 `{ petId }`，空串恢复默认形象。不可用的形象返回 403（VIP 专享或未购买），不存在或已下架返回 404。
 - `POST /agent-pets/:id/purchase`：请求 `{ expectedPriceMicrocredits }`，必须等于当前价格，否则返回 409。成功返回 `{ pet, charged, availableMicrocredits }`；已购买时 `charged=false` 且不重复扣费。余额不足返回 400，`reason=failed_precondition`；免费形象或会员免费返回 400；VIP 专享返回 403；积分功能关闭时按功能开关拒绝。

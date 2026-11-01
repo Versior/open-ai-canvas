@@ -4036,6 +4036,73 @@ summary.agent-tool-step:hover {
         transition: none;
     }
     .agent-panel-status-dot[data-live] {
+
+/* 宠物形象头顶的云朵对话框：外形由 SVG 绘制（agent-pet-bubble-layout.ts），这里只负责文字、层级和动效。 */
+.agent-pet-bubble {
+    --agent-pet-bubble-fill: #ffffff;
+    --agent-pet-bubble-stroke: #e2e5ef;
+    --agent-pet-bubble-text: #3a4155;
+    position: fixed;
+    z-index: calc(var(--z-panel-floating) + 2);
+    width: max-content;
+    padding: 9px 13px;
+    color: var(--agent-pet-bubble-text);
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
+    cursor: pointer;
+    user-select: none;
+}
+
+.dark .agent-pet-bubble {
+    --agent-pet-bubble-stroke: #cfd4e2;
+    --agent-pet-bubble-text: #2f3547;
+}
+
+.agent-pet-bubble-shape {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+    pointer-events: none;
+    filter: drop-shadow(0 6px 12px rgb(30 41 59 / 0.13)) drop-shadow(0 1px 2px rgb(30 41 59 / 0.08));
+}
+
+.agent-pet-bubble-outline path {
+    fill: none;
+    stroke: var(--agent-pet-bubble-stroke);
+    stroke-width: 3;
+    stroke-linejoin: round;
+}
+
+.agent-pet-bubble-fill path {
+    fill: var(--agent-pet-bubble-fill);
+}
+
+.agent-pet-bubble-text {
+    position: relative;
+    display: block;
+}
+
+.agent-pet-bubble.is-shown {
+    animation: agent-pet-bubble-pop 260ms cubic-bezier(0.2, 1.35, 0.4, 1) both;
+}
+
+@keyframes agent-pet-bubble-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-pet-bubble.is-shown {
         animation: none;
     }
 }

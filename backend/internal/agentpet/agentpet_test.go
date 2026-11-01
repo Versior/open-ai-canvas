@@ -16,12 +16,12 @@ func TestBuiltinCatalogIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) < 10 {
+	if len(list) < 60 {
 		t.Fatalf("builtin pets = %d", len(list))
 	}
 	versions := map[int]int{}
 	for _, item := range list {
-		if item.Name == "" || item.Description == "" || item.Revision == "" {
+		if item.Name == "" || item.Description == "" || item.Revision == "" || item.Tone == "" || len(item.Lines) == 0 {
 			t.Fatalf("builtin %s is incomplete: %+v", item.ID, item)
 		}
 		data, sheet, err := BuiltinSheet(item.ID)

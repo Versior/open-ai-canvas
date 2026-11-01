@@ -122,7 +122,7 @@ func TestAgentPetCatalogAccessSelectionAndPurchase(t *testing.T) {
 	if err != nil || len(catalog.Pets) != 3 || catalog.Pets[0].ID != "pingo" || !catalog.CreditsEnabled {
 		t.Fatalf("user catalog = %+v, %v", catalog, err)
 	}
-	if pet := findAgentPetView(t, catalog.Pets, "pingo"); !pet.Usable || pet.Name != "企鹅" || pet.Revision == "" || pet.SpriteVersion != 2 {
+	if pet := findAgentPetView(t, catalog.Pets, "pingo"); !pet.Usable || pet.Name != "企鹅" || pet.Revision == "" || pet.SpriteVersion != 2 || pet.Tone != "gentle" || len(pet.Lines) == 0 {
 		t.Fatalf("free pet = %+v", pet)
 	}
 	if pet := findAgentPetView(t, catalog.Pets, "polin"); pet.Usable || !pet.Purchasable || pet.PriceMicrocredits != 5_000_000 {
@@ -240,7 +240,7 @@ func TestAgentPetImportReferencesAndDelete(t *testing.T) {
 		t.Fatal("opaque sheet imported")
 	}
 	imported, err := svc.ImportAgentPet(admin, multipartFileHeader(t, "fox.zip", "application/zip", agentPetTestZIP(t, "Pixel Fox")))
-	if err != nil || imported.Source != agentPetSourceUpload || imported.Enabled || imported.SpriteVersion != 2 || imported.Name != "Pixel Fox" || imported.Description != "导入测试" {
+	if err != nil || imported.Source != agentPetSourceUpload || imported.Enabled || imported.SpriteVersion != 2 || imported.Name != "Pixel Fox" || imported.Description != "导入测试" || imported.Tone != "" || imported.Lines == nil || len(imported.Lines) != 0 {
 		t.Fatalf("import = %+v, %v", imported, err)
 	}
 	stored, err := svc.repo.AgentPet(imported.ID)

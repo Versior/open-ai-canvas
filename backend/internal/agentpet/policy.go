@@ -23,6 +23,14 @@ var Rows = []string{"idle", "running-right", "running-left", "waving", "jumping"
 // States 是助手运行状态，状态映射只能覆盖这些键。
 var States = []string{"idle", "queued", "running", "waiting_approval", "completed", "failed", "cancelled", "rejected"}
 
+// Tones 是头顶气泡的说话风格，前端按风格选择语气；上传形象没有专属风格时用 gentle。
+var Tones = []string{"gentle", "kitty", "puppy", "robot", "mystic", "sunny"}
+
+const (
+	maxLines     = 4
+	maxLineRunes = 40
+)
+
 var groupCodePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
 
 // Access 是形象的开放方式。
