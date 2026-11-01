@@ -26,6 +26,8 @@ type Builtin struct {
 	File          string `json:"file"`
 	Pixelated     bool   `json:"pixelated"`
 	SortOrder     int    `json:"sortOrder"`
+	// Category 是商店里的默认分类；管理员保存过配置后以数据库为准。
+	Category string `json:"category"`
 	// Tone 决定头顶气泡的说话风格，Lines 是这个形象专属的台词。
 	Tone  string   `json:"tone"`
 	Lines []string `json:"lines"`
@@ -108,6 +110,9 @@ func loadBuiltins() ([]Builtin, error) {
 		}
 		if !slices.Contains(Tones, item.Tone) || len(item.Lines) == 0 || len(item.Lines) > maxLines {
 			return nil, fmt.Errorf("内置形象 %s 的说话风格或台词无效", item.ID)
+		}
+		if item.Category == "" || utf8.RuneCountInString(item.Category) > MaxCategoryRunes {
+			return nil, fmt.Errorf("内置形象 %s 的分类为空或过长", item.ID)
 		}
 		for _, line := range item.Lines {
 			if line == "" || utf8.RuneCountInString(line) > maxLineRunes {

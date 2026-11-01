@@ -284,7 +284,8 @@ export const AgentLauncher = memo(function AgentLauncher({
                 <AgentPetContextMenu
                     theme={theme}
                     point={menuPoint}
-                    title={pet?.name || appearance.agentName}
+                    pet={pet}
+                    agentName={appearance.agentName}
                     petShown={petShown}
                     collapsed={collapsed}
                     approvalPending={approvalPending}

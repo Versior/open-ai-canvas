@@ -11,13 +11,13 @@ description: 影策后端核心持久化表与状态边界
 
 | 表 | 主要字段 | 约束与语义 |
 | --- | --- | --- |
-| `agent_pets` | 主键 `id`（内置形象为短横线小写 ID，上传形象为 `custom-` 前缀随机 ID）、`source`（`builtin` / `upload`）、`resource_id`（上传图集的本地资源）、`name`、`description`、`sprite_version`（1 / 2）、`enabled`、`access`（`free` / `vip` / `paid` / `spend`）、`price_microcredits`、`unlock_microcredits`（非空，默认 0）、`group_codes_json`、`state_rows_json`、`pixelated`、`sort_order`、`updated_by` | 内置形象图集随程序发布，只有管理员保存过配置才落库，未落库时按“未上架、免费”处理；`vip` 只对所选分组开放且不能购买；`paid` 价格须大于 0，所选分组免费使用；`spend` 的 `unlock_microcredits` 是累计消费门槛，须大于 0，所选分组免费使用。不属于当前方式的价格或门槛存 0 |
-| `user_agent_pets` | 主键 `(user_id, pet_id)`、`price_microcredits`、`ledger_entry_id` | 拥有记录：积分购买，或累计消费达标后第一次选择时领取（价格 0、没有积分流水）；主键即购买和领取的幂等键。下架或调高门槛不影响已拥有的用户；有拥有记录的形象不能删除 |
+| `agent_pets` | 主键 `id`（内置形象为短横线小写 ID，上传形象为 `custom-` 前缀随机 ID）、`source`（`builtin` / `upload`）、`resource_id`（上传图集的本地资源）、`name`、`description`、`sprite_version`（1 / 2）、`enabled`、`access`（`free` / `vip` / `paid` / `spend`）、`price_microcredits`（原价）、`unlock_microcredits`（非空，默认 0）、`group_codes_json`、`state_rows_json`、`pixelated`、`sort_order`、`category`（非空，默认空串）、`badge`（非空，默认空串）、`promo_enabled`、`promo_label`、`promo_price_microcredits`、`promo_starts_at`、`promo_ends_at`（后两列可空）、`tone`（非空，默认空串）、`lines_json`（非空，默认 `[]`）、`updated_by` | 内置形象图集随程序发布，只有管理员保存过配置才落库，未落库时按“未上架、免费、自带分类”处理，落库后以库里的分类为准（空为未分类）；`vip` 只对所选分组开放且不能购买；`paid` 价格须大于 0，所选分组免费使用；`spend` 的 `unlock_microcredits` 是累计消费门槛，须大于 0，所选分组免费使用。不属于当前方式的价格或门槛存 0。促销只对 `paid` 生效，促销价低于原价（0 为限时免费），开始 / 结束时间以 UTC 保存，为空分别表示立即开始、手动结束；关闭促销时其余促销列清空。`tone`、`lines_json` 只用于上传形象的说话风格与台词，内置形象沿用程序自带的 |
+| `user_agent_pets` | 主键 `(user_id, pet_id)`、`price_microcredits`、`ledger_entry_id` | 拥有记录：积分购买（`price_microcredits` 为实付价，促销时为促销价），限时免费领取或累计消费达标后第一次选择时领取（价格 0、没有积分流水）；主键即购买和领取的幂等键。后台“累计收入”按这一列求和。下架、改价或调高门槛不影响已拥有的用户；有拥有记录的形象不能删除 |
 | `user_agent_pet_selections` | 主键 `user_id`、`pet_id` | 用户当前使用的形象；没有记录表示使用站点默认形象。失去资格（分组变化、形象下架且未拥有）时按默认形象展示，资格恢复后自动生效 |
 
-累计消费按 `billing_orders` 中 `status = settled` 的 `actual_amount_microcredits` 求和，与后台用户列表的“已消费”一致；形象购买走 `credit_ledger_entries`，不计入。启动时版本 80 的物理结构校验同时检查 `agent_pets.unlock_microcredits` 列。
+累计消费按 `billing_orders` 中 `status = settled` 的 `actual_amount_microcredits` 求和，与后台用户列表的“已消费”一致；形象购买走 `credit_ledger_entries`，不计入。启动时版本 80 的物理结构校验同时检查 `agent_pets` 的 `unlock_microcredits`、`tone`、`lines_json`、`category`、`badge` 与五个促销列。批量修改在一个事务里保存所有形象，任一失败整批回滚。
 
-购买在一个事务里先插入已购记录抢占 `(user_id, pet_id)`，再复核形象仍上架且价格未变，然后以 `available_microcredits >= 价格` 条件扣减余额并写 `credit_ledger_entries`（类型 `agent_pet_purchase`，场景“智能体形象”，金额为负）。重复或并发请求只扣一次，余额不足整笔回滚。用户积分明细的“消费”筛选包含该类型。上传图集以资源类型 `agent-pet` 存在本地数据目录，`agent_pets.resource_id` 引用期间资源删除和后台回收都会跳过；读不到形象库时按全部被引用处理。
+购买在一个事务里先插入已购记录抢占 `(user_id, pet_id)`，再读出形象的最新配置复核仍上架、仍是积分购买且此刻售价（含促销）未变，售价为 0 时到此为止；否则以 `available_microcredits >= 价格` 条件扣减余额并写 `credit_ledger_entries`（类型 `agent_pet_purchase`，场景“智能体形象”，金额为负）。重复或并发请求只扣一次，余额不足整笔回滚。用户积分明细的“消费”筛选包含该类型。上传图集以资源类型 `agent-pet` 存在本地数据目录，`agent_pets.resource_id` 引用期间资源删除和后台回收都会跳过；读不到形象库时按全部被引用处理。
 
 ## 灵感上新（Schema 87）
 

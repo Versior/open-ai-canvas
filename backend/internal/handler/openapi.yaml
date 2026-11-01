@@ -1141,11 +1141,84 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/batch:
+    post:
+      tags: [admin]
+      summary: 批量修改形象（上架、分类、角标、开放方式与价格、促销），只改提供了的字段
+      description: 一次最多 200 个。不适用的形象（如给非积分购买的形象开促销、打折后价格不变）跳过并在 skipped 说明；任一形象校验失败整批不保存。access 改成非 paid 时同时结束促销；promotion.enabled 为 false 时结束所选形象的促销，为 true 时按 percent（原价的百分比，0 为限时免费）定促销价，四舍五入到 0.01 积分。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
+                enabled: {type: boolean}
+                category: {type: string, maxLength: 12, description: 空字符串表示移出分类}
+                badge: {type: string, maxLength: 6}
+                access:
+                  type: object
+                  required: [mode]
+                  properties:
+                    mode: {type: string, enum: [free, vip, paid, spend]}
+                    priceMicrocredits: {type: integer, format: int64}
+                    unlockMicrocredits: {type: integer, format: int64}
+                    groupCodes: {type: array, items: {type: string}}
+                promotion:
+                  type: object
+                  required: [enabled]
+                  properties:
+                    enabled: {type: boolean}
+                    label: {type: string, maxLength: 8}
+                    percent: {type: integer, minimum: 0, maximum: 99}
+                    startsAt: {type: string, format: date-time, nullable: true}
+                    endsAt: {type: string, format: date-time, nullable: true}
+      responses:
+        "200":
+          description: 成功信封 data 为批量结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/batch-delete:
+    post:
+      tags: [admin]
+      summary: 批量删除上传的形象；内置形象和已有人拥有的形象跳过并说明原因
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
+      responses:
+        "200":
+          description: 成功信封 data 为批量结果（deleted、skipped）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/agent-pets/{id}:
     put:
       tags: [admin]
-      summary: 保存形象配置（名称、简介、上架、开放方式、价格、分组、状态映射、像素清晰、排序）
-      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用；spend 累计消费门槛须大于 0，达标后免费领取，所选分组免费使用。
+      summary: 保存形象的完整配置（名称、简介、上架、开放方式与价格、分组、分类、角标、促销、状态映射、说话风格、像素清晰、排序）
+      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用；spend 累计消费门槛须大于 0，达标后免费领取，所选分组免费使用。促销只对 paid 生效，促销价须低于原价（0 为限时免费），结束时间须晚于现在、开始时间，且一次不超过一年；未改动的促销原样保留。tone 与 lines 只对上传形象生效。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       requestBody:
@@ -1166,6 +1239,15 @@ paths:
                 stateRows: {type: object, additionalProperties: {type: string}}
                 pixelated: {type: boolean}
                 sortOrder: {type: integer}
+                category: {type: string, maxLength: 12}
+                badge: {type: string, maxLength: 6}
+                promoEnabled: {type: boolean}
+                promoLabel: {type: string, maxLength: 8}
+                promoPriceMicrocredits: {type: integer, format: int64, minimum: 0}
+                promoStartsAt: {type: string, format: date-time, nullable: true}
+                promoEndsAt: {type: string, format: date-time, nullable: true}
+                tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 仅上传形象}
+                lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 仅上传形象}
       responses:
         "200": {$ref: "#/components/responses/Envelope"}
         "400": {$ref: "#/components/responses/Error"}
@@ -3670,9 +3752,15 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    AgentPetPromotion:
+      type: object
+      required: [label, endsAt]
+      properties:
+        label: {type: string, maxLength: 8, description: 活动名称，默认“限时特惠”，促销价为 0 时默认“限时免费”}
+        endsAt: {type: string, format: date-time, nullable: true, description: 为空表示管理员手动结束前一直有效}
     AgentPet:
       type: object
-      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, unlockMicrocredits, owned, memberFree, usable, purchasable, claimable, tone, lines]
+      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, listPriceMicrocredits, promotion, unlockMicrocredits, owned, memberFree, usable, purchasable, claimable, category, badge, tone, lines]
       properties:
         id: {type: string}
         name: {type: string}
@@ -3682,8 +3770,12 @@ components:
         pixelated: {type: boolean}
         stateRows: {type: object, additionalProperties: {type: string, enum: [idle, running-right, running-left, waving, jumping, failed, waiting, running, review]}, description: 助手状态到图集动作的覆盖项}
         access: {type: string, enum: [free, vip, paid, spend]}
-        priceMicrocredits: {type: integer, format: int64, description: 仅 paid 时大于 0}
+        priceMicrocredits: {type: integer, format: int64, description: 此刻的售价（促销中为促销价，限时免费为 0）；仅 paid 有值}
+        listPriceMicrocredits: {type: integer, format: int64, description: 原价；仅 paid 有值}
+        promotion: {allOf: [{$ref: "#/components/schemas/AgentPetPromotion"}], nullable: true, description: 只在促销进行中时返回}
         unlockMicrocredits: {type: integer, format: int64, description: 仅 spend 时大于 0，累计消费达到即可领取}
+        category: {type: string, maxLength: 12, description: 商店分类，空为未分类}
+        badge: {type: string, maxLength: 6, description: 卡片角标，如“新品”}
         owned: {type: boolean}
         memberFree: {type: boolean, description: 付费形象对当前用户分组免费}
         usable: {type: boolean}
@@ -3695,14 +3787,36 @@ components:
       allOf:
         - $ref: "#/components/schemas/AgentPet"
         - type: object
-          required: [source, enabled, groupCodes, sortOrder, ownerCount]
+          required: [source, enabled, groupCodes, sortOrder, ownerCount, revenueMicrocredits, promoEnabled, promoLabel, promoPriceMicrocredits, promoStartsAt, promoEndsAt, promoState]
           properties:
             source: {type: string, enum: [builtin, upload]}
             enabled: {type: boolean}
             groupCodes: {type: array, items: {type: string}}
             sortOrder: {type: integer}
-            ownerCount: {type: integer, format: int64}
+            ownerCount: {type: integer, format: int64, description: 拥有人数（购买或领取）}
+            revenueMicrocredits: {type: integer, format: int64, description: 累计购买收入}
+            promoEnabled: {type: boolean}
+            promoLabel: {type: string}
+            promoPriceMicrocredits: {type: integer, format: int64}
+            promoStartsAt: {type: string, format: date-time, nullable: true}
+            promoEndsAt: {type: string, format: date-time, nullable: true}
+            promoState: {type: string, enum: [none, scheduled, active, ended]}
             updatedAt: {type: string, format: date-time}
+    AdminAgentPetBatchResult:
+      type: object
+      required: [pets, deleted, skipped]
+      properties:
+        pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}, description: 修改后的形象}
+        deleted: {type: array, items: {type: string}, description: 已删除的形象 ID}
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, name, reason]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              reason: {type: string}
     FeedbackAttachment:
       type: object
       required: [id, name, type, url, size, mimeType]

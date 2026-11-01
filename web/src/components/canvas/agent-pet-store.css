@@ -1,0 +1,572 @@
+/*
+ * 形象商店卡片与右键菜单的共用外观。
+ * 颜色只引用调色板 token（--palette-node-* 按说话风格着色，--palette-status-* 表示价格与状态）；
+ * 文字、底色、描边由组件把画布主题写进 --pet-* 变量，明暗主题跟随画布。
+ */
+.agent-pet-toned {
+    --pet-tone: var(--palette-node-config);
+}
+.agent-pet-toned[data-tone="gentle"] {
+    --pet-tone: var(--palette-node-character);
+}
+.agent-pet-toned[data-tone="kitty"] {
+    --pet-tone: var(--palette-node-skill);
+}
+.agent-pet-toned[data-tone="puppy"] {
+    --pet-tone: var(--palette-node-drawing);
+}
+.agent-pet-toned[data-tone="robot"] {
+    --pet-tone: var(--palette-node-audio);
+}
+.agent-pet-toned[data-tone="mystic"] {
+    --pet-tone: var(--palette-node-script);
+}
+.agent-pet-toned[data-tone="sunny"] {
+    --pet-tone: var(--palette-node-image);
+}
+
+/* 说话风格着色的“舞台”：卡片顶部、菜单头部和换形象格子共用。 */
+.agent-pet-stage {
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 85% at 50% 100%, color-mix(in srgb, var(--pet-tone) 34%, transparent), transparent 72%), linear-gradient(180deg, color-mix(in srgb, var(--pet-tone) 12%, transparent), color-mix(in srgb, var(--pet-tone) 4%, transparent));
+}
+
+/* ---------- 标签 ---------- */
+.agent-pet-tag {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 3px;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: var(--fs-label);
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    --tag-color: var(--pet-muted);
+    background: color-mix(in srgb, var(--tag-color) 14%, var(--pet-fill));
+    color: color-mix(in srgb, var(--tag-color) 78%, var(--pet-ink));
+}
+.agent-pet-tag svg {
+    width: 11px;
+    height: 11px;
+    stroke-width: 2.2;
+}
+.agent-pet-tag[data-kind="tone"] {
+    --tag-color: var(--pet-tone);
+    background: color-mix(in srgb, var(--pet-tone) 20%, var(--pet-fill));
+}
+.agent-pet-tag[data-kind="free"],
+.agent-pet-tag[data-kind="claimable"] {
+    --tag-color: var(--palette-status-success);
+}
+.agent-pet-tag[data-kind="paid"] {
+    --tag-color: var(--palette-status-warning);
+}
+.agent-pet-tag[data-kind="spend"] {
+    --tag-color: var(--palette-status-loading);
+}
+.agent-pet-tag[data-kind="vip"],
+.agent-pet-tag[data-kind="member"] {
+    --tag-color: var(--palette-node-script);
+}
+.agent-pet-tag[data-kind="owned"] {
+    --tag-color: var(--pet-accent);
+}
+/* 限时活动最醒目：实色。文字用页面底色，明暗主题下都有足够对比度。 */
+.agent-pet-tag[data-kind="sale"],
+.agent-pet-tag[data-kind="gift"] {
+    background: var(--palette-status-error);
+    color: var(--background);
+}
+.agent-pet-tag[data-kind="badge"] {
+    --tag-color: var(--palette-status-warning);
+    background: var(--palette-status-warning);
+    color: var(--background);
+}
+
+/* ---------- 商店 ---------- */
+.agent-pet-store {
+    container-type: inline-size;
+    color: var(--pet-ink);
+}
+
+.agent-pet-store-chips {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+}
+.agent-pet-store-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.agent-pet-store-chip {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 999px;
+    background: var(--pet-fill);
+    color: var(--pet-muted);
+    font-size: var(--fs-ui);
+    font-weight: 500;
+    box-shadow: inset 0 0 0 1px var(--pet-stroke);
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+.agent-pet-store-chip:hover {
+    color: var(--pet-ink);
+}
+.agent-pet-store-chip[aria-pressed="true"] {
+    background: var(--pet-ink);
+    color: var(--pet-panel);
+    box-shadow: none;
+}
+.agent-pet-store-chip small {
+    font-size: var(--fs-label);
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+}
+.agent-pet-store-chip:focus-visible {
+    outline: 2px solid var(--pet-accent);
+    outline-offset: 1px;
+}
+
+.agent-pet-store-banner {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: var(--r-lg);
+    background: linear-gradient(100deg, color-mix(in srgb, var(--palette-status-error) 16%, var(--pet-fill)), color-mix(in srgb, var(--palette-status-warning) 12%, var(--pet-fill)));
+    color: var(--pet-ink);
+    text-align: left;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--palette-status-error) 22%, transparent);
+}
+.agent-pet-store-banner:focus-visible {
+    outline: 2px solid var(--pet-accent);
+    outline-offset: 1px;
+}
+
+.agent-pet-store-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+/* 手机等窄容器也保持两列，方便对比浏览。 */
+@container (max-width: 420px) {
+    .agent-pet-store-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .agent-pet-card-body {
+        padding: 8px 10px 10px;
+    }
+
+    .agent-pet-card-say {
+        top: 32px;
+        max-width: 92%;
+        padding: 5px 8px;
+    }
+}
+
+.agent-pet-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--r-2xl);
+    background: var(--pet-fill);
+    box-shadow: inset 0 0 0 1px var(--pet-stroke);
+    transition:
+        transform 0.18s ease,
+        box-shadow 0.18s ease;
+}
+.agent-pet-card:hover,
+.agent-pet-card:focus-within {
+    transform: translateY(-2px);
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--pet-tone) 55%, transparent),
+        0 12px 28px -12px color-mix(in srgb, var(--pet-tone) 60%, transparent);
+}
+.agent-pet-card[data-selected="true"] {
+    box-shadow:
+        inset 0 0 0 2px var(--pet-accent),
+        0 10px 24px -14px color-mix(in srgb, var(--pet-accent) 60%, transparent);
+}
+
+.agent-pet-card-stage {
+    display: grid;
+    height: 140px;
+    place-items: end center;
+    cursor: pointer;
+}
+.agent-pet-card-stage > .agent-pet-sprite {
+    margin-bottom: 4px;
+}
+.agent-pet-card-corner {
+    position: absolute;
+    top: 8px;
+    z-index: 1;
+    display: flex;
+    max-width: calc(50% - 6px);
+    flex-direction: column;
+    gap: 4px;
+}
+.agent-pet-card-corner.is-left {
+    left: 8px;
+    align-items: flex-start;
+}
+.agent-pet-card-corner.is-right {
+    right: 8px;
+    align-items: flex-end;
+}
+.agent-pet-card-current {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: var(--pet-accent);
+    color: var(--pet-panel);
+    font-size: var(--fs-label);
+    font-weight: 600;
+}
+
+/* 悬停时形象在舞台上说一句话；配色与入口头顶的云朵气泡一致，暗色主题下同样保持白底。 */
+.agent-pet-card-say {
+    position: absolute;
+    top: 36px;
+    left: 50%;
+    z-index: 2;
+    width: max-content;
+    max-width: 86%;
+    padding: 6px 9px;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #3a4155;
+    font-size: var(--fs-label);
+    line-height: 1.4;
+    text-wrap: pretty;
+    box-shadow:
+        0 0 0 1px #e2e5ef,
+        0 6px 16px -6px rgba(36, 41, 66, 0.35);
+    transform: translateX(-50%);
+    animation: agent-pet-say-in 0.22s ease-out both;
+    pointer-events: none;
+}
+/* 最多两行，不把形象整个盖住；尾巴在外层，不受截断影响。 */
+.agent-pet-card-say > span {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+.agent-pet-card-say::after {
+    content: "";
+    position: absolute;
+    bottom: -5px;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    background: #ffffff;
+    box-shadow: 1px 1px 0 0 #e2e5ef;
+    transform: translateX(-50%) rotate(45deg);
+}
+@keyframes agent-pet-say-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, 6px) scale(0.92);
+    }
+}
+
+.agent-pet-card-body {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 12px 12px;
+}
+.agent-pet-card-title {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--fs-ui);
+    font-weight: 650;
+}
+.agent-pet-card-desc {
+    display: -webkit-box;
+    min-height: 32px;
+    overflow: hidden;
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+    line-height: 16px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+.agent-pet-card-quote {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--pet-tone) 70%, var(--pet-ink));
+    font-size: var(--fs-label);
+    line-height: 16px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.agent-pet-card-price {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: auto;
+    font-variant-numeric: tabular-nums;
+}
+.agent-pet-card-price b {
+    font-size: 17px;
+    font-weight: 750;
+    line-height: 1.1;
+    color: color-mix(in srgb, var(--palette-status-warning) 82%, var(--pet-ink));
+}
+.agent-pet-card-price b small {
+    margin-left: 2px;
+    font-size: var(--fs-label);
+    font-weight: 600;
+}
+.agent-pet-card-price[data-kind="sale"] b,
+.agent-pet-card-price[data-kind="gift"] b {
+    color: var(--palette-status-error);
+}
+.agent-pet-card-price s {
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+}
+.agent-pet-card-countdown {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--palette-status-error);
+    font-size: var(--fs-label);
+    font-weight: 600;
+}
+.agent-pet-card-progress {
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--palette-status-loading) 14%, var(--pet-fill));
+}
+.agent-pet-card-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--palette-status-loading) 70%, var(--pet-tone)), var(--palette-status-loading));
+}
+.agent-pet-card-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+/* ---------- 右键菜单 ---------- */
+.agent-pet-menu-hero {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    min-height: 84px;
+    margin-bottom: 6px;
+    padding: 10px 12px 10px 8px;
+    border-radius: var(--r-md);
+}
+.agent-pet-menu-quote {
+    display: -webkit-box;
+    overflow: hidden;
+    color: color-mix(in srgb, var(--pet-tone) 70%, var(--pet-ink));
+    font-size: var(--fs-label);
+    line-height: 16px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.agent-pet-menu-tiles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 2px 2px 4px;
+}
+.agent-pet-menu-tile {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 6px 10px;
+    border-radius: var(--r-md);
+    background: var(--menu-hover);
+    color: var(--pet-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    text-align: left;
+    outline: none;
+    transition:
+        background-color 0.15s ease,
+        transform 0.15s ease;
+}
+.agent-pet-menu-tile:enabled:hover {
+    background: color-mix(in srgb, var(--pet-tone, var(--pet-accent)) 16%, var(--menu-hover));
+}
+.agent-pet-menu-tile:enabled:active {
+    transform: scale(0.98);
+}
+.agent-pet-menu-tile:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+.agent-pet-menu-tile:focus-visible {
+    box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+.agent-pet-menu-tile svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    stroke-width: 1.9;
+    color: color-mix(in srgb, var(--pet-tone, var(--pet-accent)) 70%, var(--pet-ink));
+}
+.agent-pet-menu-tile small {
+    display: block;
+    overflow: hidden;
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+    font-weight: 400;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* 大小：分段控件，选中项浮起。 */
+.agent-pet-menu-segmented {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--r-md);
+    background: var(--menu-hover);
+}
+.agent-pet-menu-segmented button {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    height: 44px;
+    padding-bottom: 4px;
+    border-radius: calc(var(--r-md) - 2px);
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    outline: none;
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+.agent-pet-menu-segmented button:hover {
+    color: var(--pet-ink);
+}
+.agent-pet-menu-segmented button[aria-pressed="true"] {
+    background: var(--pet-panel);
+    color: var(--pet-ink);
+    font-weight: 650;
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--pet-ink) 18%, transparent);
+}
+.agent-pet-menu-segmented button:focus-visible {
+    box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+
+/* 换形象：缩略图格子。 */
+.agent-pet-menu-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 2px;
+}
+.agent-pet-menu-pet {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0 0 6px;
+    overflow: hidden;
+    border-radius: var(--r-md);
+    background: var(--menu-hover);
+    color: var(--pet-ink);
+    font-size: var(--fs-label);
+    font-weight: 500;
+    outline: none;
+}
+.agent-pet-menu-pet .agent-pet-stage {
+    display: grid;
+    width: 100%;
+    height: 56px;
+    place-items: end center;
+}
+.agent-pet-menu-pet > span:last-child {
+    max-width: 100%;
+    padding: 0 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.agent-pet-menu-pet:enabled:hover {
+    background: color-mix(in srgb, var(--pet-tone, var(--pet-accent)) 16%, var(--menu-hover));
+}
+.agent-pet-menu-pet[aria-current="true"] {
+    box-shadow: inset 0 0 0 2px var(--pet-accent);
+}
+.agent-pet-menu-pet:focus-visible {
+    box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+.agent-pet-menu-pet:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+.agent-pet-menu-pet-mark {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-pet-card,
+    .agent-pet-menu-tile,
+    .agent-pet-store-chip,
+    .agent-pet-menu-segmented button {
+        transition: none;
+    }
+    .agent-pet-card:hover,
+    .agent-pet-card:focus-within {
+        transform: none;
+    }
+    .agent-pet-card-say {
+        animation: none;
+    }
+}
