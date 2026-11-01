@@ -4,10 +4,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { CanvasNode } from "../src/components/canvas/canvas-node";
 import { canvasNodeCanResyncTask } from "../src/lib/canvas/canvas-task-state";
+import { taskTickerSnapshot } from "../src/lib/canvas/task-ticker";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 
 const noop = () => {};
-const createdAt = new Date(Date.now() - 103_000).toISOString();
+// 静态渲染读取计时器快照（模块首次加载时的时刻），不是 Date.now()；全量运行时两者可能相差数十秒，
+// 以同一时钟为基准才能稳定得到 103 秒。
+const createdAt = new Date(taskTickerSnapshot() - 103_000).toISOString();
 
 function renderNode(metadata: CanvasNodeData["metadata"], type: CanvasNodeData["type"] = CanvasNodeType.Image) {
     return renderToStaticMarkup(
