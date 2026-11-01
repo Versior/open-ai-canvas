@@ -30,6 +30,7 @@ const LoginLogsPage = lazyAdminPage(() => import("@/pages/admin/login-logs/login
 const RedemptionCodesPage = lazyAdminPage(() => import("@/pages/admin/redemption-codes/redemption-codes-page"));
 const RuntimePolicySettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/runtime-policy-settings-page"));
 const AppearanceSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/appearance-settings-page"));
+const AgentPetsSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/agent-pets-page"));
 const DrawingEngineSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/drawing-engine-settings-page"));
 const EcommerceSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/ecommerce-settings-page"));
 const StorageSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/storage-settings-page"));
@@ -261,6 +262,7 @@ export const router = createBrowserRouter([
                     { path: "logs", element: <LogsPage /> },
                     { path: "settings", element: <Navigate to="runtime-policy" replace /> },
                     { path: "settings/appearance", element: <AppearanceSettingsPage /> },
+                    { path: "settings/agent-styles", element: <AgentPetsSettingsPage /> },
                     { path: "settings/drawing-engine", element: <DrawingEngineSettingsPage /> },
                     { path: "settings/ecommerce", element: <EcommerceSettingsPage /> },
                     { path: "settings/concurrency", element: <Navigate to="/admin/settings/runtime-policy" replace /> },

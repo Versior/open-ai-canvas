@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Input } from "antd";
-import { ArrowLeft, Blocks, BookMarked, Check, ChevronRight, CirclePlay, Cpu, Gauge, LockKeyhole, PlugZap, Search, ShieldCheck, Sparkles, Wrench } from "lucide-react";
+import { ArrowLeft, Blocks, BookMarked, Check, ChevronRight, CirclePlay, Cpu, Gauge, LockKeyhole, PawPrint, PlugZap, Search, ShieldCheck, Sparkles, Wrench } from "lucide-react";
 
+import { AgentPetPicker } from "@/components/canvas/agent-pet-picker";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { ModelPicker } from "@/components/model-picker";
 import { Switch } from "@/components/ui/base/switch";
 import type { CanvasTheme } from "@/lib/canvas-theme";
@@ -14,7 +16,7 @@ import type { AiConfig } from "@/stores/use-config-store";
 export const AGENT_PINNED_SKILL_LIMIT = 8;
 
 export type AgentContextKey = "canvas" | "resources" | "generation_history" | "skills" | "project";
-type SettingsSection = "home" | "profile" | "memories" | "skills" | "mcp" | "context" | "budget";
+type SettingsSection = "home" | "profile" | "memories" | "skills" | "mcp" | "context" | "budget" | "pet";
 
 type AgentSettingsProps = {
     theme: CanvasTheme;
@@ -85,7 +87,7 @@ export function CanvasCloudAgentSettings(props: AgentSettingsProps) {
             <header data-agent-drag-handle className="agent-panel-header flex shrink-0 items-center gap-2">
                 <Button type="text" shape="circle" icon={<ArrowLeft className="size-4" />} onClick={section === "home" ? props.onBack : goHome} aria-label={section === "home" ? "返回对话" : "返回设置"} />
                 <div className="min-w-0 flex-1"><div className="text-sm font-semibold">{title}</div><div className="mt-0.5 text-[var(--fs-label)] opacity-40">{section === "home" ? "只影响下一次新运行" : sectionSubtitle(section)}</div></div>
-                {section !== "home" ? <span className="rounded-full px-2 py-1 text-[var(--fs-label)] opacity-50" style={{ background: theme.node.fill }}>{section === "skills" ? "自动匹配" : "当前 Agent"}</span> : null}
+                {section !== "home" ? <span className="rounded-full px-2 py-1 text-[var(--fs-label)] opacity-50" style={{ background: theme.node.fill }}>{section === "skills" ? "自动匹配" : section === "pet" ? "仅自己可见" : "当前 Agent"}</span> : null}
             </header>
 
             {section === "home" ? <SettingsHome props={props} theme={theme} onOpen={setSection} /> : null}
@@ -95,13 +97,19 @@ export function CanvasCloudAgentSettings(props: AgentSettingsProps) {
             {section === "mcp" ? <McpWorkspace theme={theme} /> : null}
             {section === "context" ? <ContextWorkspace props={props} theme={theme} /> : null}
             {section === "budget" ? <BudgetWorkspace props={props} theme={theme} /> : null}
+            {section === "pet" ? <AgentPetPicker theme={theme} /> : null}
         </div>
     );
 }
 
 function SettingsHome({ props, theme, onOpen }: { props: AgentSettingsProps; theme: CanvasTheme; onOpen: (section: SettingsSection) => void }) {
+    const { pet } = useActiveAgentPet();
     return (
         <div className="canvas-agent-settings-scroll thin-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+            <section>
+                <SettingLabel label="助手形象" hint="只对你自己生效" />
+                <SettingRow theme={theme} icon={<PawPrint className="size-4" />} title="更换形象" summary={pet ? `当前：${pet.name}` : "当前使用站点默认形象"} onClick={() => onOpen("pet")} />
+            </section>
             <section>
                 <SettingLabel label="推理模式" hint="新运行生效" />
                 <div className="grid grid-cols-3 gap-2">{reasoningOptions.map((option) => <button key={option.value} type="button" aria-pressed={props.reasoningMode === option.value} onClick={() => props.onReasoningModeChange(option.value)} className="rounded-xl p-3 text-left" style={{ background: props.reasoningMode === option.value ? theme.toolbar.itemHover : theme.node.fill, border: `1px solid ${props.reasoningMode === option.value ? theme.accent.primary : 'transparent'}` }}><div className="text-xs font-semibold">{option.label}</div><div className="mt-1 text-[var(--fs-label)] opacity-50">{option.description}</div></button>)}</div>
@@ -379,8 +387,8 @@ function SettingRow({ theme, icon, title, summary, onClick }: { theme: CanvasThe
 function TabButton({ active, label, onClick, theme }: { active: boolean; label: string; onClick: () => void; theme: CanvasTheme }) { return <button type="button" aria-pressed={active} className="min-w-0 flex-1 rounded-lg px-2 py-2 text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2" style={{ background: active ? theme.toolbar.itemHover : "transparent", color: active ? theme.node.text : theme.node.muted }} onClick={onClick}>{label}</button>; }
 function SettingLabel({ label, hint }: { label: string; hint?: string }) { return <div className="mb-2 flex items-center justify-between text-xs font-semibold"><span>{label}</span>{hint ? <span className="text-[var(--fs-label)] font-normal opacity-40">{hint}</span> : null}</div>; }
 function BudgetInput({ label, hint, value, onChange, theme }: { label: string; hint: string; value: string; onChange: (value: string) => void; theme: CanvasTheme }) { return <label className="block"><span className="flex items-center justify-between text-xs font-medium"><span>{label}</span><span className="text-[var(--fs-label)] opacity-40">{hint}</span></span><Input size="large" value={value} onChange={(event) => onChange(event.target.value.replace(/[^0-9]/g, ""))} inputMode="numeric" className="mt-2 !rounded-lg" style={{ background: theme.node.fill }} /></label>; }
-function sectionTitle(section: SettingsSection) { return section === "profile" ? "长期偏好" : section === "memories" ? "个人记忆" : section === "skills" ? "Skills" : section === "mcp" ? "MCP 与工具" : section === "context" ? "上下文" : "预算"; }
-function sectionSubtitle(section: SettingsSection) { return section === "profile" ? "用户、项目和画布的长期行为偏好" : section === "memories" ? "只属于你，批准后才会注入会话" : section === "skills" ? "浏览、安装和管理；运行时自动匹配" : section === "mcp" ? "云端工具与连接状态" : section === "context" ? "控制 Agent 能读取的范围" : "控制本轮积分与生成消耗"; }
+function sectionTitle(section: SettingsSection) { return section === "profile" ? "长期偏好" : section === "memories" ? "个人记忆" : section === "skills" ? "Skills" : section === "mcp" ? "MCP 与工具" : section === "context" ? "上下文" : section === "pet" ? "助手形象" : "预算"; }
+function sectionSubtitle(section: SettingsSection) { return section === "profile" ? "用户、项目和画布的长期行为偏好" : section === "memories" ? "只属于你，批准后才会注入会话" : section === "skills" ? "浏览、安装和管理；运行时自动匹配" : section === "mcp" ? "云端工具与连接状态" : section === "context" ? "控制 Agent 能读取的范围" : section === "pet" ? "免费、会员专享或用积分购买" : "控制本轮积分与生成消耗"; }
 
 export function agentPermissionLabel(mode: AgentPermissionMode) { return permissionOptions.find((option) => option.value === mode)?.label || "请求审批"; }
 export function agentPermissionVisual(mode: AgentPermissionMode) { const option = permissionOptions.find((item) => item.value === mode) || permissionOptions[0]; return { color: option.color, soft: `${option.color}1f`, icon: option.icon }; }

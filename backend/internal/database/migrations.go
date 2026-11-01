@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 79
+const CurrentSchemaVersion int64 = 80
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -50,6 +50,8 @@ const agentMemoryDocumentSkillDiscoveryMigrationName = "agent_memory_document_sk
 const agentMemoryDocumentSkillDiscoveryMigrationChecksum = "sha256:agent-memory-document-skill-discovery-v76-20261028"
 const agentMemoryDocumentColumnsMigrationName = "agent_memory_document_columns"
 const agentMemoryDocumentColumnsMigrationChecksum = "sha256:agent-memory-document-columns-v77-20261028"
+const agentPetSkinsMigrationName = "agent_pet_skins"
+const agentPetSkinsMigrationChecksum = "sha256:agent-pet-skins-v80-20261101"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -300,6 +302,10 @@ var schemaMigrations = []migration{
 	{version: 77, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum, apply: migrateUserGroupsPricingCurrency},
 	{version: 78, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, apply: migrateAgentMemoryDocumentSkillDiscovery},
 	{version: 79, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum, apply: migrateAgentMemoryDocumentColumns},
+	// Fork 自有：智能体形象库、用户已购形象和当前选择。上游之后的新迁移（上游 78 起）同步时需顺延到 81 起。
+	{version: 80, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{})
+	}},
 }
 
 // migrateAgentMemoryDocumentColumns 补齐记忆文件的条目序号与修订的工具调用 ID。
@@ -919,6 +925,12 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 	case 79:
 		if !tx.Migrator().HasColumn(&model.AgentMemoryDocument{}, "NextEntrySeq") || !tx.Migrator().HasColumn(&model.AgentMemoryDocumentRevision{}, "CallID") {
 			return fmt.Errorf("Agent 记忆补列迁移账本与物理结构不一致：缺少条目序号或工具调用 ID")
+		}
+	case 80:
+		for _, table := range []any{&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{}} {
+			if !tx.Migrator().HasTable(table) {
+				return fmt.Errorf("智能体形象迁移账本与物理结构不一致：缺少形象库、已购或选择表")
+			}
 		}
 	}
 	return nil

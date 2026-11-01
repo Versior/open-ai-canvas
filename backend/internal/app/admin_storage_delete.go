@@ -111,6 +111,13 @@ func (s *Service) DeleteAdminResources(actor *model.User, req AdminResourceDelet
 		blocked.References = append(blocked.References, references...)
 		blockedByID[resourceID] = blocked
 	}
+	for resourceID, references := range s.agentPetResourceReferences(resourceIDs) {
+		blocked := blockedByID[resourceID]
+		blocked.ID = resourceID
+		blocked.Reason = "资源仍被智能体样式引用"
+		blocked.References = append(blocked.References, references...)
+		blockedByID[resourceID] = blocked
+	}
 	deletable := make([]model.Resource, 0, len(resources))
 	deletableIDs := make([]string, 0, len(resources))
 	for _, resourceID := range resourceIDs {

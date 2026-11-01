@@ -34,7 +34,8 @@ func TestAgentMemoryDocumentColumnsMigrationRepairsEarlyV78Tables(t *testing.T) 
 	if err := db.Exec("INSERT INTO agent_memory_documents (user_id, entries_json, revision, hash, char_count, mode, capacity) VALUES ('early-user', '[]', 1, '', 0, 'auto', 5000)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("DELETE FROM schema_migrations WHERE version = 79").Error; err != nil {
+	// 账本必须连续：v79 之后的迁移记录一并移除，重跑时按顺序补齐。
+	if err := db.Exec("DELETE FROM schema_migrations WHERE version >= 79").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := MigrateSchema(db); err != nil {

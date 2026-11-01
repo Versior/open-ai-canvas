@@ -160,7 +160,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 79 {
+	if CurrentSchemaVersion != 80 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -172,6 +172,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 77, Name: userGroupsPricingCurrencyMigrationName, Checksum: userGroupsPricingCurrencyMigrationChecksum},
 		{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
 		{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum},
+		{Version: 80, Name: agentPetSkinsMigrationName, Checksum: agentPetSkinsMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {

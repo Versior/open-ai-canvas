@@ -74,6 +74,12 @@ description: 从产品功能快速定位主要代码入口
 - 画布形象：`web/src/components/canvas/live2d-avatar.tsx`、`canvas-cloud-agent-panel.tsx`；受限资源加载：`web/src/services/live2d-loader.ts`。
 - 服务端：`backend/internal/app/appearance_canvas.go` 校验配置，`appearance_live2d.go` 验证 ZIP、导入及资源访问；`backend/internal/handler/appearance_live2d.go` 为 HTTP 边界。已有外观设置和资源引用链路负责持久化及删除保护。
 
+## 智能体形象（宠物皮肤）
+
+- 领域包 `backend/internal/agentpet`：`sprite.go` 只读文件头校验 WebP / PNG 图集的尺寸、透明通道与 v1 / v2 布局；`archive.go` 解析 Codex 宠物 ZIP；`catalog.go` 以 `go:embed` 打包 `builtin/` 内置形象（`catalog.json`、WebP 图集和仅随程序分发的 `NOTICE.md` 授权记录）；`policy.go` 定义开放方式、状态映射和使用资格。
+- 组合与权限：`backend/internal/app/agent_pets.go`（形象库合并、用户列表、选择、购买、图集读取）与 `agent_pets_admin.go`（后台配置、导入、删除、资源引用保护）；持久化 `backend/internal/repository/agent_pets.go`（购买事务）；模型 `backend/internal/model/models_agent_pet.go`；HTTP 边界 `backend/internal/handler/agent_pets.go`。
+- 前端：图集数学与帧数检测 `web/src/lib/canvas/agent-pet.ts`，渲染 `web/src/components/canvas/agent-pet-sprite.tsx`，入口接入 `canvas-cloud-agent-panel-parts.tsx` 的 `AgentLauncher`，当前形象 `web/src/hooks/use-active-agent-pet.ts`，用户换装 `web/src/components/canvas/agent-pet-picker.tsx`（Agent 设置「助手形象」），后台 `web/src/pages/admin/settings/agent-pets-page.tsx` 与 `components/agent-pet-editor.tsx`，接口 `web/src/services/api/agent-pets.ts`。
+
 这是一张入口地图，不罗列所有文件。先找到功能所属层，再沿调用关系阅读。
 
 ## 前端页面
