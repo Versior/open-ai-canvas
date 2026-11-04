@@ -433,6 +433,11 @@ func migrations() []tableMigration {
 		migrateTable[model.SkillFile]("skill_files"),
 		migrateTable[model.UserSkillState]("user_skill_states"),
 		migrateTable[model.BuiltinSkillTombstone]("builtin_skill_tombstones"),
+		migrateTable[model.SkillCurationSetting]("skill_curation_settings"),
+		migrateTable[model.SkillCurationCategory]("skill_curation_categories"),
+		migrateTable[model.SkillCurationAssignment]("skill_curation_assignments"),
+		migrateTable[model.SkillCurationRoot]("skill_curation_roots"),
+		migrateTable[model.SkillCurationRootAssignment]("skill_curation_root_assignments"),
 		migrateTable[model.Resource]("resources"),
 		migrateTable[model.ResourceDeletionJob]("resource_deletion_jobs"),
 		migrateTable[model.ResourceOffloadJob]("resource_offload_jobs"),
@@ -492,5 +497,8 @@ func migrations() []tableMigration {
 		migrateTable[model.TaskTextDelta]("task_text_delta"),
 		migrateTable[model.TaskLog]("task_logs"),
 		migrateTable[model.Result]("results"),
+		migrateTable[model.AgentPet]("agent_pets"),
+		migrateTable[model.UserAgentPet]("user_agent_pets"),
+		migrateTable[model.UserAgentPetSelection]("user_agent_pet_selections"),
 	}
 }

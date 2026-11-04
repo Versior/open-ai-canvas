@@ -31,6 +31,12 @@ func TestSkillCurationUpgradeAndRollback(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// 基线 v1 的模型清单后来补进了技能分类表，真实的 v43 库里还没有它们，删掉以还原升级前的结构。
+	for _, table := range []any{&model.SkillCurationSetting{}, &model.SkillCurationCategory{}, &model.SkillCurationAssignment{}, &model.SkillCurationRoot{}, &model.SkillCurationRootAssignment{}} {
+		if err := db.Migrator().DropTable(table); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if db.Migrator().HasTable(&model.SkillCurationSetting{}) {
 		t.Fatal("fixture is not an original schema")
 	}
