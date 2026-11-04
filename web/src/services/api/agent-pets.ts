@@ -116,6 +116,8 @@ export type AdminAgentPetBatchInput = {
     access?: { mode: AgentPetAccess; priceMicrocredits?: number; unlockMicrocredits?: number; groupCodes?: string[] };
     /** enabled 为 false 时结束促销；percent 是原价的百分比（0 为限时免费）。 */
     promotion?: { enabled: boolean; label?: string; percent?: number; startsAt?: string | null; endsAt?: string | null };
+    /** 把所选形象按原来的先后移到形象库最前或最后。 */
+    sortPosition?: "first" | "last";
 };
 
 export type AdminAgentPetBatchResult = {
