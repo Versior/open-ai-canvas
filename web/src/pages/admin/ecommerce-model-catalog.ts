@@ -21,7 +21,8 @@ export function commercePlanningModelOptions(catalog: ModelCatalogResponse, requ
         const vision = typeof max === "number" ? (max > 0 ? `图片 ≤${max} 张` : "未配置图片输入") : "图片能力未知";
         result.push({
             value: `channel:${model.id}`,
-            label: `${model.displayName && model.displayName !== model.modelKey ? `${model.displayName} · ` : ""}${model.modelKey} · ${channel.displayName || channel.name} · ${vision}`,
+            // 渠道可以不填名称；空段直接省略，避免出现“gpt-4o · · 图片 ≤8 张”。
+            label: [model.displayName && model.displayName !== model.modelKey ? model.displayName : "", model.modelKey, channel.displayName || channel.name, vision].filter(Boolean).join(" · "),
             disabled: requiresVision && (typeof max !== "number" || max < 1),
         });
     }

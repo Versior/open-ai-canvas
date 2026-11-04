@@ -37,6 +37,14 @@ test("admin discovers the complete shared catalog, including newly added and sam
     expect(commercePlanningModelOptions(input)).toHaveLength(1);
 });
 
+test("an unnamed channel leaves no empty label segment", () => {
+    const input = catalog(1);
+    input.channels![0].name = "";
+    input.channels![0].displayName = "";
+    input.channels![0].models[0].displayName = "key-0";
+    expect(commercePlanningModelOptions(input)[0].label).toBe("key-0 · 图片 ≤1 张");
+});
+
 test("text-only and unknown vision capability remain searchable but cannot be selected", () => {
     const input = catalog(3);
     input.channels![0].models[0] = model("plain", 0);

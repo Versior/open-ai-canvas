@@ -90,12 +90,16 @@ export function modelQuoteDescription(quote: LogicalModelQuote) {
     return descriptions.join("；");
 }
 
-export function modelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements): ModelQuoteRequest | undefined {
+/**
+ * 系统渠道直连模型默认只为视频构造服务端报价，图片和文本由调用方展示本地价格。
+ * `directChannelQuote` 供必须先拿到服务端报价才能提交的页面（电商 Agent）使用，所有能力都按渠道 SKU 报价。
+ */
+export function modelQuoteRequest(config: AiConfig, value: string, capability?: ModelCapability, requirements?: ModelRequirements, options?: { directChannelQuote?: boolean }): ModelQuoteRequest | undefined {
     if (!capability || !value) return undefined;
     const channel = resolveModelChannel(config, value);
     if (channel.scope !== "system") return undefined;
     const cost = channel.modelCosts?.find((item) => item.model === modelOptionName(value));
-    if (!cost || (!cost.logicalModelId && capability !== "video")) return undefined;
+    if (!cost || (!cost.logicalModelId && capability !== "video" && !options?.directChannelQuote)) return undefined;
     const input = requirements?.input;
     const intent: ModelRequestIntent = {
         capability,

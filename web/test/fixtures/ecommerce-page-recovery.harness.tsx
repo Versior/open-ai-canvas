@@ -192,7 +192,7 @@ beforeEach(async () => {
     mockEcommerceImageDelivery();
     scope = crypto.randomUUID();
     setActiveUserScope(scope);
-    useUserStore.setState({ user: { id: scope, username: "test", displayName: "测试", role: "user", status: "active" } });
+    useUserStore.setState({ user: { id: scope, username: "test", displayName: "测试", role: "user", status: "active" }, features: { ...originalUser.features, imageWorkbenchEnabled: true } });
     projects.clear();
     tasks.clear();
     fetched.length = 0;
@@ -804,6 +804,18 @@ describe("真实电商页面生命周期", () => {
         });
         expect(paidSubmissions).toHaveLength(0);
     });
+    test("后台未开放图片生成时，在任何付费分析前拦下提交", async () => {
+        useUserStore.setState({ features: { ...useUserStore.getState().features, imageWorkbenchEnabled: false } });
+        draft = { ...draft, instruction: "为测试商品设计主图" };
+        await sessions.writeEcommerceWorkspace(scope, { sessionId: crypto.randomUUID(), draft, plan: null, project: null, creationMode: "ai", autoGenerate: false });
+        await render();
+        await act(async () => {
+            host.querySelector<HTMLButtonElement>(".flylep-submit")!.click();
+        });
+        expect(errors.some((value) => value.includes("尚未开放「图片生成」"))).toBe(true);
+        expect(document.body.textContent).not.toContain("确认生成配置");
+        expect(paidSubmissions).toHaveLength(0);
+    });
     test("提交失败时保留输入内容供用户重试", async () => {
         draft = { ...draft, instruction: "保留这次商品需求" };
         spyOn(taskApi, "createGenerationTask").mockRejectedValueOnce(new Error("提交失败"));
@@ -950,13 +962,12 @@ describe("真实电商页面生命周期", () => {
             host.querySelector<HTMLButtonElement>(".commerce-canvas-layers header button")!.click();
         });
         expect(host.querySelector(".commerce-canvas-layer-list > button.is-selected")).not.toBeNull();
-        // Finishing a set in this session starts exactly one follow-up recommendation.
-        expect(paidSubmissions).toHaveLength(3);
-        expect((paidSubmissions[2] as { metadata: { stage: string } }).metadata.stage).toBe("creative-directions");
-        expect(host.querySelector(".commerce-direction-message.is-followup")).toBeNull();
-        expect(planningProgress()?.textContent).toContain("小夜正在分析商品并推荐视觉风格");
+        // Follow-up directions are a paid text task: finishing a set only offers them, the user starts them explicitly.
+        expect(paidSubmissions).toHaveLength(2);
+        expect(planningProgress()).toBeNull();
+        expect(Array.from(host.querySelectorAll("button")).some((button) => button.textContent?.includes("为你推荐下一组创意方向"))).toBe(true);
         expect(host.querySelector(".commerce-result-canvas .ecommerce-result")).not.toBeNull();
-        expect(paidSubmissions).toHaveLength(3);
+        expect(host.textContent).not.toContain("配置已更新。当前方案保留供参考");
         expect(images).toHaveBeenCalledTimes(1);
         expect(sessions.peekEcommerceWorkspace(scope)?.plan?.images[0]?.taskId).toBe("generated-image");
     });

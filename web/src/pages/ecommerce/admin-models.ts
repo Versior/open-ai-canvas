@@ -11,7 +11,7 @@ export function matchCommerceAdminModel(config: AiConfig, textModels: string[], 
     if (!ref || !hasRef(ref)) return "";
     return (
         textModels.find((value) => {
-            const route = modelQuoteRequest(config, value, "text", { capability: "text", input: { textCount: 1, imageCount: 1, videoCount: 0, audioCount: 0, characterCount: 0 } });
+            const route = modelQuoteRequest(config, value, "text", { capability: "text", input: { textCount: 1, imageCount: 1, videoCount: 0, audioCount: 0, characterCount: 0 } }, { directChannelQuote: true });
             return ref.channelModelId ? route?.channelId === ref.channelId && route?.modelKey === ref.modelKey : route?.logicalModelID === ref.logicalModelId;
         }) || ""
     );

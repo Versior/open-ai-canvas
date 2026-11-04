@@ -91,10 +91,27 @@ func (r *Repository) requireActiveTaskProject(userID string, canvasOrProjectID s
 	if locked.Error != nil {
 		return locked.Error
 	}
-	if locked.RowsAffected != 1 {
-		return ErrProjectNotActive
+	if locked.RowsAffected == 1 {
+		return nil
 	}
-	return nil
+	// 电商 Agent 任务以电商项目 ID 作为 projectId：画布和业务项目都不存在时，锁定本人的电商项目后放行，
+	// 与删除电商项目的写事务串行；已归档的业务项目仍按不可用拒绝。
+	var projectCount int64
+	if err := r.db.Model(&model.Project{}).Where("id = ? AND user_id = ?", canvasOrProjectID, userID).Count(&projectCount).Error; err != nil {
+		return err
+	}
+	if projectCount == 0 {
+		lockedEcommerce := r.db.Model(&model.EcommerceProject{}).
+			Where("id = ? AND user_id = ?", canvasOrProjectID, userID).
+			UpdateColumn("revision", gorm.Expr("revision"))
+		if lockedEcommerce.Error != nil {
+			return lockedEcommerce.Error
+		}
+		if lockedEcommerce.RowsAffected == 1 {
+			return nil
+		}
+	}
+	return ErrProjectNotActive
 }
 
 func (r *Repository) CreateProject(project *model.Project) error {

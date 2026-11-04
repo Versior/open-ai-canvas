@@ -17,6 +17,8 @@ func TestEnsureTaskProjectActiveRequiresOwnedProjectOrCanvas(t *testing.T) {
 		&model.CanvasProject{ID: "owned-canvas-foreign-project", UserID: "user-1", ProjectID: "foreign-project"},
 		&model.CanvasProject{ID: "owned-canvas-missing-project", UserID: "user-1", ProjectID: "missing-project"},
 		&model.CanvasProject{ID: "foreign-canvas", UserID: "user-2", ProjectID: "foreign-project"},
+		&model.EcommerceProject{ID: "owned-ecommerce", UserID: "user-1", Name: "owned", Status: "draft", DraftJSON: "{}", PlanJSON: "{}", Revision: 1},
+		&model.EcommerceProject{ID: "foreign-ecommerce", UserID: "user-2", Name: "foreign", Status: "draft", DraftJSON: "{}", PlanJSON: "{}", Revision: 1},
 	} {
 		if err := db.Create(record).Error; err != nil {
 			t.Fatal(err)
@@ -30,6 +32,7 @@ func TestEnsureTaskProjectActiveRequiresOwnedProjectOrCanvas(t *testing.T) {
 		{name: "no project id", id: " "},
 		{name: "owned project", id: "owned-project"},
 		{name: "owned canvas", id: "owned-canvas"},
+		{name: "owned ecommerce project", id: "owned-ecommerce"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := service.ensureTaskProjectActive("user-1", test.id); err != nil {
@@ -44,6 +47,7 @@ func TestEnsureTaskProjectActiveRequiresOwnedProjectOrCanvas(t *testing.T) {
 	}{
 		{name: "foreign project", id: "foreign-project"},
 		{name: "foreign canvas", id: "foreign-canvas"},
+		{name: "foreign ecommerce project", id: "foreign-ecommerce"},
 		{name: "missing project", id: "missing-project"},
 		{name: "owned canvas with foreign project", id: "owned-canvas-foreign-project"},
 		{name: "owned canvas with missing project", id: "owned-canvas-missing-project"},

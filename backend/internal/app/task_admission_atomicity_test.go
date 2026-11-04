@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func newTaskAdmissionAtomicityTestService(t *testing.T) (*Service, *gorm.DB) {
 	t.Helper()
 	db := newSQLiteTestDB(t)
 	if err := db.AutoMigrate(
-		&model.SystemSetting{}, &model.Project{}, &model.CanvasProject{},
+		&model.SystemSetting{}, &model.Project{}, &model.CanvasProject{}, &model.EcommerceProject{},
 		&model.Asset{}, &model.Task{}, &model.TaskLog{}, &model.Result{},
 		&model.TaskTextDelta{}, &model.ApiCallLog{}, &model.RouteAttempt{}, &model.CloudAgentResourceLease{},
 		&model.BillingOrder{}, &model.CreditAccount{}, &model.CreditLedgerEntry{},
@@ -47,6 +48,39 @@ func TestCreateTextReplayTaskRejectsForeignProject(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("persisted tasks = %d, want 0", count)
+	}
+}
+
+func TestCreateTaskWithCreditReservationAcceptsOnlyOwnedEcommerceProject(t *testing.T) {
+	service, db := newTaskAdmissionAtomicityTestService(t)
+	for _, record := range []any{
+		&model.EcommerceProject{ID: "owned-ecommerce", UserID: "user-a", Name: "owned", Status: "draft", DraftJSON: "{}", PlanJSON: "{}", Revision: 1},
+		&model.EcommerceProject{ID: "foreign-ecommerce", UserID: "user-b", Name: "foreign", Status: "draft", DraftJSON: "{}", PlanJSON: "{}", Revision: 1},
+		&model.CreditAccount{UserID: "user-a", AvailableMicrocredits: 1000},
+	} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, test := range []struct {
+		projectID string
+		wantErr   bool
+	}{
+		{projectID: "owned-ecommerce"},
+		{projectID: "foreign-ecommerce", wantErr: true},
+		{projectID: "missing-ecommerce", wantErr: true},
+	} {
+		t.Run(test.projectID, func(t *testing.T) {
+			task := model.Task{ID: "task-" + test.projectID, UserID: "user-a", ProjectID: test.projectID, Type: "canvas_text", Status: model.TaskStatusQueued, InputJSON: "{}", BillingOrderID: "order-" + test.projectID}
+			order := &model.BillingOrder{ID: task.BillingOrderID, UserID: task.UserID, TaskID: task.ID, IdempotencyKey: task.ID, Status: model.BillingStatusReserved, AmountMicrocredits: 100}
+			err := service.repo.CreateTaskWithCreditReservation(&task, order, 10)
+			if !test.wantErr && err != nil {
+				t.Fatalf("CreateTaskWithCreditReservation() error = %v", err)
+			}
+			if test.wantErr && !errors.Is(err, repository.ErrProjectNotActive) {
+				t.Fatalf("CreateTaskWithCreditReservation() error = %v, want ErrProjectNotActive", err)
+			}
+		})
 	}
 }
 

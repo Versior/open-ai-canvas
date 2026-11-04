@@ -1200,6 +1200,12 @@ html:not(.dark) .commerce-platform-logo[data-monochrome="true"] {
     gap: 7px;
     width: 100%;
 }
+/* 远程资源图片外壳默认铺满父级；收紧到缩略图尺寸，多张参考图同排换行，不压到下一条消息。 */
+.commerce-request-references > .cached-resource-image-shell {
+    flex: none;
+    width: 58px;
+    height: 58px;
+}
 .commerce-request-references img {
     width: 58px;
     height: 58px;

@@ -72,12 +72,18 @@ export function SingleImageEditor({
         const controller = new AbortController();
         setCost(undefined);
         setError("");
-        const request = modelQuoteRequest(config, edited.imageModel, "image", {
-            capability: "image",
-            input: { textCount: 1, imageCount: refs.length, referenceImageCount: refs.length, videoCount: 0, audioCount: 0, characterCount: 0 },
-            imageSize: quotedRatio,
-            options: { size: quotedRatio, imageResolution: edited.resolution, count: 1 },
-        });
+        const request = modelQuoteRequest(
+            config,
+            edited.imageModel,
+            "image",
+            {
+                capability: "image",
+                input: { textCount: 1, imageCount: refs.length, referenceImageCount: refs.length, videoCount: 0, audioCount: 0, characterCount: 0 },
+                imageSize: quotedRatio,
+                options: { size: quotedRatio, imageResolution: edited.resolution, count: 1 },
+            },
+            { directChannelQuote: true },
+        );
         if (request)
             void quoteModel(request, controller.signal)
                 .then((value) => {

@@ -48,7 +48,10 @@ func ecommerceInt(name string, fallback, max int) int {
 func ecommerceConfig() ecommerceProviderConfig {
 	mode := strings.ToLower(strings.TrimSpace(os.Getenv("AI_MODE")))
 	if mode == "" {
-		mode = "disabled"
+		// 本 Fork 默认 live：没配 TEXT_API_KEY 时走后台「电商知识库 → 阶段模型」里选的平台渠道，
+		// 按普通任务计费。默认 disabled 会让 /ecommerce 的创意方向拿到未经服务端改写的原始回复，页面无法显示。
+		// 显式设为 disabled 可关闭电商 Agent 的服务端编排。
+		mode = "live"
 	}
 	textBase := strings.TrimRight(strings.TrimSpace(os.Getenv("TEXT_BASE_URL")), "/")
 	if textBase == "" {

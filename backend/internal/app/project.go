@@ -673,6 +673,14 @@ func (s *Service) ensureTaskProjectActive(userID string, canvasOrProjectID strin
 		}
 	}
 	if projectErr != nil {
+		if canvasErr != nil {
+			// 电商 Agent 用电商项目 ID 作为任务 projectId；电商项目没有归档和作品预算语义，归属本人即可。
+			if _, ecommerceErr := s.repo.EcommerceProject(userID, id); ecommerceErr == nil {
+				return nil
+			} else if !errors.Is(ecommerceErr, gorm.ErrRecordNotFound) {
+				return ecommerceErr
+			}
+		}
 		return NotFound("任务所属画布或项目不存在或无权访问")
 	}
 	if project.Status == model.ProjectStatusArchived {

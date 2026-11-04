@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptyEcommerceDraft, type EcommerceProject } from "../src/services/api/ecommerce";
+import { ecommerceProjectName, emptyEcommerceDraft, type EcommerceProject } from "../src/services/api/ecommerce";
 import { ecommerceHistoryCovers } from "../src/pages/ecommerce/project-history";
 import type { GenerationTask } from "../src/services/api/task-center";
 
@@ -53,5 +53,19 @@ describe("电商历史项目封面", () => {
     test("历史方案损坏仍可显示商品封面，缺失资料提供空封面", () => {
         expect(ecommerceHistoryCovers({ ...project, planJson: "broken" }, {})).toHaveLength(1);
         expect(ecommerceHistoryCovers({ ...project, draftJson: "broken", planJson: "broken" }, {})).toEqual([]);
+    });
+});
+
+describe("电商项目命名", () => {
+    const draft = { ...emptyEcommerceDraft(), productName: "", instruction: "" };
+    test("商品名优先，已有名称保持不变", () => {
+        expect(ecommerceProjectName({ name: "未命名商品" }, { ...draft, productName: " 保温杯 " }, null)).toBe("保温杯");
+        expect(ecommerceProjectName({ name: "头戴式耳机" }, { ...draft, instruction: "换一款商品" }, null)).toBe("头戴式耳机");
+    });
+    test("对话式输入用需求或策划摘要的第一句命名，并限制长度", () => {
+        expect(ecommerceProjectName({ name: "未命名商品" }, { ...draft, instruction: "为蓝色耳机做一套淘宝主图，突出降噪" }, null)).toBe("为蓝色耳机做一套淘宝主图");
+        expect(ecommerceProjectName({ name: "未命名商品" }, draft, { productSummary: "米白陶瓷马克杯。容量 350ml" })).toBe("米白陶瓷马克杯");
+        expect(Array.from(ecommerceProjectName({ name: "未命名商品" }, { ...draft, instruction: "很".repeat(40) }, null))).toHaveLength(24);
+        expect(ecommerceProjectName({ name: "未命名商品" }, draft, null)).toBe("未命名商品");
     });
 });

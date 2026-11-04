@@ -232,10 +232,21 @@ export function createEcommerceProject() {
 export function getEcommerceProject(id: string) {
     return http.get<EcommerceProject>(`/ecommerce/projects/${encodeURIComponent(id)}`);
 }
+/** 对话式创作通常不填商品名：用本轮需求或策划摘要的第一句命名，历史项目不再全是“未命名商品”。 */
+export function ecommerceProjectName(project: Pick<EcommerceProject, "name">, draft: Pick<EcommerceDraft, "productName" | "instruction">, plan: Pick<EcommercePlan, "productSummary"> | null) {
+    const explicit = (draft.productName || "").trim();
+    if (explicit) return explicit;
+    if (project.name && project.name !== "未命名商品") return project.name;
+    const sentence = `${draft.instruction || ""}\n${plan?.productSummary || ""}`
+        .split(/[\n。！？!?；;，,]/)
+        .map((part) => part.trim())
+        .find(Boolean);
+    return sentence ? Array.from(sentence).slice(0, 24).join("") : project.name;
+}
 export function saveEcommerceProject(project: EcommerceProject, draft: EcommerceDraft, plan: EcommercePlan | null) {
     return http.put<EcommerceProject>(`/ecommerce/projects/${encodeURIComponent(project.id)}`, {
         revision: project.revision,
-        name: draft.productName || project.name,
+        name: ecommerceProjectName(project, draft, plan),
         draft,
         ...(plan ? { plan } : {}),
     });

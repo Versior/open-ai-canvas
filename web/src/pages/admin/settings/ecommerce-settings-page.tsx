@@ -143,8 +143,8 @@ export default function EcommerceSettingsPage() {
     const patchModel = (id: string, patch: Partial<EcommerceSetting["models"][number]>) => setDraft((current) => current && { ...current, models: current.models.map((item) => (item.id === id ? { ...item, ...patch } : item)) });
     return (
         <AdminPageFrame
-            title="电商画布"
-            description="管理创作用途、默认提示词和公共模特库"
+            title="旧版电商画布"
+            description="管理旧版电商画布的创作用途、默认提示词和公共模特库；电商 Agent 的模型与知识在「电商知识库」配置"
             scroll
             actions={
                 <>

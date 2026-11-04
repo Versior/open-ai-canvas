@@ -148,7 +148,7 @@ export function CommerceDirectionCards({
         <section className={`flylep-directions-stage commerce-direction-message${followup ? " is-followup" : ""}`} aria-label={followup ? "为你推荐" : "为你的商品推荐四个设计方向"}>
             <header className="commerce-direction-header">
                 <span className="commerce-direction-symbol">
-                    <img src="/yoru/yoru-body.png" alt="小夜" />
+                    <img src="/commerce/agent-mark.svg" alt="小夜" />
                 </span>
                 <h2>
                     {followup ? (

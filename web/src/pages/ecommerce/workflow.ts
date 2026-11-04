@@ -73,20 +73,20 @@ export function commerceProductReshoot(imageType: string) {
 
 const commerceArtifactGuard = "避免 AI 痕迹：扭曲或乱码文字、变形 Logo、多余或融化的部件、错误的手指、重复图案、无来源的光斑粒子和漂浮杂物。没有内部结构资料时，不绘制写实爆炸图、剖面或内部零件。";
 
-export type CommerceImageParameters = { size: string; quality?: string; imageResolution?: string; count: 1; canvasSize?: string };
+/** 只含工作台图片任务允许的字段（size/quality/imageResolution/count），多余字段会被后端整单拒绝。 */
+export type CommerceImageParameters = { size: string; quality?: string; imageResolution?: string; count: 1 };
 
 export function commerceImageParameters(profile: ImageCapabilityConfig, ratio: string, resolution: string): CommerceImageParameters {
     const normalized = normalizeImageValue(profile, { size: ratio, imageResolution: resolution, quality: profile.quality.default, count: "1" });
-    const base: CommerceImageParameters = { size: String(normalized.size || ratio), quality: normalized.quality, imageResolution: normalized.imageResolution, count: 1 };
     // Submit the selected ratio itself; never substitute a wider generation canvas.
-    return { ...base, canvasSize: base.size };
+    return { size: String(normalized.size || ratio), quality: normalized.quality, imageResolution: normalized.imageResolution, count: 1 };
 }
 
-export function commerceImagePrompt(draft: EcommerceDraft, image: EcommercePlan["images"][number], productSummary = "", visualStrategy = "", parameters?: Pick<CommerceImageParameters, "canvasSize">) {
+export function commerceImagePrompt(draft: EcommerceDraft, image: EcommercePlan["images"][number], productSummary = "", visualStrategy = "", parameters?: Pick<CommerceImageParameters, "size">) {
     if (!image.manualPrompt && commerceAllowsText(draft, image.imageType)) assertCommerceConsumerCopy(image.copy || "");
     const prompt = baseCommerceImagePrompt(draft, image, productSummary, visualStrategy);
     const reference = commerceReferenceImageInstruction(draft, image);
-    const extended = Boolean(parameters?.canvasSize && parameters.canvasSize !== image.ratio);
+    const extended = Boolean(parameters?.size && parameters.size !== image.ratio);
     const fullBleed = `【画幅】按 ${extended ? "本次生成尺寸" : image.ratio} 原生构图，full bleed edge-to-edge artwork，场景与背景连续延伸到四条边。禁止上下黑条、白条、letterbox、pillarbox、相框、胶片边框；不能把横向海报缩进竖向画幅。商品参考图即使是多视角拼贴说明板，也只提取商品身份，不复制原板的分格、边框、文字布局。`;
     const frame = extended ? commerceExtendedCanvasNote(image.ratio) : commerceTallCanvasSafeArea(image.ratio);
     const typography = commerceAllowsText(draft, image.imageType) && (image.copy || "").trim() ? `\n\n${commerceTypographyInstruction}` : "";
@@ -282,19 +282,31 @@ export function commerceGenerationRatio(config: Config, draft: Pick<EcommerceDra
 export async function quoteCommerce(config: Config, draft: EcommerceDraft, count: number, clone = false, planning = true) {
     const imageRefs = commerceRequiredImageReferenceCount(draft, clone);
     const ratio = commerceGenerationRatio(config, draft, draft);
-    const imageRequest = modelQuoteRequest(config, draft.imageModel, "image", {
-        capability: "image",
-        input: { textCount: 1, imageCount: imageRefs, referenceImageCount: imageRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
-        imageSize: ratio,
-        options: { size: ratio, imageResolution: draft.resolution, count: 1 },
-    });
+    const imageRequest = modelQuoteRequest(
+        config,
+        draft.imageModel,
+        "image",
+        {
+            capability: "image",
+            input: { textCount: 1, imageCount: imageRefs, referenceImageCount: imageRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
+            imageSize: ratio,
+            options: { size: ratio, imageResolution: draft.resolution, count: 1 },
+        },
+        { directChannelQuote: true },
+    );
     const maxAgentRefs = modelCapabilityConfigFor(config, draft.agentModel).text?.references.maxImages || 0;
     const agentRefs = commercePlanningReferenceCount(draft);
     if (planning && agentRefs > maxAgentRefs) throw new Error(`后台指定的策划模型最多读取 ${maxAgentRefs} 张图片，请减少参考图或联系管理员更换模型`);
-    const agentRequest = modelQuoteRequest(config, draft.agentModel, "text", {
-        capability: "text",
-        input: { textCount: 1, imageCount: agentRefs, referenceImageCount: agentRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
-    });
+    const agentRequest = modelQuoteRequest(
+        config,
+        draft.agentModel,
+        "text",
+        {
+            capability: "text",
+            input: { textCount: 1, imageCount: agentRefs, referenceImageCount: agentRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
+        },
+        { directChannelQuote: true },
+    );
     if (!imageRequest || (planning && !agentRequest)) throw new Error("当前模型无法报价，请更换模型");
     const [image, agent] = await Promise.all([quoteModel(imageRequest), planning && agentRequest ? quoteModel(agentRequest) : Promise.resolve(null)]);
     const agentCost = agent?.quote.amountMicrocredits || 0;

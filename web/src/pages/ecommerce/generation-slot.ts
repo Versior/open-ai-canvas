@@ -41,6 +41,16 @@ export function assertCommerceBatchHealthy(tasks: ActiveTask[]) {
     if (tasks.some((task) => task.status === "failed" || task.status === "cancelled")) throw new CommerceBatchPausedError();
 }
 
+/**
+ * The server answered with a definite 4xx rejection (bad parameters, feature closed, credits exhausted…), so no
+ * task or billing order exists and the image can be submitted again once the cause is fixed. Timeouts, network
+ * failures, 5xx and rate limits without an explicit `taskCreated: false` stay "unconfirmed".
+ */
+export function commerceSubmissionRejected(cause: unknown): cause is ApiError {
+    if (!(cause instanceof ApiError) || cause.status === undefined || cause.status < 400 || cause.status >= 500 || cause.status === 408) return false;
+    return cause.status !== 429 || cause.details?.taskCreated === false;
+}
+
 export async function submitCommerceTaskWhenSlotAvailable<T>(options: SlotOptions & { submit: () => Promise<T> }): Promise<T> {
     for (;;) {
         await waitForCommerceGenerationSlot(options);

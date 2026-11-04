@@ -68,3 +68,15 @@ func TestEcommerceAgentImageEditSendsReferenceAndSupportedSize(t *testing.T) {
 		t.Fatal("unsupported channel aspect ratio was sent upstream")
 	}
 }
+
+// 本 Fork 未设置 AI_MODE 时按 live 处理；上游默认 disabled 会让 /ecommerce 的创意方向拿到未经服务端改写的原始回复。
+func TestEcommerceConfigDefaultsToLiveMode(t *testing.T) {
+	t.Setenv("AI_MODE", "")
+	if mode := ecommerceConfig().Mode; mode != "live" {
+		t.Fatalf("default AI_MODE = %q, want live", mode)
+	}
+	t.Setenv("AI_MODE", " Disabled ")
+	if mode := ecommerceConfig().Mode; mode != "disabled" {
+		t.Fatalf("explicit AI_MODE = %q, want disabled", mode)
+	}
+}

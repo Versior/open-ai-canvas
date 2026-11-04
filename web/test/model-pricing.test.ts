@@ -274,6 +274,20 @@ describe("model request pricing", () => {
         expect(priceTierSummaryLabel(tiers.slice(0, 1), "video")).toBe("0 积分/百万视频 Token");
     });
 
+    test("opts into direct channel quotes for image models only when the caller requires a server quote", () => {
+        const tiers = [{ selector: {}, billingMode: "fixed_request" as const, unitPriceMicrocredits: 1_000_000 }];
+        const config = systemConfig({ capability: "image", tiers });
+        const requirements: ModelRequirements = { capability: "image", input: { textCount: 1, imageCount: 1, videoCount: 0, audioCount: 0, characterCount: 0 }, options: { size: "1:1" } };
+        expect(modelQuoteRequest(config, config.model, "image", requirements)).toBeUndefined();
+        expect(modelQuoteRequest(config, config.model, "image", requirements, { directChannelQuote: true })).toMatchObject({
+            channelId: "system-channel",
+            modelKey: "image-model",
+            intent: { capability: "image", operation: "image_to_image", inputs: { image: 1 } },
+        });
+        const logical = systemConfig({ capability: "image", logicalModelId: "logical-image", tiers });
+        expect(modelQuoteRequest(logical, logical.model, "image", requirements, { directChannelQuote: true })).toMatchObject({ logicalModelID: "logical-image" });
+    });
+
     test("builds a direct system-video quote without inventing a logical model ID", () => {
         const config = systemConfig({ tiers: [{ selector: {}, billingMode: "token", unitPriceMicrocredits: 0 }] });
         const requirements = { ...textVideoRequirements, options: { videoGenerateAudio: false, vquality: "1080p" } };

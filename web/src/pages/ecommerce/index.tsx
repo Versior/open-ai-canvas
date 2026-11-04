@@ -112,7 +112,7 @@ import { activeCommerceReferences, commercePlanningReferenceCount } from "./mode
 import { EcommerceResultGallery } from "./result-gallery";
 import { EcommerceResultCanvas } from "./result-canvas";
 import { inspectCommerceImageAsset } from "./quality";
-import { assertCommerceBatchHealthy, CommerceBatchPausedError, submitCommerceTaskWhenSlotAvailable } from "./generation-slot";
+import { assertCommerceBatchHealthy, CommerceBatchPausedError, commerceSubmissionRejected, submitCommerceTaskWhenSlotAvailable } from "./generation-slot";
 import { ecommerceTypeConfig, typeValidation } from "./type-config";
 import { downloadEcommerceImage, exportEcommerceLongImage, exportEcommerceZip, type EcommerceExportItem, type EcommerceDownload } from "./export";
 import "./workspace.css";
@@ -363,6 +363,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     const planningModel = adminModels.planningModel;
     const directionsModel = adminModels.visionModel;
     const adminModelIssue = adminModels.problem || (adminModels.loaded ? "" : "正在读取后台指定的电商 Agent 模型，请稍后重试");
+    // 出图走工作台图片任务接口，受后台「功能开放 · 图片生成」控制；关闭时必须在任何付费分析之前拦下。
+    const imageWorkbenchEnabled = useUserStore((state) => state.features.imageWorkbenchEnabled);
+    const imageGenerationIssue = imageWorkbenchEnabled ? "" : "管理员尚未开放「图片生成」，电商 Agent 暂时无法出图。请联系管理员在后台「功能开放」中开启后再试";
     const planningReferenceCount = commercePlanningReferenceCount(draft);
     const planningModels = useMemo(() => commercePlanningModels(config, textModels, planningReferenceCount), [config, textModels, planningReferenceCount]);
     const imageProfile = draft.imageModel ? modelCapabilityConfigFor(config, draft.imageModel).image : undefined;
@@ -853,19 +856,31 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                     : activeCommerceReferences(draft).filter((ref) => ref.role !== "sku" || ref.resourceId === draft.skus.find((sku) => sku.id === ("skuId" in image ? image.skuId : undefined))?.resourceId).length || 1;
             // Quote the size the image is generated at (自动 resolves to the platform recommendation).
             const ratio = commerceGenerationRatio(config, draft, { imageModel: image.imageModel, ratio: image.ratio, imageType: "imageType" in image && typeof image.imageType === "string" ? image.imageType : undefined });
-            return modelQuoteRequest(config, image.imageModel, "image", {
-                capability: "image",
-                input: { textCount: 1, imageCount: referenceCount, referenceImageCount: referenceCount, videoCount: 0, audioCount: 0, characterCount: 0 },
-                imageSize: ratio,
-                options: { size: ratio, imageResolution: image.resolution, count: 1 },
-            });
+            return modelQuoteRequest(
+                config,
+                image.imageModel,
+                "image",
+                {
+                    capability: "image",
+                    input: { textCount: 1, imageCount: referenceCount, referenceImageCount: referenceCount, videoCount: 0, audioCount: 0, characterCount: 0 },
+                    imageSize: ratio,
+                    options: { size: ratio, imageResolution: image.resolution, count: 1 },
+                },
+                { directChannelQuote: true },
+            );
         });
         const agentImageCount = commercePlanningReferenceCount(draft);
         const textQuote = (model: string) =>
-            modelQuoteRequest(config, model, "text", {
-                capability: "text",
-                input: { textCount: 1, imageCount: agentImageCount, referenceImageCount: agentImageCount, videoCount: 0, audioCount: 0, characterCount: 0 },
-            });
+            modelQuoteRequest(
+                config,
+                model,
+                "text",
+                {
+                    capability: "text",
+                    input: { textCount: 1, imageCount: agentImageCount, referenceImageCount: agentImageCount, videoCount: 0, audioCount: 0, characterCount: 0 },
+                },
+                { directChannelQuote: true },
+            );
         const agentRequest = textQuote(planningModel);
         const separateVision = Boolean(directionsModel) && directionsModel !== planningModel;
         const visionRequest = separateVision ? textQuote(directionsModel) : null;
@@ -1032,8 +1047,8 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error("请先选择平台和语言");
             return;
         }
-        if (adminModelIssue) {
-            message.error(adminModelIssue);
+        if (imageGenerationIssue || adminModelIssue) {
+            message.error(imageGenerationIssue || adminModelIssue);
             return;
         }
         if (!planningModels.includes(planningModel) || !planningModels.includes(directionsModel)) {
@@ -1084,6 +1099,8 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             });
             if (getActiveUserScope() !== scope) throw new Error("登录账号已切换，已停止提交");
             const task = await createGenerationTask(input);
+            // 保存期间路由会恢复项目并订阅任务，分析可能在下面的 await 结束前就返回；先登记待弹出的风格选择。
+            if (isCurrent(owner)) stylePickerPendingRef.current = !followup;
             const nextDraft = { ...snapshot, directionsTaskId: task.id };
             setEcommerceDirectionsReceipt(scope, destination.id, task.id);
             if (!followup) sessionStorage.setItem(`ecommerce-composer-submitted:${scope}:${destination.id}`, composerFingerprint(snapshot));
@@ -1095,15 +1112,18 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             }
             await save(nextDraft, existingPlan, owner);
             if (isCurrent(owner)) {
-                stylePickerPendingRef.current = !followup;
                 setDraft(nextDraft);
                 setChosenDirection(null);
-                setDirectionsTask(task);
                 if (!followup) clearSubmittedComposer(snapshot);
-                setStage("正在分析商品并推荐风格，切换页面后任务会继续");
+                // 结果已经到达时不再用“分析中”覆盖完成状态和最新任务快照。
+                if (directionsRecovered.current !== task.id) {
+                    setDirectionsTask(task);
+                    setStage("正在分析商品并推荐风格，切换页面后任务会继续");
+                }
             }
         } catch (cause) {
             if (isCurrent(owner)) {
+                stylePickerPendingRef.current = false;
                 setDirectionsStatus("idle");
                 setStage(`方向推荐提交或保存未完成：${errorText(cause)}；已提交的任务可在返回项目后恢复`);
                 message.error(errorText(cause));
@@ -1202,8 +1222,8 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error("请选择可用的图片模型");
             return;
         }
-        if (adminModelIssue) {
-            message.error(adminModelIssue);
+        if (imageGenerationIssue || adminModelIssue) {
+            message.error(imageGenerationIssue || adminModelIssue);
             return;
         }
         const pendingRefs = commercePlanningReferenceCount(planningDraft);
@@ -1338,6 +1358,10 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error(errorText(cause));
             return;
         }
+        if (imageGenerationIssue) {
+            message.error(imageGenerationIssue);
+            return;
+        }
         if (quote?.imageTotal == null) {
             message.error("当前图片方案尚未完成服务端报价，请稍后重试");
             return;
@@ -1433,7 +1457,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                     break;
                 }
                 if (isCurrent(owner)) {
-                    setStage(`第 ${index + 1} 张提交状态未确认：${errorText(cause)}。请先核对创作历史，避免重复扣费。`);
+                    // 存在旧回执时失败的是回执查询，任务可能已经创建，仍按“未确认”处理。
+                    const rejected = !sessionStorage.getItem(`ecommerce-task:${scope}:${destination.id}:${planned.id}`) && commerceSubmissionRejected(cause);
+                    setStage(rejected ? `第 ${index + 1} 张未提交：${errorText(cause)}。处理后可继续生成剩余图片，已提交的图片不受影响。` : `第 ${index + 1} 张提交状态未确认：${errorText(cause)}。请先核对创作历史，避免重复扣费。`);
                     message.error(errorText(cause));
                 }
                 break;
@@ -1479,7 +1505,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             setPlan(nextPlan);
             message.success("重试任务已提交");
         } catch (cause) {
-            if (isCurrent(session)) message.error(`重试提交状态未确认：${errorText(cause)}。请先查看创作历史，避免重复扣费。`);
+            // 只有本次新提交被服务端明确拒绝才算“未提交”；查询旧回执失败时仍可能已有重试任务。
+            const rejected = !sessionStorage.getItem(receiptKey) && commerceSubmissionRejected(cause);
+            if (isCurrent(session)) message.error(rejected ? `重试未提交：${errorText(cause)}` : `重试提交状态未确认：${errorText(cause)}。请先查看创作历史，避免重复扣费。`);
         } finally {
             session.endSubmission();
             if (isCurrent(session)) setBusy(false);
@@ -1510,8 +1538,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         const receiptKey = `ecommerce-edit:${originalProject.id}:${edited.id}`;
         const signature = JSON.stringify([edited.prompt, edited.copy, edited.negativePrompt, edited.imageModel, edited.ratio, edited.resolution]);
         type EditReceipt = { projectId: string; signature: string; taskId?: string; submitting?: boolean };
-        let receipt: EditReceipt | null = JSON.parse(sessionStorage.getItem(receiptKey) || "null");
-        if (receipt && (receipt.signature !== signature || (receipt.submitting && !receipt.taskId))) throw new Error("上次提交的回执尚未确认，请先查看创作历史，避免重复扣费");
+        const receipt: EditReceipt | null = JSON.parse(sessionStorage.getItem(receiptKey) || "null");
+        // 被服务端明确拒绝过的回执（submitting=false 且没有任务）只保留目标项目，可按本次编辑重新提交。
+        if (receipt && (receipt.taskId ? receipt.signature !== signature : receipt.submitting)) throw new Error("上次提交的回执尚未确认，请先查看创作历史，避免重复扣费");
         if (!session.beginSubmission()) throw new Error("上一项操作仍在提交，请稍候");
         submissionLock.current = true;
         setBusy(true);
@@ -1528,14 +1557,13 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                 images: plan.images.map((image) => (image.id === edited.id ? { ...edited, taskId: undefined } : image)),
             };
             destination = await saveEcommerceProject(destination, source, nextPlan);
-            receipt ||= { projectId: destination.id, signature };
-            receipt.submitting = true;
-            sessionStorage.setItem(receiptKey, JSON.stringify(receipt));
+            const pending: EditReceipt = { ...(receipt || { projectId: destination.id }), signature, submitting: true };
+            sessionStorage.setItem(receiptKey, JSON.stringify(pending));
             const logicalModelId = logicalModelIDForConfig({ ...config, model: edited.imageModel });
             // An unedited regeneration asks for a new take; otherwise the same prompt returns the same picture.
             const variation = originalImage.prompt === edited.prompt ? `\n\n${commerceRegenerationVariation(source, edited)}` : "";
-            const task = receipt.taskId
-                ? await queryGenerationTask(receipt.taskId)
+            const task = pending.taskId
+                ? await queryGenerationTask(pending.taskId)
                 : await createWorkbenchTask({
                       kind: "image",
                       prompt: `${commerceImagePrompt(source, generated, plan.productSummary, plan.visualStrategy, parameters)}${variation}`,
@@ -1543,9 +1571,13 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                       ...(logicalModelId ? { logicalModelId } : { channelId: resolveModelChannel(config, edited.imageModel).id }),
                       parameters,
                       references: refs.map((ref) => ({ resourceId: ref.resourceId, kind: "image" as const, role: "reference" as const })),
+                  }).catch((cause: unknown) => {
+                      // 明确拒绝（如积分不足）没有创建任务：解除“提交中”，补足积分或修改后可直接再试。
+                      if (commerceSubmissionRejected(cause)) sessionStorage.setItem(receiptKey, JSON.stringify({ ...pending, submitting: false }));
+                      throw cause;
                   });
-            receipt.taskId = task.id;
-            sessionStorage.setItem(receiptKey, JSON.stringify(receipt));
+            pending.taskId = task.id;
+            sessionStorage.setItem(receiptKey, JSON.stringify(pending));
             nextPlan.images = nextPlan.images.map((image) => (image.id === edited.id ? { ...image, taskId: task.id } : image));
             destination = await saveEcommerceProject(destination, source, nextPlan);
             if (!isCurrent(session)) return;
@@ -1790,36 +1822,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     const submitted = plan?.images.filter((image) => image.taskId).length || 0;
     const activeImages = plan?.images.filter((image) => image.taskId && (!tasks[image.taskId] || !terminal(tasks[image.taskId].status))).length || 0;
     const total = plan?.images.length || requestedCount;
-    // Follow-up directions are a paid text task. They start automatically only
-    // when a set finishes generating in this session (images were running and
-    // now all succeeded), once per plan. Restoring or reopening an already
-    // finished project never starts them, so it cannot charge.
-    const runningImages = plan?.images.filter((image) => image.taskId && tasks[image.taskId] && !terminal(tasks[image.taskId].status)).length || 0;
-    const followupWatchRef = useRef<{ planKey: string; sawActive: boolean; fired: boolean }>({ planKey: "", sawActive: false, fired: false });
-    const followupPlanKey = plan ? `${project?.id || ""}:${plan.images.map((image) => image.taskId || "").join(",")}` : "";
-    useEffect(() => {
-        const watch = followupWatchRef.current;
-        if (watch.planKey !== followupPlanKey) {
-            // Task IDs are filled in one by one while submitting; keep the
-            // "was active" observation across those updates of the same plan.
-            const samePlanFilling = watch.planKey && followupPlanKey.startsWith(watch.planKey.split(":")[0] + ":") && watch.sawActive && !watch.fired;
-            followupWatchRef.current = { planKey: followupPlanKey, sawActive: Boolean(samePlanFilling), fired: false };
-        }
-        const current = followupWatchRef.current;
-        if (!plan || !total) return;
-        // Only a loaded, still-running image counts: tasks of a restored project
-        // are briefly unknown while loading and must not look like generation.
-        if (runningImages > 0) {
-            current.sawActive = true;
-            return;
-        }
-        if (activeImages > 0) return;
-        if (!current.sawActive || current.fired || completed !== total) return;
-        if (creativeDirections.length || directionsStatus === "loading" || busy || planningPending || restoring) return;
-        current.fired = true;
-        void requestCreativeDirections(true);
-        // eslint-disable-next-line react-hooks/exhaustive-deps -- requestCreativeDirections is recreated each render; firing is guarded by the ref.
-    }, [followupPlanKey, runningImages, activeImages, completed, total, creativeDirections.length, directionsStatus, busy, planningPending, restoring]);
+    // Follow-up directions are a paid text task and clear the chosen direction
+    // from the draft, so a finished set only offers the「为你推荐下一组创意方向」
+    // button; nothing is charged until the user asks for it.
     const stage = submitted > 0 && completed === total ? `全部完成 · ${completed} 张图片已保存到资产库` : stageMessage;
     // Failed analysis used to render as plain grey text under the greeting; show
     // it as an error with a retry so the user knows what to do next.
@@ -1912,6 +1917,10 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         try {
             setConfirmAction(action);
             setFlyPanel(null);
+            if (imageGenerationIssue) {
+                message.error(imageGenerationIssue);
+                return;
+            }
             if (creationMode === "ai" && adminModelIssue) {
                 message.error(adminModelIssue);
                 return;
@@ -2339,7 +2348,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                             </button>
                         ) : !plan && !chosenDirection ? (
                             <div className="commerce-assistant-intro">
-                                <img src="/yoru/yoru-body.png" alt="小夜全身形象" />
+                                <img src="/commerce/agent-mark.svg" alt="小夜" />
                                 <div>
                                     <strong>Hi, {nickname}~</strong>
                                     <b>我能帮你什么呢？</b>
@@ -2350,7 +2359,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                         {restoring || planningPending || directionsStatus === "loading" ? (
                             <div className="commerce-assistant-progress" role="status">
                                 <span className="commerce-thinking-orbit" aria-hidden="true">
-                                    <img src="/yoru/yoru-body.png" alt="" />
+                                    <img src="/commerce/agent-mark.svg" alt="" />
                                 </span>
                                 <span>{restoring ? "正在恢复项目…" : directionsStatus === "loading" ? "小夜正在分析商品并推荐视觉风格…" : "小夜正在完成视觉策划…"}</span>
                             </div>
