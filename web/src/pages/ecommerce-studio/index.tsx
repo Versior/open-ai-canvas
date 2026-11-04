@@ -7,6 +7,7 @@ import { WorkspacePage } from "@/components/layout/workspace-page";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { EmptyState } from "@/components/ui/product/empty-state/empty-state";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
+import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { createStudioProduct, studioOutputCount } from "@/lib/ecommerce-studio/product";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { downloadBrowserMedia } from "@/services/browser-download";
@@ -101,7 +102,7 @@ export default function EcommerceStudioPage() {
     };
 
     const groups = useMemo(() => (product ? studioShotGroups(product) : []), [product]);
-    const blocked = !product?.photos.length ? "先上传商品图" : !image.value ? "先选择图片模型" : "";
+    const blocked = !product?.photos.length ? "先上传商品图" : !studioReferencePhotos(product.photos).length ? "至少点亮一张商品图的星标，出图以它为外观依据" : !image.value ? "先选择图片模型" : "";
 
     const addReference = (output: StudioOutput) => {
         if (!product) return;

@@ -31,6 +31,12 @@ async function imageSize(file: File): Promise<{ width?: number; height?: number 
     }
 }
 
+/** 改视角：改成吊牌就不再作外观依据；从吊牌改回其他视角时重新作为外观依据。 */
+export function studioViewPatch(photo: Pick<StudioPhoto, "view">, view: StudioPhotoView): Pick<StudioPhoto, "view"> & Partial<Pick<StudioPhoto, "truth">> {
+    if (view === "tag") return { view, truth: false };
+    return photo.view === "tag" ? { view, truth: true } : { view };
+}
+
 export function studioImageFiles(list: FileList | File[] | null | undefined) {
     return Array.from(list || []).filter((file) => file.type.startsWith("image/"));
 }

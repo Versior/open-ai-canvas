@@ -1,5 +1,5 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
-import { CircleHelp, LayoutTemplate, RotateCcw, ScanSearch, Settings2, Sparkles } from "lucide-react";
+import { LayoutTemplate, RotateCcw, ScanSearch, Settings2, Sparkles } from "lucide-react";
 import { useMemo, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
@@ -22,11 +22,12 @@ import {
 } from "@/lib/ecommerce-studio/brief";
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
-import { studioModelAdapter } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { moveStudioSetEntry, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { StudioDossierCard } from "./studio-dossier";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
 import { StudioShotList } from "./studio-shot-list";
 import { StudioSuitePicker } from "./studio-suite-picker";
@@ -99,7 +100,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const images = setKind ? included.length : brief.count;
     const firstEntry = included[0] || entries[0];
     const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(spec.role || "main-selling", product);
-    const referenceCount = Math.min(profile?.references.maxImages || 4, product.photos.filter((photo) => photo.view !== "tag").length + product.references.length);
+    const truthCount = studioReferencePhotos(product.photos, 8).length;
+    const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + product.references.length);
     const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
@@ -108,7 +110,19 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const noTextOnMain = !spec.set && spec.role ? studioPlatformForbidsText(product, spec.role) : false;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
-    const blocked = !product.photos.length ? "先上传商品图" : !image.value ? "先选择图片模型" : uploading ? "图片上传中，请稍候" : suiteMissing ? "先选择一套模板" : setKind && !included.length ? "镜头清单里至少留一张" : "";
+    const blocked = !product.photos.length
+        ? "先上传商品图"
+        : !truthCount
+          ? "至少点亮一张商品图的星标，出图以它为外观依据"
+          : !image.value
+            ? "先选择图片模型"
+            : uploading
+              ? "图片上传中，请稍候"
+              : suiteMissing
+                ? "先选择一套模板"
+                : setKind && !included.length
+                  ? "镜头清单里至少留一张"
+                  : "";
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
@@ -118,8 +132,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         if (!text.value) return void message.warning("没有可用的文本模型，先到模型设置里添加");
         try {
             const result = await runner.fill(ensure(), text.value);
-            const pending = result.dossier.questions.length;
-            message.success(pending ? `已填好，${pending} 处需要你确认` : "已按商品图填好");
+            const pending = [result.openQuestions ? `${result.openQuestions} 个问题` : "", result.unsureFacts ? `${result.unsureFacts} 条推断` : ""].filter(Boolean);
+            message.success(pending.length ? `已填好，还有${pending.join("、")}，在「商品档案」里核对` : "已按商品图填好");
             if (result.infoKept)
                 modal.confirm({
                     title: "用识别出的卖点替换现在的内容？",
@@ -152,7 +166,6 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     };
 
     const ratioLabel = brief.sameLayout && product.references.length ? "自动（跟参考图）" : "自动（推荐）";
-    const questions = product.dossier?.questions || [];
 
     return (
         <section className="es-form" aria-label="生图表单" onPasteCapture={onPaste}>
@@ -166,6 +179,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         onFiles={(files) => void uploads.addFiles("photos", files)}
                         onAssets={(assets) => void uploads.addAssets("photos", assets)}
                         onRemove={(photo) => edit((current) => ({ ...current, photos: current.photos.filter((item) => item.id !== photo.id) }))}
+                        onPatch={(photo, patch) => edit((current) => ({ ...current, photos: current.photos.map((item) => (item.id === photo.id ? { ...item, ...patch } : item)) }))}
                     />
                     <StudioUploadBox
                         kind="references"
@@ -225,21 +239,13 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         span={6}
                         htmlFor="es-info"
                         hint={
-                            issues.length || questions.length ? (
+                            issues.length ? (
                                 <div className="es-hints">
                                     {issues.slice(0, 3).map((issue, index) => (
                                         <span key={`${issue.term}-${index}`} data-tone="warning">
                                             {issue.field}「{issue.term}」：{issue.reason}
                                         </span>
                                     ))}
-                                    {questions.length ? (
-                                        <span>
-                                            <CircleHelp size={12} aria-hidden /> 识别时没能确认：{questions.slice(0, 3).join("；")}
-                                            <button type="button" className="es-link" onClick={() => edit((current) => (current.dossier ? { ...current, dossier: { ...current.dossier, questions: [] } } : current))}>
-                                                知道了
-                                            </button>
-                                        </span>
-                                    ) : null}
                                 </div>
                             ) : undefined
                         }
@@ -256,6 +262,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     </Field>
                 </div>
 
+                {product.dossier ? <StudioDossierCard key={product.dossier.recognizedAt || "dossier"} dossier={product.dossier} edit={edit} /> : null}
                 <div className="es-section-head">
                     <h2>出图设置</h2>
                 </div>

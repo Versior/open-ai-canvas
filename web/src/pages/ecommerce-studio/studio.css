@@ -303,16 +303,45 @@
     height: 100%;
     object-fit: cover;
 }
-.es-thumb-tag {
+/* 视角标签：点开改视角；吊牌只读文字，不作外观依据。 */
+.es-thumb-view {
     position: absolute;
     right: 0;
     bottom: 0;
     left: 0;
     padding: 1px 0;
+    border: 0;
     background: var(--es-glass);
     color: var(--es-on-media);
     font-size: 10px;
+    line-height: 1.4;
     text-align: center;
+    cursor: pointer;
+}
+.es-thumb-view:hover {
+    background: var(--es-glass-strong);
+}
+/* 星标：外观依据。点亮时常显，未点亮时半透明，悬停才完全显示。 */
+.es-thumb-star {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: var(--es-glass-strong);
+    color: var(--es-on-media);
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity var(--es-motion);
+}
+.es-thumb[data-truth] .es-thumb-star,
+.es-thumb:is(:hover, :focus-within) .es-thumb-star {
+    opacity: 1;
 }
 .es-thumb-remove {
     position: absolute;
@@ -499,6 +528,191 @@
     font-family: inherit;
     font-size: var(--fs-caption);
     white-space: pre-wrap;
+}
+
+/* ---------- 商品档案 ---------- */
+.es-dossier {
+    margin-top: var(--space-4);
+    border-radius: var(--es-radius-control);
+    background: var(--es-muted);
+}
+.es-dossier > summary {
+    padding: var(--space-3) var(--space-4);
+    cursor: pointer;
+}
+.es-dossier-title {
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+.es-dossier-meta {
+    margin-left: var(--space-2);
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
+.es-dossier-body {
+    display: grid;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) var(--space-4);
+}
+.es-dossier-note {
+    margin: 0;
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+.es-dossier-block {
+    display: grid;
+    gap: 4px;
+}
+.es-fact-group-label {
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+}
+.es-facts,
+.es-questions {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.es-fact {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    min-height: 34px;
+    padding: 2px 2px 2px var(--space-3);
+    border-radius: var(--r-md);
+    background: var(--es-panel);
+}
+.es-fact-label {
+    flex: 0 0 auto;
+    max-width: 30%;
+    overflow: hidden;
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.es-fact-value {
+    display: inline-flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--es-ink);
+    font-size: var(--fs-ui);
+    text-align: left;
+    cursor: text;
+    transition: background-color var(--es-motion);
+}
+.es-fact-value:hover {
+    background: var(--es-hover);
+}
+.es-fact-value span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.es-fact-value svg {
+    flex: 0 0 auto;
+    color: var(--es-ink-3);
+    opacity: 0.5;
+    transition: opacity var(--es-motion);
+}
+.es-fact-value:is(:hover, :focus-visible) svg {
+    opacity: 1;
+}
+.es-fact:not([data-usable]) .es-fact-value span {
+    color: var(--es-ink-2);
+}
+.es-fact-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    padding: 0 6px;
+    border: 1px solid var(--es-line-strong);
+    border-radius: var(--r-sm);
+    background: var(--es-panel);
+    color: var(--es-ink);
+    font: inherit;
+    font-size: var(--fs-ui);
+}
+.es-fact-badge {
+    flex: 0 0 auto;
+    padding: 1px 8px;
+    border-radius: var(--r-full);
+    font-size: var(--fs-tiny);
+    line-height: 1.6;
+    white-space: nowrap;
+}
+.es-fact-badge:is([data-evidence="visible"], [data-evidence="confirmed"]) {
+    background: color-mix(in srgb, var(--status-success) 14%, transparent);
+    color: var(--status-success);
+}
+.es-fact-badge:is([data-evidence="inferred"], [data-evidence="pending"]) {
+    background: color-mix(in srgb, var(--status-warning) 14%, transparent);
+    color: var(--status-warning);
+}
+.es-question {
+    display: grid;
+    gap: 6px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--r-md);
+    background: var(--es-panel);
+}
+.es-question-text {
+    font-size: var(--fs-ui);
+    line-height: 1.5;
+}
+.es-question-answer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.es-question-answer .ant-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.es-question-answer .es-link {
+    margin-left: 0;
+    white-space: nowrap;
+}
+.es-invariants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.es-invariant {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px 2px 10px;
+    border-radius: var(--r-full);
+    background: var(--es-panel);
+    font-size: var(--fs-caption);
+}
+.es-invariant button {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--es-ink-3);
+    cursor: pointer;
+}
+.es-invariant button:hover {
+    background: var(--es-hover);
+    color: var(--es-ink);
 }
 
 /* ---------- 镜头清单与模板 ---------- */
@@ -993,7 +1207,7 @@
 }
 .es-prompt-layer span {
     color: var(--es-ink-3);
-    font-size: var(--fs-tiny, 11px);
+    font-size: var(--fs-tiny);
 }
 .es-prompt-layer p {
     margin: 0;

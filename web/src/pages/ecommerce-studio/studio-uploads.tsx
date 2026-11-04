@@ -1,11 +1,11 @@
-import { App, Spin, Tooltip } from "antd";
-import { Images, Plus, X } from "lucide-react";
+import { App, Dropdown, Spin, Tooltip } from "antd";
+import { Images, Plus, Star, X } from "lucide-react";
 import { nanoid } from "nanoid";
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
-import { STUDIO_VIEW_LABEL, type StudioPhoto, type StudioProduct } from "@/lib/ecommerce-studio/types";
+import { STUDIO_VIEW_LABEL, type StudioPhoto, type StudioPhotoView, type StudioProduct } from "@/lib/ecommerce-studio/types";
 import type { PickedWorkbenchAsset } from "@/pages/workbench/workbench-asset-picker";
 import { studioImageUrl } from "./studio-parts";
-import { guessStudioView, studioImageFiles, uploadStudioPhoto } from "./studio-upload";
+import { guessStudioView, studioImageFiles, studioViewPatch, uploadStudioPhoto } from "./studio-upload";
 import { useStudioStore } from "./use-studio-store";
 
 const WorkbenchAssetPicker = lazy(() => import("@/pages/workbench/workbench-asset-picker").then((module) => ({ default: module.WorkbenchAssetPicker })));
@@ -14,6 +14,9 @@ export type StudioUploadKind = "photos" | "references";
 
 const LIMITS: Record<StudioUploadKind, number> = { photos: 8, references: 3 };
 const LABELS: Record<StudioUploadKind, string> = { photos: "商品图", references: "参考图" };
+const VIEW_ITEMS = (Object.keys(STUDIO_VIEW_LABEL) as StudioPhotoView[]).map((view) => ({ key: view, label: view === "tag" ? "吊牌（只读文字）" : STUDIO_VIEW_LABEL[view] }));
+
+export type StudioPhotoPatch = Partial<Pick<StudioPhoto, "view" | "truth">>;
 
 /** 素材库里选的图没有尺寸记录：读一次原图拿宽高，同款版式要按它定画幅。 */
 function probeSize(url: string) {
@@ -105,6 +108,7 @@ export function StudioUploadBox({
     onFiles,
     onAssets,
     onRemove,
+    onPatch,
 }: {
     kind: StudioUploadKind;
     hint: string;
@@ -113,6 +117,8 @@ export function StudioUploadBox({
     onFiles: (files: File[]) => void;
     onAssets: (assets: PickedWorkbenchAsset[]) => void;
     onRemove: (photo: StudioPhoto) => void;
+    /** 商品图可以改视角、点亮或取消星标（外观依据）；参考图不传。 */
+    onPatch?: (photo: StudioPhoto, patch: StudioPhotoPatch) => void;
 }) {
     const input = useRef<HTMLInputElement>(null);
     const [dragging, setDragging] = useState(false);
@@ -144,17 +150,33 @@ export function StudioUploadBox({
                 <span>{items.length ? `${items.length}/${LIMITS[kind]}` : hint}</span>
             </header>
             <div className="es-upload-row">
-                {items.map((photo) => (
-                    <Tooltip key={photo.id} title={kind === "photos" ? (photo.view === "tag" ? "吊牌：只读文字，不作外观依据" : STUDIO_VIEW_LABEL[photo.view]) : photo.name || "参考图"} mouseEnterDelay={0.4}>
-                        <div className="es-thumb">
+                {items.map((photo) => {
+                    const truth = photo.truth && photo.view !== "tag";
+                    return (
+                        <div key={photo.id} className="es-thumb" data-truth={truth || undefined} title={kind === "references" ? photo.name || "参考图" : undefined}>
                             <img src={studioImageUrl(photo.resourceId, true)} alt={photo.name || label} loading="lazy" />
-                            {kind === "photos" && photo.view === "tag" ? <span className="es-thumb-tag">吊牌</span> : null}
+                            {kind === "photos" && onPatch ? (
+                                <>
+                                    {photo.view === "tag" ? null : (
+                                        <Tooltip title={truth ? "外观依据：出图以这张为准，点一下取消" : "点亮星标，出图时以这张为外观依据"} mouseEnterDelay={0.3}>
+                                            <button type="button" className="es-thumb-star" aria-pressed={truth} aria-label={truth ? "取消外观依据星标" : "设为外观依据"} onClick={() => onPatch(photo, { truth: !truth })}>
+                                                <Star size={11} strokeWidth={2} fill={truth ? "currentColor" : "none"} />
+                                            </button>
+                                        </Tooltip>
+                                    )}
+                                    <Dropdown trigger={["click"]} rootClassName="es-portal" menu={{ items: VIEW_ITEMS, selectable: true, selectedKeys: [photo.view], onClick: ({ key }) => onPatch(photo, studioViewPatch(photo, key as StudioPhotoView)) }}>
+                                        <button type="button" className="es-thumb-view" aria-label={`视角：${STUDIO_VIEW_LABEL[photo.view]}，点击修改`}>
+                                            {STUDIO_VIEW_LABEL[photo.view]}
+                                        </button>
+                                    </Dropdown>
+                                </>
+                            ) : null}
                             <button type="button" className="es-thumb-remove" aria-label={`移除这张${label}`} onClick={() => onRemove(photo)}>
                                 <X size={12} strokeWidth={2.25} />
                             </button>
                         </div>
-                    </Tooltip>
-                ))}
+                    );
+                })}
                 {Array.from({ length: pending }, (_, index) => (
                     <div key={`pending-${index}`} className="es-thumb" data-pending="true" aria-label="上传中">
                         <Spin size="small" />

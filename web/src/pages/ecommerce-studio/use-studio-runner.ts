@@ -6,12 +6,13 @@ import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-anal
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
+import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { compileStudioPrompt } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioShot, studioAttemptActive, studioPlanOf, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioRunOf } from "@/lib/ecommerce-studio/runs";
-import type { StudioAttempt, StudioAttemptStatus, StudioOutput, StudioPhoto, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
+import { studioFactUsable, type StudioAttempt, type StudioAttemptStatus, type StudioOutput, type StudioPhoto, type StudioPlanKind, type StudioProduct, type StudioRun, type StudioShot, type StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
@@ -167,10 +168,10 @@ export function useStudioRunner() {
         return product;
     }, []);
 
-    /** 看图识别并填表：建档、品牌、类型、主标题和卖点一次写好。已经填过的字段不覆盖。 */
+    /** 看图识别并填表：建档、品牌、类型、主标题和卖点一次写好。已经填过的字段不覆盖，档案里卖家确认过的信息保留。 */
     const fill = useCallback(
         (productId: string, textModel: string) =>
-            trackAnalysis(productId, "fill", async (): Promise<StudioFillResult & { info: string; infoKept: boolean }> => {
+            trackAnalysis(productId, "fill", async (): Promise<StudioFillResult & { info: string; infoKept: boolean; openQuestions: number; unsureFacts: number }> => {
                 const product = read(productId);
                 if (!product.photos.length) throw new Error("请先上传至少一张商品图");
                 const current = configRef.current;
@@ -200,15 +201,20 @@ export function useStudioRunner() {
                     .map(studioPointLine)
                     .join("\n");
                 let infoKept = false;
+                let openQuestions = parsed.dossier.questions.length;
+                let unsureFacts = 0;
                 update(
                     productId,
                     (value) => {
                         // 只填空着的字段：用户已经写过的内容不被识别结果覆盖。
                         infoKept = Boolean(value.sellerNotes.trim()) && Boolean(info);
+                        const dossier = mergeStudioDossier(value.dossier, parsed.dossier);
+                        openQuestions = dossier.questions.length;
+                        unsureFacts = dossier.facts.filter((fact) => !studioFactUsable(fact)).length;
                         return {
                             ...value,
                             name: value.name || parsed.dossier.name,
-                            dossier: parsed.dossier,
+                            dossier,
                             sellingPoints: parsed.sellingPoints,
                             sellerNotes: value.sellerNotes.trim() ? value.sellerNotes : info,
                             brief: { ...value.brief, brand: value.brief.brand || parsed.brand, productType: value.brief.productType || parsed.dossier.category },
@@ -217,7 +223,7 @@ export function useStudioRunner() {
                     },
                     { immediate: true },
                 );
-                return { ...parsed, info, infoKept };
+                return { ...parsed, info, infoKept, openQuestions, unsureFacts };
             }),
         [read, update],
     );
