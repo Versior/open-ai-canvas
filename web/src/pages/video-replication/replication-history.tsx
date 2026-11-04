@@ -1,5 +1,5 @@
-import { Skeleton } from "antd";
-import { Clapperboard } from "lucide-react";
+import { Button, Skeleton } from "antd";
+import { Clapperboard, LoaderCircle, Plus } from "lucide-react";
 
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
 import { cn } from "@/lib/utils";
@@ -11,10 +11,15 @@ type Props = {
     loading: boolean;
     error: string;
     selectedId: string;
+    /** 正在后台跑的那条，列表里显示进行中。 */
+    runningId: string;
+    className?: string;
     onSelect: (id: string) => void;
+    onNew: () => void;
 };
 
-function recordStatus(record: VideoReplicationRecord) {
+function recordStatus(record: VideoReplicationRecord, running: boolean) {
+    if (running) return { label: "进行中", tone: "running" as const };
     if (record.status === "queued" || record.status === "running") return { label: record.stage || "拆解中", tone: "running" as const };
     if (record.status === "failed" || record.status === "cancelled") return { label: record.status === "cancelled" ? "已取消" : "拆解失败", tone: "failed" as const };
     if (!record.analyzedAt) return { label: "未分析", tone: "pending" as const };
@@ -26,22 +31,25 @@ function recordTime(value: string) {
     return Number.isNaN(date.getTime()) ? "" : date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/** 历史拆解：最近 50 次，含正在跑和失败的；点一条在右侧打开。 */
-export function ReplicationHistory({ records, loading, error, selectedId, onSelect }: Props) {
+/** 左栏：新建入口和最近 50 次拆解（含进行中、失败的）；列表自己滚动。 */
+export function ReplicationHistory({ records, loading, error, selectedId, runningId, className, onSelect, onNew }: Props) {
     return (
-        <section className="flex min-h-0 flex-col gap-2 rounded-[var(--r-lg)] border border-border bg-card p-3" aria-label="拆解记录">
-            <h2 className="px-1 text-sm font-semibold">拆解记录</h2>
-            {loading ? <Skeleton active paragraph={{ rows: 3 }} title={false} /> : null}
+        <section className={cn("flex min-h-0 flex-col gap-3 rounded-[var(--r-lg)] border border-border bg-card p-3", className)} aria-label="拆解记录">
+            <Button type={selectedId ? "default" : "primary"} block icon={<Plus className="size-4" />} onClick={onNew} aria-pressed={!selectedId}>
+                新建拆解
+            </Button>
+            <h2 className="px-1 text-xs font-medium text-muted-foreground">拆解记录</h2>
+            {loading ? <Skeleton active paragraph={{ rows: 4 }} title={false} /> : null}
             {error ? (
                 <p role="alert" className="px-1 text-xs text-destructive">
                     {error}
                 </p>
             ) : null}
             {!loading && !error && !records?.length ? <p className="px-1 py-2 text-xs text-muted-foreground">还没有拆解过视频</p> : null}
-            {/* 最多 50 条：列表自己滚动，不把左栏撑得比视口还高。 */}
-            <ul className="flex max-h-[520px] flex-col gap-1 overflow-y-auto">
+            <ul className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1 max-lg:max-h-64">
                 {records?.map((record) => {
-                    const status = recordStatus(record);
+                    const running = record.id === runningId;
+                    const status = recordStatus(record, running);
                     const active = record.id === selectedId;
                     return (
                         <li key={record.id}>
@@ -59,7 +67,12 @@ export function ReplicationHistory({ records, loading, error, selectedId, onSele
                                     <span className="truncate text-xs text-muted-foreground">
                                         {[recordTime(record.createdAt), record.shotCount ? `${record.shotCount} 镜` : "", record.durationMs ? formatTeardownTime(record.durationMs) : ""].filter(Boolean).join(" · ")}
                                     </span>
-                                    {status ? <span className={cn("text-xs", status.tone === "failed" ? "text-destructive" : "text-muted-foreground")}>{status.label}</span> : null}
+                                    {status ? (
+                                        <span className={cn("flex items-center gap-1 text-xs", status.tone === "failed" ? "text-destructive" : status.tone === "running" ? "text-primary" : "text-muted-foreground")}>
+                                            {status.tone === "running" ? <LoaderCircle className="size-3 animate-spin motion-reduce:animate-none" aria-hidden /> : null}
+                                            {status.label}
+                                        </span>
+                                    ) : null}
                                 </span>
                             </button>
                         </li>

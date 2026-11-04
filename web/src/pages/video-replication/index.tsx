@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { App } from "antd";
-import { ScanSearch } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { PageHeader, WorkspacePage } from "@/components/layout/workspace-page";
-import { EmptyState } from "@/components/ui/product/empty-state/empty-state";
 import { videoTeardownModelError, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getVideoReplication, listVideoReplications, type VideoTeardownBundle } from "@/services/api/video-replication";
@@ -14,14 +12,15 @@ import { openVideoTeardownInCanvas } from "./replication-canvas";
 import { ReplicationForm } from "./replication-form";
 import { ReplicationHistory } from "./replication-history";
 import { ReplicationResult } from "./replication-result";
-import { dismissReplicationError, reanalyzeReplication, REPLICATION_STAGE_LABELS, resumePendingReplication, startReplication, useReplicationRun, useReplicationRunId, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
+import { dismissReplicationError, reanalyzeReplication, resumePendingReplication, startReplication, useReplicationRun, useReplicationRunId, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
 
 function errorText(error: unknown) {
     return error ? (error instanceof Error ? error.message : "读取失败") : "";
 }
 
 /**
- * 视频复刻：左边新建拆解和历史记录，右边看选中的那条。当前记录写在 ?id= 里，刷新和回退都能回到原处。
+ * 视频复刻：左栏是「新建拆解」和拆解记录，右栏是新建表单或选中的记录，两栏各自滚动。
+ * 当前记录写在 ?id= 里，?new 打开新建表单；地址里都没有时，有正在跑的拆解就显示它，否则显示新建表单。
  * 拆解结果（镜头事实和模型分析）都存在服务端；「在画布中打开」再把它们铺到一张新画布上继续创作。
  */
 export default function VideoReplicationPage() {
@@ -36,6 +35,7 @@ export default function VideoReplicationPage() {
     const model = pickedModel || defaultModel;
     const [transcribe, setTranscribe] = useState(true);
     const [opening, setOpening] = useState(false);
+    const contentRef = useRef<HTMLDivElement>(null);
 
     const history = useQuery({
         queryKey: videoReplicationKeys.list(scope),
@@ -44,8 +44,7 @@ export default function VideoReplicationPage() {
     });
     const records = history.data;
     const runId = useReplicationRunId();
-    // 地址里没指定记录时，优先显示正在跑的那条（离开页面再回来也能接着看进度）。
-    const selectedId = params.get("id") || runId || records?.[0]?.id || "";
+    const selectedId = params.get("id") || (params.has("new") ? "" : runId);
     const detail = useQuery({
         queryKey: videoReplicationKeys.detail(scope, selectedId),
         queryFn: ({ signal }) => getVideoReplication(selectedId, signal),
@@ -61,6 +60,10 @@ export default function VideoReplicationPage() {
     useEffect(() => {
         if (records) resumePendingReplication(records, configRef.current);
     }, [records]);
+    // 换一条记录时右栏回到顶部。
+    useEffect(() => {
+        contentRef.current?.scrollTo({ top: 0 });
+    }, [selectedId]);
 
     const startRun = (source: ReplicationSource, options: { model: string; transcribe: boolean }) => {
         dismissReplicationError();
@@ -69,7 +72,7 @@ export default function VideoReplicationPage() {
     const reanalyzeSelected = (fallbackTitle: string) => {
         const error = videoTeardownModelError(config, model);
         if (error) {
-            message.warning(error);
+            message.warning(`${error}（在「新建拆解」里换一个分析模型）`);
             return;
         }
         dismissReplicationError();
@@ -88,37 +91,40 @@ export default function VideoReplicationPage() {
         }
     };
 
-    // 新建前还没有任务 ID 的步骤（导入、上传）失败时，错误只能显示在表单下面。
-    const orphanRun = run && !run.id ? run : null;
+    // 导入、上传这两步还没有拆解任务，进度和错误显示在新建表单里。
+    const formRun = run && !run.id ? run : null;
     return (
-        <WorkspacePage>
-            <PageHeader title="视频复刻" description="上传视频或粘贴抖音、TikTok 链接，拆出镜头、口播、运镜和节奏，生成可直接复用的分镜表和拆解报告。" />
-            <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(300px,360px)_minmax(0,1fr)]">
-                <aside className="flex min-w-0 flex-col gap-4">
-                    <ReplicationForm config={config} model={model} onModelChange={setPickedModel} transcribe={transcribe} onTranscribeChange={setTranscribe} busy={running} onStart={startRun} />
-                    {orphanRun ? (
-                        <p role={orphanRun.error ? "alert" : "status"} className={orphanRun.error ? "px-1 text-sm text-destructive" : "px-1 text-sm text-muted-foreground"}>
-                            {orphanRun.error ? `拆解失败：${orphanRun.error}` : `${REPLICATION_STAGE_LABELS[orphanRun.stage]}${orphanRun.detail ? ` · ${orphanRun.detail}` : ""}${orphanRun.percent !== undefined ? ` ${orphanRun.percent}%` : ""}`}
-                        </p>
-                    ) : null}
-                    <ReplicationHistory records={records} loading={history.isPending} error={errorText(history.error)} selectedId={selectedId} onSelect={select} />
-                </aside>
-                <div className="min-w-0">
-                    {selectedId ? (
-                        <ReplicationResult
-                            detail={detail.data}
-                            loading={detail.isPending}
-                            error={errorText(detail.error)}
-                            run={run}
-                            busy={running}
-                            opening={opening}
-                            modelLabel={(id) => modelOptionLabel(config, id)}
-                            onReanalyze={reanalyzeSelected}
-                            onOpenCanvas={(bundle, analysis) => void openInCanvas(bundle, analysis)}
-                        />
-                    ) : history.isPending ? null : (
-                        <EmptyState icon={ScanSearch} title="还没有拆解记录" description="在左边粘贴链接或上传一段 3 分钟以内的视频，开始第一次拆解。" />
-                    )}
+        <WorkspacePage fluid scroll={false}>
+            <div className="flex h-full flex-col gap-3 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4 lg:overflow-hidden xl:px-5">
+                <PageHeader title="视频复刻" description="上传视频或粘贴抖音、TikTok 链接，拆出镜头、口播、运镜和节奏，得到可直接复用的分镜和复刻提示词。" />
+                <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[288px_minmax(0,1fr)]">
+                    <ReplicationHistory
+                        records={records}
+                        loading={history.isPending}
+                        error={errorText(history.error)}
+                        selectedId={selectedId}
+                        runningId={running ? runId : ""}
+                        className="lg:h-full"
+                        onSelect={select}
+                        onNew={() => setParams({ new: "1" })}
+                    />
+                    <div ref={contentRef} className="min-w-0 lg:h-full lg:overflow-y-auto lg:pr-1">
+                        {selectedId ? (
+                            <ReplicationResult
+                                detail={detail.data}
+                                loading={detail.isPending}
+                                error={errorText(detail.error)}
+                                run={run}
+                                busy={running}
+                                opening={opening}
+                                modelLabel={(id) => modelOptionLabel(config, id)}
+                                onReanalyze={reanalyzeSelected}
+                                onOpenCanvas={(bundle, analysis) => void openInCanvas(bundle, analysis)}
+                            />
+                        ) : (
+                            <ReplicationForm config={config} model={model} onModelChange={setPickedModel} transcribe={transcribe} onTranscribeChange={setTranscribe} busy={running} run={formRun} onStart={startRun} />
+                        )}
+                    </div>
                 </div>
             </div>
         </WorkspacePage>
