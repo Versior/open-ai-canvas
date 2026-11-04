@@ -260,7 +260,7 @@ function SummarySection({ bundle, analysis }: { bundle: VideoTeardownBundle; ana
     return (
         <section className="flex flex-col gap-5 rounded-[var(--r-lg)] border border-border bg-card p-4 sm:p-5" aria-label="全片结构">
             {summary.hook ? (
-                <div className="border-l-2 border-primary pl-3">
+                <div className="rounded-[var(--r-md)] bg-muted/60 p-3">
                     <h3 className="text-xs font-medium text-muted-foreground">钩子</h3>
                     <p className="mt-1 text-base leading-7">{summary.hook}</p>
                 </div>
