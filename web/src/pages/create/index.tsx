@@ -1206,6 +1206,11 @@ export default function CreatePage() {
         threadScrollRef.current?.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
         window.requestAnimationFrame(() => composerFocusRef.current?.focus({ preventScroll: true }));
     };
+    // 浮动输入条与完整创作区共用同一份提示词；回到顶部后接着在完整创作区里编辑。
+    const returnToComposer = () => {
+        threadScrollRef.current?.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+        window.requestAnimationFrame(() => composerFocusRef.current?.focus({ preventScroll: true }));
+    };
 
     const composerProps = {
         mode,
@@ -1267,10 +1272,13 @@ export default function CreatePage() {
                         initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
                         transition={{ duration: reducedMotion ? 0 : .15 }}>
                         <PenLine aria-hidden="true" />
-                        <input aria-label="快捷编辑提示词" placeholder="写下提示词…" value={prompt} disabled={busy || referenceReplacementBusy} onChange={(event) => setPrompt(event.target.value)} />
-                        <button type="button" aria-label="返回顶部" onClick={() => {
-                            threadScrollRef.current?.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
-                        }}><ArrowUp aria-hidden="true" /><span>返回顶部</span></button>
+                        <input aria-label="快捷编辑提示词，回车回到完整创作区" placeholder="写下提示词…" value={prompt} disabled={busy || referenceReplacementBusy} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => {
+                            // 浮条看不到模型和报价，回车只带回完整创作区，不直接提交生成。
+                            if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                            event.preventDefault();
+                            returnToComposer();
+                        }} />
+                        <button type="button" aria-label="返回顶部" onClick={returnToComposer}><ArrowUp aria-hidden="true" /><span>返回顶部</span></button>
                     </motion.div> : null}
                 </AnimatePresence>
                 <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-home-scroll creation-scrollbar">
