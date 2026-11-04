@@ -414,38 +414,47 @@ func formatAgentPetCredits(microcredits int64) string {
 // AgentPetSpritesheet 返回图集。已上架的形象所有登录用户可读（用于商店预览），
 // 已下架的只有已拥有的用户和管理员可读。
 func (s *Service) AgentPetSpritesheet(actor *model.User, petID string) (*AgentPetSheet, error) {
-	if actor == nil {
-		return nil, Unauthorized("请先登录")
-	}
-	entries, err := s.agentPetLibrary()
+	entry, err := s.readableAgentPetEntry(actor, petID)
 	if err != nil {
 		return nil, err
 	}
-	entry, found := findAgentPetEntry(entries, petID)
-	if !found {
-		return nil, NotFound("形象不存在")
-	}
-	if !entry.pet.Enabled && s.RequireAdmin(actor) != nil {
-		owned, err := s.repo.OwnedAgentPetIDs(actor.ID)
-		if err != nil {
-			return nil, err
-		}
-		if !owned[entry.pet.ID] {
-			return nil, NotFound("形象不存在")
-		}
-	}
-	if entry.pet.Source == agentPetSourceBuiltin {
-		data, sheet, err := agentpet.BuiltinSheet(entry.pet.ID)
-		if err != nil {
-			return nil, err
-		}
-		return &AgentPetSheet{Data: data, MimeType: sheet.MimeType, Revision: entry.revision}, nil
-	}
-	data, sheet, err := s.readUploadedAgentPetSheet(entry.pet.ResourceID)
+	data, sheet, err := s.agentPetSheetData(entry)
 	if err != nil {
 		return nil, err
 	}
 	return &AgentPetSheet{Data: data, MimeType: sheet.MimeType, Revision: entry.revision}, nil
+}
+
+// readableAgentPetEntry 找到形象并校验图集读取权限，图集和列表缩略图共用。
+func (s *Service) readableAgentPetEntry(actor *model.User, petID string) (agentPetEntry, error) {
+	if actor == nil {
+		return agentPetEntry{}, Unauthorized("请先登录")
+	}
+	entries, err := s.agentPetLibrary()
+	if err != nil {
+		return agentPetEntry{}, err
+	}
+	entry, found := findAgentPetEntry(entries, petID)
+	if !found {
+		return agentPetEntry{}, NotFound("形象不存在")
+	}
+	if !entry.pet.Enabled && s.RequireAdmin(actor) != nil {
+		owned, err := s.repo.OwnedAgentPetIDs(actor.ID)
+		if err != nil {
+			return agentPetEntry{}, err
+		}
+		if !owned[entry.pet.ID] {
+			return agentPetEntry{}, NotFound("形象不存在")
+		}
+	}
+	return entry, nil
+}
+
+func (s *Service) agentPetSheetData(entry agentPetEntry) ([]byte, agentpet.Sheet, error) {
+	if entry.pet.Source == agentPetSourceBuiltin {
+		return agentpet.BuiltinSheet(entry.pet.ID)
+	}
+	return s.readUploadedAgentPetSheet(entry.pet.ResourceID)
 }
 
 func (s *Service) readUploadedAgentPetSheet(resourceID string) ([]byte, agentpet.Sheet, error) {

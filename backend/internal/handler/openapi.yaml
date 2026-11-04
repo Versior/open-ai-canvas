@@ -708,6 +708,19 @@ paths:
         "304": {description: 未变化}
         "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/preview:
+    get:
+      tags: [agent]
+      summary: 读取形象列表缩略图（PNG，192×208，待机动作第一格有画面的帧）
+      description: 商店、换形象菜单和后台列表先显示缩略图，悬停或选中时才加载整张图集。读取权限与图集相同。v 等于 revision 时长期缓存；待机状态改用其他动作时 v 为 revision 加 “.动作名”。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: PNG 缩略图}
+        "304": {description: 未变化}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /admin/agent-pets:
     get:
       tags: [admin]

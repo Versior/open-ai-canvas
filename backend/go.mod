@@ -8,6 +8,7 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/gabriel-vasile/mimetype v1.4.13
 	github.com/gin-gonic/gin v1.12.0
+	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.5.0
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/qiniu/go-sdk/v7 v7.27.0
@@ -15,6 +16,7 @@ require (
 	github.com/tencentyun/cos-go-sdk-v5 v0.7.75
 	github.com/volcengine/volc-sdk-golang v1.0.253
 	golang.org/x/crypto v0.54.0
+	golang.org/x/image v0.40.0
 	golang.org/x/net v0.57.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/sys v0.47.0
@@ -41,7 +43,6 @@ require (
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.3 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect

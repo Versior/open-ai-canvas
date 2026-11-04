@@ -148,6 +148,16 @@ export function agentPetSpritesheetURL(pet: Pick<AgentPet, "id" | "revision">) {
     return `${apiBaseURL.replace(/\/$/, "")}/agent-pets/${encodeURIComponent(pet.id)}/spritesheet?v=${encodeURIComponent(pet.revision)}`;
 }
 
+/**
+ * 列表缩略图：待机首帧的静态 PNG（单格 192×208），商店、换形象和后台列表静止时只加载它。
+ * v 与后端规则一致：图集版本；待机改用别的动作时再加上动作名，改了状态映射浏览器不会继续用旧图。
+ */
+export function agentPetPreviewURL(pet: Pick<AgentPet, "id" | "revision" | "stateRows">) {
+    const idle = pet.stateRows.idle;
+    const version = idle && idle !== "idle" ? `${pet.revision}.${idle}` : pet.revision;
+    return `${apiBaseURL.replace(/\/$/, "")}/agent-pets/${encodeURIComponent(pet.id)}/preview?v=${encodeURIComponent(version)}`;
+}
+
 export async function listAdminAgentPets() {
     const result = await http.get<{ pets: AdminAgentPet[] }>("/admin/agent-pets");
     return result.pets;

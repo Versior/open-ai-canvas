@@ -105,6 +105,29 @@ func RegisterAgentPetRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		http.ServeContent(c.Writer, c.Request, "spritesheet", time.Time{}, bytes.NewReader(sheet.Data))
 	})
+	// 列表缩略图：待机首帧 PNG，缓存规则与图集相同。
+	r.GET("/agent-pets/:id/preview", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		preview, err := svc.AgentPetPreview(actor, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("Content-Security-Policy", "default-src 'none'")
+		c.Header("Content-Type", preview.MimeType)
+		c.Header("ETag", `"preview-`+preview.Revision+`"`)
+		if c.Query("v") == preview.Revision {
+			c.Header("Cache-Control", "private, max-age=31536000, immutable")
+		} else {
+			c.Header("Cache-Control", "private, no-cache")
+		}
+		http.ServeContent(c.Writer, c.Request, "preview.png", time.Time{}, bytes.NewReader(preview.Data))
+	})
 
 	r.GET("/admin/agent-pets", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)

@@ -10,6 +10,7 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { AGENT_PET_ASPECT } from "@/lib/canvas/agent-pet";
 import { agentPetCategories, agentPetDiscountLabel, formatAgentPetCountdown } from "@/lib/canvas/agent-pet-store";
 import {
+    agentPetPreviewURL,
     agentPetSpritesheetURL,
     batchDeleteAdminAgentPets,
     batchUpdateAdminAgentPets,
@@ -241,7 +242,19 @@ export default function AgentPetsSettingsPage() {
                 render: (_, pet) => (
                     <div className="flex min-w-0 items-center gap-3" onPointerEnter={() => setPreviewId(pet.id)} onPointerLeave={() => setPreviewId("")}>
                         <div className="grid shrink-0 place-items-center rounded-lg bg-foreground/[0.04]" style={{ width: THUMB_WIDTH + 8, height: THUMB_HEIGHT + 8 }}>
-                            <AgentPetSprite src={agentPetSpritesheetURL(pet)} version={pet.spriteVersion} state="idle" width={THUMB_WIDTH} height={THUMB_HEIGHT} paused={previewId !== pet.id} pixelated={pet.pixelated} lookAtPointer={false} lazy />
+                            <AgentPetSprite
+                                src={agentPetSpritesheetURL(pet)}
+                                preview={agentPetPreviewURL(pet)}
+                                version={pet.spriteVersion}
+                                state="idle"
+                                stateRows={pet.stateRows}
+                                width={THUMB_WIDTH}
+                                height={THUMB_HEIGHT}
+                                paused={previewId !== pet.id}
+                                pixelated={pet.pixelated}
+                                lookAtPointer={false}
+                                lazy
+                            />
                         </div>
                         <div className="min-w-0">
                             <div className="flex min-w-0 flex-wrap items-center gap-1.5">

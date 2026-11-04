@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { agentPetCategories, agentPetDiscountLabel, agentPetOffer, formatAgentPetCountdown, matchesAgentPetFilter } from "../src/lib/canvas/agent-pet-store";
-import type { AgentPet } from "../src/services/api/agent-pets";
+import { agentPetPreviewURL, type AgentPet } from "../src/services/api/agent-pets";
 
 const CREDIT = 1_000_000;
 
@@ -74,5 +74,11 @@ describe("agent pet store offers", () => {
         expect(pets.filter((item) => matchesAgentPetFilter(item, "sale")).map((item) => item.id)).toEqual(["b"]);
         expect(pets.filter((item) => matchesAgentPetFilter(item, "spend")).map((item) => item.id)).toEqual(["c"]);
         expect(pets.filter((item) => matchesAgentPetFilter(item, "all"))).toHaveLength(4);
+    });
+
+    test("preview URLs follow the sheet revision and a remapped idle row, like the server", () => {
+        expect(agentPetPreviewURL(pet({ id: "pingo", revision: "r1" }))).toEndWith("/agent-pets/pingo/preview?v=r1");
+        expect(agentPetPreviewURL(pet({ id: "pingo", revision: "r1", stateRows: { idle: "idle", running: "review" } }))).toEndWith("/preview?v=r1");
+        expect(agentPetPreviewURL(pet({ id: "a b", revision: "r1", stateRows: { idle: "waving" } }))).toEndWith("/agent-pets/a%20b/preview?v=r1.waving");
     });
 });
