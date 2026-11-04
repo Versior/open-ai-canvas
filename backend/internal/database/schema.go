@@ -89,6 +89,12 @@ func Models() []any {
 		&model.SkillFile{},
 		&model.UserSkillState{},
 		&model.BuiltinSkillTombstone{},
+		// 技能分类（迁移 46、47 建表并写入默认值）；必须登记在这里，跨数据库迁移才会复制。
+		&model.SkillCurationSetting{},
+		&model.SkillCurationCategory{},
+		&model.SkillCurationAssignment{},
+		&model.SkillCurationRoot{},
+		&model.SkillCurationRootAssignment{},
 		&model.Tool{},
 		&model.ToolFavorite{},
 		&model.Resource{},
@@ -155,6 +161,10 @@ func Models() []any {
 		&model.DramaTake{},
 		&model.DramaSegment{},
 		&model.DramaJob{},
+		// Fork 自有：智能体形象库、已拥有的形象和当前选择（迁移 80 建表）。
+		&model.AgentPet{},
+		&model.UserAgentPet{},
+		&model.UserAgentPetSelection{},
 	}
 }
 

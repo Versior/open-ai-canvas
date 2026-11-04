@@ -1,12 +1,14 @@
 package main
 
 import (
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"yingce/backend/internal/database"
 	"yingce/backend/internal/model"
 
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -34,6 +36,75 @@ func TestMigrationListCoversSchemaModels(t *testing.T) {
 		if !covered {
 			t.Errorf("migration list is missing table %q", table)
 		}
+	}
+}
+
+// 迁移账本建出来的每张业务表都必须在复制清单里；漏掉的表在迁到 PostgreSQL 时会被悄悄丢掉。
+func TestMigrationListCoversMigratedSchema(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "schema.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, _ := db.DB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := database.MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	var tables []string
+	if err := db.Raw("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").Scan(&tables).Error; err != nil {
+		t.Fatal(err)
+	}
+	copied := map[string]bool{"schema_migrations": true}
+	for _, migration := range migrations() {
+		copied[migration.name] = true
+	}
+	for _, table := range tables {
+		if !copied[table] {
+			t.Errorf("table %q is created by the schema migrations but not copied to PostgreSQL", table)
+		}
+	}
+}
+
+func TestAgentPetTablesMigration(t *testing.T) {
+	source, err := database.Open(database.Config{Driver: "sqlite", DSN: "file:agent-pet-migration-source?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := database.Open(database.Config{Driver: "sqlite", DSN: "file:agent-pet-migration-target?mode=memory&cache=shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, db := range []*gorm.DB{source, target} {
+		if err := db.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows := []any{
+		&model.AgentPet{ID: "pingo", Source: "builtin", Name: "企鹅", SpriteVersion: 2, Enabled: true, Access: "paid", PriceMicrocredits: 5_000_000, GroupCodesJSON: "[]", StateRowsJSON: "{}", LinesJSON: `["你好"]`, Category: "小动物", SortOrder: 10},
+		&model.AgentPet{ID: "custom-1", Source: "upload", ResourceID: "resource-1", Name: "上传", SpriteVersion: 1, Access: "free", GroupCodesJSON: "[]", StateRowsJSON: `{"idle":"waving"}`, LinesJSON: "[]", SortOrder: -20},
+		&model.UserAgentPet{UserID: "user-1", PetID: "pingo", PriceMicrocredits: 5_000_000, LedgerEntryID: "ledger-1"},
+		&model.UserAgentPet{UserID: "user-1", PetID: "custom-1"},
+		&model.UserAgentPetSelection{UserID: "user-1", PetID: "pingo"},
+	}
+	for _, row := range rows {
+		if err := source.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := map[string]int{"agent_pets": 2, "user_agent_pets": 2, "user_agent_pet_selections": 1}
+	for _, migration := range migrations() {
+		expected, ok := want[migration.name]
+		if !ok {
+			continue
+		}
+		count, err := migration.run(source, target, true)
+		if err != nil || count != expected {
+			t.Fatalf("%s copied %d rows, want %d: %v", migration.name, count, expected, err)
+		}
+		delete(want, migration.name)
+	}
+	if len(want) > 0 {
+		t.Fatalf("migration list is missing %v", want)
 	}
 }
 
