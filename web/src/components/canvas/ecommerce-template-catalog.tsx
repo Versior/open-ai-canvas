@@ -13,8 +13,8 @@ export function EcommerceTemplateCatalogDetails({ title = "浏览项目内置套
     );
 }
 
-export function EcommerceTemplateCatalog({ disabled, onApply, applyLabel = "使用此套图" }: { disabled?: boolean; onApply: (template: EcommerceSuiteTemplate) => void; applyLabel?: string }) {
-    const [query, setQuery] = useState("");
+export function EcommerceTemplateCatalog({ disabled, onApply, applyLabel = "使用此套图", initialQuery = "" }: { disabled?: boolean; onApply: (template: EcommerceSuiteTemplate) => void; applyLabel?: string; initialQuery?: string }) {
+    const [query, setQuery] = useState(initialQuery);
     const [page, setPage] = useState(1);
     const [items, setItems] = useState<EcommerceCatalogEntry[]>([]);
     const [total, setTotal] = useState(0);

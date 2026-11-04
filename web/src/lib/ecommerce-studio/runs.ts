@@ -1,7 +1,8 @@
 import { studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioTitleOf } from "./brief";
 import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioShotSpec } from "./shot-specs";
-import type { StudioPhoto, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
+import { studioSuiteShotRole } from "./suites";
+import type { StudioBrief, StudioPhoto, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
 
 /**
  * 表单生成的记录：点一次「生成商品图」就是一组镜头。
@@ -37,25 +38,100 @@ export function studioRunShotCopy(role: StudioShotRole, product: StudioProduct, 
     return { ...studioShotCopy(role, source), sellingPointIds: [] };
 }
 
+/** 套图镜头清单里的一项。key 在一套里唯一：内置套图用镜头角色，模板套图用 s 加模板里的序号。 */
+export type StudioSetEntry = { key: string; role: StudioShotRole; title: string; purpose: string; duty?: string; ratio?: string; noText?: boolean; included: boolean };
+
+/** 套图按主图还是详情页出：模板套图看模板用途，单张类型返回 undefined。 */
+export function studioSetKind(product: StudioProduct): StudioPlanKind | undefined {
+    const spec = studioOutputSpec(product.brief.outputType);
+    if (!spec.set) return undefined;
+    return product.brief.outputType === "template-set" ? product.brief.suite?.kind || spec.set : spec.set;
+}
+
+function baseEntries(product: StudioProduct, kind: StudioPlanKind): Omit<StudioSetEntry, "included">[] {
+    const family = product.dossier?.family || "generic";
+    if (product.brief.outputType === "template-set") {
+        const shots = product.brief.suite?.shots || [];
+        return shots.map((shot, index) => {
+            const role = studioSuiteShotRole(shot, kind, index, shots.length);
+            const purpose = shot.duty.split("\n")[0] || studioShotSpec(role, family).purpose;
+            return { key: `s${index}`, role, title: shot.title, purpose, ...(shot.duty ? { duty: shot.duty } : {}), ...(shot.ratio ? { ratio: shot.ratio } : {}), ...(shot.noText ? { noText: true } : {}) };
+        });
+    }
+    return studioPlanRoles(kind, family).map((role) => {
+        const spec = studioShotSpec(role, family);
+        return { key: role, role, title: spec.title, purpose: spec.purpose };
+    });
+}
+
+/** 当前表单下套图的镜头清单，按用户调整后的顺序；单张类型返回空数组。 */
+export function studioSetEntries(product: StudioProduct): StudioSetEntry[] {
+    const kind = studioSetKind(product);
+    if (!kind) return [];
+    const base = baseEntries(product, kind);
+    const byKey = new Map(base.map((entry) => [entry.key, entry]));
+    const keys = [...new Set([...product.brief.shotOrder.filter((key) => byKey.has(key)), ...base.map((entry) => entry.key)])];
+    const skipped = new Set(product.brief.shotSkip);
+    return keys.map((key) => ({ ...byKey.get(key)!, included: !skipped.has(key) }));
+}
+
+/** 把一张镜头上移或下移一位，返回新的表单参数。 */
+export function moveStudioSetEntry(product: StudioProduct, key: string, delta: -1 | 1): StudioBrief {
+    const keys = studioSetEntries(product).map((entry) => entry.key);
+    const from = keys.indexOf(key);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= keys.length) return product.brief;
+    [keys[from], keys[to]] = [keys[to], keys[from]];
+    return { ...product.brief, shotOrder: keys };
+}
+
+export function toggleStudioSetEntry(product: StudioProduct, key: string): StudioBrief {
+    const skip = product.brief.shotSkip;
+    return { ...product.brief, shotSkip: skip.includes(key) ? skip.filter((item) => item !== key) : [...skip, key] };
+}
+
+/** 镜头的画幅：用户选了比例或按参考图同款时照旧规则；否则模板写了画幅就按模板。 */
+export function studioEntryRatio(entry: Pick<StudioSetEntry, "role" | "ratio">, product: StudioProduct) {
+    return entry.ratio && product.brief.ratio === "auto" && !product.brief.sameLayout ? entry.ratio : studioRunRatio(entry.role, product);
+}
+
+const EMPTY_COPY = { headline: "", subline: "", lines: [] as string[], sellingPointIds: [] as string[] };
+
 export function createStudioRun(product: StudioProduct, createId: StudioIdFactory, now = new Date().toISOString()): StudioRun {
     const brief = product.brief;
     const spec = studioOutputSpec(brief.outputType);
-    const family = product.dossier?.family || "generic";
-    const single = !spec.set;
-    const roles: StudioShotRole[] = spec.set ? studioPlanRoles(spec.set, family) : Array.from({ length: Math.max(1, Math.min(4, brief.count)) }, () => spec.role || "main-selling");
+    const kind = studioSetKind(product);
+    const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality };
+    if (kind) {
+        if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");
+        const entries = studioSetEntries(product).filter((entry) => entry.included);
+        if (!entries.length) throw new Error("镜头清单里至少留一张");
+        return {
+            ...base,
+            kind,
+            ...(brief.outputType === "template-set" && brief.suite ? { suite: { id: brief.suite.id, name: brief.suite.name, style: brief.suite.style } } : {}),
+            shots: entries.map((entry) => ({
+                id: createId(),
+                role: entry.role,
+                title: entry.title,
+                ratio: studioEntryRatio(entry, product),
+                ...(entry.noText ? EMPTY_COPY : studioRunShotCopy(entry.role, product, false)),
+                ...(entry.duty ? { duty: entry.duty } : {}),
+                tweaks: [],
+                attempts: [],
+            })),
+        };
+    }
+    const role = spec.role || "main-selling";
+    const count = Math.max(1, Math.min(4, brief.count));
     return {
-        id: createId(),
-        createdAt: now,
-        type: spec.id,
-        ...(spec.set ? { kind: spec.set } : {}),
-        textMode: "model",
-        quality: brief.quality,
-        shots: roles.map((role, index) => ({
+        ...base,
+        shots: Array.from({ length: count }, (_, index) => ({
             id: createId(),
             role,
-            title: single ? (roles.length > 1 ? `${spec.label} ${index + 1}` : spec.label) : studioShotSpec(role, family).title,
+            title: count > 1 ? `${spec.label} ${index + 1}` : spec.label,
             ratio: studioRunRatio(role, product),
-            ...studioRunShotCopy(role, product, single),
+            ...studioRunShotCopy(role, product, true),
             tweaks: [],
             attempts: [],
         })),

@@ -17,7 +17,7 @@ export type StudioModelAdapter = {
     textRendering: "strong" | "fair" | "weak";
 };
 
-export type StudioPromptLayerId = "truth" | "goal" | "composition" | "shooting" | "lighting" | "style" | "set" | "category" | "market" | "audience" | "layout" | "copy" | "extra" | "quality";
+export type StudioPromptLayerId = "truth" | "goal" | "duty" | "composition" | "shooting" | "lighting" | "style" | "set" | "category" | "market" | "audience" | "layout" | "copy" | "extra" | "quality";
 
 export type StudioPromptLayer = {
     id: StudioPromptLayerId;
@@ -55,6 +55,8 @@ export type StudioCompileInput = {
     maxReferences?: number;
     /** 表单参数：传入时追加市场与语言、拍法、人群定位、参考图和补充要求。 */
     brief?: StudioBrief;
+    /** 模板套图的模板名与整套视觉规范：有规范时代替风格锁。 */
+    suite?: { name: string; style: string };
 };
 
 const DEFAULT_MAX_CHARS = 4000;
@@ -189,6 +191,18 @@ function layoutLayer(brief: StudioBrief, references: StudioPhoto[], styleReferen
     return { id: "layout", title: "风格参考", source: "参考图", text: `参考${range}的色调、光线和氛围，构图按上面的要求；不要出现参考图里的商品、品牌和文字。` };
 }
 
+/** 模板给这张图的职责：排在镜头规格前，冲突时以它为准；商品外观仍只看商品图。 */
+function dutyLayer(shot: StudioShot): StudioPromptLayer | undefined {
+    const duty = shot.duty?.trim();
+    if (!duty) return undefined;
+    return {
+        id: "duty",
+        title: "套图模板对这张图的要求",
+        source: "套图模板",
+        text: `${duty}\n与下面的构图、机位、光线和背景要求冲突时，以这一条为准；商品外观仍以商品图为准，模板里提到的属性、价格和功效不照搬。`,
+    };
+}
+
 function compositionLayer(shot: StudioShot, spec: StudioShotSpec): StudioPromptLayer {
     const tweaks = shot.tweaks.map((id) => STUDIO_TWEAKS.find((tweak) => tweak.id === id)?.instruction).filter((item): item is string => Boolean(item));
     const text = [sentence(spec.composition), sentence(spec.camera), tweaks.length ? `本次调整：${tweaks.join("；")}。` : ""].filter(Boolean).join("\n");
@@ -235,12 +249,18 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const hasCopy = studioShotHasCopy(shot, spec);
     const effective = hasCopy ? studioEffectiveTextMode({ textMode }, adapter) : { mode: textMode };
     const style = studioStyle(product.style);
-    const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief), goalLayer(product, shot, spec, hasCopy), compositionLayer(shot, spec)];
+    const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief), goalLayer(product, shot, spec, hasCopy)];
+    const duty = dutyLayer(shot);
+    if (duty) layers.push(duty);
+    layers.push(compositionLayer(shot, spec));
     const extra = brief ? briefLayers(brief, hasCopy) : [];
     const shooting = extra.find((layer) => layer.id === "shooting");
     if (shooting) layers.push(shooting);
     layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
-    if (!spec.neutralBackground) {
+    const suite = input.suite?.style.trim() ? input.suite : undefined;
+    if (!spec.neutralBackground && suite) {
+        layers.push({ id: "style", title: `整套视觉规范「${suite.name}」`, source: "套图模板", text: `${sentence(suite.style)}整套图共用这一规范。` });
+    } else if (!spec.neutralBackground) {
         layers.push({
             id: "style",
             title: `风格锁「${style.name}」`,

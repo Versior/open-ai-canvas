@@ -36,7 +36,16 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
         shots: plan.shots,
         fromAgent: true,
     }));
-    const runs = product.runs.map((run) => ({ key: `run:${run.id}`, ref: { runId: run.id }, title: studioOutputSpec(run.type).label, createdAt: run.createdAt, kind: run.kind, textMode: run.textMode, shots: run.shots, fromAgent: false }));
+    const runs = product.runs.map((run) => ({
+        key: `run:${run.id}`,
+        ref: { runId: run.id },
+        title: run.suite ? `${studioOutputSpec(run.type).label} · ${run.suite.name}` : studioOutputSpec(run.type).label,
+        createdAt: run.createdAt,
+        kind: run.kind,
+        textMode: run.textMode,
+        shots: run.shots,
+        fromAgent: false,
+    }));
     return [...plans, ...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 

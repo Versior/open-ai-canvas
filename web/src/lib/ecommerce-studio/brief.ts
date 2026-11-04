@@ -1,6 +1,7 @@
 import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
 import { studioShotSpec } from "./shot-specs";
+import { normalizeStudioSuite } from "./suites";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
 
 /**
@@ -20,6 +21,8 @@ export const STUDIO_OUTPUT_TYPES: StudioOutputSpec[] = [
     { id: "poster", label: "海报头图", hint: "详情页首屏或活动海报", role: "detail-hero" },
     { id: "main-set", label: "主图套图（5 张）", hint: "白底、卖点、场景、细节、多角度", set: "main" },
     { id: "detail-set", label: "详情页（10 屏）", hint: "按品类排好十屏，可导出长图", set: "detail" },
+    // 实际按主图还是详情页出，看选中模板的用途；没选模板前按详情页处理。
+    { id: "template-set", label: "模板套图", hint: "从后台精选或内置模板库选一套，按模板逐张出图", set: "detail" },
 ];
 
 export const STUDIO_MARKETS: { id: StudioMarket; label: string; language: StudioLanguage; prompt: string }[] = [
@@ -57,9 +60,10 @@ const MARKET_IDS = new Set(STUDIO_MARKETS.map((item) => item.id));
 const LANGUAGE_IDS = new Set(STUDIO_LANGUAGES.map((item) => item.id));
 const SHOOTING_IDS = new Set(STUDIO_SHOOTINGS.map((item) => item.id));
 const RATIO_PATTERN = /^([1-9]\d?):([1-9]\d?)$/;
+const SHOT_KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 
 export function createStudioBrief(): StudioBrief {
-    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", ratio: "auto" };
+    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", ratio: "auto", shotOrder: [], shotSkip: [] };
 }
 
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
@@ -71,11 +75,16 @@ function text(value: unknown, max: number) {
     return typeof value === "string" ? value.slice(0, max) : "";
 }
 
+function shotKeys(value: unknown) {
+    return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && SHOT_KEY_PATTERN.test(item)))].slice(0, 40) : [];
+}
+
 export function normalizeStudioBrief(value: unknown): StudioBrief {
     const base = createStudioBrief();
     if (!value || typeof value !== "object" || Array.isArray(value)) return base;
     const record = value as Record<string, unknown>;
     const count = Number(record.count);
+    const suite = normalizeStudioSuite(record.suite);
     return {
         brand: text(record.brand, 40),
         productType: text(record.productType, 40),
@@ -90,6 +99,9 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         count: Number.isInteger(count) && STUDIO_COUNT_OPTIONS.includes(count) ? count : base.count,
         quality: text(record.quality, 20),
         ratio: typeof record.ratio === "string" && (record.ratio === "auto" || RATIO_PATTERN.test(record.ratio)) ? record.ratio : base.ratio,
+        ...(suite ? { suite } : {}),
+        shotOrder: shotKeys(record.shotOrder),
+        shotSkip: shotKeys(record.shotSkip),
     };
 }
 

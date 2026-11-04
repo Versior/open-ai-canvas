@@ -1,6 +1,6 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
-import { CircleHelp, RotateCcw, ScanSearch, Settings2, Sparkles } from "lucide-react";
-import { useMemo, type ClipboardEvent, type ReactNode } from "react";
+import { CircleHelp, LayoutTemplate, RotateCcw, ScanSearch, Settings2, Sparkles } from "lucide-react";
+import { useMemo, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
 import { ECOMMERCE_PLATFORMS, ecommercePlatform, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
@@ -23,10 +23,13 @@ import {
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter } from "@/lib/ecommerce-studio/prompt-compiler";
-import { STUDIO_STYLES, studioPlanRoles } from "@/lib/ecommerce-studio/shot-specs";
+import { moveStudioSetEntry, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
+import { StudioShotList } from "./studio-shot-list";
+import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
 import { studioImageFiles } from "./studio-upload";
 import { useStudioEstimate } from "./use-studio-estimate";
@@ -88,9 +91,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const qualityOptions = useMemo(() => studioQualityOptions(profile), [profile]);
     const quality = studioEffectiveQuality(profile, brief.quality);
     const ratioOptions = useMemo(() => studioRatioOptions(profile, quality), [profile, quality]);
-    const roles = spec.set ? studioPlanRoles(spec.set, product.dossier?.family || "generic") : [spec.role || "main-selling"];
-    const images = spec.set ? roles.length : brief.count;
-    const firstRatio = studioRunRatio(roles[0], product);
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const setKind = studioSetKind(product);
+    const entries = useMemo(() => studioSetEntries(product), [product]);
+    const included = entries.filter((entry) => entry.included);
+    const unit = setKind === "detail" ? "屏" : "张";
+    const images = setKind ? included.length : brief.count;
+    const firstEntry = included[0] || entries[0];
+    const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(spec.role || "main-selling", product);
     const referenceCount = Math.min(profile?.references.maxImages || 4, product.photos.filter((photo) => photo.view !== "tag").length + product.references.length);
     const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
     const suggestion = studioSuggestion(product);
@@ -99,7 +107,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const platform = ecommercePlatform(product.platform);
     const noTextOnMain = !spec.set && spec.role ? studioPlatformForbidsText(product, spec.role) : false;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
-    const blocked = !product.photos.length ? "先上传商品图" : !image.value ? "先选择图片模型" : uploading ? "图片上传中，请稍候" : "";
+    const suiteMissing = brief.outputType === "template-set" && !brief.suite;
+    const blocked = !product.photos.length ? "先上传商品图" : !image.value ? "先选择图片模型" : uploading ? "图片上传中，请稍候" : suiteMissing ? "先选择一套模板" : setKind && !included.length ? "镜头清单里至少留一张" : "";
+    const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
 
@@ -251,7 +261,18 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 </div>
                 <div className="es-grid">
                     <Field label="出图类型" span={2} hint={noTextOnMain ? `${platform?.name || "这个平台"}首图不加文字，标题不会写进图里` : spec.hint}>
-                        <Select appearance="field" size="large" value={brief.outputType} options={OUTPUT_OPTIONS} ariaLabel="出图类型" onChange={(value: StudioOutputType) => editBrief({ outputType: value })} />
+                        <Select
+                            appearance="field"
+                            size="large"
+                            value={brief.outputType}
+                            options={OUTPUT_OPTIONS}
+                            ariaLabel="出图类型"
+                            onChange={(value: StudioOutputType) => {
+                                // 换类型时镜头不同，清掉上一种的顺序和勾选；已选的模板保留，切回来还在。
+                                editBrief({ outputType: value, shotOrder: [], shotSkip: [] });
+                                if (value === "template-set" && !brief.suite) setPickerOpen(true);
+                            }}
+                        />
                     </Field>
                     <Field label="视觉方向" span={2}>
                         <Select appearance="field" size="large" value={product.platform} options={PLATFORM_OPTIONS} ariaLabel="视觉方向（平台）" onChange={(value: EcommercePlatformId) => edit((current) => ({ ...current, platform: value }))} />
@@ -289,9 +310,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         <Select
                             appearance="field"
                             size="large"
-                            value={spec.set ? images : brief.count}
-                            disabled={Boolean(spec.set)}
-                            options={spec.set ? [{ value: images, label: spec.set === "detail" ? `${images} 屏` : `${images} 张` }] : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))}
+                            value={setKind ? images : brief.count}
+                            disabled={Boolean(setKind)}
+                            options={setKind ? [{ value: images, label: `${images} ${unit}` }] : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))}
                             ariaLabel="数量"
                             onChange={(value: number) => editBrief({ count: value })}
                         />
@@ -331,7 +352,51 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         </Tooltip>
                     </div>
                 </div>
+
+                {setKind ? (
+                    <>
+                        <div className="es-section-head">
+                            <h2>镜头清单</h2>
+                            <span className="es-section-note">
+                                已选 {included.length}/{entries.length} {unit} · 勾掉这次不出的，箭头调整顺序
+                            </span>
+                        </div>
+                        {brief.outputType === "template-set" ? (
+                            <div className="es-suite-card" data-empty={brief.suite ? undefined : true}>
+                                <span className="es-suite-card-text">
+                                    <strong>{brief.suite ? brief.suite.name : "还没选模板"}</strong>
+                                    <span>
+                                        {brief.suite
+                                            ? [brief.suite.source === "admin" ? "后台精选" : "内置模板库", brief.suite.kind === "main" ? "按主图出" : "按详情页出", brief.suite.category].filter(Boolean).join(" · ")
+                                            : "从后台精选或内置模板库挑一套，按模板逐张出图。"}
+                                    </span>
+                                </span>
+                                <Button icon={<LayoutTemplate size={14} />} onClick={() => setPickerOpen(true)}>
+                                    {brief.suite ? "换一套" : "选择模板"}
+                                </Button>
+                            </div>
+                        ) : null}
+                        {entries.length ? (
+                            <StudioShotList
+                                entries={entries}
+                                unit={unit}
+                                onToggle={(key) => edit((current) => ({ ...current, brief: toggleStudioSetEntry(current, key) }))}
+                                onMove={(key, delta) => edit((current) => ({ ...current, brief: moveStudioSetEntry(current, key, delta) }))}
+                            />
+                        ) : null}
+                    </>
+                ) : null}
             </div>
+            <StudioSuitePicker
+                open={pickerOpen}
+                query={brief.productType.trim() || product.dossier?.category.trim() || ""}
+                onClose={() => setPickerOpen(false)}
+                onPick={(suite) => {
+                    edit((current) => ({ ...current, brief: { ...current.brief, outputType: "template-set", suite, shotOrder: [], shotSkip: [] } }), { immediate: true });
+                    setPickerOpen(false);
+                    message.success(`已选「${suite.name}」，共 ${suite.shots.length} 张`);
+                }}
+            />
             <footer className="es-form-foot">
                 <span className="es-estimate">{estimate}</span>
                 <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
@@ -339,7 +404,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 </Button>
                 <Tooltip title={blocked || undefined}>
                     <Button type="primary" size="large" className="es-generate" icon={<Sparkles size={16} />} disabled={Boolean(blocked)} onClick={generate}>
-                        {spec.set ? `生成${spec.set === "detail" ? "详情页" : "主图套图"}` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
+                        {setKind ? `生成${setLabel}（${images} ${unit}）` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
                     </Button>
                 </Tooltip>
             </footer>

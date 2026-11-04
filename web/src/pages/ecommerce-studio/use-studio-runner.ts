@@ -11,7 +11,7 @@ import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { compileStudioPrompt } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioShot, studioAttemptActive, studioPlanOf, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioRunOf } from "@/lib/ecommerce-studio/runs";
-import type { StudioAttempt, StudioAttemptStatus, StudioOutput, StudioPhoto, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
+import type { StudioAttempt, StudioAttemptStatus, StudioOutput, StudioPhoto, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
@@ -93,17 +93,39 @@ function taskOutputs(task: GenerationTask): StudioOutput[] {
         .map((output) => ({ resourceId: output.resourceId!, url: `/api/resources/${output.resourceId}/file`, ...(output.width ? { width: output.width } : {}), ...(output.height ? { height: output.height } : {}) }));
 }
 
-type Located = { shot: StudioShot; textMode: StudioTextMode; quality: string; fromForm: boolean };
+export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; fromForm: boolean; suite?: StudioRun["suite"] };
 
-export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): Located | undefined {
+export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): StudioLocatedShot | undefined {
     if ("runId" in ref) {
         const run = studioRunOf(product, ref.runId);
         const shot = run?.shots.find((item) => item.id === shotId);
-        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, fromForm: true } : undefined;
+        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, fromForm: true, suite: run.suite } : undefined;
     }
     const plan = studioPlanOf(product, ref.planKind);
     const shot = plan?.shots.find((item) => item.id === shotId);
     return plan && shot ? { shot, textMode: plan.textMode, quality: product.brief.quality, fromForm: false } : undefined;
+}
+
+type ModelConfig = Parameters<typeof modelCapabilityConfigFor>[0];
+
+/**
+ * 按出图时的规则编译这张图的提示词，提交任务和「查看提示词」共用。
+ * 助手方案的镜头由助手定好构图：只带市场、语言、人群和补充要求，不套表单里的拍法和同款版式。
+ */
+export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, imageModel: string, config: ModelConfig) {
+    const profile = modelCapabilityConfigFor(config, imageModel).image;
+    const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
+    const compiled = compileStudioPrompt({
+        product,
+        textMode: located.textMode,
+        shot: located.shot,
+        model: imageModel,
+        maxChars: profile?.references.promptMaxChars,
+        maxReferences: profile?.references.maxImages || undefined,
+        brief,
+        ...(located.suite ? { suite: located.suite } : {}),
+    });
+    return { profile, compiled };
 }
 
 export function patchStudioShotAt(product: StudioProduct, ref: StudioShotRef, shotId: string, patch: (shot: StudioShot) => StudioShot) {
@@ -253,10 +275,7 @@ export function useStudioRunner() {
                 const located = locateStudioShot(product, ref, shotId);
                 if (!located) throw new Error("这张图已不在记录里");
                 const current = configRef.current;
-                const profile = modelCapabilityConfigFor(current, imageModel).image;
-                // 助手方案的镜头由助手定好构图：只带市场、语言、人群和补充要求，不套表单里的拍法和同款版式。
-                const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
-                const compiled = compileStudioPrompt({ product, textMode: located.textMode, shot: located.shot, model: imageModel, maxChars: profile?.references.promptMaxChars, maxReferences: profile?.references.maxImages || undefined, brief });
+                const { profile, compiled } = compileStudioShot(product, located, imageModel, current);
                 if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
                 const request = studioImageRequest(profile, located.quality, located.shot.ratio);
                 const references = [...compiled.references, ...compiled.styleReferences];
@@ -289,9 +308,11 @@ export function useStudioRunner() {
         (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string) => {
             if (!imageModel) throw new Error("请先选择图片模型");
             const attempts = shotIds.map((shotId) => ({ shotId, attempt: { id: nanoid(12), status: "submitting" as const, model: imageModel, tweaks: [], createdAt: new Date().toISOString(), outputs: [] } satisfies StudioAttempt }));
+            // 尝试记下提交时这张图的微调标签，之后改了标签也能看出每张结果是怎么出的。
             update(productId, (product) =>
                 attempts.reduce(
-                    (value, { shotId, attempt }) => patchStudioShotAt(value, ref, shotId, (shot) => (shot.attempts.some((item) => item.id === attempt.id) ? shot : { ...shot, attempts: [...shot.attempts, attempt].slice(-MAX_ATTEMPTS) })),
+                    (value, { shotId, attempt }) =>
+                        patchStudioShotAt(value, ref, shotId, (shot) => (shot.attempts.some((item) => item.id === attempt.id) ? shot : { ...shot, attempts: [...shot.attempts, { ...attempt, tweaks: [...shot.tweaks] }].slice(-MAX_ATTEMPTS) })),
                     product,
                 ),
             );
