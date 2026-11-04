@@ -29,6 +29,7 @@ func TestAgentPetRoutesAndOpenAPI(t *testing.T) {
 		"PUT /api/agent-pets/selection":           false,
 		"POST /api/agent-pets/:id/purchase":       false,
 		"GET /api/agent-pets/:id/spritesheet":     false,
+		"GET /api/agent-pets/:id/preview":         false,
 		"GET /api/admin/agent-pets":               false,
 		"POST /api/admin/agent-pets/import":       false,
 		"POST /api/admin/agent-pets/batch":        false,
@@ -54,7 +55,7 @@ func TestAgentPetRoutesAndOpenAPI(t *testing.T) {
 	}
 	for path, methods := range map[string][]string{
 		"/agent-pets": {"get"}, "/agent-pets/selection": {"get", "put"}, "/agent-pets/{id}/purchase": {"post"},
-		"/agent-pets/{id}/spritesheet": {"get"}, "/admin/agent-pets": {"get"}, "/admin/agent-pets/import": {"post"},
+		"/agent-pets/{id}/spritesheet": {"get"}, "/agent-pets/{id}/preview": {"get"}, "/admin/agent-pets": {"get"}, "/admin/agent-pets/import": {"post"},
 		"/admin/agent-pets/{id}": {"put", "delete"}, "/admin/agent-pets/batch": {"post"}, "/admin/agent-pets/batch-delete": {"post"},
 	} {
 		for _, method := range methods {
@@ -130,6 +131,17 @@ func TestAgentPetHTTPFlow(t *testing.T) {
 	}
 	if w = call(http.MethodGet, "/api/agent-pets/vika/spritesheet", "", nil); w.Code != http.StatusNotFound {
 		t.Fatalf("unlisted sheet status = %d", w.Code)
+	}
+	// 列表缩略图：一帧 PNG，比整张图集小得多，缓存规则相同。
+	w = call(http.MethodGet, "/api/agent-pets/pingo/preview?v="+revision, "", nil)
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" || !strings.Contains(w.Header().Get("Cache-Control"), "immutable") || w.Header().Get("X-Content-Type-Options") != "nosniff" || w.Body.Len() == 0 {
+		t.Fatalf("preview status=%d headers=%v", w.Code, w.Header())
+	}
+	if w = call(http.MethodGet, "/api/agent-pets/pingo/preview", "", map[string]string{"If-None-Match": `"preview-` + revision + `"`}); w.Code != http.StatusNotModified {
+		t.Fatalf("conditional preview status=%d", w.Code)
+	}
+	if w = call(http.MethodGet, "/api/agent-pets/vika/preview", "", nil); w.Code != http.StatusNotFound {
+		t.Fatalf("unlisted preview status = %d", w.Code)
 	}
 	if w = call(http.MethodPut, "/api/agent-pets/selection", `{"petId":"pingo"}`, nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"id":"pingo"`) {
 		t.Fatalf("select status=%d body=%s", w.Code, w.Body.String())

@@ -17,7 +17,7 @@ import { AGENT_PET_ASPECT } from "@/lib/canvas/agent-pet";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
 import { AGENT_PET_STORE_FILTERS, AGENT_PET_TONE_LABELS, agentPetCategories, agentPetDiscountLabel, agentPetOffer, formatAgentPetCountdown, matchesAgentPetFilter, type AgentPetOffer, type AgentPetStoreFilter } from "@/lib/canvas/agent-pet-store";
 import { openWorkspaceWallet } from "@/lib/workspace-wallet";
-import { agentPetSpritesheetURL, getAgentPetCatalog, purchaseAgentPet, selectAgentPet, type AgentPet, type AgentPetTone } from "@/services/api/agent-pets";
+import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, purchaseAgentPet, selectAgentPet, type AgentPet, type AgentPetTone } from "@/services/api/agent-pets";
 import { ApiError } from "@/services/api/request";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -339,6 +339,7 @@ function StoreCard({
                 ) : null}
                 <AgentPetSprite
                     src={agentPetSpritesheetURL(pet)}
+                    preview={agentPetPreviewURL(pet)}
                     version={pet.spriteVersion}
                     state="idle"
                     stateRows={pet.stateRows}

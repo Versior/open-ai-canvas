@@ -19,6 +19,8 @@ import type { AgentPetRow } from "@/services/api/agent-pets";
 
 /** 鼠标停止移动多久后，形象从“看向鼠标”回到待机动画。 */
 const LOOK_IDLE_MS = 2500;
+/** 有缩略图时，开始播放这么久之后才下载整张图集：滚动时鼠标从卡片上划过、触屏按下就开始滑动，都不会白下载。 */
+const SHEET_DELAY_MS = 150;
 
 type LookCell = { row: number; column: number };
 
@@ -42,6 +44,11 @@ export type AgentPetSpriteProps = {
     lookAtPointer?: boolean;
     /** 列表缩略图用：接近可视区域才加载图集，避免打开商店或后台时一次下载、解码整个形象库。 */
     lazy?: boolean;
+    /**
+     * 静态缩略图（待机首帧，几十 KB）。给了它时，静止的格子只显示缩略图；开始播放（悬停、预览、选中）
+     * 才加载整张图集（1–3 MB），加载好之前继续显示缩略图。
+     */
+    preview?: string;
     label?: string;
     className?: string;
     onError?: () => void;
@@ -67,19 +74,29 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     hovered = false,
     lookAtPointer = true,
     lazy = false,
+    preview,
     label,
     className,
     onError,
 }: AgentPetSpriteProps) {
     const element = useRef<HTMLSpanElement>(null);
     const rows = agentPetSheetRows(version);
-    // 已经检测过的图集在缓存里，直接显示，切换筛选时不闪一下空白。
-    const near = useNearViewport(element, lazy && !cachedAgentPetMetrics(src));
-    const sheet = near ? src : "";
-    const { frames } = useAgentPetSheetMetrics(sheet, version, onError);
-
     const documentHidden = useDocumentHidden();
     const still = paused || reducedMotion || documentHidden;
+    // 已经检测过的图集在缓存里，直接显示，切换筛选时不闪一下空白。
+    const sheetCached = Boolean(cachedAgentPetMetrics(src));
+    const near = useNearViewport(element, lazy && !sheetCached);
+    // 有缩略图时图集等到要播放才加载；加载过一次之后静止时也用图集（同一帧，已在浏览器缓存里）。
+    const wantsSheet = near && (!preview || !still || sheetCached);
+    const [sheetAllowed, setSheetAllowed] = useState(false);
+    useEffect(() => {
+        if (!wantsSheet || !preview || sheetAllowed) return;
+        const timer = window.setTimeout(() => setSheetAllowed(true), SHEET_DELAY_MS);
+        return () => window.clearTimeout(timer);
+    }, [wantsSheet, preview, sheetAllowed]);
+    const sheet = wantsSheet && (!preview || sheetCached || sheetAllowed) ? src : "";
+    const { frames } = useAgentPetSheetMetrics(sheet, version, onError);
+    const showPreview = Boolean(preview) && near && !(sheet && cachedAgentPetMetrics(sheet));
     const idleRow = agentPetRowForState("idle", stateRows);
     const mappedRow = agentPetRowForState(state, stateRows);
     const loopRow = forcedRow ?? (state === "completed" ? idleRow : mappedRow);
@@ -127,16 +144,28 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     }, [still, look, frame, frameCount, activeRow, oneShot]);
 
     const cell = look ?? { row: agentPetRowIndex(activeRow), column: still ? 0 : Math.min(frame, frameCount - 1) };
+    const image = showPreview ? preview : sheet;
     const style: CSSProperties = {
         width,
         height,
-        backgroundImage: sheet ? `url(${JSON.stringify(sheet)})` : undefined,
+        backgroundImage: image ? `url(${JSON.stringify(image)})` : undefined,
         backgroundRepeat: "no-repeat",
-        backgroundSize: `${width * AGENT_PET_COLUMNS}px ${height * rows}px`,
-        backgroundPosition: `${-cell.column * width}px ${-cell.row * height}px`,
+        backgroundSize: showPreview ? `${width}px ${height}px` : `${width * AGENT_PET_COLUMNS}px ${height * rows}px`,
+        backgroundPosition: showPreview ? "0px 0px" : `${-cell.column * width}px ${-cell.row * height}px`,
         imageRendering: pixelated ? "pixelated" : undefined,
     };
-    return <span ref={element} className={cn("agent-pet-sprite block shrink-0", className)} style={style} role={label ? "img" : undefined} aria-label={label} aria-hidden={label ? undefined : true} data-pet-row={look ? "look" : activeRow} />;
+    return (
+        <span
+            ref={element}
+            className={cn("agent-pet-sprite block shrink-0", className)}
+            style={style}
+            role={label ? "img" : undefined}
+            aria-label={label}
+            aria-hidden={label ? undefined : true}
+            data-pet-row={look ? "look" : activeRow}
+            data-pet-preview={showPreview || undefined}
+        />
+    );
 });
 
 const DEFAULT_METRICS: AgentPetSheetMetrics = { frames: DEFAULT_AGENT_PET_FRAMES, headTop: DEFAULT_AGENT_PET_HEAD_TOP };

@@ -80,4 +80,21 @@ describe("AgentPetSprite markup", () => {
         expect(forced).toContain('role="img"');
         expect(forced).toContain("background-size:768px 936px");
     });
+
+    test("list thumbnails show the one-frame preview until the full sheet is needed and loaded", () => {
+        const still = renderToStaticMarkup(<AgentPetSprite src="/sheet.webp" preview="/preview.png" version={2} state="idle" width={96} height={104} paused />);
+        expect(still).toContain("/preview.png");
+        expect(still).not.toContain("/sheet.webp");
+        expect(still).toContain("background-size:96px 104px");
+        expect(still).toContain("background-position:0px 0px");
+        expect(still).toContain('data-pet-preview="true"');
+        // 开始播放时图集还没加载完，继续显示缩略图，不闪空白。
+        const playing = renderToStaticMarkup(<AgentPetSprite src="/sheet.webp" preview="/preview.png" version={2} state="idle" width={96} height={104} />);
+        expect(playing).toContain("/preview.png");
+        // 懒加载的格子滚到附近之前，缩略图也不加载。
+        const offscreen = renderToStaticMarkup(<AgentPetSprite src="/sheet.webp" preview="/preview.png" version={2} state="idle" width={96} height={104} paused lazy />);
+        expect(offscreen).not.toContain("background-image");
+        // 没有缩略图时照旧直接用图集。
+        expect(renderToStaticMarkup(<AgentPetSprite src="/sheet.webp" version={2} state="idle" width={96} height={104} paused />)).toContain("/sheet.webp");
+    });
 });

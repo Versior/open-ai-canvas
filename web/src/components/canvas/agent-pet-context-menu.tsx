@@ -11,7 +11,7 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AGENT_PET_ASPECT, AGENT_PET_SIZE_OPTIONS } from "@/lib/canvas/agent-pet";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
 import { AGENT_PET_TONE_LABELS } from "@/lib/canvas/agent-pet-store";
-import { agentPetSpritesheetURL, getAgentPetCatalog, type AgentPet } from "@/services/api/agent-pets";
+import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, type AgentPet } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useUserStore } from "@/stores/use-user-store";
 import "./agent-pet-store.css";
@@ -341,6 +341,7 @@ function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: 
                                 ) : (
                                     <AgentPetSprite
                                         src={agentPetSpritesheetURL(pet)}
+                                        preview={agentPetPreviewURL(pet)}
                                         version={pet.spriteVersion}
                                         state="idle"
                                         stateRows={pet.stateRows}
