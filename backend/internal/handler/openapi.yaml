@@ -3690,6 +3690,26 @@ paths:
         "429":
           $ref: "#/components/responses/Error"
   /video-replication/teardowns:
+    get:
+      tags: [tasks]
+      summary: 视频复刻页面的历史记录
+      description: 需要登录。按创建时间倒序返回当前账号最近 50 次拆解（含排队、失败的任务）；已保存模型分析的记录带标题、模型和分析时间。
+      responses:
+        "200":
+          description: data 为记录数组
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VideoReplicationRecord"
+        "401":
+          $ref: "#/components/responses/Error"
     post:
       tags: [tasks]
       summary: 视频复刻：异步拆解一条视频的镜头、关键帧和口播
@@ -3730,6 +3750,62 @@ paths:
         "413":
           $ref: "#/components/responses/Error"
         "429":
+          $ref: "#/components/responses/Error"
+  /video-replication/teardowns/{id}:
+    get:
+      tags: [tasks]
+      summary: 读取一条视频复刻记录
+      description: 需要登录。返回拆解任务（resultJson 是镜头事实）和保存过的模型分析；不是本人的拆解任务返回 404。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: data 为 VideoReplicationDetail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/VideoReplicationDetail"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /video-replication/teardowns/{id}/analysis:
+    put:
+      tags: [tasks]
+      summary: 保存视频复刻的模型分析
+      description: 需要登录。只接受本人已完成的拆解任务；rows 的数量和 shotNumber 必须与拆解结果的镜头一一对应。保存后覆盖这条记录之前的分析。正文不超过 512 KiB，计入账号结构化数据容量。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoReplicationAnalysis"
+      responses:
+        "200":
+          description: data 为保存后的 VideoReplicationDetail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/VideoReplicationDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
           $ref: "#/components/responses/Error"
   /tasks/{id}/recover-media:
     post:
@@ -3911,6 +3987,48 @@ components:
               id: {type: string}
               name: {type: string}
               reason: {type: string}
+    VideoReplicationRecord:
+      type: object
+      required: [id, status, stage, progress, createdAt, durationMs, shotCount]
+      properties:
+        id: {type: string, description: 拆解任务 ID}
+        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        stage: {type: string}
+        progress: {type: integer}
+        error: {type: string}
+        createdAt: {type: string, format: date-time}
+        durationMs: {type: integer}
+        shotCount: {type: integer}
+        coverResourceId: {type: string, description: 第一镜关键帧的图片资源 ID}
+        title: {type: string, description: 已保存分析的标题}
+        model: {type: string, description: 已保存分析所用的模型}
+        analyzedAt: {type: string, format: date-time}
+    VideoReplicationDetail:
+      type: object
+      required: [task]
+      properties:
+        task:
+          $ref: "#/components/schemas/Task"
+        analysis:
+          $ref: "#/components/schemas/VideoReplicationAnalysis"
+        analyzedAt: {type: string, format: date-time}
+    VideoReplicationAnalysis:
+      type: object
+      required: [version, model, rows]
+      additionalProperties: true
+      properties:
+        version: {type: integer, enum: [1]}
+        model: {type: string, maxLength: 200}
+        title: {type: string, maxLength: 200}
+        summary: {type: object, nullable: true, additionalProperties: true}
+        rows:
+          type: array
+          items:
+            type: object
+            required: [shotNumber]
+            additionalProperties: true
+            properties:
+              shotNumber: {type: integer, minimum: 1}
     VideoTeardownRequest:
       type: object
       required: [resourceId]
