@@ -40,6 +40,39 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 同步请求可能返回 400（链接、幂等键、项目或任务额度无效）、401（未登录）、409（幂等键冲突）、413（正文超过 4 KiB）或 429（创建任务限流）；已入队后的平台解析、下载、校验或入库失败体现在 Task 的 `status=failed` 与脱敏 `error` 中。
 
+## 视频复刻：拆解准备
+
+`POST /api/video-replication/teardowns` 把一条视频拆成确定的镜头事实，供前端交给能看图的文本模型补全语义。鉴权、`X-Idempotency-Key`（8–128 个字符）、4 KiB 正文上限和 409 规则与社交视频导入相同：
+
+```json
+{
+  "resourceId": "当前账号自己的视频资源 ID",
+  "projectId": "可选的当前账号活动画布或项目 ID",
+  "transcribe": true,
+  "language": "zh",
+  "maxShots": 60
+}
+```
+
+`transcribe` 省略时为 `true`；`language` 可留空或填 `auto`；`maxShots` 为 1–60，省略时 60。视频必须是本人已就绪的视频资源，时长不超过 3 分钟。`data` 是 `type="replication_teardown"` 的异步 Task（`provider=local`、`model=ffmpeg`），不调用模型渠道、不计模型费用，最长运行 10 分钟。成功时 `resultJson` 解析后为：
+
+```json
+{
+  "version": 1,
+  "source": { "resourceId": "...", "durationMs": 31200, "width": 1080, "height": 1920, "hasAudio": true },
+  "shots": [
+    { "index": 1, "startMs": 0, "endMs": 1840, "boundary": "start", "keyframeTimeMs": 920, "keyframeResourceId": "...", "keyframeWidth": 288, "keyframeHeight": 512 }
+  ],
+  "grids": [{ "resourceId": "...", "shotIndexes": [1, 2, 3], "width": 896, "height": 1568 }],
+  "transcript": { "source": "asr", "language": "zh", "segments": [{ "startMs": 0, "endMs": 2100, "text": "……" }] },
+  "warnings": []
+}
+```
+
+- 切点用 ffmpeg 场景分数检测（主要看亮度变化），短于 400ms 的镜头并入前一镜；没有切点的长镜头按不超过 10 秒切开，`boundary` 为 `split`（画面连续），检测到的切点为 `cut`。镜头数超过 `maxShots` 时先把切开的长镜头拼回去，再合并最短的镜头。
+- 每镜截开头、中间、结尾三帧（长边 512px）；中间帧存成关键帧图片资源。宫格每张放 3 个镜头，一行一个镜头，三列依次是开头、中间、结尾。关键帧和宫格计入存储容量，上传标识带任务 ID，任务被重新领取时复用已存的图片。
+- 口播转写复用 `CANVAS_WHISPER_BASE_URL` 指向的 whisper.cpp 服务，并受字幕转写功能开关约束。视频没有音轨、功能未开放、服务没配置或识别失败时，`transcript.source` 为 `none`，任务仍然成功，原因写在 `warnings`。
+
 ## 电商画布配置与公共模特
 
 管理员只读接口 GET /api/admin/settings/ecommerce/defaults 返回 data.defaults：cap:能力标识及 detail/main/wear/seed 对应 worker 实际内置规则。响应禁止缓存，普通用户无权读取，不修改自定义覆盖或 revision。

@@ -208,6 +208,9 @@ func (w *taskWorkerCoordinator) processClaimedTask(task *model.Task, globalSlot 
 	if task.Type == model.TaskTypeSocialVideoImport {
 		return w.processSocialVideoImport(task, ctx)
 	}
+	if task.Type == model.TaskTypeReplicationTeardown {
+		return w.processReplicationTeardown(task, ctx)
+	}
 	if task.MediaRecoveryJSON != "" {
 		result, recoveryErr := s.resumeTaskMedia(ctx, task)
 		return s.finishTaskMediaRecovery(task, result, recoveryErr)
@@ -489,6 +492,8 @@ func taskExecutionTimeoutWithPolicy(taskType string, policy RuntimeTaskPolicy) t
 		return 60 * time.Minute
 	case taskType == model.TaskTypeSocialVideoImport:
 		return 10 * time.Minute
+	case taskType == model.TaskTypeReplicationTeardown:
+		return videoTeardownTimeout
 	default:
 		return time.Duration(policy.DefaultTimeoutMinutes) * time.Minute
 	}

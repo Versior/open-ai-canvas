@@ -65,6 +65,7 @@ type CanvasNodeToolbarProps = {
     onExtractAudioFromVideo: (node: CanvasNodeData) => void;
     onTrimVideoSegments: (node: CanvasNodeData) => void;
     onEnhanceVideo?: (node: CanvasNodeData) => void;
+    onVideoTeardown?: (node: CanvasNodeData) => void;
     onSubtitles: (node: CanvasNodeData) => void;
     onTimeline: (node: CanvasNodeData) => void;
     onVersions?: (node: CanvasNodeData) => void;
@@ -142,6 +143,7 @@ export function CanvasNodeToolbar({
     onExtractAudioFromVideo,
     onTrimVideoSegments,
     onEnhanceVideo,
+    onVideoTeardown,
     onSubtitles,
     onTimeline,
     onVersions,
@@ -296,7 +298,7 @@ export function CanvasNodeToolbar({
         onNodeSaveAsset: onSaveAsset, onNodeRegionEdit: onRegionEdit, onNodeRemoveBackground: onRemoveBackground, onNodeEmotion: onEmotion, onNodePortraitTexture: onPortraitTexture, onNodeCrop: onCrop,
         onNodeCreateEditCopy: onCreateEditCopy, onNodeRotateImage: onRotateImage,
         onNodeSplit: (target) => onSplit(target, { rows: 2, columns: 2 }), onNodeUpscale: onUpscale, onNodeSuperResolve: onSuperResolve, onNodeAngle: onAngle, onNodeViewImage: onViewImage,
-        onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeEnhanceVideo: onEnhanceVideo, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
+        onNodeExtractVideoFrames: onExtractVideoFrames, onNodeExtractAudioFromVideo: onExtractAudioFromVideo, onNodeTrimVideoSegments: onTrimVideoSegments, onNodeEnhanceVideo: onEnhanceVideo, onNodeVideoTeardown: onVideoTeardown, onNodeReversePrompt: onReversePrompt, onNodeToggleFreeResize: onToggleFreeResize,
         onNodeSubtitles: onSubtitles, onNodeTimeline: onTimeline, onNodeVersions: onVersions, onNodeToggleLocked: onToggleLocked, onNodeCopyPrompt: copyImagePrompt,
         onNodeAdoptToDrama: onAdoptToDrama, onNodeRefreshFromDrama: onRefreshFromDrama,
     } as Partial<ToolbarHandlers> as ToolbarHandlers;

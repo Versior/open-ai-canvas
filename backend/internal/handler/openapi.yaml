@@ -3689,6 +3689,48 @@ paths:
           $ref: "#/components/responses/Error"
         "429":
           $ref: "#/components/responses/Error"
+  /video-replication/teardowns:
+    post:
+      tags: [tasks]
+      summary: 视频复刻：异步拆解一条视频的镜头、关键帧和口播
+      description: 需要登录。服务端用本地 ffmpeg 检测切点、截取每镜关键帧并拼成宫格，配置了转写服务时识别口播，结果写入任务 resultJson。不调用模型、不计费，关键帧和宫格作为图片资源计入存储。只接受当前账号自己的、不超过 3 分钟的视频资源。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
+      parameters:
+        - in: header
+          name: X-Idempotency-Key
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+          description: 客户端为一次拆解生成的稳定幂等键；重试原请求时必须复用
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoTeardownRequest"
+      responses:
+        "200":
+          description: 已创建或复用异步拆解任务
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Task"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
   /tasks/{id}/recover-media:
     post:
       tags: [tasks]
@@ -3869,6 +3911,32 @@ components:
               id: {type: string}
               name: {type: string}
               reason: {type: string}
+    VideoTeardownRequest:
+      type: object
+      required: [resourceId]
+      additionalProperties: false
+      properties:
+        resourceId:
+          type: string
+          maxLength: 128
+          description: 当前账号自己的视频资源 ID，时长不超过 3 分钟
+        projectId:
+          type: string
+          description: 可选，当前账号的活动画布或项目 ID
+        transcribe:
+          type: boolean
+          default: true
+          description: 是否识别口播。服务端没有配置转写服务时任务照常完成，并在结果 warnings 里说明
+        language:
+          type: string
+          maxLength: 16
+          description: 口播语言提示，例如 zh、en；auto 或留空表示自动识别
+        maxShots:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 60
+          description: 镜头数上限，超过时合并最短的镜头
     SocialVideoImportRequest:
       type: object
       additionalProperties: false

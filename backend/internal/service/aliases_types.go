@@ -406,6 +406,7 @@ type (
 	VideoCapabilityConfig                  = app.VideoCapabilityConfig
 	VideoDurationConfig                    = app.VideoDurationConfig
 	VideoReferenceConfig                   = app.VideoReferenceConfig
+	VideoTeardownRequest                   = app.VideoTeardownRequest
 	VoiceProfileSummary                    = app.VoiceProfileSummary
 	WalletSummary                          = app.WalletSummary
 	WorkflowField                          = app.WorkflowField
