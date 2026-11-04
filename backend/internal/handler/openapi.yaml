@@ -59,7 +59,7 @@ paths:
     get:
       tags: [canvas]
       summary: 搜索分页读取项目内置套图库
-      description: 登录可读，普通用户须启用电商与详情套图；管理员可在停用时管理。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。
+      description: 登录可读，普通用户须开放「电商生图台」；管理员不受开关限制。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。
       parameters:
         - {in: query, name: q, schema: {type: string, maxLength: 100}}
         - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
@@ -81,6 +81,15 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/templates:
+    get:
+      tags: [canvas]
+      summary: 读取后台已启用的套图模板
+      description: 权限同套图库。只返回 enabled 为 true 的模板，供生图台「模板套图」选择；停用草稿不返回。
+      responses:
+        "200": {description: data.templates 为 EcommerceSuiteTemplate 数组}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/settings/ecommerce:
     get:
       tags: [admin]

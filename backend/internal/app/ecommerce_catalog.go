@@ -72,6 +72,9 @@ func loadEcommerceCatalog() ([]ecommerceCatalogDocument, error) {
 	})
 	return ecommerceCatalogDocs, ecommerceCatalogErr
 }
+
+// allowEcommerceCatalog：套图库与后台模板供生图台「模板套图」使用，按「电商生图台」开关放行；
+// 旧画布的总开关和用途开关已没有后台入口，不再参与判断。管理员维护模板时不受开关限制。
 func (s *Service) allowEcommerceCatalog(actor *model.User) error {
 	if actor == nil {
 		return Unauthorized("请先登录")
@@ -79,14 +82,25 @@ func (s *Service) allowEcommerceCatalog(actor *model.User) error {
 	if actor.Role == model.UserRoleAdmin {
 		return nil
 	}
+	return s.RequireFeature(FeatureEcommerceStudio)
+}
+
+// EcommerceStudioTemplates 返回后台已启用的套图模板，供生图台选择；停用的草稿不对用户可见。
+func (s *Service) EcommerceStudioTemplates(actor *model.User) ([]EcommerceSuiteTemplate, error) {
+	if err := s.allowEcommerceCatalog(actor); err != nil {
+		return nil, err
+	}
 	_, setting, err := s.readEcommerceSetting()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !setting.Enabled || !setting.Flows["detail"].Enabled {
-		return Forbidden("管理员已停用电商套图")
+	templates := []EcommerceSuiteTemplate{}
+	for _, item := range setting.Templates {
+		if item.Enabled {
+			templates = append(templates, item)
+		}
 	}
-	return nil
+	return templates, nil
 }
 func (s *Service) EcommerceCatalog(actor *model.User, query string, page, pageSize int) (*EcommerceCatalogPage, error) {
 	if err := s.allowEcommerceCatalog(actor); err != nil {

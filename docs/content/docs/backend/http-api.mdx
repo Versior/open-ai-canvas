@@ -85,13 +85,16 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 | --- | --- |
 | `GET /api/ecommerce/templates` | 内置 1173 套目录，支持 q（100 字内）、page、pageSize（最多 50）；返回 items/total/page/pageSize 摘要 |
 | `GET /api/ecommerce/templates/:templateId` | 返回 data.template，含完整视觉规范、逐张镜头/布光/留白及参考提示词；原库只读 |
+| `GET /api/ecommerce/studio/templates` | 返回 data.templates：后台已启用的套图模板（停用草稿不返回），供生图台「模板套图」选择 |
+
+以上三个模板接口需要登录；普通用户须开放「功能开放 → 电商生图台」，否则返回 403 `电商生图台暂未开放`，管理员不受开关限制。旧画布的总开关 `enabled` 与 `flows.detail` 不再参与判断。
 | `GET /api/admin/settings/ecommerce` | 完整配置，包括旧画布遗留字段与 `revision` |
 | `PUT /api/admin/settings/ecommerce` | 提交完整配置及读取时的 `revision`；冲突拒绝覆盖；响应为保存后的 `data.setting` |
 | `GET /api/admin/settings/ecommerce/previous` | 读取上一版供草稿恢复，不立即生效；首次保存前返回 404 |
 
 配置字段为 `enabled`、`modelLibraryEnabled`、`autoBindEnabled`、`flows`、`capabilities`、`models`、`templates`、`revision`。后台页面只编辑 `capabilities.dossier`（商品档案）与 `templates`，其余字段是旧版电商画布遗留，保存时原样提交并照旧校验：`flows` 必须完整包含 `detail/main/wear/seed`；`capabilities` 包含 `planning/suite-forge/model-cast/pattern/listing/print-pack/pipeline/layers/dossier` 的开关与可选 `directorPrompt`，旧配置未提供时初始化为启用，提供时须完整；`models` 每项 `id/name/enabled/tags/resourceIds`，最多 200 个。`directorPrompt` 仅管理员接口可读写，空串使用服务端内置默认。写请求上限 2 MiB。
 
-`templates` 最多 200 套，各含 `id/name/flow/category/enabled/style/source/shots`；名称最多 100 字、类目 200 字、视觉规范 6000 字、来源 500 字，每套 1–30 张，每张标题 100 字、职责 12000 字。项目内置目录独立压缩嵌入后端，按页摘要和单套正文读取，不占 200 套额度；后台可载入为停用草稿再编辑保存。生图台目前不读取套图模板。
+`templates` 最多 200 套，各含 `id/name/flow/category/enabled/style/source/shots`；名称最多 100 字、类目 200 字、视觉规范 6000 字、来源 500 字，每套 1–30 张，每张标题 100 字、职责 12000 字。项目内置目录独立压缩嵌入后端，按页摘要和单套正文读取，不占 200 套额度；后台可载入为停用草稿再编辑保存。生图台的「模板套图」从后台已启用的模板和内置目录里选一套，选中时把模板快照存进商品的 `brief.suite`，之后后台改模板不影响已选的这一套。
 
 生图台识别商品提交 `metadata.ecommerceCapability=dossier` 与 `metadata.ecommerceAnalysisFlow=cap:dossier`，并带 `metadata.source=ecommerce-studio`。服务端在准入和 worker 执行时复查能力开关、模式与分析标识，拒绝 AgentRequests 混用；商品档案只看自身开关，不受旧画布总开关 `enabled` 约束，另需「功能开放 → 电商生图台」。worker 在内存中注入后台指令和电商知识库片段，持久任务输入不写入这些内容，上游请求/响应正文日志整体隐藏，失败任务不回显上游原文。其余旧画布能力与四种用途的任务仍按原规则校验，前端不再提交。
 

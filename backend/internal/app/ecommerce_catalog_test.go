@@ -50,21 +50,38 @@ func TestEcommerceBuiltinCatalog(t *testing.T) {
 		t.Fatal("invalid page accepted")
 	}
 	user := &model.User{ID: "ordinary", Role: model.UserRoleUser}
-	if _, err := s.EcommerceCatalog(user, "", 1, 20); err != nil {
+	// 生图台没开放时普通用户读不到套图库和后台模板，管理员照常维护。
+	if _, err := s.EcommerceCatalog(user, "", 1, 20); err == nil {
+		t.Fatal("catalog readable while studio closed")
+	}
+	if _, err := s.EcommerceCatalogTemplate(user, page.Items[0].ID); err == nil {
+		t.Fatal("template readable while studio closed")
+	}
+	if _, err := s.EcommerceStudioTemplates(user); err == nil {
+		t.Fatal("studio templates readable while studio closed")
+	}
+	if _, err := s.EcommerceCatalog(admin, "", 1, 20); err != nil {
+		t.Fatal("admin cannot manage catalog while studio closed")
+	}
+	if err := s.repo.SaveSystemSetting(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"ecommerceStudioEnabled":true}`}); err != nil {
 		t.Fatal(err)
 	}
+	// 旧画布的总开关已没有后台入口，关掉它不影响生图台用套图库；后台模板只给出已启用的。
+	shots := []EcommerceTemplateShot{{Title: "白底主图", Duty: "展示完整外观"}}
 	setting := defaultEcommerceSetting()
 	setting.Enabled = false
+	setting.Templates = []EcommerceSuiteTemplate{{ID: "on", Name: "启用的模板", Flow: "main", Shots: shots, Enabled: true}, {ID: "off", Name: "停用草稿", Flow: "detail", Shots: shots}}
 	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.EcommerceCatalog(user, "", 1, 20); err == nil {
-		t.Fatal("disabled catalog accepted")
+	if _, err := s.EcommerceCatalog(user, "", 1, 20); err != nil {
+		t.Fatalf("old canvas switch still gates catalog: %v", err)
 	}
-	if _, err := s.EcommerceCatalogTemplate(user, page.Items[0].ID); err == nil {
-		t.Fatal("disabled template accepted")
+	if _, err := s.EcommerceCatalogTemplate(user, page.Items[0].ID); err != nil {
+		t.Fatalf("template unreadable with studio open: %v", err)
 	}
-	if _, err := s.EcommerceCatalog(admin, "", 1, 20); err != nil {
-		t.Fatal("admin cannot manage disabled catalog")
+	templates, err := s.EcommerceStudioTemplates(user)
+	if err != nil || len(templates) != 1 || templates[0].ID != "on" {
+		t.Fatalf("studio templates = %+v, %v", templates, err)
 	}
 }
