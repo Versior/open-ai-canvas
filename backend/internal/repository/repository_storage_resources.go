@@ -6,6 +6,7 @@
 package repository
 
 import (
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -123,6 +124,14 @@ func (r *Repository) ReleaseDailyUpload(userID string, day string, size int64) e
 		}).Error
 }
 
+// AccountExemptResourceKinds 是管理员导入的站点外观资源（Live2D 模型、形象包、智能体形象图集）。
+// 它们给全站用户使用，不计入导入者的个人文件容量。
+var AccountExemptResourceKinds = []string{"live2d", "agent-avatar-bundle", "agent-pet"}
+
+func IsAccountExemptResourceKind(kind string) bool {
+	return slices.Contains(AccountExemptResourceKinds, kind)
+}
+
 func (r *Repository) UserStoredFileBytes(userID string) (int64, error) {
 	var total int64
 	err := r.db.Raw(`
@@ -132,11 +141,11 @@ func (r *Repository) UserStoredFileBytes(userID string) (int64, error) {
 				FROM (
 					SELECT MAX(size) AS size
 					FROM resources
-					WHERE user_id = ? AND status = ?
+					WHERE user_id = ? AND status = ? AND kind NOT IN ?
 					GROUP BY COALESCE(NULLIF(provider, ''), 'local'), endpoint, bucket, object_key
 				) AS physical_resources
 			), 0)
-	`, userID, model.ResourceStatusReady).Scan(&total).Error
+	`, userID, model.ResourceStatusReady, AccountExemptResourceKinds).Scan(&total).Error
 	return total, err
 }
 

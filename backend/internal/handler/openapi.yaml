@@ -1046,6 +1046,294 @@ paths:
           { description: JSON 或 MP4 原始内容，支持 Range；停用后拒绝公开读取 }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /agent-pets:
+    get:
+      tags: [agent]
+      summary: 列出当前用户可见的智能体形象（已上架和已购买）及使用资格
+      responses:
+        "200":
+          description: 成功信封 data 为形象列表；selectedPetId 为空表示使用站点默认形象
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  msg: {type: string}
+                  data:
+                    type: object
+                    required: [pets, selectedPetId, creditsEnabled, consumedMicrocredits]
+                    properties:
+                      pets: {type: array, items: {$ref: "#/components/schemas/AgentPet"}}
+                      selectedPetId: {type: string}
+                      creditsEnabled: {type: boolean}
+                      consumedMicrocredits: {type: integer, format: int64, description: 累计消费（已结算的模型调用积分），用于累计消费解锁}
+        "401": {$ref: "#/components/responses/Error"}
+  /agent-pets/selection:
+    get:
+      tags: [agent]
+      summary: 读取当前使用的形象；未选择或已失去资格时 data.pet 为 null
+      responses:
+        "200":
+          description: 成功信封 data.pet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data:
+                    type: object
+                    properties:
+                      pet: {allOf: [{$ref: "#/components/schemas/AgentPet"}], nullable: true}
+        "401": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [agent]
+      summary: 切换当前形象；petId 为空字符串时恢复站点默认形象
+      description: 累计消费已达标（claimable）的形象在这里自动领取，之后调整门槛不影响已领取的用户。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [petId]
+              properties:
+                petId: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/purchase:
+    post:
+      tags: [agent]
+      summary: 用积分购买付费形象（幂等，已购买时不重复扣费）
+      description: expectedPriceMicrocredits 必须等于当前价格，否则返回 409；余额不足返回 400，reason 为 failed_precondition。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedPriceMicrocredits]
+              properties:
+                expectedPriceMicrocredits: {type: integer, format: int64, minimum: 1}
+      responses:
+        "200":
+          description: 成功信封 data 包含已购形象、本次是否扣费和购买后的可用积分
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data:
+                    type: object
+                    required: [pet, charged, availableMicrocredits]
+                    properties:
+                      pet: {$ref: "#/components/schemas/AgentPet"}
+                      charged: {type: boolean}
+                      availableMicrocredits: {type: integer, format: int64}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/spritesheet:
+    get:
+      tags: [agent]
+      summary: 读取形象图集（WebP 或 PNG，8 列 × 9/11 行，单格 192×208）
+      description: 已上架的形象所有登录用户可读；已下架的只有已拥有（购买或领取）的用户和管理员可读。v 等于当前 revision 时长期缓存，支持 If-None-Match。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: 图集原始内容}
+        "304": {description: 未变化}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/preview:
+    get:
+      tags: [agent]
+      summary: 读取形象列表缩略图（PNG，192×208，待机动作第一格有画面的帧）
+      description: 商店、换形象菜单和后台列表先显示缩略图，悬停或选中时才加载整张图集。读取权限与图集相同。v 等于 revision 时长期缓存；待机状态改用其他动作时 v 为 revision 加 “.动作名”。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: PNG 缩略图}
+        "304": {description: 未变化}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets:
+    get:
+      tags: [admin]
+      summary: 列出形象库（内置和上传），含开放方式与拥有人数（购买或领取）
+      responses:
+        "200":
+          description: 成功信封 data.pets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data:
+                    type: object
+                    properties:
+                      pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/import:
+    post:
+      tags: [admin]
+      summary: 导入 Codex 宠物 ZIP（pet.json + 图集）或单张 WebP/PNG 图集，导入后默认未上架
+      description: 文件最大 32 MiB、图集最大 16 MiB；图集须为带透明通道的 1536×1872（v1）或 1536×2288（v2）。pet.json 只读取名称和简介。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/batch:
+    post:
+      tags: [admin]
+      summary: 批量修改形象（上架、分类、角标、开放方式与价格、促销、排序位置），只改提供了的字段
+      description: 一次最多 200 个。不适用的形象（如给非积分购买的形象开促销、打折后价格不变）跳过并在 skipped 说明；任一形象校验失败整批不保存。access 改成非 paid 时同时结束促销；promotion.enabled 为 false 时结束所选形象的促销，为 true 时按 percent（原价的百分比，0 为限时免费）定促销价，四舍五入到 0.01 积分。sortPosition 为 first / last 时把所选形象按原来的先后移到形象库最前或最后（间隔 10），其余形象的排序值不变；新排序值超出 -100000 到 100000 时整批拒绝。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
+                enabled: {type: boolean}
+                category: {type: string, maxLength: 12, description: 空字符串表示移出分类}
+                badge: {type: string, maxLength: 6}
+                access:
+                  type: object
+                  required: [mode]
+                  properties:
+                    mode: {type: string, enum: [free, vip, paid, spend]}
+                    priceMicrocredits: {type: integer, format: int64}
+                    unlockMicrocredits: {type: integer, format: int64}
+                    groupCodes: {type: array, items: {type: string}}
+                promotion:
+                  type: object
+                  required: [enabled]
+                  properties:
+                    enabled: {type: boolean}
+                    label: {type: string, maxLength: 8}
+                    percent: {type: integer, minimum: 0, maximum: 99}
+                    startsAt: {type: string, format: date-time, nullable: true}
+                    endsAt: {type: string, format: date-time, nullable: true}
+                sortPosition: {type: string, enum: [first, last]}
+      responses:
+        "200":
+          description: 成功信封 data 为批量结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/batch-delete:
+    post:
+      tags: [admin]
+      summary: 批量删除上传的形象；内置形象和已有人拥有的形象跳过并说明原因
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
+      responses:
+        "200":
+          description: 成功信封 data 为批量结果（deleted、skipped）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/{id}:
+    put:
+      tags: [admin]
+      summary: 保存形象的完整配置（名称、简介、上架、开放方式与价格、分组、分类、角标、促销、状态映射、说话风格、像素清晰、排序）
+      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用；spend 累计消费门槛须大于 0，达标后免费领取，所选分组免费使用。促销只对 paid 生效，促销价须低于原价（0 为限时免费），结束时间须晚于现在、开始时间，且一次不超过一年；未改动的促销原样保留。tone 与 lines 只对上传形象生效。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, enabled, access, priceMicrocredits, unlockMicrocredits, groupCodes, stateRows, pixelated, sortOrder]
+              properties:
+                name: {type: string, maxLength: 40}
+                description: {type: string, maxLength: 200}
+                enabled: {type: boolean}
+                access: {type: string, enum: [free, vip, paid, spend]}
+                priceMicrocredits: {type: integer, format: int64, description: paid 的价格}
+                unlockMicrocredits: {type: integer, format: int64, description: spend 的累计消费门槛}
+                groupCodes: {type: array, items: {type: string}}
+                stateRows: {type: object, additionalProperties: {type: string}}
+                pixelated: {type: boolean}
+                sortOrder: {type: integer}
+                category: {type: string, maxLength: 12}
+                badge: {type: string, maxLength: 6}
+                promoEnabled: {type: boolean}
+                promoLabel: {type: string, maxLength: 8}
+                promoPriceMicrocredits: {type: integer, format: int64, minimum: 0}
+                promoStartsAt: {type: string, format: date-time, nullable: true}
+                promoEndsAt: {type: string, format: date-time, nullable: true}
+                tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 仅上传形象}
+                lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 仅上传形象}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 删除上传的形象；内置形象只能下架，已有人购买或领取的形象返回 409
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
   /tools:
     get:
       tags: [canvas]
@@ -3516,6 +3804,71 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    AgentPetPromotion:
+      type: object
+      required: [label, endsAt]
+      properties:
+        label: {type: string, maxLength: 8, description: 活动名称，默认“限时特惠”，促销价为 0 时默认“限时免费”}
+        endsAt: {type: string, format: date-time, nullable: true, description: 为空表示管理员手动结束前一直有效}
+    AgentPet:
+      type: object
+      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, listPriceMicrocredits, promotion, unlockMicrocredits, owned, memberFree, usable, purchasable, claimable, category, badge, tone, lines]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        spriteVersion: {type: integer, enum: [1, 2], description: 2 表示带 16 个视线方向，可跟随鼠标}
+        revision: {type: string, description: 图集缓存版本}
+        pixelated: {type: boolean}
+        stateRows: {type: object, additionalProperties: {type: string, enum: [idle, running-right, running-left, waving, jumping, failed, waiting, running, review]}, description: 助手状态到图集动作的覆盖项}
+        access: {type: string, enum: [free, vip, paid, spend]}
+        priceMicrocredits: {type: integer, format: int64, description: 此刻的售价（促销中为促销价，限时免费为 0）；仅 paid 有值}
+        listPriceMicrocredits: {type: integer, format: int64, description: 原价；仅 paid 有值}
+        promotion: {allOf: [{$ref: "#/components/schemas/AgentPetPromotion"}], nullable: true, description: 只在促销进行中时返回}
+        unlockMicrocredits: {type: integer, format: int64, description: 仅 spend 时大于 0，累计消费达到即可领取}
+        category: {type: string, maxLength: 12, description: 商店分类，空为未分类}
+        badge: {type: string, maxLength: 6, description: 卡片角标，如“新品”}
+        owned: {type: boolean}
+        memberFree: {type: boolean, description: 付费形象对当前用户分组免费}
+        usable: {type: boolean}
+        purchasable: {type: boolean}
+        claimable: {type: boolean, description: 累计消费已达标、尚未领取；选择时自动领取}
+        tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 头顶气泡的说话风格；上传形象为空，前端用通用语气}
+        lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 形象专属台词}
+    AdminAgentPet:
+      allOf:
+        - $ref: "#/components/schemas/AgentPet"
+        - type: object
+          required: [source, enabled, groupCodes, sortOrder, ownerCount, revenueMicrocredits, promoEnabled, promoLabel, promoPriceMicrocredits, promoStartsAt, promoEndsAt, promoState]
+          properties:
+            source: {type: string, enum: [builtin, upload]}
+            enabled: {type: boolean}
+            groupCodes: {type: array, items: {type: string}}
+            sortOrder: {type: integer}
+            ownerCount: {type: integer, format: int64, description: 拥有人数（购买或领取）}
+            revenueMicrocredits: {type: integer, format: int64, description: 累计购买收入}
+            promoEnabled: {type: boolean}
+            promoLabel: {type: string}
+            promoPriceMicrocredits: {type: integer, format: int64}
+            promoStartsAt: {type: string, format: date-time, nullable: true}
+            promoEndsAt: {type: string, format: date-time, nullable: true}
+            promoState: {type: string, enum: [none, scheduled, active, ended]}
+            updatedAt: {type: string, format: date-time}
+    AdminAgentPetBatchResult:
+      type: object
+      required: [pets, deleted, skipped]
+      properties:
+        pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}, description: 修改后的形象}
+        deleted: {type: array, items: {type: string}, description: 已删除的形象 ID}
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, name, reason]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              reason: {type: string}
     SocialVideoImportRequest:
       type: object
       additionalProperties: false

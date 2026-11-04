@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Input } from "antd";
-import { ArrowLeft, BookMarked, Check, ChevronRight, Cpu, Gauge, LockKeyhole, PlugZap, Search, ShieldCheck, Sparkles, Wrench, Blocks, CirclePlay, X } from "lucide-react";
+import { ArrowLeft, BookMarked, Check, ChevronRight, Cpu, Gauge, LockKeyhole, PawPrint, PlugZap, Search, ShieldCheck, Sparkles, Wrench, Blocks, CirclePlay, X } from "lucide-react";
 
+import { AgentPetPicker } from "@/components/canvas/agent-pet-picker";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { ModelPicker } from "@/components/model-picker";
 import { Switch } from "@/components/ui/base/switch";
 import type { CanvasTheme } from "@/lib/canvas-theme";
@@ -15,7 +17,7 @@ import { AgentConnectorsBar } from "./canvas-cloud-agent-connectors";
 export const AGENT_PINNED_SKILL_LIMIT = 8;
 
 export type AgentContextKey = "canvas" | "resources" | "generation_history" | "skills" | "project";
-type SettingsSection = "home" | "profile" | "memories" | "skills" | "mcp" | "context" | "budget";
+type SettingsSection = "home" | "profile" | "memories" | "skills" | "mcp" | "context" | "budget" | "pet";
 
 type AgentSettingsProps = {
     theme: CanvasTheme;
@@ -92,7 +94,7 @@ export function CanvasCloudAgentSettings(props: AgentSettingsProps) {
                 </div>
                 {section !== "home" ? (
                     <span className="rounded-full px-2 py-1 text-[var(--fs-label)] opacity-50" style={{ background: theme.node.fill }}>
-                        {section === "skills" ? "自动匹配" : "当前 Agent"}
+                        {section === "skills" ? "自动匹配" : section === "pet" ? "仅自己可见" : "当前 Agent"}
                     </span>
                 ) : null}
                 {props.onCollapse ? <Button type="text" shape="circle" icon={<X className="size-4" />} onClick={props.onCollapse} aria-label="收起 Agent" title="收起" /> : null}
@@ -105,13 +107,19 @@ export function CanvasCloudAgentSettings(props: AgentSettingsProps) {
             {section === "mcp" ? <McpWorkspace theme={theme} /> : null}
             {section === "context" ? <ContextWorkspace props={props} theme={theme} /> : null}
             {section === "budget" ? <BudgetWorkspace props={props} theme={theme} /> : null}
+            {section === "pet" ? <AgentPetPicker theme={theme} /> : null}
         </div>
     );
 }
 
 function SettingsHome({ props, theme, onOpen }: { props: AgentSettingsProps; theme: CanvasTheme; onOpen: (section: SettingsSection) => void }) {
+    const { pet } = useActiveAgentPet();
     return (
         <div className="canvas-agent-settings-scroll thin-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+            <section>
+                <SettingLabel label="助手形象" hint="只对你自己生效" />
+                <SettingRow theme={theme} icon={<PawPrint className="size-4" />} title="更换形象" summary={pet ? `当前：${pet.name}` : "当前使用站点默认形象"} onClick={() => onOpen("pet")} />
+            </section>
             <section>
                 <SettingLabel label="推理模式" hint="新运行生效" />
                 <div className="grid grid-cols-3 gap-2">
@@ -614,7 +622,7 @@ function BudgetInput({ label, hint, value, onChange, theme }: { label: string; h
     );
 }
 function sectionTitle(section: SettingsSection) {
-    return section === "profile" ? "长期偏好" : section === "memories" ? "个人记忆" : section === "skills" ? "Skills" : section === "mcp" ? "MCP 与工具" : section === "context" ? "上下文" : "预算";
+    return section === "profile" ? "长期偏好" : section === "memories" ? "个人记忆" : section === "skills" ? "Skills" : section === "mcp" ? "MCP 与工具" : section === "context" ? "上下文" : section === "pet" ? "助手形象" : "预算";
 }
 function sectionSubtitle(section: SettingsSection) {
     return section === "profile"
@@ -627,7 +635,9 @@ function sectionSubtitle(section: SettingsSection) {
               ? "云端工具与连接状态"
               : section === "context"
                 ? "控制 Agent 能读取的范围"
-                : "控制本轮积分与生成消耗";
+                : section === "pet"
+                  ? "免费、会员专享、积分购买或消费解锁"
+                  : "控制本轮积分与生成消耗";
 }
 
 export function agentPermissionLabel(mode: AgentPermissionMode) {

@@ -92,7 +92,7 @@ func (r *Repository) CreditLedger(userID string, entryType string, limit int, of
 	case "income":
 		query = query.Where("type IN ?", []model.CreditLedgerType{model.CreditLedgerRedeem, model.CreditLedgerAdminGrant, model.CreditLedgerAdminAdjust, model.CreditLedgerSignupBonus, model.CreditLedgerCheckinBonus})
 	case "consume":
-		query = query.Where("type = ?", model.CreditLedgerConsume)
+		query = query.Where("type IN ?", []model.CreditLedgerType{model.CreditLedgerConsume, model.CreditLedgerAgentPetPurchase})
 	case "refund":
 		query = query.Where("type = ?", model.CreditLedgerRefund)
 	}

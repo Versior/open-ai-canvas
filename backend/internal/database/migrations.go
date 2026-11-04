@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 81
+const CurrentSchemaVersion int64 = 82
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -55,6 +55,8 @@ const agentMemoryDocumentColumnsMigrationChecksum = "sha256:agent-memory-documen
 const upstreamEcommerceAgentKnowledgeMigrationChecksum = "sha256:ecommerce-agent-and-knowledge-v79-20261101"
 const dramaCastVoiceLooksMigrationName = "drama_cast_voice_looks"
 const dramaCastVoiceLooksMigrationChecksum = "sha256:drama-cast-voice-looks-v78-20261101"
+const agentPetSkinsMigrationName = "agent_pet_skins"
+const agentPetSkinsMigrationChecksum = "sha256:agent-pet-skins-v80-20261101"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -310,6 +312,11 @@ var schemaMigrations = []migration{
 	{version: 80, name: ecommerceAgentKnowledgeMigrationName, checksum: ecommerceAgentKnowledgeMigrationChecksum, apply: migrateEcommerceFeature},
 	// 上游 main 的 78（短剧角色声音与造型）。Fork 的 80 已被电商 Agent 占用，排在其后为 81，名称和校验和与上游一致。
 	{version: 81, name: dramaCastVoiceLooksMigrationName, checksum: dramaCastVoiceLooksMigrationChecksum, apply: migrateDramaCastVoiceLooks},
+	// Fork 自有：智能体形象库、用户已购形象和当前选择。形象分支上原为 80，合入电商分支时排到电商 Agent（80）
+	// 与短剧角色声音与造型（81）之后，校验和沿用原值。上游之后的新迁移同步时顺延到 83 起。
+	{version: 82, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{})
+	}},
 }
 
 // migrateDramaCastVoiceLooks 为短剧设定补角色声音（声音库条目与样本音频）和造型（所属角色、造型名、默认适用章节）。
@@ -977,6 +984,17 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		}
 		if !tx.Migrator().HasColumn(&model.DramaShot{}, "LookCastIDsJSON") {
 			return fmt.Errorf("短剧角色声音与造型迁移账本与物理结构不一致：缺少 drama_shots.look_cast_ids_json")
+		}
+	case 82:
+		for _, table := range []any{&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{}} {
+			if !tx.Migrator().HasTable(table) {
+				return fmt.Errorf("智能体形象迁移账本与物理结构不一致：缺少形象库、已购或选择表")
+			}
+		}
+		for _, field := range []string{"UnlockMicrocredits", "Tone", "LinesJSON", "Category", "Badge", "PromoEnabled", "PromoLabel", "PromoPriceMicrocredits", "PromoStartsAt", "PromoEndsAt"} {
+			if !tx.Migrator().HasColumn(&model.AgentPet{}, field) {
+				return fmt.Errorf("智能体形象迁移账本与物理结构不一致：agent_pets 缺少 %s 列", field)
+			}
 		}
 	}
 	return nil

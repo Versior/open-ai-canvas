@@ -6,7 +6,7 @@
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
-import { type CSSProperties, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
@@ -16,6 +16,15 @@ import { cn } from "@/lib/utils";
 import { Live2DAvatar } from "./live2d-avatar";
 import { agentAvatarBundleFileURL, live2DModelURL } from "@/services/api/appearance";
 import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
+import { AgentPetBubble } from "@/components/canvas/agent-pet-bubble";
+import { AgentPetContextMenu, type AgentPetMenuPoint } from "@/components/canvas/agent-pet-context-menu";
+import { AgentPetStoreModal } from "@/components/canvas/agent-pet-picker";
+import { AgentPetSprite, useAgentPetSheetMetrics } from "@/components/canvas/agent-pet-sprite";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
+import { AGENT_PET_ASPECT, agentPetLauncherHeight } from "@/lib/canvas/agent-pet";
+import { agentPetSpritesheetURL } from "@/services/api/agent-pets";
+import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import { ArrowDown, ArrowLeft, Check, Clock3, Download, Ellipsis, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RefreshCw, Scaling, Settings2, ShieldCheck, Trash2, X, Sparkles } from "lucide-react";
 import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
@@ -65,12 +74,30 @@ export const AgentLauncher = memo(function AgentLauncher({
     const appearance = useAppearanceStore((state) => state.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
     const appearanceResolved = useAppearanceStore((state) => state.resolved);
     const appearanceRevision = useAppearanceStore((state) => state.appearance.revision);
-    const live = appearance.avatarType === "live2d" && Boolean(appearance.live2dResourceId && appearance.live2dEntry);
+    // 用户选择的形象优先于站点默认形象；图集加载失败时回到默认形象。
+    const { pet: selectedPet, pending: petPending } = useActiveAgentPet();
+    const [failedPetId, setFailedPetId] = useState("");
+    const pet = selectedPet && selectedPet.id !== failedPetId ? selectedPet : null;
+    const [petHovered, setPetHovered] = useState(false);
+    const petSize = useAgentPetPrefsStore((state) => state.size);
+    // 右键菜单（换形象、商店、大小、气泡等）；键盘菜单键 / Shift+F10 也能打开。
+    const launcherRef = useRef<HTMLButtonElement>(null);
+    const [menuPoint, setMenuPoint] = useState<AgentPetMenuPoint | null>(null);
+    const [storeOpen, setStoreOpen] = useState(false);
+    const closeMenu = useCallback((restoreFocus: boolean) => {
+        setMenuPoint(null);
+        if (restoreFocus) launcherRef.current?.focus({ preventScroll: true });
+    }, []);
+    useEffect(() => {
+        if (hidden) setMenuPoint(null);
+    }, [hidden]);
+    const bundleActive = appearance.avatarType === "bundle" && !pet;
+    const live = !pet && appearance.avatarType === "live2d" && Boolean(appearance.live2dResourceId && appearance.live2dEntry);
     const avatarState = agentAvatarStateForRunStatus(status);
     const bundleManifestURL = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, appearanceRevision) : "/doll/avatar.json";
     const [bundleManifestState, setBundleManifestState] = useState<{ url: string; manifest: AgentAvatarBundleManifest | null } | null>(null);
     useEffect(() => {
-        if (appearance.avatarType !== "bundle") {
+        if (!bundleActive) {
             setBundleManifestState(null);
             return;
         }
@@ -87,13 +114,13 @@ export const AgentLauncher = memo(function AgentLauncher({
             }
         })();
         return () => controller.abort();
-    }, [appearance.avatarType, bundleManifestURL]);
+    }, [bundleActive, bundleManifestURL]);
     const currentBundleManifestState = bundleManifestState?.url === bundleManifestURL ? bundleManifestState : null;
     const bundleManifest = currentBundleManifestState?.manifest ?? null;
-    const bundleManifestLoading = appearance.avatarType === "bundle" && currentBundleManifestState === null;
+    const bundleManifestLoading = bundleActive && currentBundleManifestState === null;
     const clip = bundleManifest ? agentAvatarClipForState(appearance, avatarState, bundleManifest) : "";
     const clipFile = bundleManifest?.clips[clip] || "";
-    const mediaURL = appearance.avatarType === "bundle" && clipFile ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, clipFile, false, appearanceRevision) : `/doll/${encodeURIComponent(clipFile)}`) : "";
+    const mediaURL = bundleActive && clipFile ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, clipFile, false, appearanceRevision) : `/doll/${encodeURIComponent(clipFile)}`) : "";
     const [mediaError, setMediaError] = useState(false);
     useEffect(() => setMediaError(false), [mediaURL]);
     const [live2DError, setLive2DError] = useState("");
@@ -115,33 +142,48 @@ export const AgentLauncher = memo(function AgentLauncher({
         }
     };
     const media = Boolean(mediaURL && !mediaError);
-    const aspectRatio = live ? 0.75 : bundleManifest ? bundleManifest.width / bundleManifest.height : appearance.avatarType === "bundle" ? 480 / 432 : 1;
-    const largeAvatar = live || media || bundleManifestLoading;
+    const aspectRatio = pet ? AGENT_PET_ASPECT : live ? 0.75 : bundleManifest ? bundleManifest.width / bundleManifest.height : appearance.avatarType === "bundle" ? 480 / 432 : 1;
+    const largeAvatar = Boolean(pet) || petPending || live || media || bundleManifestLoading;
     const inCanvasEditor = Boolean(useMatch("/canvas/:id"));
     // 收起后只留小圆球入口：不加载 Live2D / 动画，也不挡画布。位置以右下角为锚点，收起展开不跳位。
     const keepsAvatarSize = largeAvatar && !collapsed;
-    const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? resolveAgentLauncherAvatarHeight(appearance.avatarHeight, aspectRatio, viewport, inCanvasEditor) : 76;
+    const avatarHeight = pet ? agentPetLauncherHeight(petSize, appearance.avatarHeight, viewport, inCanvasEditor) : resolveAgentLauncherAvatarHeight(appearance.avatarHeight, aspectRatio, viewport, inCanvasEditor);
+    const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? avatarHeight : 76;
     const width = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? Math.round(height * aspectRatio) : 76;
     const { position, dragging, handlers } = useAgentLauncherPosition(onOpen, width, height);
     const { onClick, onKeyDown, onDoubleClick, ...pointerHandlers } = handlers;
     // 大形象的外框大多是透明像素：外框不接收指针，只有身体热区可点、可拖，透明处的点击落到下面的页面。
     // 键盘聚焦与激活仍在按钮上；小圆球和默认 76px 入口整块可点。
-    const bodyHitOnly = keepsAvatarSize && (live || media);
+    const bodyHitOnly = keepsAvatarSize && (live || media || Boolean(pet));
     const hitInset = bodyHitOnly ? AGENT_LAUNCHER_HIT_INSET : null;
+    const petHoverHandlers = pet ? { onPointerEnter: () => setPetHovered(true), onPointerLeave: () => setPetHovered(false) } : null;
+    // 宠物形象不显示状态圆点、入口文字和待审批角标，改由头顶云朵气泡说话。
+    const petShown = Boolean(pet) && !collapsed;
+    const petSheetURL = pet ? agentPetSpritesheetURL(pet) : "";
+    const petMetrics = useAgentPetSheetMetrics(petSheetURL, pet?.spriteVersion ?? 1);
+    const { message: petMessage, dismiss: dismissPetMessage, speak: petSpeak } = useAgentPetChatter({ pet, state: avatarState, approvalPending, active: petShown && !hidden, hovered: petHovered });
     const showToggle = !hidden && (largeAvatar || collapsed);
+    const openMenu = (event: ReactMouseEvent<HTMLElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        // 键盘打开时可能没有指针坐标，菜单贴着入口中心打开。
+        const rect = event.currentTarget.getBoundingClientRect();
+        setMenuPoint({ x: event.clientX || rect.left + rect.width / 2, y: event.clientY || rect.top + rect.height / 2 });
+    };
     return (
         <>
             <motion.button
+                ref={launcherRef}
                 type="button"
                 aria-label={`打开${appearance.agentName}`}
-                title={live && live2DError ? live2DError : `${approvalPending ? "Agent 等待你的审批" : "打开 Agent 助手"} · 拖动可调整位置，聚焦后可用方向键移动`}
+                title={live && live2DError ? live2DError : `${approvalPending ? "Agent 等待你的审批" : "打开 Agent 助手"} · 拖动可调整位置，聚焦后可用方向键移动 · 右键可换形象、调大小`}
                 className={cn(
                     "canvas-agent-launcher fixed z-[var(--z-panel-floating)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current/35",
                     dragging && "is-dragging",
                     collapsed && "is-collapsed",
                     bodyHitOnly && "is-body-hit",
                     keepsAvatarSize && live && "canvas-agent-launcher-live2d",
-                    keepsAvatarSize && media && "canvas-agent-launcher-media",
+                    keepsAvatarSize && (media || Boolean(pet)) && "canvas-agent-launcher-media",
                 )}
                 style={{ ...position, width, height, color: theme.node.text, "--canvas-agent-launcher-shadow": theme.spatial.shadow, ...(hidden ? { display: "none" } : null) } as CSSProperties}
                 aria-hidden={hidden || undefined}
@@ -152,13 +194,35 @@ export const AgentLauncher = memo(function AgentLauncher({
                 onClick={onClick}
                 onKeyDown={onKeyDown}
                 onDoubleClick={onDoubleClick}
+                onContextMenu={openMenu}
                 whileHover={reducedMotion || dragging ? undefined : { scale: 1.035 }}
                 whileTap={reducedMotion || dragging ? undefined : { scale: 0.96 }}
                 transition={{ duration: reducedMotion ? 0 : 0.18 }}
             >
-                {hitInset ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} /> : null}
+                {hitInset ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} {...petHoverHandlers} /> : null}
                 {collapsed ? (
                     <FluidOrb size={30} color="#7164f6" />
+                ) : pet ? (
+                    <AgentPetSprite
+                        src={petSheetURL}
+                        version={pet.spriteVersion}
+                        state={avatarState}
+                        stateRows={pet.stateRows}
+                        width={width}
+                        height={height}
+                        paused={hidden}
+                        reducedMotion={reducedMotion}
+                        pixelated={pet.pixelated}
+                        dragging={dragging}
+                        offsetRight={position.right}
+                        hovered={petHovered}
+                        onError={() => setFailedPetId(pet.id)}
+                    />
+                ) : petPending ? (
+                    <span role="status" aria-busy="true">
+                        <LoaderCircle className={reducedMotion ? "size-6" : "size-6 motion-safe:animate-spin"} aria-hidden="true" />
+                        <span className="sr-only">正在加载助手形象</span>
+                    </span>
                 ) : live ? (
                     <Live2DAvatar
                         url={live2DModelURL(appearance.live2dResourceId, appearance.live2dEntry)}
@@ -179,15 +243,24 @@ export const AgentLauncher = memo(function AgentLauncher({
                 ) : (
                     <FluidOrb size={60} color="#7164f6" />
                 )}
-                {appearance.launcherLabel && !collapsed ? <span className="canvas-agent-launcher-label">{appearance.launcherLabel}</span> : null}
+                {appearance.launcherLabel && !collapsed && !petShown ? <span className="canvas-agent-launcher-label">{appearance.launcherLabel}</span> : null}
                 {live && live2DError ? (
                     <span className="sr-only" role="status">
                         {live2DError}
                     </span>
                 ) : null}
-                <span className={cn("canvas-agent-launcher-status", approvalPending && "is-pending")} style={{ "--canvas-agent-status-color": statusColor } as CSSProperties} />
-                {approvalPending ? <span className="canvas-agent-launcher-badge">待审批</span> : null}
+                {petShown ? null : <span className={cn("canvas-agent-launcher-status", approvalPending && "is-pending")} style={{ "--canvas-agent-status-color": statusColor } as CSSProperties} />}
+                {approvalPending && !petShown ? <span className="canvas-agent-launcher-badge">待审批</span> : null}
             </motion.button>
+            {petShown && !hidden && petMessage ? (
+                <AgentPetBubble
+                    key={petMessage.id}
+                    text={petMessage.text}
+                    anchor={{ left: viewport.width - position.right - width, top: viewport.height - position.bottom - height, width, height, headTop: petMetrics.headTop }}
+                    viewport={viewport}
+                    onDismiss={dismissPetMessage}
+                />
+            ) : null}
             {showToggle ? (
                 <button
                     type="button"
@@ -207,6 +280,23 @@ export const AgentLauncher = memo(function AgentLauncher({
                     {collapsed ? <Maximize2 className="size-3" aria-hidden="true" /> : <Minus className="size-3" aria-hidden="true" />}
                 </button>
             ) : null}
+            {menuPoint && !hidden ? (
+                <AgentPetContextMenu
+                    theme={theme}
+                    point={menuPoint}
+                    pet={pet}
+                    agentName={appearance.agentName}
+                    petShown={petShown}
+                    collapsed={collapsed}
+                    approvalPending={approvalPending}
+                    onOpenAgent={onOpen}
+                    onOpenStore={() => setStoreOpen(true)}
+                    onSpeak={petSpeak}
+                    onToggleCollapsed={toggleCollapsed}
+                    onClose={closeMenu}
+                />
+            ) : null}
+            <AgentPetStoreModal theme={theme} open={storeOpen} onClose={() => setStoreOpen(false)} />
         </>
     );
 });
