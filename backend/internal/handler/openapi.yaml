@@ -155,6 +155,61 @@ paths:
         "307": {description: 按资源存储位置跳转}
         "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio:
+    get:
+      tags: [canvas]
+      summary: 读取当前用户的电商生图台工作区
+      description: 登录可读，只返回本人的商品档案、出图方案与采用结果。revision 为整份工作区的修订号，每次保存或删除加一。Cache-Control 为 no-store。
+      responses:
+        "200": {description: data 包含 revision 与 products；products 为前端定义的商品对象数组}
+        "401": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/products/{productId}:
+    get:
+      tags: [canvas]
+      summary: 读取一个生图台商品
+      description: 只返回本人的商品；保存冲突后用它载入最新版本。Cache-Control 为 no-store。
+      parameters:
+        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      responses:
+        "200": {description: data 包含工作区 revision 与 product；product.revision 是该商品的修订号}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [canvas]
+      summary: 新建或整体替换一个生图台商品
+      description: 请求体只能是 {product, expectedRevision}，product.id 必须与地址一致（6–80 位字母、数字、下划线或连字符）。expectedRevision 是上次读到的商品修订号（新商品为 0），与服务端不一致时返回 409、reason=studio_product_conflict、details.revision 为当前值；省略时直接覆盖。product.revision 由服务端写入，客户端传来的值被忽略。单个商品不超过 1 MiB、整份工作区不超过 8 MiB、最多 200 个商品；不能内嵌 data URL，图片须先上传为资源，并以 resourceId 字段引用，孤儿清理会据此保留这些资源。与旧私有库共用一行数据，其他键原样保留。受画布写入频率限制。
+      parameters:
+        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product]
+              additionalProperties: false
+              properties:
+                product: {type: object}
+                expectedRevision: {type: integer, minimum: 0}
+      responses:
+        "200": {description: data 包含新的工作区 revision 与规范化后的 product（带新的 product.revision）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [canvas]
+      summary: 删除一个生图台商品
+      description: 幂等，商品不存在时同样返回当前 revision。只删除工作区记录，不删除已上传的素材与任务。
+      parameters:
+        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      responses:
+        "200": {description: data.revision 为删除后的修订号}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
   /libtv/gallery:
     get:
       tags: [libtv]
@@ -4094,9 +4149,14 @@ components:
         contextScope:
           type: array
           maxItems: 1
+          description: canvas 需要 canvasId；studio 需要 studioProductId，且 canvasId 与焦点节点必须为空。
           items:
             type: string
-            enum: [canvas]
+            enum: [canvas, studio]
+        studioProductId:
+          type: string
+          maxLength: 80
+          description: 只与 contextScope=[studio] 一起出现，绑定当前用户的电商生图台商品；建 run 时校验归属，本轮只开放生图台工具与通用工具。
         focusNodeIds:
           type: array
           maxItems: 8

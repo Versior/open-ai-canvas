@@ -333,6 +333,12 @@ func (s *Service) requireTaskGenerationFeatures(userID, projectID, taskType, ope
 	if stringValue(metadata["source"]) == "ecommerce-agent" && !ecommerce {
 		return BadAuthRequest("电商任务必须关联当前用户的电商项目")
 	}
+	// 电商生图台的识别、文案与出图任务受「电商生图台」开关控制；来源标记只能收紧准入，不能放宽。
+	if stringValue(metadata["source"]) == "ecommerce-studio" {
+		if err := s.RequireFeature(FeatureEcommerceStudio); err != nil {
+			return err
+		}
+	}
 	if ecommerce {
 		if err := s.RequireFeature(FeatureEcommerce); err != nil {
 			return err

@@ -28,6 +28,7 @@ const (
 	FeatureVideoWorkbench        = "videoWorkbench"
 	FeatureEcommerce             = "ecommerce"
 	FeatureEcommerceVideo        = "ecommerceVideo"
+	FeatureEcommerceStudio       = "ecommerceStudio"
 	FeatureSiteAssistant         = "siteAssistant"
 )
 
@@ -46,6 +47,7 @@ type FeatureAvailability struct {
 	VideoWorkbenchEnabled        bool `json:"videoWorkbenchEnabled"`
 	EcommerceEnabled             bool `json:"ecommerceEnabled"`
 	EcommerceVideoEnabled        bool `json:"ecommerceVideoEnabled"`
+	EcommerceStudioEnabled       bool `json:"ecommerceStudioEnabled"`
 	SiteAssistantEnabled         bool `json:"siteAssistantEnabled"`
 }
 
@@ -73,6 +75,7 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		VideoWorkbenchEnabled:        false,
 		EcommerceEnabled:             false,
 		EcommerceVideoEnabled:        false,
+		EcommerceStudioEnabled:       false,
 		SiteAssistantEnabled:         false,
 	}
 }
@@ -149,6 +152,8 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 		return value.EcommerceEnabled, nil
 	case FeatureEcommerceVideo:
 		return value.EcommerceVideoEnabled, nil
+	case FeatureEcommerceStudio:
+		return value.EcommerceStudioEnabled, nil
 	case FeatureSiteAssistant:
 		return value.SiteAssistantEnabled, nil
 	default:
@@ -191,6 +196,8 @@ func (s *Service) RequireFeature(feature string) error {
 		return kernel.Forbidden("电商创作暂未开放")
 	case FeatureEcommerceVideo:
 		return kernel.Forbidden("电商视频暂未开放")
+	case FeatureEcommerceStudio:
+		return kernel.Forbidden("电商生图台暂未开放")
 	case FeatureSiteAssistant:
 		return kernel.Forbidden("站内助手暂未开放")
 	default:

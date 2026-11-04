@@ -1,7 +1,28 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { App, Button, Skeleton } from "antd";
 import { Switch } from "@/pages/admin/ui/controls";
-import { AlertTriangle, ArrowUpRight, Boxes, Clapperboard, Coins, CornerDownRight, History, ImageIcon, MessageCircleMore, MonitorCog, PlugZap, Quote, RadioTower, RefreshCw, ShieldCheck, ShoppingBag, SlidersHorizontal, Video, Wallet } from "lucide-react";
+import {
+    AlertTriangle,
+    ArrowUpRight,
+    Boxes,
+    Clapperboard,
+    Coins,
+    CornerDownRight,
+    History,
+    ImageIcon,
+    MessageCircleMore,
+    MonitorCog,
+    Package,
+    PlugZap,
+    Quote,
+    RadioTower,
+    RefreshCw,
+    ShieldCheck,
+    ShoppingBag,
+    SlidersHorizontal,
+    Video,
+    Wallet,
+} from "lucide-react";
 
 import { Link } from "react-router";
 
@@ -24,6 +45,7 @@ type FeatureKey =
     | "videoWorkbenchEnabled"
     | "ecommerceEnabled"
     | "ecommerceVideoEnabled"
+    | "ecommerceStudioEnabled"
     | "siteAssistantEnabled";
 
 /** 跨分组的依赖：开关本身可以打开，但缺少这一项时功能只部分可用。 */
@@ -60,6 +82,7 @@ const editableFeatureKeys: FeatureKey[] = [
     "videoWorkbenchEnabled",
     "ecommerceEnabled",
     "ecommerceVideoEnabled",
+    "ecommerceStudioEnabled",
     "siteAssistantEnabled",
     "frontendModelsEnabled",
     "pluginCenterEnabled",
@@ -112,6 +135,13 @@ const featureGroups: FeatureGroup[] = [
                         requires: [{ key: "videoWorkbenchEnabled", effect: "商品视频不能生成" }],
                     },
                 ],
+            },
+            {
+                key: "ecommerceStudioEnabled",
+                title: "电商生图台",
+                location: "侧栏 · 电商生图台",
+                description: "独立的商品出图工作台，与电商 Agent 共用电商知识库。关闭后隐藏入口，已保存的商品和成品保留。",
+                icon: <Package className="size-4" aria-hidden="true" />,
             },
         ],
     },
@@ -540,6 +570,7 @@ function toEditablePayload(features: FeatureAvailability) {
         videoWorkbenchEnabled: features.videoWorkbenchEnabled,
         ecommerceEnabled: features.ecommerceEnabled,
         ecommerceVideoEnabled: features.ecommerceVideoEnabled,
+        ecommerceStudioEnabled: features.ecommerceStudioEnabled,
         siteAssistantEnabled: features.siteAssistantEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
@@ -568,6 +599,7 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         videoWorkbenchEnabled: record.videoWorkbenchEnabled as boolean,
         ecommerceEnabled: record.ecommerceEnabled as boolean,
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
+        ecommerceStudioEnabled: record.ecommerceStudioEnabled as boolean,
         siteAssistantEnabled: record.siteAssistantEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,

@@ -50,6 +50,7 @@ const (
 	FeatureVideoWorkbench              = app.FeatureVideoWorkbench
 	FeatureEcommerce                   = app.FeatureEcommerce
 	FeatureEcommerceVideo              = app.FeatureEcommerceVideo
+	FeatureEcommerceStudio             = app.FeatureEcommerceStudio
 	FeatureSiteAssistant               = app.FeatureSiteAssistant
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
 	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage

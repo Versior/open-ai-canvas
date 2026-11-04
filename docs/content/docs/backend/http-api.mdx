@@ -86,6 +86,22 @@ GET /api/canvas-projects 的分页查询可传 kind=freeform 或 ecommerce，在
 列表页大小上限为 40；导入请求体上限为 16 KiB。不存在、未审核或不兼容的作品返回明确错误，不用私有项目作为公开模板的回退来源。
 “单步制作同款”只预填提示词和比例，不自动提交生成任务；含节点引用的步骤需复制完整画布。
 
+## 电商生图台
+
+`/studio` 页面把商品档案与出图记录按商品整体保存在当前用户自己的工作区。所有接口需要登录态，并检查「功能开放 → 电商生图台」（`ecommerceStudioEnabled`）；关闭时返回 403 `电商生图台暂未开放`。
+
+| 接口 | 合同 |
+| --- | --- |
+| `GET /api/ecommerce/studio` | 返回 `data.revision` 与 `data.products`（商品 JSON 数组），响应带 `Cache-Control: no-store` |
+| `GET /api/ecommerce/studio/products/:productId` | 返回单个商品 `data.product`，用于保存冲突后载入最新版本；不存在或不属于本人返回 404 |
+| `PUT /api/ecommerce/studio/products/:productId` | 请求体 `{ "product": {...}, "expectedRevision": n }`，按 `id` 新增或整体替换；返回 `data.revision` 与保存后的 `data.product` |
+| `DELETE /api/ecommerce/studio/products/:productId` | 删除这个商品的档案与记录，不删除照片和生成图对应的资源；返回 `data.revision` |
+
+- 商品 `id` 须为至少 6 位的合法资源标识，并与地址中的 `:productId` 一致；`name` 不超过 120 字；单个商品不超过 1 MiB，每人最多 200 个商品，整个工作区不超过 8 MiB。商品里不能内嵌 `data:` 图片，照片与成品先上传为资源，再以 `resourceId` 引用，这些引用参与素材删除保护与孤儿清理。
+- 每个商品带服务端维护的 `product.revision`。`expectedRevision` 与当前值不一致时返回 409，`reason` 为 `studio_product_conflict`，`details.revision` 为当前值。写入在服务端存储锁内按工作区 `revision` 比较交换，冲突自动重试 3 次；已有数据无法解析时拒绝写入。写请求按用户限流，上限沿用运行策略里的画布写入上限。
+- 识别商品提交普通文本任务，带 `metadata.source=ecommerce-studio`、`ecommerceCapability=dossier`、`ecommerceAnalysisFlow=cap:dossier`，可选 `studioPlatform`、`studioCategory`、`studioProductName`。worker 注入后台「商品档案」分析指令，再按这三项从电商知识库检索已审核、来源已启用的知识（只取商品知识、营销策略、文案和平台规则类），作为参考数据追加到系统提示词；检索失败只跳过这一步并记录告警。出图提交普通图片任务（`metadata.source=ecommerce-studio`）。带这个来源的任务都要求「电商生图台」已开放。
+- 全局助手：`POST /api/agent/runs` 传 `contextScope: ["studio"]` 与 `studioProductId` 时，这一轮绑定本人的一个生图台商品，`canvasId` 与焦点必须为空；生图台未开放时拒绝建 run。本轮只开放通用工具和 `studio_get_state`、`studio_inspect_photos`、`studio_update_dossier`、`studio_plan_shots`、`studio_request_generation`；写工具要传最近读到的 `revision`，出图请求只交给页面确认，不由 Agent 提交任务。
+
 ## 注册与签到积分策略
 
 `GET /api/admin/settings/credits` 和 `PATCH /api/admin/settings/credits` 均要求管理员，返回 `data={policy}`。PATCH 提交完整策略：`signupBonusMicrocredits`、`checkinBonusMicrocredits`、`defaultMultiplierBasisPoints`、`modelMultiplierBasisPoints`；停止赠送只将前两项设为 0，保留倍率。金额为微积分（1000000 = 1 积分），倍率为万分比（10000 = 1 倍）。

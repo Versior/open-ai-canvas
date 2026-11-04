@@ -531,7 +531,7 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 					return BadAuthRequest("工具缺少审批预演入口")
 				}
 				var mutationErr error
-				preview, mutationErr = binding.Handler.Preview(repo, run.UserID, state.Request.CanvasID, call)
+				preview, mutationErr = binding.Handler.Preview(repo, run.UserID, cloudAgentToolTargetID(state.Request), call)
 				if mutationErr != nil {
 					var argumentErr *cloudAgentArgumentError
 					if errors.As(mutationErr, &argumentErr) {
@@ -582,10 +582,10 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 	var inspectionResult any
 	var inspectionErr error
 	if allowed && binding.Handler.Pipeline == cloudAgentToolVision {
-		inspectionResult, inspectionErr = s.prepareCloudAgentImageInspection(run.UserID, state.Request.CanvasID, state, call)
+		inspectionResult, inspectionErr = s.prepareCloudAgentVisionTool(run.UserID, state, call)
 		if errors.Is(inspectionErr, errCloudAgentImageInspectionBudget) {
 			inspectionErr = &cloudAgentReadLoopError{
-				ToolName:   agenttool.CanvasInspectImage,
+				ToolName:   call.Function.Name,
 				Count:      state.cloudAgentImageInspectionCalls() + 1,
 				Budget:     true,
 				ReasonCode: "vision_read_budget_exceeded",
@@ -623,7 +623,7 @@ func (s *Service) advanceCloudAgentTool(run *model.CloudAgentExecution, state *c
 				toolErr = BadAuthRequest("工具未获本轮权限授权")
 			}
 		case binding.Handler.Write != nil:
-			result, toolErr = binding.Handler.Write(repo, run.UserID, state.Request.CanvasID, call, policy, cloudAgentCanvasEventRecorder(run.ID, state))
+			result, toolErr = binding.Handler.Write(repo, run.UserID, cloudAgentToolTargetID(state.Request), call, policy, cloudAgentCanvasEventRecorder(run.ID, state))
 		case binding.Handler.Pipeline == cloudAgentToolVision:
 			result, toolErr = inspectionResult, inspectionErr
 			if toolErr == nil && inspectionResult != nil {

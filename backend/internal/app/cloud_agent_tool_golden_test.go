@@ -18,6 +18,7 @@ func cloudAgentToolGoldenRequests() map[string]CloudAgentRequest {
 		"read_only_canvas": {PermissionMode: "read_only", ContextScope: []string{"canvas"}, MemoryMode: "auto"},
 		"approval_canvas":  {PermissionMode: "request_approval", ContextScope: []string{"canvas"}, MemoryMode: "review"},
 		"no_canvas":        {PermissionMode: "auto"},
+		"studio":           {PermissionMode: "request_approval", ContextScope: []string{"studio"}, StudioProductID: "product_golden", SkillsEnabled: true, MemoryMode: "auto", VisionEnabled: true},
 	}
 }
 

@@ -111,6 +111,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { applyAgentCanvasPatches, refreshCanvasAfterAgent, prepareCanvasForCloudAction } from "@/services/user-data-sync";
 import { createAgentCanvasSync } from "@/services/agent-canvas-sync";
+import { notifyStudioAgentEvent } from "@/services/agent-studio-sync";
 import { agentCanvasUndoKey, type AgentCanvasUndoState, type AgentCanvasUndoTarget } from "@/lib/canvas/agent-canvas-undo";
 import { canvasEditLeases } from "@/services/canvas-edit-leases";
 import { AgentChatComposer, parseCloudAgentFormAnswer, AgentPlanBar, AgentQuestionBar, type CloudAgentChatMessage } from "./canvas-cloud-agent-chat-ui";
@@ -170,7 +171,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const domainProjectId = useGlobalAgentStore((state) => state.canvas?.domainProjectId);
     const nodeCount = useGlobalAgentStore((state) => state.canvas?.nodeCount ?? 0);
     const references = useGlobalAgentStore((state) => state.canvas?.references ?? EMPTY_REFERENCES);
-    const prefillRequest = useGlobalAgentStore((state) => state.canvas?.prefillRequest ?? null);
+    const prefillRequest = useGlobalAgentStore((state) => state.canvas?.prefillRequest ?? state.studio?.prefillRequest ?? null);
+    // 电商生图台发布的商品；画布优先，二者不会同时绑定到一轮对话。
+    const studioProductId = useGlobalAgentStore((state) => (state.canvas ? "" : (state.studio?.productId ?? "")));
+    const studioProductName = useGlobalAgentStore((state) => (state.canvas ? "" : (state.studio?.productName ?? "")));
     const onFocusNode = useGlobalAgentStore((state) => state.canvas?.onFocusNode);
     const open = useGlobalAgentStore((state) => state.open);
     const onOpen = useGlobalAgentStore((state) => state.openAgent);
@@ -896,6 +900,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 setContextUsage((current) => reduceAgentContextUsage(current, event));
                 applyAgentEvent(event, setMessages, setRun, setApproval);
                 canvasSyncRef.current?.receive(event);
+                notifyStudioAgentEvent(event);
                 // 采用到短剧改的是短剧数据而不是画布：刷新短剧侧栏、过期标记与制作台缓存。
                 if (event.type === "tool_completed" && event.payload?.toolName === "drama_adopt_canvas_media") void appQueryClient.invalidateQueries({ queryKey: ["drama"] });
             },
@@ -1238,7 +1243,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     focusNodeIds: canvasId ? focus.focusNodeIds : [],
                     focusNodeOmittedCount: canvasId ? focus.focusNodeOmittedCount : 0,
                     permissionMode: settings.permissionMode,
-                    contextScope: canvasId ? settings.contextScope : [],
+                    contextScope: canvasId ? settings.contextScope : studioProductId ? ["studio"] : [],
+                    ...(!canvasId && studioProductId ? { studioProductId } : {}),
                     budget: {
                         maxCredits: positiveNumber(settings.maxCredits),
                         maxGenerationTasks: settings.permissionMode === "read_only" ? 0 : Number(settings.maxGenerationTasks),
@@ -2289,6 +2295,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         statusColor={statusColor}
                                         live={running}
                                         nodeCount={canvasId ? nodeCount : null}
+                                        studioProductName={studioProductName}
                                         onNew={newConversation}
                                         onHistory={() => setView("history")}
                                         exporting={exporting}

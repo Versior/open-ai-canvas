@@ -1,0 +1,348 @@
+import { App, Button, Input, Popover, Tooltip } from "antd";
+import { CircleHelp, RotateCcw, ScanSearch, Settings2, Sparkles } from "lucide-react";
+import { useMemo, type ClipboardEvent, type ReactNode } from "react";
+import { Checkbox } from "@/components/ui/base/checkbox";
+import { Select } from "@/components/ui/base/select";
+import { ECOMMERCE_PLATFORMS, ecommercePlatform, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
+import {
+    applyStudioSuggestion,
+    resetStudioBriefParameters,
+    STUDIO_COUNT_OPTIONS,
+    STUDIO_LANGUAGES,
+    STUDIO_MARKETS,
+    STUDIO_OUTPUT_TYPES,
+    STUDIO_SHOOTINGS,
+    studioMarket,
+    studioOutputSpec,
+    studioPlatformForbidsText,
+    studioRunRatio,
+    studioInfoPoints,
+    studioSuggestion,
+    studioTitleOf,
+} from "@/lib/ecommerce-studio/brief";
+import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
+import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
+import { studioModelAdapter } from "@/lib/ecommerce-studio/prompt-compiler";
+import { STUDIO_STYLES, studioPlanRoles } from "@/lib/ecommerce-studio/shot-specs";
+import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { StudioModelPicker, useStudioModel } from "./studio-parts";
+import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
+import { studioImageFiles } from "./studio-upload";
+import { useStudioEstimate } from "./use-studio-estimate";
+import { useStudioAnalysis, type StudioRunner } from "./use-studio-runner";
+
+type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
+
+const OUTPUT_OPTIONS = STUDIO_OUTPUT_TYPES.map((item) => ({ value: item.id, label: item.label, title: item.hint }));
+const PLATFORM_OPTIONS = ECOMMERCE_PLATFORMS.map((platform) => ({ value: platform.id, label: platform.name }));
+const MARKET_OPTIONS = STUDIO_MARKETS.map((item) => ({ value: item.id, label: item.label }));
+const LANGUAGE_OPTIONS = STUDIO_LANGUAGES.map((item) => ({ value: item.id, label: item.label }));
+const STYLE_OPTIONS = STUDIO_STYLES.map((style) => ({ value: style.id, label: style.name, title: style.mood }));
+const SHOOTING_OPTIONS = STUDIO_SHOOTINGS.map((item) => ({ value: item.id, label: item.label }));
+const INFO_PLACEHOLDER = "每行一条卖点或商品信息，例如：\n316 不锈钢内胆：长效保温 12 小时\n一键弹盖，单手就能打开\n容量 500ml，重约 280g";
+
+function Field({ label, span, hint, children, htmlFor }: { label: string; span: 2 | 3 | 6; hint?: ReactNode; children: ReactNode; htmlFor?: string }) {
+    return (
+        <div className="es-field" data-span={span}>
+            <label className="es-field-label" htmlFor={htmlFor}>
+                {label}
+            </label>
+            {children}
+            {hint ? <div className="es-field-hint">{hint}</div> : null}
+        </div>
+    );
+}
+
+/** 识别用的文本模型：放在小浮层里，平时只露出一个设置按钮。 */
+function FillModelPopover({ imageCount }: { imageCount: number }) {
+    return (
+        <Popover
+            trigger="click"
+            placement="bottomRight"
+            rootClassName="es-portal"
+            content={
+                <div className="es-popover">
+                    <span className="es-popover-title">识别用的模型</span>
+                    <StudioModelPicker kind="text" imageCount={Math.max(1, imageCount)} placeholder="选择能看图的文本模型" />
+                    <span className="es-popover-note">需要能看图的文本模型，按模型计费。</span>
+                </div>
+            }
+        >
+            <button type="button" className="es-icon-btn" aria-label="选择识别用的模型">
+                <Settings2 size={14} />
+            </button>
+        </Popover>
+    );
+}
+
+export function StudioForm({ product, edit, ensure, runner, onGenerated }: { product: StudioProduct; edit: Edit; ensure: () => string; runner: StudioRunner; onGenerated: () => void }) {
+    const { message, modal } = App.useApp();
+    const image = useStudioModel("image");
+    const text = useStudioModel("text");
+    const uploads = useStudioUploads(ensure);
+    const filling = useStudioAnalysis((state) => state.running[product.id] === "fill");
+    const brief = product.brief;
+    const spec = studioOutputSpec(brief.outputType);
+    const profile = image.value ? modelCapabilityConfigFor(image.config, image.value).image : undefined;
+    const qualityOptions = useMemo(() => studioQualityOptions(profile), [profile]);
+    const quality = studioEffectiveQuality(profile, brief.quality);
+    const ratioOptions = useMemo(() => studioRatioOptions(profile, quality), [profile, quality]);
+    const roles = spec.set ? studioPlanRoles(spec.set, product.dossier?.family || "generic") : [spec.role || "main-selling"];
+    const images = spec.set ? roles.length : brief.count;
+    const firstRatio = studioRunRatio(roles[0], product);
+    const referenceCount = Math.min(profile?.references.maxImages || 4, product.photos.filter((photo) => photo.view !== "tag").length + product.references.length);
+    const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
+    const suggestion = studioSuggestion(product);
+    const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
+    const adapter = studioModelAdapter(image.value);
+    const platform = ecommercePlatform(product.platform);
+    const noTextOnMain = !spec.set && spec.role ? studioPlatformForbidsText(product, spec.role) : false;
+    const uploading = uploads.pending.photos + uploads.pending.references > 0;
+    const blocked = !product.photos.length ? "先上传商品图" : !image.value ? "先选择图片模型" : uploading ? "图片上传中，请稍候" : "";
+
+    const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
+
+    const fill = async () => {
+        if (!product.photos.length) return void message.warning("先上传商品图，再识别");
+        if (!text.value) return void message.warning("没有可用的文本模型，先到模型设置里添加");
+        try {
+            const result = await runner.fill(ensure(), text.value);
+            const pending = result.dossier.questions.length;
+            message.success(pending ? `已填好，${pending} 处需要你确认` : "已按商品图填好");
+            if (result.infoKept)
+                modal.confirm({
+                    title: "用识别出的卖点替换现在的内容？",
+                    content: <pre className="es-confirm-pre">{result.info}</pre>,
+                    okText: "替换",
+                    cancelText: "保留我写的",
+                    onOk: () => edit((current) => ({ ...current, sellerNotes: result.info }), { immediate: true }),
+                });
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "识别失败，请重试");
+        }
+    };
+
+    const generate = () => {
+        if (blocked) return void message.warning(blocked);
+        try {
+            runner.generate(ensure(), image.value);
+            onGenerated();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "生成失败");
+        }
+    };
+
+    // 粘贴图片默认加到商品图；在输入框里粘贴文字不受影响。
+    const onPaste = (event: ClipboardEvent<HTMLElement>) => {
+        const files = studioImageFiles(event.clipboardData?.files);
+        if (!files.length) return;
+        event.preventDefault();
+        void uploads.addFiles("photos", files);
+    };
+
+    const ratioLabel = brief.sameLayout && product.references.length ? "自动（跟参考图）" : "自动（推荐）";
+    const questions = product.dossier?.questions || [];
+
+    return (
+        <section className="es-form" aria-label="生图表单" onPasteCapture={onPaste}>
+            <div className="es-form-scroll">
+                <div className="es-uploads">
+                    <StudioUploadBox
+                        kind="photos"
+                        hint="必填 · 出图以它为准"
+                        product={product}
+                        pending={uploads.pending.photos}
+                        onFiles={(files) => void uploads.addFiles("photos", files)}
+                        onAssets={(assets) => void uploads.addAssets("photos", assets)}
+                        onRemove={(photo) => edit((current) => ({ ...current, photos: current.photos.filter((item) => item.id !== photo.id) }))}
+                    />
+                    <StudioUploadBox
+                        kind="references"
+                        hint="可选 · 风格或版式"
+                        product={product}
+                        pending={uploads.pending.references}
+                        onFiles={(files) => void uploads.addFiles("references", files)}
+                        onAssets={(assets) => void uploads.addAssets("references", assets)}
+                        onRemove={(photo) => edit((current) => ({ ...current, references: current.references.filter((item) => item.id !== photo.id) }))}
+                    />
+                </div>
+
+                {suggestion ? (
+                    <div className="es-banner">
+                        <span>
+                            助手给出了
+                            {[suggestion.brand ? "品牌" : "", suggestion.productType ? "商品类型" : "", suggestion.points ? `${suggestion.points} 条卖点` : ""].filter(Boolean).join("、")}
+                            ，还没填进表单。
+                        </span>
+                        <Button size="small" onClick={() => edit(applyStudioSuggestion, { immediate: true })}>
+                            填入表单
+                        </Button>
+                    </div>
+                ) : null}
+
+                <div className="es-section-head">
+                    <h2>商品信息</h2>
+                    <span className="es-field-actions">
+                        <Tooltip title={product.photos.length ? "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖" : "先上传商品图"}>
+                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling} disabled={!product.photos.length} onClick={() => void fill()}>
+                                {filling ? "识别中…" : "识别商品自动填写"}
+                            </Button>
+                        </Tooltip>
+                        <FillModelPopover imageCount={product.photos.length} />
+                    </span>
+                </div>
+                <div className="es-grid">
+                    <Field label="品牌名" span={3} htmlFor="es-brand">
+                        <Input id="es-brand" variant="filled" size="large" value={brief.brand} placeholder="例如：NORDA" maxLength={40} onChange={(event) => editBrief({ brand: event.target.value })} />
+                    </Field>
+                    <Field label="商品类型" span={3} htmlFor="es-type">
+                        <Input id="es-type" variant="filled" size="large" value={brief.productType} placeholder="例如：保温杯" maxLength={40} onChange={(event) => editBrief({ productType: event.target.value })} />
+                    </Field>
+                    <Field label="核心标题" span={6} htmlFor="es-title">
+                        <Input
+                            id="es-title"
+                            variant="filled"
+                            size="large"
+                            value={studioTitleOf(product)}
+                            placeholder="图上的主标题，例如：12 小时长效保温（可留空）"
+                            maxLength={30}
+                            onChange={(event) => edit((current) => ({ ...current, copy: { headline: event.target.value, subhead: current.copy?.subhead || "", listingTitle: current.copy?.listingTitle || "", bullets: current.copy?.bullets || [] } }))}
+                        />
+                    </Field>
+                    <Field
+                        label="卖点与商品信息"
+                        span={6}
+                        htmlFor="es-info"
+                        hint={
+                            issues.length || questions.length ? (
+                                <div className="es-hints">
+                                    {issues.slice(0, 3).map((issue, index) => (
+                                        <span key={`${issue.term}-${index}`} data-tone="warning">
+                                            {issue.field}「{issue.term}」：{issue.reason}
+                                        </span>
+                                    ))}
+                                    {questions.length ? (
+                                        <span>
+                                            <CircleHelp size={12} aria-hidden /> 识别时没能确认：{questions.slice(0, 3).join("；")}
+                                            <button type="button" className="es-link" onClick={() => edit((current) => (current.dossier ? { ...current, dossier: { ...current.dossier, questions: [] } } : current))}>
+                                                知道了
+                                            </button>
+                                        </span>
+                                    ) : null}
+                                </div>
+                            ) : undefined
+                        }
+                    >
+                        <Input.TextArea
+                            id="es-info"
+                            variant="filled"
+                            value={product.sellerNotes}
+                            placeholder={INFO_PLACEHOLDER}
+                            autoSize={{ minRows: 4, maxRows: 10 }}
+                            maxLength={600}
+                            onChange={(event) => edit((current) => ({ ...current, sellerNotes: event.target.value }))}
+                        />
+                    </Field>
+                </div>
+
+                <div className="es-section-head">
+                    <h2>出图设置</h2>
+                </div>
+                <div className="es-grid">
+                    <Field label="出图类型" span={2} hint={noTextOnMain ? `${platform?.name || "这个平台"}首图不加文字，标题不会写进图里` : spec.hint}>
+                        <Select appearance="field" size="large" value={brief.outputType} options={OUTPUT_OPTIONS} ariaLabel="出图类型" onChange={(value: StudioOutputType) => editBrief({ outputType: value })} />
+                    </Field>
+                    <Field label="视觉方向" span={2}>
+                        <Select appearance="field" size="large" value={product.platform} options={PLATFORM_OPTIONS} ariaLabel="视觉方向（平台）" onChange={(value: EcommercePlatformId) => edit((current) => ({ ...current, platform: value }))} />
+                    </Field>
+                    <Field label="市场" span={2}>
+                        <Select
+                            appearance="field"
+                            size="large"
+                            value={brief.market}
+                            options={MARKET_OPTIONS}
+                            ariaLabel="市场"
+                            onChange={(value: StudioMarket) => editBrief({ market: value, language: brief.language === "none" ? "none" : studioMarket(value).language })}
+                        />
+                    </Field>
+                    <Field label="语言" span={2} hint={brief.language !== "none" && adapter.textRendering === "weak" && image.value ? `${adapter.label} 写字不稳定，建议选「不加文字」` : undefined}>
+                        <Select appearance="field" size="large" value={brief.language} options={LANGUAGE_OPTIONS} ariaLabel="图上文字的语言" onChange={(value: StudioLanguage) => editBrief({ language: value })} />
+                    </Field>
+                    <Field label="质感" span={2}>
+                        <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => ({ ...current, style: value }))} />
+                    </Field>
+                    <Field label="拍摄方式" span={2}>
+                        <Select appearance="field" size="large" value={brief.shooting} options={SHOOTING_OPTIONS} ariaLabel="拍摄方式" onChange={(value: StudioShooting) => editBrief({ shooting: value })} />
+                    </Field>
+                    <Field label="目标人群" span={3} htmlFor="es-audience">
+                        <Input id="es-audience" variant="filled" size="large" value={brief.audience} placeholder="例如：宝妈、上班族、送礼人" maxLength={60} onChange={(event) => editBrief({ audience: event.target.value })} />
+                    </Field>
+                    <Field label="价格/定位" span={3} htmlFor="es-positioning">
+                        <Input id="es-positioning" variant="filled" size="large" value={brief.positioning} placeholder="例如：中高端、性价比、礼盒" maxLength={60} onChange={(event) => editBrief({ positioning: event.target.value })} />
+                    </Field>
+
+                    <Field label="生图模型" span={6}>
+                        <StudioModelPicker kind="image" imageCount={Math.max(1, referenceCount)} placeholder="选择图片模型" />
+                    </Field>
+                    <Field label="数量" span={2}>
+                        <Select
+                            appearance="field"
+                            size="large"
+                            value={spec.set ? images : brief.count}
+                            disabled={Boolean(spec.set)}
+                            options={spec.set ? [{ value: images, label: spec.set === "detail" ? `${images} 屏` : `${images} 张` }] : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))}
+                            ariaLabel="数量"
+                            onChange={(value: number) => editBrief({ count: value })}
+                        />
+                    </Field>
+                    <Field label="质量" span={2}>
+                        <Select
+                            appearance="field"
+                            size="large"
+                            value={qualityOptions.length ? quality : "default"}
+                            disabled={!qualityOptions.length}
+                            options={qualityOptions.length ? qualityOptions : [{ value: "default", label: "模型默认" }]}
+                            ariaLabel="质量"
+                            onChange={(value: string) => editBrief({ quality: value })}
+                        />
+                    </Field>
+                    <Field label="比例" span={2}>
+                        <Select
+                            appearance="field"
+                            size="large"
+                            value={brief.ratio === "auto" || ratioOptions.includes(brief.ratio) ? brief.ratio : "auto"}
+                            disabled={!ratioOptions.length}
+                            options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio }))]}
+                            ariaLabel="比例"
+                            onChange={(value: string) => editBrief({ ratio: value })}
+                        />
+                    </Field>
+                    <Field label="补充要求" span={6} htmlFor="es-extra">
+                        <Input id="es-extra" variant="filled" size="large" value={brief.extra} placeholder="例如：白底、强质感、不要多余文字、保留商品结构" maxLength={300} onChange={(event) => editBrief({ extra: event.target.value })} />
+                    </Field>
+                    <div className="es-field" data-span={6}>
+                        <Tooltip title={product.references.length ? "照着参考图的构图、文字位置和配色出图，商品换成你的" : "先上传一张参考图"}>
+                            <span className="es-check">
+                                <Checkbox checked={brief.sameLayout && product.references.length > 0} disabled={!product.references.length} onChange={(event) => editBrief({ sameLayout: event.target.checked })}>
+                                    一键同款参考图版式
+                                </Checkbox>
+                            </span>
+                        </Tooltip>
+                    </div>
+                </div>
+            </div>
+            <footer className="es-form-foot">
+                <span className="es-estimate">{estimate}</span>
+                <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
+                    重置参数
+                </Button>
+                <Tooltip title={blocked || undefined}>
+                    <Button type="primary" size="large" className="es-generate" icon={<Sparkles size={16} />} disabled={Boolean(blocked)} onClick={generate}>
+                        {spec.set ? `生成${spec.set === "detail" ? "详情页" : "主图套图"}` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
+                    </Button>
+                </Tooltip>
+            </footer>
+        </section>
+    );
+}

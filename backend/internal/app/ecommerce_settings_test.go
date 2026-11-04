@@ -19,7 +19,7 @@ func TestEcommercePlannerDefaultsAndOverrides(t *testing.T) {
 		t.Fatal("ordinary user read defaults")
 	}
 	defaults, err := s.AdminEcommerceDefaults(admin)
-	if err != nil || len(defaults) != 12 || defaults["cap:planning"] != defaultEcommerceCapabilityPrompt("planning") || defaults["detail"] != defaultEcommerceDirectorPrompt("detail") {
+	if err != nil || len(defaults) != 13 || defaults["cap:planning"] != defaultEcommerceCapabilityPrompt("planning") || defaults["cap:dossier"] != defaultEcommerceCapabilityPrompt("dossier") || defaults["detail"] != defaultEcommerceDirectorPrompt("detail") {
 		t.Fatal("defaults differ from worker instructions")
 	}
 	input := canvasGenerationInput{Mode: "text", Prompt: "verified product facts", Metadata: map[string]interface{}{"ecommerceCapability": "planning", "ecommerceAnalysisFlow": "cap:planning"}}
@@ -134,6 +134,7 @@ func TestEcommerceCapabilityAdmission(t *testing.T) {
 	}{
 		{"text", "planning", "cap:planning", true}, {"image", "planning", "", true},
 		{"image", "model-cast", "", true}, {"text", "listing", "cap:listing", true},
+		{"text", "dossier", "cap:dossier", true}, {"text", "dossier", "cap:listing", false},
 		{"text", "unknown", "cap:unknown", false}, {"text", "planning", "cap:listing", false},
 		{"image", "listing", "", false}, {"image", "planning", "cap:planning", false},
 		{"text", "pattern", "cap:pattern", false}, {"video", "planning", "", false},

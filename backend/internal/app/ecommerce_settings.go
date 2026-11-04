@@ -90,12 +90,15 @@ type EcommerceSetting struct {
 	Templates           []EcommerceSuiteTemplate        `json:"templates"`
 }
 
-var ecommerceCapabilities = []string{"planning", "suite-forge", "model-cast", "pattern", "listing", "print-pack", "pipeline", "layers"}
+var ecommerceCapabilities = []string{"planning", "suite-forge", "model-cast", "pattern", "listing", "print-pack", "pipeline", "layers", "dossier"}
 
 func normalizeEcommerceCapabilities(value *EcommerceSetting) {
 	if value.Capabilities == nil {
 		value.Capabilities = map[string]EcommerceFlowSetting{}
-		for _, id := range ecommerceCapabilities {
+	}
+	// 新增能力向前兼容：旧配置里缺少的能力按默认启用补齐，已有能力保持管理员原值。
+	for _, id := range ecommerceCapabilities {
+		if _, ok := value.Capabilities[id]; !ok {
 			value.Capabilities[id] = EcommerceFlowSetting{Enabled: true}
 		}
 	}
@@ -282,6 +285,12 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 			director = defaultEcommerceCapabilityPrompt(strings.TrimPrefix(id, "cap:"))
 		}
 		input.Config.SystemPrompt = director
+		// 生图台的商品档案与电商 Agent 共用知识库；只在 worker 的内存请求里追加，不进入任务记录。
+		if strings.TrimPrefix(id, "cap:") == ecommerceStudioDossierCapability {
+			if knowledge := s.ecommerceStudioKnowledgePrompt(input.Metadata); knowledge != "" {
+				input.Config.SystemPrompt += "\n\n" + knowledge
+			}
+		}
 		return nil
 	}
 	flow, ok := setting.Flows[id]
@@ -347,7 +356,7 @@ func (s *Service) validateEcommerceCapability(input *canvasGenerationInput) erro
 		}
 	}
 	if input.Mode == "text" {
-		if (id != "planning" && id != "suite-forge" && id != "listing" && id != "pipeline") || flow != "cap:"+id {
+		if (id != "planning" && id != "suite-forge" && id != "listing" && id != "pipeline" && id != "dossier") || flow != "cap:"+id {
 			return BadAuthRequest("电商文本任务与分析能力不一致")
 		}
 	} else if (id != "model-cast" && id != "pattern" && id != "planning") || input.Metadata["ecommerceAnalysisFlow"] != nil {
@@ -406,8 +415,8 @@ func (s *Service) UpdateEcommerceSetting(actor *model.User, value EcommerceSetti
 	existingRefs := map[string]bool{}
 	previousRecord, previousErr := s.repo.SystemSetting(ecommerceSettingKey + "_previous")
 	if previousErr == nil {
-		var previous EcommerceSetting
-		if json.Unmarshal([]byte(previousRecord.ValueJSON), &previous) != nil || validateEcommerceSetting(previous) != nil {
+		previous, err := decodeStoredEcommerceSetting(previousRecord.ValueJSON)
+		if err != nil {
 			return nil, BadAuthRequest("上一版配置无法读取，请先修复配置")
 		}
 		for _, item := range previous.Models {
@@ -474,14 +483,22 @@ func (s *Service) PreviousEcommerceSetting(actor *model.User) (*EcommerceSetting
 	if err != nil {
 		return nil, err
 	}
-	var value EcommerceSetting
-	if err := json.Unmarshal([]byte(record.ValueJSON), &value); err != nil {
-		return nil, err
-	}
-	if err := validateEcommerceSetting(value); err != nil {
+	value, err := decodeStoredEcommerceSetting(record.ValueJSON)
+	if err != nil {
 		return nil, err
 	}
 	return &value, nil
+}
+
+// decodeStoredEcommerceSetting 读取已保存的配置。能力清单变长时在读取阶段补齐，
+// 否则旧配置会被判成损坏，进而停用分析任务、阻塞管理员保存和资源删除。
+func decodeStoredEcommerceSetting(raw string) (EcommerceSetting, error) {
+	var value EcommerceSetting
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return value, err
+	}
+	normalizeEcommerceCapabilities(&value)
+	return value, validateEcommerceSetting(value)
 }
 func (s *Service) UploadEcommerceModelImage(actor *model.User, header *multipart.FileHeader) (*model.Resource, error) {
 	if err := s.RequireAdmin(actor); err != nil {
@@ -570,7 +587,10 @@ func (s *Service) ecommerceResourceReferences(resourceIDs []string) map[string][
 			continue
 		}
 		var value EcommerceSetting
-		if err != nil || json.Unmarshal([]byte(record.ValueJSON), &value) != nil || validateEcommerceSetting(value) != nil {
+		if err == nil {
+			value, err = decodeStoredEcommerceSetting(record.ValueJSON)
+		}
+		if err != nil {
 			for _, id := range resourceIDs {
 				result[id] = append(result[id], AdminResourceReferenceView{Kind: "电商画布", ID: key, Title: "配置无法读取，暂停资源删除"})
 			}

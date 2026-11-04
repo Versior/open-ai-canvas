@@ -476,6 +476,7 @@ export function updateAdminFeatureAvailability(
             | "videoWorkbenchEnabled"
             | "ecommerceEnabled"
             | "ecommerceVideoEnabled"
+            | "ecommerceStudioEnabled"
             | "siteAssistantEnabled"
         >
     >,

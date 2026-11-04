@@ -92,7 +92,7 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 			Defaults map[string]string `json:"defaults"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &defaults); err != nil || response.Code != 200 || len(defaults.Data.Defaults) != 12 || defaults.Data.Defaults["cap:planning"] == "" {
+	if err := json.Unmarshal(response.Body.Bytes(), &defaults); err != nil || response.Code != 200 || len(defaults.Data.Defaults) != 13 || defaults.Data.Defaults["cap:planning"] == "" || defaults.Data.Defaults["cap:dossier"] == "" {
 		t.Fatal("default instruction HTTP contract incomplete")
 	}
 	response = profileRequest(router, "GET", "/api/ecommerce/templates?q=&page=1&pageSize=20", "", cookie)
@@ -146,6 +146,7 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 		"/ecommerce/settings": {"get"}, "/admin/settings/ecommerce": {"get", "put"},
 		"/admin/settings/ecommerce/previous": {"get"}, "/admin/settings/ecommerce/images": {"post"},
 		"/ecommerce/models/{modelId}/images/{resourceId}": {"get"},
+		"/ecommerce/studio": {"get"}, "/ecommerce/studio/products/{productId}": {"put", "delete"},
 	} {
 		for _, method := range methods {
 			if spec.Paths[path][method] == nil {

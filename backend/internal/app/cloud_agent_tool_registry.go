@@ -75,9 +75,10 @@ func buildCloudAgentRegistry() *agenttool.Registry[cloudAgentToolHandler] {
 
 func cloudAgentToolScope(req CloudAgentRequest, profile bool) agenttool.Scope {
 	return agenttool.Scope{
-		Canvas: len(req.ContextScope) > 0, Skills: req.SkillsEnabled,
+		Canvas: cloudAgentCanvasScope(req), Skills: req.SkillsEnabled,
 		Vision: req.VisionEnabled, ReadOnly: req.PermissionMode == "read_only", IncludeProfile: profile,
-		Drama:  req.DramaLinked && len(req.ContextScope) > 0,
+		Drama:  req.DramaLinked && cloudAgentCanvasScope(req),
 		Memory: req.MemoryMode == model.AgentMemoryDocumentModeAuto || req.MemoryMode == model.AgentMemoryDocumentModeReview,
+		Studio: cloudAgentStudioScope(req),
 	}
 }

@@ -42,10 +42,13 @@ func cloudAgentToolErrorClass(req CloudAgentRequest, call cloudAgentCall, err er
 		if !cloudAgentPlatformToolNames()[call.Function.Name] {
 			return cloudAgentToolErrorInvalidModelOutput, true, "use_advertised_tools"
 		}
-		scopeRequest := req
-		scopeRequest.ContextScope = []string{"canvas"}
-		if cloudAgentToolAllowed(scopeRequest, call.Function.Name) {
-			return cloudAgentToolErrorInvalidModelOutput, true, "use_advertised_tools"
+		for _, scope := range []string{"canvas", cloudAgentStudioScopeName} {
+			scopeRequest := req
+			scopeRequest.ContextScope = []string{scope}
+			scopeRequest.StudioProductID = firstNonEmpty(req.StudioProductID, "scope-probe")
+			if cloudAgentToolAllowed(scopeRequest, call.Function.Name) {
+				return cloudAgentToolErrorInvalidModelOutput, true, "use_advertised_tools"
+			}
 		}
 		return cloudAgentToolErrorPermission, false, "ask_user"
 	}

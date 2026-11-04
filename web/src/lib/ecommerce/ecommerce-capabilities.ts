@@ -13,6 +13,11 @@ export const ECOMMERCE_CAPABILITIES = [
     { id: "layers", name: "分层交付", description: "复用 AI 分层，导出图层 PNG、ZIP 与 PSD" },
 ] as const;
 export type EcommerceCapability = (typeof ECOMMERCE_CAPABILITIES)[number]["id"];
+/** 生图台专用能力：出现在后台能力配置里，不进画布工作台的标签页。 */
+export const ECOMMERCE_STUDIO_CAPABILITIES = [{ id: "dossier", name: "商品档案", description: "生图台看图识别商品事实，并按已确认事实写卖点与文案" }] as const;
+/** 后台配置与服务端设置里完整的能力清单（画布能力 + 生图台能力）。 */
+export const ECOMMERCE_SETTING_CAPABILITIES = [...ECOMMERCE_CAPABILITIES, ...ECOMMERCE_STUDIO_CAPABILITIES] as const;
+export type EcommerceSettingCapability = (typeof ECOMMERCE_SETTING_CAPABILITIES)[number]["id"];
 export const DEFAULT_ECOMMERCE_BRIEF: EcommerceWorkbenchBrief = {
     name: "",
     facts: "",

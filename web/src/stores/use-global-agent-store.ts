@@ -38,15 +38,27 @@ export type AgentCanvasContext = {
     discardAgentNodes?: (nodeIds: string[]) => void;
 };
 
+/**
+ * 电商生图台当前打开的商品。只有生图台工作台会发布它；离开时清空。
+ * 有画布上下文时以画布为准，两者不会同时绑定到一轮对话。
+ */
+export type AgentStudioContext = {
+    productId: string;
+    productName: string;
+    prefillRequest?: AgentPrefillRequest | null;
+};
+
 type GlobalAgentStore = {
     /** 平台唯一 Agent 面板的开合状态，跨路由保持。 */
     open: boolean;
     canvas: AgentCanvasContext | null;
+    studio: AgentStudioContext | null;
     /** 本机 UI 偏好：在画布里是否停靠到右侧，以及停靠宽度。账号切换不影响。 */
     dock: AgentPanelDockPreference;
     openAgent: () => void;
     closeAgent: () => void;
     setCanvas: (canvas: AgentCanvasContext | null) => void;
+    setStudio: (studio: AgentStudioContext | null) => void;
     setDocked: (docked: boolean) => void;
     setDockWidth: (width: number) => void;
     reset: () => void;
@@ -113,6 +125,7 @@ function persistDockPreference(dock: AgentPanelDockPreference) {
 export const useGlobalAgentStore = create<GlobalAgentStore>()((set, get) => ({
     open: false,
     canvas: null,
+    studio: null,
     dock: readDockPreference(),
     openAgent: () => set({ open: true }),
     closeAgent: () => set({ open: false }),
@@ -121,6 +134,12 @@ export const useGlobalAgentStore = create<GlobalAgentStore>()((set, get) => ({
             const next = stabilizeCanvasContext(state.canvas, canvas);
             // 返回同一个 state 时 zustand 不通知订阅者。
             return next === state.canvas ? state : { canvas: next };
+        }),
+    setStudio: (studio) =>
+        set((state) => {
+            const previous = state.studio;
+            const same = previous && studio && previous.productId === studio.productId && previous.productName === studio.productName && previous.prefillRequest === studio.prefillRequest;
+            return same || (!previous && !studio) ? state : { studio };
         }),
     setDocked: (docked) => {
         const dock = { ...get().dock, docked };
@@ -133,5 +152,5 @@ export const useGlobalAgentStore = create<GlobalAgentStore>()((set, get) => ({
         set({ dock });
         persistDockPreference(dock);
     },
-    reset: () => set({ open: false, canvas: null }),
+    reset: () => set({ open: false, canvas: null, studio: null }),
 }));

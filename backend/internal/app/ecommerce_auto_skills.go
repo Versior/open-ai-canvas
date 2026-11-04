@@ -292,6 +292,7 @@ func ecommerceAutoSkillQuery(flow, prompt string) string {
 		"cap:suite-forge": "电商套图 ecommerce 商品视觉 生成提示词",
 		"cap:listing":     "电商上架 ecommerce 商品标题 卖点文案",
 		"cap:pipeline":    "电商成包 ecommerce 详情主图 商品上架",
+		"cap:dossier":     "电商商品识别 ecommerce 商品卖点 详情页文案",
 	}
 	prefix := keywords[strings.TrimSpace(flow)]
 	if prefix == "" {

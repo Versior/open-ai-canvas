@@ -4,7 +4,19 @@ import { lazyAdminPage } from "@/pages/admin/admin-page-loader";
 
 import { RequireAuth } from "@/components/auth/require-auth";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
-import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadEcommerceCanvasPage, loadInspirationPage, loadProjectCreatePage, loadProjectDetailPage, loadProjectsPage, loadSkillWorkbenchPage } from "@/lib/workspace-route-modules";
+import {
+    loadAssetsPage,
+    loadCanvasPage,
+    loadCanvasProjectPage,
+    loadCreatePage,
+    loadEcommerceCanvasPage,
+    loadEcommerceStudioPage,
+    loadInspirationPage,
+    loadProjectCreatePage,
+    loadProjectDetailPage,
+    loadProjectsPage,
+    loadSkillWorkbenchPage,
+} from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
@@ -54,6 +66,7 @@ const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
 const EcommerceCanvasPage = lazy(loadEcommerceCanvasPage);
+const EcommerceStudioPage = lazy(loadEcommerceStudioPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const CreatePage = lazy(loadCreatePage);
@@ -142,6 +155,15 @@ export const router = createBrowserRouter([
             { path: "/create", element: deferred(<CreatePage />) },
             { path: "/inspirations", element: <LegacyInspirationsRedirect /> },
             { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
+            // 电商生图台：独立于电商 Agent 的商品出图工作台。
+            {
+                path: "/studio",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="ecommerceStudioEnabled">{deferred(<EcommerceStudioPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
             {
                 path: "/toolbox/image",
                 element: (

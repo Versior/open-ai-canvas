@@ -303,7 +303,8 @@ func cloudAgentAllToolSchemas() []map[string]any {
 		"restyleSegments": map[string]any{"type": "boolean", "description": "图片：让引用该设定、已生成的剧情段视频过期待重做，默认 false"},
 		"cascade":         map[string]any{"type": "boolean", "description": "视频：后续已生成的剧情段重新排队生成以保证衔接（会产生费用），默认 false"},
 	}, "nodeId")
-	return tools
+	// 生图台工具只在 studio 范围出现（RequiresStudio），追加在最后，不改变画布运行的工具前缀。
+	return append(tools, cloudAgentStudioToolSchemas()...)
 }
 
 // Explicit choices stay complete and exclusive. The intent tool may also omit

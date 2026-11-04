@@ -30,5 +30,10 @@
   "canvas_arrange_nodes",
   "generate_media",
   "drama_get_context",
-  "drama_adopt_canvas_media"
+  "drama_adopt_canvas_media",
+  "studio_get_state",
+  "studio_inspect_photos",
+  "studio_update_dossier",
+  "studio_plan_shots",
+  "studio_request_generation"
 ]

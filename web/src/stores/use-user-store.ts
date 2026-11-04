@@ -45,6 +45,7 @@ export type FeatureAvailability = {
     videoWorkbenchEnabled: boolean;
     ecommerceEnabled: boolean;
     ecommerceVideoEnabled: boolean;
+    ecommerceStudioEnabled: boolean;
     siteAssistantEnabled: boolean;
     configured?: boolean;
     updatedBy?: string;
@@ -65,6 +66,7 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     videoWorkbenchEnabled: false,
     ecommerceEnabled: false,
     ecommerceVideoEnabled: false,
+    ecommerceStudioEnabled: false,
     siteAssistantEnabled: false,
 };
 

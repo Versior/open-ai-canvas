@@ -36,6 +36,7 @@ const (
 	FeatureVideoWorkbench        = platform.FeatureVideoWorkbench
 	FeatureEcommerce             = platform.FeatureEcommerce
 	FeatureEcommerceVideo        = platform.FeatureEcommerceVideo
+	FeatureEcommerceStudio       = platform.FeatureEcommerceStudio
 	FeatureSiteAssistant         = platform.FeatureSiteAssistant
 )
 

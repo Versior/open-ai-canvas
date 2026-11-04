@@ -59,6 +59,8 @@ description: 影策后端核心持久化表与状态边界
 
 Schema 72 `ecommerce_private_library` 保留历史私人电商库表结构，以兼容已部署 Fork 与既有数据；当前产品不提供私人库云同步入口，该迁移不会重新启用此功能。
 
+电商生图台复用同一张 `ecommerce_libraries`（每个用户一行，`revision` 乐观并发），无需新增表或 Schema 迁移。`payload_json` 里的 `studio` 键保存 `{ "version": 1, "products": [...] }`，其余历史键原样保留；无法解析的历史数据会拒绝写入而不是覆盖。资源引用扫描读取整行 `payload_json`，商品照片、出图结果与采用结果的 `resourceId` 因此受删除保护和孤儿清理保护。删除生图台商品只移除这份 JSON 里的记录，不删除资源。每个商品对象内的 `revision` 由服务端写入（每次保存或 Agent 写入加一），浏览器保存与 Agent 写入都按它比较交换；`pendingGeneration` 记录 Agent 交给用户确认的出图请求，用户确认或忽略后由页面清除。这两个字段都在 JSON 里，没有新增列。
+
 ## 推广中心（Schema 74）
 
 版本 74 `referral_center` 为 `users` 增加 `is_promoter`（非空布尔，默认 `false`，带索引），并新增三张表。开放方式保存在 `system_settings` 的 `referral` 键：`enabled`、`mode`（`all` 全民推广 / `assigned` 指定推广人）、`commissionRateBasisPoints`（万分比，0–5000）。默认关闭。

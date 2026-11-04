@@ -39,6 +39,12 @@ func cloudAgentToolHandlers() map[string]cloudAgentToolHandler {
 		agenttool.GenerateMedia:          {Pipeline: cloudAgentToolMedia},
 		agenttool.DramaGetContext:        {Read: cloudAgentHandleDramaGetContext},
 		agenttool.DramaAdoptCanvasMedia:  {Write: applyCloudAgentDramaAdopt, Preview: cloudAgentPreviewDramaAdopt},
+		// 电商生图台（cloud_agent_studio_tools.go）
+		agenttool.StudioGetState:          {Read: cloudAgentHandleStudioGetState},
+		agenttool.StudioInspectPhotos:     {Pipeline: cloudAgentToolVision},
+		agenttool.StudioUpdateDossier:     {Write: applyCloudAgentStudioDossier, Preview: cloudAgentPreviewStudioDossier},
+		agenttool.StudioPlanShots:         {Write: applyCloudAgentStudioPlan, Preview: cloudAgentPreviewStudioPlan},
+		agenttool.StudioRequestGeneration: {Read: cloudAgentHandleStudioRequestGeneration},
 	}
 }
 

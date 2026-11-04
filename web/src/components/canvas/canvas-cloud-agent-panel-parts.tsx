@@ -231,6 +231,7 @@ export function AgentHeader({
     statusColor,
     live = false,
     nodeCount,
+    studioProductName,
     onNew,
     onHistory,
     onSettings,
@@ -248,6 +249,8 @@ export function AgentHeader({
     /** 本轮正在运行：状态圆点呼吸。 */
     live?: boolean;
     nodeCount: number | null;
+    /** 不在画布、但在电商生图台打开了商品时，本轮对话绑定这件商品。 */
+    studioProductName?: string;
     onNew: () => void;
     onHistory: () => void;
     onSettings: () => void;
@@ -310,7 +313,7 @@ export function AgentHeader({
                     </span>
                 </div>
                 <div className="agent-panel-context">
-                    {appearance.agentName} · {nodeCount === null ? "未在画布中，可对话；进入画布后自动关联" : `当前画布 ${nodeCount} 个节点`}
+                    {appearance.agentName} · {nodeCount === null ? (studioProductName ? `当前生图台商品「${studioProductName}」` : "未在画布中，可对话；进入画布后自动关联") : `当前画布 ${nodeCount} 个节点`}
                 </div>
             </div>
             <div className="agent-header-actions flex items-center gap-0.5" style={{ color: theme.node.muted }}>

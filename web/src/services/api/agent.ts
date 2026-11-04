@@ -140,6 +140,8 @@ export type CreateAgentRunInput = {
     channelModelKey?: string;
     /** 对话固定或本条消息点名的技能；其余已安装技能由 Agent 按目录自动发现。 */
     pinnedSkillIds?: string[];
+    /** 只与 contextScope=["studio"] 一起出现：本轮绑定的电商生图台商品。 */
+    studioProductId?: string;
     focusNodeIds?: string[];
     focusNodeOmittedCount?: number;
     permissionMode?: AgentPermissionMode;

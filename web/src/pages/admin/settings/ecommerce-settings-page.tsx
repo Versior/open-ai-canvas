@@ -11,7 +11,7 @@ import { ECOMMERCE_ONE_CLICK_FLOWS } from "@/lib/ecommerce/ecommerce-oneclick";
 import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { EcommerceTemplateEditor } from "./ecommerce-template-editor";
 import "./ecommerce-settings-page.css";
-import { ECOMMERCE_CAPABILITIES, type EcommerceCapability } from "@/lib/ecommerce/ecommerce-capabilities";
+import { ECOMMERCE_SETTING_CAPABILITIES as ECOMMERCE_CAPABILITIES, type EcommerceSettingCapability as EcommerceCapability } from "@/lib/ecommerce/ecommerce-capabilities";
 import { ecommerceCapabilitySettings } from "@/services/api/ecommerce-canvas";
 import { getAdminEcommerceDefaults } from "@/services/api/ecommerce-canvas";
 import { ECOMMERCE_PRINT_SPECS } from "@/lib/ecommerce/ecommerce-print-specs";

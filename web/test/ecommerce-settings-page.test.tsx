@@ -74,7 +74,7 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
                             defaultsReads === 1
                                 ? {}
                                 : Object.fromEntries(
-                                      ["cap:planning", "cap:suite-forge", "cap:model-cast", "cap:pattern", "cap:listing", "cap:print-pack", "cap:pipeline", "cap:layers", "detail", "main", "wear", "seed"].map((key) => [
+                                      ["cap:planning", "cap:suite-forge", "cap:model-cast", "cap:pattern", "cap:listing", "cap:print-pack", "cap:pipeline", "cap:layers", "cap:dossier", "detail", "main", "wear", "seed"].map((key) => [
                                           key,
                                           key === "cap:planning" ? "Complete built-in planner" : "Complete detail instruction",
                                       ]),
