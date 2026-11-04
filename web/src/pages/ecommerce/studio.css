@@ -1200,11 +1200,16 @@ html:not(.dark) .commerce-platform-logo[data-monochrome="true"] {
     gap: 7px;
     width: 100%;
 }
-/* 远程资源图片外壳默认铺满父级；收紧到缩略图尺寸，多张参考图同排换行，不压到下一条消息。 */
 .commerce-request-references > .cached-resource-image-shell {
-    flex: none;
+    flex: 0 0 58px;
     width: 58px;
     height: 58px;
+}
+.commerce-memory-note {
+    margin: 0 4px 8px;
+    color: var(--user-ink-muted);
+    font-size: 11px;
+    line-height: 1.6;
 }
 .commerce-request-references img {
     width: 58px;

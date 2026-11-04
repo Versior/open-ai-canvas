@@ -6,6 +6,7 @@ import { buildLibTVCanvasNodes, formatLibTVBatchTime, parseLibTVProjectUUID, sum
 import { createLatestRequestGuard } from "@/lib/libtv-gallery";
 import { importLibTVCanvas, importLibTVTemplate, type LibTVImportResult } from "@/services/api/libtv";
 import type { CanvasConnection, CanvasNodeData, ViewportTransform } from "@/types/canvas";
+import type { CanvasImportSaveStatus } from "../canvas-import-save";
 import "./libtv-import-dialog.css";
 
 type Props = {
@@ -14,7 +15,7 @@ type Props = {
     viewport: ViewportTransform;
     viewportSize: { width: number; height: number };
     onClose: () => void;
-    onApply: (nodes: CanvasNodeData[], connections: CanvasConnection[]) => Promise<void>;
+    onApply: (nodes: CanvasNodeData[], connections: CanvasConnection[]) => Promise<CanvasImportSaveStatus>;
     /** 模板模式：使用 importLibTVTemplate，支持 frame/text/audio，坐标已绝对化。 */
     templateUuid?: string;
 };
@@ -25,6 +26,8 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
     const [loading, setLoading] = useState(false);
     const [applying, setApplying] = useState(false);
     const [result, setResult] = useState<LibTVImportResult | null>(null);
+    const [saveStarted, setSaveStarted] = useState(false);
+    const applyingRef = useRef(false);
     const requestGuardRef = useRef(createLatestRequestGuard());
     const autoLoadedKeyRef = useRef("");
     const templateMode = Boolean(templateUuid);
@@ -36,6 +39,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
         const guard = requestGuardRef.current;
         setResult(null);
         setLoading(false);
+        setSaveStarted(false);
         return () => guard.invalidate();
     }, [projectId, templateUuid]);
 
@@ -45,6 +49,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
         setValue("");
         setResult(null);
         setLoading(false);
+        setSaveStarted(false);
     };
 
     const close = () => {
@@ -58,6 +63,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
         setValue(nextValue);
         setResult(null);
         setLoading(false);
+        setSaveStarted(false);
     };
 
     const load = async () => {
@@ -90,16 +96,21 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
     });
 
     const apply = async () => {
-        if (!result || applying) return;
+        if (!result || applyingRef.current) return;
+        applyingRef.current = true;
+        setSaveStarted(true);
         setApplying(true);
         try {
-            await onApply(buildLibTVCanvasNodes(result.nodes, viewport, viewportSize), result.connections);
+            const status = await onApply(buildLibTVCanvasNodes(result.nodes, viewport, viewportSize), result.connections);
             reset();
             onClose();
-            message.success(`已导入 ${result.importedNodeCount} 个节点和 ${result.importedConnectionCount} 条连接`);
+            const summary = `${result.importedNodeCount} 个节点和 ${result.importedConnectionCount} 条连接`;
+            if (status === "pending") message.warning(`已在本机保存 ${summary}，正在后台同步`);
+            else message.success(`已导入 ${summary}并保存到云端`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "保存导入结果失败");
         } finally {
+            applyingRef.current = false;
             setApplying(false);
         }
     };
@@ -118,7 +129,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                             关闭
                         </Button>,
                         <Button key="apply" type="primary" icon={<Import className="size-4" />} loading={applying} onClick={() => void apply()}>
-                            确认导入
+                            {saveStarted ? "重试保存" : "确认导入"}
                         </Button>,
                     ]
                 ) : (
@@ -132,12 +143,7 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                 {!templateMode && (
                     <div>
                         <label className="mb-2 block text-sm font-medium">LibTV 画布 UUID 或链接</label>
-                        <Input
-                            value={value}
-                            onChange={(e) => changeValue(e.target.value)}
-                            placeholder="请输入 32 位 UUID 或完整链接"
-                            disabled={loading}
-                        />
+                        <Input value={value} onChange={(e) => changeValue(e.target.value)} placeholder="请输入 32 位 UUID 或完整链接" disabled={loading} />
                     </div>
                 )}
                 {loading && !result ? (
@@ -152,7 +158,9 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                             <div className="flex flex-wrap items-start justify-between gap-3">
                                 <div>
                                     <div className="text-sm font-semibold">{result.projectName || "LibTV 画布"}</div>
-                                    <div className="mt-1 text-sm text-foreground/60">可导入 {result.importedNodeCount} 个节点 · {result.importedConnectionCount} 条连线</div>
+                                    <div className="mt-1 text-sm text-foreground/60">
+                                        可导入 {result.importedNodeCount} 个节点 · {result.importedConnectionCount} 条连线
+                                    </div>
                                 </div>
                                 <span className="libtv-import-batch">批次：{formatLibTVBatchTime(result.batchCreatedAt)}</span>
                             </div>
@@ -164,7 +172,8 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                                 <div>
                                     {warningGroups.map((warning) => (
                                         <div key={warning.message}>
-                                            {warning.message}{warning.count > 1 ? `（${warning.count} 处）` : ""}
+                                            {warning.message}
+                                            {warning.count > 1 ? `（${warning.count} 处）` : ""}
                                         </div>
                                     ))}
                                 </div>
@@ -184,7 +193,9 @@ export function LibTVImportDialog({ open, projectId, viewport, viewportSize, onC
                                 </div>
                             </div>
                         ) : null}
-                        <p className="libtv-import-status" role="status">等待确认导入</p>
+                        <p className="libtv-import-status" role="status">
+                            {saveStarted ? "保存未完成，导入内容仍保留" : "等待确认导入"}
+                        </p>
                     </div>
                 ) : null}
             </div>

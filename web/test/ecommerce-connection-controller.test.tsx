@@ -11,7 +11,8 @@ test("product slot pointer drags create connected images; ordinary output drags 
     const descriptors = Object.fromEntries(["window", "document", "IS_REACT_ACT_ENVIRONMENT"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
     const originalApp = App.useApp;
     Object.defineProperty(globalThis, "window", { configurable: true, value: new EventTarget() });
-    Object.defineProperty(globalThis, "document", { configurable: true, value: { elementFromPoint: () => null } });
+    // 控制器会在 document 上挂批量连接的按压守卫，假 document 需要事件接口。
+    Object.defineProperty(globalThis, "document", { configurable: true, value: Object.assign(new EventTarget(), { elementFromPoint: () => null }) });
     Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
     const warnings: string[] = [];
     App.useApp = (() => ({ message: { warning: (value: string) => warnings.push(value), error: (value: string) => warnings.push(value), success() {} } })) as typeof App.useApp;

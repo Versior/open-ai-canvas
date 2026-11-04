@@ -250,7 +250,7 @@ describe("LibTV work detail dialog", () => {
         // 加载中/失败分支都给了关闭入口，弹窗自身的关闭按钮在内容之外，任何阶段都在。
         expect(body).toContain("if (isLoading)");
         expect(body).toContain("if (error || !data)");
-        expect(body).toContain("<Button type=\"link\" onClick={onClose}>");
+        expect(body).toContain('<Button type="link" onClick={onClose}>');
         const dialog = source("../src/pages/inspiration/work-detail-dialog.tsx");
         expect(dialog).toContain('closeIcon={<X className="size-4" />}');
     });
@@ -268,13 +268,13 @@ describe("LibTV work detail dialog", () => {
         // 只看渲染部分，避免匹配到事件处理函数里的同名文案。
         const render = pane.slice(pane.indexOf("const body = () => {"));
         const video = render.indexOf("<video ref={mainVideoRef}");
-        for (const anchor of ['查看制作过程', '复制到画布', '使用视频步骤', ">提示词<", ">制作流程<"]) {
+        for (const anchor of ["查看制作过程", "复制到画布", "使用视频步骤", ">提示词<", ">制作流程<"]) {
             expect(render).toContain(anchor);
             expect(video).toBeLessThan(render.indexOf(anchor));
         }
         // 主播放器打开后加载原视频并尝试静音播放。
-        expect(pane).toContain('poster={data.work.coverUrl || undefined}');
-        expect(pane).toContain("preload=\"auto\"");
+        expect(pane).toContain("poster={data.work.coverUrl || undefined}");
+        expect(pane).toContain('preload="auto"');
         expect(pane).toContain("libtv-detail-media w-full bg-black object-contain");
         expect(pane).toContain("autoPlay muted controls");
     });
@@ -306,14 +306,7 @@ describe("LibTV work detail dialog", () => {
     test("recommendations exclude the open work, dedupe, and prefer the same tag", () => {
         const same = { tags: [{ id: 3, code: "film", label: "影视" }] };
         const other = { tags: [{ id: 9, code: "anime", label: "动漫" }] };
-        const items = [
-            galleryItemLike("current", same),
-            galleryItemLike("tagged-b", other),
-            galleryItemLike("tagged-a", same),
-            galleryItemLike("tagged-a", same),
-            galleryItemLike("no-title", same, ""),
-            galleryItemLike("current", same),
-        ];
+        const items = [galleryItemLike("current", same), galleryItemLike("tagged-b", other), galleryItemLike("tagged-a", same), galleryItemLike("tagged-a", same), galleryItemLike("no-title", same, ""), galleryItemLike("current", same)];
         expect(pickLibTVRecommendations(items, "current", 6, [3]).map((item) => item.templateUuid)).toEqual(["tagged-a", "tagged-b"]);
         // 同标签优先，但缺口用真实列表补齐；限制生效。
         expect(pickLibTVRecommendations(items, "current", 1, [3]).map((item) => item.templateUuid)).toEqual(["tagged-a"]);
@@ -377,7 +370,7 @@ describe("LibTV replication options", () => {
         expect(handler).not.toContain("navigate(");
         expect(handler).toContain("复制到画布");
         const makeSame = detail.slice(detail.indexOf("const handleMakeSame"), detail.indexOf("const body = () =>"));
-        expect(makeSame).toContain("navigate(\"/\", { state: resolution.state })");
+        expect(makeSame).toContain('navigate("/", { state: resolution.state })');
         expect(makeSame).not.toContain("submit");
         expect(makeSame).not.toContain("自动付费");
     });
@@ -434,15 +427,17 @@ describe("LibTV copy-to-canvas remote draft", () => {
 });
 
 describe("LibTV template import viewport", () => {
-    test("only a gallery template imported into an empty canvas reuses fit-to-content after a successful save", () => {
+    test("only a gallery template imported into an empty canvas reuses fit-to-content once the nodes are written", () => {
         const project = source("../src/pages/canvas/project.tsx");
-        const wrapper = project.slice(project.indexOf("const applyLibTVDialogImport"), project.indexOf("[applyLibTVImport, fitCanvasContent, libTVImportTemplateUuid]"));
+        const wrapper = project.slice(project.indexOf("const applyLibTVDialogImport"), project.indexOf("[applyImportedCanvas, fitCanvasContent, libTVImportTemplateUuid]"));
         expect(wrapper).toContain("Boolean(libTVImportTemplateUuid) && nodesRef.current.length === 0");
-        // 先等保存成功（失败会抛错并撤销），再适应画布。
-        expect(wrapper.indexOf("await applyLibTVImport(")).toBeLessThan(wrapper.indexOf("if (fitAfterImport) fitCanvasContent();"));
+        // 导入先写入画布再保存，保存失败时节点仍保留：在 finally 里适应画布，并把保存状态交回弹窗。
+        expect(wrapper).toContain("return await applyImportedCanvas(importedNodes, importedConnections);");
+        expect(wrapper.indexOf("finally")).toBeGreaterThan(wrapper.indexOf("return await applyImportedCanvas("));
+        expect(wrapper.indexOf("if (fitAfterImport && nodesRef.current.length > 0) fitCanvasContent();")).toBeGreaterThan(wrapper.indexOf("finally"));
         expect(project).toContain("onApply={applyLibTVDialogImport}");
         // TapNow 与其他导入不受影响。
-        expect(project).toContain("onApply={applyTapNowImport}");
+        expect(project).toContain("onApply={applyImportedCanvas}");
     });
 });
 
@@ -480,12 +475,12 @@ describe("LibTV gallery tag containment", () => {
         expect(gallery).toContain("const visibleTags = tagsExpanded ? knownTags : tagRank.visible;");
         // 选中态与清除入口都在，且筛选用的仍是真实 tagId。
         expect(gallery).toContain("checked={selectedTagId === tag.id}");
-        expect(gallery).toContain('onChange={() => handleTagClick(tag.id)}');
-        expect(gallery).toContain('checked={!selectedTagId}');
+        expect(gallery).toContain("onChange={() => handleTagClick(tag.id)}");
+        expect(gallery).toContain("checked={!selectedTagId}");
         expect(gallery).toContain("onChange={() => handleTagClick(undefined)}");
         expect(gallery).toContain("aria-expanded={tagsExpanded}");
         // 首屏只铺常用的几个，其余按需展开。
-        expect(gallery).toContain("{tagsExpanded ? \"收起标签\" : `展开全部 ${knownTags.length} 个标签`}");
+        expect(gallery).toContain('{tagsExpanded ? "收起标签" : `展开全部 ${knownTags.length} 个标签`}');
     });
 });
 
@@ -532,7 +527,8 @@ describe("LibTV work detail liveness", () => {
     });
 
     test("the modal width override is scoped to this one dialog", () => {
-        const css = source("../src/styles/globals.css");
+        // globals.css 按 Prettier 分行，比较前把空白压成单个空格。
+        const css = source("../src/styles/globals.css").replace(/\s+/g, " ");
         expect(css).toContain(".workspace-modal.library-modal.libtv-work-detail-dialog { width: min(1200px, calc(100vw - 32px)) !important; }");
         // 全局标准/宽弹窗 token 与规则不动。
         expect(css).toContain("--modal-width-standard: 640px;");
@@ -549,7 +545,7 @@ describe("LibTV work detail liveness", () => {
 describe("LibTV creation page featured works", () => {
     test("精选灵感 reads the same gallery query instead of a copied static list", () => {
         const empty = source("../src/pages/create/creation-workspace-empty.tsx");
-        expect(empty).toContain("useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: \"\" }, getLibTVGallery))");
+        expect(empty).toContain('useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: "" }, getLibTVGallery))');
         // 同一个 queryKey（keyword 空、无 tagId）与灵感广场共享缓存，不复制数据、不转存媒体。
         expect(empty).not.toContain("creationFeaturedWorks");
         expect(empty).not.toContain("inspirationSource");
@@ -572,8 +568,8 @@ describe("LibTV creation page featured works", () => {
         // 创作页对话、模型与积分都留在原地。
         const create = source("../src/pages/create/index.tsx");
         expect(create).toContain("<CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration=");
-        expect(create).toContain('userId && userSessionHydrated ? <CreationFeaturedWorks');
-        expect(create).toContain('登录后查看画布灵感');
+        expect(create).toContain("userId && userSessionHydrated ? <CreationFeaturedWorks");
+        expect(create).toContain("登录后查看画布灵感");
     });
 
     test("loading, failure and empty are stated honestly without the old footer actions", () => {
@@ -631,14 +627,14 @@ describe("LibTV inspiration navigation", () => {
         const dialog = source("../src/pages/canvas/components/libtv-import-dialog.tsx");
         expect(dialog).toContain('className="workspace-modal libtv-import-dialog"');
         expect(dialog).toContain('className="libtv-import-status"');
-        expect(dialog).not.toContain('<Tag>等待确认导入</Tag>');
+        expect(dialog).not.toContain("<Tag>等待确认导入</Tag>");
         expect(dialog).not.toContain('color="blue"');
         const css = source("../src/pages/canvas/components/libtv-import-dialog.css");
-        expect(css).toContain('--button-primary-bg: var(--foreground)');
-        expect(css).toContain('--button-primary-fg: var(--background)');
-        expect(css).toContain('align-items: center');
-        expect(css).toContain('height: var(--space-10)');
-        expect(css).toContain('transform: none');
+        expect(css).toContain("--button-primary-bg: var(--foreground)");
+        expect(css).toContain("--button-primary-fg: var(--background)");
+        expect(css).toContain("align-items: center");
+        expect(css).toContain("height: var(--space-10)");
+        expect(css).toContain("transform: none");
     });
 
     test("sidebar, title, command palette and route preload all know the inspiration page", () => {
@@ -646,7 +642,7 @@ describe("LibTV inspiration navigation", () => {
         const resources = sidebar.slice(sidebar.indexOf('heading: "资源与工具"'), sidebar.indexOf("taskCenterEnabled ? [{ items"));
         expect(resources).toContain('toolItem("inspiration", "/inspiration")');
         expect(resources.indexOf('toolItem("plugins", "/plugins")')).toBeLessThan(resources.indexOf('toolItem("inspiration", "/inspiration")'));
-        expect(sidebar).toContain('item.id === "inspiration" ? "灵感"');
+        expect(sidebar.replace(/\s+/g, " ")).toContain('item.id === "inspiration" ? "灵感"');
         expect(source("../src/components/layout/workspace-top-bar.tsx")).toContain('inspiration: "灵感广场"');
         expect(source("../src/components/layout/workspace-command-palette.tsx")).toContain('toolEntry("inspiration", "/inspiration")');
         const modules = source("../src/lib/workspace-route-modules.ts");

@@ -128,7 +128,8 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		{75, userGroupsPricingCurrencyMigrationName, userGroupsPricingCurrencyMigrationChecksum, migrateUserGroupsPricingCurrency, time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)},
 		{76, agentMemoryDocumentSkillDiscoveryMigrationName, agentMemoryDocumentSkillDiscoveryMigrationChecksum, migrateAgentMemoryDocumentSkillDiscovery, time.Date(2026, 10, 28, 9, 1, 0, 0, time.UTC)},
 		{77, agentMemoryDocumentColumnsMigrationName, agentMemoryDocumentColumnsMigrationChecksum, migrateAgentMemoryDocumentColumns, time.Date(2026, 10, 28, 9, 2, 0, 0, time.UTC)},
-		{78, ecommerceAgentKnowledgeMigrationName, ecommerceAgentKnowledgeMigrationChecksum, migrateEcommerceFeature, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
+		{78, dramaCastVoiceLooksMigrationName, dramaCastVoiceLooksMigrationChecksum, migrateDramaCastVoiceLooks, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
+		{79, ecommerceAgentKnowledgeMigrationName, upstreamEcommerceAgentKnowledgeMigrationChecksum, migrateEcommerceFeature, time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -161,7 +162,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 80 {
+	if CurrentSchemaVersion != 81 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -174,6 +175,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
 		{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum},
 		{Version: 80, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum},
+		{Version: 81, Name: dramaCastVoiceLooksMigrationName, Checksum: dramaCastVoiceLooksMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -208,12 +210,25 @@ func TestMigrateSchemaPreservesForkSchema74(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
+			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
+			if version >= 79 {
+				if err := db.Create(&project).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
 			if err := MigrateSchema(db); err != nil {
 				t.Fatalf("upgrade upstream schema %d: %v", version, err)
 			}
+			if version >= 79 {
+				var stored model.EcommerceProject
+				if err := db.First(&stored, "id = ?", project.ID).Error; err != nil || stored.PlanJSON != project.PlanJSON || stored.Revision != project.Revision {
+					t.Fatalf("upstream ecommerce project changed: %#v err=%v", stored, err)
+				}
+			}
+			// 上游 78（短剧声音与造型）在 Fork 为 81，上游 79（电商 Agent）为 80；没跑过的由本次迁移补上，AppliedAt 为零时不比较。
 			for _, want := range []schemaMigration{
 				{Version: 72, Name: ecommercePrivateLibraryMigrationName, Checksum: ecommercePrivateLibraryMigrationChecksum},
 				{Version: 73, Name: restoreEcommerceCanvasKindMigrationName, Checksum: restoreEcommerceCanvasKindMigrationChecksum},
@@ -223,9 +238,13 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 77, Name: userGroupsPricingCurrencyMigrationName, Checksum: userGroupsPricingCurrencyMigrationChecksum, AppliedAt: applied[75]},
 				{Version: 78, Name: agentMemoryDocumentSkillDiscoveryMigrationName, Checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, AppliedAt: applied[76]},
 				{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum, AppliedAt: applied[77]},
-				{Version: 80, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum, AppliedAt: applied[78]},
+				{Version: 80, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum, AppliedAt: applied[79]},
+				{Version: 81, Name: dramaCastVoiceLooksMigrationName, Checksum: dramaCastVoiceLooksMigrationChecksum, AppliedAt: applied[78]},
 			} {
 				requireMigration(t, db, want)
+			}
+			if err := RequireSchemaVersion(db); err != nil {
+				t.Fatalf("schema after upgrading upstream %d: %v", version, err)
 			}
 			var profile model.ReferralProfile
 			if err := db.First(&profile, "user_id = ?", "upstream-promoter").Error; err != nil || profile.Code != "UPSTREAM26" {
@@ -301,6 +320,22 @@ func TestMigrateSchemaRejectsInexactLineagesBeforeChangingLedger(t *testing.T) {
 		requireMigration(t, db, schemaMigration{Version: 73, Name: dramaEpisodeSourceFormatMigrationName, Checksum: dramaEpisodeSourceFormatMigrationChecksum})
 	})
 
+	// 上游 PR #939 分支把电商 Agent 记为 78；上游 main 从未发布这套编号，按名称不一致拒绝，账本保持原样。
+	t.Run("upstream pull request lineage", func(t *testing.T) {
+		db, _ := upstreamSchemaDatabase(t, 77)
+		if err := migrateEcommerceFeature(db); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&schemaMigration{Version: 78, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum, AppliedAt: time.Now().UTC()}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := MigrateSchema(db); err == nil || !strings.Contains(err.Error(), "名称不一致") {
+			t.Fatalf("expected pull request lineage rejection, got %v", err)
+		}
+		requireMigration(t, db, schemaMigration{Version: 72, Name: referralCenterMigrationName, Checksum: upstreamReferralCenterMigrationChecksum})
+		requireMigration(t, db, schemaMigration{Version: 78, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum})
+	})
+
 	t.Run("legacy checksum", func(t *testing.T) {
 		db, _ := legacyEcommerceSchema59Database(t)
 		if err := db.Model(&schemaMigration{}).Where("version = ?", 59).Update("checksum", "sha256:tampered").Error; err != nil {
@@ -349,6 +384,9 @@ func TestMigrateSchemaRejectsUpstreamLedgerWithoutPhysicalSchema(t *testing.T) {
 		{"billing order currency rate column", 75, func(db *gorm.DB) error {
 			return db.Migrator().DropColumn(&model.BillingOrder{}, "CurrencyRateMicrocredits")
 		}},
+		{"drama look column", 78, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaCast{}, "LookName") }},
+		{"drama shot look column", 78, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaShot{}, "LookCastIDsJSON") }},
+		{"ecommerce agent table", 79, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EcommerceAgentRun{}) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -395,6 +433,8 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 		{"billing order currency rate column", 77, func(db *gorm.DB) error {
 			return db.Migrator().DropColumn(&model.BillingOrder{}, "CurrencyRateMicrocredits")
 		}},
+		{"ecommerce agent table", 80, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EcommerceAgentRun{}) }},
+		{"drama look column", 81, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaCast{}, "LookName") }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

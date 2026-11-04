@@ -31,7 +31,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { loadAssetsForUse } from "@/services/user-data-sync";
+import { loadAssetsForUse, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
@@ -58,7 +58,7 @@ import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { filterCanvasDisplayConnections, persistCanvasHideNodeConnections, readCanvasHideNodeConnections } from "@/lib/canvas/canvas-connection-visibility";
 import { summarizeCanvasContext } from "@/lib/canvas/canvas-context-summary";
 import { refreshCanvasCharacterReferenceNodes } from "@/lib/canvas/canvas-character-reference";
-import { useAssetStore } from "@/stores/use-asset-store";
+import { flushAssetStorePersistence, useAssetStore, type ImageAsset } from "@/stores/use-asset-store";
 import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { flushCanvasStorePersistence } from "@/stores/canvas/use-canvas-store";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
@@ -106,7 +106,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { handleListGenerate } from "./list-mode-generator";
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { useCanvasCreateCommands } from "@/components/canvas/use-canvas-create-commands";
-import { AssetPickerModal } from "@/components/canvas/asset-picker-modal";
+import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { getProject, listCharacters, type ProjectAsset } from "@/services/api/projects";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { CanvasShareModal } from "@/components/canvas/canvas-share-modal";
@@ -142,7 +142,15 @@ import type { CloudAgentMessagePresentation } from "@/services/cloud-agent-conve
 import { CanvasConnectionCreateMenu, CanvasNodePanelOverlay } from "@/components/canvas/canvas-workspace-overlays";
 import { CanvasOverlayLayerContainer, CanvasOverlayLayerProvider } from "@/components/canvas/canvas-overlay-layer";
 import { CanvasLeaferGraphicsLayer } from "@/components/canvas/canvas-leafer-graphics-layer";
-import { CanvasDramaEmptyState, CanvasFreeformEmptyState, CanvasLinkedProjectEmptyState, CanvasShortDramaEmptyState, CanvasShortDramaGuide, CanvasStoryInputNodeContent, CanvasStylePlaceholderNodeContent } from "@/components/canvas/canvas-short-drama-entry";
+import {
+    CanvasDramaEmptyState,
+    CanvasFreeformEmptyState,
+    CanvasLinkedProjectEmptyState,
+    CanvasShortDramaEmptyState,
+    CanvasShortDramaGuide,
+    CanvasStoryInputNodeContent,
+    CanvasStylePlaceholderNodeContent,
+} from "@/components/canvas/canvas-short-drama-entry";
 import { resolveCanvasEmptyStateKind } from "@/lib/canvas/canvas-starter";
 import { failedImageBatchChildren, markImageBatchRetrying, reconcileImageBatchRoot, restoreUnsubmittedImageBatchChild } from "@/lib/canvas/canvas-image-batch-retry";
 import { cinematicStoryboardColumns, createCanvasNode, getInputSummary, isHiddenBatchChild } from "@/lib/canvas/canvas-project-domain";
@@ -150,7 +158,15 @@ import { canSaveCanvasImageAsModel, ecommerceModelPresetPrompt, type EcommerceMo
 import { resolveEcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { ecommerceImageSettings } from "@/lib/ecommerce/ecommerce-image-generation";
 import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities";
-import { ecommerceProductReferenceImages, ecommerceProductReferenceSignature, ecommerceReferenceImageGuide, ecommerceRowPromptIssue, connectedStyleReferenceNodes, resolveEcommerceInputs, withImageAsEcommerceReference } from "@/lib/ecommerce/ecommerce-canvas";
+import {
+    ecommerceProductReferenceImages,
+    ecommerceProductReferenceSignature,
+    ecommerceReferenceImageGuide,
+    ecommerceRowPromptIssue,
+    connectedStyleReferenceNodes,
+    resolveEcommerceInputs,
+    withImageAsEcommerceReference,
+} from "@/lib/ecommerce/ecommerce-canvas";
 import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
 import { ecommerceOneClickFlow, ecommerceOneClickScreens, type EcommerceOneClickFlowId } from "@/lib/ecommerce/ecommerce-oneclick";
 import { ecommerceBriefBlock, ecommerceBriefRows, ecommerceBriefSlicePlatform } from "@/lib/ecommerce/ecommerce-brief";
@@ -198,7 +214,7 @@ import { removeCanvasDrawing } from "@/lib/canvas/canvas-drawing-storage";
 import { useCanvasConnectionController } from "./use-canvas-connection-controller";
 import { useCanvasOperationHistory } from "./use-canvas-operation-history";
 import { useCanvasAssistantVisibility } from "./use-canvas-assistant-visibility";
-import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
+import { useGlobalAgentStore, type AgentInsertedNode } from "@/stores/use-global-agent-store";
 import { useCanvasActiveTasks } from "./use-canvas-active-tasks";
 import { useCanvasStyleWorkflow } from "./use-canvas-style-workflow";
 import { useCanvasPrevis } from "./use-canvas-previs";
@@ -213,6 +229,8 @@ import { useCanvasMediaTools } from "./use-canvas-media-tools";
 import { useCanvasNodeEditor } from "./use-canvas-node-editor";
 import { useCanvasNodeOperations } from "./use-canvas-node-operations";
 import { useCanvasProjectLifecycle } from "./use-canvas-project-lifecycle";
+import { applyCanvasImport } from "./canvas-import-save";
+import { waitForCanvasSync } from "@/lib/canvas/sync-recovery";
 import { useCanvasRenderModel } from "./use-canvas-render-model";
 import { useCanvasSelectionController } from "./use-canvas-selection-controller";
 import { useCanvasShortDrama } from "./use-canvas-short-drama";
@@ -497,7 +515,7 @@ function CanvasViewportPage() {
         [cleanupAssetImages, getHistoryCleanupContext],
     );
 
-    const { loadError, retryLoad, addedSkills, agentFocus, clearCanvasFiles, createAndOpenProject, currentProject, deleteCurrentProject, renameCurrentProject, saveCanvasProject, updateProject } = useCanvasProjectLifecycle({
+    const { loadError, retryLoad, addedSkills, agentFocus, clearCanvasFiles, createAndOpenProject, currentProject, deleteCurrentProject, renameCurrentProject, saveCanvasProject, persistLocalEdits, updateProject } = useCanvasProjectLifecycle({
         projectId,
         projectLoaded,
         nodes,
@@ -581,47 +599,25 @@ ${instruction.trim()}`
         },
         [agentMentionReferences, message, openAgent],
     );
-    const applyLibTVImport = useCallback(
+    const applyImportedCanvas = useCallback(
         async (importedNodes: CanvasNodeData[], importedConnections: CanvasConnection[]) => {
-            const previousNodes = nodesRef.current;
-            const previousConnections = connectionsRef.current;
-            const nextNodes = [...nodesRef.current, ...importedNodes];
-            const nextConnections = [...connectionsRef.current, ...importedConnections];
-            nodesRef.current = nextNodes;
-            connectionsRef.current = nextConnections;
-            setNodes(nextNodes);
-            setConnections(nextConnections);
-            const saved = await saveCanvasProject({ requireRemote: false });
-            if (!saved) {
-                nodesRef.current = previousNodes;
-                connectionsRef.current = previousConnections;
-                setNodes(previousNodes);
-                setConnections(previousConnections);
-                throw new Error("画布保存失败，已撤销本次 LibTV 导入");
-            }
+            return applyCanvasImport(importedNodes, importedConnections, {
+                canvasId: projectId,
+                read: () => ({ nodes: nodesRef.current, connections: connectionsRef.current }),
+                write: ({ nodes, connections }) => {
+                    nodesRef.current = nodes;
+                    connectionsRef.current = connections;
+                    setNodes(nodes);
+                    setConnections(connections);
+                },
+                persistLocal: async () => {
+                    await persistLocalEdits();
+                    await waitForCanvasSync(flushAssetStorePersistence());
+                },
+                syncRemote: () => saveRemoteUserDataNow(projectId),
+            });
         },
-        [saveCanvasProject, setConnections, setNodes],
-    );
-    const applyTapNowImport = useCallback(
-        async (importedNodes: CanvasNodeData[], importedConnections: CanvasConnection[]) => {
-            const previousNodes = nodesRef.current;
-            const previousConnections = connectionsRef.current;
-            const nextNodes = [...nodesRef.current, ...importedNodes];
-            const nextConnections = [...connectionsRef.current, ...importedConnections];
-            nodesRef.current = nextNodes;
-            connectionsRef.current = nextConnections;
-            setNodes(nextNodes);
-            setConnections(nextConnections);
-            const saved = await saveCanvasProject({ requireRemote: false });
-            if (!saved) {
-                nodesRef.current = previousNodes;
-                connectionsRef.current = previousConnections;
-                setNodes(previousNodes);
-                setConnections(previousConnections);
-                throw new Error("画布保存失败，已撤销本次 TapNow 导入");
-            }
-        },
-        [saveCanvasProject, setConnections, setNodes],
+        [persistLocalEdits, projectId, setConnections, setNodes],
     );
     const linkedProjectId = shortDramaEnabled ? currentProject?.projectId || "" : "";
     // 画布种类决定节点菜单里出现哪一套节点（见 lib/canvas/canvas-kind.ts）。
@@ -629,10 +625,7 @@ ${instruction.trim()}`
     const canvasKind = resolveCanvasKind(currentProject?.kind);
     const [workspaceModeOverride, setWorkspaceModeOverride] = useState<{ projectId: string; mode: CanvasWorkspaceMode } | null>(null);
     const persistedWorkspaceMode = useMemo(() => (canvasKind === "ecommerce" ? readCanvasWorkspaceModePreference(projectId) : null), [canvasKind, projectId]);
-    const workspaceMode =
-        canvasKind === "ecommerce" && workspaceModeOverride?.projectId === projectId
-            ? workspaceModeOverride.mode
-            : persistedWorkspaceMode ?? defaultCanvasWorkspaceMode(canvasKind);
+    const workspaceMode = canvasKind === "ecommerce" && workspaceModeOverride?.projectId === projectId ? workspaceModeOverride.mode : (persistedWorkspaceMode ?? defaultCanvasWorkspaceMode(canvasKind));
     const showProfessionalControls = canvasKind !== "ecommerce" || workspaceMode === "professional";
     const changeWorkspaceMode = useCallback(
         (mode: CanvasWorkspaceMode) => {
@@ -697,14 +690,15 @@ ${instruction.trim()}`
     // 每帧新对象会让所有节点跟着重渲染，错题本里多条崩溃都出在画布高频更新。
     const nodeGraphContext = useMemo<CanvasNodeGraphContextValue>(() => createCanvasNodeGraph(nodes, connections), [connections, nodes]);
 
-    const { applyGenerationTaskResult, bindGenerationTask, finishGenerationRequest, openNodeTaskDetails, resyncGenerationTaskNode, runningNodeId, setRunningNodeId, setTaskDetail, startGenerationRequest, taskDetail, taskDetailLoading, taskDetailLogs } = useCanvasGeneration({
-        projectId,
-        domainProjectId: linkedProjectId,
-        projectLoaded,
-        nodes,
-        nodesRef,
-        setNodes,
-    });
+    const { applyGenerationTaskResult, bindGenerationTask, finishGenerationRequest, openNodeTaskDetails, resyncGenerationTaskNode, runningNodeId, setRunningNodeId, setTaskDetail, startGenerationRequest, taskDetail, taskDetailLoading, taskDetailLogs } =
+        useCanvasGeneration({
+            projectId,
+            domainProjectId: linkedProjectId,
+            projectLoaded,
+            nodes,
+            nodesRef,
+            setNodes,
+        });
 
     const cancelCanvasTask = useCallback(
         (task: import("@/services/api/task-center").GenerationTask) => {
@@ -845,10 +839,14 @@ ${instruction.trim()}`
     const applyLibTVDialogImport = useCallback(
         async (importedNodes: CanvasNodeData[], importedConnections: CanvasConnection[]) => {
             const fitAfterImport = Boolean(libTVImportTemplateUuid) && nodesRef.current.length === 0;
-            await applyLibTVImport(importedNodes, importedConnections);
-            if (fitAfterImport) fitCanvasContent();
+            try {
+                return await applyImportedCanvas(importedNodes, importedConnections);
+            } finally {
+                // 保存失败时节点仍留在画布上；重试时画布已非空，所以首次写入后就要适配视图。
+                if (fitAfterImport && nodesRef.current.length > 0) fitCanvasContent();
+            }
         },
-        [applyLibTVImport, fitCanvasContent, libTVImportTemplateUuid],
+        [applyImportedCanvas, fitCanvasContent, libTVImportTemplateUuid],
     );
 
     // 关联短剧的精修画布：投送、过期提示与采用弹窗。定位节点要用到后面才定义的视图切换，经 ref 转发。
@@ -910,6 +908,7 @@ ${instruction.trim()}`
         closeAssetPicker,
         createVideoNodeFromBlob,
         createAssetPayloadNode,
+        createImageAssetNode,
         fileDropActive,
         handleAssetsInsert,
         handleDrop,
@@ -2152,13 +2151,9 @@ ${instruction.trim()}`
                     if (currentProduct.metadata?.locked) throw new Error("目标商品已锁定");
                     const rows = ecommerceTeardownOutlineToSuiteRows((currentTeardown.metadata?.ecommerceTeardown?.outline || []).filter((row) => row.title.trim()));
                     if (!rows.length) throw new Error("竞品拆解还没有可写入的详情页大纲");
-                    const connected = connectionsRef.current.some(
-                        (edge) => (edge.fromNodeId === currentTeardown.id && edge.toNodeId === currentProduct.id) || (edge.fromNodeId === currentProduct.id && edge.toNodeId === currentTeardown.id),
-                    );
+                    const connected = connectionsRef.current.some((edge) => (edge.fromNodeId === currentTeardown.id && edge.toNodeId === currentProduct.id) || (edge.fromNodeId === currentProduct.id && edge.toNodeId === currentTeardown.id));
                     if (!connected) throw new Error("请先把竞品拆解节点连接到目标商品");
-                    const table = nodesRef.current.find(
-                        (item) => item.type === CanvasNodeType.BatchTable && item.metadata?.ecommerceProductId === currentProduct.id && item.metadata.ecommerceFlowId === "detail",
-                    );
+                    const table = nodesRef.current.find((item) => item.type === CanvasNodeType.BatchTable && item.metadata?.ecommerceProductId === currentProduct.id && item.metadata.ecommerceFlowId === "detail");
                     if (table?.metadata?.locked) throw new Error("详情页创作表已锁定");
                     return { currentProduct, table, rows };
                 };
@@ -2821,14 +2816,7 @@ ${instruction.trim()}`
             }
             const evidenceSignature = ecommerceProductReferenceSignature(productNode, nodesRef.current, connectionsRef.current);
             const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig).analysisModel;
-            const text = await runEcommerceTextDraft(
-                productNode,
-                buildEcommerceProfileDraftPrompt(),
-                resolvedAnalysisModel,
-                false,
-                "cap:planning",
-                "planning",
-            );
+            const text = await runEcommerceTextDraft(productNode, buildEcommerceProfileDraftPrompt(), resolvedAnalysisModel, false, "cap:planning", "planning");
             if (text === undefined) return undefined;
             const latestAnalysisModel = resolveEcommerceTableModels(effectiveConfigRef.current).analysisModel;
             if (resolvedAnalysisModel !== latestAnalysisModel) {
@@ -3049,10 +3037,7 @@ ${instruction.trim()}`
             });
             const sourceForGeneration = { ...suiteNode, metadata: { ...suiteNode.metadata, ...ecommerceSuiteMetadata(suiteNode.metadata, requestedSuite!) } };
             const preparedById = new Map<string, CanvasNodeData>(preparedTargets.map((item) => [item.id, item]));
-            const graphNodes = [
-                ...nodesRef.current.map((item) => (item.id === suiteNode.id ? sourceForGeneration : preparedById.get(item.id) || item)),
-                ...plan.spawned.map((item) => preparedById.get(item.id)!),
-            ];
+            const graphNodes = [...nodesRef.current.map((item) => (item.id === suiteNode.id ? sourceForGeneration : preparedById.get(item.id) || item)), ...plan.spawned.map((item) => preparedById.get(item.id)!)];
             for (const item of preparedTargets) {
                 const row = rowsByNodeId.get(item.id)!;
                 const signature = ecommerceResultSourceSignature(sourceForGeneration, row, item, graphNodes, graphConnections);
@@ -3966,6 +3951,55 @@ ${instruction.trim()}`
         },
         [currentProject?.projectId, currentProject?.title, message, navigate, projectId],
     );
+    // Agent 输入框的附件放到画布中心附近（按 3 列网格排开），不改选区、不弹全局进度；上传状态写在节点上。
+    const insertAgentFiles = useCallback(
+        (files: File[], onError?: (nodeId: string, details: string) => void) => {
+            const center = getCanvasCenter();
+            const columns = Math.min(files.length, 3);
+            return files.map((file, index) => {
+                const nodeId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+                const position = { x: center.x + ((index % 3) - (columns - 1) / 2) * 380, y: center.y + Math.floor(index / 3) * 300 };
+                void createFileNode(file, position, undefined, { quiet: { nodeId, onError: onError ? (details) => onError(nodeId, details) : undefined } });
+                return nodeId;
+            });
+        },
+        [createFileNode, getCanvasCenter],
+    );
+    const insertAgentText = useCallback(
+        (text: string, title: string) => {
+            const node = { ...createCanvasNode(CanvasNodeType.Text, getCanvasCenter(), { content: text, prompt: text, status: "success" }), title };
+            setNodes((current) => [...current, node]);
+            return node.id;
+        },
+        [getCanvasCenter, setNodes],
+    );
+    const insertAgentAssets = useCallback(
+        async (payloads: InsertAssetPayload[]): Promise<AgentInsertedNode[]> =>
+            (await handleAssetsInsert(payloads)).map((node) => ({
+                nodeId: node.id,
+                title: node.title || "素材",
+                kind: node.type === CanvasNodeType.Image ? "image" : node.type === CanvasNodeType.Video ? "video" : node.type === CanvasNodeType.Audio ? "audio" : "text",
+                previewUrl: node.type === CanvasNodeType.Image ? node.metadata?.content : undefined,
+            })),
+        [handleAssetsInsert],
+    );
+    const insertAgentImageAsset = useCallback(
+        async (assetId: string) => {
+            const asset = useAssetStore.getState().assets.find((item): item is ImageAsset => item.kind === "image" && item.id === assetId);
+            if (!asset) return null;
+            return createImageAssetNode(asset, undefined, { quiet: true });
+        },
+        [createImageAssetNode],
+    );
+    // 只删除没有连线的节点：用户已经把它接到别的节点上，说明它不再只是这条消息的附件。
+    const discardAgentNodes = useCallback(
+        (nodeIds: string[]) => {
+            const linked = new Set(connectionsRef.current.flatMap((connection) => [connection.fromNodeId, connection.toNodeId]));
+            const removable = nodeIds.filter((id) => !linked.has(id) && nodesRef.current.some((node) => node.id === id));
+            if (removable.length) deleteNodes(new Set(removable));
+        },
+        [deleteNodes, nodesRef],
+    );
     // 平台唯一的 Agent 面板挂在布局上；画布只发布自己的上下文。画布加载完成前不发布，避免以未保存画布绑定运行。
     const publishAgentCanvas = useGlobalAgentStore((state) => state.setCanvas);
     useEffect(() => {
@@ -3980,8 +4014,29 @@ ${instruction.trim()}`
             references: agentMentionReferences,
             prefillRequest: agentPrefillRequest,
             onFocusNode: handleAgentFocusNode,
+            insertAgentFiles,
+            insertAgentText,
+            insertAgentAssets,
+            insertAgentImageAsset,
+            discardAgentNodes,
         });
-    }, [projectLoaded, projectId, currentProject?.projectId, nodes, runningNodeId, agentSelectedNodeIds, agentMentionReferences, agentPrefillRequest, handleAgentFocusNode, publishAgentCanvas]);
+    }, [
+        projectLoaded,
+        projectId,
+        currentProject?.projectId,
+        nodes,
+        runningNodeId,
+        agentSelectedNodeIds,
+        agentMentionReferences,
+        agentPrefillRequest,
+        handleAgentFocusNode,
+        publishAgentCanvas,
+        insertAgentFiles,
+        insertAgentText,
+        insertAgentAssets,
+        insertAgentImageAsset,
+        discardAgentNodes,
+    ]);
     // 离开画布（卸载或切换到另一个画布）时撤回上下文：之后的对话轮次不再绑定这个画布。
     useEffect(() => {
         return () => {
@@ -4138,7 +4193,7 @@ ${instruction.trim()}`
                                 onApply={applyLibTVDialogImport}
                                 templateUuid={libTVImportTemplateUuid}
                             />
-                            <TapNowImportDialog open={tapNowImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => setTapNowImportOpen(false)} onApply={applyTapNowImport} />
+                            <TapNowImportDialog open={tapNowImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => setTapNowImportOpen(false)} onApply={applyImportedCanvas} />
 
                             <CanvasStylePickerModal open={stylePickerOpen} value={activeStylePresetId} applying={styleApplying} onClose={() => setStylePickerOpen(false)} onSelect={selectCanvasStyle} />
                             <CanvasEcommerceModelLibraryModal

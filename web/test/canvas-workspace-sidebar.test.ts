@@ -41,11 +41,11 @@ test("image style and presets remain visible without the prompt template picker"
     expect(source).toContain("canvas-node-tool-controls-inline");
     expect(source).toContain("<CanvasChooseImageStylePicker");
     expect(source).toContain("<CanvasNineGridPicker");
-    expect(source).toContain('dense appearance="quiet"');
+    expect(source.replace(/\s+/g, " ")).toContain('dense appearance="quiet"');
     // 电商画布里 image 模式也要给预设——那批预设正是为商品图写的（白底主图、种草图、
     // 详情页单屏），藏起来等于把最该点的东西藏了。自由画布保持原样。
     expect(source).toContain('const showPromptTemplates = !simpleMode && (mode !== "image" || canvasKind === "ecommerce")');
-    expect(source).toContain("{showPromptTemplates ? <CanvasPresetPicker");
+    expect(source).toMatch(/\{showPromptTemplates\s*\?\s*\(?\s*<CanvasPresetPicker/);
     expect(source).toContain("if (showPromptTemplates &&");
     expect(source).not.toContain('aria-label="生成工具"');
     expect(component("canvas-choose-image-style-picker.tsx")).toContain('resolvedLabel || (ecommerce ? "拍法" : "风格")');
@@ -95,7 +95,7 @@ test("editor rail and expanded panel share one restrained glass surface without 
     const page = readFileSync(new URL("../src/pages/canvas/project.tsx", import.meta.url), "utf8");
     const panel = component("canvas-workspace-panel.tsx");
     const styles = component("canvas-workspace-panel.css").replace(/\r\n/g, "\n");
-    expect(page).toContain('<CanvasViewport');
+    expect(page).toContain("<CanvasViewport");
     expect(page).not.toContain("canvas-workspace-backdrop");
     expect(page).toContain("canvas-main-with-workspace");
     expect(styles).toContain(".canvas-main-with-workspace .canvas-editor-shell {\n    z-index: 0;");

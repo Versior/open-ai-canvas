@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 80
+const CurrentSchemaVersion int64 = 81
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -52,6 +52,9 @@ const agentMemoryDocumentSkillDiscoveryMigrationName = "agent_memory_document_sk
 const agentMemoryDocumentSkillDiscoveryMigrationChecksum = "sha256:agent-memory-document-skill-discovery-v76-20261028"
 const agentMemoryDocumentColumnsMigrationName = "agent_memory_document_columns"
 const agentMemoryDocumentColumnsMigrationChecksum = "sha256:agent-memory-document-columns-v77-20261028"
+const upstreamEcommerceAgentKnowledgeMigrationChecksum = "sha256:ecommerce-agent-and-knowledge-v79-20261101"
+const dramaCastVoiceLooksMigrationName = "drama_cast_voice_looks"
+const dramaCastVoiceLooksMigrationChecksum = "sha256:drama-cast-voice-looks-v78-20261101"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -302,8 +305,41 @@ var schemaMigrations = []migration{
 	{version: 77, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum, apply: migrateUserGroupsPricingCurrency},
 	{version: 78, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum, apply: migrateAgentMemoryDocumentSkillDiscovery},
 	{version: 79, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum, apply: migrateAgentMemoryDocumentColumns},
-	// 上游 PR #939 的 78 号迁移（电商 Agent 与知识库）。名称和校验和与上游一致，Fork 顺延到 80。
+	// 电商 Agent 与知识库：上游 main 为 79（PR #939 分支为 78）。Fork 中排在 80 并沿用 PR 的校验和，已升级到 80 的库不动；
+	// 上游库启动时顺延到 80 并改写校验和，两版建表内容相同。
 	{version: 80, name: ecommerceAgentKnowledgeMigrationName, checksum: ecommerceAgentKnowledgeMigrationChecksum, apply: migrateEcommerceFeature},
+	// 上游 main 的 78（短剧角色声音与造型）。Fork 的 80 已被电商 Agent 占用，排在其后为 81，名称和校验和与上游一致。
+	{version: 81, name: dramaCastVoiceLooksMigrationName, checksum: dramaCastVoiceLooksMigrationChecksum, apply: migrateDramaCastVoiceLooks},
+}
+
+// migrateDramaCastVoiceLooks 为短剧设定补角色声音（声音库条目与样本音频）和造型（所属角色、造型名、默认适用章节）。
+// 旧设定都是没有指定声音的角色本体，新增列写成零值。
+func migrateDramaCastVoiceLooks(tx *gorm.DB) error {
+	for _, field := range []string{"VoiceProfileID", "VoiceSampleResourceID", "ParentID", "LookName", "LookFromChapter", "LookToChapter"} {
+		if tx.Migrator().HasColumn(&model.DramaCast{}, field) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(&model.DramaCast{}, field); err != nil {
+			return err
+		}
+	}
+	for column, value := range map[string]any{"voice_profile_id": "", "voice_sample_resource_id": "", "parent_id": "", "look_name": "", "look_from_chapter": 0, "look_to_chapter": 0} {
+		if err := tx.Model(&model.DramaCast{}).Where(column+" IS NULL").Update(column, value).Error; err != nil {
+			return err
+		}
+	}
+	if !tx.Migrator().HasColumn(&model.DramaShot{}, "LookCastIDsJSON") {
+		if err := tx.Migrator().AddColumn(&model.DramaShot{}, "LookCastIDsJSON"); err != nil {
+			return err
+		}
+	}
+	if err := tx.Model(&model.DramaShot{}).Where("look_cast_ids_json IS NULL").Update("look_cast_ids_json", "").Error; err != nil {
+		return err
+	}
+	if tx.Migrator().HasIndex(&model.DramaCast{}, "ParentID") {
+		return nil
+	}
+	return tx.Migrator().CreateIndex(&model.DramaCast{}, "ParentID")
 }
 
 // migrateAgentMemoryDocumentColumns 补齐记忆文件的条目序号与修订的工具调用 ID。
@@ -933,6 +969,15 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasIndex(&model.EcommerceKnowledgeEntry{}, "idx_ecommerce_knowledge_domain") {
 			return fmt.Errorf("电商知识库迁移账本与物理结构不一致：缺少索引 idx_ecommerce_knowledge_domain")
 		}
+	case 81:
+		for _, field := range []string{"VoiceProfileID", "VoiceSampleResourceID", "ParentID", "LookName", "LookFromChapter", "LookToChapter"} {
+			if !tx.Migrator().HasColumn(&model.DramaCast{}, field) {
+				return fmt.Errorf("短剧角色声音与造型迁移账本与物理结构不一致：缺少 drama_casts 的 %s", field)
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.DramaShot{}, "LookCastIDsJSON") {
+			return fmt.Errorf("短剧角色声音与造型迁移账本与物理结构不一致：缺少 drama_shots.look_cast_ids_json")
+		}
 	}
 	return nil
 }
@@ -957,48 +1002,57 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		return false, nil
 	}
 
-	upstream := []migration{
-		{version: 72, name: referralCenterMigrationName, checksum: upstreamReferralCenterMigrationChecksum},
-		{version: 73, name: dramaEpisodeSourceFormatMigrationName, checksum: dramaEpisodeSourceFormatMigrationChecksum},
-		{version: 74, name: dramaSegmentReferencesMigrationName, checksum: dramaSegmentReferencesMigrationChecksum},
-		{version: 75, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum},
-		{version: 76, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum},
-		{version: 77, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum},
-		{version: 78, name: ecommerceAgentKnowledgeMigrationName, checksum: ecommerceAgentKnowledgeMigrationChecksum},
+	// 上游 main 72–79 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
+	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和。未列出的上游新版本一律拒绝自动重排。
+	upstream := []struct {
+		migration
+		forkVersion  int64
+		forkChecksum string
+	}{
+		{migration{version: 72, name: referralCenterMigrationName, checksum: upstreamReferralCenterMigrationChecksum}, 74, referralCenterMigrationChecksum},
+		{migration{version: 73, name: dramaEpisodeSourceFormatMigrationName, checksum: dramaEpisodeSourceFormatMigrationChecksum}, 75, dramaEpisodeSourceFormatMigrationChecksum},
+		{migration{version: 74, name: dramaSegmentReferencesMigrationName, checksum: dramaSegmentReferencesMigrationChecksum}, 76, dramaSegmentReferencesMigrationChecksum},
+		{migration{version: 75, name: userGroupsPricingCurrencyMigrationName, checksum: userGroupsPricingCurrencyMigrationChecksum}, 77, userGroupsPricingCurrencyMigrationChecksum},
+		{migration{version: 76, name: agentMemoryDocumentSkillDiscoveryMigrationName, checksum: agentMemoryDocumentSkillDiscoveryMigrationChecksum}, 78, agentMemoryDocumentSkillDiscoveryMigrationChecksum},
+		{migration{version: 77, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum}, 79, agentMemoryDocumentColumnsMigrationChecksum},
+		{migration{version: 78, name: dramaCastVoiceLooksMigrationName, checksum: dramaCastVoiceLooksMigrationChecksum}, 81, dramaCastVoiceLooksMigrationChecksum},
+		{migration{version: 79, name: ecommerceAgentKnowledgeMigrationName, checksum: upstreamEcommerceAgentKnowledgeMigrationChecksum}, 80, ecommerceAgentKnowledgeMigrationChecksum},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 78 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 79 后仍有记录，拒绝自动重排")
 	}
 	for index, applied := range records {
 		expected := upstream[index]
 		if applied.Version != expected.version {
 			return false, fmt.Errorf("上游迁移账本不连续：期望版本 %d，实际为 %d", expected.version, applied.Version)
 		}
-		if err := validateMigrationRecord(applied, expected); err != nil {
+		if err := validateMigrationRecord(applied, expected.migration); err != nil {
 			return false, err
 		}
 	}
-	for _, applied := range records {
-		if err := validateCanonicalMigrationPhysicalSchema(tx, applied.Version+2); err != nil {
+	for index := range records {
+		if err := validateCanonicalMigrationPhysicalSchema(tx, upstream[index].forkVersion); err != nil {
 			return false, err
 		}
 	}
 
-	// 逆序搬迁避免上游主键槽位互相碰撞；AppliedAt 不参与更新。
+	// 逆序搬迁避免主键槽位碰撞：上游 79→80、78→81 的目标都高于上游最大版本，之后每条的目标槽位都已腾空。
+	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]
-		values := map[string]any{"version": applied.Version + 2}
-		if applied.Version == 72 {
-			values["checksum"] = referralCenterMigrationChecksum
+		target := upstream[index]
+		values := map[string]any{"version": target.forkVersion}
+		if target.forkChecksum != applied.Checksum {
+			values["checksum"] = target.forkChecksum
 		}
 		result := tx.Model(&schemaMigration{}).
 			Where("version = ? AND name = ? AND checksum = ?", applied.Version, applied.Name, applied.Checksum).
 			Updates(values)
 		if result.Error != nil {
-			return false, fmt.Errorf("迁移上游账本记录 %d 到 %d：%w", applied.Version, applied.Version+2, result.Error)
+			return false, fmt.Errorf("迁移上游账本记录 %d 到 %d：%w", applied.Version, target.forkVersion, result.Error)
 		}
 		if result.RowsAffected != 1 {
-			return false, fmt.Errorf("迁移上游账本记录 %d 到 %d 影响 %d 行，拒绝继续启动", applied.Version, applied.Version+2, result.RowsAffected)
+			return false, fmt.Errorf("迁移上游账本记录 %d 到 %d 影响 %d 行，拒绝继续启动", applied.Version, target.forkVersion, result.RowsAffected)
 		}
 	}
 	return true, nil

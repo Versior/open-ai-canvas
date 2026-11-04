@@ -54,6 +54,10 @@ type CanvasUploadProgress = {
 type FileNodeUploadOptions = {
     // 批量上传由批量入口统一展示进度、选中结果和汇总提示，并在全部完成后只刷新一次项目。
     batch?: { onLocalOnly: () => void };
+    // Agent 输入框添加的附件：用调用方给的节点 ID（输入框立即就能引用它），不弹全局进度、不改选区；
+    // 进度、失败原因和「仅本机」都写在节点上，由输入框的附件卡片展示。占位节点还没建出来就失败时
+    // （例如图片读不出尺寸），节点上没处写原因，由 onError 交给输入框。
+    quiet?: { nodeId: string; onError?: (details: string) => void };
 };
 
 type CanvasUploadTarget = { nodeId?: string; position?: Position } | { createTargetNode: () => string | undefined };
@@ -218,15 +222,16 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
             const expectedScope = getActiveUserScope();
             const original = replaceId ? nodesRef.current.find((node) => node.id === replaceId) : undefined;
             if (replaceId && (!original || activeUploadsRef.current.has(replaceId))) return null;
-            const id = replaceId || `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const id = replaceId || options.quiet?.nodeId || `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
             const ownedUploadNodes = new WeakSet<CanvasNodeData>();
             const ownUploadNode = (node: CanvasNodeData) => {
                 ownedUploadNodes.add(node);
                 return node;
             };
             const batch = options.batch;
+            const silent = Boolean(batch || options.quiet);
             activeUploadsRef.current.add(id);
-            const progress = batch ? SILENT_UPLOAD_PROGRESS : startUploadStatus(replaceId ? "替换文件" : "上传文件", "读取文件信息", domainProjectId ? 4 : 3);
+            const progress = silent ? SILENT_UPLOAD_PROGRESS : startUploadStatus(replaceId ? "替换文件" : "上传文件", "读取文件信息", domainProjectId ? 4 : 3);
             const fileType = uploadNodeType(file);
             // 占位节点首帧就显示本地文件，上传进度叠加在预览之上，不再是一块空白。
             if (fileType === CanvasNodeType.Image || fileType === CanvasNodeType.Video) registerUploadPreview(id, file);
@@ -247,7 +252,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                           )
                         : [...current, ownUploadNode(placeholder)],
                 );
-                if (!batch) selectInsertedNode(id, "close");
+                if (!silent) selectInsertedNode(id, "close");
                 let lastPercent: number | undefined;
                 let lastPaintAt = 0;
                 const onProgress = (loaded: number, total: number) => {
@@ -337,7 +342,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                 progress.done(localOnly ? "已保存在本机，尚未上传到服务器" : persisted.syncPending ? `文件已添加到画布，${pendingLabel}` : persisted.persisted ? "文件已添加到画布" : "文件已添加，项目资产待重试");
                 if (localOnly) {
                     if (batch) batch.onLocalOnly();
-                    else message.warning("文件已保存在本机，尚未上传到服务器");
+                    else if (!options.quiet) message.warning("文件已保存在本机，尚未上传到服务器");
                 }
                 return id;
             } catch (error) {
@@ -366,7 +371,8 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                 );
                 progress.fail(details);
                 // 批量上传的失败原因留在各自节点上，并由批量汇总提示数量，避免逐个弹错。
-                if (!batch) message.error(details);
+                if (!silent) message.error(details);
+                options.quiet?.onError?.(details);
                 return null;
             } finally {
                 activeUploadsRef.current.delete(id);
@@ -376,13 +382,14 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
         [domainProjectId, message, nodesRef, persistMediaNode, selectInsertedNode, setNodes, startUploadStatus],
     );
 
+    // quiet：Agent 输入框拖入素材时不改选区；返回新节点 ID，失败返回 null。
     const createImageAssetNode = useCallback(
-        async (asset: ImageAsset, position?: Position) => {
+        async (asset: ImageAsset, position?: Position, options: { quiet?: boolean } = {}) => {
             try {
                 const content = asset.data.storageKey ? await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl || asset.coverUrl) : asset.data.dataUrl || asset.coverUrl;
                 if (!content) {
                     message.error("素材图片不可用");
-                    return;
+                    return null;
                 }
                 const size = fitImageNodeSize(asset.data.width || NODE_DEFAULT_SIZE[CanvasNodeType.Image].width, asset.data.height || NODE_DEFAULT_SIZE[CanvasNodeType.Image].height);
                 const center = position || getCanvasCenter();
@@ -408,9 +415,11 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                     },
                 };
                 setNodes((current) => [...current, node]);
-                selectInsertedNode(id, "close");
+                if (!options.quiet) selectInsertedNode(id, "close");
+                return id;
             } catch (error) {
                 message.error(error instanceof Error ? error.message : "素材图片读取失败");
+                return null;
             }
         },
         [getCanvasCenter, message, selectInsertedNode, setNodes],

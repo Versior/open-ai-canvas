@@ -172,7 +172,7 @@ describe("模特库的存储与界面", () => {
     test("输入框那一格在电商画布里是模特、自由画布里是风格", () => {
         expect(panel).toContain("<CanvasEcommerceModelButton");
         expect(panel).toContain('canvasKind === "ecommerce" ? (');
-        expect(panel).toContain("<CanvasChooseImageStylePicker open={expanded ? expandedStyleToolOpen : styleToolOpen}");
+        expect(panel.replace(/\s+/g, " ")).toContain("<CanvasChooseImageStylePicker open={expanded ? expandedStyleToolOpen : styleToolOpen}");
     });
 });
 

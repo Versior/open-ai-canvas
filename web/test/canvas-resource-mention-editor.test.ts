@@ -112,7 +112,10 @@ describe("canvas resource mention editor", () => {
 
     test("agent composer attachments stay large, previewable, and mentionable", () => {
         const component = moduleGroupSource("components/canvas/canvas-cloud-agent-chat-ui.tsx") + source("../src/components/canvas/canvas-cloud-agent-composer.tsx");
-        expect(component).toContain("w-20 shrink-0");
+        // 卡片尺寸在 CSS 里：80px 缩略图，移除按钮叠在右上角，失败原因和重试写在卡片下方。
+        expect(component).toContain('className={`agent-attachment${failed ? " is-failed" : ""}`}');
+        expect(source("../src/components/canvas/canvas-cloud-agent.css")).toMatch(/\.agent-attachment-thumb \{[^}]*width: 80px;[^}]*height: 80px;/);
+        expect(component).toContain('className="agent-attachment-remove"');
         expect(component).toContain("insertAttachmentMention");
         expect(component).toContain("@[attachment:");
         expect(component).toContain("AgentImagePreview");
@@ -129,6 +132,7 @@ describe("canvas resource mention editor", () => {
         expect(component).toContain("[/、]([^\\s/、]*)$");
         // 面板已取消「每轮固定 Skills」，输入框不再承诺「/」技能菜单，改为说明 Agent 自动匹配。
         expect(source("../src/lib/canvas/agent-appearance.ts")).toContain("用 / 或 、 引用 Skills");
+        // 二开：画布 Agent 不再手动引用技能，输入框提示自动匹配。
         expect(moduleGroupSource("components/canvas/canvas-cloud-agent-panel.tsx") + source("../src/components/canvas/canvas-cloud-agent-panel-parts.tsx")).toContain("Agent 会自动匹配所需技能");
     });
 
@@ -146,7 +150,8 @@ describe("canvas resource mention editor", () => {
         expect(chat).toContain('sendOnEnter={canSubmit ? "both" : false}');
         expect(chat).toContain("agent-composer-resize-handle");
         expect(chat).toContain("Enter 或 ⌘/Ctrl+Enter 发送");
-        expect(chat).toContain('title={canStop ? "插话：Agent 下一次开口时看到它"');
+        // 运行中主按钮是「排队」：Enter 排队，⌘/Ctrl+Enter 直接插话。
+        expect(chat).toContain("`排队：本轮结束后依次发送 · Enter；${modifierEnter} 直接插话`");
         expect(css).toContain(".agent-composer-prompt-scroll");
         expect(css).not.toContain(".agent-tool-row:hover");
     });
