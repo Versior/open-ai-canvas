@@ -122,6 +122,13 @@ func (r *Repository) SaveResourceWithinStorageLimit(resource *model.Resource, li
 		if err := tx.Save(resource).Error; err != nil {
 			return err
 		}
+		// 站点外观资源不占导入者的个人容量，保存时不按个人容量拦截。
+		if IsAccountExemptResourceKind(resource.Kind) {
+			if reservationID != "" {
+				return tx.Delete(&model.UploadReservation{}, "id = ? AND user_id = ?", reservationID, resource.UserID).Error
+			}
+			return nil
+		}
 		stored, err := New(tx).UserStoredFileBytes(resource.UserID)
 		if err != nil {
 			return err

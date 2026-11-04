@@ -193,3 +193,28 @@ func TestUploadReservationCommitAcrossUTCDay(t *testing.T) {
 		t.Fatalf("old-day reservation=%d", used)
 	}
 }
+
+// 站点外观资源（形象图集等）不计入导入者的个人容量，个人容量已满时也能保存。
+func TestAccountExemptResourcesSkipPersonalStorage(t *testing.T) {
+	_, repo, _ := uploadReservationTestDB(t)
+	for _, resource := range []model.Resource{
+		{ID: "image", UserID: "admin", Kind: "image", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "users/admin/image/a.png", Size: 100},
+		{ID: "pet", UserID: "admin", Kind: "agent-pet", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "users/admin/agent-pet/a.webp", Size: 1000},
+		{ID: "model", UserID: "admin", Kind: "live2d", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "users/admin/live2d/a.zip", Size: 1000},
+	} {
+		if err := repo.CreateResource(&resource); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stored, err := repo.UserStoredFileBytes("admin"); err != nil || stored != 100 {
+		t.Fatalf("stored bytes = %d, %v; want only the ordinary image", stored, err)
+	}
+	pet := model.Resource{ID: "pet-2", UserID: "admin", Kind: "agent-pet", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "users/admin/agent-pet/b.webp", Size: 500}
+	if err := repo.SaveResourceWithinStorageLimit(&pet, 50, 1000, ""); err != nil {
+		t.Fatalf("site appearance resource blocked by personal storage: %v", err)
+	}
+	image := model.Resource{ID: "image-2", UserID: "admin", Kind: "image", Status: model.ResourceStatusReady, Provider: "local", ObjectKey: "users/admin/image/b.png", Size: 10}
+	if err := repo.SaveResourceWithinStorageLimit(&image, 50, 1000, ""); !errors.Is(err, ErrUploadStorageLimit) {
+		t.Fatalf("ordinary upload over the limit = %v", err)
+	}
+}
