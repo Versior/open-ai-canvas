@@ -5,7 +5,20 @@ import (
 	"testing"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/repository"
 )
+
+// 站点外观资源（智能体形象图集、形象包、Live2D）不计入导入者的个人容量；资源类型改名时这里会失败。
+func TestSiteAppearanceResourceKindsAreAccountExempt(t *testing.T) {
+	for _, kind := range []string{agentPetResourceKind, agentAvatarBundleResourceKind, "live2d"} {
+		if !repository.IsAccountExemptResourceKind(kind) {
+			t.Errorf("resource kind %q counts toward the importing admin's personal storage", kind)
+		}
+	}
+	if repository.IsAccountExemptResourceKind("image") {
+		t.Error("ordinary images must count toward personal storage")
+	}
+}
 
 func TestReserveUserUploadQuotaRejectsSingleFileAtLimit(t *testing.T) {
 	svc := newResourceTestService(t)
