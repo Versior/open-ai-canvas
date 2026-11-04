@@ -7,7 +7,9 @@ import { useNavigate, useParams } from "react-router";
 import { PageHeader, WorkspacePage } from "@/components/layout/workspace-page";
 import { summarizeLibTVImportWarnings } from "@/lib/canvas/libtv-import";
 import { collectLibTVStepPrompts, createLatestRequestGuard, ensureRemoteLibTVCanvasDraft, resolveLibTVMakeSame, resolveLibTVReplicationPlan } from "@/lib/libtv-gallery";
-import { getLibTVWorkDetail } from "@/services/api/libtv-gallery";
+import { useLibTVWorkDetailFetcher } from "@/hooks/use-libtv-gallery-fetcher";
+import { openAuthModal } from "@/stores/use-auth-modal-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { createCanvasProjectWithRemoteSync, formatLocalSavedRemotePending, localSavedRemotePendingMessage, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import type { LibTVWorkStep } from "@/types/libtv-gallery";
@@ -36,9 +38,10 @@ export function WorkDetailPane({
     const mainVideoRef = useRef<HTMLVideoElement>(null);
     const [playbackBlocked, setPlaybackBlocked] = useState(false);
 
+    const fetchWorkDetail = useLibTVWorkDetailFetcher();
     const { data, isLoading, error } = useQuery({
         queryKey: ["libtv-work-detail", templateUuid],
-        queryFn: () => getLibTVWorkDetail(templateUuid),
+        queryFn: () => fetchWorkDetail(templateUuid),
         enabled: Boolean(templateUuid),
     });
     const previewStep = data?.steps.find((step) => step.id === previewStepId);
@@ -71,6 +74,11 @@ export function WorkDetailPane({
 
     const handleCopyToCanvas = async () => {
         if (!templateUuid || !data?.canImport || copyingCanvas) return;
+        // 复制到画布要创建云端画布：游客先登录，登录后留在当前作品里再点一次。
+        if (!useUserStore.getState().user) {
+            openAuthModal();
+            return;
+        }
 
         const guard = copyGuardRef.current.begin();
         setCopyingCanvas(true);

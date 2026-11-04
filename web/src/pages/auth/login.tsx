@@ -9,7 +9,8 @@ import { LinuxDOIcon } from "./auth-scene";
 import { VerificationFields } from "@/components/auth/verification-fields";
 import { emptyVerification, loginVerification, methodLabels, verificationMethods, type VerificationMethod } from "@/services/api/verification";
 
-export default function LoginPage() {
+/** 登录表单。登录弹窗传入 next 与 onSuccess：成功后关闭弹窗留在当前页，不再跳转。 */
+export default function LoginPage({ next: embeddedNext, onSuccess }: { next?: string; onSuccess?: () => void } = {}) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const { message } = App.useApp();
@@ -20,17 +21,17 @@ export default function LoginPage() {
     const [methods, setMethods] = useState<VerificationMethod[]>([]);
     const [method, setMethod] = useState<"password" | VerificationMethod>("password");
     const [verification, setVerification] = useState({ ...emptyVerification });
-    const next = safeNext(params.get("next"));
+    const next = embeddedNext ? safeNext(embeddedNext) : safeNext(params.get("next"));
     const forgotPasswordURL = `/forgot-password?next=${encodeURIComponent(next)}`;
     const user = useUserStore((state) => state.user);
     const hydrated = useUserStore((state) => state.hydrated);
 
     // 如果已登录，直接跳转
     useEffect(() => {
-        if (hydrated && user) {
+        if (!onSuccess && hydrated && user) {
             navigate(next, { replace: true });
         }
-    }, [hydrated, user, next, navigate]);
+    }, [hydrated, user, next, navigate, onSuccess]);
 
     useEffect(() => {
         void getAuthSettings()
@@ -56,7 +57,8 @@ export default function LoginPage() {
             const { applyUserSession } = await import("@/lib/user-session");
             await applyUserSession(await getAuthSession());
             message.success("登录成功");
-            navigate(next, { replace: true });
+            if (onSuccess) onSuccess();
+            else navigate(next, { replace: true });
         } catch (error) {
             message.error(error instanceof Error ? error.message : "登录失败");
         } finally {

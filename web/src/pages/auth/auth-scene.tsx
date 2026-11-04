@@ -10,12 +10,12 @@ import { aceternityMotion } from "@/lib/aceternity-motion";
 import { brandStudioLabel, useAppearanceStore } from "@/stores/use-appearance-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
-const AUTH_TABS = [
+export const AUTH_TABS = [
     { key: "login", label: "登录" },
     { key: "register", label: "注册" },
 ];
 
-const authCopy = {
+export const authCopy = {
     login: {
         eyebrow: "WELCOME BACK",
         title: "进入创作现场",

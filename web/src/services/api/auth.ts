@@ -454,6 +454,10 @@ export function getSystemChannels() {
 export function getFeatureAvailability() {
     return http.get<{ features: FeatureAvailability }>("/features");
 }
+/** 游客读取功能开关：只有开关与是否已配置，不需要登录。 */
+export function getGuestFeatureAvailability() {
+    return http.get<{ features: FeatureAvailability }>("/public/features");
+}
 
 export function getAdminFeatureAvailability() {
     return http.get<{ features: FeatureAvailability }>("/admin/settings/features");

@@ -14,7 +14,8 @@ type AuthSettings = Awaited<ReturnType<typeof getAuthSettings>>;
 
 const REFERRAL_CODE_STORAGE_KEY = "yingce:referral-code";
 
-export default function RegisterPage() {
+/** 注册表单。登录弹窗传入 next 与 onSuccess：成功后关闭弹窗留在当前页，不再跳转。 */
+export default function RegisterPage({ next: embeddedNext, onSuccess }: { next?: string; onSuccess?: () => void } = {}) {
     const navigate = useNavigate();
     const [params] = useSearchParams();
     const { message } = App.useApp();
@@ -34,7 +35,7 @@ export default function RegisterPage() {
     const [submitting, setSubmitting] = useState(false);
     const [registerCountdown, setRegisterCountdown] = useState(0);
     const registering = useRef(false);
-    const next = safeNext(params.get("next"));
+    const next = embeddedNext ? safeNext(embeddedNext) : safeNext(params.get("next"));
     // 推广码只存会话级缓存：用户从推广链接跳到登录页再回来注册时仍能归属，关闭浏览器后失效。
     const [referralCode] = useState(() => {
         const fromUrl = (params.get("ref") || "").trim();
@@ -88,7 +89,8 @@ export default function RegisterPage() {
             await applyUserSession(await getAuthSession());
             if (!settings?.firstUser) window.sessionStorage.setItem("yingce:model-setup-guide", "1");
             message.success(settings?.firstUser ? "管理员账号已创建" : "注册成功");
-            navigate(next, { replace: true });
+            if (onSuccess) onSuccess();
+            else navigate(next, { replace: true });
         } catch (error) {
             if (error instanceof ApiError && error.status === 429) setRegisterCountdown(Math.max(1, Math.ceil((error.retryAfterMs ?? 60000) / 1000)));
             message.error(error instanceof Error ? error.message : "注册失败");

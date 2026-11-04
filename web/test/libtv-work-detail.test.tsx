@@ -545,7 +545,9 @@ describe("LibTV work detail liveness", () => {
 describe("LibTV creation page featured works", () => {
     test("精选灵感 reads the same gallery query instead of a copied static list", () => {
         const empty = source("../src/pages/create/creation-workspace-empty.tsx");
-        expect(empty).toContain('useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: "" }, getLibTVGallery))');
+        expect(empty).toContain('useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: "" }, fetchGallery))');
+        // 游客走游客接口、登录后走账号接口，由同一个 hook 选择。
+        expect(empty).toContain("const fetchGallery = useLibTVGalleryFetcher();");
         // 同一个 queryKey（keyword 空、无 tagId）与灵感广场共享缓存，不复制数据、不转存媒体。
         expect(empty).not.toContain("creationFeaturedWorks");
         expect(empty).not.toContain("inspirationSource");
@@ -568,8 +570,9 @@ describe("LibTV creation page featured works", () => {
         // 创作页对话、模型与积分都留在原地。
         const create = source("../src/pages/create/index.tsx");
         expect(create).toContain("<CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration=");
-        expect(create).toContain("userId && userSessionHydrated ? <CreationFeaturedWorks");
-        expect(create).toContain("登录后查看画布灵感");
+        // 游客也能看画布灵感；只在会话恢复前显示加载提示。
+        expect(create).toContain("userSessionHydrated ? <CreationFeaturedWorks");
+        expect(create).not.toContain("登录后查看画布灵感");
     });
 
     test("loading, failure and empty are stated honestly without the old footer actions", () => {

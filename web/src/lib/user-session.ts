@@ -1,6 +1,6 @@
-import { getFeatureAvailability, type AuthSessionPayload } from "@/services/api/auth";
+import { getFeatureAvailability, getGuestFeatureAvailability, type AuthSessionPayload } from "@/services/api/auth";
 import { projectImageParameters, imageParametersForSpec } from "./image-parameters";
-import { getModelCatalog, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog, type PublicLogicalModel } from "@/services/api/logical-models";
+import { getGuestModelCatalog, getModelCatalog, type CapabilitySpec, type ModelCatalogResponse, type OptionConstraint, type PublicChannelCatalog, type PublicLogicalModel } from "@/services/api/logical-models";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { appQueryClient } from "@/lib/query-client";
 import { scopedLocalStorage, setActiveUserScope, withUserScopedPersistenceSuppressed } from "@/lib/user-scope";
@@ -114,11 +114,18 @@ async function hydrateUserSessionData(payload: AuthSessionPayload, generation: n
         await initializeRemoteUserDataSession(userId);
     } else {
         resetRemoteUserDataSync();
+        // 游客会话不带功能开关：单独读取游客视图，失败时保留默认开关，不影响浏览。
+        void getGuestFeatureAvailability()
+            .then((payload) => {
+                if (isCurrentSession(generation, userId)) useUserStore.getState().setFeatures(payload.features);
+            })
+            .catch((error) => console.warn("游客功能开关读取失败，按默认开关显示", error));
     }
 
     void (async () => {
         try {
-            const catalog = await getModelCatalog();
+            // 游客读默认分组的展示目录；生成与报价仍要求登录。
+            const catalog = userId ? await getModelCatalog() : await getGuestModelCatalog();
             if (!isCurrentSession(generation, userId)) return;
             if (!persistedConfig) {
                 // 只有首次配置缺失时才生成能力推荐；已有配置中的空数组代表用户明确清空。
@@ -326,7 +333,7 @@ function booleanOption(option: OptionConstraint | undefined, fallback: unknown) 
 }
 
 export async function refreshFeatureAvailability() {
-    const payload = await getFeatureAvailability();
+    const payload = useUserStore.getState().user ? await getFeatureAvailability() : await getGuestFeatureAvailability();
     useUserStore.getState().setFeatures(payload.features);
     return payload.features;
 }

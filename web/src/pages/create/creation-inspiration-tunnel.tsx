@@ -20,7 +20,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 
 import { libTVGalleryInfiniteQuery } from "@/lib/libtv-gallery";
-import { getLibTVGallery } from "@/services/api/libtv-gallery";
+import { useLibTVGalleryFetcher } from "@/hooks/use-libtv-gallery-fetcher";
 import type { LibTVGalleryItem } from "@/types/libtv-gallery";
 import { LibTVGalleryCover } from "@/pages/inspiration/gallery-card";
 import { LibTVWorkDetailDialog } from "@/pages/inspiration/work-detail-dialog";
@@ -99,7 +99,8 @@ function pickBatch(pool: TunnelItem[], size: number, mode: CreationMode): Tunnel
 export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUseInspiration }: { mode: CreationMode; enabled: boolean; hidden?: boolean; onUseInspiration?: (item: CreationInspiration) => void }) {
     const navigate = useNavigate();
     const { message } = App.useApp();
-    const { data, isLoading } = useInfiniteQuery({ ...libTVGalleryInfiniteQuery({ keyword: "" }, getLibTVGallery), enabled });
+    const fetchGallery = useLibTVGalleryFetcher();
+    const { data, isLoading } = useInfiniteQuery({ ...libTVGalleryInfiniteQuery({ keyword: "" }, fetchGallery), enabled });
     const pool = useMemo(() => [...new Map((data?.pages.flatMap((page) => page.items) ?? []).map((item) => [item.templateUuid, item])).values()], [data?.pages]);
     const [activeTemplateUuid, setActiveTemplateUuid] = useState<string>();
     const [promptDetail, setPromptDetail] = useState<CreationInspiration | null>(null);
