@@ -77,6 +77,9 @@ func Models() []any {
 		&model.PluginPlatformState{},
 		&model.UserPluginState{},
 		&model.ArkPrivateAssetBinding{},
+		&model.ArkPortraitSession{},
+		&model.ArkPortraitGroup{},
+		&model.ArkPortraitAsset{},
 		&model.UserOSSSetting{},
 		&model.StorageLocation{},
 		&model.UserDailyUploadUsage{},
@@ -155,7 +158,7 @@ func Models() []any {
 		&model.DramaTake{},
 		&model.DramaSegment{},
 		&model.DramaJob{},
-		// Fork 自有：智能体形象库、已拥有的形象和当前选择（迁移 82 建表）。
+		// Fork 自有：智能体形象库、已拥有的形象和当前选择（迁移 84 建表）。
 		&model.AgentPet{},
 		&model.UserAgentPet{},
 		&model.UserAgentPetSelection{},

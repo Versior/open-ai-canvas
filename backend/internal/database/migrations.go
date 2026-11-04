@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 82
+const CurrentSchemaVersion int64 = 84
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -57,6 +57,10 @@ const dramaCastVoiceLooksMigrationName = "drama_cast_voice_looks"
 const dramaCastVoiceLooksMigrationChecksum = "sha256:drama-cast-voice-looks-v78-20261101"
 const agentPetSkinsMigrationName = "agent_pet_skins"
 const agentPetSkinsMigrationChecksum = "sha256:agent-pet-skins-v80-20261101"
+const paymentOrderChargeMethodMigrationName = "payment_order_charge_method"
+const paymentOrderChargeMethodMigrationChecksum = "sha256:payment-order-charge-method-v80-20261104"
+const arkPortraitAssetsMigrationName = "ark_portrait_assets"
+const arkPortraitAssetsMigrationChecksum = "sha256:ark-portrait-assets-v81-20261104"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -312,11 +316,33 @@ var schemaMigrations = []migration{
 	{version: 80, name: ecommerceAgentKnowledgeMigrationName, checksum: ecommerceAgentKnowledgeMigrationChecksum, apply: migrateEcommerceFeature},
 	// 上游 main 的 78（短剧角色声音与造型）。Fork 的 80 已被电商 Agent 占用，排在其后为 81，名称和校验和与上游一致。
 	{version: 81, name: dramaCastVoiceLooksMigrationName, checksum: dramaCastVoiceLooksMigrationChecksum, apply: migrateDramaCastVoiceLooks},
-	// Fork 自有：智能体形象库、用户已购形象和当前选择。形象分支上原为 80，合入电商分支时排到电商 Agent（80）
-	// 与短剧角色声音与造型（81）之后，校验和沿用原值。上游之后的新迁移同步时顺延到 83 起。
-	{version: 82, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
+	// 上游 main 的 80（支付订单实收金额、货币、汇率与支付方式）、81（方舟真人素材）在 Fork 中顺延两位为 82、83，名称和校验和与上游一致。
+	{version: 82, name: paymentOrderChargeMethodMigrationName, checksum: paymentOrderChargeMethodMigrationChecksum, apply: migratePaymentOrderChargeMethod},
+	{version: 83, name: arkPortraitAssetsMigrationName, checksum: arkPortraitAssetsMigrationChecksum, apply: func(tx *gorm.DB) error {
+		// 方舟真人认证会话、用户真人素材组与组内素材；只建新表，不改写可信素材绑定。
+		return tx.AutoMigrate(&model.ArkPortraitSession{}, &model.ArkPortraitGroup{}, &model.ArkPortraitAsset{})
+	}},
+	// Fork 自有：智能体形象库、用户已购形象和当前选择。排在所有上游迁移之后：形象分支上原为 80，合入电商分支时为 82，
+	// 同步上游 80、81 后顺延为 84，名称和校验和沿用原值。上游再有新迁移时同样排在它前面、形象顺延。
+	{version: 84, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{})
 	}},
+}
+
+// migratePaymentOrderChargeMethod 为支付订单增加实收金额、实收货币、汇率快照和支付方式。
+// 旧订单都是按商品货币原价下单，实收金额回填为商品金额，回调与对账校验结果不变。
+func migratePaymentOrderChargeMethod(tx *gorm.DB) error {
+	for _, field := range []string{"ChargeAmountFen", "ChargeCurrency", "ExchangeRateMicros", "PaymentMethod"} {
+		if tx.Migrator().HasColumn(&model.PaymentOrder{}, field) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(&model.PaymentOrder{}, field); err != nil {
+			return err
+		}
+	}
+	return tx.Model(&model.PaymentOrder{}).
+		Where("charge_currency = '' OR charge_currency IS NULL").
+		Updates(map[string]any{"charge_amount_fen": gorm.Expr("amount_fen"), "charge_currency": gorm.Expr("currency")}).Error
 }
 
 // migrateDramaCastVoiceLooks 为短剧设定补角色声音（声音库条目与样本音频）和造型（所属角色、造型名、默认适用章节）。
@@ -986,6 +1012,18 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 			return fmt.Errorf("短剧角色声音与造型迁移账本与物理结构不一致：缺少 drama_shots.look_cast_ids_json")
 		}
 	case 82:
+		for _, field := range []string{"ChargeAmountFen", "ChargeCurrency", "ExchangeRateMicros", "PaymentMethod"} {
+			if !tx.Migrator().HasColumn(&model.PaymentOrder{}, field) {
+				return fmt.Errorf("支付订单实收迁移账本与物理结构不一致：payment_orders 缺少 %s 列", field)
+			}
+		}
+	case 83:
+		for _, table := range []any{&model.ArkPortraitSession{}, &model.ArkPortraitGroup{}, &model.ArkPortraitAsset{}} {
+			if !tx.Migrator().HasTable(table) {
+				return fmt.Errorf("方舟真人素材迁移账本与物理结构不一致：缺少认证会话、素材组或素材表")
+			}
+		}
+	case 84:
 		for _, table := range []any{&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{}} {
 			if !tx.Migrator().HasTable(table) {
 				return fmt.Errorf("智能体形象迁移账本与物理结构不一致：缺少形象库、已购或选择表")
@@ -1020,8 +1058,9 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		return false, nil
 	}
 
-	// 上游 main 72–79 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
-	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和。未列出的上游新版本一律拒绝自动重排。
+	// 上游 main 72–81 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
+	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83。
+	// Fork 自有的形象迁移（84）排在全部上游迁移之后，搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
 		forkVersion  int64
@@ -1035,9 +1074,11 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 77, name: agentMemoryDocumentColumnsMigrationName, checksum: agentMemoryDocumentColumnsMigrationChecksum}, 79, agentMemoryDocumentColumnsMigrationChecksum},
 		{migration{version: 78, name: dramaCastVoiceLooksMigrationName, checksum: dramaCastVoiceLooksMigrationChecksum}, 81, dramaCastVoiceLooksMigrationChecksum},
 		{migration{version: 79, name: ecommerceAgentKnowledgeMigrationName, checksum: upstreamEcommerceAgentKnowledgeMigrationChecksum}, 80, ecommerceAgentKnowledgeMigrationChecksum},
+		{migration{version: 80, name: paymentOrderChargeMethodMigrationName, checksum: paymentOrderChargeMethodMigrationChecksum}, 82, paymentOrderChargeMethodMigrationChecksum},
+		{migration{version: 81, name: arkPortraitAssetsMigrationName, checksum: arkPortraitAssetsMigrationChecksum}, 83, arkPortraitAssetsMigrationChecksum},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 79 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 81 后仍有记录，拒绝自动重排")
 	}
 	for index, applied := range records {
 		expected := upstream[index]
@@ -1054,7 +1095,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		}
 	}
 
-	// 逆序搬迁避免主键槽位碰撞：上游 79→80、78→81 的目标都高于上游最大版本，之后每条的目标槽位都已腾空。
+	// 逆序搬迁避免主键槽位碰撞：上游 81→83、80→82 的目标都高于上游最大版本，之后每条的目标槽位都已腾空。
 	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]
