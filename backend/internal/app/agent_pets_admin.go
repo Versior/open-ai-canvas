@@ -77,6 +77,8 @@ type AdminAgentPetBatchInput struct {
 	Badge     *string                      `json:"badge"`
 	Access    *AdminAgentPetBatchAccess    `json:"access"`
 	Promotion *AdminAgentPetBatchPromotion `json:"promotion"`
+	// SortPosition 为 first / last 时把所选形象移到形象库最前或最后，所选形象之间保持原来的先后。
+	SortPosition string `json:"sortPosition"`
 }
 
 // AdminAgentPetBatchAccess 把所选形象改成同一种开放方式；改成非积分购买时同时结束促销。
@@ -340,7 +342,42 @@ func normalizeAgentPetBatchIDs(ids []string) ([]string, error) {
 	return result, nil
 }
 
-// BatchUpdateAdminAgentPets 批量修改上架、分类、角标、开放方式与价格或促销。
+// agentPetBatchSortOrders 算出“移到最前 / 最后”后所选形象的排序值：按形象库里的先后，
+// 以 10 为间隔排在其余形象的最小值之前（或最大值之后）。其余形象的排序值不变。
+func agentPetBatchSortOrders(entries []agentPetEntry, ids []string, position string) (map[string]int, error) {
+	if position == "" {
+		return nil, nil
+	}
+	if position != "first" && position != "last" {
+		return nil, BadAuthRequest("排序位置须为 first 或 last")
+	}
+	const step = 10
+	selected := make([]string, 0, len(ids))
+	edge, hasOthers := 0, false
+	for _, entry := range entries {
+		if slices.Contains(ids, entry.pet.ID) {
+			selected = append(selected, entry.pet.ID)
+			continue
+		}
+		if order := entry.pet.SortOrder; !hasOthers || (position == "first" && order < edge) || (position == "last" && order > edge) {
+			edge, hasOthers = order, true
+		}
+	}
+	orders := make(map[string]int, len(selected))
+	for i, id := range selected {
+		order := edge + step*(i+1)
+		if position == "first" {
+			order = edge - step*(len(selected)-i)
+		}
+		if order < -100000 || order > 100000 {
+			return nil, BadAuthRequest("排序值会超出 -100000 到 100000，请先在编辑里调整其他形象的排序")
+		}
+		orders[id] = order
+	}
+	return orders, nil
+}
+
+// BatchUpdateAdminAgentPets 批量修改上架、分类、角标、开放方式与价格、促销或排序位置。
 // 不适用的形象（如给非积分购买的形象开促销）跳过并说明原因；校验失败时整批不保存。
 func (s *Service) BatchUpdateAdminAgentPets(actor *model.User, input AdminAgentPetBatchInput) (*AdminAgentPetBatchResult, error) {
 	if err := s.RequireAdmin(actor); err != nil {
@@ -350,10 +387,14 @@ func (s *Service) BatchUpdateAdminAgentPets(actor *model.User, input AdminAgentP
 	if err != nil {
 		return nil, err
 	}
-	if input.Enabled == nil && input.Category == nil && input.Badge == nil && input.Access == nil && input.Promotion == nil {
+	if input.Enabled == nil && input.Category == nil && input.Badge == nil && input.Access == nil && input.Promotion == nil && input.SortPosition == "" {
 		return nil, BadAuthRequest("请选择要批量修改的内容")
 	}
 	entries, err := s.agentPetLibrary()
+	if err != nil {
+		return nil, err
+	}
+	sortOrders, err := agentPetBatchSortOrders(entries, ids, input.SortPosition)
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +420,9 @@ func (s *Service) BatchUpdateAdminAgentPets(actor *model.User, input AdminAgentP
 		}
 		if input.Badge != nil {
 			next.Badge = *input.Badge
+		}
+		if order, ok := sortOrders[id]; ok {
+			next.SortOrder = order
 		}
 		if access := input.Access; access != nil {
 			next.Access, next.PriceMicrocredits, next.UnlockMicrocredits, next.GroupCodes = access.Mode, access.PriceMicrocredits, access.UnlockMicrocredits, access.GroupCodes

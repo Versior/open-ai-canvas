@@ -1,7 +1,7 @@
 import { App, Button } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
-import { BadgePercent, Ban, CircleOff, Eye, FolderTree, Pencil, RefreshCw, Search, Sparkles, Tag, Trash2, Upload, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, BadgePercent, Ban, CircleOff, Eye, FolderTree, Pencil, RefreshCw, Search, Sparkles, Tag, Trash2, Upload, Wallet } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
@@ -25,7 +25,7 @@ import {
 import { listAdminUserGroups, type UserGroup } from "@/services/api/user-groups";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminSearchInput } from "../components/admin-search-input";
-import { AdminBatchBar, AdminDataTable, AdminRowActions, AdminStatTile, AdminStatusBadge, AdminTableEmpty } from "../components/admin-ui";
+import { AdminBatchBar, AdminDataTable, AdminRowActions, AdminStatTile, AdminStatusBadge, AdminTableEmpty, PaginationBar } from "../components/admin-ui";
 import { AdminSelect, AdminSwitch } from "../ui/controls";
 import { AgentPetBatchDialog, type AgentPetBatchMode } from "./components/agent-pet-batch-dialog";
 import { AgentPetCategoryManager } from "./components/agent-pet-category-manager";
@@ -35,6 +35,8 @@ import "./agent-pets-page.css";
 
 const THUMB_HEIGHT = 56;
 const THUMB_WIDTH = Math.round(THUMB_HEIGHT * AGENT_PET_ASPECT);
+/** 形象库有几百个时一次渲染全部行会让搜索每敲一个字都卡顿，默认每页 50 个。 */
+const DEFAULT_PAGE_SIZE = 50;
 const ACCESS_LABELS: Record<AgentPetAccess, string> = { free: "免费", vip: "VIP 专享", paid: "积分购买", spend: "消费解锁" };
 const UNCATEGORIZED = "__none";
 
@@ -54,6 +56,8 @@ export default function AgentPetsSettingsPage() {
     const [previewId, setPreviewId] = useState("");
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [batchMode, setBatchMode] = useState<AgentPetBatchMode | null>(null);
     const [batchBusy, setBatchBusy] = useState("");
     const [importOpen, setImportOpen] = useState(false);
@@ -81,17 +85,7 @@ export default function AgentPetsSettingsPage() {
         void load();
     }, [load]);
 
-    const replace = useCallback((saved: AdminAgentPet[]) => {
-        setPets((items) => {
-            const next = [...items];
-            for (const pet of saved) {
-                const index = next.findIndex((item) => item.id === pet.id);
-                if (index >= 0) next[index] = pet;
-                else next.push(pet);
-            }
-            return next.sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id));
-        });
-    }, []);
+    const replace = useCallback((saved: AdminAgentPet[]) => setPets((items) => mergeAgentPets(items, saved)), []);
 
     const edit = useCallback((pet: AdminAgentPet) => {
         setEditing(pet);
@@ -218,6 +212,9 @@ export default function AgentPetsSettingsPage() {
         });
     }, [filters, pets]);
     const filtered = JSON.stringify(filters) !== JSON.stringify(EMPTY_FILTERS);
+    // 删除或筛选后页数变少时停在最后一页，不显示空页。
+    const currentPage = Math.min(page, Math.max(1, Math.ceil(visiblePets.length / pageSize)));
+    const pagePets = useMemo(() => visiblePets.slice((currentPage - 1) * pageSize, currentPage * pageSize), [currentPage, pageSize, visiblePets]);
 
     const stats = useMemo(() => {
         const count = (predicate: (pet: AdminAgentPet) => boolean) => pets.filter(predicate).length;
@@ -368,7 +365,10 @@ export default function AgentPetsSettingsPage() {
         [edit, groupNames, now, previewId, remove, toggle, togglingId],
     );
 
-    const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((current) => ({ ...current, [key]: value }));
+    const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
+        setFilters((current) => ({ ...current, [key]: value }));
+        setPage(1);
+    };
     const busy = Boolean(batchBusy);
 
     return (
@@ -408,7 +408,10 @@ export default function AgentPetsSettingsPage() {
                     />
                 }
                 toolbarActive={filtered}
-                onReset={() => setFilters(EMPTY_FILTERS)}
+                onReset={() => {
+                    setFilters(EMPTY_FILTERS);
+                    setPage(1);
+                }}
                 toolbarFilters={
                     <>
                         <AdminSelect
@@ -485,6 +488,26 @@ export default function AgentPetsSettingsPage() {
                         <Button size="small" icon={<CircleOff className="size-3.5" />} loading={batchBusy === "end-promo"} disabled={busy} onClick={confirmEndPromotion}>
                             结束促销
                         </Button>
+                        <Button
+                            size="small"
+                            icon={<ArrowUpToLine className="size-3.5" />}
+                            loading={batchBusy === "first"}
+                            disabled={busy}
+                            title="按原来的先后排到形象库最前，商店里也排在最前"
+                            onClick={() => void runBatch("first", { sortPosition: "first" }, (count) => `已把 ${count} 个形象移到最前`)}
+                        >
+                            移到最前
+                        </Button>
+                        <Button
+                            size="small"
+                            icon={<ArrowDownToLine className="size-3.5" />}
+                            loading={batchBusy === "last"}
+                            disabled={busy}
+                            title="按原来的先后排到形象库最后"
+                            onClick={() => void runBatch("last", { sortPosition: "last" }, (count) => `已把 ${count} 个形象移到最后`)}
+                        >
+                            移到最后
+                        </Button>
                         <Button size="small" danger icon={<Trash2 className="size-3.5" />} loading={batchBusy === "delete"} disabled={busy} onClick={confirmDelete}>
                             删除
                         </Button>
@@ -497,7 +520,7 @@ export default function AgentPetsSettingsPage() {
                     rowKey: "id",
                     loading,
                     columns,
-                    dataSource: visiblePets,
+                    dataSource: pagePets,
                     pagination: false,
                     scroll: { x: 1180 },
                     rowSelection: {
@@ -507,6 +530,19 @@ export default function AgentPetsSettingsPage() {
                         onChange: (keys) => setSelectedIds(keys.map(String)),
                     },
                 }}
+                footer={
+                    <PaginationBar
+                        alwaysShow
+                        current={currentPage}
+                        pageSize={pageSize}
+                        total={visiblePets.length}
+                        itemLabel="个"
+                        onChange={(nextPage, nextPageSize) => {
+                            setPage(nextPageSize !== pageSize ? 1 : nextPage);
+                            setPageSize(nextPageSize);
+                        }}
+                    />
+                }
                 empty={
                     loadError ? (
                         <div className="admin-inline-load-error" role="status">
@@ -551,9 +587,12 @@ export default function AgentPetsSettingsPage() {
                 open={importOpen}
                 onClose={() => setImportOpen(false)}
                 onImported={(imported) => {
-                    replace(imported);
-                    // 清掉筛选，刚导入的形象（未上架、免费）一定看得见。
+                    const next = mergeAgentPets(pets, imported);
+                    setPets(next);
+                    // 清掉筛选并翻到第一个新形象所在的页（新导入的排在最后），刚导入的形象（未上架、免费）一定看得见。
                     setFilters(EMPTY_FILTERS);
+                    const first = next.findIndex((pet) => imported.some((item) => item.id === pet.id));
+                    setPage(first >= 0 ? Math.floor(first / pageSize) + 1 : 1);
                     setSelectedIds(imported.map((pet) => pet.id));
                     message.success(`已导入 ${imported.length} 个形象并为你选中，可以批量设置分类、价格后上架`);
                 }}
@@ -561,6 +600,17 @@ export default function AgentPetsSettingsPage() {
             <AgentPetCategoryManager open={categoryOpen} pets={pets} onClose={() => setCategoryOpen(false)} onDone={(result, summary) => finishBatch(result, summary)} />
         </AdminPageFrame>
     );
+}
+
+/** 合并保存后的形象，按形象库顺序（排序值，相同时按 ID）排列。 */
+function mergeAgentPets(items: AdminAgentPet[], saved: AdminAgentPet[]) {
+    const next = [...items];
+    for (const pet of saved) {
+        const index = next.findIndex((item) => item.id === pet.id);
+        if (index >= 0) next[index] = pet;
+        else next.push(pet);
+    }
+    return next.sort((left, right) => left.sortOrder - right.sortOrder || left.id.localeCompare(right.id));
 }
 
 function PromotionCell({ pet, now }: { pet: AdminAgentPet; now: number }) {

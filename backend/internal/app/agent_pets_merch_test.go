@@ -2,6 +2,7 @@ package app
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -184,5 +185,72 @@ func TestAgentPetBatchOperations(t *testing.T) {
 	}
 	if _, err := svc.BatchDeleteAdminAgentPets(admin, nil); err == nil {
 		t.Fatal("empty batch delete accepted")
+	}
+}
+
+// 批量移到最前 / 最后：所选形象按原来的先后排到一端，其余形象的相对顺序不变。
+func TestAgentPetBatchSortPosition(t *testing.T) {
+	svc, _, _, admin := newAppearanceTestService(t)
+	order := func() []string {
+		t.Helper()
+		views, err := svc.AdminAgentPets(admin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]string, 0, len(views))
+		for _, view := range views {
+			ids = append(ids, view.ID)
+		}
+		return ids
+	}
+	moved := func(before, ids []string, first bool) []string {
+		picked, rest := []string{}, []string{}
+		for _, id := range before {
+			if slices.Contains(ids, id) {
+				picked = append(picked, id)
+			} else {
+				rest = append(rest, id)
+			}
+		}
+		if first {
+			return append(picked, rest...)
+		}
+		return append(rest, picked...)
+	}
+	before := order()
+	if len(before) < 6 {
+		t.Fatalf("library too small: %v", before)
+	}
+	// 故意倒着传 ID：结果仍按形象库原来的先后。
+	toFront := []string{before[len(before)-1], before[3]}
+	if _, err := svc.BatchUpdateAdminAgentPets(admin, AdminAgentPetBatchInput{IDs: toFront, SortPosition: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	after := order()
+	if want := moved(before, toFront, true); !slices.Equal(after, want) {
+		t.Fatalf("move to front = %v, want %v", after[:4], want[:4])
+	}
+	toBack := []string{after[0], after[2]}
+	if _, err := svc.BatchUpdateAdminAgentPets(admin, AdminAgentPetBatchInput{IDs: toBack, SortPosition: "last"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := order(), moved(after, toBack, false); !slices.Equal(got, want) {
+		t.Fatalf("move to back = %v, want %v", got[len(got)-3:], want[len(want)-3:])
+	}
+
+	if _, err := svc.BatchUpdateAdminAgentPets(admin, AdminAgentPetBatchInput{IDs: toFront, SortPosition: "middle"}); err == nil {
+		t.Fatal("unknown sort position accepted")
+	}
+	// 排到最前会超出排序范围时整批拒绝，不保存半截结果。
+	edge := order()[0]
+	if _, err := svc.UpdateAdminAgentPet(admin, edge, AdminAgentPetInput{Name: "最前", Access: "free", SortOrder: -99995}); err != nil {
+		t.Fatal(err)
+	}
+	current := order()
+	if _, err := svc.BatchUpdateAdminAgentPets(admin, AdminAgentPetBatchInput{IDs: []string{current[4]}, SortPosition: "first"}); err == nil || !strings.Contains(err.Error(), "排序值") {
+		t.Fatalf("out-of-range move = %v", err)
+	}
+	if !slices.Equal(order(), current) {
+		t.Fatal("rejected move changed the library order")
 	}
 }
