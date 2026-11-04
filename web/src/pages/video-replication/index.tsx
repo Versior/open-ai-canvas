@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { App } from "antd";
 import { ScanSearch } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import { PageHeader, WorkspacePage } from "@/components/layout/workspace-page";
@@ -14,7 +14,7 @@ import { openVideoTeardownInCanvas } from "./replication-canvas";
 import { ReplicationForm } from "./replication-form";
 import { ReplicationHistory } from "./replication-history";
 import { ReplicationResult } from "./replication-result";
-import { useReplicationRunner, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
+import { dismissReplicationError, reanalyzeReplication, REPLICATION_STAGE_LABELS, resumePendingReplication, startReplication, useReplicationRun, useReplicationRunId, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
 
 function errorText(error: unknown) {
     return error ? (error instanceof Error ? error.message : "读取失败") : "";
@@ -43,7 +43,9 @@ export default function VideoReplicationPage() {
         refetchInterval: (query) => (query.state.data?.some((record) => record.status === "queued" || record.status === "running") ? 3000 : false),
     });
     const records = history.data;
-    const selectedId = params.get("id") || records?.[0]?.id || "";
+    const runId = useReplicationRunId();
+    // 地址里没指定记录时，优先显示正在跑的那条（离开页面再回来也能接着看进度）。
+    const selectedId = params.get("id") || runId || records?.[0]?.id || "";
     const detail = useQuery({
         queryKey: videoReplicationKeys.detail(scope, selectedId),
         queryFn: ({ signal }) => getVideoReplication(selectedId, signal),
@@ -52,12 +54,17 @@ export default function VideoReplicationPage() {
     });
 
     const select = useCallback((id: string) => setParams({ id }), [setParams]);
-    const runner = useReplicationRunner({ config, onRecord: select });
-    const { run, running, start, reanalyze, dismiss } = runner;
+    const { run, running } = useReplicationRun(select);
+    const configRef = useRef(config);
+    configRef.current = config;
+    // 记录列表一到就看看有没有上次刷新、关页面打断的拆解，有就接着跑。
+    useEffect(() => {
+        if (records) resumePendingReplication(records, configRef.current);
+    }, [records]);
 
     const startRun = (source: ReplicationSource, options: { model: string; transcribe: boolean }) => {
-        dismiss();
-        void start(source, options);
+        dismissReplicationError();
+        void startReplication(source, options, config);
     };
     const reanalyzeSelected = (fallbackTitle: string) => {
         const error = videoTeardownModelError(config, model);
@@ -65,8 +72,8 @@ export default function VideoReplicationPage() {
             message.warning(error);
             return;
         }
-        dismiss();
-        void reanalyze(selectedId, { model, transcribe }, fallbackTitle);
+        dismissReplicationError();
+        void reanalyzeReplication(selectedId, { model, transcribe }, fallbackTitle, config);
     };
     const openInCanvas = async (bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis & { model: string }) => {
         setOpening(true);
@@ -91,7 +98,7 @@ export default function VideoReplicationPage() {
                     <ReplicationForm config={config} model={model} onModelChange={setPickedModel} transcribe={transcribe} onTranscribeChange={setTranscribe} busy={running} onStart={startRun} />
                     {orphanRun ? (
                         <p role={orphanRun.error ? "alert" : "status"} className={orphanRun.error ? "px-1 text-sm text-destructive" : "px-1 text-sm text-muted-foreground"}>
-                            {orphanRun.error ? `拆解失败：${orphanRun.error}` : `${orphanRun.step}${orphanRun.detail ? ` · ${orphanRun.detail}` : ""}`}
+                            {orphanRun.error ? `拆解失败：${orphanRun.error}` : `${REPLICATION_STAGE_LABELS[orphanRun.stage]}${orphanRun.detail ? ` · ${orphanRun.detail}` : ""}${orphanRun.percent !== undefined ? ` ${orphanRun.percent}%` : ""}`}
                         </p>
                     ) : null}
                     <ReplicationHistory records={records} loading={history.isPending} error={errorText(history.error)} selectedId={selectedId} onSelect={select} />

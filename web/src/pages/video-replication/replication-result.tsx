@@ -6,7 +6,7 @@ import { useMemo, type ReactNode } from "react";
 import { formatTeardownTime, orientationLabel, readVideoReplicationAnalysis, teardownTimeRange, videoTeardownReportMarkdown, videoTeardownStoryboardRows, type VideoTeardownAnalysis, type VideoTeardownAnalysisRow } from "@/lib/canvas/video-teardown";
 import { resourceFileUrl } from "@/services/api/resources";
 import { parseVideoTeardownBundle, type VideoReplicationDetail, type VideoTeardownBundle, type VideoTeardownShot } from "@/services/api/video-replication";
-import type { ReplicationRun } from "./use-replication-runner";
+import { REPLICATION_STAGE_LABELS, type ReplicationRun } from "./use-replication-runner";
 
 type Props = {
     detail: VideoReplicationDetail | undefined;
@@ -55,7 +55,7 @@ export function ReplicationResult({ detail, loading, error, run, busy, opening, 
     const task = detail.task;
     if (task.status === "queued" || task.status === "running") {
         return (
-            <StateCard title={ownRun?.step || "正在拆解"} description={ownRun?.detail || task.stage || "排队中"}>
+            <StateCard title={ownRun ? REPLICATION_STAGE_LABELS[ownRun.stage] : "正在拆解"} description={ownRun?.detail || task.stage || "排队中"}>
                 <Progress percent={Math.round(Math.min(Math.max(task.progress || 0, 0), 100))} size="small" />
             </StateCard>
         );
@@ -104,7 +104,7 @@ export function ReplicationResult({ detail, loading, error, run, busy, opening, 
                     </div>
                     {ownRun ? (
                         <p role={ownRun.error ? "alert" : "status"} className={ownRun.error ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
-                            {ownRun.error ? `分析失败：${ownRun.error}` : `${ownRun.step}${ownRun.detail ? ` · ${ownRun.detail}` : ""}`}
+                            {ownRun.error ? `分析失败：${ownRun.error}` : `${REPLICATION_STAGE_LABELS[ownRun.stage]}${ownRun.detail ? ` · ${ownRun.detail}` : ""}`}
                         </p>
                     ) : null}
                     {!analysis && !ownRun ? <p className="text-sm text-muted-foreground">镜头已经切好，还没有模型分析。选好分析模型后点「开始分析」。</p> : null}
