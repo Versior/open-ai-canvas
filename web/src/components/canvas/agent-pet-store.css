@@ -88,11 +88,151 @@
     background: var(--palette-status-warning);
     color: var(--background);
 }
+/* 能力标记用中性蓝灰，和按说话风格着色的标签区分开。 */
+.agent-pet-tag[data-kind="gaze"] {
+    --tag-color: var(--palette-node-text);
+    font-weight: 500;
+}
 
 /* ---------- 商店 ---------- */
 .agent-pet-store {
     container-type: inline-size;
     color: var(--pet-ink);
+}
+
+.agent-pet-store-header-icon {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: var(--r-lg);
+    background: color-mix(in srgb, var(--pet-ink) 6%, var(--pet-panel));
+    color: var(--pet-ink);
+}
+.agent-pet-store-header-icon svg {
+    width: 18px;
+    height: 18px;
+    stroke-width: 1.9;
+}
+
+/* 余额、累计消费：标题栏右侧的小胶囊，充值是胶囊里的次要按钮。 */
+.agent-pet-store-pill {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--pet-ink) 5%, var(--pet-panel));
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+    white-space: nowrap;
+}
+.agent-pet-store-pill[data-action] {
+    padding-right: 3px;
+}
+.agent-pet-store-pill svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.agent-pet-store-pill b {
+    color: var(--pet-ink);
+    font-size: var(--fs-ui);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+.agent-pet-store-topup {
+    height: 22px;
+    margin-left: 4px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--pet-raised);
+    color: var(--pet-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--pet-ink) 16%, transparent);
+    transition: background-color 0.15s ease;
+}
+.agent-pet-store-topup:hover {
+    background: color-mix(in srgb, var(--pet-ink) 8%, var(--pet-raised));
+}
+.agent-pet-store-topup:focus-visible {
+    outline: 2px solid var(--pet-accent);
+    outline-offset: 1px;
+}
+
+/*
+ * 搜索和筛选吸顶。滚动容器有 16px 内边距，吸顶位置按内容区算：top 取 -16px 才能贴住可见顶边，
+ * 否则上方会留出一条缝，卡片从缝里透出来。作为第一项时再向上、左右各拉出 16px 贴边。
+ */
+.agent-pet-store-toolbar {
+    position: sticky;
+    top: -16px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-inline: -16px;
+    padding: 12px 16px;
+    background: var(--pet-panel);
+    box-shadow: 0 1px 0 var(--pet-stroke);
+}
+.agent-pet-store-toolbar:first-child {
+    margin-top: -16px;
+}
+.agent-pet-store-toolbar-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+.agent-pet-store-toolbar-row .agent-pet-store-search {
+    min-width: 0;
+    flex: 1 1 220px;
+}
+
+/* 获取方式：单选分段按钮，选中项浮起。 */
+.agent-pet-store-segmented {
+    display: inline-flex;
+    max-width: 100%;
+    flex-shrink: 0;
+    gap: 2px;
+    overflow-x: auto;
+    padding: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--pet-ink) 6%, var(--pet-panel));
+    scrollbar-width: none;
+}
+.agent-pet-store-segmented::-webkit-scrollbar {
+    display: none;
+}
+.agent-pet-store-segmented button {
+    flex-shrink: 0;
+    height: 26px;
+    padding: 0 12px;
+    border-radius: 999px;
+    color: var(--pet-muted);
+    font-size: var(--fs-ui);
+    font-weight: 500;
+    white-space: nowrap;
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease;
+}
+.agent-pet-store-segmented button:hover {
+    color: var(--pet-ink);
+}
+.agent-pet-store-segmented button[aria-pressed="true"] {
+    background: var(--pet-raised);
+    color: var(--pet-ink);
+    font-weight: 600;
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--pet-ink) 16%, transparent);
+}
+.agent-pet-store-segmented button:focus-visible {
+    outline: 2px solid var(--pet-accent);
+    outline-offset: -2px;
 }
 
 .agent-pet-store-chips {
@@ -466,7 +606,7 @@
     text-overflow: ellipsis;
 }
 
-/* 大小：分段控件，选中项浮起。 */
+/* 大小：分段控件，选中项浮起；示意图是当前形象按比例缩小，未选中的去色变淡。 */
 .agent-pet-menu-segmented {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -481,13 +621,14 @@
     flex-direction: column;
     align-items: center;
     justify-content: flex-end;
-    gap: 2px;
-    height: 44px;
-    padding-bottom: 4px;
+    gap: 3px;
+    height: 52px;
+    padding-bottom: 5px;
     border-radius: calc(var(--r-md) - 2px);
     color: var(--pet-muted);
     font-size: var(--fs-label);
     font-weight: 500;
+    line-height: 14px;
     outline: none;
     transition:
         background-color 0.15s ease,
@@ -497,13 +638,44 @@
     color: var(--pet-ink);
 }
 .agent-pet-menu-segmented button[aria-pressed="true"] {
-    background: var(--pet-panel);
+    background: var(--pet-raised);
     color: var(--pet-ink);
     font-weight: 650;
     box-shadow: 0 1px 3px color-mix(in srgb, var(--pet-ink) 18%, transparent);
 }
 .agent-pet-menu-segmented button:focus-visible {
     box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+.agent-pet-size-glyph {
+    display: flex;
+    height: 26px;
+    align-items: flex-end;
+    justify-content: center;
+    opacity: 0.5;
+    filter: grayscale(1);
+    transition:
+        opacity 0.15s ease,
+        filter 0.15s ease;
+}
+.agent-pet-size-glyph img {
+    display: block;
+    max-width: none;
+    object-fit: contain;
+    pointer-events: none;
+}
+.agent-pet-size-glyph[data-auto] {
+    width: 22px;
+    padding-bottom: 2px;
+    border: 1px dashed currentColor;
+    border-radius: 6px;
+}
+.agent-pet-menu-segmented button:hover .agent-pet-size-glyph {
+    opacity: 0.8;
+    filter: grayscale(0.4);
+}
+.agent-pet-menu-segmented button[aria-pressed="true"] .agent-pet-size-glyph {
+    opacity: 1;
+    filter: none;
 }
 
 /* 换形象：形象多时的搜索框。 */
@@ -593,12 +765,34 @@
     right: 4px;
     z-index: 1;
 }
+/* 「视线」标记：格子太小放不下文字，左上角放一个眼睛。 */
+.agent-pet-menu-pet-gaze {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    z-index: 1;
+    display: grid;
+    width: 16px;
+    height: 16px;
+    place-items: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--pet-panel) 80%, transparent);
+    color: color-mix(in srgb, var(--palette-node-text) 80%, var(--pet-ink));
+}
+.agent-pet-menu-pet-gaze svg {
+    width: 10px;
+    height: 10px;
+    stroke-width: 2.2;
+}
 
 @media (prefers-reduced-motion: reduce) {
     .agent-pet-card,
     .agent-pet-menu-tile,
     .agent-pet-store-chip,
-    .agent-pet-menu-segmented button {
+    .agent-pet-store-segmented button,
+    .agent-pet-store-topup,
+    .agent-pet-menu-segmented button,
+    .agent-pet-size-glyph {
         transition: none;
     }
     .agent-pet-card:hover,

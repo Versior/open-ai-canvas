@@ -37,12 +37,76 @@ import "./agent-pet-store.css";
 
 const PREVIEW_HEIGHT = 112;
 const PREVIEW_WIDTH = Math.round(PREVIEW_HEIGHT * AGENT_PET_ASPECT);
+const AGENT_PET_STORE_HINT = "形象只对你自己显示，悬停或点一下形象可以听它说话；带「视线」标记的形象待机时会看向鼠标。";
 
 export const AGENT_PET_TONE_ICONS: Record<AgentPetTone, LucideIcon> = { gentle: Heart, kitty: Cat, puppy: Dog, robot: Bot, mystic: Moon, sunny: Sun };
 
 /** 把画布主题写进商店与右键菜单共用的 --pet-* 变量。 */
 export function agentPetThemeVars(theme: CanvasTheme) {
-    return { "--pet-ink": theme.node.text, "--pet-muted": theme.node.muted, "--pet-fill": theme.node.fill, "--pet-stroke": theme.node.stroke, "--pet-accent": theme.accent.primary, "--pet-panel": theme.node.panel } as CSSProperties;
+    return {
+        "--pet-ink": theme.node.text,
+        "--pet-muted": theme.node.muted,
+        "--pet-fill": theme.node.fill,
+        "--pet-stroke": theme.node.stroke,
+        "--pet-accent": theme.accent.primary,
+        "--pet-panel": theme.node.panel,
+        "--pet-raised": raisedSurface(theme.node.panel),
+    } as CSSProperties;
+}
+
+/** 分段按钮的选中项要比轨道“浮起”：浅色面板直接用面板色，深色面板再提亮一层，否则选中项反而显得凹下去。 */
+function raisedSurface(panel: string) {
+    const match = /^#([0-9a-f]{6})$/i.exec(panel.trim());
+    if (!match) return panel;
+    const value = Number.parseInt(match[1], 16);
+    const luminance = (0.2126 * ((value >> 16) & 255) + 0.7152 * ((value >> 8) & 255) + 0.0722 * (value & 255)) / 255;
+    return luminance < 0.5 ? `color-mix(in srgb, #ffffff 12%, ${panel})` : panel;
+}
+
+/** v2 图集（带 16 个视线方向）的「视线」标记：待机时会看向鼠标。商店卡片和右键菜单名片共用。 */
+export function AgentPetGazeTag() {
+    return (
+        <span className="agent-pet-tag" data-kind="gaze" title="待机时会看向鼠标">
+            <Eye aria-hidden="true" />
+            视线
+        </span>
+    );
+}
+
+function useAgentPetCatalog(userId: string) {
+    return useQuery({ queryKey: agentPetCatalogQueryKey(userId), queryFn: ({ signal }) => getAgentPetCatalog(signal), enabled: Boolean(userId) });
+}
+
+/** 积分余额（带充值入口）和累计消费。商店弹窗放在标题栏右侧，Agent 设置里放在列表上方。 */
+function AgentPetWalletPills() {
+    const userId = useUserStore((state) => state.user?.id || "");
+    const catalog = useAgentPetCatalog(userId);
+    const creditsEnabled = catalog.data?.creditsEnabled ?? false;
+    const wallet = useWalletBalance(userId, creditsEnabled);
+    const balance = wallet.availableMicrocredits;
+    const hasSpendPets = catalog.data?.pets.some((pet) => pet.access === "spend") ?? false;
+    if (!catalog.data || (!hasSpendPets && (!creditsEnabled || balance === null))) return null;
+    return (
+        <span className="flex flex-wrap items-center gap-1.5">
+            {hasSpendPets ? (
+                <span className="agent-pet-store-pill" title="只统计已结算的模型调用，购买形象不计入">
+                    <Coins aria-hidden="true" />
+                    累计消费
+                    <b>{formatCredits(catalog.data.consumedMicrocredits, 2)}</b>
+                </span>
+            ) : null}
+            {creditsEnabled && balance !== null ? (
+                <span className="agent-pet-store-pill" data-action>
+                    <Wallet aria-hidden="true" />
+                    <b>{formatCredits(balance, 2)}</b>
+                    积分
+                    <button type="button" className="agent-pet-store-topup" onClick={() => openWorkspaceWallet({ tab: "topup" })}>
+                        充值
+                    </button>
+                </span>
+            ) : null}
+        </span>
+    );
 }
 
 /**
@@ -54,7 +118,7 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
     const userId = useUserStore((state) => state.user?.id || "");
     const queryClient = useQueryClient();
     const { message } = App.useApp();
-    const catalog = useQuery({ queryKey: agentPetCatalogQueryKey(userId), queryFn: ({ signal }) => getAgentPetCatalog(signal), enabled: Boolean(userId) });
+    const catalog = useAgentPetCatalog(userId);
     const creditsEnabled = catalog.data?.creditsEnabled ?? false;
     const wallet = useWalletBalance(userId, creditsEnabled);
     const [busyId, setBusyId] = useState<string | null>(null);
@@ -123,8 +187,10 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
 
     const balance = wallet.availableMicrocredits;
     const consumed = catalog.data.consumedMicrocredits;
-    const hasSpendPets = pets.some((pet) => pet.access === "spend");
     const filters = AGENT_PET_STORE_FILTERS.filter((item) => item.id === "all" || pets.some((pet) => matchesAgentPetFilter(pet, item.id)));
+    const showSearch = pets.length >= AGENT_PET_SEARCH_THRESHOLD;
+    const showFilters = filters.length > 2;
+    const showCategories = categories.length > 1;
     const searching = query.trim() !== "";
     const visible = pets.filter((pet) => (category === "all" || pet.category === category) && matchesAgentPetFilter(pet, filter) && matchesAgentPetQuery(pet, query));
     const showDefault = !searching && category === "all" && (filter === "all" || filter === "usable" || filter === "free");
@@ -143,32 +209,13 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
 
     return (
         <div className="agent-pet-store canvas-agent-settings-scroll thin-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4" style={agentPetThemeVars(theme)}>
-            <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
-                {creditsEnabled && balance !== null ? (
-                    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1" style={{ background: theme.node.fill }}>
-                        <Wallet className="size-3.5" aria-hidden="true" />
-                        可用{" "}
-                        <b className="tabular-nums" style={{ color: theme.node.text }}>
-                            {formatCredits(balance, 2)}
-                        </b>{" "}
-                        积分
-                        <button type="button" className="ml-1 font-medium underline-offset-2 hover:underline" style={{ color: theme.accent.primary }} onClick={() => openWorkspaceWallet({ tab: "topup" })}>
-                            充值
-                        </button>
-                    </span>
-                ) : null}
-                {hasSpendPets ? (
-                    <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1" style={{ background: theme.node.fill }} title="只统计已结算的模型调用，购买形象不计入">
-                        <Coins className="size-3.5" aria-hidden="true" />
-                        累计消费{" "}
-                        <b className="tabular-nums" style={{ color: theme.node.text }}>
-                            {formatCredits(consumed, 2)}
-                        </b>{" "}
-                        积分
-                    </span>
-                ) : null}
-                <span>形象只对你自己显示，悬停或点一下形象可以听它说话。</span>
-            </div>
+            {/* 商店弹窗把余额和提示放在标题栏里；Agent 设置没有标题栏，放在列表上方。 */}
+            {variant === "settings" ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: theme.node.muted }}>
+                    <AgentPetWalletPills />
+                    <span>{AGENT_PET_STORE_HINT}</span>
+                </div>
+            ) : null}
 
             {variant === "settings" ? (
                 <label className="flex items-center gap-3 rounded-xl px-3 py-2.5" style={{ background: theme.node.fill }}>
@@ -183,6 +230,49 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                 </label>
             ) : null}
 
+            {/* 搜索和筛选吸顶：形象有上百个，往下翻也能随时换分类。获取方式是单选，用分段按钮和分类标签区分开。 */}
+            {showSearch || showFilters || showCategories ? (
+                <div className="agent-pet-store-toolbar">
+                    {showSearch || showFilters ? (
+                        <div className="agent-pet-store-toolbar-row">
+                            {showSearch ? (
+                                <Input
+                                    allowClear
+                                    className="agent-pet-store-search"
+                                    prefix={<Search className="size-4" style={{ color: theme.node.muted }} aria-hidden="true" />}
+                                    value={query}
+                                    onChange={(event) => setQuery(event.target.value)}
+                                    placeholder="搜索形象名称、简介或分类"
+                                    aria-label="搜索形象"
+                                />
+                            ) : null}
+                            {showFilters ? (
+                                <div className="agent-pet-store-segmented" role="group" aria-label="获取方式">
+                                    {filters.map((item) => (
+                                        <button key={item.id} type="button" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {showCategories ? (
+                        <div className="agent-pet-store-chips" role="group" aria-label="形象分类">
+                            <button type="button" className="agent-pet-store-chip" aria-pressed={category === "all"} onClick={() => setCategory("all")}>
+                                全部分类
+                            </button>
+                            {categories.map((item) => (
+                                <button key={item.name} type="button" className="agent-pet-store-chip" aria-pressed={category === item.name} onClick={() => setCategory(item.name)}>
+                                    {item.name}
+                                    <small>{item.count}</small>
+                                </button>
+                            ))}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
+
             {sales.length ? (
                 <button type="button" className="agent-pet-store-banner" aria-pressed={filter === "sale"} onClick={() => setFilter(filter === "sale" ? "all" : "sale")}>
                     <Flame className="size-5 shrink-0" style={{ color: "var(--palette-status-error)" }} aria-hidden="true" />
@@ -194,40 +284,6 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                         </span>
                     </span>
                 </button>
-            ) : null}
-
-            {pets.length >= AGENT_PET_SEARCH_THRESHOLD ? (
-                <Input
-                    allowClear
-                    prefix={<Search className="size-4" style={{ color: theme.node.muted }} aria-hidden="true" />}
-                    value={query}
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜索形象名称、简介或分类"
-                    aria-label="搜索形象"
-                />
-            ) : null}
-
-            {categories.length > 1 ? (
-                <div className="agent-pet-store-chips" role="group" aria-label="形象分类">
-                    <button type="button" className="agent-pet-store-chip" aria-pressed={category === "all"} onClick={() => setCategory("all")}>
-                        全部分类
-                    </button>
-                    {categories.map((item) => (
-                        <button key={item.name} type="button" className="agent-pet-store-chip" aria-pressed={category === item.name} onClick={() => setCategory(item.name)}>
-                            {item.name}
-                            <small>{item.count}</small>
-                        </button>
-                    ))}
-                </div>
-            ) : null}
-            {filters.length > 2 ? (
-                <div className="agent-pet-store-chips" role="group" aria-label="获取方式">
-                    {filters.map((item) => (
-                        <button key={item.id} type="button" className="agent-pet-store-chip" aria-pressed={filter === item.id} onClick={() => setFilter(item.id)}>
-                            {item.label}
-                        </button>
-                    ))}
-                </div>
             ) : null}
 
             <div className="agent-pet-store-grid">
@@ -294,16 +350,18 @@ export function AgentPetStoreModal({ theme, open, onClose }: { theme: CanvasThem
     return (
         <AppModal open={open} title={null} footer={null} centered width="min(780px, calc(100vw - 24px))" onCancel={onClose} flush aria-label="形象商店">
             <div className="flex h-[min(720px,calc(100dvh-80px))] min-h-0 flex-col" style={{ color: theme.node.text, background: theme.node.panel }}>
-                <header className="flex shrink-0 items-center gap-3 border-b px-5 py-3.5 pr-12" style={{ borderColor: theme.node.stroke }}>
-                    <span className="grid size-9 shrink-0 place-items-center rounded-xl" style={{ background: theme.node.fill, color: theme.accent.primary }}>
-                        <Store className="size-4.5" aria-hidden="true" />
+                {/* 右侧留出弹窗关闭按钮的位置；窄屏时余额换到第二行。 */}
+                <header className="agent-pet-store-header flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b py-3 pl-5 pr-14" style={{ borderColor: theme.node.stroke, ...agentPetThemeVars(theme) }}>
+                    <span className="agent-pet-store-header-icon" aria-hidden="true">
+                        <Store />
                     </span>
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                         <h2 className="text-base font-semibold leading-6">形象商店</h2>
-                        <p className="text-[length:var(--fs-label)]" style={{ color: theme.node.muted }}>
-                            挑一个陪你创作的小伙伴：免费、会员专享、积分购买或累计消费解锁
+                        <p className="text-[length:var(--fs-label)] leading-4" style={{ color: theme.node.muted }}>
+                            只对你自己显示 · 悬停或点一下形象可以听它说话 · 带「视线」标记的会看向鼠标
                         </p>
                     </span>
+                    <AgentPetWalletPills />
                 </header>
                 <AgentPetPicker theme={theme} variant="store" />
             </div>
@@ -383,7 +441,7 @@ function StoreCard({
             <div className="agent-pet-card-body">
                 <div className="agent-pet-card-title">
                     <span className="min-w-0 truncate">{pet.name}</span>
-                    {pet.spriteVersion === 2 ? <Eye className="size-3.5 shrink-0 opacity-50" aria-label="视线跟随鼠标" /> : null}
+                    {pet.spriteVersion === 2 ? <AgentPetGazeTag /> : null}
                 </div>
                 <p className="agent-pet-card-desc">{pet.description}</p>
                 {pet.lines[0] ? <p className="agent-pet-card-quote">“{pet.lines[0]}”</p> : null}

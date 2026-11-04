@@ -1,14 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, ChevronRight, Eye, Gift, LoaderCircle, Maximize2, MessageCircleHeart, MessageSquareQuote, MessageSquareText, Minus, MoveDiagonal2, PawPrint, RotateCcw, Search, Shirt, Smile, Store } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Eye, Gift, LoaderCircle, Maximize2, MessageCircleHeart, MessageSquareQuote, MessageSquareText, Minus, PawPrint, RotateCcw, Search, Shirt, Smile, Store } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 
-import { AGENT_PET_TONE_ICONS, agentPetThemeVars } from "@/components/canvas/agent-pet-picker";
+import { AGENT_PET_TONE_ICONS, AgentPetGazeTag, agentPetThemeVars } from "@/components/canvas/agent-pet-picker";
 import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
 import { Switch } from "@/components/ui/base/switch";
 import { agentPetCatalogQueryKey, useApplyAgentPet } from "@/hooks/use-active-agent-pet";
 import type { CanvasTheme } from "@/lib/canvas-theme";
-import { AGENT_PET_ASPECT, AGENT_PET_SIZE_OPTIONS } from "@/lib/canvas/agent-pet";
+import { AGENT_PET_ASPECT, AGENT_PET_SIZE_OPTIONS, type AgentPetSize } from "@/lib/canvas/agent-pet";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
 import { AGENT_PET_SEARCH_THRESHOLD, AGENT_PET_TONE_LABELS, matchesAgentPetQuery } from "@/lib/canvas/agent-pet-store";
 import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, type AgentPet } from "@/services/api/agent-pets";
@@ -21,8 +21,8 @@ const MENU_MARGIN = 12;
 const HERO_HEIGHT = 64;
 const TILE_HEIGHT = 46;
 const ITEM_SELECTOR = "[data-agent-pet-menu-item]:not(:disabled)";
-/** 大小档位图标：脚印越来越大，自动档用斜向双箭头。 */
-const SIZE_ICON_PX: Record<string, number> = { s: 10, m: 12, l: 14, xl: 17 };
+/** 大小档位示意图的高度，按真实高度 96 / 128 / 168 / 208px 等比缩小；自动档放进虚线框里。 */
+const SIZE_GLYPH_PX: Record<AgentPetSize, number> = { s: 12, m: 16, l: 21, xl: 26, auto: 15 };
 
 export type AgentPetMenuPoint = { x: number; y: number };
 
@@ -176,7 +176,7 @@ export function AgentPetContextMenu({ theme, point, pet, agentName, petShown, co
                                             title={option.height ? `${option.height}px 高` : "跟随站点设置，离开画布时自动缩小"}
                                             onClick={() => setSize(option.id)}
                                         >
-                                            {option.height ? <PawPrint aria-hidden="true" style={{ width: SIZE_ICON_PX[option.id], height: SIZE_ICON_PX[option.id] }} /> : <MoveDiagonal2 aria-hidden="true" style={{ width: 13, height: 13 }} />}
+                                            <SizeGlyph pet={pet} size={option.id} />
                                             {option.label}
                                         </button>
                                     ))}
@@ -239,13 +239,14 @@ function Hero({ pet, agentName, collapsed, reducedMotion, theme }: { pet: AgentP
                 lookAtPointer={false}
             />
             <span className="min-w-0 flex-1 pb-0.5">
-                <span className="flex items-center gap-1.5">
-                    <span className="min-w-0 truncate text-sm font-semibold">{pet.name}</span>
+                {/* 名字长时标签换到下一行，不把名字挤成省略号。 */}
+                <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    <span className="min-w-0 max-w-full truncate text-sm font-semibold">{pet.name}</span>
                     <span className="agent-pet-tag" data-kind="tone">
                         <ToneIcon aria-hidden="true" />
                         {AGENT_PET_TONE_LABELS[tone]}
                     </span>
-                    {pet.spriteVersion === 2 ? <Eye className="size-3.5 shrink-0 opacity-50" aria-label="视线跟随鼠标" /> : null}
+                    {pet.spriteVersion === 2 ? <AgentPetGazeTag /> : null}
                 </span>
                 <span className="agent-pet-menu-quote mt-1">{collapsed ? "已收起，展开后继续陪你～" : `“${quote}”`}</span>
             </span>
@@ -384,6 +385,11 @@ function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: 
                                     )}
                                 </span>
                                 {pet.id === selectedId ? <TileMark icon={<Check />} /> : pet.claimable ? <TileMark icon={<Gift />} tone="success" /> : null}
+                                {pet.spriteVersion === 2 ? (
+                                    <span className="agent-pet-menu-pet-gaze" title="视线：待机时会看向鼠标" aria-hidden="true">
+                                        <Eye />
+                                    </span>
+                                ) : null}
                                 <span>{pet.name}</span>
                             </button>
                         ))}
@@ -398,6 +404,24 @@ function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: 
             <MenuDivider theme={theme} />
             <MenuItem theme={theme} icon={<Store />} label="去形象商店" detail={locked > 0 ? `还有 ${locked} 个形象可以购买或解锁` : "看看有没有新形象"} chevron onClick={onOpenStore} />
         </>
+    );
+}
+
+/**
+ * 大小档位的示意：当前形象的首帧缩略图按真实比例排开，站在同一条底线上；自动档套一个虚线框，表示跟随站点设置。
+ * 缩略图读不到时退回脚印图标。
+ */
+function SizeGlyph({ pet, size }: { pet: AgentPet | null; size: AgentPetSize }) {
+    const [failed, setFailed] = useState(false);
+    const height = SIZE_GLYPH_PX[size];
+    return (
+        <span className="agent-pet-size-glyph" data-auto={size === "auto" || undefined} aria-hidden="true">
+            {pet && !failed ? (
+                <img src={agentPetPreviewURL(pet)} alt="" draggable={false} style={{ width: Math.round(height * AGENT_PET_ASPECT), height, imageRendering: pet.pixelated ? "pixelated" : undefined }} onError={() => setFailed(true)} />
+            ) : (
+                <PawPrint style={{ width: Math.round(height * 0.75), height: Math.round(height * 0.75) }} />
+            )}
+        </span>
     );
 }
 
