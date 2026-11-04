@@ -214,7 +214,7 @@ function Hero({ pet, agentName, collapsed, reducedMotion, theme }: { pet: AgentP
                 </span>
                 <span className="min-w-0 self-center">
                     <span className="block truncate text-sm font-semibold">{agentName}</span>
-                    <span className="block text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
+                    <span className="block text-[length:var(--fs-label)]" style={{ color: theme.node.muted }}>
                         {collapsed ? "形象已收起" : "站点默认形象，可以在商店换一个"}
                     </span>
                 </span>

@@ -175,7 +175,7 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                     <MessageCircleHeart className="size-4 shrink-0" style={{ color: theme.accent.primary }} aria-hidden="true" />
                     <span className="min-w-0 flex-1">
                         <span className="block text-xs font-medium">头顶气泡</span>
-                        <span className="mt-0.5 block text-[var(--fs-label)] leading-4" style={{ color: theme.node.muted }}>
+                        <span className="mt-0.5 block text-[length:var(--fs-label)] leading-4" style={{ color: theme.node.muted }}>
                             形象会提醒时间和未完成的项目，也会说说灵感和贴心话；待审批提醒始终显示
                         </span>
                     </span>
@@ -188,7 +188,7 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                     <Flame className="size-5 shrink-0" style={{ color: "var(--palette-status-error)" }} aria-hidden="true" />
                     <span className="min-w-0 flex-1">
                         <span className="block text-sm font-semibold">限时活动 · {bannerTitle}</span>
-                        <span className="block text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
+                        <span className="block text-[length:var(--fs-label)]" style={{ color: theme.node.muted }}>
                             {soonestEnd ? `最早一档${formatAgentPetCountdown(soonestEnd, now)}，` : ""}
                             {filter === "sale" ? "点这里看全部形象" : "点这里只看活动形象"}
                         </span>
@@ -300,7 +300,7 @@ export function AgentPetStoreModal({ theme, open, onClose }: { theme: CanvasThem
                     </span>
                     <span className="min-w-0">
                         <h2 className="text-base font-semibold leading-6">形象商店</h2>
-                        <p className="text-[var(--fs-label)]" style={{ color: theme.node.muted }}>
+                        <p className="text-[length:var(--fs-label)]" style={{ color: theme.node.muted }}>
                             挑一个陪你创作的小伙伴：免费、会员专享、积分购买或累计消费解锁
                         </p>
                     </span>
@@ -493,7 +493,7 @@ function OfferPrice({ offer }: { offer: AgentPetOffer }) {
                         <small>积分</small>
                     </b>
                     <s>{formatCredits(offer.listPrice, 2)}</s>
-                    <span className="text-[var(--fs-label)] font-medium" style={{ color: "var(--palette-status-error)" }}>
+                    <span className="text-[length:var(--fs-label)] font-medium" style={{ color: "var(--palette-status-error)" }}>
                         {offer.label}
                     </span>
                 </div>
@@ -508,7 +508,7 @@ function OfferPrice({ offer }: { offer: AgentPetOffer }) {
         case "spend":
             return (
                 <div className="agent-pet-card-price" data-kind="spend">
-                    <span className="text-[var(--fs-label)]" style={{ color: "var(--pet-muted)" }}>
+                    <span className="text-[length:var(--fs-label)]" style={{ color: "var(--pet-muted)" }}>
                         累计消费满 <b style={{ fontSize: "var(--fs-ui)", color: "var(--pet-ink)" }}>{formatCredits(offer.unlock, 2)}</b> 积分解锁
                     </span>
                 </div>
@@ -516,7 +516,7 @@ function OfferPrice({ offer }: { offer: AgentPetOffer }) {
         case "claimable":
             return (
                 <div className="agent-pet-card-price" data-kind="claimable">
-                    <span className="text-[var(--fs-label)]" style={{ color: "var(--palette-status-success)" }}>
+                    <span className="text-[length:var(--fs-label)]" style={{ color: "var(--palette-status-success)" }}>
                         累计消费已满 {formatCredits(offer.unlock, 2)} 积分
                     </span>
                 </div>
