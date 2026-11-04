@@ -91,6 +91,15 @@ export function matchesAgentPetFilter(pet: AgentPet, filter: AgentPetStoreFilter
     }
 }
 
+/** 形象达到这个数量时，商店和换形象菜单显示搜索框。 */
+export const AGENT_PET_SEARCH_THRESHOLD = 9;
+
+/** 商店和换形象的搜索：名称、简介或分类包含关键词（忽略大小写和首尾空格），空关键词全部匹配。 */
+export function matchesAgentPetQuery(pet: Pick<AgentPet, "name" | "description" | "category">, query: string) {
+    const needle = query.trim().toLowerCase();
+    return !needle || [pet.name, pet.description, pet.category].some((value) => value.toLowerCase().includes(needle));
+}
+
 /** 形象出现过的分类，按首次出现的顺序（即后台排序）；未分类不列出。 */
 export function agentPetCategories(pets: ReadonlyArray<Pick<AgentPet, "category">>) {
     const counts = new Map<string, number>();
