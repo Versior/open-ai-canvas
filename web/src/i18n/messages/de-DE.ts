@@ -37,6 +37,7 @@ export const deDE: Messages = {
         },
         sidebar: {
             ecommerceStudio: "E-Commerce-Studio",
+            videoReplication: "Video-Nachbau",
             home: "Erstellen",
             projects: "Kurzserien",
             ecommerce: "E-Commerce-Agent",
@@ -51,6 +52,7 @@ export const deDE: Messages = {
             headingAssets: "Assets und Verlauf",
         },
         collapsed: {
+            videoReplication: "Nachbau",
             inspiration: "Ideen",
             home: "Start",
             projects: "Serien",
@@ -63,6 +65,7 @@ export const deDE: Messages = {
         pageTitles: {
             ecommerce: "E-Commerce",
             studio: "E-Commerce-Studio",
+            videoReplication: "Video-Nachbau",
             inspiration: "Inspiration",
             home: "Erstellen",
             projects: "Kurzserien",

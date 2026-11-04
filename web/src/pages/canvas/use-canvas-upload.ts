@@ -118,7 +118,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
     const uploadStatusIdRef = useRef(0);
     const statusTimersRef = useRef<Set<number>>(new Set());
     const socialVideoImportsRef = useRef(new Set<AbortController>());
-    const socialVideoOperationsRef = useRef(new Map<string, Promise<CanvasNodeData | null>>());
+    const socialVideoOperationsRef = useRef(new Map<string, Promise<boolean>>());
     const socialVideoContextRef = useRef({ canvasId, domainProjectId });
     socialVideoContextRef.current = { canvasId, domainProjectId };
     const fileDragDepthRef = useRef(0);
@@ -679,11 +679,10 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
         [createFileNode, nodesRef],
     );
 
-    // 导入抖音 / TikTok 分享链接里的视频：成功返回新建的视频节点；链接无效、失败或中止返回 null（失败已提示）。
-    const importSocialVideo = useCallback(
-        async (text: string, position?: Position): Promise<CanvasNodeData | null> => {
+    const importSocialVideoFromClipboard = useCallback(
+        async (text: string, position?: Position) => {
             const url = socialVideoURLFromText(text);
-            if (!url) return null;
+            if (!url) return false;
             const expectedScope = getActiveUserScope();
             const expectedCanvasId = canvasId;
             const expectedProjectId = domainProjectId || "";
@@ -756,13 +755,13 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                     setContextMenu(null);
                     progress.done(persisted.syncPending ? "视频已导入，项目资产正在自动同步" : "视频已导入画布");
                     message.success("平台视频已导入，可继续拆解并复刻");
-                    return node;
+                    return true;
                 } catch (error) {
-                    if (isAbortError(error)) return null;
+                    if (isAbortError(error)) return true;
                     const details = error instanceof Error ? error.message : "平台视频导入失败";
                     progress.fail(details);
                     message.error(`视频导入失败：${details}`);
-                    return null;
+                    return true;
                 } finally {
                     socialVideoImportsRef.current.delete(controller);
                 }
@@ -775,15 +774,6 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
             }
         },
         [canvasId, domainProjectId, getCanvasCenter, message, persistMediaNode, selectInsertedNode, setContextMenu, setNodes, startUploadStatus],
-    );
-    // 粘贴时只要文本里有受支持的平台链接就算已处理（失败也已提示），不再落到普通文本粘贴。
-    const importSocialVideoFromClipboard = useCallback(
-        async (text: string, position?: Position) => {
-            if (!socialVideoURLFromText(text)) return false;
-            await importSocialVideo(text, position);
-            return true;
-        },
-        [importSocialVideo],
     );
     const pasteSystemClipboard = useCallback(
         async (position?: Position, clipboardEvent?: ClipboardEvent | null) => {
@@ -1162,7 +1152,6 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
         handleUploadFiles,
         handleUploadRequest,
         imageInputRef,
-        importSocialVideo,
         closeUploadModal,
         openAssetsAtPosition,
         pasteAssistantImage,

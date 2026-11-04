@@ -104,7 +104,7 @@ export function teardownTimeRange(shot: Pick<VideoTeardownShot, "startMs" | "end
 
 const BOUNDARY_LABELS: Record<VideoTeardownShot["boundary"], string> = { start: "开头", cut: "切点", split: "同一长镜头切开，画面连续" };
 
-function orientationLabel(width: number, height: number) {
+export function orientationLabel(width: number, height: number) {
     if (width === height) return "方形";
     return width > height ? "横屏" : "竖屏";
 }
@@ -450,4 +450,28 @@ export function videoTeardownReportMarkdown(bundle: VideoTeardownBundle, analysi
     lines.push("- 切点和时间码由程序检测；画面、口播和制作方式是模型判断，可在分镜表里修改。");
     lines.push("- 拆解用于学习结构和节奏。复刻请使用你有权使用的素材和形象，不要搬运原视频的画面、音乐或人物。");
     return lines.join("\n");
+}
+
+/** 视频复刻页面保存到服务端的分析：所用模型、标题、全片总结和逐镜结果，镜头编号与拆解结果一一对应。 */
+export type VideoReplicationAnalysisDocument = { version: 1; model: string; title: string; summary: VideoTeardownSummary | null; rows: VideoTeardownAnalysisRow[] };
+
+export function videoReplicationAnalysisDocument(analysis: VideoTeardownAnalysis, model: string): VideoReplicationAnalysisDocument {
+    return { version: 1, model, title: analysis.title, summary: analysis.summary, rows: analysis.rows };
+}
+
+/**
+ * 读回保存过的分析（展示路径）：复用模型回复的解析规则，字段缺失按空字符串显示。
+ * 版本不对或镜头对不上时返回 null，页面按“还没有分析”处理并提供重新分析。
+ */
+export function readVideoReplicationAnalysis(value: unknown, shotCount: number): (VideoTeardownAnalysis & { model: string }) | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    if (record.version !== 1 || !Array.isArray(record.rows) || shotCount < 1) return null;
+    const expected = Array.from({ length: shotCount }, (_, index) => index + 1);
+    try {
+        const parsed = parseVideoTeardownAnalysis(JSON.stringify({ title: record.title, summary: record.summary, rows: record.rows }), expected, true);
+        return { ...parsed, model: textValue(record.model) };
+    } catch {
+        return null;
+    }
 }

@@ -88,9 +88,6 @@ import { CanvasSubtitleDialog } from "@/components/canvas/canvas-subtitle-dialog
 import { CanvasVideoFrameDialog } from "@/components/canvas/canvas-video-frame-dialog";
 import { CanvasVideoSegmentDialog } from "@/components/canvas/canvas-video-segment-dialog";
 import { CanvasVideoEnhanceDialog } from "@/components/canvas/canvas-video-enhance-dialog";
-import { CanvasVideoTeardownDialog, type VideoTeardownSource } from "@/components/canvas/canvas-video-teardown-dialog";
-import type { VideoTeardownOptions } from "@/lib/canvas/video-teardown";
-import { teardownVideoSlot, useCanvasVideoTeardown } from "./use-canvas-video-teardown";
 import { listVideoEnhanceModels } from "@/lib/canvas/canvas-video-enhance";
 import { CanvasTimelineDialog } from "@/components/canvas/canvas-timeline-dialog";
 import { syncNodeSubtitlesToTimeline } from "@/lib/timeline/timeline-build";
@@ -415,8 +412,6 @@ function CanvasViewportPage() {
     const [batchScrollById, setBatchScrollById] = useState<Record<string, BatchScroll>>({});
     const [previsNodeId, setPrevisNodeId] = useState<string | null>(null);
     const [libTVImportOpen, setLibTVImportOpen] = useState(false);
-    // 视频复刻弹窗：nodeId 为空表示从创建菜单打开，让用户粘贴链接或上传视频。
-    const [videoTeardownRequest, setVideoTeardownRequest] = useState<{ nodeId: string | null } | null>(null);
     const [libTVImportTemplateUuid, setLibTVImportTemplateUuid] = useState<string>();
 
     useEffect(() => {
@@ -928,7 +923,6 @@ ${instruction.trim()}`
         handleUploadRequest,
         requestDeferredImageUpload,
         imageInputRef,
-        importSocialVideo,
         openAssetsAtPosition,
         pasteSystemClipboard,
         replaceNodeMedia,
@@ -951,36 +945,6 @@ ${instruction.trim()}`
         setDialogNodeId,
     });
     const replaceCanvasNodeMedia = useCallback((node: CanvasNodeData) => handleUploadRequest(node.id), [handleUploadRequest]);
-    // agentFocusNodeRef 在后面声明；拆解完成时组件早已渲染完，调用时它已就绪。
-    const focusTeardownTable = useCallback((nodeId: string) => agentFocusNodeRef.current(nodeId), []);
-    const { runTeardown: runVideoTeardown, runningNodeId: videoTeardownNodeId } = useCanvasVideoTeardown({
-        canvasId: projectId,
-        config: effectiveConfig,
-        nodesRef,
-        connectionsRef,
-        setNodes,
-        setConnections,
-        setSelectedNodeIds,
-        setSelectedConnectionId,
-        setDialogNodeId,
-        startUploadStatus,
-        focusNode: focusTeardownTable,
-    });
-    // 从链接或本地文件开始时先导入成视频节点（放在视野中心附近的空位），再拆解这个节点。导入失败已有提示，不再继续。
-    const startVideoTeardown = useCallback(
-        async (source: VideoTeardownSource, options: VideoTeardownOptions) => {
-            setVideoTeardownRequest(null);
-            let node: CanvasNodeData | null = null;
-            if (source.kind === "node") node = source.node;
-            else if (source.kind === "link") node = await importSocialVideo(source.text, teardownVideoSlot(nodesRef.current, getCanvasCenter()).topLeft);
-            else {
-                const id = await createFileNode(source.file, teardownVideoSlot(nodesRef.current, getCanvasCenter()).center);
-                node = id ? nodesRef.current.find((item) => item.id === id) || null : null;
-            }
-            if (node) await runVideoTeardown(node, options);
-        },
-        [createFileNode, getCanvasCenter, importSocialVideo, runVideoTeardown],
-    );
     const { actions: batchReferences, pickerModal: batchReferencePickerModal } = useCanvasBatchReferences({ nodesRef, connectionsRef, setNodes, setConnections, createFileNode });
     const { rotateImageNode, rotatingNodeId } = useCanvasImageRotation({ projectId, nodesRef, setNodes, setConnections, setSelectedNodeIds, readOnly: false });
     const {
@@ -3843,7 +3807,6 @@ ${instruction.trim()}`
             onOpenPrevis: () => setPrevisTemplateRequest({}),
             onUpload: () => handleUploadRequest(),
             onOpenMyAssets: () => openCanvasAssetLibrary(),
-            onOpenVideoReplication: () => setVideoTeardownRequest({ nodeId: null }),
             onOpenProjectCharacters: () => openCharacterLibrary(),
         },
     });
@@ -4409,7 +4372,6 @@ ${instruction.trim()}`
                                             onUndo={undoCanvas}
                                             onRedo={redoCanvas}
                                             onUpload={() => handleUploadRequest()}
-                                            onOpenVideoReplication={() => setVideoTeardownRequest({ nodeId: null })}
                                             onDelete={() => deleteNodes(new Set(selectedNodeIds))}
                                             onClear={() => setClearConfirmOpen(true)}
                                             onDeselect={deselectCanvas}
@@ -4633,7 +4595,6 @@ ${instruction.trim()}`
                                 onExtractAudioFromVideo={(node) => void extractAudioFromVideo(node)}
                                 onTrimVideoSegments={openVideoSegmentExtractor}
                                 onEnhanceVideo={hasVideoEnhanceModels ? openVideoEnhance : undefined}
-                                onVideoTeardown={(node) => setVideoTeardownRequest({ nodeId: node.id })}
                                 onSubtitles={(node) => setSubtitleNodeId(node.id)}
                                 onTimeline={(node) => setTimelineNodeId(node.id)}
                                 onVersions={(node) => setMediaVersionNodeId(node.id)}
@@ -4788,15 +4749,6 @@ ${instruction.trim()}`
                                     onConfirm={(params) => void handleSegmentConfirm(segmentNode, params)}
                                 />
                             ) : null}
-
-                            <CanvasVideoTeardownDialog
-                                open={Boolean(videoTeardownRequest)}
-                                node={videoTeardownRequest?.nodeId ? nodes.find((item) => item.id === videoTeardownRequest.nodeId) || null : null}
-                                config={effectiveConfig}
-                                busy={Boolean(videoTeardownNodeId)}
-                                onClose={() => setVideoTeardownRequest(null)}
-                                onStart={(source, options) => void startVideoTeardown(source, options)}
-                            />
 
                             {enhanceNode ? (
                                 <CanvasVideoEnhanceDialog node={enhanceNode} open={Boolean(enhanceNode)} config={effectiveConfig} onClose={() => setEnhanceDialogNodeId(null)} onConfirm={(params) => void enhanceVideoNode(enhanceNode, params)} />

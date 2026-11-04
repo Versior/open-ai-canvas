@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ShoppingBag, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -48,6 +48,7 @@ const COLLAPSED_TITLE_KEYS: Record<string, string> = {
     skills: "nav.collapsed.skills",
     plugins: "nav.collapsed.plugins",
     tasks: "nav.collapsed.tasks",
+    "video-replication": "nav.collapsed.videoReplication",
 };
 
 function toolItem(slug: NavigationToolSlug, to: string, t: TFunction): WorkspaceNavItem {
@@ -62,6 +63,7 @@ function buildNav(features: FeatureAvailability, t: TFunction): { groups: Worksp
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
                 ...(features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Package, to: "/studio" }] : []),
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
+                { id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" },
                 ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: t("nav.sidebar.ecommerce"), icon: ShoppingBag, to: "/ecommerce" }] : []),
                 { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
             ],

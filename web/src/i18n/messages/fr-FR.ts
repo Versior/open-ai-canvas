@@ -37,6 +37,7 @@ export const frFR: Messages = {
         },
         sidebar: {
             ecommerceStudio: "Studio e-commerce",
+            videoReplication: "Réplication vidéo",
             home: "Créer",
             projects: "Courts métrages",
             ecommerce: "Agent e-commerce",
@@ -51,6 +52,7 @@ export const frFR: Messages = {
             headingAssets: "Ressources et historique",
         },
         collapsed: {
+            videoReplication: "Répliquer",
             inspiration: "Idées",
             home: "Créer",
             projects: "Séries",
@@ -63,6 +65,7 @@ export const frFR: Messages = {
         pageTitles: {
             ecommerce: "E-commerce",
             studio: "Studio e-commerce",
+            videoReplication: "Réplication vidéo",
             inspiration: "Inspiration",
             home: "Créer",
             projects: "Courts métrages",

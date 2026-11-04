@@ -4,6 +4,7 @@ const workspaceRouteLoaders = {
     ecommerce: () => import("@/pages/ecommerce"),
     ecommerceCanvas: () => import("@/pages/canvas/ecommerce-entry"),
     ecommerceStudio: () => import("@/pages/ecommerce-studio"),
+    "video-replication": () => import("@/pages/video-replication"),
     create: () => import("@/pages/create"),
     inspiration: () => import("@/pages/inspirations"),
     projects: () => import("@/pages/projects"),

@@ -50,7 +50,6 @@ export function CanvasToolbar({
     onUndo,
     onRedo,
     onUpload,
-    onOpenVideoReplication,
     onDelete,
     onClear,
     onDeselect,
@@ -90,8 +89,6 @@ export function CanvasToolbar({
     onUndo: () => void;
     onRedo: () => void;
     onUpload: () => void;
-    /** 视频复刻入口：粘贴平台链接或上传视频后拆解。 */
-    onOpenVideoReplication?: () => void;
     onDelete: () => void;
     onClear: () => void;
     onDeselect: () => void;
@@ -167,7 +164,6 @@ export function CanvasToolbar({
         onChooseStyle,
         onOpenPrevis,
         onUpload,
-        onOpenVideoReplication,
         onOpenWorkspace,
         onOpenMyAssets,
         onOpenProjectCharacters,
