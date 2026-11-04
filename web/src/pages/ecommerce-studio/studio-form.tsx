@@ -404,7 +404,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 </Button>
                 <Tooltip title={blocked || undefined}>
                     <Button type="primary" size="large" className="es-generate" icon={<Sparkles size={16} />} disabled={Boolean(blocked)} onClick={generate}>
-                        {setKind ? `生成${setLabel}（${images} ${unit}）` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
+                        {setKind ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
                     </Button>
                 </Tooltip>
             </footer>

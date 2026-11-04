@@ -909,6 +909,100 @@
     height: 100%;
     object-fit: cover;
 }
+.es-tuner {
+    display: grid;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--es-line);
+}
+.es-tuner-title {
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+.es-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.es-chip {
+    height: 28px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--es-line);
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+        background-color var(--es-motion),
+        border-color var(--es-motion),
+        color var(--es-motion);
+}
+.es-chip:hover {
+    background: var(--es-muted);
+    color: var(--es-ink);
+}
+.es-chip[aria-pressed="true"] {
+    border-color: var(--control-selected-border);
+    background: var(--control-selected-bg);
+    color: var(--control-selected-fg);
+}
+.es-tuner-copy {
+    display: grid;
+    gap: var(--space-2);
+}
+.es-tuner-field {
+    display: grid;
+    gap: 4px;
+}
+.es-tuner-field > span {
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
+.es-prompt summary {
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+.es-prompt-body {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+.es-prompt-note {
+    margin: 0;
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+.es-prompt-note[data-tone="warning"] {
+    color: var(--status-warning);
+}
+.es-prompt-layer {
+    display: grid;
+    gap: 2px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--es-radius-control);
+    background: var(--es-muted);
+}
+.es-prompt-layer strong {
+    font-size: var(--fs-caption);
+    font-weight: 600;
+}
+.es-prompt-layer span {
+    color: var(--es-ink-3);
+    font-size: var(--fs-tiny, 11px);
+}
+.es-prompt-layer p {
+    margin: 0;
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
 
 /* ---------- 选套图模板 ---------- */
 .es-suite-picker {
@@ -921,7 +1015,8 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--space-4);
-    padding: var(--space-5) var(--space-5) var(--space-4);
+    /* 右侧给弹窗自带的关闭按钮留位置。 */
+    padding: var(--space-5) 56px var(--space-4) var(--space-5);
     border-bottom: 1px solid var(--es-line);
 }
 .es-suite-picker-head h3 {

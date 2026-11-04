@@ -42,19 +42,19 @@ function AdminTemplates({ open, onPick, onLoaded }: { open: boolean; onPick: (su
 
     if (error) {
         return (
-            <p className="es-suite-note" role="alert">
+            <div className="es-suite-note" role="alert">
                 {error}
                 <Button size="small" onClick={() => setRetry((value) => value + 1)}>
                     重试
                 </Button>
-            </p>
+            </div>
         );
     }
     if (!templates) {
         return (
-            <p className="es-suite-note" role="status">
+            <div className="es-suite-note" role="status">
                 <Spin size="small" /> 正在读取后台模板…
-            </p>
+            </div>
         );
     }
     if (!templates.length) {

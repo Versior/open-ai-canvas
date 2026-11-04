@@ -1,32 +1,37 @@
 import { Button } from "antd";
-import { Check, ChevronLeft, ChevronRight, Download, ImagePlus, RefreshCw } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Download, ImagePlus } from "lucide-react";
 import { useCallback, useEffect } from "react";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import { studioAttemptActive, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
-import type { StudioOutput, StudioShot } from "@/lib/ecommerce-studio/types";
+import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { studioImageUrl } from "./studio-parts";
 import type { StudioShotGroup, StudioViewerTarget } from "./studio-results";
+import { StudioShotTuner, type StudioShotPatch } from "./studio-shot-tuner";
 
-/** 大图查看：←/→ 在这一组出过图的镜头之间切换；套图里有多张候选时可以挑一张作为导出用图。 */
+/** 大图查看：←/→ 在这一组出过图的镜头之间切换；套图里有多张候选时可以挑一张作为导出用图；右侧可以调整这一张再出。 */
 export function StudioViewer({
+    product,
     groups,
     target,
     blocked,
+    imageModel,
     onChange,
     onClose,
     onDownload,
     onReference,
-    onRerun,
+    onTune,
     onAdopt,
 }: {
+    product?: StudioProduct;
     groups: StudioShotGroup[];
     target?: StudioViewerTarget;
     blocked: string;
+    imageModel: string;
     onChange: (target: StudioViewerTarget) => void;
     onClose: () => void;
     onDownload: (shot: StudioShot, output: StudioOutput) => void;
     onReference: (output: StudioOutput) => void;
-    onRerun: (group: StudioShotGroup, shot: StudioShot) => void;
+    onTune: (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch) => void;
     onAdopt: (group: StudioShotGroup, shot: StudioShot, output: StudioOutput) => void;
 }) {
     const group = groups.find((item) => item.key === target?.groupKey);
@@ -102,10 +107,8 @@ export function StudioViewer({
                             <Button icon={<ImagePlus size={14} />} onClick={() => onReference(current)}>
                                 用作参考图
                             </Button>
-                            <Button icon={<RefreshCw size={14} />} disabled={Boolean(blocked) || active} title={blocked || undefined} onClick={() => onRerun(group, shot)}>
-                                {active ? "正在出新的一张…" : "再出一张"}
-                            </Button>
                         </div>
+                        {product ? <StudioShotTuner key={shot.id} product={product} shotRef={group.ref} shot={shot} imageModel={imageModel} blocked={blocked} active={active} onRun={(patch) => onTune(group, shot, patch)} /> : null}
                         <div className="es-viewer-nav">
                             <Button block icon={<ChevronLeft size={14} />} disabled={viewable.length < 2} onClick={() => move(-1)}>
                                 上一张

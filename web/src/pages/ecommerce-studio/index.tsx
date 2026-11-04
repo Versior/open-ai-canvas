@@ -15,6 +15,7 @@ import { StudioForm } from "./studio-form";
 import { StudioHeader } from "./studio-header";
 import { useStudioModel } from "./studio-parts";
 import { StudioResults, studioShotGroups, type StudioShotGroup, type StudioViewerTarget } from "./studio-results";
+import type { StudioShotPatch } from "./studio-shot-tuner";
 import { StudioViewer } from "./studio-viewer";
 import { useStudioAgentBridge } from "./use-studio-agent";
 import { patchStudioShotAt, useStudioRunner } from "./use-studio-runner";
@@ -129,11 +130,13 @@ export default function EcommerceStudioPage() {
         void downloadBrowserMedia({ fileName, storageKey: resourceStorageKey(output.resourceId) }).catch((failure) => message.error(failure instanceof Error ? failure.message : "下载失败"));
     };
 
-    const rerun = (group: StudioShotGroup, shot: StudioShot) => {
+    /** 大图里调整这一张：先把微调和文案写回这张镜头，再按它出一张新的；之前的结果都保留。 */
+    const tune = (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch) => {
         if (!product) return;
         if (blocked) return void message.warning(blocked);
         try {
-            runner.rerun(product.id, group.ref, [shot.id], image.value);
+            edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, ...patch })), { immediate: true });
+            if (!runner.rerun(product.id, group.ref, [shot.id], image.value)) message.info("这张图正在生成，等它完成");
         } catch (failure) {
             message.error(failure instanceof Error ? failure.message : "提交失败");
         }
@@ -191,14 +194,16 @@ export default function EcommerceStudioPage() {
                 )}
             </div>
             <StudioViewer
+                product={product}
                 groups={groups}
                 target={viewer}
                 blocked={blocked}
+                imageModel={image.value}
                 onChange={setViewer}
                 onClose={() => setViewer(undefined)}
                 onDownload={download}
                 onReference={addReference}
-                onRerun={rerun}
+                onTune={tune}
                 onAdopt={(group, shot, output) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, adopted: output })), { immediate: true })}
             />
         </WorkspacePage>
