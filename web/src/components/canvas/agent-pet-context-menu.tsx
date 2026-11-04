@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Check, ChevronRight, Eye, Gift, LoaderCircle, Maximize2, MessageCircleHeart, MessageSquareQuote, MessageSquareText, Minus, MoveDiagonal2, PawPrint, RotateCcw, Shirt, Smile, Store } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Eye, Gift, LoaderCircle, Maximize2, MessageCircleHeart, MessageSquareQuote, MessageSquareText, Minus, MoveDiagonal2, PawPrint, RotateCcw, Search, Shirt, Smile, Store } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 
@@ -10,7 +10,7 @@ import { agentPetCatalogQueryKey, useApplyAgentPet } from "@/hooks/use-active-ag
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AGENT_PET_ASPECT, AGENT_PET_SIZE_OPTIONS } from "@/lib/canvas/agent-pet";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
-import { AGENT_PET_TONE_LABELS } from "@/lib/canvas/agent-pet-store";
+import { AGENT_PET_SEARCH_THRESHOLD, AGENT_PET_TONE_LABELS, matchesAgentPetQuery } from "@/lib/canvas/agent-pet-store";
 import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, type AgentPet } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -253,16 +253,19 @@ function Hero({ pet, agentName, collapsed, reducedMotion, theme }: { pet: AgentP
     );
 }
 
-/** 「换形象」子菜单：默认形象和当前可用的形象（含累计消费已达标、选择即领取的形象），缩略图格子排列。 */
+/** 「换形象」子菜单：默认形象和当前可用的形象（含累计消费已达标、选择即领取的形象），缩略图格子排列；形象多时可以搜索。 */
 function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: { theme: CanvasTheme; userId: string; reducedMotion: boolean; onBack: () => void; onOpenStore: () => void; onDone: () => void }) {
     const catalog = useQuery({ queryKey: agentPetCatalogQueryKey(userId), queryFn: ({ signal }) => getAgentPetCatalog(signal), enabled: Boolean(userId) });
     const applyPet = useApplyAgentPet();
     const [busyId, setBusyId] = useState<string | null>(null);
     const [hoverId, setHoverId] = useState("");
+    const [query, setQuery] = useState("");
     const selectedId = catalog.data?.selectedPetId ?? "";
     const pets = catalog.data?.pets ?? [];
     const usable = pets.filter((pet) => pet.usable);
     const locked = pets.length - usable.length;
+    const searching = query.trim() !== "";
+    const matched = usable.filter((pet) => matchesAgentPetQuery(pet, query));
     const grid = useRef<HTMLDivElement>(null);
     const loaded = catalog.isSuccess;
     // 列表读完时焦点还停在返回按钮上，就移到当前形象。
@@ -312,54 +315,85 @@ function PetList({ theme, userId, reducedMotion, onBack, onOpenStore, onDone }: 
             ) : catalog.isError ? (
                 <MenuItem theme={theme} icon={<RotateCcw />} label="读取失败，点此重试" onClick={() => void catalog.refetch()} />
             ) : (
-                <div ref={grid} className="agent-pet-menu-grid">
-                    <button type="button" data-agent-pet-menu-item className="agent-pet-menu-pet agent-pet-toned" aria-current={!selectedId || undefined} aria-label="默认形象" disabled={busyId !== null} onClick={() => void choose(null)}>
-                        <span className="agent-pet-stage" style={{ placeItems: "center" }}>
-                            {busyId === "" ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : <Smile className="size-5" style={{ color: theme.accent.primary }} aria-hidden="true" />}
-                        </span>
-                        {!selectedId ? <TileMark icon={<Check />} /> : null}
-                        <span>默认</span>
-                    </button>
-                    {usable.map((pet) => (
-                        <button
-                            key={pet.id}
-                            type="button"
-                            data-agent-pet-menu-item
-                            className="agent-pet-menu-pet agent-pet-toned"
-                            data-tone={pet.tone || "gentle"}
-                            aria-current={pet.id === selectedId || undefined}
-                            aria-label={pet.claimable ? `${pet.name}（累计消费已达标，选择即领取）` : pet.name}
-                            title={pet.claimable ? "累计消费已达标，选择即领取" : pet.description}
-                            disabled={busyId !== null}
-                            onPointerEnter={() => setHoverId(pet.id)}
-                            onPointerLeave={() => setHoverId("")}
-                            onClick={() => void choose(pet)}
-                        >
-                            <span className="agent-pet-stage">
-                                {busyId === pet.id ? (
-                                    <LoaderCircle className="mb-3 size-4 motion-safe:animate-spin" aria-hidden="true" />
-                                ) : (
-                                    <AgentPetSprite
-                                        src={agentPetSpritesheetURL(pet)}
-                                        preview={agentPetPreviewURL(pet)}
-                                        version={pet.spriteVersion}
-                                        state="idle"
-                                        stateRows={pet.stateRows}
-                                        width={Math.round(TILE_HEIGHT * AGENT_PET_ASPECT)}
-                                        height={TILE_HEIGHT}
-                                        paused={hoverId !== pet.id}
-                                        reducedMotion={reducedMotion}
-                                        pixelated={pet.pixelated}
-                                        lookAtPointer={false}
-                                        lazy
-                                    />
-                                )}
-                            </span>
-                            {pet.id === selectedId ? <TileMark icon={<Check />} /> : pet.claimable ? <TileMark icon={<Gift />} tone="success" /> : null}
-                            <span>{pet.name}</span>
-                        </button>
-                    ))}
-                </div>
+                <>
+                    {usable.length >= AGENT_PET_SEARCH_THRESHOLD ? (
+                        <label className="agent-pet-menu-search">
+                            <Search aria-hidden="true" />
+                            <input
+                                type="search"
+                                data-agent-pet-menu-item
+                                value={query}
+                                placeholder="搜索形象"
+                                aria-label="搜索形象"
+                                onChange={(event) => setQuery(event.target.value)}
+                                onKeyDown={(event) => {
+                                    // 输入框里左右键和 Home / End 移动光标；有关键词时 Esc 先清空，再按一次才返回。
+                                    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End") event.stopPropagation();
+                                    if (event.key === "Escape" && query) {
+                                        event.preventDefault();
+                                        event.stopPropagation();
+                                        setQuery("");
+                                    }
+                                }}
+                            />
+                        </label>
+                    ) : null}
+                    <div ref={grid} className="agent-pet-menu-grid">
+                        {searching ? null : (
+                            <button type="button" data-agent-pet-menu-item className="agent-pet-menu-pet agent-pet-toned" aria-current={!selectedId || undefined} aria-label="默认形象" disabled={busyId !== null} onClick={() => void choose(null)}>
+                                <span className="agent-pet-stage" style={{ placeItems: "center" }}>
+                                    {busyId === "" ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : <Smile className="size-5" style={{ color: theme.accent.primary }} aria-hidden="true" />}
+                                </span>
+                                {!selectedId ? <TileMark icon={<Check />} /> : null}
+                                <span>默认</span>
+                            </button>
+                        )}
+                        {matched.map((pet) => (
+                            <button
+                                key={pet.id}
+                                type="button"
+                                data-agent-pet-menu-item
+                                className="agent-pet-menu-pet agent-pet-toned"
+                                data-tone={pet.tone || "gentle"}
+                                aria-current={pet.id === selectedId || undefined}
+                                aria-label={pet.claimable ? `${pet.name}（累计消费已达标，选择即领取）` : pet.name}
+                                title={pet.claimable ? "累计消费已达标，选择即领取" : pet.description}
+                                disabled={busyId !== null}
+                                onPointerEnter={() => setHoverId(pet.id)}
+                                onPointerLeave={() => setHoverId("")}
+                                onClick={() => void choose(pet)}
+                            >
+                                <span className="agent-pet-stage">
+                                    {busyId === pet.id ? (
+                                        <LoaderCircle className="mb-3 size-4 motion-safe:animate-spin" aria-hidden="true" />
+                                    ) : (
+                                        <AgentPetSprite
+                                            src={agentPetSpritesheetURL(pet)}
+                                            preview={agentPetPreviewURL(pet)}
+                                            version={pet.spriteVersion}
+                                            state="idle"
+                                            stateRows={pet.stateRows}
+                                            width={Math.round(TILE_HEIGHT * AGENT_PET_ASPECT)}
+                                            height={TILE_HEIGHT}
+                                            paused={hoverId !== pet.id}
+                                            reducedMotion={reducedMotion}
+                                            pixelated={pet.pixelated}
+                                            lookAtPointer={false}
+                                            lazy
+                                        />
+                                    )}
+                                </span>
+                                {pet.id === selectedId ? <TileMark icon={<Check />} /> : pet.claimable ? <TileMark icon={<Gift />} tone="success" /> : null}
+                                <span>{pet.name}</span>
+                            </button>
+                        ))}
+                    </div>
+                    {searching && matched.length === 0 ? (
+                        <p className="px-2 py-3 text-center" style={{ color: theme.node.muted, fontSize: "var(--fs-label)" }} role="status">
+                            没有找到「{query.trim()}」
+                        </p>
+                    ) : null}
+                </>
             )}
             <MenuDivider theme={theme} />
             <MenuItem theme={theme} icon={<Store />} label="去形象商店" detail={locked > 0 ? `还有 ${locked} 个形象可以购买或解锁` : "看看有没有新形象"} chevron onClick={onOpenStore} />

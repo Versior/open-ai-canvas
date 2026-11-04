@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button } from "antd";
-import { Bot, Cat, Check, Coins, Crown, Dog, Eye, Flame, Gift, Heart, LoaderCircle, Lock, MessageCircleHeart, Moon, RotateCcw, ShoppingBag, Store, Sun, Timer, Wallet, type LucideIcon } from "lucide-react";
+import { App, Button, Input } from "antd";
+import { Bot, Cat, Check, Coins, Crown, Dog, Eye, Flame, Gift, Heart, LoaderCircle, Lock, MessageCircleHeart, Moon, RotateCcw, Search, ShoppingBag, Store, Sun, Timer, Wallet, type LucideIcon } from "lucide-react";
 import { useReducedMotion } from "motion/react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
@@ -15,7 +15,19 @@ import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AGENT_PET_ASPECT } from "@/lib/canvas/agent-pet";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
-import { AGENT_PET_STORE_FILTERS, AGENT_PET_TONE_LABELS, agentPetCategories, agentPetDiscountLabel, agentPetOffer, formatAgentPetCountdown, matchesAgentPetFilter, type AgentPetOffer, type AgentPetStoreFilter } from "@/lib/canvas/agent-pet-store";
+import {
+    AGENT_PET_SEARCH_THRESHOLD,
+    AGENT_PET_STORE_FILTERS,
+    AGENT_PET_TONE_LABELS,
+    agentPetCategories,
+    agentPetDiscountLabel,
+    agentPetOffer,
+    formatAgentPetCountdown,
+    matchesAgentPetFilter,
+    matchesAgentPetQuery,
+    type AgentPetOffer,
+    type AgentPetStoreFilter,
+} from "@/lib/canvas/agent-pet-store";
 import { openWorkspaceWallet } from "@/lib/workspace-wallet";
 import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, purchaseAgentPet, selectAgentPet, type AgentPet, type AgentPetTone } from "@/services/api/agent-pets";
 import { ApiError } from "@/services/api/request";
@@ -50,6 +62,7 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
     const [previewId, setPreviewId] = useState("");
     const [category, setCategory] = useState("all");
     const [filter, setFilter] = useState<AgentPetStoreFilter>("all");
+    const [query, setQuery] = useState("");
     const now = useMinuteClock();
     const selectedId = catalog.data?.selectedPetId ?? "";
     const chatter = useAgentPetPrefsStore((state) => state.chatter);
@@ -112,8 +125,9 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
     const consumed = catalog.data.consumedMicrocredits;
     const hasSpendPets = pets.some((pet) => pet.access === "spend");
     const filters = AGENT_PET_STORE_FILTERS.filter((item) => item.id === "all" || pets.some((pet) => matchesAgentPetFilter(pet, item.id)));
-    const visible = pets.filter((pet) => (category === "all" || pet.category === category) && matchesAgentPetFilter(pet, filter));
-    const showDefault = category === "all" && (filter === "all" || filter === "usable" || filter === "free");
+    const searching = query.trim() !== "";
+    const visible = pets.filter((pet) => (category === "all" || pet.category === category) && matchesAgentPetFilter(pet, filter) && matchesAgentPetQuery(pet, query));
+    const showDefault = !searching && category === "all" && (filter === "all" || filter === "usable" || filter === "free");
     const soonestEnd = sales
         .map((pet) => pet.promotion?.endsAt)
         .filter((value): value is string => Boolean(value))
@@ -180,6 +194,17 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                         </span>
                     </span>
                 </button>
+            ) : null}
+
+            {pets.length >= AGENT_PET_SEARCH_THRESHOLD ? (
+                <Input
+                    allowClear
+                    prefix={<Search className="size-4" style={{ color: theme.node.muted }} aria-hidden="true" />}
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜索形象名称、简介或分类"
+                    aria-label="搜索形象"
+                />
             ) : null}
 
             {categories.length > 1 ? (
@@ -257,7 +282,7 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
             </div>
             {visible.length === 0 && !showDefault ? (
                 <p className="py-6 text-center text-xs leading-5" style={{ color: theme.node.muted }}>
-                    {pets.length ? "这里还没有形象，换个分类看看。" : "管理员还没有开放可更换的形象。"}
+                    {searching ? `没有找到「${query.trim()}」，换个关键词或分类看看。` : pets.length ? "这里还没有形象，换个分类看看。" : "管理员还没有开放可更换的形象。"}
                 </p>
             ) : null}
         </div>

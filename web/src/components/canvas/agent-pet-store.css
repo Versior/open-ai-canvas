@@ -105,6 +105,13 @@
 .agent-pet-store-chips::-webkit-scrollbar {
     display: none;
 }
+/* 宽容器里标签换行全部露出来；窄容器（手机）保持一行横向滑动，不占太多高度。 */
+@container (min-width: 421px) {
+    .agent-pet-store-chips {
+        flex-wrap: wrap;
+        overflow-x: visible;
+    }
+}
 
 .agent-pet-store-chip {
     display: inline-flex;
@@ -497,6 +504,38 @@
 }
 .agent-pet-menu-segmented button:focus-visible {
     box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+
+/* 换形象：形象多时的搜索框。 */
+.agent-pet-menu-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    margin: 0 2px 6px;
+    padding: 0 8px;
+    border-radius: var(--r-md);
+    background: var(--menu-hover);
+    color: var(--pet-muted);
+}
+.agent-pet-menu-search:focus-within {
+    box-shadow: 0 0 0 2px var(--tw-ring-color);
+}
+.agent-pet-menu-search svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+.agent-pet-menu-search input {
+    min-width: 0;
+    flex: 1;
+    background: transparent;
+    color: var(--pet-ink);
+    font-size: var(--fs-ui);
+    outline: none;
+}
+.agent-pet-menu-search input::placeholder {
+    color: var(--pet-muted);
 }
 
 /* 换形象：缩略图格子。 */
