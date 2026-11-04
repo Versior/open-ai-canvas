@@ -12,6 +12,15 @@ export type StudioIdFactory = () => string;
 
 /** 保留的组数：超出后删掉最早一组（图片仍在素材库和任务中心）。 */
 export const STUDIO_MAX_RUNS = 30;
+/**
+ * 记录占用的上限：服务端单个商品只收 1MB，模板套图每张都带职责文字，组数没到上限也可能先超；
+ * 按字节再裁一次，给照片、档案、助手方案留出空间。
+ */
+export const STUDIO_RUNS_MAX_BYTES = 600 * 1024;
+
+function jsonBytes(value: unknown) {
+    return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
 
 /** 用表单里的标题和卖点代替档案文案，复用镜头规格里按角色取文案的规则。 */
 function copySource(product: StudioProduct): StudioProduct {
@@ -142,12 +151,18 @@ function runActive(run: StudioRun) {
     return run.shots.some((shot) => shot.attempts.some(studioAttemptActive));
 }
 
-/** 新的一组放最前；超出上限时从最旧的删起，还有任务在跑的记录不删。 */
+/** 新的一组放最前；组数或占用超出上限时从最旧的删起，还有任务在跑的记录不删。 */
 export function appendStudioRun(product: StudioProduct, run: StudioRun): StudioProduct {
     if (product.runs.some((item) => item.id === run.id)) return product;
     const runs = [run, ...product.runs];
     for (let index = runs.length - 1; runs.length > STUDIO_MAX_RUNS && index > 0; index -= 1) {
         if (!runActive(runs[index])) runs.splice(index, 1);
+    }
+    let size = jsonBytes(runs);
+    for (let index = runs.length - 1; size > STUDIO_RUNS_MAX_BYTES && index > 0; index -= 1) {
+        if (runActive(runs[index])) continue;
+        size -= jsonBytes(runs[index]);
+        runs.splice(index, 1);
     }
     return { ...product, runs };
 }
