@@ -63,14 +63,14 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
   "shots": [
     { "index": 1, "startMs": 0, "endMs": 1840, "boundary": "start", "keyframeTimeMs": 920, "keyframeResourceId": "...", "keyframeWidth": 288, "keyframeHeight": 512 }
   ],
-  "grids": [{ "resourceId": "...", "shotIndexes": [1, 2, 3], "width": 896, "height": 1568 }],
+  "grids": [{ "resourceId": "...", "shotIndexes": [1, 2, 3], "width": 976, "height": 1568 }],
   "transcript": { "source": "asr", "language": "zh", "segments": [{ "startMs": 0, "endMs": 2100, "text": "……" }] },
   "warnings": []
 }
 ```
 
 - 切点用 ffmpeg 场景分数检测（主要看亮度变化），短于 400ms 的镜头并入前一镜；没有切点的长镜头按不超过 10 秒切开，`boundary` 为 `split`（画面连续），检测到的切点为 `cut`。镜头数超过 `maxShots` 时先把切开的长镜头拼回去，再合并最短的镜头。
-- 每镜截开头、中间、结尾三帧（长边 512px）；中间帧存成关键帧图片资源。宫格每张放 3 个镜头，一行一个镜头，三列依次是开头、中间、结尾。关键帧和宫格计入存储容量，上传标识带任务 ID，任务被重新领取时复用已存的图片。
+- 每镜截开头、中间、结尾三帧（长边 512px）；中间帧存成关键帧图片资源。宫格每张放 3 个镜头，一行一个镜头，三列依次是开头、中间、结尾；底色和间隔为中灰（纯白、黑场画面也能分清），左侧 80px 编号栏写着每行的镜头编号。关键帧和宫格计入存储容量，上传标识带任务 ID，任务被重新领取时复用已存的图片。
 - 口播转写复用 `CANVAS_WHISPER_BASE_URL` 指向的 whisper.cpp 服务，并受字幕转写功能开关约束。视频没有音轨、功能未开放、服务没配置或识别失败时，`transcript.source` 为 `none`，任务仍然成功，原因写在 `warnings`。
 
 ## 电商画布配置与公共模特

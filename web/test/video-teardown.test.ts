@@ -90,8 +90,9 @@ describe("video teardown prompt", () => {
 
     test("describes the grid layout, the fixed shot list and the transcript", () => {
         const prompt = buildVideoTeardownPrompt(bundle(), [bundle().grids[0]], true);
-        expect(prompt).toContain("第 1 张宫格：镜头 1、2、3");
-        expect(prompt).toContain("三列从左到右是这个镜头的开头、中间、结尾画面");
+        expect(prompt).toContain("第 1 张宫格：从上到下是镜头 1、2、3");
+        expect(prompt).toContain("每行最左边黑底白字的数字就是镜头编号");
+        expect(prompt).toContain("三格从左到右是这个镜头的开头、中间、结尾画面");
         expect(prompt).toContain("镜头 2｜0:01.8–0:04.2｜切点");
         expect(prompt).toContain("镜头 3｜0:04.2–0:06.6｜同一长镜头切开，画面连续");
         expect(prompt).toContain("镜头 1：姐妹们看过来");

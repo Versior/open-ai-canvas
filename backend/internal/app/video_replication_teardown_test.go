@@ -216,8 +216,8 @@ func TestReplicationTeardownSplitsShotsAndSavesKeyframes(t *testing.T) {
 			t.Fatalf("keyframe %d = %+v (%dx%d), %v", index+1, keyframe, shot.KeyframeWidth, shot.KeyframeHeight, err)
 		}
 	}
-	// 一行一个镜头、三列开头 / 中间 / 结尾：3 × 288 + 白边 32 = 896 宽，3 × 512 + 32 = 1568 高。
-	if len(bundle.Grids) != 1 || !slices.Equal(bundle.Grids[0].ShotIndexes, []int{1, 2, 3}) || bundle.Grids[0].Width != 896 || bundle.Grids[0].Height != 1568 {
+	// 一行一个镜头、三列开头 / 中间 / 结尾：编号栏 80 + 3 × 288 + 灰边 32 = 976 宽，3 × 512 + 32 = 1568 高。
+	if len(bundle.Grids) != 1 || !slices.Equal(bundle.Grids[0].ShotIndexes, []int{1, 2, 3}) || bundle.Grids[0].Width != 976 || bundle.Grids[0].Height != 1568 {
 		t.Fatalf("grids = %+v", bundle.Grids)
 	}
 	if bundle.Transcript.Source != "none" || len(bundle.Transcript.Segments) != 0 || len(bundle.Warnings) != 1 {

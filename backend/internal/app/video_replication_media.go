@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"math"
 	"os"
@@ -14,6 +18,10 @@ import (
 	"strconv"
 	"strings"
 
+	xdraw "golang.org/x/image/draw"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -30,7 +38,10 @@ const (
 	// videoTeardownFrameEdge 是关键帧长边像素，宫格里每格就是这个尺寸。
 	videoTeardownFrameEdge = 512
 	// videoTeardownGridShots：每张宫格放 3 个镜头，一行一个镜头，三列是开头、中间、结尾。
-	videoTeardownGridShots       = 3
+	videoTeardownGridShots = 3
+	// videoTeardownGridGap 是宫格外边和格子间隔（中灰），videoTeardownLabelWidth 是左侧镜头编号条的宽度。
+	videoTeardownGridGap         = 8
+	videoTeardownLabelWidth      = 80
 	videoTeardownFrameConcurrent = 4
 	videoTeardownStderrLimit     = 4 << 20
 )
@@ -236,8 +247,9 @@ func extractVideoTeardownFrames(ctx context.Context, ffmpeg, source, dir string,
 	return frames, nil
 }
 
-// buildVideoTeardownGrid 把若干镜头的三帧拼成一张图：一行一个镜头，三列依次是开头、中间、结尾，格子之间留白边。
-func buildVideoTeardownGrid(ctx context.Context, ffmpeg, dir string, index int, shots [][3]string, output string) error {
+// buildVideoTeardownGrid 把若干镜头的三帧拼成一张图：一行一个镜头，三列依次是开头、中间、结尾，
+// 左侧编号条写上镜头编号（从 firstShot 起）。模型按编号对应镜头，不靠自己数行。
+func buildVideoTeardownGrid(ctx context.Context, ffmpeg, dir string, index, firstShot int, shots [][3]string, output string) error {
 	sequence := filepath.Join(dir, fmt.Sprintf("grid-%02d", index))
 	if err := os.MkdirAll(sequence, 0o700); err != nil {
 		return err
@@ -251,16 +263,68 @@ func buildVideoTeardownGrid(ctx context.Context, ffmpeg, dir string, index int, 
 			}
 		}
 	}
-	layout := fmt.Sprintf("tile=3x%d:margin=8:padding=8:color=white", len(shots))
+	// 中灰底和间隔：闪白、黑场这类纯色画面也能和背景分开，模型不会把整张宫格当成空白。
+	// 先无损拼成 PNG，加完编号再只压一次 JPEG。
+	tiled := filepath.Join(dir, fmt.Sprintf("grid-%02d-tiled.png", index))
+	layout := fmt.Sprintf("tile=3x%d:margin=%d:padding=%d:color=gray", len(shots), videoTeardownGridGap, videoTeardownGridGap)
 	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-		"-framerate", "1", "-i", filepath.Join(sequence, "%03d.jpg"), "-vf", layout, "-frames:v", "1", "-q:v", "3", output)
+		"-framerate", "1", "-i", filepath.Join(sequence, "%03d.jpg"), "-vf", layout, "-frames:v", "1", tiled)
 	if combined, err := cmd.CombinedOutput(); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		return fmt.Errorf("拼接宫格失败（ffmpeg）：%s", commandTail(combined))
 	}
+	if err := labelVideoTeardownGrid(tiled, output, firstShot, len(shots)); err != nil {
+		return fmt.Errorf("标注宫格失败：%w", err)
+	}
 	return nil
+}
+
+// labelVideoTeardownGrid 在宫格左边加一条中灰编号栏，每行中间写上镜头编号，存成 JPEG。
+func labelVideoTeardownGrid(tiledPath, output string, firstShot, rows int) error {
+	file, err := os.Open(tiledPath)
+	if err != nil {
+		return err
+	}
+	tiled, err := png.Decode(file)
+	file.Close()
+	if err != nil {
+		return err
+	}
+	bounds := tiled.Bounds()
+	canvas := image.NewRGBA(image.Rect(0, 0, bounds.Dx()+videoTeardownLabelWidth, bounds.Dy()))
+	xdraw.Draw(canvas, canvas.Bounds(), image.NewUniform(color.RGBA{R: 128, G: 128, B: 128, A: 255}), image.Point{}, xdraw.Src)
+	xdraw.Draw(canvas, image.Rect(videoTeardownLabelWidth, 0, canvas.Bounds().Dx(), bounds.Dy()), tiled, bounds.Min, xdraw.Src)
+	rowHeight := (bounds.Dy() - (rows+1)*videoTeardownGridGap) / max(rows, 1)
+	for row := range rows {
+		top := videoTeardownGridGap + row*(rowHeight+videoTeardownGridGap)
+		drawVideoTeardownLabel(canvas, strconv.Itoa(firstShot+row), image.Rect(videoTeardownGridGap, top, videoTeardownLabelWidth, top+rowHeight))
+	}
+	out, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := jpeg.Encode(out, canvas, &jpeg.Options{Quality: 85}); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// drawVideoTeardownLabel 在 area 中间画深色底块和白色数字。basicfont 是随 x/image 打包的 7×13 点阵字，
+// 放大 4 倍；镜像里不装字体也能用（ffmpeg 的 drawtext 需要 freetype 和字体文件）。
+func drawVideoTeardownLabel(dst *image.RGBA, text string, area image.Rectangle) {
+	const scale = 4
+	face := basicfont.Face7x13
+	glyphs := image.NewRGBA(image.Rect(0, 0, face.Advance*len(text), face.Height))
+	drawer := font.Drawer{Dst: glyphs, Src: image.White, Face: face, Dot: fixed.P(0, face.Ascent)}
+	drawer.DrawString(text)
+	width, height := glyphs.Bounds().Dx()*scale, glyphs.Bounds().Dy()*scale
+	center := image.Pt((area.Min.X+area.Max.X)/2, (area.Min.Y+area.Max.Y)/2)
+	digits := image.Rect(center.X-width/2, center.Y-height/2, center.X-width/2+width, center.Y-height/2+height)
+	xdraw.Draw(dst, digits.Inset(-8), image.NewUniform(color.RGBA{R: 24, G: 24, B: 24, A: 255}), image.Point{}, xdraw.Src)
+	xdraw.NearestNeighbor.Scale(dst, digits, glyphs, glyphs.Bounds(), xdraw.Over, nil)
 }
 
 func copyVideoTeardownFile(from, to string) error {

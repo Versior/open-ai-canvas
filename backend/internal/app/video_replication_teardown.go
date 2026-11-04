@@ -293,7 +293,7 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	for start := 0; start < len(frames); start += videoTeardownGridShots {
 		end := min(start+videoTeardownGridShots, len(frames))
 		path := filepath.Join(workDir, fmt.Sprintf("grid-%02d.jpg", len(gridPaths)+1))
-		if err := buildVideoTeardownGrid(ctx, ffmpeg, workDir, len(gridPaths)+1, frames[start:end], path); err != nil {
+		if err := buildVideoTeardownGrid(ctx, ffmpeg, workDir, len(gridPaths)+1, start+1, frames[start:end], path); err != nil {
 			return videoTeardownBundle{}, err
 		}
 		gridPaths = append(gridPaths, path)
