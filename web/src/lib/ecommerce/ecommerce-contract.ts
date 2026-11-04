@@ -133,23 +133,6 @@ export function ecommerceProductReady(profile: EcommerceProductProfile | undefin
     return Boolean(profile.category.trim() || profile.appearance.trim());
 }
 
-/**
- * 写文案之前，档案里还缺什么。
- *
- * 判据来自「详情页文案母版」的最小信息集：产品名、品类、价格带、
- * 2–3 个核心卖点、目标用户或场景。缺了这些，模型只有两条路——
- * 编，或者写「暂未提供」。两条都不能要，所以要在起草之前拦下来。
- *
- * 外观和标识不算在内：它们影响的是「画得像不像」，不影响「话说不说得出来」。
- */
-export function ecommerceCopySourceIssues(profile: EcommerceProductProfile | undefined) {
-    const issues: string[] = [];
-    if (!profile?.category.trim()) issues.push("品类");
-    if (!profile?.facts.trim()) issues.push("卖点与依据");
-    if (!profile?.audience.trim()) issues.push("目标人群与场景");
-    return issues;
-}
-
 /** 已绑定的视角数量，用于齐全度提示。 */
 export function ecommerceProductViewCount(profile: EcommerceProductProfile | undefined) {
     if (!profile) return 0;
@@ -550,21 +533,6 @@ export function ecommerceDropMarketingLines(text: string) {
         .filter(Boolean)
         .join("\n")
         .trim();
-}
-
-/**
- * 节点提示词里「不属于画面 schema」的那部分——即用户自己补的话。
- *
- * 新合同详情行的节点提示词就是画面段原文（七项已经展开过一遍）。只要它带画面标签，
- * 整段都是重复内容，不能再拼到尾部：里面的 `主标题：…` 会绕过 copy 唯一来源。
- * 完全不带标签的才算用户补充，照样先剔营销段再拼。
- */
-export function ecommerceTailOutsideVisualSchema(text: string) {
-    const trimmed = text.trim();
-    if (!trimmed) return "";
-    const segments = ecommercePromptSegments(trimmed);
-    if (segments.some((segment) => segment.kind !== "text")) return "";
-    return ecommerceDropMarketingLines(trimmed);
 }
 
 /**

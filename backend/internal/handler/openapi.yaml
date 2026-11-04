@@ -35,14 +35,13 @@ paths:
   /canvas-projects:
     get:
       tags: [canvas]
-      summary: 按分类分页读取自己的画布
-      description: 分类在计数和分页前过滤；缺省 kind 保留全部读取。未标记分类的旧画布归自由画布。
+      summary: 分页读取自己的画布
+      description: 旧版电商画布已下线，带 kind=ecommerce 的存量画布与自由画布在同一列表中返回。
       parameters:
         - {in: query, name: page, schema: {type: integer, minimum: 1}}
         - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50}}
-        - {in: query, name: kind, schema: {type: string, enum: [freeform, ecommerce]}}
       responses:
-        "200": {description: 分页信封 data 包含 projects、total、hasMore；每项包含 kind 与受限预览}
+        "200": {description: 分页信封 data 包含 projects、total、hasMore；每项包含受限预览}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
   /admin/settings/ecommerce/defaults:
@@ -80,18 +79,11 @@ paths:
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
-  /ecommerce/settings:
-    get:
-      tags: [canvas]
-      summary: 读取电商画布功能及已发布模板与公共模特
-      description: 需要登录，仅返回启用模特、全局与用途均启用的模板；不下发分析指令。业务开关不替代模型权限与额度，前端缓存最多 30 秒。
-      responses:
-        "200": {description: 标准信封 data.setting 为 EcommerceSetting，models 已过滤停用记录}
-        "401": {$ref: "#/components/responses/Error"}
   /admin/settings/ecommerce:
     get:
       tags: [admin]
-      summary: 管理员读取完整电商画布配置
+      summary: 管理员读取完整电商生图台配置
+      description: 后台页面只编辑商品档案能力与套图模板；旧版电商画布的字段（总开关、其他能力、公共模特）仍随配置保存，保存时原样提交。
       responses:
         "200": {description: 标准信封 data.setting 为 EcommerceSetting}
         "401": {$ref: "#/components/responses/Error"}
@@ -119,41 +111,6 @@ paths:
         "200": {description: 标准信封 data.setting 为上一版 EcommerceSetting}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /admin/settings/ecommerce/images:
-    post:
-      tags: [admin]
-      summary: 管理员上传公共模特参考图
-      description: 内容嗅探 PNG、JPEG、WebP，单文件最多 10 MiB；写入本地受管资源，遵守上传频率和容量配额。上传后须保存模特配置才发布。
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file: {type: string, format: binary}
-      responses:
-        "200": {description: 标准信封 data.resource 为已保存资源}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "413": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /ecommerce/models/{modelId}/images/{resourceId}:
-    get:
-      tags: [canvas]
-      summary: 登录后读取公共模特参考图
-      description: 校验模特、图片引用及功能开关；管理员可预览当前和上一版引用。复用资源分发和 Range 合同。
-      parameters:
-        - {in: path, name: modelId, required: true, schema: {type: string}}
-        - {in: path, name: resourceId, required: true, schema: {type: string}}
-      responses:
-        "200": {description: 图片内容或 access 描述}
-        "206": {description: 图片 Range 内容}
-        "307": {description: 按资源存储位置跳转}
-        "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
   /ecommerce/studio:
     get:

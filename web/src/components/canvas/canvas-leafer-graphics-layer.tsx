@@ -25,10 +25,6 @@ type CanvasLeaferGraphicsLayerProps = {
     connectingParams: ConnectionHandle | null;
     batchConnectionPreview: CanvasBatchConnectionPreview | null;
     mouseWorld: Position;
-    connectionTargetNodeId: string | null;
-    connectionTargetAnchorRatio?: number;
-    connectionTargetAnchorXRatio?: number;
-    connectionTargetHandleId?: string;
     nodeById: Map<string, CanvasNodeData>;
     selectionBox: SelectionBox | null;
     selectedNodeBounds: NodeBounds;

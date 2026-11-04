@@ -1,22 +1,4 @@
-import {
-    openEcommerceTable,
-    replaceEcommerceTableOutlineRows,
-    syncEcommerceTables,
-    ecommerceTableSource,
-    connectEcommerceTableOutputs,
-    detachEcommerceTableOutputConnections,
-    ecommerceAnalysisSnapshot,
-    ecommerceGenerationSourceSignature,
-    ecommerceSelectedOutputs,
-    ecommerceSuiteMetadata,
-    type EcommerceResultSourceSignature,
-} from "@/lib/ecommerce/ecommerce-table";
-import { CanvasEcommerceTableNodeContent } from "@/components/canvas/canvas-ecommerce-table-node";
-import { CanvasEcommerceWorkbench } from "@/components/canvas/canvas-ecommerce-workbench";
-import { useEcommerceWorkbench } from "./use-ecommerce-workbench";
-import { openEcommerceStudio } from "@/lib/ecommerce/ecommerce-studio";
 import { CanvasWorkspacePanel } from "@/components/canvas/canvas-workspace-panel";
-import { defaultCanvasWorkspaceMode, resolveCanvasKind } from "@/lib/canvas/canvas-kind";
 import { CanvasNodeResizeMotionProvider } from "@/components/canvas/canvas-node-resize-motion";
 import "@/lib/plugins/builtin/ai-art-critique";
 import "@/lib/plugins/builtin/media-conversion";
@@ -33,24 +15,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { loadAssetsForUse, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { canvasAssetHandoffIds } from "@/lib/canvas/canvas-asset-handoff";
-import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { ECOMMERCE_PRODUCT_VIEWS } from "@/lib/ecommerce/ecommerce-contract";
-import { migrateLegacyEcommerceReplicaConnections } from "@/lib/ecommerce/ecommerce-replica";
-import { ecommerceBindingImages, ecommerceBindingKey, finishEcommerceBinding } from "@/lib/ecommerce/ecommerce-binding";
-import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
-import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
-import { resolveEcommerceTableModels } from "@/lib/ecommerce/ecommerce-model-defaults";
-import { synchronizeGenerationSpec } from "@/lib/canvas/generation-contract";
-import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
-import { runBackendGenerationTask } from "@/services/api/generation-task";
-import { navigateToSettings } from "@/lib/settings-navigation";
-import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
+import { useEffectiveConfig } from "@/stores/use-config-store";
 import { createCanvasGenerationLiveProjectAdapter, registerCanvasGenerationLiveProject } from "@/services/canvas-generation-consumer";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getResource, getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
-import { imageToDataUrl, uploadImage } from "@/services/image-storage";
+import { uploadImage } from "@/services/image-storage";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
-import { isCanvasImageSourceNode, hasEmbeddedEcommerceControls } from "@/lib/canvas/canvas-image-source";
+import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import copyToClipboard from "copy-to-clipboard";
 import { nanoid } from "nanoid";
 import { canvasAppearanceBaseTheme, canvasAppearanceForTheme, DEFAULT_CANVAS_BACKGROUND_MODE, normalizeCanvasAppearance, resolveCanvasAppearance, writeCanvasAppearanceDefault, type CanvasAppearance } from "@/lib/canvas/canvas-appearance";
@@ -59,7 +31,6 @@ import { filterCanvasDisplayConnections, persistCanvasHideNodeConnections, readC
 import { summarizeCanvasContext } from "@/lib/canvas/canvas-context-summary";
 import { refreshCanvasCharacterReferenceNodes } from "@/lib/canvas/canvas-character-reference";
 import { flushAssetStorePersistence, useAssetStore, type ImageAsset } from "@/stores/use-asset-store";
-import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { flushCanvasStorePersistence } from "@/stores/canvas/use-canvas-store";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useCanvasThemeStore, useCanvasThemeScope } from "@/stores/canvas/use-canvas-theme-store";
@@ -154,30 +125,6 @@ import {
 import { resolveCanvasEmptyStateKind } from "@/lib/canvas/canvas-starter";
 import { failedImageBatchChildren, markImageBatchRetrying, reconcileImageBatchRoot, restoreUnsubmittedImageBatchChild } from "@/lib/canvas/canvas-image-batch-retry";
 import { cinematicStoryboardColumns, createCanvasNode, getInputSummary, isHiddenBatchChild } from "@/lib/canvas/canvas-project-domain";
-import { canSaveCanvasImageAsModel, ecommerceModelPresetPrompt, type EcommerceModelPreset } from "@/lib/ecommerce/ecommerce-models";
-import { resolveEcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { ecommerceImageSettings } from "@/lib/ecommerce/ecommerce-image-generation";
-import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities";
-import {
-    ecommerceProductReferenceImages,
-    ecommerceProductReferenceSignature,
-    ecommerceReferenceImageGuide,
-    ecommerceRowPromptIssue,
-    connectedStyleReferenceNodes,
-    resolveEcommerceInputs,
-    withImageAsEcommerceReference,
-} from "@/lib/ecommerce/ecommerce-canvas";
-import { buildEcommerceProfileDraftPrompt, parseEcommerceProfileDraft } from "@/lib/ecommerce/ecommerce-draft";
-import { ecommerceOneClickFlow, ecommerceOneClickScreens, type EcommerceOneClickFlowId } from "@/lib/ecommerce/ecommerce-oneclick";
-import { ecommerceBriefBlock, ecommerceBriefRows, ecommerceBriefSlicePlatform } from "@/lib/ecommerce/ecommerce-brief";
-import { ecommerceSuiteDraftPrompt, ecommerceSuiteRows, parseEcommerceSuiteDraft, reconcileEcommerceSuiteDraftRows, type EcommerceSuite, type EcommerceSuiteRow } from "@/lib/ecommerce/ecommerce-suite";
-import { ecommerceTeardownOutlineToSuiteRows } from "@/lib/ecommerce/ecommerce-teardown";
-import { createEcommerceStyleReference, ecommerceSuiteTargets } from "@/lib/ecommerce/ecommerce-canvas-preset";
-import { isEcommerceInputHandle, withEcommerceInputConnection } from "@/lib/ecommerce/ecommerce-canvas";
-import { ecommerceResultTextMode, rasterizeEcommerceComposition, rasterizeEcommerceDetailPage } from "@/lib/ecommerce/ecommerce-rasterize";
-import { generationErrorMessage } from "@/lib/generation-error";
-import { useEcommerceSuitePrompt } from "@/stores/use-ecommerce-suite-prompt";
-import { CanvasEcommerceModelLibraryModal } from "@/components/canvas/canvas-ecommerce-model-library";
 import { bindStoryboardKeyframes, storyboardKeyframeTime, storyboardRowsFromBatchTable } from "@/lib/canvas/canvas-batch-storyboard";
 import { stampCanvasNodeChanges } from "@/lib/canvas/canvas-node-timestamps";
 import { useCanvasContentUpdates } from "./use-canvas-content-updates";
@@ -185,8 +132,7 @@ import { canvasAssetHandoffAttempt, finalizeCanvasAssetHandoff, uninsertedCanvas
 import { batchSourceRestriction } from "@/lib/canvas/canvas-batch-connection";
 import { deriveStoryboardPipelineProgress } from "@/lib/canvas/canvas-storyboard-progress";
 import { CanvasOperationChangeToast, CanvasMergeStatusToast, CanvasUploadStatusToast } from "./canvas-project-feedback";
-import { buildGenerationConfig, getGenerationCount } from "@/lib/canvas/canvas-project-generation";
-import { createCanvasBatchInputSnapshot } from "@/lib/canvas/canvas-batch-input-snapshot";
+import { getGenerationCount } from "@/lib/canvas/canvas-project-generation";
 import { canvasReferenceImageDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { cancelGenerationTask } from "@/services/api/task-center";
 import { CanvasTopBar, type CanvasProjectView } from "./canvas-project-top-bar";
@@ -266,27 +212,6 @@ const CanvasDrawingEditorModal = lazy(() => import("@/components/canvas/canvas-d
 
 const NODE_STATUS_SUCCESS = "success" as const;
 const EMPTY_RESOURCE_REFERENCES: CanvasResourceReference[] = [];
-const ECOMMERCE_WORKSPACE_MODE_STORAGE_PREFIX = "yingce:canvas-workspace-mode:";
-
-function readCanvasWorkspaceModePreference(projectId: string): CanvasWorkspaceMode | null {
-    if (!projectId || typeof window === "undefined") return null;
-    try {
-        const stored = window.localStorage.getItem(`${ECOMMERCE_WORKSPACE_MODE_STORAGE_PREFIX}${projectId}`);
-        return stored === "simple" || stored === "professional" ? stored : null;
-    } catch {
-        return null;
-    }
-}
-
-function persistCanvasWorkspaceModePreference(projectId: string, mode: CanvasWorkspaceMode) {
-    if (!projectId || typeof window === "undefined") return;
-    try {
-        window.localStorage.setItem(`${ECOMMERCE_WORKSPACE_MODE_STORAGE_PREFIX}${projectId}`, mode);
-    } catch {
-        // localStorage unavailable: the in-memory override still keeps this session usable.
-    }
-}
-
 function visibleGenerationBatch(node: CanvasNodeData) {
     const batches = node.metadata?.generationBatches || [];
     for (let index = batches.length - 1; index >= 0; index -= 1) {
@@ -323,8 +248,6 @@ function CanvasViewportPage() {
     const assetHandoffRef = useRef("");
 
     const effectiveConfig = useEffectiveConfig();
-    const effectiveConfigRef = useRef(effectiveConfig);
-    effectiveConfigRef.current = effectiveConfig;
     const assets = useAssetStore((state) => state.assets);
     const assetsHydrated = useAssetStore((state) => state.hydrated);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
@@ -363,24 +286,14 @@ function CanvasViewportPage() {
     const [projectLoaded, setProjectLoaded] = useState(false);
     useLayoutEffect(() => {
         if (!projectLoaded) return;
-        const migratedConnections = migrateLegacyEcommerceReplicaConnections(nodesRef.current, connectionsRef.current);
-        const nextNodes = syncBatchColumnReferences(syncEcommerceTables(nodesRef.current, migratedConnections), migratedConnections);
-        const nextConnections = reconcileBatchCellConnections(nextNodes, migratedConnections);
+        const nextNodes = syncBatchColumnReferences(nodesRef.current, connectionsRef.current);
+        const nextConnections = reconcileBatchCellConnections(nextNodes, connectionsRef.current);
         if (nextNodes !== nodesRef.current) setNodes(nextNodes);
         if (nextConnections !== connectionsRef.current) setConnections(nextConnections);
     }, [projectLoaded, nodes, connections, setNodes, setConnections]);
+    const workspaceMode: CanvasWorkspaceMode = "professional";
     const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
     const [shareModalOpen, setShareModalOpen] = useState(false);
-    const [ecommerceWorkbenchOpen, setEcommerceWorkbenchOpen] = useState(false);
-    const [ecommerceWorkbenchStudioId, setEcommerceWorkbenchStudioId] = useState<string | undefined>();
-    const [ecommerceWorkbenchCapability, setEcommerceWorkbenchCapability] = useState<import("@/lib/ecommerce/ecommerce-capabilities").EcommerceCapability>("planning");
-    useLayoutEffect(() => {
-        setEcommerceWorkbenchOpen(false);
-        setEcommerceWorkbenchStudioId(undefined);
-    }, [projectId]);
-    const ecommerceWorkbenchRunRef = useRef<ReturnType<typeof useEcommerceWorkbench>["run"] | null>(null);
-    const ecommerceWorkbenchStopRef = useRef<(() => void) | null>(null);
-    const ecommerceWorkbenchRunningRef = useRef<((nodeId: string) => boolean) | null>(null);
     const [tapNowImportOpen, setTapNowImportOpen] = useState(false);
     const [nodeSearchOpen, setNodeSearchOpen] = useState(false);
     const [toolbarNodeId, setToolbarNodeId] = useState<string | null>(null);
@@ -393,8 +306,6 @@ function CanvasViewportPage() {
     const [characterLibraryPosition, setCharacterLibraryPosition] = useState<Position | undefined>();
     const [drawingNodeId, setDrawingNodeId] = useState<string | null>(null);
     const [stylePickerOpen, setStylePickerOpen] = useState(false);
-    const [modelLibraryOpen, setModelLibraryOpen] = useState(false);
-    const [modelImageToAdd, setModelImageToAdd] = useState<{ storageKey: string; name: string } | null>(null);
     // 新建预演台镜头必须先选模板：null 表示未在选择中，undefined position 表示用画布中心。
     const [previsTemplateRequest, setPrevisTemplateRequest] = useState<{ position?: Position } | null>(null);
     const [infoNodeId, setInfoNodeId] = useState<string | null>(null);
@@ -551,7 +462,7 @@ function CanvasViewportPage() {
     }, [openAssistant]);
 
     const sendSelectionToAgent = useCallback(
-        (nodeId?: string, instruction?: string) => {
+        (nodeId?: string) => {
             const ids = nodeId ? [nodeId] : Array.from(selectedNodeIdsRef.current);
             const references = ids.map((id) => agentMentionReferences.find((reference) => reference.nodeId === id)).filter((reference): reference is CanvasResourceReference => Boolean(reference));
             if (!references.length) return;
@@ -560,12 +471,7 @@ function CanvasViewportPage() {
                 selectedNodeIdsRef.current = selection;
                 setSelectedNodeIds(selection);
             }
-            const text = `${references.map(canvasResourceMentionToken).join(" ")}${
-                instruction?.trim()
-                    ? `
-${instruction.trim()}`
-                    : " "
-            }`;
+            const text = `${references.map(canvasResourceMentionToken).join(" ")} `;
             setAgentPrefillRequest((current) => ({ id: (current?.id ?? 0) + 1, text }));
             openAgent();
             setContextMenu(null);
@@ -620,28 +526,6 @@ ${instruction.trim()}`
         [persistLocalEdits, projectId, setConnections, setNodes],
     );
     const linkedProjectId = shortDramaEnabled ? currentProject?.projectId || "" : "";
-    // 画布种类决定节点菜单里出现哪一套节点（见 lib/canvas/canvas-kind.ts）。
-    // 缺省是自由画布：老画布没有 kind 字段，它们是自由画布。
-    const canvasKind = resolveCanvasKind(currentProject?.kind);
-    const [workspaceModeOverride, setWorkspaceModeOverride] = useState<{ projectId: string; mode: CanvasWorkspaceMode } | null>(null);
-    const persistedWorkspaceMode = useMemo(() => (canvasKind === "ecommerce" ? readCanvasWorkspaceModePreference(projectId) : null), [canvasKind, projectId]);
-    const workspaceMode = canvasKind === "ecommerce" && workspaceModeOverride?.projectId === projectId ? workspaceModeOverride.mode : (persistedWorkspaceMode ?? defaultCanvasWorkspaceMode(canvasKind));
-    const showProfessionalControls = canvasKind !== "ecommerce" || workspaceMode === "professional";
-    const changeWorkspaceMode = useCallback(
-        (mode: CanvasWorkspaceMode) => {
-            setWorkspaceModeOverride({ projectId, mode });
-            persistCanvasWorkspaceModePreference(projectId, mode);
-            if (mode === "simple") setEcommerceWorkbenchOpen(false);
-        },
-        [projectId],
-    );
-    useEffect(() => {
-        if (canvasKind === "ecommerce")
-            void useEcommerceSettings
-                .getState()
-                .load()
-                .catch((error) => message.error(error instanceof Error ? error.message : "电商配置读取失败"));
-    }, [canvasKind, message]);
     const linkedProjectQuery = useQuery({ queryKey: ["project", linkedProjectId], queryFn: () => getProject(linkedProjectId), enabled: Boolean(linkedProjectId) });
     const refetchLinkedProject = linkedProjectQuery.refetch;
     const archiveNodesToLinkedFolder = useCallback(
@@ -809,7 +693,6 @@ ${instruction.trim()}`
         fitCanvasContent,
         fitCanvasSelection,
         focusCanvasImageNode,
-        focusCanvasImageNodes,
         focusCanvasNode,
         getCanvasCenter,
         handleCanvasDoubleClick,
@@ -920,7 +803,6 @@ ${instruction.trim()}`
         handleProjectChapterInsert,
         handleUploadFiles,
         handleUploadRequest,
-        requestDeferredImageUpload,
         imageInputRef,
         openAssetsAtPosition,
         pasteSystemClipboard,
@@ -1039,10 +921,6 @@ ${instruction.trim()}`
         openPanoramaConfig,
         createPanoramaViewerWithConfig,
         addPanoramaCaptureNode,
-        spawnEcommerceMaterials,
-        spawnEcommerceShotOutputs,
-        exportEcommerceLayout,
-        exportEcommerceDetailPage,
         panoramaConfigNodeId,
         setPanoramaConfigNodeId,
         generateEmotionNode,
@@ -1280,9 +1158,6 @@ ${instruction.trim()}`
     const {
         cancelPendingConnectionCreate,
         closeConnectionCreateMenu,
-        connectionTargetAnchorRatio,
-        connectionTargetAnchorXRatio,
-        connectionTargetHandleId,
         connectionTargetNodeId,
         connectionApproach,
         connectionReplaceHover,
@@ -1759,342 +1634,8 @@ ${instruction.trim()}`
         },
         [updateNodeFromContent],
     );
-    /**
-     * 电商创作：把画布上的一张图存进模特库。
-     *
-     * 存的是 storageKey，不是 url——直传失败退回本机时 url 是个重启就失效的
-     * blob URL，存它等于模特库过一夜全变空白。
-     */
-    const saveImageAsModel = useCallback(
-        (node: CanvasNodeData) => {
-            const ref = node.metadata?.storageKey;
-            if (!ref || !canSaveCanvasImageAsModel(node)) {
-                message.warning("这张图还没落盘，等生成完成后再存");
-                return;
-            }
-            setModelImageToAdd({ storageKey: ref, name: node.title || "新模特" });
-            setModelLibraryOpen(true);
-        },
-        [message],
-    );
-
-    const addEcommerceInput = useCallback(
-        (product: CanvasNodeData, handle: string) => {
-            if (!isEcommerceInputHandle(handle)) return;
-            requestDeferredImageUpload(() => {
-                const currentProduct = nodesRef.current.find((item) => item.id === product.id);
-                if (!currentProduct) return undefined;
-                const plan = createEcommerceStyleReference(currentProduct, nodesRef.current, handle);
-                if (handle.startsWith("product-view:")) {
-                    const view = ECOMMERCE_PRODUCT_VIEWS.find((item) => handle === `product-view:${item.id}`);
-                    plan.node.title = view?.label || "商品图";
-                    plan.node.metadata = { ...plan.node.metadata, ecommerceReferenceRole: undefined };
-                }
-                const wrapper = Array.from(document.querySelectorAll<HTMLElement>("[data-node-id]")).find((element) => element.dataset.nodeId === product.id);
-                const slot = Array.from(wrapper?.querySelectorAll<HTMLElement>("[data-ecommerce-input]") || []).find((element) => element.dataset.ecommerceInput === handle);
-                const rect = wrapper?.getBoundingClientRect();
-                const pin = slot?.querySelector(".ecom-input-pin")?.getBoundingClientRect();
-                const connection = { ...plan.connection, ...(rect?.width && rect.height && pin ? { toAnchorRatio: (pin.top + pin.height / 2 - rect.top) / rect.height, toAnchorXRatio: (pin.left + pin.width / 2 - rect.left) / rect.width } : {}) };
-                const nextNodes = [...nodesRef.current, plan.node];
-                const nextConnections = withEcommerceInputConnection(connectionsRef.current, connection);
-                nodesRef.current = nextNodes;
-                connectionsRef.current = nextConnections;
-                setNodes(nextNodes);
-                setConnections(nextConnections);
-                setSelectedNodeIds(new Set([plan.node.id]));
-                setSelectedConnectionId(null);
-                return plan.node.id;
-            });
-        },
-        [nodesRef, requestDeferredImageUpload, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds],
-    );
-
-    const addEcommerceReference = useCallback(
-        (product: CanvasNodeData) => {
-            const used = new Set(connectionsRef.current.filter((edge) => edge.toNodeId === product.id).map((edge) => edge.toHandleId));
-            let index = 0;
-            while (used.has(`visual-reference:${index}`)) index += 1;
-            addEcommerceInput(product, `visual-reference:${index}`);
-        },
-        [addEcommerceInput],
-    );
-
-    const ecommerceInputAnchor = (element: Element) => {
-        const slot = element.closest("[data-ecommerce-input]");
-        const rect = slot?.closest("[data-node-id]")?.getBoundingClientRect();
-        const pin = slot?.querySelector(".ecom-input-pin")?.getBoundingClientRect();
-        return rect?.width && rect.height && pin ? ([(pin.top + pin.height / 2 - rect.top) / rect.height, (pin.left + pin.width / 2 - rect.left) / rect.width] as const) : ([undefined, undefined] as const);
-    };
-    const connectEcommerceInput = useCallback(
-        (event: React.PointerEvent, nodeId: string, handle: string) => {
-            const [y, x] = ecommerceInputAnchor(event.currentTarget);
-            handleConnectStart(event, nodeId, "target", handle, y, x);
-        },
-        [handleConnectStart],
-    );
-    const dropEcommerceInput = useCallback(
-        (event: React.PointerEvent, nodeId: string, handle: string) => {
-            const [y, x] = ecommerceInputAnchor(event.currentTarget);
-            handleConnectDrop(event, nodeId, handle, y, x);
-        },
-        [handleConnectDrop],
-    );
-    const disconnectEcommerceInput = useCallback(
-        (nodeId: string, handle: string, sourceId: string) => {
-            const next = connectionsRef.current.filter((edge) => !(edge.toNodeId === nodeId && edge.fromNodeId === sourceId && (handle ? edge.toHandleId === handle : !edge.toHandleId)));
-            connectionsRef.current = next;
-            setConnections(next);
-            const product = nodesRef.current.find((node) => node.id === nodeId);
-            if (product?.metadata?.productProfile && handle.startsWith("product-view:")) {
-                const views = { ...product.metadata.productProfile.views };
-                for (const key of ECOMMERCE_PRODUCT_VIEWS) if (views[key.id] === sourceId || handle === `product-view:${key.id}`) views[key.id] = "";
-                updateNodeMetadataFromContent(nodeId, { productProfile: { ...product.metadata.productProfile, views } });
-            }
-            setSelectedConnectionId(null);
-        },
-        [setConnections, updateNodeMetadataFromContent],
-    );
-    const updateEcommerceInputAnchor = useCallback(
-        (nodeId: string, handle: string, y: number, x: number) => {
-            if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-            let changed = false;
-            const next = connectionsRef.current.map((edge) => {
-                if (edge.toNodeId !== nodeId || edge.toHandleId !== handle || (Math.abs((edge.toAnchorRatio ?? -1) - y) < 0.001 && Math.abs((edge.toAnchorXRatio ?? -1) - x) < 0.001)) return edge;
-                changed = true;
-                return { ...edge, toAnchorRatio: y, toAnchorXRatio: x };
-            });
-            if (changed) {
-                connectionsRef.current = next;
-                setConnections(next);
-            }
-        },
-        [setConnections],
-    );
-
-    const useImageAsStyleReference = useCallback(
-        (node: CanvasNodeData) => {
-            const productIds = nodesRef.current.filter((item) => item.type === CanvasNodeType.Product).map((item) => item.id);
-            const next = withImageAsEcommerceReference(connectionsRef.current, node.id, productIds);
-            connectionsRef.current = next;
-            setConnections(next);
-            updateNodeMetadataFromContent(node.id, { ecommerceReferenceRole: "style" });
-        },
-        [setConnections, updateNodeMetadataFromContent],
-    );
-
-    /**
-     * 电商创作：公共起手式出一张模特参考图。
-     *
-     * 落一个图片节点再提交生成，而不是在弹窗里悄悄出一张塞进库：
-     * 出图要花积分，用户得看得见它、能重出、能删。出完在图上点「存为模特」入库。
-     */
-    const generateEcommerceModelPreset = useCallback(
-        async (preset: EcommerceModelPreset) => {
-            const prompt = ecommerceModelPresetPrompt(preset);
-            const imageNode = createCanvasNode(CanvasNodeType.Image, getCanvasCenter(), { prompt });
-            imageNode.title = preset.name;
-            setNodes((current) => [...current, imageNode]);
-            setSelectedNodeIds(new Set([imageNode.id]));
-            setSelectedConnectionId(null);
-            await generateNodeRef.current?.(imageNode.id, "image", prompt, { skipDuplicateConfirmation: true });
-        },
-        [getCanvasCenter, setNodes, setSelectedConnectionId, setSelectedNodeIds],
-    );
-
-    /**
-     * 一键流程的收尾：全屏出完 → 装订成详情页长图并切片。
-     *
-     * 装订是纯装配：各屏已经出好了，长图只是按顺序接起来、按平台上限切开。
-     * 交给模型做才是错的——它会顺手重画每一屏，商品就不一致了。
-     * 只有明确的 local 结果叠字；模型带字和历史未知结果保留原图。
-     */
-    const bindingRef = useRef(new Set<string>());
-    const ecommerceResultSourceSignature = useCallback(
-        (source: CanvasNodeData, row: EcommerceSuiteRow, image: CanvasNodeData, graphNodes = nodesRef.current, graphConnections = connectionsRef.current) =>
-            ecommerceGenerationSourceSignature({ source, row, target: image, nodes: graphNodes, connections: graphConnections, config: effectiveConfig, customModels: useEcommerceModelLibrary.getState().models }),
-        [connectionsRef, effectiveConfig, nodesRef],
-    );
-    const bindEcommerceSuite = useCallback(
-        async (node: CanvasNodeData, rows: EcommerceSuiteRow[]) => {
-            const bindingProduct = ecommerceTableSource(node, nodesRef.current, connectionsRef.current).product;
-            const bindingPlan = bindingProduct.metadata?.ecommerceOneClick;
-            if (bindingRef.current.has(bindingProduct.id) || (bindingPlan && bindingRef.current.has(ecommerceBindingKey(bindingProduct.id, bindingPlan)))) throw new Error("正在装订，请稍候");
-            bindingRef.current.add(bindingProduct.id);
-            const scope = getActiveUserScope();
-            try {
-                const setting = await useEcommerceSettings.getState().load();
-                if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消装订");
-                const { source, product } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
-                if (product.id !== bindingProduct.id) throw new Error("商品连接已变化，请重新装订");
-                const flow = ecommerceOneClickFlow(source.metadata?.ecommerceFlowId);
-                if (!flow?.bind || !setting.enabled || !setting.autoBindEnabled || !setting.flows[flow.id].enabled) throw new Error("当前用途未开放长图装订");
-                const platform = ecommerceBriefSlicePlatform(source.metadata?.ecommerceBrief, source.metadata?.ecommercePlatform || product.metadata?.ecommercePlatform);
-                const outputs = ecommerceSelectedOutputs(source, rows, nodesRef.current, connectionsRef.current, (row, image) => ecommerceResultSourceSignature(source, row, image));
-                const enabledRows = rows.filter((row) => row.enabled !== false);
-                const snapshot = JSON.stringify([product.id, platform, outputs.map((image) => [image.id, image.metadata?.storageKey, ecommerceResultTextMode(image)]), enabledRows.map((row) => [row.slotId, row.copy, row.layout])]);
-                // 手动采用结果后接管等待/失败的自动计划，避免旧计划永久阻塞或重复导出。
-                const pendingPlan = product.metadata?.ecommerceOneClick;
-                if (pendingPlan) setNodes((current) => finishEcommerceBinding(current, product.id, ecommerceBindingKey(product.id, pendingPlan)));
-                const urls: string[] = [];
-                for (const [index, image] of outputs.entries()) {
-                    const imageUrl = await imageToDataUrl({ url: image.metadata?.content, storageKey: image.metadata?.storageKey, name: image.title });
-                    const row = enabledRows[index];
-                    urls.push(ecommerceResultTextMode(image) === "local" ? await rasterizeEcommerceComposition({ imageUrl, copy: row?.copy, layout: row?.layout }) : imageUrl);
-                }
-                const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform, code: product.metadata?.productProfile?.name });
-                if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消装订");
-                const validateSelection = () => {
-                    const { source: latest, product: latestProduct } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
-                    if (latestProduct.metadata?.ecommerceOneClick) throw new Error("自动装订计划已变化，请重新装订");
-                    const selected = ecommerceSelectedOutputs(latest, latest.metadata?.ecommerceSuite?.rows || [], nodesRef.current, connectionsRef.current, (row, image) => ecommerceResultSourceSignature(latest, row, image));
-                    const latestRows = (latest.metadata?.ecommerceSuite?.rows || []).filter((row) => row.enabled !== false);
-                    const latestPlatform = ecommerceBriefSlicePlatform(latest.metadata?.ecommerceBrief, latest.metadata?.ecommercePlatform || latestProduct.metadata?.ecommercePlatform);
-                    if (snapshot !== JSON.stringify([latestProduct.id, latestPlatform, selected.map((image) => [image.id, image.metadata?.storageKey, ecommerceResultTextMode(image)]), latestRows.map((row) => [row.slotId, row.copy, row.layout])]))
-                        throw new Error("商品、切片规格、采用结果、文案、版式或顺序已变化，请重新装订");
-                };
-                validateSelection();
-                if (result.plan.conflicts.length || result.plan.overTotalHeight) throw new Error("当前图片无法按平台限制安全切片，请使用交付节点检查尺寸与切点");
-                await exportEcommerceDetailPage(source, result.longImage.dataUrl, result.pieces, result.fileNames, validateSelection);
-                message.success("已按采用版本生成长图与切片");
-            } finally {
-                bindingRef.current.delete(bindingProduct.id);
-            }
-        },
-        [ecommerceResultSourceSignature, exportEcommerceDetailPage, message, setNodes],
-    );
-    useEffect(() => {
-        if (!projectLoaded || !exportEcommerceDetailPage) return;
-        for (const product of nodes.filter((item) => item.type === CanvasNodeType.Product && item.metadata?.ecommerceOneClick)) {
-            const plan = product.metadata!.ecommerceOneClick!;
-            const bindingKey = ecommerceBindingKey(product.id, plan);
-            if (plan.status === "failed" || bindingRef.current.has(product.id) || bindingRef.current.has(bindingKey) || !plan.nodeIds.length) continue;
-            const terminalImage = plan.nodeIds.map((id) => nodesRef.current.find((node) => node.id === id)).find((node) => node?.metadata?.status === "error" || node?.metadata?.taskStatus === "failed" || node?.metadata?.taskStatus === "cancelled");
-            if (terminalImage) {
-                const error = terminalImage.metadata?.taskStatus === "cancelled" ? "本轮图片生成已停止，请重试" : "本轮有图片生成失败，请重试失败图片";
-                setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey, error));
-                continue;
-            }
-            const ready = ecommerceBindingImages(plan, nodesRef.current);
-            if (!ready) continue;
-            const source = nodesRef.current.find((item) => item.type === CanvasNodeType.BatchTable && item.metadata?.ecommerceProductId === product.id && item.metadata.ecommerceFlowId === plan.flow);
-            const suite = source?.metadata?.ecommerceSuite;
-            if (!source || source.metadata?.locked || suite?.flow !== plan.flow) {
-                setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey, "自动装订找不到当前创作表，请重试"));
-                continue;
-            }
-            const enabledRows = suite.rows.filter((row) => row.enabled !== false);
-            const imagesBySlot = new Map(plan.slotIds.map((slotId, index) => [slotId, ready[index]]));
-            const selections: { row: EcommerceSuiteRow; image: CanvasNodeData }[] = [];
-            for (const row of enabledRows) {
-                const image = imagesBySlot.get(row.slotId);
-                if (image) selections.push({ row, image });
-            }
-            if (!enabledRows.length || selections.length !== enabledRows.length) {
-                setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey, "当前创作表与本轮生成结果不一致，请重新生成"));
-                continue;
-            }
-            if (selections.some(({ row, image }) => image.metadata?.batchResultInputSignature !== ecommerceResultSourceSignature(source, row, image))) {
-                setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey, "创作方案已变化，请重新生成后再装订"));
-                continue;
-            }
-            const sourceSignature = JSON.stringify([source.id, source.type, source.metadata?.locked, source.metadata?.ecommerceProductId, source.metadata?.ecommerceFlowId, suite]);
-            const currentSourceSignature = () => {
-                const current = nodesRef.current.find((item) => item.id === source.id);
-                return JSON.stringify([current?.id, current?.type, current?.metadata?.locked, current?.metadata?.ecommerceProductId, current?.metadata?.ecommerceFlowId, current?.metadata?.ecommerceSuite]);
-            };
-            bindingRef.current.add(product.id);
-            bindingRef.current.add(bindingKey);
-            const scope = getActiveUserScope();
-            void (async () => {
-                try {
-                    const urls: string[] = [];
-                    for (const { row, image } of selections) {
-                        const imageUrl = await imageToDataUrl({ url: image.metadata?.content, storageKey: image.metadata?.storageKey, name: image.title });
-                        urls.push(ecommerceResultTextMode(image) === "local" ? await rasterizeEcommerceComposition({ imageUrl, copy: row.copy, layout: row.layout }) : imageUrl);
-                    }
-                    const platform = ecommerceBriefSlicePlatform(source.metadata?.ecommerceBrief, plan.platform || product.metadata?.ecommercePlatform);
-                    const result = await rasterizeEcommerceDetailPage({ imageUrls: urls, platform, code: product.metadata?.productProfile?.name });
-                    if (scope !== getActiveUserScope()) return;
-                    const validatePlan = () => {
-                        if (currentSourceSignature() !== sourceSignature) throw new Error("创作表已变化，已取消旧装订");
-                        const currentPlan = nodesRef.current.find((item) => item.id === product.id)?.metadata?.ecommerceOneClick;
-                        if (!currentPlan || ecommerceBindingKey(product.id, currentPlan) !== bindingKey) throw new Error("装订计划已取消或替换");
-                        const currentImages = ecommerceBindingImages(currentPlan, nodesRef.current);
-                        if (
-                            !currentImages ||
-                            currentImages.length !== ready.length ||
-                            ready.some((image, index) => {
-                                const current = currentImages[index];
-                                return (
-                                    current.id !== image.id ||
-                                    current.metadata?.storageKey !== image.metadata?.storageKey ||
-                                    current.metadata?.content !== image.metadata?.content ||
-                                    current.metadata?.taskId !== image.metadata?.taskId ||
-                                    ecommerceResultTextMode(current) !== ecommerceResultTextMode(image)
-                                );
-                            })
-                        )
-                            throw new Error("装订图片已变化，请重新装订");
-                        const currentSource = nodesRef.current.find((item) => item.id === source.id);
-                        const currentRows = new Map(currentSource?.metadata?.ecommerceSuite?.rows.map((row) => [row.slotId, row]));
-                        if (
-                            !currentSource ||
-                            currentPlan.slotIds.some((slotId, index) => {
-                                const row = currentRows.get(slotId);
-                                const image = currentImages[index];
-                                return !row || image.metadata?.batchResultInputSignature !== ecommerceResultSourceSignature(currentSource, row, image);
-                            })
-                        )
-                            throw new Error("商品事实、模特、参考图或生成配置已变化，请重新生成后再装订");
-                    };
-                    validatePlan();
-                    await exportEcommerceDetailPage(product, result.longImage.dataUrl, result.pieces, result.fileNames, validatePlan);
-                    validatePlan();
-                    setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey));
-                    message.success(`已装订：${result.longImage.height}px 长图 + ${result.pieces.length} 张切片`);
-                } catch (error) {
-                    if (scope !== getActiveUserScope() || currentSourceSignature() !== sourceSignature) return;
-                    message.error(generationErrorMessage(error));
-                    setNodes((current) => finishEcommerceBinding(current, product.id, bindingKey, generationErrorMessage(error)));
-                } finally {
-                    bindingRef.current.delete(bindingKey);
-                    bindingRef.current.delete(product.id);
-                }
-            })();
-        }
-    }, [ecommerceResultSourceSignature, exportEcommerceDetailPage, message, nodes, projectLoaded, setNodes]);
-
     const canvasNodeActions = useMemo<CanvasNodeActionContextValue>(
         () => ({
-            workspaceMode,
-            stopEcommerceWorkbench: () => ecommerceWorkbenchStopRef.current?.(),
-            isEcommerceWorkbenchRunning: (nodeId) => ecommerceWorkbenchRunningRef.current?.(nodeId) || false,
-            runEcommerceWorkbench: (request) => {
-                if (!ecommerceWorkbenchRunRef.current) return Promise.reject(new Error("电商工作台尚未就绪"));
-                return ecommerceWorkbenchRunRef.current(request);
-            },
-            openEcommerceWorkbench:
-                canvasKind === "ecommerce" && workspaceMode === "professional"
-                    ? (node, capability = "planning") => {
-                          setEcommerceWorkbenchStudioId(node.id);
-                          setEcommerceWorkbenchCapability(capability);
-                          setEcommerceWorkbenchOpen(true);
-                      }
-                    : undefined,
-            openEcommerceStudio:
-                canvasKind === "ecommerce" && workspaceMode === "professional"
-                    ? (product) => {
-                          try {
-                              const result = openEcommerceStudio(nodesRef.current, connectionsRef.current, product.id);
-                              setNodes(result.nodes);
-                              setConnections(result.connections);
-                              setSelectedNodeIds(new Set([result.studio.id]));
-                              focusCanvasNode(result.studio.id);
-                          } catch (error) {
-                              message.error(error instanceof Error ? error.message : "创建生图台失败");
-                          }
-                      }
-                    : undefined,
             upload: replaceCanvasNodeMedia,
             download: downloadNodeImage,
             duplicate: duplicateNodeFromContent,
@@ -2105,130 +1646,24 @@ ${instruction.trim()}`
             openArtCritique,
             addPanoramaCaptureNode,
             extractLayerMaterials,
-            spawnEcommerceMaterials: async (node, planId) => {
-                await spawnEcommerceMaterials(node, planId);
-            },
-            generateEcommerceMaterials: async (node, planId) => {
-                await generateEcommerceMaterialsRef.current?.(node, planId);
-            },
-            exportEcommerceLayout,
-            exportEcommerceDetailPage,
-            reversePromptFromNode: (node, prompt) => createImageReversePromptNodes(node, prompt),
-            draftWithAgent: (node, instruction) => sendSelectionToAgent(node.id, instruction),
-            generateEcommerceNode: async (node, mode, prompt) => {
-                await generateNodeRef.current?.(node.id, mode, prompt, { skipDuplicateConfirmation: true });
-            },
-            generateEcommerceShotSet: async (node, shotIds) => {
-                await generateEcommerceShotSetRef.current?.(node, shotIds);
-            },
-            saveImageAsModel,
-            addEcommerceReference,
-            addEcommerceInput,
-            connectEcommerceInput,
-            dropEcommerceInput,
-            disconnectEcommerceInput,
-            updateEcommerceInputAnchor,
-            viewImage: (node) => setPreviewNodeId(node.id),
-            focusNode: focusCanvasNode,
-            generateEcommerceModelPreset,
-            openEcommerceTable: (node, flowId) => {
-                try {
-                    const plan = openEcommerceTable(nodesRef.current, connectionsRef.current, node.id, flowId);
-                    setNodes(plan.nodes);
-                    setConnections(plan.connections);
-                    setSelectedNodeIds(new Set([plan.table.id]));
-                    focusCanvasNode(plan.table.id);
-                } catch (error) {
-                    message.error(error instanceof Error ? error.message : "创建创作表失败");
-                }
-            },
-            openEcommerceTableFromOutline: (teardownNode, productNode) => {
-                const resolveTarget = () => {
-                    const currentTeardown = nodesRef.current.find((item) => item.id === teardownNode.id && item.type === CanvasNodeType.Teardown);
-                    const currentProduct = nodesRef.current.find((item) => item.id === productNode.id && item.type === CanvasNodeType.Product);
-                    if (!currentTeardown) throw new Error("竞品拆解节点已不存在");
-                    if (!currentProduct) throw new Error("目标商品已不存在");
-                    if (currentProduct.metadata?.locked) throw new Error("目标商品已锁定");
-                    const rows = ecommerceTeardownOutlineToSuiteRows((currentTeardown.metadata?.ecommerceTeardown?.outline || []).filter((row) => row.title.trim()));
-                    if (!rows.length) throw new Error("竞品拆解还没有可写入的详情页大纲");
-                    const connected = connectionsRef.current.some((edge) => (edge.fromNodeId === currentTeardown.id && edge.toNodeId === currentProduct.id) || (edge.fromNodeId === currentProduct.id && edge.toNodeId === currentTeardown.id));
-                    if (!connected) throw new Error("请先把竞品拆解节点连接到目标商品");
-                    const table = nodesRef.current.find((item) => item.type === CanvasNodeType.BatchTable && item.metadata?.ecommerceProductId === currentProduct.id && item.metadata.ecommerceFlowId === "detail");
-                    if (table?.metadata?.locked) throw new Error("详情页创作表已锁定");
-                    return { currentProduct, table, rows };
-                };
-                const applyOutline = () => {
-                    try {
-                        const { currentProduct, rows } = resolveTarget();
-                        const plan = openEcommerceTable(nodesRef.current, connectionsRef.current, currentProduct.id, "detail");
-                        const table = replaceEcommerceTableOutlineRows(plan.table, rows);
-                        setNodes(plan.nodes.map((item) => (item.id === table.id ? table : item)));
-                        setConnections(detachEcommerceTableOutputConnections(plan.connections, table.id));
-                        setSelectedNodeIds(new Set([table.id]));
-                        focusCanvasNode(table.id);
-                        message.success("已将竞品大纲写入详情页创作表");
-                    } catch (error) {
-                        message.error(error instanceof Error ? error.message : "写入详情页创作表失败");
-                    }
-                };
-                try {
-                    const { table } = resolveTarget();
-                    if (!table) {
-                        applyOutline();
-                        return;
-                    }
-                    modal.confirm({
-                        title: "替换现有详情页屏次？",
-                        content: "将用确认时的最新竞品大纲替换当前详情页屏次，并解除旧结果与创作表的连接；生成图片会保留为独立素材，模型、尺寸、画质及分析设置不变。",
-                        okText: "确认替换",
-                        cancelText: "取消",
-                        onOk: applyOutline,
-                    });
-                } catch (error) {
-                    message.error(error instanceof Error ? error.message : "写入详情页创作表失败");
-                }
-            },
-            generateEcommerceSuite: async (node, flowId, slotIds, rows, completeSuite) => Boolean(await generateEcommerceSuiteRef.current?.(node, flowId, slotIds, rows, completeSuite)),
-            draftEcommerceSuite: (node, flowId, analysisModel, rows) => draftEcommerceSuiteRef.current?.(node, flowId, analysisModel, rows),
-            reverseEcommerceSuite: (node, flowId, analysisModel) => reverseEcommerceSuiteRef.current?.(node, flowId, analysisModel),
-            bindEcommerceSuite,
-            draftEcommerceProfile: (node) => draftEcommerceProfileRef.current?.(node),
             openMediaVersions: (node: CanvasNodeData) => setMediaVersionNodeId(node.id),
             dramaStaleNodeIds: drama.staleNodeIds,
             refreshFromDrama: drama.active ? drama.refreshNode : undefined,
         }),
         [
-            bindEcommerceSuite,
-            extractLayerMaterials,
-            addEcommerceInput,
-            addEcommerceReference,
-            connectEcommerceInput,
-            dropEcommerceInput,
-            disconnectEcommerceInput,
-            updateEcommerceInputAnchor,
             addPanoramaCaptureNode,
-            createImageReversePromptNodes,
             deleteNodeFromContent,
             downloadNodeImage,
             drama.active,
             drama.refreshNode,
             drama.staleNodeIds,
             duplicateNodeFromContent,
-            exportEcommerceLayout,
-            focusCanvasNode,
-            generateEcommerceModelPreset,
-            message,
-            modal,
+            extractLayerMaterials,
             openArtCritique,
             replaceCanvasNodeMedia,
-            saveImageAsModel,
-            sendSelectionToAgent,
-            spawnEcommerceMaterials,
             updateMediaNodeFromContent,
             updateNodeFromContent,
             updateNodeMetadataFromContent,
-            canvasKind,
-            workspaceMode,
         ],
     );
     const { dismissLastAgentChange, lastAgentChange, undoAgentOps, viewLastAgentChange } = useCanvasOperationHistory({
@@ -2584,636 +2019,6 @@ ${instruction.trim()}`
         setNodes,
         handleGenerateNode,
     });
-    const ecommerceWorkbench = useEcommerceWorkbench({
-        projectId,
-        domainProjectId: linkedProjectId,
-        nodesRef,
-        connectionsRef,
-        setNodes,
-        setConnections,
-        setSelectedNodeIds,
-        center: getCanvasCenter,
-        applyResult: applyGenerationTaskResult,
-        bindTask: bindGenerationTask,
-    });
-    ecommerceWorkbenchRunRef.current = ecommerceWorkbench.run;
-    ecommerceWorkbenchStopRef.current = ecommerceWorkbench.stop;
-    ecommerceWorkbenchRunningRef.current = ecommerceWorkbench.isRunning;
-    const addEcommerceStudio = useCallback(() => {
-        const studio = createCanvasNode(CanvasNodeType.EcommerceStudio, getCanvasCenter());
-        setNodes((current) => [...current, studio]);
-        setSelectedNodeIds(new Set([studio.id]));
-        focusCanvasNode(studio.id);
-    }, [getCanvasCenter, setNodes, focusCanvasNode]);
-
-    /**
-     * 电商创作：铺一套物料并直接推入生成队列。
-     *
-     * 铺完再让人一张张点「生成」是这条流程里最蠢的一段——五张主图点五次，十三张点十三次。
-     * 批次队列（并发上限、失败重试、任务对账）本来就有，电商直接复用它；批次挂在商品节点上，
-     * 因为这一套交付物本来就属于这个商品，不属于其中某一张图。
-     *
-     * 提交前确认张数与模型：一次铺一套会真金白银地跑十几次外部模型调用，不能静默提交。
-     */
-    const generateEcommerceMaterials = useCallback(
-        async (node: CanvasNodeData, planId: string) => {
-            const imageNodeIds = await spawnEcommerceMaterials(node, planId);
-            if (!imageNodeIds.length) return;
-            const model = effectiveConfig.imageModel || effectiveConfig.model;
-            const confirmed = await new Promise<boolean>((resolve) => {
-                modal.confirm({
-                    title: `确认提交 ${imageNodeIds.length} 张生成任务`,
-                    content: `任务数：${imageNodeIds.length}；模型：${model}。当前没有可用价格数据，将提交 ${imageNodeIds.length} 个外部模型任务。可以先「只铺节点」，改完拍法再一起生成。`,
-                    okText: "确认生成",
-                    cancelText: "只铺节点",
-                    centered: true,
-                    onOk: () => resolve(true),
-                    onCancel: () => resolve(false),
-                });
-            });
-            if (!confirmed) return;
-            focusCanvasImageNodes(imageNodeIds);
-            if (
-                enqueueGenerationBatch(
-                    node.id,
-                    "batch_image",
-                    imageNodeIds.map((id) => ({ rowId: id, nodeId: id })),
-                )
-            ) {
-                message.success(`${imageNodeIds.length} 张已加入生成队列`);
-            }
-        },
-        [effectiveConfig.imageModel, effectiveConfig.model, enqueueGenerationBatch, focusCanvasImageNodes, message, modal, spawnEcommerceMaterials],
-    );
-
-    // 节点动作 Context 在批次队列之前组装，所以这里用 ref 把处理器递进去，
-    // 与 generateNodeRef 同一套做法，避免为一次接线把整个 Context 挪到批次之后。
-    const generateEcommerceMaterialsRef = useRef(generateEcommerceMaterials);
-    useEffect(() => {
-        generateEcommerceMaterialsRef.current = generateEcommerceMaterials;
-    }, [generateEcommerceMaterials]);
-
-    /**
-     * 电商创作：拍法清单整组出图。
-     *
-     * 与商品节点的「铺一套并生成」不同：那条路是按交付物方案铺一整套，
-     * 这条路是按**当前清单**出图——清单可能已经被改过（加了行、换了拍法、删了行），
-     * 所以要按清单对账补齐，而不是按方案重铺。
-     *
-     * 传 shotIds 只出那几行；不传就出整张清单。缺的产物节点先补齐再进同一个批次，
-     * 一次确认覆盖全部外部调用。
-     */
-    const generateEcommerceShotSet = useCallback(
-        async (node: CanvasNodeData, shotIds?: string[]) => {
-            const spawnedIds = await spawnEcommerceShotOutputs(node, shotIds);
-            const set = node.metadata?.shotSet;
-            if (!set) return;
-            // 要出的行 = 本次新铺的 + 之前已认领的（限定在 shotIds 范围内）
-            const wanted = shotIds?.length ? new Set(shotIds) : undefined;
-            const targetShotIds = set.shots.filter((shot) => !wanted || wanted.has(shot.id)).map((shot) => shot.id);
-            if (!targetShotIds.length) return;
-            const outputByShot = new Map<string, string>();
-            for (const connection of connectionsRef.current) {
-                if (connection.fromNodeId !== node.id) continue;
-                const child = nodesRef.current.find((item) => item.id === connection.toNodeId);
-                const shotId = child?.metadata?.ecommerceShotId;
-                if (child?.type === CanvasNodeType.Image && shotId && targetShotIds.includes(shotId)) outputByShot.set(shotId, child.id);
-            }
-            for (const id of spawnedIds) {
-                const child = nodesRef.current.find((item) => item.id === id) || nodes.find((item) => item.id === id);
-                const shotId = child?.metadata?.ecommerceShotId;
-                if (shotId) outputByShot.set(shotId, id);
-            }
-            const targets = targetShotIds.map((shotId) => outputByShot.get(shotId)).filter(Boolean) as string[];
-            if (!targets.length) return;
-            const model = effectiveConfig.imageModel || effectiveConfig.model;
-            const confirmed = await new Promise<boolean>((resolve) => {
-                modal.confirm({
-                    title: `确认提交 ${targets.length} 张生成任务`,
-                    content: `任务数：${targets.length}；模型：${model}。清单里每一行按各自的构图、光线、背景编译提示词，商品特征逐字锁定。`,
-                    okText: "确认生成",
-                    cancelText: "再改改",
-                    centered: true,
-                    onOk: () => resolve(true),
-                    onCancel: () => resolve(false),
-                });
-            });
-            if (!confirmed) return;
-            if (
-                enqueueGenerationBatch(
-                    node.id,
-                    "batch_image",
-                    targets.map((id) => ({ rowId: id, nodeId: id })),
-                )
-            ) {
-                message.success(`${targets.length} 张已加入生成队列`);
-            }
-        },
-        [connectionsRef, effectiveConfig.imageModel, effectiveConfig.model, enqueueGenerationBatch, message, modal, nodes, nodesRef, spawnEcommerceShotOutputs],
-    );
-
-    const generateEcommerceShotSetRef = useRef(generateEcommerceShotSet);
-    useEffect(() => {
-        generateEcommerceShotSetRef.current = generateEcommerceShotSet;
-    }, [generateEcommerceShotSet]);
-
-    /**
-     * 商品节点上连着的实拍，转成生成链路的参考图。
-     *
-     * **这一步是「读图起草」能不能成立的全部。** 模型是多模态的，能看图——
-     * 但图必须真的递过去。上一版没传 referenceImages，模型收到的只有一段文字，
-     * 于是它只能回一句「系统未传入图片节点的画面像素数据」。
-     *
-     * 判据与生成链路共用视图解析：起草时看到的图，
-     * 必须和后面出图时用的图是同一批。
-     */
-    const productReferenceImages = useCallback(
-        (productNodeId: string, includeVisualReferences = false) => {
-            const product = nodesRef.current.find((node) => node.id === productNodeId);
-            return [
-                ...(product ? ecommerceProductReferenceImages(product, nodesRef.current, connectionsRef.current) : []),
-                ...(includeVisualReferences
-                    ? connectedStyleReferenceNodes(productNodeId, nodesRef.current, connectionsRef.current).map((node) => ({
-                          id: node.id,
-                          name: `视觉参考：${node.title || node.id}`,
-                          type: node.metadata?.mimeType || "image/png",
-                          dataUrl: "",
-                          url: node.metadata?.content,
-                          storageKey: node.metadata?.storageKey,
-                      }))
-                    : []),
-            ];
-        },
-        [connectionsRef, nodesRef],
-    );
-
-    /**
-     * 跑一次「读图 → 出结论」的文本任务，返回模型的原话。
-     *
-     * 三件事一件都不能少：**把图递进去、确认这个文本模型看得了图、把结果原样带回来。**
-     * 少任何一条，用户拿到的都是一句关于工具链的抱怨而不是内容——
-     * 上一版就是这么坏的：走云 agent，那边没有取图工具，模型只好说「未挂载视觉查看工具」。
-     *
-     * 模型看不了图时直接说清楚并让用户换模型，不静默降级成纯文本——
-     * 那会得到一份看起来正常、实际全是编的档案。
-     *
-     * `modelOverride` 让面板上选的分析模型压过全局配置：分析要读图、出图不用，
-     * 两者常常不是同一个模型，而全局配置只有一个。传了就用它，没传才回落到全局。
-     *
-     * 覆盖走节点 metadata.model 这条既有通道，不是直接改 config.model——
-     * 模型选的是「渠道 :: 模型」，直接写 model 字段会留下旧渠道，
-     * 走 buildGenerationConfig 才能把渠道与能力一起重新解析。
-     */
-    const runEcommerceTextDraft = useCallback(
-        async (productNode: CanvasNodeData, prompt: string, modelOverride?: string, includeVisualReferences = false, ecommerceAnalysisFlow?: EcommerceOneClickFlowId | "cap:planning", ecommerceCapability?: "planning") => {
-            const scope = getActiveUserScope();
-            const referenceImages = productReferenceImages(productNode.id, includeVisualReferences);
-            const effectivePrompt = [prompt, ecommerceReferenceImageGuide(referenceImages)].filter(Boolean).join("\n\n");
-            if (getActiveUserScope() !== scope) return undefined;
-            const requirements = { capability: "text" as const, input: { textCount: 0, imageCount: referenceImages.length, videoCount: 0, audioCount: 0, characterCount: 0 } };
-            let generationConfig: typeof effectiveConfig;
-            try {
-                generationConfig = buildEcommerceAnalysisGeneration(effectiveConfig, modelOverride, requirements.input);
-            } catch (error) {
-                message.error(error instanceof Error ? error.message : "分析模型配置无效");
-                return undefined;
-            }
-            if (!useConfigStore.getState().isAiConfigReady(generationConfig, generationConfig.model)) {
-                navigateToSettings({ continueCreation: true });
-                return undefined;
-            }
-            try {
-                const result = await runBackendGenerationTask({
-                    projectId,
-                    mode: "text",
-                    config: generationConfig,
-                    prompt: effectivePrompt,
-                    referenceImages,
-                    streamText: false,
-                    metadata: { nodeId: productNode.id, ...(ecommerceAnalysisFlow ? { ecommerceAnalysisFlow } : {}), ...(ecommerceCapability ? { ecommerceCapability } : {}) },
-                });
-                return getActiveUserScope() === scope ? result.text || "" : undefined;
-            } catch (error) {
-                message.error(generationErrorMessage(error));
-                return undefined;
-            }
-        },
-        [effectiveConfig, message, productReferenceImages, projectId],
-    );
-
-    /**
-     * 电商创作：读商品实拍，起草商品档案。
-     *
-     * 读的是**图**，不是档案——档案就是它要写的东西。所以这里必须把商品实拍递进去，
-     * 这也是「让助手读图起草档案」这句话里「读图」两个字的全部含义。
-     */
-    const draftEcommerceProfile = useCallback(
-        async (node: CanvasNodeData) => {
-            const productNode = nodesRef.current.find((item) => item.id === node.id) || node;
-            if (!productReferenceImages(productNode.id).length) {
-                message.warning("还没有连入商品实拍——读图起草要先有图");
-                return undefined;
-            }
-            const evidenceSignature = ecommerceProductReferenceSignature(productNode, nodesRef.current, connectionsRef.current);
-            const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig).analysisModel;
-            const text = await runEcommerceTextDraft(productNode, buildEcommerceProfileDraftPrompt(), resolvedAnalysisModel, false, "cap:planning", "planning");
-            if (text === undefined) return undefined;
-            const latestAnalysisModel = resolveEcommerceTableModels(effectiveConfigRef.current).analysisModel;
-            if (resolvedAnalysisModel !== latestAnalysisModel) {
-                message.warning("分析期间全局模型已变化，请重试商品识别");
-                return undefined;
-            }
-            const latestProduct = nodesRef.current.find((item) => item.id === productNode.id);
-            if (!latestProduct || evidenceSignature !== ecommerceProductReferenceSignature(latestProduct, nodesRef.current, connectionsRef.current)) {
-                message.warning("商品图片已变化，请重新识别");
-                return undefined;
-            }
-            const parsed = parseEcommerceProfileDraft(text);
-            const { unsure, ...fields } = parsed;
-            if (!Object.keys(fields).length) {
-                message.warning("模型这次没按格式回——换个文本模型再试，或者直接在档案里手填");
-                return undefined;
-            }
-            message.success(unsure && unsure !== "无" ? `草稿已生成，请重点核对：${unsure}` : "草稿已生成，请核对后确认");
-            return parsed;
-        },
-        [connectionsRef, effectiveConfig, message, nodesRef, productReferenceImages, runEcommerceTextDraft],
-    );
-
-    /**
-     * 电商创作：分析商品，为这一套的每一张写一条完整的出图提示词。
-     *
-     * 单位是**一张图一条提示词**，不是一张图一句话。图递进去（见 runEcommerceTextDraft）——
-     * 主图画什么、模特上身图画什么、细节图画什么，构图光线景别全不一样，
-     * 这些只有看过商品实拍才写得出来。
-     *
-     * 面板可显式覆盖分析模型；留空时跟随当前全局文本模型。
-     * 显式模型失效时底层会拒绝提交，不能偷偷回退到另一个模型。
-     */
-    const draftEcommerceSuite = useCallback(
-        async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string, rowsOverride?: EcommerceSuiteRow[]) => {
-            const flow = ecommerceOneClickFlow(flowId);
-            if (!flow) return undefined;
-            const setting = await useEcommerceSettings.getState().load();
-            if (!setting.enabled || !setting.flows[flowId].enabled) throw new Error("管理员已停用此电商创作用途");
-            const { source: suiteNode, product: productNode } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
-            if (!productReferenceImages(productNode.id).length) {
-                message.warning("还没有连入商品实拍——分析要先有图，模型才知道要画的是什么");
-                return undefined;
-            }
-            // 交给模型的是**当前那张表**，不是行业套路给的骨架：用户可能已经删到六屏、
-            // 改过职责，或者在自己的提示词里要求了不同的分工。
-            const rows = ecommerceBriefRows(flow, rowsOverride || ecommerceSuiteRows(flow, suiteNode.metadata?.ecommerceSuitesByFlow?.[flowId] || suiteNode.metadata?.ecommerceSuite), suiteNode.metadata?.ecommerceBrief);
-            const platformId = resolveEcommercePlatformId(suiteNode.metadata?.ecommerceBrief?.platform || suiteNode.metadata?.ecommercePlatform || productNode.metadata?.ecommercePlatform);
-            const uniform = {
-                platformId,
-                styleReferenceNames: connectedStyleReferenceNodes(productNode.id, nodesRef.current, connectionsRef.current).map((item) => item.title || item.id),
-            };
-            const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig, { analysisModel }).analysisModel;
-            const analysisSnapshot = ecommerceAnalysisSnapshot(suiteNode, productNode, nodesRef.current, connectionsRef.current, resolvedAnalysisModel);
-            const text = await runEcommerceTextDraft(
-                productNode,
-                [ecommerceSuiteDraftPrompt(flow, productNode.metadata?.productProfile, rows, undefined, uniform), ecommerceBriefBlock(suiteNode.metadata?.ecommerceBrief, flow.id)].filter(Boolean).join("\n\n"),
-                resolvedAnalysisModel,
-                true,
-                flowId,
-            );
-            if (text === undefined) return undefined;
-            const parsed = parseEcommerceSuiteDraft(text, flow);
-            if (!parsed) {
-                message.warning("模型返回的提示词格式不完整，请重试或直接编辑提示词表");
-                return undefined;
-            }
-            const plannedCount = rows.filter((row) => row.enabled !== false).length;
-            const reconciled = reconcileEcommerceSuiteDraftRows(rows, parsed);
-            if (!reconciled) {
-                message.warning(`模型返回的槽位、顺序或数量与当前 ${plannedCount} 张计划不一致，当前表格已保留，请重试`);
-                return undefined;
-            }
-            const generationCount = reconciled.filter((row) => row.enabled !== false).length;
-            const latest = nodesRef.current.find((item) => item.id === suiteNode.id);
-            if (!latest) return undefined;
-            const latestProduct = nodesRef.current.find((item) => item.id === productNode.id);
-            const latestAnalysisModel = resolveEcommerceTableModels(effectiveConfigRef.current, { analysisModel: latest.metadata?.ecommerceAnalysisModel }).analysisModel;
-            if (!latestProduct || analysisSnapshot !== ecommerceAnalysisSnapshot(latest, latestProduct, nodesRef.current, connectionsRef.current, latestAnalysisModel)) {
-                message.warning("分析期间模型、表格、商品资料或参考图已变化，保留当前编辑，请重新分析");
-                return undefined;
-            }
-            const suite = {
-                flow: flow.id,
-                rows: reconciled,
-                source: "draft" as const,
-                updatedAt: new Date().toISOString(),
-            };
-            updateNodeMetadataFromContent(suiteNode.id, ecommerceSuiteMetadata(latest.metadata, suite));
-            message.success(`分析完成：${generationCount} 张都有提示词。逐条核对，改完点右下角批量生成`);
-            return reconciled;
-        },
-        [effectiveConfig, message, nodesRef, productReferenceImages, runEcommerceTextDraft, updateNodeMetadataFromContent],
-    );
-
-    /**
-     * 电商创作：按套图面板里那张表出图。
-     *
-     * 每行的视觉提示词与文案先同步到目标，再由共享编译链冻结完整输入。
-     * 商品锁定与模特锁定由 ecommerce 编译链自动前置。
-     *
-     * **节点只为真正要出的那几张铺，而且按槽位复用。** 上一版点一下先铺九屏，
-     * 用户看到的是一堆还没出图的空方块；重出一次又在旁边堆九个。现在铺节点并进出图，
-     * 已有的按槽位认回来，重出只是覆盖那几张。
-     *
-     * 传 `slotIds` 就只出那几行——面板里每张旁边那个「出这一张」走的就是这条路。
-     *
-     * **每一条提前退出的路都要说话。** 上一版 targets 为空时静默 return，
-     * 用户点了「批量生成」看到的是面板关掉、画布上什么都没发生——最难查的一类 bug，
-     * 因为它既不报错也不留痕。
-     */
-    const generateEcommerceSuite = useCallback(
-        async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, slotIds?: string[], rowsOverride?: EcommerceSuiteRow[], completeSuite = false) => {
-            const flow = ecommerceOneClickFlow(flowId);
-            if (!flow) return false;
-            const setting = await useEcommerceSettings.getState().load();
-            if (!setting.enabled || !setting.flows[flowId].enabled) throw new Error("管理员已停用此电商创作用途");
-            const { source: suiteNode, product: productNode } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
-
-            // 出图模型与参数在面板上选，写在每一张节点上——批次调度按节点自己的模型解析，
-            const bindingPlan = productNode.metadata?.ecommerceOneClick;
-            if (bindingRef.current.has(productNode.id) || (bindingPlan && bindingRef.current.has(ecommerceBindingKey(productNode.id, bindingPlan)))) throw new Error("正在装订，请稍候");
-            if (bindingPlan && bindingPlan.status !== "failed") throw new Error("请先完成或取消当前自动装订，再开始新一轮套图");
-            // 不读商品节点的字段。
-            const { imageModel } = resolveEcommerceTableModels(effectiveConfig, { imageModel: suiteNode.metadata?.ecommerceImageModel });
-            const imageSize = suiteNode.metadata?.ecommerceImageSize?.trim();
-            const imageQuality = suiteNode.metadata?.ecommerceImageQuality?.trim();
-            if (!imageModel) {
-                message.warning("未选择生图模型，请先在面板中选择生图模型");
-                return false;
-            }
-            const resolvedImageSize = imageSize || ecommerceImageSettings(effectiveConfig, imageModel, { ...DEFAULT_ECOMMERCE_BRIEF, aspectRatio: ecommerceOneClickScreens(flow)[0]?.aspectRatio }).size;
-            const completeRun = completeSuite || !slotIds?.length;
-            const requestedSuite: EcommerceSuite | undefined = rowsOverride
-                ? { flow: flow.id, rows: rowsOverride, source: "draft", updatedAt: new Date().toISOString() }
-                : suiteNode.metadata?.ecommerceSuitesByFlow?.[flowId] || suiteNode.metadata?.ecommerceSuite;
-            const completePlan = connectEcommerceTableOutputs(
-                ecommerceSuiteTargets(
-                    productNode,
-                    flow,
-                    requestedSuite,
-                    { nodes: nodesRef.current, connections: connectionsRef.current },
-                    { ...(imageModel ? { model: imageModel } : {}), ...(resolvedImageSize ? { size: resolvedImageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) },
-                    () => nanoid(),
-                    completeRun ? undefined : slotIds,
-                    suiteNode.id,
-                ),
-                suiteNode,
-                nodesRef.current,
-                connectionsRef.current,
-            );
-            const requestedSlots = completeRun && slotIds?.length ? new Set(slotIds) : undefined;
-            const spawnedIdsToGenerate = new Set(completePlan.spawned.map((item) => item.id));
-            const generationIndexes = completePlan.rows.flatMap((row, index) => (!requestedSlots || requestedSlots.has(row.slotId) || spawnedIdsToGenerate.has(completePlan.nodeIds[index]) ? [index] : []));
-            const generationSlots = new Set(generationIndexes.map((index) => completePlan.rows[index].slotId));
-            const generationNodeIds = generationIndexes.map((index) => completePlan.nodeIds[index]);
-            const generationNodeIdSet = new Set(generationNodeIds);
-            const plan = requestedSlots
-                ? {
-                      ...completePlan,
-                      rows: generationIndexes.map((index) => completePlan.rows[index]),
-                      reuse: completePlan.reuse.filter((item) => generationSlots.has(item.slotId)),
-                      spawned: completePlan.spawned.filter((item) => generationNodeIdSet.has(item.id)),
-                      nodeIds: generationNodeIds,
-                  }
-                : completePlan;
-            if (!plan.rows.length) {
-                message.warning(`「${flow.name}」还没有提示词，请先分析商品或编辑提示词表`);
-                return false;
-            }
-            if (!plan.nodeIds.length) {
-                message.error("这一套的产物节点没能铺出来——刷新页面后重试，或先删掉画布上重名的图片节点");
-                return false;
-            }
-            for (const row of plan.rows) {
-                const issue = ecommerceRowPromptIssue(row, flow.id);
-                if (issue) throw new Error(issue);
-            }
-            // 流程状态挂在商品节点上：全屏出完之后要自动装订，得记住这一批是哪几张、
-            // 落在哪几个节点上。单张出图不写这个状态——只出一张时不该触发装订。
-            //
-            // **不再挂拍法清单。** 每一张的拍法已经写进那一张自己的提示词里了；
-            // 再挂一份通用清单，编译时它会作为「本张：构图…光线…」前置到提示词之前，
-            // 与用户核对过的那条打架（用户改成俯拍，清单还写着平视）。
-            // 清掉而不是不写：早先版本铺下的清单还留在画布上，不清就会一直压着新提示词。
-            const nodeIds = plan.nodeIds;
-            const single = !completeRun;
-            const autoBind = suiteNode.metadata?.ecommerceAutoBind === true && setting.autoBindEnabled && flow.bind;
-            const slicePlatform = !single && autoBind ? ecommerceBriefSlicePlatform(suiteNode.metadata?.ecommerceBrief, suiteNode.metadata?.ecommercePlatform || productNode.metadata?.ecommercePlatform) : undefined;
-            const runId = nanoid();
-            const bindingNodeIds = completeRun ? completePlan.nodeIds : nodeIds;
-            const bindingNodeIdSet = new Set(bindingNodeIds);
-            const shotPatch = { ...(imageModel ? { model: imageModel } : {}), ...(resolvedImageSize ? { size: resolvedImageSize } : {}), ...(imageQuality ? { quality: imageQuality } : {}) };
-            const rowsByNodeId = new Map(plan.nodeIds.map((id, index) => [id, plan.rows[index]]));
-            const graphConnections = [...connectionsRef.current, ...plan.connections, ...plan.reconnect];
-            const reusedIds = new Set(plan.reuse.map((item) => item.nodeId));
-            // 新建和复用先同步当前行，再共同冻结；排队后不再从实时表格取文案。
-            const preparedTargets = [...nodesRef.current.filter((item) => reusedIds.has(item.id)), ...plan.spawned].map((item) => {
-                const row = rowsByNodeId.get(item.id)!;
-                const prompt = row.prompt.trim();
-                const prepared = synchronizeGenerationSpec(item, { prompt, composerContent: prompt, generationResultPlacement: "replace-node", errorDetails: undefined, ...shotPatch });
-                return {
-                    ...prepared,
-                    title: row.title,
-                    metadata: {
-                        ...resetGenerationTaskMetadata(prepared.metadata),
-                        ecommerceCopy: structuredClone(row.copy),
-                        ecommerceLayout: structuredClone(row.layout),
-                        ecommerceProductId: productNode.id,
-                        ecommerceFlowId: flow.id,
-                        ecommerceShotId: row.slotId,
-                        ecommerceRunId: runId,
-                        batchSourceNodeId: suiteNode.id,
-                        batchRowId: row.slotId,
-                        batchResultInputSignature: undefined,
-                    },
-                };
-            });
-            const sourceForGeneration = { ...suiteNode, metadata: { ...suiteNode.metadata, ...ecommerceSuiteMetadata(suiteNode.metadata, requestedSuite!) } };
-            const preparedById = new Map<string, CanvasNodeData>(preparedTargets.map((item) => [item.id, item]));
-            const graphNodes = [...nodesRef.current.map((item) => (item.id === suiteNode.id ? sourceForGeneration : preparedById.get(item.id) || item)), ...plan.spawned.map((item) => preparedById.get(item.id)!)];
-            for (const item of preparedTargets) {
-                const row = rowsByNodeId.get(item.id)!;
-                const signature = ecommerceResultSourceSignature(sourceForGeneration, row, item, graphNodes, graphConnections);
-                preparedById.set(item.id, { ...item, metadata: { ...item.metadata, batchInputSignature: signature } });
-            }
-            const snapshotNodes = graphNodes.map((item) => preparedById.get(item.id) || item);
-            const snapshots = new Map([...preparedById.values()].map((item) => [item.id, createCanvasBatchInputSnapshot(item, snapshotNodes, graphConnections, assets, useEcommerceModelLibrary.getState().models)]));
-            const preparedSpawned = plan.spawned.map((item) => preparedById.get(item.id)!);
-            const touchedExistingIds = new Set([productNode.id, ...plan.reuse.map((item) => item.nodeId), ...(autoBind && completeRun ? bindingNodeIds : [])]);
-            const spawnedIds = new Set(preparedSpawned.map((item) => item.id));
-            const nodesBefore = new Map(nodesRef.current.filter((item) => touchedExistingIds.has(item.id)).map((item) => [item.id, item]));
-            const connectionsBefore = new Set(connectionsRef.current);
-            const selectionBeforeState = selectedNodeIdsRef.current;
-            const selectionBefore = new Set(selectionBeforeState);
-            setNodes((current) => [
-                ...current.map((item) => {
-                    if (item.id === productNode.id) {
-                        // 装订可关：关掉就不写流程状态——装订链路只认这个字段，
-                        // 不写它出完就只是出完，想拼时在商品节点上手动点。
-                        if (single || !autoBind) return { ...item, metadata: { ...item.metadata, ecommerceShotSet: undefined, ecommerceOneClick: undefined } };
-                        return {
-                            ...item,
-                            metadata: {
-                                ...item.metadata,
-                                ecommerceShotSet: undefined,
-                                ecommerceOneClick: { flow: flow.id, slotIds: completePlan.rows.map((row) => row.slotId), nodeIds: bindingNodeIds, runId, platform: slicePlatform, status: "running" as const },
-                            },
-                        };
-                    }
-                    const prepared = preparedById.get(item.id);
-                    if (prepared) return prepared;
-                    if (autoBind && completeRun && bindingNodeIdSet.has(item.id)) return { ...item, metadata: { ...item.metadata, ecommerceRunId: runId } };
-                    return item;
-                }),
-                // 新铺的节点由 ecommerceSuiteTargets 带上自己的提示词与参数——
-                // 它们进不了上面那个循环（上面只走画布上已有的节点），
-                // 少了那句话每一张都是空提示词，整批会被标成「生成提示词为空」。
-                ...preparedSpawned,
-            ]);
-            // 认回来的节点可能没连到商品（连接被删过、或上一次铺节点时连接没落盘）。
-            // 少了那条边，生成时约束链走不上去，商品锁定块静默丢失——出来的图看着正常
-            // 却不是同一件商品。补上，而不是让那种图悄悄出街。
-            if (plan.connections.length || plan.reconnect.length) setConnections((current) => [...current, ...plan.connections, ...plan.reconnect]);
-            focusCanvasImageNodes(nodeIds);
-            const appliedNodes = new Map(nodesRef.current.filter((item) => touchedExistingIds.has(item.id) || spawnedIds.has(item.id)).map((item) => [item.id, item]));
-            const addedConnections = new Set([...plan.connections, ...plan.reconnect]);
-            const appliedSelection = selectedNodeIdsRef.current;
-            const rollbackPreparedGeneration = () => {
-                setNodes((current) =>
-                    current.flatMap((item) => {
-                        const applied = appliedNodes.get(item.id);
-                        if (spawnedIds.has(item.id)) return item === applied ? [] : [item];
-                        const before = nodesBefore.get(item.id);
-                        if (!before || !applied) return [item];
-                        const beforeMetadata = before.metadata || {};
-                        const appliedMetadata = applied.metadata || {};
-                        const currentMetadata = item.metadata || {};
-                        const keys = new Set([...Object.keys(beforeMetadata), ...Object.keys(appliedMetadata)] as Array<keyof CanvasNodeMetadata>);
-                        let restored: CanvasNodeMetadata | undefined;
-                        for (const key of keys) {
-                            const beforeOwns = Object.prototype.hasOwnProperty.call(beforeMetadata, key);
-                            const appliedOwns = Object.prototype.hasOwnProperty.call(appliedMetadata, key);
-                            const currentOwns = Object.prototype.hasOwnProperty.call(currentMetadata, key);
-                            if ((beforeOwns === appliedOwns && Object.is(beforeMetadata[key], appliedMetadata[key])) || currentOwns !== appliedOwns || !Object.is(currentMetadata[key], appliedMetadata[key])) continue;
-                            restored ||= { ...currentMetadata };
-                            if (beforeOwns) (restored as Record<string, unknown>)[key] = beforeMetadata[key];
-                            else delete (restored as Record<string, unknown>)[key];
-                        }
-                        const title = item.title === applied.title ? before.title : item.title;
-                        if (!restored && title === item.title) return [item];
-                        return [{ ...item, title, ...(restored ? { metadata: Object.keys(restored).length || before.metadata ? restored : undefined } : {}) }];
-                    }),
-                );
-                if (addedConnections.size) setConnections((current) => current.filter((connection) => connectionsBefore.has(connection) || !addedConnections.has(connection)));
-                if (appliedSelection !== selectionBeforeState && selectedNodeIdsRef.current === appliedSelection) {
-                    selectedNodeIdsRef.current = selectionBefore;
-                    setSelectedNodeIds(selectionBefore);
-                }
-            };
-            let batchId: ReturnType<typeof enqueueGenerationBatch>;
-            try {
-                batchId = enqueueGenerationBatch(
-                    productNode.id,
-                    "batch_image",
-                    nodeIds.map((id) => ({ rowId: id, nodeId: id, inputSnapshot: snapshots.get(id) })),
-                );
-            } catch (error) {
-                rollbackPreparedGeneration();
-                throw error;
-            }
-            if (!batchId) rollbackPreparedGeneration();
-            if (batchId) {
-                message.success(`${nodeIds.length} 张已加入生成队列${!single && flow.bind && autoBind ? "，出完自动装订成详情页长图" : ""}`);
-            }
-            return Boolean(batchId);
-        },
-        [assets, connectionsRef, ecommerceResultSourceSignature, effectiveConfig, enqueueGenerationBatch, focusCanvasImageNodes, message, nodesRef, selectedNodeIdsRef, setConnections, setNodes, setSelectedNodeIds],
-    );
-
-    // 动作 Context 在批次队列之前组装，所以用 ref 把处理器递进去，
-    // 与 generateNodeRef 同一套做法。
-    const generateEcommerceSuiteRef = useRef(generateEcommerceSuite);
-    useEffect(() => {
-        generateEcommerceSuiteRef.current = generateEcommerceSuite;
-    }, [generateEcommerceSuite]);
-    const reverseEcommerceSuite = useCallback(
-        async (node: CanvasNodeData, flowId: EcommerceOneClickFlowId, analysisModel?: string) => {
-            const { source, product } = ecommerceTableSource(node, nodesRef.current, connectionsRef.current);
-            const refs = connectedStyleReferenceNodes(product.id, nodesRef.current, connectionsRef.current);
-            if (!refs.length) {
-                message.warning("请先把参考套图连接到商品节点的参考图槽位");
-                return;
-            }
-            if (!analysisModel) {
-                message.warning("请先选择支持看图的分析模型");
-                return;
-            }
-            const resolvedAnalysisModel = resolveEcommerceTableModels(effectiveConfig, { analysisModel }).analysisModel;
-            const snapshot = ecommerceAnalysisSnapshot(source, product, nodesRef.current, connectionsRef.current, resolvedAnalysisModel);
-            const flow = ecommerceOneClickFlow(flowId)!;
-            const previousRows = ecommerceSuiteRows(flow, source.metadata?.ecommerceSuitesByFlow?.[flowId] || source.metadata?.ecommerceSuite);
-            const count = source.metadata?.ecommerceBrief?.imageCount || refs.length;
-            if (!Number.isInteger(count) || count < 1 || count > 30) throw new Error("参考套图张数须为 1–30 张");
-            const requestedRows = ecommerceBriefRows(flow, previousRows, { imageCount: count });
-            const platformId = resolveEcommercePlatformId(source.metadata?.ecommerceBrief?.platform || source.metadata?.ecommercePlatform || product.metadata?.ecommercePlatform);
-            const prompt = [
-                ecommerceSuiteDraftPrompt(flow, product.metadata?.productProfile, requestedRows, undefined, { platformId }),
-                ecommerceBriefBlock(source.metadata?.ecommerceBrief, flow.id),
-                `根据独立视觉参考图的顺序反推 ${count} 张套图。只借鉴叙事顺序、构图、布光、配色与文字层级，主体始终是当前商品。不得把参考图的参数、认证、价格、品牌、人物身份或卖点当成商品事实。输出可以直接生成的新画面提示词；整套视觉一致。`,
-            ]
-                .filter(Boolean)
-                .join(String.fromCharCode(10, 10));
-            const text = await runEcommerceTextDraft(product, prompt, resolvedAnalysisModel, true, flowId);
-            if (text === undefined) return;
-            const parsed = parseEcommerceSuiteDraft(text, flow);
-            if (!parsed) {
-                message.warning(`参考套图分析须返回 ${count} 张，当前表格已保留，请重试`);
-                return;
-            }
-            const rows = reconcileEcommerceSuiteDraftRows(requestedRows, parsed);
-            if (!rows) {
-                message.warning(`参考套图分析返回的槽位、顺序或数量与 ${count} 张计划不一致，当前表格已保留，请重试`);
-                return;
-            }
-            const generationCount = rows.filter((row) => row.enabled !== false).length;
-            const latest = nodesRef.current.find((item) => item.id === source.id);
-            const latestProduct = nodesRef.current.find((item) => item.id === product.id);
-            const latestAnalysisModel = latest ? resolveEcommerceTableModels(effectiveConfigRef.current, { analysisModel: latest.metadata?.ecommerceAnalysisModel }).analysisModel : undefined;
-            if (!latest || !latestProduct || ecommerceAnalysisSnapshot(latest, latestProduct, nodesRef.current, connectionsRef.current, latestAnalysisModel) !== snapshot) {
-                message.warning("分析期间模型、表格、商品资料或参考图已变化，保留当前编辑，请重试");
-                return;
-            }
-            const suite = {
-                flow: flowId,
-                rows,
-                source: "draft" as const,
-                updatedAt: new Date().toISOString(),
-            };
-            updateNodeMetadataFromContent(source.id, ecommerceSuiteMetadata(latest.metadata, suite));
-            message.success(`参考套图已规划 ${generationCount} 张，请逐条核对商品事实和提示词`);
-        },
-        [connectionsRef, effectiveConfig, message, nodesRef, runEcommerceTextDraft, updateNodeMetadataFromContent],
-    );
-    const reverseEcommerceSuiteRef = useRef(reverseEcommerceSuite);
-    useEffect(() => {
-        reverseEcommerceSuiteRef.current = reverseEcommerceSuite;
-    }, [reverseEcommerceSuite]);
-    const draftEcommerceSuiteRef = useRef(draftEcommerceSuite);
-    useEffect(() => {
-        draftEcommerceSuiteRef.current = draftEcommerceSuite;
-    }, [draftEcommerceSuite]);
-    const draftEcommerceProfileRef = useRef(draftEcommerceProfile);
-    useEffect(() => {
-        draftEcommerceProfileRef.current = draftEcommerceProfile;
-    }, [draftEcommerceProfile]);
-
     const {
         addReferenceColumn: addBatchReferenceColumn,
         addRow: addBatchRow,
@@ -3424,7 +2229,8 @@ ${instruction.trim()}`
 
     const renderCanvasNodePanel = useCallback(
         (panelNode: CanvasNodeData) => {
-            if (hasEmbeddedEcommerceControls(panelNode) || panelNode.type === CanvasNodeType.Script || panelNode.type === CanvasNodeType.Drawing) return null;
+            // 已下线的电商节点只显示占位，不打开提示词面板。
+            if (isRetiredEcommerceNode(panelNode) || panelNode.type === CanvasNodeType.Script || panelNode.type === CanvasNodeType.Drawing) return null;
             return panelNode.type === CanvasNodeType.Config ? (
                 <CanvasConfigComposer
                     nodeId={panelNode.id}
@@ -3443,8 +2249,6 @@ ${instruction.trim()}`
                 <CanvasNodePromptPanel
                     projectId={projectId}
                     node={panelNode}
-                    canvasKind={canvasKind}
-                    ecommercePromptAvailable={canvasKind === "ecommerce" && Boolean(resolveEcommerceInputs(panelNode.id, nodesRef.current, connectionsRef.current).prompt)}
                     isRunning={isCanvasNodeGenerating(panelNode, runningNodeId)}
                     mentionReferences={[
                         ...(mentionReferencesByNodeId.get(panelNode.id) || EMPTY_RESOURCE_REFERENCES),
@@ -3533,7 +2337,6 @@ ${instruction.trim()}`
             if (contentNode.metadata?.workflowKind === "story_input") {
                 return <CanvasStoryInputNodeContent node={contentNode} onEdit={() => openStoryInput(contentNode.id)} />;
             }
-            if (contentNode.type === CanvasNodeType.BatchTable && contentNode.metadata?.ecommerceFlowId) return <CanvasEcommerceTableNodeContent node={contentNode} />;
             if (contentNode.type === CanvasNodeType.BatchTable) {
                 return (
                     <CanvasBatchTableNodeContent
@@ -3714,17 +2517,6 @@ ${instruction.trim()}`
     );
     const retryCanvasNode = useCallback(
         (node: CanvasNodeData) => {
-            if (node.type === CanvasNodeType.EcommerceStudio) {
-                const work = node.metadata?.ecommerceWorkbench;
-                if (!work?.request) {
-                    message.warning("请在生图台选择电商操作后执行");
-                    return;
-                }
-                void ecommerceWorkbench
-                    .run({ ...structuredClone(work.request), resumeReceiptId: node.id, retryFailed: Boolean(work.inputSignature && work.steps.some((step) => step.status === "failed")) })
-                    .catch((error) => message.error(error instanceof Error ? error.message : "电商任务重试失败"));
-                return;
-            }
             if (node.metadata?.imageLayerWorkflow && !node.metadata.experimentalLayerPlan && !node.metadata.layerDecomposition) {
                 const source = nodesRef.current.find((item) => item.id === node.metadata!.imageLayerWorkflow!.sourceNodeId);
                 if (source?.metadata?.content) setLayerDecompositionNodeId(source.id);
@@ -3760,7 +2552,7 @@ ${instruction.trim()}`
             }
             void handleRetryNode(node);
         },
-        [ecommerceWorkbench.run, generateScriptRows, handleRetryNode, message, nodesRef, retryImageBatchChildren, setLayerDecompositionNodeId],
+        [generateScriptRows, handleRetryNode, message, nodesRef, retryImageBatchChildren, setLayerDecompositionNodeId],
     );
     const openCanvasNodeTaskDetails = useCallback(
         (node: CanvasNodeData) => {
@@ -3787,7 +2579,6 @@ ${instruction.trim()}`
             : [];
     const freeformCreateCommands = useCanvasCreateCommands({
         workspaceMode,
-        canvasKind: canvasKind,
         isProjectLinked: Boolean(shortDramaEnabled && currentProject?.projectId),
         handlers: {
             onAddText: () => createNode(CanvasNodeType.Text),
@@ -4077,7 +2868,6 @@ ${instruction.trim()}`
                         projectId={projectId}
                         nodes={nodes}
                         selectedNodeIds={selectedNodeIds}
-                        canvasKind={canvasKind}
                         onClose={() => setWorkspaceOpen(false)}
                         onAssets={() => openCanvasAssetLibrary()}
                         onProjectAssets={currentProject?.projectId ? () => openProjectAssets() : undefined}
@@ -4115,9 +2905,6 @@ ${instruction.trim()}`
                         <section data-canvas-editor className="relative min-w-0 flex-1 flex flex-col min-h-0 overflow-clip">
                             {!focusMode ? (
                                 <CanvasTopBar
-                                    ecommerce={currentProject?.kind === "ecommerce"}
-                                    workspaceMode={workspaceMode}
-                                    onWorkspaceModeChange={changeWorkspaceMode}
                                     view={canvasView}
                                     onViewChange={changeCanvasView}
                                     title={currentProject?.title || "未命名画布"}
@@ -4141,7 +2928,6 @@ ${instruction.trim()}`
                                     shortcutRequestNonce={shortcutRequestNonce}
                                     syncIcon={<CanvasSyncStatus projectId={projectId} />}
                                     onOpenSearch={() => setNodeSearchOpen(true)}
-                                    onOpenModelLibrary={canvasKind === "ecommerce" ? () => setModelLibraryOpen(true) : undefined}
                                     projectContext={
                                         shortDramaEnabled && currentProject?.projectId
                                             ? {
@@ -4196,15 +2982,6 @@ ${instruction.trim()}`
                             <TapNowImportDialog open={tapNowImportOpen} projectId={projectId} viewport={viewport} viewportSize={size} onClose={() => setTapNowImportOpen(false)} onApply={applyImportedCanvas} />
 
                             <CanvasStylePickerModal open={stylePickerOpen} value={activeStylePresetId} applying={styleApplying} onClose={() => setStylePickerOpen(false)} onSelect={selectCanvasStyle} />
-                            <CanvasEcommerceModelLibraryModal
-                                open={modelLibraryOpen}
-                                imageToAdd={modelImageToAdd || undefined}
-                                onClose={() => {
-                                    setModelLibraryOpen(false);
-                                    setModelImageToAdd(null);
-                                }}
-                            />
-
                             <CanvasPrevisTemplateModal open={Boolean(previsTemplateRequest)} onClose={() => setPrevisTemplateRequest(null)} onSelect={(templateId) => createPrevisShot(templateId, previsTemplateRequest?.position)} />
 
                             <div className="relative flex min-h-0 min-w-0 flex-1">
@@ -4227,9 +3004,6 @@ ${instruction.trim()}`
                                                 connectingParams={connectingParams}
                                                 batchConnectionPreview={batchConnectionPreview}
                                                 mouseWorld={mouseWorld}
-                                                connectionTargetNodeId={connectionTargetNodeId}
-                                                connectionTargetAnchorRatio={connectionTargetAnchorRatio}
-                                                connectionTargetAnchorXRatio={connectionTargetAnchorXRatio}
                                                 nodeById={nodeById}
                                                 selectionBox={selectionBox}
                                                 selectedNodeBounds={selectedNodeBounds}
@@ -4239,7 +3013,7 @@ ${instruction.trim()}`
                                         onViewportChange={handleViewportChange}
                                         onViewportPreviewChange={handleViewportPreviewChange}
                                         onCanvasMouseDown={handleCanvasMouseDown}
-                                        boxSelectEnabled={showProfessionalControls && canvasTool === "box-select"}
+                                        boxSelectEnabled={canvasTool === "box-select"}
                                         onCanvasDoubleClick={handleCanvasDoubleClick}
                                         onCanvasDeselect={deselectCanvas}
                                         onContextMenu={handleCanvasContextMenu}
@@ -4253,7 +3027,6 @@ ${instruction.trim()}`
                                                 <CanvasProjectWorldLayers
                                                     connectionApproach={connectionApproach}
                                                     isConnecting={Boolean(connectingParams || batchConnectionPreview)}
-                                                    connectionInteractionEnabled={showProfessionalControls}
                                                     projectId={projectId}
                                                     viewportScale={viewport.k}
                                                     connectionLayerBounds={connectionLayerBounds}
@@ -4344,7 +3117,6 @@ ${instruction.trim()}`
                                     {!focusMode || focusDockRevealed ? (
                                         <CanvasToolbar
                                             selectedCount={selectedNodeIds.size}
-                                            canvasKind={currentProject?.kind}
                                             workspaceMode={workspaceMode}
                                             canvasTool={canvasTool}
                                             onToolChange={setCanvasTool}
@@ -4381,29 +3153,7 @@ ${instruction.trim()}`
                                                 openCanvasAssetLibrary();
                                             }}
                                             onOpenProjectCharacters={() => openCharacterLibrary()}
-                                            onOpenEcommerceWorkbench={addEcommerceStudio}
                                             compact={dramaCanvas}
-                                        />
-                                    ) : null}
-                                </div>
-
-                                <div className="contents">
-                                    {canvasKind === "ecommerce" && workspaceMode === "professional" ? (
-                                        <CanvasEcommerceWorkbench
-                                            key={projectId}
-                                            studioId={ecommerceWorkbenchStudioId}
-                                            initialCapability={ecommerceWorkbenchCapability}
-                                            open={ecommerceWorkbenchOpen}
-                                            onClose={() => setEcommerceWorkbenchOpen(false)}
-                                            nodes={nodes}
-                                            connections={connections}
-                                            selectedIds={selectedNodeIds}
-                                            busy={ecommerceWorkbench.busy}
-                                            onRun={ecommerceWorkbench.run}
-                                            onStop={ecommerceWorkbench.stop}
-                                            onLayers={openLayerDecomposition}
-                                            onFocus={focusCanvasNode}
-                                            onAssets={() => openCanvasAssetLibrary()}
                                         />
                                     ) : null}
                                 </div>
@@ -4457,7 +3207,7 @@ ${instruction.trim()}`
                             ) : null}
 
                             {dialogNode &&
-                            !hasEmbeddedEcommerceControls(dialogNode) &&
+                            !isRetiredEcommerceNode(dialogNode) &&
                             !isCanvasImageSourceNode(dialogNode) &&
                             !dialogNode.metadata?.fileUpload &&
                             dialogNode.type !== CanvasNodeType.Script &&
@@ -4480,22 +3230,20 @@ ${instruction.trim()}`
                                 </CanvasNodePanelOverlay>
                             ) : null}
 
-                            {showProfessionalControls && pendingConnectionCreate ? (
+                            {pendingConnectionCreate ? (
                                 <CanvasConnectionCreateMenu
                                     pending={pendingConnectionCreate}
                                     viewport={viewport}
                                     viewportSize={size}
                                     containerRef={containerRef}
                                     canCreateDrawing={canCreateDrawingFromConnection}
-                                    canvasKind={canvasKind}
-                                    workspaceMode={workspaceMode}
                                     getDisabledReason={(type) => getConnectionCreateDisabledReason(type, pendingConnectionCreate)}
                                     onCreate={(type) => void createConnectedNode(type, pendingConnectionCreate)}
                                     onClose={cancelPendingConnectionCreate}
                                 />
                             ) : null}
 
-                            {showProfessionalControls && connectionReplaceHover ? (
+                            {connectionReplaceHover ? (
                                 <div
                                     className="pointer-events-none fixed z-[var(--z-dialog-popover)] flex select-none items-center gap-2 rounded-full border border-white/15 bg-black/60 px-2 py-1 text-[var(--fs-label)] font-medium text-white/90 shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-md transition-opacity duration-150"
                                     style={{
@@ -4510,7 +3258,7 @@ ${instruction.trim()}`
                                 </div>
                             ) : null}
 
-                            {showProfessionalControls && selectedNodeBounds && !selectionBox && !isCanvasNodeMoving ? (
+                            {selectedNodeBounds && !selectionBox && !isCanvasNodeMoving ? (
                                 <CanvasProjectSelectionToolbar
                                     anchorRef={selectionBoundsElementRef}
                                     containerRef={containerRef}
@@ -4542,8 +3290,6 @@ ${instruction.trim()}`
                             ) : null}
 
                             <CanvasNodeToolbar
-                                canvasKind={canvasKind}
-                                onSaveAsModel={saveImageAsModel}
                                 onRotateImage={(node, direction) => void rotateImageNode(node.id, direction)}
                                 onCreateEditCopy={(node) => duplicateNode(node.id, "linked-copy")}
                                 rotatingImage={rotatingNodeId !== null}
@@ -4608,9 +3354,7 @@ ${instruction.trim()}`
                                 onDelete={(node) => deleteNodes(new Set([node.id]))}
                             />
 
-                            {showProfessionalControls && isMiniMapOpen && !focusMode ? (
-                                <Minimap nodes={nodes} viewport={viewport} viewportSize={size} canvasContainerRef={containerRef} onViewportPreviewChange={previewViewport} onViewportChange={handleViewportChange} />
-                            ) : null}
+                            {isMiniMapOpen && !focusMode ? <Minimap nodes={nodes} viewport={viewport} viewportSize={size} canvasContainerRef={containerRef} onViewportPreviewChange={previewViewport} onViewportChange={handleViewportChange} /> : null}
 
                             {!focusMode ? (
                                 <CanvasOverlayLayerContainer
@@ -4632,18 +3376,13 @@ ${instruction.trim()}`
                                         isMiniMapOpen={isMiniMapOpen}
                                         onToggleMiniMap={() => setIsMiniMapOpen((value) => !value)}
                                         onOpenShortcuts={() => setShortcutRequestNonce((value) => value + 1)}
-                                        showProfessionalControls={showProfessionalControls}
                                         bare={dramaCanvas}
                                     />
                                 </CanvasOverlayLayerContainer>
                             ) : null}
 
                             <CanvasProjectContextMenu
-                                canvasKind={canvasKind}
-                                onSaveAsModel={saveImageAsModel}
-                                onUseAsStyleReference={useImageAsStyleReference}
-                                onOpenModelLibrary={() => setModelLibraryOpen(true)}
-                                menu={contextMenu?.type === "connection" && !showProfessionalControls ? null : contextMenu}
+                                menu={contextMenu}
                                 node={contextMenuNode}
                                 workspaceMode={workspaceMode}
                                 isProjectLinked={Boolean(currentProject?.projectId)}

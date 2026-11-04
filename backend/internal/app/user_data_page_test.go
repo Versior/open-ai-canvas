@@ -44,9 +44,10 @@ func TestUserCanvasLibraryPageIsBoundedAndScoped(t *testing.T) {
 	}
 }
 
-func TestUserCanvasLibrarySeparatesKindsBeforePagination(t *testing.T) {
+// 旧版电商画布下线后不再单独成库：带 kind=ecommerce 的存量画布和自由画布在同一个列表里。
+func TestUserCanvasLibraryListsRetiredEcommerceCanvases(t *testing.T) {
 	s, db := newProjectWorkbenchReadTestService(t)
-	for _, item := range []struct{ id, owner, kind string }{{"shop-a", "owner", "ecommerce"}, {"shop-b", "owner", "ecommerce"}, {"free", "owner", "freeform"}, {"legacy", "owner", ""}, {"foreign", "other", "ecommerce"}} {
+	for _, item := range []struct{ id, owner, kind string }{{"shop", "owner", "ecommerce"}, {"free", "owner", "freeform"}, {"legacy", "owner", ""}, {"foreign", "other", "ecommerce"}} {
 		payload := "{}"
 		if item.kind != "" {
 			payload = fmt.Sprintf(`{"kind":%q}`, item.kind)
@@ -55,21 +56,16 @@ func TestUserCanvasLibrarySeparatesKindsBeforePagination(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	page, err := s.UserCanvasProjectsPage("owner", 1, 1, "", "", "name", "ecommerce")
-	if err != nil || page.Total != 2 || len(page.Projects) != 1 || !page.HasMore || page.Projects[0].Kind != "ecommerce" {
-		t.Fatalf("ecommerce page: %+v %v", page, err)
+	page, err := s.UserCanvasProjectsPage("owner", 1, 40, "", "", "name")
+	if err != nil || page.Total != 3 || page.HasMore {
+		t.Fatalf("library page: %+v %v", page, err)
 	}
-	free, err := s.UserCanvasProjectsPage("owner", 1, 40, "", "", "name", "freeform")
-	if err != nil || free.Total != 2 || free.HasMore {
-		t.Fatalf("free page: %+v %v", free, err)
+	ids := map[string]bool{}
+	for _, project := range page.Projects {
+		ids[project.ID] = true
 	}
-	for _, project := range free.Projects {
-		if project.Kind == "ecommerce" {
-			t.Fatal("ecommerce canvas leaked into free library")
-		}
-	}
-	if _, err := s.UserCanvasProjectsPage("owner", 1, 40, "", "", "name", "bad"); err == nil {
-		t.Fatal("invalid kind accepted")
+	if !ids["shop"] || !ids["free"] || !ids["legacy"] || ids["foreign"] {
+		t.Fatalf("library should list every own canvas exactly once: %+v", ids)
 	}
 }
 

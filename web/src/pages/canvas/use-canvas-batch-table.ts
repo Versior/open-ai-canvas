@@ -10,7 +10,7 @@ import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasBatchRow, type CanvasBatchTableData, type CanvasConnection, type CanvasGenerationBatchMode, type CanvasNodeData } from "@/types/canvas";
 import type { BatchGenerationSettings } from "@/components/canvas/batch-generation-settings-dialog";
 import type { Asset } from "@/stores/use-asset-store";
-import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 
 type Options = {
     nodesRef: { current: CanvasNodeData[] };
@@ -175,7 +175,7 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, assets, setNodes
 
         let prepared: ReturnType<typeof prepareCanvasBatchTableGeneration>;
         try {
-            prepared = prepareCanvasBatchTableGeneration({ nodes: nodesRef.current, connections: connectionsRef.current, sourceNodeId: nodeId, rows, config: effectiveConfig, settings, assets, customModels: useEcommerceModelLibrary.getState().models });
+            prepared = prepareCanvasBatchTableGeneration({ nodes: nodesRef.current, connections: connectionsRef.current, sourceNodeId: nodeId, rows, config: effectiveConfig, settings, assets });
         } catch (error) {
             message.error(error instanceof Error ? error.message : "任务输入快照保存失败，未加入生成队列");
             return;
@@ -192,7 +192,8 @@ export function useCanvasBatchTable({ nodesRef, connectionsRef, assets, setNodes
     const generateRows = useCallback((nodeId: string, requestedRowIds?: string[]) => {
         const sourceNode = nodesRef.current.find((item) => item.id === nodeId);
         const table = sourceNode?.metadata?.batchTable;
-        if (!sourceNode || !table) return;
+        // 旧电商创作表已下线：它的行是电商套图方案，不能按普通批量表提交。
+        if (!sourceNode || !table || isRetiredEcommerceNode(sourceNode)) return;
         const imageModel = effectiveConfig.imageModel || effectiveConfig.model;
         if (!isAiConfigReady(effectiveConfig, imageModel)) {
             navigateToSettings({ continueCreation: true });

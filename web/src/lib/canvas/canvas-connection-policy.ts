@@ -1,6 +1,7 @@
 import { audioModelForConnection, audioReferenceCapacity, doubaoAudioInputError, isDoubaoAudioModel, maxModelInputCapacity, resolveCompatibleModel, type ModelInputSummary } from "@/lib/model-selection";
 import { getNodeAcceptedInputKinds, getNodeGenerationMode, getNodeInputKind, getNodeMaxInputCount } from "@/lib/canvas/node-registry";
 import { readNodeGenerationSpec, resolveGenerationSelection } from "@/lib/canvas/generation-contract";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import type { AiConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
@@ -13,29 +14,9 @@ type CanvasConnectionPolicyOptions = {
 export function canvasConnectionError(config: AiConfig, nodes: CanvasNodeData[], connections: CanvasConnection[], candidate: ConnectionCandidate, options: CanvasConnectionPolicyOptions = {}) {
     const target = nodes.find((node) => node.id === candidate.toNodeId);
     if (!target) return "找不到连线目标节点";
-    if (target.type === CanvasNodeType.EcommerceStudio && target.metadata?.locked) return "电商生图台已锁定";
-    if (target.type === CanvasNodeType.EcommerceStudio) {
-        const source = nodes.find((node) => node.id === candidate.fromNodeId);
-        if (!source || ![CanvasNodeType.Product, CanvasNodeType.Image, CanvasNodeType.Text].includes(source.type as CanvasNodeType)) return "电商生图台只接受商品、图片或文本输入";
-        if (source.id === target.id) return "生图台不能连接自身";
-        const visited = new Set<string>();
-        const pending = [target.id];
-        while (pending.length) {
-            const id = pending.pop()!;
-            if (id === source.id) return "不能将生图台下游结果连回输入，请复制为独立素材后使用";
-            if (visited.has(id)) continue;
-            visited.add(id);
-            for (const edge of connections) if (edge.fromNodeId === id) pending.push(edge.toNodeId);
-        }
-    }
+    // 旧版电商画布的节点已下线：存量连线保留，但不能再连入或连出。
+    if (isRetiredEcommerceNode(target) || isRetiredEcommerceNode(nodes.find((node) => node.id === candidate.fromNodeId))) return "该节点类型已下线，不能连线";
     if (target.type === CanvasNodeType.BatchTable && target.metadata?.locked) return "批量创作表已锁定";
-    const sourceNode = nodes.find((node) => node.id === candidate.fromNodeId);
-    if (target.type === CanvasNodeType.BatchTable && (sourceNode?.type === CanvasNodeType.Product || target.metadata?.ecommerceFlowId)) {
-        if (sourceNode?.type !== CanvasNodeType.Product) return "电商创作表只接受商品输入";
-        if (target.metadata?.ecommerceProductId && target.metadata.ecommerceProductId !== sourceNode.id) return "此创作表属于其他商品，请新建创作表";
-        if (connections.some((edge) => edge.toNodeId === target.id && edge.fromNodeId !== sourceNode.id)) return "创作表只能连接一个商品，请先断开已有输入";
-        return "";
-    }
     const acceptedInputKinds = getNodeAcceptedInputKinds(target.type);
     if (acceptedInputKinds.length) {
         const source = nodes.find((node) => node.id === candidate.fromNodeId);

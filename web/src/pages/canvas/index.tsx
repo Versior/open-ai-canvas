@@ -30,13 +30,10 @@ import { primeResourceBlobCache } from "@/services/resource-blob-cache";
 import { useSyncProgressStore } from "@/stores/use-sync-progress-store";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
-import { ecommerceCanvasPreset, ecommerceCanvasTitle } from "@/lib/ecommerce/ecommerce-canvas-preset";
-import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 
 const CanvasDeleteProjectsDialog = lazy(() => import("@/components/canvas/canvas-delete-projects-dialog").then((module) => ({ default: module.CanvasDeleteProjectsDialog })));
 
-export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | "ecommerce" }) {
-    const ecommerce = kind === "ecommerce";
+export default function CanvasPage() {
     const { message } = App.useApp();
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const navigate = useNavigate();
@@ -60,8 +57,8 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
         return () => window.clearTimeout(timer);
     }, [keyword]);
     const libraryQuery = useInfiniteQuery({
-        queryKey: ["canvas-library", userId, kind, projectFilter, sort, debouncedKeyword],
-        queryFn: ({ pageParam, signal }) => listRemoteCanvasProjectsPage({ page: pageParam, pageSize: 40, kind, projectId: projectFilter, sort, query: debouncedKeyword, signal }),
+        queryKey: ["canvas-library", userId, projectFilter, sort, debouncedKeyword],
+        queryFn: ({ pageParam, signal }) => listRemoteCanvasProjectsPage({ page: pageParam, pageSize: 40, projectId: projectFilter, sort, query: debouncedKeyword, signal }),
         initialPageParam: 1,
         getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
         enabled: Boolean(userId) && sessionHydrated,
@@ -70,19 +67,16 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
         () =>
             userId
                 ? libraryQuery.data?.pages.flatMap((page) => page.projects) || []
-                : localProjects
-                      .filter((project) => (project.kind === "ecommerce") === ecommerce)
-                      .map((project) => ({
-                          ...project,
-                          nodeCount: project.nodes.length,
-                          previewNodes: project.nodes.filter((node) => node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video).slice(0, 4),
-                      })),
-        [libraryQuery.data, localProjects, userId, ecommerce],
+                : localProjects.map((project) => ({
+                      ...project,
+                      nodeCount: project.nodes.length,
+                      previewNodes: project.nodes.filter((node) => node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video).slice(0, 4),
+                  })),
+        [libraryQuery.data, localProjects, userId],
     );
     const totalProjects = userId ? libraryQuery.data?.pages[0]?.total || 0 : projects.length;
     const importProject = useCanvasStore((state) => state.importProject);
-    const allSelectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
-    const selectedIds = allSelectedIds.filter((id) => projects.some((project) => project.id === id));
+    const selectedIds = useCanvasUiStore((state) => state.selectedProjectIds);
     const deleteDialogOpen = useCanvasUiStore((state) => state.deleteProjectIds.length > 0);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const updateProject = useCanvasStore((state) => state.updateProject);
@@ -115,9 +109,7 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
         creatingRef.current = true;
         setCreating(true);
         try {
-            if (ecommerce && !(await useEcommerceSettings.getState().load()).enabled) throw new Error("管理员已停用新建电商画布");
-            const title = ecommerce ? ecommerceCanvasTitle(projects.map((project) => project.title)) : `自由画布 ${projects.length + 1}`;
-            const { id, syncError } = await createCanvasProjectWithRemoteSync(title, undefined, ecommerce ? { ...ecommerceCanvasPreset(), kind: "ecommerce" } : undefined);
+            const { id, syncError } = await createCanvasProjectWithRemoteSync(`自由画布 ${projects.length + 1}`);
             if (syncError) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
             enterProject(id);
         } catch (error) {
@@ -436,13 +428,13 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
         <WorkspacePage className="studio-collection-page">
             <div className="studio-band">
                 <PageHeader
-                    title={ecommerce ? "我的电商画布" : "我的画布"}
-                    description={ecommerce ? "管理商品素材、画面方案与电商交付。" : "把镜头、素材和想法留在同一张画布里。"}
+                    title="我的画布"
+                    description="把镜头、素材和想法留在同一张画布里。"
                     meta={<span className="app-projects-header-meta">{totalProjects} 个</span>}
                     actions={
                         <div className="collection-header-actions">
                             <Button disabled={!hydrated || creating} loading={creating} icon={<Plus />} onClick={() => void createAndEnter()}>
-                                {ecommerce ? "新建电商画布" : "新建画布"}
+                                新建画布
                             </Button>
                             <Button disabled={!hydrated} icon={<FileUp />} onClick={() => inputRef.current?.click()}>
                                 导入
@@ -543,11 +535,11 @@ export default function CanvasPage({ kind = "freeform" }: { kind?: "freeform" | 
                 ) : (
                     <WorkspaceState
                         icon="canvas"
-                        title={ecommerce ? "创建第一张电商画布" : "让第一个想法落在画布上"}
-                        description={ecommerce ? "从商品实拍开始，规划画面并制作套图。" : "图片、分镜和灵感，都可以在这里自由组织。"}
+                        title="让第一个想法落在画布上"
+                        description="图片、分镜和灵感，都可以在这里自由组织。"
                         action={
                             <Button type="primary" icon={<Plus />} disabled={!hydrated || creating} title={hydrated ? undefined : "正在恢复本地画布，完成后可新建"} onClick={() => void createAndEnter()}>
-                                {ecommerce ? "新建电商画布" : "新建画布"}
+                                新建画布
                             </Button>
                         }
                     />

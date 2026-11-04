@@ -4,10 +4,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strconv"
-	"time"
 	"yingce/backend/internal/service"
 )
 
+// RegisterEcommerceCanvasRoutes 注册电商生图台的后台配置（商品档案指令、套图模板）与 EcomGen 模板目录。
+// 旧版电商画布已下线，公开配置、公共模特图片上传与读取接口随之删除。
 func RegisterEcommerceCanvasRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.GET("/ecommerce/templates", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
@@ -61,20 +62,6 @@ func RegisterEcommerceCanvasRoutes(r *gin.RouterGroup, svc *service.Service) {
 		c.Header("Cache-Control", "no-store")
 		ok(c, gin.H{"defaults": value})
 	})
-	r.GET("/ecommerce/settings", func(c *gin.Context) {
-		actor, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		value, err := svc.EcommerceSetting(actor)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		c.Header("Cache-Control", "no-store")
-		ok(c, gin.H{"setting": value})
-	})
 	r.GET("/admin/settings/ecommerce", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {
@@ -123,48 +110,5 @@ func RegisterEcommerceCanvasRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, gin.H{"setting": value})
-	})
-	r.POST("/admin/settings/ecommerce/images", func(c *gin.Context) {
-		actor, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		if err := svc.RequireAdmin(actor); err != nil {
-			failService(c, err)
-			return
-		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 11<<20)
-		policy, available := loadRuntimePolicy(c, svc)
-		if !available || !enforceRateLimit(c, "admin-ecommerce-upload:"+actor.ID, policy.Request.ResourceUploadPerMinute, time.Minute) {
-			return
-		}
-		file, err := c.FormFile("file")
-		if c.Request.MultipartForm != nil {
-			defer c.Request.MultipartForm.RemoveAll()
-		}
-		if err != nil {
-			fail(c, http.StatusBadRequest, err)
-			return
-		}
-		resource, err := svc.UploadEcommerceModelImage(actor, file)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		ok(c, gin.H{"resource": resource})
-	})
-	r.GET("/ecommerce/models/:modelId/images/:resourceId", func(c *gin.Context) {
-		actor, err := currentUser(c, svc)
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		value, err := svc.PrepareEcommerceModelDelivery(actor, c.Param("modelId"), c.Param("resourceId"), resourceAccessOptions(c), c.GetHeader("Range"))
-		if err != nil {
-			failService(c, err)
-			return
-		}
-		serveResourceDelivery(c, value, "private, no-cache", "")
 	})
 }

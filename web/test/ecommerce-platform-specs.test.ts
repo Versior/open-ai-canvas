@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { createEcommerceShot } from "@/lib/ecommerce/ecommerce-contract";
 import {
     ECOMMERCE_PLATFORMS,
     aspectRatioLabel,
@@ -14,8 +13,6 @@ import {
     ecommercePlatformChoiceLabel,
     resolveEcommercePlatformId,
 } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { ecommerceDiagramBoxes, ecommerceShotDiagram } from "@/lib/ecommerce/ecommerce-shot-diagram";
-import { ECOMMERCE_BRIEF_CHOICES, ecommerceChoiceOptions } from "@/components/canvas/ecommerce-choice-input";
 
 describe("platform specs", () => {
     test("resolves platform ids from ids, display names and common aliases", () => {
@@ -48,17 +45,6 @@ describe("platform specs", () => {
         // 用户自己填的平台不清空、不改写
         expect(ecommercePlatformChoiceLabel("我自己的小店")).toBe("我自己的小店 · 通用建议");
         expect(ecommercePlatformChoiceLabel("")).toBe("");
-    });
-
-    test("only the platform field annotates its dropdown; market and language stay as they are", () => {
-        // 平台候选：显示文案带口径，提交值仍是原文
-        expect(ecommerceChoiceOptions(["淘宝", "快手"], "", true)).toEqual([
-            { value: "淘宝", label: "淘宝 · 专属规格" },
-            { value: "快手", label: "快手 · 通用建议" },
-        ]);
-        // 市场与语言一字不加，过滤行为不变
-        expect(ecommerceChoiceOptions(["中国", "美国"], "美", false)).toEqual([{ value: "美国", label: "美国" }]);
-        expect(ecommerceChoiceOptions(ECOMMERCE_BRIEF_CHOICES.language, "", false).map((option) => option.label)).toEqual([...ECOMMERCE_BRIEF_CHOICES.language]);
     });
 
     test("covers both the domestic and the overseas platforms this product ships to", () => {
@@ -237,54 +223,5 @@ describe("platform specs", () => {
         // 版本号只增不减——名字里必须带 v
         expect(ecommerceFileName({ code: "A001", role: "white", index: 1 })).toContain("_v1");
         expect(ecommerceFileName({ code: "", role: "detail", index: 9, platformId: "douyin" })).toBe("ITEM_详情_09_douyin_v1.jpg");
-    });
-});
-
-describe("shot composition diagram", () => {
-    test("reads the product position out of the composition text", () => {
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), composition: "商品完整入画，居中构图" }).product).toBe("center");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), composition: "商品偏左放置" }).product).toBe("left");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), composition: "商品偏右，右侧留白" }).product).toBe("right");
-    });
-
-    test("reads the copy zone, including the no-copy case", () => {
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), copyZone: "顶部留出标题位" }).copyZone).toBe("top");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), copyZone: "底部留出文案位" }).copyZone).toBe("bottom");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), copyZone: "四周预留标题与价格位置" }).copyZone).toBe("around");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), copyZone: "不预留文案位" }).copyZone).toBeNull();
-    });
-
-    test("reads the key light direction", () => {
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), lighting: "主光位于右上方 45°" }).light).toBe("right");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), lighting: "侧逆光" }).light).toBe("back");
-        expect(ecommerceShotDiagram({ ...createEcommerceShot("x"), lighting: "柔和均匀棚拍布光" }).light).toBe("front");
-    });
-
-    test("close-ups draw a bigger product frame", () => {
-        const close = ecommerceShotDiagram({ ...createEcommerceShot("x"), lens: "100mm 微距" });
-        const wide = ecommerceShotDiagram({ ...createEcommerceShot("x"), lens: "35mm" });
-        expect(close.closeUp).toBe(true);
-        expect(ecommerceDiagramBoxes(close).product.width).toBeGreaterThan(ecommerceDiagramBoxes(wide).product.width);
-    });
-
-    test("an empty recipe falls back to the neutral frame instead of guessing", () => {
-        const diagram = ecommerceShotDiagram(createEcommerceShot("空"));
-        expect(diagram).toEqual({ product: "center", copyZone: null, light: "front", closeUp: false });
-        expect(ecommerceShotDiagram(undefined).product).toBe("center");
-    });
-
-    test("every box stays inside the frame", () => {
-        for (const preset of ["center", "left", "right"] as const) {
-            for (const copyZone of ["top", "bottom", "left", "right", "around", null] as const) {
-                const { product, copy } = ecommerceDiagramBoxes({ product: preset, copyZone, light: "front", closeUp: false });
-                expect(product.left).toBeGreaterThanOrEqual(0);
-                expect(product.left + product.width).toBeLessThanOrEqual(100);
-                if (copy) {
-                    expect(copy.left).toBeGreaterThanOrEqual(0);
-                    expect(copy.left + copy.width).toBeLessThanOrEqual(100);
-                    expect(copy.top + copy.height).toBeLessThanOrEqual(100);
-                }
-            }
-        }
     });
 });

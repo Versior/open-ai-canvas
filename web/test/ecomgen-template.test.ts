@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import { parseEcomgenTemplate, ecommerceTemplateRows } from "../src/lib/ecommerce/ecomgen-template";
 import { parseEcommerceSetting, DEFAULT_ECOMMERCE_SETTING } from "../src/services/api/ecommerce-canvas";
-import { ecommerceBriefBlock } from "../src/lib/ecommerce/ecommerce-brief";
 
 const suite = {
     schemaVersion: 1,
@@ -25,7 +24,7 @@ test("EcomGen import orders shots and retains editable visual guidance without i
     expect(rows.map((row) => row.prompt)).toEqual(["", ""]);
     expect(new Set(rows.map((row) => row.slotId)).size).toBe(2);
     expect(ecommerceTemplateRows(template)[0].slotId).not.toBe(rows[0].slotId);
-    expect(ecommerceBriefBlock({ template, style: template.style, imageCount: rows.length })).toContain("Consistent light");
+    expect(template.style).toContain("Consistent light");
     template.shots[0].title = "Later admin edit";
     expect(rows[0].title).toBe("Hero");
 });

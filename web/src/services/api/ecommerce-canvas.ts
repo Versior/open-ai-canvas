@@ -1,5 +1,4 @@
-import { apiBaseURL, http } from "./request";
-import type { RemoteResource } from "./resources";
+import { http } from "./request";
 import { canonicalize } from "json-canonicalize";
 import { ECOMMERCE_SETTING_CAPABILITIES, type EcommerceSettingCapability } from "@/lib/ecommerce/ecommerce-capabilities";
 export const ECOMMERCE_FLOW_IDS = ["detail", "main", "wear", "seed"] as const;
@@ -32,7 +31,7 @@ export function ecommerceSettingsEqual(a: EcommerceSetting, b: EcommerceSetting,
     return canonicalize(ignoreRevision ? { ...a, revision: "" } : a) === canonicalize(ignoreRevision ? { ...b, revision: "" } : b);
 }
 export function parseEcommerceSetting(value: unknown): EcommerceSetting {
-    if (!value || typeof value !== "object") throw new Error("电商画布配置格式无效");
+    if (!value || typeof value !== "object") throw new Error("电商生图台配置格式无效");
     const setting = structuredClone(value) as EcommerceSetting;
     if (setting.capabilities && typeof setting.capabilities === "object") {
         for (const item of Object.values(setting.capabilities)) {
@@ -104,7 +103,7 @@ export function parseEcommerceSetting(value: unknown): EcommerceSetting {
                 model.resourceIds.every((id) => typeof id === "string"),
         )
     )
-        throw new Error("电商画布配置格式无效");
+        throw new Error("电商生图台配置格式无效");
     if (
         !setting.revision ||
         setting.models.length > 200 ||
@@ -125,14 +124,13 @@ export function parseEcommerceSetting(value: unknown): EcommerceSetting {
         ) ||
         ECOMMERCE_FLOW_IDS.some((id) => [...setting.flows[id].directorPrompt].length > 20000)
     )
-        throw new Error("电商画布配置字段无效");
+        throw new Error("电商生图台配置字段无效");
     return setting;
 }
 async function readSetting(path: string) {
     const result = await http.get<{ setting: unknown }>(path);
     return parseEcommerceSetting(result.setting);
 }
-export const getEcommerceSetting = () => readSetting("/ecommerce/settings");
 export const getAdminEcommerceSetting = () => readSetting("/admin/settings/ecommerce");
 export const getAdminEcommerceDefaults = () => http.get<{ defaults: Record<string, string> }>("/admin/settings/ecommerce/defaults", { timeout: 15000 });
 export type EcommerceCatalogEntry = { id: string; name: string; category: string; description: string; count: number };
@@ -145,12 +143,4 @@ export async function saveAdminEcommerceSetting(value: EcommerceSetting) {
     if (new TextEncoder().encode(JSON.stringify(validated)).byteLength > 2 * 1024 * 1024) throw new Error("电商配置超过 2MB，请减少模板数量或缩短内容后保存");
     const result = await http.put<{ setting: unknown }>("/admin/settings/ecommerce", validated);
     return parseEcommerceSetting(result.setting);
-}
-export function uploadEcommerceModelImage(file: File) {
-    const form = new FormData();
-    form.append("file", file);
-    return http.post<{ resource: RemoteResource }>("/admin/settings/ecommerce/images", form);
-}
-export function ecommercePublicImageUrl(modelId: string, resourceId: string) {
-    return `${apiBaseURL.replace(/\/$/, "")}/ecommerce/models/${encodeURIComponent(modelId)}/images/${encodeURIComponent(resourceId)}`;
 }

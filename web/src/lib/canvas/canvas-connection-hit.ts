@@ -74,7 +74,7 @@ export function resolveCanvasConnectionTarget({
     const handleFor = (node: CanvasNodeData) =>
         node.type === CanvasNodeType.Script ? storyboardHandleAtY(node, point.y, scriptScrollTopById[node.id] || 0) : node.type === CanvasNodeType.BatchTable ? batchReferenceHandleAtY(node, point.y, radius) : undefined;
     const targetFor = (node: CanvasNodeData, handleId = handleFor(node)): CanvasConnectionDropTarget => {
-        const missingHandle = (node.type === CanvasNodeType.Script || (node.type === CanvasNodeType.BatchTable && !node.metadata?.ecommerceFlowId)) && !handleId;
+        const missingHandle = (node.type === CanvasNodeType.Script || node.type === CanvasNodeType.BatchTable) && !handleId;
         const accepted = !missingHandle && canConnect(node);
         return accepted ? { nodeId: node.id, handleId, isNearNode: true } : { nodeId: null, handleId, isNearNode: true, rejectedNodeId: node.id };
     };

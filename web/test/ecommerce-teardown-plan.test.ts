@@ -8,12 +8,10 @@ import {
     createEcommerceTeardownDraft,
     ecommerceTeardownOutlineToSuiteRows,
     ecommerceTeardownPlanRequest,
-    ecommerceTeardownPlanSourceSignature,
     parseEcommerceTeardownPlan,
     parseEcommerceTeardownPlanRequest,
     type EcommerceTeardownDimension,
 } from "@/lib/ecommerce/ecommerce-teardown";
-import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { reconcileEcommerceSuiteDraftRows } from "@/lib/ecommerce/ecommerce-suite";
 
 const selectedDimensions: EcommerceTeardownDimension[] = ["structure", "evidence"];
@@ -27,40 +25,6 @@ const validPlan = JSON.stringify({
         { title: "反常规证据", brief: "先给实测结果，再解释原理。", stance: "differentiate" },
     ],
 });
-
-function target(dimensions: EcommerceTeardownDimension[] = selectedDimensions): CanvasNodeData {
-    return {
-        id: "teardown-target",
-        type: CanvasNodeType.Teardown,
-        position: { x: 0, y: 0 },
-        metadata: { ecommerceTeardown: { ...createEcommerceTeardown("竞品 A"), dimensions } },
-    };
-}
-
-function reference(content: string): CanvasNodeData {
-    return { id: "reference-image", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, metadata: { content } };
-}
-
-function product(id = "confirmed-product", facts = "净重 210g"): CanvasNodeData {
-    return {
-        id,
-        type: CanvasNodeType.Product,
-        position: { x: 0, y: 0 },
-        metadata: {
-            productProfile: {
-                name: "轻量保温杯",
-                category: "杯具",
-                appearance: "雾白色杯身",
-                marks: "YINGCE",
-                forbidden: "不得改变杯盖结构",
-                audience: "通勤人群",
-                facts,
-                price: "99 元",
-                views: {},
-            },
-        },
-    };
-}
 
 describe("ecommerce teardown structured plan", () => {
     test("request markers round-trip the target without leaking into the prompt", () => {
@@ -123,23 +87,6 @@ describe("ecommerce teardown structured plan", () => {
         expect(repeated.outline.map((item) => item.id)).toEqual(first.outline.map((item) => item.id));
         expect(otherSource.outline[0].id).not.toBe(first.outline[0].id);
         expect(otherPlan.outline[0].id).not.toBe(first.outline[0].id);
-    });
-
-    test("source signatures follow selected dimensions, reference identity and confirmed product facts without retaining raw sensitive inputs", () => {
-        const source = reference("https://cdn.example.test/detail.png?token=secret");
-        const confirmed = product("confirmed-product", "净重 210g；来源 https://private.test/?token=product-secret；data:raw；blob:raw");
-        const signature = ecommerceTeardownPlanSourceSignature({ target: target(), referenceImage: source, product: confirmed });
-
-        expect(signature).not.toContain("https://");
-        expect(signature).not.toContain("token");
-        expect(signature).not.toContain("secret");
-        expect(signature).not.toContain("data:");
-        expect(signature).not.toContain("blob:");
-        expect(ecommerceTeardownPlanSourceSignature({ target: target(["structure"]), referenceImage: source, product: confirmed })).not.toBe(signature);
-        expect(ecommerceTeardownPlanSourceSignature({ target: target(), referenceImage: reference("data:image/png;base64,raw-bytes"), product: confirmed })).not.toBe(signature);
-        expect(ecommerceTeardownPlanSourceSignature({ target: target(), referenceImage: source, product: product("confirmed-product", "净重 300g") })).not.toBe(signature);
-        expect(ecommerceTeardownPlanSourceSignature({ target: target(), referenceImage: source, product: product("other-product", confirmed.metadata!.productProfile!.facts) })).not.toBe(signature);
-        expect(ecommerceTeardownPlanSourceSignature({ target: { ...target(), metadata: { ...target().metadata, model: "other-model" } }, referenceImage: source, product: confirmed })).toBe(signature);
     });
 
     test("an accepted outline becomes a clean editable suite skeleton that preserves differentiation intent", () => {

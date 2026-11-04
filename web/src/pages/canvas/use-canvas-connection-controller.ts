@@ -9,7 +9,6 @@ import { batchCellSourcesError, batchConnectionRejectReason, batchSourceRestrict
 import { batchCellConnectionError, batchCellHandle, parseBatchCellHandle, type BatchScroll } from "@/lib/canvas/canvas-batch-references";
 import { connectedNodeCenterFromEdgeDrop } from "@/lib/canvas/canvas-connected-node-placement";
 import { canvasConnectionError, connectionInputSummary } from "@/lib/canvas/canvas-connection-policy";
-import { isEcommerceInputHandle, withEcommerceInputConnection } from "@/lib/ecommerce/ecommerce-canvas";
 import { createCanvasConnectionHitIndexCache, resolveCanvasConnectionTarget, type CanvasConnectionDropTarget as ConnectionDropTarget } from "@/lib/canvas/canvas-connection-hit";
 import { CANVAS_WHEEL_POPUP_SELECTOR } from "@/lib/canvas/canvas-wheel-intent";
 import { audioModelForConnectionInput } from "@/lib/model-selection";
@@ -53,7 +52,6 @@ export type ConnectionReplaceHover = {
     clientY: number;
 };
 
-type EcommerceConnectionDropTarget = ConnectionDropTarget & { anchorXRatio?: number };
 type BatchConnectionDropTarget = ConnectionDropTarget;
 
 // LibTV's 80px world-space quick-add zone renders at roughly 110px on the
@@ -99,9 +97,6 @@ export function useCanvasConnectionController({
     const [connectingParams, setConnectingParams] = useState<ConnectionHandle | null>(null);
     const [connectionTargetNodeId, setConnectionTargetNodeId] = useState<string | null>(null);
     const [connectionApproach, setConnectionApproach] = useState<CanvasConnectionApproach>(null);
-    const [connectionTargetAnchorRatio, setConnectionTargetAnchorRatio] = useState<number | undefined>();
-    const [connectionTargetAnchorXRatio, setConnectionTargetAnchorXRatio] = useState<number | undefined>();
-    const [connectionTargetHandleId, setConnectionTargetHandleId] = useState<string | undefined>();
     const [connectionReplaceHover, setConnectionReplaceHover] = useState<ConnectionReplaceHover | null>(null);
     const [pendingConnectionCreate, setPendingConnectionCreate] = useState<PendingConnectionCreate | null>(null);
     const [batchConnectionPreview, setBatchConnectionPreview] = useState<CanvasBatchConnectionPreview | null>(null);
@@ -177,9 +172,6 @@ export function useCanvasConnectionController({
                 connectingPointerIdRef.current = null;
                 connectingPointerStartRef.current = null;
                 setConnectionTargetNodeId(null);
-                setConnectionTargetAnchorRatio(undefined);
-                setConnectionTargetAnchorXRatio(undefined);
-                setConnectionTargetHandleId(undefined);
             }
         },
         [updateConnectionReplaceHover],
@@ -239,7 +231,7 @@ export function useCanvasConnectionController({
     );
 
     const connectNodes = useCallback(
-        (current: ConnectionHandle, targetNodeId: string, targetHandleId?: string, targetAnchorRatio?: number, targetAnchorXRatio?: number) => {
+        (current: ConnectionHandle, targetNodeId: string, targetHandleId?: string, targetAnchorRatio?: number) => {
             if (current.nodeId === targetNodeId) return;
             const connection = normalizeConnection(current.nodeId, targetNodeId, nodesRef.current, current.handleType);
             if (!connection) {
@@ -259,27 +251,16 @@ export function useCanvasConnectionController({
                 setContextMenu(null);
                 return;
             }
-            const toAnchorXRatio = toNodeId === current.nodeId ? current.anchorXRatio : targetAnchorXRatio;
-            if (isEcommerceInputHandle(toHandleId) && (!isEcommerceInputHandle(toHandleId, nodesRef.current.find((node) => node.id === toNodeId)?.type) || nodesRef.current.find((node) => node.id === fromNodeId)?.type !== CanvasNodeType.Image)) {
-                message.warning("商品视图和参考图槽位只接受图片节点");
-                return;
-            }
-            const edge = { id: nanoid(), fromNodeId, toNodeId, fromHandleId, toHandleId, fromAnchorRatio, toAnchorRatio, toAnchorXRatio };
-            const remaining = isEcommerceInputHandle(toHandleId) ? withEcommerceInputConnection(connectionsRef.current, edge).filter((item) => item.id !== edge.id) : connectionsRef.current;
-            const policyError = canvasConnectionError(config, nodesRef.current, remaining, { fromNodeId, toNodeId });
+            const policyError = canvasConnectionError(config, nodesRef.current, connectionsRef.current, { fromNodeId, toNodeId });
             if (policyError) {
                 message.warning(policyError);
                 return;
             }
             const exists = connectionsRef.current.find((item) => item.fromNodeId === fromNodeId && item.toNodeId === toNodeId && item.fromHandleId === fromHandleId && item.toHandleId === toHandleId);
             if (exists) {
-                const next = connectionsRef.current.map((item) => (item.id === exists.id ? { ...item, fromAnchorRatio, toAnchorRatio, toAnchorXRatio } : item));
-                connectionsRef.current = next;
-                setConnections(next);
+                setConnections((currentConnections) => currentConnections.map((item) => (item.id === exists.id ? { ...item, fromAnchorRatio, toAnchorRatio } : item)));
             } else {
-                const next = withEcommerceInputConnection(connectionsRef.current, edge);
-                connectionsRef.current = next;
-                setConnections(next);
+                setConnections((currentConnections) => [...currentConnections, { id: `conn-${Date.now()}`, fromNodeId, toNodeId, fromHandleId, toHandleId, fromAnchorRatio, toAnchorRatio }]);
                 setNodes((currentNodes) => attachNodeToStoryboardRow(currentNodes, { fromNodeId, toNodeId, fromHandleId, toHandleId }));
             }
             setContextMenu(null);
@@ -290,10 +271,6 @@ export function useCanvasConnectionController({
     const createConnectedNode = useCallback(
         async (type: CanvasCreatableNodeType, pending: PendingConnectionCreate, workflowProvider?: "runninghub") => {
             const nodeType = type;
-            if (isEcommerceInputHandle(pending.connection.handleId) && nodeType !== CanvasNodeType.Image) {
-                message.warning("商品视图和参考图槽位只接受图片节点");
-                return;
-            }
             if (nodeType === CanvasNodeType.Drawing && !isDrawingEngineAvailable(defaultDrawingEngine, tldrawLicenseKey)) {
                 message.error("当前生产构建未配置 tldraw License Key，不能创建 tldraw 绘图");
                 closeConnectionCreateMenu();
@@ -469,10 +446,9 @@ export function useCanvasConnectionController({
             const toHandleId = connection.toNodeId === pending.connection.nodeId ? pending.connection.handleId : undefined;
             const fromAnchorRatio = connection.fromNodeId === pending.connection.nodeId ? pending.connection.anchorRatio : 0.5;
             const toAnchorRatio = connection.toNodeId === pending.connection.nodeId ? pending.connection.anchorRatio : 0.5;
-            const toAnchorXRatio = connection.toNodeId === pending.connection.nodeId ? pending.connection.anchorXRatio : undefined;
-            const connected = { ...connection, fromHandleId, toHandleId, fromAnchorRatio, toAnchorRatio, toAnchorXRatio };
+            const connected = { ...connection, fromHandleId, toHandleId, fromAnchorRatio, toAnchorRatio };
             setNodes((currentNodes) => attachNodeToStoryboardRow([...currentNodes, newNode], connected));
-            setConnections((currentConnections) => withEcommerceInputConnection(currentConnections, { id: nanoid(), ...connected }));
+            setConnections((currentConnections) => [...currentConnections, { id: nanoid(), ...connected }]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
             if (nodeType === CanvasNodeType.Drawing) setDrawingNodeId(newNode.id);
@@ -504,7 +480,6 @@ export function useCanvasConnectionController({
     const getConnectionCreateDisabledReason = useCallback(
         (type: CanvasCreatableNodeType, pending: PendingConnectionCreate, workflowProvider?: "runninghub") => {
             const nodeType = type;
-            if (isEcommerceInputHandle(pending.connection.handleId) && nodeType !== CanvasNodeType.Image) return "此槽位只接受图片节点";
             if (nodeType === CanvasNodeType.Config) {
                 if (workflowProvider && !workflowProviderPluginEnabled(runtimeStatuses, workflowProvider)) return "RunningHub 工作流插件未启用";
             }
@@ -528,22 +503,7 @@ export function useCanvasConnectionController({
     );
 
     const getConnectionDropTarget = useCallback(
-        (clientX: number, clientY: number, current: ConnectionHandle): EcommerceConnectionDropTarget => {
-            const slot = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-ecommerce-input]");
-            const slotNodeId = slot?.dataset.productNodeId;
-            if (slot && slotNodeId && current.handleType === "source" && slotNodeId !== current.nodeId) {
-                const handleId = slot.dataset.ecommerceInput;
-                const wrapper = slot.closest<HTMLElement>("[data-node-id]");
-                const rect = wrapper?.getBoundingClientRect();
-                const pin = slot.querySelector(".ecom-input-pin")?.getBoundingClientRect();
-                const source = nodesRef.current.find((node) => node.id === current.nodeId);
-                const target = nodesRef.current.find((node) => node.id === slotNodeId);
-                if (source?.type !== CanvasNodeType.Image || !target || !isEcommerceInputHandle(handleId, target.type) || !rect?.width || !rect.height || !pin) return { nodeId: null, isNearNode: true };
-                const edge = { id: "candidate", fromNodeId: source.id, toNodeId: target.id, toHandleId: handleId };
-                const remaining = withEcommerceInputConnection(connectionsRef.current, edge).filter((item) => item.id !== edge.id);
-                if (canvasConnectionError(config, nodesRef.current, remaining, edge)) return { nodeId: null, isNearNode: true };
-                return { nodeId: target.id, handleId, anchorRatio: (pin.top + pin.height / 2 - rect.top) / rect.height, anchorXRatio: (pin.left + pin.width / 2 - rect.left) / rect.width, isNearNode: true };
-            }
+        (clientX: number, clientY: number, current: ConnectionHandle): ConnectionDropTarget => {
             const cell = batchCellAtPoint(clientX, clientY);
             if (cell && current.handleType === "source") {
                 const handleId = batchCellHandle(cell.rowId, cell.columnId);
@@ -565,13 +525,7 @@ export function useCanvasConnectionController({
                 batchScrollById,
                 canConnect: (node) => {
                     const normalized = node.id === current.nodeId ? null : normalizeConnection(current.nodeId, node.id, nodesRef.current, current.handleType);
-                    if (!normalized) return false;
-                    const ecommerceHandle = current.handleType === "target" && isEcommerceInputHandle(current.handleId) ? current.handleId : undefined;
-                    if (ecommerceHandle && (node.type !== CanvasNodeType.Image || !isEcommerceInputHandle(ecommerceHandle, nodesRef.current.find((item) => item.id === current.nodeId)?.type))) return false;
-                    const candidate = ecommerceHandle ? { ...normalized, toHandleId: ecommerceHandle } : normalized;
-                    const edge = { id: "candidate", ...candidate };
-                    const remaining = ecommerceHandle ? withEcommerceInputConnection(connectionsRef.current, edge).filter((item) => item.id !== edge.id) : connectionsRef.current;
-                    return !canvasConnectionError(config, nodesRef.current, remaining, candidate);
+                    return Boolean(normalized && !canvasConnectionError(config, nodesRef.current, connectionsRef.current, normalized));
                 },
             });
         },
@@ -775,7 +729,7 @@ export function useCanvasConnectionController({
 
             const dropTarget = getConnectionDropTarget(clientX, clientY, currentConnection);
             if (dropTarget.nodeId) {
-                connectNodes(currentConnection, dropTarget.nodeId, dropTarget.handleId, dropTarget.anchorRatio, dropTarget.anchorXRatio);
+                connectNodes(currentConnection, dropTarget.nodeId, dropTarget.handleId, dropTarget.anchorRatio);
                 setConnecting(null);
             } else if (dropTarget.isNearNode) {
                 setConnecting(null);
@@ -783,19 +737,15 @@ export function useCanvasConnectionController({
                 const position = screenToCanvas(clientX, clientY);
                 setMouseWorld(position);
                 const pending = { connection: currentConnection, position };
-                if (currentConnection.handleType === "target" && isEcommerceInputHandle(currentConnection.handleId)) {
-                    void createConnectedNode(CanvasNodeType.Image, pending);
-                    return;
-                }
                 pendingConnectionCreateRef.current = pending;
                 setPendingConnectionCreate(pending);
             }
         },
-        [connectNodes, createConnectedNode, getConnectionDropTarget, onReplaceReference, screenToCanvas, setConnecting, updateConnectionReplaceHover],
+        [connectNodes, getConnectionDropTarget, onReplaceReference, screenToCanvas, setConnecting, updateConnectionReplaceHover],
     );
 
     const handleConnectStart = useCallback(
-        (event: ReactPointerEvent, nodeId: string, handleType: "source" | "target", handleId?: string, anchorRatio?: number, anchorXRatio?: number) => {
+        (event: ReactPointerEvent, nodeId: string, handleType: "source" | "target", handleId?: string, anchorRatio?: number) => {
             event.preventDefault();
             event.stopPropagation();
             // A new pin interaction always starts a fresh session. Without this
@@ -812,7 +762,7 @@ export function useCanvasConnectionController({
             // of starting a new connection session from the target pin.
             const activeConnection = connectingParamsRef.current;
             if (activeConnection && handleType === "target" && activeConnection.nodeId !== nodeId) {
-                connectNodes(activeConnection, nodeId, handleId, anchorRatio, anchorXRatio);
+                connectNodes(activeConnection, nodeId, handleId, anchorRatio);
                 setConnecting(null);
                 return;
             }
@@ -821,7 +771,7 @@ export function useCanvasConnectionController({
             connectingPointerIdRef.current = event.pointerId;
             connectingPointerStartRef.current = { x: event.clientX, y: event.clientY };
             setMouseWorld(screenToCanvas(event.clientX, event.clientY));
-            setConnecting({ nodeId, handleType, handleId, anchorRatio, anchorXRatio });
+            setConnecting({ nodeId, handleType, handleId, anchorRatio });
             setConnectionTargetNodeId(null);
             setSelectedConnectionId(null);
         },
@@ -829,7 +779,7 @@ export function useCanvasConnectionController({
     );
 
     const handleConnectDrop = useCallback(
-        (event: ReactPointerEvent, nodeId: string, handleId?: string, anchorRatio?: number, anchorXRatio?: number) => {
+        (event: ReactPointerEvent, nodeId: string, handleId?: string) => {
             event.preventDefault();
             event.stopPropagation();
             if (batchConnectionPreviewRef.current) {
@@ -839,7 +789,7 @@ export function useCanvasConnectionController({
             }
             const current = connectingParamsRef.current;
             if (!current || current.nodeId === nodeId) return;
-            connectNodes(current, nodeId, handleId, anchorRatio, anchorXRatio);
+            connectNodes(current, nodeId, handleId);
             setConnecting(null);
         },
         [clearBatchConnection, commitBatchConnection, connectNodes, setConnecting],
@@ -898,9 +848,6 @@ export function useCanvasConnectionController({
             const point = screenToCanvas(event.clientX, event.clientY);
             setConnectionApproach((previous) => latchCanvasConnectionApproach(previous, dropTarget.nodeId, point));
             setConnectionTargetNodeId(dropTarget.nodeId);
-            setConnectionTargetAnchorRatio(dropTarget.anchorRatio);
-            setConnectionTargetAnchorXRatio(dropTarget.anchorXRatio);
-            setConnectionTargetHandleId(dropTarget.handleId);
             setMouseWorld(point);
         };
         const handlePointerMove = (event: PointerEvent) => {
@@ -934,10 +881,6 @@ export function useCanvasConnectionController({
                 const current = connectingParamsRef.current;
                 if (current) {
                     const pending = { connection: current, position: screenToCanvas(event.clientX, event.clientY), quick: true };
-                    if (current.handleType === "target" && isEcommerceInputHandle(current.handleId)) {
-                        void createConnectedNode(CanvasNodeType.Image, pending);
-                        return;
-                    }
                     pendingConnectionCreateRef.current = pending;
                     setPendingConnectionCreate(pending);
                     setConnecting(null);
@@ -1034,7 +977,6 @@ export function useCanvasConnectionController({
         };
     }, [
         clearBatchConnection,
-        createConnectedNode,
         finishConnection,
         getBatchConnectionDropTarget,
         getConnectionDropTarget,
@@ -1056,9 +998,6 @@ export function useCanvasConnectionController({
         closeConnectionCreateMenu,
         connectionTargetNodeId,
         connectionApproach,
-        connectionTargetAnchorRatio,
-        connectionTargetAnchorXRatio,
-        connectionTargetHandleId,
         connectionReplaceHover,
         connectingParams,
         createConnectedNode,

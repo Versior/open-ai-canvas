@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { Switch } from "@/components/ui/base/switch";
-import { Palette, Info, Images } from "lucide-react";
+import { Palette, Info } from "lucide-react";
 
 import { FloatingDock } from "@/components/ui/aceternity/floating-dock";
 import { SpotlightSurface } from "@/components/ui/aceternity/spotlight-surface";
@@ -16,16 +16,10 @@ import type { CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { canvasThemes, type CanvasBackgroundMode, type CanvasTheme } from "@/lib/canvas-theme";
 import { defaultToolbarPrefs, readToolbarPrefs, resolveToolbarEntries, type ToolContext, type ToolbarHandlers, type ToolbarPrefs } from "@/lib/canvas/tool-registry";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import { CanvasNodeType, type CanvasNodeTypeId, type CanvasToolMode, type CanvasWorkspaceMode } from "@/types/canvas";
-import type { AddNodeMenuContext } from "@/lib/canvas/tool-registry";
-
-const SIMPLE_ECOMMERCE_TOOL_IDS = new Set(["tool-undo", "tool-redo", "tool-add", "tool-assets"]);
-// 商品与上传/素材已有，这一轮只补 Image 与 Text；卖点、文案、版式等专业链路留给专业模式。
-export const SIMPLE_ECOMMERCE_CREATE_IDS = new Set([CanvasNodeType.Product, CanvasNodeType.Image, CanvasNodeType.Text, "upload", "assets"]);
+import type { CanvasNodeTypeId, CanvasToolMode, CanvasWorkspaceMode } from "@/types/canvas";
 
 export function CanvasToolbar({
     selectedCount,
-    canvasKind,
     workspaceMode,
     canvasTool,
     onToolChange,
@@ -60,11 +54,9 @@ export function CanvasToolbar({
     onOpenWorkspace,
     onOpenMyAssets,
     onOpenProjectCharacters,
-    onOpenEcommerceWorkbench,
     compact = false,
 }: {
     selectedCount: number;
-    canvasKind: AddNodeMenuContext["canvasKind"];
     workspaceMode: CanvasWorkspaceMode;
     canvasTool: CanvasToolMode;
     onToolChange: (tool: CanvasToolMode) => void;
@@ -99,7 +91,6 @@ export function CanvasToolbar({
     onOpenWorkspace?: () => void;
     onOpenMyAssets: () => void;
     onOpenProjectCharacters: () => void;
-    onOpenEcommerceWorkbench?: () => void;
     /** 紧凑尺寸：短剧精修画布把视野留给节点。 */
     compact?: boolean;
 }) {
@@ -229,9 +220,8 @@ export function CanvasToolbar({
         onNodeCopyPrompt: () => {},
     } as ToolbarHandlers;
 
-    const ctx: ToolContext & Pick<AddNodeMenuContext, "canvasKind"> = {
+    const ctx: ToolContext = {
         selectedCount,
-        canvasKind,
         selectedNodeTypes: new Set(),
         selectedVideoCount: 0,
         canvasTool,
@@ -249,14 +239,10 @@ export function CanvasToolbar({
         handlers,
     };
 
-    const isSimpleEcommerce = canvasKind === "ecommerce" && workspaceMode === "simple";
-    let items = resolveToolbarEntries("main", ctx, prefs ?? defaultToolbarPrefs("main"));
-    if (isSimpleEcommerce) items = items.filter((item) => SIMPLE_ECOMMERCE_TOOL_IDS.has(item.id));
-    if (canvasKind === "ecommerce" && onOpenEcommerceWorkbench) items.push({ id: "ecommerce-studio", label: "添加电商生图台", icon: <Images />, onClick: onOpenEcommerceWorkbench });
+    const items = resolveToolbarEntries("main", ctx, prefs ?? defaultToolbarPrefs("main"));
 
     // 中央空白起点与主工具栏共用同一份命令解析，避免素材类型和插件节点逐渐分叉。
-    const allCreateCommands = useCanvasCreateCommands(isSimpleEcommerce ? { ...ctx, workspaceMode: "professional" } : ctx, runAddAction);
-    const createCommands = isSimpleEcommerce ? allCreateCommands.filter((command) => SIMPLE_ECOMMERCE_CREATE_IDS.has(command.id)) : allCreateCommands;
+    const createCommands = useCanvasCreateCommands(ctx, runAddAction);
 
     return (
         <div

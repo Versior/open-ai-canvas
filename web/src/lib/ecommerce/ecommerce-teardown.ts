@@ -13,7 +13,6 @@
  * 所以拆解节点的产出不是图，是结构：结论 + 我方大纲。大纲能一键铺成拍摄清单。
  */
 import { canvasBatchInputToken } from "@/lib/canvas/canvas-batch-input-signature";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
 
 import type { EcommerceSuiteRow } from "./ecommerce-suite";
 
@@ -158,26 +157,7 @@ export function applyEcommerceTeardownDraft(teardown: EcommerceTeardown, draft: 
     };
 }
 
-function canvasMediaSignatureToken(node: CanvasNodeData | undefined) {
-    if (!node) return "";
-    const metadata = node.metadata;
-    const identity = metadata?.currentMediaVersionId || metadata?.assetId || metadata?.taskId || metadata?.storageKey || metadata?.content || "";
-    return identity ? canvasBatchInputToken(node.id, identity) : node.id;
-}
-
-/** Fingerprint plan inputs without retaining media URLs, access tokens, data URLs or bytes. */
-export function ecommerceTeardownPlanSourceSignature(input: { target: CanvasNodeData; referenceImage?: CanvasNodeData; product?: CanvasNodeData }) {
-    const dimensions = input.target.metadata?.ecommerceTeardown?.dimensions || createEcommerceTeardown(input.target.title).dimensions;
-    const profile = input.product?.metadata?.productProfile;
-    const profileToken = profile
-        ? canvasBatchInputToken(input.product!.id, JSON.stringify([profile.name, profile.category, profile.appearance, profile.marks, profile.forbidden, profile.audience, profile.facts, profile.price]))
-        : "";
-    return JSON.stringify([input.target.id, [...new Set(dimensions)].sort(), canvasMediaSignatureToken(input.referenceImage), input.product?.id || "", profileToken]);
-}
-
-export function ecommerceTeardownOutlineToSuiteRows(
-    outline: ReadonlyArray<Pick<EcommerceTeardownOutlineRow, "title" | "brief" | "stance">>,
-): Array<EcommerceSuiteRow & { stance: EcommerceTeardownOutlineRow["stance"] }> {
+export function ecommerceTeardownOutlineToSuiteRows(outline: ReadonlyArray<Pick<EcommerceTeardownOutlineRow, "title" | "brief" | "stance">>): Array<EcommerceSuiteRow & { stance: EcommerceTeardownOutlineRow["stance"] }> {
     return outline.slice(0, ECOMMERCE_TEARDOWN_PLAN_MAX_SCREENS).map((row, index) => ({
         slotId: `detail-${index + 1}`,
         enabled: true,
@@ -259,10 +239,4 @@ export function ecommerceTeardownBlock(teardown: EcommerceTeardown | undefined) 
     }
     if (!lines.length) return "";
     return [`【竞品参考】${teardownValue.name.trim() || "未命名拆解"}`, ...lines].join("\n");
-}
-
-/** 拆解节点的上游竞品图。 */
-export function ecommerceTeardownSourceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const fromIds = connections.filter((connection) => connection.toNodeId === nodeId && connection.relation !== "batch-output").map((connection) => connection.fromNodeId);
-    return nodes.find((node) => fromIds.includes(node.id) && node.type === CanvasNodeType.Image && (node.metadata?.content || node.metadata?.storageKey));
 }

@@ -107,7 +107,7 @@ func (s *Service) DeleteAdminResources(actor *model.User, req AdminResourceDelet
 	for resourceID, references := range s.ecommerceResourceReferences(resourceIDs) {
 		blocked := blockedByID[resourceID]
 		blocked.ID = resourceID
-		blocked.Reason = "资源仍被电商画布配置引用"
+		blocked.Reason = "资源仍被电商生图台配置引用"
 		blocked.References = append(blocked.References, references...)
 		blockedByID[resourceID] = blocked
 	}

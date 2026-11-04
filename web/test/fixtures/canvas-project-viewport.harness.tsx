@@ -1,7 +1,7 @@
 import { afterAll, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { CanvasProject } from "../../src/stores/canvas/use-canvas-store";
-import type { ViewportTransform } from "../../src/types/canvas";
+import { CanvasNodeType, type CanvasNodeData, type ViewportTransform } from "../../src/types/canvas";
 
 const dom = new Window({ url: "http://localhost/" });
 const originals = new Map<string, PropertyDescriptor | undefined>();
@@ -19,9 +19,9 @@ let save: (options?: { requireRemote?: boolean }) => Promise<boolean>;
 mock.module("antd", () => ({ App: { useApp: () => ({ message }) } }));
 mock.module("react-router", () => ({ useNavigate: () => noop }));
 const { canvasAppearanceForTheme } = await import("../../src/lib/canvas/canvas-appearance");
-const { ecommerceCanvasPreset } = await import("../../src/lib/ecommerce/ecommerce-canvas-preset");
 const appearance = canvasAppearanceForTheme("dark");
-const product = ecommerceCanvasPreset().nodes[0];
+// 旧电商画布 kind 仍可能出现在存量数据里，按普通画布打开；节点用居中在原点的普通图片。
+const product: CanvasNodeData = { id: "centered-image", type: CanvasNodeType.Image, title: "商品图", position: { x: -210, y: -118 }, width: 420, height: 236, metadata: {} };
 const project: CanvasProject = { id: "product-project", title: "商品", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", nodes: [product], connections: [], chatSessions: [], activeChatId: null, kind: "ecommerce", appearance, backgroundMode: "dots", showImageInfo: false, viewport: { x: 0, y: 0, k: 1 }, previsScenes: [] };
 const store = { hydrated: true, projects: [project], openProject: () => project, updateProject: noop, renameProject: noop };
 const canvasStore = Object.assign((selector: (state: typeof store) => unknown) => selector(store), { getState: () => store });
@@ -81,7 +81,7 @@ async function mount(cached: CanvasProject) {
     return { viewport: () => current!, move: async (next: ViewportTransform) => { await act(async () => move!(next)); }, cloud: async (next: CanvasProject) => { await act(async () => { restore(next); finish(next); }); }, dispose: async () => { await act(async () => root.unmount()); host.remove(); } };
 }
 
-test("cloud content does not move the centered product back into the corner", async () => {
+test("cloud content does not move the centered node back into the corner", async () => {
     const editor = await mount(project);
     try {
         await editor.move({ x: 600, y: 360, k: 1 });

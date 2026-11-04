@@ -10,7 +10,6 @@ import { batchRowInputSignature } from "./canvas-batch-references";
 import { batchOperationLabel, batchPromptForRow } from "./canvas-batch-table";
 import { createCanvasNode } from "./canvas-project-domain";
 import { buildGenerationConfig, resetGenerationTaskMetadata } from "./canvas-project-generation";
-import type { EcommerceModel } from "@/lib/ecommerce/ecommerce-models";
 
 export type CanvasBatchGenerationTarget = Pick<CanvasGenerationBatchItem, "rowId" | "nodeId" | "inputSnapshot">;
 
@@ -39,7 +38,6 @@ export function prepareCanvasBatchTableGeneration({
     config,
     settings,
     assets,
-    customModels = [],
 }: {
     nodes: CanvasNodeData[];
     connections: CanvasConnection[];
@@ -48,7 +46,6 @@ export function prepareCanvasBatchTableGeneration({
     config: AiConfig;
     settings: BatchGenerationSettings;
     assets: Asset[];
-    customModels?: EcommerceModel[];
 }) {
     const sourceNode = nodes.find((node) => node.id === sourceNodeId);
     const table = sourceNode?.metadata?.batchTable;
@@ -128,6 +125,6 @@ export function prepareCanvasBatchTableGeneration({
     };
     const nodeById = new Map(nextNodes.map((node) => [node.id, node]));
     // A failure in any row discards this candidate, including previously prepared rows.
-    const preparedTargets = targets.map((target) => ({ ...target, inputSnapshot: createCanvasBatchInputSnapshot(nodeById.get(target.nodeId)!, nextNodes, nextConnections, assets, customModels) }));
+    const preparedTargets = targets.map((target) => ({ ...target, inputSnapshot: createCanvasBatchInputSnapshot(nodeById.get(target.nodeId)!, nextNodes, nextConnections, assets) }));
     return { nodes: nextNodes, connections: nextConnections, targets: preparedTargets };
 }

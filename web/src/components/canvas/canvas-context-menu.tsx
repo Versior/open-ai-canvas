@@ -14,8 +14,6 @@ import { formatRelativeTime } from "@/lib/relative-time";
 import { resolveAddNodeMenuCommands, type AddNodeMenuContext } from "@/lib/canvas/tool-registry";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import type { CanvasKind } from "@/lib/canvas/canvas-kind";
-import { canSaveCanvasImageAsModel } from "@/lib/ecommerce/ecommerce-models";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type CanvasWorkspaceMode, type ContextMenuState, type Position } from "@/types/canvas";
 
 type CanvasAssetCategory = NonNullable<NonNullable<CanvasNodeData["metadata"]>["assetCategory"]>;
@@ -26,7 +24,6 @@ type CanvasNodeContextMenuProps = {
     menu: ContextMenuState;
     node?: CanvasNodeData | null;
     workspaceMode?: CanvasWorkspaceMode;
-    canvasKind?: CanvasKind;
     isProjectLinked?: boolean;
     canUndo: boolean;
     canRedo: boolean;
@@ -48,9 +45,6 @@ type CanvasNodeContextMenuProps = {
     onDuplicate: () => void;
     onDelete: () => void;
     onSaveAsset: () => void;
-    onSaveAsModel?: () => void;
-    onUseAsStyleReference?: () => void;
-    onOpenModelLibrary?: () => void;
     onViewMedia: () => void;
     onOpenVersions?: () => void;
     onEditText: () => void;
@@ -78,7 +72,6 @@ export function CanvasNodeContextMenu({
     menu,
     node,
     workspaceMode = "professional",
-    canvasKind,
     isProjectLinked = false,
     canUndo,
     canRedo,
@@ -100,9 +93,6 @@ export function CanvasNodeContextMenu({
     onDuplicate,
     onDelete,
     onSaveAsset,
-    onSaveAsModel,
-    onUseAsStyleReference,
-    onOpenModelLibrary,
     onViewMedia,
     onOpenVersions,
     onEditText,
@@ -231,7 +221,6 @@ export function CanvasNodeContextMenu({
                             ) : null}
                             <MenuButton icon={<Plus className="size-4" />} label="添加节点" chevron active={addOpen} onClick={() => setAddOpen((value) => !value)} />
                             <MenuButton icon={<Upload className="size-4" />} label="上传到这里" onClick={() => runAction(onUpload)} />
-                            {canvasKind === "ecommerce" && onOpenModelLibrary ? <MenuButton icon={<UserRound />} label="管理模特库" onClick={() => runAction(onOpenModelLibrary)} /> : null}
                             {!isProjectLinked ? <MenuButton icon={<FolderOpen className="size-4" />} label="从素材库插入" onClick={() => runAction(onOpenAssets)} /> : null}
                             <MenuDivider />
                             <MenuButton icon={<Undo2 className="size-4" />} label="撤销" shortcut="⌘Z" disabled={!canUndo} onClick={() => runAction(onUndo)} />
@@ -269,8 +258,6 @@ export function CanvasNodeContextMenu({
                                     <MenuSection label="查看与归档" />
                                     <MenuButton icon={<Maximize2 />} label="进入全景预览" disabled={!canOpenPreview} onClick={() => runAction(onViewMedia)} />
                                     {isImage ? <MenuButton icon={<Upload />} label="替换图片" onClick={() => runAction(onUpload)} /> : null}
-                                    {isImage && canvasKind === "ecommerce" && onSaveAsModel ? <MenuButton icon={<UserRound />} label="加入模特库" disabled={!canSaveCanvasImageAsModel(node)} onClick={() => runAction(onSaveAsModel)} /> : null}
-                                    {isImage && canvasKind === "ecommerce" && onUseAsStyleReference ? <MenuButton icon={<ImageIcon />} label="用作参考图" onClick={() => runAction(onUseAsStyleReference)} /> : null}
                                     {onAdoptToDrama ? <MenuButton icon={<CircleCheckBig />} label="采用到短剧" detail={isImage ? "设为设定参考图" : "设为剧情段视频"} disabled={!hasNodeContent} onClick={() => runAction(onAdoptToDrama)} /> : null}
                                     {versionMenuButton}
                                     <MenuButton icon={<Tags />} label="设置资产分类" chevron onClick={() => setCategoryOpen(true)} />
@@ -320,7 +307,6 @@ export function CanvasNodeContextMenu({
                     <AddNodeContextMenu
                         parentPosition={position}
                         workspaceMode={workspaceMode}
-                        canvasKind={canvasKind}
                         isProjectLinked={isProjectLinked}
                         onAddNode={(type) => runAction(() => onAddNode(type))}
                         onAddFolder={() => runAction(onAddFolder)}
@@ -336,14 +322,13 @@ export function CanvasNodeContextMenu({
     );
 }
 
-function AddNodeContextMenu({ parentPosition, workspaceMode, canvasKind, isProjectLinked, onAddNode, onAddFolder, onChooseStyle, onOpenPrevis, onUpload, onOpenAssets, onOpenProjectCharacters }: { parentPosition: { left: number; top: number }; workspaceMode: CanvasWorkspaceMode; canvasKind?: CanvasKind; isProjectLinked: boolean; onAddNode: (type: CanvasNodeTypeId) => void; onAddFolder: () => void; onChooseStyle: () => void; onOpenPrevis: () => void; onUpload: () => void; onOpenAssets: () => void; onOpenProjectCharacters: () => void }) {
+function AddNodeContextMenu({ parentPosition, workspaceMode, isProjectLinked, onAddNode, onAddFolder, onChooseStyle, onOpenPrevis, onUpload, onOpenAssets, onOpenProjectCharacters }: { parentPosition: { left: number; top: number }; workspaceMode: CanvasWorkspaceMode; isProjectLinked: boolean; onAddNode: (type: CanvasNodeTypeId) => void; onAddFolder: () => void; onChooseStyle: () => void; onOpenPrevis: () => void; onUpload: () => void; onOpenAssets: () => void; onOpenProjectCharacters: () => void }) {
     const theme = canvasThemes[useActiveTheme()];
     const installations = usePluginStore((state) => state.installations);
     const pluginStates = usePluginStore((state) => state.pluginStates);
     const left = getSubmenuLeft(parentPosition.left);
     const createContext: AddNodeMenuContext = {
         workspaceMode,
-        canvasKind,
         isProjectLinked,
         enabledPluginIds: new Set(installations.filter((item) => pluginStates[item.manifest.id]?.effectiveEnabled ?? item.enabled).map((item) => item.manifest.id)),
         handlers: {

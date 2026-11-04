@@ -185,7 +185,7 @@ export function useCanvasViewportController({
     }, [containerRef, screenToCanvas, size.height, size.width]);
 
     const focusNodesInView = useCallback((targetNodes: CanvasNodeData[], maxScale = 1) => {
-        const bounds = getCanvasNodesBounds(targetNodes.filter((node) => !node.metadata?.ecommerceCandidate));
+        const bounds = getCanvasNodesBounds(targetNodes);
         if (!bounds) return false;
         transitionViewportTo(viewportForBounds(bounds, size, { padding: 88, maxScale }));
         setContextMenu(null);
@@ -230,37 +230,14 @@ export function useCanvasViewportController({
         setToolbarNodeId(node.id);
     }, [nodesRef, selectFocusedNode, setDialogNodeId, setToolbarNodeId, size.height, size.width, transitionViewportTo, viewportRef]);
 
-    const focusCanvasImageNodes = useCallback((nodeIds: string[]) => {
-        const ids = new Set(nodeIds);
-        const targets = nodesRef.current.filter((node) => ids.has(node.id) && node.type === CanvasNodeType.Image);
-        const bounds = getCanvasNodesBounds(targets);
-        if (!bounds) return false;
-        transitionViewportTo(viewportForBounds(bounds, size, { padding: 96, maxScale: 0.9 }));
-        selectedNodeIdsRef.current = ids;
-        setSelectedNodeIds(ids);
-        setSelectedConnectionId(null);
-        setContextMenu(null);
-        setDialogNodeId(null);
-        setToolbarNodeId(null);
-        return true;
-    }, [nodesRef, selectedNodeIdsRef, setContextMenu, setDialogNodeId, setSelectedConnectionId, setSelectedNodeIds, setToolbarNodeId, size, transitionViewportTo]);
-
     const focusCanvasNode = useCallback((nodeId: string) => {
         const node = nodesRef.current.find((item) => item.id === nodeId);
         if (!node) return;
-        if (node.type === CanvasNodeType.BatchTable && node.metadata?.ecommerceFlowId) {
-            const bounds = getCanvasNodesBounds([node]);
-            if (bounds) transitionViewportTo(viewportForBounds(bounds, size, { padding: 48, maxScale: 1 }));
-            selectFocusedNode(node.id);
-            setDialogNodeId(null);
-            setToolbarNodeId(null);
-            return;
-        }
         const scale = Math.min(1.18, Math.max(viewportRef.current.k, 0.72));
         transitionViewportTo({ x: size.width / 2 - (node.position.x + node.width / 2) * scale, y: size.height / 2 - (node.position.y + node.height / 2) * scale, k: scale });
         selectFocusedNode(node.id);
         setDialogNodeId(node.type === CanvasNodeType.Drawing || node.type === CanvasNodeType.Script ? null : node.id);
-    }, [nodesRef, selectFocusedNode, setDialogNodeId, setToolbarNodeId, size.height, size.width, transitionViewportTo, viewportRef]);
+    }, [nodesRef, selectFocusedNode, setDialogNodeId, size.height, size.width, transitionViewportTo, viewportRef]);
 
     const setZoomScale = useCallback((scale: number) => {
         cancelViewportTransition();
@@ -296,7 +273,6 @@ export function useCanvasViewportController({
         fitCanvasContent,
         fitCanvasSelection,
         focusCanvasImageNode,
-        focusCanvasImageNodes,
         focusCanvasNode,
         getCanvasCenter,
         handleCanvasDoubleClick,

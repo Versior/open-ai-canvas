@@ -1,15 +1,14 @@
 import { expect, test } from "bun:test";
-import React, { act, type ReactNode, type ReactElement } from "react";
+import React, { act, type ReactNode } from "react";
 import { reconciler } from "@react-three/fiber";
 import { App } from "antd";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { DEFAULT_ECOMMERCE_SETTING, type EcommerceSetting } from "../src/services/api/ecommerce-canvas";
 import { apiClient } from "../src/services/api/request";
-import { useEcommerceSettings } from "../src/stores/use-ecommerce-settings";
 Object.defineProperty(globalThis, "__APP_VERSION__", { configurable: true, value: "test" });
 const { default: EcommerceSettingsPage } = await import("../src/pages/admin/settings/ecommerce-settings-page");
 
-type Props = { children?: ReactNode; actions?: ReactNode; items?: { children?: ReactNode }[]; "aria-label"?: string; value?: string; placeholder?: string; onChange?: (value: any) => void; onClick?: () => unknown; disabled?: boolean };
+type Props = { children?: ReactNode; actions?: ReactNode; items?: { children?: ReactNode }[]; "aria-label"?: string; value?: string; placeholder?: string; onChange?: (value: any) => void; onClick?: () => unknown; disabled?: boolean; checked?: boolean };
 function find(tree: ReactNode, predicate: (props: Props) => boolean): Props | undefined {
     if (Array.isArray(tree)) {
         for (const child of tree) {
@@ -27,12 +26,11 @@ function find(tree: ReactNode, predicate: (props: Props) => boolean): Props | un
     }
 }
 
-test("admin page keeps failed drafts, serializes saves and confirms replacing a dirty draft", async () => {
+test("studio settings page edits only the dossier capability, keeps failed drafts and serializes saves", async () => {
     const originalRequest = apiClient.request;
     const originalApp = App.useApp;
     const originalAct = Object.getOwnPropertyDescriptor(globalThis, "IS_REACT_ACT_ENVIRONMENT");
     const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
-    const originalState = useEcommerceSettings.getState();
     const storage = new Map<string, string>();
     Object.defineProperty(globalThis, "window", { configurable: true, value: Object.assign(new EventTarget(), { localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value) } }) });
     Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
@@ -53,7 +51,7 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
             },
         },
     })) as unknown as typeof App.useApp;
-    let writes = 0;
+    const writes: EcommerceSetting[] = [];
     let previousReads = 0;
     let failSave = true;
     let release!: () => void;
@@ -66,29 +64,11 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
     apiClient.request = (async (config) => {
         if (config.url?.endsWith("/defaults")) {
             defaultsReads++;
-            return {
-                data: {
-                    code: 0,
-                    data: {
-                        defaults:
-                            defaultsReads === 1
-                                ? {}
-                                : Object.fromEntries(
-                                      ["cap:planning", "cap:suite-forge", "cap:model-cast", "cap:pattern", "cap:listing", "cap:print-pack", "cap:pipeline", "cap:layers", "cap:dossier", "detail", "main", "wear", "seed"].map((key) => [
-                                          key,
-                                          key === "cap:planning" ? "Complete built-in planner" : "Complete detail instruction",
-                                      ]),
-                                  ),
-                    },
-                    msg: "ok",
-                },
-                status: 200,
-                headers: {},
-            };
+            return { data: { code: 0, data: { defaults: defaultsReads === 1 ? {} : { "cap:dossier": "Complete dossier instruction" } }, msg: "ok" }, status: 200, headers: {} };
         }
         let setting: EcommerceSetting = structuredClone(DEFAULT_ECOMMERCE_SETTING);
         if (config.method === "put") {
-            writes++;
+            writes.push(structuredClone(config.data));
             await pending;
             if (failSave) throw new Error("save unavailable");
             setting = { ...config.data, revision: "saved" };
@@ -114,9 +94,9 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
         if (!props) throw new Error("Missing button: " + label);
         return props;
     };
-    const toggle = (label: string) => {
+    const labelled = (label: string) => {
         const props = find(tree, (props) => props["aria-label"] === label);
-        if (!props) throw new Error("Missing switch: " + label);
+        if (!props) throw new Error("Missing control: " + label);
         return props;
     };
     try {
@@ -125,37 +105,34 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
         });
         expect(uncaught).toEqual([]);
         expect(button("保存修改").disabled).toBe(true);
-        expect(toggle("智能规划私有分析指令").placeholder).not.toBe("正在读取内置指令…");
-        expect(button("重试读取默认指令")).toBeDefined();
+        // 旧画布的能力、功能开关与公共模特不再出现在页面上。
+        expect(find(tree, (props) => props["aria-label"] === "智能规划私有分析指令")).toBeUndefined();
+        expect(find(tree, (props) => props["aria-label"] === "电商画布")).toBeUndefined();
+        expect(find(tree, (props) => props["aria-label"] === "模特库")).toBeUndefined();
+        expect(labelled("商品档案私有分析指令").placeholder).not.toBe("正在读取内置指令…");
         await act(async () => {
             await button("重试读取默认指令").onClick!();
         });
-        expect(toggle("智能规划私有分析指令").value).toBe("Complete built-in planner");
+        expect(labelled("商品档案私有分析指令").value).toBe("Complete dossier instruction");
         await act(async () => {
-            find(tree, (props) => Boolean(find(props.children, (child) => child.children === "花型工坊")) && Boolean(props.onClick))!.onClick!();
+            labelled("商品档案私有分析指令").onChange!({ target: { value: "Custom dossier" } });
         });
-        expect(find(tree, (props) => props["aria-label"] === "智能规划私有分析指令")).toBeUndefined();
-        expect(toggle("花型工坊私有分析指令").value).toBe("Complete detail instruction");
-        await act(async () => {
-            find(tree, (props) => Boolean(find(props.children, (child) => child.children === "智能规划")) && Boolean(props.onClick))!.onClick!();
-        });
-        await act(async () => {
-            toggle("智能规划私有分析指令").onChange!({ target: { value: "Custom planner" } });
-        });
-        expect(toggle("智能规划私有分析指令").value).toBe("Custom planner");
+        expect(labelled("商品档案私有分析指令").value).toBe("Custom dossier");
+        expect(button("保存修改").disabled).toBe(false);
         await act(async () => {
             button("恢复内置默认").onClick!();
         });
-        expect(toggle("智能规划私有分析指令").value).toBe("Complete built-in planner");
+        expect(labelled("商品档案私有分析指令").value).toBe("Complete dossier instruction");
         expect(button("保存修改").disabled).toBe(true);
         await act(async () => {
-            toggle("电商画布").onChange!(false);
+            labelled("商品档案开放使用").onChange!(false);
         });
         await act(async () => {
             button("保存修改").onClick!();
         });
         expect(errors).toContain("save unavailable");
         expect(button("保存修改").disabled).toBe(false);
+        expect(labelled("商品档案开放使用").checked).toBe(false);
         failSave = false;
         pending = gate();
         const save = button("保存修改").onClick!;
@@ -163,15 +140,19 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
             save();
             save();
         });
-        expect(writes).toBe(2);
+        expect(writes).toHaveLength(2);
         await act(async () => {
             release();
             await pending;
         });
         expect(button("保存修改").disabled).toBe(true);
-        expect(useEcommerceSettings.getState().setting).toMatchObject({ enabled: false, revision: "saved" });
+        // 保存仍提交整份设置：页面不编辑的字段按读取到的原样带回。
+        const submitted = writes.at(-1)!;
+        expect(submitted.capabilities?.dossier).toEqual({ enabled: false, directorPrompt: "" });
+        expect(submitted.capabilities?.planning).toEqual({ enabled: true, directorPrompt: "" });
+        expect({ ...submitted, capabilities: undefined }).toEqual({ ...DEFAULT_ECOMMERCE_SETTING, capabilities: undefined });
         await act(async () => {
-            toggle("模特库").onChange!(false);
+            labelled("商品档案开放使用").onChange!(true);
         });
         await act(async () => {
             button("载入上一版").onClick!();
@@ -191,7 +172,6 @@ test("admin page keeps failed drafts, serializes saves and confirms replacing a 
         router.dispose();
         apiClient.request = originalRequest;
         App.useApp = originalApp;
-        useEcommerceSettings.setState(originalState, true);
         for (const [key, descriptor] of [
             ["window", originalWindow],
             ["IS_REACT_ACT_ENVIRONMENT", originalAct],

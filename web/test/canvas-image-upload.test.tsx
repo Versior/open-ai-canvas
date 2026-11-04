@@ -568,55 +568,47 @@ test("所有资源渲染真实百分比，100% 仍等待保存，磨砂渐淡但
     }
 });
 
-test("短剧关联顶栏在快捷与专业模式都保留电商模式、专业入口和模特库入口", async () => {
+test("短剧关联顶栏链接回短剧制作台，且不再有旧电商画布的模式切换和模特库入口", async () => {
     const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
     const { MemoryRouter } = await import("react-router");
     const { CanvasTopBar } = await import("../src/pages/canvas/canvas-project-top-bar");
     const noop = () => {};
-    const renderTopBar = (props: { workspaceMode: "simple" | "professional"; onOpenModelLibrary?: () => void }) =>
-        renderToStaticMarkup(
-            <QueryClientProvider client={new QueryClient()}>
-                <MemoryRouter>
-                    <CanvasTopBar
-                        ecommerce
-                        workspaceMode={props.workspaceMode}
-                        onWorkspaceModeChange={noop}
-                        view="canvas"
-                        onViewChange={noop}
-                        title="电商画布"
-                        titleDraft="电商画布"
-                        isTitleEditing={false}
-                        onTitleDraftChange={noop}
-                        onStartTitleEditing={noop}
-                        onFinishTitleEditing={noop}
-                        onCancelTitleEditing={noop}
-                        canUndo={false}
-                        canRedo={false}
-                        onCreateProject={noop}
-                        onDeleteProject={noop}
-                        onSave={noop}
-                        onImportImage={noop}
-                        onImportLibTV={noop}
-                        onImportTapNow={noop}
-                        onUndo={noop}
-                        onRedo={noop}
-                        onShare={noop}
-                        shortcutRequestNonce={0}
-                        onOpenSearch={noop}
-                        onOpenModelLibrary={props.onOpenModelLibrary}
-                        onEnterFocusMode={noop}
-                        projectContext={{ projectId: "demo drama", projectName: "短剧示例", kind: "drama", nodeCount: 3, selectedCount: 0, chapterLabel: "", shotLabel: "" }}
-                    />
-                </MemoryRouter>
-            </QueryClientProvider>,
-        );
-    for (const workspaceMode of ["simple", "professional"] as const) {
-        const html = renderTopBar({ workspaceMode, onOpenModelLibrary: noop });
-        expect(html).toContain('href="/projects/demo%20drama"');
-        expect(html).toContain("打开短剧制作台：短剧示例");
-        expect(html).toContain(workspaceMode === "simple" ? 'aria-label="快捷创作，切换到专业画布"' : 'aria-label="专业画布，返回快捷创作"');
-        // 二开让快捷模式也能管理模特库，该入口不再由 showProfessionalControls 隐藏。
-        expect(html).toContain('aria-label="管理模特库"');
-    }
-    expect(renderTopBar({ workspaceMode: "simple" })).not.toContain('aria-label="管理模特库"');
+    const html = renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+            <MemoryRouter>
+                <CanvasTopBar
+                    view="canvas"
+                    onViewChange={noop}
+                    title="旧电商画布"
+                    titleDraft="旧电商画布"
+                    isTitleEditing={false}
+                    onTitleDraftChange={noop}
+                    onStartTitleEditing={noop}
+                    onFinishTitleEditing={noop}
+                    onCancelTitleEditing={noop}
+                    canUndo={false}
+                    canRedo={false}
+                    onCreateProject={noop}
+                    onDeleteProject={noop}
+                    onSave={noop}
+                    onImportImage={noop}
+                    onImportLibTV={noop}
+                    onImportTapNow={noop}
+                    onUndo={noop}
+                    onRedo={noop}
+                    onShare={noop}
+                    shortcutRequestNonce={0}
+                    onOpenSearch={noop}
+                    onEnterFocusMode={noop}
+                    projectContext={{ projectId: "demo drama", projectName: "短剧示例", kind: "drama", nodeCount: 3, selectedCount: 0, chapterLabel: "", shotLabel: "" }}
+                />
+            </MemoryRouter>
+        </QueryClientProvider>,
+    );
+    expect(html).toContain('href="/projects/demo%20drama"');
+    expect(html).toContain("打开短剧制作台：短剧示例");
+    expect(html).not.toContain("快捷创作");
+    expect(html).not.toContain("专业画布");
+    expect(html).not.toContain("管理模特库");
+    expect(html).not.toContain("/ecommerce/canvas");
 });

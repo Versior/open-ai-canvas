@@ -19,9 +19,6 @@ import { clearResourceAccessCache } from "@/services/api/resources";
 import { clearResourceBlobCache } from "@/services/resource-blob-cache";
 import { withGenerationConsumersPaused } from "@/services/generation-consumer-lifecycle";
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
-import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
-import { useEcommerceSuitePrompt } from "@/stores/use-ecommerce-suite-prompt";
-import { useEcommerceTemplateLibrary } from "@/stores/use-ecommerce-template-library";
 import { useInspirationStore } from "@/stores/use-inspiration-store";
 
 export async function switchUserStorageScope(userId?: string | null) {
@@ -79,9 +76,6 @@ function resetUserScopedMemory() {
     useConfigStore.setState({ config: normalizeConfigSnapshot({ config: defaultConfig }).config });
     usePluginStore.setState({ hydrated: false, installations: [], runtimeStatuses: {}, pluginStates: {} });
     useCreationPreferencesStore.setState({ hydrated: false, preferences: {} });
-    useEcommerceModelLibrary.getState().reset();
-    useEcommerceSuitePrompt.getState().reset();
-    useEcommerceTemplateLibrary.getState().reset();
     useInspirationStore.setState({ hydrated: false, custom: [], overrides: {}, hidden: [], favorites: [] });
     // 全局 Agent 的开合与待投递消息属于账号会话，切换账号必须清空。
     useGlobalAgentStore.getState().reset();
@@ -106,8 +100,6 @@ async function hydrateUserSessionData(payload: AuthSessionPayload, generation: n
         useConfigStore.persist.rehydrate(),
         usePluginStore.persist.rehydrate(),
         useCreationPreferencesStore.persist.rehydrate(),
-        useEcommerceModelLibrary.getState().hydrate(),
-        useEcommerceSuitePrompt.getState().hydrate(),
         useInspirationStore.persist.rehydrate(),
     ]);
     if (!isCurrentSession(generation, userId)) return;

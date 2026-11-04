@@ -5,8 +5,6 @@ import { App } from "antd";
 import { createCanvasStateWriter } from "../src/lib/canvas/canvas-editor-state";
 import { resetGenerationTaskMetadata } from "../src/lib/canvas/canvas-task-state";
 import { synchronizeGenerationSpec } from "../src/lib/canvas/generation-contract";
-import { ecommerceSuiteTargets } from "../src/lib/ecommerce/ecommerce-canvas-preset";
-import { ecommerceOneClickFlow } from "../src/lib/ecommerce/ecommerce-oneclick";
 import { useCanvasContentUpdates } from "../src/pages/canvas/use-canvas-content-updates";
 import { useCanvasGenerationBatches } from "../src/pages/canvas/use-canvas-generation-batches";
 import { useCanvasGenerationExecutor } from "../src/pages/canvas/use-canvas-generation-executor";
@@ -44,8 +42,8 @@ afterEach(async () => {
     }
 });
 
-const product: CanvasNodeData = { id: "product", type: CanvasNodeType.Product, title: "Product", position: { x: 0, y: 0 }, width: 460, height: 660 };
-const image = (id: string): CanvasNodeData => ({ ...product, id, type: CanvasNodeType.Image, metadata: { prompt: "Original " + id, model: "test::gpt-image-2" } });
+const table: CanvasNodeData = { id: "table", type: CanvasNodeType.BatchTable, title: "Batch table", position: { x: 0, y: 0 }, width: 460, height: 660 };
+const image = (id: string): CanvasNodeData => ({ ...table, id, type: CanvasNodeType.Image, metadata: { prompt: "Original " + id, model: "test::gpt-image-2" } });
 const envelope = () => ({ data: { code: 0, data: [], msg: "ok" }, status: 200, headers: {} });
 
 async function mountQueue(initial: CanvasNodeData[], realExecutor = false) {
@@ -210,41 +208,42 @@ async function mountQueue(initial: CanvasNodeData[], realExecutor = false) {
     };
 }
 
-test("draft save, suite creation and actual queue scheduling preserve both generation rounds", async () => {
-    const queue = await mountQueue([product]);
-    const flow = ecommerceOneClickFlow("main")!;
+const roundTargets = Array.from({ length: 5 }, (_, index) => image("round-" + index));
+
+/** 同一批节点换一轮提示词后重新入队，模拟批量表格第二轮出图。 */
+async function queueRound(queue: Awaited<ReturnType<typeof mountQueue>>, round: number) {
+    const prompts = roundTargets.map((_, index) => "Round " + round + " image " + index);
+    await act(async () => {
+        const api = queue.api();
+        api.write((current) =>
+            current.map((node) => {
+                const index = roundTargets.findIndex((target) => target.id === node.id);
+                if (index < 0) return node;
+                const prepared = synchronizeGenerationSpec(node, { prompt: prompts[index], composerContent: prompts[index], generationResultPlacement: "replace-node" });
+                return { ...prepared, metadata: resetGenerationTaskMetadata(prepared.metadata) };
+            }),
+        );
+        expect(
+            api.enqueueGenerationBatch(
+                table.id,
+                "batch_image",
+                roundTargets.map((target) => ({ nodeId: target.id, rowId: target.id })),
+            ),
+        ).toBeString();
+    });
+    return prompts;
+}
+
+test("two queued rounds on the same nodes keep both generation batches and submit each round", async () => {
+    const queue = await mountQueue([table, ...roundTargets]);
     for (let round = 1; round <= 2; round++) {
-        const rows = Array.from({ length: 5 }, (_, index) => ({ slotId: "main-" + index, title: "Image " + index, duty: "Product", prompt: "Round " + round + " image " + index }));
-        await act(async () => {
-            const api = queue.api();
-            api.write((current) => [...current]);
-            api.updateNode(product.id, (node) => ({ ...node, metadata: { ...node.metadata, ecommerceSuite: { flow: flow.id, rows, source: "draft", updatedAt: "test" } } }));
-            let sequence = 0;
-            const plan = ecommerceSuiteTargets(api.ref.current[0], flow, api.ref.current[0].metadata?.ecommerceSuite, { nodes: api.ref.current, connections: [] }, { model: "test::gpt-image-2" }, () => "edge-" + round + "-" + sequence++);
-            const reusedPrompts = new Map(plan.reuse.map((item) => [item.nodeId, item.prompt]));
-            api.write((current) => [
-                ...current.map((node) => {
-                    const prompt = reusedPrompts.get(node.id);
-                    if (!prompt) return node;
-                    const prepared = synchronizeGenerationSpec(node, { prompt, composerContent: prompt, generationResultPlacement: "replace-node" });
-                    return { ...prepared, metadata: resetGenerationTaskMetadata(prepared.metadata) };
-                }),
-                ...plan.spawned,
-            ]);
-            expect(
-                api.enqueueGenerationBatch(
-                    product.id,
-                    "batch_image",
-                    plan.nodeIds.map((nodeId) => ({ nodeId, rowId: nodeId })),
-                ),
-            ).toBeString();
-        });
+        const prompts = await queueRound(queue, round);
         expect(queue.api().ref.current).toEqual(queue.api().nodes);
         await act(async () => {
             queue.tick();
         });
         expect(queue.submitted).toHaveLength(round * 5);
-        expect(queue.submitted.slice(-5).map((item) => item.prompt)).toEqual(rows.map((row) => row.prompt));
+        expect(queue.submitted.slice(-5).map((item) => item.prompt)).toEqual(prompts);
         expect(queue.api().nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.status === "success")).toHaveLength(5);
         expect(queue.api().nodes[0].metadata?.generationBatches).toHaveLength(round);
         expect(queue.api().nodes[0].metadata?.generationBatches?.every((batch) => batch.status === "completed")).toBe(true);
@@ -254,7 +253,7 @@ test("draft save, suite creation and actual queue scheduling preserve both gener
 });
 
 test("task listing skips deleted nodes and submits the queued prompt snapshot while awaiting capacity", async () => {
-    const queue = await mountQueue([product, image("deleted"), image("edited")]);
+    const queue = await mountQueue([table, image("deleted"), image("edited")]);
     let release!: (value: ReturnType<typeof envelope>) => void;
     const pending = new Promise<ReturnType<typeof envelope>>((resolve) => {
         release = resolve;
@@ -262,7 +261,7 @@ test("task listing skips deleted nodes and submits the queued prompt snapshot wh
     apiClient.request = (() => pending) as typeof apiClient.request;
     await act(async () => {
         queue.api().enqueueGenerationBatch(
-            product.id,
+            table.id,
             "batch_image",
             ["deleted", "edited"].map((nodeId) => ({ nodeId, rowId: nodeId })),
         );
@@ -280,7 +279,7 @@ test("task listing skips deleted nodes and submits the queued prompt snapshot wh
 });
 
 test("a batch queued by user A is not submitted after the active scope switches to user B", async () => {
-    const queue = await mountQueue([product, image("owned-by-a")], true);
+    const queue = await mountQueue([table, image("owned-by-a")], true);
     let release!: (value: ReturnType<typeof envelope>) => void;
     const pending = new Promise<ReturnType<typeof envelope>>((resolve) => {
         release = resolve;
@@ -292,7 +291,7 @@ test("a batch queued by user A is not submitted after the active scope switches 
     }) as typeof apiClient.request;
 
     await act(async () => {
-        queue.api().enqueueGenerationBatch(product.id, "batch_image", [{ nodeId: "owned-by-a", rowId: "owned-by-a" }]);
+        queue.api().enqueueGenerationBatch(table.id, "batch_image", [{ nodeId: "owned-by-a", rowId: "owned-by-a" }]);
         queue.tick();
     });
     expect(queue.api().nodes[0].metadata?.generationBatches?.[0].userScope).toBe("user-a");
@@ -413,10 +412,10 @@ test("stale preflight cleanup does not overwrite a newer request for the same no
 });
 
 test("a legacy batch without a user scope is failed instead of being submitted", async () => {
-    const queue = await mountQueue([product, image("legacy")]);
+    const queue = await mountQueue([table, image("legacy")]);
     await act(async () => {
-        queue.api().enqueueGenerationBatch(product.id, "batch_image", [{ nodeId: "legacy", rowId: "legacy" }]);
-        queue.api().updateNode(product.id, (node) => ({
+        queue.api().enqueueGenerationBatch(table.id, "batch_image", [{ nodeId: "legacy", rowId: "legacy" }]);
+        queue.api().updateNode(table.id, (node) => ({
             ...node,
             metadata: {
                 ...node.metadata,
@@ -432,9 +431,9 @@ test("a legacy batch without a user scope is failed instead of being submitted",
 test("invalid references are rejected before a batch is queued", async () => {
     const target = image("invalid-reference");
     target.metadata = { ...target.metadata, prompt: "Use @[node:missing-reference]" };
-    const queue = await mountQueue([product, target], true);
+    const queue = await mountQueue([table, target], true);
     await act(async () => {
-        expect(queue.api().enqueueGenerationBatch(product.id, "batch_image", [{ nodeId: target.id, rowId: target.id }])).toBeUndefined();
+        expect(queue.api().enqueueGenerationBatch(table.id, "batch_image", [{ nodeId: target.id, rowId: target.id }])).toBeUndefined();
         queue.tick();
     });
     expect(queue.errors).toHaveLength(1);
@@ -444,12 +443,12 @@ test("invalid references are rejected before a batch is queued", async () => {
 
 test("invalid references fail a legacy batch without a snapshot instead of requeueing forever", async () => {
     const target = image("invalid-reference");
-    const queue = await mountQueue([product, target], true);
+    const queue = await mountQueue([table, target], true);
     await act(async () => {
-        queue.api().enqueueGenerationBatch(product.id, "batch_image", [{ nodeId: target.id, rowId: target.id }]);
+        queue.api().enqueueGenerationBatch(table.id, "batch_image", [{ nodeId: target.id, rowId: target.id }]);
         queue
             .api()
-            .updateNode(product.id, (node) => ({ ...node, metadata: { ...node.metadata, generationBatches: node.metadata!.generationBatches!.map((batch) => ({ ...batch, items: batch.items.map((item) => ({ ...item, inputSnapshot: undefined })) })) } }));
+            .updateNode(table.id, (node) => ({ ...node, metadata: { ...node.metadata, generationBatches: node.metadata!.generationBatches!.map((batch) => ({ ...batch, items: batch.items.map((item) => ({ ...item, inputSnapshot: undefined })) })) } }));
         queue.api().updateNode(target.id, (node) => ({ ...node, metadata: { ...node.metadata, prompt: "Use @[node:missing-reference]" } }));
         queue.tick();
     });
@@ -465,8 +464,8 @@ test("invalid references fail a legacy batch without a snapshot instead of reque
     expect(queue.api().nodes[0].metadata?.generationBatches?.[0].items[0].status).toBe("failed");
 });
 
-test("real executor submits and queries distinct backend tasks for two suite rounds", async () => {
-    const queue = await mountQueue([product], true);
+test("real executor submits and queries distinct backend tasks for two batch rounds", async () => {
+    const queue = await mountQueue([table, ...roundTargets], true);
     const requests: CreateTaskInput[] = [];
     const tasks = new Map<string, GenerationTask>();
     const reply = (data: unknown) => ({ data: { code: 0, data, msg: "ok" }, status: 200, headers: {} });
@@ -485,33 +484,13 @@ test("real executor submits and queries distinct backend tasks for two suite rou
         if (config.url === "/tasks") return reply([]);
         throw new Error("Unexpected API boundary: " + config.url);
     }) as typeof apiClient.request;
-    const flow = ecommerceOneClickFlow("main")!;
     for (let round = 1; round <= 2; round++) {
+        const prompts = await queueRound(queue, round);
         await act(async () => {
-            const api = queue.api();
-            const rows = Array.from({ length: 5 }, (_, index) => ({ slotId: "main-" + index, title: "Image " + index, duty: "Product", prompt: "Round " + round + " image " + index }));
-            api.updateNode(product.id, (node) => ({ ...node, metadata: { ...node.metadata, ecommerceSuite: { flow: flow.id, rows, source: "draft", updatedAt: "test" } } }));
-            let sequence = 0;
-            const plan = ecommerceSuiteTargets(api.ref.current[0], flow, api.ref.current[0].metadata?.ecommerceSuite, { nodes: api.ref.current, connections: [] }, { model: "test::gpt-image-2" }, () => "edge-" + round + "-" + sequence++);
-            const reusedPrompts = new Map(plan.reuse.map((item) => [item.nodeId, item.prompt]));
-            api.write((current) => [
-                ...current.map((node) => {
-                    const prompt = reusedPrompts.get(node.id);
-                    if (!prompt) return node;
-                    const prepared = synchronizeGenerationSpec(node, { prompt, composerContent: prompt, generationResultPlacement: "replace-node" });
-                    return { ...prepared, metadata: resetGenerationTaskMetadata(prepared.metadata) };
-                }),
-                ...plan.spawned,
-            ]);
-            api.enqueueGenerationBatch(
-                product.id,
-                "batch_image",
-                plan.nodeIds.map((nodeId) => ({ nodeId, rowId: nodeId })),
-            );
             queue.tick();
         });
         expect(requests).toHaveLength(round * 5);
-        expect(requests.slice(-5).map((request) => request.prompt?.split("\n\n").at(-1))).toEqual(Array.from({ length: 5 }, (_, index) => "Round " + round + " image " + index));
+        expect(requests.slice(-5).map((request) => request.prompt?.split("\n\n").at(-1))).toEqual(prompts);
         expect(queue.api().nodes.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.content)).toHaveLength(5);
         expect(queue.api().nodes[0].metadata?.generationBatches?.every((batch) => batch.status === "completed")).toBe(true);
     }

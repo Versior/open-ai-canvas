@@ -5,12 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"mime/multipart"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
-	"yingce/backend/internal/assets"
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
@@ -139,7 +137,7 @@ func (s *Service) readEcommerceSetting() (*model.SystemSetting, EcommerceSetting
 	}
 	var value EcommerceSetting
 	if err := json.Unmarshal([]byte(record.ValueJSON), &value); err != nil {
-		return nil, value, fmt.Errorf("电商画布配置无法读取: %w", err)
+		return nil, value, fmt.Errorf("电商生图台配置无法读取: %w", err)
 	}
 	normalizeEcommerceCapabilities(&value)
 	if err := validateEcommerceSetting(value); err != nil {
@@ -219,43 +217,6 @@ func validateEcommerceSetting(value EcommerceSetting) error {
 	return nil
 }
 
-func (s *Service) EcommerceSetting(actor *model.User) (*EcommerceSetting, error) {
-	if actor == nil {
-		return nil, Unauthorized("请先登录")
-	}
-	_, value, err := s.readEcommerceSetting()
-	if err != nil {
-		return nil, err
-	}
-	models := []EcommercePublicModel{}
-	if value.Enabled && value.ModelLibraryEnabled {
-		for _, item := range value.Models {
-			if item.Enabled {
-				models = append(models, item)
-			}
-		}
-	}
-	value.Models = models
-	templates := []EcommerceSuiteTemplate{}
-	if value.Enabled {
-		for _, item := range value.Templates {
-			if item.Enabled && value.Flows[item.Flow].Enabled {
-				templates = append(templates, item)
-			}
-		}
-	}
-	value.Templates = templates
-	for id, item := range value.Capabilities {
-		item.DirectorPrompt = ""
-		value.Capabilities[id] = item
-	}
-	for id, flow := range value.Flows {
-		flow.DirectorPrompt = ""
-		value.Flows[id] = flow
-	}
-	return &value, nil
-}
-
 // Inject only in the worker's in-memory request, so task polling and exports
 // never contain administrator instructions. Model routing and billing stay on
 // the normal generation task path.
@@ -277,7 +238,7 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 	}
 	if strings.HasPrefix(id, "cap:") {
 		capability, ok := setting.Capabilities[strings.TrimPrefix(id, "cap:")]
-		if !ok || !setting.Enabled || !capability.Enabled {
+		if !ok || !ecommerceCapabilityOpen(setting, strings.TrimPrefix(id, "cap:"), capability) {
 			return BadAuthRequest("管理员已停用此电商能力")
 		}
 		director := strings.TrimSpace(capability.DirectorPrompt)
@@ -323,6 +284,12 @@ func (s *Service) applyEcommerceImageCapabilityInstruction(input *canvasGenerati
 	return nil
 }
 
+// 生图台的商品档案只看自己的能力开关。setting.Enabled 是已下线的旧版电商画布总开关，
+// 后台不再提供，不能再拦住生图台；其余旧画布能力仍受它约束。
+func ecommerceCapabilityOpen(setting EcommerceSetting, id string, capability EcommerceFlowSetting) bool {
+	return capability.Enabled && (setting.Enabled || id == ecommerceStudioDossierCapability)
+}
+
 // Validate on admission and again in the worker, before any provider request.
 func (s *Service) validateEcommerceCapability(input *canvasGenerationInput) error {
 	raw, marked := input.Metadata["ecommerceCapability"]
@@ -345,7 +312,7 @@ func (s *Service) validateEcommerceCapability(input *canvasGenerationInput) erro
 	if !ok {
 		return BadAuthRequest("电商能力不存在")
 	}
-	if !setting.Enabled || !capability.Enabled {
+	if !ecommerceCapabilityOpen(setting, id, capability) {
 		return BadAuthRequest("管理员已停用此电商能力")
 	}
 	if id == "pipeline" {
@@ -460,7 +427,7 @@ func (s *Service) UpdateEcommerceSetting(actor *model.User, value EcommerceSetti
 		record.CreatedAt = current.CreatedAt
 	}
 	backup := model.SystemSetting{Key: ecommerceSettingKey + "_previous", ValueJSON: string(encodedBefore), UpdatedBy: actor.ID}
-	audit, err := newAdminAuditEvent(actor, "ecommerce_canvas.update", "system_setting", ecommerceSettingKey, "更新电商画布配置", map[string]any{"enabled": value.Enabled, "modelCount": len(value.Models), "revision": value.Revision})
+	audit, err := newAdminAuditEvent(actor, "ecommerce_canvas.update", "system_setting", ecommerceSettingKey, "更新电商生图台配置", map[string]any{"enabled": value.Enabled, "modelCount": len(value.Models), "revision": value.Revision})
 	if err != nil {
 		return nil, err
 	}
@@ -500,78 +467,6 @@ func decodeStoredEcommerceSetting(raw string) (EcommerceSetting, error) {
 	normalizeEcommerceCapabilities(&value)
 	return value, validateEcommerceSetting(value)
 }
-func (s *Service) UploadEcommerceModelImage(actor *model.User, header *multipart.FileHeader) (*model.Resource, error) {
-	if err := s.RequireAdmin(actor); err != nil {
-		return nil, err
-	}
-	if header == nil || header.Size > 10<<20 {
-		return nil, BadAuthRequest("请选择不超过 10MB 的模特图片")
-	}
-	file, err := header.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	mimeType, err := detectUploadedMimeType(file)
-	if err != nil {
-		return nil, err
-	}
-	if mimeType != "image/png" && mimeType != "image/jpeg" && mimeType != "image/webp" {
-		return nil, BadAuthRequest("仅支持 PNG、JPEG、WebP 图片")
-	}
-	header.Header.Set("Content-Type", mimeType)
-	return s.uploadLocalResource(actor.ID, header, "image", 0, 0, 0)
-}
-func (s *Service) PrepareEcommerceModelDelivery(actor *model.User, modelID, resourceID string, options ResourceAccessOptions, rangeHeader string) (*ResourceDelivery, error) {
-	if actor == nil {
-		return nil, Unauthorized("请先登录")
-	}
-	options, err := assets.NormalizeAccessOptions(options, false)
-	if err != nil {
-		return nil, err
-	}
-	_, value, err := s.readEcommerceSetting()
-	if err != nil {
-		return nil, err
-	}
-	allowed := false
-	for _, item := range value.Models {
-		if item.ID == modelID && (item.Enabled && value.Enabled && value.ModelLibraryEnabled || actor.Role == model.UserRoleAdmin) {
-			for _, id := range item.ResourceIDs {
-				if id == resourceID {
-					allowed = true
-				}
-			}
-		}
-	}
-	if !allowed {
-		if actor.Role == model.UserRoleAdmin {
-			previous, err := s.PreviousEcommerceSetting(actor)
-			if err == nil {
-				for _, item := range previous.Models {
-					if item.ID == modelID {
-						for _, id := range item.ResourceIDs {
-							if id == resourceID {
-								allowed = true
-							}
-						}
-					}
-				}
-			}
-		}
-		if !allowed {
-			return nil, NotFound("公共模特图片不可用")
-		}
-	}
-	resource, err := s.repo.Resource(resourceID)
-	if err != nil {
-		return nil, err
-	}
-	if resource.Kind != "image" || resource.Status != model.ResourceStatusReady {
-		return nil, NotFound("公共模特图片不可用")
-	}
-	return s.prepareResourceDelivery(resource.UserID, resource, options, rangeHeader)
-}
 
 // Current and rollback configurations both own their image references. Invalid
 // settings block deletion so a damaged record cannot silently destroy assets.
@@ -592,14 +487,14 @@ func (s *Service) ecommerceResourceReferences(resourceIDs []string) map[string][
 		}
 		if err != nil {
 			for _, id := range resourceIDs {
-				result[id] = append(result[id], AdminResourceReferenceView{Kind: "电商画布", ID: key, Title: "配置无法读取，暂停资源删除"})
+				result[id] = append(result[id], AdminResourceReferenceView{Kind: "电商生图台配置", ID: key, Title: "配置无法读取，暂停资源删除"})
 			}
 			continue
 		}
 		for _, item := range value.Models {
 			for _, id := range item.ResourceIDs {
 				if wanted[id] {
-					result[id] = append(result[id], AdminResourceReferenceView{Kind: "电商画布", ID: key, Title: item.Name})
+					result[id] = append(result[id], AdminResourceReferenceView{Kind: "电商生图台配置", ID: key, Title: item.Name})
 				}
 			}
 		}

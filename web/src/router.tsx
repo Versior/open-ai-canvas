@@ -4,19 +4,7 @@ import { lazyAdminPage } from "@/pages/admin/admin-page-loader";
 
 import { RequireAuth } from "@/components/auth/require-auth";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
-import {
-    loadAssetsPage,
-    loadCanvasPage,
-    loadCanvasProjectPage,
-    loadCreatePage,
-    loadEcommerceCanvasPage,
-    loadEcommerceStudioPage,
-    loadInspirationPage,
-    loadProjectCreatePage,
-    loadProjectDetailPage,
-    loadProjectsPage,
-    loadSkillWorkbenchPage,
-} from "@/lib/workspace-route-modules";
+import { loadAssetsPage, loadCanvasPage, loadCanvasProjectPage, loadCreatePage, loadEcommerceStudioPage, loadInspirationPage, loadProjectCreatePage, loadProjectDetailPage, loadProjectsPage, loadSkillWorkbenchPage } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
@@ -65,7 +53,6 @@ const LoginPage = lazy(() => import("@/pages/auth/login"));
 const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
-const EcommerceCanvasPage = lazy(loadEcommerceCanvasPage);
 const EcommerceStudioPage = lazy(loadEcommerceStudioPage);
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
@@ -250,8 +237,8 @@ export const router = createBrowserRouter([
             },
             { path: "/projects/:projectId/*", element: <Navigate to=".." relative="path" replace /> },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
-            // 旧版电商画布列表：/ecommerce 由电商 Agent 工作区接管，存量电商画布从这里进入。
-            { path: "/ecommerce/canvas", element: <RequireAuth>{deferred(<EcommerceCanvasPage />)}</RequireAuth> },
+            // 旧版电商画布已下线：旧入口收进画布列表，存量电商画布按自由画布打开。
+            { path: "/ecommerce/canvas", element: <Navigate to="/canvas" replace /> },
             {
                 path: "/canvas/:id",
                 element: (

@@ -324,12 +324,9 @@ function resetGenerationParamsOnModelSwitch(node: CanvasNodeData, patch: Partial
  * 连线落到目标节点上的吸附点。单端口一侧取边的正中——与 connectionHandleY 保持同一个
  * 口径，否则吸附点和实际画出来的线会对不上（这两处是同一规则的两份实现，改一处必错）。
  */
-export function getConnectionTargetAnchor(node: CanvasNodeData, current: ConnectionHandle, handleId?: string, scrollTop = 0, batchScroll?: BatchScroll, anchorRatio?: number, anchorXRatio?: number) {
+export function getConnectionTargetAnchor(node: CanvasNodeData, current: ConnectionHandle, handleId?: string, scrollTop = 0, batchScroll?: BatchScroll) {
     const cell = current.handleType === "source" ? batchCellAnchor(node, handleId, batchScroll) : undefined;
     if (cell) return { x: cell.x, y: cell.y };
-    if (node.type === CanvasNodeType.Product && (handleId?.startsWith("product-view:") || handleId?.startsWith("visual-reference:")) && anchorRatio !== undefined && anchorXRatio !== undefined) {
-        return { x: node.position.x + node.width * anchorXRatio, y: node.position.y + node.height * anchorRatio };
-    }
     return {
         x: current.handleType === "source" ? node.position.x : node.position.x + node.width,
         y: batchReferenceHandleY(node, handleId) ?? storyboardHandleY(node, handleId, scrollTop) ?? node.position.y + node.height / 2,

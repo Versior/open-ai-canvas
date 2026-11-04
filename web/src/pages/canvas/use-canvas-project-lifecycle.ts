@@ -1,7 +1,5 @@
 import { agentCanvasFocusTargets, type AgentCanvasFocus } from "@/lib/canvas/agent-canvas-focus";
 import { mergeAgentCanvasEditor } from "@/lib/canvas/agent-canvas-patch";
-import { ecommerceCanvasPreset, ecommerceCanvasTitle } from "@/lib/ecommerce/ecommerce-canvas-preset";
-import { useEcommerceSettings } from "@/stores/use-ecommerce-settings";
 import { rebaseCanvasLocalEdits } from "@/lib/canvas/canvas-sync-rebase";
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { App } from "antd";
@@ -413,25 +411,15 @@ export function useCanvasProjectLifecycle({
     );
 
     const createAndOpenProject = useCallback(() => {
-        const state = useCanvasStore.getState();
-        const ecommerce = state.projects.find((project) => project.id === projectId)?.kind === "ecommerce";
-        void (async () => {
-            if (ecommerce && !(await useEcommerceSettings.getState().load()).enabled) throw new Error("管理员已停用新建电商画布");
-            return createCanvasProjectWithRemoteSync(
-                ecommerce ? ecommerceCanvasTitle(state.projects.map((project) => project.title)) : `自由画布 ${state.projects.length + 1}`,
-                undefined,
-                ecommerce ? { ...ecommerceCanvasPreset(), kind: "ecommerce" } : undefined,
-            );
-        })()
+        void createCanvasProjectWithRemoteSync(`自由画布 ${useCanvasStore.getState().projects.length + 1}`)
             .then(({ id, syncError }) => {
                 if (syncError) console.warn("新画布等待后台同步", syncError);
                 navigate(`/canvas/${id}`);
             })
             .catch((error) => message.error(error instanceof Error ? error.message : "创建画布失败"));
-    }, [message, navigate, projectId]);
+    }, [message, navigate]);
 
     const deleteCurrentProject = useCallback(async () => {
-        const listPath = useCanvasStore.getState().projects.find((project) => project.id === projectId)?.kind === "ecommerce" ? "/ecommerce/canvas" : "/canvas";
         const drawingIds = nodesRef.current.flatMap((node) => (node.type === "drawing" && node.metadata?.drawingId ? [node.metadata.drawingId] : []));
         try {
             await deleteCanvasProjectsWithRemoteSync([projectId]);
@@ -443,7 +431,7 @@ export function useCanvasProjectLifecycle({
             void Promise.all(drawingIds.map((drawingId) => removeCanvasDrawing(projectId, drawingId))).catch(() => message.warning("项目已删除，但部分本地绘图缓存清理失败"));
         }
         cleanupAssetImages();
-        navigate(listPath);
+        navigate("/canvas");
     }, [cleanupAssetImages, message, navigate, nodesRef, projectId]);
 
     const renameCurrentProject = useCallback(
