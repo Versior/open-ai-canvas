@@ -17,7 +17,9 @@ description: 影策后端核心持久化表与状态边界
 
 累计消费按 `billing_orders` 中 `status = settled` 的 `actual_amount_microcredits` 求和，与后台用户列表的“已消费”一致；形象购买走 `credit_ledger_entries`，不计入。启动时版本 80 的物理结构校验同时检查 `agent_pets` 的 `unlock_microcredits`、`tone`、`lines_json`、`category`、`badge` 与五个促销列。批量修改在一个事务里保存所有形象，任一失败整批回滚。
 
-购买在一个事务里先插入已购记录抢占 `(user_id, pet_id)`，再读出形象的最新配置复核仍上架、仍是积分购买且此刻售价（含促销）未变，售价为 0 时到此为止；否则以 `available_microcredits >= 价格` 条件扣减余额并写 `credit_ledger_entries`（类型 `agent_pet_purchase`，场景“智能体形象”，金额为负）。重复或并发请求只扣一次，余额不足整笔回滚。用户积分明细的“消费”筛选包含该类型。上传图集以资源类型 `agent-pet` 存在本地数据目录，`agent_pets.resource_id` 引用期间资源删除和后台回收都会跳过；读不到形象库时按全部被引用处理。
+购买在一个事务里先插入已购记录抢占 `(user_id, pet_id)`，再读出形象的最新配置复核仍上架、仍是积分购买且此刻售价（含促销）未变，售价为 0 时到此为止；否则以 `available_microcredits >= 价格` 条件扣减余额并写 `credit_ledger_entries`（类型 `agent_pet_purchase`，场景“智能体形象”，金额为负）。重复或并发请求只扣一次，余额不足整笔回滚。用户积分明细的“消费”筛选包含该类型。上传图集以资源类型 `agent-pet` 存在本地数据目录，`agent_pets.resource_id` 引用期间资源删除和后台回收都会跳过；读不到形象库时按全部被引用处理。图集给全站用户使用，不计入导入管理员的账号文件容量（见“资源存储”）。
+
+三张表登记在 `database.Models()`，SQLite → PostgreSQL 搬迁（`cmd/migrate-sqlite-postgres`）也复制这三张表。搬迁工具的测试会建出完整 Schema，检查每张业务表都在复制清单里，以后新增表漏登记时测试直接失败。
 
 ## Agent 记忆文件列补齐（Schema 79）
 
@@ -499,7 +501,7 @@ schema v27 为 `channel_model_price_tiers` 和 `billing_orders` 添加 `cost_con
 
 个人画布中的图片、视频和音频采用 `Asset -> Resource` 所有权约束：前端先提交素材，再提交带 `assetId` 的画布节点或时间线直连媒体；后端保存画布前校验资源属于当前用户、状态为 `ready`、素材存在且引用同一资源。素材更新、全量替换和删除也会反向检查已有画布，不能把仍在使用的资源从素材库中移除或替换成其他资源。登录历史账号时，前端会按资源键补建缺失素材并回写 `assetId`。这项修复复用现有表和 Outbox，不新增结构迁移。
 
-账号文件容量上限为全局基础容量加生效扩容（见“存储空间套餐”）。已用容量只统计 `ready` 资源，并按 Provider、Endpoint、Bucket、ObjectKey 对同一物理对象去重。上传中或失败记录不占用已存储容量。后台每小时检查资源生命周期：超过 1 小时的 `pending/failed` 记录，以及超过 24 小时仍没有任何素材、画布、任务或其他业务引用的 `ready` 记录，会在再次校验引用后删除数据库记录并写入 `resource_deletion_jobs`，由幂等 Worker 清理物理对象。
+账号文件容量上限为全局基础容量加生效扩容（见“存储空间套餐”）。已用容量只统计 `ready` 资源，并按 Provider、Endpoint、Bucket、ObjectKey 对同一物理对象去重。管理员导入的站点外观资源（`kind` 为 `live2d`、`agent-avatar-bundle`、`agent-pet`）给全站使用，不计入导入者的已用容量，保存时也不按个人容量拦截；这三种类型只能由管理员的导入路径写入，普通上传不能声明。上传中或失败记录不占用已存储容量。后台每小时检查资源生命周期：超过 1 小时的 `pending/failed` 记录，以及超过 24 小时仍没有任何素材、画布、任务或其他业务引用的 `ready` 记录，会在再次校验引用后删除数据库记录并写入 `resource_deletion_jobs`，由幂等 Worker 清理物理对象。
 
 素材状态为 `archived` 时进入回收站。后台按“资源与请求策略”中的 `recycleBinRetentionDays` 定期扫描过期项；`0` 表示永久保留。自动清理与用户手动彻底删除复用同一 service 引用校验和 `resource_deletion_jobs` Outbox，仍被画布、项目、任务或其他业务记录引用的素材不会被删除。
 
@@ -520,3 +522,5 @@ Schema 32 为 `channel_models` 新增 `tags`（TEXT、NOT NULL、默认 `'[]'`�
 迁移 46 新增 skill_curation_settings、skill_curation_categories、skill_curation_assignments；默认关闭，不导入技能内容。表结构与事务规则见 [平台技能策展](./skill-curation)。
 
 迁移 47 依赖 46，新增 skill_curation_roots 与 skill_curation_root_assignments；保留原五个根 ID，根停用时使用派生默认桶，根表为空回落固定五类。
+
+这五张表由迁移 46、47 建立，同时登记在 `database.Models()`，SQLite → PostgreSQL 搬迁会复制它们（此前漏登记，搬迁后平台分类和归类会丢失）。
