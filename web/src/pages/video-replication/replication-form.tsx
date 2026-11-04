@@ -131,8 +131,8 @@ export function ReplicationForm({ config, model, onModelChange, transcribe, onTr
                 </p>
             ) : null}
             {run ? <ReplicationProgress run={run} /> : null}
-            <Button type="primary" size="large" block icon={<ScanSearch className="size-4" />} disabled={!ready} loading={busy} onClick={start}>
-                {busy ? "正在拆解" : "开始拆解"}
+            <Button type="primary" size="large" block icon={<ScanSearch className="size-4" />} disabled={!ready} onClick={start}>
+                {busy ? "正在拆解…" : "开始拆解"}
             </Button>
             <p className="text-xs leading-5 text-muted-foreground">
                 视频最长 3 分钟、最多拆 60 个镜头；切镜和抽帧不收费，模型分析按所选模型计费。识别口播需要服务端配置转写服务，没配置时从画面字幕读。拆解用于学习结构和节奏，复刻请使用你有权使用的素材和形象。

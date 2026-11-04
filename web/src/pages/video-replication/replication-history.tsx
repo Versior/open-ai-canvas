@@ -35,7 +35,7 @@ function recordTime(value: string) {
 export function ReplicationHistory({ records, loading, error, selectedId, runningId, className, onSelect, onNew }: Props) {
     return (
         <section className={cn("flex min-h-0 flex-col gap-3 rounded-[var(--r-lg)] border border-border bg-card p-3", className)} aria-label="拆解记录">
-            <Button type={selectedId ? "default" : "primary"} block icon={<Plus className="size-4" />} onClick={onNew} aria-pressed={!selectedId}>
+            <Button block icon={<Plus className="size-4" />} onClick={onNew} aria-pressed={!selectedId}>
                 新建拆解
             </Button>
             <h2 className="px-1 text-xs font-medium text-muted-foreground">拆解记录</h2>
