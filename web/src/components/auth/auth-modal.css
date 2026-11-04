@@ -69,7 +69,7 @@
     min-height: 0;
     flex-direction: column;
     overflow-y: auto;
-    padding: var(--space-10) var(--space-8) var(--space-4);
+    padding: var(--space-8) var(--space-8) var(--space-4);
     border-radius: 0;
     box-shadow: none;
     backdrop-filter: none;
@@ -83,7 +83,7 @@
 
 .auth-modal-title {
     margin-top: var(--space-2);
-    font-size: var(--fs-heading-lg);
+    font-size: var(--fs-title);
     font-weight: 600;
 }
 
@@ -110,6 +110,7 @@
 
 .auth-modal-footer {
     margin-top: var(--space-6);
+    padding-bottom: 0;
 }
 
 /* 窄屏只留表单：海报在手机上占掉半屏，用户要的是登录框。 */

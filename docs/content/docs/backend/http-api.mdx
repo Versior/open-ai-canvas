@@ -64,6 +64,19 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 当前配置、上一版与审计同事务提交，并比较持久化快照防止并发覆盖。当前及上一版 `models` 里的图片引用仍阻止后台删除和自动清理；配置损坏时暂停删除。这些业务开关不替代模型权限与额度策略，也不取消已提交任务。
 
+## 游客只读接口
+
+不需要登录，供游客浏览首页、模型与灵感。接口只读、不含凭证；结果在应用层缓存 60 秒（键数有上限），响应头 `Cache-Control: private, no-store`。每个来源地址与全站游客各有一份每分钟限流，超限返回 429 和 `Retry-After`。`c.ClientIP()` 会采信 `X-Forwarded-For`，单地址上限可被伪造绕过，真正兜底的是全站上限。
+
+| 接口 | 合同 |
+| --- | --- |
+| `GET /api/public/features` | `data.features`：各功能开关与 `configured`，不含操作人与更新时间。单地址 60 次/分，全站 1200 次/分 |
+| `GET /api/public/model-catalog` | 结构同 `GET /api/model-catalog`；按默认分组的渠道可见性与价格计算，不附加可用率统计，不放开分组隐藏的渠道。单地址 30 次/分，全站 600 次/分 |
+| `GET /api/public/libtv/gallery` | 参数与返回同 `GET /api/libtv/gallery`；同一组参数（含 requestId）共用缓存，首页不带 requestId 时游客拿到同一个 requestId，翻页顺序一致。单地址 20 次/分，全站 200 次/分（与作品详情共用） |
+| `GET /api/public/libtv/works/:uuid` | 返回同 `GET /api/libtv/works/:uuid`，按作品缓存 |
+
+报价（`POST /api/model-catalog/quote`、`/available`）、生成、上传、保存与 LibTV 导入仍要求登录。`GET /api/auth/session` 对游客仍只返回 `{ "user": null }`，前端另读 `/api/public/features`。
+
 ## LibTV 公开作品与模板
 
 以下接口需要平台登录态。作品查询按用户限流，仅访问 LibTV 已审核的公开作品，不转发管理员配置的 LibTV 凭证。

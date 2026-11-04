@@ -97,7 +97,7 @@ export function AuthModal({ open, tab, next, onTabChange, onClose }: { open: boo
                             {tab === "login" ? <LoginForm next={next} onSuccess={onClose} /> : <RegisterForm next={next} onSuccess={onClose} />}
                         </Suspense>
                     </div>
-                    <SiteComplianceFooter variant="auth" className="auth-modal-footer" />
+                    <SiteComplianceFooter className="auth-modal-footer" />
                 </section>
             </div>
         </AppModal>
