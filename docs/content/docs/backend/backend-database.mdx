@@ -75,7 +75,7 @@ description: 影策后端核心持久化表与状态边界
 
 Schema 72 `ecommerce_private_library` 保留历史私人电商库表结构，以兼容已部署 Fork 与既有数据；当前产品不提供私人库云同步入口，该迁移不会重新启用此功能。
 
-电商生图台复用同一张 `ecommerce_libraries`（每个用户一行，`revision` 乐观并发），无需新增表或 Schema 迁移。`payload_json` 里的 `studio` 键保存 `{ "version": 1, "products": [...] }`，其余历史键原样保留；无法解析的历史数据会拒绝写入而不是覆盖。资源引用扫描读取整行 `payload_json`，商品照片、出图结果与采用结果的 `resourceId` 因此受删除保护和孤儿清理保护。删除生图台商品只移除这份 JSON 里的记录，不删除资源。每个商品对象内的 `revision` 由服务端写入（每次保存或 Agent 写入加一），浏览器保存与 Agent 写入都按它比较交换；`pendingGeneration` 记录 Agent 交给用户确认的出图请求，用户确认或忽略后由页面清除。这两个字段都在 JSON 里，没有新增列。
+电商生图台复用同一张 `ecommerce_libraries`（每个用户一行，`revision` 乐观并发），无需新增表或 Schema 迁移。`payload_json` 里的 `studio` 键保存 `{ "version": 1, "products": [...] }`，其余历史键原样保留；无法解析的历史数据会拒绝写入而不是覆盖。资源引用扫描读取整行 `payload_json`，商品照片、出图结果与采用结果的 `resourceId` 因此受删除保护和孤儿清理保护。删除生图台商品只移除这份 JSON 里的记录，不删除资源。每个商品对象内的 `revision` 由服务端写入（每次保存或 Agent 写入加一），浏览器保存与 Agent 写入都按它比较交换；`pendingGeneration` 记录 Agent 交给用户确认的出图请求，用户确认或忽略后由页面清除。这两个字段都在 JSON 里，没有新增列。模板套图同样只用 JSON 字段：`brief.suite` 是选中模板的快照（每张图的标题、职责、可选画幅与是否不放文字，以及整套视觉规范），`brief.shotOrder` / `brief.shotSkip` 记镜头清单的顺序与这次不出的镜头，生成记录的 `suite` 与镜头的 `duty` 记提交那一刻的模板内容。
 
 ## 推广中心（Schema 74）
 
