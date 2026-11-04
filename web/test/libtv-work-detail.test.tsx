@@ -642,11 +642,12 @@ describe("LibTV inspiration navigation", () => {
 
     test("sidebar, title, command palette and route preload all know the inspiration page", () => {
         const sidebar = source("../src/components/layout/workspace-sidebar-nav.tsx");
-        const resources = sidebar.slice(sidebar.indexOf('heading: "资源与工具"'), sidebar.indexOf("taskCenterEnabled ? [{ items"));
-        expect(resources).toContain('toolItem("inspiration", "/inspiration")');
-        expect(resources.indexOf('toolItem("plugins", "/plugins")')).toBeLessThan(resources.indexOf('toolItem("inspiration", "/inspiration")'));
-        expect(sidebar.replace(/\s+/g, " ")).toContain('item.id === "inspiration" ? "灵感"');
-        expect(source("../src/components/layout/workspace-top-bar.tsx")).toContain('inspiration: "灵感广场"');
+        // 侧栏和顶栏改用 i18n 键：资源与工具分组里灵感广场排在插件之后，收起时和页面标题各有自己的键。
+        const resources = sidebar.slice(sidebar.indexOf('heading: t("nav.sidebar.headingTools")'), sidebar.indexOf('heading: t("nav.sidebar.headingAssets")'));
+        expect(resources).toContain('toolItem("inspiration", "/inspiration", t)');
+        expect(resources.indexOf('toolItem("plugins", "/plugins", t)')).toBeLessThan(resources.indexOf('toolItem("inspiration", "/inspiration", t)'));
+        expect(sidebar).toContain('inspiration: "nav.collapsed.inspiration"');
+        expect(source("../src/components/layout/workspace-top-bar.tsx")).toContain('inspiration: "nav.pageTitles.inspiration"');
         expect(source("../src/components/layout/workspace-command-palette.tsx")).toContain('toolEntry("inspiration", "/inspiration")');
         const modules = source("../src/lib/workspace-route-modules.ts");
         expect(modules).toContain('inspiration: () => import("@/pages/inspirations")');

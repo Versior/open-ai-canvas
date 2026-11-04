@@ -1,0 +1,95 @@
+/* 智能体样式后台：概览统计、价格与促销单元格、批量导入拖放区。只消费后台已有 token。 */
+.agent-pets-overview {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: 16px;
+    overflow: hidden;
+    border: 1px solid var(--admin-card-border);
+    border-radius: var(--r-lg);
+    background: var(--admin-layer-1);
+    box-shadow: var(--admin-card-shadow);
+}
+
+.agent-pets-overview .admin-stat-tile {
+    min-height: 96px;
+}
+
+@media (max-width: 900px) {
+    .agent-pets-overview {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .agent-pets-overview .admin-stat-tile:nth-child(3) {
+        border-left: 0;
+    }
+
+    .agent-pets-overview .admin-stat-tile:nth-child(n + 3) {
+        border-top: 1px solid color-mix(in srgb, var(--foreground) 9%, transparent);
+    }
+}
+
+.agent-pet-price {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+.agent-pet-price-now {
+    font-weight: 600;
+    color: var(--admin-text-primary);
+}
+
+.agent-pet-price-now.is-sale {
+    color: var(--admin-status-error);
+}
+
+.agent-pet-price-list {
+    font-size: var(--fs-label);
+    color: var(--admin-text-muted);
+    text-decoration: line-through;
+}
+
+.agent-pet-category-chip {
+    display: inline-flex;
+    max-width: 100%;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--admin-text) 7%, transparent);
+    font-size: var(--fs-label);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.agent-pet-import-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 28px 16px;
+    border: 1px dashed var(--admin-border-strong);
+    border-radius: var(--r-lg);
+    color: var(--admin-text-secondary);
+    text-align: center;
+    cursor: pointer;
+    transition:
+        border-color var(--admin-motion, 0.15s) ease,
+        background-color var(--admin-motion, 0.15s) ease;
+}
+
+.agent-pet-import-drop:hover,
+.agent-pet-import-drop:focus-visible,
+.agent-pet-import-drop.is-dragging {
+    border-color: var(--admin-accent);
+    background: color-mix(in srgb, var(--admin-accent) 6%, transparent);
+    outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .agent-pet-import-drop {
+        transition: none;
+    }
+}

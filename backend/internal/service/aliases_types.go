@@ -4,6 +4,8 @@ import "yingce/backend/internal/app"
 
 type AgentAvatarBundleManifest = app.AgentAvatarBundleManifest
 type AgentAvatarBundleImport = app.AgentAvatarBundleImport
+type AdminAgentPetInput = app.AdminAgentPetInput
+type AdminAgentPetBatchInput = app.AdminAgentPetBatchInput
 
 const (
 	WorkbenchKindImage = app.WorkbenchKindImage
@@ -404,6 +406,7 @@ type (
 	VideoCapabilityConfig                  = app.VideoCapabilityConfig
 	VideoDurationConfig                    = app.VideoDurationConfig
 	VideoReferenceConfig                   = app.VideoReferenceConfig
+	VideoTeardownRequest                   = app.VideoTeardownRequest
 	VoiceProfileSummary                    = app.VoiceProfileSummary
 	WalletSummary                          = app.WalletSummary
 	WorkflowField                          = app.WorkflowField

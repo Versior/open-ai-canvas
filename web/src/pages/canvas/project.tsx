@@ -21,6 +21,7 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { getResource, getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, syncResourceToArkPrivateAsset } from "@/services/api/resources";
 import { uploadImage } from "@/services/image-storage";
 import { imageMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
 import { isCanvasImageSourceNode } from "@/lib/canvas/canvas-image-source";
 import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import copyToClipboard from "copy-to-clipboard";
@@ -58,6 +59,9 @@ import { CanvasSubtitleDialog } from "@/components/canvas/canvas-subtitle-dialog
 import { CanvasVideoFrameDialog } from "@/components/canvas/canvas-video-frame-dialog";
 import { CanvasVideoSegmentDialog } from "@/components/canvas/canvas-video-segment-dialog";
 import { CanvasVideoEnhanceDialog } from "@/components/canvas/canvas-video-enhance-dialog";
+import { CanvasVideoTeardownDialog, type VideoTeardownSource } from "@/components/canvas/canvas-video-teardown-dialog";
+import type { VideoTeardownOptions } from "@/lib/canvas/video-teardown";
+import { teardownVideoSlot, useCanvasVideoTeardown } from "./use-canvas-video-teardown";
 import { listVideoEnhanceModels } from "@/lib/canvas/canvas-video-enhance";
 import { CanvasTimelineDialog } from "@/components/canvas/canvas-timeline-dialog";
 import { syncNodeSubtitlesToTimeline } from "@/lib/timeline/timeline-build";
@@ -322,6 +326,8 @@ function CanvasViewportPage() {
     const [batchScrollById, setBatchScrollById] = useState<Record<string, BatchScroll>>({});
     const [previsNodeId, setPrevisNodeId] = useState<string | null>(null);
     const [libTVImportOpen, setLibTVImportOpen] = useState(false);
+    // 视频复刻弹窗：nodeId 为空表示从创建菜单打开，让用户粘贴链接或上传视频。
+    const [videoTeardownRequest, setVideoTeardownRequest] = useState<{ nodeId: string | null } | null>(null);
     const [libTVImportTemplateUuid, setLibTVImportTemplateUuid] = useState<string>();
 
     useEffect(() => {
@@ -804,6 +810,7 @@ function CanvasViewportPage() {
         handleUploadFiles,
         handleUploadRequest,
         imageInputRef,
+        importSocialVideo,
         openAssetsAtPosition,
         pasteSystemClipboard,
         replaceNodeMedia,
@@ -826,6 +833,36 @@ function CanvasViewportPage() {
         setDialogNodeId,
     });
     const replaceCanvasNodeMedia = useCallback((node: CanvasNodeData) => handleUploadRequest(node.id), [handleUploadRequest]);
+    // agentFocusNodeRef 在后面声明；拆解完成时组件早已渲染完，调用时它已就绪。
+    const focusTeardownTable = useCallback((nodeId: string) => agentFocusNodeRef.current(nodeId), []);
+    const { runTeardown: runVideoTeardown, runningNodeId: videoTeardownNodeId } = useCanvasVideoTeardown({
+        canvasId: projectId,
+        config: effectiveConfig,
+        nodesRef,
+        connectionsRef,
+        setNodes,
+        setConnections,
+        setSelectedNodeIds,
+        setSelectedConnectionId,
+        setDialogNodeId,
+        startUploadStatus,
+        focusNode: focusTeardownTable,
+    });
+    // 从链接或本地文件开始时先导入成视频节点（放在视野中心附近的空位），再拆解这个节点。导入失败已有提示，不再继续。
+    const startVideoTeardown = useCallback(
+        async (source: VideoTeardownSource, options: VideoTeardownOptions) => {
+            setVideoTeardownRequest(null);
+            let node: CanvasNodeData | null = null;
+            if (source.kind === "node") node = source.node;
+            else if (source.kind === "link") node = await importSocialVideo(source.text, teardownVideoSlot(nodesRef.current, getCanvasCenter()).topLeft);
+            else {
+                const id = await createFileNode(source.file, teardownVideoSlot(nodesRef.current, getCanvasCenter()).center);
+                node = id ? nodesRef.current.find((item) => item.id === id) || null : null;
+            }
+            if (node) await runVideoTeardown(node, options);
+        },
+        [createFileNode, getCanvasCenter, importSocialVideo, runVideoTeardown],
+    );
     const { actions: batchReferences, pickerModal: batchReferencePickerModal } = useCanvasBatchReferences({ nodesRef, connectionsRef, setNodes, setConnections, createFileNode });
     const { rotateImageNode, rotatingNodeId } = useCanvasImageRotation({ projectId, nodesRef, setNodes, setConnections, setSelectedNodeIds, readOnly: false });
     const {
@@ -2083,12 +2120,11 @@ function CanvasViewportPage() {
             const keyframeTimesMs = rows.map(storyboardKeyframeTime).filter((value): value is number => value !== undefined);
             const useKeyframes = Boolean(sourceVideo && keyframeTimesMs.length);
             const scriptSpec = getNodeSpec(CanvasNodeType.Script);
+            // 表格右侧可能已有拆解报告或上一次生成的脚本，挪到最近的空位。
+            const scriptOrigin = findAvailableGenerationGroupPosition(nodesRef.current, { x: tableNode.position.x + tableNode.width + 160, y: tableNode.position.y + (Math.max(tableNode.height, scriptSpec.height) - scriptSpec.height) / 2 }, scriptSpec);
             const scriptNode = createCanvasNode(
                 CanvasNodeType.Script,
-                {
-                    x: tableNode.position.x + tableNode.width + 160 + scriptSpec.width / 2,
-                    y: tableNode.position.y + Math.max(tableNode.height, scriptSpec.height) / 2,
-                },
+                { x: scriptOrigin.x + scriptSpec.width / 2, y: scriptOrigin.y + scriptSpec.height / 2 },
                 {
                     storyboard: { rows, visibleColumns: cinematicStoryboardColumns(), referenceNodeIds: sourceIds },
                     storyboardVideoInputMode: useKeyframes ? "keyframe" : "direct",
@@ -2108,7 +2144,10 @@ function CanvasViewportPage() {
             setSelectedNodeIds(new Set([scriptNode.id]));
             setDialogNodeId(null);
             if (sourceVideo && keyframeTimesMs.length) {
-                const frameNodes = await extractVideoFrames(sourceVideo, { timesMs: keyframeTimesMs });
+                // 拆解复刻已经放好了这段视频的关键帧节点：时间对得上的直接复用，只在浏览器里补抽缺的。
+                const existingFrames = nodesRef.current.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.videoFrameSourceNodeId === sourceVideo.id && keyframeTimesMs.includes(node.metadata?.videoFrameTimeMs ?? -1));
+                const missingTimes = keyframeTimesMs.filter((time) => !existingFrames.some((node) => node.metadata?.videoFrameTimeMs === time));
+                const frameNodes = [...existingFrames, ...(missingTimes.length ? await extractVideoFrames(sourceVideo, { timesMs: missingTimes }) : [])];
                 if (frameNodes.length) {
                     const withFrames = nodesRef.current.map((node) =>
                         node.id === scriptNode.id
@@ -2128,7 +2167,7 @@ function CanvasViewportPage() {
                     );
                     nodesRef.current = withFrames;
                     setNodes(withFrames);
-                    message.success(`已创建视频脚本并自动抽取 ${frameNodes.length} 个关键帧，点击“生成视频”继续`);
+                    message.success(missingTimes.length ? `已创建视频脚本并自动抽取 ${frameNodes.length} 个关键帧，点击“生成视频”继续` : `已创建视频脚本并绑定 ${frameNodes.length} 个关键帧，点击“生成视频”继续`);
                 } else {
                     message.warning("视频脚本已创建，但关键帧抽取失败；请检查视频是否已保存或允许跨域读取");
                 }
@@ -2595,6 +2634,7 @@ function CanvasViewportPage() {
             onOpenPrevis: () => setPrevisTemplateRequest({}),
             onUpload: () => handleUploadRequest(),
             onOpenMyAssets: () => openCanvasAssetLibrary(),
+            onOpenVideoReplication: () => setVideoTeardownRequest({ nodeId: null }),
             onOpenProjectCharacters: () => openCharacterLibrary(),
         },
     });
@@ -3141,6 +3181,7 @@ function CanvasViewportPage() {
                                             onUndo={undoCanvas}
                                             onRedo={redoCanvas}
                                             onUpload={() => handleUploadRequest()}
+                                            onOpenVideoReplication={() => setVideoTeardownRequest({ nodeId: null })}
                                             onDelete={() => deleteNodes(new Set(selectedNodeIds))}
                                             onClear={() => setClearConfirmOpen(true)}
                                             onDeselect={deselectCanvas}
@@ -3338,6 +3379,7 @@ function CanvasViewportPage() {
                                 onExtractAudioFromVideo={(node) => void extractAudioFromVideo(node)}
                                 onTrimVideoSegments={openVideoSegmentExtractor}
                                 onEnhanceVideo={hasVideoEnhanceModels ? openVideoEnhance : undefined}
+                                onVideoTeardown={(node) => setVideoTeardownRequest({ nodeId: node.id })}
                                 onSubtitles={(node) => setSubtitleNodeId(node.id)}
                                 onTimeline={(node) => setTimelineNodeId(node.id)}
                                 onVersions={(node) => setMediaVersionNodeId(node.id)}
@@ -3485,6 +3527,15 @@ function CanvasViewportPage() {
                                     onConfirm={(params) => void handleSegmentConfirm(segmentNode, params)}
                                 />
                             ) : null}
+
+                            <CanvasVideoTeardownDialog
+                                open={Boolean(videoTeardownRequest)}
+                                node={videoTeardownRequest?.nodeId ? nodes.find((item) => item.id === videoTeardownRequest.nodeId) || null : null}
+                                config={effectiveConfig}
+                                busy={Boolean(videoTeardownNodeId)}
+                                onClose={() => setVideoTeardownRequest(null)}
+                                onStart={(source, options) => void startVideoTeardown(source, options)}
+                            />
 
                             {enhanceNode ? (
                                 <CanvasVideoEnhanceDialog node={enhanceNode} open={Boolean(enhanceNode)} config={effectiveConfig} onClose={() => setEnhanceDialogNodeId(null)} onConfirm={(params) => void enhanceVideoNode(enhanceNode, params)} />

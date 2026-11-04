@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Spin, Tabs } from "antd";
+import { useTranslation } from "react-i18next";
 import { useLocation } from "react-router";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { SiteComplianceFooter } from "@/components/layout/site-compliance-footer";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
-import { AUTH_TABS, authCopy } from "@/pages/auth/auth-scene";
+import { AUTH_EYEBROWS } from "@/pages/auth/auth-scene";
 import { brandStudioLabel, useAppearanceStore } from "@/stores/use-appearance-store";
 import { useAuthModalStore, type AuthModalTab } from "@/stores/use-auth-modal-store";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -62,12 +63,18 @@ export function AuthModal({ open, tab, next, onTabChange, onClose }: { open: boo
     const appearance = useAppearanceStore((state) => state.appearance);
     const theme = useThemeStore((state) => state.theme);
     const [failedPosterURL, setFailedPosterURL] = useState("");
-    const copy = authCopy[tab];
+    const { t } = useTranslation();
+    // 与登录页同一套文案：眉题固定英文，标题与说明随界面语言切换。
+    const copy = { eyebrow: AUTH_EYEBROWS[tab], title: t(`auth.copy.${tab}.title`), description: t(`auth.copy.${tab}.description`) };
+    const authTabs = [
+        { key: "login", label: t("auth.tabs.login") },
+        { key: "register", label: t("auth.tabs.register") },
+    ];
     const poster = appearance.authVideoPosterUrl && failedPosterURL !== appearance.authVideoPosterUrl ? appearance.authVideoPosterUrl : "";
     return (
         <AppModal open={open} onCancel={onClose} footer={null} centered flush width="min(1040px, calc(100vw - 32px))" rootClassName="auth-modal" aria-label={copy.title}>
             <div className="auth-modal-shell auth-scene">
-                <section className="auth-modal-hero auth-scene-hero" aria-label={`${appearance.brandName}品牌海报`}>
+                <section className="auth-modal-hero auth-scene-hero" aria-label={t("auth.brandPoster", { brand: appearance.brandName })}>
                     {poster ? <img className="auth-modal-poster" src={poster} alt="" decoding="async" onError={() => setFailedPosterURL(poster)} /> : null}
                     <div aria-hidden className="auth-scene-hero-overlay auth-modal-overlay" />
                     <div className="auth-modal-brand">
@@ -85,7 +92,7 @@ export function AuthModal({ open, tab, next, onTabChange, onClose }: { open: boo
                         <h2 className="auth-modal-title">{copy.title}</h2>
                         <p className="auth-scene-muted auth-modal-description">{copy.description}</p>
                     </header>
-                    <Tabs className="auth-card-tabs" activeKey={tab} items={AUTH_TABS} onChange={(key) => onTabChange(key === "register" ? "register" : "login")} />
+                    <Tabs className="auth-card-tabs" activeKey={tab} items={authTabs} onChange={(key) => onTabChange(key === "register" ? "register" : "login")} />
                     <div className="auth-modal-form">
                         <Suspense
                             fallback={

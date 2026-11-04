@@ -7,4 +7,7 @@ const (
 	TaskTypeTimelineTranscription = "timeline_transcription"
 	TaskTypeTimelineRender        = "timeline_render"
 	TaskTypeSocialVideoImport     = "social_video_import"
+	// 视频复刻的拆解准备：本地切镜、抽关键帧、拼宫格、可选转写。不以 video_ 开头，
+	// 否则会按视频生成的超时处理。
+	TaskTypeReplicationTeardown = "replication_teardown"
 )

@@ -170,6 +170,15 @@ export type StoryboardRow = {
     sourceStartMs?: number;
     sourceEndMs?: number;
     keyframeTimeMs?: number;
+    /** 视频复刻拆解记下的原片信息：切点类型、画面文字、制作方式判断、口播来源和关键帧资源。 */
+    sourceAnalysis?: {
+        boundary?: "start" | "cut" | "split";
+        onScreenText?: string;
+        production?: string;
+        productionConfidence?: string;
+        dialogueSource?: "asr" | "subtitle" | "none";
+        keyframeResourceId?: string;
+    };
     imageNodeId?: string;
     videoNodeId?: string;
     status?: CanvasNodeStatus;
