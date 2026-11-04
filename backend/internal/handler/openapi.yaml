@@ -29,6 +29,8 @@ tags:
   - name: workbench
   - name: feedback
     description: 用户反馈与管理员收件箱
+  - name: guest
+    description: 游客只读展示接口：功能开关、模型目录与 LibTV 公开作品
   - name: referral
     description: 推广中心：推广码、邀请记录与返佣
 paths:
@@ -184,6 +186,50 @@ paths:
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /public/features:
+    get:
+      tags: [guest]
+      summary: 游客读取功能开关
+      description: 不需要登录。只返回各功能开关与 configured，不含操作人与更新时间。每个来源地址每分钟 60 次，全站游客每分钟 1200 次。
+      responses:
+        "200": {description: "标准信封 data.features；Cache-Control 为 private, no-store"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/model-catalog:
+    get:
+      tags: [guest]
+      summary: 游客读取模型目录
+      description: 不需要登录。按默认分组的渠道可见性与价格展示模型名称、图标、能力与价格档，不附加可用率统计，服务端缓存 60 秒。报价、可用性检查与任务创建仍要求登录。每个来源地址每分钟 30 次，全站游客每分钟 600 次。
+      responses:
+        "200": {description: "结构同 GET /model-catalog；Cache-Control 为 private, no-store"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/libtv/gallery:
+    get:
+      tags: [guest]
+      summary: 游客读取 LibTV 公开作品列表
+      description: 不需要登录，参数与返回同 GET /libtv/gallery。同一组参数（含 requestId）缓存 60 秒；首页不带 requestId 时游客共用缓存里的同一个 requestId，翻页保持同一顺序。每个来源地址每分钟 20 次，全站游客每分钟 200 次（与作品详情共用）。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1, maximum: 1000, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 40, default: 20}}
+        - {in: query, name: keyword, schema: {type: string, maxLength: 100}}
+        - {in: query, name: tagId, schema: {type: integer, minimum: 0}}
+        - {in: query, name: requestId, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: 结构同 GET /libtv/gallery}
+        "400": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /public/libtv/works/{uuid}:
+    get:
+      tags: [guest]
+      summary: 游客读取 LibTV 作品详情
+      description: 不需要登录，返回同 GET /libtv/works/{uuid}，按作品缓存 60 秒；导入画布仍要求登录。
+      parameters:
+        - {in: path, name: uuid, required: true, schema: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}}
+      responses:
+        "200": {description: "结构同 GET /libtv/works/{uuid}"}
+        "400": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/Error"}
         "502": {$ref: "#/components/responses/Error"}
   /libtv/works/{uuid}:
