@@ -6,14 +6,14 @@ import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-anal
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
-import { STUDIO_DETAIL_PLAN_CAPABILITY, studioDetailPlanRoles } from "@/lib/ecommerce-studio/detail-plan";
-import { buildDetailPlanPrompt, parseDetailPlan, type StudioDetailPlanResult } from "@/lib/ecommerce-studio/detail-plan-tasks";
+import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, studioDetailPlanRoles } from "@/lib/ecommerce-studio/detail-plan";
+import { buildDetailPlanPrompt, parseDetailPlan, studioPlanTargetRoles, type StudioDetailPlanResult, type StudioPlanRequest } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { compileStudioPrompt, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioShot, studioAttemptActive, studioPlanOf, studioShotPreview } from "@/lib/ecommerce-studio/product";
-import { appendStudioRun, createStudioRun, patchStudioRunShot, studioRunOf } from "@/lib/ecommerce-studio/runs";
+import { appendStudioRun, createStudioRun, patchStudioRunShot, studioActivePlan, studioPlanScopeOf, studioRunOf, studioSingleTargets } from "@/lib/ecommerce-studio/runs";
 import { studioFactUsable, type StudioAttempt, type StudioAttemptStatus, type StudioOutput, type StudioPhoto, type StudioPlanKind, type StudioProduct, type StudioRun, type StudioShot, type StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
@@ -233,13 +233,19 @@ export function useStudioRunner() {
     );
 
     /**
-     * 按这件商品策划详情页：服务端按「详情页策划」能力带上电商知识库的详情页、版式、摄影和场景方法，
-     * 模型看商品图和表单信息排每一屏。结果存进表单，镜头清单换成策划的屏，原来的勾选和顺序清掉。
+     * 按这件商品策划当前出图类型（详情页、主图套图或选中的单张图）：服务端按「出图策划」能力和策划范围
+     * 带上电商知识库的对应方法，模型看商品图和表单信息排每一张。结果存进表单对应的策划，镜头清单换成策划的屏，
+     * 原来的勾选和顺序清掉。revise 时带上这一版策划，按补充调整修改。
      */
     const plan = useCallback(
-        (productId: string, textModel: string) =>
+        (productId: string, textModel: string, options: { revise?: boolean } = {}) =>
             trackAnalysis(productId, "plan", async (): Promise<StudioDetailPlanResult> => {
                 const product = read(productId);
+                const scope = studioPlanScopeOf(product);
+                if (!scope) throw new Error("模板套图按模板出图，不需要策划");
+                const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
+                // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
+                const request: StudioPlanRequest = { scope, ...(targets ? { targets } : {}), ...(options.revise ? { previous: studioActivePlan(product) } : {}) };
                 const current = configRef.current;
                 const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
                 // 商品图只用来让模型看清外观，最多带两张；模型不收图时只按表单和档案的文字策划。
@@ -247,22 +253,22 @@ export function useStudioRunner() {
                 const limit = Math.min(2, maxImages ?? 2);
                 const photos = limit > 0 ? studioReferencePhotos(product.photos, limit) : [];
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(photos.length));
-                const roles = studioDetailPlanRoles(product);
+                const roles = scope === "single" ? studioPlanTargetRoles(targets || []) : studioDetailPlanRoles(product, scope);
                 const result = await runBackendGenerationTask({
                     mode: "text",
-                    prompt: buildDetailPlanPrompt(product, roles),
+                    prompt: buildDetailPlanPrompt(product, roles, request),
                     config: generation,
                     referenceImages: photos.map(photoReference),
                     streamText: false,
-                    metadata: studioAnalysisMetadata(
-                        productId,
-                        "plan",
-                        { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name },
-                        STUDIO_DETAIL_PLAN_CAPABILITY,
-                    ),
+                    metadata: {
+                        ...studioAnalysisMetadata(productId, "plan", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }, STUDIO_DETAIL_PLAN_CAPABILITY),
+                        // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事。
+                        studioPlanKind: scope,
+                    },
                 });
-                const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() });
-                update(productId, (value) => ({ ...value, brief: { ...value.brief, detailPlan: parsed.plan, ...(value.brief.outputType === "detail-set" ? { shotOrder: [], shotSkip: [] } : {}) } }), { immediate: true });
+                const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);
+                const field = STUDIO_PLAN_FIELD[scope];
+                update(productId, (value) => ({ ...value, brief: { ...value.brief, [field]: parsed.plan, shotOrder: [], shotSkip: [] } }), { immediate: true });
                 return parsed;
             }),
         [read, update],

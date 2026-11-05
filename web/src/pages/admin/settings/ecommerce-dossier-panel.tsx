@@ -4,7 +4,7 @@ import { ECOMMERCE_STUDIO_CAPABILITIES } from "@/lib/ecommerce/ecommerce-capabil
 import { AdminStatusBadge } from "../components/admin-ui";
 import { AdminCallout, AdminSwitch } from "../ui/controls";
 
-/** 电商生图台的能力：「商品档案」看图识别商品事实并写卖点与文案；「详情页策划」按商品排每一屏。 */
+/** 电商生图台的能力：「商品档案」看图识别商品事实并写卖点与文案；「出图策划」按商品排详情页、主图套图和单张图的每一张。 */
 export type StudioCapability = (typeof ECOMMERCE_STUDIO_CAPABILITIES)[number];
 export const DOSSIER = ECOMMERCE_STUDIO_CAPABILITIES[0];
 export const DETAIL_PLAN = ECOMMERCE_STUDIO_CAPABILITIES[1];
@@ -15,7 +15,7 @@ export function studioCapabilityDefaultKey(capability: StudioCapability) {
 const PROMPT_MAX = 20000;
 const CLOSED_NOTE: Record<StudioCapability["id"], string> = {
     dossier: "关闭后，生图台不能再识别商品档案，也不能撰写卖点与文案。",
-    "detail-plan": "关闭后，生图台的详情页只能按品类排好的十屏出，不能再按商品策划。",
+    "detail-plan": "关闭后，生图台不能再按商品策划：详情页和主图套图要先策划才能生成，关闭期间无法生成；单张图仍可按类型直接出。",
 };
 
 type CapabilityValue = { enabled: boolean; directorPrompt: string };
@@ -96,7 +96,7 @@ export function renderStudioCapabilityPanel({
                 />
                 <p className="ecm-hint">
                     输入框里是实际使用的完整指令。改动后成为自定义覆盖，恢复内置默认即回到内置写法。
-                    {capability.id === "detail-plan" ? "电商知识库里的详情页、版式、摄影、场景和文案方法由服务端按商品检索后附在指令后面，不用写进这里。" : ""}
+                    {capability.id === "detail-plan" ? "电商知识库里的详情页、主图、版式、摄影、场景和文案方法由服务端按商品和策划范围检索后附在指令后面，不用写进这里。" : ""}
                 </p>
             </section>
         </div>

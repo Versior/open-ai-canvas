@@ -3,6 +3,7 @@ import { rasterizeEcommerceDetailPage, type EcommerceDetailPageResult } from "@/
 import type { EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
 import { studioEffectiveTextMode, studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotPreview } from "@/lib/ecommerce-studio/product";
+import { studioActivePlan } from "@/lib/ecommerce-studio/runs";
 import { studioProductStyle, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { typesetStudioImage } from "@/lib/ecommerce-studio/typeset";
 import type { StudioOutput, StudioPlan, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
@@ -34,7 +35,7 @@ async function objectUrl(output: StudioOutput) {
 /** 需要程序排字的镜头在这里排上文字；其余原样使用。返回的 URL 由调用方负责释放。 */
 export async function composeStudioShots(product: StudioProduct, plan: StudioPlan, signal?: AbortSignal): Promise<StudioComposedShot[]> {
     const family = product.dossier?.family || "generic";
-    const style = studioProductStyle(product);
+    const style = studioProductStyle(product, studioActivePlan(product)?.styleId);
     const results: StudioComposedShot[] = [];
     for (const shot of plan.shots) {
         if (signal?.aborted) break;

@@ -1013,6 +1013,17 @@
     align-items: center;
     gap: var(--space-2);
 }
+/* 补充调整：占满卡片一整行，写给策划的意见。 */
+.es-plan-note {
+    display: grid;
+    flex: 1 1 100%;
+    gap: 4px;
+    min-width: 0;
+}
+.es-plan-note > span {
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
 .es-shots {
     display: grid;
     gap: 2px;

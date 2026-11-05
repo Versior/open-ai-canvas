@@ -9,6 +9,7 @@ import {
     pickStudioSetType,
     resetStudioBriefParameters,
     STUDIO_COUNT_OPTIONS,
+    STUDIO_PLAN_NOTE_MAX,
     STUDIO_LANGUAGES,
     STUDIO_MARKETS,
     STUDIO_SET_TYPES,
@@ -28,8 +29,8 @@ import {
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
-import { patchStudioDetailPlanScreen, STUDIO_DETAIL_PLAN_LIMITS } from "@/lib/ecommerce-studio/detail-plan";
-import { moveStudioSetEntry, studioActiveDetailPlan, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
+import { moveStudioSetEntry, studioActivePlan, studioEntryRatio, studioPlanScopeOf, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
@@ -154,7 +155,10 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const filling = useStudioAnalysis((state) => state.running[product.id] === "fill");
     const planning = useStudioAnalysis((state) => state.running[product.id] === "plan");
     const brief = product.brief;
-    const detailPlan = studioActiveDetailPlan(product);
+    // 当前出图类型的策划：详情页、主图套图和单张图各有一份，模板套图按模板出。
+    const scope = studioPlanScopeOf(product);
+    const activePlan = studioActivePlan(product);
+    const scopeMeta = scope ? STUDIO_PLAN_SCOPES[scope] : undefined;
     const spec = studioOutputSpec(brief.outputType);
     const profile = image.value ? modelCapabilityConfigFor(image.config, image.value).image : undefined;
     const qualityOptions = useMemo(() => studioQualityOptions(profile), [profile]);
@@ -171,8 +175,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const entries = useMemo(() => studioSetEntries(product), [product]);
     const included = entries.filter((entry) => entry.included);
     const unit = setKind === "detail" ? "屏" : "张";
-    // 单张类型可以多选，数量是每种出几张。
-    const images = setKind ? included.length : singles.length * brief.count;
+    // 单张类型可以多选，数量是每种出几张；单张图策划过时按策划清单里勾选的张数。
+    const images = setKind || (scope === "single" && activePlan) ? included.length : singles.length * brief.count;
     const firstEntry = included[0] || entries[0];
     const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(singles[0]?.role || "main-selling", product);
     const truthCount = studioReferencePhotos(product.photos, 8).length;
@@ -190,9 +194,15 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const typeHint = singles.length > 1 ? [`${singles.map((item) => item.label).join("、")}，每种 ${brief.count} 张，共 ${images} 张`, noTextNote].filter(Boolean).join("；") : noTextNote || spec.hint;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
-    // 详情页固定 10 屏，每屏由策划按这件商品排；只有没有可用的文本模型时才按品类默认的 10 屏出。
-    const planScreens = STUDIO_DETAIL_PLAN_LIMITS.screens;
-    const planMissing = brief.outputType === "detail-set" && !detailPlan && Boolean(text.value);
+    // 详情页 10 屏、主图 5 张都由策划按这件商品排，策划前不能生成；只有没有可用的文本模型时才按品类默认的清单出。
+    // 单张图可以直接出，也可以先策划。
+    const planScreens = scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
+    const planUnit = scopeMeta?.unit || "张";
+    const planMissing = (scope === "detail" || scope === "main") && !activePlan && Boolean(text.value);
+    const planField = scope ? STUDIO_PLAN_FIELD[scope] : "detailPlan";
+    const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
+    // 明确不收图的文本模型识别不了商品：「AI 分析并策划」跳过识别，直接按表单和档案的文字策划。
+    const textSeesPhotos = !text.value || modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages !== 0;
     const blocked = !product.photos.length
         ? "先上传商品图"
         : !truthCount
@@ -204,13 +214,20 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
               : suiteMissing
                 ? "先选择一套模板"
                 : planMissing
-                  ? `先策划这 ${planScreens} 屏`
-                  : setKind && !included.length
+                  ? `先策划这 ${planScreens} ${planUnit}`
+                  : (setKind || (scope === "single" && activePlan)) && !included.length
                     ? "镜头清单里至少留一张"
                     : "";
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
     // 质感选「按商品推荐」：详情页由策划挑，其他出图类型按品类挑。
-    const styleHint = product.style !== "auto" ? "" : detailPlan?.styleId ? `策划挑了「${studioProductStyle(product).name}」` : brief.outputType === "detail-set" ? "策划时按这件商品挑" : `按品类用「${studioProductStyle(product).name}」`;
+    const styleHint =
+        product.style !== "auto"
+            ? ""
+            : activePlan?.styleId
+              ? `策划挑了「${studioProductStyle(product, activePlan?.styleId).name}」`
+              : scope && text.value
+                ? `策划时按这件商品挑，没策划时按品类用「${studioProductStyle(product, activePlan?.styleId).name}」`
+                : `按品类用「${studioProductStyle(product, activePlan?.styleId).name}」`;
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
     const pickSet = (id: StudioOutputType) => {
@@ -218,11 +235,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         if (id === "template-set" && !brief.suite) setPickerOpen(true);
     };
 
-    const fill = async () => {
-        if (!product.photos.length) return void message.warning("先上传商品图，再识别");
-        if (!text.value) return void message.warning("没有可用的文本模型，先到模型设置里添加");
+    /** 识别商品。quiet 时是「AI 分析并策划」的第一步：不弹替换确认，卖家写过的内容保留。返回是否成功。 */
+    const fill = async (quiet = false) => {
         try {
             const result = await runner.fill(ensure(), text.value);
+            if (quiet) return true;
             const pending = [result.openQuestions ? `${result.openQuestions} 个问题` : "", result.unsureFacts ? `${result.unsureFacts} 条推断` : ""].filter(Boolean);
             message.success(pending.length ? `已填好，还有${pending.join("、")}，在「商品档案」里核对` : "已按商品图填好");
             if (result.infoKept)
@@ -233,29 +250,51 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     cancelText: "保留我写的",
                     onOk: () => edit((current) => ({ ...current, sellerNotes: result.info }), { immediate: true }),
                 });
+            return true;
         } catch (error) {
             message.error(error instanceof Error ? error.message : "识别失败，请重试");
+            return false;
         }
     };
 
-    const runPlan = async () => {
+    const runPlan = async (revise: boolean) => {
         try {
-            const result = await runner.plan(ensure(), text.value);
+            const result = await runner.plan(ensure(), text.value, { revise });
             const count = result.plan.screens.length;
-            const notes = [result.dropped ? `${result.dropped} 屏依据不够没收进来` : "", result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "", result.issues.length ? `${result.issues.length} 处用词需要留意` : ""].filter(Boolean);
-            const summary = `已按这件商品排好 ${count} 屏${notes.length ? `，${notes.join("，")}` : ""}`;
-            // 不足 10 屏时如实说明，让用户决定直接出还是重新策划。
-            if (count < planScreens) message.warning(`${summary}，比 ${planScreens} 屏少 ${planScreens - count} 屏，可以重新策划`);
+            const notes = [
+                result.dropped ? `${result.dropped} ${planUnit}依据不够没收进来` : "",
+                result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "",
+                result.issues.length ? `${result.issues.length} 处用词需要留意` : "",
+                result.tacky.length ? `文案里有「${result.tacky.join("」「")}」这类说法，可以在补充调整里要求换掉` : "",
+            ].filter(Boolean);
+            const summary = `已按这件商品排好 ${count} ${planUnit}${notes.length ? `，${notes.join("，")}` : ""}`;
+            // 不足预定张数时如实说明，让用户决定直接出还是重新策划。
+            if (count < planScreens) message.warning(`${summary}，比 ${planScreens} ${planUnit}少 ${planScreens - count} ${planUnit}，可以重新策划`);
             else message.success(`${summary}，可以展开修改`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "策划失败，请重试");
         }
     };
-    const planDetail = () => {
-        if (!truthCount) return void message.warning("先上传商品图并点亮星标，再策划");
+
+    /**
+     * AI 分析并策划：还没识别过商品（或要求重新识别）时先识别，再按当前出图类型策划；模板套图只识别。
+     * revise 时带上这一版策划和补充调整，让模型按意见改。
+     */
+    const analyzeAndPlan = async ({ revise = false, reanalyze = false } = {}) => {
+        if (!truthCount) return void message.warning("先上传商品图并点亮星标，再分析");
         if (!text.value) return void message.warning("没有可用的文本模型，先到模型设置里添加");
-        if (!detailPlan) return void runPlan();
-        modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。", okText: "重新策划", cancelText: "取消", onOk: () => void runPlan() });
+        if (!scope) return void fill();
+        if (!textSeesPhotos) {
+            if (reanalyze) message.info("这个文本模型看不了图，跳过识别商品，按表单里的信息策划");
+        } else if ((reanalyze || !product.dossier) && !(await fill(true))) return;
+        await runPlan(revise);
+    };
+    const planDetail = () => {
+        const note = brief.planNote?.trim();
+        if (!activePlan) return void analyzeAndPlan();
+        // 写了补充调整：按意见改这一版；没写时从头重新策划，先确认会替换改过的内容。
+        if (note) return void analyzeAndPlan({ revise: true });
+        modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。只想改几处的话，先在「补充调整」里写下要改的地方。", okText: "重新策划", cancelText: "取消", onOk: () => void analyzeAndPlan() });
     };
 
     const generate = () => {
@@ -319,9 +358,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 <div className="es-section-head">
                     <h2>商品信息</h2>
                     <span className="es-field-actions">
-                        <Tooltip title={product.photos.length ? "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖" : "先上传商品图"}>
-                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling} disabled={planning || !product.photos.length} onClick={() => void fill()}>
-                                {filling ? "识别中…" : "识别商品自动填写"}
+                        <Tooltip
+                            title={!product.photos.length ? "先上传商品图" : scope ? `看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再按当前出图类型策划这 ${planScreens} ${planUnit}` : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}
+                        >
+                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || planning} disabled={!product.photos.length} onClick={() => void analyzeAndPlan({ reanalyze: true })}>
+                                {filling ? "分析商品中…" : planning ? "策划中…" : scope ? "AI 分析并策划" : "AI 分析商品"}
                             </Button>
                         </Tooltip>
                         <FillModelPopover imageCount={product.photos.length} />
@@ -506,11 +547,13 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     </div>
                 </div>
 
-                {setKind ? (
+                {setKind || scope ? (
                     <>
                         <div className="es-section-head">
-                            <h2>镜头清单</h2>
-                            <span className="es-section-note">{planMissing ? "策划好后可以逐屏修改、勾掉这次不出的、调整顺序" : `已选 ${included.length}/${entries.length} ${unit} · 勾掉这次不出的，箭头调整顺序`}</span>
+                            <h2>{setKind ? "镜头清单" : "出图策划"}</h2>
+                            <span className="es-section-note">
+                                {planMissing || (!setKind && !activePlan) ? `策划好后可以逐${planUnit}修改、勾掉这次不出的、调整顺序` : `已选 ${included.length}/${entries.length} ${setKind ? unit : "张"} · 勾掉这次不出的，箭头调整顺序`}
+                            </span>
                         </div>
                         {brief.outputType === "template-set" ? (
                             <div className="es-suite-card" data-empty={brief.suite ? undefined : true}>
@@ -527,35 +570,68 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                 </Button>
                             </div>
                         ) : null}
-                        {brief.outputType === "detail-set" ? (
-                            <div className="es-suite-card es-plan-card" data-empty={planMissing ? true : undefined} data-planned={detailPlan ? true : undefined}>
+                        {scope ? (
+                            <div className="es-suite-card es-plan-card" data-empty={planMissing ? true : undefined} data-planned={activePlan ? true : undefined}>
                                 <span className="es-suite-card-text">
-                                    <strong>{detailPlan ? `已按这件商品策划 ${detailPlan.screens.length} 屏` : planMissing ? `先策划这 ${planScreens} 屏` : `按品类默认的 ${entries.length} 屏`}</strong>
+                                    <strong>
+                                        {activePlan
+                                            ? `已按这件商品策划 ${activePlan.screens.length} ${planUnit}${planTone ? ` · ${planTone}` : ""}`
+                                            : !text.value
+                                              ? scope === "single"
+                                                  ? "没有可用的文本模型，按出图类型直接出"
+                                                  : `按品类默认的 ${entries.length} ${planUnit}`
+                                              : scope === "single"
+                                                ? `可以先让 AI 策划这 ${planScreens} 张`
+                                                : `先策划这 ${planScreens} ${planUnit}`}
+                                    </strong>
                                     <span>
-                                        {detailPlan
-                                            ? detailPlan.summary || "每一屏的画面和文案按这件商品写好，点笔形按钮可以修改。"
-                                            : planMissing
-                                              ? `策划会参考电商知识库，先分析这件商品的买家最关心什么，再定每一屏讲什么、画面怎么拍、文案写什么；排好后可以逐屏修改再生成${product.dossier ? "" : "。先识别商品，策划会更准"}。`
-                                              : "没有可用的文本模型，没法按商品策划，这次按品类默认的清单出。添加文本模型后可以按商品策划。"}
+                                        {activePlan
+                                            ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
+                                            : text.value
+                                              ? `AI 先分析商品图和卖点，再参考电商知识库挑设计调性，定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。不策划也可以直接生成" : ""}。`
+                                              : "添加文本模型后可以按商品策划。"}
                                     </span>
                                 </span>
-                                <span className="es-plan-card-actions">
-                                    {detailPlan || planMissing ? (
-                                        <Button type={planMissing ? "primary" : "default"} icon={<ListChecks size={14} />} loading={planning} disabled={filling || !product.photos.length} onClick={planDetail}>
-                                            {planning ? "策划中…" : detailPlan ? "重新策划" : `策划 ${planScreens} 屏`}
+                                {text.value ? (
+                                    <span className="es-plan-card-actions">
+                                        <Button type={activePlan ? "default" : "primary"} icon={<ListChecks size={14} />} loading={planning || filling} disabled={!product.photos.length} onClick={planDetail}>
+                                            {filling
+                                                ? "分析商品中…"
+                                                : planning
+                                                  ? "策划中…"
+                                                  : activePlan
+                                                    ? brief.planNote?.trim()
+                                                        ? "按补充调整重新策划"
+                                                        : "重新策划"
+                                                    : product.dossier || !textSeesPhotos
+                                                      ? `AI 策划 ${planScreens} ${planUnit}`
+                                                      : "AI 分析并策划"}
                                         </Button>
-                                    ) : null}
-                                    <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
-                                </span>
+                                        <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
+                                    </span>
+                                ) : null}
+                                {text.value ? (
+                                    <label className="es-plan-note">
+                                        <span>补充调整（写给 AI 策划，每次策划都会带上）</span>
+                                        <Input.TextArea
+                                            variant="filled"
+                                            autoSize={{ minRows: 1, maxRows: 4 }}
+                                            maxLength={STUDIO_PLAN_NOTE_MAX}
+                                            value={brief.planNote || ""}
+                                            placeholder="例如：做成苹果官网那种极简高级感；多放生活场景，少放参数；标题更有画面感，别用口号"
+                                            onChange={(event) => editBrief({ planNote: event.target.value })}
+                                        />
+                                    </label>
+                                ) : null}
                             </div>
                         ) : null}
                         {entries.length && !planMissing ? (
                             <StudioShotList
                                 entries={entries}
-                                unit={unit}
+                                unit={setKind ? unit : "张"}
                                 onToggle={(key) => edit((current) => ({ ...current, brief: toggleStudioSetEntry(current, key) }))}
                                 onMove={(key, delta) => edit((current) => ({ ...current, brief: moveStudioSetEntry(current, key, delta) }))}
-                                {...(detailPlan ? { onEditPlan: (index: number, patch: StudioPlannedScreenPatch) => edit((current) => ({ ...current, brief: patchStudioDetailPlanScreen(current.brief, index, patch) })) } : {})}
+                                {...(activePlan ? { onEditPlan: (index: number, patch: StudioPlannedScreenPatch) => edit((current) => ({ ...current, brief: patchStudioDetailPlanScreen(current.brief, index, patch, planField) })) } : {})}
                             />
                         ) : null}
                     </>
@@ -578,7 +654,15 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 </Button>
                 <Tooltip title={blocked || undefined}>
                     <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked)} onClick={generate}>
-                        {setKind ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}` : singles.length > 1 ? `生成 ${singles.length} 种共 ${images} 张` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
+                        {setKind
+                            ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}`
+                            : activePlan
+                              ? `按策划生成 ${images} 张`
+                              : singles.length > 1
+                                ? `生成 ${singles.length} 种共 ${images} 张`
+                                : brief.count > 1
+                                  ? `生成 ${brief.count} 张商品图`
+                                  : "生成商品图"}
                     </Button>
                 </Tooltip>
             </footer>

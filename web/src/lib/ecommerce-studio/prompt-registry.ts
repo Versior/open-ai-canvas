@@ -15,6 +15,7 @@ const ROLES: StudioShotRole[] = [
     "main-scene",
     "main-detail",
     "main-angle",
+    "main-flatlay",
     "detail-hero",
     "detail-selling",
     "detail-model",
@@ -25,6 +26,12 @@ const ROLES: StudioShotRole[] = [
     "detail-spec",
     "detail-size",
     "detail-package",
+    "detail-seeding",
+    "detail-compare",
+    "detail-steps",
+    "detail-collocation",
+    "detail-campaign",
+    "detail-ugc",
     "detail-closing",
 ];
 

@@ -23,7 +23,8 @@ export const STUDIO_SHOT_ADJUST_MAX = 200;
 export type StudioStylePresetId = "mist" | "warm" | "noir" | "fresh" | "vivid" | "pure" | "wood" | "cream" | "tech" | "oriental" | "luxe" | "sport" | "candy" | "organic" | "editorial";
 export type StudioStyleId = StudioStylePresetId | "auto";
 /** 表单里的「出图类型」：单张类型按数量出图，套图类型按品类排好整组镜头；mix 是同时选了几种单张类型。 */
-export type StudioOutputType = "main" | "white" | "scene" | "selling" | "closeup" | "model" | "angles" | "poster" | "main-set" | "detail-set" | "template-set" | "mix";
+export type StudioOutputType =
+    "main" | "white" | "scene" | "selling" | "closeup" | "model" | "angles" | "poster" | "seeding" | "compare" | "steps" | "collocation" | "flatlay" | "campaign" | "ugc" | "size" | "spec" | "package" | "main-set" | "detail-set" | "template-set" | "mix";
 export type StudioMarket = "cn" | "hk-tw" | "sea" | "jp-kr" | "west" | "mena";
 export type StudioLanguage = "zh" | "zh-hant" | "en" | "ja" | "ko" | "none";
 export type StudioShooting = "auto" | "studio" | "lifestyle" | "model" | "hand" | "flatlay" | "macro";
@@ -34,6 +35,7 @@ export type StudioShotRole =
     | "main-scene"
     | "main-detail"
     | "main-angle"
+    | "main-flatlay"
     | "detail-hero"
     | "detail-selling"
     | "detail-model"
@@ -44,6 +46,12 @@ export type StudioShotRole =
     | "detail-spec"
     | "detail-size"
     | "detail-package"
+    | "detail-seeding"
+    | "detail-compare"
+    | "detail-steps"
+    | "detail-collocation"
+    | "detail-campaign"
+    | "detail-ugc"
     | "detail-closing";
 
 export type StudioPhoto = {
@@ -180,7 +188,13 @@ export type StudioPlannedScreen = {
     noText?: boolean;
 };
 
-/** 详情页策划：按这件商品排的整套详情页（固定 10 屏），选了「一键详情页」时由它决定每一屏。 */
+/** 策划的范围：详情页（10 屏）、主图套图（5 张）或选中的几种单张图。 */
+export type StudioPlanScope = "detail" | "main" | "single";
+/** 单张图策划时选中的类型和每种几张；选择变了策划就不再适用。 */
+export type StudioPlanTarget = { type: StudioOutputType; count: number };
+/** 设计调性：决定版面节奏、字体、文案语气和摄影，由策划按商品挑。 */
+export type StudioDesignToneId = "global-minimal" | "editorial" | "oriental" | "lifestyle" | "tech" | "hot-seller" | "playful";
+/** 出图策划：按这件商品排的一组图（详情页 10 屏、主图 5 张或选中的单张图），由它决定每一张怎么出。 */
 export type StudioDetailPlan = {
     id: string;
     createdAt: string;
@@ -192,6 +206,10 @@ export type StudioDetailPlan = {
     style: string;
     /** 质感选「按商品推荐」时策划挑的质感预设。 */
     styleId?: StudioStylePresetId;
+    /** 策划挑的设计调性。 */
+    tone?: StudioDesignToneId;
+    /** 单张图策划：策划时选中的类型和数量。 */
+    targets?: StudioPlanTarget[];
     screens: StudioPlannedScreen[];
 };
 
@@ -246,6 +264,12 @@ export type StudioBrief = {
     suite?: StudioSuite;
     /** 「一键详情页」按这件商品排好的策划；有文本模型时要先策划才能出图，没有文本模型时按品类默认的清单出。 */
     detailPlan?: StudioDetailPlan;
+    /** 主图套图的策划（5 张），规则同详情页。 */
+    mainPlan?: StudioDetailPlan;
+    /** 单张图的策划：只在选中的类型和数量与策划时一致时使用。 */
+    singlePlan?: StudioDetailPlan;
+    /** 写给策划的补充调整，每次策划和重新策划都带上。 */
+    planNote?: string;
     /** 套图的镜头清单：调整后的顺序与这次不出的镜头。元素是镜头 key，内置套图为镜头角色，模板套图为 s 加序号。 */
     shotOrder: string[];
     shotSkip: string[];
@@ -264,8 +288,8 @@ export type StudioRun = {
     quality: string;
     /** 点生成那一刻的清晰度，重出这一组的图也按它。 */
     resolution?: string;
-    /** 模板套图：模板名与整套视觉规范，在点生成那一刻定下来。 */
-    suite?: { id: string; name: string; style: string };
+    /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性。 */
+    suite?: { id: string; name: string; style: string; tone?: StudioDesignToneId };
     shots: StudioShot[];
 };
 

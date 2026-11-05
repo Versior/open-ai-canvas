@@ -112,6 +112,18 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 		t.Fatalf("layout knowledge should be capped at 3 of %d entries, got %d", len(knowledge), layouts)
 	}
 
+	// 主图套图和单张图的策划按各自的创作类型取规则，不带详情页的逐屏叙事。
+	for kind, rule := range map[string]string{"main": "电商主副图层级", "single": "单图独立叙事"} {
+		scoped := task("detail-plan")
+		scoped.Metadata["studioPlanKind"] = kind
+		if err := svc.applyEcommerceAnalysisInstruction(&scoped); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(scoped.Config.SystemPrompt, rule) || strings.Contains(scoped.Config.SystemPrompt, "详情页逐屏连贯叙事") || !strings.Contains(scoped.Config.SystemPrompt, "耳机棚拍布光") {
+			t.Fatalf("%s plan knowledge is wrong: %s", kind, scoped.Config.SystemPrompt)
+		}
+	}
+
 	// 商品档案仍只拿文案类知识，版式和摄影留给详情页策划。
 	dossier := task("dossier")
 	if err := svc.applyEcommerceAnalysisInstruction(&dossier); err != nil {

@@ -20,8 +20,18 @@ export const STUDIO_OUTPUT_TYPES: StudioOutputSpec[] = [
     { id: "closeup", label: "细节特写", hint: "放大材质和做工", role: "main-detail" },
     { id: "model", label: "模特图", hint: "上身或使用效果", role: "detail-model" },
     { id: "angles", label: "多角度图", hint: "正面、侧面、背面一张看全", role: "detail-angles" },
-    { id: "poster", label: "海报头图", hint: "详情页首屏或活动海报", role: "detail-hero" },
-    { id: "main-set", label: "主图套图（5 张）", hint: "白底、卖点、场景、细节、多角度", set: "main" },
+    { id: "poster", label: "海报头图", hint: "详情页首屏或品牌主视觉", role: "detail-hero" },
+    { id: "seeding", label: "种草图", hint: "小红书式生活分享，有氛围、有故事", role: "detail-seeding" },
+    { id: "ugc", label: "随手拍", hint: "手机随手拍质感的生活照，自然可信；不冒充买家评价", role: "detail-ugc" },
+    { id: "compare", label: "对比图", hint: "同一件商品的两种状态或使用前后", role: "detail-compare" },
+    { id: "steps", label: "使用步骤", hint: "三四步讲清怎么用", role: "detail-steps" },
+    { id: "collocation", label: "搭配图", hint: "和什么一起用、怎么搭", role: "detail-collocation" },
+    { id: "flatlay", label: "平铺图", hint: "垂直俯拍看全貌", role: "main-flatlay" },
+    { id: "campaign", label: "活动海报", hint: "节日、上新、大促主视觉，不写价格", role: "detail-campaign" },
+    { id: "size", label: "尺寸图", hint: "尺寸或尺码参照，只写已确认的数值", role: "detail-size" },
+    { id: "spec", label: "参数图", hint: "参数表，只列已确认的参数", role: "detail-spec" },
+    { id: "package", label: "包装配件", hint: "到手有什么，只放已确认的包装和配件", role: "detail-package" },
+    { id: "main-set", label: "主图套图（5 张）", hint: "先按这件商品策划 5 张：首图让人认出商品，其余每张一个点击理由", set: "main" },
     { id: "detail-set", label: "详情页（10 屏）", hint: "固定 10 屏，先按这件商品策划每一屏讲什么、怎么拍，再出图，可导出长图", set: "detail" },
     // 实际按主图还是详情页出，看选中模板的用途；没选模板前按详情页处理。
     { id: "template-set", label: "模板套图", hint: "从后台精选或内置模板库选一套，按模板逐张出图", set: "detail" },
@@ -70,6 +80,8 @@ const LANGUAGE_IDS = new Set(STUDIO_LANGUAGES.map((item) => item.id));
 const SHOOTING_IDS = new Set(STUDIO_SHOOTINGS.map((item) => item.id));
 const RATIO_PATTERN = /^([1-9]\d?):([1-9]\d?)$/;
 const RESOLUTION_PATTERN = /^(1k|1\.5k|2k|4k)$/;
+/** 写给策划的补充调整的字数上限。 */
+export const STUDIO_PLAN_NOTE_MAX = 300;
 const SHOT_KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 
 /** 比例写法「宽:高」，宽高各 1–99，长边不超过短边的 3 倍（模型出不了更极端的画幅）。 */
@@ -86,8 +98,9 @@ export function createStudioBrief(): StudioBrief {
 
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
 export function resetStudioBriefParameters(brief: StudioBrief): StudioBrief {
-    // 详情页策划是按这件商品排出来的结果，和品牌、类型一样跟着商品走，不随参数重置。
-    return { ...createStudioBrief(), brand: brief.brand, productType: brief.productType, ...(brief.detailPlan ? { detailPlan: brief.detailPlan } : {}) };
+    // 策划是按这件商品排出来的结果，和品牌、类型一样跟着商品走，不随参数重置。
+    const { detailPlan, mainPlan, singlePlan } = brief;
+    return { ...createStudioBrief(), brand: brief.brand, productType: brief.productType, ...(detailPlan ? { detailPlan } : {}), ...(mainPlan ? { mainPlan } : {}), ...(singlePlan ? { singlePlan } : {}) };
 }
 
 function text(value: unknown, max: number) {
@@ -152,6 +165,9 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const count = Number(record.count);
     const suite = normalizeStudioSuite(record.suite);
     const detailPlan = normalizeStudioDetailPlan(record.detailPlan);
+    const mainPlan = normalizeStudioDetailPlan(record.mainPlan);
+    const singlePlan = normalizeStudioDetailPlan(record.singlePlan);
+    const planNote = text(record.planNote, STUDIO_PLAN_NOTE_MAX).trim();
     const model = normalizeStudioModelCast(record.model);
     return {
         brand: text(record.brand, 40),
@@ -170,6 +186,9 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         ratio: typeof record.ratio === "string" && (record.ratio === "auto" || studioRatioValid(record.ratio)) ? record.ratio : base.ratio,
         ...(suite ? { suite } : {}),
         ...(detailPlan ? { detailPlan } : {}),
+        ...(mainPlan ? { mainPlan } : {}),
+        ...(singlePlan?.targets?.length ? { singlePlan } : {}),
+        ...(planNote ? { planNote } : {}),
         ...(model ? { model } : {}),
         shotOrder: shotKeys(record.shotOrder),
         shotSkip: shotKeys(record.shotSkip),

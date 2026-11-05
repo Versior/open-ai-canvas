@@ -1,6 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX } from "./detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioPlanTone } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import {
@@ -262,7 +262,14 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
         quality: str(run.quality),
         ...(typeof run.resolution === "string" && /^(1k|1\.5k|2k|4k)$/.test(run.resolution) ? { resolution: run.resolution } : {}),
         ...(isRecord(run.suite) && typeof run.suite.id === "string" && typeof run.suite.name === "string"
-            ? { suite: { id: run.suite.id, name: run.suite.name.slice(0, STUDIO_SUITE_LIMITS.name), style: str(run.suite.style).slice(0, STUDIO_SUITE_LIMITS.style) } }
+            ? {
+                  suite: {
+                      id: run.suite.id,
+                      name: run.suite.name.slice(0, STUDIO_SUITE_LIMITS.name),
+                      style: str(run.suite.style).slice(0, Math.max(STUDIO_SUITE_LIMITS.style, STUDIO_DETAIL_PLAN_LIMITS.style)),
+                      ...(studioPlanTone(run.suite.tone) ? { tone: studioPlanTone(run.suite.tone) } : {}),
+                  },
+              }
             : {}),
         shots,
     };

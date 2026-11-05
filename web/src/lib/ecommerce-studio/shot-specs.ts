@@ -242,6 +242,100 @@ const SHOT_SPECS: Record<StudioShotRole, StudioShotSpec> = {
         overlayZone: { x: 0.08, y: 0.05, width: 0.84, height: 0.12, align: "left", vAlign: "top" },
         avoid: ["不新增赠品、线材、说明书或配件"],
     },
+    "detail-seeding": {
+        role: "detail-seeding",
+        title: "种草图",
+        purpose: "像真实用户在小红书分享一样，让人觉得「我也想要」：有生活气息，有一个打动人的瞬间。",
+        platformRole: "detail",
+        composition: "竖版生活方式构图：商品放在真实的生活角落里（桌面、窗边、包里、手里），被自然地使用或摆放，约占画面 35%–50%；有一两件体现生活方式的小物，画面有呼吸感和故事感，不像棚拍广告。",
+        camera: "手机或 35mm 视角的平视、俯拍或第一人称视角，浅到中等景深，轻微的生活化构图偏移。",
+        lighting: "自然窗光或暖色室内光，光影柔和，有真实的明暗过渡，色调干净通透。",
+        set: "真实、干净、有审美的家居或日常环境，道具不超过 3 件，都服务于生活方式。",
+        copySlot: "headline-subline",
+        textZone: "画面上方或一角，像笔记封面的大字标题",
+        overlayZone: { x: 0.07, y: 0.06, width: 0.86, height: 0.2, align: "left", vAlign: "top" },
+        avoid: ["不出现平台图标、点赞数、头像、用户名和水印", "不用夸张的手写贴纸和表情包"],
+    },
+    "detail-compare": {
+        role: "detail-compare",
+        title: "对比图",
+        purpose: "用对照讲清差别：同一件商品的两种状态、两个角度或使用前后。",
+        platformRole: "detail",
+        composition: "画面左右或上下两栏对照，中间一条细分隔线，每栏顶部一个短标签，两栏的机位和光线一致，只改变要对比的那一点。",
+        camera: "两栏用同一机位和焦段，平视或 45° 俯视。",
+        lighting: "两栏同一套柔光，避免用光线制造差别。",
+        set: "干净的同色背景，两栏背景一致。",
+        copySlot: "points",
+        textZone: "画面顶部标题区和每栏顶部的标签",
+        overlayZone: { x: 0.08, y: 0.05, width: 0.84, height: 0.14, align: "center", vAlign: "top" },
+        avoid: ["只对比这件商品自身，不出现其他品牌或商品", "不画出没有依据的数据和效果"],
+    },
+    "detail-steps": {
+        role: "detail-steps",
+        title: "使用步骤图",
+        purpose: "三四步讲清怎么用，让买家觉得简单。",
+        platformRole: "detail",
+        composition: "画面分成 3–4 个等大的格子或一条横向流程，每格一个使用动作的特写，格子左上角是步骤序号，下方一行短说明。",
+        camera: "每格同一机位和景别的近景，手部动作清晰。",
+        lighting: "均匀柔和的顶光，各格亮度一致。",
+        set: "干净的台面或使用环境，各格背景一致。",
+        copySlot: "points",
+        textZone: "画面顶部标题区和每格下方的说明",
+        overlayZone: { x: 0.08, y: 0.05, width: 0.84, height: 0.12, align: "left", vAlign: "top" },
+        avoid: ["步骤只画商品真实的用法，不添加不存在的按键或配件"],
+    },
+    "detail-collocation": {
+        role: "detail-collocation",
+        title: "搭配图",
+        purpose: "给出搭配方案，让买家想象怎么用、和什么一起用。",
+        platformRole: "detail",
+        composition: "商品是画面主角，旁边是两三件相配的单品或物件，按杂志静物或穿搭平铺的方式排布，主次分明，留白充足。",
+        camera: "垂直俯拍或 45° 俯视，等效 50mm 镜头。",
+        lighting: "柔和均匀的顶光，阴影短而柔。",
+        set: "与风格锁一致的纯色或细纹理台面，搭配物件不带品牌标识。",
+        copySlot: "headline-subline",
+        textZone: "画面一侧的留白区",
+        overlayZone: { x: 0.07, y: 0.06, width: 0.5, height: 0.2, align: "left", vAlign: "top" },
+        avoid: ["搭配物件不抢商品，不出现其他品牌标识"],
+    },
+    "main-flatlay": {
+        role: "main-flatlay",
+        title: "平铺图",
+        purpose: "垂直俯拍的平铺展示，干净地看清商品全貌和细节。",
+        platformRole: "main",
+        composition: "商品平放在画面中央，完整展开，约占画面 65%；可以有一两件呼应用途的小物件放在边缘。",
+        camera: "严格垂直俯拍，等效 50mm 镜头，画面没有透视变形。",
+        lighting: "大面积柔光从上方均匀照射，阴影极淡。",
+        set: "与风格锁一致的纯色或细纹理台面。",
+        copySlot: "none",
+        avoid: ["商品不折叠变形，比例与商品图一致", "不加文字和角标"],
+    },
+    "detail-campaign": {
+        role: "detail-campaign",
+        title: "活动海报",
+        purpose: "节日、上新或大促的主视觉：有氛围、有冲击力，但不写价格和促销承诺。",
+        platformRole: "promo",
+        composition: "海报式构图：商品是视觉中心，周围是与活动主题相配的氛围元素（光效、几何色块、节日意象），主标题大字占据画面上部，留出清楚的层级。",
+        camera: "略低机位让商品更有存在感，等效 70mm 镜头。",
+        lighting: "有戏剧性的主光和轮廓光，氛围光与主题色呼应。",
+        set: "与活动主题一致的色彩和道具，元素不超过 3 类。",
+        copySlot: "headline-subline",
+        textZone: "画面上部三分之一的标题区",
+        overlayZone: { x: 0.08, y: 0.06, width: 0.84, height: 0.22, align: "center", vAlign: "top" },
+        avoid: ["不写价格、折扣、限时和赠品承诺", "不用爆炸贴、价签和促销角标"],
+    },
+    "detail-ugc": {
+        role: "detail-ugc",
+        title: "随手拍",
+        purpose: "手机随手拍质感的生活照：可信、自然、不像广告。",
+        platformRole: "detail",
+        composition: "真实使用中的随手拍：商品在手里、身上或生活场景里，构图略有偏移，背景是真实但不杂乱的环境。",
+        camera: "手机主摄或前置镜头视角，等效 26mm，自然的景深。",
+        lighting: "真实的室内灯光或自然光，允许轻微偏暖和不均匀。",
+        set: "真实生活环境，有一点生活痕迹但整体干净。",
+        copySlot: "none",
+        avoid: ["不出现平台界面、评价星级、头像和水印", "画面里最多一个人，不出现路人"],
+    },
     "detail-closing": {
         role: "detail-closing",
         title: "购买理由",
@@ -561,11 +655,13 @@ export function studioStyle(id: StudioStyleId): StudioStylePreset {
     return { ...style, mood: studioPromptText(`style.${style.id}.mood`, style.mood), light: studioPromptText(`style.${style.id}.light`, style.light) };
 }
 
-/** 这件商品实际用的质感：选了预设就用预设；选「按商品推荐」时用策划挑的，没有策划按品类挑。 */
-export function studioProductStyle(product: Pick<StudioProduct, "style" | "dossier"> & { brief?: Pick<StudioBrief, "detailPlan" | "outputType"> }): StudioStylePreset {
+/**
+ * 这件商品实际用的质感：选了预设就用预设；选「按商品推荐」时用当前出图类型的策划挑的（plannedStyleId，
+ * 由调用方按 studioActivePlan 取），没有策划按品类挑。
+ */
+export function studioProductStyle(product: Pick<StudioProduct, "style" | "dossier">, plannedStyleId?: StudioStylePresetId): StudioStylePreset {
     if (product.style !== "auto") return studioStyle(product.style);
-    const planned = product.brief?.outputType === "detail-set" ? product.brief.detailPlan?.styleId : undefined;
-    return studioStyle(planned || STUDIO_FAMILY_STYLE[product.dossier?.family || "generic"]);
+    return studioStyle(plannedStyleId || STUDIO_FAMILY_STYLE[product.dossier?.family || "generic"]);
 }
 
 /** 微调标签：只改这张图的镜头规格，不碰商品真值。 */

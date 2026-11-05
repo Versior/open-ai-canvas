@@ -1,13 +1,14 @@
 import { ecommercePlatform, ecommerceRoleSpec, type EcommercePlatformId, type EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioLanguage, studioMarket, studioShooting } from "./brief";
-import { STUDIO_DETAIL_LAYOUTS } from "./detail-plan";
-import { studioStyleReferences } from "./runs";
+import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_TACKY_DESIGN } from "./detail-plan";
+import { studioActivePlan, studioStyleReferences } from "./runs";
 import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
 import {
     STUDIO_FACT_GROUP_LABEL,
     STUDIO_VIEW_LABEL,
     studioFactUsable,
     type StudioBrief,
+    type StudioDesignToneId,
     type StudioFact,
     type StudioFactGroup,
     type StudioModelCast,
@@ -32,7 +33,7 @@ export type StudioModelAdapter = {
     textRendering: "strong" | "fair" | "weak";
 };
 
-export type StudioPromptLayerId = "truth" | "goal" | "duty" | "visual" | "model" | "composition" | "shooting" | "lighting" | "style" | "set" | "category" | "market" | "audience" | "layout" | "copy" | "extra" | "adjust" | "quality";
+export type StudioPromptLayerId = "truth" | "goal" | "duty" | "visual" | "model" | "composition" | "shooting" | "lighting" | "style" | "set" | "category" | "market" | "audience" | "layout" | "design" | "copy" | "extra" | "adjust" | "quality";
 
 export type StudioPromptLayer = {
     id: StudioPromptLayerId;
@@ -73,7 +74,7 @@ export type StudioCompileInput = {
     /** 表单参数：传入时追加市场与语言、拍法、人群定位、参考图和补充要求。 */
     brief?: StudioBrief;
     /** 模板套图的模板名与整套视觉规范：有规范时代替风格锁。 */
-    suite?: { name: string; style: string };
+    suite?: { name: string; style: string; tone?: StudioDesignToneId };
 };
 
 const DEFAULT_MAX_CHARS = 4000;
@@ -221,17 +222,17 @@ function truthLayer(product: StudioProduct, references: StudioPhoto[], styleRefe
 function goalLayer(product: StudioProduct, shot: StudioShot, spec: StudioShotSpec, hasCopy: boolean, planned: boolean): StudioPromptLayer {
     const platform = ecommercePlatform(product.platform);
     const rule = studioPlatformRuleText(product.platform, spec.platformRole, hasCopy);
-    // 详情页策划的屏把这一屏的目的写在画面层里，不再套镜头规格的通用目的。
+    // 策划过的屏把这一屏的目的写在画面层里，不再套镜头规格的通用目的。
     const text = `${platform?.name || "电商平台"}·${shot.title || spec.title}，画幅 ${shot.ratio}。${planned ? "" : sentence(spec.purpose)}${rule ? `\n${rule}` : ""}`;
-    return { id: "goal", title: "这张图做什么", source: planned ? "详情页策划 + 平台规则" : "镜头规格 + 平台规则", text };
+    return { id: "goal", title: "这张图做什么", source: planned ? "出图策划 + 平台规则" : "镜头规格 + 平台规则", text };
 }
 
-/** 详情页策划给这一屏写的目的与画面：代替镜头规格的构图、机位、光线和背景；商品外观仍只看商品图。 */
+/** 出图策划给这一屏写的目的与画面：代替镜头规格的构图、机位、光线和背景；商品外观仍只看商品图。 */
 function visualLayer(shot: StudioShot): StudioPromptLayer {
     return {
         id: "visual",
         title: "这一屏的画面",
-        source: "详情页策划",
+        source: "出图策划",
         text: `${shot.visual!.trim()}\n画面里提到的商品外观和属性以上面的商品真值为准，不新增商品没有的部件、功能和配件。`,
     };
 }
@@ -277,7 +278,7 @@ function dutyLayer(shot: StudioShot): StudioPromptLayer | undefined {
     };
 }
 
-/** 构图与机位。详情页策划的屏构图已写在画面层里，这里只剩微调标签，没有微调时不出现。 */
+/** 构图与机位。策划过的屏构图已写在画面层里，这里只剩微调标签，没有微调时不出现。 */
 function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boolean): StudioPromptLayer | undefined {
     const tweaks = shot.tweaks.map(studioTweakInstruction).filter((item): item is string => Boolean(item));
     const adjust = tweaks.length ? `本次调整：${tweaks.join("；")}。` : "";
@@ -287,19 +288,21 @@ function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boole
 }
 
 function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode, hasCopy: boolean, brief?: StudioBrief, planned = false): StudioPromptLayer | undefined {
-    if (planned && !hasCopy) return { id: "copy", title: "文字", source: "详情页策划", text: "这一屏不放文字，画面中不生成任何文字（商品本身的标识除外）。" };
+    if (planned && !hasCopy) return { id: "copy", title: "文字", source: "出图策划", text: "这一屏不放文字，画面中不生成任何文字（商品本身的标识除外）。" };
     if (planned && mode === "model") {
         const layout = shot.layout ? STUDIO_DETAIL_LAYOUTS[shot.layout] : undefined;
         const lines: string[] = ["位置：按「这一屏的画面」里的版式和文字位置排；没写到时放在画面留白处，不压在商品上。字体、字重和颜色按整套视觉规范，全套一致。"];
         if (shot.eyebrow?.trim()) lines.push(`栏目小标题${quote(shot.eyebrow)}：放在主标题上方，小号字、字距加宽，用整套规范里的强调色。`);
-        if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，粗字重，字高约为画面高度的 6%–9%。`);
+        // 字重跟设计调性走：极简调性要细到中等字重，爆款调性才用粗字重，不一律加粗。
+        if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，字高约为画面高度的 6%–9%，字重按设计调性和整套视觉规范（没写时用中粗）。`);
         if (shot.subline.trim()) lines.push(`副标题${quote(shot.subline)}：常规字重，字号约为主标题的一半，紧贴主标题下方。`);
         const items = shot.lines.map((line) => line.trim()).filter(Boolean);
         if (items.length) lines.push(`${layout?.lines || "要点（每行一条，行距宽松）"}：${items.map(quote).join(" ")}`);
-        lines.push("主标题、副标题和标签至少分出三级字号，对齐整齐。");
+        const levels = [shot.eyebrow?.trim(), shot.headline.trim(), shot.subline.trim(), items.length ? "lines" : ""].filter(Boolean).length;
+        if (levels > 1) lines.push("这几层文字字号拉开层级，主标题明显最大，其余逐级变小，对齐整齐。");
         if (brief && brief.language !== "zh" && brief.language !== "none") lines.push(`图内文字使用${studioLanguage(brief.language).name}：上面的文案不是这种语言时，先准确翻译，再逐字呈现译文。`);
         lines.push("除了上面这些文字，画面里可以有图标、细线、引线、编号圆点、色块和圆角信息卡这类设计元素，但不出现其他文字、数字、价格、角标或水印。");
-        return { id: "copy", title: "图内文字（逐字呈现，不增不减）", source: "详情页策划的文案", text: lines.join("\n") };
+        return { id: "copy", title: "图内文字（逐字呈现，不增不减）", source: "出图策划的文案", text: lines.join("\n") };
     }
     if (!hasCopy) {
         if (spec.copySlot === "none") return undefined;
@@ -345,8 +348,8 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const referenceNotice = dropped.length ? `这个模型一次最多带 ${maxReferences} 张图，${dropped.join("和")}没有带上${wantedModel.length > modelReferences.length ? "，模特改用文字描述" : ""}` : undefined;
     const hasCopy = studioShotHasCopy(shot, spec);
     const effective = hasCopy ? studioEffectiveTextMode({ textMode }, adapter) : { mode: textMode };
-    const style = studioProductStyle({ ...product, brief: brief ?? product.brief });
-    // 详情页策划的屏：画面层代替镜头规格的构图、光线、背景和避坑项，免得每件商品都套同一套写法。
+    const style = studioProductStyle(product, studioActivePlan({ brief: brief ?? product.brief })?.styleId);
+    // 策划过的屏：画面层代替镜头规格的构图、光线、背景和避坑项，免得每件商品都套同一套写法。
     const planned = Boolean(shot.visual?.trim());
     const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief, modelReferences), goalLayer(product, shot, spec, hasCopy, planned)];
     const duty = dutyLayer(shot);
@@ -362,7 +365,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     if (!planned) layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
     const suite = input.suite?.style.trim() ? input.suite : undefined;
     if (!spec.neutralBackground && suite) {
-        layers.push({ id: "style", title: `整套视觉规范「${suite.name}」`, source: planned ? "详情页策划" : "套图模板", text: `${sentence(suite.style)}整套图共用这一规范。` });
+        layers.push({ id: "style", title: `整套视觉规范「${suite.name}」`, source: planned ? "出图策划" : "套图模板", text: `${sentence(suite.style)}整套图共用这一规范。` });
     } else if (!spec.neutralBackground) {
         layers.push({
             id: "style",
@@ -371,6 +374,9 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
             text: `气质${style.mood}；色板 ${style.palette.map((color) => `${color.name} ${color.hex}`).join("、")}；光影${style.light}。整套图共用这一风格。`,
         });
     }
+    // 策划挑的设计调性：版面节奏、字体和摄影的写法，整组一致。
+    const tone = planned && suite?.tone ? STUDIO_DESIGN_TONES[suite.tone] : undefined;
+    if (tone) layers.push({ id: "design", title: `设计调性「${tone.label}」`, source: "出图策划", text: sentence(tone.render) });
     if (!planned) layers.push({ id: "set", title: "背景与道具", source: "镜头规格", text: sentence(spec.set) });
     layers.push({ id: "category", title: "品类要求", source: "品类规则", text: studioFamilyRule(family) });
     for (const layer of extra) if (layer.id !== "shooting") layers.push(layer);
@@ -383,8 +389,10 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const avoid = planned ? ["只出现商品图里有的部件、配件和细节", "不出现其他品牌、价格、促销角标和水印"] : [...spec.avoid];
     if (!planned && spec.copySlot === "none") avoid.push("画面中不出现任何文字（商品本身的标识除外）");
     // 策划的屏要像设计过的详情页，而不是一张商品照片加一行字。
-    const designed = planned && hasCopy ? "整张是排过版的电商详情页画面，不是单纯的商品照片：视觉层级清楚，元素对齐，留白充足，图标和装饰的风格整套统一；" : "";
-    layers.push({ id: "quality", title: "质感与约束", source: planned ? "详情页策划" : "镜头规格", text: `${designed}材质表现真实，边缘干净，没有塑料感和过度锐化；${avoid.join("；")}；商品自带的标识与文字按商品图保留，不出现乱码。` });
+    const designed = planned && hasCopy ? "整张是排过版的电商画面，不是单纯的商品照片：视觉层级清楚，元素对齐，留白充足，图标和装饰的风格整组统一；摄影是商业大片级别，光线有方向和质感；" : "";
+    // 有字的图都不许出现显得廉价的字效和装饰。
+    if (hasCopy && effective.mode === "model") avoid.push(STUDIO_TACKY_DESIGN);
+    layers.push({ id: "quality", title: "质感与约束", source: planned ? "出图策划" : "镜头规格", text: `${designed}材质表现真实，边缘干净，没有塑料感和过度锐化；${avoid.join("；")}；商品自带的标识与文字按商品图保留，不出现乱码。` });
 
     const budget = Math.max(400, input.maxChars || DEFAULT_MAX_CHARS);
     const trimmed: StudioPromptLayerId[] = [];

@@ -164,7 +164,7 @@ export default function EcommerceSettingsPage() {
     return (
         <AdminPageFrame
             title="电商生图台"
-            description="商品档案与详情页策划指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
+            description="商品档案与出图策划指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
             scroll
             actions={
                 <>

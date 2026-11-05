@@ -12,8 +12,8 @@ import (
 // 生图台的分析任务在 worker 里按商品名称、类型和平台检索已审核、来源已启用的知识，
 // 作为参考数据追加到系统提示词；知识是方法与规则，不是这件商品的事实。
 //   - 商品档案（dossier）：写事实、卖点、主标题和文案，只取商品、营销、文案与平台规则类知识。
-//   - 详情页策划（detail-plan）：给这件商品排每一屏的画面和文案，取详情页、版式、摄影、场景、风格、
-//     提示词写法与质检类知识，再加文案和平台规则。
+//   - 出图策划（detail-plan）：给这件商品排详情页、主图套图或单张图每一张的画面和文案，取详情页、版式、
+//     摄影、场景、风格、提示词写法与质检类知识，再加文案和平台规则；创作类型按任务的 studioPlanKind。
 const (
 	ecommerceStudioSource               = "ecommerce-studio"
 	ecommerceStudioDossierCapability    = "dossier"
@@ -76,7 +76,7 @@ func (s *Service) ecommerceStudioKnowledgePrompt(capability string, metadata map
 		err      error
 	)
 	if capability == ecommerceStudioDetailPlanCapability {
-		selected, blocked, err = s.ecommerceStudioPlanKnowledge(req)
+		selected, blocked, err = s.ecommerceStudioPlanKnowledge(req, stringValue(metadata["studioPlanKind"]))
 	} else {
 		selected, blocked, err = s.ecommerceStudioDossierKnowledge(req)
 	}
@@ -113,9 +113,15 @@ func (s *Service) ecommerceStudioDossierKnowledge(req EcommerceCreativeDirection
 	return selected, retrieval.SourcesBlocked, nil
 }
 
-// 详情页策划：按详情页创作类型检索（带上「详情页逐屏连贯叙事」这类创作规则），在全部候选里按类型取。
-func (s *Service) ecommerceStudioPlanKnowledge(req EcommerceCreativeDirectionsRequest) ([]model.EcommerceKnowledgeEntry, bool, error) {
-	req.ImageType = "detail"
+// 出图策划：按策划范围的创作类型检索（详情页带上「详情页逐屏连贯叙事」，主图带上「电商主副图层级」，
+// 单张图带上「单图独立叙事」），在全部候选里按类型取。没写范围的旧任务按详情页处理。
+func (s *Service) ecommerceStudioPlanKnowledge(req EcommerceCreativeDirectionsRequest, kind string) ([]model.EcommerceKnowledgeEntry, bool, error) {
+	switch kind {
+	case "main", "single":
+		req.ImageType = kind
+	default:
+		req.ImageType = "detail"
+	}
 	retrieval, ranked, err := s.rankEcommerceKnowledge(req)
 	if err != nil {
 		return nil, false, err

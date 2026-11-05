@@ -16,7 +16,7 @@ export type EcommerceCapability = (typeof ECOMMERCE_CAPABILITIES)[number]["id"];
 /** 生图台专用能力：出现在后台能力配置里，不进画布工作台的标签页。 */
 export const ECOMMERCE_STUDIO_CAPABILITIES = [
     { id: "dossier", name: "商品档案", description: "生图台看图识别商品事实，并按已确认事实写卖点与文案" },
-    { id: "detail-plan", name: "详情页策划", description: "生图台出详情页前，参考电商知识库按这件商品排每一屏的画面和文案" },
+    { id: "detail-plan", name: "出图策划", description: "生图台出详情页、主图套图和单张图前，参考电商知识库按这件商品挑设计调性，排每一张的画面、版式和文案" },
 ] as const;
 /** 后台配置与服务端设置里完整的能力清单（画布能力 + 生图台能力）。 */
 export const ECOMMERCE_SETTING_CAPABILITIES = [...ECOMMERCE_CAPABILITIES, ...ECOMMERCE_STUDIO_CAPABILITIES] as const;

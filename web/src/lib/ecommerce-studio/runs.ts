@@ -1,9 +1,9 @@
 import { STUDIO_SINGLE_TYPES, studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioSingleTypes, studioTitleOf } from "./brief";
-import { STUDIO_DETAIL_PLAN_NAME, studioDetailPlanKey, studioPlannedShotVisual } from "./detail-plan";
+import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
 import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
-import type { StudioBrief, StudioDetailLayoutId, StudioPhoto, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
+import type { StudioBrief, StudioDetailLayoutId, StudioDetailPlan, StudioPhoto, StudioPlanKind, StudioPlanScope, StudioPlanTarget, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
 
 /**
  * 表单生成的记录：点一次「生成商品图」就是一组镜头。
@@ -76,29 +76,51 @@ export function studioSetKind(product: StudioProduct): StudioPlanKind | undefine
     return product.brief.outputType === "template-set" ? product.brief.suite?.kind || spec.set : spec.set;
 }
 
-/** 「一键详情页」正在用的详情页策划；其他出图类型不用。 */
-export function studioActiveDetailPlan(product: StudioProduct) {
-    return product.brief.outputType === "detail-set" ? product.brief.detailPlan : undefined;
+/** 这件商品当前的出图类型对应哪种策划：详情页、主图套图或单张图；模板套图按模板出，不策划。 */
+export function studioPlanScopeOf(product: Pick<StudioProduct, "brief">): StudioPlanScope | undefined {
+    const type = product.brief.outputType;
+    if (type === "detail-set") return "detail";
+    if (type === "main-set") return "main";
+    if (type === "template-set") return undefined;
+    return studioSingleTypes(product.brief).length ? "single" : undefined;
+}
+
+/** 单张图的当前选择：选中的类型和每种几张。 */
+export function studioSingleTargets(brief: Pick<StudioBrief, "outputType" | "mix" | "count">): StudioPlanTarget[] {
+    const count = Math.max(1, Math.min(4, brief.count));
+    return studioSingleTypes(brief).map((type) => ({ type: type.id, count }));
+}
+
+/** 当前出图类型正在用的策划；单张图的选择和策划时不一样时不用。 */
+export function studioActivePlan(product: Pick<StudioProduct, "brief">): StudioDetailPlan | undefined {
+    const scope = studioPlanScopeOf(product);
+    if (!scope) return undefined;
+    const plan = product.brief[STUDIO_PLAN_FIELD[scope]];
+    if (!plan) return undefined;
+    return scope === "single" && !studioSameTargets(plan.targets, studioSingleTargets(product.brief)) ? undefined : plan;
+}
+
+function planEntries(product: StudioProduct, plan: StudioDetailPlan): Omit<StudioSetEntry, "included">[] {
+    const family = product.dossier?.family || "generic";
+    return plan.screens.map((screen, index) => ({
+        key: studioDetailPlanKey(index),
+        role: screen.role,
+        title: screen.title,
+        purpose: screen.purpose || studioShotSpec(screen.role, family).purpose,
+        planIndex: index,
+        visual: screen.visual,
+        layout: screen.layout,
+        elements: screen.elements,
+        ...(screen.eyebrow ? { eyebrow: screen.eyebrow } : {}),
+        copy: { headline: screen.headline, subline: screen.subline, lines: screen.lines },
+        ...(screen.noText ? { noText: true } : {}),
+    }));
 }
 
 function baseEntries(product: StudioProduct, kind: StudioPlanKind): Omit<StudioSetEntry, "included">[] {
     const family = product.dossier?.family || "generic";
-    const plan = studioActiveDetailPlan(product);
-    if (plan) {
-        return plan.screens.map((screen, index) => ({
-            key: studioDetailPlanKey(index),
-            role: screen.role,
-            title: screen.title,
-            purpose: screen.purpose || studioShotSpec(screen.role, family).purpose,
-            planIndex: index,
-            visual: screen.visual,
-            layout: screen.layout,
-            elements: screen.elements,
-            ...(screen.eyebrow ? { eyebrow: screen.eyebrow } : {}),
-            copy: { headline: screen.headline, subline: screen.subline, lines: screen.lines },
-            ...(screen.noText ? { noText: true } : {}),
-        }));
-    }
+    const plan = studioActivePlan(product);
+    if (plan) return planEntries(product, plan);
     if (product.brief.outputType === "template-set") {
         const shots = product.brief.suite?.shots || [];
         return shots.map((shot, index) => {
@@ -113,15 +135,19 @@ function baseEntries(product: StudioProduct, kind: StudioPlanKind): Omit<StudioS
     });
 }
 
-/** 当前表单下套图的镜头清单，按用户调整后的顺序；单张类型返回空数组。 */
-export function studioSetEntries(product: StudioProduct): StudioSetEntry[] {
-    const kind = studioSetKind(product);
-    if (!kind) return [];
-    const base = baseEntries(product, kind);
+function orderedEntries(product: StudioProduct, base: Omit<StudioSetEntry, "included">[]): StudioSetEntry[] {
     const byKey = new Map(base.map((entry) => [entry.key, entry]));
     const keys = [...new Set([...product.brief.shotOrder.filter((key) => byKey.has(key)), ...base.map((entry) => entry.key)])];
     const skipped = new Set(product.brief.shotSkip);
     return keys.map((key) => ({ ...byKey.get(key)!, included: !skipped.has(key) }));
+}
+
+/** 当前表单下套图的镜头清单，按用户调整后的顺序；单张图策划过时是策划的那几张，没策划的单张图返回空数组。 */
+export function studioSetEntries(product: StudioProduct): StudioSetEntry[] {
+    const kind = studioSetKind(product);
+    if (kind) return orderedEntries(product, baseEntries(product, kind));
+    const plan = studioPlanScopeOf(product) === "single" ? studioActivePlan(product) : undefined;
+    return plan ? orderedEntries(product, planEntries(product, plan)) : [];
 }
 
 /** 把一张镜头上移或下移一位，返回新的表单参数。 */
@@ -146,45 +172,50 @@ export function studioEntryRatio(entry: Pick<StudioSetEntry, "role" | "ratio">, 
 
 const EMPTY_COPY = { headline: "", subline: "", lines: [] as string[], sellingPointIds: [] as string[] };
 
+/** 清单里的一张变成出图记录里的一张：策划的屏带画面、版式和文案，模板的带职责，其余按角色取文案。 */
+function entryShot(entry: StudioSetEntry, product: StudioProduct, plan: StudioDetailPlan | undefined, createId: StudioIdFactory, single: boolean): StudioShot {
+    const textless = product.brief.language === "none";
+    const visual = entry.planIndex !== undefined && plan ? studioPlannedShotVisual(plan.screens[entry.planIndex]) : "";
+    // 策划的屏用策划写好的文案；不加文字或平台不许放字时和按角色取文案一样留空。
+    const planned = entry.copy ? (textless || studioPlatformForbidsText(product, entry.role) ? EMPTY_COPY : { ...entry.copy, sellingPointIds: [] }) : undefined;
+    const copy = entry.noText ? EMPTY_COPY : planned || studioRunShotCopy(entry.role, product, single);
+    return {
+        id: createId(),
+        role: entry.role,
+        title: entry.title,
+        ratio: studioEntryRatio(entry, product),
+        ...copy,
+        ...(entry.duty ? { duty: entry.duty } : {}),
+        ...(visual ? { visual, ...(entry.layout ? { layout: entry.layout } : {}), ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}) } : {}),
+        tweaks: [],
+        attempts: [],
+    };
+}
+
 export function createStudioRun(product: StudioProduct, createId: StudioIdFactory, now = new Date().toISOString()): StudioRun {
     const brief = product.brief;
     const spec = studioOutputSpec(brief.outputType);
     const kind = studioSetKind(product);
     const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
+    const plan = studioActivePlan(product);
+    // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性），结果区的组名带上「按商品策划」。
+    const planSuite = plan ? { id: plan.id, name: STUDIO_DETAIL_PLAN_NAME, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}) } : undefined;
     if (kind) {
         if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");
         const entries = studioSetEntries(product).filter((entry) => entry.included);
         if (!entries.length) throw new Error("镜头清单里至少留一张");
-        const plan = studioActiveDetailPlan(product);
-        // 详情页策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里，结果区的组名带上「按商品策划」。
-        const suite = plan ? { id: plan.id, name: STUDIO_DETAIL_PLAN_NAME, style: plan.style } : brief.outputType === "template-set" && brief.suite ? { id: brief.suite.id, name: brief.suite.name, style: brief.suite.style } : undefined;
-        const textless = brief.language === "none";
-        return {
-            ...base,
-            kind,
-            ...(suite ? { suite } : {}),
-            shots: entries.map((entry) => {
-                const visual = entry.planIndex !== undefined && plan ? studioPlannedShotVisual(plan.screens[entry.planIndex]) : "";
-                // 策划的屏用策划写好的文案；不加文字或平台不许放字时和按角色取文案一样留空。
-                const planned = entry.copy ? (textless || studioPlatformForbidsText(product, entry.role) ? EMPTY_COPY : { ...entry.copy, sellingPointIds: [] }) : undefined;
-                const copy = entry.noText ? EMPTY_COPY : planned || studioRunShotCopy(entry.role, product, false);
-                return {
-                    id: createId(),
-                    role: entry.role,
-                    title: entry.title,
-                    ratio: studioEntryRatio(entry, product),
-                    ...copy,
-                    ...(entry.duty ? { duty: entry.duty } : {}),
-                    ...(visual ? { visual, ...(entry.layout ? { layout: entry.layout } : {}), ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}) } : {}),
-                    tweaks: [],
-                    attempts: [],
-                };
-            }),
-        };
+        const suite = planSuite || (brief.outputType === "template-set" && brief.suite ? { id: brief.suite.id, name: brief.suite.name, style: brief.suite.style } : undefined);
+        return { ...base, kind, ...(suite ? { suite } : {}), shots: entries.map((entry) => entryShot(entry, product, plan, createId, false)) };
     }
-    // 单张类型（含同时选了几种）：每种按数量出，每张都按单张图写文案。
     const types = studioSingleTypes(brief);
     if (!types.length) throw new Error("先选择出图类型");
+    // 单张图策划过：按策划的那几张出（可以勾掉、调顺序）。
+    if (plan) {
+        const entries = studioSetEntries(product).filter((entry) => entry.included);
+        if (!entries.length) throw new Error("策划的清单里至少留一张");
+        return { ...base, ...(planSuite ? { suite: planSuite } : {}), shots: entries.map((entry) => entryShot(entry, product, plan, createId, true)) };
+    }
+    // 没策划的单张类型（含同时选了几种）：每种按数量出，每张都按单张图写文案。
     const count = Math.max(1, Math.min(4, brief.count));
     return {
         ...base,
@@ -205,12 +236,12 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     };
 }
 
-/** 结果区里一组的标题：多种组合列出包含的类型，模板套图带上模板名。 */
+/** 结果区里一组的标题：多种组合列出包含的类型，模板套图和策划过的组带上模板名或「按商品策划」。 */
 export function studioRunTitle(run: Pick<StudioRun, "type" | "shots" | "suite">) {
     if (run.type === "mix") {
         const roles = new Set(run.shots.map((shot) => shot.role));
         const labels = STUDIO_SINGLE_TYPES.filter((item) => item.role && roles.has(item.role)).map((item) => item.label);
-        if (labels.length) return labels.join(" · ");
+        if (labels.length) return [...labels, ...(run.suite ? [run.suite.name] : [])].join(" · ");
     }
     const label = studioOutputSpec(run.type).label;
     // 模板和详情页策划的屏数不一定是类型名里写的数，组名去掉括号里的「10 屏」这类说明。
