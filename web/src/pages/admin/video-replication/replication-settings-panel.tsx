@@ -130,7 +130,7 @@ export function ReplicationSettingsPanel({ features, featuresError, onFeaturesCh
                             <InputNumber min={10} max={180} precision={0} addonAfter="秒" />
                         </Form.Item>
                         <Form.Item name="maxShots" label="最多镜头" rules={[{ required: true, type: "integer", min: 1, max: 60, message: "填 1 到 60 之间的整数" }]} extra="1 到 60 个；镜头越多，分析时看图模型的调用越多。">
-                            <InputNumber min={1} max={60} precision={0} addonAfter="个" />
+                            <InputNumber min={1} max={60} precision={0} addonAfter="个镜头" />
                         </Form.Item>
                     </div>
                 </SettingsSectionCard>

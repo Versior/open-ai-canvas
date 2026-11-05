@@ -24,6 +24,13 @@ export const TEARDOWN_STATUS_FILTERS: { value: "all" | TaskStatus; label: string
 
 export const TRANSCRIPT_LABELS: Record<"asr" | "none", string> = { asr: "语音转写", none: "画面字幕" };
 
+/** 分析记下的模型可能带系统渠道前缀（CHANNEL_000005::deepseek-v4），列表只显示模型名，完整值放在悬停提示里。 */
+export function modelLabel(model?: string) {
+    if (!model) return "";
+    const separator = model.lastIndexOf("::");
+    return separator >= 0 ? model.slice(separator + 2) : model;
+}
+
 /** 占比的整数百分数；分母为 0 时返回 null，页面显示「—」而不是 0%。 */
 export function percentOf(part: number, total: number) {
     return total > 0 ? Math.round((part / total) * 100) : null;

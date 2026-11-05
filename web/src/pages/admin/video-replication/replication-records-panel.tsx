@@ -7,7 +7,7 @@ import { AdminDataTable, AdminStatusBadge, AdminTableEmpty, PaginationBar } from
 import { formatTeardownTime, orientationLabel } from "@/lib/canvas/video-teardown";
 import { adminUserLabel, listAdminVideoReplications, type AdminVideoReplicationPage, type AdminVideoReplicationRecord } from "@/services/api/video-replication-admin";
 import { formatParseClock, formatParseTime } from "./parse-shared";
-import { AdminResourceThumb, TEARDOWN_STATUS_FILTERS, TEARDOWN_STATUS_META, TRANSCRIPT_LABELS } from "./replication-admin-shared";
+import { AdminResourceThumb, modelLabel, TEARDOWN_STATUS_FILTERS, TEARDOWN_STATUS_META, TRANSCRIPT_LABELS } from "./replication-admin-shared";
 import { ReplicationRecordDrawer } from "./replication-record-drawer";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -120,7 +120,7 @@ export function ReplicationRecordsPanel({ recordId, onOpenRecord }: { recordId: 
                 record.analyzedAt ? (
                     <div className="admin-vr-record-state">
                         <span className="admin-vr-ellipsis" title={record.model}>
-                            {record.model || "—"}
+                            {modelLabel(record.model) || "—"}
                         </span>
                         <small title={formatParseTime(record.analyzedAt)}>{formatParseClock(record.analyzedAt)}</small>
                     </div>

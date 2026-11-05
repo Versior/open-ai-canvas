@@ -185,9 +185,10 @@
     list-style: none;
 }
 
+/* 每行各自成栅格，次数列给定宽，几行的进度条才能对齐。 */
 .admin-vr-platforms li {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr) auto;
+    grid-template-columns: 72px minmax(0, 1fr) 104px;
     align-items: center;
     gap: 10px;
     font-size: 13px;
@@ -215,6 +216,8 @@
     color: var(--admin-text-secondary);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
 }
 
 .admin-vr-failures {
@@ -431,8 +434,9 @@ div.admin-vr-failure {
     flex-direction: column;
     gap: 6px;
     margin: 0;
-    padding-left: 18px;
+    padding: 0;
     font-size: 13px;
+    list-style: none;
 }
 
 .admin-vr-beats li {

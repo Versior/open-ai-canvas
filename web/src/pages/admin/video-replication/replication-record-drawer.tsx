@@ -7,7 +7,7 @@ import { adminResourceFileUrl } from "@/services/api/admin-storage";
 import { parseVideoTeardownBundle } from "@/services/api/video-replication";
 import { adminUserLabel, getAdminVideoReplication, type AdminVideoReplicationDetail } from "@/services/api/video-replication-admin";
 import { formatParseTime } from "./parse-shared";
-import { AdminResourceThumb, TEARDOWN_STATUS_META, TRANSCRIPT_LABELS } from "./replication-admin-shared";
+import { AdminResourceThumb, modelLabel, TEARDOWN_STATUS_META, TRANSCRIPT_LABELS } from "./replication-admin-shared";
 
 const BOUNDARY_LABELS = { start: "开头", cut: "切点", split: "长镜头切开" } as const;
 
@@ -59,7 +59,7 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
                         ["口播", `${TRANSCRIPT_LABELS[bundle.transcript.source]}${bundle.transcript.language ? `（${bundle.transcript.language}）` : ""}${bundle.source.hasAudio ? "" : "，视频没有音轨"}`],
                     ] as [string, string][])
                   : []),
-              ["分析", analysis ? `${analysis.model || "未记录模型"} · ${formatParseTime(detail.analyzedAt)}` : detail.analysis ? "保存的分析和镜头对不上，读不出来" : "还没有分析"],
+              ["分析", analysis ? `${modelLabel(analysis.model) || "未记录模型"} · ${formatParseTime(detail.analyzedAt)}` : detail.analysis ? "保存的分析和镜头对不上，读不出来" : "还没有分析"],
               ["任务 ID", task.id],
           ]
         : [];

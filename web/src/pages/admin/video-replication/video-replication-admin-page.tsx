@@ -104,7 +104,11 @@ export default function VideoReplicationAdminPage() {
                     {
                         key: "overview",
                         label: "概览",
-                        children: <ReplicationOverviewPanel overview={overview} parse={parse} features={features} loading={loading} onOpenTab={(next) => navigate({ tab: next })} onOpenRecord={(id) => navigate({ tab: "records", record: id })} />,
+                        // 概览没有要留住的输入；切走时卸掉，隐藏的页签里图表量不到尺寸会一直报警告。
+                        children:
+                            tab === "overview" ? (
+                                <ReplicationOverviewPanel overview={overview} parse={parse} features={features} loading={loading} onOpenTab={(next) => navigate({ tab: next })} onOpenRecord={(id) => navigate({ tab: "records", record: id })} />
+                            ) : null,
                     },
                     {
                         key: "records",
