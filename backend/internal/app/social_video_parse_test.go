@@ -496,7 +496,14 @@ func TestRecoverSocialVideoParseAPIsReleasesAfterCooldownWithoutSampleLink(t *te
 	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: socialVideoParseStateKey, ValueJSON: string(raw)}); err != nil {
 		t.Fatal(err)
 	}
-	svc.recoverSocialVideoParseAPIs(context.Background())
+	// 关了视频链接导入时巡检整轮跳过，冷却期满的接口也不动。
+	setVideoReplicationFeatures(t, svc, true, false)
+	svc.runSocialVideoParseMaintenance(context.Background())
+	if state, _ := svc.socialVideoParseState(); !state.APIs[api.ID].AutoDisabled || len(state.Logs) != 0 {
+		t.Fatalf("maintenance ran while link import is off: %#v logs=%#v", state.APIs[api.ID], state.Logs)
+	}
+	setVideoReplicationFeatures(t, svc, true, true)
+	svc.runSocialVideoParseMaintenance(context.Background())
 	state, _ := svc.socialVideoParseState()
 	if current := state.APIs[api.ID]; current.AutoDisabled || current.ConsecutiveFailures != 2 || len(state.Logs) != 1 || state.Logs[0].Kind != "health" {
 		t.Fatalf("state after cooldown = %#v logs=%#v", current, state.Logs)
