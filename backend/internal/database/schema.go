@@ -161,7 +161,7 @@ func Models() []any {
 		&model.DramaTake{},
 		&model.DramaSegment{},
 		&model.DramaJob{},
-		// Fork 自有：智能体形象库、已拥有的形象和当前选择（迁移 80 建表）。
+		// Fork 自有：智能体形象库、已拥有的形象和当前选择（迁移 88 建表）。
 		&model.AgentPet{},
 		&model.UserAgentPet{},
 		&model.UserAgentPetSelection{},

@@ -4036,6 +4036,9 @@ summary.agent-tool-step:hover {
         transition: none;
     }
     .agent-panel-status-dot[data-live] {
+        animation: none;
+    }
+}
 
 /* 宠物形象头顶的云朵对话框：外形由 SVG 绘制（agent-pet-bubble-layout.ts），这里只负责文字、层级和动效。 */
 .agent-pet-bubble {
