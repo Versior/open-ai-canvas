@@ -2,7 +2,6 @@ import { App, Button, Checkbox, Input, Segmented, Select, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { Copy, Download, FlaskConical, Pencil, Plus, RefreshCw, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AdminPageFrame } from "@/pages/admin/components/admin-shell";
 import { AdminDataTable, AdminRowActions, AdminStatTile, AdminStatusBadge, AdminTableEmpty } from "@/pages/admin/components/admin-ui";
 import { AdminModal } from "@/pages/admin/ui/overlays";
 import {
@@ -80,10 +79,11 @@ function parseImportText(text: string): SocialVideoParseAPIInput[] {
 }
 
 /**
- * 后台「视频解析接口」：用户粘贴的短视频链接靠这里的第三方接口解析和下载。
+ * 后台「视频复刻 · 解析接口」：用户粘贴的短视频链接靠这里的第三方接口解析和下载。
  * 接口按平台分类，按设置的方式轮询；连续失败自动停用、到点自动恢复；订阅源定时采集新接口。
+ * 功能开放里关了视频链接导入时顶部提示：导入、巡检、自动恢复和订阅同步都暂停，手动测试照常。
  */
-export default function VideoParsePage() {
+export function ParsePoolPanel({ linkImportEnabled, onOpenSettings }: { linkImportEnabled: boolean | undefined; onOpenSettings: () => void }) {
     const { message, modal } = App.useApp();
     const [overview, setOverview] = useState<SocialVideoParseOverview | null>(null);
     const [loading, setLoading] = useState(true);
@@ -114,7 +114,7 @@ export default function VideoParsePage() {
             setOverview(data);
             setLoadError("");
         } catch (error) {
-            if (request === requestRef.current) setLoadError(error instanceof Error ? error.message : "读取视频解析接口失败");
+            if (request === requestRef.current) setLoadError(error instanceof Error ? error.message : "读取解析接口失败");
         } finally {
             if (request === requestRef.current) setLoading(false);
         }
@@ -355,33 +355,21 @@ export default function VideoParsePage() {
     ];
 
     return (
-        <AdminPageFrame
-            title="视频解析接口"
-            description="用户粘贴短视频链接时，由这里的第三方接口解析并下载视频。"
-            scroll
-            actions={
-                <>
-                    <Button icon={<FlaskConical className="size-4" />} loading={batchTesting} disabled={!apis.length} onClick={() => void testAll()}>
-                        {platform === "all" ? "全部测试" : `测试${platformName(platforms, platform)}接口`}
-                    </Button>
-                    <Button icon={<Upload className="size-4" />} onClick={() => setImportOpen(true)}>
-                        导入
-                    </Button>
-                    <Button icon={<Download className="size-4" />} disabled={!apis.length} onClick={() => void exportAll()}>
-                        导出
-                    </Button>
-                    <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openEditor(null)}>
-                        新增接口
-                    </Button>
-                </>
-            }
-        >
+        <>
             <div className="admin-video-parse">
                 {loadError ? (
                     <div className="admin-video-parse-load-error" role="alert">
                         <span>{loadError}</span>
                         <Button size="small" onClick={() => void reload()}>
                             重新加载
+                        </Button>
+                    </div>
+                ) : null}
+                {linkImportEnabled === false ? (
+                    <div className="admin-video-parse-paused" role="status">
+                        <span>视频链接导入已在功能开放里关闭：用户不能粘贴链接导入，巡检、自动恢复和订阅同步也一并暂停；这里仍可编辑和手动测试接口。</span>
+                        <Button size="small" onClick={onOpenSettings}>
+                            去开启
                         </Button>
                     </div>
                 ) : null}
@@ -401,18 +389,36 @@ export default function VideoParsePage() {
                     />
                     <AdminStatTile label="最近成功率" value={stats.rate === null ? "—" : `${stats.rate}%`} detail="各接口最近 10 次" />
                 </div>
-                <Segmented
-                    className="admin-video-parse-views"
-                    aria-label="视频解析接口视图"
-                    value={view}
-                    onChange={(value) => setView(value as View)}
-                    options={[
-                        { label: `接口（${apis.length}）`, value: "apis" },
-                        { label: `订阅源（${overview?.sources.length || 0}）`, value: "sources" },
-                        { label: "调用记录", value: "logs" },
-                        { label: "设置", value: "settings" },
-                    ]}
-                />
+                <div className="admin-video-parse-head">
+                    <Segmented
+                        className="admin-video-parse-views"
+                        aria-label="解析接口视图"
+                        value={view}
+                        onChange={(value) => setView(value as View)}
+                        options={[
+                            { label: `接口（${apis.length}）`, value: "apis" },
+                            { label: `订阅源（${overview?.sources.length || 0}）`, value: "sources" },
+                            { label: "调用记录", value: "logs" },
+                            { label: "解析设置", value: "settings" },
+                        ]}
+                    />
+                    {view === "apis" ? (
+                        <div className="admin-video-parse-actions">
+                            <Button icon={<FlaskConical className="size-4" />} loading={batchTesting} disabled={!apis.length} onClick={() => void testAll()}>
+                                {platform === "all" ? "全部测试" : `测试${platformName(platforms, platform)}接口`}
+                            </Button>
+                            <Button icon={<Upload className="size-4" />} onClick={() => setImportOpen(true)}>
+                                导入
+                            </Button>
+                            <Button icon={<Download className="size-4" />} disabled={!apis.length} onClick={() => void exportAll()}>
+                                导出
+                            </Button>
+                            <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openEditor(null)}>
+                                新增接口
+                            </Button>
+                        </div>
+                    ) : null}
+                </div>
                 {view === "apis" ? (
                     <div className="admin-video-parse-panel">
                         <div className="admin-video-parse-toolbar">
@@ -517,7 +523,7 @@ export default function VideoParsePage() {
                         </ul>
                         {batchResult.skipped.length ? (
                             <>
-                                <p className="admin-video-parse-muted">没测的接口（在「设置」里给对应平台填测试链接后再测）：</p>
+                                <p className="admin-video-parse-muted">没测的接口（在「解析设置」里给对应平台填测试链接后再测）：</p>
                                 <ul className="admin-video-parse-notes">
                                     {batchResult.skipped.map((item) => (
                                         <li key={item}>{item}</li>
@@ -558,6 +564,6 @@ export default function VideoParsePage() {
                     </Checkbox>
                 </div>
             </AdminModal>
-        </AdminPageFrame>
+        </>
     );
 }

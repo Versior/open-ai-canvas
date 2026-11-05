@@ -47,6 +47,9 @@ export type FeatureAvailability = {
     ecommerceVideoEnabled: boolean;
     ecommerceStudioEnabled: boolean;
     siteAssistantEnabled: boolean;
+    videoReplicationEnabled: boolean;
+    /** 粘贴短视频分享链接导入（画布粘贴和视频复刻共用）。 */
+    socialVideoImportEnabled: boolean;
     configured?: boolean;
     updatedBy?: string;
     updatedAt?: string;
@@ -68,6 +71,8 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     ecommerceVideoEnabled: false,
     ecommerceStudioEnabled: false,
     siteAssistantEnabled: false,
+    videoReplicationEnabled: true,
+    socialVideoImportEnabled: true,
 };
 
 type UserStore = {

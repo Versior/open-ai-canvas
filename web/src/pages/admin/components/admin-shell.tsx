@@ -35,6 +35,7 @@ import {
     RadioTower,
     RefreshCw,
     Rows3,
+    ScanSearch,
     Settings2,
     Shapes,
     ShieldAlert,
@@ -44,7 +45,6 @@ import {
     TicketCheck,
     ToggleLeft,
     UsersRound,
-    Link2,
 } from "lucide-react";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
@@ -110,7 +110,6 @@ const adminNavigation: AdminNavigationGroup[] = [
         items: [
             { path: "/admin/channels", label: "渠道与模型", shortLabel: "渠道", icon: <RadioTower className="size-4" /> },
             { path: "/admin/models", label: "前台模型", shortLabel: "模型", icon: <Layers3 className="size-4" />, requireFeature: "frontendModelsEnabled" },
-            { path: "/admin/video-parse", label: "视频解析接口", shortLabel: "解析", icon: <Link2 className="size-4" /> },
         ],
     },
     {
@@ -118,6 +117,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         label: "创作与扩展",
         items: [
             { path: "/admin/workbench-tools", label: "工作台工具", shortLabel: "工具", icon: <Shapes className="size-4" /> },
+            { path: "/admin/video-replication", label: "视频复刻", shortLabel: "复刻", icon: <ScanSearch className="size-4" /> },
             { path: "/admin/prompt-templates", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", shortLabel: "绘图", icon: <Paintbrush className="size-4" /> },
             // 旧版电商画布的设置只管 /ecommerce/canvas；电商 Agent（/ecommerce）的配置、知识与技能在下面的「电商 Agent」分组。

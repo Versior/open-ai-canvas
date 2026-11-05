@@ -36,7 +36,7 @@ const EmailSettingsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-
 const FeatureAvailabilityPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.FeatureAvailabilityPage })));
 const AgentLessonsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AgentLessonsPage })));
 const ChannelsPage = lazyAdminPage(() => import("@/pages/admin/channels/channels-page"));
-const VideoParsePage = lazyAdminPage(() => import("@/pages/admin/video-parse/video-parse-page"));
+const VideoReplicationAdminPage = lazyAdminPage(() => import("@/pages/admin/video-replication/video-replication-admin-page"));
 const LogicalModelsPage = lazyAdminPage(() => import("@/pages/admin/logical-models/logical-models-page"));
 const AdminPluginsPage = lazyAdminPage(() => import("@/pages/admin/plugins/plugins-page"));
 const SkillCurationPage = lazyAdminPage(() => import("@/pages/admin/skill-curation-page"));
@@ -168,7 +168,14 @@ export const router = createBrowserRouter([
                 ),
             },
             // 视频复刻：上传视频或粘贴平台链接，拆出镜头、口播和节奏。
-            { path: "/video-replication", element: <RequireAuth>{deferred(<VideoReplicationPage />)}</RequireAuth> },
+            {
+                path: "/video-replication",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="videoReplicationEnabled">{deferred(<VideoReplicationPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
             {
                 path: "/toolbox/image",
                 element: (
@@ -277,7 +284,6 @@ export const router = createBrowserRouter([
                     { path: "channels", element: <ChannelsPage /> },
                     // 关闭前台模型只影响用户端模型来源；后台仍可进入，便于开启前先配置。
                     { path: "models", element: <LogicalModelsPage /> },
-                    { path: "video-parse", element: <VideoParsePage /> },
                     { path: "ecommerce", element: <Navigate to="/admin/ecommerce/agent" replace /> },
                     { path: "ecommerce/agent", element: <EcommerceAgentConfigPage /> },
                     { path: "ecommerce/library", element: <EcommerceManagementPage /> },
@@ -291,6 +297,8 @@ export const router = createBrowserRouter([
                     { path: "ecommerce-categories", element: <Navigate to="/admin/ecommerce/library/categories" replace /> },
                     { path: "plugins", element: <AdminPluginsPage /> },
                     { path: "workbench-tools", element: <WorkbenchToolsPage /> },
+                    // 视频复刻的统计、记录、解析接口和设置；关闭视频复刻只影响用户端，后台仍可进入。
+                    { path: "video-replication", element: <VideoReplicationAdminPage /> },
                     { path: "skill-curation", element: <SkillCurationPage /> },
                     { path: "payments", element: <AdminPaymentsPage /> },
                     { path: "prompt-templates", element: <StoryboardPromptsPage /> },

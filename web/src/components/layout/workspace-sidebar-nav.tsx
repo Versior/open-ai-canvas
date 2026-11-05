@@ -63,7 +63,7 @@ function buildNav(features: FeatureAvailability, t: TFunction): { groups: Worksp
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
                 ...(features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Package, to: "/studio" }] : []),
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
-                { id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" },
+                ...(features.videoReplicationEnabled ? [{ id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" }] : []),
                 ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: t("nav.sidebar.ecommerce"), icon: ShoppingBag, to: "/ecommerce" }] : []),
                 { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
             ],

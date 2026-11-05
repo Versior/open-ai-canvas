@@ -186,7 +186,7 @@ export function ParseSourcesPanel({ sources, apis, onChanged }: { sources: Socia
         <div className="admin-video-parse-panel">
             <div className="admin-video-parse-panel-head">
                 <p className="admin-video-parse-muted">
-                    订阅源返回一份接口清单（与「导出」的格式相同，也可以直接是接口数组），后台按设置的间隔拉取，新接口按请求方式、地址和请求体去重后加进接口池。打开「测试通过后启用」时，用「设置」里各平台的测试链接测一遍，通过的直接启用。
+                    订阅源返回一份接口清单（与「导出」的格式相同，也可以直接是接口数组），后台按设置的间隔拉取，新接口按请求方式、地址和请求体去重后加进接口池。打开「测试通过后启用」时，用「解析设置」里各平台的测试链接测一遍，通过的直接启用。
                 </p>
                 <Button type="primary" icon={<Plus className="size-4" />} onClick={() => open(null)}>
                     新增订阅源

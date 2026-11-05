@@ -1,4 +1,4 @@
-/* 后台「视频解析接口」页：只用管理后台 token。 */
+/* 后台「视频复刻 · 解析接口」：只用管理后台 token。 */
 .admin-video-parse {
     display: flex;
     min-height: 0;
@@ -14,6 +14,35 @@
 
 .admin-video-parse-views {
     align-self: flex-start;
+}
+
+/* 视图切换和接口列表的操作放同一行：操作只跟着「接口」视图出现。 */
+.admin-video-parse-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+}
+
+.admin-video-parse-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.admin-video-parse-paused {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+    color: var(--admin-status-warning);
+    font-size: 13px;
+    line-height: 1.6;
 }
 
 .admin-video-parse-panel {

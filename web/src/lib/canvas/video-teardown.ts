@@ -98,6 +98,13 @@ export function formatTeardownTime(ms: number) {
     return `${minutes}:${String(seconds).padStart(2, "0")}.${tenths % 10}`;
 }
 
+/** 把时长上限写成「3 分钟」「45 秒」「1 分 30 秒」，和服务端超时长的提示一致。 */
+export function formatDurationLimit(seconds: number) {
+    if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60} 分钟`;
+    if (seconds < 60) return `${seconds} 秒`;
+    return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+}
+
 export function teardownTimeRange(shot: Pick<VideoTeardownShot, "startMs" | "endMs">) {
     return `${formatTeardownTime(shot.startMs)}–${formatTeardownTime(shot.endMs)}`;
 }

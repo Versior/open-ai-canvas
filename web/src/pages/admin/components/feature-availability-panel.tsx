@@ -10,6 +10,7 @@ import {
     CornerDownRight,
     History,
     ImageIcon,
+    Link2,
     MessageCircleMore,
     MonitorCog,
     Package,
@@ -17,6 +18,7 @@ import {
     Quote,
     RadioTower,
     RefreshCw,
+    ScanSearch,
     ShieldCheck,
     ShoppingBag,
     SlidersHorizontal,
@@ -46,7 +48,9 @@ type FeatureKey =
     | "ecommerceEnabled"
     | "ecommerceVideoEnabled"
     | "ecommerceStudioEnabled"
-    | "siteAssistantEnabled";
+    | "siteAssistantEnabled"
+    | "videoReplicationEnabled"
+    | "socialVideoImportEnabled";
 
 /** 跨分组的依赖：开关本身可以打开，但缺少这一项时功能只部分可用。 */
 type FeatureRequirement = { key: FeatureKey; effect: string };
@@ -84,6 +88,8 @@ const editableFeatureKeys: FeatureKey[] = [
     "ecommerceVideoEnabled",
     "ecommerceStudioEnabled",
     "siteAssistantEnabled",
+    "videoReplicationEnabled",
+    "socialVideoImportEnabled",
     "frontendModelsEnabled",
     "pluginCenterEnabled",
     "systemPluginsVisibleToUsers",
@@ -142,6 +148,22 @@ const featureGroups: FeatureGroup[] = [
                 location: "侧栏 · 电商生图台",
                 description: "独立的商品出图工作台，与电商 Agent 共用电商知识库。关闭后隐藏入口，已保存的商品和成品保留。",
                 icon: <Package className="size-4" aria-hidden="true" />,
+            },
+            {
+                key: "videoReplicationEnabled",
+                title: "视频复刻",
+                location: "侧栏 · 视频复刻",
+                description: "拆解一条视频的镜头、口播和节奏。关闭后隐藏入口且不能新建拆解，已有记录保留。",
+                icon: <ScanSearch className="size-4" aria-hidden="true" />,
+                link: { to: "/admin/video-replication", label: "视频复刻管理" },
+            },
+            {
+                key: "socialVideoImportEnabled",
+                title: "视频链接导入",
+                location: "画布粘贴 · 视频复刻",
+                description: "粘贴抖音、快手等分享链接导入视频，靠第三方解析接口下载。关闭后画布按普通文字粘贴，视频复刻只能上传文件。",
+                icon: <Link2 className="size-4" aria-hidden="true" />,
+                link: { to: "/admin/video-replication?tab=parse", label: "配置解析接口" },
             },
         ],
     },
@@ -572,6 +594,8 @@ function toEditablePayload(features: FeatureAvailability) {
         ecommerceVideoEnabled: features.ecommerceVideoEnabled,
         ecommerceStudioEnabled: features.ecommerceStudioEnabled,
         siteAssistantEnabled: features.siteAssistantEnabled,
+        videoReplicationEnabled: features.videoReplicationEnabled,
+        socialVideoImportEnabled: features.socialVideoImportEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
         systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
@@ -601,6 +625,8 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
         ecommerceStudioEnabled: record.ecommerceStudioEnabled as boolean,
         siteAssistantEnabled: record.siteAssistantEnabled as boolean,
+        videoReplicationEnabled: record.videoReplicationEnabled as boolean,
+        socialVideoImportEnabled: record.socialVideoImportEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,
         systemPluginsVisibleToUsers: record.systemPluginsVisibleToUsers as boolean,

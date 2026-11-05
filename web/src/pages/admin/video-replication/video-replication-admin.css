@@ -1,0 +1,699 @@
+/* 后台「视频复刻」页：概览、拆解记录、设置。解析接口页签的样式在 video-parse.css；只用管理后台 token。 */
+.admin-vr-tabs > .ant-tabs-nav {
+    margin-bottom: 16px;
+}
+
+.admin-vr-load-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+    color: var(--admin-status-error);
+}
+
+.admin-vr-muted {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.admin-vr-error {
+    color: var(--admin-status-error) !important;
+}
+
+.admin-vr-mono {
+    font-family: var(--admin-font-mono);
+    font-size: 12px;
+}
+
+.admin-vr-ellipsis {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-vr-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+
+.admin-vr-link:hover {
+    color: var(--admin-text);
+}
+
+/* 概览 */
+.admin-vr-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin-vr-status {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-vr-status-item {
+    position: relative;
+    display: flex;
+    width: 100%;
+    min-height: 72px;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px 36px 12px 16px;
+    border: 0;
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+    color: var(--admin-text);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--admin-motion);
+}
+
+.admin-vr-status-item:hover {
+    background: var(--admin-nav-hover);
+}
+
+.admin-vr-status-item:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 1px;
+}
+
+.admin-vr-status-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-vr-status-head strong {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.admin-vr-status-detail {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.admin-vr-status-arrow {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    color: var(--admin-text-placeholder);
+    transform: translateY(-50%);
+}
+
+.admin-vr-stats {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.admin-vr-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 12px;
+}
+
+.admin-vr-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+}
+
+.admin-vr-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.admin-vr-card-head h2 {
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.admin-vr-card-head p {
+    margin: 4px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.admin-vr-chart {
+    height: 220px;
+    color: var(--admin-text-muted);
+}
+
+.admin-vr-empty {
+    display: flex;
+    min-height: 120px;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--admin-text-muted);
+    font-size: 13px;
+}
+
+.admin-vr-platforms {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-vr-platforms li {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+}
+
+.admin-vr-platform-name {
+    color: var(--admin-text);
+}
+
+.admin-vr-platform-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--admin-layer-2);
+}
+
+.admin-vr-platform-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--admin-status-success);
+}
+
+.admin-vr-platform-numbers {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-vr-failures {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-vr-failures li + li {
+    border-top: 1px solid var(--admin-divider);
+}
+
+.admin-vr-failure {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 88px auto minmax(80px, 160px) minmax(0, 1fr) 16px;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 4px;
+    border: 0;
+    background: transparent;
+    color: var(--admin-text);
+    font-size: 13px;
+    text-align: left;
+}
+
+button.admin-vr-failure {
+    cursor: pointer;
+}
+
+button.admin-vr-failure:hover {
+    background: var(--admin-nav-hover);
+}
+
+button.admin-vr-failure:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: -2px;
+}
+
+div.admin-vr-failure {
+    grid-template-columns: 88px auto minmax(80px, 160px) minmax(0, 1fr);
+}
+
+.admin-vr-failure-time {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-vr-failure-user,
+.admin-vr-failure-error {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-vr-failure-error {
+    color: var(--admin-status-error);
+}
+
+/* 拆解记录 */
+.admin-vr-records-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-vr-records-toolbar .ant-input-affix-wrapper {
+    width: 260px;
+}
+
+.admin-vr-records-toolbar .ant-select {
+    width: 128px;
+}
+
+.admin-vr-thumb {
+    display: block;
+    flex: none;
+    border-radius: var(--admin-radius-sm);
+    background: var(--admin-layer-2);
+    object-fit: cover;
+}
+
+.admin-vr-thumb.is-empty {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--admin-text-placeholder);
+}
+
+.admin-vr-thumb.is-empty svg {
+    width: 16px;
+    height: 16px;
+}
+
+.admin-vr-record {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-vr-record-cover {
+    width: 64px;
+    height: 40px;
+}
+
+.admin-vr-record-copy,
+.admin-vr-record-state {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.admin-vr-record-copy strong {
+    overflow: hidden;
+    color: var(--admin-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-vr-record-copy strong.is-muted {
+    color: var(--admin-text-muted);
+    font-weight: 500;
+}
+
+.admin-vr-record-copy small,
+.admin-vr-record-state small {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+/* 记录详情 */
+.admin-vr-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin-vr-detail h3 {
+    margin: 0 0 10px;
+    color: var(--admin-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.admin-vr-detail-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-vr-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 20px;
+    margin: 0;
+}
+
+.admin-vr-facts dt {
+    margin-bottom: 2px;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.admin-vr-facts dd {
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.admin-vr-warnings,
+.admin-vr-points {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+    list-style: disc;
+}
+
+.admin-vr-video {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    border-radius: var(--admin-radius);
+    background: var(--admin-layer-2);
+}
+
+.admin-vr-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+}
+
+.admin-vr-summary h3 {
+    margin: 0;
+}
+
+.admin-vr-beats {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+}
+
+.admin-vr-beats li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.admin-vr-shots {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-vr-shot {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+}
+
+.admin-vr-shot + .admin-vr-shot {
+    border-top: 1px solid var(--admin-divider);
+}
+
+.admin-vr-shot-frame {
+    width: 120px;
+    height: 68px;
+}
+
+.admin-vr-shot-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.admin-vr-shot-copy p {
+    margin: 0;
+    color: var(--admin-text);
+    line-height: 1.6;
+}
+
+.admin-vr-shot-copy p.admin-vr-muted {
+    color: var(--admin-text-muted);
+}
+
+.admin-vr-shot-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-vr-dialogue {
+    color: var(--admin-text-secondary) !important;
+}
+
+/* 设置 */
+.admin-vr-settings {
+    display: flex;
+    max-width: 960px;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin-vr-settings-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* 区块内容默认没有左右留白（[data-admin-root] .admin-settings-section-content 只给上下 4px）。 */
+.admin-vr-settings .admin-settings-section-content {
+    padding: 18px 20px 2px;
+}
+
+.admin-vr-settings-form .ant-input-number {
+    width: 100%;
+}
+
+.admin-vr-settings-form .ant-form-item-extra {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.admin-vr-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+}
+
+.admin-vr-switches {
+    display: flex;
+    flex-direction: column;
+    margin: 0 0 16px;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-vr-switches li {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+}
+
+.admin-vr-switches li + li {
+    border-top: 1px solid var(--admin-divider);
+}
+
+.admin-vr-switch-icon {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--admin-radius);
+    background: var(--admin-layer-2);
+    color: var(--admin-text-secondary);
+}
+
+.admin-vr-switch-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.admin-vr-switch-copy strong {
+    color: var(--admin-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.admin-vr-switch-copy span {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.admin-vr-switch-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-vr-switches-error {
+    margin: -8px 0 12px;
+    font-size: 12px;
+}
+
+.admin-vr-checks {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0 0 18px;
+    padding: 12px;
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+}
+
+.admin-vr-checks > div {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+}
+
+.admin-vr-checks dt {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+
+.admin-vr-checks dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+}
+
+.admin-vr-checks code {
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--admin-layer-1);
+    font-family: var(--admin-font-mono);
+    font-size: 12px;
+}
+
+/* 保存栏放在表单末尾；有没保存的修改时贴住滚动区底部浮起来提醒。 */
+.admin-vr-settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+}
+
+.admin-vr-settings-actions[data-dirty] {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    border-color: var(--admin-border-strong);
+    box-shadow: var(--admin-shadow-overlay);
+}
+
+.admin-vr-settings-actions[data-dirty] > span {
+    color: var(--admin-status-warning);
+}
+
+.admin-vr-settings-buttons {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+@media (max-width: 1280px) {
+    .admin-vr-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 960px) {
+    .admin-vr-status,
+    .admin-vr-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 720px) {
+    .admin-vr-stats,
+    .admin-vr-grid,
+    .admin-vr-facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-vr-failure,
+    div.admin-vr-failure {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .admin-vr-failure-error {
+        grid-column: 1 / -1;
+        white-space: normal;
+    }
+
+    .admin-vr-checks > div {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+    }
+
+    .admin-vr-shot-frame {
+        width: 88px;
+        height: 50px;
+    }
+}

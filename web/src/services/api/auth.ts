@@ -484,6 +484,8 @@ export function updateAdminFeatureAvailability(
             | "ecommerceVideoEnabled"
             | "ecommerceStudioEnabled"
             | "siteAssistantEnabled"
+            | "videoReplicationEnabled"
+            | "socialVideoImportEnabled"
         >
     >,
 ) {

@@ -1,7 +1,7 @@
 import { http } from "@/services/api/request";
 import type { SocialVideoPlatform } from "@/services/api/social-video";
 
-/** 后台「视频解析接口」：第三方解析接口池、订阅源和全局设置。接口与字段说明见 docs/content/docs/backend/http-api.mdx。 */
+/** 后台「视频复刻 · 解析接口」：第三方解析接口池、订阅源和全局设置。接口与字段说明见 docs/content/docs/backend/http-api.mdx。 */
 
 export type SocialVideoParseStrategy = "priority" | "round_robin" | "weighted" | "fastest";
 
