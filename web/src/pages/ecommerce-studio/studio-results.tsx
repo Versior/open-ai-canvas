@@ -69,7 +69,8 @@ function ResultTile({ shot, caption, blocked, onView, onDownload, onReference, o
     const status = latest?.status || "idle";
     return (
         <figure className="es-tile-wrap">
-            <div className="es-tile" style={ratioStyle(shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
+            {/* 出好的图按实际宽高显示：模型给的比例和要求的不一样时也不裁掉。 */}
+            <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
                 {preview ? (
                     <button type="button" className="es-tile-image" onClick={onView} aria-label={`查看${shot.title}`}>
                         <img src={studioImageUrl(preview.resourceId, true)} alt={shot.title} loading="lazy" />

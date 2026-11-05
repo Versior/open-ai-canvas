@@ -1,5 +1,5 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
-import { LayoutTemplate, RotateCcw, ScanSearch, Settings2, Sparkles } from "lucide-react";
+import { ChevronDown, LayoutTemplate, RotateCcw, ScanSearch, Sparkles } from "lucide-react";
 import { useMemo, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
@@ -27,6 +27,7 @@ import { moveStudioSetEntry, studioEntryRatio, studioSetEntries, studioSetKind, 
 import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { configuredModelDisplayName } from "@/lib/model-selection";
 import { StudioDossierCard } from "./studio-dossier";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
 import { StudioShotList } from "./studio-shot-list";
@@ -58,8 +59,10 @@ function Field({ label, span, hint, children, htmlFor }: { label: string; span: 
     );
 }
 
-/** 识别用的文本模型：放在小浮层里，平时只露出一个设置按钮。 */
+/** 识别用的文本模型：按钮上直接写着当前模型，点开浮层更换。 */
 function FillModelPopover({ imageCount }: { imageCount: number }) {
+    const { config, models, value } = useStudioModel("text");
+    const label = value ? configuredModelDisplayName(config, value) : models.length ? "选择识别模型" : "没有可用的文本模型";
     return (
         <Popover
             trigger="click"
@@ -73,8 +76,10 @@ function FillModelPopover({ imageCount }: { imageCount: number }) {
                 </div>
             }
         >
-            <button type="button" className="es-icon-btn" aria-label="选择识别用的模型">
-                <Settings2 size={14} />
+            <button type="button" className="es-model-chip" aria-label={`识别用的模型：${label}，点击更换`} title="识别用的模型，点击更换">
+                <span className="es-model-chip-label">识别模型</span>
+                <span className="es-model-chip-value">{label}</span>
+                <ChevronDown size={12} aria-hidden />
             </button>
         </Popover>
     );

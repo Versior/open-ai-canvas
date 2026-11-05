@@ -409,7 +409,44 @@
 .es-field-actions {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.es-model-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    max-width: 240px;
+    height: 28px;
+    padding: 0 var(--space-2) 0 var(--space-3);
+    border: 1px solid var(--es-line);
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--es-ink);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+    transition:
+        background-color var(--es-motion),
+        border-color var(--es-motion);
+}
+.es-model-chip:hover {
+    border-color: var(--es-line-strong);
+    background: var(--es-muted);
+}
+.es-model-chip-label {
+    flex: 0 0 auto;
+    color: var(--es-ink-3);
+}
+.es-model-chip-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.es-model-chip svg {
+    flex: 0 0 auto;
+    color: var(--es-ink-3);
 }
 .es-grid {
     display: grid;
@@ -1056,10 +1093,13 @@
 .es-viewer {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: minmax(0, 1fr);
     height: min(80vh, 760px);
 }
+/* 单元格必须是确定尺寸，否则行高会被原图撑开，竖图下半截被弹窗裁掉。 */
 .es-viewer-stage {
     display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     min-width: 0;
     min-height: 0;
