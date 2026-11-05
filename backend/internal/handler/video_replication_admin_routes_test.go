@@ -27,6 +27,7 @@ func TestVideoReplicationAdminRoutesAndOpenAPI(t *testing.T) {
 		"GET /api/admin/video-replication/overview":         "/admin/video-replication/overview",
 		"GET /api/admin/video-replication/teardowns":        "/admin/video-replication/teardowns",
 		"GET /api/admin/video-replication/teardowns/:id":    "/admin/video-replication/teardowns/{id}",
+		"DELETE /api/admin/video-replication/teardowns/:id": "/admin/video-replication/teardowns/{id}",
 		"GET /api/admin/video-replication/settings":         "/admin/video-replication/settings",
 		"PATCH /api/admin/video-replication/settings":       "/admin/video-replication/settings",
 		"POST /api/video-replication/teardowns":             "/video-replication/teardowns",
@@ -172,5 +173,15 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 		if response := call(http.MethodGet, path, "", admin); response.Code != http.StatusOK {
 			t.Fatalf("admin %s with the feature off = %d", path, response.Code)
 		}
+	}
+	// 删除记录：只有管理员能删，删了以后详情 404。
+	if response := call(http.MethodDelete, "/api/admin/video-replication/teardowns/vt-http-1", "", user); response.Code != http.StatusForbidden {
+		t.Fatalf("non-admin delete = %d", response.Code)
+	}
+	if deleted := call(http.MethodDelete, "/api/admin/video-replication/teardowns/vt-http-1", "", admin); deleted.Code != http.StatusOK || !strings.Contains(deleted.Body.String(), `"deletedResources":[]`) {
+		t.Fatalf("delete = %d %s", deleted.Code, deleted.Body.String())
+	}
+	if gone := call(http.MethodGet, "/api/admin/video-replication/teardowns/vt-http-1", "", admin); gone.Code != http.StatusNotFound {
+		t.Fatalf("detail after delete = %d", gone.Code)
 	}
 }

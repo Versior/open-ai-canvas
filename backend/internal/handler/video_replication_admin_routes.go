@@ -1,4 +1,4 @@
-// 后台「视频复刻」管理：使用统计、所有用户的拆解记录和视频复刻设置。解析接口池的路由在 social_video_parse_routes.go。
+// 后台「视频复刻」管理：使用统计、所有用户的拆解记录（查看、删除）和视频复刻设置。解析接口池的路由在 social_video_parse_routes.go。
 package handler
 
 import (
@@ -52,6 +52,19 @@ func RegisterVideoReplicationAdminRoutes(r *gin.RouterGroup, svc *service.Servic
 			return
 		}
 		ok(c, detail)
+	})
+	r.DELETE("/admin/video-replication/teardowns/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		result, err := svc.DeleteAdminVideoReplication(user, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, result)
 	})
 	r.GET("/admin/video-replication/settings", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

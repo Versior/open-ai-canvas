@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"strings"
 	"time"
 
@@ -103,6 +104,43 @@ func (r *Repository) CountTasksWithResult(taskType, kind string) (int64, error) 
 	var count int64
 	err := r.db.Model(&model.Result{}).Joins("JOIN tasks ON tasks.id = results.task_id").Where("tasks.type = ? AND results.kind = ?", taskType, kind).Distinct("results.task_id").Count(&count).Error
 	return count, err
+}
+
+// ErrTaskRecordsChanged 表示要删的任务已经不在，或者状态变了（比如又被领取执行）。
+var ErrTaskRecordsChanged = errors.New("任务状态已变化，请刷新后重试")
+
+// ResourcesForUserByUploadKeys 按上传标识的摘要找一个用户的资源（任务存图时用上传标识去重，删除任务时据此找回它存过的图）。
+func (r *Repository) ResourcesForUserByUploadKeys(userID string, uploadKeys []string) ([]model.Resource, error) {
+	if len(uploadKeys) == 0 {
+		return []model.Resource{}, nil
+	}
+	var resources []model.Resource
+	err := r.db.Where("user_id = ? AND upload_key IN ?", userID, uploadKeys).Find(&resources).Error
+	return resources, err
+}
+
+// DeleteFinishedTaskRecords 在一个事务里删掉一个任务、它的结果和日志，并写入审计；任务必须还是给定类型和状态，
+// 否则返回 ErrTaskRecordsChanged，什么都不删。任务存过的资源由调用方另行按引用规则清理。
+func (r *Repository) DeleteFinishedTaskRecords(taskID, taskType string, statuses []model.TaskStatus, audit *model.AdminAuditEvent) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		deleted := tx.Where("id = ? AND type = ? AND status IN ?", taskID, taskType, statuses).Delete(&model.Task{})
+		if deleted.Error != nil {
+			return deleted.Error
+		}
+		if deleted.RowsAffected != 1 {
+			return ErrTaskRecordsChanged
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.Result{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("task_id = ?", taskID).Delete(&model.TaskLog{}).Error; err != nil {
+			return err
+		}
+		if audit != nil {
+			return tx.Create(audit).Error
+		}
+		return nil
+	})
 }
 
 // TaskDayCount 是一个 UTC 自然日里新建的某类任务按状态的数量；Day 为 Unix 秒整除 86400。

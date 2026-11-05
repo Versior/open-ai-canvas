@@ -470,6 +470,12 @@ func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoRep
 	return videoTeardownTranscript{Source: "asr", Language: detected, Segments: segments}
 }
 
+// videoTeardownUploadIdentity 是拆解存图的上传标识：任务 ID 加文件名（keyframe-001.jpg、grid-01.jpg）。
+// 删除拆解记录时按它找回这条拆解存过、但可能没写进结果的图（任务失败或被重新领取时）。
+func videoTeardownUploadIdentity(taskID, name string) string {
+	return "replication-teardown:" + taskID + ":" + name
+}
+
 // saveVideoTeardownImage 把关键帧或宫格存成图片资源。上传标识带任务 ID 和文件名，
 // 任务被重新领取时复用已存的资源，不重复占用存储。
 func (s *Service) saveVideoTeardownImage(task *model.Task, name, path string) (*model.Resource, int, int, error) {
@@ -478,7 +484,7 @@ func (s *Service) saveVideoTeardownImage(task *model.Task, name, path string) (*
 		return nil, 0, 0, fmt.Errorf("读取%s失败", name)
 	}
 	width, height := imageDimensions(data)
-	resource, err := s.UploadResourceFile(task.UserID, name, int64(len(data)), "image", width, height, 0, bytes.NewReader(data), "replication-teardown:"+task.ID+":"+name)
+	resource, err := s.UploadResourceFile(task.UserID, name, int64(len(data)), "image", width, height, 0, bytes.NewReader(data), videoTeardownUploadIdentity(task.ID, name))
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("保存%s失败：%w", name, err)
 	}

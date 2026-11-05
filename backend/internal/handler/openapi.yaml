@@ -4197,6 +4197,57 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+    delete:
+      tags: [admin]
+      summary: 删除一条视频复刻记录
+      description: |-
+        要求管理员。只能删已结束（已完成、失败、已取消）的拆解，排队或拆解中返回 400。拆解任务、保存的模型分析和日志在一个事务里删掉，
+        记管理审计 video_replication.teardown.delete；随后按资源删除的引用规则清理这条拆解存的关键帧和宫格：没被别处用到的删掉（各记一条 resource.delete 审计），
+        被画布、其他任务等用到的保留，列在 keptResources 里。原视频是用户自己的素材，不删。图片清理失败时记录照样删除，imagesError 写原因。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: data 为删除结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [id, deletedResources, keptResources]
+                        properties:
+                          id: {type: string}
+                          deletedResources: {type: array, items: {type: string}, description: 删掉的关键帧和宫格}
+                          keptResources:
+                            type: array
+                            description: 仍被用到而保留的图片和用到它的地方
+                            items:
+                              type: object
+                              required: [id, reason, references]
+                              properties:
+                                id: {type: string}
+                                reason: {type: string}
+                                references:
+                                  type: array
+                                  items:
+                                    type: object
+                                    properties:
+                                      kind: {type: string}
+                                      id: {type: string}
+                                      title: {type: string}
+                          imagesError: {type: string, description: 图片清理失败的原因}
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
   /admin/video-replication/settings:
     get:
       tags: [admin]
