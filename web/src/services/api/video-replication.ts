@@ -152,6 +152,10 @@ export type VideoReplicationRecord = {
     durationMs: number;
     shotCount: number;
     coverResourceId?: string;
+    /** 均匀取自全片的几张关键帧，卡片上排成胶片条。 */
+    previewResourceIds?: string[];
+    width?: number;
+    height?: number;
     title?: string;
     model?: string;
     analyzedAt?: string;

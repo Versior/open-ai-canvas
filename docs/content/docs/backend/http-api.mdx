@@ -75,7 +75,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 视频复刻页面（`/video-replication`）的历史记录走下面三个接口，都只读写当前账号自己的拆解任务，别人的或不是拆解类型的任务一律返回 404：
 
-- `GET /api/video-replication/teardowns`：按创建时间倒序返回最近 50 次拆解，含排队、失败的任务。每条有 `id`（拆解任务 ID）、`status`、`stage`、`progress`、`error`、`durationMs`、`shotCount`、`coverResourceId`（第一镜关键帧）；保存过分析的再带 `title`、`model`、`analyzedAt`。
+- `GET /api/video-replication/teardowns`：按创建时间倒序返回最近 50 次拆解，含排队、失败的任务。每条有 `id`（拆解任务 ID）、`status`、`stage`、`progress`、`error`、`durationMs`、`shotCount`、`coverResourceId`（第一镜关键帧）、`previewResourceIds`（均匀取自全片的最多 4 张关键帧）、`width` / `height`（原视频画幅）；保存过分析的再带 `title`、`model`、`analyzedAt`。
 - `GET /api/video-replication/teardowns/:id`：返回 `{ task, analysis?, analyzedAt? }`，`task.resultJson` 是上面的镜头事实。
 - `PUT /api/video-replication/teardowns/:id/analysis`：保存前端解析好的模型分析，正文为 `{ "version": 1, "model": "...", "title": "...", "summary": {...} | null, "rows": [{ "shotNumber": 1, ... }] }`，不超过 512 KiB。只接受已完成的拆解；`rows` 的数量和 `shotNumber` 必须与 `shots` 一一对应，缺镜头、重复或越界都返回 400。分析存在 `results` 表（`kind=replication_analysis`，`task_id` 为拆解任务），同一任务只留最新一份，计入账号结构化数据容量。
 

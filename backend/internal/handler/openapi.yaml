@@ -4000,6 +4000,9 @@ components:
         durationMs: {type: integer}
         shotCount: {type: integer}
         coverResourceId: {type: string, description: 第一镜关键帧的图片资源 ID}
+        previewResourceIds: {type: array, items: {type: string}, description: 均匀取自全片的最多 4 张关键帧图片资源 ID}
+        width: {type: integer, description: 原视频宽度}
+        height: {type: integer, description: 原视频高度}
         title: {type: string, description: 已保存分析的标题}
         model: {type: string, description: 已保存分析所用的模型}
         analyzedAt: {type: string, format: date-time}

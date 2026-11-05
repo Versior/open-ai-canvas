@@ -20,6 +20,8 @@ const (
 	videoReplicationAnalysisKind     = "replication_analysis"
 	videoReplicationAnalysisMaxBytes = 512 << 10
 	videoReplicationHistoryLimit     = 50
+	// videoReplicationPreviewFrames：列表卡片上的胶片条最多放几张关键帧，均匀取自全片。
+	videoReplicationPreviewFrames = 4
 )
 
 // VideoReplicationRecord 是历史列表的一条：拆解任务的状态，加上分析结果的标题和所用模型。
@@ -33,9 +35,13 @@ type VideoReplicationRecord struct {
 	DurationMs      int64            `json:"durationMs"`
 	ShotCount       int              `json:"shotCount"`
 	CoverResourceID string           `json:"coverResourceId,omitempty"`
-	Title           string           `json:"title,omitempty"`
-	Model           string           `json:"model,omitempty"`
-	AnalyzedAt      *time.Time       `json:"analyzedAt,omitempty"`
+	// PreviewResourceIDs 是均匀取自全片的几张关键帧，Width / Height 是原视频画幅。
+	PreviewResourceIDs []string   `json:"previewResourceIds,omitempty"`
+	Width              int        `json:"width,omitempty"`
+	Height             int        `json:"height,omitempty"`
+	Title              string     `json:"title,omitempty"`
+	Model              string     `json:"model,omitempty"`
+	AnalyzedAt         *time.Time `json:"analyzedAt,omitempty"`
 }
 
 // VideoReplicationDetail 是一条记录的全部内容：拆解任务（resultJson 里是镜头事实）和保存过的分析。
@@ -79,8 +85,13 @@ func (s *Service) VideoReplications(userID string) ([]VideoReplicationRecord, er
 		if task.Status == model.TaskStatusSucceeded && json.Unmarshal([]byte(task.ResultJSON), &bundle) == nil {
 			record.DurationMs = bundle.Source.DurationMs
 			record.ShotCount = len(bundle.Shots)
+			record.Width, record.Height = bundle.Source.Width, bundle.Source.Height
 			if len(bundle.Shots) > 0 {
 				record.CoverResourceID = bundle.Shots[0].KeyframeResourceID
+			}
+			count := min(len(bundle.Shots), videoReplicationPreviewFrames)
+			for index := range count {
+				record.PreviewResourceIDs = append(record.PreviewResourceIDs, bundle.Shots[index*len(bundle.Shots)/count].KeyframeResourceID)
 			}
 		}
 		if result, found := analyses[task.ID]; found {

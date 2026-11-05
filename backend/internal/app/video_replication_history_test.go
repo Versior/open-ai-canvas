@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -60,7 +61,7 @@ func TestVideoReplicationAnalysisSaveListAndDetail(t *testing.T) {
 		t.Fatalf("records = %+v, %v", records, err)
 	}
 	record := records[0]
-	if record.ID != task.ID || record.Title != "第二版" || record.Model != "text-model" || record.ShotCount != 2 || record.CoverResourceID != "res-key-1" || record.DurationMs != 9000 || record.AnalyzedAt == nil {
+	if record.ID != task.ID || record.Title != "第二版" || record.Model != "text-model" || record.ShotCount != 2 || record.CoverResourceID != "res-key-1" || record.DurationMs != 9000 || record.AnalyzedAt == nil || !slices.Equal(record.PreviewResourceIDs, []string{"res-key-1", "res-key-2"}) || record.Width != 1080 || record.Height != 1920 {
 		t.Fatalf("record = %+v", record)
 	}
 	detail, err := svc.VideoReplication("usr-a", task.ID)
