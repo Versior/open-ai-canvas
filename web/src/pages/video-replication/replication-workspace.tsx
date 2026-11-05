@@ -92,7 +92,8 @@ export function ReplicationWorkspace(props: Props) {
                 <StatePanel tone="error" title="拆解结果无法读取" description={bundleError || "请重新拆解这个视频。"} action={<Button onClick={onBack}>重新拆解</Button>} />
             </WorkspaceShell>
         );
-    return <RecordWorkspace {...props} bundle={bundle} analysis={analysis} ownRun={ownRun} />;
+    // 按记录重建：换一条记录时切换栏、浮层和播放位置都从头开始。
+    return <RecordWorkspace key={task.id} {...props} bundle={bundle} analysis={analysis} ownRun={ownRun} />;
 }
 
 function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, config, model, onModelChange, onReanalyze, onOpenCanvas, onBack }: Props & { bundle: VideoTeardownBundle; analysis: Analysis | null; ownRun: ReplicationRun | null }) {
@@ -172,13 +173,14 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
     return (
         <WorkspaceShell title={title} meta={meta} actions={actions} onBack={onBack}>
             {ownRun ? <ReplicationProgress run={ownRun} /> : null}
-            {!analysis && !ownRun ? (
+            {/* 还没有分析、也没在分析（含上次分析失败）时，在这里选模型开始或重试。 */}
+            {!analysis && !analyzing ? (
                 <div className="vr-panel vr-analyze">
                     <div className="vr-analyze-copy">
-                        <p className="vr-analyze-title">镜头已经切好，还差模型分析</p>
-                        <p className="vr-analyze-text">选一个能看图的文本模型，逐镜补全画面、口播、运镜和复刻提示词，按所选模型计费。</p>
+                        <p className="vr-analyze-title">{ownRun?.error ? "这次分析没有完成" : "镜头已经切好，还差模型分析"}</p>
+                        <p className="vr-analyze-text">{ownRun?.error ? "镜头和关键帧都还在，可以直接重试，或换一个能看图的模型再分析。" : "选一个能看图的文本模型，逐镜补全画面、口播、运镜和复刻提示词，按所选模型计费。"}</p>
                     </div>
-                    <AnalyzeControls config={config} model={model} onModelChange={onModelChange} busy={busy} label="开始分析" onStart={() => onReanalyze("")} />
+                    <AnalyzeControls config={config} model={model} onModelChange={onModelChange} busy={busy} label={ownRun?.error ? "重试分析" : "开始分析"} onStart={() => onReanalyze("")} />
                 </div>
             ) : null}
             <ReplicationTimeline bundle={bundle} summary={summary} activeIndex={playback.activeIndex} video={playback.video} onPick={playback.playShot} />
