@@ -53,6 +53,19 @@ func RegisterVideoReplicationAdminRoutes(r *gin.RouterGroup, svc *service.Servic
 		}
 		ok(c, detail)
 	})
+	r.GET("/admin/video-replication/settings", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		view, err := svc.AdminVideoReplicationSettings(user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, view)
+	})
 	r.PATCH("/admin/video-replication/settings", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {
@@ -63,11 +76,16 @@ func RegisterVideoReplicationAdminRoutes(r *gin.RouterGroup, svc *service.Servic
 		if !bindLimitedJSON(c, 4<<10, &req) {
 			return
 		}
-		settings, err := svc.UpdateVideoReplicationSettings(user, req)
+		if _, err := svc.UpdateVideoReplicationSettings(user, req); err != nil {
+			failService(c, err)
+			return
+		}
+		// 和 GET 返回同一份内容：保存后的设置，以及按新设置算出的口播识别状态。
+		view, err := svc.AdminVideoReplicationSettings(user)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"settings": settings})
+		ok(c, view)
 	})
 }

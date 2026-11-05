@@ -105,12 +105,26 @@ func (r *Repository) CountTasksWithResult(taskType, kind string) (int64, error) 
 	return count, err
 }
 
-// TasksByTypesBetween 取一段时间内创建的某几类任务，只带统计用的列。
-func (r *Repository) TasksByTypesBetween(types []string, from, to time.Time) ([]model.Task, error) {
-	var tasks []model.Task
-	query := whereTimeRange(r.db.Model(&model.Task{}).Select("id", "type", "status", "provider", "created_at"), "created_at", from, to)
-	err := query.Where("type IN ?", types).Find(&tasks).Error
-	return tasks, err
+// TaskDayCount 是一个 UTC 自然日里新建的某类任务按状态的数量；Day 为 Unix 秒整除 86400。
+type TaskDayCount struct {
+	Day    int64
+	Type   string
+	Status model.TaskStatus
+	Count  int64
+}
+
+// TaskDailyCountsByTypes 在数据库里按 UTC 自然日、类型和状态分组计数，不把整段时间的任务行读进内存。
+// SQLite 用 created_at_epoch（created_at 存成带时区的文本，不能直接按日期截）；PostgreSQL 直接取 created_at 的
+// Unix 秒，那边老数据的 epoch 列没有回填过。
+func (r *Repository) TaskDailyCountsByTypes(types []string, from, to time.Time) ([]TaskDayCount, error) {
+	day := "created_at_epoch / 86400"
+	if r.Dialect() == "postgres" {
+		day = "CAST(FLOOR(EXTRACT(EPOCH FROM created_at) / 86400) AS BIGINT)"
+	}
+	var rows []TaskDayCount
+	query := whereTimeRange(r.db.Model(&model.Task{}).Select(day+" AS day, type, status, COUNT(*) AS count"), "created_at", from, to)
+	err := query.Where("type IN ?", types).Group("day, type, status").Scan(&rows).Error
+	return rows, err
 }
 
 func (r *Repository) RecentFailedTasksByTypes(types []string, limit int) ([]model.Task, error) {

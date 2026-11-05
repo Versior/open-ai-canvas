@@ -27,6 +27,7 @@ func TestVideoReplicationAdminRoutesAndOpenAPI(t *testing.T) {
 		"GET /api/admin/video-replication/overview":         "/admin/video-replication/overview",
 		"GET /api/admin/video-replication/teardowns":        "/admin/video-replication/teardowns",
 		"GET /api/admin/video-replication/teardowns/:id":    "/admin/video-replication/teardowns/{id}",
+		"GET /api/admin/video-replication/settings":         "/admin/video-replication/settings",
 		"PATCH /api/admin/video-replication/settings":       "/admin/video-replication/settings",
 		"POST /api/video-replication/teardowns":             "/video-replication/teardowns",
 		"GET /api/video-replication/teardowns":              "/video-replication/teardowns",
@@ -103,7 +104,7 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 	}
 	const admin, user = "vr-admin-session.admin-token", "vr-user-session.user-token"
 
-	for _, path := range []string{"/api/admin/video-replication/overview", "/api/admin/video-replication/teardowns", "/api/admin/video-replication/teardowns/vt-http-1"} {
+	for _, path := range []string{"/api/admin/video-replication/overview", "/api/admin/video-replication/teardowns", "/api/admin/video-replication/teardowns/vt-http-1", "/api/admin/video-replication/settings"} {
 		if response := call(http.MethodGet, path, "", user); response.Code != http.StatusForbidden {
 			t.Fatalf("non-admin %s status = %d, body = %s", path, response.Code, response.Body.String())
 		}
@@ -111,8 +112,13 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 	if response := call(http.MethodPatch, "/api/admin/video-replication/settings", `{"maxShots":20}`, user); response.Code != http.StatusForbidden {
 		t.Fatalf("non-admin settings status = %d", response.Code)
 	}
+	// 设置页单独读取：默认设置和口播识别状态（测试环境没配转写服务）。
+	initial := call(http.MethodGet, "/api/admin/video-replication/settings", "", admin)
+	if initial.Code != http.StatusOK || !strings.Contains(initial.Body.String(), `"maxShots":60`) || !strings.Contains(initial.Body.String(), `"serviceConfigured":false`) || !strings.Contains(initial.Body.String(), `"available":false`) {
+		t.Fatalf("settings read = %d %s", initial.Code, initial.Body.String())
+	}
 	saved := call(http.MethodPatch, "/api/admin/video-replication/settings", `{"maxShots":20}`, admin)
-	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `"maxShots":20`) || !strings.Contains(saved.Body.String(), `"maxDurationSeconds":180`) {
+	if saved.Code != http.StatusOK || !strings.Contains(saved.Body.String(), `"maxShots":20`) || !strings.Contains(saved.Body.String(), `"maxDurationSeconds":180`) || !strings.Contains(saved.Body.String(), `"transcription":{`) {
 		t.Fatalf("settings status = %d, body = %s", saved.Code, saved.Body.String())
 	}
 	if invalid := call(http.MethodPatch, "/api/admin/video-replication/settings", `{"maxDurationSeconds":5}`, admin); invalid.Code != http.StatusBadRequest {
@@ -162,7 +168,9 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 		}
 	}
 	// 后台管理不受功能开关影响。
-	if response := call(http.MethodGet, "/api/admin/video-replication/teardowns", "", admin); response.Code != http.StatusOK {
-		t.Fatalf("admin list with the feature off = %d", response.Code)
+	for _, path := range []string{"/api/admin/video-replication/teardowns", "/api/admin/video-replication/settings"} {
+		if response := call(http.MethodGet, path, "", admin); response.Code != http.StatusOK {
+			t.Fatalf("admin %s with the feature off = %d", path, response.Code)
+		}
 	}
 }

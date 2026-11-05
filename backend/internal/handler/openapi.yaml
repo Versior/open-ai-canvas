@@ -4198,10 +4198,29 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
   /admin/video-replication/settings:
+    get:
+      tags: [admin]
+      summary: 读取视频复刻设置
+      description: 要求管理员。返回当前设置和口播识别状态，不做概览里的统计；视频复刻关着时也能读。
+      responses:
+        "200":
+          description: data 为设置和口播识别状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: {$ref: "#/components/schemas/AdminVideoReplicationSettingsView"}
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
     patch:
       tags: [admin]
       summary: 修改视频复刻设置
-      description: 要求管理员。只改请求里给出的字段，保存后新的拆解任务和排队中的任务都按新设置执行。data.settings 为保存后的完整设置。
+      description: 要求管理员。只改请求里给出的字段，保存后新的拆解任务和排队中的任务都按新设置执行。返回内容和 GET 相同：保存后的完整设置和按新设置算出的口播识别状态。
       requestBody:
         required: true
         content:
@@ -4210,7 +4229,15 @@ paths:
               $ref: "#/components/schemas/VideoReplicationSettingsPatch"
       responses:
         "200":
-          $ref: "#/components/responses/Envelope"
+          description: data 为保存后的设置和口播识别状态
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data: {$ref: "#/components/schemas/AdminVideoReplicationSettingsView"}
         "400":
           $ref: "#/components/responses/Error"
         "401":
@@ -4539,6 +4566,21 @@ components:
         maxDurationSeconds: {type: integer, minimum: 10, maximum: 180}
         maxShots: {type: integer, minimum: 1, maximum: 60}
         transcribeEnabled: {type: boolean}
+    VideoReplicationTranscription:
+      type: object
+      required: [enabled, featureEnabled, serviceConfigured, available]
+      properties:
+        enabled: {type: boolean, description: 后台是否允许识别口播}
+        featureEnabled: {type: boolean, description: 「功能开放」里的字幕转写是否开放}
+        serviceConfigured: {type: boolean, description: 服务器是否配置了转写服务}
+        available: {type: boolean, description: 三项都满足，拆解时会识别口播}
+        note: {type: string, description: 不能识别时的原因}
+    AdminVideoReplicationSettingsView:
+      type: object
+      required: [settings, transcription]
+      properties:
+        settings: {$ref: "#/components/schemas/VideoReplicationSettings"}
+        transcription: {$ref: "#/components/schemas/VideoReplicationTranscription"}
     VideoReplicationConfig:
       type: object
       required: [maxDurationSeconds, maxShots, transcribeAvailable]

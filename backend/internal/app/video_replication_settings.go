@@ -39,6 +39,12 @@ type VideoReplicationTranscription struct {
 	Note              string `json:"note,omitempty"`
 }
 
+// AdminVideoReplicationSettingsView 是后台设置页要的全部内容：当前设置，以及口播识别现在能不能用。
+type AdminVideoReplicationSettingsView struct {
+	Settings      VideoReplicationSettings      `json:"settings"`
+	Transcription VideoReplicationTranscription `json:"transcription"`
+}
+
 // VideoReplicationConfig 是视频复刻页面要用的限制：时长、镜头数上限，以及能不能识别口播。
 type VideoReplicationConfig struct {
 	MaxDurationSeconds  int    `json:"maxDurationSeconds"`
@@ -94,6 +100,23 @@ func (s *Service) videoReplicationSettings() (VideoReplicationSettings, error) {
 		}
 	}
 	return normalizeStoredVideoReplicationSettings(value), nil
+}
+
+// AdminVideoReplicationSettings 给后台设置页单独读取设置和口播识别状态，不跑概览里的统计查询；
+// 功能开关关着时也能读，方便先调好限制再开放。
+func (s *Service) AdminVideoReplicationSettings(actor *model.User) (*AdminVideoReplicationSettingsView, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	settings, err := s.videoReplicationSettings()
+	if err != nil {
+		return nil, err
+	}
+	transcription, err := s.videoReplicationTranscription(settings)
+	if err != nil {
+		return nil, err
+	}
+	return &AdminVideoReplicationSettingsView{Settings: settings, Transcription: transcription}, nil
 }
 
 // UpdateVideoReplicationSettings 按请求里给出的字段修改设置，按读到的原文比较写回；有变化时记管理审计。

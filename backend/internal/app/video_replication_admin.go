@@ -189,7 +189,8 @@ func (s *Service) AdminVideoReplicationOverview(actor *model.User) (*AdminVideoR
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	from := today.AddDate(0, 0, -(adminVideoReplicationTrendDays - 1))
-	recent, err := s.repo.TasksByTypesBetween(types, from, today.AddDate(0, 0, 1))
+	// 每天的数量在数据库里分组算好，这里只按日期填进 14 天的格子（没有任务的日子是 0）。
+	dailyCounts, err := s.repo.TaskDailyCountsByTypes(types, from, today.AddDate(0, 0, 1))
 	if err != nil {
 		return nil, err
 	}
@@ -199,27 +200,27 @@ func (s *Service) AdminVideoReplicationOverview(actor *model.User) (*AdminVideoR
 		overview.Daily = append(overview.Daily, AdminVideoReplicationDay{Date: day.Format("2006-01-02")})
 	}
 	weekStart := today.AddDate(0, 0, -6)
-	for _, task := range recent {
-		created := task.CreatedAt.UTC()
-		index, found := days[created.Format("2006-01-02")]
+	for _, row := range dailyCounts {
+		day := time.Unix(row.Day*86400, 0).UTC()
+		index, found := days[day.Format("2006-01-02")]
 		if !found {
 			continue
 		}
 		stats := &overview.Teardowns
-		if task.Type == model.TaskTypeReplicationTeardown {
-			overview.Daily[index].Teardowns++
+		if row.Type == model.TaskTypeReplicationTeardown {
+			overview.Daily[index].Teardowns += row.Count
 		} else {
-			overview.Daily[index].Imports++
+			overview.Daily[index].Imports += row.Count
 			stats = &overview.Imports
 		}
-		if task.Status == model.TaskStatusFailed {
-			overview.Daily[index].Failed++
+		if row.Status == model.TaskStatusFailed {
+			overview.Daily[index].Failed += row.Count
 		}
-		if !created.Before(weekStart) {
-			stats.Last7Days++
+		if !day.Before(weekStart) {
+			stats.Last7Days += row.Count
 		}
-		if !created.Before(today) {
-			stats.Today++
+		if !day.Before(today) {
+			stats.Today += row.Count
 		}
 	}
 

@@ -56,6 +56,10 @@ func TestAdminVideoReplicationListDetailAndOverview(t *testing.T) {
 	if err != nil || page.Total != 3 || len(page.Records) != 3 || page.Page != 1 || page.Limit != 20 {
 		t.Fatalf("page = %+v, %v", page, err)
 	}
+	// 每页超过 100 条时按 100 条，不退回默认的 20 条。
+	if wide, err := svc.AdminVideoReplications(videoReplicationTestAdmin, AdminVideoReplicationQuery{Limit: 500}); err != nil || wide.Limit != 100 || len(wide.Records) != 3 {
+		t.Fatalf("pageSize 500 = %+v, %v", wide, err)
+	}
 	byID := map[string]AdminVideoReplicationRecord{}
 	for _, record := range page.Records {
 		byID[record.ID] = record

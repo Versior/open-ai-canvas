@@ -71,14 +71,15 @@ func (s *Service) AdminSystemChannelPage(actor *model.User, query AdminListQuery
 	return &AdminChannelPage{Channels: result, Total: total, Page: page, Limit: limit}, nil
 }
 
+// normalizeAdminPage 收拢后台列表的分页：页码从 1 开始，每页没给时 20 条，超过 100 条按 100 条。
 func normalizeAdminPage(page int, limit int) (int, int) {
 	if page <= 0 {
 		page = 1
 	}
-	if limit <= 0 || limit > 100 {
+	if limit <= 0 {
 		limit = 20
 	}
-	return page, limit
+	return page, min(limit, 100)
 }
 
 func (s *Service) CreateSystemChannel(actor *model.User, req ChannelRequest) (*PublicModelChannel, error) {
