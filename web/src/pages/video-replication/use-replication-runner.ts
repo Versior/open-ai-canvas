@@ -181,14 +181,15 @@ export function startReplication(source: ReplicationSource, options: VideoTeardo
             if (!link.platform.available) throw new Error(`${link.platform.name}链接暂时无法导入：后台还没有可用的解析接口`);
             const url = link.url;
             update({ detail: "提交下载任务" });
-            const created = await createSocialVideoImport(url, undefined, signal);
+            // 把后台的时长上限交给服务端：超长的视频在导入时就失败，不先下载存成资源。
+            const created = await createSocialVideoImport(url, undefined, signal, { maxDurationSeconds: limits?.maxDurationSeconds });
             assertCurrent();
             const task = await waitForGenerationTask(created.id, { initialTask: created, signal, timeoutMs: IMPORT_TIMEOUT_MS, onTaskUpdate: (item) => update({ detail: "下载并校验视频", percent: taskPercent(item) }) });
             assertCurrent();
             const result = parseSocialVideoImportResult(task);
             const resource = validateSocialVideoResource(result, await getResource(result.resourceId));
             assertCurrent();
-            // 链接导入最长 3 分钟，后台可能把拆解上限设得更短：导入好了也先比一下，不白建拆解任务。
+            // 服务端已按上限校验；上限还没读到时服务端按 3 分钟，这里再比一次，不白建拆解任务。
             const tooLong = durationError(limits, result.durationMs);
             if (tooLong) throw new Error(tooLong);
             resourceId = resource.id;

@@ -113,8 +113,10 @@ export function loadSocialVideoPlatforms(): Promise<readonly SocialVideoPlatform
     return promise;
 }
 
-export function createSocialVideoImport(url: string, projectId?: string, signal?: AbortSignal) {
-    return http.post<GenerationTask>("/social-video/imports", { url, ...(projectId ? { projectId } : {}) }, { signal, headers: { "X-Idempotency-Key": createClientId() } });
+/** maxDurationSeconds：这次导入能接受的最长秒数（视频复刻按后台的时长上限传）；超长的视频在服务端就失败，不存成资源。 */
+export function createSocialVideoImport(url: string, projectId?: string, signal?: AbortSignal, options: { maxDurationSeconds?: number } = {}) {
+    const body = { url, ...(projectId ? { projectId } : {}), ...(options.maxDurationSeconds ? { maxDurationSeconds: options.maxDurationSeconds } : {}) };
+    return http.post<GenerationTask>("/social-video/imports", body, { signal, headers: { "X-Idempotency-Key": createClientId() } });
 }
 
 export function parseSocialVideoImportResult(task: GenerationTask): SocialVideoImportResult {
