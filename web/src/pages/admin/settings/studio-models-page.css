@@ -1,0 +1,147 @@
+/* 后台「电商模特库」：只用后台 token，卡片栅格与上下架开关。 */
+.studio-models {
+    display: grid;
+    gap: var(--space-4);
+}
+.studio-models-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+}
+.studio-models-toolbar .ant-input-affix-wrapper {
+    flex: 1 1 240px;
+    max-width: 360px;
+}
+.studio-models-error {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--admin-status-error);
+}
+.studio-models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+    gap: var(--space-3);
+}
+.studio-model-card {
+    display: grid;
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--admin-card-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-layer-1);
+}
+.studio-model-card[data-selected] {
+    border-color: var(--admin-border-strong);
+}
+.studio-model-thumb {
+    position: relative;
+    aspect-ratio: 4 / 5;
+    background: color-mix(in srgb, var(--admin-text) 6%, transparent);
+}
+.studio-model-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.studio-model-thumb-text {
+    display: grid;
+    gap: var(--space-2);
+    place-content: center;
+    justify-items: center;
+    height: 100%;
+    padding: var(--space-3);
+    color: var(--admin-text-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+    text-align: center;
+}
+.studio-model-select {
+    position: absolute;
+    top: var(--space-2);
+    left: var(--space-2);
+}
+.studio-model-body {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3) var(--space-3);
+}
+.studio-model-body strong {
+    overflow: hidden;
+    color: var(--admin-text);
+    font-size: var(--fs-ui);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.studio-model-body > span {
+    overflow: hidden;
+    color: var(--admin-text-muted);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.studio-model-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+.studio-model-actions > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+.studio-model-editor {
+    display: grid;
+    gap: var(--space-3);
+}
+.studio-model-editor-note {
+    margin: 0;
+    color: var(--admin-text-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+.studio-model-editor-files {
+    display: grid;
+    gap: var(--space-1);
+    justify-items: start;
+}
+.studio-model-editor-files > span {
+    color: var(--admin-text-muted);
+    font-size: var(--fs-caption);
+}
+.studio-model-editor-preview {
+    max-width: 160px;
+    max-height: 200px;
+    border-radius: var(--admin-radius-lg);
+    object-fit: contain;
+}
+.studio-model-field {
+    display: grid;
+    flex: 1 1 0;
+    gap: 4px;
+    min-width: 0;
+}
+.studio-model-field > span {
+    color: var(--admin-text-secondary);
+    font-size: var(--fs-caption);
+}
+.studio-model-field-row {
+    display: flex;
+    gap: var(--space-3);
+}
+.studio-model-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--admin-text-secondary);
+    font-size: var(--fs-caption);
+}
+.studio-model-editor-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}

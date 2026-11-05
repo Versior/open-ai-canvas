@@ -36,6 +36,7 @@ const AppearanceSettingsPage = lazyAdminPage(() => import("@/pages/admin/setting
 const AgentPetsSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/agent-pets-page"));
 const DrawingEngineSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/drawing-engine-settings-page"));
 const EcommerceSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/ecommerce-settings-page"));
+const StudioModelsPage = lazyAdminPage(() => import("@/pages/admin/settings/studio-models-page"));
 const StorageSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/storage-settings-page"));
 const ArkPrivateAssetsSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/ark-private-assets-settings-page"));
 const ResponseInterceptionSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/response-interception-settings-page"));
@@ -291,6 +292,7 @@ export const router = createBrowserRouter([
                     { path: "settings/agent-styles", element: <AgentPetsSettingsPage /> },
                     { path: "settings/drawing-engine", element: <DrawingEngineSettingsPage /> },
                     { path: "settings/ecommerce", element: <EcommerceSettingsPage /> },
+                    { path: "settings/studio-models", element: <StudioModelsPage /> },
                     { path: "settings/concurrency", element: <Navigate to="/admin/settings/runtime-policy" replace /> },
                     { path: "settings/runtime-policy", element: <RuntimePolicySettingsPage /> },
                     { path: "settings/features", element: <FeatureAvailabilityPage /> },
