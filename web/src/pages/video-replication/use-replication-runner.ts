@@ -25,8 +25,9 @@ export type ReplicationRun = { id?: string; stage: ReplicationStage; detail: str
 /**
  * 记在本机的未完成分析：拆解任务已经建好，但分析结果还没存回服务端。
  * 页面刷新或关掉后再打开时据此接着跑；textTasks 记着已提交的文本任务，接回时等它们的结果，不重复扣费。
+ * failed 表示分析失败过：不再自动接着跑，但留着 textTasks，用户用同一个模型重试时已经成功的那几批直接取结果。
  */
-type PendingReplication = { id: string; model: string; transcribe: boolean; fallbackTitle: string; startedAt: number; textTasks: Record<string, string> };
+type PendingReplication = { id: string; model: string; transcribe: boolean; fallbackTitle: string; startedAt: number; textTasks: Record<string, string>; failed?: boolean };
 
 const PENDING_KEY = "video-replication:pending";
 const PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -109,8 +110,9 @@ function readVideoFileInfo(file: File): Promise<{ width: number; height: number;
 
 type RunContext = { signal: AbortSignal; scope: string; assertCurrent: () => void; update: (patch: Partial<ReplicationRun>) => void };
 
+/** 已经有一次拆解或分析在跑时返回 false，调用方提示用户等它结束；一次只跑一个，避免同时提交两批计费任务。 */
 async function execute(initial: ReplicationRun, body: (context: RunContext) => Promise<void>) {
-    if (controller) return;
+    if (controller) return false;
     const current = new AbortController();
     controller = current;
     const scope = getActiveUserScope();
@@ -134,6 +136,7 @@ async function execute(initial: ReplicationRun, body: (context: RunContext) => P
     } finally {
         if (controller === current) controller = null;
     }
+    return true;
 }
 
 /** 等拆解任务完成 → 分析 → 存回服务端；成功或确定失败后清掉本机的未完成记录。 */
@@ -160,8 +163,9 @@ async function finishReplication(pending: PendingReplication, config: AiConfig, 
         await saveVideoReplicationAnalysis(id, videoReplicationAnalysisDocument(analysis, pending.model), context.signal);
         context.assertCurrent();
     } catch (error) {
-        // 中止（切换账号）时留着记录，下次回到这个账号还能接上；分析本身失败就不再自动重跑，等用户点「重新分析」。
-        if (!isAbort(error)) updatePending(id, () => undefined);
+        // 中止（切换账号）时留着记录，下次回到这个账号还能接上；分析本身失败就不再自动重跑，等用户点「重试分析」，
+        // 已经成功的文本任务留着，重试时不再重复提交。
+        if (!isAbort(error)) updatePending(id, (item) => (item ? { ...item, failed: true } : item));
         throw error;
     }
     updatePending(id, () => undefined);
@@ -224,7 +228,10 @@ export function reanalyzeReplication(id: string, options: VideoTeardownOptions, 
     return execute({ id, stage: "analyze", detail: "读取拆解结果" }, async (context) => {
         const detail = await getVideoReplication(id, context.signal);
         context.assertCurrent();
-        const pending: PendingReplication = { id, model: options.model, transcribe: options.transcribe, fallbackTitle, startedAt: Date.now(), textTasks: {} };
+        // 上次用同一个模型没分析完：接着用已经提交过的文本任务；换了模型就全部重来。
+        const previous = readPending().find((item) => item.id === id);
+        const textTasks = previous && previous.model === options.model ? previous.textTasks : {};
+        const pending: PendingReplication = { id, model: options.model, transcribe: options.transcribe, fallbackTitle, startedAt: Date.now(), textTasks };
         updatePending(id, () => pending);
         await finishReplication(pending, config, context, detail.task);
     });
@@ -242,7 +249,7 @@ export function resumePendingReplication(records: VideoReplicationRecord[], conf
         if (!record) return false;
         const resumable = !record.analyzedAt && (record.status === "queued" || record.status === "running" || record.status === "succeeded");
         if (!resumable) updatePending(item.id, () => undefined);
-        return resumable;
+        return resumable && !item.failed;
     });
     const next = pending.sort((left, right) => right.startedAt - left.startedAt)[0];
     if (!next) return;

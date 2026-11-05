@@ -51,7 +51,14 @@ export async function analyzeVideoTeardown(bundle: VideoTeardownBundle, options:
     for (let start = 0; start < bundle.grids.length; start += batchSize) batches.push(bundle.grids.slice(start, start + batchSize));
     const run = async (key: string, prompt: string, grids: VideoTeardownGrid[]) => {
         const existing = options.existingTask?.(key);
-        if (existing) return parseBackendGenerationResult(await waitForGenerationTask(existing, { signal, timeoutMs: TEXT_TASK_TIMEOUT_MS })).text || "";
+        if (existing) {
+            try {
+                return parseBackendGenerationResult(await waitForGenerationTask(existing, { signal, timeoutMs: TEXT_TASK_TIMEOUT_MS })).text || "";
+            } catch (error) {
+                // 之前提交的那次失败了（或已过期查不到）：这一步重新提交，新任务 ID 会覆盖旧的。
+                if (isAbort(error) || signal.aborted) throw error;
+            }
+        }
         const requirements = videoTeardownTextRequirements(config, grids.length);
         const error = modelCompatibilityError(config, model, requirements);
         if (error) throw new Error(`所选模型不能用于拆解：${error}`);
