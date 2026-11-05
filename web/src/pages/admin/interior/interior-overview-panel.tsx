@@ -7,7 +7,7 @@ import { getAdminInteriorOverview, type AdminInteriorOverview, type InteriorAdmi
 import { adminUserLabel } from "@/services/api/video-replication-admin";
 import { formatInteriorTime, interiorPercent } from "./interior-admin-shared";
 
-export type InteriorAdminTab = "overview" | "records" | "modes" | "styles" | "rooms" | "settings";
+export type InteriorAdminTab = "overview" | "records" | "modes" | "styles" | "rooms" | "knowledge" | "settings";
 
 function rateText(succeeded: number, failed: number) {
     const rate = interiorPercent(succeeded, succeeded + failed);

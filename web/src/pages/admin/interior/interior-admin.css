@@ -316,6 +316,17 @@ textarea.itd-admin-code {
     font-size: 12px;
 }
 
+.itd-admin-cell .itd-admin-knowledge-text {
+    color: var(--admin-text-secondary);
+    line-height: 1.6;
+    white-space: normal;
+}
+
+.itd-admin-knowledge-count {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
 .itd-admin-ellipsis {
     display: block;
     min-width: 0;

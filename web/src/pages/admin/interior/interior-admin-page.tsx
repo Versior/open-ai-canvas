@@ -2,6 +2,7 @@ import { useCallback, useMemo } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminSegmented } from "../ui/controls";
+import { InteriorKnowledgePanel } from "./interior-knowledge-panel";
 import { InteriorModesPanel } from "./interior-modes-panel";
 import { InteriorOverviewPanel, type InteriorAdminTab } from "./interior-overview-panel";
 import { InteriorPresetsPanel } from "./interior-presets-panel";
@@ -15,10 +16,11 @@ const tabs: { value: InteriorAdminTab; label: string; path: string }[] = [
     { value: "modes", label: "出图方式", path: "/admin/interior/modes" },
     { value: "styles", label: "风格", path: "/admin/interior/styles" },
     { value: "rooms", label: "空间", path: "/admin/interior/rooms" },
+    { value: "knowledge", label: "知识库", path: "/admin/interior/knowledge" },
     { value: "settings", label: "设置", path: "/admin/interior/settings" },
 ];
 
-/** 室内设计后台：出图统计、所有用户的出图记录，以及出图方式、风格、空间和全局设置。前台入口由「功能开放」里的室内设计开关控制。 */
+/** 室内设计后台：出图统计、所有用户的出图记录，出图方式、风格、空间、内置知识库和全局设置。前台入口由「功能开放」里的室内设计开关控制。 */
 export default function InteriorAdminPage() {
     const { pathname } = useLocation();
     const navigate = useNavigate();
@@ -47,7 +49,7 @@ export default function InteriorAdminPage() {
     return (
         <AdminPageFrame
             title="室内设计"
-            description="看用户的出图量、成功率和每一次出图的原图、效果图与提示词；配置出图方式、风格、空间和默认模型。模板和片段只在服务端拼接，前台目录不返回。"
+            description="看用户的出图量、成功率和每一次出图的原图、效果图与提示词；配置出图方式、风格、空间和默认模型；查看 3D 模型参考的内置知识库。模板和片段只在服务端拼接，前台目录不返回。"
             actions={<AdminSegmented<InteriorAdminTab> ariaLabel="室内设计后台视图" value={active} onChange={openTab} options={tabs.map((tab) => ({ value: tab.value, label: tab.label }))} />}
             scroll
         >
@@ -56,6 +58,7 @@ export default function InteriorAdminPage() {
             {active === "modes" ? <InteriorModesPanel /> : null}
             {active === "styles" ? <InteriorPresetsPanel key="style" type="style" /> : null}
             {active === "rooms" ? <InteriorPresetsPanel key="room" type="room" /> : null}
+            {active === "knowledge" ? <InteriorKnowledgePanel /> : null}
             {active === "settings" ? <InteriorSettingsPanel /> : null}
         </AdminPageFrame>
     );

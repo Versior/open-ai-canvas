@@ -302,6 +302,7 @@ export const router = createBrowserRouter([
                     { path: "interior/modes", element: <InteriorAdminPage /> },
                     { path: "interior/styles", element: <InteriorAdminPage /> },
                     { path: "interior/rooms", element: <InteriorAdminPage /> },
+                    { path: "interior/knowledge", element: <InteriorAdminPage /> },
                     { path: "interior/settings", element: <InteriorAdminPage /> },
                     { path: "plugins", element: <AdminPluginsPage /> },
                     { path: "workbench-tools", element: <WorkbenchToolsPage /> },
