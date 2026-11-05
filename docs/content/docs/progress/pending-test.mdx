@@ -5,6 +5,15 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 
 # 待测试
 
+## 视频复刻：第二轮补齐（删除记录、设置单独读取、导入时长、口播原因、关键帧不被清理、逐镜商品）
+
+- 已修复：拆解结果里的关键帧写在 `keyframeResourceId`，以前资源引用扫描不认这个字段，拆解 24 小时后没被画布用到的关键帧会被游离资源清理删掉（记录里的关键帧打不开）。现在算作引用；测试环境和开发库里最早的拆解都还不到 24 小时，没有关键帧丢失。
+- 已实现（后端）：`DELETE /admin/video-replication/teardowns/:id` 删除已结束的拆解（任务、分析、日志一个事务删，记审计；关键帧和宫格按资源引用规则清理，被画布等用到的保留，原视频不动）；`GET /admin/video-replication/settings` 单独读设置和口播识别状态，`PATCH` 也返回同一份；近 14 天按日计数改在数据库里分组；后台列表每页超过 100 条按 100 条（原来退回 20）；链接导入可带 `maxDurationSeconds`，解析接口给了时长时下载前就拦、没给时下载后拦，超长视频不存成资源；没识别口播的原因写进 `transcript.note`（不再进 `warnings`，不写服务器配置项名），后台列表给 `transcriptNote`，早期结果从 `warnings` 拆回原因。
+- 已实现（前端）：后台拆解记录每行加删除（确认框说明会删什么、保留什么，进行中的不能删，删完刷新列表和概览数量）；设置页自己读取设置，统计读不出来时照样能改；口播原因只在「口播」那一栏写一次，后台列表不再多出「1 条提示」；视频复刻链接导入时把时长上限交给服务端。拆解分析参考 daihuo-fanpai 逐镜记下商品怎么出现、商品角色和关键颜色，动作写过程并带进提示词，全片总结记下原片商品；分镜、全片结构、后台详情、画布分镜表和报告都显示这几项。
+- 已验证：后端 `go test ./internal/app -run 'VideoReplication|VideoTeardown|ReplicationTeardown|AdminVideo|DeleteAdminVideo|SocialVideo|TestDetachedResourceCleanup'`、`go test ./internal/handler -run 'VideoReplication|SocialVideo|OpenAPI'`、`go test ./internal/repository ./internal/assets` 通过；其中删除记录用真实 ffmpeg 拆出 3 个关键帧和 1 张宫格，第 1 帧被画布用到时只删另外 3 张、保留这一张并说明「画布」，原视频、审计都对；去掉 `keyframeResourceId` 时关键帧清理用例会失败，加上后通过。前端 typecheck、lint、Prettier，`bun test` 相关 9 个文件（146 项）通过。
+- [ ] 浏览器核对后台删除：确认框文案、删除后列表和页签数量刷新、删的是这一页最后一条时回到上一页、被画布用到的图片保留提示。
+- [ ] 用新的分析提示词跑几条真实带货视频，看商品角色和关键颜色判断得准不准、提示词里有没有把动作写全。
+
 ## 视频复刻：后台管理
 
 - 已实现（后端）：「功能开放」新增 `videoReplicationEnabled`（视频复刻）和 `socialVideoImportEnabled`（视频链接导入），都默认开放。关视频复刻后，建拆解、历史列表、详情和 `GET /api/video-replication/config` 返回 403「视频复刻暂未开放」，已经开始的拆解和分析照常完成并保存；关链接导入后建导入任务返回 403，平台列表全标不可用（画布粘贴按普通文字），解析接口池的巡检、自动恢复和订阅同步整轮跳过。新的 `system_settings` 键 `video_replication_settings`：时长上限 10–180 秒（默认 180）、镜头数上限 1–60（默认 60）、是否允许识别口播（默认允许）；建任务时校验，执行时按当时的设置再查时长、镜头数和口播识别；同一幂等键的重放先于这些校验，后台改了设置也返回原任务。后台接口：`GET /admin/video-replication/overview`（按状态的数量、近 7 天 / 今天、用过的人数、已分析数、各平台导入、近 14 个 UTC 日、最近 8 次失败）、`GET /admin/video-replication/teardowns`（所有用户、按状态和用户 / 任务 ID 筛选、分页）、`GET /admin/video-replication/teardowns/:id`、`PATCH /admin/video-replication/settings`（只改给出的字段，存量配置缺的字段以默认值为底，超范围 400，有变化才记审计）。
@@ -13,8 +22,8 @@ description: 当前项目已实现功能的手工验证清单与未确认边界
 - 已验证：后端 `go test ./internal/app -run 'VideoReplication|VideoTeardown|SocialVideo|FeatureAvailability'`（设置默认值、按字段修改、超范围拒绝、审计、旧配置收回范围；拆解按设置拦时长和镜头数；关功能后四个接口 403、已开始的分析照常保存；关链接导入后平台不可用、建导入 403、巡检不跑；后台列表跨用户、状态与关键字筛选、详情 404、统计数字）、`go test ./internal/handler -run 'VideoReplication|SocialVideo|OpenAPI|Feature'`（路由与 OpenAPI 对齐、非管理员 403、部分修改设置、关功能后用户接口 403 而后台照常）通过；前端 typecheck、lint、Prettier、`bun test` 相关 11 个文件（94 项）通过。合并测试环境（:3200 / :8200，临时管理员会话）无头 Chrome 1440×900 浅色 / 深色：四个页签、详情抽屉（原视频能播，2 镜关键帧与描述对上）、筛选空态、设置保存后 `config` 变为 24 镜再改回 60；关链接导入后解析接口页签出现暂停提示、平台列表全部 `available=false`、视频复刻页只剩上传；关视频复刻后侧栏入口消失、页面提示暂未开放；开关最后都已恢复。快手真实链接导入一次约 15 秒完成。控制台无报错（除既有的 antd Switch `size="default"` 弃用提示）。
 - [ ] 配置 whisper.cpp 后核对：口播识别「现在可用」，关掉「允许识别口播」后新拆解不再调用转写服务、结果里写明原因。
 - [ ] 后台调低时长上限（如 30 秒）后，用户上传 / 导入更长的视频被拦下，提示写的是新上限；排队中的长视频按新上限失败。
-- [ ] 拆解记录多的部署（上万条）下概览和记录列表的耗时；PostgreSQL 下的分组计数与按用户关键字筛选。
-- [ ] 拆解记录暂不能在后台删除（关键帧、宫格和原视频是用户资源，要按资源引用规则处理），需要时再做。
+- [ ] 拆解记录多的部署（上万条）下概览和记录列表的耗时；PostgreSQL 下的分组计数（按日分组已有 PostgreSQL 用例，CI 跑）与按用户关键字筛选。
+- [ ] 后台删除拆解记录已实现（见上一节）；用户自己删除记录还没做，要不要开放待定。
 
 ## 视频链接解析：第三方接口池
 
