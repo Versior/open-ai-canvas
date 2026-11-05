@@ -168,6 +168,58 @@ func (s *Service) broadcastCloudAgentPiContextPressure(userID, runID string, usa
 	return s.broadcastAgentEvent(userID, runID, "context_pressure", payload)
 }
 
+// broadcastCloudAgentModelUsage 在普通模型步骤成功后发出 model_usage：这一步的模型、token 用量与上游耗时。
+// 这是展示用读数，查询或写入失败只记日志，不影响本步结果，也不重试。
+func (s *Service) broadcastCloudAgentModelUsage(userID, runID string, task *model.Task) {
+	if task == nil {
+		return
+	}
+	calls, err := s.repo.APICallLogsByTask(userID, task.ID)
+	if err != nil {
+		log.Printf("[Agent] model usage lookup failed run=%s task=%s: %v", runID, task.ID, err)
+		calls = nil
+	}
+	if err := s.broadcastAgentEvent(userID, runID, "model_usage", cloudAgentModelUsagePayload(task, calls)); err != nil {
+		log.Printf("[Agent] model usage event not recorded run=%s task=%s: %v", runID, task.ID, err)
+	}
+}
+
+// cloudAgentModelUsagePayload 汇总一个模型步骤的上游调用日志（一个任务可能有多次上游调用）。
+// token 只累加上游回传了用量的调用，没有回传时 usageAvailable=false，不猜用量；
+// 耗时是全部调用之和（含失败重试），日志里没有耗时才退回任务自己的开始/完成时间。
+func cloudAgentModelUsagePayload(task *model.Task, calls []model.ApiCallLog) map[string]any {
+	modelName := task.Model
+	var inputTokens, outputTokens, cachedTokens, durationMs int64
+	usageAvailable := false
+	for _, call := range calls {
+		if name := strings.TrimSpace(call.Model); name != "" {
+			modelName = name
+		}
+		durationMs += max(call.DurationMs, 0)
+		if call.UsageAvailable {
+			usageAvailable = true
+			inputTokens += call.InputTokens
+			outputTokens += call.OutputTokens
+			cachedTokens += call.CachedTokens
+		}
+	}
+	if durationMs <= 0 && task.StartedAt != nil && task.CompletedAt != nil {
+		durationMs = task.CompletedAt.Sub(*task.StartedAt).Milliseconds()
+	}
+	payload := map[string]any{
+		"taskId":         task.ID,
+		"model":          modelName,
+		"inputTokens":    inputTokens,
+		"outputTokens":   outputTokens,
+		"cachedTokens":   cachedTokens,
+		"usageAvailable": usageAvailable,
+	}
+	if durationMs > 0 {
+		payload["durationMs"] = durationMs
+	}
+	return payload
+}
+
 // cloudAgentModelStepRetries 是单步模型调用首次失败后的最大重试次数。
 const cloudAgentModelStepRetries = 3
 
@@ -371,6 +423,9 @@ func (s *Service) runCloudAgentModelStep(ctx context.Context, userID, runID stri
 		return nil, false, fmt.Errorf("decode model result: %w", err)
 	}
 	if !compactionSummary {
+		// 本步无论提交还是被拒绝重做都已调用过模型。用量事件延后到本步提交或释放之后，
+		// 保证它排在同一 messageId（即任务 ID）的 assistant_message 之后，前端才能挂到这条回复上。
+		defer s.broadcastCloudAgentModelUsage(userID, runID, task)
 		if violation := cloudAgentOutputViolation(result.Text, len(result.ToolCalls)); violation != "" {
 			// 在保存 Calls 或交给运行时执行前整批拒绝；不能截取前几项造成半批写入。
 			// 释放本步任务后沿用现有重试上限，模型调用仍正常计费，不执行任何工具。

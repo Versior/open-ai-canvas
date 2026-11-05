@@ -47,6 +47,8 @@ export function AdminSelect<V extends string = string>({
     size?: "sm" | "md";
     ariaLabel?: string;
     className?: string;
+    /** 表单里和输入框并排时用 field（与输入框同样的小圆角）；默认 pill。 */
+    appearance?: "soft" | "pill" | "field";
 }) {
     return <UnifiedSelect {...props} size={size === "sm" ? "small" : "middle"} className={cn("admin-select", className)} aria-label={ariaLabel} onChange={(value) => onChange?.(value as V)} />;
 }

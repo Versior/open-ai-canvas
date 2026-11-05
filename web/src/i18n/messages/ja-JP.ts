@@ -132,6 +132,7 @@ export const jaJP: Messages = {
             recovery: { title: "パスワードの再設定", description: "アカウントのメールを確認してから、新しいパスワードを設定します。" },
         },
         brandFilm: "{{brand}} ブランドムービー",
+        brandPoster: "{{brand}}のブランドポスター",
         playVideo: "ブランドムービーを再生",
         videoPlaying: "制作が進行中",
         backHome: "ホームに戻る",

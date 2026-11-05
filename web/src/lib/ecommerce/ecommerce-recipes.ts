@@ -549,19 +549,6 @@ export function createEcommerceStyleFromPreset(id: string): EcommerceStyle | und
     return preset ? { ...createEcommerceStyle(preset.style.name), ...preset.style } : undefined;
 }
 
-// ── 画幅 ────────────────────────────────────────────────────
-
-export type EcommerceAspectRatio = { id: string; label: string; hint: string };
-
-export const ECOMMERCE_ASPECT_RATIOS: EcommerceAspectRatio[] = [
-    { id: "1:1", label: "1:1", hint: "列表主图，淘宝/亚马逊通用" },
-    { id: "4:5", label: "4:5", hint: "小红书/Instagram 竖版" },
-    { id: "3:4", label: "3:4", hint: "淘宝详情页与主图" },
-    { id: "9:16", label: "9:16", hint: "抖音/视频号/快拍" },
-    { id: "16:9", label: "16:9", hint: "横版海报与头图" },
-    { id: "2:3", label: "2:3", hint: "服饰类竖版主图" },
-];
-
 // ── 字体风格 ────────────────────────────────────────────────
 
 /**
@@ -594,18 +581,6 @@ export function ecommerceTypographyPresetFor(typography: string) {
 }
 
 // ── 图上文字的语言 ─────────────────────────────────────────
-
-export type EcommerceLanguageId = "zh" | "en" | "bilingual";
-
-export const ECOMMERCE_LANGUAGES: { id: EcommerceLanguageId; name: string; hint: string }[] = [
-    { id: "zh", name: "中文", hint: "国内平台：淘宝、京东、拼多多、抖音、小红书" },
-    { id: "en", name: "英文", hint: "海外平台：Amazon、Walmart、Etsy、TikTok Shop" },
-    { id: "bilingual", name: "中英对照", hint: "国内主图带英文副标，或海外站的中文品牌露出" },
-];
-
-export function ecommerceLanguage(id: string | undefined) {
-    return ECOMMERCE_LANGUAGES.find((item) => item.id === id);
-}
 
 /** 图上文字的语言，写成一句给模型的话。 */
 export function ecommerceLanguageRule(id: string | undefined) {

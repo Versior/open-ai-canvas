@@ -511,5 +511,6 @@ func migrations() []tableMigration {
 		migrateTable[model.AgentPet]("agent_pets"),
 		migrateTable[model.UserAgentPet]("user_agent_pets"),
 		migrateTable[model.UserAgentPetSelection]("user_agent_pet_selections"),
+		migrateTable[model.StudioModelAsset]("studio_model_assets"),
 	}
 }

@@ -563,12 +563,24 @@ export function pluginWorkflowCapabilityConfig(protocol: ModelProtocol, workflow
     return { ...fallback, video: workflowVideoCapabilityConfig(fields, fallback.video!) };
 }
 
-export function modelCapabilityConfigFor(config: { channels: Array<{ id: string; models: string[]; modelCosts?: Array<{ model: string; capabilityConfig?: ModelCapabilityConfig; protocol?: ModelProtocol }> }> }, model: string) {
+type ModelCapabilitySource = { channels: Array<{ id: string; models: string[]; modelCosts?: Array<{ model: string; capabilityConfig?: ModelCapabilityConfig; protocol?: ModelProtocol }> }> };
+
+function modelCostFor(config: ModelCapabilitySource, model: string) {
     const separator = model.indexOf("::");
     const channelId = separator >= 0 ? model.slice(0, separator) : "";
     const modelName = separator >= 0 ? model.slice(separator + 2) : model;
     const channel = config.channels.find((item) => item.id === channelId) || config.channels.find((item) => item.models.includes(modelName));
-    const cost = channel?.modelCosts?.find((item) => item.model === modelName);
+    return { modelName, cost: channel?.modelCosts?.find((item) => item.model === modelName) };
+}
+
+/** 管理员给这个文本模型声明的上下文窗口；没有声明时返回 undefined，不拿默认值冒充（服务端同样按“未知窗口”处理）。 */
+export function configuredTextContextWindow(config: ModelCapabilitySource, model: string): number | undefined {
+    const window = modelCostFor(config, model).cost?.capabilityConfig?.text?.contextWindowTokens;
+    return typeof window === "number" && Number.isFinite(window) && window > 0 ? window : undefined;
+}
+
+export function modelCapabilityConfigFor(config: ModelCapabilitySource, model: string) {
+    const { modelName, cost } = modelCostFor(config, model);
     const fallback = defaultModelCapabilityConfig(cost?.protocol, modelName);
     if (!cost?.capabilityConfig) return fallback;
     const capabilityConfig = normalizeModelCapabilityConfig(cost.capabilityConfig);

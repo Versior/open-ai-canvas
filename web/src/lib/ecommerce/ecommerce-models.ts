@@ -20,7 +20,6 @@
  * 手上还没有模特实拍的人，先生成一张，再用它去锁后面所有的图。
  */
 import type { EcommerceProductView } from "./ecommerce-contract";
-import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
 export type EcommerceModelKind = "preset" | "custom";
 
@@ -67,43 +66,9 @@ export const ECOMMERCE_MODEL_REFERENCE_SUFFIX =
 
 export const ECOMMERCE_MODEL_PRESETS: EcommerceModelPreset[] = [];
 
-export function filterEcommerceModels(models: EcommerceModel[], query: string, order = "recent") {
-    const search = query.trim().toLocaleLowerCase();
-    return models
-        .filter((model) => !search || [model.name, ...model.tags].some((value) => value.toLocaleLowerCase().includes(search)))
-        .sort((a, b) => order === "name" ? a.name.localeCompare(b.name, "zh-CN") : b.lastUsedAt.localeCompare(a.lastUsedAt));
-}
-
-export function canSaveCanvasImageAsModel(node: CanvasNodeData | null | undefined) {
-    return Boolean(node?.type === CanvasNodeType.Image && node.metadata?.storageKey?.trim());
-}
-
-export function createEcommerceModel(name = "新模特", refs: string[] = []): EcommerceModel {
-    const now = new Date().toISOString();
-    return {
-        id: `model-${Math.random().toString(36).slice(2, 10)}`,
-        name,
-        kind: "custom",
-        refs: [...refs],
-        tags: [],
-        createdAt: now,
-        lastUsedAt: now,
-    };
-}
-
-/** 公共起手式生成参考图用的完整提示词。 */
-export function ecommerceModelPresetPrompt(preset: EcommerceModelPreset) {
-    return `${preset.brief}${ECOMMERCE_MODEL_REFERENCE_SUFFIX}`;
-}
-
 export function ecommerceModelPresetById(id: string | undefined) {
     if (!id) return undefined;
     return ECOMMERCE_MODEL_PRESETS.find((preset) => preset.id === id);
-}
-
-export function ecommerceModelById(id: string | undefined, custom: EcommerceModel[]) {
-    if (!id) return undefined;
-    return custom.find((model) => model.id === id);
 }
 
 /**
@@ -114,11 +79,6 @@ export function ecommerceModelById(id: string | undefined, custom: EcommerceMode
  */
 export function ecommerceModelReady(model: EcommerceModel | undefined) {
     return Boolean(model && model.refs.some((ref) => Boolean(ref)));
-}
-
-/** 参考图数量。卡片上那一行统计读它。 */
-export function ecommerceModelRefCount(model: EcommerceModel | undefined) {
-    return model ? model.refs.filter(Boolean).length : 0;
 }
 
 /**
@@ -140,16 +100,6 @@ export function ecommerceModelLockBlock(model: EcommerceModel | undefined, pose?
     ];
     if (pose?.trim()) lines.push(`姿势：${pose.trim()}`);
     return [`【模特锁定】${value.name}`, ...lines].join("\n");
-}
-
-/** 参考图按顺序返回，用于接成生成链路的参考图。 */
-export function ecommerceModelRefs(model: EcommerceModel | undefined) {
-    return model ? model.refs.filter(Boolean) : [];
-}
-
-/** 卡片封面：第一张参考图。 */
-export function ecommerceModelCoverRef(model: EcommerceModel | undefined) {
-    return model?.refs.find(Boolean);
 }
 
 // 商品视角与模特参考是两套概念（一个看物品的构造，一个看人的呈现），

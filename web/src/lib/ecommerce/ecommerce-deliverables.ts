@@ -277,11 +277,3 @@ export const ECOMMERCE_ALL_DELIVERABLE_SETS: EcommerceDeliverableSet[] = [
 export function ecommerceDeliverableSet(id: string) {
     return ECOMMERCE_ALL_DELIVERABLE_SETS.find((set) => set.id === id) || ECOMMERCE_DELIVERABLE_SETS.find((set) => set.id === id);
 }
-
-/** 轻量起手：只要一张时用它。单张不是"小号的一整套"，就是一张。 */
-export const ECOMMERCE_SINGLE_SLOT: EcommerceDeliverableSet = {
-    id: "single",
-    name: "单张主图",
-    hint: "只要一张，最轻",
-    slots: [{ id: "single-1", title: "主图", duty: "单张起手，之后可以随时补成整套", presetId: "studio-white" }],
-};

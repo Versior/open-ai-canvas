@@ -19,7 +19,6 @@ type CanvasZoomControlsProps = {
     isMiniMapOpen: boolean;
     onToggleMiniMap: () => void;
     onOpenShortcuts: () => void;
-    showProfessionalControls?: boolean;
     containerRef?: RefObject<HTMLDivElement | null>;
     /** 紧凑且去掉底板：工具条与画布融为一体，靠图标对比度和悬停反馈区分。 */
     bare?: boolean;
@@ -27,7 +26,7 @@ type CanvasZoomControlsProps = {
 
 const QUICK_ZOOM_LEVELS = [0.25, 0.5, 1, 2] as const;
 
-export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoArrange, hideNodeConnections = false, onHideNodeConnectionsChange, isMiniMapOpen, onToggleMiniMap, onOpenShortcuts, showProfessionalControls = true, containerRef, bare = false }: CanvasZoomControlsProps) {
+export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoArrange, hideNodeConnections = false, onHideNodeConnectionsChange, isMiniMapOpen, onToggleMiniMap, onOpenShortcuts, containerRef, bare = false }: CanvasZoomControlsProps) {
     const theme = canvasThemes[useActiveTheme()];
     const rootRef = useRef<HTMLDivElement>(null);
     const liveScaleRef = useRef(scale);
@@ -98,10 +97,20 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
     }
 
     const items: FloatingDockEntry[] = [
-        ...(showProfessionalControls ? [{ id: "zoom-minimap", label: isMiniMapOpen ? "关闭小地图" : "打开小地图", icon: <Compass />, active: isMiniMapOpen, onClick: onToggleMiniMap }] : []),
+        { id: "zoom-minimap", label: isMiniMapOpen ? "关闭小地图" : "打开小地图", icon: <Compass />, active: isMiniMapOpen, onClick: onToggleMiniMap },
         { id: "zoom-fit", label: "适应画布", icon: <Focus />, onClick: onFitContent },
-        ...(showProfessionalControls && onAutoArrange ? [{ id: "zoom-auto-arrange", label: "自动整理节点", icon: <LayoutTemplate />, onClick: onAutoArrange }] : []),
-        ...(showProfessionalControls && onHideNodeConnectionsChange ? [{ id: "zoom-hide-node-connections", label: hideNodeConnections ? "显示全部连线" : "设置隐藏节点连线", icon: hideNodeConnections ? <Eye /> : <EyeOff />, active: hideNodeConnections, onClick: () => onHideNodeConnectionsChange(!hideNodeConnections) }] : []),
+        ...(onAutoArrange ? [{ id: "zoom-auto-arrange", label: "自动整理节点", icon: <LayoutTemplate />, onClick: onAutoArrange }] : []),
+        ...(onHideNodeConnectionsChange
+            ? [
+                  {
+                      id: "zoom-hide-node-connections",
+                      label: hideNodeConnections ? "显示全部连线" : "设置隐藏节点连线",
+                      icon: hideNodeConnections ? <Eye /> : <EyeOff />,
+                      active: hideNodeConnections,
+                      onClick: () => onHideNodeConnectionsChange(!hideNodeConnections),
+                  },
+              ]
+            : []),
         { kind: "separator", id: "zoom-separator" },
         { id: "zoom-out", label: "缩小画布", icon: <Minus />, onClick: () => commitScale(liveScaleRef.current - 0.1) },
         {
@@ -114,7 +123,8 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
             onClick: () => setPrecisionOpen((value) => !value),
         },
         { id: "zoom-in", label: "放大画布", icon: <Plus />, onClick: () => commitScale(liveScaleRef.current + 0.1) },
-        ...(showProfessionalControls ? [{ kind: "separator" as const, id: "help-separator" }, { id: "zoom-shortcuts", label: "画布快捷键", icon: <HelpCircle />, onClick: onOpenShortcuts }] : []),
+        { kind: "separator", id: "help-separator" },
+        { id: "zoom-shortcuts", label: "画布快捷键", icon: <HelpCircle />, onClick: onOpenShortcuts },
     ];
 
     return (

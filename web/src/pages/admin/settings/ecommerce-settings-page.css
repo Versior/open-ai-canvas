@@ -1,301 +1,555 @@
-.admin-ecommerce {
-    max-width: 1180px;
+/* 后台「电商生图台」：商品档案、出图提示词、套图模板三个页签共用的卡片、字段与工具栏，只用后台 token。 */
+.ecm {
+    display: grid;
+    gap: var(--space-4);
     width: 100%;
-    margin-inline: auto;
-}
-.admin-ecommerce-save.ant-btn:not(:disabled) {
-    background: var(--admin-text);
-    border-color: var(--admin-text);
-    color: var(--admin-surface);
-}
-.admin-ecommerce-capability-workspace {
-    display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    gap: var(--space-5);
-    align-items: start;
-}
-.admin-ecommerce-capability-nav {
-    display: grid;
-    gap: var(--space-2);
-}
-.admin-ecommerce-capability-nav button {
-    display: grid;
-    gap: var(--space-1);
-    padding: var(--space-3);
-    text-align: left;
-    background: var(--admin-surface);
-    color: var(--admin-text);
-    border: 1px solid transparent;
-    border-radius: var(--r-md);
-    cursor: pointer;
-    font: inherit;
-}
-.admin-ecommerce-capability-nav button:hover,
-.admin-ecommerce-capability-nav button[aria-pressed="true"] {
-    background: var(--admin-surface-hover, var(--muted));
-    border-color: var(--admin-border);
-}
-.admin-ecommerce-capability-nav button:focus-visible {
-    outline: 2px solid var(--admin-text);
-    outline-offset: 2px;
-}
-.admin-ecommerce-capability-nav span,
-.admin-ecommerce-note {
-    color: var(--admin-text-muted);
-    font-size: var(--fs-caption);
-    line-height: 1.7;
-}
-.admin-ecommerce-capability-editor {
     min-width: 0;
-    padding: var(--space-4);
+    padding-bottom: var(--space-6);
+}
+.ecm-card {
+    min-width: 0;
     border: 1px solid var(--admin-border);
     border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
 }
-.admin-ecommerce-capability-editor textarea {
-    line-height: 1.8;
-    min-height: 320px;
-    resize: vertical;
+/* 「已保存」与「有未保存修改」占同样宽度，切换时页头不跳。 */
+.ecm-save-state {
+    display: inline-flex;
+    justify-content: flex-end;
+    min-width: 92px;
 }
-.admin-ecommerce-specs {
-    margin-block: var(--space-4);
-    font-size: var(--fs-caption);
-}
-.admin-ecommerce-specs ul {
-    padding: 0;
-    margin-block: var(--space-3);
-    list-style: none;
-}
-.admin-ecommerce-specs li {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    gap: var(--space-2);
-    padding-block: var(--space-2);
-    border-bottom: 1px solid var(--admin-border);
-}
-.admin-ecommerce-specs li > span:last-child {
-    color: var(--admin-text-muted);
-}
-@media (max-width: 760px) {
-    .admin-ecommerce-capability-workspace {
-        grid-template-columns: minmax(0, 1fr);
-    }
-    .admin-ecommerce-capability-nav {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-.admin-ecommerce .admin-settings-status-bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) 0;
-    color: var(--admin-text-muted);
-    font-size: 12px;
-}
-.admin-ecommerce .admin-settings-status-bar > span:last-child {
-    margin-left: auto;
-}
-.admin-ecommerce .admin-settings-section {
-    border: 1px solid var(--admin-border);
-}
-.admin-ecommerce .admin-settings-section-summary {
-    padding: var(--space-4);
-    border-bottom: 1px solid var(--admin-border);
-}
-.admin-ecommerce .admin-settings-section-content {
-    padding: var(--space-4);
-}
-.admin-ecommerce .admin-ecommerce-features {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0 var(--space-5);
-}
-.admin-ecommerce-features .ant-form-item {
+.ecm-hint {
     margin: 0;
-    padding: var(--space-3) 0;
-    border-bottom: 1px solid var(--admin-border);
-}
-.admin-ecommerce-features .ant-form-item-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px;
-    gap: var(--space-3);
-    align-items: start;
-}
-.admin-ecommerce-features .ant-form-item-label {
-    text-align: left;
-    padding: 0;
-}
-.admin-ecommerce-features .ant-form-item-control {
-    min-width: 0;
-    display: contents;
-}
-.admin-ecommerce-features .ant-form-item-control-input {
-    grid-column: 2;
-    grid-row: 1;
-    min-height: 24px;
-}
-.admin-ecommerce-features .ant-form-item-extra {
-    grid-column: 1 / -1;
-    max-width: none;
+    color: var(--admin-text-muted);
     font-size: 12px;
     line-height: 1.6;
-    color: var(--admin-text-muted);
 }
-.admin-ecommerce-prompt-nav {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+.ecm-intro {
+    max-width: 880px;
+    margin: 0 0 var(--space-3);
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* ---------- 页签 ---------- */
+/* 窄屏时页签条不能把整页撑宽：放不下的页签由 AntD 收进「更多」。 */
+.ecm-tabs {
+    min-width: 0;
+}
+.ecm-tabs > .ant-tabs-nav {
     margin-bottom: var(--space-4);
 }
-.admin-ecommerce-prompt-nav button {
-    border: 1px solid var(--admin-border);
-    border-radius: var(--r-md);
-    padding: var(--space-2) var(--space-3);
+.ecm-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.ecm-tab em {
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--admin-surface-2);
     color: var(--admin-text-muted);
-    background: var(--admin-surface);
-    cursor: pointer;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 16px;
 }
-.admin-ecommerce-prompt-nav button[aria-pressed="true"] {
-    background: var(--admin-surface-hover, var(--muted));
-    color: var(--admin-text);
-    border-color: var(--admin-text-muted);
+.ecm-tab-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--admin-status-warning);
 }
-.admin-ecommerce-prompt-nav button:focus-visible {
-    outline: 2px solid var(--admin-text);
-    outline-offset: 2px;
+
+/* ---------- 字段 ---------- */
+.ecm-field {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    min-width: 0;
 }
-.admin-ecommerce-prompt-editor .ant-form-item {
-    margin-bottom: var(--space-2);
+.ecm-field > span {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
 }
-.admin-ecommerce-prompt-editor textarea {
-    line-height: 1.8;
+.ecm-field > small {
+    color: var(--admin-text-muted);
+    font-size: 11px;
+    line-height: 1.5;
 }
-.admin-ecommerce-prompt-heading {
+.ecm-field-head {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    margin-bottom: var(--space-2);
-    color: var(--admin-text);
+    gap: var(--space-2);
+    min-height: 24px;
 }
-.admin-ecommerce-prompt-heading .ant-btn {
+.ecm-field-head > label {
+    color: var(--admin-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+.ecm-field-head > .ant-btn {
+    margin-left: auto;
     color: var(--admin-text-muted);
 }
-.admin-ecommerce .ant-form-item-label > label:has(.admin-ecommerce-prompt-heading) {
-    width: 100%;
+.ecm-field-count {
+    color: var(--admin-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
 }
-.admin-ecommerce-model {
+
+/* ---------- 商品档案 ---------- */
+.ecm-dossier-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--admin-divider);
+}
+.ecm-dossier-switch strong {
+    color: var(--admin-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+.ecm-dossier-switch p {
+    margin: 2px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.ecm-dossier-prompt {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5) var(--space-5);
+}
+.ecm-dossier-textarea.ant-input {
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+/* ---------- 出图提示词 ---------- */
+.ecm-prompts {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+}
+.ecm-prompts-rail {
+    min-width: 0;
+    border-right: 1px solid var(--admin-divider);
+}
+.ecm-prompts-rail-inner {
+    position: sticky;
+    top: var(--space-3);
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    gap: var(--space-2);
+    max-height: calc(100dvh - 120px);
+    padding: var(--space-3);
+}
+.ecm-prompts-total {
+    margin: 0;
+    padding-inline: 4px;
+    color: var(--admin-text-muted);
+    font-size: 11px;
+}
+.ecm-prompts-nav {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.ecm-prompts-section {
+    display: grid;
+    gap: 2px;
+}
+.ecm-prompts-section-title {
+    padding: 0 8px 4px;
+    color: var(--admin-text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+.ecm-prompts-nav button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--admin-radius);
+    background: transparent;
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color var(--admin-motion),
+        color var(--admin-motion);
+}
+.ecm-prompts-nav button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ecm-prompts-nav button:hover {
+    background: var(--admin-nav-hover);
+    color: var(--admin-text);
+}
+.ecm-prompts-nav button[aria-pressed="true"] {
+    background: var(--admin-nav-active);
+    color: var(--admin-text);
+    font-weight: 600;
+}
+.ecm-prompts-nav button:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 1px;
+}
+.ecm-prompts-nav em {
+    flex: none;
+    color: var(--admin-status-info);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 500;
+}
+.ecm-prompts-main {
+    display: grid;
+    align-content: start;
+    gap: var(--space-4);
+    min-width: 0;
+    padding: var(--space-4) var(--space-5) var(--space-5);
+}
+.ecm-prompts-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+.ecm-prompts-head h3 {
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 15px;
+    font-weight: 600;
+}
+.ecm-prompts-head p {
+    margin: 4px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.ecm-prompts-entries {
+    display: grid;
+    gap: var(--space-4);
+}
+.ecm-prompt {
+    display: grid;
+    gap: 6px;
+}
+
+/* ---------- 套图模板 ---------- */
+.ecm-templates {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+}
+.ecm-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+}
+.ecm-toolbar-note {
+    flex: 1 1 280px;
+    margin: 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+.ecm-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+}
+.ecm-inline-field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+.ecm-inline-field .ant-select {
+    min-width: 120px;
+}
+.ecm-library {
+    --etc-height: clamp(520px, calc(100dvh - 260px), 760px);
     padding: var(--space-4);
-    margin-top: var(--space-4);
+}
+.ecm-curated {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-4);
+}
+.ecm-curated-list {
+    position: sticky;
+    top: var(--space-3);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--space-2);
+    max-height: calc(100dvh - 120px);
+    padding: var(--space-3);
+}
+.ecm-curated-rows {
+    display: grid;
+    align-content: start;
+    gap: 2px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.ecm-template-row {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 0;
+    border-radius: var(--admin-radius);
+    background: transparent;
+    color: var(--admin-text);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--admin-motion);
+}
+.ecm-template-row:hover {
+    background: var(--admin-nav-hover);
+}
+.ecm-template-row[aria-pressed="true"] {
+    background: var(--admin-nav-active);
+}
+.ecm-template-row:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 1px;
+}
+.ecm-template-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.ecm-template-row-head strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ecm-template-row-head .admin-status-badge {
+    flex: none;
+    font-size: 11px;
+}
+.ecm-template-row-meta {
+    overflow: hidden;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ecm-empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-2);
+}
+
+/* 编辑区 */
+.ecm-form-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+    padding: var(--space-4) var(--space-5);
+    border-bottom: 1px solid var(--admin-divider);
+}
+.ecm-form-title {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+.ecm-form-title > span {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+.ecm-form-title h3 {
+    margin: 2px 0 0;
+    overflow: hidden;
+    color: var(--admin-text);
+    font-size: 15px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.ecm-form-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+}
+.ecm-form-body {
+    display: grid;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5) var(--space-5);
+}
+.ecm-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-4);
+}
+/* 统一选择器默认 36px 高，这里和同一行的后台输入框（32px）对齐。 */
+.ecm-form-grid .ant-select.app-unified-select {
+    width: 100%;
+    min-height: 32px;
+    height: 32px;
+}
+.ecm-shots {
+    display: grid;
+    gap: var(--space-3);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--admin-divider);
+}
+.ecm-shots-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+.ecm-shots-head strong {
+    color: var(--admin-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+.ecm-shots-head span {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+.ecm-shots ol {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.ecm-shot {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-3);
+    padding: var(--space-3);
     border: 1px solid var(--admin-border);
     border-radius: var(--admin-radius-lg);
     background: var(--admin-surface);
 }
-.admin-ecommerce-model-fields {
+.ecm-shot-index {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-    gap: var(--space-3);
-}
-.admin-ecommerce-upload {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    padding-block: var(--space-3);
-    margin-right: var(--space-3);
-    font-size: 12px;
-}
-.admin-ecommerce-template-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-    margin-block: var(--space-3);
-}
-.admin-ecommerce-template-import {
-    margin-block: var(--space-4);
-    color: var(--admin-text-muted);
-}
-.admin-ecommerce-template-import summary {
-    cursor: pointer;
-    color: var(--admin-text);
-}
-.admin-ecommerce-template-import p {
-    margin-block: var(--space-3);
-}
-.admin-ecommerce-template-workspace {
-    display: grid;
-    grid-template-columns: 240px minmax(0, 1fr);
-    gap: var(--space-5);
-    align-items: start;
-}
-.admin-ecommerce-template-list {
-    display: grid;
-    gap: var(--space-2);
-    max-height: 560px;
-    overflow-y: auto;
-    margin-top: var(--space-3);
-}
-.admin-ecommerce-template-list button {
-    display: grid;
-    gap: var(--space-1);
-    padding: var(--space-3);
-    text-align: left;
-    border: 1px solid var(--admin-border);
-    border-radius: var(--r-md);
+    width: 24px;
+    height: 24px;
+    margin-top: 4px;
+    place-items: center;
+    border-radius: 999px;
     background: var(--admin-surface);
-    color: var(--admin-text);
-    cursor: pointer;
-}
-.admin-ecommerce-template-list button[aria-pressed="true"] {
-    border-color: var(--admin-text-muted);
-    background: var(--admin-surface-hover, var(--muted));
-}
-.admin-ecommerce-template-list span {
+    box-shadow: inset 0 0 0 1px var(--admin-border-strong);
+    color: var(--admin-text-secondary);
     font-size: 12px;
-    color: var(--admin-text-muted);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
 }
-.admin-ecommerce-template-fields {
+.ecm-shot-fields {
+    display: grid;
+    gap: var(--space-2);
     min-width: 0;
-    display: grid;
-    gap: var(--space-4);
-    border: 0;
-    padding: 0;
 }
-.admin-ecommerce-template-fields label {
-    display: grid;
-    gap: var(--space-2);
-    font-size: 12px;
-    color: var(--admin-text-muted);
+.ecm-shot-actions {
+    display: flex;
+    gap: 2px;
 }
-.admin-ecommerce-template-shots {
-    display: grid;
-    gap: var(--space-4);
+.ecm-shot-add.ant-btn {
+    height: 36px;
+    color: var(--admin-text-secondary);
 }
-.admin-ecommerce-template-shots > div {
+
+/* 导入弹窗 */
+.ecm-import {
     display: grid;
     gap: var(--space-3);
-    padding-block: var(--space-3);
-    border-top: 1px solid var(--admin-border);
 }
-.admin-ecommerce-template-editor select {
-    padding: var(--space-2);
-    margin-left: var(--space-2);
-    border: 1px solid var(--admin-border);
-    border-radius: var(--r-md);
-    color: var(--admin-text);
-    background: var(--admin-surface);
+.ecm-import .ant-select {
+    width: 200px;
 }
-@media (max-width: 760px) {
-    .admin-ecommerce-template-workspace {
+.ecm-import-json.ant-input {
+    font-family: var(--admin-font-mono);
+    font-size: 12px;
+}
+
+@media (max-width: 1080px) {
+    .ecm-curated {
         grid-template-columns: minmax(0, 1fr);
     }
+    .ecm-curated-list {
+        position: static;
+        max-height: 320px;
+    }
 }
-@media (max-width: 760px) {
-    .admin-ecommerce .admin-ecommerce-features,
-    .admin-ecommerce-model-fields {
+@media (max-width: 860px) {
+    .ecm-prompts {
         grid-template-columns: minmax(0, 1fr);
+    }
+    .ecm-prompts-rail {
+        border-right: 0;
+        border-bottom: 1px solid var(--admin-divider);
+    }
+    .ecm-prompts-rail-inner {
+        position: static;
+        max-height: 300px;
+    }
+    .ecm-prompts-main,
+    .ecm-dossier-prompt,
+    .ecm-form-body {
+        padding-inline: var(--space-4);
+    }
+    .ecm-dossier-switch,
+    .ecm-form-head {
+        padding-inline: var(--space-4);
+    }
+}
+@media (max-width: 640px) {
+    .ecm-form-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .ecm-shot {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .ecm-shot-index {
+        display: none;
+    }
+    .ecm-library {
+        padding: var(--space-3);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ecm-prompts-nav button,
+    .ecm-template-row {
+        transition: none;
     }
 }

@@ -13,100 +13,6 @@
  * 「不复刻清单」做成不可清空的默认值，并且逐条写进提示词——让模型知道
  * 参考图里的品牌标识、模特面孔、原创文案、装饰图形一个都不能搬。
  */
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
-
-export const ECOMMERCE_REPLICA_REFERENCE_HANDLE = "replica-reference";
-export const ECOMMERCE_REPLICA_PRODUCT_HANDLE = "replica-product";
-
-export type EcommerceReplicaInputs = {
-    ordered: { node: CanvasNodeData; role: "reference" | "product" }[];
-    referenceImages: CanvasNodeData[];
-    productImages: CanvasNodeData[];
-    unassignedImages: CanvasNodeData[];
-    unassignedConnections: CanvasConnection[];
-};
-
-/** 为角色唯一可确定的旧版复刻连线补槽位；有歧义时保持原样交给用户处理。 */
-export function migrateLegacyEcommerceReplicaConnections(nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const byId = new Map(nodes.map((node) => [node.id, node]));
-    const assignments = new Map<CanvasConnection, string>();
-
-    for (const replica of nodes) {
-        if (replica.type !== CanvasNodeType.Replica) continue;
-        const incoming = connections.filter((connection) => {
-            const source = byId.get(connection.fromNodeId);
-            return connection.toNodeId === replica.id && connection.relation !== "batch-output" && source?.type === CanvasNodeType.Image && Boolean(source.metadata?.content || source.metadata?.storageKey);
-        });
-        const references = incoming.filter((connection) => connection.toHandleId === ECOMMERCE_REPLICA_REFERENCE_HANDLE);
-        const products = incoming.filter((connection) => connection.toHandleId === ECOMMERCE_REPLICA_PRODUCT_HANDLE);
-        const legacy = incoming.filter((connection) => !connection.toHandleId);
-        const unknown = incoming.some((connection) => connection.toHandleId && connection.toHandleId !== ECOMMERCE_REPLICA_REFERENCE_HANDLE && connection.toHandleId !== ECOMMERCE_REPLICA_PRODUCT_HANDLE);
-        if (unknown || references.length > 1 || products.length > 1 || !legacy.length) continue;
-
-        if (!references.length && !products.length && (legacy.length === 1 || legacy.length === 2) && new Set(legacy.map((connection) => connection.fromNodeId)).size === legacy.length) {
-            assignments.set(legacy[0], ECOMMERCE_REPLICA_REFERENCE_HANDLE);
-            if (legacy[1]) assignments.set(legacy[1], ECOMMERCE_REPLICA_PRODUCT_HANDLE);
-            continue;
-        }
-
-        if (legacy.length !== 1 || references.length + products.length !== 1) continue;
-        const assigned = references[0] || products[0];
-        if (assigned.fromNodeId === legacy[0].fromNodeId) continue;
-        assignments.set(legacy[0], references.length ? ECOMMERCE_REPLICA_PRODUCT_HANDLE : ECOMMERCE_REPLICA_REFERENCE_HANDLE);
-    }
-
-    return assignments.size ? connections.map((connection) => (assignments.has(connection) ? { ...connection, toHandleId: assignments.get(connection) } : connection)) : connections;
-}
-
-export function ecommerceReplicaInputNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]): EcommerceReplicaInputs {
-    const byId = new Map(nodes.map((node) => [node.id, node]));
-    const ordered: EcommerceReplicaInputs["ordered"] = [];
-    const unassignedImages: CanvasNodeData[] = [];
-    const unassignedConnections: CanvasConnection[] = [];
-    const unassignedIds = new Set<string>();
-
-    for (const connection of connections) {
-        if (connection.toNodeId !== nodeId || connection.relation === "batch-output") continue;
-        const image = byId.get(connection.fromNodeId);
-        if (image?.type !== CanvasNodeType.Image || !(image.metadata?.content || image.metadata?.storageKey)) continue;
-        const role = connection.toHandleId === ECOMMERCE_REPLICA_REFERENCE_HANDLE ? "reference" : connection.toHandleId === ECOMMERCE_REPLICA_PRODUCT_HANDLE ? "product" : undefined;
-        if (role) ordered.push({ node: image, role });
-        else {
-            unassignedConnections.push(connection);
-            if (!unassignedIds.has(image.id)) {
-                unassignedIds.add(image.id);
-                unassignedImages.push(image);
-            }
-        }
-    }
-
-    return {
-        ordered,
-        referenceImages: ordered.filter((input) => input.role === "reference").map((input) => input.node),
-        productImages: ordered.filter((input) => input.role === "product").map((input) => input.node),
-        unassignedImages,
-        unassignedConnections,
-    };
-}
-
-export function ecommerceReplicaInputIssue(inputs: EcommerceReplicaInputs) {
-    if (inputs.unassignedImages.length) return "旧画布连线未标注用途，请断开后分别接到参考图和商品图槽位";
-    if (inputs.referenceImages.length > 1) return "参考图槽位连接了多张图片，请只保留一张";
-    if (inputs.productImages.length > 1) return "商品图槽位连接了多张图片，请只保留一张";
-    if (inputs.referenceImages[0]?.id && inputs.referenceImages[0].id === inputs.productImages[0]?.id) return "参考图和商品图不能使用同一张图片";
-    return "";
-}
-
-export function ecommerceReplicaImageRoleBlock(replica: EcommerceReplica, inputs: EcommerceReplicaInputs) {
-    if (ecommerceReplicaInputIssue(inputs) || inputs.referenceImages.length !== 1 || inputs.productImages.length !== 1) return "";
-    const referenceRole = replica.purpose === "compose" ? "参考图（场景）" : "参考图（结构）";
-    const lines = inputs.ordered.map((input, index) =>
-        input.role === "product"
-            ? `第 ${index + 1} 张：商品图（主体），锁定本次商品的形状、材质、颜色与标识。`
-            : `第 ${index + 1} 张：${referenceRole}，${replica.purpose === "compose" ? "保留场景并让商品自然融入。" : "只借鉴构图、布光和版式，不复制其中的商品与文案。"}`,
-    );
-    return ["【输入图片角色】以下编号按本次实际提交的图片顺序：", ...lines].join("\n");
-}
 
 /** 可以从参考图里复刻的维度。勾选哪些，提示词就写哪些。 */
 export type EcommerceReplicaAspect = "composition" | "lighting" | "palette" | "layout" | "props" | "mood";
@@ -128,12 +34,6 @@ export const ECOMMERCE_REPLICA_ASPECTS: { id: EcommerceReplicaAspect; label: str
  * 「太像」会被平台判搬运，「太不像」用户觉得白花了钱。
  */
 export type EcommerceReplicaFidelity = "high" | "medium" | "low";
-
-export const ECOMMERCE_REPLICA_FIDELITIES: { id: EcommerceReplicaFidelity; label: string; hint: string }[] = [
-    { id: "high", label: "贴近", hint: "结构尽量照搬，只换商品与文案。适合同品类直接对标" },
-    { id: "medium", label: "借鉴", hint: "借结构换风格，保留自己的品牌调性" },
-    { id: "low", label: "取意", hint: "只借氛围与情绪，版面自己排。适合跨品类参考" },
-];
 
 /**
  * 不可复刻清单。
@@ -231,10 +131,4 @@ export function ecommerceReplicaBlock(replica: EcommerceReplica | undefined) {
     lines.push(`方向：${FIDELITY_DIRECTION[replicaValue.fidelity]}`);
     if (replicaValue.notes.trim()) lines.push(`结构笔记：${replicaValue.notes.trim()}`);
     return [`【复刻参考】${replicaValue.name.trim() || "未命名复刻"}`, ...lines].join("\n");
-}
-
-/** 复刻节点的参考图——只认显式标注为参考图的唯一连线。 */
-export function ecommerceReplicaReferenceNode(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    const inputs = ecommerceReplicaInputNodes(nodeId, nodes, connections);
-    return ecommerceReplicaInputIssue(inputs) || inputs.referenceImages.length !== 1 ? undefined : inputs.referenceImages[0];
 }

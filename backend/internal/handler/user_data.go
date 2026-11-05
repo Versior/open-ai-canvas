@@ -515,7 +515,7 @@ func RegisterUserDataRoutes(r *gin.RouterGroup, svc *service.Service) {
 				fail(c, http.StatusBadRequest, pageErr)
 				return
 			}
-			result, pageErr := svc.UserCanvasProjectsPage(user.ID, page, pageSize, c.Query("projectId"), c.Query("q"), c.Query("sort"), c.Query("kind"))
+			result, pageErr := svc.UserCanvasProjectsPage(user.ID, page, pageSize, c.Query("projectId"), c.Query("q"), c.Query("sort"))
 			if pageErr != nil {
 				failService(c, pageErr)
 				return

@@ -13,8 +13,8 @@ import { aceternityMotion } from "@/lib/aceternity-motion";
 import { brandStudioLabel, useAppearanceStore } from "@/stores/use-appearance-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 
-// 眉题是固定的英文装饰字，标题与说明随界面语言切换。
-const AUTH_EYEBROWS = { login: "WELCOME BACK", register: "CREATE ACCOUNT", recovery: "ACCOUNT RECOVERY" } as const;
+// 眉题是固定的英文装饰字，标题与说明随界面语言切换。登录弹窗复用同一组眉题。
+export const AUTH_EYEBROWS = { login: "WELCOME BACK", register: "CREATE ACCOUNT", recovery: "ACCOUNT RECOVERY" } as const;
 
 export function LinuxDOIcon() {
     return (

@@ -1,10 +1,5 @@
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 
-/** 电商节点已内置自己的输入与执行表单。 */
-export function hasEmbeddedEcommerceControls(node: Pick<CanvasNodeData, "type">): boolean {
-    return node.type === CanvasNodeType.Product || node.type === CanvasNodeType.EcommerceStudio;
-}
-
 /** 已有媒体但没有生成配置的图片是输入素材，不提供原地生成入口。 */
 export function isCanvasImageSourceNode(node: CanvasNodeData | null | undefined): boolean {
     if (node?.type === CanvasNodeType.Image && node.metadata?.fileUpload) return true;

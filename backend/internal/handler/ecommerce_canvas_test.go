@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -23,11 +24,10 @@ func TestEcommerceRoutesRequireAuthentication(t *testing.T) {
 	router := gin.New()
 	RegisterEcommerceCanvasRoutes(router.Group("/api"), &service.Service{})
 	for _, tc := range []struct{ method, path string }{
-		{"GET", "/api/ecommerce/settings"}, {"GET", "/api/admin/settings/ecommerce"},
+		{"GET", "/api/admin/settings/ecommerce"},
 		{"GET", "/api/admin/settings/ecommerce/defaults"},
 		{"GET", "/api/ecommerce/templates"}, {"GET", "/api/ecommerce/templates/missing"},
 		{"PUT", "/api/admin/settings/ecommerce"}, {"GET", "/api/admin/settings/ecommerce/previous"},
-		{"POST", "/api/admin/settings/ecommerce/images"}, {"GET", "/api/ecommerce/models/model/images/image"},
 	} {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
@@ -62,21 +62,17 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/api/admin/settings/ecommerce"}, {"PUT", "/api/admin/settings/ecommerce"},
 		{"GET", "/api/admin/settings/ecommerce/defaults"},
-		{"GET", "/api/admin/settings/ecommerce/previous"}, {"POST", "/api/admin/settings/ecommerce/images"},
+		{"GET", "/api/admin/settings/ecommerce/previous"},
 	} {
 		result := profileRequest(router, tc.method, tc.path, "{}", cookie)
 		if result.Code != http.StatusForbidden {
 			t.Fatalf("non-admin %s: %d", tc.path, result.Code)
 		}
 	}
-	response := profileRequest(router, "GET", "/api/ecommerce/settings", "", cookie)
-	if response.Code != 200 {
-		t.Fatalf("public settings: %d", response.Code)
-	}
 	if err := db.Model(&user).Update("role", model.UserRoleAdmin).Error; err != nil {
 		t.Fatal(err)
 	}
-	response = profileRequest(router, "GET", "/api/admin/settings/ecommerce", "", cookie)
+	response := profileRequest(router, "GET", "/api/admin/settings/ecommerce", "", cookie)
 	var envelope struct {
 		Data struct {
 			Setting service.EcommerceSetting `json:"setting"`
@@ -102,10 +98,24 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 			Items []struct {
 				ID string `json:"id"`
 			} `json:"items"`
+			Categories []struct {
+				Name  string `json:"name"`
+				Count int    `json:"count"`
+			} `json:"categories"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || response.Code != 200 || catalog.Data.Total != 1173 || len(catalog.Data.Items) != 20 {
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || response.Code != 200 || catalog.Data.Total != 1173 || len(catalog.Data.Items) != 20 || len(catalog.Data.Categories) != 24 {
 		t.Fatal("catalog HTTP contract failed")
+	}
+	first := catalog.Data.Categories[0]
+	response = profileRequest(router, "GET", "/api/ecommerce/templates?q=&category="+url.QueryEscape(first.Name)+"&page=1&pageSize=20", "", cookie)
+	var byCategory struct {
+		Data struct {
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &byCategory); err != nil || response.Code != 200 || byCategory.Data.Total != first.Count {
+		t.Fatalf("catalog category filter: %d %v total=%d want %d", response.Code, err, byCategory.Data.Total, first.Count)
 	}
 	response = profileRequest(router, "GET", "/api/ecommerce/templates/"+catalog.Data.Items[0].ID, "", cookie)
 	var detail struct {
@@ -138,14 +148,14 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 	if err := yaml.Unmarshal(openAPISpec, &spec); err != nil {
 		t.Fatal(err)
 	}
-	if spec.Paths["/ecommerce/library"] != nil {
-		t.Fatal("removed private library endpoint remains in OpenAPI")
+	for _, removed := range []string{"/ecommerce/library", "/ecommerce/settings", "/admin/settings/ecommerce/images", "/ecommerce/models/{modelId}/images/{resourceId}"} {
+		if spec.Paths[removed] != nil {
+			t.Fatalf("removed endpoint %s remains in OpenAPI", removed)
+		}
 	}
 	for path, methods := range map[string][]string{
 		"/admin/settings/ecommerce/defaults": {"get"}, "/ecommerce/templates": {"get"}, "/ecommerce/templates/{templateId}": {"get"},
-		"/ecommerce/settings": {"get"}, "/admin/settings/ecommerce": {"get", "put"},
-		"/admin/settings/ecommerce/previous": {"get"}, "/admin/settings/ecommerce/images": {"post"},
-		"/ecommerce/models/{modelId}/images/{resourceId}": {"get"},
+		"/admin/settings/ecommerce": {"get", "put"}, "/admin/settings/ecommerce/previous": {"get"},
 		"/ecommerce/studio": {"get"}, "/ecommerce/studio/products/{productId}": {"put", "delete"},
 	} {
 		for _, method := range methods {
@@ -156,15 +166,21 @@ func TestEcommerceOpenAPIPaths(t *testing.T) {
 	}
 }
 
-func TestEcommercePrivateLibraryRoutesRemoved(t *testing.T) {
+// 旧版电商画布下线：私有素材库、公开配置与公共模特图片接口都不再注册。
+func TestEcommerceRetiredCanvasRoutesRemoved(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	RegisterEcommerceCanvasRoutes(router.Group("/api"), &service.Service{})
-	for _, method := range []string{http.MethodGet, http.MethodPut} {
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api/ecommerce/library"}, {http.MethodPut, "/api/ecommerce/library"},
+		{http.MethodGet, "/api/ecommerce/settings"},
+		{http.MethodPost, "/api/admin/settings/ecommerce/images"},
+		{http.MethodGet, "/api/ecommerce/models/model/images/image"},
+	} {
 		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(method, "/api/ecommerce/library", nil))
+		router.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
 		if response.Code != http.StatusNotFound {
-			t.Fatalf("removed endpoint %s returned %d", method, response.Code)
+			t.Fatalf("removed endpoint %s %s returned %d", tc.method, tc.path, response.Code)
 		}
 	}
 }

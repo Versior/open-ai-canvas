@@ -132,6 +132,7 @@ export const frFR: Messages = {
             recovery: { title: "Réinitialiser le mot de passe", description: "Vérifiez l'e-mail du compte, puis définissez un nouveau mot de passe." },
         },
         brandFilm: "Film de marque {{brand}}",
+        brandPoster: "Affiche de la marque {{brand}}",
         playVideo: "Lire le film de marque",
         videoPlaying: "La création est en cours",
         backHome: "Retour à l'accueil",

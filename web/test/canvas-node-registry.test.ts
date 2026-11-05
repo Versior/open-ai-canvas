@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { getNodeDefinition, getNodeGenerationMode, getNodeInputKind, getNodeListLabel, getNodeMinSize, getNodeResourceKind, listCreatableNodeDefinitions, listNodeDefinitions, shouldKeepAspectRatio } from "../src/lib/canvas/node-registry";
 import { connectionInputSummary } from "../src/lib/canvas/canvas-connection-policy";
+import { RETIRED_ECOMMERCE_NODE_NAMES } from "../src/lib/canvas/canvas-retired-nodes";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type CanvasNodeMetadata } from "../src/types/canvas";
 
 function node(type: CanvasNodeType, metadata?: CanvasNodeMetadata, id = type): CanvasNodeData {
@@ -16,9 +17,10 @@ describe("节点注册表——覆盖完整性", () => {
         for (const type of ALL_TYPES) expect(getNodeMinSize(type)).toBeDefined();
     });
 
-    test("仅技能与生成配置不进创建菜单", () => {
+    test("仅技能、生成配置与已下线的电商节点不进创建菜单", () => {
         const hidden = ALL_TYPES.filter((type) => !listCreatableNodeDefinitions().some((def) => def.type === type));
-        expect(hidden.sort()).toEqual([CanvasNodeType.Config, CanvasNodeType.Skill].sort());
+        const retired = Object.keys(RETIRED_ECOMMERCE_NODE_NAMES) as CanvasNodeType[];
+        expect(hidden.sort()).toEqual([CanvasNodeType.Config, CanvasNodeType.Skill, ...retired].sort());
     });
 });
 

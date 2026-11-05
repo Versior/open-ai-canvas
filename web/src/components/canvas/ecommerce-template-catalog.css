@@ -1,67 +1,537 @@
+/* 套图模板目录：生图台选模板弹窗和后台「内置模板库」共用。
+   组件 token 依次取生图台（--es-*）、后台（--admin-*）、全站语义 token，放在哪个页面都用那里的表面和文字色。 */
 .ecommerce-template-catalog {
+    --etc-ink: var(--es-ink, var(--admin-text, var(--foreground)));
+    --etc-ink-2: var(--es-ink-2, var(--admin-text-secondary, var(--muted-foreground)));
+    --etc-ink-3: var(--es-ink-3, var(--admin-text-muted, var(--muted-foreground)));
+    --etc-line: var(--es-line, var(--admin-border, var(--border)));
+    --etc-surface: var(--es-muted, var(--admin-surface-2, var(--muted)));
+    --etc-hover: var(--es-hover, var(--surface-hover));
+    --etc-selected: var(--control-selected-bg);
+    --etc-radius: var(--es-radius-control, var(--admin-radius-lg, var(--r-md)));
+    --etc-motion: var(--es-motion, 160ms ease);
+    --etc-focus: var(--control-focus-ring, var(--ring));
+    container-type: inline-size;
+    height: var(--etc-height, min(72vh, 660px));
+    min-width: 0;
+    min-height: 0;
+    color: var(--etc-ink);
+}
+
+.etc-layout {
     display: grid;
-    gap: 12px;
+    grid-template-columns: 148px minmax(0, 1fr) minmax(300px, 0.95fr);
+    gap: var(--space-4);
+    height: 100%;
+    min-height: 0;
+}
+
+.ecommerce-template-catalog.is-curated .etc-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 1.05fr);
+}
+
+.etc-rail,
+.etc-rows,
+.etc-preview-scroll {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+
+/* ---------- 类目栏 ---------- */
+.etc-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.etc-rail button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 32px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--etc-radius);
+    background: transparent;
+    color: var(--etc-ink-2);
+    font-size: var(--fs-ui);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color var(--etc-motion),
+        color var(--etc-motion);
+}
+
+.etc-rail button span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.etc-rail button em {
+    flex: none;
+    color: var(--etc-ink-3);
+    font-size: var(--fs-caption);
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+}
+
+.etc-rail button:hover {
+    background: var(--etc-hover);
+    color: var(--etc-ink);
+}
+
+.etc-rail button[aria-current="true"] {
+    background: var(--etc-selected);
+    color: var(--etc-ink);
+    font-weight: 600;
+}
+
+/* ---------- 列表 ---------- */
+.etc-list {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    min-width: 0;
+    min-height: 0;
+}
+
+.etc-list-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 2px 2px 0;
+}
+
+.etc-list-head strong {
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.etc-list-head span,
+.etc-pager {
+    color: var(--etc-ink-3);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.etc-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.etc-rows[aria-busy="true"] > .etc-row {
+    opacity: 0.6;
+}
+
+.etc-row {
+    display: grid;
+    flex: none;
+    gap: 3px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: var(--etc-radius);
+    background: transparent;
+    color: var(--etc-ink);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color var(--etc-motion),
+        opacity var(--etc-motion);
+}
+
+.etc-row:hover {
+    background: var(--etc-hover);
+}
+
+.etc-row[aria-pressed="true"] {
+    background: var(--etc-selected);
+}
+
+.etc-row-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
     min-width: 0;
 }
-.ecommerce-catalog-list {
-    display: grid;
-    gap: 4px;
-    max-height: 280px;
-    overflow: auto;
+
+.etc-row-head strong {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.ecommerce-catalog-list button {
-    display: grid;
-    gap: 4px;
-    padding: 10px 12px;
-    text-align: left;
-    color: var(--foreground);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--r-md);
-    cursor: pointer;
+
+.etc-row-head em {
+    flex: none;
+    color: var(--etc-ink-3);
+    font-size: var(--fs-caption);
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
 }
-.ecommerce-catalog-list button:hover {
-    background: var(--muted);
+
+.etc-row-path,
+.etc-row-desc {
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-.ecommerce-catalog-list button[aria-pressed="true"] {
-    border-color: var(--border);
-    background: var(--muted);
+
+.etc-row-path {
+    color: var(--etc-ink-3);
 }
-.ecommerce-catalog-list button:focus-visible {
-    outline: 2px solid var(--foreground);
-    outline-offset: -2px;
+
+.etc-row-desc {
+    color: var(--etc-ink-2);
 }
-.ecommerce-catalog-list span,
-.ecommerce-catalog-pagination {
-    color: var(--muted-foreground);
-    font-size: var(--fs-tiny);
-}
-.ecommerce-catalog-pagination,
-.ecommerce-catalog-preview header {
+
+.etc-pager {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
-    flex-wrap: wrap;
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--etc-line);
 }
-.ecommerce-catalog-pagination > span:first-child,
-.ecommerce-catalog-preview header strong {
-    margin-right: auto;
-}
-.ecommerce-catalog-preview {
+
+/* ---------- 预览 ---------- */
+.etc-preview {
     display: grid;
-    gap: 10px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
+    grid-template-rows: minmax(0, 1fr) auto;
     min-width: 0;
+    min-height: 0;
+    padding-left: var(--space-4);
+    border-left: 1px solid var(--etc-line);
 }
-.ecommerce-catalog-preview p {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    color: var(--muted-foreground);
-    max-height: 240px;
-    overflow: auto;
-    margin: 8px 0;
+
+.etc-preview.is-note {
+    grid-template-rows: minmax(0, 1fr);
+    align-content: center;
+    justify-items: center;
 }
-.ecommerce-catalog-preview summary {
+
+.etc-preview-scroll {
+    padding-right: 2px;
+}
+
+.etc-preview-head {
+    display: grid;
+    gap: 6px;
+    margin-bottom: var(--space-3);
+}
+
+.etc-preview-path {
+    color: var(--etc-ink-3);
+    font-size: var(--fs-caption);
+}
+
+.etc-preview-head h4 {
+    margin: 0;
+    font-size: var(--fs-heading);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.etc-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.etc-tags span {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: var(--etc-surface);
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.etc-preview-desc {
+    margin: 2px 0 0;
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+.etc-style,
+.etc-shot {
+    border-radius: var(--etc-radius);
+    background: var(--etc-surface);
+}
+
+.etc-style {
+    margin-bottom: var(--space-3);
+}
+
+.etc-style summary,
+.etc-shot > summary,
+div.etc-shot {
+    list-style: none;
+}
+
+.etc-style summary::-webkit-details-marker,
+.etc-shot > summary::-webkit-details-marker {
+    display: none;
+}
+
+.etc-style summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 9px 12px;
+    font-size: var(--fs-caption);
+    font-weight: 600;
     cursor: pointer;
+}
+
+.etc-style p {
+    margin: 0;
+    padding: 0 12px 12px;
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.65;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.etc-chevron {
+    flex: none;
+    color: var(--etc-ink-3);
+    transition: transform var(--etc-motion);
+}
+
+details[open] > summary .etc-chevron {
+    transform: rotate(180deg);
+}
+
+.etc-shots {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.etc-shot > summary,
+div.etc-shot {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr) auto auto;
+    align-items: start;
+    gap: 10px;
+    padding: 9px 10px;
+}
+
+details.etc-shot > summary {
+    cursor: pointer;
+}
+
+.etc-style summary:focus-visible,
+.etc-shot > summary:focus-visible,
+.etc-rail button:focus-visible,
+.etc-row:focus-visible {
+    outline: 2px solid var(--etc-focus);
+    outline-offset: -2px;
+}
+
+.etc-shot-index {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--etc-selected);
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.etc-shot-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding-top: 1px;
+}
+
+.etc-shot-text strong {
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.etc-shot-text span {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+details[open] .etc-shot-text span {
+    display: block;
+}
+
+.etc-shot-meta {
+    display: flex;
+    gap: 4px;
+    padding-top: 1px;
+}
+
+.etc-shot-meta em {
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: var(--etc-selected);
+    color: var(--etc-ink-2);
+    font-size: var(--fs-tiny);
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+    line-height: 20px;
+    white-space: nowrap;
+}
+
+.etc-shot > summary .etc-chevron {
+    margin-top: 3px;
+}
+
+.etc-shot dl {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0 12px 12px 42px;
+}
+
+.etc-shot dl > div {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 8px;
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+}
+
+.etc-shot dl > div:not(:has(dt)) {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.etc-shot dt {
+    color: var(--etc-ink-3);
+}
+
+.etc-shot dd {
+    margin: 0;
+    color: var(--etc-ink-2);
+    overflow-wrap: anywhere;
+}
+
+.etc-preview-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--etc-line);
+}
+
+.etc-preview-note {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--etc-ink-3);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
+/* ---------- 读取、出错与空态 ---------- */
+.etc-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: var(--space-4) var(--space-2);
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+}
+
+.etc-empty {
+    display: grid;
+    justify-items: start;
+    gap: 6px;
+    padding: var(--space-6) var(--space-3);
+    color: var(--etc-ink-2);
+    font-size: var(--fs-caption);
+}
+
+.etc-empty strong {
+    color: var(--etc-ink);
+    font-size: var(--fs-ui);
+}
+
+/* 窄容器：类目改成顶部横向一排，列表和预览并排；再窄就上下排、整体滚动。 */
+@container (max-width: 860px) {
+    .etc-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 0.95fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+    .etc-rail {
+        grid-column: 1 / -1;
+        flex-direction: row;
+        gap: 4px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 2px;
+    }
+    .etc-rail button {
+        min-height: 28px;
+        border-radius: 999px;
+    }
+    .ecommerce-template-catalog.is-curated .etc-layout {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+    }
+}
+
+@container (max-width: 600px) {
+    .etc-layout,
+    .ecommerce-template-catalog.is-curated .etc-layout {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+    }
+    .etc-list {
+        grid-template-rows: auto;
+    }
+    .etc-rows,
+    .etc-preview-scroll {
+        overflow: visible;
+    }
+    .etc-preview {
+        padding: var(--space-4) 0 0;
+        border-top: 1px solid var(--etc-line);
+        border-left: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .etc-rail button,
+    .etc-row,
+    .etc-chevron {
+        transition: none;
+    }
 }

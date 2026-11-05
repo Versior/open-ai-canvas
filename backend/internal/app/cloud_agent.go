@@ -542,6 +542,15 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 		}
 		req.SkillsEnabled = referencesAvailable
 	}
+	// 生图台对话固定带上内置「电商出图方法库」作参考技能：镜头角色、拍法和合规用词以它为准，
+	// 不取决于用户有没有安装、也不靠 skill_search 碰运气（用户装了别的电商技能时检索会先命中那些）。
+	var skillReferences []cloudAgentSkill
+	if cloudAgentStudioScope(req) {
+		if reference, ok := s.cloudAgentStudioMethodReference(userID, skillPool.Versions, skillPool.Pinned); ok {
+			skillReferences = append(skillReferences, reference)
+			req.SkillsEnabled = true
+		}
+	}
 	req.MemoryMode = memory.Mode
 	canvasSummary := ""
 	if cloudAgentCanvasScope(req) {
@@ -560,7 +569,7 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	if err != nil {
 		return nil, err
 	}
-	state := cloudAgentState{Version: 1, Request: req, ParentID: parentID, Fingerprint: fingerprint, CreativeAnchor: creativeAnchor, Plan: inheritedPlan, ConfirmationRounds: inheritedConfirmationRounds, ConfirmationFingerprints: inheritedConfirmationFingerprints, Skills: skillPool.Pinned, SkillVersions: skillPool.Versions, SkillHints: skillPool.Hints, Memory: memory, Profile: profile, Policy: policy}
+	state := cloudAgentState{Version: 1, Request: req, ParentID: parentID, Fingerprint: fingerprint, CreativeAnchor: creativeAnchor, Plan: inheritedPlan, ConfirmationRounds: inheritedConfirmationRounds, ConfirmationFingerprints: inheritedConfirmationFingerprints, Skills: skillPool.Pinned, SkillReferences: skillReferences, SkillVersions: skillPool.Versions, SkillHints: skillPool.Hints, Memory: memory, Profile: profile, Policy: policy}
 	canonical := cloudAgentCanonicalFor(system, history, req.Prompt, req, len(profile.Layers) > 0)
 	// Keep the catalog out of TextHistory (which defines conversation turns),
 	// while exposing it as a fresh data message for this run immediately before

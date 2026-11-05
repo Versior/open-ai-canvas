@@ -1,4 +1,4 @@
-// 画布 Agent 面板的展示组件：悬浮入口、标题栏、上下文用量环、历史会话、对话区、
+// 画布 Agent 面板的展示组件：悬浮入口、标题栏、历史会话、对话区、
 // 输入区控件与审批卡片。
 //
 // 这些组件只接收 props、不直接访问 Agent API；状态与副作用集中在 CanvasCloudAgentPanel。
@@ -7,7 +7,6 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
 import { useMatch } from "react-router";
@@ -28,9 +27,11 @@ import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import { ArrowDown, ArrowLeft, Check, Clock3, Download, Ellipsis, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RefreshCw, Scaling, Settings2, ShieldCheck, Trash2, X, Sparkles } from "lucide-react";
 import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
-import { Button, Input, Popover } from "antd";
+import { Button, Input } from "antd";
 import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
-import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
+import { formatContextTokens } from "@/lib/canvas/agent-context-usage";
+import { formatAgentClockTime, formatAgentTokenSpeed, presentAgentModelUsage } from "@/lib/canvas/agent-run-stats";
+import { configuredModelDisplayName } from "@/lib/model-selection";
 import { cloudAgentConversationServerId, type CloudAgentConversation } from "@/services/cloud-agent-conversations";
 import { AgentChatMessage, AgentOperationFeed, AgentReasoningFeed, AgentWorkingMessage, type CloudAgentChatMessage } from "./canvas-cloud-agent-chat-ui";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -430,152 +431,6 @@ export function AgentHeader({
     );
 }
 
-export const CONTEXT_PHASE_LABEL: Record<AgentContextPhase, string> = {
-    idle: "尚未测量",
-    unknown: "窗口未知",
-    ok: "上下文充足",
-    watch: "接近压缩",
-    compress: "即将压缩",
-    compacting: "正在压缩",
-    stale: "压缩后待刷新",
-};
-
-export function formatContextCount(tokens: number | undefined) {
-    if (tokens === undefined) return "—";
-    if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`;
-    if (tokens >= 1_000) return `${Math.round(tokens / 100) / 10}K`;
-    return Math.round(tokens).toLocaleString("zh-CN");
-}
-
-export function formatContextBytes(bytes: number | undefined) {
-    if (bytes === undefined) return "—";
-    if (bytes >= 1_000_000) return `${Math.round(bytes / 100_000) / 10} MB`;
-    if (bytes >= 1_000) return `${Math.round(bytes / 100) / 10} KB`;
-    return `${Math.round(bytes).toLocaleString("zh-CN")} 字节`;
-}
-
-export function AgentContextRing({ view, theme }: { view: AgentContextUsageView; theme: CanvasTheme }) {
-    const [open, setOpen] = useState(false);
-    const popoverRef = usePopoverAnchorAlign(open);
-    const marker = view.compactRatio && view.compactRatio > 0 && view.compactRatio < 1 ? view.compactRatio : undefined;
-    const percent = view.ratio === undefined ? view.label : `${Math.round(view.ratio * 100)}%`;
-    const meterLabel = view.ratio === undefined ? "—" : percent;
-    const used = formatContextCount(view.inputTokens);
-    const budget = formatContextCount(view.usableTokens);
-    const remaining = formatContextCount(view.remainingTokens);
-    const protocolBytes = formatContextBytes(view.protocolBytes);
-    const usedRatio = view.ratio === undefined ? 0 : Math.max(0, Math.min(1, view.ratio));
-    const phaseLabel = CONTEXT_PHASE_LABEL[view.phase];
-    const sourceLabel = view.tokenSource === "pi" ? "Pi 会话估算" : "未测量";
-    const usageHeading = view.ratio !== undefined ? `上下文已用 ${percent}` : view.phase === "idle" ? "上下文用量" : view.phase === "unknown" ? "上下文窗口未知" : `上下文${view.label}`;
-
-    return (
-        <Popover
-            ref={popoverRef}
-            open={open}
-            onOpenChange={setOpen}
-            trigger="click"
-            placement="topRight"
-            autoAdjustOverflow
-            arrow={false}
-            classNames={{ root: "agent-context-popover" }}
-            // 助手面板会裁切内容；独立挂到 body，并显式携带画布主题。
-            getPopupContainer={() => document.body}
-            styles={{ root: { "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary } as CSSProperties }}
-            content={
-                <div className="agent-context-panel" data-phase={view.phase}>
-                    <span className="agent-context-eyebrow">下一次请求 · 上下文窗口占用</span>
-                    <div className="agent-context-panel-head">
-                        <strong>{usageHeading}</strong>
-                        {view.phase !== "ok" ? <span className={`agent-context-phase is-${view.phase}`}>{phaseLabel}</span> : null}
-                    </div>
-                    <div className="agent-context-summary">
-                        {view.remainingTokens !== undefined && view.usableTokens !== undefined ? (
-                            <>
-                                <strong>{used}</strong>
-                                <span>/ {budget} Token</span>
-                                <em>剩余 {remaining}</em>
-                            </>
-                        ) : (
-                            <>
-                                <strong>{used}</strong>
-                                <span>Token</span>
-                            </>
-                        )}
-                    </div>
-                    <div className="agent-context-progress-head">
-                        <span>上下文窗口占用</span>
-                        <strong>{percent}</strong>
-                    </div>
-                    <div className="agent-context-progress" role="progressbar" aria-label={`上下文已用 ${percent}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={view.ratio === undefined ? undefined : Math.round(view.ratio * 100)}>
-                        <span style={{ width: `${usedRatio * 100}%` }} />
-                        {marker ? <i style={{ left: `${marker * 100}%` }} aria-hidden="true" /> : null}
-                    </div>
-                    <p className="agent-context-detail">{view.detail}</p>
-                    {view.breakdown.length || view.protocolBytes !== undefined || view.remainingTokens !== undefined ? (
-                        <ul className="agent-context-breakdown">
-                            {view.breakdown.map((item) => (
-                                <li key={item.key}>
-                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
-                                    <span className="agent-context-breakdown-label">{item.label}</span>
-                                    <span className="agent-context-breakdown-value">{formatContextCount(item.tokens)}</span>
-                                </li>
-                            ))}
-                            {view.protocolBytes !== undefined ? (
-                                <li className="is-secondary">
-                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
-                                    <span className="agent-context-breakdown-label">协议外壳</span>
-                                    <span className="agent-context-breakdown-value">{protocolBytes}</span>
-                                </li>
-                            ) : null}
-                            {view.remainingTokens !== undefined ? (
-                                <li className="is-muted">
-                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
-                                    <span className="agent-context-breakdown-label">未使用</span>
-                                    <span className="agent-context-breakdown-value">{remaining}</span>
-                                </li>
-                            ) : null}
-                        </ul>
-                    ) : null}
-                    <div className="agent-context-panel-foot">
-                        <span>
-                            {sourceLabel}
-                            {view.tokenSource === "pi" ? " · 不是计费 Token" : ""}
-                        </span>
-                        {view.compactAtTokens ? <span>压缩线 {formatContextCount(view.compactAtTokens)}</span> : null}
-                    </div>
-                    {view.compactionError ? (
-                        <p className="agent-context-note" role="status">
-                            {view.compactionError}
-                        </p>
-                    ) : view.lastCompaction ? (
-                        <p className="agent-context-note">本轮已完成一次上下文压缩，下一次读数会刷新。</p>
-                    ) : null}
-                </div>
-            }
-        >
-            <button type="button" className={`agent-context-ring is-${view.phase}`} aria-label={`${usageHeading}，${phaseLabel}。点击查看明细`} aria-expanded={open} title="查看上下文用量" onPointerDown={(event) => event.stopPropagation()}>
-                <span
-                    className="agent-context-ring-visual"
-                    aria-hidden="true"
-                    style={
-                        {
-                            "--agent-context-progress": `${view.ring * 100}%`,
-                            "--agent-context-marker-angle": `${(marker || 0) * 360}deg`,
-                        } as CSSProperties
-                    }
-                >
-                    {marker ? <span className="agent-context-ring-marker" /> : null}
-                </span>
-                <span className="agent-context-meter-copy">
-                    <strong>{meterLabel}</strong>
-                    <small>上下文</small>
-                </span>
-            </button>
-        </Popover>
-    );
-}
-
 export function AgentHistory({
     conversations,
     activeConversationId,
@@ -709,6 +564,28 @@ function useLinkStableReferences(references: CanvasResourceReference[]) {
     return stable;
 }
 
+/** 每一轮最后一条助手回复（runId → messageId）：页脚常显，并承载「重试这一轮」。升级前缓存的消息没有 runId，不参与。 */
+function agentFinalReplyIds(messages: readonly CloudAgentChatMessage[]) {
+    const byRun = new Map<string, string>();
+    for (const message of messages) {
+        if (message.role === "assistant" && !message.reasoning && message.runId && message.text.trim()) byRun.set(message.runId, message.id);
+    }
+    return byRun;
+}
+
+/** 助手回复页脚的展示文字；没有数据的项返回 undefined，页脚就不显示它。 */
+function agentReplyFooterLabels(message: CloudAgentChatMessage, modelLabel: (model: string) => string): { model?: string; usage?: string; time?: string } {
+    if (message.role !== "assistant" || message.reasoning) return {};
+    const usage = presentAgentModelUsage(message.usage);
+    const speed = formatAgentTokenSpeed(usage.tokensPerSecond);
+    const total = usage.totalTokens === undefined ? undefined : `${formatContextTokens(usage.totalTokens)} tokens`;
+    return {
+        model: usage.model ? modelLabel(usage.model) : undefined,
+        usage: speed && total ? `${speed} · ${total}` : total,
+        time: formatAgentClockTime(message.createdAt),
+    };
+}
+
 /**
  * 只有对话停在 Agent 的最后一条回复上（之后没有用户发言）时，这条回复末尾的编号选项
  * 才变成可点击卡片；更早的回复保持原文，便于回看。
@@ -749,8 +626,10 @@ export function AgentConversation({
     onReplyOption,
     replyOptionsDisabled = false,
     retryableErrorId = null,
+    retryableReplyRunId = null,
     onRetryRun,
     retryingRun = false,
+    config,
 }: {
     theme: CanvasTheme;
     messages: CloudAgentChatMessage[];
@@ -779,8 +658,12 @@ export function AgentConversation({
     replyOptionsDisabled?: boolean;
     /** 可以重试的失败卡片（本轮失败且空闲时）；重试用新的幂等键重新发起一轮，会重新计费。 */
     retryableErrorId?: string | null;
+    /** 已结束（非失败）且可以原样重试的最新一轮：重试入口放在它最后一条回复的页脚上。 */
+    retryableReplyRunId?: string | null;
     onRetryRun?: () => void;
     retryingRun?: boolean;
+    /** 用于把回复页脚里的模型 ID 换成配置里的显示名；缺省时显示原始 ID。 */
+    config?: ReturnType<typeof useEffectiveConfig>;
 }) {
     const appearance = useAppearanceStore((state) => state.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
     const reducedMotion = useReducedMotion();
@@ -799,6 +682,21 @@ export function AgentConversation({
     const lastMessage = messages.at(-1);
     const replyOptionsEnabled = Boolean(onReplyOption) && !busy && !approval;
     const replyTarget = useMemo(() => (replyOptionsEnabled ? agentReplyOptionsTarget(messages) : null), [messages, replyOptionsEnabled]);
+    const finalReplyByRun = useMemo(() => agentFinalReplyIds(messages), [messages]);
+    const finalReplyIds = useMemo(() => new Set(finalReplyByRun.values()), [finalReplyByRun]);
+    const retryReplyId = retryableReplyRunId ? finalReplyByRun.get(retryableReplyRunId) : undefined;
+    // 模型显示名按当前配置缓存，配置变了才重新解析。
+    const modelLabel = useMemo(() => {
+        const cache = new Map<string, string>();
+        return (model: string) => {
+            let label = cache.get(model);
+            if (label === undefined) {
+                label = config ? configuredModelDisplayName(config, model) : model;
+                cache.set(model, label);
+            }
+            return label;
+        };
+    }, [config]);
     // 父组件每次渲染（例如输入框每敲一个字）都会传入新的回调和引用表。消息组件已 memo，
     // 这里换成稳定的回调和“只看链接字段”的引用表，消息才能跳过与它无关的重渲染。
     const handlersRef = useRef({ onUndo, onWithdrawInterjection, onRequeueInterjection, onReplyOption, onRetryRun });
@@ -868,6 +766,7 @@ export function AgentConversation({
                     ) : null}
                     {segments.slice(startIndex).map((segment, offset) => {
                         const index = startIndex + offset;
+                        const footer = segment.kind === "message" ? agentReplyFooterLabels(segment.item, modelLabel) : undefined;
                         return segment.kind === "operations" ? (
                             // 只有"对话末尾那一段 + 还在跑"才流光：历史段落留在静态态，任务完成即停。
                             <AgentOperationFeed
@@ -886,6 +785,10 @@ export function AgentConversation({
                             <AgentChatMessage
                                 key={segment.key}
                                 item={segment.item}
+                                replyModelLabel={footer?.model}
+                                replyUsageLabel={footer?.usage}
+                                replyTimeLabel={footer?.time}
+                                replyPinned={finalReplyIds.has(segment.item.id)}
                                 theme={theme}
                                 references={linkReferences}
                                 onFocusNode={onFocusNode}
@@ -898,8 +801,8 @@ export function AgentConversation({
                                 replyOptions={replyTarget?.id === segment.item.id ? replyTarget.options : null}
                                 onReplyOption={replyTarget?.id === segment.item.id && onReplyOption ? stableReply : undefined}
                                 replyOptionsDisabled={replyOptionsDisabled}
-                                onRetry={onRetryRun && retryableErrorId === segment.item.id ? stableRetry : undefined}
-                                retrying={retryingRun && retryableErrorId === segment.item.id}
+                                onRetry={onRetryRun && (retryableErrorId === segment.item.id || retryReplyId === segment.item.id) ? stableRetry : undefined}
+                                retrying={retryingRun && (retryableErrorId === segment.item.id || retryReplyId === segment.item.id)}
                             />
                         );
                     })}

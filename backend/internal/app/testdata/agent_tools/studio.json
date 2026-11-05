@@ -747,6 +747,7 @@
                   "type": "string"
                 },
                 "role": {
+                  "description": "只能用这些值：main-white 白底主图、main-selling 卖点主图、main-scene 场景主图、main-detail 细节特写、main-angle 多角度、detail-hero 头图海报、detail-selling 核心卖点、detail-model 上身效果、detail-scene 使用场景、detail-material 材质工艺、detail-closeup 细节特写、detail-angles 多角度展示、detail-spec 规格参数、detail-size 尺寸参考、detail-package 包装与配件、detail-closing 购买理由",
                   "enum": [
                     "main-white",
                     "main-selling",

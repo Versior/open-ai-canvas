@@ -156,6 +156,20 @@ func (s *Service) LibTVGallery(ctx context.Context, actor *model.User, req LibTV
 	if err := s.allowLibTVGalleryRead(ctx, actor.ID); err != nil {
 		return nil, err
 	}
+	return fetchLibTVGallery(ctx, req)
+}
+
+// PublicLibTVGallery 读取公开作品列表，不做账号限流。游客入口在 HTTP 层先按来源地址与全站游客限流，
+// 再经应用层短缓存调用这里。
+func (s *Service) PublicLibTVGallery(ctx context.Context, req LibTVGalleryRequest) (*LibTVGalleryResult, error) {
+	req, err := normalizeLibTVGalleryRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	return fetchLibTVGallery(ctx, req)
+}
+
+func fetchLibTVGallery(ctx context.Context, req LibTVGalleryRequest) (*LibTVGalleryResult, error) {
 	payload := struct {
 		Page      int    `json:"page"`
 		PageSize  int    `json:"pageSize"`
@@ -198,6 +212,18 @@ func (s *Service) LibTVWork(ctx context.Context, actor *model.User, templateUUID
 	if err := s.allowLibTVGalleryRead(ctx, actor.ID); err != nil {
 		return nil, err
 	}
+	return fetchLibTVWorkDetail(ctx, templateUUID)
+}
+
+// PublicLibTVWork 读取单个公开作品详情，不做账号限流；限流与缓存规则同 PublicLibTVGallery。
+func (s *Service) PublicLibTVWork(ctx context.Context, templateUUID string) (*LibTVWorkDetail, error) {
+	if !isLibTVProjectUUID(strings.TrimSpace(templateUUID)) {
+		return nil, kernel.BadAuthRequest("LibTV 作品 UUID 格式无效")
+	}
+	return fetchLibTVWorkDetail(ctx, templateUUID)
+}
+
+func fetchLibTVWorkDetail(ctx context.Context, templateUUID string) (*LibTVWorkDetail, error) {
 	work, snapshot, err := fetchLibTVPublishedTemplate(ctx, templateUUID)
 	if err != nil {
 		return nil, err

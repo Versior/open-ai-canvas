@@ -1,39 +1,14 @@
 import { motion, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import {
-    Aperture,
-    ArrowRightLeft,
-    BadgeCheck,
-    Clapperboard,
-    Copy,
-    Film,
-    History,
-    Image as ImageIcon,
-    Layers,
-    LayoutTemplate,
-    List,
-    Music2,
-    Package,
-    PackageCheck,
-    Palette,
-    Pencil,
-    PenLine,
-    Search,
-    SwatchBook,
-    Table2,
-    Video,
-    Workflow as WorkflowIcon,
-} from "lucide-react";
+import { Clapperboard, Image as ImageIcon, List, Music2, Pencil, Table2, Video, Workflow as WorkflowIcon, ArrowRightLeft } from "lucide-react";
 
 import { useCanvasOverlayLayer } from "@/components/canvas/canvas-overlay-layer";
-import { getNodeIcon, getNodeLabel } from "@/lib/canvas/node-registry";
-import type { CanvasKind } from "@/lib/canvas/canvas-kind";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { canvasOverlayBounds, observeCanvasOverlayBounds, placeCanvasNodePanel, updateCanvasNodePanelBounds } from "@/lib/canvas/canvas-overlay-layout";
 import { subscribeCanvasGraphicsViewportPreview, subscribeCanvasNodeDragPreview, subscribeCanvasViewportPreview } from "@/lib/canvas/canvas-live-viewport";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
-import { CanvasNodeType, type CanvasCreatableNodeType, type CanvasNodeData, type CanvasWorkspaceMode, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
+import { CanvasNodeType, type CanvasCreatableNodeType, type CanvasNodeData, type ConnectionHandle, type Position, type ViewportTransform } from "@/types/canvas";
 import { useCanvasNodeResizeMotion } from "./canvas-node-resize-motion";
 
 export type PendingConnectionCreate = {
@@ -249,8 +224,6 @@ export function CanvasConnectionCreateMenu({
     viewportSize,
     containerRef,
     canCreateDrawing,
-    canvasKind = "freeform",
-    workspaceMode = "professional",
     getDisabledReason,
     onCreate,
     onClose,
@@ -260,19 +233,12 @@ export function CanvasConnectionCreateMenu({
     viewportSize: { width: number; height: number };
     containerRef: RefObject<HTMLDivElement | null>;
     canCreateDrawing: boolean;
-    /**
-     * 画布种类。电商节点只在电商画布里出现，影视侧的节点也不进电商画布——
-     * 两边是两套工作流，混在一起会把两条流程的入口都搞模糊（见 canvas-kind.ts）。
-     */
-    canvasKind?: CanvasKind;
-    workspaceMode?: CanvasWorkspaceMode;
     getDisabledReason: (type: CanvasCreatableNodeType, provider?: "runninghub") => string;
     onCreate: (type: CanvasCreatableNodeType, provider?: "runninghub") => void;
     onClose: () => void;
 }) {
     const theme = canvasThemes[useActiveTheme()];
     const reducedMotion = useReducedMotion();
-    const ecommerceCanvas = canvasKind === "ecommerce";
     const menuRef = useRef<HTMLDivElement>(null);
     const onCloseRef = useRef(onClose);
     const focusSessionRef = useRef(0);
@@ -280,18 +246,12 @@ export function CanvasConnectionCreateMenu({
     const [activeOption, setActiveOption] = useState<string | null>(null);
     const lastPointerRef = useRef<Position | null>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer("connection-create-menu", "var(--z-modal-overlay)");
-    const options = CONNECTION_CREATE_OPTIONS.filter((option) => (canCreateDrawing || option.type !== CanvasNodeType.Drawing) && connectionCreateOptionVisible(option.type, ecommerceCanvas, workspaceMode === "simple"));
-    const ecommerceGroups = ecommerceCanvas ? ecommerceConnectionGroups(workspaceMode) : [];
-    const ecommerceOptions = ecommerceGroups.flatMap((group) => group.options);
-    const active = [...options, ...ecommerceOptions].find((option) => option.title === activeOption);
+    const options = CONNECTION_CREATE_OPTIONS.filter((option) => canCreateDrawing || option.type !== CanvasNodeType.Drawing);
+    const active = options.find((option) => option.title === activeOption);
     const activeDisabledReason = active ? getDisabledReason(active.type) : "";
     const menuWidth = Math.min(288, viewportSize.width - 24);
-    // 行高 40 + 间距 2，分组标题约 26，加列表内边距与底部 52px 说明区；只用于首帧定位，随后按实际高度修正。
-    // 电商专业模式条目多，估小了会在第一帧把菜单摆偏，所以按完整条目数估。
-    const menuHeight = (options.length + ecommerceOptions.length) * 42 + (ecommerceGroups.length + (ecommerceCanvas ? 0 : 1)) * 26 + 14 + 52;
-    const renderOption = (option: ConnectionCreateItem) => (
-        <ConnectionCreateOption key={option.type} active={activeOption === option.title} icon={option.icon} title={option.title} description={option.description} disabledReason={getDisabledReason(option.type)} onClick={() => onCreate(option.type)} />
-    );
+    // 行高 40 + 间距 2，加列表内边距与底部 52px 说明区；只用于首帧定位，随后按实际高度修正。
+    const menuHeight = options.length * 42 + 14 + 52;
     const gap = 12;
     const initialPosition = getConnectionMenuPosition(pending.position, viewport, viewportSize, menuWidth, menuHeight, gap);
 
@@ -378,14 +338,16 @@ export function CanvasConnectionCreateMenu({
             {/* 行高固定，说明统一放在底部说明区：悬停只换高亮和说明文字，列表不移动。 */}
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-2">
                 <div className="grid min-w-0 grid-cols-1 gap-0.5">
-                    {ecommerceCanvas ? null : <ConnectionCreateGroupLabel label="通用" />}
-                    {options.map(renderOption)}
-                    {ecommerceGroups.length ? <span aria-hidden className="mx-1 my-0.5 h-px" style={{ background: "color-mix(in srgb, currentColor 12%, transparent)" }} /> : null}
-                    {ecommerceGroups.map((group) => (
-                        <div key={group.label} className="grid min-w-0 grid-cols-1 gap-0.5">
-                            <ConnectionCreateGroupLabel label={group.label} />
-                            {group.options.map(renderOption)}
-                        </div>
+                    {options.map((option) => (
+                        <ConnectionCreateOption
+                            key={option.type}
+                            active={activeOption === option.title}
+                            icon={option.icon}
+                            title={option.title}
+                            description={option.description}
+                            disabledReason={getDisabledReason(option.type)}
+                            onClick={() => onCreate(option.type)}
+                        />
                     ))}
                 </div>
             </div>
@@ -396,47 +358,6 @@ export function CanvasConnectionCreateMenu({
                 </p>
             </div>
         </motion.div>
-    );
-}
-
-type ConnectionCreateItem = { type: CanvasCreatableNodeType; title: string; description: string; icon: ReactNode };
-
-/** 电商画布的业务节点分组；快捷模式只保留从商品到交付的核心链路。 */
-const ECOMMERCE_CONNECTION_GROUPS: Record<CanvasWorkspaceMode, ReadonlyArray<{ label: string; types: readonly CanvasCreatableNodeType[] }>> = {
-    simple: [
-        { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
-        { label: "画面制作", types: [CanvasNodeType.Layout, CanvasNodeType.Infographic] },
-        { label: "修改交付", types: [CanvasNodeType.Delivery] },
-    ],
-    professional: [
-        { label: "商品信息", types: [CanvasNodeType.Product, CanvasNodeType.SellingPoint, CanvasNodeType.Copy, CanvasNodeType.Style] },
-        { label: "画面制作", types: [CanvasNodeType.EcommerceStudio, CanvasNodeType.ShotRecipe, CanvasNodeType.Layout, CanvasNodeType.Infographic, CanvasNodeType.Aplus, CanvasNodeType.EcommerceVideo] },
-        { label: "参考分析", types: [CanvasNodeType.Replica, CanvasNodeType.Teardown] },
-        { label: "修改交付", types: [CanvasNodeType.Revision, CanvasNodeType.Delivery] },
-    ],
-};
-
-function ecommerceConnectionGroups(workspaceMode: CanvasWorkspaceMode) {
-    return ECOMMERCE_CONNECTION_GROUPS[workspaceMode].map((group) => ({
-        label: group.label,
-        options: group.types.map((type): ConnectionCreateItem => ({ type, title: getNodeLabel(type), description: `添加并连接${getNodeLabel(type)}`, icon: getNodeIcon(type) })),
-    }));
-}
-
-/** 影视节点（文本、分镜）不进电商画布；快捷电商不放批量表和生成配置；音频只在专业自由画布出现。 */
-function connectionCreateOptionVisible(type: CanvasCreatableNodeType, ecommerceCanvas: boolean, simpleMode: boolean) {
-    if (type === CanvasNodeType.Text || type === CanvasNodeType.Script) return !ecommerceCanvas;
-    if (type === CanvasNodeType.BatchTable || type === CanvasNodeType.Config) return !ecommerceCanvas || !simpleMode;
-    if (type === CanvasNodeType.Audio) return !ecommerceCanvas && !simpleMode;
-    return true;
-}
-
-/** 菜单里的分组标题。标题本身就是导航——22 项平铺时用户得把整列扫一遍。 */
-function ConnectionCreateGroupLabel({ label }: { label: string }) {
-    return (
-        <span className="px-2 pb-0.5 pt-2 text-[9px] font-bold tracking-[.12em]" style={{ color: "var(--canvas-connection-group, var(--muted-foreground))" }}>
-            {label}
-        </span>
     );
 }
 

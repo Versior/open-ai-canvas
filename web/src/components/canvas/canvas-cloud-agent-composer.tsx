@@ -232,7 +232,7 @@ export function AgentChatComposer({
     blockReason,
     onLongTextPaste,
     left,
-    submitAccessory,
+    statusBar,
     tray,
     footer,
     onStop,
@@ -278,8 +278,8 @@ export function AgentChatComposer({
     /** 粘贴了很长的文字：文字照常粘贴，由调用方决定是否建议转成画布文本节点。 */
     onLongTextPaste?: (text: string) => void;
     left?: ReactNode;
-    /** 发送按钮左侧的附属控件，例如上下文用量环。 */
-    submitAccessory?: ReactNode;
+    /** 输入卡片正上方的状态栏，例如上下文与本轮用量。 */
+    statusBar?: ReactNode;
     /** 输入区底部的附加内容（例如连接器条）。 */
     footer?: ReactNode;
     /** 供「@」插入的画布节点/素材/技能引用候选（可选，默认空，缺省时退化为普通输入框） */
@@ -459,6 +459,7 @@ export function AgentChatComposer({
 
     return (
         <div className="agent-composer-wrap min-w-0 shrink-0" onWheelCapture={(event) => event.stopPropagation()}>
+            {statusBar}
             {/* 有队列条或底部附加内容时，外壳托住它们与输入卡片，形成一张整卡。 */}
             <div className="agent-composer-shell relative" data-has-footer={wrapped ? "" : undefined}>
                 <AnimatePresence initial={false}>
@@ -652,7 +653,6 @@ export function AgentChatComposer({
                                     {textLength.toLocaleString()} / {charLimit!.toLocaleString()}
                                 </span>
                             ) : null}
-                            {submitAccessory}
                             <span className="agent-composer-stop-slot">
                                 <AnimatePresence initial={false}>
                                     {canStop ? (

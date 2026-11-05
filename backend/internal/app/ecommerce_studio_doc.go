@@ -462,7 +462,7 @@ func studioContextSummary(productID string, doc *studioProductDoc) (map[string]a
 	summary := map[string]any{
 		"source": "server_snapshot", "productId": productID, "revision": doc.revision(), "name": doc.str("name"), "platform": doc.str("platform"), "style": doc.str("style"),
 		"photos": len(photos), "truthPhotos": truth, "dossier": nil, "sellingPoints": len(points), "hasCopy": copyDoc != nil, "pendingGeneration": pending != nil,
-		"note": "需要商品事实时先用 studio_get_state 读取完整状态和 revision；写入工具必须传最新 revision。电商出图方法可用 skill_search 检索「电商出图方法库」。",
+		"note": "需要商品事实时先用 studio_get_state 读取完整状态和 revision；写入工具必须传最新 revision。排镜头前先用 skill_read_file 读内置技能「电商出图方法库」（skillId ecommerce-studio-method）的 SKILL.md 与 cards/shot-roles.md；镜头角色只能用 studio_plan_shots 声明里的值，不要按其他技能自造角色名。",
 	}
 	if dossier != nil {
 		unconfirmed := 0

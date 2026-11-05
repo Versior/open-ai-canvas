@@ -35,8 +35,6 @@ mock.module("motion/react", () => ({
 const { createRoot } = await import("react-dom/client");
 const { CanvasConnectionCreateMenu } = await import("../../src/components/canvas/canvas-workspace-overlays");
 const { CanvasNodeType } = await import("../../src/types/canvas");
-type CanvasKind = import("../../src/types/canvas").CanvasKind;
-type CanvasWorkspaceMode = import("../../src/types/canvas").CanvasWorkspaceMode;
 
 afterAll(() => {
     dom.happyDOM.abort();
@@ -61,7 +59,7 @@ function setupSurface() {
     return { host, canvas, trigger, outside, root };
 }
 
-function MenuHarness({ canvas, allDisabled = false, canvasKind = "freeform", workspaceMode = "professional", onClose }: { canvas: HTMLDivElement; allDisabled?: boolean; canvasKind?: CanvasKind; workspaceMode?: CanvasWorkspaceMode; onClose: () => void }) {
+function MenuHarness({ canvas, allDisabled = false, onClose }: { canvas: HTMLDivElement; allDisabled?: boolean; onClose: () => void }) {
     const [open, setOpen] = useState(true);
     const close = useCallback(() => {
         onClose();
@@ -75,8 +73,6 @@ function MenuHarness({ canvas, allDisabled = false, canvasKind = "freeform", wor
             viewportSize={{ width: 1280, height: 800 }}
             containerRef={{ current: canvas } as RefObject<HTMLDivElement>}
             canCreateDrawing={false}
-            canvasKind={canvasKind}
-            workspaceMode={workspaceMode}
             getDisabledReason={(type) => (allDisabled || type === CanvasNodeType.Text ? "暂不可用" : "")}
             onCreate={() => {}}
             onClose={close}
@@ -84,29 +80,13 @@ function MenuHarness({ canvas, allDisabled = false, canvasKind = "freeform", wor
     );
 }
 
-test("连接后菜单在快捷电商保留核心电商节点，专业与自由画布不受误伤", async () => {
+test("连接后菜单只列通用节点，不再出现已下线的电商节点", async () => {
     const surface = setupSurface();
-    const labels = () => new Set(Array.from(surface.host.querySelectorAll<HTMLElement>("[data-create-option]"), (option) => option.getAttribute("aria-label")));
-    const render = async (canvasKind: CanvasKind, workspaceMode: CanvasWorkspaceMode) => {
-        await act(async () => surface.root.render(<MenuHarness key={`${canvasKind}-${workspaceMode}`} canvas={surface.canvas} canvasKind={canvasKind} workspaceMode={workspaceMode} onClose={() => {}} />));
-        return labels();
-    };
     try {
-        const simple = await render("ecommerce", "simple");
-        for (const label of ["商品", "卖点", "文案", "品牌风格", "排版", "信息图", "交付"]) expect(simple.has(label)).toBe(true);
-        for (const label of ["电商生图台", "批量创作表", "生成配置", "音频参考", "分镜脚本", "拍法", "爆款复刻", "竞品拆解", "改稿", "电商视频", "A+ 内容"]) expect(simple.has(label)).toBe(false);
-
-        const professional = await render("ecommerce", "professional");
-        for (const label of ["商品", "卖点", "电商生图台", "批量创作表", "生成配置"]) expect(professional.has(label)).toBe(true);
-        expect(professional.has("音频参考")).toBe(false);
-
-        const freeform = await render("freeform", "simple");
-        expect(freeform.has("商品")).toBe(false);
-        expect(freeform.has("批量创作表")).toBe(true);
-        expect(freeform.has("生成配置")).toBe(true);
-        expect(freeform.has("音频参考")).toBe(false);
-
-        expect((await render("freeform", "professional")).has("音频参考")).toBe(true);
+        await act(async () => surface.root.render(<MenuHarness canvas={surface.canvas} onClose={() => {}} />));
+        const labels = Array.from(surface.host.querySelectorAll<HTMLElement>("[data-create-option]"), (option) => option.getAttribute("aria-label"));
+        expect(labels).toEqual(["文本生成", "分镜脚本", "批量创作表", "图片生成", "生成配置", "视频生成", "音频参考", "转换"]);
+        for (const label of ["商品", "卖点", "电商生图台", "排版", "交付"]) expect(labels).not.toContain(label);
     } finally {
         await act(async () => surface.root.unmount());
         surface.host.remove();
@@ -115,7 +95,6 @@ test("连接后菜单在快捷电商保留核心电商节点，专业与自由�
         surface.outside.remove();
     }
 });
-
 test("连接创建弹层接管焦点，Escape 在焦点移出后仍关闭并恢复触发焦点", async () => {
     const surface = setupSurface();
     let closeCount = 0;

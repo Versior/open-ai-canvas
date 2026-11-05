@@ -26,7 +26,6 @@ import {
     SquareDashed,
     Sun,
     Upload,
-    UserRound,
     Scaling,
     Eraser,
 } from "lucide-react";
@@ -35,7 +34,6 @@ import type { CanvasNodeData } from "@/types/canvas";
 import type { NodeToolbarGroup } from "@/lib/canvas/tool-registry";
 
 type ImageNodeActionToolId =
-    | "saveAsModel"
     | "copyPrompt"
     | "reversePrompt"
     | "replace"
@@ -90,7 +88,6 @@ type ImageToolHandlers = {
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
-    onSaveAsModel?: (node: CanvasNodeData) => void;
     onNineGrid: (node: CanvasNodeData, toolId: number, label: string, icon: string) => void;
 };
 
@@ -107,8 +104,6 @@ type ImageToolDefinition = {
     run: (node: CanvasNodeData, handlers: ImageToolHandlers, tool: ImageToolDefinition) => void;
     /** 后端 nine_grid 类型提示词工具 ID；工具条分组按用途决定，与后端类型无关。 */
     toolId?: number;
-    /** 只在电商画布里出现。自由画布的工具盘不掺电商的东西。 */
-    ecommerceOnly?: boolean;
 };
 
 /** lucide 组件把 PascalCase 图标名写入 displayName，从 icon 渲染结果反查图标名，未命中时回退 Grid3x3。 */
@@ -420,17 +415,6 @@ const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onUpload(node),
     },
     {
-        id: "saveAsModel",
-        section: "素材",
-        label: "存为模特",
-        description: "把这张图存进模特库，之后同一款商品的每张图都用它锁住同一个人",
-        icon: () => <UserRound className="size-3.5" />,
-        group: "more",
-        order: 46,
-        ecommerceOnly: true,
-        run: (node, handlers) => handlers.onSaveAsModel?.(node),
-    },
-    {
         id: "copyPrompt",
         section: "生成信息",
         label: "复制提示词",
@@ -460,45 +444,18 @@ const imageToolDefinitions: ImageToolDefinition[] = [
     },
 ];
 
-const simpleEcommerceImageToolbarToolIds = new Set([
-    "regionEdit",
-    "textEdit",
-    "lighting",
-    "removeBackground",
-    "angle",
-    "crop",
-    "upscale",
-    "annotation",
-    "annotationEdit",
-    "view",
-    "replace",
-    "copyPrompt",
-    "reversePrompt",
-    "resize",
-    "uploadImage",
-    "retry",
-    "download",
-    "mediaVersions",
-]);
-
-export function isSimpleEcommerceImageToolbarTool(id: string) {
-    return simpleEcommerceImageToolbarToolIds.has(id);
-}
-
-export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers, options?: { ecommerce?: boolean; simpleEcommerce?: boolean }) {
-    return imageToolDefinitions
-        .filter((tool) => (!tool.ecommerceOnly || options?.ecommerce) && (!options?.simpleEcommerce || isSimpleEcommerceImageToolbarTool(tool.id)))
-        .map((tool) => ({
-            id: tool.id,
-            label: resolveToolText(tool.label, node),
-            icon: tool.icon(node),
-            group: tool.group,
-            order: tool.order,
-            section: tool.section,
-            description: tool.description,
-            active: tool.active?.(node),
-            onClick: () => tool.run(node, handlers, tool),
-        }));
+export function buildImageToolbarTools(node: CanvasNodeData, handlers: ImageToolHandlers) {
+    return imageToolDefinitions.map((tool) => ({
+        id: tool.id,
+        label: resolveToolText(tool.label, node),
+        icon: tool.icon(node),
+        group: tool.group,
+        order: tool.order,
+        section: tool.section,
+        description: tool.description,
+        active: tool.active?.(node),
+        onClick: () => tool.run(node, handlers, tool),
+    }));
 }
 
 function resolveToolText(value: string | ((node: CanvasNodeData) => string), node: CanvasNodeData) {

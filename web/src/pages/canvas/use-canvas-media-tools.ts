@@ -21,7 +21,6 @@ import type { CanvasVideoFrameParams } from "@/components/canvas/canvas-video-fr
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { prepareRasterSource } from "@/lib/image-raster";
-import { getActiveUserScope } from "@/lib/user-scope";
 import { isValidGridSplit, layoutGridSplitCells } from "@/lib/canvas/canvas-grid-split";
 import { audioMetadata, buildSourceImageLayerNodeResult, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { commitProducedModel } from "@/lib/canvas/produced-model";
@@ -48,11 +47,6 @@ import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution
 import { buildGenerationConfig, buildImageGenerationMetadata, nodeReferenceImage, isGenerationCanceled, runBackendCanvasGenerationTask, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasImageNodeDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { fitImageNodeSize, fitNodeSize, preserveImageNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
-import { isEcommerceNode } from "@/lib/ecommerce/ecommerce-canvas";
-import { normalizeEcommerceProductName } from "@/lib/ecommerce/ecommerce-contract";
-import { ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE, ecommerceTeardownPlanSourceSignature, parseEcommerceTeardownPlanRequest } from "@/lib/ecommerce/ecommerce-teardown";
-import { ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE, ecommerceVideoCreativePlanSourceSignature, parseEcommerceVideoCreativePlanRequest } from "@/lib/ecommerce/ecommerce-video";
-import { ecommerceMaterialNodes, ecommerceMaterialPlan, ecommerceShotSetOutputs } from "@/lib/ecommerce/ecommerce-canvas-preset";
 import { compositeEmotionImage, emotionGenerationSize, emotionProviderMask, normalizeEmotionPromptForProvider, resolveEmotionEditPlan } from "@/lib/canvas/canvas-emotion";
 import { DEFAULT_PORTRAIT_TEXTURE_SETTINGS } from "@/lib/canvas/canvas-portrait-texture";
 import { IMAGE_PROMPT_REVERSE } from "@/lib/prompts";
@@ -191,20 +185,17 @@ export function useCanvasMediaTools({
     );
 
     const persistMediaNodes = useCallback(
-        async (mediaNodes: CanvasNodeData[], ensureCurrent?: () => void) => {
+        async (mediaNodes: CanvasNodeData[]) => {
             const assetIds = new Map<string, string>();
             for (const mediaNode of mediaNodes) {
-                ensureCurrent?.();
                 try {
                     const result = await ensureCanvasNodeAsset({ canvasId: projectId, domainProjectId, node: mediaNode, source: "canvas-manual" });
                     assetIds.set(mediaNode.id, result.assetId);
                 } catch (error) {
                     message.warning(`媒体节点已创建，但素材库写入失败：${error instanceof Error ? error.message : "未知错误"}`);
                 }
-                ensureCurrent?.();
             }
             if (assetIds.size > 0) {
-                ensureCurrent?.();
                 setNodes((current) =>
                     current.map((item) => {
                         const assetId = assetIds.get(item.id);
@@ -217,100 +208,45 @@ export function useCanvasMediaTools({
         [domainProjectId, message, projectId, setNodes],
     );
 
-    /**
-     * 从图片或视频节点反推提示词：建一个指令文本节点 + 一个结果节点，并把两者连到媒体上。
-     *
-     * prompt 可传——不传走通用的生图提示词反推；传了就按传进来的指令走
-     * （竞品拆解就是这样用的：同一张图，问的是结构而不是提示词）。
-     */
+    /** 从图片或视频节点反推提示词：建一个指令文本节点 + 一个结果节点，并把两者连到媒体上。 */
     const createImageReversePromptNodes = useCallback(
-        (node: CanvasNodeData, prompt?: string) => {
+        (node: CanvasNodeData) => {
             const mediaType = node.type === CanvasNodeType.Image ? "图片" : node.type === CanvasNodeType.Video ? "视频" : "";
             if (!mediaType || (!node.metadata?.content && !node.metadata?.storageKey)) {
                 message.warning(`${mediaType || "媒体"}节点为空，无法反推提示词`);
                 return;
             }
-            const ecommerceVideoRequest = parseEcommerceVideoCreativePlanRequest(prompt);
-            const ecommerceVideoTarget = ecommerceVideoRequest ? nodesRef.current.find((item) => item.id === ecommerceVideoRequest.targetNodeId && item.type === CanvasNodeType.EcommerceVideo) : undefined;
-            const ecommerceVideoTargetId = ecommerceVideoTarget?.id;
-            const ecommerceTeardownRequest = parseEcommerceTeardownPlanRequest(prompt);
-            const ecommerceTeardownTarget = ecommerceTeardownRequest ? nodesRef.current.find((item) => item.id === ecommerceTeardownRequest.targetNodeId && item.type === CanvasNodeType.Teardown) : undefined;
-            const ecommerceTeardownTargetId = ecommerceTeardownTarget?.id;
-            const structuredTargetId = ecommerceVideoTargetId || ecommerceTeardownTargetId;
-            const targetInputIds = new Set(structuredTargetId ? connectionsRef.current.filter((connection) => connection.toNodeId === structuredTargetId).map((connection) => connection.fromNodeId) : []);
-            const targetInputs = structuredTargetId ? nodesRef.current.filter((item) => targetInputIds.has(item.id)) : [];
-            const productImages = ecommerceVideoTargetId ? targetInputs.filter((item) => item.type === CanvasNodeType.Image && Boolean(item.metadata?.content || item.metadata?.storageKey)).slice(0, 4) : [];
-            const product = targetInputs.find((item) => item.type === CanvasNodeType.Product);
-            const productProfile = product?.metadata?.productProfile;
-            const ecommerceVideoCreativePlanSource = ecommerceVideoTarget
-                ? {
-                      targetNodeId: ecommerceVideoTarget.id,
-                      referenceVideoId: node.id,
-                      signature: ecommerceVideoCreativePlanSourceSignature({ target: ecommerceVideoTarget, referenceVideo: node, product, productImages }),
-                  }
-                : undefined;
-            const ecommerceTeardownPlanSource = ecommerceTeardownTarget
-                ? {
-                      targetNodeId: ecommerceTeardownTarget.id,
-                      referenceImageId: node.id,
-                      productNodeId: product?.id,
-                      signature: ecommerceTeardownPlanSourceSignature({ target: ecommerceTeardownTarget, referenceImage: node, product }),
-                  }
-                : undefined;
-            const productFacts = productProfile
-                ? [
-                      normalizeEcommerceProductName(productProfile.name) && `商品名：${normalizeEcommerceProductName(productProfile.name)}`,
-                      productProfile.category.trim() && `品类：${productProfile.category.trim()}`,
-                      productProfile.appearance.trim() && `外观：${productProfile.appearance.trim()}`,
-                      productProfile.marks.trim() && `标识：${productProfile.marks.trim()}`,
-                      productProfile.forbidden.trim() && `禁止宣称与禁止改动：${productProfile.forbidden.trim()}`,
-                      productProfile.audience.trim() && `目标人群与使用场景：${productProfile.audience.trim()}`,
-                      productProfile.facts.trim() && `卖点与依据：${productProfile.facts.trim()}`,
-                      productProfile.price.trim() && `价格：${productProfile.price.trim()}`,
-                  ].filter(Boolean)
-                : [];
-            const instruction = [ecommerceVideoRequest?.prompt || ecommerceTeardownRequest?.prompt || prompt?.trim() || IMAGE_PROMPT_REVERSE, productFacts.length ? `【已确认商品资料】\n${productFacts.join("\n")}` : ""].filter(Boolean).join("\n\n");
             const gap = 96;
             const textSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
             const resultSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
             const centerY = node.position.y + node.height / 2;
             const textNode = {
-                ...createCanvasNode(CanvasNodeType.Text, { x: node.position.x + node.width + gap + textSpec.width / 2, y: centerY }, { content: instruction, prompt: instruction, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
-                title: prompt ? "拆解指令" : "反推提示词",
-            };
-            const resultMetadata = {
-                content: "",
-                generationMode: "text" as const,
-                model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel,
-                count: 1,
-                composerContent: [`参考${mediaType}：@${mediaType}1`, productImages.length ? `商品图片：${productImages.map((_, index) => `@图片${index + 1}`).join(" ")}` : "", "任务说明：@文本1"].filter(Boolean).join("\n"),
-                ecommerceVideoCreativePlanSource,
-                ecommerceTeardownPlanSource,
+                ...createCanvasNode(CanvasNodeType.Text, { x: node.position.x + node.width + gap + textSpec.width / 2, y: centerY }, { content: IMAGE_PROMPT_REVERSE, prompt: IMAGE_PROMPT_REVERSE, status: NODE_STATUS_SUCCESS, fontSize: 14 }),
+                title: "反推提示词",
             };
             const resultNode = {
                 ...createCanvasNode(
                     CanvasNodeType.Text,
                     { x: textNode.position.x + textNode.width + gap + resultSpec.width / 2, y: centerY },
-                    resultMetadata,
+                    {
+                        content: "",
+                        generationMode: "text",
+                        model: effectiveConfig.textModel || effectiveConfig.model || defaultConfig.textModel,
+                        count: 1,
+                        composerContent: `参考${mediaType}：@${mediaType}1\n任务说明：@文本1`,
+                    },
                 ),
-                title: ecommerceTeardownTargetId ? ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE : ecommerceVideoTargetId ? ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE : "反推提示词结果",
+                title: "反推提示词结果",
             };
             setNodes((current) => [...current, textNode, resultNode]);
-            setConnections((current) => [
-                ...current,
-                { id: nanoid(), fromNodeId: node.id, toNodeId: resultNode.id },
-                { id: nanoid(), fromNodeId: textNode.id, toNodeId: resultNode.id },
-                ...productImages.map((image) => ({ id: nanoid(), fromNodeId: image.id, toNodeId: resultNode.id })),
-                ...(structuredTargetId ? [{ id: nanoid(), fromNodeId: resultNode.id, toNodeId: structuredTargetId }] : []),
-            ]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: resultNode.id }, { id: nanoid(), fromNodeId: textNode.id, toNodeId: resultNode.id }]);
             setSelectedNodeIds(new Set([resultNode.id]));
             setSelectedConnectionId(null);
             setDialogNodeId(resultNode.id);
             setContextMenu(null);
         },
-        [connectionsRef, effectiveConfig.model, effectiveConfig.textModel, message, nodesRef, setConnections, setContextMenu, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
+        [effectiveConfig.model, effectiveConfig.textModel, message, setConnections, setContextMenu, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );
-
     const openPortraitTextureEditor = useCallback(
         (node: CanvasNodeData) => {
             if (node.type !== CanvasNodeType.Image || !node.metadata?.content) {
@@ -805,158 +741,6 @@ export function useCanvasMediaTools({
             message.success(`已导出「${title}」`);
         },
         [connectionsRef, message, persistMediaNodes, setConnections, setNodes],
-    );
-
-    /**
-     * 电商创作：按物料方案从商品节点长出下游。
-     *
-     * 不预铺节点是这套设计的一条硬规矩——用户只要一张主图时，铺七个节点是荒谬的。
-     * 这里只在用户明确选了「要什么」之后才建节点，节点数量因此始终等于用户真正要的东西。
-     */
-    const spawnEcommerceMaterials = useCallback(
-        async (node: CanvasNodeData, planId: string): Promise<string[]> => {
-            const plan = ecommerceMaterialPlan(planId);
-            if (!plan) return [];
-            const existing = new Set(nodesRef.current.map((item) => item.id));
-            const { nodes: spawned, connections: spawnedConnections } = ecommerceMaterialNodes(node, plan, () => nanoid());
-            if (spawned.some((item) => existing.has(item.id))) return [];
-            const spawnedImageIds = spawned.filter((item) => item.type === CanvasNodeType.Image).map((item) => item.id);
-            setNodes((current) => [...current, ...spawned]);
-            setConnections((current) => [...current, ...spawnedConnections]);
-            setSelectedNodeIds(new Set(spawnedImageIds));
-            setSelectedConnectionId(null);
-            await persistMediaNodes(spawned);
-            message.success(`已铺「${plan.name}」：${plan.slots.length} 张图${plan.extras?.length ? ` + ${plan.extras.length} 个辅助节点` : ""}`);
-            return spawnedImageIds;
-        },
-        [message, nodesRef, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds],
-    );
-
-    /**
-     * 电商创作：从拍法节点按清单补齐缺的产物图。
-     *
-     * 与 spawnEcommerceMaterials 的分工：那个从商品节点按方案铺一整套，
-     * 这个从已有的拍法节点按**当前清单**对账——用户改过清单（加行、删行、换拍法）之后，
-     * 产物节点与清单行会对不上，按方案重铺会冲掉改动，按清单补齐才不会。
-     */
-    const spawnEcommerceShotOutputs = useCallback(
-        async (node: CanvasNodeData, shotIds?: string[]): Promise<string[]> => {
-            const claimed = new Set(
-                connectionsRef.current
-                    .filter((connection) => connection.fromNodeId === node.id)
-                    .map((connection) => nodesRef.current.find((item) => item.id === connection.toNodeId))
-                    .filter((item): item is CanvasNodeData => Boolean(item) && item!.type === CanvasNodeType.Image)
-                    .map((item) => item.metadata?.ecommerceShotId)
-                    .filter(Boolean) as string[],
-            );
-            const { nodes: spawned, connections: spawnedConnections } = ecommerceShotSetOutputs(node, claimed, () => nanoid(), shotIds);
-            if (!spawned.length) return [];
-            // 拍法节点的上游电商节点（商品、风格、卖点、文案……）要一起连到新图上。
-            // 少了这一步，新图沿约束链往上只能走到拍法——商品锁定块静默丢失，
-            // 生成结果看起来正常，商品却不是同一件，这是最难查的一类错。
-            const nodeById = new Map(nodesRef.current.map((item) => [item.id, item]));
-            const upstreamSources = connectionsRef.current
-                .filter((connection) => connection.toNodeId === node.id)
-                .map((connection) => nodeById.get(connection.fromNodeId))
-                .filter((item): item is CanvasNodeData => Boolean(item) && isEcommerceNode(item!));
-            for (const image of spawned) {
-                for (const source of upstreamSources) spawnedConnections.push({ id: nanoid(), fromNodeId: source.id, toNodeId: image.id });
-            }
-            const spawnedImageIds = spawned.map((item) => item.id);
-            setNodes((current) => [...current, ...spawned]);
-            setConnections((current) => [...current, ...spawnedConnections]);
-            setSelectedNodeIds(new Set(spawnedImageIds));
-            setSelectedConnectionId(null);
-            await persistMediaNodes(spawned);
-            return spawnedImageIds;
-        },
-        [connectionsRef, nodesRef, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds],
-    );
-
-    /** 电商创作：把排版节点合成成成品图，导出为新图片节点。合成只在导出时跑一次。 */
-    const exportEcommerceLayout = useCallback(
-        async (node: CanvasNodeData, dataUrl: string, title: string) => {
-            const image = await uploadImage(dataUrl);
-            const size = fitNodeSize(image.width || 720, image.height || 720);
-            const outputCount = connectionsRef.current.filter((connection) => connection.fromNodeId === node.id).length;
-            const childNode: CanvasNodeData = {
-                id: nanoid(),
-                type: CanvasNodeType.Image,
-                title,
-                position: { x: node.position.x + node.width + 96, y: node.position.y + (outputCount % 5) * (size.height + 32) },
-                width: size.width,
-                height: size.height,
-                metadata: { ...imageMetadata(image), prompt: node.metadata?.prompt },
-            };
-            setNodes((current) => [...current, childNode]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childNode.id }]);
-            await persistMediaNodes([childNode]);
-            message.success(`已导出「${title}」`);
-        },
-        [connectionsRef, message, persistMediaNodes, setConnections, setNodes],
-    );
-
-    /**
-     * 电商创作：一键详情页——长图与切片各落成一张图片节点。
-     *
-     * 长图排在最前面（它是整体），切片按顺序排在后面。切片标题用交付命名，
-     * 这样用户上传时直接照抄文件名，不用再对照 CSV 找哪张是哪张。
-     */
-    const exportEcommerceDetailPage = useCallback(
-        async (node: CanvasNodeData, longImageDataUrl: string, pieces: { index: number; top: number; height: number; dataUrl: string }[], fileNames: string[], validateSource?: () => void) => {
-            if (!pieces.length) return;
-            const scope = getActiveUserScope();
-            const sourceNameSignature = JSON.stringify([node.title, node.metadata?.productProfile?.name]);
-            const ensureCurrentSource = () => {
-                if (scope !== getActiveUserScope()) throw new Error("账号已切换，已取消长图交付");
-                const source = nodesRef.current.find((item) => item.id === node.id);
-                if (!source || source.metadata?.locked) throw new Error("来源节点已删除或锁定，已取消长图交付");
-                if (sourceNameSignature !== JSON.stringify([source.title, source.metadata?.productProfile?.name])) throw new Error("来源标题或商品名称已变化，已取消长图交付");
-                validateSource?.();
-            };
-            ensureCurrentSource();
-            const outputs: { title: string; dataUrl: string }[] = [{ title: `${node.title || "详情页"} · 长图`, dataUrl: longImageDataUrl }];
-            pieces.forEach((piece, index) => outputs.push({ title: fileNames[index] || `切片 ${piece.index}`, dataUrl: piece.dataUrl }));
-            const uploaded = [];
-            for (const output of outputs) {
-                ensureCurrentSource();
-                const image = await uploadImage(output.dataUrl, undefined, undefined, { expectedScope: scope });
-                ensureCurrentSource();
-                uploaded.push({ output, image, size: fitNodeSize(image.width || 720, image.height || 720) });
-            }
-            const startX = node.position.x + node.width + 96;
-            const positions = layoutGridSplitCells(
-                { x: startX, y: node.position.y },
-                uploaded.map(({ size }, index) => ({ row: Math.floor(index / 3), column: index % 3, width: size.width, height: size.height })),
-            );
-            const childNodes = uploaded.map(
-                ({ output, image, size }, index) =>
-                    ({
-                        id: nanoid(),
-                        type: CanvasNodeType.Image,
-                        title: output.title,
-                        position: positions[index],
-                        width: size.width,
-                        height: size.height,
-                        metadata: { ...imageMetadata(image), prompt: node.metadata?.prompt },
-                    }) satisfies CanvasNodeData,
-            );
-            const childNodeIds = new Set(childNodes.map((child) => child.id));
-            ensureCurrentSource();
-            setNodes((current) => [...current, ...childNodes]);
-            setConnections((current) => [...current, ...childNodes.map((child) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: child.id }))]);
-            setSelectedNodeIds(childNodeIds);
-            setSelectedConnectionId(null);
-            try {
-                await persistMediaNodes(childNodes, ensureCurrentSource);
-            } catch (error) {
-                setNodes((current) => current.filter((item) => !childNodeIds.has(item.id)));
-                setConnections((current) => current.filter((connection) => !childNodeIds.has(connection.fromNodeId) && !childNodeIds.has(connection.toNodeId)));
-                setSelectedNodeIds((current) => new Set([...current].filter((id) => !childNodeIds.has(id))));
-                throw error;
-            }
-        },
-        [nodesRef, persistMediaNodes, setConnections, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );
 
     const splitImageNode = useCallback(
@@ -2364,10 +2148,6 @@ export function useCanvasMediaTools({
         openPanoramaConfig,
         createPanoramaViewerWithConfig,
         addPanoramaCaptureNode,
-        spawnEcommerceMaterials,
-        spawnEcommerceShotOutputs,
-        exportEcommerceLayout,
-        exportEcommerceDetailPage,
         panoramaConfigNodeId,
         setPanoramaConfigNodeId,
         regionEditImageNode,

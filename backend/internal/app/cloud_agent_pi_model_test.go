@@ -142,6 +142,9 @@ func TestCloudAgentPiCompactionSummaryUsesStandardStepWithoutAssistantEvent(t *t
 		if event.Type == "assistant_message" && stringField(event.Payload, "text") == "internal compaction summary" {
 			t.Fatal("internal summary was published as assistant message")
 		}
+		if event.Type == "model_usage" {
+			t.Fatal("internal compaction summary step must not publish model_usage")
+		}
 	}
 }
 

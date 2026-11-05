@@ -1,6 +1,7 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
 import { STUDIO_STYLES } from "./shot-specs";
+import { STUDIO_SUITE_LIMITS } from "./suites";
 import {
     STUDIO_PRODUCT_SCHEMA,
     studioFactUsable,
@@ -235,6 +236,7 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         lines: strings(shot.lines),
         sellingPointIds: strings(shot.sellingPointIds),
         tweaks: strings(shot.tweaks),
+        ...(typeof shot.duty === "string" && shot.duty.trim() ? { duty: shot.duty.slice(0, STUDIO_SUITE_LIMITS.duty) } : {}),
         attempts: arrayOf(shot.attempts, (attempt) => normalizeAttempt(attempt, fallbackTime)),
         adopted: isRecord(shot.adopted) ? normalizeOutput(shot.adopted) : undefined,
     };
@@ -251,6 +253,9 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
         ...(run.kind === "main" || run.kind === "detail" ? { kind: run.kind } : {}),
         textMode: run.textMode === "overlay" ? "overlay" : "model",
         quality: str(run.quality),
+        ...(isRecord(run.suite) && typeof run.suite.id === "string" && typeof run.suite.name === "string"
+            ? { suite: { id: run.suite.id, name: run.suite.name.slice(0, STUDIO_SUITE_LIMITS.name), style: str(run.suite.style).slice(0, STUDIO_SUITE_LIMITS.style) } }
+            : {}),
         shots,
     };
 }

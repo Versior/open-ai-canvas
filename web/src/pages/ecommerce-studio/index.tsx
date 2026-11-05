@@ -7,6 +7,9 @@ import { WorkspacePage } from "@/components/layout/workspace-page";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { EmptyState } from "@/components/ui/product/empty-state/empty-state";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
+import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
+import { setStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
+import { getStudioPrompts } from "@/services/api/ecommerce-studio";
 import { createStudioProduct, studioOutputCount } from "@/lib/ecommerce-studio/product";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { downloadBrowserMedia } from "@/services/browser-download";
@@ -15,6 +18,7 @@ import { StudioForm } from "./studio-form";
 import { StudioHeader } from "./studio-header";
 import { useStudioModel } from "./studio-parts";
 import { StudioResults, studioShotGroups, type StudioShotGroup, type StudioViewerTarget } from "./studio-results";
+import type { StudioShotPatch } from "./studio-shot-tuner";
 import { StudioViewer } from "./studio-viewer";
 import { useStudioAgentBridge } from "./use-studio-agent";
 import { patchStudioShotAt, useStudioRunner } from "./use-studio-runner";
@@ -51,6 +55,17 @@ export default function EcommerceStudioPage() {
     useEffect(() => {
         void load();
     }, [load]);
+
+    // 后台改过的出图提示词：读不到时按内置写法出图，并告诉用户这一次没用上后台的写法。
+    useEffect(() => {
+        const controller = new AbortController();
+        void getStudioPrompts(controller.signal)
+            .then(setStudioPromptOverrides)
+            .catch((failure) => {
+                if (!controller.signal.aborted) message.warning(`后台的出图提示词没有读到，这次按内置写法出图：${failure instanceof Error ? failure.message : "请稍后刷新"}`);
+            });
+        return () => controller.abort();
+    }, [message]);
 
     const ready = status === "ready";
     const stored = products.find((item) => item.id === requested) || (!requested ? products[0] : undefined);
@@ -100,7 +115,7 @@ export default function EcommerceStudioPage() {
     };
 
     const groups = useMemo(() => (product ? studioShotGroups(product) : []), [product]);
-    const blocked = !product?.photos.length ? "先上传商品图" : !image.value ? "先选择图片模型" : "";
+    const blocked = !product?.photos.length ? "先上传商品图" : !studioReferencePhotos(product.photos).length ? "至少点亮一张商品图的星标，出图以它为外观依据" : !image.value ? "先选择图片模型" : "";
 
     const addReference = (output: StudioOutput) => {
         if (!product) return;
@@ -129,11 +144,13 @@ export default function EcommerceStudioPage() {
         void downloadBrowserMedia({ fileName, storageKey: resourceStorageKey(output.resourceId) }).catch((failure) => message.error(failure instanceof Error ? failure.message : "下载失败"));
     };
 
-    const rerun = (group: StudioShotGroup, shot: StudioShot) => {
+    /** 大图里调整这一张：先把微调和文案写回这张镜头，再按它出一张新的；之前的结果都保留。 */
+    const tune = (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch) => {
         if (!product) return;
         if (blocked) return void message.warning(blocked);
         try {
-            runner.rerun(product.id, group.ref, [shot.id], image.value);
+            edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, ...patch })), { immediate: true });
+            if (!runner.rerun(product.id, group.ref, [shot.id], image.value)) message.info("这张图正在生成，等它完成");
         } catch (failure) {
             message.error(failure instanceof Error ? failure.message : "提交失败");
         }
@@ -191,14 +208,16 @@ export default function EcommerceStudioPage() {
                 )}
             </div>
             <StudioViewer
+                product={product}
                 groups={groups}
                 target={viewer}
                 blocked={blocked}
+                imageModel={image.value}
                 onChange={setViewer}
                 onClose={() => setViewer(undefined)}
                 onDownload={download}
                 onReference={addReference}
-                onRerun={rerun}
+                onTune={tune}
                 onAdopt={(group, shot, output) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, adopted: output })), { immediate: true })}
             />
         </WorkspacePage>

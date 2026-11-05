@@ -26,6 +26,7 @@ import {
     Megaphone,
     MessageSquareText,
     Moon,
+    Package,
     Paintbrush,
     Palette,
     PanelLeftClose,
@@ -44,6 +45,7 @@ import {
     Sun,
     TicketCheck,
     ToggleLeft,
+    UserRound,
     UsersRound,
 } from "lucide-react";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
@@ -120,8 +122,9 @@ const adminNavigation: AdminNavigationGroup[] = [
             { path: "/admin/video-replication", label: "视频复刻", shortLabel: "复刻", icon: <ScanSearch className="size-4" /> },
             { path: "/admin/prompt-templates", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/settings/drawing-engine", label: "绘图工具", shortLabel: "绘图", icon: <Paintbrush className="size-4" /> },
-            // 旧版电商画布的设置只管 /ecommerce/canvas；电商 Agent（/ecommerce）的配置、知识与技能在下面的「电商 Agent」分组。
-            { path: "/admin/settings/ecommerce", label: "旧版电商画布", shortLabel: "旧电商", icon: <Paintbrush className="size-4" /> },
+            // 电商生图台（/studio）的商品档案指令与套图模板；电商 Agent（/ecommerce）的配置、知识与技能在下面的「电商 Agent」分组。
+            { path: "/admin/settings/ecommerce", label: "电商生图台", shortLabel: "生图台", icon: <Package className="size-4" /> },
+            { path: "/admin/settings/studio-models", label: "电商模特库", shortLabel: "模特库", icon: <UserRound className="size-4" /> },
             { path: "/admin/plugins", label: "插件管理", shortLabel: "插件", icon: <PlugZap className="size-4" /> },
             { path: "/admin/skill-curation", label: "技能分类", shortLabel: "技能", icon: <Sparkles className="size-4" /> },
             { path: "/admin/resources", label: "存储资源", shortLabel: "资源", icon: <Database className="size-4" /> },

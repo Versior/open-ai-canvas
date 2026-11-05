@@ -16,6 +16,7 @@ import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import { isResourceUrl } from "@/services/api/resources";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
 import { CanvasVideoPreviewImage } from "./canvas-video-preview-image";
 import { CanvasFileUploadContent } from "./canvas-file-upload-content";
@@ -23,20 +24,7 @@ import { MarkdownNodeContent } from "./nodes/markdown-node";
 import { ChartNodeContent } from "./nodes/chart-node";
 import { CompareNodeContent } from "./nodes/compare-node";
 import { ColorGradeNodeContent } from "./nodes/color-grade-node";
-import { CopyNodeContent } from "./nodes/copy-node";
-import { LayoutNodeContent } from "./nodes/layout-node";
-import { AplusNodeContent } from "./nodes/aplus-node";
-import { InfographicNodeContent } from "./nodes/infographic-node";
-import { ReplicaNodeContent } from "./nodes/replica-node";
-import { TeardownNodeContent } from "./nodes/teardown-node";
-import { DeliveryNodeContent } from "./nodes/delivery-node";
-import { RevisionNodeContent } from "./nodes/revision-node";
-import { EcommerceVideoNodeContent } from "./nodes/ecommerce-video-node";
-import { ProductNodeContent } from "./nodes/product-node";
-import { EcommerceStudioNodeContent } from "./nodes/ecommerce-studio-node";
-import { SellingPointNodeContent } from "./nodes/selling-point-node";
-import { ShotRecipeNodeContent } from "./nodes/shot-recipe-node";
-import { StyleNodeContent } from "./nodes/style-node";
+import { RetiredEcommerceNodeContent } from "./nodes/retired-ecommerce-node";
 import { HtmlNodeContent } from "./nodes/html-node";
 import { PanoramaNodeContent } from "./nodes/panorama-node";
 import { SvgNodeContent } from "./nodes/svg-node";
@@ -94,6 +82,8 @@ export function canvasNodeRendersStatusContent(node: CanvasNodeData, options: { 
     const status = node.metadata?.status;
     if (status !== "loading" && status !== "error") return false;
     if (node.metadata?.fileUpload) return false;
+    // 已下线节点只显示占位；旧数据里残留的生成状态不再叠加徽章。
+    if (isRetiredEcommerceNode(node)) return true;
     if (options.hasCustomRenderer && canvasNodeUsesCustomContent(node, options.isEditingContent)) return false;
     if (node.type === ART_CRITIQUE_NODE_TYPE || node.type === MEDIA_CONVERSION_NODE_TYPE) return false;
     if (options.isBatchRoot) return !node.metadata?.content && !node.metadata?.storageKey;
@@ -109,11 +99,12 @@ export function CanvasNodeContent(props: CanvasNodeContentProps) {
     }
     if (props.renderLOD === "shell") return <CanvasNodeShellContent node={props.node} theme={props.theme} />;
     if (props.renderLOD === "preview") return <CanvasNodePreviewContent node={props.node} theme={props.theme} />;
+    // 旧版电商画布已下线：电商节点和旧电商创作表只显示占位，数据原样保留。
+    if (isRetiredEcommerceNode(props.node)) return <RetiredEcommerceNodeContent node={props.node} theme={props.theme} />;
     const hasCustomContent = canvasNodeUsesCustomContent(props.node, props.isEditingContent);
     if (hasCustomContent && props.renderNodeContent) return props.renderNodeContent(props.node);
     if (props.node.type === ART_CRITIQUE_NODE_TYPE) return <ArtCritiqueNodeContent node={props.node} />;
     if (props.node.type === MEDIA_CONVERSION_NODE_TYPE) return <MediaConversionNodeContent node={props.node} theme={props.theme} />;
-    if (props.node.type === CanvasNodeType.EcommerceStudio) return <EcommerceStudioNodeContent node={props.node} theme={props.theme} />;
     if (props.isBatchRoot) return <ImageNodeContent {...props} />;
     if (props.node.metadata?.status === "loading") return <LoadingContent node={props.node} theme={props.theme} onOpenTaskDetails={props.onOpenTaskDetails} />;
     if (props.node.metadata?.status === "error") return <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onReloadResource={props.onReloadResource} onOpenTaskDetails={props.onOpenTaskDetails} />;
@@ -216,19 +207,6 @@ const nodeContentRenderers: Partial<Record<string, (props: CanvasNodeContentProp
     [CanvasNodeType.Compare]: CompareNodeContent,
     [CanvasNodeType.Chart]: ChartNodeContent,
     [CanvasNodeType.ColorGrade]: ColorGradeNodeContent,
-    [CanvasNodeType.Product]: ProductNodeContent,
-    [CanvasNodeType.ShotRecipe]: ShotRecipeNodeContent,
-    [CanvasNodeType.SellingPoint]: SellingPointNodeContent,
-    [CanvasNodeType.Copy]: CopyNodeContent,
-    [CanvasNodeType.Style]: StyleNodeContent,
-    [CanvasNodeType.Layout]: LayoutNodeContent,
-    [CanvasNodeType.Infographic]: InfographicNodeContent,
-    [CanvasNodeType.Aplus]: AplusNodeContent,
-    [CanvasNodeType.Replica]: ReplicaNodeContent,
-    [CanvasNodeType.Teardown]: TeardownNodeContent,
-    [CanvasNodeType.Delivery]: DeliveryNodeContent,
-    [CanvasNodeType.Revision]: RevisionNodeContent,
-    [CanvasNodeType.EcommerceVideo]: EcommerceVideoNodeContent,
 };
 
 function DrawingContent({ node, theme, drawingProjectId }: CanvasNodeContentProps) {

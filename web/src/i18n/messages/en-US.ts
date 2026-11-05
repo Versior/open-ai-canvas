@@ -131,6 +131,7 @@ export const enUS: Messages = {
             recovery: { title: "Reset your password", description: "Verify your account email, then set a new password." },
         },
         brandFilm: "{{brand}} brand film",
+        brandPoster: "{{brand}} brand poster",
         playVideo: "Play brand film",
         videoPlaying: "Creation in progress",
         backHome: "Back to home",

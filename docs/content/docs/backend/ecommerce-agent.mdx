@@ -39,8 +39,8 @@ HTTP 路由由 `backend/internal/handler/ecommerce.go` 和 `ecommerce_agent.go` 
 
 ## 本 Fork 的适配
 
-- `/ecommerce` 由电商 Agent 接管，旧版电商画布列表在 `/ecommerce/canvas`（从电商画布顶栏返回列表时进入），后台「旧版电商画布」（`/admin/settings/ecommerce`）只管旧画布。旧画布的服务端路由与前端协议为 `handler/ecommerce_canvas.go`（`RegisterEcommerceCanvasRoutes`）和 `services/api/ecommerce-canvas.ts`。
-- 侧栏入口和电商接口受后台「功能开放 → 电商 Agent」（`ecommerceEnabled`）控制。出图走工作台图片任务 `POST /api/workbench/tasks`，还需开启「图片生成」（`imageWorkbenchEnabled`）；这两个开关默认关闭。「图片生成」关闭时页面在提交前直接提示，不会先发起收费的方向和策划任务。
+- `/ecommerce` 由电商 Agent 接管。旧版电商画布已下线，`/ecommerce/canvas` 重定向到画布列表；后台 `/admin/settings/ecommerce` 改为「电商生图台」配置（商品档案指令与套图模板），路由与前端协议为 `handler/ecommerce_canvas.go`（`RegisterEcommerceCanvasRoutes`）和 `services/api/ecommerce-canvas.ts`。
+- 侧栏入口和电商接口受后台「功能开放 → 电商 Agent」（`ecommerceEnabled`）控制。出图走工作台图片任务 `POST /api/workbench/tasks`，只看「电商 Agent」开关，默认关闭；商品视频另看「商品视频」（`ecommerceVideoEnabled`）。「图片生成」「视频生成」（`imageWorkbenchEnabled` / `videoWorkbenchEnabled`）只控制侧栏的工作台页面，关掉它们不影响电商 Agent 出图和商品视频。
 - `AI_MODE` 未设置时按 `live` 处理（上游默认 `disabled`）：方向与策划任务由服务端改写提示词、注入知识并校验结果。设为 `disabled` 时关闭这层编排：方向任务不再由服务端改写，推荐接口改用知识库检索、不看商品图，只在排查问题时使用；`mock` 只用于自动测试。配了 `TEXT_API_KEY` 时 `TEXT_BASE_URL` 必须是 HTTPS。
 - 系统渠道模型没有逻辑模型时，电商页按渠道 SKU 调 `POST /api/model-catalog/quote` 报价（`modelQuoteRequest` 的 `directChannelQuote` 选项），后台阶段模型按「渠道 ID + 模型标识」或逻辑模型 ID 匹配用户的可选模型。其他页面不变：只有视频走渠道报价，图片和文本显示本地价格。报价拿不到时页面不允许提交。
 - 方向、策划和图片任务都关联电商项目：文本任务以电商项目 ID 作为任务 `projectId`，图片任务经工作台接口的 `ecommerceProjectId` 写入同一字段。Fork 的服务层准入（`ensureTaskProjectActive`）和建单事务（`requireActiveTaskProject`）在画布和业务项目都查不到时，接受当前用户自己的电商项目；建单事务锁住这条记录，与删除串行。别人的项目或不存在的项目仍然拒绝。电商项目删除后，排队中、尚未发往上游的任务在执行前复查准入，按失败处理。

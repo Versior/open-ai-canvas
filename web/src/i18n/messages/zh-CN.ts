@@ -133,6 +133,7 @@ export const zhCN = {
             recovery: { title: "重新设置密码", description: "验证账号邮箱后，设置一个新的登录密码。" },
         },
         brandFilm: "{{brand}}品牌影片",
+        brandPoster: "{{brand}}品牌海报",
         playVideo: "播放品牌影片",
         videoPlaying: "创作正在发生",
         backHome: "返回首页",

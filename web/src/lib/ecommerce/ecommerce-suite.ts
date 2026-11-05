@@ -59,22 +59,6 @@ export type EcommerceSuite = {
 };
 
 /**
- * 2 起的差别只有一条：同样 flow 的空表就是**用户删空了**，不再被当成「还没建表」补回十屏。
- * 所以读过一次 1 的表必须留下标记，否则下次加载又会把删掉的屏还回去。
- */
-export const CURRENT_ECOMMERCE_SUITE_SCHEMA_VERSION = 2;
-
-/** Upgrade only the unambiguous nine-screen detail skeleton; versioned user edits are authoritative. */
-export function migrateLegacyEcommerceSuite(suite: EcommerceSuite): EcommerceSuite {
-    if (suite.schemaVersion === CURRENT_ECOMMERCE_SUITE_SCHEMA_VERSION) return suite;
-    // 带版本号 = 用户确认过的结构，升版本只改标号，绝不补行。
-    if (suite.schemaVersion !== undefined) return { ...suite, schemaVersion: CURRENT_ECOMMERCE_SUITE_SCHEMA_VERSION };
-    if (suite.flow !== "detail" || suite.rows.length !== 9 || suite.rows.some((row, index) => row.slotId !== `detail-${index + 1}`)) return suite;
-    const detail = ecommerceOneClickFlow("detail")!;
-    return { ...suite, schemaVersion: CURRENT_ECOMMERCE_SUITE_SCHEMA_VERSION, rows: [...suite.rows, ecommerceSuiteSkeleton(detail)[9]] };
-}
-
-/**
  * 这一套实际用哪张表。
  *
  * **表是唯一真相，行业套路只是它的初始值。** 几张、每张干什么，由表决定——
@@ -100,21 +84,6 @@ export function ecommerceSuiteRows(flow: EcommerceOneClickFlow, suite: Ecommerce
  */
 export function ecommerceSuiteSkeleton(flow: EcommerceOneClickFlow): EcommerceSuiteRow[] {
     return ecommerceOneClickScreens(flow).map((screen) => ({ slotId: screen.slotId, title: screen.title.replace(/^[^·]*·\s*/, "") || screen.title, duty: screen.duty, prompt: "" }));
-}
-
-/**
- * 新加一行的槽位 id。
- *
- * 沿用 `detail-1` 这种「入口前缀 + 序号」的形状，序号取当前最大值的下一个——
- * 而不是随机串。槽位 id 会出现在画布节点上、编译日志里和用户的截图里，
- * 一串随机字符没法读。前缀认不出来时退回一个稳定可读的形状。
- */
-export function ecommerceSuiteRowId(flow: EcommerceOneClickFlow, rows: EcommerceSuiteRow[]) {
-    const prefix = flow.set.slots[0]?.id.replace(/\d+$/, "") || `${flow.id}-`;
-    const used = new Set(rows.map((row) => row.slotId));
-    let index = rows.length + 1;
-    while (used.has(`${prefix}${index}`)) index += 1;
-    return `${prefix}${index}`;
 }
 
 /**
@@ -458,22 +427,6 @@ export function reconcileEcommerceSuiteDraftRows(previousRows: EcommerceSuiteRow
             resultNodeId: previous.resultNodeId,
         };
     });
-}
-
-/**
- * 把某一行往前或往后挪一格。
- *
- * **顺序不是装饰**：出图按表的顺序提交，装订长图也按这个顺序接——
- * 「先讲痛点还是先摆参数」是详情页的叙事，改不了顺序就等于改不了叙事。
- */
-export function ecommerceSuiteMoveRow(rows: EcommerceSuiteRow[], slotId: string, delta: number): EcommerceSuiteRow[] {
-    const index = rows.findIndex((row) => row.slotId === slotId);
-    const target = index + delta;
-    if (index < 0 || target < 0 || target >= rows.length) return rows;
-    const next = [...rows];
-    const [moved] = next.splice(index, 1);
-    next.splice(target, 0, moved);
-    return next;
 }
 
 /**
