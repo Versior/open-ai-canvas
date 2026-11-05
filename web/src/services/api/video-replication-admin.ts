@@ -62,6 +62,18 @@ export function getAdminVideoReplication(id: string, signal?: AbortSignal) {
     return http.get<AdminVideoReplicationDetail>(`/admin/video-replication/teardowns/${encodeURIComponent(id)}`, { signal });
 }
 
+/** 删除一条拆解记录的结果：删掉的图片、仍被画布等用到而保留的图片；imagesError 是图片清理失败的原因（记录已删）。 */
+export type AdminVideoReplicationDeleteResult = {
+    id: string;
+    deletedResources: string[];
+    keptResources: { id: string; reason: string; references: { kind: string; id: string; title: string }[] }[];
+    imagesError?: string;
+};
+
+export function deleteAdminVideoReplication(id: string) {
+    return http.delete<AdminVideoReplicationDeleteResult>(`/admin/video-replication/teardowns/${encodeURIComponent(id)}`);
+}
+
 /** 设置页单独读取的内容：当前设置和口播识别状态；保存设置也返回同一份。 */
 export type AdminVideoReplicationSettingsView = { settings: VideoReplicationSettings; transcription: VideoReplicationTranscription };
 

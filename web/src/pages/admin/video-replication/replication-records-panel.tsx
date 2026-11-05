@@ -1,11 +1,11 @@
-import { Button, Select } from "antd";
+import { App, Button, Select } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { RefreshCw, Search } from "lucide-react";
+import { RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AdminSearchInput } from "@/pages/admin/components/admin-search-input";
 import { AdminDataTable, AdminStatusBadge, AdminTableEmpty, PaginationBar } from "@/pages/admin/components/admin-ui";
 import { formatTeardownTime, orientationLabel } from "@/lib/canvas/video-teardown";
-import { adminUserLabel, listAdminVideoReplications, type AdminVideoReplicationPage, type AdminVideoReplicationRecord } from "@/services/api/video-replication-admin";
+import { adminUserLabel, deleteAdminVideoReplication, listAdminVideoReplications, type AdminVideoReplicationPage, type AdminVideoReplicationRecord } from "@/services/api/video-replication-admin";
 import { formatParseClock, formatParseTime } from "./parse-shared";
 import { AdminResourceThumb, modelLabel, TEARDOWN_STATUS_FILTERS, teardownInProgress, teardownStatusMeta, TRANSCRIPT_LABELS } from "./replication-admin-shared";
 import { ReplicationRecordDrawer } from "./replication-record-drawer";
@@ -14,10 +14,12 @@ const SEARCH_DEBOUNCE_MS = 300;
 const IN_PROGRESS_REFRESH_MS = 4000;
 
 /**
- * 所有用户的拆解记录：按状态和用户筛选，点开看镜头、口播和分析。只读，不改用户数据。
+ * 所有用户的拆解记录：按状态和用户筛选，点开看镜头、口播和分析；已结束的记录可以删除。
  * 页签打开着、列表里有排队或拆解中的记录时定时刷新，进度跟着走。
  */
-export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { active: boolean; recordId: string; onOpenRecord: (id: string) => void }) {
+export function ReplicationRecordsPanel({ active, recordId, onOpenRecord, onRecordsChanged }: { active: boolean; recordId: string; onOpenRecord: (id: string) => void; onRecordsChanged: () => void }) {
+    const { message, modal } = App.useApp();
+    const [deletingId, setDeletingId] = useState("");
     const [status, setStatus] = useState("all");
     const [keyword, setKeyword] = useState("");
     const [appliedKeyword, setAppliedKeyword] = useState("");
@@ -71,6 +73,35 @@ export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { ac
 
     const records = data?.records || [];
     const filtered = status !== "all" || Boolean(appliedKeyword);
+
+    const removeRecord = async (record: AdminVideoReplicationRecord) => {
+        setDeletingId(record.id);
+        try {
+            const result = await deleteAdminVideoReplication(record.id);
+            if (result.imagesError) message.warning(`记录已删除；${result.imagesError}，可以到「存储资源」里再删。`);
+            else if (result.keptResources.length) message.success(`已删除，${result.keptResources.length} 张图片还被画布等用到，已保留`);
+            else message.success("已删除");
+            if (recordId === record.id) onOpenRecord("");
+            // 删掉的是这一页最后一条时回到上一页，不停在空页。
+            if (records.length === 1 && page > 1) setPage(page - 1);
+            else setReloadKey((value) => value + 1);
+            onRecordsChanged();
+        } catch (cause) {
+            message.error(cause instanceof Error ? cause.message : "删除失败");
+        } finally {
+            setDeletingId("");
+        }
+    };
+    const confirmRemove = (record: AdminVideoReplicationRecord) => {
+        modal.confirm({
+            title: `删除「${record.title || adminUserLabel(record.user)}」这条拆解记录？`,
+            content: "拆解结果、模型分析和这条拆解存的关键帧、宫格会一起删掉，用户那边也看不到这条记录。原视频保留在用户的素材里，被画布用到的关键帧也会保留。删除后不能恢复。",
+            okText: "删除",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: () => removeRecord(record),
+        });
+    };
     const columns: ColumnsType<AdminVideoReplicationRecord> = [
         {
             title: "视频",
@@ -168,13 +199,30 @@ export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { ac
         {
             title: "操作",
             key: "actions",
-            width: 84,
+            width: 116,
             fixed: "right",
-            render: (_, record) => (
-                <Button size="small" aria-label={`查看「${record.title || adminUserLabel(record.user)}」的拆解记录`} onClick={() => onOpenRecord(record.id)}>
-                    查看
-                </Button>
-            ),
+            render: (_, record) => {
+                const name = record.title || adminUserLabel(record.user);
+                const inProgress = teardownInProgress(record.status);
+                return (
+                    <div className="admin-vr-record-actions">
+                        <Button size="small" aria-label={`查看「${name}」的拆解记录`} onClick={() => onOpenRecord(record.id)}>
+                            查看
+                        </Button>
+                        <Button
+                            size="small"
+                            type="text"
+                            danger
+                            icon={<Trash2 className="size-3.5" aria-hidden="true" />}
+                            aria-label={`删除「${name}」的拆解记录`}
+                            title={inProgress ? "拆解结束后才能删除" : "删除这条记录"}
+                            disabled={inProgress || Boolean(deletingId)}
+                            loading={deletingId === record.id}
+                            onClick={() => confirmRemove(record)}
+                        />
+                    </div>
+                );
+            },
         },
     ];
 
@@ -220,7 +268,7 @@ export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { ac
                         }}
                     />
                 }
-                table={{ rowKey: "id", loading, pagination: false, columns, dataSource: records, scroll: { x: 1180 } }}
+                table={{ rowKey: "id", loading, pagination: false, columns, dataSource: records, scroll: { x: 1220 } }}
                 empty={filtered ? <AdminTableEmpty filtered /> : <AdminTableEmpty title="还没有拆解记录" description="用户在「视频复刻」里拆解视频后，记录会出现在这里。" />}
             />
             <ReplicationRecordDrawer id={recordId} onClose={() => onOpenRecord("")} />

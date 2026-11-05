@@ -133,7 +133,8 @@ export default function VideoReplicationAdminPage() {
                     {
                         key: "records",
                         label: `拆解记录${overview ? `（${overview.teardowns.total}）` : ""}`,
-                        children: <ReplicationRecordsPanel active={tab === "records"} recordId={recordId} onOpenRecord={(id) => navigate({ record: id })} />,
+                        // 删了记录以后刷新概览：页签上的数量和统计跟着变。
+                        children: <ReplicationRecordsPanel active={tab === "records"} recordId={recordId} onOpenRecord={(id) => navigate({ record: id })} onRecordsChanged={() => void reload()} />,
                     },
                     {
                         key: "parse",

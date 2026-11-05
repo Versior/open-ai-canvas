@@ -350,6 +350,12 @@ div.admin-vr-failure {
     background: transparent;
 }
 
+.admin-vr-record-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
 .admin-vr-record-copy,
 .admin-vr-record-state {
     display: flex;
