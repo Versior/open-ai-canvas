@@ -36,6 +36,7 @@ export const enUS: Messages = {
         },
         sidebar: {
             ecommerceStudio: "E-commerce Studio",
+            interior: "Interior design",
             videoReplication: "Video replication",
             home: "Create",
             projects: "Short dramas",
@@ -52,6 +53,7 @@ export const enUS: Messages = {
         },
         collapsed: {
             videoReplication: "Replicate",
+            interior: "Interior",
             inspiration: "Ideas",
             home: "Create",
             projects: "Drama",
@@ -65,6 +67,7 @@ export const enUS: Messages = {
             ecommerce: "E-commerce",
             studio: "E-commerce Studio",
             videoReplication: "Video replication",
+            interior: "Interior design",
             inspiration: "Inspiration",
             home: "Create",
             projects: "Short dramas",

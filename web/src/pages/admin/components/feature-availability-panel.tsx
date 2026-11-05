@@ -22,6 +22,7 @@ import {
     ShieldCheck,
     ShoppingBag,
     SlidersHorizontal,
+    Sofa,
     Video,
     Wallet,
 } from "lucide-react";
@@ -50,7 +51,8 @@ type FeatureKey =
     | "ecommerceStudioEnabled"
     | "siteAssistantEnabled"
     | "videoReplicationEnabled"
-    | "socialVideoImportEnabled";
+    | "socialVideoImportEnabled"
+    | "interiorEnabled";
 
 /** 跨分组的依赖：开关本身可以打开，但缺少这一项时功能只部分可用。 */
 type FeatureRequirement = { key: FeatureKey; effect: string };
@@ -87,6 +89,7 @@ const editableFeatureKeys: FeatureKey[] = [
     "ecommerceEnabled",
     "ecommerceVideoEnabled",
     "ecommerceStudioEnabled",
+    "interiorEnabled",
     "siteAssistantEnabled",
     "videoReplicationEnabled",
     "socialVideoImportEnabled",
@@ -162,6 +165,14 @@ const featureGroups: FeatureGroup[] = [
                 description: "粘贴抖音、快手等分享链接导入视频，靠第三方解析接口下载。关闭后画布按普通文字粘贴，视频复刻只能上传文件。",
                 icon: <Link2 className="size-4" aria-hidden="true" />,
                 link: { to: "/admin/video-replication?tab=parse", label: "配置解析接口" },
+            },
+            {
+                key: "interiorEnabled",
+                title: "室内设计",
+                location: "侧栏 · 室内设计",
+                description: "房间照片、毛坯、线稿出装修效果图。关闭后隐藏入口且不能出图，已保存的项目和效果图保留。",
+                icon: <Sofa className="size-4" aria-hidden="true" />,
+                link: { to: "/admin/interior", label: "室内设计配置" },
             },
         ],
     },
@@ -598,6 +609,7 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         ecommerceEnabled: record.ecommerceEnabled as boolean,
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
         ecommerceStudioEnabled: record.ecommerceStudioEnabled as boolean,
+        interiorEnabled: record.interiorEnabled as boolean,
         siteAssistantEnabled: record.siteAssistantEnabled as boolean,
         videoReplicationEnabled: record.videoReplicationEnabled as boolean,
         socialVideoImportEnabled: record.socialVideoImportEnabled as boolean,

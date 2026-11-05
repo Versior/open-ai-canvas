@@ -56,6 +56,7 @@ const (
 	FeatureSiteAssistant               = app.FeatureSiteAssistant
 	FeatureVideoReplication            = app.FeatureVideoReplication
 	FeatureSocialVideoImport           = app.FeatureSocialVideoImport
+	FeatureInterior                    = app.FeatureInterior
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
 	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage
 	PaymentPluginWeChatNative          = app.PaymentPluginWeChatNative

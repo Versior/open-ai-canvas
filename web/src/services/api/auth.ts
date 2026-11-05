@@ -490,6 +490,7 @@ export function updateAdminFeatureAvailability(
             | "siteAssistantEnabled"
             | "videoReplicationEnabled"
             | "socialVideoImportEnabled"
+            | "interiorEnabled"
         >
     >,
 ) {

@@ -38,6 +38,7 @@ export const zhCN = {
         },
         sidebar: {
             ecommerceStudio: "电商生图台",
+            interior: "室内设计",
             videoReplication: "视频复刻",
             home: "创作",
             projects: "短剧制作",
@@ -54,6 +55,7 @@ export const zhCN = {
         },
         collapsed: {
             videoReplication: "复刻",
+            interior: "室内",
             inspiration: "灵感",
             home: "创作",
             projects: "短剧",
@@ -67,6 +69,7 @@ export const zhCN = {
             ecommerce: "电商创作",
             studio: "电商生图台",
             videoReplication: "视频复刻",
+            interior: "室内设计",
             inspiration: "灵感广场",
             home: "创作",
             projects: "短剧制作",

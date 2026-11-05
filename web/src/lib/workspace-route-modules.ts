@@ -4,6 +4,7 @@ const workspaceRouteLoaders = {
     ecommerce: () => import("@/pages/ecommerce"),
     ecommerceStudio: () => import("@/pages/ecommerce-studio"),
     "video-replication": () => import("@/pages/video-replication"),
+    interior: () => import("@/pages/interior"),
     create: () => import("@/pages/create"),
     inspiration: () => import("@/pages/inspirations"),
     projects: () => import("@/pages/projects"),
@@ -16,6 +17,7 @@ export const loadAssetsPage = workspaceRouteLoaders.assets;
 export const loadCanvasPage = workspaceRouteLoaders.canvas;
 export const loadEcommercePage = workspaceRouteLoaders.ecommerce;
 export const loadEcommerceStudioPage = workspaceRouteLoaders.ecommerceStudio;
+export const loadInteriorPage = workspaceRouteLoaders.interior;
 export const loadCanvasProjectPage = () => import("@/pages/canvas/project");
 export const loadCreatePage = workspaceRouteLoaders.create;
 export const loadInspirationPage = workspaceRouteLoaders.inspiration;

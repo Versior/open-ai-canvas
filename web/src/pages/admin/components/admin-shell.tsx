@@ -41,6 +41,7 @@ import {
     Shapes,
     ShieldAlert,
     ShieldCheck,
+    Sofa,
     Sparkles,
     Sun,
     TicketCheck,
@@ -137,6 +138,11 @@ const adminNavigation: AdminNavigationGroup[] = [
             { path: "/admin/ecommerce/agent", label: "电商 Agent 配置", shortLabel: "配置", icon: <Bot className="size-4" /> },
             { path: "/admin/ecommerce/library", label: "知识与技能", shortLabel: "知识", icon: <Database className="size-4" /> },
         ],
+    },
+    {
+        key: "interior",
+        label: "室内设计",
+        items: [{ path: "/admin/interior", label: "室内设计配置", shortLabel: "室内", icon: <Sofa className="size-4" /> }],
     },
     {
         key: "settings",

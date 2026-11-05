@@ -50,6 +50,7 @@ export type FeatureAvailability = {
     videoReplicationEnabled: boolean;
     /** 粘贴短视频分享链接导入（画布粘贴和视频复刻共用）。 */
     socialVideoImportEnabled: boolean;
+    interiorEnabled: boolean;
     configured?: boolean;
     updatedBy?: string;
     updatedAt?: string;
@@ -73,6 +74,7 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     siteAssistantEnabled: false,
     videoReplicationEnabled: true,
     socialVideoImportEnabled: true,
+    interiorEnabled: false,
 };
 
 type UserStore = {

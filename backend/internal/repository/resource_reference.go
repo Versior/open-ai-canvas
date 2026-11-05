@@ -150,6 +150,9 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 			snapshot.Documents = append(snapshot.Documents, ResourceReferenceDocument{Kind: "私人电商库", ID: userID, Title: "电商生图台商品与私人素材", PrimaryJSON: library.PayloadJSON})
 		}
 	}
+	if err := r.interiorResourceReferences(userID, resourceIDs, &snapshot); err != nil {
+		return snapshot, err
+	}
 	dramaReferences, err := r.DramaResourceReferences(userID, resourceIDs)
 	if err != nil {
 		return snapshot, err

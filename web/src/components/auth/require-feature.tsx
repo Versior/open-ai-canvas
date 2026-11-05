@@ -7,7 +7,8 @@ import { WorkspaceErrorState, WorkspaceLoadingState, WorkspaceState } from "@/co
 import { refreshFeatureAvailability } from "@/lib/user-session";
 import { useUserStore } from "@/stores/use-user-store";
 
-type FeatureKey = "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "imageWorkbenchEnabled" | "videoWorkbenchEnabled" | "ecommerceStudioEnabled" | "videoReplicationEnabled";
+type FeatureKey =
+    "shortDramaEnabled" | "taskCenterEnabled" | "creditsEnabled" | "frontendModelsEnabled" | "pluginCenterEnabled" | "imageWorkbenchEnabled" | "videoWorkbenchEnabled" | "ecommerceStudioEnabled" | "videoReplicationEnabled" | "interiorEnabled";
 
 const featureNames: Record<FeatureKey, string> = {
     shortDramaEnabled: "短剧创作",
@@ -19,6 +20,7 @@ const featureNames: Record<FeatureKey, string> = {
     videoWorkbenchEnabled: "视频",
     ecommerceStudioEnabled: "电商生图台",
     videoReplicationEnabled: "视频复刻",
+    interiorEnabled: "室内设计",
 };
 
 export function RequireFeature({ feature, children }: { feature: FeatureKey; children: ReactNode }) {

@@ -32,6 +32,7 @@ docs/content/docs/backend/*
 !docs/content/docs/backend/credit-rewards.mdx
 !docs/content/docs/backend/creative-agent-runtime.mdx
 !docs/content/docs/backend/ecommerce-agent.mdx
+!docs/content/docs/backend/interior-design.mdx
 # Keep the creative Agent design versioned without unignoring generated docs.
 !docs/content/docs/overview/
 docs/content/docs/overview/*

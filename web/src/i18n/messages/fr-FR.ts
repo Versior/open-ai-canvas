@@ -37,6 +37,7 @@ export const frFR: Messages = {
         },
         sidebar: {
             ecommerceStudio: "Studio e-commerce",
+            interior: "Design intérieur",
             videoReplication: "Réplication vidéo",
             home: "Créer",
             projects: "Courts métrages",
@@ -53,6 +54,7 @@ export const frFR: Messages = {
         },
         collapsed: {
             videoReplication: "Répliquer",
+            interior: "Intérieur",
             inspiration: "Idées",
             home: "Créer",
             projects: "Séries",
@@ -66,6 +68,7 @@ export const frFR: Messages = {
             ecommerce: "E-commerce",
             studio: "Studio e-commerce",
             videoReplication: "Réplication vidéo",
+            interior: "Design intérieur",
             inspiration: "Inspiration",
             home: "Créer",
             projects: "Courts métrages",

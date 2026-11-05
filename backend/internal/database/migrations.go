@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 85
+const CurrentSchemaVersion int64 = 86
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -59,6 +59,8 @@ const agentPetSkinsMigrationName = "agent_pet_skins"
 const agentPetSkinsMigrationChecksum = "sha256:agent-pet-skins-v80-20261101"
 const studioModelLibraryMigrationName = "studio_model_library"
 const studioModelLibraryMigrationChecksum = "sha256:studio-model-library-v85-20261105"
+const interiorDesignMigrationName = "interior_design"
+const interiorDesignMigrationChecksum = "sha256:interior-design-v86-20261105"
 const paymentOrderChargeMethodMigrationName = "payment_order_charge_method"
 const paymentOrderChargeMethodMigrationChecksum = "sha256:payment-order-charge-method-v80-20261104"
 const arkPortraitAssetsMigrationName = "ark_portrait_assets"
@@ -333,6 +335,8 @@ var schemaMigrations = []migration{
 	{version: 85, name: studioModelLibraryMigrationName, checksum: studioModelLibraryMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.StudioModelAsset{})
 	}},
+	// Fork 自有：室内设计（模式、风格/空间预设、用户项目）。排在模特库之后，上游再有新迁移时一起顺延。
+	{version: 86, name: interiorDesignMigrationName, checksum: interiorDesignMigrationChecksum, apply: migrateInteriorFeature},
 }
 
 // migratePaymentOrderChargeMethod 为支付订单增加实收金额、实收货币、汇率快照和支付方式。
@@ -1047,6 +1051,12 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		for _, field := range []string{"Kind", "ResourceID", "ThumbResourceID", "Consent", "Enabled", "SortOrder"} {
 			if !tx.Migrator().HasColumn(&model.StudioModelAsset{}, field) {
 				return fmt.Errorf("模特库迁移账本与物理结构不一致：studio_model_assets 缺少 %s 列", field)
+			}
+		}
+	case 86:
+		for _, table := range []any{&model.InteriorMode{}, &model.InteriorPreset{}, &model.InteriorProject{}} {
+			if !tx.Migrator().HasTable(table) {
+				return fmt.Errorf("室内设计迁移账本与物理结构不一致：缺少模式、预设或项目表")
 			}
 		}
 	}
