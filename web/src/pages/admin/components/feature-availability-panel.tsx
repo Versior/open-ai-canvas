@@ -337,9 +337,10 @@ export default function FeatureAvailabilityPanel() {
         setSavingKey(key);
         setSaveError("");
         try {
-            const result = await updateAdminFeatureAvailability(toEditablePayload(expected));
+            // 只提交这一个开关：服务端把它合并到当前配置上，别处（如视频复刻设置）刚改过的开关不会被本页加载时的旧值盖回去。
+            const result = await updateAdminFeatureAvailability({ [key]: enabled });
             const value = parseFeatureAvailability(result.features);
-            if (!sameEditableFeatures(value, expected)) throw new Error("服务端返回的功能状态与本次保存内容不一致，请重新读取后核对");
+            if (value[key] !== enabled) throw new Error("服务端返回的功能状态与本次保存内容不一致，请重新读取后核对");
             setSavedFeatures(value);
             setDraftFeatures(value);
             setGlobalFeatures(value);
@@ -579,31 +580,6 @@ function ModelSourceRow({ draft, saving, onChange }: { draft: FeatureAvailabilit
             </div>
         </article>
     );
-}
-
-function toEditablePayload(features: FeatureAvailability) {
-    return {
-        shortDramaEnabled: features.shortDramaEnabled,
-        taskCenterEnabled: features.taskCenterEnabled,
-        creditsEnabled: features.creditsEnabled,
-        customChannelsEnabled: features.customChannelsEnabled,
-        inspirationSourcesVisible: features.inspirationSourcesVisible,
-        imageWorkbenchEnabled: features.imageWorkbenchEnabled,
-        videoWorkbenchEnabled: features.videoWorkbenchEnabled,
-        ecommerceEnabled: features.ecommerceEnabled,
-        ecommerceVideoEnabled: features.ecommerceVideoEnabled,
-        ecommerceStudioEnabled: features.ecommerceStudioEnabled,
-        siteAssistantEnabled: features.siteAssistantEnabled,
-        videoReplicationEnabled: features.videoReplicationEnabled,
-        socialVideoImportEnabled: features.socialVideoImportEnabled,
-        frontendModelsEnabled: features.frontendModelsEnabled,
-        pluginCenterEnabled: features.pluginCenterEnabled,
-        systemPluginsVisibleToUsers: features.systemPluginsVisibleToUsers,
-    };
-}
-
-function sameEditableFeatures(left: FeatureAvailability, right: FeatureAvailability) {
-    return editableFeatureKeys.every((key) => left[key] === right[key]);
 }
 
 function parseFeatureAvailability(value: unknown): FeatureAvailability {

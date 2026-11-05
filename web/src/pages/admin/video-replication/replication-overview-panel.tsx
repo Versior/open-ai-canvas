@@ -14,6 +14,7 @@ type Props = {
     overview: AdminVideoReplicationOverview | null;
     parse: SocialVideoParseOverview | null;
     features: Pick<FeatureAvailability, "videoReplicationEnabled" | "socialVideoImportEnabled"> | null;
+    featuresError: string;
     loading: boolean;
     onOpenTab: (tab: VideoReplicationAdminTab) => void;
     onOpenRecord: (id: string) => void;
@@ -24,8 +25,13 @@ function rateText(succeeded: number, failed: number) {
     return rate === null ? "—" : `${rate}%`;
 }
 
+function switchBadge(enabled: boolean | undefined, error: string) {
+    if (enabled === undefined) return error ? <AdminStatusBadge label="读取失败" tone="error" title={error} /> : null;
+    return <AdminStatusBadge label={enabled ? "已开放" : "已关闭"} tone={enabled ? "success" : "neutral"} />;
+}
+
 /** 概览：开关和口播识别的现状、拆解与链接导入的数量、近 14 天趋势、各平台导入和最近失败。 */
-export function ReplicationOverviewPanel({ overview, parse, features, loading, onOpenTab, onOpenRecord }: Props) {
+export function ReplicationOverviewPanel({ overview, parse, features, featuresError, loading, onOpenTab, onOpenRecord }: Props) {
     const teardowns = overview?.teardowns;
     const imports = overview?.imports;
     const apis = parse?.apis || [];
@@ -34,19 +40,21 @@ export function ReplicationOverviewPanel({ overview, parse, features, loading, o
     const daily = overview?.daily || [];
     const hasTrend = daily.some((day) => day.teardowns || day.imports);
     const transcription = overview?.transcription;
+    // 开关没读到时不按「已开放」描述，免得把读取失败显示成正常。
+    const unknownSwitch = features ? "" : featuresError ? `读取开关失败：${featuresError}` : "";
     const statusItems = [
         {
             key: "replication",
             label: "视频复刻",
-            badge: features ? <AdminStatusBadge label={features.videoReplicationEnabled ? "已开放" : "已关闭"} tone={features.videoReplicationEnabled ? "success" : "neutral"} /> : null,
-            detail: features?.videoReplicationEnabled === false ? "侧栏不显示入口，用户不能新建拆解" : "用户可以在侧栏进入视频复刻",
+            badge: switchBadge(features?.videoReplicationEnabled, featuresError),
+            detail: !features ? unknownSwitch : features.videoReplicationEnabled ? "用户可以在侧栏进入视频复刻" : "侧栏不显示入口，用户不能新建拆解",
             tab: "settings" as const,
         },
         {
             key: "import",
             label: "视频链接导入",
-            badge: features ? <AdminStatusBadge label={features.socialVideoImportEnabled ? "已开放" : "已关闭"} tone={features.socialVideoImportEnabled ? "success" : "neutral"} /> : null,
-            detail: features?.socialVideoImportEnabled === false ? "只能上传文件，画布按普通文字粘贴链接" : coveredPlatforms.length ? `可导入：${coveredPlatforms.map((item) => item.name).join("、")}` : "还没有可用的解析接口",
+            badge: switchBadge(features?.socialVideoImportEnabled, featuresError),
+            detail: !features ? unknownSwitch : !features.socialVideoImportEnabled ? "只能上传文件，画布按普通文字粘贴链接" : coveredPlatforms.length ? `可导入：${coveredPlatforms.map((item) => item.name).join("、")}` : "还没有可用的解析接口",
             tab: features?.socialVideoImportEnabled === false ? ("settings" as const) : ("parse" as const),
         },
         {
@@ -88,13 +96,14 @@ export function ReplicationOverviewPanel({ overview, parse, features, loading, o
                 <AdminStatTile label="链接导入" value={imports?.total ?? "—"} detail={imports ? `成功率 ${rateText(imports.succeeded, imports.failed)} · 今天 ${imports.today}` : undefined} />
                 <AdminStatTile label="正常解析接口" value={parse ? `${activeAPIs} / ${apis.length}` : "—"} detail={parse ? `覆盖 ${coveredPlatforms.length} 个平台` : undefined} />
             </div>
+            <p className="admin-vr-footnote">「今天」「近 7 天」和下面的近 14 天都按 UTC 自然日统计，和运行总览同一口径。</p>
 
             <div className="admin-vr-columns">
                 <section className="admin-vr-card" aria-labelledby="admin-vr-trend-title">
                     <header className="admin-vr-card-head">
                         <div>
                             <h2 id="admin-vr-trend-title">近 14 天</h2>
-                            <p>每天新建的拆解和链接导入任务，按 UTC 自然日统计；折线是其中失败的。</p>
+                            <p>每天新建的拆解和链接导入任务；折线是其中失败的。</p>
                         </div>
                     </header>
                     {hasTrend ? (

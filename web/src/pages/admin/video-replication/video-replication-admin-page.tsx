@@ -35,19 +35,24 @@ export default function VideoReplicationAdminPage() {
     const [overviewError, setOverviewError] = useState("");
     const [featuresError, setFeaturesError] = useState("");
     const requestRef = useRef(0);
+    // 开关每切换一次加一：重新读取期间切过开关时，不拿读取开始时的旧开关覆盖刚保存的结果。
+    const featuresVersionRef = useRef(0);
 
     const reload = useCallback(async () => {
         const request = ++requestRef.current;
+        const featuresVersion = featuresVersionRef.current;
         setLoading(true);
         // 三份数据互不依赖，一份失败不挡另外两份；各自的错误分开显示。
         const [overviewResult, parseResult, featuresResult] = await Promise.allSettled([getAdminVideoReplicationOverview(), getSocialVideoParseOverview(), getAdminFeatureAvailability()]);
         if (request !== requestRef.current) return;
         if (overviewResult.status === "fulfilled") setOverview(overviewResult.value);
         if (parseResult.status === "fulfilled") setParse(parseResult.value);
-        if (featuresResult.status === "fulfilled") setFeatures(featuresResult.value.features);
+        if (featuresVersion === featuresVersionRef.current) {
+            if (featuresResult.status === "fulfilled") setFeatures(featuresResult.value.features);
+            setFeaturesError(featuresResult.status === "rejected" ? errorText(featuresResult.reason, "读取功能开放配置失败") : "");
+        }
         const failures = [overviewResult.status === "rejected" ? errorText(overviewResult.reason, "读取视频复刻统计失败") : "", parseResult.status === "rejected" ? errorText(parseResult.reason, "读取解析接口失败") : ""].filter(Boolean);
         setOverviewError(failures.join("；"));
-        setFeaturesError(featuresResult.status === "rejected" ? errorText(featuresResult.reason, "读取功能开放配置失败") : "");
         setLoading(false);
     }, []);
     useEffect(() => {
@@ -56,6 +61,12 @@ export default function VideoReplicationAdminPage() {
             requestRef.current += 1;
         };
     }, [reload]);
+
+    const changeFeatures = useCallback((next: FeatureAvailability) => {
+        featuresVersionRef.current += 1;
+        setFeatures(next);
+        setFeaturesError("");
+    }, []);
 
     const navigate = useCallback(
         (next: { tab?: VideoReplicationAdminTab; record?: string }) => {
@@ -88,7 +99,8 @@ export default function VideoReplicationAdminPage() {
                 ) : null
             }
         >
-            {overviewError && tab !== "parse" ? (
+            {/* 统计和设置初值都来自这次读取；记录和解析接口页签各自读取，各自显示错误。 */}
+            {overviewError && (tab === "overview" || tab === "settings") ? (
                 <div className="admin-vr-load-error" role="alert">
                     <span>{overviewError}</span>
                     <Button size="small" onClick={() => void reload()}>
@@ -107,23 +119,32 @@ export default function VideoReplicationAdminPage() {
                         // 概览没有要留住的输入；切走时卸掉，隐藏的页签里图表量不到尺寸会一直报警告。
                         children:
                             tab === "overview" ? (
-                                <ReplicationOverviewPanel overview={overview} parse={parse} features={features} loading={loading} onOpenTab={(next) => navigate({ tab: next })} onOpenRecord={(id) => navigate({ tab: "records", record: id })} />
+                                <ReplicationOverviewPanel
+                                    overview={overview}
+                                    parse={parse}
+                                    features={features}
+                                    featuresError={featuresError}
+                                    loading={loading}
+                                    onOpenTab={(next) => navigate({ tab: next })}
+                                    onOpenRecord={(id) => navigate({ tab: "records", record: id })}
+                                />
                             ) : null,
                     },
                     {
                         key: "records",
                         label: `拆解记录${overview ? `（${overview.teardowns.total}）` : ""}`,
-                        children: <ReplicationRecordsPanel recordId={recordId} onOpenRecord={(id) => navigate({ record: id })} />,
+                        children: <ReplicationRecordsPanel active={tab === "records"} recordId={recordId} onOpenRecord={(id) => navigate({ record: id })} />,
                     },
                     {
                         key: "parse",
                         label: "解析接口",
-                        children: <ParsePoolPanel linkImportEnabled={features?.socialVideoImportEnabled} onOpenSettings={() => navigate({ tab: "settings" })} />,
+                        // 解析接口页签读到的新数据同步给概览，改完接口回到概览时接口数和可导入平台是新的。
+                        children: <ParsePoolPanel linkImportEnabled={features?.socialVideoImportEnabled} onLoaded={setParse} onOpenSettings={() => navigate({ tab: "settings" })} />,
                     },
                     {
                         key: "settings",
                         label: "设置",
-                        children: <ReplicationSettingsPanel features={features} featuresError={featuresError} onFeaturesChange={setFeatures} overview={overview} onSaved={() => void reload()} />,
+                        children: <ReplicationSettingsPanel features={features} featuresError={featuresError} onFeaturesChange={changeFeatures} overview={overview} onSaved={() => void reload()} />,
                     },
                 ]}
             />

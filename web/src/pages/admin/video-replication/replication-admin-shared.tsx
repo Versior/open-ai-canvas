@@ -5,13 +5,24 @@ import { cn } from "@/lib/utils";
 import { adminResourceFileUrl } from "@/services/api/admin-storage";
 import type { TaskStatus } from "@/services/api/task-center";
 
-export const TEARDOWN_STATUS_META: Record<TaskStatus, { label: string; tone: AdminStatusTone }> = {
+const TEARDOWN_STATUS_META: Record<TaskStatus, { label: string; tone: AdminStatusTone }> = {
     queued: { label: "排队中", tone: "neutral" },
     running: { label: "拆解中", tone: "info" },
     succeeded: { label: "已完成", tone: "success" },
     failed: { label: "失败", tone: "error" },
     cancelled: { label: "已取消", tone: "neutral" },
 };
+
+/** 拆解任务状态的文字和颜色；遇到没见过的状态原样显示，不让整行渲染失败。 */
+export function teardownStatusMeta(status: string, progress?: number) {
+    const meta = TEARDOWN_STATUS_META[status as TaskStatus] ?? { label: status || "未知", tone: "neutral" as const };
+    return status === "running" && typeof progress === "number" ? { ...meta, label: `${meta.label} ${progress}%` } : meta;
+}
+
+/** 正在排队或拆解的状态：列表里有这样的记录时定时刷新。 */
+export function teardownInProgress(status: string) {
+    return status === "queued" || status === "running";
+}
 
 export const TEARDOWN_STATUS_FILTERS: { value: "all" | TaskStatus; label: string }[] = [
     { value: "all", label: "全部状态" },
@@ -36,15 +47,19 @@ export function percentOf(part: number, total: number) {
     return total > 0 ? Math.round((part / total) * 100) : null;
 }
 
-/** 后台看用户的关键帧、宫格和原视频都走管理员资源接口，不借用户的访问授权。 */
-export function AdminResourceThumb({ id, className, label }: { id?: string; className?: string; label: string }) {
+/**
+ * 后台看用户的关键帧、宫格和原视频都走管理员资源接口，不借用户的访问授权。
+ * 画面按原比例完整显示在框里（竖屏两侧留底色），不裁掉主体；传了宽高时框也按这个比例。
+ */
+export function AdminResourceThumb({ id, className, label, width, height }: { id?: string; className?: string; label: string; width?: number; height?: number }) {
     const [failed, setFailed] = useState(false);
+    const style = width && height ? { aspectRatio: `${width} / ${height}` } : undefined;
     if (!id || failed) {
         return (
-            <span className={cn("admin-vr-thumb is-empty", className)} role="img" aria-label={`${label}（无法显示）`}>
+            <span className={cn("admin-vr-thumb is-empty", className)} style={style} role="img" aria-label={`${label}（无法显示）`}>
                 <ImageOff aria-hidden="true" />
             </span>
         );
     }
-    return <img className={cn("admin-vr-thumb", className)} src={adminResourceFileUrl(id)} alt={label} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+    return <img className={cn("admin-vr-thumb", className)} style={style} src={adminResourceFileUrl(id)} alt={label} loading="lazy" decoding="async" onError={() => setFailed(true)} />;
 }

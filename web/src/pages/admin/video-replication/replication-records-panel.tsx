@@ -7,13 +7,17 @@ import { AdminDataTable, AdminStatusBadge, AdminTableEmpty, PaginationBar } from
 import { formatTeardownTime, orientationLabel } from "@/lib/canvas/video-teardown";
 import { adminUserLabel, listAdminVideoReplications, type AdminVideoReplicationPage, type AdminVideoReplicationRecord } from "@/services/api/video-replication-admin";
 import { formatParseClock, formatParseTime } from "./parse-shared";
-import { AdminResourceThumb, modelLabel, TEARDOWN_STATUS_FILTERS, TEARDOWN_STATUS_META, TRANSCRIPT_LABELS } from "./replication-admin-shared";
+import { AdminResourceThumb, modelLabel, TEARDOWN_STATUS_FILTERS, teardownInProgress, teardownStatusMeta, TRANSCRIPT_LABELS } from "./replication-admin-shared";
 import { ReplicationRecordDrawer } from "./replication-record-drawer";
 
 const SEARCH_DEBOUNCE_MS = 300;
+const IN_PROGRESS_REFRESH_MS = 4000;
 
-/** 所有用户的拆解记录：按状态和用户筛选，点开看镜头、口播和分析。只读，不改用户数据。 */
-export function ReplicationRecordsPanel({ recordId, onOpenRecord }: { recordId: string; onOpenRecord: (id: string) => void }) {
+/**
+ * 所有用户的拆解记录：按状态和用户筛选，点开看镜头、口播和分析。只读，不改用户数据。
+ * 页签打开着、列表里有排队或拆解中的记录时定时刷新，进度跟着走。
+ */
+export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { active: boolean; recordId: string; onOpenRecord: (id: string) => void }) {
     const [status, setStatus] = useState("all");
     const [keyword, setKeyword] = useState("");
     const [appliedKeyword, setAppliedKeyword] = useState("");
@@ -33,26 +37,37 @@ export function ReplicationRecordsPanel({ recordId, onOpenRecord }: { recordId: 
         return () => window.clearTimeout(timer);
     }, [keyword]);
 
-    const load = useCallback(async () => {
-        controllerRef.current?.abort();
-        const controller = new AbortController();
-        controllerRef.current = controller;
-        setLoading(true);
-        try {
-            const result = await listAdminVideoReplications({ status, keyword: appliedKeyword, page, pageSize }, controller.signal);
-            if (controller.signal.aborted) return;
-            setData(result);
-            setError("");
-        } catch (cause) {
-            if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "读取拆解记录失败");
-        } finally {
-            if (!controller.signal.aborted) setLoading(false);
-        }
-    }, [appliedKeyword, page, pageSize, status]);
+    // silent 用于后台定时刷新：不转圈，表格不闪。
+    const load = useCallback(
+        async (silent = false) => {
+            controllerRef.current?.abort();
+            const controller = new AbortController();
+            controllerRef.current = controller;
+            if (!silent) setLoading(true);
+            try {
+                const result = await listAdminVideoReplications({ status, keyword: appliedKeyword, page, pageSize }, controller.signal);
+                if (controller.signal.aborted) return;
+                setData(result);
+                setError("");
+            } catch (cause) {
+                if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "读取拆解记录失败");
+            } finally {
+                if (!controller.signal.aborted) setLoading(false);
+            }
+        },
+        [appliedKeyword, page, pageSize, status],
+    );
     useEffect(() => {
         void load();
         return () => controllerRef.current?.abort();
     }, [load, reloadKey]);
+    const hasInProgress = Boolean(data?.records.some((record) => teardownInProgress(record.status)));
+    // 每拿到一份新数据就重新排下一次刷新；记录都结束了或切走页签就停。
+    useEffect(() => {
+        if (!active || !hasInProgress) return;
+        const timer = window.setTimeout(() => void load(true), IN_PROGRESS_REFRESH_MS);
+        return () => window.clearTimeout(timer);
+    }, [active, data, hasInProgress, load]);
 
     const records = data?.records || [];
     const filtered = status !== "all" || Boolean(appliedKeyword);
@@ -62,7 +77,10 @@ export function ReplicationRecordsPanel({ recordId, onOpenRecord }: { recordId: 
             key: "video",
             render: (_, record) => (
                 <div className="admin-vr-record">
-                    <AdminResourceThumb id={record.coverResourceId} label={record.title || "第一镜关键帧"} className="admin-vr-record-cover" />
+                    {/* 封面框固定大小，各行文字对齐；画面在框里按原比例完整显示。 */}
+                    <span className="admin-vr-record-cover">
+                        <AdminResourceThumb id={record.coverResourceId} label={record.title || "第一镜关键帧"} />
+                    </span>
                     <div className="admin-vr-record-copy">
                         <strong className={record.title ? undefined : "is-muted"} title={record.title || undefined}>
                             {record.title || (record.status === "succeeded" ? "还没有分析" : "—")}
@@ -91,10 +109,10 @@ export function ReplicationRecordsPanel({ recordId, onOpenRecord }: { recordId: 
             key: "status",
             width: 200,
             render: (_, record) => {
-                const meta = TEARDOWN_STATUS_META[record.status];
+                const meta = teardownStatusMeta(record.status, record.progress);
                 return (
                     <div className="admin-vr-record-state">
-                        <AdminStatusBadge label={record.status === "running" ? `${meta.label} ${record.progress}%` : meta.label} tone={meta.tone} />
+                        <AdminStatusBadge label={meta.label} tone={meta.tone} />
                         {record.status === "failed" && record.error ? (
                             <small className="admin-vr-error admin-vr-ellipsis" title={record.error}>
                                 {record.error}
@@ -140,7 +158,7 @@ export function ReplicationRecordsPanel({ recordId, onOpenRecord }: { recordId: 
             width: 84,
             fixed: "right",
             render: (_, record) => (
-                <Button size="small" onClick={() => onOpenRecord(record.id)}>
+                <Button size="small" aria-label={`查看「${record.title || adminUserLabel(record.user)}」的拆解记录`} onClick={() => onOpenRecord(record.id)}>
                     查看
                 </Button>
             ),

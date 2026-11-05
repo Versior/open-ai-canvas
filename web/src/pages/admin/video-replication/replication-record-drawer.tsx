@@ -1,5 +1,5 @@
 import { Alert, Button, Skeleton } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminStatusBadge } from "@/pages/admin/components/admin-ui";
 import { AdminDrawer } from "@/pages/admin/ui/overlays";
 import { formatTeardownTime, orientationLabel, readVideoReplicationAnalysis, teardownTimeRange, videoTeardownShotTranscripts } from "@/lib/canvas/video-teardown";
@@ -7,29 +7,43 @@ import { adminResourceFileUrl } from "@/services/api/admin-storage";
 import { parseVideoTeardownBundle } from "@/services/api/video-replication";
 import { adminUserLabel, getAdminVideoReplication, type AdminVideoReplicationDetail } from "@/services/api/video-replication-admin";
 import { formatParseTime } from "./parse-shared";
-import { AdminResourceThumb, modelLabel, TEARDOWN_STATUS_META, TRANSCRIPT_LABELS } from "./replication-admin-shared";
+import { AdminResourceThumb, modelLabel, teardownInProgress, teardownStatusMeta, TRANSCRIPT_LABELS } from "./replication-admin-shared";
 
 const BOUNDARY_LABELS = { start: "开头", cut: "切点", split: "长镜头切开" } as const;
+const IN_PROGRESS_REFRESH_MS = 3000;
 
 /** 一条拆解记录的详情：原视频、镜头事实、口播和保存过的分析。展示路径，结果读不出来时说明原因，不拿默认值补。 */
 export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     const [detail, setDetail] = useState<AdminVideoReplicationDetail | null>(null);
     const [error, setError] = useState("");
     const [retry, setRetry] = useState(0);
+    const shownIdRef = useRef("");
     useEffect(() => {
-        setDetail(null);
-        setError("");
+        // 换了记录才清空；重试或进行中的定时刷新读的是同一条，保留已显示的内容，不闪骨架屏。
+        if (shownIdRef.current !== id) {
+            shownIdRef.current = id;
+            setDetail(null);
+            setError("");
+        }
         if (!id) return;
         const controller = new AbortController();
         void getAdminVideoReplication(id, controller.signal)
             .then((result) => {
-                if (!controller.signal.aborted) setDetail(result);
+                if (controller.signal.aborted) return;
+                setDetail(result);
+                setError("");
             })
             .catch((cause) => {
                 if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "读取拆解记录失败");
             });
         return () => controller.abort();
     }, [id, retry]);
+    // 还在排队或拆解时每 3 秒刷新一次，看得到进度和完成后的结果。
+    useEffect(() => {
+        if (!id || !detail || !teardownInProgress(detail.task.status)) return;
+        const timer = window.setTimeout(() => setRetry((value) => value + 1), IN_PROGRESS_REFRESH_MS);
+        return () => window.clearTimeout(timer);
+    }, [detail, id]);
 
     const parsed = useMemo(() => {
         if (!detail || detail.task.status !== "succeeded") return { bundle: null, error: "" };
@@ -45,7 +59,7 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
     const rows = useMemo(() => new Map((analysis?.rows || []).map((row) => [row.shotNumber, row])), [analysis]);
 
     const task = detail?.task;
-    const meta = task ? TEARDOWN_STATUS_META[task.status] : null;
+    const meta = task ? teardownStatusMeta(task.status, task.progress ?? 0) : null;
     const facts: [string, string][] = task
         ? [
               ["用户", adminUserLabel(detail.user)],
@@ -83,7 +97,7 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
             ) : (
                 <div className="admin-vr-detail">
                     <div className="admin-vr-detail-status">
-                        <AdminStatusBadge label={task.status === "running" ? `${meta.label} ${task.progress ?? 0}%` : meta.label} tone={meta.tone} />
+                        <AdminStatusBadge label={meta.label} tone={meta.tone} />
                         {task.stage ? <span className="admin-vr-muted">{task.stage}</span> : null}
                     </div>
                     {task.status === "failed" && task.error ? <Alert type="error" showIcon title="失败原因" description={task.error} /> : null}
@@ -146,7 +160,7 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
                                     const dialogue = row?.dialogue || transcripts.get(shot.index) || "";
                                     return (
                                         <li key={shot.index} className="admin-vr-shot">
-                                            <AdminResourceThumb id={shot.keyframeResourceId} label={`镜头 ${shot.index} 关键帧`} className="admin-vr-shot-frame" />
+                                            <AdminResourceThumb id={shot.keyframeResourceId} label={`镜头 ${shot.index} 关键帧`} width={shot.keyframeWidth} height={shot.keyframeHeight} className="admin-vr-shot-frame" />
                                             <div className="admin-vr-shot-copy">
                                                 <div className="admin-vr-shot-head">
                                                     <strong>{`#${shot.index}`}</strong>

@@ -12,14 +12,27 @@ import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store"
 type SwitchKey = "videoReplicationEnabled" | "socialVideoImportEnabled";
 
 const SWITCHES: { key: SwitchKey; title: string; description: string; icon: ReactNode }[] = [
-    { key: "videoReplicationEnabled", title: "视频复刻", description: "关闭后侧栏不显示入口，用户不能新建拆解，也看不到已有记录；记录和关键帧都保留，重新开启后恢复。", icon: <ScanSearch className="size-4" aria-hidden="true" /> },
+    {
+        key: "videoReplicationEnabled",
+        title: "视频复刻",
+        description: "关闭后侧栏不显示入口，用户不能新建拆解，页面上也看不到记录；已经开始的拆解和分析照常完成，记录和关键帧都保留，重新开启后恢复。",
+        icon: <ScanSearch className="size-4" aria-hidden="true" />,
+    },
     {
         key: "socialVideoImportEnabled",
         title: "视频链接导入",
-        description: "粘贴抖音、快手等分享链接导入视频（画布粘贴和视频复刻共用）。关闭后画布按普通文字粘贴，视频复刻只能上传文件；解析接口的巡检、自动恢复和订阅同步一并暂停。",
+        description: "粘贴抖音、快手等分享链接导入视频（画布粘贴和视频复刻共用）。关闭后画布按普通文字粘贴，视频复刻只能上传文件；解析接口的巡检、自动恢复和订阅同步一并暂停，已经开始的导入会跑完。",
         icon: <Link2 className="size-4" aria-hidden="true" />,
     },
 ];
+
+const SETTING_KEYS: (keyof VideoReplicationSettings)[] = ["maxDurationSeconds", "maxShots", "transcribeEnabled"];
+
+/** 表单里和已保存设置不同的字段；保存时只提交这些，别的管理员同时改的其他字段不会被这里的旧值盖掉。 */
+function changedSettings(values: Partial<VideoReplicationSettings>, saved: VideoReplicationSettings | undefined): Partial<VideoReplicationSettings> {
+    if (!saved) return {};
+    return Object.fromEntries(SETTING_KEYS.filter((key) => values[key] !== undefined && values[key] !== saved[key]).map((key) => [key, values[key]]));
+}
 
 type Props = {
     features: FeatureAvailability | null;
@@ -72,9 +85,14 @@ export function ReplicationSettingsPanel({ features, featuresError, onFeaturesCh
     const save = async () => {
         const values = await form.validateFields().catch(() => null);
         if (!values) return;
+        const patch = changedSettings(values, settings);
+        if (!Object.keys(patch).length) {
+            setDirty(false);
+            return;
+        }
         setSaving(true);
         try {
-            const saved = await updateVideoReplicationSettings(values);
+            const saved = await updateVideoReplicationSettings(patch);
             form.setFieldsValue(saved);
             setDirty(false);
             message.success("设置已保存");
@@ -118,7 +136,8 @@ export function ReplicationSettingsPanel({ features, featuresError, onFeaturesCh
                 ) : null}
             </SettingsSectionCard>
 
-            <Form form={form} layout="vertical" requiredMark={false} className="admin-vr-settings-form" disabled={!settings} onValuesChange={() => setDirty(true)}>
+            {/* 改回原值时不算未保存。 */}
+            <Form form={form} layout="vertical" requiredMark={false} className="admin-vr-settings-form" disabled={!settings} onValuesChange={(_, values) => setDirty(Object.keys(changedSettings(values, settings)).length > 0)}>
                 <SettingsSectionCard title="拆解限制" description="超过时长的视频在上传和导入后就拦下；镜头多于上限时合并相邻的短镜头。保存后新建和排队中的拆解都按新限制执行。">
                     <div className="admin-vr-grid">
                         <Form.Item

@@ -123,6 +123,13 @@
     gap: 12px;
 }
 
+/* 紧跟在统计卡片下面，说明计数口径。 */
+.admin-vr-footnote {
+    margin: -8px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
 .admin-vr-columns {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
@@ -324,9 +331,23 @@ div.admin-vr-failure {
     gap: 10px;
 }
 
+/* 封面框固定大小，竖屏、横屏的画面都完整显示在框里，两侧或上下留底色。 */
 .admin-vr-record-cover {
-    width: 64px;
-    height: 40px;
+    display: inline-flex;
+    width: 72px;
+    height: 44px;
+    flex: none;
+    overflow: hidden;
+    border-radius: var(--admin-radius-sm);
+    background: var(--admin-layer-2);
+}
+
+.admin-vr-record-cover .admin-vr-thumb {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+    background: transparent;
+    object-fit: contain;
 }
 
 .admin-vr-record-copy,
@@ -463,9 +484,11 @@ div.admin-vr-failure {
     border-top: 1px solid var(--admin-divider);
 }
 
+/* 关键帧按原比例显示（比例由行内 aspect-ratio 给出）：竖屏窄、横屏宽，同一条视频的各镜头一样宽。 */
 .admin-vr-shot-frame {
-    width: 120px;
-    height: 68px;
+    width: auto;
+    height: 88px;
+    max-width: 160px;
 }
 
 .admin-vr-shot-copy {
@@ -691,13 +714,18 @@ div.admin-vr-failure {
         white-space: normal;
     }
 
+    /* 窄屏下失败行折成两行，行尾箭头没有固定位置，去掉；整行仍可点。 */
+    .admin-vr-failure > svg {
+        display: none;
+    }
+
     .admin-vr-checks > div {
         grid-template-columns: minmax(0, 1fr);
         gap: 4px;
     }
 
     .admin-vr-shot-frame {
-        width: 88px;
-        height: 50px;
+        height: 64px;
+        max-width: 112px;
     }
 }

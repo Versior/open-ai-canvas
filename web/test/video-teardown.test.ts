@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
     buildVideoTeardownPrompt,
     buildVideoTeardownSummaryPrompt,
+    formatDurationLimit,
     formatTeardownTime,
     parseVideoTeardownAnalysis,
     parseVideoTeardownSummary,
@@ -63,6 +64,12 @@ function row(shotNumber: number, extra: Record<string, unknown> = {}) {
         ...extra,
     };
 }
+
+describe("video replication duration limit", () => {
+    test("matches the server wording for whole minutes, seconds and mixed values", () => {
+        expect([180, 60, 45, 10, 90, 125].map(formatDurationLimit)).toEqual(["3 分钟", "1 分钟", "45 秒", "10 秒", "1 分 30 秒", "2 分 5 秒"]);
+    });
+});
 
 describe("video teardown bundle", () => {
     test("accepts a well-formed bundle", () => {

@@ -83,7 +83,7 @@ function parseImportText(text: string): SocialVideoParseAPIInput[] {
  * 接口按平台分类，按设置的方式轮询；连续失败自动停用、到点自动恢复；订阅源定时采集新接口。
  * 功能开放里关了视频链接导入时顶部提示：导入、巡检、自动恢复和订阅同步都暂停，手动测试照常。
  */
-export function ParsePoolPanel({ linkImportEnabled, onOpenSettings }: { linkImportEnabled: boolean | undefined; onOpenSettings: () => void }) {
+export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: { linkImportEnabled: boolean | undefined; onLoaded: (overview: SocialVideoParseOverview) => void; onOpenSettings: () => void }) {
     const { message, modal } = App.useApp();
     const [overview, setOverview] = useState<SocialVideoParseOverview | null>(null);
     const [loading, setLoading] = useState(true);
@@ -113,12 +113,13 @@ export function ParsePoolPanel({ linkImportEnabled, onOpenSettings }: { linkImpo
             if (request !== requestRef.current) return;
             setOverview(data);
             setLoadError("");
+            onLoaded(data);
         } catch (error) {
             if (request === requestRef.current) setLoadError(error instanceof Error ? error.message : "读取解析接口失败");
         } finally {
             if (request === requestRef.current) setLoading(false);
         }
-    }, []);
+    }, [onLoaded]);
     useEffect(() => {
         void reload();
     }, [reload]);

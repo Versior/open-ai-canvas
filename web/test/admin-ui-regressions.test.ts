@@ -181,6 +181,18 @@ test("high impact feature shutdowns require confirmation", async () => {
     expect(source).toContain("onChange={requestFeatureChange}");
 });
 
+test("feature switches save only the switch that changed", async () => {
+    // 视频复刻设置页也能切开关；「功能开放」页整份提交会把别处刚改的开关按旧值盖回去。
+    const [panel, replication] = await Promise.all([
+        Bun.file(new URL("../src/pages/admin/components/feature-availability-panel.tsx", import.meta.url)).text(),
+        Bun.file(new URL("../src/pages/admin/video-replication/replication-settings-panel.tsx", import.meta.url)).text(),
+    ]);
+    expect(panel).toContain("updateAdminFeatureAvailability({ [key]: enabled })");
+    expect(panel).not.toContain("toEditablePayload");
+    expect(replication).toContain("updateAdminFeatureAvailability({ [key]: enabled })");
+    expect(replication).toContain("updateVideoReplicationSettings(patch)");
+});
+
 test("admin settings use full-width summaries without selected-card side stripes", async () => {
     const [componentSource, cssSource] = await Promise.all([Bun.file(new URL("../src/pages/admin/components/admin-ui.tsx", import.meta.url)).text(), Bun.file(new URL("../src/styles/admin-ui.css", import.meta.url)).text()]);
 
