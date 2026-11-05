@@ -1,7 +1,7 @@
 import { ChevronDown, TriangleAlert } from "lucide-react";
 import { useId, useState } from "react";
-import { formatContextTokens, type AgentContextPhase, type AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
-import { agentUsageDetails, agentUsageHeadline, formatAgentShare, type AgentRunStatsView, type AgentUsageItem } from "@/lib/canvas/agent-run-stats";
+import { AGENT_CONTEXT_COMPACT_RATIO, formatContextTokens, type AgentContextPhase, type AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
+import { AGENT_USAGE_NO_READING, agentUsageDetails, agentUsageStats, formatAgentShare, type AgentRunStatsView, type AgentUsageItem } from "@/lib/canvas/agent-run-stats";
 
 const AGENT_USAGE_EXPANDED_KEY = "canvas:agent-usage-expanded:v1";
 
@@ -49,10 +49,11 @@ function UsageTiles({ items }: { items: AgentUsageItem[] }) {
 }
 
 /**
- * 输入框正上方的上下文与本轮用量，一直占着同一个位置，不会时有时无：
- * - 还没有读数：显示所选模型的上下文窗口和「发出消息后开始统计」；
- * - 新一轮的读数还没回来：沿用同一对话上一轮最后的读数，标「上一轮」；轮次进行中但还没有数字时标「进行中」；
- * - 有读数：上下文占用和本轮 token、速度、耗时、工具调用；「明细」展开剩余、压缩线、输入输出与缓存、模型与工具耗时，展开与否记在本机。
+ * 输入框正上方的上下文与本轮用量卡片。三段结构在任何状态下都在，数据到了才填数字，不会时有时无：
+ * - 第一行：上下文已用 / 窗口、占比、阶段，右侧是当前模型和「明细」；
+ * - 进度条带自动压缩线，下方写剩余和压缩线位置（还没有读数时写下一步会发生什么）；
+ * - 本轮五项：token、缓存命中、速度、耗时、工具调用，没有的项显示「—」。
+ * 新一轮的读数还没回来时沿用同一对话上一轮的上下文读数并标「上一轮」；「明细」展开上下文构成和本轮的输入输出、耗时，展开与否记在本机。
  */
 export function AgentUsageBar({
     view,
@@ -61,6 +62,7 @@ export function AgentUsageBar({
     hasRun = false,
     carried = false,
     contextWindow,
+    modelLabel,
 }: {
     view: AgentContextUsageView;
     stats?: AgentRunStatsView | null;
@@ -72,33 +74,29 @@ export function AgentUsageBar({
     carried?: boolean;
     /** 所选模型声明的上下文窗口，没有读数时用来提示。 */
     contextWindow?: number;
+    /** 当前选择的模型名；面板窄时输入框下方的模型按钮只剩图标，这里写全。 */
+    modelLabel?: string;
 }) {
     const [expanded, setExpanded] = useState(readExpanded);
     const detailsId = useId();
-    const headline = agentUsageHeadline(stats);
-    const showContext = view.phase !== "idle";
-    if (!showContext && !headline.length) {
-        return (
-            <section className="agent-usage is-idle" aria-label="上下文与本轮用量">
-                <div className="agent-usage-summary is-run-only">
-                    <span className="agent-usage-context">
-                        <span>上下文</span>
-                        {contextWindow ? <span className="agent-usage-figure">— / {formatContextTokens(contextWindow)}</span> : null}
-                        <span className="agent-usage-meter" aria-hidden="true" />
-                        <span className="agent-usage-hint">{running ? "这一轮进行中，读数稍后出现" : hasRun ? "这一轮还没有上下文读数" : "发出消息后开始统计"}</span>
-                    </span>
-                </div>
-            </section>
-        );
-    }
+    const measured = view.phase !== "idle";
+    const compacting = view.phase === "compacting";
+    const windowTokens = view.contextWindowTokens ?? contextWindow;
+    const ratio = view.ratio;
+    const percent = ratio === undefined ? undefined : formatAgentShare(ratio);
+    const fill = compacting ? 1 : Math.max(0, Math.min(1, ratio ?? 0));
+    // 压缩线：有读数用读数给的位置；还没有读数但知道窗口时，按后端同一个比例画出来。
+    const compactRatio = view.compactRatio ?? (windowTokens ? AGENT_CONTEXT_COMPACT_RATIO : undefined);
+    const compactAt = view.compactAtTokens ?? (windowTokens ? Math.round(windowTokens * AGENT_CONTEXT_COMPACT_RATIO) : undefined);
+    const marker = compactRatio && compactRatio > 0 && compactRatio < 1 ? compactRatio : undefined;
+    const badge = PHASE_BADGE[view.phase];
+    const tiles = agentUsageStats(stats);
     const details = agentUsageDetails(view, stats);
     const hasDetails = details.context.length > 0 || details.run.length > 0;
     const notes = usageNotes(view, stats);
-    const ratio = view.ratio;
-    const percent = ratio === undefined ? undefined : formatAgentShare(ratio);
-    const fill = view.phase === "compacting" ? 1 : Math.max(0, Math.min(1, ratio ?? 0));
-    const marker = view.compactRatio && view.compactRatio > 0 && view.compactRatio < 1 ? view.compactRatio : undefined;
-    const badge = PHASE_BADGE[view.phase];
+    const remaining = view.remainingTokens !== undefined && view.contextWindowTokens ? `剩余 ${formatContextTokens(view.remainingTokens)}（${formatAgentShare(view.remainingTokens / view.contextWindowTokens)}）` : "";
+    const scaleStart = measured ? remaining : running ? "这一轮进行中，读数稍后出现" : hasRun ? "这一轮还没有上下文读数" : "发出消息后开始统计";
+    const scaleEnd = compacting ? "正在把较早的对话收成检查点" : compactAt && compactRatio ? `到 ${formatContextTokens(compactAt)}（${formatAgentShare(compactRatio)}）自动压缩` : "";
     const toggle = () => {
         const next = !expanded;
         setExpanded(next);
@@ -111,62 +109,60 @@ export function AgentUsageBar({
     };
     return (
         <section className={`agent-usage is-${view.phase}`} aria-label="上下文与本轮用量">
-            <div className={`agent-usage-summary${showContext ? "" : " is-run-only"}`}>
-                {showContext ? (
-                    <span className="agent-usage-context" title={view.detail}>
-                        <span>上下文</span>
-                        {view.inputTokens !== undefined ? (
-                            <span className="agent-usage-figure">
-                                <strong>{formatContextTokens(view.inputTokens)}</strong>
-                                {view.contextWindowTokens ? ` / ${formatContextTokens(view.contextWindowTokens)}` : null}
-                            </span>
-                        ) : null}
-                        {ratio !== undefined || view.phase === "compacting" ? (
-                            <span
-                                className="agent-usage-meter"
-                                role="progressbar"
-                                aria-label={percent ? `上下文已用 ${percent}` : "上下文正在压缩"}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-valuenow={ratio === undefined ? undefined : Math.round(ratio * 100)}
-                            >
-                                <span style={{ width: `${fill * 100}%` }} />
-                                {marker ? <i style={{ left: `${marker * 100}%` }} aria-hidden="true" /> : null}
-                            </span>
-                        ) : null}
-                        {percent ? <strong>{percent}</strong> : null}
-                        {badge ? <span className="agent-usage-badge">{badge}</span> : null}
-                        {carried ? (
-                            <span className="agent-usage-tag" title="这一轮的上下文读数还没回来，先显示同一对话上一轮最后的读数">
-                                上一轮
-                            </span>
-                        ) : null}
+            <div className="agent-usage-head">
+                <span className="agent-usage-context" title={measured ? view.detail : undefined}>
+                    <span className="agent-usage-label">上下文</span>
+                    <span className="agent-usage-figure">
+                        <strong>{measured && view.inputTokens !== undefined ? formatContextTokens(view.inputTokens) : AGENT_USAGE_NO_READING}</strong>
+                        {windowTokens ? ` / ${formatContextTokens(windowTokens)}` : null}
                     </span>
-                ) : null}
-                {headline.length ? (
-                    <span className="agent-usage-metrics">
-                        {headline.map((item) => (
-                            <span key={item.key} className="agent-usage-metric" title={item.title}>
-                                <span>{item.label}</span>
-                                <strong>{item.value}</strong>
-                            </span>
-                        ))}
-                    </span>
-                ) : running ? (
-                    <span className="agent-usage-metrics">
-                        <span className="agent-usage-metric is-pending">
-                            <span>本轮</span>
-                            <span className="agent-usage-hint">进行中，模型回复后出现 token 与速度</span>
+                    {percent ? <span className="agent-usage-percent">{percent}</span> : null}
+                    {badge ? <span className="agent-usage-badge">{badge}</span> : null}
+                    {carried ? (
+                        <span className="agent-usage-tag" title="这一轮的上下文读数还没回来，先显示同一对话上一轮最后的读数">
+                            上一轮
                         </span>
-                    </span>
-                ) : null}
-                {hasDetails ? (
-                    <button type="button" className="agent-usage-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={toggle}>
-                        明细
-                        <ChevronDown className="size-3.5" aria-hidden="true" />
-                    </button>
-                ) : null}
+                    ) : null}
+                    {running ? <span className="agent-usage-live">进行中</span> : null}
+                </span>
+                <span className="agent-usage-side">
+                    {modelLabel ? (
+                        <span className="agent-usage-model" title={`当前模型：${modelLabel}`}>
+                            {modelLabel}
+                        </span>
+                    ) : null}
+                    {hasDetails ? (
+                        <button type="button" className="agent-usage-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={toggle}>
+                            明细
+                            <ChevronDown className="size-3.5" aria-hidden="true" />
+                        </button>
+                    ) : null}
+                </span>
             </div>
+            {measured && (ratio !== undefined || compacting) ? (
+                <span className="agent-usage-meter" role="progressbar" aria-label={percent ? `上下文已用 ${percent}` : "上下文正在压缩"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={ratio === undefined ? undefined : Math.round(ratio * 100)}>
+                    <span style={{ width: `${fill * 100}%` }} />
+                    {marker ? <i style={{ left: `${marker * 100}%` }} aria-hidden="true" /> : null}
+                </span>
+            ) : (
+                <span className="agent-usage-meter" aria-hidden="true">
+                    {marker ? <i style={{ left: `${marker * 100}%` }} /> : null}
+                </span>
+            )}
+            {scaleStart || scaleEnd ? (
+                <div className="agent-usage-scale">
+                    <span>{scaleStart}</span>
+                    {scaleEnd ? <span>{scaleEnd}</span> : null}
+                </div>
+            ) : null}
+            <dl className="agent-usage-stats" aria-label="本轮用量">
+                {tiles.map((item) => (
+                    <div key={item.key} title={item.title} data-empty={item.value === AGENT_USAGE_NO_READING ? "" : undefined}>
+                        <dt>{item.label}</dt>
+                        <dd>{item.value}</dd>
+                    </div>
+                ))}
+            </dl>
             {view.compactionError ? (
                 <p className="agent-usage-alert" role="status">
                     <TriangleAlert className="size-3.5" aria-hidden="true" />
@@ -177,13 +173,13 @@ export function AgentUsageBar({
                 <div id={detailsId} className="agent-usage-details" hidden={!expanded}>
                     {details.context.length ? (
                         <div className="agent-usage-group">
-                            <span className="agent-usage-eyebrow">上下文</span>
+                            <span className="agent-usage-eyebrow">上下文构成</span>
                             <UsageTiles items={details.context} />
                         </div>
                     ) : null}
                     {details.run.length ? (
                         <div className="agent-usage-group">
-                            <span className="agent-usage-eyebrow">本轮</span>
+                            <span className="agent-usage-eyebrow">本轮明细</span>
                             <UsageTiles items={details.run} />
                         </div>
                     ) : null}

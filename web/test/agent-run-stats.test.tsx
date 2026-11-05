@@ -4,7 +4,7 @@ import type { AgentEvent, AgentRun } from "@/services/api/agent";
 import {
     agentRunStatsCovers,
     agentUsageDetails,
-    agentUsageHeadline,
+    agentUsageStats,
     emptyAgentRunStats,
     formatAgentClockTime,
     formatAgentDuration,
@@ -220,40 +220,44 @@ describe("Usage bar above the composer", () => {
 
     it("keeps its place before the first reading and never invents numbers", () => {
         const idle = presentAgentContextUsage(emptyAgentContextUsage(""));
-        expect(agentUsageHeadline(null)).toEqual([]);
+        // 本轮五项固定在位，没有数据时都是「—」。
+        expect(agentUsageStats(null).map((item) => `${item.label} ${item.value}`)).toEqual(["本轮 tokens —", "缓存命中 —", "每秒 tokens —", "耗时 —", "工具调用 —"]);
         expect(agentUsageDetails(idle, null)).toEqual({ context: [], run: [] });
-        // 没有读数时仍占着同一个位置：给出模型的上下文窗口和下一步会发生什么，没有「明细」。
-        const fresh = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} contextWindow={1_000_000} />);
+        // 没有读数时卡片照样在：模型名、上下文窗口、压缩线位置和下一步会发生什么，没有「明细」，也没有进度读数。
+        const fresh = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} contextWindow={1_000_000} modelLabel="测试模型" />);
         expect(fresh).toContain("agent-usage is-idle");
-        expect(fresh).toContain("— / 1M");
+        expect(fresh).toContain("<strong>—</strong> / 1M");
+        expect(fresh).toContain("测试模型");
         expect(fresh).toContain("发出消息后开始统计");
+        expect(fresh).toContain("到 800K（80%）自动压缩");
+        expect(fresh).toContain('style="left:80%"');
+        expect(fresh).not.toContain("progressbar");
         expect(fresh).not.toContain("明细");
-        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />)).toContain("这一轮进行中，读数稍后出现");
+        expect(fresh.match(/data-empty=""/g)).toHaveLength(5);
+        const pending = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />);
+        expect(pending).toContain("这一轮进行中，读数稍后出现");
+        expect(pending).toContain("agent-usage-live");
         expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} hasRun />)).toContain("这一轮还没有上下文读数");
-        // 新一轮的读数到达前沿用上一轮的，标「上一轮」；这一轮还没有数字时标进行中。
+        // 新一轮的读数到达前沿用上一轮的上下文读数，标「上一轮」；本轮五项还没有数字。
         const carried = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} running carried />);
         expect(carried).toContain("上一轮");
-        expect(carried).toContain("进行中，模型回复后出现 token 与速度");
+        expect(carried).toContain("进行中");
+        expect(carried.match(/data-empty=""/g)).toHaveLength(5);
 
-        expect(agentUsageDetails(contextView, null)).toEqual({
-            context: [
-                { key: "remaining", label: "剩余", value: "952.3K", detail: "95%" },
-                { key: "compact-at", label: "压缩线", value: "800K", detail: "80%", title: "上下文到这里会自动把较早的对话收成检查点" },
-            ],
-            run: [],
-        });
+        // 剩余和压缩线常显在进度条下方，不再放进明细；这份读数没有构成，没有明细可展开。
+        expect(agentUsageDetails(contextView, null)).toEqual({ context: [], run: [] });
         const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />);
         expect(html).toContain("agent-usage is-ok");
         expect(html).toContain("<strong>47.7K</strong> / 1M");
         expect(html).toContain('aria-valuenow="5"');
-        // 明细默认收起，但仍在页面里，切换按钮有可指向的目标。
-        expect(html).toContain('aria-expanded="false"');
-        expect(html).toContain('hidden=""');
+        expect(html).toContain("剩余 952.3K（95%）");
+        expect(html).toContain("到 800K（80%）自动压缩");
+        expect(html).not.toContain("明细");
     });
 
-    it("shows run totals inline and the split in the details", () => {
+    it("shows run totals in the card and the split in the details", () => {
         const stats = presentAgentRunStats(reduce(fullRun).runs["run-1"]);
-        expect(agentUsageHeadline(stats).map((item) => `${item.label} ${item.value}`)).toEqual(["本轮 47.7K tokens", "速度 69 tokens/s", "耗时 8m 36s", "工具 3 次"]);
+        expect(agentUsageStats(stats).map((item) => `${item.label} ${item.value}`)).toEqual(["本轮 tokens 47.7K", "缓存命中 98%", "每秒 tokens 69", "耗时 8m 36s", "工具调用 3 次"]);
         const run = agentUsageDetails(contextView, stats).run;
         expect(run.map((item) => item.label)).toEqual(["模型调用", "输入", "输出", "缓存读取", "模型耗时", "工具调用"]);
         const value = (key: string) => run.find((item) => item.key === key);
@@ -263,9 +267,13 @@ describe("Usage bar above the composer", () => {
         expect(value("model-time")).toMatchObject({ value: "7s", detail: "1%" });
         expect(value("tools")?.value).toBe("2 种 · 3 次");
         const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />);
-        expect(html).toContain("<strong>69 tokens/s</strong>");
-        expect(html).toContain("<strong>8m 36s</strong>");
+        expect(html).toContain("<dd>69</dd>");
+        expect(html).toContain("<dd>8m 36s</dd>");
+        expect(html).not.toContain('data-empty=""');
         expect(html).toContain("本轮用量与速度来自上游调用记录");
+        // 明细默认收起，但仍在页面里，切换按钮有可指向的目标。
+        expect(html).toContain('aria-expanded="false"');
+        expect(html).toContain('hidden=""');
 
         const timedTools = presentAgentRunStats(reduce([event(1, "tool_completed", { toolName: "generate_media", callId: "a", durationMs: 211_000 }, 0), event(2, "run_completed", {}, 516_000)]).runs["run-1"]);
         expect(agentUsageDetails(contextView, timedTools).run.find((item) => item.key === "tool-time")).toMatchObject({ label: "工具耗时", value: "3m 31s", detail: "41%" });

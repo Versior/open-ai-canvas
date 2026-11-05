@@ -2533,7 +2533,17 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         stopping={stopping}
                                         references={references}
                                         includeAssetLibrary={false}
-                                        statusBar={<AgentUsageBar view={contextView} stats={runStatsView} running={running} hasRun={Boolean(run?.id)} carried={Boolean(carriedContext)} contextWindow={contextWindow} />}
+                                        statusBar={
+                                            <AgentUsageBar
+                                                view={contextView}
+                                                stats={runStatsView}
+                                                running={running}
+                                                hasRun={Boolean(run?.id)}
+                                                carried={Boolean(carriedContext)}
+                                                contextWindow={contextWindow}
+                                                modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
+                                            />
+                                        }
                                         left={<ComposerControls config={config} selectedModel={selectedModel} permissionMode={permissionMode} theme={theme} onModelChange={setModel} onPermissionChange={setPermissionMode} />}
                                     />
                                 </motion.div>

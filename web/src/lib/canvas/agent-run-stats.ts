@@ -275,9 +275,15 @@ export function formatAgentDuration(ms: number | undefined): string | undefined 
     return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
 }
 
-export function formatAgentTokenSpeed(tokensPerSecond: number | undefined): string | undefined {
+/** 生成速度的数值部分：10 以下保留一位小数。 */
+function formatAgentTokenRate(tokensPerSecond: number | undefined): string | undefined {
     if (tokensPerSecond === undefined || !Number.isFinite(tokensPerSecond) || tokensPerSecond <= 0) return undefined;
-    return `${tokensPerSecond < 10 ? Math.round(tokensPerSecond * 10) / 10 : Math.round(tokensPerSecond)} tokens/s`;
+    return String(tokensPerSecond < 10 ? Math.round(tokensPerSecond * 10) / 10 : Math.round(tokensPerSecond));
+}
+
+export function formatAgentTokenSpeed(tokensPerSecond: number | undefined): string | undefined {
+    const rate = formatAgentTokenRate(tokensPerSecond);
+    return rate ? `${rate} tokens/s` : undefined;
 }
 
 export function formatAgentShare(share: number | undefined): string | undefined {
@@ -294,28 +300,31 @@ export function formatAgentClockTime(value: string | undefined): string | undefi
     return [date.getHours(), date.getMinutes(), date.getSeconds()].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
-/** 用量栏里的一项读数；只有对应数据真实存在时才生成。 */
+/** 用量栏里的一项读数。value 为「—」表示还没有这项数据（不是 0）；detail 是值后面的补充，如占比。 */
 export type AgentUsageItem = { key: string; label: string; value: string; detail?: string; title?: string };
 
-/** 输入框上方常显的本轮读数：token 合计、生成速度、耗时、工具调用次数。 */
-export function agentUsageHeadline(stats: AgentRunStatsView | null | undefined): AgentUsageItem[] {
-    if (!stats) return [];
-    const items: AgentUsageItem[] = [];
-    if (stats.totalTokens !== undefined) items.push({ key: "total", label: "本轮", value: `${formatContextTokens(stats.totalTokens)} tokens`, title: `${stats.steps} 次模型调用的合计` });
-    const speed = formatAgentTokenSpeed(stats.tokensPerSecond);
-    if (speed) items.push({ key: "speed", label: "速度", value: speed });
-    const elapsed = formatAgentDuration(stats.elapsedMs);
-    if (elapsed) items.push({ key: "elapsed", label: "耗时", value: elapsed, title: "本轮第一条到最后一条事件的时间" });
-    if (stats.toolCalls > 0) items.push({ key: "tools", label: "工具", value: `${stats.toolCalls} 次`, title: `${stats.toolKinds} 种工具 · ${stats.toolCalls} 次调用` });
-    return items;
+/** 还没有读数的项。 */
+export const AGENT_USAGE_NO_READING = "—";
+
+/**
+ * 输入框上方常显的本轮读数：固定五项（token 合计、缓存命中、生成速度、耗时、工具调用），
+ * 位置不随数据有无变化；没有数据的项显示「—」，不编数字。
+ */
+export function agentUsageStats(stats: AgentRunStatsView | null | undefined): AgentUsageItem[] {
+    const none = AGENT_USAGE_NO_READING;
+    const total = stats?.totalTokens;
+    return [
+        { key: "total", label: "本轮 tokens", value: total === undefined ? none : formatContextTokens(total), title: stats && total !== undefined ? `${stats.steps} 次模型调用的输入与输出合计` : "本轮所有模型调用的输入与输出合计" },
+        { key: "cache", label: "缓存命中", value: formatAgentShare(stats?.cacheHitRate) ?? none, title: "输入里从缓存读取的比例" },
+        { key: "speed", label: "每秒 tokens", value: formatAgentTokenRate(stats?.tokensPerSecond) ?? none, title: "生成速度：有耗时记录的模型调用平均每秒输出的 token" },
+        { key: "elapsed", label: "耗时", value: formatAgentDuration(stats?.elapsedMs) ?? none, title: "本轮第一条到最后一条事件的时间" },
+        { key: "tools", label: "工具调用", value: stats ? `${stats.toolCalls} 次` : none, title: stats?.toolCalls ? `${stats.toolKinds} 种工具 · ${stats.toolCalls} 次调用` : undefined },
+    ];
 }
 
-/** 展开后的明细：上下文剩余、压缩线与构成；本轮模型调用、输入输出与缓存、模型和工具耗时、工具种类。 */
+/** 展开后的明细：上下文的构成；本轮模型调用、输入输出与缓存、模型和工具耗时、工具种类。剩余和压缩线常显在进度条下方。 */
 export function agentUsageDetails(view: AgentContextUsageView, stats: AgentRunStatsView | null | undefined): { context: AgentUsageItem[]; run: AgentUsageItem[] } {
     const context: AgentUsageItem[] = [];
-    const contextWindow = view.contextWindowTokens;
-    if (contextWindow && view.remainingTokens !== undefined) context.push({ key: "remaining", label: "剩余", value: formatContextTokens(view.remainingTokens), detail: formatAgentShare(view.remainingTokens / contextWindow) });
-    if (view.compactAtTokens) context.push({ key: "compact-at", label: "压缩线", value: formatContextTokens(view.compactAtTokens), detail: formatAgentShare(view.compactRatio), title: "上下文到这里会自动把较早的对话收成检查点" });
     for (const item of view.breakdown) context.push({ key: `bucket-${item.key}`, label: item.label, value: formatContextTokens(item.tokens) });
     if (view.protocolBytes !== undefined) context.push({ key: "envelope", label: "协议外壳", value: formatContextBytes(view.protocolBytes) });
     const run: AgentUsageItem[] = [];

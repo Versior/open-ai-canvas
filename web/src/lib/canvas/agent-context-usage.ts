@@ -50,6 +50,9 @@ export type AgentContextUsageView = {
     compactionError?: string;
 };
 
+/** 自动压缩线占模型窗口的比例，与后端 Pi 读数的 compactAtTokens（窗口的 80%）一致；还没有读数时用它画压缩线。 */
+export const AGENT_CONTEXT_COMPACT_RATIO = 0.8;
+
 export function emptyAgentContextUsage(runId: string): AgentContextUsage {
     return { runId, reading: null, readingSeq: 0, readingStale: false, compactionPending: null, compactionSeq: 0, compactionId: null, lastCompaction: null, compactionError: null };
 }
@@ -204,7 +207,7 @@ export function presentAgentContextUsage(usage: AgentContextUsage): AgentContext
         const measured = inputTokens === undefined ? "窗口未知" : `约 ${formatContextTokens(inputTokens)} Token`;
         return { ...base, phase: "unknown", label: measured, detail: "这个模型没有配置可确认的上下文窗口，不能给出占用百分比；对话过长时仍会按条数和体积压缩。" };
     }
-    const line = compactRatio && compactRatio > 0 ? compactRatio : 0.8;
+    const line = compactRatio && compactRatio > 0 ? compactRatio : AGENT_CONTEXT_COMPACT_RATIO;
     const ring = Math.max(0, Math.min(1, ratio));
     const percent = Math.round(ratio * 100);
     const source = "Pi 会话估算";
