@@ -3,9 +3,10 @@ import { ArrowUpRight, Link2, ScanSearch } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { AdminStatusBadge, SettingsSectionCard } from "@/pages/admin/components/admin-ui";
-import { Switch } from "@/pages/admin/ui/controls";
+import { Select, Switch } from "@/pages/admin/ui/controls";
 import { formatDurationLimit } from "@/lib/canvas/video-teardown";
 import { updateAdminFeatureAvailability } from "@/services/api/auth";
+import { listAdminAllChannelModels, type AdminChannelModelListItem } from "@/services/api/wallet";
 import { getAdminVideoReplicationSettings, updateVideoReplicationSettings, type AdminVideoReplicationSettingsView, type VideoReplicationSettings } from "@/services/api/video-replication-admin";
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
 
@@ -26,7 +27,19 @@ const SWITCHES: { key: SwitchKey; title: string; description: string; icon: Reac
     },
 ];
 
-const SETTING_KEYS: (keyof VideoReplicationSettings)[] = ["maxDurationSeconds", "maxShots", "transcribeEnabled"];
+const SETTING_KEYS: (keyof VideoReplicationSettings)[] = ["maxDurationSeconds", "maxShots", "transcribeEnabled", "transcriptionChannelModelId"];
+
+/** 转写模型下拉：系统渠道里 OpenAI Audio 协议的音频模型。已保存但现在不在列表里（删了或改了协议）的也列出来，标明不可用。 */
+function transcriptionModelOptions(models: AdminChannelModelListItem[], selected: string | undefined) {
+    const options = models
+        .filter((item) => item.capability === "audio" && item.protocol === "openai-audio")
+        .map((item) => {
+            const usable = item.enabled && item.channelEnabled;
+            return { value: item.id, label: `${item.displayName || item.modelKey} · ${item.channelName}${usable ? "" : "（已停用）"}`, disabled: !usable && item.id !== selected };
+        });
+    if (selected && !options.some((item) => item.value === selected)) options.push({ value: selected, label: "已保存的模型现在不可用", disabled: false });
+    return [{ value: "", label: "不用模型，走服务器自建的转写服务", disabled: false }, ...options];
+}
 
 /** 表单里和已保存设置不同的字段；保存时只提交这些，别的管理员同时改的其他字段不会被这里的旧值盖掉。 */
 function changedSettings(values: Partial<VideoReplicationSettings>, saved: VideoReplicationSettings | undefined): Partial<VideoReplicationSettings> {
@@ -60,6 +73,24 @@ export function ReplicationSettingsPanel({ active, features, featuresError, onFe
     const [dirty, setDirtyState] = useState(false);
     const dirtyRef = useRef(false);
     const maxDurationSeconds = Form.useWatch("maxDurationSeconds", form);
+    const [models, setModels] = useState<AdminChannelModelListItem[]>([]);
+    const [modelsError, setModelsError] = useState("");
+    useEffect(() => {
+        if (!active) return;
+        let cancelled = false;
+        void listAdminAllChannelModels()
+            .then((result) => {
+                if (cancelled) return;
+                setModels(result.models);
+                setModelsError("");
+            })
+            .catch((cause) => {
+                if (!cancelled) setModelsError(cause instanceof Error ? cause.message : "读取渠道模型失败");
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [active, reloadKey]);
     useEffect(() => {
         if (!active) return;
         const controller = new AbortController();
@@ -75,6 +106,8 @@ export function ReplicationSettingsPanel({ active, features, featuresError, onFe
         return () => controller.abort();
     }, [active, reloadKey]);
     const settings = view?.settings;
+    const savedModel = settings?.transcriptionChannelModelId || undefined;
+    const modelOptions = useMemo(() => transcriptionModelOptions(models, savedModel), [models, savedModel]);
     // 重新读取会换掉 settings 对象：内容没变、或者正在改的时候都不重置表单。
     const settingsKey = useMemo(() => (settings ? JSON.stringify(settings) : ""), [settings]);
     const setDirty = (value: boolean) => {
@@ -187,11 +220,36 @@ export function ReplicationSettingsPanel({ active, features, featuresError, onFe
                 </SettingsSectionCard>
                 <SettingsSectionCard
                     title="口播识别"
-                    description="拆解时把音轨交给语音转写服务识别口播；不能识别时让看图模型从画面字幕读口播。"
+                    description="拆解时把音轨交给转写模型或自建转写服务识别口播；不能识别时让看图模型从画面字幕读口播。"
                     status={transcription ? <AdminStatusBadge label={transcription.available ? "现在可用" : "现在不可用"} tone={transcription.available ? "success" : "warning"} /> : undefined}
                 >
                     <Form.Item name="transcribeEnabled" label="允许识别口播" valuePropName="checked" extra="关闭后拆解不调用转写服务，用户端的「识别口播」开关不能打开。">
                         <Switch aria-label="允许识别口播" />
+                    </Form.Item>
+                    <Form.Item
+                        name="transcriptionChannelModelId"
+                        label="转写模型"
+                        extra={
+                            modelsError ? (
+                                <span className="admin-vr-error">{`读取渠道模型失败：${modelsError}`}</span>
+                            ) : (
+                                <>
+                                    选系统渠道里协议为 OpenAI Audio 的音频模型，要能返回分句时间（比如 whisper-1）。走平台渠道，费用由平台承担，不扣用户积分。
+                                    {modelOptions.length > 1 ? null : (
+                                        <>
+                                            {" 渠道里还没有这类模型，先去 "}
+                                            <Link to="/admin/channels" className="admin-vr-link">
+                                                渠道管理
+                                                <ArrowUpRight className="size-3" aria-hidden="true" />
+                                            </Link>
+                                            {" 添加。"}
+                                        </>
+                                    )}
+                                </>
+                            )
+                        }
+                    >
+                        <Select ariaLabel="转写模型" appearance="field" options={modelOptions} className="admin-vr-model-select" />
                     </Form.Item>
                     {transcription ? (
                         <dl className="admin-vr-checks">
@@ -206,14 +264,33 @@ export function ReplicationSettingsPanel({ active, features, featuresError, onFe
                                 </dd>
                             </div>
                             <div>
-                                <dt>转写服务</dt>
+                                <dt>转写方式</dt>
                                 <dd>
-                                    <AdminStatusBadge label={transcription.serviceConfigured ? "已配置" : "未配置"} tone={transcription.serviceConfigured ? "success" : "neutral"} />
+                                    <AdminStatusBadge label={transcription.engine === "channel" ? "转写模型" : transcription.engine === "whisper" ? "自建服务" : "未配置"} tone={transcription.serviceConfigured ? "success" : "neutral"} />
                                     <span className="admin-vr-muted">
-                                        在服务器环境变量 <code>CANVAS_WHISPER_BASE_URL</code> 里配置 whisper.cpp 服务地址，改后重启后端。
+                                        {transcription.engine === "channel" ? (
+                                            `用 ${transcription.model}`
+                                        ) : transcription.engine === "whisper" ? (
+                                            <>
+                                                用服务器自建的 whisper.cpp 服务（环境变量 <code>CANVAS_WHISPER_BASE_URL</code>）。
+                                            </>
+                                        ) : (
+                                            <>
+                                                选一个转写模型，或在服务器环境变量 <code>CANVAS_WHISPER_BASE_URL</code> 里配置 whisper.cpp 服务地址（改后重启后端）。
+                                            </>
+                                        )}
                                     </span>
                                 </dd>
                             </div>
+                            {transcription.modelIssue ? (
+                                <div>
+                                    <dt>转写模型</dt>
+                                    <dd>
+                                        <AdminStatusBadge label="不可用" tone="warning" />
+                                        <span className="admin-vr-muted">{transcription.modelIssue}</span>
+                                    </dd>
+                                </div>
+                            ) : null}
                             {transcription.note ? (
                                 <div>
                                     <dt>现在</dt>

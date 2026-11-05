@@ -4,10 +4,24 @@ import type { VideoReplicationRecord } from "@/services/api/video-replication";
 
 /** 后台「视频复刻」：使用统计、所有用户的拆解记录和视频复刻设置。接口说明见 docs/content/docs/backend/http-api.mdx。 */
 
-export type VideoReplicationSettings = { maxDurationSeconds: number; maxShots: number; transcribeEnabled: boolean };
+/** transcriptionChannelModelId 是后台选的转写模型（系统渠道里 OpenAI Audio 协议的音频模型）；空字符串表示用服务器自建的转写服务。 */
+export type VideoReplicationSettings = { maxDurationSeconds: number; maxShots: number; transcribeEnabled: boolean; transcriptionChannelModelId: string };
 
-/** 拆解时能不能识别口播：后台允许、字幕转写已开放、服务器配置了转写服务，三样都有才可用。 */
-export type VideoReplicationTranscription = { enabled: boolean; featureEnabled: boolean; serviceConfigured: boolean; available: boolean; note?: string };
+/**
+ * 拆解时能不能识别口播：后台允许、字幕转写已开放、有能用的转写方式，三样都有才可用。
+ * engine 是实际会用的转写方式：channel 为后台选的转写模型（model 是模型和渠道名），whisper 为服务器自建服务。
+ * modelIssue 是选了转写模型但现在不能用的原因。
+ */
+export type VideoReplicationTranscription = {
+    enabled: boolean;
+    featureEnabled: boolean;
+    serviceConfigured: boolean;
+    available: boolean;
+    engine?: "channel" | "whisper";
+    model?: string;
+    modelIssue?: string;
+    note?: string;
+};
 
 export type VideoReplicationTaskStats = { total: number; queued: number; running: number; succeeded: number; failed: number; cancelled: number; users: number; last7Days: number; today: number };
 

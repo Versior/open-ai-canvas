@@ -61,7 +61,7 @@ export function ReplicationOverviewPanel({ overview, parse, features, featuresEr
             key: "transcription",
             label: "口播识别",
             badge: transcription ? <AdminStatusBadge label={transcription.available ? "可用" : "不可用"} tone={transcription.available ? "success" : "warning"} /> : null,
-            detail: transcription ? transcription.note || "拆解时用转写服务识别口播" : "",
+            detail: transcription ? transcription.note || (transcription.engine === "channel" ? `用转写模型 ${transcription.model}` : "用服务器自建的转写服务") : "",
             tab: "settings" as const,
         },
     ];
