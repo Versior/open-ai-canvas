@@ -1,24 +1,38 @@
-import { App, Button, Form, Input, Skeleton, Tabs } from "antd";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { App, Button, Skeleton, Tabs } from "antd";
+import { canonicalize } from "json-canonicalize";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useBlocker } from "react-router";
-import { RefreshCw, Save, Undo2 } from "lucide-react";
+import { History, RefreshCw, Save, Undo2 } from "lucide-react";
 import { AdminPageFrame } from "../components/admin-shell";
-import { SettingsSectionCard, AdminStatusBadge } from "../components/admin-ui";
-import { Switch } from "../ui/controls";
+import { AdminStatusBadge } from "../components/admin-ui";
+import { AdminCallout } from "../ui/controls";
 import { ecommerceCapabilitySettings, ecommerceSettingsEqual, getAdminEcommerceDefaults, getAdminEcommerceSetting, getPreviousEcommerceSetting, saveAdminEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce-canvas";
-import { ECOMMERCE_STUDIO_CAPABILITIES } from "@/lib/ecommerce/ecommerce-capabilities";
+import { DOSSIER, DOSSIER_DEFAULT_KEY, renderDossierPanel } from "./ecommerce-dossier-panel";
 import { EcommerceTemplateEditor } from "./ecommerce-template-editor";
 import { StudioPromptsEditor } from "./studio-prompts-editor";
 import "./ecommerce-settings-page.css";
 
-/** 电商生图台的「商品档案」能力：看图识别商品事实，再按已确认事实写卖点与文案。 */
-const DOSSIER = ECOMMERCE_STUDIO_CAPABILITIES[0];
-const DOSSIER_DEFAULT_KEY = `cap:${DOSSIER.id}`;
+/** 页签名后面的状态小字；这一组有没保存的修改时加一个圆点。 */
+function tabLabel(name: string, meta: string, changed: boolean): ReactNode {
+    return (
+        <span className="ecm-tab">
+            {name}
+            <em>{meta}</em>
+            {changed ? (
+                <span className="ecm-tab-dot" title="有未保存修改">
+                    <span className="sr-only">有未保存修改</span>
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
+const same = (a: unknown, b: unknown) => canonicalize(a ?? null) === canonicalize(b ?? null);
 
 /**
  * 电商生图台配置。
  *
- * 后端仍把整份设置存在 ecommerce_canvas 里并整体校验；页面只编辑商品档案能力和套图模板，
+ * 后端仍把整份设置存在 ecommerce_canvas 里并整体校验；页面只编辑商品档案能力、出图提示词和套图模板，
  * 其余字段（旧画布能力、功能开关、公共模特等）保存时按读取到的原样提交。
  */
 export default function EcommerceSettingsPage() {
@@ -128,94 +142,78 @@ export default function EcommerceSettingsPage() {
         const originalDefaults = !saved?.capabilities && Object.values(capabilities).every((item) => item.enabled && !item.directorPrompt);
         setDraft({ ...draft, capabilities: originalDefaults ? undefined : capabilities });
     };
+    const ready = Boolean(draft && dossier && !loading);
+    const promptCount = Object.keys(draft?.studioPrompts ?? {}).length;
+    const enabledTemplates = draft?.templates.filter((item) => item.enabled).length ?? 0;
     return (
         <AdminPageFrame
             title="电商生图台"
-            description="管理电商生图台的商品档案指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
+            description="商品档案指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
             scroll
             actions={
                 <>
+                    {ready ? (
+                        <span className="ecm-save-state">
+                            <AdminStatusBadge label={dirty ? "有未保存修改" : "已保存"} tone={dirty ? "warning" : "success"} />
+                        </span>
+                    ) : null}
+                    <Button
+                        disabled={busy || loading || !draft}
+                        onClick={() => (dirty ? modal.confirm({ title: "载入上一版会覆盖当前草稿", okText: "载入上一版", cancelText: "继续编辑", onOk: previous }) : void previous())}
+                        icon={<History className="size-4" />}
+                    >
+                        载入上一版
+                    </Button>
                     <Button disabled={busy || loading} onClick={refresh} icon={<RefreshCw className="size-4" />}>
                         刷新
                     </Button>
                     <Button disabled={!dirty || busy} onClick={() => setDraft(saved && structuredClone(saved))} icon={<Undo2 className="size-4" />}>
                         撤销
                     </Button>
-                    <Button className="admin-ecommerce-save" loading={busy} disabled={!dirty || loading} onClick={() => void save()} icon={<Save className="size-4" />}>
+                    <Button type="primary" loading={busy} disabled={!dirty || loading} onClick={() => void save()} icon={<Save className="size-4" />}>
                         保存修改
                     </Button>
                 </>
             }
         >
-            {error ? (
-                <div role="alert">
-                    {error}
-                    <Button onClick={() => void load()}>重试</Button>
-                </div>
-            ) : null}
-            {!draft || !dossier || loading ? (
-                loading ? (
-                    <Skeleton active />
-                ) : null
-            ) : (
-                <div className="admin-settings-stack admin-ecommerce">
-                    <div className="admin-settings-status-bar">
-                        <AdminStatusBadge label={dirty ? "有未保存修改" : "已保存"} tone={dirty ? "warning" : "success"} />
-                        <Button disabled={busy || loading} onClick={() => (dirty ? modal.confirm({ title: "载入上一版会覆盖当前草稿", okText: "载入上一版", cancelText: "继续编辑", onOk: previous }) : void previous())}>
-                            载入上一版
-                        </Button>
-                        <span>修改保存后生效</span>
-                    </div>
-                    {defaultsError ? (
-                        <p role="alert">
-                            {defaultsError}
-                            <Button type="text" disabled={defaultsLoading} onClick={() => void loadDefaults()}>
-                                重试读取默认指令
+            <div className="ecm">
+                {error ? (
+                    <AdminCallout
+                        tone="error"
+                        title="电商生图台配置读取失败"
+                        action={
+                            <Button size="small" onClick={() => void load()}>
+                                重试
                             </Button>
-                        </p>
-                    ) : null}
+                        }
+                    >
+                        {error}
+                    </AdminCallout>
+                ) : null}
+                {loading ? <Skeleton active paragraph={{ rows: 8 }} /> : null}
+                {ready && draft && dossier && saved ? (
                     <Tabs
-                        className="admin-ecommerce-tabs"
+                        className="ecm-tabs"
                         items={[
                             {
                                 key: "dossier",
-                                label: DOSSIER.name,
-                                children: (
-                                    <SettingsSectionCard title={DOSSIER.name} description={`${DOSSIER.description}。修改保存后生效。`} layout="stacked">
-                                        <Form layout="vertical" className="admin-ecommerce-capability-editor">
-                                            <Form.Item label={DOSSIER.name} extra="关闭后，电商生图台不能再识别商品档案或撰写卖点与文案。">
-                                                <Switch aria-label={DOSSIER.name + "开放使用"} disabled={busy} checked={dossier.enabled} onChange={(enabled) => patchDossier({ enabled })} />
-                                            </Form.Item>
-                                            <div className="admin-ecommerce-prompt-heading">
-                                                <span>{dossier.directorPrompt.trim() ? "自定义指令" : "内置默认指令"}</span>
-                                                <Button type="text" size="small" icon={<Undo2 className="size-3.5" />} disabled={busy || !dossier.directorPrompt} onClick={() => patchDossier({ directorPrompt: "" })}>
-                                                    恢复内置默认
-                                                </Button>
-                                            </div>
-                                            <Form.Item extra="下方展示实际使用的完整指令。编辑后成为自定义覆盖，保存修改后生效。">
-                                                <Input.TextArea
-                                                    aria-label={DOSSIER.name + "私有分析指令"}
-                                                    disabled={busy || (!dossier.directorPrompt && !defaults[DOSSIER_DEFAULT_KEY])}
-                                                    rows={8}
-                                                    maxLength={20000}
-                                                    value={dossier.directorPrompt || defaults[DOSSIER_DEFAULT_KEY] || ""}
-                                                    placeholder={defaultsLoading ? "正在读取内置指令…" : "内置指令未读取成功，请点击上方重试"}
-                                                    onChange={(event) => patchDossier({ directorPrompt: event.target.value })}
-                                                />
-                                            </Form.Item>
-                                        </Form>
-                                    </SettingsSectionCard>
-                                ),
+                                label: tabLabel(DOSSIER.name, dossier.enabled ? "已开启" : "已关闭", !same(dossier, ecommerceCapabilitySettings(saved)[DOSSIER.id])),
+                                children: renderDossierPanel({
+                                    value: dossier,
+                                    defaultText: defaults[DOSSIER_DEFAULT_KEY] || "",
+                                    defaultsLoading,
+                                    defaultsError,
+                                    disabled: busy,
+                                    onChange: patchDossier,
+                                    onRetryDefaults: loadDefaults,
+                                }),
                             },
                             {
                                 key: "prompts",
-                                label: "出图提示词",
+                                label: tabLabel("出图提示词", promptCount ? `已改 ${promptCount}` : "内置", !same(draft.studioPrompts, saved.studioPrompts)),
                                 children: (
-                                    <SettingsSectionCard
-                                        title="出图提示词"
-                                        description="生图台出图时每一层提示词的写法：镜头规格、拍摄方式、市场、质感、品类规则和微调标签。改过的替换内置写法，恢复内置或改回原样即不再覆盖；商品事实、图上文字和平台硬性要求不在这里改。修改保存后生效。"
-                                        layout="stacked"
-                                    >
+                                    <>
+                                        <p className="ecm-intro">生图台出图时每一层提示词的写法：镜头规格、拍摄方式、市场、质感、品类规则和微调标签。改过的条目替换内置写法；商品事实、图上文字和平台硬性要求不在这里改。</p>
                                         <StudioPromptsEditor
                                             value={draft.studioPrompts}
                                             disabled={busy}
@@ -225,22 +223,18 @@ export default function EcommerceSettingsPage() {
                                                 setDraft(next);
                                             }}
                                         />
-                                    </SettingsSectionCard>
+                                    </>
                                 ),
                             },
                             {
                                 key: "templates",
-                                label: "套图模板",
-                                children: (
-                                    <SettingsSectionCard title="套图模板" description="生图台「模板套图」可以直接选内置的 1173 套模板；这里把常用的加入后台精选并按需改写画面顺序、每张职责与整套视觉规范。修改保存后生效。" layout="stacked">
-                                        <EcommerceTemplateEditor templates={draft.templates} disabled={busy} onChange={(templates) => setDraft({ ...draft, templates })} />
-                                    </SettingsSectionCard>
-                                ),
+                                label: tabLabel("套图模板", draft.templates.length ? `启用 ${enabledTemplates}` : "未精选", !same(draft.templates, saved.templates)),
+                                children: <EcommerceTemplateEditor templates={draft.templates} disabled={busy} onChange={(templates) => setDraft({ ...draft, templates })} />,
                             },
                         ]}
                     />
-                </div>
-            )}
+                ) : null}
+            </div>
         </AdminPageFrame>
     );
 }

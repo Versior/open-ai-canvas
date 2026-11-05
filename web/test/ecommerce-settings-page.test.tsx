@@ -8,7 +8,19 @@ import { apiClient } from "../src/services/api/request";
 Object.defineProperty(globalThis, "__APP_VERSION__", { configurable: true, value: "test" });
 const { default: EcommerceSettingsPage } = await import("../src/pages/admin/settings/ecommerce-settings-page");
 
-type Props = { children?: ReactNode; actions?: ReactNode; items?: { children?: ReactNode }[]; "aria-label"?: string; value?: string; placeholder?: string; onChange?: (value: any) => void; onClick?: () => unknown; disabled?: boolean; checked?: boolean };
+type Props = {
+    children?: ReactNode;
+    actions?: ReactNode;
+    action?: ReactNode;
+    items?: { children?: ReactNode }[];
+    "aria-label"?: string;
+    value?: string;
+    placeholder?: string;
+    onChange?: (value: any) => void;
+    onClick?: () => unknown;
+    disabled?: boolean;
+    checked?: boolean;
+};
 function find(tree: ReactNode, predicate: (props: Props) => boolean): Props | undefined {
     if (Array.isArray(tree)) {
         for (const child of tree) {
@@ -19,7 +31,7 @@ function find(tree: ReactNode, predicate: (props: Props) => boolean): Props | un
     }
     if (!React.isValidElement<Props>(tree)) return;
     if (predicate(tree.props)) return tree.props;
-    const children = [tree.props.children, tree.props.actions, ...(tree.props.items?.map((item) => item.children) ?? [])];
+    const children = [tree.props.children, tree.props.actions, tree.props.action, ...(tree.props.items?.map((item) => item.children) ?? [])];
     for (const child of children.flatMap((value) => React.Children.toArray(value))) {
         const found = find(child, predicate);
         if (found) return found;
