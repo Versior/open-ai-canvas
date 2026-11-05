@@ -59,9 +59,15 @@ export function getAdminVideoReplication(id: string, signal?: AbortSignal) {
     return http.get<AdminVideoReplicationDetail>(`/admin/video-replication/teardowns/${encodeURIComponent(id)}`, { signal });
 }
 
-export async function updateVideoReplicationSettings(settings: Partial<VideoReplicationSettings>) {
-    const result = await http.patch<{ settings: VideoReplicationSettings }>("/admin/video-replication/settings", settings);
-    return result.settings;
+/** 设置页单独读取的内容：当前设置和口播识别状态；保存设置也返回同一份。 */
+export type AdminVideoReplicationSettingsView = { settings: VideoReplicationSettings; transcription: VideoReplicationTranscription };
+
+export function getAdminVideoReplicationSettings(signal?: AbortSignal) {
+    return http.get<AdminVideoReplicationSettingsView>("/admin/video-replication/settings", { signal });
+}
+
+export function updateVideoReplicationSettings(settings: Partial<VideoReplicationSettings>) {
+    return http.patch<AdminVideoReplicationSettingsView>("/admin/video-replication/settings", settings);
 }
 
 /** 后台用户名展示：有昵称时「昵称（用户名）」，用户已删除时显示 ID。 */

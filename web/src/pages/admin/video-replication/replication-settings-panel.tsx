@@ -6,7 +6,7 @@ import { AdminStatusBadge, SettingsSectionCard } from "@/pages/admin/components/
 import { Switch } from "@/pages/admin/ui/controls";
 import { formatDurationLimit } from "@/lib/canvas/video-teardown";
 import { updateAdminFeatureAvailability } from "@/services/api/auth";
-import { updateVideoReplicationSettings, type AdminVideoReplicationOverview, type VideoReplicationSettings } from "@/services/api/video-replication-admin";
+import { getAdminVideoReplicationSettings, updateVideoReplicationSettings, type AdminVideoReplicationSettingsView, type VideoReplicationSettings } from "@/services/api/video-replication-admin";
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
 
 type SwitchKey = "videoReplicationEnabled" | "socialVideoImportEnabled";
@@ -35,25 +35,47 @@ function changedSettings(values: Partial<VideoReplicationSettings>, saved: Video
 }
 
 type Props = {
+    /** 页签打开时读取设置；切回来时重新读一次，看得到别的管理员刚保存的值。 */
+    active: boolean;
     features: FeatureAvailability | null;
     featuresError: string;
     onFeaturesChange: (features: FeatureAvailability) => void;
-    overview: AdminVideoReplicationOverview | null;
+    /** 保存设置以后通知页面刷新概览（口播识别状态和限制也显示在概览里）。 */
     onSaved: () => void;
 };
 
-/** 视频复刻的开关（功能开放里同一份配置，切换即保存）和拆解限制、口播识别（保存后对新任务和排队中的任务生效）。 */
-export function ReplicationSettingsPanel({ features, featuresError, onFeaturesChange, overview, onSaved }: Props) {
+/**
+ * 视频复刻的开关（功能开放里同一份配置，切换即保存）和拆解限制、口播识别（保存后对新任务和排队中的任务生效）。
+ * 设置单独读取，不依赖概览里的统计查询：统计读不出来时设置照样能改。
+ */
+export function ReplicationSettingsPanel({ active, features, featuresError, onFeaturesChange, onSaved }: Props) {
     const { message } = App.useApp();
     const setGlobalFeatures = useUserStore((state) => state.setFeatures);
     const [savingKey, setSavingKey] = useState<SwitchKey | null>(null);
     const [form] = Form.useForm<VideoReplicationSettings>();
+    const [view, setView] = useState<AdminVideoReplicationSettingsView | null>(null);
+    const [loadError, setLoadError] = useState("");
+    const [reloadKey, setReloadKey] = useState(0);
     const [saving, setSaving] = useState(false);
     const [dirty, setDirtyState] = useState(false);
     const dirtyRef = useRef(false);
     const maxDurationSeconds = Form.useWatch("maxDurationSeconds", form);
-    const settings = overview?.settings;
-    // 概览刷新会换掉 settings 对象：内容没变、或者正在改的时候都不重置表单。
+    useEffect(() => {
+        if (!active) return;
+        const controller = new AbortController();
+        void getAdminVideoReplicationSettings(controller.signal)
+            .then((result) => {
+                if (controller.signal.aborted) return;
+                setView(result);
+                setLoadError("");
+            })
+            .catch((cause) => {
+                if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : "读取视频复刻设置失败");
+            });
+        return () => controller.abort();
+    }, [active, reloadKey]);
+    const settings = view?.settings;
+    // 重新读取会换掉 settings 对象：内容没变、或者正在改的时候都不重置表单。
     const settingsKey = useMemo(() => (settings ? JSON.stringify(settings) : ""), [settings]);
     const setDirty = (value: boolean) => {
         dirtyRef.current = value;
@@ -93,8 +115,10 @@ export function ReplicationSettingsPanel({ features, featuresError, onFeaturesCh
         setSaving(true);
         try {
             const saved = await updateVideoReplicationSettings(patch);
-            form.setFieldsValue(saved);
             setDirty(false);
+            setView(saved);
+            setLoadError("");
+            form.setFieldsValue(saved.settings);
             message.success("设置已保存");
             onSaved();
         } catch (cause) {
@@ -103,7 +127,7 @@ export function ReplicationSettingsPanel({ features, featuresError, onFeaturesCh
             setSaving(false);
         }
     };
-    const transcription = overview?.transcription;
+    const transcription = view?.transcription;
 
     return (
         <div className="admin-vr-settings">
@@ -136,6 +160,14 @@ export function ReplicationSettingsPanel({ features, featuresError, onFeaturesCh
                 ) : null}
             </SettingsSectionCard>
 
+            {loadError ? (
+                <div className="admin-vr-load-error" role="alert">
+                    <span>{`读取拆解限制和口播识别设置失败：${loadError}`}</span>
+                    <Button size="small" onClick={() => setReloadKey((value) => value + 1)}>
+                        重新加载
+                    </Button>
+                </div>
+            ) : null}
             {/* 改回原值时不算未保存。 */}
             <Form form={form} layout="vertical" requiredMark={false} className="admin-vr-settings-form" disabled={!settings} onValuesChange={(_, values) => setDirty(Object.keys(changedSettings(values, settings)).length > 0)}>
                 <SettingsSectionCard title="拆解限制" description="超过时长的视频在上传和导入后就拦下；镜头多于上限时合并相邻的短镜头。保存后新建和排队中的拆解都按新限制执行。">

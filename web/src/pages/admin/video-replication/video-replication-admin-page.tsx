@@ -99,8 +99,8 @@ export default function VideoReplicationAdminPage() {
                 ) : null
             }
         >
-            {/* 统计和设置初值都来自这次读取；记录和解析接口页签各自读取，各自显示错误。 */}
-            {overviewError && (tab === "overview" || tab === "settings") ? (
+            {/* 统计来自这次读取；记录、解析接口和设置页签各自读取，各自显示错误。 */}
+            {overviewError && tab === "overview" ? (
                 <div className="admin-vr-load-error" role="alert">
                     <span>{overviewError}</span>
                     <Button size="small" onClick={() => void reload()}>
@@ -144,7 +144,7 @@ export default function VideoReplicationAdminPage() {
                     {
                         key: "settings",
                         label: "设置",
-                        children: <ReplicationSettingsPanel features={features} featuresError={featuresError} onFeaturesChange={changeFeatures} overview={overview} onSaved={() => void reload()} />,
+                        children: <ReplicationSettingsPanel active={tab === "settings"} features={features} featuresError={featuresError} onFeaturesChange={changeFeatures} onSaved={() => void reload()} />,
                     },
                 ]}
             />
