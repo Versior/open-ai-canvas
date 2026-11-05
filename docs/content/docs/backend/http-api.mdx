@@ -67,7 +67,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 测试结果 `data` 包含 `ok`、失败的步骤 `stage`（`request` / `response` / `mapping` / `media`）、`message`、`latencyMs`、`httpStatus`、取到的字段 `result`、视频地址检查 `media`（只读开头 64 KiB 确认是视频，不下载整段）和接口返回的前 4 KiB `responsePreview`（密钥换成 `***`）。测试已保存的接口、批量测试、巡检和用户导入的结果都计入运行状态：连续失败达到阈值自动停用，成功一次清零并恢复。一个平台的接口全部被自动停用时，导入会挑最早停用的那条试探一次。
 
-后台每分钟巡检一次（多实例用协调租约，同一时间只有一个实例在跑；视频链接导入关闭时整轮跳过，不在后台调用第三方接口和订阅地址）：冷却期满的自动停用接口有测试链接就测一次，通过即恢复，没有测试链接就先放行、连续失败次数停在阈值减一；开了定期巡检时按间隔测试开着的接口，每轮最多 10 条；到期的订阅源自动同步。订阅源和导入按「请求方式 + 地址模板 + 请求体」去重：已有的只更新定义，启用状态、运行状态和密钥（清单里没给时）保留；新接口先停用。
+后台每分钟巡检一次（多实例用协调租约，同一时间只有一个实例在跑；视频链接导入关闭时整轮跳过，不在后台调用第三方接口和订阅地址；读不到开关时这一轮也跳过并记告警。关闭前已经开始的导入任务会跑完）：冷却期满的自动停用接口有测试链接就测一次，通过即恢复，没有测试链接就先放行、连续失败次数停在阈值减一；开了定期巡检时按间隔测试开着的接口，每轮最多 10 条；到期的订阅源自动同步。订阅源和导入按「请求方式 + 地址模板 + 请求体」去重：已有的只更新定义，启用状态、运行状态和密钥（清单里没给时）保留；新接口先停用。
 
 ## 视频复刻：拆解准备
 
@@ -83,7 +83,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 }
 ```
 
-`transcribe` 省略时为 `true`；`language` 可留空或填 `auto`；`maxShots` 为 1 到后台设置的镜头数上限（默认 60），省略时取上限。视频必须是本人已就绪的视频资源，时长不超过后台设置的时长上限（默认 180 秒，最多 180 秒）；超时长返回 400「视频超过 N 分钟，请先截取片段再拆解」。「功能开放」里的 `videoReplicationEnabled`（默认 `true`）关闭时，本节所有视频复刻接口都返回 403「视频复刻暂未开放」。`data` 是 `type="replication_teardown"` 的异步 Task（`provider=local`、`model=ffmpeg`），不调用模型渠道、不计模型费用，最长运行 10 分钟。成功时 `resultJson` 解析后为：
+`transcribe` 省略时为 `true`；`language` 可留空或填 `auto`；`maxShots` 为 1 到后台设置的镜头数上限（默认 60），省略时取上限。视频必须是本人已就绪的视频资源，时长不超过后台设置的时长上限（默认 180 秒，最多 180 秒）；超时长返回 400，例如「视频超过 3 分钟，请先截取片段再拆解」（不是整分钟时写成「45 秒」「1 分 30 秒」）。同一幂等键的重放先于这些按设置的校验：后台改了上限以后，同一请求的重放仍返回原任务，指纹按客户端传来的原值算（`maxShots` 省略时记为 0）。「功能开放」里的 `videoReplicationEnabled`（默认 `true`）关闭时，建拆解、历史列表、详情和 `GET /api/video-replication/config` 返回 403「视频复刻暂未开放」；已经开始的拆解照常执行，保存分析也不受影响（分析已经按模型计费）。`data` 是 `type="replication_teardown"` 的异步 Task（`provider=local`、`model=ffmpeg`），不调用模型渠道、不计模型费用，最长运行 10 分钟。成功时 `resultJson` 解析后为：
 
 ```json
 {
@@ -101,7 +101,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 - 切点用 ffmpeg 场景分数检测（主要看亮度变化），短于 400ms 的镜头并入前一镜；没有切点的长镜头按不超过 10 秒切开，`boundary` 为 `split`（画面连续），检测到的切点为 `cut`。镜头数超过 `maxShots` 时先把切开的长镜头拼回去，再合并最短的镜头。
 - 每镜截开头、中间、结尾三帧（长边 512px）；中间帧存成关键帧图片资源。宫格每张放 3 个镜头，一行一个镜头，三列依次是开头、中间、结尾；底色和间隔为中灰（纯白、黑场画面也能分清），左侧 80px 编号栏写着每行的镜头编号。关键帧和宫格计入存储容量，上传标识带任务 ID，任务被重新领取时复用已存的图片。
 - 口播转写复用 `CANVAS_WHISPER_BASE_URL` 指向的 whisper.cpp 服务，并受字幕转写功能开关和后台「允许识别口播」约束。视频没有音轨、后台关了口播识别、功能未开放、服务没配置或识别失败时，`transcript.source` 为 `none`，任务仍然成功，原因写在 `warnings`。
-- 时长上限和口播识别在执行时按当时的设置再查一次：排队期间后台调低了时长上限或关了口播识别，排队中的任务也按新设置执行。
+- 时长、镜头数上限和口播识别在执行时按当时的设置再查一次：排队期间后台调低了上限或关了口播识别，排队中的任务也按新设置执行，镜头数取建任务时和当时上限中较小的。
 
 `GET /api/video-replication/config` 给视频复刻页面读限制：`{ maxDurationSeconds, maxShots, transcribeAvailable, transcribeNote? }`。`transcribeAvailable` 要求后台允许口播识别、字幕转写已开放且配置了转写服务，不满足时 `transcribeNote` 写原因；页面据此显示上限、在上传前拦下超时长的视频，并禁用「识别口播」。
 
@@ -120,9 +120,9 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 | `GET /admin/video-replication/overview` | `settings`；口播识别状态 `transcription`（`enabled`、`featureEnabled`、`serviceConfigured`、`available`、`note`）；拆解 `teardowns` 和链接导入 `imports` 各自按状态的数量、`users`（用过的人数）、`last7Days`、`today`；`analyzed`（存过分析的拆解数）；`importPlatforms`（各平台导入的总数、成功、失败）；`daily`（近 14 个 UTC 自然日每天新建的拆解、导入和其中失败的数量）；`recentFailures`（最近 8 次失败，`kind` 为 `teardown` 或 `import`，带用户和原始失败原因） |
 | `GET /admin/video-replication/teardowns` | 所有用户的拆解记录，按创建时间倒序分页（`page`、`pageSize` 默认 20、最多 100）；`status` 按状态筛选，`keyword`（最多 100 字）匹配用户名、昵称、邮箱或完整任务 ID。每条在用户侧记录字段之外带 `user`（`id`、`username`、`displayName`）、`projectId`、`transcript`（`asr` / `none`）、`warnings`、`completedAt`，`error` 不做用户侧改写；状态值不合法返回 400 |
 | `GET /admin/video-replication/teardowns/:id` | 一条记录的 `{ task, analysis?, analyzedAt?, user }`；不是拆解任务返回 404。关键帧、宫格和原视频用 `GET /admin/resources/:id/file` 读 |
-| `PATCH /admin/video-replication/settings` | 正文 `{ maxDurationSeconds?, maxShots?, transcribeEnabled? }`，只改给出的字段；超出范围返回 400，不按边界收紧。返回 `data.settings`，记管理审计 `video_replication.settings.update` |
+| `PATCH /admin/video-replication/settings` | 正文 `{ maxDurationSeconds?, maxShots?, transcribeEnabled? }`，只改给出的字段；超出范围返回 400，不按边界收紧。返回 `data.settings`；有变化时记管理审计 `video_replication.settings.update`，没有变化不记 |
 
-两个开关在 `GET/PATCH /admin/settings/features` 里：`videoReplicationEnabled`、`socialVideoImportEnabled`，都默认 `true`，`PATCH` 可以只传其中一个。
+两个开关在 `GET/PATCH /admin/settings/features` 里：`videoReplicationEnabled`、`socialVideoImportEnabled`，都默认 `true`。`PATCH` 把正文合并到当前配置上，后台「功能开放」页和视频复刻设置页每次都只提交切换的那一个开关，两处同时打开也不会把对方刚改的开关盖回去。
 
 ## 电商画布配置与公共模特
 
