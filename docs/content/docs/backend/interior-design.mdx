@@ -119,6 +119,18 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 - **粘贴上传**：在页面上按 Ctrl+V 粘贴图片。没有原图时填原图；已有原图且出图方式要参考图时填参考图。在输入框里粘贴带文字的内容（例如从 Office 复制）和在弹窗里粘贴都不会被当成图片。
 - **封面**：后台可以给出图方式、风格和空间上传封面。出图方式的封面显示在前台卡片上，风格的封面显示在风格按钮上。上传过程中编辑弹窗不能关闭，避免封面写到下一条记录上。
 
+## 3D 模型
+
+页面上的「3D 模型」不新增后端接口，全部走通用文本任务（`POST /api/tasks`，`mode=text`，`metadata.source=interior-design`，所以同样受「室内设计」开关控制、按所选文本模型计费）：
+
+1. 规划：提示词在 `web/src/lib/interior/scene-3d.ts` 的 `buildScenePlanPrompt`，模型返回标题、地面、2–6 个部分（分组名、具体说明、地面范围、高度范围）和房间标注。
+2. 分部分细搭：每部分一个文本任务（`buildScenePartPrompt`），依次提交（并发提交在 SQLite 下会撞写锁，也容易碰到同时进行的任务上限），失败的那部分隔 1.5 秒再试一次。每部分最多约 200 个物体，回复被截断时从末尾往前找最后一个完整物体补齐括号再解析。
+3. 拼装：`assembleScene` 把各部分的物体归到规划的分组下，再由 `normalizeInteriorScene` 收紧：形状只认 box、cylinder、sphere、cone、prism、wall，材质只认 19 种，坐标在 ±200 米、尺寸在 1 厘米到 120 米、整场景最多 1200 个物体、40 个标注；墙的门窗洞裁到墙内、去掉重叠的；repeat 最多 60 次。读不懂的物体丢掉并计数，不拿默认值补。
+4. 保存：拼好的场景存成 JSON 文件资源（`kind=file`），项目文档 `scenes[]` 里只记进度和 `sceneFile.resourceId`，资源引用扫描据此保留这些文件。
+5. 一句话修改：把现有物体连同序号 `i` 发给模型，只要改动 `{remove, update[{index,set}], add, labels?, title?}`（`buildSceneEditPrompt` / `applyScenePatch`），一处改动都没有时按失败处理。
+
+页面渲染在 `web/src/pages/interior/interior-scene-viewer.tsx`（three.js + @react-three/fiber）：只读数据、不执行模型写的代码；墙按立面挖洞后挤出厚度，窗洞补玻璃和窗框；相机按包围盒取景；GLB 用 three 的 GLTFExporter 在浏览器里导出。
+
 ## 当前边界
 
 - 局部替换只有「文字微调」，还没有框选或蒙版重绘。
