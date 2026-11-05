@@ -92,12 +92,18 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 | `PUT /api/admin/interior/presets/:id` | 修改风格或空间（类型和标识不能改） |
 | `GET /api/admin/interior/settings` | 全局设置 |
 | `PUT /api/admin/interior/settings` | 保存全局设置 |
+| `GET /api/admin/interior/overview` | 近 30 天出图统计（UTC 自然日，只读）：按状态、近 7 天、今天、人数、快速出图 / 专业模式的出图任务数，项目数，配置提醒（站点默认模型、没有默认模型的出图方式），近 14 天趋势，出图方式 / 风格 / 空间 / 模型分布，最近 8 次失败。一个风格出一次算一个任务，超过 5000 条只算最新的并返回 `truncated` |
+| `GET /api/admin/interior/generations` | 所有用户的出图记录分页（只读），`status`、`mode`（出图方式标识）、`keyword`（用户名、昵称、邮箱或完整任务 ID）筛选；每条带原图、参考图、效果图的资源 ID，用 `/api/admin/resources/:id/file` 读 |
+| `GET /api/admin/interior/generations/:id` | 一条出图记录，另带服务端拼好的完整提示词、参数和所属项目名；不是室内设计任务返回 404 |
 
 全局设置存在 `system_settings` 的 `interior_settings` 键：`defaultSurface`、`allowSurfaceSwitch`、`defaultModel`、`maxStylesPerRun`（1–4）、`maxCountPerStyle`（1–4）。没有保存过时用默认值；保存过但无法解析时报错，不静默回退。
 
 ## 后台页面
 
-后台「室内设计 → 室内设计配置」（`/admin/interior`）分四个标签：
+后台「室内设计 → 室内设计管理」（`/admin/interior`，默认进概览）分六个标签：
+
+- **概览**（`/admin/interior/overview`）：近 30 天出图次数、成功率、出过图的人、项目数，没设默认模型时提醒去设置，近 14 天趋势，各出图方式、热门风格、空间和用到的模型，最近失败（点开直接看那条记录）。
+- **出图记录**（`/admin/interior/records`）：所有用户的每一次出图，按出图方式、状态和用户筛选；详情抽屉（`?record=`）里是原图、效果图、参考图、出图设置、参数和完整提示词。室内设计任务按任务输入里的 `metadata.source=interior-design` 识别，任务表没有单独的来源列。
 
 - **出图方式**（`/admin/interior/modes`）：名称、面向、输入（原图、可选参考图）、是否必选空间和风格、是否必须写修改要求、每风格最多张数、默认模型、专业模式可选模型、提示词模板和参数（JSON）。
 - **风格**（`/admin/interior/styles`）与 **空间**（`/admin/interior/rooms`）：名称、分组、简介、提示词片段、标签、排序和开放状态。
