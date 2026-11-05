@@ -158,7 +158,9 @@ const LEGACY_TRANSCRIPT_SUFFIXES = ["，口播改从画面字幕识别", "，改
 function transcriptNoteAndWarnings(source: "asr" | "none", note: string, warnings: string[]) {
     if (note || source !== "none" || !warnings.length) return { note, warnings };
     const suffix = LEGACY_TRANSCRIPT_SUFFIXES.find((item) => warnings[0].endsWith(item));
-    return { note: suffix ? warnings[0].slice(0, -suffix.length) : warnings[0], warnings: warnings.slice(1) };
+    const legacy = suffix ? warnings[0].slice(0, -suffix.length) : warnings[0];
+    // 早期的「未配置转写服务（配置项名）」改成和现在一样的说法，不把服务器配置项名露出去。
+    return { note: legacy.startsWith("未配置转写服务") ? "服务器没有配置转写服务" : legacy, warnings: warnings.slice(1) };
 }
 
 /** 视频复刻页面的历史记录：id 是拆解任务 ID；保存过分析的带标题、模型和分析时间。 */

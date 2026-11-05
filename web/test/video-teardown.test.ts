@@ -83,6 +83,9 @@ describe("video teardown bundle", () => {
         expect(legacy.warnings).toEqual([]);
         const failed = parseVideoTeardownBundle(task(bundle({ transcript: { source: "none", segments: [] }, warnings: ["口播识别失败（超时），改从画面字幕识别"] })));
         expect(failed.transcript.note).toBe("口播识别失败（超时）");
+        // 早期写着服务器配置项名的说法换成现在的说法。
+        const unconfigured = parseVideoTeardownBundle(task(bundle({ transcript: { source: "none", segments: [] }, warnings: ["未配置转写服务（CANVAS_WHISPER_BASE_URL），口播改从画面字幕识别"] })));
+        expect(unconfigured.transcript.note).toBe("服务器没有配置转写服务");
         // 有转写时提示原样保留。
         expect(parseVideoTeardownBundle(task(bundle({ warnings: ["别的提示"] }))).warnings).toEqual(["别的提示"]);
     });
