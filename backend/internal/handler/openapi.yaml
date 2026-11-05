@@ -457,6 +457,32 @@ paths:
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/Error"}
+  /interior/knowledge:
+    get:
+      tags: [interior]
+      summary: 取室内设计知识库里的相关条目
+      description: >-
+        要求登录并打开室内设计。按范围、空间、风格和需求原文从内置知识库（尺寸规范、家具尺寸、动线间距、风格配色、建模要点）里取最多 16 条，
+        页面写进 AI 方案分析和 3D 建模的提示词。rooms、styles 可以重复传或用逗号分隔，各最多 12 个。
+      parameters:
+        - {in: query, name: scope, schema: {type: string, enum: [room, home, building]}}
+        - {in: query, name: rooms, schema: {type: array, items: {type: string}}}
+        - {in: query, name: styles, schema: {type: array, items: {type: string}}}
+        - {in: query, name: q, schema: {type: string, maxLength: 1000}, description: 需求原文，超过 1000 字截断}
+      responses:
+        "200": {description: "data.entries: [{ id, kind, kindName, title, guidance }]"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/knowledge:
+    get:
+      tags: [admin]
+      summary: 室内设计内置知识库
+      description: 要求管理员。全部内置知识条目，另带每条的适用范围 scopes、空间 rooms、风格 styles 和关键词 tags。知识随程序发布，后台只读。
+      responses:
+        "200": {description: data.entries}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/interior/overview:
     get:
       tags: [admin]

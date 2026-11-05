@@ -37,6 +37,18 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 		return available && enforceRateLimit(c, "interior-write:"+actor.ID, policy.Request.CanvasWritePerMinute, time.Minute)
 	}
 
+	r.GET("/interior/knowledge", func(c *gin.Context) {
+		actor, allowed := user(c)
+		if !allowed {
+			return
+		}
+		items, err := svc.InteriorKnowledge(actor, service.InteriorKnowledgeQuery{Scope: c.Query("scope"), Rooms: c.QueryArray("rooms"), Styles: c.QueryArray("styles"), Text: c.Query("q")})
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"entries": items})
+	})
 	r.GET("/interior/catalog", func(c *gin.Context) {
 		actor, allowed := user(c)
 		if !allowed {
@@ -156,6 +168,19 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 	})
 
 	admin := r.Group("/admin/interior")
+	admin.GET("/knowledge", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		items, err := svc.AdminInteriorKnowledge(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"entries": items})
+	})
 	admin.GET("/overview", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

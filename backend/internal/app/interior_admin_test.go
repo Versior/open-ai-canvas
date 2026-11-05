@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/platform"
 )
 
 func seedInteriorAdminTask(t *testing.T, db *gorm.DB, id, userID string, status model.TaskStatus, meta map[string]any, createdAt time.Time) {
@@ -111,6 +112,31 @@ func TestAdminInteriorOverviewAndGenerations(t *testing.T) {
 	}
 	if _, err := svc.AdminInteriorGenerations(videoReplicationTestAdmin, AdminInteriorGenerationQuery{Mode: "Bad Key"}); !errors.As(err, &authErr) || authErr.Status != 400 {
 		t.Fatalf("bad mode err = %v", err)
+	}
+
+	all, err := svc.AdminInteriorKnowledge(videoReplicationTestAdmin)
+	if err != nil || len(all) < 50 || all[0].KindName == "" {
+		t.Fatalf("admin knowledge = %d entries, %v", len(all), err)
+	}
+	if _, err := svc.AdminInteriorKnowledge(&model.User{ID: "usr-int-a", Role: model.UserRoleUser}); !errors.As(err, &authErr) || authErr.Status != 403 {
+		t.Fatalf("non-admin knowledge err = %v", err)
+	}
+	if _, err := svc.InteriorKnowledge(&model.User{ID: "usr-int-a"}, InteriorKnowledgeQuery{Scope: "building"}); !errors.As(err, &authErr) || authErr.Status != 403 {
+		t.Fatalf("knowledge with the feature off err = %v", err)
+	}
+	features := platform.DefaultFeatureAvailability()
+	features.InteriorEnabled = true
+	if _, err := svc.UpdateFeatureAvailability(videoReplicationTestAdmin, features); err != nil {
+		t.Fatal(err)
+	}
+	picked, err := svc.InteriorKnowledge(&model.User{ID: "usr-int-a"}, InteriorKnowledgeQuery{Scope: "building", Styles: []string{"new-chinese"}, Text: "三层别墅带前院"})
+	if err != nil || len(picked) == 0 || len(picked) > 16 || picked[0].Scopes != nil {
+		t.Fatalf("knowledge = %+v, %v", picked, err)
+	}
+	for name, query := range map[string]InteriorKnowledgeQuery{"scope": {Scope: "garden"}, "key": {Rooms: []string{"Bad Key"}}} {
+		if _, err := svc.InteriorKnowledge(&model.User{ID: "usr-int-a"}, query); !errors.As(err, &authErr) || authErr.Status != 400 {
+			t.Fatalf("%s: err = %v", name, err)
+		}
 	}
 
 	detail, err := svc.AdminInteriorGeneration(videoReplicationTestAdmin, "int-1")
