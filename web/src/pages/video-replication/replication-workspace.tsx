@@ -1,6 +1,6 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { ArrowLeft, Clapperboard, Download, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, ListChecks, RefreshCw, Sparkles } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -16,7 +16,10 @@ import { ReplicationTimeline } from "./replication-timeline";
 import { useReplicationPlayback } from "./use-replication-playback";
 import type { ReplicationRun } from "./use-replication-runner";
 import type { VideoReplicaOptions } from "./replication-canvas";
-import { ReplicationCanvasDialog } from "./replication-canvas-dialog";
+import { ReplicationPlan } from "./replication-plan";
+import { useReplicaPlan } from "./use-replica-plan";
+
+export type ReplicationView = "teardown" | "plan";
 
 type Analysis = VideoTeardownAnalysis & { model: string };
 
@@ -34,6 +37,9 @@ type Props = {
     onReanalyze: (fallbackTitle: string) => void;
     onOpenCanvas: (bundle: VideoTeardownBundle, analysis: Analysis, options: VideoReplicaOptions) => Promise<void>;
     onBack: () => void;
+    /** 拆解结果还是复刻方案；没有分析时只有拆解结果。 */
+    view: ReplicationView;
+    onViewChange: (view: ReplicationView) => void;
 };
 
 function parseBundle(detail: VideoReplicationDetail | undefined): { bundle?: VideoTeardownBundle; error?: string } {
@@ -99,11 +105,26 @@ export function ReplicationWorkspace(props: Props) {
     return <RecordWorkspace key={task.id} {...props} bundle={bundle} analysis={analysis} ownRun={ownRun} />;
 }
 
-function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, config, model, onModelChange, onReanalyze, onOpenCanvas, onBack }: Props & { bundle: VideoTeardownBundle; analysis: Analysis | null; ownRun: ReplicationRun | null }) {
+function RecordWorkspace({
+    detail,
+    bundle,
+    analysis,
+    ownRun,
+    busy,
+    opening,
+    config,
+    model,
+    onModelChange,
+    onReanalyze,
+    onOpenCanvas,
+    onBack,
+    view: requestedView,
+    onViewChange,
+}: Props & { bundle: VideoTeardownBundle; analysis: Analysis | null; ownRun: ReplicationRun | null }) {
     const { message } = App.useApp();
     const [tab, setTab] = useState<"shots" | "structure">("shots");
     const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
-    const [canvasOpen, setCanvasOpen] = useState(false);
+    const view: ReplicationView = analysis ? requestedView : "teardown";
     const playback = useReplicationPlayback(bundle.shots);
     const rows = useMemo(() => new Map(analysis?.rows.map((row) => [row.shotNumber, row])), [analysis]);
     const analyzing = Boolean(ownRun && !ownRun.error);
@@ -136,6 +157,16 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
     const actions = (
         <>
             {analysis ? (
+                <div className="vr-view-switch" role="group" aria-label="工作区内容">
+                    <button type="button" aria-pressed={view === "teardown"} onClick={() => onViewChange("teardown")}>
+                        拆解结果
+                    </button>
+                    <button type="button" aria-pressed={view === "plan"} onClick={() => onViewChange("plan")}>
+                        复刻方案
+                    </button>
+                </div>
+            ) : null}
+            {analysis && view === "teardown" ? (
                 <Popover
                     trigger="click"
                     placement="bottomRight"
@@ -168,63 +199,101 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
             <Button icon={<Download className="size-4" />} disabled={!analysis || analyzing} onClick={downloadReport}>
                 下载报告
             </Button>
-            <Button type="primary" icon={<Clapperboard className="size-4" />} disabled={!analysis || analyzing} loading={opening} onClick={() => setCanvasOpen(true)}>
-                去画布复刻
-            </Button>
+            {view === "teardown" ? (
+                <Button type="primary" icon={<ListChecks className="size-4" />} disabled={!analysis || analyzing} onClick={() => onViewChange("plan")}>
+                    做复刻方案
+                </Button>
+            ) : null}
         </>
     );
 
     return (
         <WorkspaceShell title={title} meta={meta} actions={actions} onBack={onBack}>
-            {analysis ? <ReplicationCanvasDialog open={canvasOpen} bundle={bundle} analysis={analysis} onCancel={() => setCanvasOpen(false)} onConfirm={(options) => onOpenCanvas(bundle, analysis, options)} /> : null}
             {ownRun ? <ReplicationProgress run={ownRun} /> : null}
-            {/* 还没有分析、也没在分析（含上次分析失败）时，在这里选模型开始或重试。 */}
-            {!analysis && !analyzing ? (
-                <div className="vr-panel vr-analyze">
-                    <div className="vr-analyze-copy">
-                        <p className="vr-analyze-title">{ownRun?.error ? "这次分析没有完成" : "镜头已经切好，还差模型分析"}</p>
-                        <p className="vr-analyze-text">{ownRun?.error ? "镜头和关键帧都还在，可以直接重试，或换一个能看图的模型再分析。" : "选一个能看图的文本模型，逐镜补全画面、口播、运镜和复刻提示词，按所选模型计费。"}</p>
-                    </div>
-                    <AnalyzeControls config={config} model={model} onModelChange={onModelChange} busy={busy} label={ownRun?.error ? "重试分析" : "开始分析"} onStart={() => onReanalyze("")} />
-                </div>
+            {/* 方案一直挂着（只是藏起来），切回拆解结果再回来时没存上的改动还在。 */}
+            {analysis && detail ? (
+                <PlanHost
+                    hidden={view !== "plan"}
+                    id={detail.task.id}
+                    bundle={bundle}
+                    analysis={analysis}
+                    saved={detail.plan}
+                    savedAt={detail.planUpdatedAt}
+                    config={config}
+                    model={model}
+                    onModelChange={onModelChange}
+                    opening={opening}
+                    onOpenCanvas={(plan) => onOpenCanvas(bundle, analysis, { plan })}
+                />
             ) : null}
-            <ReplicationTimeline bundle={bundle} summary={summary} activeIndex={playback.activeIndex} video={playback.video} onPick={playback.playShot} />
-            <div className="vr-ws-body" style={{ "--vr-ratio": `${bundle.source.width || 9} / ${bundle.source.height || 16}` } as CSSProperties}>
-                <ReplicationPlayer bundle={bundle} videoRef={playback.videoRef} />
-                <div className="vr-ws-main">
-                    <div className="vr-tabs" role="tablist" aria-label="拆解内容">
-                        <button type="button" role="tab" id="vr-tab-shots" className="vr-tab" aria-selected={tab === "shots"} aria-controls="vr-tabpanel" tabIndex={tab === "shots" ? 0 : -1} onClick={() => setTab("shots")} onKeyDown={switchTab}>
-                            逐镜分镜
-                            <span className="vr-tab-count">{bundle.shots.length}</span>
-                        </button>
-                        <button
-                            type="button"
-                            role="tab"
-                            id="vr-tab-structure"
-                            className="vr-tab"
-                            aria-selected={tab === "structure"}
-                            aria-controls="vr-tabpanel"
-                            tabIndex={tab === "structure" ? 0 : -1}
-                            onClick={() => setTab("structure")}
-                            onKeyDown={switchTab}
-                        >
-                            全片结构
-                        </button>
-                        <span className="vr-tabs-hint">切点和时间码由程序检测；画面、口播和制作方式是模型判断。</span>
+            {view === "plan" ? null : (
+                <>
+                    {/* 还没有分析、也没在分析（含上次分析失败）时，在这里选模型开始或重试。 */}
+                    {!analysis && !analyzing ? (
+                        <div className="vr-panel vr-analyze">
+                            <div className="vr-analyze-copy">
+                                <p className="vr-analyze-title">{ownRun?.error ? "这次分析没有完成" : "镜头已经切好，还差模型分析"}</p>
+                                <p className="vr-analyze-text">{ownRun?.error ? "镜头和关键帧都还在，可以直接重试，或换一个能看图的模型再分析。" : "选一个能看图的文本模型，逐镜补全画面、口播、运镜和复刻提示词，按所选模型计费。"}</p>
+                            </div>
+                            <AnalyzeControls config={config} model={model} onModelChange={onModelChange} busy={busy} label={ownRun?.error ? "重试分析" : "开始分析"} onStart={() => onReanalyze("")} />
+                        </div>
+                    ) : null}
+                    <ReplicationTimeline bundle={bundle} summary={summary} activeIndex={playback.activeIndex} video={playback.video} onPick={playback.playShot} />
+                    <div className="vr-ws-body" style={{ "--vr-ratio": `${bundle.source.width || 9} / ${bundle.source.height || 16}` } as CSSProperties}>
+                        <ReplicationPlayer bundle={bundle} videoRef={playback.videoRef} />
+                        <div className="vr-ws-main">
+                            <div className="vr-tabs" role="tablist" aria-label="拆解内容">
+                                <button type="button" role="tab" id="vr-tab-shots" className="vr-tab" aria-selected={tab === "shots"} aria-controls="vr-tabpanel" tabIndex={tab === "shots" ? 0 : -1} onClick={() => setTab("shots")} onKeyDown={switchTab}>
+                                    逐镜分镜
+                                    <span className="vr-tab-count">{bundle.shots.length}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    id="vr-tab-structure"
+                                    className="vr-tab"
+                                    aria-selected={tab === "structure"}
+                                    aria-controls="vr-tabpanel"
+                                    tabIndex={tab === "structure" ? 0 : -1}
+                                    onClick={() => setTab("structure")}
+                                    onKeyDown={switchTab}
+                                >
+                                    全片结构
+                                </button>
+                                <span className="vr-tabs-hint">切点和时间码由程序检测；画面、口播和制作方式是模型判断。</span>
+                            </div>
+                            {/* 宽屏下这里是分镜和结构自己的滚动区，页面本身不滚。 */}
+                            <div id="vr-tabpanel" className="vr-tabpanel" data-vr-scroll role="tabpanel" aria-labelledby={`vr-tab-${tab}`} tabIndex={0}>
+                                {tab === "shots" ? (
+                                    <ReplicationShots bundle={bundle} rows={rows} activeIndex={playback.activeIndex} playing={playback.playing} onPlay={playback.playShot} onCopy={copy} />
+                                ) : summary ? (
+                                    <ReplicationStructure bundle={bundle} summary={summary} onPlay={playback.playShot} />
+                                ) : (
+                                    <StatePanel title="还没有全片结构" description="模型分析完成后，这里会给出开头钩子、节拍结构、吸引人的原因和复刻建议。" />
+                                )}
+                            </div>
+                        </div>
                     </div>
-                    {/* 宽屏下这里是分镜和结构自己的滚动区，页面本身不滚。 */}
-                    <div id="vr-tabpanel" className="vr-tabpanel" data-vr-scroll role="tabpanel" aria-labelledby={`vr-tab-${tab}`} tabIndex={0}>
-                        {tab === "shots" ? (
-                            <ReplicationShots bundle={bundle} rows={rows} activeIndex={playback.activeIndex} playing={playback.playing} onPlay={playback.playShot} onCopy={copy} />
-                        ) : summary ? (
-                            <ReplicationStructure bundle={bundle} summary={summary} onPlay={playback.playShot} />
-                        ) : (
-                            <StatePanel title="还没有全片结构" description="模型分析完成后，这里会给出开头钩子、节拍结构、吸引人的原因和复刻建议。" />
-                        )}
-                    </div>
-                </div>
-            </div>
+                </>
+            )}
         </WorkspaceShell>
+    );
+}
+
+function PlanHost({
+    hidden,
+    id,
+    bundle,
+    analysis,
+    saved,
+    savedAt,
+    ...rest
+}: { hidden: boolean; id: string; bundle: VideoTeardownBundle; analysis: Analysis; saved: unknown; savedAt?: string } & Pick<Parameters<typeof ReplicationPlan>[0], "config" | "model" | "onModelChange" | "opening" | "onOpenCanvas">) {
+    const state = useReplicaPlan(id, bundle, analysis, saved, savedAt);
+    return (
+        <div hidden={hidden}>
+            <ReplicationPlan bundle={bundle} analysis={analysis} {...state} {...rest} />
+        </div>
     );
 }
 

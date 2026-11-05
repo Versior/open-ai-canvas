@@ -1,4 +1,5 @@
 import { createClientId } from "@/lib/client-id";
+import type { VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
 import type { VideoReplicationAnalysisDocument } from "@/lib/canvas/video-teardown";
 import { http } from "@/services/api/request";
 import type { GenerationTask } from "@/services/api/task-center";
@@ -183,8 +184,8 @@ export type VideoReplicationRecord = {
     analyzedAt?: string;
 };
 
-/** 一条记录的全部内容：拆解任务（resultJson 是镜头事实）和保存过的分析原文，分析由调用方再校验。 */
-export type VideoReplicationDetail = { task: GenerationTask; analysis?: unknown; analyzedAt?: string };
+/** 一条记录的全部内容：拆解任务（resultJson 是镜头事实）、保存过的分析原文和复刻方案原文，都由调用方再校验。 */
+export type VideoReplicationDetail = { task: GenerationTask; analysis?: unknown; analyzedAt?: string; plan?: unknown; planUpdatedAt?: string };
 
 export function listVideoReplications(signal?: AbortSignal) {
     return http.get<VideoReplicationRecord[]>("/video-replication/teardowns", { signal });
@@ -196,6 +197,11 @@ export function getVideoReplication(id: string, signal?: AbortSignal) {
 
 export function saveVideoReplicationAnalysis(id: string, analysis: VideoReplicationAnalysisDocument, signal?: AbortSignal) {
     return http.put<VideoReplicationDetail>(`/video-replication/teardowns/${encodeURIComponent(id)}/analysis`, analysis, { signal });
+}
+
+/** 保存复刻方案（商品档案、改写脚本、逐镜处理），整份覆盖。 */
+export function saveVideoReplicationPlan(id: string, plan: VideoReplicaPlan, signal?: AbortSignal) {
+    return http.put<VideoReplicationDetail>(`/video-replication/teardowns/${encodeURIComponent(id)}/plan`, plan, { signal });
 }
 
 /** 后台设置的拆解限制，以及这台服务器现在能不能识别口播；不能时 transcribeNote 写原因。 */

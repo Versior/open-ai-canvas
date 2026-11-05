@@ -2164,111 +2164,7 @@
     }
 }
 
-/* 去画布复刻弹窗 */
-.vr-dialog {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-    padding-top: var(--space-1);
-}
-
-.vr-dialog-modes {
-    margin: 0;
-    padding: 0;
-    border: 0;
-}
-
-.vr-dialog-label {
-    margin-bottom: var(--space-2);
-    padding: 0;
-    color: var(--user-ink);
-    font-size: var(--fs-ui);
-    font-weight: 600;
-}
-
-.vr-dialog-optional {
-    margin-left: 6px;
-    color: var(--user-ink-soft);
-    font-size: var(--fs-caption);
-    font-weight: 400;
-}
-
-.vr-dialog-mode-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-2);
-}
-
-.vr-dialog-mode {
-    position: relative;
-    display: flex;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: 12px;
-    box-shadow: inset 0 0 0 1px var(--user-border);
-    cursor: pointer;
-    transition:
-        background var(--user-motion),
-        box-shadow var(--user-motion);
-}
-
-.vr-dialog-mode:hover {
-    background: var(--user-surface-hover);
-}
-
-.vr-dialog-mode[data-active] {
-    background: var(--user-surface-muted);
-    box-shadow: inset 0 0 0 2px var(--user-ink);
-}
-
-.vr-dialog-mode:has(input:focus-visible) {
-    outline: 2px solid var(--control-focus-ring);
-    outline-offset: 2px;
-}
-
-.vr-dialog-mode input {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-}
-
-.vr-dialog-mode-icon {
-    width: 18px;
-    height: 18px;
-    flex: none;
-    margin-top: 2px;
-    color: var(--user-ink-muted);
-}
-
-.vr-dialog-mode-copy strong {
-    display: block;
-    color: var(--user-ink);
-    font-size: var(--fs-ui);
-    font-weight: 600;
-}
-
-.vr-dialog-mode-copy > span {
-    display: block;
-    margin-top: 2px;
-    color: var(--user-ink-muted);
-    font-size: var(--fs-caption);
-    line-height: 1.55;
-}
-
-.vr-dialog-check {
-    margin-top: calc(-1 * var(--space-2));
-}
-
-.vr-dialog-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-
-.vr-dialog-section .vr-dialog-label {
-    margin-bottom: 0;
-}
-
+/* 复刻方案里的商品图格子 */
 .vr-dialog-hint {
     color: var(--user-ink-soft);
     font-size: var(--fs-caption);
@@ -2348,43 +2244,598 @@
     height: 18px;
 }
 
-.vr-dialog-summary {
-    display: flex;
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: 12px;
+/* ── 拆解结果 / 复刻方案切换 ─────────────────────── */
+.vr-view-switch {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 8px;
     background: var(--user-surface-muted);
+}
+
+.vr-view-switch button {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 6px;
     color: var(--user-ink-muted);
-    font-size: var(--fs-caption);
-    line-height: 1.65;
+    font-size: var(--fs-ui);
+    font-weight: 550;
+    transition:
+        background var(--user-motion),
+        color var(--user-motion);
 }
 
-.vr-dialog-summary > svg {
-    width: 16px;
-    height: 16px;
-    flex: none;
-    margin-top: 2px;
+.vr-view-switch button:hover {
+    color: var(--user-ink);
 }
 
-.vr-dialog-summary p + p {
-    margin-top: 2px;
+.vr-view-switch button[aria-pressed="true"] {
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    color: var(--user-ink);
 }
 
-.vr-dialog-footer {
+.vr-view-switch button:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 1px;
+}
+
+/* ── 复刻方案：左侧步骤条吸顶，右侧四段整页滚动 ─────── */
+.vr-plan {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+}
+
+@media (min-width: 1100px) {
+    .vr-plan {
+        grid-template-columns: 200px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .vr-plan-rail {
+        position: sticky;
+        top: var(--space-4);
+    }
+}
+
+.vr-plan-rail ol {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--space-2);
+    flex-wrap: wrap;
+    gap: 4px;
 }
 
-.vr-dialog-stage {
-    margin-right: auto;
+@media (min-width: 1100px) {
+    .vr-plan-rail ol {
+        flex-direction: column;
+    }
+}
+
+.vr-plan-step {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    font-weight: 550;
+    text-align: left;
+    transition:
+        background var(--user-motion),
+        color var(--user-motion);
+}
+
+.vr-plan-step:hover {
+    background: var(--user-surface-muted);
+    color: var(--user-ink);
+}
+
+.vr-plan-step:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: -2px;
+}
+
+.vr-plan-step-index {
+    display: inline-grid;
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: var(--r-full);
+    box-shadow: inset 0 0 0 1px var(--user-border-strong);
+    font-size: var(--fs-label);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-step[data-done] .vr-plan-step-index {
+    background: var(--user-ink);
+    box-shadow: none;
+    color: var(--user-surface);
+}
+
+.vr-plan-step-index svg {
+    width: 13px;
+    height: 13px;
+}
+
+.vr-plan-save {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin-top: var(--space-3);
+    padding: 0 10px;
     color: var(--user-ink-soft);
     font-size: var(--fs-caption);
 }
 
+.vr-plan-save svg {
+    width: 13px;
+    height: 13px;
+}
+
+.vr-plan-save[data-tone="error"] {
+    color: var(--destructive);
+}
+
+.vr-plan-main {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.vr-plan-section {
+    padding: var(--space-5);
+    scroll-margin-top: var(--space-4);
+}
+
+.vr-plan-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.vr-plan-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 650;
+}
+
+.vr-plan-section-title span {
+    color: var(--user-ink-soft);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-section-text {
+    max-width: 640px;
+    margin-top: 4px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+.vr-plan-muted {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-plan-empty {
+    padding: var(--space-4);
+    border-radius: 8px;
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+
+/* 商品档案：左边文字，右边商品图。 */
+.vr-plan-product {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+}
+
+@media (min-width: 900px) {
+    .vr-plan-product {
+        grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    }
+}
+
+.vr-plan-fields {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.vr-plan-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vr-plan-field > span,
+.vr-plan-field-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 550;
+}
+
+.vr-plan-field-label {
+    margin-bottom: 6px;
+}
+
+.vr-plan-field em {
+    color: var(--user-ink-soft);
+    font-style: normal;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-field em[data-over] {
+    color: var(--destructive);
+}
+
+.vr-plan-images .vr-dialog-hint {
+    margin-top: 8px;
+}
+
+.vr-plan-uploading {
+    display: grid;
+    place-items: center;
+    color: var(--user-ink-soft);
+}
+
+.vr-plan-uploading svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* 改写脚本：模型、版本数、按钮一行，下面是各版本卡片。 */
+.vr-plan-script-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.vr-plan-script-model {
+    width: min(320px, 100%);
+}
+
+.vr-plan-scripts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: var(--space-3);
+}
+
+.vr-plan-script {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border-radius: 10px;
+    box-shadow: inset 0 0 0 1px var(--user-border);
+}
+
+.vr-plan-script[data-active] {
+    box-shadow: inset 0 0 0 2px var(--user-ink);
+}
+
+.vr-plan-script-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+}
+
+.vr-plan-pill {
+    padding: 1px 8px;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-label);
+}
+
+.vr-plan-icon {
+    display: inline-grid;
+    width: 26px;
+    height: 26px;
+    margin-left: auto;
+    place-items: center;
+    border-radius: 6px;
+    color: var(--user-ink-soft);
+}
+
+.vr-plan-icon:hover {
+    background: var(--user-surface-muted);
+    color: var(--destructive);
+}
+
+.vr-plan-icon:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+}
+
+.vr-plan-icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.vr-plan-script-hook {
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
+.vr-plan-script-lines {
+    display: flex;
+    max-height: 220px;
+    flex: 1;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.vr-plan-script-lines li {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 6px;
+    color: var(--user-ink);
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+}
+
+.vr-plan-script-lines span {
+    color: var(--user-ink-soft);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-script-lines em {
+    color: var(--user-ink-soft);
+    font-style: normal;
+}
+
+/* 逐镜计划：每镜一行，左边原片，右边复刻版。 */
+.vr-plan-bulk {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.vr-plan-auth {
+    margin-bottom: var(--space-3);
+}
+
+.vr-plan-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: var(--space-3);
+}
+
+.vr-plan-counts span {
+    padding: 2px 10px;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-shots {
+    display: flex;
+    flex-direction: column;
+    border-radius: 10px;
+    box-shadow: inset 0 0 0 1px var(--user-border);
+}
+
+.vr-plan-shot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    padding: var(--space-4);
+}
+
+.vr-plan-shot + .vr-plan-shot {
+    border-top: 1px solid var(--user-border);
+}
+
+@media (min-width: 900px) {
+    .vr-plan-shot {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    }
+}
+
+.vr-plan-shot[data-skip] .vr-plan-shot-source {
+    opacity: 0.45;
+}
+
+.vr-plan-shot-source {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-3);
+    transition: opacity var(--user-motion);
+}
+
+.vr-plan-shot-source img {
+    width: 72px;
+    max-height: 128px;
+    border-radius: 6px;
+    background: var(--user-surface-muted);
+    object-fit: cover;
+}
+
+.vr-plan-shot-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vr-plan-shot-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.vr-plan-shot-title span {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-shot-plot {
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+}
+
+.vr-plan-shot-orig {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
+.vr-plan-shot-edit {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.vr-plan-shot-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.vr-plan-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    padding: 2px 6px;
+    border-radius: 6px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-plan-link:hover {
+    background: var(--user-surface-muted);
+    color: var(--user-ink);
+}
+
+.vr-plan-link:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+}
+
+.vr-plan-link svg {
+    width: 12px;
+    height: 12px;
+}
+
+.vr-plan-prompts summary {
+    width: fit-content;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+
+.vr-plan-prompts summary:focus-visible {
+    border-radius: 4px;
+    outline: 2px solid var(--control-focus-ring);
+}
+
+.vr-plan-prompts[open] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+/* 去画布：几个数字、问题列表和按钮。 */
+.vr-plan-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+}
+
+.vr-plan-summary div {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--user-surface-muted);
+}
+
+.vr-plan-summary dt {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-plan-summary dd {
+    margin-top: 2px;
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-plan-issues {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: var(--space-4);
+}
+
+.vr-plan-issues li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+}
+
+.vr-plan-issues li[data-tone="error"] {
+    color: var(--destructive);
+}
+
+.vr-plan-issues svg {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.vr-plan-canvas-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+}
+
 @media (max-width: 640px) {
-    .vr-dialog-mode-grid {
-        grid-template-columns: minmax(0, 1fr);
+    .vr-plan-section {
+        padding: var(--space-4);
     }
 }

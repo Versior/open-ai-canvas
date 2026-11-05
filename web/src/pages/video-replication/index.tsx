@@ -11,7 +11,7 @@ import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-c
 import { useUserStore } from "@/stores/use-user-store";
 import { openVideoTeardownInCanvas, type VideoReplicaOptions } from "./replication-canvas";
 import { ReplicationHome } from "./replication-home";
-import { ReplicationWorkspace } from "./replication-workspace";
+import { ReplicationWorkspace, type ReplicationView } from "./replication-workspace";
 import { dismissReplicationError, reanalyzeReplication, resumePendingReplication, startReplication, useReplicationRun, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
 import "./video-replication.css";
 
@@ -52,6 +52,7 @@ export default function VideoReplicationPage() {
     });
     const records = history.data;
     const selectedId = params.get("id") || "";
+    const view: ReplicationView = params.get("view") === "plan" ? "plan" : "teardown";
     const detail = useQuery({
         queryKey: videoReplicationKeys.detail(scope, selectedId),
         queryFn: ({ signal }) => getVideoReplication(selectedId, signal),
@@ -60,6 +61,7 @@ export default function VideoReplicationPage() {
     });
 
     const select = useCallback((id: string) => setParams(id ? { id } : {}), [setParams]);
+    const changeView = useCallback((next: ReplicationView) => setParams(next === "plan" ? { id: selectedId, view: next } : { id: selectedId }), [selectedId, setParams]);
     const { run, running } = useReplicationRun(select);
     const configRef = useRef(config);
     configRef.current = config;
@@ -67,14 +69,16 @@ export default function VideoReplicationPage() {
     useEffect(() => {
         if (records) resumePendingReplication(records, configRef.current);
     }, [records]);
-    // 首页和记录之间切换时回到页面顶部。
+    // 首页、记录和复刻方案之间切换时回到页面顶部。
     useEffect(() => {
         rootRef.current?.closest(".app-workspace-scroll")?.scrollTo({ top: 0 });
-    }, [selectedId]);
+    }, [selectedId, view]);
 
     const startRun = (source: ReplicationSource, options: { model: string; transcribe: boolean }) => {
         dismissReplicationError();
-        void startReplication(source, options, config, limits);
+        void startReplication(source, options, config, limits).then((started) => {
+            if (!started) message.info("已有一条拆解在进行，等它结束再开始");
+        });
     };
     const reanalyzeSelected = (fallbackTitle: string) => {
         const error = videoTeardownModelError(config, model);
@@ -83,7 +87,9 @@ export default function VideoReplicationPage() {
             return;
         }
         dismissReplicationError();
-        void reanalyzeReplication(selectedId, { model, transcribe: effectiveTranscribe }, fallbackTitle, config);
+        void reanalyzeReplication(selectedId, { model, transcribe: effectiveTranscribe }, fallbackTitle, config).then((started) => {
+            if (!started) message.info("已有一条拆解在进行，等它结束再分析");
+        });
     };
     const openInCanvas = async (bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis & { model: string }, options: VideoReplicaOptions) => {
         setOpening(true);
@@ -100,7 +106,8 @@ export default function VideoReplicationPage() {
 
     return (
         <WorkspacePage fluid>
-            <div ref={rootRef} className="vr-page" data-view={selectedId ? "record" : "home"}>
+            {/* 复刻方案整页滚动；拆解结果在宽屏下是一屏布局。 */}
+            <div ref={rootRef} className="vr-page" data-view={selectedId ? (view === "plan" && detail.data?.analysis ? "plan" : "record") : "home"}>
                 {selectedId ? (
                     <ReplicationWorkspace
                         detail={detail.data}
@@ -115,6 +122,8 @@ export default function VideoReplicationPage() {
                         onReanalyze={reanalyzeSelected}
                         onOpenCanvas={openInCanvas}
                         onBack={() => select("")}
+                        view={view}
+                        onViewChange={changeView}
                     />
                 ) : (
                     <ReplicationHome

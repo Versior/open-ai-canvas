@@ -80,12 +80,17 @@ export type VideoReplicaMode = "remake" | "reuse";
 
 const NO_PRODUCT_TEXT = /^(无|没有|未出现|不出现|画面中没有|这一镜没有)/;
 
-/** 有商品的镜头：模型判了商品角色时按角色；早期分析没有角色，就看「商品出镜」有没有写内容。 */
-export function videoTeardownProductShot(row: Pick<StoryboardRow, "sourceAnalysis">) {
-    const role = row.sourceAnalysis?.productRole || "";
-    if (role) return role !== "none";
-    const product = (row.sourceAnalysis?.product || "").trim();
+/** 分析判断有商品的镜头：判了商品角色时按角色；早期分析没有角色，就看「商品出镜」有没有写内容。 */
+export function videoTeardownRowHasProduct(row: Pick<VideoTeardownAnalysisRow, "product" | "productRole"> | undefined) {
+    if (!row) return false;
+    if (row.productRole) return row.productRole !== "none";
+    const product = row.product.trim();
     return Boolean(product) && !NO_PRODUCT_TEXT.test(product);
+}
+
+/** 分镜行版本的 videoTeardownRowHasProduct。 */
+export function videoTeardownProductShot(row: Pick<StoryboardRow, "sourceAnalysis">) {
+    return videoTeardownRowHasProduct({ product: row.sourceAnalysis?.product || "", productRole: (row.sourceAnalysis?.productRole || "") as VideoTeardownProductRole });
 }
 
 /**
@@ -269,7 +274,7 @@ export function buildVideoTeardownSummaryPrompt(bundle: VideoTeardownBundle, row
 }
 
 /** 模型常把 JSON 包在代码块或说明文字里：依次尝试全文、代码块和配平的大括号片段。 */
-function jsonCandidates(text: string) {
+export function jsonCandidates(text: string) {
     const candidates = [text.trim(), ...Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi), (match) => match[1].trim())];
     let start = -1;
     let depth = 0;

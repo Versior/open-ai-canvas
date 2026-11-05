@@ -7,19 +7,25 @@ import { fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size"
 import { cinematicStoryboardColumns, createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { storyboardComposerContent } from "@/lib/canvas/canvas-storyboard-materializer";
 import { buildVideoFrameNodes } from "@/lib/canvas/canvas-video-frame-nodes";
-import { videoReplicaProductFramePrompt, videoReplicaProductVideoPrompt, videoTeardownProductShot, videoTeardownReportMarkdown, videoTeardownStoryboardRows, type VideoReplicaMode, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
+import { replicaProductNote, type VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
+import { videoReplicaProductFramePrompt, videoReplicaProductVideoPrompt, videoTeardownReportMarkdown, videoTeardownStoryboardRows, type VideoReplicaMode, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { getResource, resourceFileUrl, resourceStorageKey } from "@/services/api/resources";
 import type { UploadedImage } from "@/services/image-storage";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { createCanvasProjectWithRemoteSync } from "@/services/user-data-sync";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type StoryboardRow } from "@/types/canvas";
 
-export type VideoReplicaOptions = {
-    mode: VideoReplicaMode;
-    /** 用户的商品实拍图；有商品的镜头先用它们换掉原片商品再出视频。 */
-    products: UploadedImage[];
-    productNote: string;
-};
+export type VideoReplicaOptions = { plan: VideoReplicaPlan };
+
+/** 方案里的商品图（已在服务端的图片资源）转成画布图片节点要的格式。 */
+function productUploads(plan: VideoReplicaPlan): UploadedImage[] {
+    return plan.product.images.map((image) => ({ url: resourceFileUrl(image.resourceId), storageKey: resourceStorageKey(image.resourceId), width: image.width || 1024, height: image.height || 1024, bytes: image.bytes, mimeType: image.mimeType }));
+}
+
+/** 换商品但没有商品图：只能把商品写进提示词。 */
+function textOnlyProductPrompt(prompt: string, note: string) {
+    return [note ? `画面里的商品是：${note}，不要画成原片里的商品。` : "", prompt].filter(Boolean).join("\n");
+}
 
 const REPORT_SIZE = { width: 520, height: 680 };
 const NODE_GAP = 120;
@@ -37,14 +43,20 @@ function boxed(width: number, height: number, box: number) {
 
 /**
  * 去画布复刻：视频右侧放关键帧格子和分镜脚本（「先做首帧」模式，生成首帧 → 生成视频 → 合并成片），
- * 关键帧格子下面放拆解报告。商品图放在分镜脚本上方。
+ * 关键帧格子下面放拆解报告。商品图放在分镜脚本上方。分镜按复刻方案逐镜处理：
  *
- * - remake：每一镜的首帧按提示词重新生成，不用原片画面和人物。
- * - reuse：没有商品、或没给商品图的镜头直接用原片关键帧当首帧。
- * - 给了商品图时，有商品的镜头预先建好首帧节点：参考图（reuse 是原画面 + 商品图，remake 只有商品图）用普通连线接到首帧节点，
- *   只参与这张首帧的生成；视频那一步只带首帧，商品图不会再进视频请求。
+ * - remake：首帧按提示词重新生成，不用原片画面和人物。
+ * - original：原片关键帧直接当首帧（方案里已确认授权）。
+ * - product：有商品图时预先建好首帧节点，参考图（已授权时是原画面 + 商品图，否则只有商品图）用普通连线接到首帧节点，
+ *   只参与这张首帧的生成；视频那一步只带首帧，商品图不会再进视频请求。没有商品图时只把商品写进提示词。
+ * - skip：不放进分镜。
+ * 口播、画面字和提示词用方案里改过的版本。
  */
-export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string, existing: CanvasNodeData[], options: VideoReplicaOptions = { mode: "remake", products: [], productNote: "" }) {
+export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string, existing: CanvasNodeData[], options: VideoReplicaOptions) {
+    const { plan } = options;
+    const uploads = productUploads(plan);
+    const note = replicaProductNote(plan.product);
+    const swapMode: VideoReplicaMode = plan.authorized ? "reuse" : "remake";
     const frames = buildVideoFrameNodes(
         anchor,
         bundle.shots.map((shot) => ({
@@ -69,7 +81,7 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
     const framesBottom = Math.max(anchor.position.y + anchor.height, ...frames.map((frame) => frame.position.y + frame.height));
     const title = analysis.title || anchor.title || "视频拆解";
 
-    const products: CanvasNodeData[] = options.products.map((image, index) => ({
+    const products: CanvasNodeData[] = uploads.map((image, index) => ({
         id: `image-${nanoid()}`,
         type: CanvasNodeType.Image,
         title: `商品图 ${index + 1}`,
@@ -79,10 +91,29 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
         metadata: { ...imageMetadata(image), assetCategory: "prop", manualSize: true },
     }));
     const baseRows = videoTeardownStoryboardRows(bundle, analysis.rows);
-    const swapRowIds = new Set(products.length ? baseRows.filter(videoTeardownProductShot).map((row) => row.id) : []);
-    const rows: StoryboardRow[] = baseRows.map((row, index) => {
-        if (swapRowIds.has(row.id)) return { ...row, imageGenerationPrompt: videoReplicaProductFramePrompt(row, options.mode, options.productNote), videoMotionPrompt: videoReplicaProductVideoPrompt(row, options.productNote) };
-        return options.mode === "reuse" && frames[index] ? { ...row, imageNodeId: frames[index].id } : row;
+    const shotPlans = new Map(plan.shots.map((shot) => [shot.shotNumber, shot]));
+    const swapRowIds = new Set<string>();
+    // 关键帧下标 = 镜头编号 - 1；跳过的镜头不进分镜，但关键帧照样放在画布上作参考。
+    const frameOf = new Map<string, CanvasNodeData>();
+    const rows: StoryboardRow[] = baseRows.flatMap((base, index) => {
+        const shot = shotPlans.get(base.shotNumber);
+        if (shot?.treatment === "skip") return [];
+        const row: StoryboardRow = shot
+            ? {
+                  ...base,
+                  dialogue: shot.dialogue,
+                  imageGenerationPrompt: shot.imagePrompt || base.imageGenerationPrompt,
+                  videoMotionPrompt: shot.videoPrompt || base.videoMotionPrompt,
+                  sourceAnalysis: base.sourceAnalysis ? { ...base.sourceAnalysis, onScreenText: shot.onScreenText } : base.sourceAnalysis,
+              }
+            : base;
+        if (frames[index]) frameOf.set(row.id, frames[index]);
+        if (shot?.treatment === "product") {
+            if (!products.length) return [{ ...row, imageGenerationPrompt: textOnlyProductPrompt(row.imageGenerationPrompt, note), videoMotionPrompt: videoReplicaProductVideoPrompt(row, note) }];
+            swapRowIds.add(row.id);
+            return [{ ...row, imageGenerationPrompt: videoReplicaProductFramePrompt(row, swapMode, note), videoMotionPrompt: videoReplicaProductVideoPrompt(row, note) }];
+        }
+        return [shot?.treatment === "original" && plan.authorized && frames[index] ? { ...row, imageNodeId: frames[index].id } : row];
     });
 
     const scriptSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Script];
@@ -111,10 +142,11 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
     const connections: CanvasConnection[] = [...frames.map((frame) => ({ id: nanoid(), fromNodeId: anchor.id, toNodeId: frame.id }))];
     const imageSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
     const firstFrames: CanvasNodeData[] = [];
-    rows.forEach((row, index) => {
+    rows.forEach((row) => {
         if (!swapRowIds.has(row.id)) return;
-        // 参考图顺序决定提示词里的编号：reuse 时第一张是原画面。
-        const referenceIds = [...(options.mode === "reuse" && frames[index] ? [frames[index].id] : []), ...products.map((node) => node.id)];
+        // 参考图顺序决定提示词里的编号：已授权时第一张是原画面。
+        const frame = frameOf.get(row.id);
+        const referenceIds = [...(swapMode === "reuse" && frame ? [frame.id] : []), ...products.map((node) => node.id)];
         const prompt = row.imageGenerationPrompt;
         const node = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { prompt, workflowKind: "shot", workflowTitle: `镜头 ${row.shotNumber} 首帧`, shotIndex: row.shotNumber, status: "idle" });
         node.title = `镜头 ${row.shotNumber} · 首帧（换商品）`;
