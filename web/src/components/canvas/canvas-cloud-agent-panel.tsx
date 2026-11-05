@@ -150,7 +150,7 @@ type AgentDraftAttachment = {
 /** 来自输入框的消息额外带上的内容：附件节点引用（排在选区前作为重点），以及是否不带选区。 */
 type ComposerExtras = { attachmentNodeIds: string[]; excludeSelection: boolean };
 
-/** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计。 */
+/** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计和上下文环读数。 */
 async function loadAgentRunEventPrefix(runId: string, untilSeq: number, signal: AbortSignal) {
     const events: AgentEvent[] = [];
     let seq = 0;
@@ -904,14 +904,16 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const after = replayCursorRef.current.runId === run.id ? replayCursorRef.current.seq : 0;
         replayCursorRef.current = { runId: run.id, seq: after };
         lastSeqRef.current = after;
-        // 续接已有轮次（刷新、切回对话）时事件流只推游标之后的事件，本轮统计却要从第 1 条算起：
-        // 本机还没有这段前缀就补读一次。补读只喂给统计，不重放消息，也不触发画布写回。
+        // 续接已有轮次（刷新、切回对话）时事件流只推游标之后的事件，本轮统计和上下文读数却在这段前缀里：
+        // 本机还没有这段前缀就补读一次。补读只喂给统计和上下文环，不重放消息，也不触发画布写回。
         const statsPrefix = new AbortController();
         if (after > 0 && !agentRunStatsCovers(runStatsRef.current, conversationScope, run.id, after)) {
             void loadAgentRunEventPrefix(run.id, after, statsPrefix.signal)
                 .then((events) => {
                     if (statsPrefix.signal.aborted || !accountIsCurrent() || currentScope.current !== conversationScope || cloudRunTransitionRef.current !== run.id) return;
                     setRunStats((current) => events.reduce(reduceAgentRunStats, scopeAgentRunStats(current, conversationScope)));
+                    // 事件流已经推来本轮读数或压缩时，它们比前缀新，补读不能把环拨回去。
+                    setContextUsage((current) => (current.runId === run.id && (current.readingSeq > 0 || current.compactionSeq > 0) ? current : events.reduce(reduceAgentContextUsage, emptyAgentContextUsage(run.id))));
                 })
                 .catch((cause) => {
                     // 统计只是展示读数：补读失败时本轮合计保持隐藏，对话照常进行。
