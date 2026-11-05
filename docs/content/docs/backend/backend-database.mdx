@@ -11,11 +11,11 @@ description: 影策后端核心持久化表与状态边界
 
 | 表 | 主要字段 | 约束与语义 |
 | --- | --- | --- |
-| `studio_model_assets` | 主键 `id`、`kind`（`face` 模特人脸 / `pose` 姿势 / `style` 模特样式，带索引）、`name`、`category`、`gender`（`female` / `male`，空为不限）、`tags_json`（非空，默认 `[]`）、`prompt`（写进出图提示词的描述）、`resource_id`、`thumb_resource_id`（原图与缩略图资源，非空，默认空串，带索引）、`width`、`height`、`consent`（人脸的肖像授权确认）、`enabled`、`sort_order`、`created_by`、`updated_by` | 人脸和姿势必须带图，模特样式必须有 `prompt`、图片可选。人脸 `consent` 为假时不能上架（单条修改和批量上架都拦）。类型与图片导入后不能改，换图要删掉重新导入。用户端只读 `enabled = true` 的行 |
+| `studio_model_assets` | 主键 `id`、`kind`（`face` 模特人脸 / `figure` 全身模特 / `pose` 姿势 / `style` 模特样式，带索引）、`name`、`category`、`gender`（`female` / `male`，空为不限）、`tags_json`（非空，默认 `[]`）、`prompt`（写进出图提示词的描述）、`resource_id`、`thumb_resource_id`（原图与缩略图资源，非空，默认空串，带索引）、`width`、`height`、`consent`（人脸和全身模特的肖像授权确认）、`enabled`、`sort_order`、`created_by`、`updated_by` | 人脸、全身模特和姿势必须带图，模特样式必须有 `prompt`、图片可选。人脸和全身模特 `consent` 为假时不能上架（单条修改和批量上架都拦）。`figure` 是后加的取值，`kind` 列本来就是字符串，不需要迁移。类型与图片导入后不能改，换图要删掉重新导入。用户端只读 `enabled = true` 的行 |
 
 原图与导入时生成的 512 像素 JPEG 缩略图以资源类型 `studio-model` 存在本地数据目录，归导入的管理员所有但不计入其账号文件容量（与形象图集同列在 `AccountExemptResourceKinds`）。`resource_id` 或 `thumb_resource_id` 引用期间，后台删除资源和自动回收都会跳过；读不到素材表时按全部被引用处理。删除素材只删这一行，资源随后按无引用处理。
 
-用户在生图台选用人脸或姿势时，服务端把原图复制成该用户自己的 `image` 资源，`resources.upload_key` 为素材 ID 与原图资源 ID 的 SHA-256 摘要，同一用户对同一张原图只复制一次，复制计入上传配额。商品 JSON 的 `brief.model` 记录选中项的素材 ID、名称、描述和复制后的资源 ID，出图任务只引用用户自己的资源，资源归属校验不变；素材之后被删或下架，已复制的那份仍在用户资源库里。
+用户在生图台选用人脸、全身模特或姿势时，服务端把原图复制成该用户自己的 `image` 资源，`resources.upload_key` 为素材 ID 与原图资源 ID 的 SHA-256 摘要，同一用户对同一张原图只复制一次，复制计入上传配额。商品 JSON 的 `brief.model` 记录选中项的素材 ID、名称、描述和复制后的资源 ID，出图任务只引用用户自己的资源，资源归属校验不变；素材之后被删或下架，已复制的那份仍在用户资源库里。
 
 这张表登记在 `database.Models()`，SQLite → PostgreSQL 搬迁也复制它。启动时版本 85 的物理结构校验检查表和 `kind`、`resource_id`、`thumb_resource_id`、`consent`、`enabled`、`sort_order` 列。
 
