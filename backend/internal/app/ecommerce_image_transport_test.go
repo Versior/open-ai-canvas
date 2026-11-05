@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -154,8 +155,36 @@ func TestEcommerceImageWorkerReachesOpenAIImagesUpstream(t *testing.T) {
 			paths := make(chan string, 1)
 			bodies := make(chan map[string]any, 1)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var body map[string]any
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				// 上游把有参考图的编辑改成 multipart（37d219c8）；文本字段放进同一个 map 里比较。
+				body := map[string]any{}
+				if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+					if err := r.ParseMultipartForm(32 << 20); err != nil {
+						t.Error(err)
+						w.WriteHeader(http.StatusBadRequest)
+						return
+					}
+					for key, values := range r.MultipartForm.Value {
+						if len(values) > 0 {
+							body[key] = values[0]
+						}
+					}
+					// 参考图作为文件上传：记下每个文件字段是否是 PNG 像素，替代 JSON 里的 data URL。
+					for key, files := range r.MultipartForm.File {
+						for _, header := range files {
+							file, err := header.Open()
+							if err != nil {
+								t.Error(err)
+								continue
+							}
+							head := make([]byte, 8)
+							n, _ := file.Read(head)
+							_ = file.Close()
+							if bytes.HasPrefix(head[:n], []byte("\x89PNG")) {
+								body["file:"+key] = "png"
+							}
+						}
+					}
+				} else if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 					t.Error(err)
 					w.WriteHeader(http.StatusBadRequest)
 					return
@@ -203,7 +232,7 @@ func TestEcommerceImageWorkerReachesOpenAIImagesUpstream(t *testing.T) {
 				if !strings.Contains(string(encoded), "extract the flat pattern") {
 					t.Fatalf("upstream lost the prompt: %s", encoded)
 				}
-				if len(route.images) > 0 && !strings.Contains(string(encoded), "data:image/png;base64,") {
+				if len(route.images) > 0 && !strings.Contains(string(encoded), "data:image/png;base64,") && body["file:image"] != "png" {
 					t.Fatalf("upstream lost the reference pixels: %s", encoded)
 				}
 				prompt, _ := body["prompt"].(string)

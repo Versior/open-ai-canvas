@@ -878,7 +878,8 @@ describe("真实电商页面生命周期", () => {
             host.querySelector<HTMLButtonElement>(".ecs-submit")!.click();
         });
         expect(errors.some((value) => value.includes("图片生成"))).toBe(false);
-        expect(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some((button) => button.textContent?.trim() === "确认并生成")).toBe(true);
+        // 上游五步流程按当前步骤显示「确认并开始 / 确认并策划 / 确认并出图」。
+        expect(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some((button) => ["确认并开始", "确认并策划", "确认并出图"].includes(button.textContent?.trim() || ""))).toBe(true);
         expect(paidSubmissions).toHaveLength(0);
     });
     test("提交失败时保留输入内容供用户重试", async () => {
