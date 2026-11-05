@@ -304,12 +304,13 @@ div.admin-vr-failure {
     width: 128px;
 }
 
+/* 画面完整显示；框被最大宽度收窄时上下留底色，不裁掉两侧。 */
 .admin-vr-thumb {
     display: block;
     flex: none;
     border-radius: var(--admin-radius-sm);
     background: var(--admin-layer-2);
-    object-fit: cover;
+    object-fit: contain;
 }
 
 .admin-vr-thumb.is-empty {
@@ -347,7 +348,6 @@ div.admin-vr-failure {
     height: 100%;
     border-radius: 0;
     background: transparent;
-    object-fit: contain;
 }
 
 .admin-vr-record-copy,
