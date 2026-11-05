@@ -15,7 +15,7 @@ import { fitImageNodeSize, fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas
 import { CANVAS_UPLOAD_ACCEPT, createFileUploadPlaceholder, uploadNodeType, uploadPercent } from "@/lib/canvas/canvas-file-upload";
 import { recordReplacedMediaVersion } from "@/lib/canvas/canvas-media-versions";
 import { getResource, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
-import { createSocialVideoImport, parseSocialVideoImportResult, socialVideoURLFromText, validateSocialVideoResource } from "@/services/api/social-video";
+import { createSocialVideoImport, loadSocialVideoPlatforms, parseSocialVideoImportResult, socialVideoLinkFromText, validateSocialVideoResource } from "@/services/api/social-video";
 import { waitForGenerationTask } from "@/services/api/task-center";
 import { uploadMediaFile } from "@/services/file-storage";
 import { resolveImageUrl, uploadImage } from "@/services/image-storage";
@@ -681,8 +681,12 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
 
     const importSocialVideoFromClipboard = useCallback(
         async (text: string, position?: Position) => {
-            const url = socialVideoURLFromText(text);
-            if (!url) return false;
+            // 普通文字不去取平台列表，免得每次粘贴都多一次请求。
+            if (!/https?:\/\//i.test(text)) return false;
+            const link = socialVideoLinkFromText(text, await loadSocialVideoPlatforms());
+            // 后台还没给这个平台配解析接口时按普通文字粘贴，不弹导入失败。
+            if (!link || !link.platform.available) return false;
+            const url = link.url;
             const expectedScope = getActiveUserScope();
             const expectedCanvasId = canvasId;
             const expectedProjectId = domainProjectId || "";
@@ -731,7 +735,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                     let node = {
                         id: `video-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                         type: CanvasNodeType.Video,
-                        title: result.title.trim() || (result.platform === "douyin" ? "抖音视频" : "TikTok 视频"),
+                        title: result.title.trim() || `${link.platform.name}视频`,
                         position: origin,
                         width: size.width,
                         height: size.height,

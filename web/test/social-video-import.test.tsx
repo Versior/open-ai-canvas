@@ -157,8 +157,10 @@ function ok(config: InternalAxiosRequestConfig, data: unknown) {
 
 async function withAdapter(adapter: AxiosAdapter, run: () => Promise<void>) {
     const { apiClient } = await import("../src/services/api/request");
+    const { BUILTIN_SOCIAL_VIDEO_PLATFORMS } = await import("../src/services/api/social-video");
     const previous = apiClient.defaults.adapter;
-    apiClient.defaults.adapter = adapter;
+    // 粘贴导入会先取一次平台列表：统一返回抖音 / TikTok 可用，各用例只记录、断言导入相关的请求。
+    apiClient.defaults.adapter = async (config) => (config.method === "get" && config.url === "/social-video/platforms" ? ok(config, { platforms: BUILTIN_SOCIAL_VIDEO_PLATFORMS }) : adapter(config));
     try {
         await run();
     } finally {
@@ -204,6 +206,27 @@ describe("抖音/TikTok 分享链接粘贴导入", () => {
         ]) {
             expect(socialVideoURLFromText(input)).toBeNull();
         }
+    });
+    test("按后台平台列表识别更多平台：非严格平台只认域名，http 短链升级为 https，没有接口的平台标记不可用", async () => {
+        const { parseSocialVideoImportResult, socialVideoLinkFromText, socialVideoPlatformNames } = await import("../src/services/api/social-video");
+        const platforms = [
+            { id: "douyin", name: "抖音", hosts: ["www.douyin.com"], shortHosts: ["v.douyin.com"], strict: true, available: true },
+            { id: "xiaohongshu", name: "小红书", hosts: ["www.xiaohongshu.com"], shortHosts: ["xhslink.com"], strict: false, available: true },
+            { id: "bilibili", name: "哔哩哔哩", hosts: ["www.bilibili.com"], shortHosts: ["b23.tv"], strict: false, available: false },
+        ];
+        const xhs = socialVideoLinkFromText("复制后打开【小红书】查看笔记！ http://xhslink.com/a/AbCdEf12", platforms);
+        expect(xhs?.url).toBe("https://xhslink.com/a/AbCdEf12");
+        expect(xhs?.platform.id).toBe("xiaohongshu");
+        expect(xhs?.short).toBe(true);
+        expect(socialVideoLinkFromText("https://www.bilibili.com/video/BV1xx411c7mD", platforms)?.platform.available).toBe(false);
+        expect(socialVideoLinkFromText("http://www.douyin.com/video/123", platforms)).toBeNull();
+        expect(socialVideoLinkFromText("https://www.douyin.com/discover", platforms)).toBeNull();
+        expect(socialVideoLinkFromText("https://www.xiaohongshu.com/", platforms)).toBeNull();
+        expect(socialVideoLinkFromText("https://example.com/video/123", platforms)).toBeNull();
+        expect(socialVideoPlatformNames(platforms)).toBe("抖音、小红书");
+        const imported = parseSocialVideoImportResult(task("succeeded", JSON.stringify({ ...resultObject, platform: "kuaishou" })) as never);
+        expect(imported.platform).toBe("kuaishou");
+        expect(() => parseSocialVideoImportResult(task("succeeded", JSON.stringify({ ...resultObject, platform: "Not Valid" })) as never)).toThrow();
     });
     test("单个平台链接创建导入任务并直接生成持久化 Video 节点", async () => {
         const fixture = await mountCanvasUpload();

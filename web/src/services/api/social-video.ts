@@ -1,20 +1,9 @@
 import { createClientId } from "@/lib/client-id";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { http } from "@/services/api/request";
 import type { RemoteResource } from "@/services/api/resources";
 import type { GenerationTask } from "@/services/api/task-center";
 
-const SOCIAL_VIDEO_HOSTS: ReadonlyMap<string, { platform: "douyin" | "tiktok"; short: boolean }> = new Map([
-    ["v.douyin.com", { platform: "douyin", short: true }],
-    ["douyin.com", { platform: "douyin", short: false }],
-    ["www.douyin.com", { platform: "douyin", short: false }],
-    ["m.douyin.com", { platform: "douyin", short: false }],
-    ["www.iesdouyin.com", { platform: "douyin", short: false }],
-    ["vm.tiktok.com", { platform: "tiktok", short: true }],
-    ["vt.tiktok.com", { platform: "tiktok", short: true }],
-    ["tiktok.com", { platform: "tiktok", short: false }],
-    ["www.tiktok.com", { platform: "tiktok", short: false }],
-    ["m.tiktok.com", { platform: "tiktok", short: false }],
-]);
 const SOCIAL_VIDEO_ID_PATH = /^\/(?:video|share\/video)\/[0-9]+\/?$/;
 const TIKTOK_VIDEO_PATH = /^\/@[^/]+\/video\/[0-9]+\/?$/;
 const SOCIAL_VIDEO_CANONICAL_ID = /^[A-Za-z0-9_-]{1,160}$/;
@@ -25,9 +14,22 @@ const SOCIAL_VIDEO_MAX_DURATION_MS = 180_000;
 const SOCIAL_VIDEO_MAX_DIMENSION = 16_384;
 const SOCIAL_VIDEO_MAX_PIXELS = 134_217_728;
 const SOCIAL_VIDEO_MIME_TYPE = /^video\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/;
+const SOCIAL_VIDEO_PLATFORM_ID = /^[a-z0-9]{2,24}$/;
+const PLATFORM_CACHE_MS = 60_000;
+
+/** 可导入的短视频平台：分享链接的域名、是否走抖音 / TikTok 的严格单视频规则，以及后台有没有开着的解析接口。 */
+export type SocialVideoPlatform = { id: string; name: string; hosts: string[]; shortHosts: string[]; strict: boolean; available: boolean };
+
+/** 还没拿到后台平台列表（或请求失败）时用的内置规则：只认抖音和 TikTok。 */
+export const BUILTIN_SOCIAL_VIDEO_PLATFORMS: readonly SocialVideoPlatform[] = [
+    { id: "douyin", name: "抖音", hosts: ["douyin.com", "www.douyin.com", "m.douyin.com", "www.iesdouyin.com"], shortHosts: ["v.douyin.com"], strict: true, available: true },
+    { id: "tiktok", name: "TikTok", hosts: ["tiktok.com", "www.tiktok.com", "m.tiktok.com"], shortHosts: ["vm.tiktok.com", "vt.tiktok.com"], strict: true, available: true },
+];
+
+export type SocialVideoLink = { url: string; platform: SocialVideoPlatform; short: boolean };
 
 export type SocialVideoImportResult = {
-    platform: "douyin" | "tiktok";
+    platform: string;
     canonicalId: string;
     title: string;
     resourceId: string;
@@ -46,7 +48,11 @@ function validDimensions(width: unknown, height: unknown) {
     return positiveIntegerAtMost(width, SOCIAL_VIDEO_MAX_DIMENSION) && positiveIntegerAtMost(height, SOCIAL_VIDEO_MAX_DIMENSION) && (width as number) * (height as number) <= SOCIAL_VIDEO_MAX_PIXELS;
 }
 
-export function socialVideoURLFromText(text: string) {
+/**
+ * 从分享文字里认出唯一的视频链接和平台，规则与服务端一致：抖音 / TikTok 只认 HTTPS 单视频地址，
+ * 其他平台只认域名（分享里常见的 http 短链升级成 https），具体能不能解析交给后台的解析接口。
+ */
+export function socialVideoLinkFromText(text: string, platforms: readonly SocialVideoPlatform[] = BUILTIN_SOCIAL_VIDEO_PLATFORMS): SocialVideoLink | null {
     const trimmed = text.trim();
     if (!trimmed || new TextEncoder().encode(trimmed).byteLength > SOCIAL_VIDEO_TEXT_MAX_BYTES) return null;
     const matches = trimmed.match(/https?:\/\/[^\s<>]+/gu) || [];
@@ -54,18 +60,57 @@ export function socialVideoURLFromText(text: string) {
     const raw = matches[0].replace(TRAILING_SHARE_PUNCTUATION, "");
     try {
         const parsed = new URL(raw);
-        if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.hash || (parsed.port && parsed.port !== "443")) return null;
         const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-        const source = SOCIAL_VIDEO_HOSTS.get(hostname);
-        if (!source) return null;
+        const platform = platforms.find((item) => item.shortHosts.includes(hostname) || item.hosts.includes(hostname));
+        if (!platform) return null;
+        const short = platform.shortHosts.includes(hostname);
+        if (parsed.protocol !== "https:" && (platform.strict || parsed.protocol !== "http:")) return null;
+        if (parsed.username || parsed.password || parsed.hash || (parsed.port && parsed.port !== "443")) return null;
         const path = parsed.pathname || "/";
-        if (source.short ? !path.replace(/^\/+|\/+$/g, "") : !SOCIAL_VIDEO_ID_PATH.test(path) && !(source.platform === "tiktok" && TIKTOK_VIDEO_PATH.test(path))) return null;
+        if (short || !platform.strict) {
+            if (!path.replace(/^\/+|\/+$/g, "") && !parsed.search) return null;
+        } else if (!SOCIAL_VIDEO_ID_PATH.test(path) && !(platform.id === "tiktok" && TIKTOK_VIDEO_PATH.test(path))) return null;
         parsed.protocol = "https:";
         parsed.host = hostname;
-        return parsed.toString();
+        return { url: parsed.toString(), platform, short };
     } catch {
         return null;
     }
+}
+
+/** 只按内置的抖音 / TikTok 规则取链接，给拿不到后台平台列表的地方用。 */
+export function socialVideoURLFromText(text: string) {
+    return socialVideoLinkFromText(text)?.url ?? null;
+}
+
+/** 平台名称串，用在「只支持……的链接」这类提示里；只列后台有接口的平台，一个都没有时列全部。 */
+export function socialVideoPlatformNames(platforms: readonly SocialVideoPlatform[]) {
+    const available = platforms.filter((platform) => platform.available);
+    return (available.length ? available : platforms).map((platform) => platform.name).join("、");
+}
+
+export function listSocialVideoPlatforms(signal?: AbortSignal) {
+    return http.get<{ platforms: SocialVideoPlatform[] }>("/social-video/platforms", { signal }).then((data) => (Array.isArray(data?.platforms) ? data.platforms : []));
+}
+
+const platformCache = new Map<string, { at: number; promise: Promise<readonly SocialVideoPlatform[]> }>();
+
+/** 带一分钟缓存的平台列表，按账号区分；请求失败或返回空时退回内置规则，下次再重取。 */
+export function loadSocialVideoPlatforms(): Promise<readonly SocialVideoPlatform[]> {
+    const scope = getActiveUserScope();
+    const cached = platformCache.get(scope);
+    if (cached && Date.now() - cached.at < PLATFORM_CACHE_MS) return cached.promise;
+    const promise: Promise<readonly SocialVideoPlatform[]> = listSocialVideoPlatforms()
+        .then((platforms) => {
+            if (!platforms.length) throw new Error("empty platform list");
+            return platforms;
+        })
+        .catch(() => {
+            if (platformCache.get(scope)?.promise === promise) platformCache.delete(scope);
+            return BUILTIN_SOCIAL_VIDEO_PLATFORMS;
+        });
+    platformCache.set(scope, { at: Date.now(), promise });
+    return promise;
 }
 
 export function createSocialVideoImport(url: string, projectId?: string, signal?: AbortSignal) {
@@ -82,7 +127,8 @@ export function parseSocialVideoImportResult(task: GenerationTask): SocialVideoI
     const result = value as Partial<SocialVideoImportResult> | null;
     if (
         !result ||
-        (result.platform !== "douyin" && result.platform !== "tiktok") ||
+        typeof result.platform !== "string" ||
+        !SOCIAL_VIDEO_PLATFORM_ID.test(result.platform) ||
         typeof result.canonicalId !== "string" ||
         !SOCIAL_VIDEO_CANONICAL_ID.test(result.canonicalId) ||
         typeof result.title !== "string" ||

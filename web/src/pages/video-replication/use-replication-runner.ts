@@ -5,7 +5,7 @@ import { appQueryClient } from "@/lib/query-client";
 import { videoReplicationAnalysisDocument, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope, scopedLocalStorage } from "@/lib/user-scope";
 import { getResource, uploadResourceFile } from "@/services/api/resources";
-import { createSocialVideoImport, parseSocialVideoImportResult, socialVideoURLFromText, validateSocialVideoResource } from "@/services/api/social-video";
+import { createSocialVideoImport, loadSocialVideoPlatforms, parseSocialVideoImportResult, socialVideoLinkFromText, socialVideoPlatformNames, validateSocialVideoResource } from "@/services/api/social-video";
 import { waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { createVideoTeardown, getVideoReplication, parseVideoTeardownBundle, saveVideoReplicationAnalysis, type VideoReplicationRecord, type VideoTeardownBundle } from "@/services/api/video-replication";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -167,8 +167,12 @@ export function startReplication(source: ReplicationSource, options: VideoTeardo
         let resourceId = "";
         let fallbackTitle = "";
         if (source.kind === "link") {
-            const url = socialVideoURLFromText(source.text);
-            if (!url) throw new Error("只支持抖音和 TikTok 的单视频链接或分享文字");
+            const platforms = await loadSocialVideoPlatforms();
+            assertCurrent();
+            const link = socialVideoLinkFromText(source.text, platforms);
+            if (!link) throw new Error(`只支持${socialVideoPlatformNames(platforms)}的单视频链接或分享文字`);
+            if (!link.platform.available) throw new Error(`${link.platform.name}链接暂时无法导入：后台还没有可用的解析接口`);
+            const url = link.url;
             update({ detail: "提交下载任务" });
             const created = await createSocialVideoImport(url, undefined, signal);
             assertCurrent();

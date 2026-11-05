@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { App, Button, Input } from "antd";
 import { CircleCheck, ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
@@ -7,7 +8,8 @@ import { HoverBorderGradient } from "@/components/ui/aceternity/hover-border-gra
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { Switch } from "@/components/ui/base/switch";
 import { formatTeardownTime, orientationLabel, videoTeardownModelError, videoTeardownTextRequirements, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
-import { socialVideoURLFromText } from "@/services/api/social-video";
+import { getActiveUserScope } from "@/lib/user-scope";
+import { BUILTIN_SOCIAL_VIDEO_PLATFORMS, listSocialVideoPlatforms, socialVideoLinkFromText, socialVideoPlatformNames } from "@/services/api/social-video";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ReplicationProgress } from "./replication-progress";
 import type { ReplicationRun, ReplicationSource } from "./use-replication-runner";
@@ -59,20 +61,18 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
     // 读剪贴板要安全上下文（https 或本机）；局域网 http 访问时不显示这个按钮，直接手动粘贴。
     const canPaste = typeof window !== "undefined" && window.isSecureContext && typeof navigator.clipboard?.readText === "function";
 
+    // 能识别哪些平台、哪些平台后台配了解析接口，以服务端为准；没取到时先按抖音 / TikTok 的内置规则识别。
+    const platformsQuery = useQuery({ queryKey: ["social-video-platforms", getActiveUserScope()], queryFn: ({ signal }) => listSocialVideoPlatforms(signal), staleTime: 60_000 });
+    const platforms = platformsQuery.data?.length ? platformsQuery.data : BUILTIN_SOCIAL_VIDEO_PLATFORMS;
+    const platformNames = socialVideoPlatformNames(platforms);
+
     const modelError = videoTeardownModelError(config, model);
-    const linkUrl = socialVideoURLFromText(linkText);
-    const linkValid = Boolean(linkUrl);
+    const link = socialVideoLinkFromText(linkText, platforms);
+    const linkValid = Boolean(link?.platform.available);
     const fileValid = Boolean(file && file.type.startsWith("video/") && (!fileInfo || fileInfo.durationMs <= MAX_DURATION_MS));
-    const sourceError =
-        mode === "link"
-            ? linkText.trim() && !linkValid
-                ? "只支持抖音和 TikTok 的单视频链接或分享文字"
-                : ""
-            : file && !file.type.startsWith("video/")
-              ? "请选择视频文件"
-              : fileInfo && fileInfo.durationMs > MAX_DURATION_MS
-                ? "视频超过 3 分钟，请先剪短再拆解"
-                : "";
+    const linkError = !linkText.trim() ? "" : !link ? `只支持${platformNames}的单视频链接或分享文字` : !link.platform.available ? `${link.platform.name}链接暂时无法导入：后台还没有可用的解析接口` : "";
+    const fileError = file && !file.type.startsWith("video/") ? "请选择视频文件" : fileInfo && fileInfo.durationMs > MAX_DURATION_MS ? "视频超过 3 分钟，请先剪短再拆解" : "";
+    const sourceError = mode === "link" ? linkError : fileError;
     const ready = (mode === "link" ? linkValid : fileValid) && !modelError && !busy;
 
     const start = () => {
@@ -149,13 +149,13 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                     }
                                 }}
                                 autoSize={{ minRows: 3, maxRows: 6 }}
-                                placeholder="粘贴抖音或 TikTok 的分享内容，或直接粘贴视频链接"
+                                placeholder={`粘贴${platformNames}的分享内容，或直接粘贴视频链接`}
                                 aria-label="视频链接或分享内容"
                             />
-                            {linkUrl ? (
+                            {link && linkValid ? (
                                 <span className="vr-link-ok">
                                     <CircleCheck aria-hidden />
-                                    {`识别到${new URL(linkUrl).hostname.includes("douyin") ? "抖音" : " TikTok "}视频链接`}
+                                    {`识别到${link.platform.name}视频链接`}
                                 </span>
                             ) : null}
                             {canPaste && !linkText ? (
