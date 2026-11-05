@@ -52,8 +52,9 @@ func (r *Repository) AdminTasksByType(filter AdminTypedTaskFilter) ([]model.Task
 		query = query.Where("status = ?", filter.Status)
 	}
 	if value := strings.TrimSpace(filter.Keyword); value != "" {
-		pattern := "%" + strings.ToLower(value) + "%"
-		users := r.db.Model(&model.User{}).Select("id").Where("lower(username) LIKE ? OR lower(display_name) LIKE ? OR lower(email) LIKE ?", pattern, pattern, pattern)
+		// 关键字里的 % 和 _ 按字面匹配，不当通配符。
+		pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(value)) + "%"
+		users := r.db.Model(&model.User{}).Select("id").Where(`lower(username) LIKE ? ESCAPE '\' OR lower(display_name) LIKE ? ESCAPE '\' OR lower(email) LIKE ? ESCAPE '\'`, pattern, pattern, pattern)
 		query = query.Where("(user_id IN (?) OR id = ?)", users, value)
 	}
 	var total int64
@@ -96,10 +97,11 @@ func (r *Repository) DistinctTaskUserCount(taskType string) (int64, error) {
 	return count, err
 }
 
-// CountTasksWithResultKind 数有多少个任务存过某种结果。
-func (r *Repository) CountTasksWithResultKind(kind string) (int64, error) {
+// CountTasksWithResult 数某类任务里有多少个存过某种结果。从任务表按类型连过去：走 tasks.type 和 results.task_id
+// 的索引，不扫整张 results 表，任务行已经不在的孤立结果也不计入。
+func (r *Repository) CountTasksWithResult(taskType, kind string) (int64, error) {
 	var count int64
-	err := r.db.Model(&model.Result{}).Where("kind = ?", kind).Distinct("task_id").Count(&count).Error
+	err := r.db.Model(&model.Result{}).Joins("JOIN tasks ON tasks.id = results.task_id").Where("tasks.type = ? AND results.kind = ?", taskType, kind).Distinct("results.task_id").Count(&count).Error
 	return count, err
 }
 

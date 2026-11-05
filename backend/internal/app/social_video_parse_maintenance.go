@@ -33,7 +33,13 @@ func (s *Service) startSocialVideoParseMaintenance() {
 
 func (s *Service) runSocialVideoParseMaintenance(ctx context.Context) {
 	// 后台关了视频链接导入时整套巡检都停：不在后台继续调用第三方接口和订阅地址，后台手动测试照常可用。
-	if enabled, err := s.FeatureEnabled(FeatureSocialVideoImport); err != nil || !enabled {
+	// 读不到开关时这一轮也不跑，但要留日志，免得巡检无声地停掉。
+	enabled, err := s.FeatureEnabled(FeatureSocialVideoImport)
+	if err != nil {
+		slog.Warn("读取视频链接导入开关失败，跳过这一轮解析接口巡检", "error", err)
+		return
+	}
+	if !enabled {
 		return
 	}
 	if s.coordinator != nil {

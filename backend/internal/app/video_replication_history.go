@@ -154,10 +154,9 @@ func (s *Service) VideoReplication(userID, taskID string) (*VideoReplicationDeta
 
 // SaveVideoReplicationAnalysis 保存前端解析好的模型分析。只接受本人已完成的拆解任务；
 // 镜头行数和编号必须与拆解结果一一对应，缺镜头、多出来的行或重复编号都拒绝。
+//
+// 这里不检查视频复刻开关：关闭只挡新建，已经开始的拆解照常执行，看图模型的分析已经计费，结果必须能存下来。
 func (s *Service) SaveVideoReplicationAnalysis(userID, taskID string, payload []byte) (*VideoReplicationDetail, error) {
-	if err := s.RequireFeature(FeatureVideoReplication); err != nil {
-		return nil, err
-	}
 	task, err := s.replicationTeardownTask(userID, taskID)
 	if err != nil {
 		return nil, err

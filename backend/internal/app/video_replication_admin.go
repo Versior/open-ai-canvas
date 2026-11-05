@@ -182,7 +182,7 @@ func (s *Service) AdminVideoReplicationOverview(actor *model.User) (*AdminVideoR
 	if overview.Imports.Users, err = s.repo.DistinctTaskUserCount(model.TaskTypeSocialVideoImport); err != nil {
 		return nil, err
 	}
-	if overview.Analyzed, err = s.repo.CountTasksWithResultKind(videoReplicationAnalysisKind); err != nil {
+	if overview.Analyzed, err = s.repo.CountTasksWithResult(model.TaskTypeReplicationTeardown, videoReplicationAnalysisKind); err != nil {
 		return nil, err
 	}
 

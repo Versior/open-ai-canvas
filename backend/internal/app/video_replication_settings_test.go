@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -56,6 +57,10 @@ func TestVideoReplicationSettingsDefaultsPatchAndAudit(t *testing.T) {
 	if current, _ := svc.videoReplicationSettings(); current != saved {
 		t.Fatalf("rejected patches changed the settings: %+v", current)
 	}
+	// 没有变化的保存不再记审计。
+	if again, err := svc.UpdateVideoReplicationSettings(videoReplicationTestAdmin, VideoReplicationSettingsPatch{MaxShots: intPointer(24)}); err != nil || again != saved {
+		t.Fatalf("unchanged patch = %+v, %v", again, err)
+	}
 	var audits int64
 	if err := db.Model(&model.AdminAuditEvent{}).Where("action = ?", "video_replication.settings.update").Count(&audits).Error; err != nil || audits != 2 {
 		t.Fatalf("audits = %d, %v", audits, err)
@@ -67,6 +72,17 @@ func TestVideoReplicationSettingsDefaultsPatchAndAudit(t *testing.T) {
 	}
 	if current, err := svc.videoReplicationSettings(); err != nil || current != (VideoReplicationSettings{MaxDurationSeconds: 180, MaxShots: 60, TranscribeEnabled: true}) {
 		t.Fatalf("normalized stored settings = %+v, %v", current, err)
+	}
+	// 写路径同样以默认值为底：超范围的存量值不挡住只改别的字段的修改。
+	if saved, err := svc.UpdateVideoReplicationSettings(videoReplicationTestAdmin, VideoReplicationSettingsPatch{TranscribeEnabled: boolPointer(false)}); err != nil || saved != (VideoReplicationSettings{MaxDurationSeconds: 180, MaxShots: 60, TranscribeEnabled: false}) {
+		t.Fatalf("patch over out-of-range stored settings = %+v, %v", saved, err)
+	}
+	// 存量配置缺 transcribeEnabled 时，只改镜头数不会把它写成 false，也不会动时长。
+	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: videoReplicationSettingsKey, ValueJSON: `{"maxDurationSeconds":60,"maxShots":20}`}); err != nil {
+		t.Fatal(err)
+	}
+	if saved, err := svc.UpdateVideoReplicationSettings(videoReplicationTestAdmin, VideoReplicationSettingsPatch{MaxShots: intPointer(30)}); err != nil || saved != (VideoReplicationSettings{MaxDurationSeconds: 60, MaxShots: 30, TranscribeEnabled: true}) {
+		t.Fatalf("patch over a row missing fields = %+v, %v", saved, err)
 	}
 	if got := []string{videoReplicationDurationLabel(180), videoReplicationDurationLabel(45), videoReplicationDurationLabel(90)}; strings.Join(got, "|") != "3 分钟|45 秒|1 分 30 秒" {
 		t.Fatalf("duration labels = %v", got)
@@ -110,12 +126,23 @@ func TestVideoTeardownFollowsReplicationSettingsAndFeatureSwitch(t *testing.T) {
 	if err := db.First(&stored, "id = ?", created.ID).Error; err != nil || !strings.Contains(stored.InputJSON, `"maxShots":12`) {
 		t.Fatalf("stored input = %s, %v", stored.InputJSON, err)
 	}
+	// 后台改了设置以后，同一幂等键、同一请求的重放仍返回原任务，不被新的上限拦下或判成冲突。
+	if _, err := svc.UpdateVideoReplicationSettings(videoReplicationTestAdmin, VideoReplicationSettingsPatch{MaxDurationSeconds: intPointer(10), MaxShots: intPointer(6)}); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := svc.CreateVideoTeardownTask("usr-a", "settings-key-0003", VideoTeardownRequest{ResourceID: "res-short"}); err != nil || replay.ID != created.ID {
+		t.Fatalf("replay after settings change = %+v, %v", replay, err)
+	}
+	if _, err := svc.CreateVideoTeardownTask("usr-a", "settings-key-0005", VideoTeardownRequest{ResourceID: "res-short"}); err == nil || !strings.Contains(err.Error(), "超过 10 秒") {
+		t.Fatalf("new request after lowering the limit err = %v", err)
+	}
 	// 后台关了口播识别：有音轨也不调转写服务，拆解照常完成并提示原因。
 	transcript, warning := svc.transcribeVideoTeardown(context.Background(), VideoReplicationSettings{TranscribeEnabled: false}, "/missing.mp4", "video/mp4", true, "")
 	if transcript.Source != "none" || !strings.Contains(warning, "后台已关闭口播识别") {
 		t.Fatalf("transcript = %+v, warning = %q", transcript, warning)
 	}
 
+	finished := seedSucceededTeardownTask(t, db, "usr-a", 2)
 	setVideoReplicationFeatures(t, svc, false, true)
 	var authErr *AuthError
 	for name, call := range map[string]func() error{
@@ -126,14 +153,45 @@ func TestVideoTeardownFollowsReplicationSettingsAndFeatureSwitch(t *testing.T) {
 		"list":   func() error { _, err := svc.VideoReplications("usr-a"); return err },
 		"detail": func() error { _, err := svc.VideoReplication("usr-a", created.ID); return err },
 		"config": func() error { _, err := svc.VideoReplicationConfig(); return err },
-		"save": func() error {
-			_, err := svc.SaveVideoReplicationAnalysis("usr-a", created.ID, teardownAnalysisPayload("关闭", 1))
-			return err
-		},
 	} {
 		if err := call(); !errors.As(err, &authErr) || authErr.Status != 403 || authErr.Message != "视频复刻暂未开放" {
 			t.Fatalf("%s with the feature off: err = %v", name, err)
 		}
+	}
+	// 关闭前已经开始的分析已经计费，结果照常能存下来。
+	if _, err := svc.SaveVideoReplicationAnalysis("usr-a", finished.ID, teardownAnalysisPayload("关闭后保存", 1, 2)); err != nil {
+		t.Fatalf("saving an in-flight analysis with the feature off: %v", err)
+	}
+}
+
+// 排队期间后台调低了镜头数上限、关了口播识别：执行时按新设置切镜，也不调用转写服务。
+func TestReplicationTeardownAppliesCurrentSettings(t *testing.T) {
+	requireFFmpegTools(t)
+	svc, db := newTimelineTaskTestService(t)
+	svc.dataDir = t.TempDir()
+	t.Setenv(whisperLangEnv, "http://whisper.invalid")
+	source := seedTeardownVideoResource(t, svc, "usr-teardown")
+	inputJSON, _ := json.Marshal(videoTeardownInput{Version: 1, ResourceID: source.ID, Transcribe: true, MaxShots: 60, Fingerprint: "fp"})
+	task := &model.Task{ID: "vt-current-settings", UserID: "usr-teardown", Type: model.TaskTypeReplicationTeardown, Status: model.TaskStatusRunning, Stage: "已领取", InputJSON: string(inputJSON)}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.UpdateVideoReplicationSettings(videoReplicationTestAdmin, VideoReplicationSettingsPatch{MaxShots: intPointer(2), TranscribeEnabled: boolPointer(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := newTaskWorkerCoordinator(svc).processReplicationTeardown(task, context.Background()); err != nil {
+		t.Fatalf("process: %v", err)
+	}
+	var stored model.Task
+	if err := db.First(&stored, "id = ?", task.ID).Error; err != nil || stored.Status != model.TaskStatusSucceeded {
+		t.Fatalf("stored = %+v, %v", stored, err)
+	}
+	var bundle videoTeardownBundle
+	if err := json.Unmarshal([]byte(stored.ResultJSON), &bundle); err != nil {
+		t.Fatal(err)
+	}
+	if len(bundle.Shots) != 2 || bundle.Transcript.Source != "none" || len(bundle.Warnings) != 1 || !strings.Contains(bundle.Warnings[0], "后台已关闭口播识别") {
+		t.Fatalf("shots = %d, transcript = %+v, warnings = %v", len(bundle.Shots), bundle.Transcript, bundle.Warnings)
 	}
 }
 

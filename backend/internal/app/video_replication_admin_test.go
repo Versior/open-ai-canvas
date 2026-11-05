@@ -75,6 +75,8 @@ func TestAdminVideoReplicationListDetailAndOverview(t *testing.T) {
 		{Keyword: "bob@example"}:               1,
 		{Keyword: alice[1].ID}:                 1,
 		{Keyword: "nobody"}:                    0,
+		{Keyword: "_"}:                         0,
+		{Keyword: "%"}:                         0,
 		{Status: "succeeded", Keyword: "bob"}:  0,
 		{Status: "succeeded", Keyword: "alic"}: 2,
 	} {
@@ -100,6 +102,10 @@ func TestAdminVideoReplicationListDetailAndOverview(t *testing.T) {
 		}
 	}
 
+	// 任务行已经不在的孤立分析结果不计入「已分析」。
+	if err := db.Create(&model.Result{ID: "res-orphan", UserID: "usr-alice", TaskID: "vt-deleted", Kind: videoReplicationAnalysisKind, Payload: "{}", CreatedAt: time.Now()}).Error; err != nil {
+		t.Fatal(err)
+	}
 	overview, err := svc.AdminVideoReplicationOverview(videoReplicationTestAdmin)
 	if err != nil {
 		t.Fatal(err)

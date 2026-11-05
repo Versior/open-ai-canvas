@@ -61,8 +61,27 @@ func validateVideoReplicationSettings(value VideoReplicationSettings) error {
 	return nil
 }
 
-// videoReplicationSettings 读出设置：没有这一行时用默认值，缺字段的配置以默认值为底；
-// 存的数为 0 时用默认值、超出允许范围时收回范围内，不让拆解因为一条旧配置全部失败。读库失败直接报错，不用默认值顶替。
+// UnmarshalJSON 以默认值为底解码：存量配置里缺的字段（包括以后新加的）取默认值，
+// 读设置和按字段修改都走这里，不会把缺的字段当成零值写回去。
+func (value *VideoReplicationSettings) UnmarshalJSON(data []byte) error {
+	type plain VideoReplicationSettings
+	decoded := plain(defaultVideoReplicationSettings())
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*value = VideoReplicationSettings(decoded)
+	return nil
+}
+
+// normalizeStoredVideoReplicationSettings 收拢存量配置：为 0 的数用默认值，超出范围的收回范围内，
+// 不让一条旧配置挡住拆解，也不挡住只改别的字段的后台修改。
+func normalizeStoredVideoReplicationSettings(value VideoReplicationSettings) VideoReplicationSettings {
+	value.MaxDurationSeconds = clampInt(value.MaxDurationSeconds, videoReplicationMinDurationSeconds, socialVideoMaxDurationSeconds, socialVideoMaxDurationSeconds)
+	value.MaxShots = clampInt(value.MaxShots, 1, videoTeardownMaxShotsLimit, videoTeardownMaxShotsLimit)
+	return value
+}
+
+// videoReplicationSettings 读出设置：没有这一行时用默认值。读库失败直接报错，不用默认值顶替。
 func (s *Service) videoReplicationSettings() (VideoReplicationSettings, error) {
 	value := defaultVideoReplicationSettings()
 	row, err := s.repo.SystemSettingOptional(videoReplicationSettingsKey)
@@ -74,26 +93,23 @@ func (s *Service) videoReplicationSettings() (VideoReplicationSettings, error) {
 			return VideoReplicationSettings{}, fmt.Errorf("读取视频复刻设置失败: %w", err)
 		}
 	}
-	value.MaxDurationSeconds = clampInt(value.MaxDurationSeconds, videoReplicationMinDurationSeconds, socialVideoMaxDurationSeconds, socialVideoMaxDurationSeconds)
-	value.MaxShots = clampInt(value.MaxShots, 1, videoTeardownMaxShotsLimit, videoTeardownMaxShotsLimit)
-	return value, nil
+	return normalizeStoredVideoReplicationSettings(value), nil
 }
 
-// UpdateVideoReplicationSettings 按请求里给出的字段修改设置，按读到的原文比较写回，并记管理审计。
+// UpdateVideoReplicationSettings 按请求里给出的字段修改设置，按读到的原文比较写回；有变化时记管理审计。
 func (s *Service) UpdateVideoReplicationSettings(actor *model.User, patch VideoReplicationSettingsPatch) (VideoReplicationSettings, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return VideoReplicationSettings{}, err
 	}
-	before, err := s.videoReplicationSettings()
-	if err != nil {
-		return VideoReplicationSettings{}, err
-	}
+	// before 取自比较交换成功的那一轮读到的值，并发修改时审计记的也是真实的修改前。
+	var before VideoReplicationSettings
 	saved, err := updateSettingJSON(s, videoReplicationSettingsKey, actor.ID, func(current *VideoReplicationSettings) error {
-		next := *current
-		if next.MaxShots == 0 {
-			// 表里还没有这一行时 current 是零值，从默认值起步；写入总是带齐三个字段，存过的镜头数上限不会是 0。
-			next = defaultVideoReplicationSettings()
+		if *current == (VideoReplicationSettings{}) {
+			// 表里还没有这一行时 current 是零值；有这一行时按默认值为底解码，不会是零值。
+			*current = defaultVideoReplicationSettings()
 		}
+		before = normalizeStoredVideoReplicationSettings(*current)
+		next := before
 		if patch.MaxDurationSeconds != nil {
 			next.MaxDurationSeconds = *patch.MaxDurationSeconds
 		}
@@ -111,6 +127,9 @@ func (s *Service) UpdateVideoReplicationSettings(actor *model.User, patch VideoR
 	})
 	if err != nil {
 		return VideoReplicationSettings{}, err
+	}
+	if saved == before {
+		return saved, nil
 	}
 	if err := s.appendAdminAudit(actor, "video_replication.settings.update", "system_setting", videoReplicationSettingsKey, "更新视频复刻设置", map[string]any{"before": before, "after": saved}); err != nil {
 		return VideoReplicationSettings{}, err

@@ -4246,7 +4246,7 @@ paths:
     put:
       tags: [tasks]
       summary: 保存视频复刻的模型分析
-      description: 需要登录，视频复刻关闭时返回 403。只接受本人已完成的拆解任务；rows 的数量和 shotNumber 必须与拆解结果的镜头一一对应。保存后覆盖这条记录之前的分析。正文不超过 512 KiB，计入账号结构化数据容量。
+      description: 需要登录。视频复刻关闭后也能保存，已经开始的分析照常落库。只接受本人已完成的拆解任务；rows 的数量和 shotNumber 必须与拆解结果的镜头一一对应。保存后覆盖这条记录之前的分析。正文不超过 512 KiB，计入账号结构化数据容量。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       requestBody:
@@ -4534,7 +4534,6 @@ components:
         transcribeEnabled: {type: boolean, description: 是否允许识别口播，默认 true；关闭后拆解不调用转写服务}
     VideoReplicationSettingsPatch:
       type: object
-      additionalProperties: false
       description: 没传的字段保持原值
       properties:
         maxDurationSeconds: {type: integer, minimum: 10, maximum: 180}

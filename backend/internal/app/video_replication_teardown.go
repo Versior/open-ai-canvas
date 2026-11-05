@@ -96,8 +96,9 @@ type videoTeardownTranscript struct {
 	Segments []timelineTranscriptionSegment `json:"segments"`
 }
 
-// normalizeVideoTeardownRequest 校验入参；没指定镜头数上限时用后台设置的上限，指定了也不能超过它。
-func normalizeVideoTeardownRequest(req VideoTeardownRequest, maxShots int) (videoTeardownInput, error) {
+// normalizeVideoTeardownRequest 校验不依赖后台设置的入参。MaxShots 保留请求原值（0 表示不指定），
+// 幂等指纹按原值算，重放结果不随后台设置变化。
+func normalizeVideoTeardownRequest(req VideoTeardownRequest) (videoTeardownInput, error) {
 	input := videoTeardownInput{Version: 1, ResourceID: strings.TrimSpace(req.ResourceID), Transcribe: req.Transcribe == nil || *req.Transcribe, Language: strings.TrimSpace(req.Language), MaxShots: req.MaxShots}
 	if input.ResourceID == "" || len(input.ResourceID) > 128 {
 		return videoTeardownInput{}, BadAuthRequest("必须指定要拆解的视频")
@@ -105,13 +106,21 @@ func normalizeVideoTeardownRequest(req VideoTeardownRequest, maxShots int) (vide
 	if input.Language != "" && (len(input.Language) > 16 || !videoTeardownLanguagePattern.MatchString(input.Language)) {
 		return videoTeardownInput{}, BadAuthRequest("口播语言格式无效，例如 zh、en 或 auto")
 	}
+	if input.MaxShots < 0 || input.MaxShots > videoTeardownMaxShotsLimit {
+		return videoTeardownInput{}, BadAuthRequest(fmt.Sprintf("镜头数上限必须在 1 到 %d 之间", videoTeardownMaxShotsLimit))
+	}
+	return input, nil
+}
+
+// applyVideoTeardownShotLimit 按后台设置的镜头数上限补齐或校验：没指定时用上限，指定了也不能超过它。
+func applyVideoTeardownShotLimit(input *videoTeardownInput, maxShots int) error {
 	if input.MaxShots == 0 {
 		input.MaxShots = maxShots
 	}
 	if input.MaxShots < 1 || input.MaxShots > maxShots {
-		return videoTeardownInput{}, BadAuthRequest(fmt.Sprintf("镜头数上限必须在 1 到 %d 之间", maxShots))
+		return BadAuthRequest(fmt.Sprintf("镜头数上限必须在 1 到 %d 之间", maxShots))
 	}
-	return input, nil
+	return nil
 }
 
 func videoTeardownTaskID(userID, idempotencyKey string) string {
@@ -137,15 +146,26 @@ func (s *Service) CreateVideoTeardownTask(userID, idempotencyKey string, req Vid
 	if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		return nil, BadAuthRequest("X-Idempotency-Key 长度必须为 8 到 128 个字符")
 	}
-	settings, err := s.videoReplicationSettings()
-	if err != nil {
-		return nil, err
-	}
-	input, err := normalizeVideoTeardownRequest(req, settings.MaxShots)
+	input, err := normalizeVideoTeardownRequest(req)
 	if err != nil {
 		return nil, err
 	}
 	projectID := strings.TrimSpace(req.ProjectID)
+	// 先认重放：已经接受的请求原样返回原任务，不受之后的后台设置、项目或资源变化影响。
+	id := videoTeardownTaskID(userID, idempotencyKey)
+	input.Fingerprint = videoTeardownFingerprint(input, projectID)
+	if existing, lookupErr := s.repo.TaskForUser(userID, id); lookupErr == nil {
+		return videoTeardownIdempotentReplay(existing, input.Fingerprint)
+	} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+		return nil, lookupErr
+	}
+	settings, err := s.videoReplicationSettings()
+	if err != nil {
+		return nil, err
+	}
+	if err := applyVideoTeardownShotLimit(&input, settings.MaxShots); err != nil {
+		return nil, err
+	}
 	if err := s.ensureTaskProjectActive(userID, projectID); err != nil {
 		return nil, err
 	}
@@ -163,13 +183,6 @@ func (s *Service) CreateVideoTeardownTask(userID, idempotencyKey string, req Vid
 		return nil, BadAuthRequest(videoReplicationDurationError(settings.MaxDurationSeconds))
 	}
 
-	id := videoTeardownTaskID(userID, idempotencyKey)
-	input.Fingerprint = videoTeardownFingerprint(input, projectID)
-	if existing, lookupErr := s.repo.TaskForUser(userID, id); lookupErr == nil {
-		return videoTeardownIdempotentReplay(existing, input.Fingerprint)
-	} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-		return nil, lookupErr
-	}
 	policy, err := s.RuntimePolicy()
 	if err != nil {
 		return nil, err
@@ -242,11 +255,12 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	if err := s.ensureTaskProjectActive(task.UserID, task.ProjectID); err != nil {
 		return videoTeardownBundle{}, errors.New("项目已删除、归档或无权访问")
 	}
-	// 按执行时的设置校验：排队期间后台调低了时长上限或关了口播识别，也照新设置执行。
+	// 按执行时的设置校验：排队期间后台调低了时长或镜头数上限、关了口播识别，也照新设置执行。
 	settings, err := s.videoReplicationSettings()
 	if err != nil {
 		return videoTeardownBundle{}, errors.New("无法读取视频复刻设置")
 	}
+	input.MaxShots = min(input.MaxShots, settings.MaxShots)
 	ffmpeg, err := videoTeardownFFmpeg()
 	if err != nil {
 		return videoTeardownBundle{}, err
