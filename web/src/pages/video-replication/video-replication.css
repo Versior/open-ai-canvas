@@ -7,80 +7,97 @@
 }
 
 /* ── 首页 ─────────────────────────────────────────── */
+/* 一屏放下：一行标题和流程、拆解入口、一行最近拆解。 */
 .vr-home {
     position: relative;
     isolation: isolate;
-    width: min(1180px, 100%);
-    margin: 0 auto;
-    padding: var(--space-12) var(--space-6) var(--space-16);
-}
-
-.vr-hero {
-    position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: var(--space-3);
-    margin-bottom: var(--space-8);
-    text-align: center;
+    gap: var(--space-5);
+    width: min(1040px, 100%);
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-6) var(--space-8);
 }
 
-/* 标题背后一层很淡的点阵，四周渐隐，没有硬边。 */
-.vr-hero::before {
-    position: absolute;
-    z-index: -1;
-    inset: -64px -12% -40px;
-    background-image: radial-gradient(circle, color-mix(in srgb, var(--user-ink) 16%, transparent) 1px, transparent 1.6px);
-    background-size: 22px 22px;
-    content: "";
-    pointer-events: none;
-    -webkit-mask-image: radial-gradient(ellipse 50% 46% at 50% 52%, #000 10%, transparent 100%);
-    mask-image: radial-gradient(ellipse 50% 46% at 50% 52%, #000 10%, transparent 100%);
+.vr-home-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-6);
 }
 
-.vr-eyebrow {
-    display: inline-flex;
+.vr-home-heading {
+    min-width: 0;
+    flex: 1 1 360px;
+}
+
+.vr-home-title {
+    color: var(--user-ink);
+    font-size: 24px;
+    font-weight: 650;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+}
+
+.vr-home-sub {
+    max-width: 560px;
+    margin-top: 4px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    line-height: 1.6;
+    text-wrap: pretty;
+}
+
+.vr-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.vr-flow-step {
+    display: flex;
     align-items: center;
-    gap: 6px;
-    height: 28px;
-    padding: 0 12px;
-    border-radius: var(--r-full);
+    gap: var(--space-2);
+    padding: 6px 12px 6px 6px;
+    border-radius: 12px;
     background: var(--user-surface);
     box-shadow: inset 0 0 0 1px var(--user-border);
-    color: var(--user-ink-muted);
-    font-size: var(--fs-caption);
-    font-weight: 600;
-    letter-spacing: 0.02em;
 }
 
-.vr-eyebrow svg {
+.vr-flow-icon {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+}
+
+.vr-flow-icon svg {
     width: 14px;
     height: 14px;
-    color: var(--user-accent);
 }
 
-.vr-hero-title {
-    margin-top: var(--space-1);
+.vr-flow-title {
+    display: block;
     color: var(--user-ink);
-    font-size: clamp(28px, 3.4vw, 40px);
-    font-weight: 650;
-    line-height: 1.18;
-    letter-spacing: -0.025em;
-    text-wrap: balance;
+    font-size: var(--fs-caption);
+    font-weight: 600;
 }
 
-.vr-hero-sub {
-    max-width: 600px;
-    color: var(--user-ink-muted);
-    font-size: var(--fs-body);
-    line-height: 1.75;
-    text-wrap: pretty;
+.vr-flow-text {
+    display: block;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-label);
+    white-space: nowrap;
 }
 
 /* 拆解入口：与创作页输入框同一套外观（大圆角卡片、柔和投影、悬停描边流光）。 */
 .vr-composer-wrap {
-    width: min(820px, 100%);
-    margin: 0 auto;
+    width: 100%;
 }
 
 .vr-composer-shell {
@@ -141,7 +158,102 @@
 
 .vr-link-field {
     position: relative;
-    min-height: 112px;
+    min-height: 84px;
+}
+
+/* 支持平台：能导入的高亮，没接入解析接口的灰显。 */
+.vr-platforms {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    min-height: 26px;
+}
+
+.vr-platforms-label {
+    line-height: 24px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+}
+
+.vr-platform-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.vr-platform {
+    display: inline-flex;
+    height: 24px;
+    align-items: center;
+    gap: 5px;
+    padding: 0 9px 0 6px;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-platform[data-available] {
+    background: color-mix(in srgb, var(--user-accent) 9%, var(--user-surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--user-accent) 20%, transparent);
+    color: var(--user-ink);
+    font-weight: 550;
+}
+
+.vr-platform.vr-skeleton {
+    width: 64px;
+}
+
+.vr-platform img {
+    width: 14px;
+    height: 14px;
+    flex: none;
+}
+
+.vr-platform:not([data-available]) img {
+    filter: grayscale(1);
+    opacity: 0.55;
+}
+
+.dark .vr-platform img[data-monochrome] {
+    filter: invert(1);
+}
+
+.dark .vr-platform:not([data-available]) img[data-monochrome] {
+    filter: invert(1) grayscale(1);
+}
+
+.vr-platform-mark {
+    display: grid;
+    width: 14px;
+    height: 14px;
+    flex: none;
+    place-items: center;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--user-ink) 12%, transparent);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.vr-platforms-hint {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-platforms-admin {
+    margin-left: auto;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 550;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.vr-platforms-admin:hover {
+    color: var(--user-ink);
 }
 
 .vr-link-field .vr-textarea {
@@ -195,7 +307,7 @@
 
 .vr-drop {
     display: flex;
-    min-height: 136px;
+    min-height: 104px;
     flex-direction: column;
     align-items: center;
     justify-content: center;
@@ -252,16 +364,16 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    min-height: 112px;
-    padding: 10px 12px 10px 10px;
+    min-height: 92px;
+    padding: 8px 12px 8px 8px;
     border-radius: 12px;
     background: var(--user-surface-muted);
 }
 
 .vr-file-preview {
     display: grid;
-    width: 68px;
-    height: 92px;
+    width: 56px;
+    height: 76px;
     flex-shrink: 0;
     place-items: center;
     overflow: hidden;
@@ -372,10 +484,10 @@
 /* 已经建好任务、在后台跑的拆解：首页上给一条入口。 */
 .vr-run-banner {
     display: flex;
-    width: min(820px, 100%);
+    width: 100%;
     align-items: center;
     gap: 10px;
-    margin: var(--space-3) auto 0;
+    margin-top: calc(-1 * var(--space-2));
     padding: 10px 14px;
     border-radius: 12px;
     background: var(--user-surface);
@@ -435,63 +547,9 @@
     height: 14px;
 }
 
-.vr-hints {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--space-5);
-    width: min(820px, 100%);
-    margin: var(--space-8) auto 0;
-}
-
-.vr-hint {
-    display: flex;
-    gap: var(--space-3);
-}
-
-.vr-hint-icon {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    flex-shrink: 0;
-    place-items: center;
-    border-radius: 10px;
-    background: var(--user-surface);
-    box-shadow: inset 0 0 0 1px var(--user-border);
-    color: var(--user-ink-muted);
-}
-
-.vr-hint-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-.vr-hint-title {
-    display: block;
-    color: var(--user-ink);
-    font-size: var(--fs-ui);
-    font-weight: 600;
-}
-
-.vr-hint-text {
-    display: block;
-    margin-top: 2px;
-    color: var(--user-ink-soft);
-    font-size: var(--fs-caption);
-    line-height: 1.55;
-}
-
-.vr-home-note {
-    width: min(820px, 100%);
-    margin: var(--space-6) auto 0;
-    color: var(--user-ink-soft);
-    font-size: var(--fs-caption);
-    line-height: 1.7;
-    text-align: center;
-}
-
 /* 最近拆解 */
 .vr-recent {
-    margin-top: var(--space-12);
+    min-width: 0;
 }
 
 .vr-section-head {
@@ -499,7 +557,39 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
-    margin-bottom: var(--space-4);
+    margin-bottom: var(--space-3);
+}
+
+.vr-section-end {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.vr-text-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px 4px;
+    border-radius: 6px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 550;
+    transition: color var(--user-motion);
+}
+
+.vr-text-button:hover {
+    color: var(--user-ink);
+}
+
+.vr-text-button:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 1px;
+}
+
+.vr-text-button svg {
+    width: 14px;
+    height: 14px;
 }
 
 .vr-section-title {
@@ -542,8 +632,24 @@
 
 .vr-recent-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: var(--space-4);
+}
+
+/* 默认一行：一屏能看到四张，多的横向滚动。 */
+.vr-recent-grid[data-layout="row"] {
+    grid-auto-columns: minmax(200px, calc((100% - 3 * var(--space-4)) / 4));
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    margin: -4px -4px 0;
+    padding: 4px 4px 10px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    scrollbar-width: thin;
+}
+
+.vr-recent-grid[data-layout="row"] > .vr-card-item {
+    scroll-snap-align: start;
 }
 
 .vr-card-item {
@@ -608,7 +714,7 @@
     grid-auto-columns: minmax(0, 1fr);
     grid-auto-flow: column;
     gap: 2px;
-    aspect-ratio: 16 / 10;
+    aspect-ratio: 16 / 9;
     overflow: hidden;
     border-radius: 10px;
     background: var(--user-surface-muted);
@@ -719,31 +825,36 @@
 
 /* ── 单条记录工作区 ───────────────────────────────── */
 .vr-workspace {
-    width: min(1440px, 100%);
+    width: min(1600px, 100%);
     margin: 0 auto;
-    padding: var(--space-5) var(--space-6) var(--space-16);
+    padding: var(--space-4) var(--space-6) var(--space-8);
 }
 
+/* 标题一行：返回、标题、来源信息在左，操作在右。 */
 .vr-ws-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
+    align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
-    margin-bottom: var(--space-5);
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
 }
 
 .vr-ws-heading {
+    display: flex;
     min-width: 0;
     flex: 1 1 360px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
 }
 
 .vr-back {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    height: 26px;
-    margin: 0 0 var(--space-2) -6px;
+    height: 28px;
+    margin: 0 0 0 -6px;
     padding: 0 8px 0 6px;
     border-radius: 6px;
     color: var(--user-ink-muted);
@@ -770,9 +881,11 @@
 }
 
 .vr-ws-title {
+    min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     color: var(--user-ink);
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 650;
     line-height: 1.3;
     letter-spacing: -0.015em;
@@ -785,7 +898,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 4px 8px;
-    margin-top: 6px;
     color: var(--user-ink-soft);
     font-size: var(--fs-caption);
 }
@@ -804,7 +916,7 @@
 .vr-ws-stack {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
+    gap: var(--space-3);
 }
 
 .vr-panel {
@@ -819,7 +931,7 @@
     --vr-player-w: clamp(272px, calc(var(--vr-video-h) * var(--vr-ratio, 9 / 16)), 440px);
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-5);
+    gap: var(--space-4);
 }
 
 @media (min-width: 1100px) {
@@ -911,7 +1023,7 @@
 
 /* 时间线：镜头按真实时长铺开，节拍在上、刻度在下，播放头跟随原视频。 */
 .vr-timeline {
-    padding: var(--space-4) var(--space-5) var(--space-3);
+    padding: 10px var(--space-4) 6px;
 }
 
 .vr-timeline-head {
@@ -919,7 +1031,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
-    margin-bottom: var(--space-3);
+    margin-bottom: 6px;
 }
 
 .vr-timeline-heading {
@@ -957,8 +1069,9 @@
 
 .vr-track-scroll {
     margin: 0 calc(-1 * var(--space-1));
-    padding: 6px var(--space-1) 0;
+    padding: 6px var(--space-1) 2px;
     overflow-x: auto;
+    overflow-y: hidden;
     scrollbar-width: thin;
 }
 
@@ -968,8 +1081,8 @@
 
 .vr-beats {
     position: relative;
-    height: 24px;
-    margin-bottom: 6px;
+    height: 20px;
+    margin-bottom: 4px;
 }
 
 .vr-beat {
@@ -1005,7 +1118,7 @@
 
 .vr-strip {
     position: relative;
-    height: 88px;
+    height: 60px;
 }
 
 .vr-seg-item {
@@ -1104,8 +1217,8 @@
 
 .vr-ruler {
     position: relative;
-    height: 22px;
-    margin-top: 6px;
+    height: 20px;
+    margin-top: 4px;
     color: var(--user-ink-soft);
     font-size: var(--fs-label);
     font-variant-numeric: tabular-nums;
@@ -1289,8 +1402,8 @@
 .vr-shot {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--space-4) var(--space-5);
-    padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
+    gap: var(--space-3) var(--space-4);
+    padding: var(--space-3) var(--space-4);
     border-top: 1px solid var(--user-border);
     /* 让开吸顶的切换栏（16px 留白 + 40px 高 + 1px 分隔线）。 */
     scroll-margin-top: 57px;
@@ -1308,8 +1421,8 @@
 .vr-shot-thumb {
     position: relative;
     display: block;
-    height: 148px;
-    max-width: 248px;
+    height: 120px;
+    max-width: 214px;
     overflow: hidden;
     border-radius: 10px;
     background: var(--user-surface-muted);
@@ -1431,10 +1544,10 @@
 }
 
 .vr-shot-plot {
-    margin-top: var(--space-2);
+    margin-top: 6px;
     color: var(--user-ink);
-    font-size: var(--fs-body);
-    line-height: 1.7;
+    font-size: var(--fs-ui);
+    line-height: 1.65;
 }
 
 .vr-shot-plot[data-empty] {
@@ -1444,10 +1557,10 @@
 .vr-dl {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
-    gap: 6px 14px;
-    margin-top: var(--space-3);
+    gap: 4px 14px;
+    margin-top: var(--space-2);
     font-size: var(--fs-ui);
-    line-height: 1.6;
+    line-height: 1.55;
 }
 
 .vr-dl dt {
@@ -1463,7 +1576,7 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
-    margin-top: var(--space-3);
+    margin-top: var(--space-2);
 }
 
 @media (min-width: 1360px) {
@@ -1498,6 +1611,18 @@
     color: var(--user-ink);
     font-size: var(--fs-caption);
     line-height: 1.7;
+}
+
+/* 长提示词先收起三行，「展开」看全文；复制按钮总是复制全文。 */
+.vr-prompt-text[data-folded] {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.vr-prompt-toggle {
+    margin: 2px 0 0 -4px;
 }
 
 .vr-icon-button {
@@ -1862,6 +1987,95 @@
     }
 }
 
+/*
+ * 宽屏一屏布局：页面本身不滚，原视频按剩余高度缩放，分镜和结构在右栏里滚动。
+ * 视频框用尺寸容器算宽高：既不超过这一栏，也不超过剩下的高度，画幅不变形。
+ */
+@media (min-width: 1100px) and (min-height: 600px) {
+    .vr-page[data-view="record"] {
+        height: 100%;
+    }
+
+    .vr-page[data-view="record"] .vr-workspace {
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        padding-bottom: var(--space-4);
+        overflow: hidden;
+    }
+
+    .vr-page[data-view="record"] .vr-workspace > .vr-ws-stack {
+        min-height: 0;
+        flex: 1;
+    }
+
+    .vr-page[data-view="record"] .vr-ws-body {
+        --vr-video-h: calc(100dvh - 400px);
+        min-height: 0;
+        flex: 1;
+        grid-template-columns: clamp(240px, calc(var(--vr-video-h) * var(--vr-ratio, 9 / 16)), 420px) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .vr-page[data-view="record"] .vr-player {
+        position: static;
+        max-height: none;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .vr-page[data-view="record"] .vr-video-frame {
+        min-height: 0;
+        flex: 1;
+        container-type: size;
+    }
+
+    .vr-page[data-view="record"] .vr-video {
+        width: min(100cqw, calc(100cqh * var(--vr-ratio, 9 / 16)));
+        max-height: 100cqh;
+    }
+
+    .vr-page[data-view="record"] .vr-stat {
+        padding: 6px 10px 7px;
+    }
+
+    .vr-page[data-view="record"] .vr-stat dd {
+        font-size: var(--fs-ui);
+    }
+
+    .vr-page[data-view="record"] .vr-ws-main {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+    }
+
+    .vr-page[data-view="record"] .vr-tabs {
+        position: static;
+        flex-shrink: 0;
+        margin: 0 0 var(--space-3);
+        padding-top: 0;
+    }
+
+    .vr-page[data-view="record"] .vr-tabpanel {
+        min-height: 0;
+        flex: 1;
+        overflow-y: auto;
+        border-radius: var(--user-radius-card);
+        overscroll-behavior: contain;
+        scrollbar-width: thin;
+    }
+
+    .vr-page[data-view="record"] .vr-tabpanel:focus-visible {
+        outline: 2px solid var(--control-focus-ring);
+        outline-offset: 2px;
+    }
+
+    .vr-page[data-view="record"] .vr-shot {
+        scroll-margin-top: 0;
+    }
+}
+
 /* 平板：原视频和数据并排，视频列宽就是视频本身的宽度。 */
 @media (min-width: 700px) and (max-width: 1099px) {
     .vr-player {
@@ -1880,10 +2094,6 @@
 }
 
 @media (max-width: 860px) {
-    .vr-hints {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
     .vr-steps {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1895,7 +2105,7 @@
 
 @media (max-width: 640px) {
     .vr-home {
-        padding: var(--space-8) var(--space-4) var(--space-12);
+        padding: var(--space-4) var(--space-4) var(--space-8);
     }
 
     /* 窄屏上链接问题的说明会折成两行，输入框底部多留一行，免得压住最后一行文字。 */
@@ -1910,11 +2120,6 @@
     .vr-ws-title {
         font-size: var(--fs-title);
         white-space: normal;
-    }
-
-    .vr-hints {
-        grid-template-columns: minmax(0, 1fr);
-        gap: var(--space-4);
     }
 
     .vr-toolbar-end {
@@ -1956,5 +2161,230 @@
 
     .vr-beat-thumbs {
         grid-column: 2;
+    }
+}
+
+/* 去画布复刻弹窗 */
+.vr-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding-top: var(--space-1);
+}
+
+.vr-dialog-modes {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.vr-dialog-label {
+    margin-bottom: var(--space-2);
+    padding: 0;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.vr-dialog-optional {
+    margin-left: 6px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-weight: 400;
+}
+
+.vr-dialog-mode-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+.vr-dialog-mode {
+    position: relative;
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    cursor: pointer;
+    transition:
+        background var(--user-motion),
+        box-shadow var(--user-motion);
+}
+
+.vr-dialog-mode:hover {
+    background: var(--user-surface-hover);
+}
+
+.vr-dialog-mode[data-active] {
+    background: var(--user-surface-muted);
+    box-shadow: inset 0 0 0 2px var(--user-ink);
+}
+
+.vr-dialog-mode:has(input:focus-visible) {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+
+.vr-dialog-mode input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.vr-dialog-mode-icon {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    margin-top: 2px;
+    color: var(--user-ink-muted);
+}
+
+.vr-dialog-mode-copy strong {
+    display: block;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.vr-dialog-mode-copy > span {
+    display: block;
+    margin-top: 2px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+}
+
+.vr-dialog-check {
+    margin-top: calc(-1 * var(--space-2));
+}
+
+.vr-dialog-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.vr-dialog-section .vr-dialog-label {
+    margin-bottom: 0;
+}
+
+.vr-dialog-hint {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+.vr-dialog-products {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.vr-dialog-product {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    margin: 0;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--user-surface-muted);
+}
+
+.vr-dialog-product img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.vr-dialog-product button {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border-radius: var(--r-full);
+    background: rgba(12, 12, 16, 0.62);
+    color: #fff;
+}
+
+.vr-dialog-product button svg {
+    width: 12px;
+    height: 12px;
+}
+
+.vr-dialog-product button:focus-visible,
+.vr-dialog-add:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 1px;
+}
+
+.vr-dialog-add {
+    display: flex;
+    width: 72px;
+    height: 72px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 1px dashed var(--user-border-strong);
+    border-radius: 10px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-label);
+    transition:
+        background var(--user-motion),
+        color var(--user-motion);
+}
+
+.vr-dialog-add:hover {
+    background: var(--user-surface-hover);
+    color: var(--user-ink);
+}
+
+.vr-dialog-add svg {
+    width: 18px;
+    height: 18px;
+}
+
+.vr-dialog-summary {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-radius: 12px;
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.65;
+}
+
+.vr-dialog-summary > svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    margin-top: 2px;
+}
+
+.vr-dialog-summary p + p {
+    margin-top: 2px;
+}
+
+.vr-dialog-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.vr-dialog-stage {
+    margin-right: auto;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+@media (max-width: 640px) {
+    .vr-dialog-mode-grid {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

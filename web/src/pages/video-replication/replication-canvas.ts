@@ -1,28 +1,50 @@
 import { nanoid } from "nanoid";
 
+import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { findAvailableGenerationGroupPosition } from "@/lib/canvas/canvas-generation-layout";
-import { videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
+import { imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
+import { cinematicStoryboardColumns, createCanvasNode } from "@/lib/canvas/canvas-project-domain";
+import { storyboardComposerContent } from "@/lib/canvas/canvas-storyboard-materializer";
 import { buildVideoFrameNodes } from "@/lib/canvas/canvas-video-frame-nodes";
-import { videoTeardownBatchTable, videoTeardownReportMarkdown, videoTeardownStoryboardRows, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
+import { videoReplicaProductFramePrompt, videoReplicaProductVideoPrompt, videoTeardownProductShot, videoTeardownReportMarkdown, videoTeardownStoryboardRows, type VideoReplicaMode, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { getResource, resourceFileUrl, resourceStorageKey } from "@/services/api/resources";
+import type { UploadedImage } from "@/services/image-storage";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { createCanvasProjectWithRemoteSync } from "@/services/user-data-sync";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
+import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type StoryboardRow } from "@/types/canvas";
+
+export type VideoReplicaOptions = {
+    mode: VideoReplicaMode;
+    /** 用户的商品实拍图；有商品的镜头先用它们换掉原片商品再出视频。 */
+    products: UploadedImage[];
+    productNote: string;
+};
 
 const REPORT_SIZE = { width: 520, height: 680 };
-const TABLE_SIZE = { width: 1280, height: 560 };
 const NODE_GAP = 120;
 // 关键帧缩成小图排成网格：几十个镜头也不会铺满画布；节点标题在图上方，行距留出标题高度。
 const KEYFRAME_BOX = 240;
 const KEYFRAME_GAP = { x: 24, y: 64 };
 const KEYFRAME_MAX_COLUMNS = 6;
+const PRODUCT_BOX = 200;
+const FIRST_FRAME_GAP = 36;
+
+function boxed(width: number, height: number, box: number) {
+    const scale = Math.min(box / Math.max(width, 1), box / Math.max(height, 1), 1);
+    return { width: Math.round(width * scale), height: Math.round(height * scale) };
+}
 
 /**
- * 视频右侧依次放关键帧格子（按镜头顺序连到分镜表的关键帧列）、拆解分镜表和拆解报告，整组再挪到最近的空位。
- * 关键帧节点带 videoFrameSourceNodeId / videoFrameTimeMs，从分镜表「创建视频脚本」时直接复用，不再从浏览器抽帧。
+ * 去画布复刻：视频右侧放关键帧格子和分镜脚本（「先做首帧」模式，生成首帧 → 生成视频 → 合并成片），
+ * 关键帧格子下面放拆解报告。商品图放在分镜脚本上方。
+ *
+ * - remake：每一镜的首帧按提示词重新生成，不用原片画面和人物。
+ * - reuse：没有商品、或没给商品图的镜头直接用原片关键帧当首帧。
+ * - 给了商品图时，有商品的镜头预先建好首帧节点：参考图（reuse 是原画面 + 商品图，remake 只有商品图）用普通连线接到首帧节点，
+ *   只参与这张首帧的生成；视频那一步只带首帧，商品图不会再进视频请求。
  */
-export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string, existing: CanvasNodeData[]) {
+export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string, existing: CanvasNodeData[], options: VideoReplicaOptions = { mode: "remake", products: [], productNote: "" }) {
     const frames = buildVideoFrameNodes(
         anchor,
         bundle.shots.map((shot) => ({
@@ -31,9 +53,8 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
         })),
     ).map((frame, index) => {
         const shot = bundle.shots[index];
-        const scale = Math.min(KEYFRAME_BOX / shot.keyframeWidth, KEYFRAME_BOX / shot.keyframeHeight, 1);
         // 标成手动尺寸：图片解码和打开画布时的按原图适配会把小图撑回原始尺寸，网格就互相压住了。
-        return { ...frame, title: `镜头 ${index + 1} · ${frame.title}`, width: Math.round(shot.keyframeWidth * scale), height: Math.round(shot.keyframeHeight * scale), metadata: { ...frame.metadata, manualSize: true } };
+        return { ...frame, title: `镜头 ${index + 1} · ${frame.title}`, ...boxed(shot.keyframeWidth, shot.keyframeHeight, KEYFRAME_BOX), metadata: { ...frame.metadata, manualSize: true } };
     });
     const columns = Math.min(KEYFRAME_MAX_COLUMNS, Math.max(1, Math.ceil(Math.sqrt(frames.length * 2))));
     const cellWidth = Math.max(...frames.map((frame) => frame.width));
@@ -45,46 +66,97 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
         frame.position = { x: startX + column * (cellWidth + KEYFRAME_GAP.x) + (cellWidth - frame.width) / 2, y: anchor.position.y + row * (cellHeight + KEYFRAME_GAP.y) + (cellHeight - frame.height) / 2 };
     });
     const framesRight = Math.max(anchor.position.x + anchor.width, ...frames.map((frame) => frame.position.x + frame.width));
-    const storyboardRows = videoTeardownStoryboardRows(bundle, analysis.rows);
+    const framesBottom = Math.max(anchor.position.y + anchor.height, ...frames.map((frame) => frame.position.y + frame.height));
     const title = analysis.title || anchor.title || "视频拆解";
-    const tableId = `batch-table-${nanoid()}`;
-    const table: CanvasNodeData = {
-        id: tableId,
-        type: CanvasNodeType.BatchTable,
-        title: `拆解分镜表 · ${title}`,
-        position: { x: framesRight + NODE_GAP, y: anchor.position.y },
-        width: TABLE_SIZE.width,
-        height: TABLE_SIZE.height,
-        metadata: { batchTable: videoTeardownBatchTable(storyboardRows, { title, sourceNodeId: anchor.id, keyframeNodeIds: frames.map((frame) => frame.id) }), model, status: "idle" },
-    };
+
+    const products: CanvasNodeData[] = options.products.map((image, index) => ({
+        id: `image-${nanoid()}`,
+        type: CanvasNodeType.Image,
+        title: `商品图 ${index + 1}`,
+        position: { x: 0, y: 0 },
+        ...boxed(image.width, image.height, PRODUCT_BOX),
+        // prop：分镜资产里按「道具」理解，和人物、场景参考区分开。
+        metadata: { ...imageMetadata(image), assetCategory: "prop", manualSize: true },
+    }));
+    const baseRows = videoTeardownStoryboardRows(bundle, analysis.rows);
+    const swapRowIds = new Set(products.length ? baseRows.filter(videoTeardownProductShot).map((row) => row.id) : []);
+    const rows: StoryboardRow[] = baseRows.map((row, index) => {
+        if (swapRowIds.has(row.id)) return { ...row, imageGenerationPrompt: videoReplicaProductFramePrompt(row, options.mode, options.productNote), videoMotionPrompt: videoReplicaProductVideoPrompt(row, options.productNote) };
+        return options.mode === "reuse" && frames[index] ? { ...row, imageNodeId: frames[index].id } : row;
+    });
+
+    const scriptSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Script];
+    const scriptHeight = Math.min(720, Math.max(scriptSpec.height, 160 + rows.length * 72));
+    const scriptTop = anchor.position.y + (products.length ? PRODUCT_BOX + 80 : 0);
+    const script = createCanvasNode(
+        CanvasNodeType.Script,
+        { x: framesRight + NODE_GAP + scriptSpec.width / 2, y: scriptTop + scriptHeight / 2 },
+        {
+            storyboard: { rows, visibleColumns: cinematicStoryboardColumns(["plotDescription", "imageGenerationPrompt"]), referenceNodeIds: [] },
+            storyboardVideoInputMode: "keyframe",
+            workflowKind: "storyboard",
+            workflowTitle: `复刻 · ${title}`,
+            composerContent: `复刻「${title}」`,
+            model,
+            status: "idle",
+        },
+    );
+    script.title = `复刻分镜 · ${title}`;
+    script.height = scriptHeight;
+    script.position = { x: framesRight + NODE_GAP, y: scriptTop };
+    products.forEach((node, index) => {
+        node.position = { x: script.position.x + index * (PRODUCT_BOX + 24) + (PRODUCT_BOX - node.width) / 2, y: anchor.position.y + (PRODUCT_BOX - node.height) / 2 };
+    });
+
+    const connections: CanvasConnection[] = [...frames.map((frame) => ({ id: nanoid(), fromNodeId: anchor.id, toNodeId: frame.id }))];
+    const imageSpec = NODE_DEFAULT_SIZE[CanvasNodeType.Image];
+    const firstFrames: CanvasNodeData[] = [];
+    rows.forEach((row, index) => {
+        if (!swapRowIds.has(row.id)) return;
+        // 参考图顺序决定提示词里的编号：reuse 时第一张是原画面。
+        const referenceIds = [...(options.mode === "reuse" && frames[index] ? [frames[index].id] : []), ...products.map((node) => node.id)];
+        const prompt = row.imageGenerationPrompt;
+        const node = createCanvasNode(CanvasNodeType.Image, { x: 0, y: 0 }, { prompt, workflowKind: "shot", workflowTitle: `镜头 ${row.shotNumber} 首帧`, shotIndex: row.shotNumber, status: "idle" });
+        node.title = `镜头 ${row.shotNumber} · 首帧（换商品）`;
+        node.position = { x: script.position.x + script.width + NODE_GAP, y: script.position.y + firstFrames.length * (imageSpec.height + FIRST_FRAME_GAP) };
+        node.metadata = { ...node.metadata, composerContent: storyboardComposerContent(prompt, referenceIds, [...frames, ...products]) };
+        row.imageNodeId = node.id;
+        firstFrames.push(node);
+        connections.push(...referenceIds.map((fromNodeId) => ({ id: nanoid(), fromNodeId, toNodeId: node.id })), {
+            id: nanoid(),
+            fromNodeId: script.id,
+            toNodeId: node.id,
+            fromHandleId: `row:${row.id}`,
+            relation: "storyboard-output" as const,
+            storyboardRowId: row.id,
+        });
+    });
+
     const report: CanvasNodeData = {
         id: `markdown-${nanoid()}`,
         type: CanvasNodeType.Markdown,
         title: `拆解报告 · ${title}`,
-        position: { x: table.position.x + table.width + NODE_GAP, y: anchor.position.y },
+        position: { x: startX, y: framesBottom + NODE_GAP },
         width: REPORT_SIZE.width,
         height: REPORT_SIZE.height,
-        metadata: { content: videoTeardownReportMarkdown(bundle, analysis, storyboardRows), status: "success" },
+        metadata: { content: videoTeardownReportMarkdown(bundle, analysis, baseRows), status: "success" },
     };
-    const group = [...frames, table, report];
+    connections.push({ id: nanoid(), fromNodeId: anchor.id, toNodeId: report.id });
+
+    const group = [...frames, ...products, script, ...firstFrames, report];
     const left = Math.min(...group.map((node) => node.position.x));
     const top = Math.min(...group.map((node) => node.position.y));
     const groupSize = { width: Math.max(...group.map((node) => node.position.x + node.width)) - left, height: Math.max(...group.map((node) => node.position.y + node.height)) - top };
     const origin = findAvailableGenerationGroupPosition(existing, { x: left, y: top }, groupSize);
     for (const node of group) node.position = { x: node.position.x + origin.x - left, y: node.position.y + origin.y - top };
-    const connections: CanvasConnection[] = [
-        ...frames.map((frame) => ({ id: nanoid(), fromNodeId: anchor.id, toNodeId: frame.id })),
-        ...frames.map((frame) => ({ id: `conn-${nanoid()}`, fromNodeId: frame.id, fromHandleId: "output", toNodeId: tableId, toHandleId: "batch-reference:ai-ref", relation: "batch-input" as const })),
-        { id: nanoid(), fromNodeId: anchor.id, toNodeId: report.id },
-    ];
-    return { nodes: group, connections, tableId };
+    return { nodes: group, connections, scriptId: script.id, swappedShots: rows.filter((row) => swapRowIds.has(row.id)).map((row) => row.shotNumber) };
 }
 
 /**
- * 新建一张画布放入原视频、关键帧、拆解分镜表和拆解报告，用来接着「创建视频脚本」和生成视频。
+ * 新建一张画布放入原视频、关键帧、分镜脚本、商品图和拆解报告，在画布里接着生成首帧、视频和成片。
  * 返回画布 ID；云端同步失败时画布已在本机创建，syncError 交给调用方提示。
  */
-export async function openVideoTeardownInCanvas(bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string) {
+export async function openVideoTeardownInCanvas(bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string, options: VideoReplicaOptions) {
     const resource = await getResource(bundle.source.resourceId);
     const size = fitNodeSize(bundle.source.width, bundle.source.height, VIDEO_NODE_MAX_SIZE.width, VIDEO_NODE_MAX_SIZE.height);
     const title = analysis.title || "视频拆解";
@@ -105,7 +177,6 @@ export async function openVideoTeardownInCanvas(bundle: VideoTeardownBundle, ana
             mimeType: resource.mimeType,
         }),
     };
-    const placed = buildVideoTeardownCanvas(video, bundle, analysis, model, [video]);
-    const created = await createCanvasProjectWithRemoteSync(`拆解 · ${title}`, undefined, { nodes: [video, ...placed.nodes], connections: placed.connections });
-    return created;
+    const placed = buildVideoTeardownCanvas(video, bundle, analysis, model, [video], options);
+    return createCanvasProjectWithRemoteSync(`复刻 · ${title}`, undefined, { nodes: [video, ...placed.nodes], connections: placed.connections });
 }

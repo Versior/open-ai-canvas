@@ -1,4 +1,5 @@
-import { Clapperboard, History, LoaderCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, Clapperboard, History, LoaderCircle } from "lucide-react";
+import { useState } from "react";
 
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { orientationLabel } from "@/lib/canvas/video-teardown";
@@ -25,9 +26,14 @@ function recordStatus(record: VideoReplicationRecord, running: boolean): Status 
     return null;
 }
 
-/** 最近拆解：卡片上是均匀取自全片的几张关键帧（竖屏排成一行，横屏拼成四宫格），角标是状态和时长。 */
+/**
+ * 最近拆解：卡片上是均匀取自全片的几张关键帧（竖屏排成一行，横屏拼成四宫格），角标是状态和时长。
+ * 默认排成一行、可以横向滚动，首页一屏放得下；点「展开全部」换成多行网格。
+ */
 export function ReplicationRecent({ records, loading, error, runningId, onOpen }: Props) {
+    const [expanded, setExpanded] = useState(false);
     const empty = !loading && !error && !records?.length;
+    const expandable = (records?.length || 0) > 4;
     return (
         <section className="vr-recent" aria-labelledby="vr-recent-title">
             <header className="vr-section-head">
@@ -35,7 +41,15 @@ export function ReplicationRecent({ records, loading, error, runningId, onOpen }
                     <History aria-hidden />
                     最近拆解
                 </h2>
-                {records?.length ? <span className="vr-section-meta">{`共 ${records.length} 条`}</span> : null}
+                <span className="vr-section-end">
+                    {records?.length ? <span className="vr-section-meta">{`共 ${records.length} 条`}</span> : null}
+                    {expandable ? (
+                        <button type="button" className="vr-text-button" aria-expanded={expanded} aria-controls="vr-recent-list" onClick={() => setExpanded((value) => !value)}>
+                            {expanded ? "收起" : "展开全部"}
+                            {expanded ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
+                        </button>
+                    ) : null}
+                </span>
             </header>
             {error ? (
                 <p role="alert" className="vr-recent-note" data-tone="error">
@@ -44,7 +58,7 @@ export function ReplicationRecent({ records, loading, error, runningId, onOpen }
             ) : null}
             {empty ? <p className="vr-recent-note">还没有拆解过视频。拆完的视频会留在这里，随时回来看分镜、复制提示词。</p> : null}
             {loading || records?.length ? (
-                <ul className="vr-recent-grid" aria-busy={loading || undefined}>
+                <ul id="vr-recent-list" className="vr-recent-grid" data-layout={expanded ? "grid" : "row"} aria-busy={loading || undefined}>
                     {loading ? [0, 1, 2, 3].map((item) => <SkeletonCard key={item} />) : records?.map((record) => <RecordCard key={record.id} record={record} running={record.id === runningId} onOpen={onOpen} />)}
                 </ul>
             ) : null}

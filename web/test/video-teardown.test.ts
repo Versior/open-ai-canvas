@@ -7,7 +7,8 @@ import {
     formatTeardownTime,
     parseVideoTeardownAnalysis,
     parseVideoTeardownSummary,
-    videoTeardownBatchTable,
+    videoReplicaProductFramePrompt,
+    videoTeardownProductShot,
     videoTeardownReportMarkdown,
     videoTeardownShotTranscripts,
     videoTeardownProductLabel,
@@ -165,7 +166,7 @@ describe("video teardown analysis", () => {
         expect(() => parseVideoTeardownSummary("{}")).toThrow("全片总结");
     });
 
-    test("merges model semantics with the detected timings into storyboard rows and a table", () => {
+    test("merges model semantics with the detected timings into storyboard rows", () => {
         const analysis = parseVideoTeardownAnalysis(JSON.stringify({ rows: [row(1, { dialogue: "姐妹们看过来", dialogueSource: "asr", onScreenText: "好物分享" }), row(2), row(3), row(4)] }), [1, 2, 3, 4], false);
         const rows = videoTeardownStoryboardRows(bundle(), analysis.rows);
         expect(rows.map((item) => [item.shotNumber, item.sourceStartMs, item.sourceEndMs, item.keyframeTimeMs, item.durationSeconds])).toEqual([
@@ -176,13 +177,6 @@ describe("video teardown analysis", () => {
         ]);
         expect(rows[0].sourceAnalysis).toEqual({ boundary: "start", onScreenText: "好物分享", product: "", productRole: "", keyColors: "", production: "实拍", productionConfidence: "中", dialogueSource: "asr", keyframeResourceId: "kf-1" });
         expect(rows[0].imageGenerationPrompt).toBe("画面 1");
-        const table = videoTeardownBatchTable(rows, { title: "杯子种草", sourceNodeId: "video-1", keyframeNodeIds: ["f1", "f2", "f3", "f4"] });
-        expect(table.contentKind).toBe("storyboard");
-        expect(table.storyboardSourceNodeIds).toEqual(["video-1"]);
-        expect(table.rows.map((item) => item.inputNodeIds)).toEqual([["f1"], ["f2"], ["f3"], ["f4"]]);
-        expect(table.rows[0].cells?.["teardown-time"]).toBe("0:00.0–0:01.8");
-        expect(table.rows[0].cells?.["teardown-production"]).toBe("实拍（把握中）");
-        expect(table.rows[0].cells?.["teardown-onScreenText"]).toBe("好物分享");
     });
 
     // 参考 daihuo-fanpai：每镜记下商品怎么出现、商品角色和关键颜色，复刻时据此决定重做方式，提示词里也要带上。
@@ -207,10 +201,9 @@ describe("video teardown analysis", () => {
         expect(analysis.rows[0].keyColors).toBe("橙色汤汁");
         const storyboard = videoTeardownStoryboardRows(bundle(), analysis.rows);
         expect(storyboard[0].sourceAnalysis).toMatchObject({ product: "一只手把海参掰开，占画面一半", productRole: "hero_real", keyColors: "橙色汤汁" });
-        const table = videoTeardownBatchTable(storyboard, { title: "海参", sourceNodeId: "video-1", keyframeNodeIds: ["f1", "f2", "f3", "f4"] });
-        expect(table.textColumns?.map((column) => column.label)).toContain("商品出镜");
-        expect(table.rows[0].cells?.["teardown-product"]).toBe("商品质感特写：一只手把海参掰开，占画面一半");
-        expect(table.rows[0].cells?.["teardown-keyColors"]).toBe("橙色汤汁");
+        expect(storyboard.map(videoTeardownProductShot)).toEqual([true, true, false, false]);
+        expect(videoReplicaProductFramePrompt(storyboard[0], "reuse", "白色瓶身")).toStartWith("第一张参考图是原画面");
+        expect(videoReplicaProductFramePrompt(storyboard[0], "remake", "")).toContain("不要画成原片里的商品");
         const report = videoTeardownReportMarkdown(bundle(), analysis, storyboard);
         expect(report).toContain("- 原片商品：鲜食海参，深蓝金色礼盒");
         expect(report).toContain("| 商品质感特写：一只手把海参掰开，占画面一半 |");

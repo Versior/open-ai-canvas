@@ -1,6 +1,6 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { ArrowLeft, Download, LayoutPanelLeft, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, Clapperboard, Download, RefreshCw, Sparkles } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -15,6 +15,8 @@ import { ReplicationStructure } from "./replication-structure";
 import { ReplicationTimeline } from "./replication-timeline";
 import { useReplicationPlayback } from "./use-replication-playback";
 import type { ReplicationRun } from "./use-replication-runner";
+import type { VideoReplicaOptions } from "./replication-canvas";
+import { ReplicationCanvasDialog } from "./replication-canvas-dialog";
 
 type Analysis = VideoTeardownAnalysis & { model: string };
 
@@ -30,7 +32,7 @@ type Props = {
     model: string;
     onModelChange: (model: string) => void;
     onReanalyze: (fallbackTitle: string) => void;
-    onOpenCanvas: (bundle: VideoTeardownBundle, analysis: Analysis) => void;
+    onOpenCanvas: (bundle: VideoTeardownBundle, analysis: Analysis, options: VideoReplicaOptions) => Promise<void>;
     onBack: () => void;
 };
 
@@ -53,7 +55,8 @@ function downloadText(filename: string, text: string) {
 }
 
 /**
- * 一条拆解记录的工作区：标题和操作、镜头时间线，下面左栏原视频（吸顶）、右栏分镜 / 全片结构。
+ * 一条拆解记录的工作区：标题和操作、镜头时间线，下面左栏原视频、右栏分镜 / 全片结构。
+ * 宽屏下整页放进一屏，分镜和结构在右栏里滚动；窄屏退回整页滚动。
  * 拆解进行中、失败、结果读不出来时换成对应状态；还没分析时在时间线上方给出分析入口。
  */
 export function ReplicationWorkspace(props: Props) {
@@ -100,6 +103,7 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
     const { message } = App.useApp();
     const [tab, setTab] = useState<"shots" | "structure">("shots");
     const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
+    const [canvasOpen, setCanvasOpen] = useState(false);
     const playback = useReplicationPlayback(bundle.shots);
     const rows = useMemo(() => new Map(analysis?.rows.map((row) => [row.shotNumber, row])), [analysis]);
     const analyzing = Boolean(ownRun && !ownRun.error);
@@ -164,14 +168,15 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
             <Button icon={<Download className="size-4" />} disabled={!analysis || analyzing} onClick={downloadReport}>
                 下载报告
             </Button>
-            <Button type="primary" icon={<LayoutPanelLeft className="size-4" />} disabled={!analysis || analyzing} loading={opening} onClick={() => analysis && onOpenCanvas(bundle, analysis)}>
-                在画布中打开
+            <Button type="primary" icon={<Clapperboard className="size-4" />} disabled={!analysis || analyzing} loading={opening} onClick={() => setCanvasOpen(true)}>
+                去画布复刻
             </Button>
         </>
     );
 
     return (
         <WorkspaceShell title={title} meta={meta} actions={actions} onBack={onBack}>
+            {analysis ? <ReplicationCanvasDialog open={canvasOpen} bundle={bundle} analysis={analysis} onCancel={() => setCanvasOpen(false)} onConfirm={(options) => onOpenCanvas(bundle, analysis, options)} /> : null}
             {ownRun ? <ReplicationProgress run={ownRun} /> : null}
             {/* 还没有分析、也没在分析（含上次分析失败）时，在这里选模型开始或重试。 */}
             {!analysis && !analyzing ? (
@@ -207,7 +212,8 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
                         </button>
                         <span className="vr-tabs-hint">切点和时间码由程序检测；画面、口播和制作方式是模型判断。</span>
                     </div>
-                    <div id="vr-tabpanel" role="tabpanel" aria-labelledby={`vr-tab-${tab}`}>
+                    {/* 宽屏下这里是分镜和结构自己的滚动区，页面本身不滚。 */}
+                    <div id="vr-tabpanel" className="vr-tabpanel" data-vr-scroll role="tabpanel" aria-labelledby={`vr-tab-${tab}`} tabIndex={0}>
                         {tab === "shots" ? (
                             <ReplicationShots bundle={bundle} rows={rows} activeIndex={playback.activeIndex} playing={playback.playing} onPlay={playback.playShot} onCopy={copy} />
                         ) : summary ? (
@@ -246,9 +252,9 @@ function WorkspaceShell({ title, meta, actions, onBack, children }: { title: Rea
         <div className="vr-workspace">
             <header className="vr-ws-head">
                 <div className="vr-ws-heading">
-                    <button type="button" className="vr-back" onClick={onBack}>
+                    <button type="button" className="vr-back" onClick={onBack} aria-label="返回全部拆解" title="返回全部拆解">
                         <ArrowLeft aria-hidden />
-                        全部拆解
+                        <span>全部</span>
                     </button>
                     <h1 className="vr-ws-title">{title}</h1>
                     {meta ? <p className="vr-ws-subtitle">{meta}</p> : null}

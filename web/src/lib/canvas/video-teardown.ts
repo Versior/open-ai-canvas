@@ -2,7 +2,7 @@ import { createStoryboardRow } from "@/lib/canvas/canvas-project-domain";
 import { modelCompatibilityError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
 import type { VideoTeardownBundle, VideoTeardownGrid, VideoTeardownShot } from "@/services/api/video-replication";
 import type { AiConfig } from "@/stores/use-config-store";
-import type { CanvasBatchTableData, StoryboardRow } from "@/types/canvas";
+import type { StoryboardRow } from "@/types/canvas";
 
 /**
  * 视频复刻 · 拆解：把后端算好的镜头清单、宫格和转写拼成看图模型的提示词，解析模型回复，
@@ -70,6 +70,41 @@ export function videoTeardownProductLabel(row: Pick<VideoTeardownAnalysisRow, "p
     if (!row || row.productRole === "none") return "";
     const role = row.productRole ? PRODUCT_ROLE_LABELS[row.productRole] : "";
     return [role, row.product].filter(Boolean).join("：");
+}
+
+/**
+ * 去画布复刻的两种方式：remake 按分镜重新生成每一镜（不用原片画面和人物），
+ * reuse 原片关键帧直接当首帧（只给自己的或已授权的视频用）。两种方式下有商品的镜头都可以换成用户的商品。
+ */
+export type VideoReplicaMode = "remake" | "reuse";
+
+const NO_PRODUCT_TEXT = /^(无|没有|未出现|不出现|画面中没有|这一镜没有)/;
+
+/** 有商品的镜头：模型判了商品角色时按角色；早期分析没有角色，就看「商品出镜」有没有写内容。 */
+export function videoTeardownProductShot(row: Pick<StoryboardRow, "sourceAnalysis">) {
+    const role = row.sourceAnalysis?.productRole || "";
+    if (role) return role !== "none";
+    const product = (row.sourceAnalysis?.product || "").trim();
+    return Boolean(product) && !NO_PRODUCT_TEXT.test(product);
+}
+
+/**
+ * 换商品镜头的首帧提示词。reuse 时第一张参考图是这一镜的原画面，其余是商品图；remake 时参考图只有商品图。
+ * 原片提示词里的商品描述保留在后面，模型按参考图改成新商品。
+ */
+export function videoReplicaProductFramePrompt(row: Pick<StoryboardRow, "imageGenerationPrompt" | "plotDescription">, mode: VideoReplicaMode, productNote: string) {
+    const note = productNote.trim() ? `（${productNote.trim()}）` : "";
+    const lead =
+        mode === "reuse"
+            ? `第一张参考图是原画面：保持构图、人物、动作、场景和光线不变，只把画面里的商品换成后面商品图里的商品${note}，商品的外观、颜色、比例和包装文字以商品图为准。`
+            : `画面里的商品换成参考图里的商品${note}，商品的外观、颜色、比例和包装文字以参考图为准，不要画成原片里的商品。`;
+    return [lead, (row.imageGenerationPrompt || row.plotDescription).trim()].filter(Boolean).join("\n");
+}
+
+/** 换商品镜头的视频提示词：首帧已经是新商品，提醒视频模型保持住，不要变回原片商品。 */
+export function videoReplicaProductVideoPrompt(row: Pick<StoryboardRow, "videoMotionPrompt" | "plotDescription">, productNote: string) {
+    const note = productNote.trim() ? `（${productNote.trim()}）` : "";
+    return [`画面里的商品始终是首帧里的那件${note}，外观和包装文字不要变。`, (row.videoMotionPrompt || row.plotDescription).trim()].filter(Boolean).join("\n");
 }
 
 export type VideoTeardownBeat = { name: string; shots: number[]; purpose: string };
@@ -392,73 +427,10 @@ export function videoTeardownStoryboardRows(bundle: VideoTeardownBundle, rows: V
     });
 }
 
-const TEARDOWN_TABLE_COLUMNS: Array<{ id: string; label: string }> = [
-    { id: "teardown-time", label: "原片时间" },
-    { id: "storyboard-durationSeconds", label: "时长（秒）" },
-    { id: "storyboard-plotDescription", label: "画面描述" },
-    { id: "storyboard-dialogue", label: "台词/旁白" },
-    { id: "teardown-onScreenText", label: "画面文字" },
-    { id: "teardown-product", label: "商品出镜" },
-    { id: "teardown-keyColors", label: "关键颜色" },
-    { id: "storyboard-shotSize", label: "景别" },
-    { id: "storyboard-camera", label: "镜头设计" },
-    { id: "storyboard-motion", label: "运镜" },
-    { id: "storyboard-lightingAndAtmosphere", label: "光影氛围" },
-    { id: "storyboard-emotion", label: "情绪" },
-    { id: "storyboard-audioEffects", label: "音效/音乐" },
-    { id: "teardown-production", label: "制作方式" },
-    { id: "storyboard-imageGenerationPrompt", label: "首帧提示词" },
-    { id: "storyboard-videoMotionPrompt", label: "视频提示词" },
-    { id: "storyboard-continuityOut", label: "结尾状态" },
-];
-
 function productionLabel(row: StoryboardRow) {
     const production = row.sourceAnalysis?.production || "";
     const confidence = row.sourceAnalysis?.productionConfidence || "";
     return production && confidence ? `${production}（把握${confidence}）` : production;
-}
-
-/**
- * 拆解分镜表：每行一个镜头，参考列是这一镜的关键帧。storyboardRows 保留原片时间码和拆解信息，
- * 从表格生成视频脚本时沿用。
- */
-export function videoTeardownBatchTable(storyboardRows: StoryboardRow[], options: { title: string; sourceNodeId: string; keyframeNodeIds: string[] }): CanvasBatchTableData {
-    return {
-        operation: "creative",
-        concurrency: 10,
-        aiGenerated: true,
-        contentKind: "storyboard",
-        storyboardRows,
-        storyboardTitle: options.title,
-        storyboardSourceNodeIds: [options.sourceNodeId],
-        referenceColumns: [{ id: "ai-ref", label: "关键帧", type: "image" }],
-        textColumns: TEARDOWN_TABLE_COLUMNS.map((column) => ({ ...column, type: "text" as const })),
-        rows: storyboardRows.map((row, index) => ({
-            id: row.id,
-            enabled: true,
-            inputNodeIds: options.keyframeNodeIds[index] ? [options.keyframeNodeIds[index]] : [],
-            prompt: row.videoMotionPrompt || row.plotDescription,
-            cells: {
-                "teardown-time": row.sourceStartMs !== undefined && row.sourceEndMs !== undefined ? teardownTimeRange({ startMs: row.sourceStartMs, endMs: row.sourceEndMs }) : "",
-                "storyboard-durationSeconds": String(row.durationSeconds),
-                "storyboard-plotDescription": row.plotDescription,
-                "storyboard-dialogue": row.dialogue,
-                "teardown-onScreenText": row.sourceAnalysis?.onScreenText || "",
-                "teardown-product": videoTeardownProductLabel({ product: row.sourceAnalysis?.product || "", productRole: row.sourceAnalysis?.productRole || "" }),
-                "teardown-keyColors": row.sourceAnalysis?.keyColors || "",
-                "storyboard-shotSize": row.shotSize,
-                "storyboard-camera": row.camera,
-                "storyboard-motion": row.motion,
-                "storyboard-lightingAndAtmosphere": row.lightingAndAtmosphere,
-                "storyboard-emotion": row.emotion,
-                "storyboard-audioEffects": row.audioEffects,
-                "teardown-production": productionLabel(row),
-                "storyboard-imageGenerationPrompt": row.imageGenerationPrompt,
-                "storyboard-videoMotionPrompt": row.videoMotionPrompt,
-                "storyboard-continuityOut": row.continuityOut,
-            },
-        })),
-    };
 }
 
 function markdownCell(value: string) {

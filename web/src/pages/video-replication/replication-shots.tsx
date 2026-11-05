@@ -1,5 +1,5 @@
 import { Copy, Play } from "lucide-react";
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { teardownTimeRange, videoTeardownProductLabel, type VideoTeardownAnalysisRow } from "@/lib/canvas/video-teardown";
 import { resourceFileUrl } from "@/services/api/resources";
@@ -19,8 +19,10 @@ const DIALOGUE_SOURCE_LABELS: Record<VideoTeardownAnalysisRow["dialogueSource"],
 const EMPTY_VALUE = /^(无|没有|暂无|none|n\/a|-|—)$/i;
 /** 用户自己滚动后，这么久之内不自动跟随播放进度。 */
 const FOLLOW_PAUSE_MS = 2500;
-/** 吸顶的分镜 / 结构切换栏高度，被它盖住的镜头不算在视野里。 */
+/** 整页滚动时吸顶的分镜 / 结构切换栏高度，被它盖住的镜头不算在视野里。 */
 const STICKY_TABS_PX = 60;
+/** 提示词超过这么多字时先收起，点「展开」看全文；复制总是复制全文。 */
+const PROMPT_FOLD_CHARS = 120;
 
 /** 逐镜分镜：一张面板里按镜头排开，正在播放的那一镜提亮；播放时列表跟着走。 */
 export function ReplicationShots({ bundle, rows, activeIndex, playing, onPlay, onCopy }: Props) {
@@ -46,8 +48,11 @@ export function ReplicationShots({ bundle, rows, activeIndex, playing, onPlay, o
         if (!list || !playing || !activeIndex || Date.now() - userScrollAt.current < FOLLOW_PAUSE_MS) return;
         const item = list.querySelector<HTMLElement>(`[data-shot="${activeIndex}"]`);
         if (!item) return;
-        const bounds = list.closest(".app-workspace-scroll")?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
-        const top = bounds.top + STICKY_TABS_PX;
+        // 宽屏下分镜在右栏自己的滚动区里；窄屏是整页滚动，要让开吸顶的切换栏。
+        const panel = list.closest<HTMLElement>("[data-vr-scroll]");
+        const ownScroll = Boolean(panel && panel.scrollHeight > panel.clientHeight + 1);
+        const bounds = (ownScroll ? panel : list.closest(".app-workspace-scroll"))?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
+        const top = bounds.top + (ownScroll ? 0 : STICKY_TABS_PX);
         if (list.getBoundingClientRect().top > top) return;
         // 这一镜的顶端落在可视区上半部分就算看得见，不用滚。
         const rect = item.getBoundingClientRect();
@@ -127,7 +132,9 @@ function ShotRow({ shot, row, ratio, active, onPlay, onCopy }: { shot: VideoTear
 }
 
 function Prompt({ label, text, onCopy }: { label: string; text: string; onCopy: (text: string) => void }) {
+    const [open, setOpen] = useState(false);
     if (!text) return null;
+    const foldable = text.length > PROMPT_FOLD_CHARS;
     return (
         <div className="vr-prompt">
             <div className="vr-prompt-head">
@@ -136,7 +143,14 @@ function Prompt({ label, text, onCopy }: { label: string; text: string; onCopy: 
                     <Copy aria-hidden />
                 </button>
             </div>
-            <p className="vr-prompt-text">{text}</p>
+            <p className="vr-prompt-text" data-folded={foldable && !open ? true : undefined}>
+                {text}
+            </p>
+            {foldable ? (
+                <button type="button" className="vr-text-button vr-prompt-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+                    {open ? "收起" : "展开"}
+                </button>
+            ) : null}
         </div>
     );
 }

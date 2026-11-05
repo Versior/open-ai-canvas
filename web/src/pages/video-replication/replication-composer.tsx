@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { App, Button, Input } from "antd";
 import { CircleAlert, CircleCheck, ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
+import { Link } from "react-router";
 
 import { ModelPicker } from "@/components/model-picker";
 import { HoverBorderGradient } from "@/components/ui/aceternity/hover-border-gradient";
@@ -9,9 +10,10 @@ import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { Switch } from "@/components/ui/base/switch";
 import { formatDurationLimit, formatTeardownTime, orientationLabel, videoTeardownModelError, videoTeardownTextRequirements, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { BUILTIN_SOCIAL_VIDEO_PLATFORMS, listSocialVideoPlatforms, socialVideoLinkFromText, socialVideoPlatformNames } from "@/services/api/social-video";
+import { BUILTIN_SOCIAL_VIDEO_PLATFORMS, listSocialVideoPlatforms, socialVideoLinkFromText, socialVideoPlatformNames, type SocialVideoPlatform } from "@/services/api/social-video";
 import type { VideoReplicationConfig } from "@/services/api/video-replication";
 import type { AiConfig } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { ReplicationProgress } from "./replication-progress";
 import type { ReplicationRun, ReplicationSource } from "./use-replication-runner";
 
@@ -34,6 +36,55 @@ type Props = {
 };
 
 type FileInfo = { durationMs: number; width: number; height: number };
+
+/** 有现成图标的平台（Simple Icons，CC0，和电商页共用）；抖音、TikTok 是单色图标，深色主题下反白。 */
+const PLATFORM_LOGOS = new Set(["douyin", "kuaishou", "tiktok", "xiaohongshu"]);
+const MONOCHROME_LOGOS = new Set(["douyin", "tiktok"]);
+
+/**
+ * 支持的平台：能导入的排前面；后台还没给某个平台配解析接口时显示成灰色，说明可以先下载再上传。
+ * 管理员多一个去配置解析接口的入口。
+ */
+function PlatformStrip({ platforms, loading }: { platforms: readonly SocialVideoPlatform[]; loading: boolean }) {
+    const admin = useUserStore((state) => state.user?.role === "admin");
+    const sorted = [...platforms].sort((left, right) => Number(right.available) - Number(left.available));
+    const missing = sorted.filter((platform) => !platform.available);
+    return (
+        <div className="vr-platforms" aria-busy={loading || undefined}>
+            <span className="vr-platforms-label" id="vr-platforms-label">
+                支持平台
+            </span>
+            <ul className="vr-platform-list" aria-labelledby="vr-platforms-label">
+                {loading
+                    ? [0, 1, 2, 3].map((item) => <li key={item} className="vr-platform vr-skeleton" aria-hidden />)
+                    : sorted.map((platform) => (
+                          <li
+                              key={platform.id}
+                              className="vr-platform"
+                              data-available={platform.available || undefined}
+                              title={platform.available ? `可以粘贴${platform.name}的分享内容或链接` : `${platform.name}还没接入解析接口，暂时不能粘贴链接导入，可以先下载视频再上传`}
+                          >
+                              {PLATFORM_LOGOS.has(platform.id) ? (
+                                  <img src={`/commerce/platforms/${platform.id}.svg`} alt="" width={14} height={14} data-monochrome={MONOCHROME_LOGOS.has(platform.id) || undefined} />
+                              ) : (
+                                  <span className="vr-platform-mark" aria-hidden>
+                                      {platform.name.slice(0, 1)}
+                                  </span>
+                              )}
+                              <span>{platform.name}</span>
+                              {platform.available ? null : <span className="sr-only">（还没接入）</span>}
+                          </li>
+                      ))}
+            </ul>
+            {!loading && missing.length ? <span className="vr-platforms-hint">灰色的还没接入，可以下载后上传</span> : null}
+            {admin ? (
+                <Link to="/admin/video-replication?tab=parse" className="vr-platforms-admin">
+                    配置解析接口
+                </Link>
+            ) : null}
+        </div>
+    );
+}
 
 /** 选中的本地视频做成 blob 地址给预览用，换文件或卸载时释放。 */
 function useObjectUrl(file: File | null) {
@@ -150,6 +201,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         )}
                         {limits ? <span className="vr-composer-limit">{`最长 ${formatDurationLimit(limits.maxDurationSeconds)} · 最多 ${limits.maxShots} 个镜头`}</span> : null}
                     </div>
+                    {mode === "link" ? <PlatformStrip platforms={platforms} loading={platformsQuery.isPending} /> : null}
                     {mode === "link" ? (
                         <div className="vr-link-field" data-hint={link && linkValid ? "ok" : linkError ? "error" : undefined}>
                             <Input.TextArea
@@ -163,7 +215,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                         start();
                                     }
                                 }}
-                                autoSize={{ minRows: 3, maxRows: 6 }}
+                                autoSize={{ minRows: 2, maxRows: 5 }}
                                 placeholder={`粘贴${platformNames}的分享内容，或直接粘贴视频链接`}
                                 aria-label="视频链接或分享内容"
                             />

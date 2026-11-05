@@ -7,14 +7,16 @@ type Props = {
     videoRef: (element: HTMLVideoElement | null) => void;
 };
 
-/** 左栏：原视频（外框按原画幅收紧，不留黑边）、四个基本数据，以及口播来源和拆解时的提示。宽屏下随页面吸顶。 */
+/** 左栏：原视频（外框按原画幅收紧，宽屏下高度跟着这一屏走）、四个基本数据，以及口播来源和拆解时的提示。 */
 export function ReplicationPlayer({ bundle, videoRef }: Props) {
     const { source, shots } = bundle;
     const seconds = source.durationMs / 1000;
     return (
         <aside className="vr-player" aria-label="原视频">
-            <div className="vr-video">
-                <video ref={videoRef} src={resourceFileUrl(source.resourceId)} controls playsInline preload="metadata" aria-label="原视频" />
+            <div className="vr-video-frame">
+                <div className="vr-video">
+                    <video ref={videoRef} src={resourceFileUrl(source.resourceId)} controls playsInline preload="metadata" aria-label="原视频" />
+                </div>
             </div>
             <dl className="vr-stats">
                 <Stat label="时长" value={`${seconds.toFixed(1)} 秒`} />
