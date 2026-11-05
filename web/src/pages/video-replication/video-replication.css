@@ -166,8 +166,13 @@
     color: var(--status-success, #16a34a);
 }
 
-.vr-link-ok[data-tone="error"],
+.vr-link-ok[data-tone="error"] {
+    align-items: flex-start;
+    color: var(--destructive);
+}
+
 .vr-link-ok[data-tone="error"] svg {
+    margin-top: 2px;
     color: var(--destructive);
 }
 
@@ -1858,6 +1863,11 @@
 @media (max-width: 640px) {
     .vr-home {
         padding: var(--space-8) var(--space-4) var(--space-12);
+    }
+
+    /* 窄屏上链接问题的说明会折成两行，输入框底部多留一行，免得压住最后一行文字。 */
+    .vr-link-field[data-hint="error"] .vr-textarea {
+        padding-bottom: 56px;
     }
 
     .vr-workspace {

@@ -137,7 +137,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         <span className="vr-composer-limit">最长 3 分钟 · 最多 60 个镜头</span>
                     </div>
                     {mode === "link" ? (
-                        <div className="vr-link-field">
+                        <div className="vr-link-field" data-hint={link && linkValid ? "ok" : linkError ? "error" : undefined}>
                             <Input.TextArea
                                 variant="borderless"
                                 className="vr-textarea"
