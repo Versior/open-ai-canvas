@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { AgentEvent, AgentRun } from "@/services/api/agent";
 import {
-    agentContextStatRows,
     agentRunStatsCovers,
-    agentUsageSummaryText,
+    agentUsageDetails,
+    agentUsageHeadline,
     emptyAgentRunStats,
     formatAgentClockTime,
     formatAgentDuration,
@@ -19,6 +19,7 @@ import {
 import { applyAgentEvent } from "@/lib/canvas/cloud-agent-events";
 import { emptyAgentContextUsage, presentAgentContextUsage, reduceAgentContextUsage } from "@/lib/canvas/agent-context-usage";
 import { AgentChatMessage, type CloudAgentChatMessage } from "@/components/canvas/canvas-cloud-agent-chat-ui";
+import { AgentUsageBar } from "@/components/canvas/canvas-agent-usage-bar";
 import { projectCloudAgentConversation } from "@/services/cloud-agent-history";
 import { canvasThemes } from "@/lib/canvas-theme";
 
@@ -207,40 +208,62 @@ describe("Assistant reply metadata", () => {
     });
 });
 
-describe("Context popover and composer summary", () => {
-    const contextView = presentAgentContextUsage(
-        reduceAgentContextUsage(
-            emptyAgentContextUsage("run-1"),
-            event(1, "context_pressure", { tokenSource: "pi", modelLimitConfigured: true, contextWindowTokens: 1_000_000, usableInputTokens: 1_000_000, compactAtTokens: 800_000, estimatedInputTokens: 47_700, pressureRatio: 0.0477 }),
-        ),
-    );
+describe("Usage bar above the composer", () => {
+    const reading = (estimatedInputTokens: number) =>
+        presentAgentContextUsage(
+            reduceAgentContextUsage(
+                emptyAgentContextUsage("run-1"),
+                event(1, "context_pressure", { tokenSource: "pi", modelLimitConfigured: true, contextWindowTokens: 1_000_000, usableInputTokens: 1_000_000, compactAtTokens: 800_000, estimatedInputTokens, pressureRatio: estimatedInputTokens / 1_000_000 }),
+            ),
+        );
+    const contextView = reading(47_700);
 
-    it("lists only rows backed by real readings", () => {
-        expect(agentContextStatRows(presentAgentContextUsage(emptyAgentContextUsage("")), null)).toEqual([]);
-        expect(agentUsageSummaryText(presentAgentContextUsage(emptyAgentContextUsage("")), null)).toBeNull();
+    it("stays out of the way until there is a real reading", () => {
+        const idle = presentAgentContextUsage(emptyAgentContextUsage(""));
+        expect(agentUsageHeadline(null)).toEqual([]);
+        expect(agentUsageDetails(idle, null)).toEqual({ context: [], run: [] });
+        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} />)).toBe("");
 
-        const contextOnly = agentContextStatRows(contextView, null);
-        expect(contextOnly).toEqual([
-            { key: "remaining", label: "剩余", value: "952.3K tokens", detail: "95%" },
-            { key: "window", label: "上下文窗口", value: "47.7K / 1M tokens", detail: "5%" },
-        ]);
-        expect(agentUsageSummaryText(contextView, null)).toBe("上下文 47.7K / 1M");
+        expect(agentUsageDetails(contextView, null)).toEqual({
+            context: [
+                { key: "remaining", label: "剩余", value: "952.3K", detail: "95%" },
+                { key: "compact-at", label: "压缩线", value: "800K", detail: "80%", title: "上下文到这里会自动把较早的对话收成检查点" },
+            ],
+            run: [],
+        });
+        const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />);
+        expect(html).toContain("agent-usage is-ok");
+        expect(html).toContain("<strong>47.7K</strong> / 1M");
+        expect(html).toContain('aria-valuenow="5"');
+        // 明细默认收起，但仍在页面里，切换按钮有可指向的目标。
+        expect(html).toContain('aria-expanded="false"');
+        expect(html).toContain('hidden=""');
     });
 
-    it("adds run totals, speed, time split, usage and tool context", () => {
+    it("shows run totals inline and the split in the details", () => {
         const stats = presentAgentRunStats(reduce(fullRun).runs["run-1"]);
-        const rows = agentContextStatRows(contextView, stats);
-        expect(rows.map((row) => row.label)).toEqual(["剩余", "上下文窗口", "本轮合计", "生成速度", "会话总耗时", "模型耗时", "模型用量", "工具上下文"]);
-        const value = (key: string) => rows.find((row) => row.key === key);
-        expect(value("total")?.value).toBe("47.7K");
-        expect(value("speed")?.value).toBe("69 tokens/s");
-        expect(value("elapsed")?.value).toBe("8m 36s");
+        expect(agentUsageHeadline(stats).map((item) => `${item.label} ${item.value}`)).toEqual(["本轮 47.7K tokens", "速度 69 tokens/s", "耗时 8m 36s", "工具 3 次"]);
+        const run = agentUsageDetails(contextView, stats).run;
+        expect(run.map((item) => item.label)).toEqual(["模型调用", "输入", "输出", "缓存读取", "模型耗时", "工具调用"]);
+        const value = (key: string) => run.find((item) => item.key === key);
+        expect(value("steps")?.value).toBe("2 次");
+        expect(value("input")?.value).toBe("1.1K");
+        expect(value("cached")).toMatchObject({ value: "46.1K", detail: "命中 98%" });
         expect(value("model-time")).toMatchObject({ value: "7s", detail: "1%" });
-        expect(value("usage")).toMatchObject({ value: "输入 1.1K · 输出 483 · 缓存读取 46.1K", detail: "缓存命中率 98%" });
-        expect(value("tools")?.value).toBe("2 种工具 · 3 次调用");
-        expect(agentUsageSummaryText(contextView, stats)).toBe("上下文 47.7K / 1M · 本轮 47.7K tokens · 69 tokens/s · 8m 36s");
+        expect(value("tools")?.value).toBe("2 种 · 3 次");
+        const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />);
+        expect(html).toContain("<strong>69 tokens/s</strong>");
+        expect(html).toContain("<strong>8m 36s</strong>");
+        expect(html).toContain("本轮用量与速度来自上游调用记录");
 
         const timedTools = presentAgentRunStats(reduce([event(1, "tool_completed", { toolName: "generate_media", callId: "a", durationMs: 211_000 }, 0), event(2, "run_completed", {}, 516_000)]).runs["run-1"]);
-        expect(agentContextStatRows(contextView, timedTools).find((row) => row.key === "tool-time")).toMatchObject({ label: "工具调用耗时", value: "3m 31s", detail: "41%" });
+        expect(agentUsageDetails(contextView, timedTools).run.find((item) => item.key === "tool-time")).toMatchObject({ label: "工具耗时", value: "3m 31s", detail: "41%" });
+    });
+
+    it("marks the context phase near the compaction line", () => {
+        const html = renderToStaticMarkup(<AgentUsageBar view={reading(760_000)} stats={null} />);
+        expect(html).toContain("agent-usage is-watch");
+        expect(html).toContain("接近压缩");
+        expect(html).toContain('aria-valuenow="76"');
     });
 });

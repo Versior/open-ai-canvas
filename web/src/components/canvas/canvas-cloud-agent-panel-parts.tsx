@@ -1,4 +1,4 @@
-// 画布 Agent 面板的展示组件：悬浮入口、标题栏、上下文用量环、历史会话、对话区、
+// 画布 Agent 面板的展示组件：悬浮入口、标题栏、历史会话、对话区、
 // 输入区控件与审批卡片。
 //
 // 这些组件只接收 props、不直接访问 Agent API；状态与副作用集中在 CanvasCloudAgentPanel。
@@ -7,7 +7,6 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
 import { useMatch } from "react-router";
@@ -28,10 +27,10 @@ import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import { ArrowDown, ArrowLeft, Check, Clock3, Download, Ellipsis, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RefreshCw, Scaling, Settings2, ShieldCheck, Trash2, X, Sparkles } from "lucide-react";
 import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
-import { Button, Input, Popover } from "antd";
+import { Button, Input } from "antd";
 import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
-import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
-import { agentContextStatRows, formatAgentClockTime, formatAgentTokenSpeed, presentAgentModelUsage, type AgentRunStatsView } from "@/lib/canvas/agent-run-stats";
+import { formatContextTokens } from "@/lib/canvas/agent-context-usage";
+import { formatAgentClockTime, formatAgentTokenSpeed, presentAgentModelUsage } from "@/lib/canvas/agent-run-stats";
 import { configuredModelDisplayName } from "@/lib/model-selection";
 import { cloudAgentConversationServerId, type CloudAgentConversation } from "@/services/cloud-agent-conversations";
 import { AgentChatMessage, AgentOperationFeed, AgentReasoningFeed, AgentWorkingMessage, type CloudAgentChatMessage } from "./canvas-cloud-agent-chat-ui";
@@ -432,179 +431,6 @@ export function AgentHeader({
     );
 }
 
-export const CONTEXT_PHASE_LABEL: Record<AgentContextPhase, string> = {
-    idle: "尚未测量",
-    unknown: "窗口未知",
-    ok: "上下文充足",
-    watch: "接近压缩",
-    compress: "即将压缩",
-    compacting: "正在压缩",
-    stale: "压缩后待刷新",
-};
-
-export function formatContextCount(tokens: number | undefined) {
-    if (tokens === undefined) return "—";
-    if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`;
-    if (tokens >= 1_000) return `${Math.round(tokens / 100) / 10}K`;
-    return Math.round(tokens).toLocaleString("zh-CN");
-}
-
-export function formatContextBytes(bytes: number | undefined) {
-    if (bytes === undefined) return "—";
-    if (bytes >= 1_000_000) return `${Math.round(bytes / 100_000) / 10} MB`;
-    if (bytes >= 1_000) return `${Math.round(bytes / 100) / 10} KB`;
-    return `${Math.round(bytes).toLocaleString("zh-CN")} 字节`;
-}
-
-function agentRunUsageNote(stats: AgentRunStatsView | null | undefined) {
-    if (!stats?.steps) return null;
-    const missing = stats.steps - stats.usageSteps;
-    if (missing <= 0) return null;
-    return stats.usageSteps ? `有 ${missing} 次模型调用上游没有回传用量，合计不含这些调用。` : "上游没有回传这一轮的 token 用量。";
-}
-
-export function AgentContextRing({ view, stats, theme }: { view: AgentContextUsageView; stats?: AgentRunStatsView | null; theme: CanvasTheme }) {
-    const [open, setOpen] = useState(false);
-    const statRows = agentContextStatRows(view, stats);
-    const usageNote = agentRunUsageNote(stats);
-    const popoverRef = usePopoverAnchorAlign(open);
-    const marker = view.compactRatio && view.compactRatio > 0 && view.compactRatio < 1 ? view.compactRatio : undefined;
-    const percent = view.ratio === undefined ? view.label : `${Math.round(view.ratio * 100)}%`;
-    const meterLabel = view.ratio === undefined ? "—" : percent;
-    const used = formatContextCount(view.inputTokens);
-    const budget = formatContextCount(view.usableTokens);
-    const remaining = formatContextCount(view.remainingTokens);
-    const protocolBytes = formatContextBytes(view.protocolBytes);
-    const usedRatio = view.ratio === undefined ? 0 : Math.max(0, Math.min(1, view.ratio));
-    const phaseLabel = CONTEXT_PHASE_LABEL[view.phase];
-    const sourceLabel = view.tokenSource === "pi" ? "Pi 会话估算" : "未测量";
-    const usageHeading = view.ratio !== undefined ? `上下文已用 ${percent}` : view.phase === "idle" ? "上下文用量" : view.phase === "unknown" ? "上下文窗口未知" : `上下文${view.label}`;
-
-    return (
-        <Popover
-            ref={popoverRef}
-            open={open}
-            onOpenChange={setOpen}
-            trigger="click"
-            placement="topRight"
-            autoAdjustOverflow
-            arrow={false}
-            classNames={{ root: "agent-context-popover" }}
-            // 助手面板会裁切内容；独立挂到 body，并显式携带画布主题。
-            getPopupContainer={() => document.body}
-            styles={{ root: { "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary } as CSSProperties }}
-            content={
-                <div className="agent-context-panel" data-phase={view.phase}>
-                    <span className="agent-context-eyebrow">下一次请求 · 上下文窗口占用</span>
-                    <div className="agent-context-panel-head">
-                        <strong>{usageHeading}</strong>
-                        {view.phase !== "ok" ? <span className={`agent-context-phase is-${view.phase}`}>{phaseLabel}</span> : null}
-                    </div>
-                    <div className="agent-context-summary">
-                        {view.remainingTokens !== undefined && view.usableTokens !== undefined ? (
-                            <>
-                                <strong>{used}</strong>
-                                <span>/ {budget} Token</span>
-                                <em>剩余 {remaining}</em>
-                            </>
-                        ) : (
-                            <>
-                                <strong>{used}</strong>
-                                <span>Token</span>
-                            </>
-                        )}
-                    </div>
-                    <div className="agent-context-progress-head">
-                        <span>上下文窗口占用</span>
-                        <strong>{percent}</strong>
-                    </div>
-                    <div className="agent-context-progress" role="progressbar" aria-label={`上下文已用 ${percent}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={view.ratio === undefined ? undefined : Math.round(view.ratio * 100)}>
-                        <span style={{ width: `${usedRatio * 100}%` }} />
-                        {marker ? <i style={{ left: `${marker * 100}%` }} aria-hidden="true" /> : null}
-                    </div>
-                    <p className="agent-context-detail">{view.detail}</p>
-                    {view.breakdown.length || view.protocolBytes !== undefined || view.remainingTokens !== undefined ? (
-                        <ul className="agent-context-breakdown">
-                            {view.breakdown.map((item) => (
-                                <li key={item.key}>
-                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
-                                    <span className="agent-context-breakdown-label">{item.label}</span>
-                                    <span className="agent-context-breakdown-value">{formatContextCount(item.tokens)}</span>
-                                </li>
-                            ))}
-                            {view.protocolBytes !== undefined ? (
-                                <li className="is-secondary">
-                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
-                                    <span className="agent-context-breakdown-label">协议外壳</span>
-                                    <span className="agent-context-breakdown-value">{protocolBytes}</span>
-                                </li>
-                            ) : null}
-                            {view.remainingTokens !== undefined ? (
-                                <li className="is-muted">
-                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
-                                    <span className="agent-context-breakdown-label">未使用</span>
-                                    <span className="agent-context-breakdown-value">{remaining}</span>
-                                </li>
-                            ) : null}
-                        </ul>
-                    ) : null}
-                    <div className="agent-context-panel-foot">
-                        <span>
-                            {sourceLabel}
-                            {view.tokenSource === "pi" ? " · 不是计费 Token" : ""}
-                        </span>
-                        {view.compactAtTokens ? <span>压缩线 {formatContextCount(view.compactAtTokens)}</span> : null}
-                    </div>
-                    {view.compactionError ? (
-                        <p className="agent-context-note" role="status">
-                            {view.compactionError}
-                        </p>
-                    ) : view.lastCompaction ? (
-                        <p className="agent-context-note">本轮已完成一次上下文压缩，下一次读数会刷新。</p>
-                    ) : null}
-                    {statRows.length ? (
-                        <section className="agent-context-stats" aria-label="本轮统计">
-                            <span className="agent-context-eyebrow">本轮统计</span>
-                            <ul className="agent-context-breakdown">
-                                {statRows.map((row) => (
-                                    <li key={row.key} title={row.title}>
-                                        <span className="agent-context-breakdown-label">{row.label}</span>
-                                        <span className="agent-context-breakdown-value">
-                                            {row.value}
-                                            {row.detail ? <em>{row.detail}</em> : null}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                            {usageNote ? <p className="agent-context-note">{usageNote}</p> : null}
-                            {stats?.totalTokens !== undefined ? <p className="agent-context-note">合计、速度与模型用量来自上游调用记录；剩余与上下文窗口为 Pi 会话估算。</p> : null}
-                        </section>
-                    ) : null}
-                </div>
-            }
-        >
-            <button type="button" className={`agent-context-ring is-${view.phase}`} aria-label={`${usageHeading}，${phaseLabel}。点击查看明细`} aria-expanded={open} title="查看上下文用量" onPointerDown={(event) => event.stopPropagation()}>
-                <span
-                    className="agent-context-ring-visual"
-                    aria-hidden="true"
-                    style={
-                        {
-                            "--agent-context-progress": `${view.ring * 100}%`,
-                            "--agent-context-marker-angle": `${(marker || 0) * 360}deg`,
-                        } as CSSProperties
-                    }
-                >
-                    {marker ? <span className="agent-context-ring-marker" /> : null}
-                </span>
-                <span className="agent-context-meter-copy">
-                    <strong>{meterLabel}</strong>
-                    <small>上下文</small>
-                </span>
-            </button>
-        </Popover>
-    );
-}
-
 export function AgentHistory({
     conversations,
     activeConversationId,
@@ -752,7 +578,7 @@ function agentReplyFooterLabels(message: CloudAgentChatMessage, modelLabel: (mod
     if (message.role !== "assistant" || message.reasoning) return {};
     const usage = presentAgentModelUsage(message.usage);
     const speed = formatAgentTokenSpeed(usage.tokensPerSecond);
-    const total = usage.totalTokens === undefined ? undefined : `${formatContextCount(usage.totalTokens)} tokens`;
+    const total = usage.totalTokens === undefined ? undefined : `${formatContextTokens(usage.totalTokens)} tokens`;
     return {
         model: usage.model ? modelLabel(usage.model) : undefined,
         usage: speed && total ? `${speed} · ${total}` : total,

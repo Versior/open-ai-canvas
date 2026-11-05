@@ -6,7 +6,7 @@
 // 序号必须从 1 连续：本机没见过这一轮的开头或中间缺事件时合计不完整，展示层直接不给数字。
 
 import type { AgentEvent } from "@/services/api/agent";
-import { formatContextTokens, type AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
+import { formatContextBytes, formatContextTokens, type AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
 
 /** 一个模型步骤的上游用量（model_usage 事件）；usageAvailable=false 时没有 token 数。 */
 export type AgentModelUsage = {
@@ -294,46 +294,43 @@ export function formatAgentClockTime(value: string | undefined): string | undefi
     return [date.getHours(), date.getMinutes(), date.getSeconds()].map((part) => String(part).padStart(2, "0")).join(":");
 }
 
-export type AgentContextStatRow = { key: string; label: string; value: string; detail?: string; title?: string };
+/** 用量栏里的一项读数；只有对应数据真实存在时才生成。 */
+export type AgentUsageItem = { key: string; label: string; value: string; detail?: string; title?: string };
 
-/** 上下文环弹层里的「本轮统计」行：只列有真实数据的项，顺序与输入框上方的摘要一致。 */
-export function agentContextStatRows(view: AgentContextUsageView, stats: AgentRunStatsView | null | undefined): AgentContextStatRow[] {
-    const rows: AgentContextStatRow[] = [];
-    const contextWindow = view.contextWindowTokens;
-    if (contextWindow && view.remainingTokens !== undefined) rows.push({ key: "remaining", label: "剩余", value: `${formatContextTokens(view.remainingTokens)} tokens`, detail: formatAgentShare(view.remainingTokens / contextWindow) });
-    if (contextWindow && view.inputTokens !== undefined)
-        rows.push({ key: "window", label: "上下文窗口", value: `${formatContextTokens(view.inputTokens)} / ${formatContextTokens(contextWindow)} tokens`, detail: formatAgentShare(view.ratio ?? view.inputTokens / contextWindow) });
-    if (!stats) return rows;
-    if (stats.totalTokens !== undefined) rows.push({ key: "total", label: "本轮合计", value: formatContextTokens(stats.totalTokens), title: `${stats.steps} 次模型调用` });
+/** 输入框上方常显的本轮读数：token 合计、生成速度、耗时、工具调用次数。 */
+export function agentUsageHeadline(stats: AgentRunStatsView | null | undefined): AgentUsageItem[] {
+    if (!stats) return [];
+    const items: AgentUsageItem[] = [];
+    if (stats.totalTokens !== undefined) items.push({ key: "total", label: "本轮", value: `${formatContextTokens(stats.totalTokens)} tokens`, title: `${stats.steps} 次模型调用的合计` });
     const speed = formatAgentTokenSpeed(stats.tokensPerSecond);
-    if (speed) rows.push({ key: "speed", label: "生成速度", value: speed });
+    if (speed) items.push({ key: "speed", label: "速度", value: speed });
     const elapsed = formatAgentDuration(stats.elapsedMs);
-    if (elapsed) rows.push({ key: "elapsed", label: "会话总耗时", value: elapsed, title: "本轮第一条到最后一条事件的时间" });
-    const modelTime = formatAgentDuration(stats.modelMs);
-    if (modelTime) rows.push({ key: "model-time", label: "模型耗时", value: modelTime, detail: formatAgentShare(stats.modelShare) });
-    const toolTime = formatAgentDuration(stats.toolMs);
-    if (toolTime) rows.push({ key: "tool-time", label: "工具调用耗时", value: toolTime, detail: formatAgentShare(stats.toolShare) });
-    if (stats.totalTokens !== undefined) {
-        const hitRate = formatAgentShare(stats.cacheHitRate);
-        rows.push({
-            key: "usage",
-            label: "模型用量",
-            value: `输入 ${formatContextTokens(stats.inputTokens)} · 输出 ${formatContextTokens(stats.outputTokens)} · 缓存读取 ${formatContextTokens(stats.cachedTokens)}`,
-            detail: hitRate ? `缓存命中率 ${hitRate}` : undefined,
-        });
-    }
-    if (stats.toolCalls > 0) rows.push({ key: "tools", label: "工具上下文", value: `${stats.toolKinds} 种工具 · ${stats.toolCalls} 次调用` });
-    return rows;
+    if (elapsed) items.push({ key: "elapsed", label: "耗时", value: elapsed, title: "本轮第一条到最后一条事件的时间" });
+    if (stats.toolCalls > 0) items.push({ key: "tools", label: "工具", value: `${stats.toolCalls} 次`, title: `${stats.toolKinds} 种工具 · ${stats.toolCalls} 次调用` });
+    return items;
 }
 
-/** 输入框上方的一行摘要：上下文占用、本轮 token、生成速度、本轮耗时；没有数据的段不出现。 */
-export function agentUsageSummaryText(view: AgentContextUsageView, stats: AgentRunStatsView | null | undefined): string | null {
-    const parts: string[] = [];
-    if (view.inputTokens !== undefined && view.contextWindowTokens) parts.push(`上下文 ${formatContextTokens(view.inputTokens)} / ${formatContextTokens(view.contextWindowTokens)}`);
-    if (stats?.totalTokens !== undefined) parts.push(`本轮 ${formatContextTokens(stats.totalTokens)} tokens`);
-    const speed = formatAgentTokenSpeed(stats?.tokensPerSecond);
-    if (speed) parts.push(speed);
-    const elapsed = formatAgentDuration(stats?.elapsedMs);
-    if (elapsed) parts.push(elapsed);
-    return parts.length ? parts.join(" · ") : null;
+/** 展开后的明细：上下文剩余、压缩线与构成；本轮模型调用、输入输出与缓存、模型和工具耗时、工具种类。 */
+export function agentUsageDetails(view: AgentContextUsageView, stats: AgentRunStatsView | null | undefined): { context: AgentUsageItem[]; run: AgentUsageItem[] } {
+    const context: AgentUsageItem[] = [];
+    const contextWindow = view.contextWindowTokens;
+    if (contextWindow && view.remainingTokens !== undefined) context.push({ key: "remaining", label: "剩余", value: formatContextTokens(view.remainingTokens), detail: formatAgentShare(view.remainingTokens / contextWindow) });
+    if (view.compactAtTokens) context.push({ key: "compact-at", label: "压缩线", value: formatContextTokens(view.compactAtTokens), detail: formatAgentShare(view.compactRatio), title: "上下文到这里会自动把较早的对话收成检查点" });
+    for (const item of view.breakdown) context.push({ key: `bucket-${item.key}`, label: item.label, value: formatContextTokens(item.tokens) });
+    if (view.protocolBytes !== undefined) context.push({ key: "envelope", label: "协议外壳", value: formatContextBytes(view.protocolBytes) });
+    const run: AgentUsageItem[] = [];
+    if (!stats) return { context, run };
+    if (stats.steps) run.push({ key: "steps", label: "模型调用", value: `${stats.steps} 次` });
+    if (stats.totalTokens !== undefined) {
+        run.push({ key: "input", label: "输入", value: formatContextTokens(stats.inputTokens), title: "没有命中缓存的输入" });
+        run.push({ key: "output", label: "输出", value: formatContextTokens(stats.outputTokens) });
+        const hitRate = formatAgentShare(stats.cacheHitRate);
+        run.push({ key: "cached", label: "缓存读取", value: formatContextTokens(stats.cachedTokens), detail: hitRate ? `命中 ${hitRate}` : undefined });
+    }
+    const modelTime = formatAgentDuration(stats.modelMs);
+    if (modelTime) run.push({ key: "model-time", label: "模型耗时", value: modelTime, detail: formatAgentShare(stats.modelShare) });
+    const toolTime = formatAgentDuration(stats.toolMs);
+    if (toolTime) run.push({ key: "tool-time", label: "工具耗时", value: toolTime, detail: formatAgentShare(stats.toolShare) });
+    if (stats.toolCalls > 0) run.push({ key: "tools", label: "工具调用", value: `${stats.toolKinds} 种 · ${stats.toolCalls} 次` });
+    return { context, run };
 }

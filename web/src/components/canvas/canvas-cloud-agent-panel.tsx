@@ -3,7 +3,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState
 import { App, Button } from "antd";
 import { appQueryClient } from "@/lib/query-client";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { EyeOff, FileText, Gauge, ImagePlus, MoveDiagonal2, SquareDashedMousePointer, X } from "lucide-react";
+import { EyeOff, FileText, ImagePlus, MoveDiagonal2, SquareDashedMousePointer, X } from "lucide-react";
 import { canvasNodeMentionToken } from "@/lib/canvas/canvas-resource-references";
 import { CANVAS_IMAGE_ASSET_DND_TYPE } from "@/lib/canvas/canvas-asset-dnd";
 import {
@@ -24,7 +24,7 @@ import { saveAs } from "file-saver";
 import { buildAgentDebugExport } from "@/lib/canvas/agent-debug-export";
 import { agentPlanVisible, latestAgentPlanItems, latestAgentPlanTerminal, pendingAgentQuestion } from "@/lib/canvas/cloud-agent-plan";
 import { emptyAgentContextUsage, presentAgentContextUsage, reduceAgentContextUsage, type AgentContextUsage } from "@/lib/canvas/agent-context-usage";
-import { agentRunStatsCovers, agentUsageSummaryText, emptyAgentRunStats, presentAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
+import { agentRunStatsCovers, emptyAgentRunStats, presentAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
 import { nanoid } from "nanoid";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -124,7 +124,8 @@ import { useAgentPanelLayout } from "./use-agent-panel-layout";
 import { useAgentPanelDock } from "./use-agent-panel-dock";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
-import { AgentContextRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { AgentUsageBar } from "./canvas-agent-usage-bar";
 import { useGlobalAgentStore, type AgentInsertedNode, type AgentPrefillRequest } from "@/stores/use-global-agent-store";
 
 type AgentPanelView = "chat" | "history" | "settings";
@@ -150,7 +151,7 @@ type AgentDraftAttachment = {
 /** 来自输入框的消息额外带上的内容：附件节点引用（排在选区前作为重点），以及是否不带选区。 */
 type ComposerExtras = { attachmentNodeIds: string[]; excludeSelection: boolean };
 
-/** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计和上下文环读数。 */
+/** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计和上下文读数。 */
 async function loadAgentRunEventPrefix(runId: string, untilSeq: number, signal: AbortSignal) {
     const events: AgentEvent[] = [];
     let seq = 0;
@@ -905,7 +906,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         replayCursorRef.current = { runId: run.id, seq: after };
         lastSeqRef.current = after;
         // 续接已有轮次（刷新、切回对话）时事件流只推游标之后的事件，本轮统计和上下文读数却在这段前缀里：
-        // 本机还没有这段前缀就补读一次。补读只喂给统计和上下文环，不重放消息，也不触发画布写回。
+        // 本机还没有这段前缀就补读一次。补读只喂给统计和上下文读数，不重放消息，也不触发画布写回。
         const statsPrefix = new AbortController();
         if (after > 0 && !agentRunStatsCovers(runStatsRef.current, conversationScope, run.id, after)) {
             void loadAgentRunEventPrefix(run.id, after, statsPrefix.signal)
@@ -1956,12 +1957,11 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     };
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
-    // 上下文环和输入框上方的摘要共用同一份读数；本轮统计只看当前对话的当前轮次。
+    // 输入框上方的用量栏：上下文读数按轮次隔离，本轮统计只看当前对话的当前轮次。
     const contextView = presentAgentContextUsage(contextUsage);
     const runStatsView = run?.id && runStats.conversationId === activeConversationId ? presentAgentRunStats(runStats.runs[run.id]) : null;
-    const usageSummary = agentUsageSummaryText(contextView, runStatsView);
     const contextBar =
-        (canvasId && selectionCount > 0) || visionMissing || longTextVisible || usageSummary ? (
+        (canvasId && selectionCount > 0) || visionMissing || longTextVisible ? (
             <>
                 {canvasId && selectionCount > 0 ? (
                     <AgentContextChip
@@ -2013,11 +2013,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         }
                     >
                         粘贴了 {agentTextLength(longTextOffer.text).toLocaleString()} 字，转成画布文本节点更稳
-                    </AgentContextChip>
-                ) : null}
-                {usageSummary ? (
-                    <AgentContextChip icon={<Gauge className="size-3.5 shrink-0" aria-hidden="true" />} title={`${usageSummary}（点输入框右下角的上下文环看明细）`}>
-                        {usageSummary}
                     </AgentContextChip>
                 ) : null}
             </>
@@ -2508,7 +2503,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         stopping={stopping}
                                         references={references}
                                         includeAssetLibrary={false}
-                                        submitAccessory={<AgentContextRing view={contextView} stats={runStatsView} theme={theme} />}
+                                        statusBar={<AgentUsageBar view={contextView} stats={runStatsView} />}
                                         left={<ComposerControls config={config} selectedModel={selectedModel} permissionMode={permissionMode} theme={theme} onModelChange={setModel} onPermissionChange={setPermissionMode} />}
                                     />
                                 </motion.div>
