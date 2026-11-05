@@ -366,7 +366,7 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 		if err := w.progress(task, "识别口播", 65); err != nil {
 			return videoTeardownBundle{}, err
 		}
-		bundle.Transcript = s.transcribeVideoTeardown(ctx, settings, sourcePath, mimeType, hasAudio, input.Language)
+		bundle.Transcript = s.transcribeVideoTeardown(ctx, task, settings, sourcePath, mimeType, hasAudio, input.Language)
 	} else {
 		bundle.Transcript.Note = "拆解时没有选择识别口播"
 	}
@@ -433,9 +433,10 @@ func (s *Service) materializeVideoTeardownSource(userID, resourceID, workDir str
 	return path, resource.MimeType, nil
 }
 
-// transcribeVideoTeardown 调用已配置的 whisper.cpp 服务识别口播。后台关了口播识别、转写不可用或失败时不让整个拆解失败，
-// 原因写在 Note 里展示给用户，前端改让模型从画面字幕读口播。原因面向用户，不写服务器的配置项名。
-func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoReplicationSettings, sourcePath, mimeType string, hasAudio bool, language string) videoTeardownTranscript {
+// transcribeVideoTeardown 识别口播：后台选了能用的转写模型时走模型渠道，否则用服务器自建的 whisper.cpp 服务。
+// 后台关了口播识别、转写不可用或失败时不让整个拆解失败，原因写在 Note 里展示给用户，
+// 前端改让模型从画面字幕读口播。原因面向用户，不写服务器的配置项名。
+func (s *Service) transcribeVideoTeardown(ctx context.Context, task *model.Task, settings VideoReplicationSettings, sourcePath, mimeType string, hasAudio bool, language string) videoTeardownTranscript {
 	none := func(note string) videoTeardownTranscript {
 		return videoTeardownTranscript{Source: "none", Segments: []timelineTranscriptionSegment{}, Note: note}
 	}
@@ -448,8 +449,15 @@ func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoRep
 	if err := s.RequireFeature(FeatureTimelineTranscription); err != nil {
 		return none("字幕转写暂未开放")
 	}
+	choice, issue, err := s.videoReplicationTranscriptionModel(settings.TranscriptionChannelModelID)
+	if err != nil {
+		return none("读取转写模型失败")
+	}
 	baseURL := strings.TrimSpace(os.Getenv(whisperLangEnv))
-	if baseURL == "" {
+	if choice == nil && baseURL == "" {
+		if issue != "" {
+			return none("后台选的转写模型不可用")
+		}
 		return none("服务器没有配置转写服务")
 	}
 	file, err := os.Open(sourcePath)
@@ -466,6 +474,13 @@ func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoRep
 	}
 	if language == "auto" {
 		language = ""
+	}
+	if choice != nil {
+		segments, detected, err := s.transcribeWithChannelModel(ctx, task, *choice, wavPath, language)
+		if err != nil {
+			return none("口播识别失败（" + providerUserFacingErrorMessage(err) + "）")
+		}
+		return videoTeardownTranscript{Source: "asr", Language: detected, Segments: segments}
 	}
 	segments, detected, err := newWhisperClient(baseURL).transcribe(ctx, wavPath, language)
 	if err != nil {

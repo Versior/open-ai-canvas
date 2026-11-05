@@ -137,7 +137,7 @@ func TestVideoTeardownFollowsReplicationSettingsAndFeatureSwitch(t *testing.T) {
 		t.Fatalf("new request after lowering the limit err = %v", err)
 	}
 	// 后台关了口播识别：有音轨也不调转写服务，拆解照常完成并提示原因。
-	transcript := svc.transcribeVideoTeardown(context.Background(), VideoReplicationSettings{TranscribeEnabled: false}, "/missing.mp4", "video/mp4", true, "")
+	transcript := svc.transcribeVideoTeardown(context.Background(), nil, VideoReplicationSettings{TranscribeEnabled: false}, "/missing.mp4", "video/mp4", true, "")
 	if transcript.Source != "none" || !strings.Contains(transcript.Note, "后台已关闭口播识别") {
 		t.Fatalf("transcript = %+v", transcript)
 	}
@@ -148,7 +148,7 @@ func TestVideoTeardownFollowsReplicationSettingsAndFeatureSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(whisperLangEnv, "")
-	if missing := svc.transcribeVideoTeardown(context.Background(), VideoReplicationSettings{TranscribeEnabled: true}, "/missing.mp4", "video/mp4", true, ""); missing.Note != "服务器没有配置转写服务" {
+	if missing := svc.transcribeVideoTeardown(context.Background(), nil, VideoReplicationSettings{TranscribeEnabled: true}, "/missing.mp4", "video/mp4", true, ""); missing.Note != "服务器没有配置转写服务" {
 		t.Fatalf("missing service note = %q", missing.Note)
 	}
 

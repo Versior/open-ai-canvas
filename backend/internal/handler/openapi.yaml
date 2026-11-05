@@ -5019,11 +5019,12 @@ components:
           description: 镜头数上限，超过时合并最短的镜头。不传时用后台设置的上限（默认 60），传了也不能超过它
     VideoReplicationSettings:
       type: object
-      required: [maxDurationSeconds, maxShots, transcribeEnabled]
+      required: [maxDurationSeconds, maxShots, transcribeEnabled, transcriptionChannelModelId]
       properties:
         maxDurationSeconds: {type: integer, minimum: 10, maximum: 180, description: 能拆解的视频最长秒数，默认 180}
         maxShots: {type: integer, minimum: 1, maximum: 60, description: 一次拆解最多几个镜头，默认 60}
         transcribeEnabled: {type: boolean, description: 是否允许识别口播，默认 true；关闭后拆解不调用转写服务}
+        transcriptionChannelModelId: {type: string, description: 后台选的转写模型（系统渠道里 OpenAI Audio 协议的音频模型，调 /audio/transcriptions，费用由平台承担）；空字符串表示用服务器自建的 whisper.cpp 服务}
     VideoReplicationSettingsPatch:
       type: object
       description: 没传的字段保持原值
@@ -5031,14 +5032,18 @@ components:
         maxDurationSeconds: {type: integer, minimum: 10, maximum: 180}
         maxShots: {type: integer, minimum: 1, maximum: 60}
         transcribeEnabled: {type: boolean}
+        transcriptionChannelModelId: {type: string, description: 选转写模型；保存前校验模型和所在渠道都启用、是 OpenAI Audio 协议的音频模型，否则 400。传空字符串改回自建服务}
     VideoReplicationTranscription:
       type: object
       required: [enabled, featureEnabled, serviceConfigured, available]
       properties:
         enabled: {type: boolean, description: 后台是否允许识别口播}
         featureEnabled: {type: boolean, description: 「功能开放」里的字幕转写是否开放}
-        serviceConfigured: {type: boolean, description: 服务器是否配置了转写服务}
+        serviceConfigured: {type: boolean, description: 有能用的转写方式：后台选的转写模型能用，或服务器配置了自建转写服务}
         available: {type: boolean, description: 三项都满足，拆解时会识别口播}
+        engine: {type: string, enum: [channel, whisper], description: 实际会用的转写方式；channel 是后台选的转写模型，whisper 是服务器自建服务。都没有时不返回}
+        model: {type: string, description: engine 为 channel 时的模型和渠道名称}
+        modelIssue: {type: string, description: 后台选了转写模型但现在不能用时的原因（已删除、已停用、协议不对）}
         note: {type: string, description: 不能识别时的原因}
     AdminVideoReplicationSettingsView:
       type: object

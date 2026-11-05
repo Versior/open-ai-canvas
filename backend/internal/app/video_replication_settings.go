@@ -10,7 +10,7 @@ import (
 )
 
 // 视频复刻的后台设置存在 system_settings 的 video_replication_settings：拆解的时长上限、镜头数上限、
-// 是否识别口播。功能本身和链接导入的开关在功能开放配置里（videoReplicationEnabled / socialVideoImportEnabled）。
+// 是否识别口播、用哪个转写模型。功能本身和链接导入的开关在功能开放配置里（videoReplicationEnabled / socialVideoImportEnabled）。
 const (
 	videoReplicationSettingsKey        = "video_replication_settings"
 	videoReplicationMinDurationSeconds = 10
@@ -21,21 +21,29 @@ type VideoReplicationSettings struct {
 	MaxDurationSeconds int  `json:"maxDurationSeconds"`
 	MaxShots           int  `json:"maxShots"`
 	TranscribeEnabled  bool `json:"transcribeEnabled"`
+	// TranscriptionChannelModelID 是后台选的转写模型：系统渠道里 OpenAI Audio 协议的音频模型，
+	// 调 /audio/transcriptions，费用由平台承担。空表示用服务器自建的 whisper.cpp 服务。
+	TranscriptionChannelModelID string `json:"transcriptionChannelModelId"`
 }
 
-// VideoReplicationSettingsPatch 是后台修改设置的请求，没传的字段保持原值。
+// VideoReplicationSettingsPatch 是后台修改设置的请求，没传的字段保持原值；转写模型传空字符串表示不用模型渠道。
 type VideoReplicationSettingsPatch struct {
-	MaxDurationSeconds *int  `json:"maxDurationSeconds"`
-	MaxShots           *int  `json:"maxShots"`
-	TranscribeEnabled  *bool `json:"transcribeEnabled"`
+	MaxDurationSeconds          *int    `json:"maxDurationSeconds"`
+	MaxShots                    *int    `json:"maxShots"`
+	TranscribeEnabled           *bool   `json:"transcribeEnabled"`
+	TranscriptionChannelModelID *string `json:"transcriptionChannelModelId"`
 }
 
 // VideoReplicationTranscription 说明拆解时能不能识别口播；不能时 Note 写原因，口播改让模型从画面字幕读。
+// Engine 是实际会用的转写方式：channel（后台选的转写模型）或 whisper（服务器自建服务），都没有时为空。
 type VideoReplicationTranscription struct {
 	Enabled           bool   `json:"enabled"`
 	FeatureEnabled    bool   `json:"featureEnabled"`
 	ServiceConfigured bool   `json:"serviceConfigured"`
 	Available         bool   `json:"available"`
+	Engine            string `json:"engine,omitempty"`
+	Model             string `json:"model,omitempty"`
+	ModelIssue        string `json:"modelIssue,omitempty"`
 	Note              string `json:"note,omitempty"`
 }
 
@@ -84,6 +92,7 @@ func (value *VideoReplicationSettings) UnmarshalJSON(data []byte) error {
 func normalizeStoredVideoReplicationSettings(value VideoReplicationSettings) VideoReplicationSettings {
 	value.MaxDurationSeconds = clampInt(value.MaxDurationSeconds, videoReplicationMinDurationSeconds, socialVideoMaxDurationSeconds, socialVideoMaxDurationSeconds)
 	value.MaxShots = clampInt(value.MaxShots, 1, videoTeardownMaxShotsLimit, videoTeardownMaxShotsLimit)
+	value.TranscriptionChannelModelID = strings.TrimSpace(value.TranscriptionChannelModelID)
 	return value
 }
 
@@ -124,6 +133,20 @@ func (s *Service) UpdateVideoReplicationSettings(actor *model.User, patch VideoR
 	if err := s.RequireAdmin(actor); err != nil {
 		return VideoReplicationSettings{}, err
 	}
+	// 新选的转写模型保存前就要能用；清空（空字符串）表示改回服务器自建的转写服务。
+	if patch.TranscriptionChannelModelID != nil {
+		id := strings.TrimSpace(*patch.TranscriptionChannelModelID)
+		if id != "" {
+			_, issue, err := s.videoReplicationTranscriptionModel(id)
+			if err != nil {
+				return VideoReplicationSettings{}, err
+			}
+			if issue != "" {
+				return VideoReplicationSettings{}, BadAuthRequest(issue)
+			}
+		}
+		patch.TranscriptionChannelModelID = &id
+	}
 	// before 取自比较交换成功的那一轮读到的值，并发修改时审计记的也是真实的修改前。
 	var before VideoReplicationSettings
 	saved, err := updateSettingJSON(s, videoReplicationSettingsKey, actor.ID, func(current *VideoReplicationSettings) error {
@@ -141,6 +164,9 @@ func (s *Service) UpdateVideoReplicationSettings(actor *model.User, patch VideoR
 		}
 		if patch.TranscribeEnabled != nil {
 			next.TranscribeEnabled = *patch.TranscribeEnabled
+		}
+		if patch.TranscriptionChannelModelID != nil {
+			next.TranscriptionChannelModelID = *patch.TranscriptionChannelModelID
 		}
 		if err := validateVideoReplicationSettings(next); err != nil {
 			return err
@@ -165,12 +191,25 @@ func (s *Service) videoReplicationTranscription(settings VideoReplicationSetting
 	if err != nil {
 		return VideoReplicationTranscription{}, err
 	}
-	status := VideoReplicationTranscription{Enabled: settings.TranscribeEnabled, FeatureEnabled: featureEnabled, ServiceConfigured: strings.TrimSpace(os.Getenv(whisperLangEnv)) != ""}
+	selected, issue, err := s.videoReplicationTranscriptionModel(settings.TranscriptionChannelModelID)
+	if err != nil {
+		return VideoReplicationTranscription{}, err
+	}
+	status := VideoReplicationTranscription{Enabled: settings.TranscribeEnabled, FeatureEnabled: featureEnabled, ModelIssue: issue}
+	switch {
+	case selected != nil:
+		status.Engine, status.Model = "channel", selected.Label
+	case strings.TrimSpace(os.Getenv(whisperLangEnv)) != "":
+		status.Engine = "whisper"
+	}
+	status.ServiceConfigured = status.Engine != ""
 	switch {
 	case !status.Enabled:
 		status.Note = "后台已关闭口播识别，口播从画面字幕识别"
 	case !status.FeatureEnabled:
 		status.Note = "字幕转写暂未开放，口播从画面字幕识别"
+	case !status.ServiceConfigured && issue != "":
+		status.Note = "后台选的转写模型不可用，口播从画面字幕识别"
 	case !status.ServiceConfigured:
 		status.Note = "服务器没有配置转写服务，口播从画面字幕识别"
 	default:
