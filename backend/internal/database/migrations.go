@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 86
+const CurrentSchemaVersion int64 = 87
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -61,6 +61,8 @@ const studioModelLibraryMigrationName = "studio_model_library"
 const studioModelLibraryMigrationChecksum = "sha256:studio-model-library-v85-20261105"
 const interiorDesignMigrationName = "interior_design"
 const interiorDesignMigrationChecksum = "sha256:interior-design-v86-20261105"
+const tokenCacheWritePriceMigrationName = "token_cache_write_price"
+const tokenCacheWritePriceMigrationChecksum = "sha256:token-cache-write-price-v82-20261105"
 const paymentOrderChargeMethodMigrationName = "payment_order_charge_method"
 const paymentOrderChargeMethodMigrationChecksum = "sha256:payment-order-charge-method-v80-20261104"
 const arkPortraitAssetsMigrationName = "ark_portrait_assets"
@@ -327,16 +329,48 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.ArkPortraitSession{}, &model.ArkPortraitGroup{}, &model.ArkPortraitAsset{})
 	}},
 	// Fork 自有：智能体形象库、用户已购形象和当前选择。排在所有上游迁移之后：形象分支上原为 80，合入电商分支时为 82，
-	// 同步上游 80、81 后顺延为 84，名称和校验和沿用原值。上游再有新迁移时同样排在它前面、形象顺延。
+	// 同步上游 80、81 后顺延为 84，名称和校验和沿用原值，之后不再挪动。
 	{version: 84, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{})
 	}},
-	// Fork 自有：电商生图台模特库（人脸、姿势、模特样式），只建一张新表。与形象迁移一样排在所有上游迁移之后，上游再有新迁移时顺延。
+	// Fork 自有：电商生图台模特库（人脸、姿势、模特样式），只建一张新表。排在形象迁移之后，不再挪动。
 	{version: 85, name: studioModelLibraryMigrationName, checksum: studioModelLibraryMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.StudioModelAsset{})
 	}},
-	// Fork 自有：室内设计（模式、风格/空间预设、用户项目）。排在模特库之后，上游再有新迁移时一起顺延。
+	// Fork 自有：室内设计（模式、风格/空间预设、用户项目）。排在模特库之后，不再挪动；之后的上游新迁移接在它后面。
 	{version: 86, name: interiorDesignMigrationName, checksum: interiorDesignMigrationChecksum, apply: migrateInteriorFeature},
+	// 上游 main 的 82（文本 Token 缓存写入价）。Fork 的 84–86 已在多个库里执行过，从这一条起上游新迁移接在 Fork 自有迁移之后，
+	// 不再把 Fork 自有迁移往后挪；名称和校验和与上游一致。
+	{version: 87, name: tokenCacheWritePriceMigrationName, checksum: tokenCacheWritePriceMigrationChecksum, apply: migrateTokenCacheWritePrice},
+}
+
+// migrateTokenCacheWritePrice 为文本 Token 定价增加缓存写入单价，为调用日志和账单增加缓存写入用量。
+// 新列都是 NOT NULL DEFAULT 0：旧价格档和旧账单的缓存写入不单独收费，结算结果不变。
+func migrateTokenCacheWritePrice(tx *gorm.DB) error {
+	for _, target := range []struct {
+		entity  any
+		columns []string
+	}{
+		{&model.ChannelModel{}, []string{"cache_write_token_price_microcredits"}},
+		{&model.ChannelModelPriceTier{}, []string{"cache_write_token_price_microcredits", "cost_cache_write_token_price_microcredits"}},
+		{&model.BillingOrder{}, []string{"cache_write_token_price_microcredits", "cost_cache_write_token_price_microcredits", "cache_write_tokens"}},
+		{&model.LogicalModel{}, []string{"cache_write_price_microcredits"}},
+		{&model.ApiCallLog{}, []string{"cache_write_tokens"}},
+	} {
+		// 精简部署或旧测试库可能没有某些表；表缺失时由基线 AutoMigrate 按当前结构建表。
+		if !tx.Migrator().HasTable(target.entity) {
+			continue
+		}
+		for _, column := range target.columns {
+			if tx.Migrator().HasColumn(target.entity, column) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(target.entity, column); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // migratePaymentOrderChargeMethod 为支付订单增加实收金额、实收货币、汇率快照和支付方式。
@@ -1059,6 +1093,26 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 				return fmt.Errorf("室内设计迁移账本与物理结构不一致：缺少模式、预设或项目表")
 			}
 		}
+	case 87:
+		for _, target := range []struct {
+			entity  any
+			columns []string
+		}{
+			{&model.ChannelModel{}, []string{"cache_write_token_price_microcredits"}},
+			{&model.ChannelModelPriceTier{}, []string{"cache_write_token_price_microcredits", "cost_cache_write_token_price_microcredits"}},
+			{&model.BillingOrder{}, []string{"cache_write_token_price_microcredits", "cost_cache_write_token_price_microcredits", "cache_write_tokens"}},
+			{&model.LogicalModel{}, []string{"cache_write_price_microcredits"}},
+			{&model.ApiCallLog{}, []string{"cache_write_tokens"}},
+		} {
+			if !tx.Migrator().HasTable(target.entity) {
+				continue
+			}
+			for _, column := range target.columns {
+				if !tx.Migrator().HasColumn(target.entity, column) {
+					return fmt.Errorf("文本 Token 缓存写入价迁移账本与物理结构不一致：缺少 %s", column)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -1083,9 +1137,10 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		return false, nil
 	}
 
-	// 上游 main 72–81 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
-	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83。
-	// Fork 自有的形象迁移（84）与模特库迁移（85）排在全部上游迁移之后，搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
+	// 上游 main 72–82 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
+	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83；
+	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87。Fork 自有的形象（84）、模特库（85）、室内设计（86）
+	// 在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
 		forkVersion  int64
@@ -1101,9 +1156,10 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 79, name: ecommerceAgentKnowledgeMigrationName, checksum: upstreamEcommerceAgentKnowledgeMigrationChecksum}, 80, ecommerceAgentKnowledgeMigrationChecksum},
 		{migration{version: 80, name: paymentOrderChargeMethodMigrationName, checksum: paymentOrderChargeMethodMigrationChecksum}, 82, paymentOrderChargeMethodMigrationChecksum},
 		{migration{version: 81, name: arkPortraitAssetsMigrationName, checksum: arkPortraitAssetsMigrationChecksum}, 83, arkPortraitAssetsMigrationChecksum},
+		{migration{version: 82, name: tokenCacheWritePriceMigrationName, checksum: tokenCacheWritePriceMigrationChecksum}, 87, tokenCacheWritePriceMigrationChecksum},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 81 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 82 后仍有记录，拒绝自动重排")
 	}
 	for index, applied := range records {
 		expected := upstream[index]
@@ -1120,7 +1176,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		}
 	}
 
-	// 逆序搬迁避免主键槽位碰撞：上游 81→83、80→82 的目标都高于上游最大版本，之后每条的目标槽位都已腾空。
+	// 逆序搬迁避免主键槽位碰撞：上游 82→87、81→83 的目标都高于上游最大版本，80→82 等之后每条的目标槽位都已腾空。
 	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]

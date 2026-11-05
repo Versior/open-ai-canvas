@@ -53,7 +53,6 @@ const (
 	FeatureEcommerce                   = app.FeatureEcommerce
 	FeatureEcommerceVideo              = app.FeatureEcommerceVideo
 	FeatureEcommerceStudio             = app.FeatureEcommerceStudio
-	FeatureSiteAssistant               = app.FeatureSiteAssistant
 	FeatureVideoReplication            = app.FeatureVideoReplication
 	FeatureSocialVideoImport           = app.FeatureSocialVideoImport
 	FeatureInterior                    = app.FeatureInterior

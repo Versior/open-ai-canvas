@@ -102,7 +102,7 @@
     background: var(--creation-surface-raised, #f0f1ee);
     box-shadow: var(--elevation-card);
     cursor: pointer;
-    /* 只有最前面那张能点，后面的点击会穿到页面上，不去抢焦点。 */
+    /* 默认不接收点击；可见的卡片由 .is-selectable 放行：中间那张填入提示词，两侧切到中间。 */
     pointer-events: none;
     will-change: transform, opacity;
     /* 封面就绪前整张卡不可见。先露面板再填图，会出现"右边有图、左边还是空白面板"的观感；
@@ -126,7 +126,8 @@
     --card-enter-scale: 1;
 }
 
-.creation-tunnel-card.is-active {
+.creation-tunnel-card.is-active,
+.creation-tunnel-card.is-selectable.is-ready {
     pointer-events: auto;
 }
 

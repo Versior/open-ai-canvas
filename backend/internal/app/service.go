@@ -121,6 +121,9 @@ type Service struct {
 	// 视频解析接口池的出站请求与地址校验；测试里换成本地假接口，生产为空时走 outbound 默认值。
 	socialVideoParseHTTPClient   func(time.Duration) *http.Client
 	socialVideoParseURLValidator func(string) (*url.URL, error)
+	// dramaTails 跟踪调度循环之外的尾帧抽取；dramaBackgroundRunner 为空时用后台 worker，测试替换为同步执行。
+	dramaTails            dramaTailWorker
+	dramaBackgroundRunner func(fn func()) bool
 }
 
 const taskWorkerConcurrency = 3

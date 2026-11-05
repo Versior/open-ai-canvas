@@ -1,5 +1,5 @@
 import { modelCapabilityConfigFor, normalizeImageValue, type ImageCapabilityConfig } from "@/lib/model-capabilities";
-import { modelQuoteRequest } from "@/lib/model-pricing";
+import { systemModelQuoteRequest } from "@/lib/model-pricing";
 import { createGenerationTask, queryGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { parseBackendGenerationResult, prepareBackendGenerationTask } from "@/services/api/generation-task";
 import { quoteModel } from "@/services/api/logical-models";
@@ -79,7 +79,7 @@ export function commerceProductReshoot(imageType: string) {
 
 const commerceArtifactGuard = "避免 AI 痕迹：扭曲或乱码文字、变形 Logo、多余或融化的部件、错误的手指、重复图案、无来源的光斑粒子和漂浮杂物。没有内部结构资料时，不绘制写实爆炸图、剖面或内部零件。";
 
-/** 只含工作台图片任务允许的字段（size/quality/imageResolution/count），多余字段会被后端整单拒绝。 */
+/** Exactly the image parameters accepted by POST /workbench/tasks; any extra key is rejected by the backend. */
 export type CommerceImageParameters = { size: string; quality?: string; imageResolution?: string; count: 1 };
 
 export function commerceImageParameters(profile: ImageCapabilityConfig, ratio: string, resolution: string): CommerceImageParameters {
@@ -286,31 +286,19 @@ export function commerceGenerationRatio(config: Config, draft: Pick<EcommerceDra
 export async function quoteCommerce(config: Config, draft: EcommerceDraft, count: number, clone = false, planning = true) {
     const imageRefs = commerceRequiredImageReferenceCount(draft, clone);
     const ratio = commerceGenerationRatio(config, draft, draft);
-    const imageRequest = modelQuoteRequest(
-        config,
-        draft.imageModel,
-        "image",
-        {
-            capability: "image",
-            input: { textCount: 1, imageCount: imageRefs, referenceImageCount: imageRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
-            imageSize: ratio,
-            options: { size: ratio, imageResolution: draft.resolution, count: 1 },
-        },
-        { directChannelQuote: true },
-    );
+    const imageRequest = systemModelQuoteRequest(config, draft.imageModel, "image", {
+        capability: "image",
+        input: { textCount: 1, imageCount: imageRefs, referenceImageCount: imageRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
+        imageSize: ratio,
+        options: { size: ratio, imageResolution: draft.resolution, count: 1 },
+    });
     const maxAgentRefs = modelCapabilityConfigFor(config, draft.agentModel).text?.references.maxImages || 0;
     const agentRefs = commercePlanningReferenceCount(draft);
     if (planning && agentRefs > maxAgentRefs) throw new Error(`后台指定的策划模型最多读取 ${maxAgentRefs} 张图片，请减少参考图或联系管理员更换模型`);
-    const agentRequest = modelQuoteRequest(
-        config,
-        draft.agentModel,
-        "text",
-        {
-            capability: "text",
-            input: { textCount: 1, imageCount: agentRefs, referenceImageCount: agentRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
-        },
-        { directChannelQuote: true },
-    );
+    const agentRequest = systemModelQuoteRequest(config, draft.agentModel, "text", {
+        capability: "text",
+        input: { textCount: 1, imageCount: agentRefs, referenceImageCount: agentRefs, videoCount: 0, audioCount: 0, characterCount: 0 },
+    });
     if (!imageRequest || (planning && !agentRequest)) throw new Error("当前模型无法报价，请更换模型");
     const [image, agent] = await Promise.all([quoteModel(imageRequest), planning && agentRequest ? quoteModel(agentRequest) : Promise.resolve(null)]);
     const agentCost = agent?.quote.amountMicrocredits || 0;

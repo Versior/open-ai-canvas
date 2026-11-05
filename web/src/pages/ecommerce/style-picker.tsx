@@ -3,7 +3,6 @@ import { ArrowUpRight, Check, LoaderCircle, PencilLine, Sparkles, Wand2 } from "
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import type { EcommerceCreativeDirection, EcommerceStyleRewrite } from "@/services/api/ecommerce";
 import { DirectionEditor, directionDescription, directionSwatches, rewriteDirection } from "./direction-cards";
-import { yoruBody } from "@/assets/yoru";
 import "./style-picker.css";
 
 const RECOMMENDED = "recommended";
@@ -149,7 +148,7 @@ export function CommerceStylePicker({
             <div className="commerce-style-picker">
                 <header className="commerce-style-picker-head">
                     <span className="commerce-style-picker-avatar" aria-hidden="true">
-                        <img src={yoruBody} alt="" />
+                        <Sparkles size={22} />
                     </span>
                     <div>
                         <small>

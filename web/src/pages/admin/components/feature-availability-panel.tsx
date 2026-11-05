@@ -11,7 +11,6 @@ import {
     History,
     ImageIcon,
     Link2,
-    MessageCircleMore,
     MonitorCog,
     Package,
     PlugZap,
@@ -49,7 +48,6 @@ type FeatureKey =
     | "ecommerceEnabled"
     | "ecommerceVideoEnabled"
     | "ecommerceStudioEnabled"
-    | "siteAssistantEnabled"
     | "videoReplicationEnabled"
     | "socialVideoImportEnabled"
     | "interiorEnabled";
@@ -90,7 +88,6 @@ const editableFeatureKeys: FeatureKey[] = [
     "ecommerceVideoEnabled",
     "ecommerceStudioEnabled",
     "interiorEnabled",
-    "siteAssistantEnabled",
     "videoReplicationEnabled",
     "socialVideoImportEnabled",
     "frontendModelsEnabled",
@@ -235,14 +232,6 @@ const featureGroups: FeatureGroup[] = [
         description: "不影响生成能力的页面元素",
         icon: <SlidersHorizontal className="size-4" aria-hidden="true" />,
         rows: [
-            {
-                key: "siteAssistantEnabled",
-                title: "创作助手",
-                location: "页面右下角",
-                description: "还需在电商 Agent 配置中启用助手并选择模型。",
-                icon: <MessageCircleMore className="size-4" aria-hidden="true" />,
-                link: { to: "/admin/ecommerce/agent", label: "配置创作助手" },
-            },
             {
                 key: "inspirationSourcesVisible",
                 title: "素材来源署名",
@@ -610,7 +599,6 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
         ecommerceStudioEnabled: record.ecommerceStudioEnabled as boolean,
         interiorEnabled: record.interiorEnabled as boolean,
-        siteAssistantEnabled: record.siteAssistantEnabled as boolean,
         videoReplicationEnabled: record.videoReplicationEnabled as boolean,
         socialVideoImportEnabled: record.socialVideoImportEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,

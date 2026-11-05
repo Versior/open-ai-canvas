@@ -13,8 +13,8 @@ describe("ecommerce ratio selection", () => {
         for (const size of profile.size.values) {
             const request = commerceImageParameters(profile, size, "1k");
             expect(request.size).toBe(size);
-            // The workbench API rejects the whole task when it sees a field outside its image whitelist.
-            for (const key of Object.keys(request)) expect(["size", "quality", "imageResolution", "count"]).toContain(key);
+            // The workbench task API rejects unknown parameter keys.
+            expect(Object.keys(request).sort()).toEqual(["count", "imageResolution", "quality", "size"]);
         }
         profile.size.values = ["9:16", "2:3", "16:9", "1:1"];
         for (const size of profile.size.values) expect(commerceImageParameters(profile, size, "1k").size).toBe(size);

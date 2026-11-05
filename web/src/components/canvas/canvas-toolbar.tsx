@@ -16,6 +16,7 @@ import type { CanvasAppearance } from "@/lib/canvas/canvas-appearance";
 import { canvasThemes, type CanvasBackgroundMode, type CanvasTheme } from "@/lib/canvas-theme";
 import { defaultToolbarPrefs, readToolbarPrefs, resolveToolbarEntries, type ToolContext, type ToolbarHandlers, type ToolbarPrefs } from "@/lib/canvas/tool-registry";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
+import { useTranslation } from "react-i18next";
 import type { CanvasNodeTypeId, CanvasToolMode, CanvasWorkspaceMode } from "@/types/canvas";
 
 export function CanvasToolbar({
@@ -94,6 +95,7 @@ export function CanvasToolbar({
     /** 紧凑尺寸：短剧精修画布把视野留给节点。 */
     compact?: boolean;
 }) {
+    const { t } = useTranslation();
     const rootRef = useRef<HTMLDivElement>(null);
     const { bringToFront, zIndex } = useCanvasOverlayLayer("main-toolbar", "var(--z-toolbar)");
     const dockRef = useRef<HTMLDivElement>(null);
@@ -269,7 +271,7 @@ export function CanvasToolbar({
                     >
                         <SpotlightSurface
                             role="region"
-                            aria-label="画布外观"
+                            aria-label={t("canvasC.toolbar.appearance")}
                             spotlightColor={theme.toolbar.itemHover}
                             initial={{ opacity: 0, scale: 0.97 }}
                             animate={{ opacity: 1, scale: 1 }}
@@ -281,7 +283,7 @@ export function CanvasToolbar({
                             style={{ maxHeight: "calc(100dvh - var(--canvas-inset-y) - var(--canvas-dock-popover-offset) - 12px)", background: theme.spatial.elevated, borderColor: theme.toolbar.border, color: theme.toolbar.item }}
                             onWheel={(event) => event.stopPropagation()}
                         >
-                            <PanelHeading icon={<Palette className="size-4" />} title="画布外观" subtitle="配色与网格" theme={theme} />
+                            <PanelHeading icon={<Palette className="size-4" />} title={t("canvasC.toolbar.appearance")} subtitle={t("canvasC.toolbar.appearanceSubtitle")} theme={theme} />
                             <CanvasAppearanceControls
                                 appearance={appearance}
                                 backgroundMode={backgroundMode}
@@ -294,7 +296,7 @@ export function CanvasToolbar({
                             <div className="mt-2.5 flex items-center justify-between gap-2 rounded-[var(--dock-item-radius-labeled)] border px-2.5 py-2" style={{ background: theme.spatial.surface, borderColor: theme.toolbar.border }}>
                                 <span className="inline-flex min-w-0 items-center gap-1.5 text-[var(--fs-caption)] font-semibold">
                                     <Info className="size-3" />
-                                    媒体信息
+                                    {t("canvasC.toolbar.mediaInfo")}
                                 </span>
                                 <Switch size="sm" checked={showImageInfo} onChange={onShowImageInfoChange} />
                             </div>

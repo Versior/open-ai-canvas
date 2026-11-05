@@ -37,7 +37,6 @@ const (
 	FeatureEcommerce             = platform.FeatureEcommerce
 	FeatureEcommerceVideo        = platform.FeatureEcommerceVideo
 	FeatureEcommerceStudio       = platform.FeatureEcommerceStudio
-	FeatureSiteAssistant         = platform.FeatureSiteAssistant
 	FeatureVideoReplication      = platform.FeatureVideoReplication
 	FeatureSocialVideoImport     = platform.FeatureSocialVideoImport
 	FeatureInterior              = platform.FeatureInterior

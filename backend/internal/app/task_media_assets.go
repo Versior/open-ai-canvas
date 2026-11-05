@@ -44,6 +44,14 @@ func (s *Service) mediaTaskProject(task *model.Task) (string, error) {
 		project, projectErr = s.repo.ProjectForUser(task.UserID, canvas.ProjectID)
 	}
 	if errors.Is(projectErr, gorm.ErrRecordNotFound) {
+		// 电商任务的 projectId 是电商项目 ID：作品只进素材库，不挂业务项目素材库。
+		if canvasErr != nil {
+			if _, ecommerceErr := s.repo.EcommerceProject(task.UserID, id); ecommerceErr == nil {
+				return "", nil
+			} else if !errors.Is(ecommerceErr, gorm.ErrRecordNotFound) {
+				return "", ecommerceErr
+			}
+		}
 		return "", &unavailableMediaTaskProjectError{cause: NotFound("任务所属画布或项目已不存在")}
 	}
 	if projectErr != nil {

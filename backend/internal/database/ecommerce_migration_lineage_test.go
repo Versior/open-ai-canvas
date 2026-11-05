@@ -130,6 +130,11 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		{77, agentMemoryDocumentColumnsMigrationName, agentMemoryDocumentColumnsMigrationChecksum, migrateAgentMemoryDocumentColumns, time.Date(2026, 10, 28, 9, 2, 0, 0, time.UTC)},
 		{78, dramaCastVoiceLooksMigrationName, dramaCastVoiceLooksMigrationChecksum, migrateDramaCastVoiceLooks, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)},
 		{79, ecommerceAgentKnowledgeMigrationName, upstreamEcommerceAgentKnowledgeMigrationChecksum, migrateEcommerceFeature, time.Date(2026, 11, 2, 9, 0, 0, 0, time.UTC)},
+		{80, paymentOrderChargeMethodMigrationName, paymentOrderChargeMethodMigrationChecksum, migratePaymentOrderChargeMethod, time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)},
+		{81, arkPortraitAssetsMigrationName, arkPortraitAssetsMigrationChecksum, func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.ArkPortraitSession{}, &model.ArkPortraitGroup{}, &model.ArkPortraitAsset{})
+		}, time.Date(2026, 11, 4, 9, 1, 0, 0, time.UTC)},
+		{82, tokenCacheWritePriceMigrationName, tokenCacheWritePriceMigrationChecksum, migrateTokenCacheWritePrice, time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -162,7 +167,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 86 {
+	if CurrentSchemaVersion != 87 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -181,6 +186,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 84, Name: agentPetSkinsMigrationName, Checksum: agentPetSkinsMigrationChecksum},
 		{Version: 85, Name: studioModelLibraryMigrationName, Checksum: studioModelLibraryMigrationChecksum},
 		{Version: 86, Name: interiorDesignMigrationName, Checksum: interiorDesignMigrationChecksum},
+		{Version: 87, Name: tokenCacheWritePriceMigrationName, Checksum: tokenCacheWritePriceMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -215,7 +221,7 @@ func TestMigrateSchemaPreservesForkSchema74(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -245,6 +251,13 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 79, Name: agentMemoryDocumentColumnsMigrationName, Checksum: agentMemoryDocumentColumnsMigrationChecksum, AppliedAt: applied[77]},
 				{Version: 80, Name: ecommerceAgentKnowledgeMigrationName, Checksum: ecommerceAgentKnowledgeMigrationChecksum, AppliedAt: applied[79]},
 				{Version: 81, Name: dramaCastVoiceLooksMigrationName, Checksum: dramaCastVoiceLooksMigrationChecksum, AppliedAt: applied[78]},
+				// 上游 80、81 在 Fork 为 82、83，上游 82 接在 Fork 自有的 84–86 之后为 87；Fork 自有迁移在搬迁后补跑。
+				{Version: 82, Name: paymentOrderChargeMethodMigrationName, Checksum: paymentOrderChargeMethodMigrationChecksum, AppliedAt: applied[80]},
+				{Version: 83, Name: arkPortraitAssetsMigrationName, Checksum: arkPortraitAssetsMigrationChecksum, AppliedAt: applied[81]},
+				{Version: 84, Name: agentPetSkinsMigrationName, Checksum: agentPetSkinsMigrationChecksum},
+				{Version: 85, Name: studioModelLibraryMigrationName, Checksum: studioModelLibraryMigrationChecksum},
+				{Version: 86, Name: interiorDesignMigrationName, Checksum: interiorDesignMigrationChecksum},
+				{Version: 87, Name: tokenCacheWritePriceMigrationName, Checksum: tokenCacheWritePriceMigrationChecksum, AppliedAt: applied[82]},
 			} {
 				requireMigration(t, db, want)
 			}

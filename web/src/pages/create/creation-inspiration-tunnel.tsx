@@ -13,6 +13,7 @@
 // 慢的那几张只剩一块空面板，观感就是"右边出来了左边还空着"。
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { App } from "antd";
 import { useReducedMotion } from "motion/react";
@@ -97,6 +98,7 @@ function pickBatch(pool: TunnelItem[], size: number, mode: CreationMode): Tunnel
 
 /** 当前作品支持点击和键盘打开详情；后排卡片不进入焦点顺序。 */
 export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUseInspiration }: { mode: CreationMode; enabled: boolean; hidden?: boolean; onUseInspiration?: (item: CreationInspiration) => void }) {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { message } = App.useApp();
     const fetchGallery = useLibTVGalleryFetcher();
@@ -221,10 +223,10 @@ export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUse
                             tabIndex={depth === 0 ? 0 : -1}
                             aria-label={`查看作品：${inspiration.title}`}
                             aria-hidden={depth !== 0 || undefined}
-                            inert={depth !== 0}
-                            className={`creation-tunnel-card ${depth === 0 ? "is-active" : ""} ${readyIds.has(id) ? "is-ready" : ""}`}
+                            inert={depth > MAX_DEPTH}
+                            className={`creation-tunnel-card ${depth === 0 ? "is-active" : ""} ${depth > 0 && depth <= MAX_DEPTH ? "is-selectable" : ""} ${readyIds.has(id) ? "is-ready" : ""}`}
                             style={style}
-                            onClick={openDetail}
+                            onClick={() => (relative === 0 ? openDetail() : step(relative))}
                             onKeyDown={(event) => {
                                 if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDetail(); }
                             }}
@@ -242,12 +244,12 @@ export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUse
                 `button:has(> svg):not(:has(> span)):not(:disabled):hover` 会认领"纯图标按钮"，
                 用 !important 改写 color / background 并把 transform 顶成 translateY(-1px)，
                 按钮会当场掉半个身位。带 span 的按钮不在那条规则的射程内。 */}
-            <button type="button" className="creation-gallery-arrow is-prev" aria-label="上一张灵感" onClick={() => step(-1)}>
+            <button type="button" className="creation-gallery-arrow is-prev" aria-label={t("create.inspiration.previous")} onClick={() => step(-1)}>
                 <span className="creation-gallery-arrow-icon">
                     <ChevronLeft aria-hidden="true" />
                 </span>
             </button>
-            <button type="button" className="creation-gallery-arrow is-next" aria-label="下一张灵感" onClick={() => step(1)}>
+            <button type="button" className="creation-gallery-arrow is-next" aria-label={t("create.inspiration.next")} onClick={() => step(1)}>
                 <span className="creation-gallery-arrow-icon">
                     <ChevronRight aria-hidden="true" />
                 </span>
