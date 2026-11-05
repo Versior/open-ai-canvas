@@ -26,6 +26,8 @@
 }
 .studio-model-card {
     display: grid;
+    /* 同一行卡片被拉高时由文字区吃掉多出的高度，缩略图保持 4:5。 */
+    grid-template-rows: auto 1fr;
     min-width: 0;
     overflow: hidden;
     border: 1px solid var(--admin-card-border);
