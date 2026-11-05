@@ -284,7 +284,8 @@ export function useStudioRunner() {
                 const { profile, compiled } = compileStudioShot(product, located, imageModel, current);
                 if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
                 const request = studioImageRequest(profile, located.quality, located.shot.ratio);
-                const references = [...compiled.references, ...compiled.styleReferences];
+                // 顺序就是提示词里的图号：商品图、模特人脸与姿势、风格参考。
+                const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences];
                 const node = { id: `studio-${shotId}`, type: CanvasNodeType.Image, title: "", width: 0, height: 0, position: { x: 0, y: 0 }, metadata: { model: imageModel } } as CanvasNodeData;
                 const generation = buildEcommerceImageGeneration(current, node, { ...DEFAULT_ECOMMERCE_BRIEF, ...(request.aspectRatio ? { aspectRatio: request.aspectRatio } : {}), imageSettings: request.imageSettings }, inputSummary(references.length));
                 const task = await serializeSubmit(() =>

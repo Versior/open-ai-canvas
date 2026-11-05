@@ -29,6 +29,7 @@ import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, Studi
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { configuredModelDisplayName } from "@/lib/model-selection";
 import { StudioDossierCard } from "./studio-dossier";
+import { StudioModelCastSection } from "./studio-model-cast";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
 import { StudioShotList } from "./studio-shot-list";
 import { StudioSuitePicker } from "./studio-suite-picker";
@@ -106,7 +107,10 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const firstEntry = included[0] || entries[0];
     const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(spec.role || "main-selling", product);
     const truthCount = studioReferencePhotos(product.photos, 8).length;
-    const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + product.references.length);
+    // 有模特的图才用模特设定：模特图、模特拍法，或者套图清单里有上身效果。
+    const castRelevant = brief.outputType === "model" || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
+    const castReferences = castRelevant ? [brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
+    const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + castReferences + product.references.length);
     const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
@@ -365,6 +369,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     </div>
                 </div>
 
+                {castRelevant ? <StudioModelCastSection product={product} edit={edit} /> : null}
                 {setKind ? (
                     <>
                         <div className="es-section-head">

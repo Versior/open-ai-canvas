@@ -132,6 +132,12 @@ export type StudioShot = {
     adopted?: StudioOutput;
 };
 
+/** 从模特库选中的一项。人脸和姿势带 resourceId（已复制到自己资源库的原图），模特样式只用文字。 */
+export type StudioModelPick = { itemId: string; name: string; prompt: string; resourceId?: string; width?: number; height?: number };
+
+/** 这个商品出模特图时用的模特设定：长相、姿势、造型各选一项，都可以不选。 */
+export type StudioModelCast = { face?: StudioModelPick; pose?: StudioModelPick; style?: StudioModelPick };
+
 /** 模板里的一张图。ratio 来自模板的画幅；noText 表示模板要求这张图不放文字。 */
 export type StudioSuiteShot = { title: string; duty: string; ratio?: string; noText?: boolean };
 
@@ -183,6 +189,8 @@ export type StudioBrief = {
     /** 套图的镜头清单：调整后的顺序与这次不出的镜头。元素是镜头 key，内置套图为镜头角色，模板套图为 s 加序号。 */
     shotOrder: string[];
     shotSkip: string[];
+    /** 模特设定：出模特图（上身效果、模特拍法）时使用。 */
+    model?: StudioModelCast;
 };
 
 /** 点一次「生成商品图」产生的一组图。套图类型的镜头各不相同，单张类型是同一类图出多张。 */

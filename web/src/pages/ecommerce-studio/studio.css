@@ -752,6 +752,157 @@
     color: var(--es-ink);
 }
 
+/* ---------- 模特设定与模特库 ---------- */
+.es-cast {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+.es-cast-slot {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    padding-right: 2px;
+    border-radius: var(--es-radius-control);
+    background: var(--es-muted);
+}
+.es-cast-slot[data-empty] {
+    border: 1px dashed var(--es-line-strong);
+    background: transparent;
+}
+.es-cast-slot-main {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    padding: var(--space-2);
+    border: 0;
+    border-radius: var(--es-radius-control);
+    background: transparent;
+    color: var(--es-ink);
+    text-align: left;
+    cursor: pointer;
+}
+.es-cast-slot-image {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 40px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: var(--es-radius-media);
+    background: var(--es-panel);
+    color: var(--es-ink-3);
+}
+.es-cast-slot-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.es-cast-slot-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+.es-cast-slot-text span {
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
+.es-cast-slot-text strong {
+    overflow: hidden;
+    font-size: var(--fs-ui);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.es-cast-filters {
+    display: grid;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+.es-cast-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: var(--space-3);
+}
+.es-cast-option {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 0 0 var(--space-2);
+    border: 0;
+    border-radius: var(--es-radius-control);
+    background: transparent;
+    color: var(--es-ink);
+    text-align: left;
+    cursor: pointer;
+}
+.es-cast-option:disabled {
+    cursor: progress;
+}
+.es-cast-option-image {
+    position: relative;
+    display: block;
+    aspect-ratio: 4 / 5;
+    margin-bottom: 4px;
+    overflow: hidden;
+    border-radius: var(--es-radius-media);
+    background: var(--es-muted);
+    transition: box-shadow var(--es-motion);
+}
+.es-cast-option:hover .es-cast-option-image {
+    box-shadow: 0 0 0 2px var(--es-line-strong);
+}
+.es-cast-option-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.es-cast-option-text {
+    display: grid;
+    gap: 6px;
+    place-content: center;
+    justify-items: center;
+    height: 100%;
+    padding: var(--space-2);
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+    text-align: center;
+}
+.es-cast-option-busy {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--es-panel) 60%, transparent);
+}
+.es-cast-option strong {
+    overflow: hidden;
+    font-size: var(--fs-ui);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.es-cast-option > span:last-child {
+    overflow: hidden;
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.es-cast-pages {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
+
 /* ---------- 镜头清单与模板 ---------- */
 .es-section-note {
     color: var(--es-ink-3);
@@ -1411,6 +1562,9 @@
         flex-direction: column;
     }
     .es-suite-admin {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .es-cast {
         grid-template-columns: minmax(0, 1fr);
     }
     .es-form-foot {

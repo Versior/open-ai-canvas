@@ -2,7 +2,7 @@ import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
 import { studioShotSpec } from "./shot-specs";
 import { normalizeStudioSuite } from "./suites";
-import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
+import type { StudioModelCast, StudioModelPick, StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
 
 /**
  * 生图表单：出图类型、市场、语言、拍法这些选项的定义，以及表单字段的读取规则。
@@ -75,6 +75,36 @@ function text(value: unknown, max: number) {
     return typeof value === "string" ? value.slice(0, max) : "";
 }
 
+function modelPick(value: unknown, withImage: boolean): StudioModelPick | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    if (typeof record.itemId !== "string" || !record.itemId) return undefined;
+    const resourceId = typeof record.resourceId === "string" && record.resourceId ? record.resourceId : undefined;
+    if (withImage && !resourceId) return undefined;
+    return {
+        itemId: record.itemId.slice(0, 64),
+        name: text(record.name, 60),
+        prompt: text(record.prompt, 600),
+        ...(resourceId ? { resourceId } : {}),
+        ...(Number(record.width) > 0 ? { width: Number(record.width) } : {}),
+        ...(Number(record.height) > 0 ? { height: Number(record.height) } : {}),
+    };
+}
+
+/** 读回模特设定：人脸和姿势必须带已复制的原图，模特样式只要文字。 */
+export function normalizeStudioModelCast(value: unknown): StudioModelCast | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    const cast: StudioModelCast = {};
+    const face = modelPick(record.face, true);
+    const pose = modelPick(record.pose, true);
+    const style = modelPick(record.style, false);
+    if (face) cast.face = face;
+    if (pose) cast.pose = pose;
+    if (style?.prompt) cast.style = style;
+    return cast.face || cast.pose || cast.style ? cast : undefined;
+}
+
 function shotKeys(value: unknown) {
     return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && SHOT_KEY_PATTERN.test(item)))].slice(0, 40) : [];
 }
@@ -85,6 +115,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const record = value as Record<string, unknown>;
     const count = Number(record.count);
     const suite = normalizeStudioSuite(record.suite);
+    const model = normalizeStudioModelCast(record.model);
     return {
         brand: text(record.brand, 40),
         productType: text(record.productType, 40),
@@ -100,6 +131,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         quality: text(record.quality, 20),
         ratio: typeof record.ratio === "string" && (record.ratio === "auto" || RATIO_PATTERN.test(record.ratio)) ? record.ratio : base.ratio,
         ...(suite ? { suite } : {}),
+        ...(model ? { model } : {}),
         shotOrder: shotKeys(record.shotOrder),
         shotSkip: shotKeys(record.shotSkip),
     };
