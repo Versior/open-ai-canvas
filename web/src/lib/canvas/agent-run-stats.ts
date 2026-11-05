@@ -322,6 +322,18 @@ export function agentUsageStats(stats: AgentRunStatsView | null | undefined): Ag
     ];
 }
 
+/** 收起时那一行里的本轮摘要：只列有数据的项，没有读数时为空字符串。 */
+export function agentUsageSummary(stats: AgentRunStatsView | null | undefined) {
+    if (!stats) return "";
+    const total = stats.totalTokens === undefined ? "" : `${formatContextTokens(stats.totalTokens)} tokens`;
+    // 一行放不下完整单位：速度写成「92/s」，跟在 tokens 后面不会看错；完整写法在展开的卡片里。
+    const rate = formatAgentTokenRate(stats.tokensPerSecond);
+    const speed = rate ? `${rate}/s` : "";
+    const elapsed = formatAgentDuration(stats.elapsedMs) || "";
+    const tools = stats.toolCalls ? `工具 ${stats.toolCalls} 次` : "";
+    return [total, speed, elapsed, tools].filter(Boolean).join(" · ");
+}
+
 /** 展开后的明细：上下文的构成；本轮模型调用、输入输出与缓存、模型和工具耗时、工具种类。剩余和压缩线常显在进度条下方。 */
 export function agentUsageDetails(view: AgentContextUsageView, stats: AgentRunStatsView | null | undefined): { context: AgentUsageItem[]; run: AgentUsageItem[] } {
     const context: AgentUsageItem[] = [];

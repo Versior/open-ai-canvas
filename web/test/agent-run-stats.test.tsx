@@ -5,6 +5,7 @@ import {
     agentRunStatsCovers,
     agentUsageDetails,
     agentUsageStats,
+    agentUsageSummary,
     emptyAgentRunStats,
     formatAgentClockTime,
     formatAgentDuration,
@@ -217,43 +218,82 @@ describe("Usage bar above the composer", () => {
             ),
         );
     const contextView = reading(47_700);
+    // 卡片展开与否记在本机：用一份内存 localStorage 模拟「已经展开过」。
+    const withCard = <T,>(open: boolean, render: () => T): T => {
+        const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+        const store = new Map<string, string>(open ? [["canvas:agent-usage-card:v1", "1"]] : []);
+        Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { getItem: (key: string) => store.get(key) ?? null, setItem: (key: string, value: string) => store.set(key, value), removeItem: (key: string) => store.delete(key) } });
+        try {
+            return render();
+        } finally {
+            if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+            else delete (globalThis as { localStorage?: unknown }).localStorage;
+        }
+    };
 
-    it("keeps its place before the first reading and never invents numbers", () => {
+    it("starts as one line and expands into the card", () => {
         const idle = presentAgentContextUsage(emptyAgentContextUsage(""));
-        // 本轮五项固定在位，没有数据时都是「—」。
-        expect(agentUsageStats(null).map((item) => `${item.label} ${item.value}`)).toEqual(["本轮 tokens —", "缓存命中 —", "每秒 tokens —", "耗时 —", "工具调用 —"]);
-        expect(agentUsageDetails(idle, null)).toEqual({ context: [], run: [] });
-        // 没有读数时卡片照样在：模型名、上下文窗口、压缩线位置和下一步会发生什么，没有「明细」，也没有进度读数。
         const fresh = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} contextWindow={1_000_000} modelLabel="测试模型" />);
-        expect(fresh).toContain("agent-usage is-idle");
+        expect(fresh).toContain("agent-usage is-idle is-collapsed");
+        expect(fresh).toContain('aria-expanded="false"');
         expect(fresh).toContain("<strong>—</strong> / 1M");
-        expect(fresh).toContain("测试模型");
         expect(fresh).toContain("发出消息后开始统计");
-        expect(fresh).toContain("到 800K（80%）自动压缩");
-        expect(fresh).toContain('style="left:80%"');
-        expect(fresh).not.toContain("progressbar");
-        expect(fresh).not.toContain("明细");
-        expect(fresh.match(/data-empty=""/g)).toHaveLength(5);
-        const pending = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />);
-        expect(pending).toContain("这一轮进行中，读数稍后出现");
-        expect(pending).toContain("agent-usage-live");
-        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} hasRun />)).toContain("这一轮还没有上下文读数");
-        // 新一轮的读数到达前沿用上一轮的上下文读数，标「上一轮」；本轮五项还没有数字。
-        const carried = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} running carried />);
-        expect(carried).toContain("上一轮");
-        expect(carried).toContain("进行中");
-        expect(carried.match(/data-empty=""/g)).toHaveLength(5);
-
-        // 剩余和压缩线常显在进度条下方，不再放进明细；这份读数没有构成，没有明细可展开。
-        expect(agentUsageDetails(contextView, null)).toEqual({ context: [], run: [] });
-        const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />);
-        expect(html).toContain("agent-usage is-ok");
-        expect(html).toContain("<strong>47.7K</strong> / 1M");
-        expect(html).toContain('aria-valuenow="5"');
-        expect(html).toContain("剩余 952.3K（95%）");
-        expect(html).toContain("到 800K（80%）自动压缩");
-        expect(html).not.toContain("明细");
+        expect(fresh).not.toContain("agent-usage-stats");
+        expect(fresh).not.toContain("测试模型");
+        // 收起时的一行：上下文读数、占比和本轮摘要。
+        const stats = presentAgentRunStats(reduce(fullRun).runs["run-1"]);
+        expect(agentUsageSummary(stats)).toBe("47.7K tokens · 69/s · 8m 36s · 工具 3 次");
+        expect(agentUsageSummary(null)).toBe("");
+        const line = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />);
+        expect(line).toContain("<strong>47.7K</strong> / 1M");
+        expect(line).toContain("5%");
+        expect(line).toContain("47.7K tokens · 69/s · 8m 36s · 工具 3 次");
+        expect(renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />)).toContain("剩余 952.3K（95%）");
+        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />)).toContain("读数稍后出现");
+        // 展开过之后是整张卡片，带收起按钮。
+        const card = withCard(true, () => renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />));
+        expect(card).not.toContain("is-collapsed");
+        expect(card).toContain("agent-usage-stats");
+        expect(card).toContain('aria-label="收起用量卡片"');
     });
+
+    it("keeps its place before the first reading and never invents numbers", () =>
+        withCard(true, () => {
+            const idle = presentAgentContextUsage(emptyAgentContextUsage(""));
+            // 本轮五项固定在位，没有数据时都是「—」。
+            expect(agentUsageStats(null).map((item) => `${item.label} ${item.value}`)).toEqual(["本轮 tokens —", "缓存命中 —", "每秒 tokens —", "耗时 —", "工具调用 —"]);
+            expect(agentUsageDetails(idle, null)).toEqual({ context: [], run: [] });
+            // 没有读数时卡片照样在：模型名、上下文窗口、压缩线位置和下一步会发生什么，没有「明细」，也没有进度读数。
+            const fresh = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} contextWindow={1_000_000} modelLabel="测试模型" />);
+            expect(fresh).toContain("agent-usage is-idle");
+            expect(fresh).toContain("<strong>—</strong> / 1M");
+            expect(fresh).toContain("测试模型");
+            expect(fresh).toContain("发出消息后开始统计");
+            expect(fresh).toContain("到 800K（80%）自动压缩");
+            expect(fresh).toContain('style="left:80%"');
+            expect(fresh).not.toContain("progressbar");
+            expect(fresh).not.toContain("明细");
+            expect(fresh.match(/data-empty=""/g)).toHaveLength(5);
+            const pending = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />);
+            expect(pending).toContain("这一轮进行中，读数稍后出现");
+            expect(pending).toContain("agent-usage-live");
+            expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} hasRun />)).toContain("这一轮还没有上下文读数");
+            // 新一轮的读数到达前沿用上一轮的上下文读数，标「上一轮」；本轮五项还没有数字。
+            const carried = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} running carried />);
+            expect(carried).toContain("上一轮");
+            expect(carried).toContain("进行中");
+            expect(carried.match(/data-empty=""/g)).toHaveLength(5);
+
+            // 剩余和压缩线常显在进度条下方，不再放进明细；这份读数没有构成，没有明细可展开。
+            expect(agentUsageDetails(contextView, null)).toEqual({ context: [], run: [] });
+            const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />);
+            expect(html).toContain("agent-usage is-ok");
+            expect(html).toContain("<strong>47.7K</strong> / 1M");
+            expect(html).toContain('aria-valuenow="5"');
+            expect(html).toContain("剩余 952.3K（95%）");
+            expect(html).toContain("到 800K（80%）自动压缩");
+            expect(html).not.toContain("明细");
+        }));
 
     it("shows run totals in the card and the split in the details", () => {
         const stats = presentAgentRunStats(reduce(fullRun).runs["run-1"]);
@@ -266,7 +306,7 @@ describe("Usage bar above the composer", () => {
         expect(value("cached")).toMatchObject({ value: "46.1K", detail: "命中 98%" });
         expect(value("model-time")).toMatchObject({ value: "7s", detail: "1%" });
         expect(value("tools")?.value).toBe("2 种 · 3 次");
-        const html = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />);
+        const html = withCard(true, () => renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />));
         expect(html).toContain("<dd>69</dd>");
         expect(html).toContain("<dd>8m 36s</dd>");
         expect(html).not.toContain('data-empty=""');
@@ -280,7 +320,7 @@ describe("Usage bar above the composer", () => {
     });
 
     it("marks the context phase near the compaction line", () => {
-        const html = renderToStaticMarkup(<AgentUsageBar view={reading(760_000)} stats={null} />);
+        const html = withCard(true, () => renderToStaticMarkup(<AgentUsageBar view={reading(760_000)} stats={null} />));
         expect(html).toContain("agent-usage is-watch");
         expect(html).toContain("接近压缩");
         expect(html).toContain('aria-valuenow="76"');

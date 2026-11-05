@@ -117,6 +117,73 @@
     line-height: 1.35;
 }
 
+/* 收起：只占一行，不要卡片外框；整行是展开按钮。 */
+.agent-usage.is-collapsed {
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.agent-usage-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 28px;
+    padding: 3px 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+}
+
+.agent-usage-strip:hover {
+    background: var(--agent-surface-hover);
+}
+
+.agent-usage-strip:focus-visible,
+.agent-usage-collapse:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 1px;
+}
+
+.agent-usage-brief {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.agent-usage-chevron {
+    flex: none;
+}
+
+.agent-usage-collapse {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--agent-caption);
+    cursor: pointer;
+}
+
+.agent-usage-collapse:hover {
+    background: var(--agent-surface-hover);
+    color: var(--agent-ink);
+}
+
 .agent-usage.is-watch {
     --agent-usage-fill: var(--status-warning);
 }
@@ -234,6 +301,23 @@
     margin-top: 2px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--agent-ink) 10%, transparent);
+}
+
+.agent-usage-meter.is-mini {
+    flex: none;
+    width: 44px;
+    height: 4px;
+    margin-top: 0;
+}
+
+.agent-usage-meter.is-mini > span {
+    min-width: 4px;
+}
+
+.agent-usage-meter.is-mini > i {
+    top: -3px;
+    bottom: -3px;
+    width: 1.5px;
 }
 
 .agent-usage-meter > span {
@@ -458,6 +542,7 @@
 
 @media (prefers-reduced-motion: reduce) {
     .agent-usage-meter > span,
+    .agent-usage-strip,
     .agent-usage-toggle,
     .agent-usage-toggle svg {
         transition: none;

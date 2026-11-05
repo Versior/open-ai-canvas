@@ -1,9 +1,11 @@
-import { ChevronDown, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
 import { useId, useState } from "react";
 import { AGENT_CONTEXT_COMPACT_RATIO, formatContextTokens, type AgentContextPhase, type AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
-import { AGENT_USAGE_NO_READING, agentUsageDetails, agentUsageStats, formatAgentShare, type AgentRunStatsView, type AgentUsageItem } from "@/lib/canvas/agent-run-stats";
+import { AGENT_USAGE_NO_READING, agentUsageDetails, agentUsageStats, agentUsageSummary, formatAgentShare, type AgentRunStatsView, type AgentUsageItem } from "@/lib/canvas/agent-run-stats";
 
 const AGENT_USAGE_EXPANDED_KEY = "canvas:agent-usage-expanded:v1";
+/** 整张卡片展开与否；默认收起成一行。 */
+const AGENT_USAGE_CARD_KEY = "canvas:agent-usage-card:v1";
 
 const PHASE_BADGE: Partial<Record<AgentContextPhase, string>> = {
     unknown: "窗口未知",
@@ -13,11 +15,20 @@ const PHASE_BADGE: Partial<Record<AgentContextPhase, string>> = {
     stale: "压缩后待刷新",
 };
 
-function readExpanded() {
+function readFlag(key: string) {
     try {
-        return localStorage.getItem(AGENT_USAGE_EXPANDED_KEY) === "1";
+        return localStorage.getItem(key) === "1";
     } catch {
         return false;
+    }
+}
+
+function writeFlag(key: string, value: boolean) {
+    try {
+        if (value) localStorage.setItem(key, "1");
+        else localStorage.removeItem(key);
+    } catch (error) {
+        console.warn("Agent 用量栏偏好无法保存", error);
     }
 }
 
@@ -49,11 +60,11 @@ function UsageTiles({ items }: { items: AgentUsageItem[] }) {
 }
 
 /**
- * 输入框正上方的上下文与本轮用量卡片。三段结构在任何状态下都在，数据到了才填数字，不会时有时无：
- * - 第一行：上下文已用 / 窗口、占比、阶段，右侧是当前模型和「明细」；
+ * 输入框正上方的上下文与本轮用量。默认收起成一行：迷你进度条、已用 / 窗口、占比、阶段和本轮摘要，点一下展开整张卡片：
+ * - 第一行：上下文已用 / 窗口、占比、阶段，右侧是当前模型、「明细」和收起；
  * - 进度条带自动压缩线，下方写剩余和压缩线位置（还没有读数时写下一步会发生什么）；
  * - 本轮五项：token、缓存命中、速度、耗时、工具调用，没有的项显示「—」。
- * 新一轮的读数还没回来时沿用同一对话上一轮的上下文读数并标「上一轮」；「明细」展开上下文构成和本轮的输入输出、耗时，展开与否记在本机。
+ * 新一轮的读数还没回来时沿用同一对话上一轮的上下文读数并标「上一轮」；卡片和「明细」展开与否都记在本机。
  */
 export function AgentUsageBar({
     view,
@@ -77,7 +88,8 @@ export function AgentUsageBar({
     /** 当前选择的模型名；面板窄时输入框下方的模型按钮只剩图标，这里写全。 */
     modelLabel?: string;
 }) {
-    const [expanded, setExpanded] = useState(readExpanded);
+    const [cardOpen, setCardOpen] = useState(() => readFlag(AGENT_USAGE_CARD_KEY));
+    const [expanded, setExpanded] = useState(() => readFlag(AGENT_USAGE_EXPANDED_KEY));
     const detailsId = useId();
     const measured = view.phase !== "idle";
     const compacting = view.phase === "compacting";
@@ -98,22 +110,61 @@ export function AgentUsageBar({
     const scaleStart = measured ? remaining : running ? "这一轮进行中，读数稍后出现" : hasRun ? "这一轮还没有上下文读数" : "发出消息后开始统计";
     const scaleEnd = compacting ? "正在把较早的对话收成检查点" : compactAt && compactRatio ? `到 ${formatContextTokens(compactAt)}（${formatAgentShare(compactRatio)}）自动压缩` : "";
     const toggle = () => {
-        const next = !expanded;
-        setExpanded(next);
-        try {
-            if (next) localStorage.setItem(AGENT_USAGE_EXPANDED_KEY, "1");
-            else localStorage.removeItem(AGENT_USAGE_EXPANDED_KEY);
-        } catch (error) {
-            console.warn("Agent 用量明细偏好无法保存", error);
-        }
+        setExpanded(!expanded);
+        writeFlag(AGENT_USAGE_EXPANDED_KEY, !expanded);
     };
+    const setCard = (open: boolean) => {
+        setCardOpen(open);
+        writeFlag(AGENT_USAGE_CARD_KEY, open);
+    };
+    const used = measured && view.inputTokens !== undefined ? formatContextTokens(view.inputTokens) : AGENT_USAGE_NO_READING;
+    const meterFill = measured && (ratio !== undefined || compacting) ? <span style={{ width: `${fill * 100}%` }} /> : null;
+    const alert = view.compactionError ? (
+        <p className="agent-usage-alert" role="status">
+            <TriangleAlert className="size-3.5" aria-hidden="true" />
+            {view.compactionError}
+        </p>
+    ) : null;
+    if (!cardOpen) {
+        // 收起：一行写完上下文和本轮摘要，整行就是展开按钮。
+        // 没有本轮读数时写剩余或下一步；轮次进行中已有「进行中」标签，提示只写读数稍后出现。
+        const brief = agentUsageSummary(stats) || (!measured && running ? "读数稍后出现" : scaleStart);
+        return (
+            <section className={`agent-usage is-${view.phase} is-collapsed`} aria-label="上下文与本轮用量">
+                <button
+                    type="button"
+                    className="agent-usage-strip"
+                    aria-expanded={false}
+                    title={measured ? view.detail : "展开用量卡片"}
+                    aria-label={`上下文 ${used}${windowTokens ? ` / ${formatContextTokens(windowTokens)}` : ""}${percent ? `，已用 ${percent}` : ""}${brief ? `；${brief}` : ""}。展开用量卡片`}
+                    onClick={() => setCard(true)}
+                >
+                    <span className="agent-usage-meter is-mini" aria-hidden="true">
+                        {meterFill}
+                        {marker ? <i style={{ left: `${marker * 100}%` }} /> : null}
+                    </span>
+                    <span className="agent-usage-figure">
+                        <strong>{used}</strong>
+                        {windowTokens ? ` / ${formatContextTokens(windowTokens)}` : null}
+                    </span>
+                    {percent ? <span className="agent-usage-percent">{percent}</span> : null}
+                    {badge ? <span className="agent-usage-badge">{badge}</span> : null}
+                    {carried ? <span className="agent-usage-tag">上一轮</span> : null}
+                    {running ? <span className="agent-usage-live">进行中</span> : null}
+                    <span className="agent-usage-brief">{brief}</span>
+                    <ChevronDown className="agent-usage-chevron size-3.5" aria-hidden="true" />
+                </button>
+                {alert}
+            </section>
+        );
+    }
     return (
         <section className={`agent-usage is-${view.phase}`} aria-label="上下文与本轮用量">
             <div className="agent-usage-head">
                 <span className="agent-usage-context" title={measured ? view.detail : undefined}>
                     <span className="agent-usage-label">上下文</span>
                     <span className="agent-usage-figure">
-                        <strong>{measured && view.inputTokens !== undefined ? formatContextTokens(view.inputTokens) : AGENT_USAGE_NO_READING}</strong>
+                        <strong>{used}</strong>
                         {windowTokens ? ` / ${formatContextTokens(windowTokens)}` : null}
                     </span>
                     {percent ? <span className="agent-usage-percent">{percent}</span> : null}
@@ -137,11 +188,14 @@ export function AgentUsageBar({
                             <ChevronDown className="size-3.5" aria-hidden="true" />
                         </button>
                     ) : null}
+                    <button type="button" className="agent-usage-collapse" aria-expanded={true} aria-label="收起用量卡片" title="收起用量卡片" onClick={() => setCard(false)}>
+                        <ChevronUp className="size-3.5" aria-hidden="true" />
+                    </button>
                 </span>
             </div>
-            {measured && (ratio !== undefined || compacting) ? (
+            {meterFill ? (
                 <span className="agent-usage-meter" role="progressbar" aria-label={percent ? `上下文已用 ${percent}` : "上下文正在压缩"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={ratio === undefined ? undefined : Math.round(ratio * 100)}>
-                    <span style={{ width: `${fill * 100}%` }} />
+                    {meterFill}
                     {marker ? <i style={{ left: `${marker * 100}%` }} aria-hidden="true" /> : null}
                 </span>
             ) : (
@@ -163,12 +217,7 @@ export function AgentUsageBar({
                     </div>
                 ))}
             </dl>
-            {view.compactionError ? (
-                <p className="agent-usage-alert" role="status">
-                    <TriangleAlert className="size-3.5" aria-hidden="true" />
-                    {view.compactionError}
-                </p>
-            ) : null}
+            {alert}
             {hasDetails ? (
                 <div id={detailsId} className="agent-usage-details" hidden={!expanded}>
                     {details.context.length ? (
