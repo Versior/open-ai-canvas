@@ -7,8 +7,9 @@ import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-st
 import { studioImageUrl } from "./studio-parts";
 import type { StudioShotGroup, StudioViewerTarget } from "./studio-results";
 import { StudioShotTuner, type StudioShotPatch } from "./studio-shot-tuner";
+import { StudioViewerStage } from "./studio-viewer-stage";
 
-/** 大图查看：←/→ 在这一组出过图的镜头之间切换；套图里有多张候选时可以挑一张作为导出用图；右侧可以调整这一张再出。 */
+/** 大图查看：←/→ 在这一组出过图的镜头之间切换，图片可以点击、滚轮放大；套图里有多张候选时可以挑一张作为导出用图；右侧可以调整这一张再出。 */
 export function StudioViewer({
     product,
     groups,
@@ -70,9 +71,7 @@ export function StudioViewer({
         <AppModal open={Boolean(group && shot && current)} onCancel={onClose} footer={null} width={1120} centered flush rootClassName="es-portal" title={null}>
             {group && shot && current ? (
                 <div className="es-viewer">
-                    <div className="es-viewer-stage">
-                        <img key={current.resourceId} src={studioImageUrl(current.resourceId)} alt={shot.title} />
-                    </div>
+                    <StudioViewerStage key={current.resourceId} src={studioImageUrl(current.resourceId)} alt={shot.title} />
                     <aside className="es-viewer-side">
                         <span className="es-viewer-count">
                             {group.title} · 第 {position + 1}/{viewable.length} 张

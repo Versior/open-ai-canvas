@@ -19,7 +19,6 @@
     --es-glass: rgba(16, 16, 20, 0.62);
     --es-glass-strong: rgba(16, 16, 20, 0.8);
     --es-on-media: #ffffff;
-    --es-stage: #0e0e11;
 }
 
 /* ---------- 页面骨架 ---------- */
@@ -1282,20 +1281,77 @@
     grid-template-rows: minmax(0, 1fr);
     height: min(80vh, 760px);
 }
-/* 单元格必须是确定尺寸，否则行高会被原图撑开，竖图下半截被弹窗裁掉。 */
+/* 图片区跟随主题用浅灰（深色为深灰）底，缩放条排在图片下面，不挡画面。 */
 .es-viewer-stage {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    background: var(--es-muted);
+}
+/* 单元格必须是确定尺寸，否则行高会被原图撑开，竖图下半截被弹窗裁掉。
+   四边留白相等：缩放以舞台中心为原点计算，图片中心要和舞台中心重合。 */
+.es-zoom {
     display: grid;
     grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     min-width: 0;
     min-height: 0;
-    padding: var(--space-4);
-    background: var(--es-stage);
+    overflow: hidden;
+    padding: var(--space-5);
+    cursor: zoom-in;
+    touch-action: none;
+    user-select: none;
 }
-.es-viewer-stage img {
+.es-zoom[data-zoomed] {
+    cursor: grab;
+}
+.es-zoom[data-gesture="drag"] {
+    cursor: grabbing;
+}
+.es-zoom img {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    border-radius: var(--es-radius-media);
+    box-shadow: 0 0 0 1px var(--es-line);
+    transition: transform var(--es-motion);
+}
+.es-zoom[data-gesture] img {
+    transition: none;
+}
+.es-zoom-bar {
+    display: inline-flex;
+    align-items: center;
+    justify-self: center;
+    gap: 2px;
+    margin-bottom: var(--space-4);
+    padding: 3px;
+    border-radius: var(--r-full);
+    background: var(--es-panel);
+    box-shadow: 0 0 0 1px var(--es-line);
+}
+.es-zoom-bar .es-icon-btn {
+    border-radius: var(--r-full);
+}
+.es-zoom-level {
+    min-width: 56px;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--es-ink-2);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+.es-zoom-level:hover:not(:disabled) {
+    background: var(--es-muted);
+    color: var(--es-ink);
+}
+.es-zoom-level:disabled {
+    cursor: default;
 }
 .es-viewer-side {
     display: flex;
