@@ -8,6 +8,7 @@ import { Switch } from "../ui/controls";
 import { ecommerceCapabilitySettings, ecommerceSettingsEqual, getAdminEcommerceDefaults, getAdminEcommerceSetting, getPreviousEcommerceSetting, saveAdminEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce-canvas";
 import { ECOMMERCE_STUDIO_CAPABILITIES } from "@/lib/ecommerce/ecommerce-capabilities";
 import { EcommerceTemplateEditor } from "./ecommerce-template-editor";
+import { StudioPromptsEditor } from "./studio-prompts-editor";
 import "./ecommerce-settings-page.css";
 
 /** 电商生图台的「商品档案」能力：看图识别商品事实，再按已确认事实写卖点与文案。 */
@@ -130,7 +131,7 @@ export default function EcommerceSettingsPage() {
     return (
         <AdminPageFrame
             title="电商生图台"
-            description="管理电商生图台的商品档案指令与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
+            description="管理电商生图台的商品档案指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
             scroll
             actions={
                 <>
@@ -203,6 +204,27 @@ export default function EcommerceSettingsPage() {
                                                 />
                                             </Form.Item>
                                         </Form>
+                                    </SettingsSectionCard>
+                                ),
+                            },
+                            {
+                                key: "prompts",
+                                label: "出图提示词",
+                                children: (
+                                    <SettingsSectionCard
+                                        title="出图提示词"
+                                        description="生图台出图时每一层提示词的写法：镜头规格、拍摄方式、市场、质感、品类规则和微调标签。改过的替换内置写法，恢复内置或改回原样即不再覆盖；商品事实、图上文字和平台硬性要求不在这里改。修改保存后生效。"
+                                        layout="stacked"
+                                    >
+                                        <StudioPromptsEditor
+                                            value={draft.studioPrompts}
+                                            disabled={busy}
+                                            onChange={(studioPrompts) => {
+                                                const next = { ...draft, studioPrompts };
+                                                if (!studioPrompts) delete next.studioPrompts;
+                                                setDraft(next);
+                                            }}
+                                        />
                                     </SettingsSectionCard>
                                 ),
                             },

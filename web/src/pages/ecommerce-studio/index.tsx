@@ -8,6 +8,8 @@ import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { EmptyState } from "@/components/ui/product/empty-state/empty-state";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
+import { setStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
+import { getStudioPrompts } from "@/services/api/ecommerce-studio";
 import { createStudioProduct, studioOutputCount } from "@/lib/ecommerce-studio/product";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { downloadBrowserMedia } from "@/services/browser-download";
@@ -53,6 +55,17 @@ export default function EcommerceStudioPage() {
     useEffect(() => {
         void load();
     }, [load]);
+
+    // 后台改过的出图提示词：读不到时按内置写法出图，并告诉用户这一次没用上后台的写法。
+    useEffect(() => {
+        const controller = new AbortController();
+        void getStudioPrompts(controller.signal)
+            .then(setStudioPromptOverrides)
+            .catch((failure) => {
+                if (!controller.signal.aborted) message.warning(`后台的出图提示词没有读到，这次按内置写法出图：${failure instanceof Error ? failure.message : "请稍后刷新"}`);
+            });
+        return () => controller.abort();
+    }, [message]);
 
     const ready = status === "ready";
     const stored = products.find((item) => item.id === requested) || (!requested ? products[0] : undefined);

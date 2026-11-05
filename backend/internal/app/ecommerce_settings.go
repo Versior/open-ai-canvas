@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -86,7 +87,12 @@ type EcommerceSetting struct {
 	Models              []EcommercePublicModel          `json:"models"`
 	Revision            string                          `json:"revision"`
 	Templates           []EcommerceSuiteTemplate        `json:"templates"`
+	// StudioPrompts 是生图台出图提示词的覆盖：键是前端登记的提示词编号（如 shot.main-white.composition），
+	// 值替换内置写法；没有的键用内置默认。后台「电商生图台 → 出图提示词」维护，用户端只读。
+	StudioPrompts map[string]string `json:"studioPrompts,omitempty"`
 }
+
+var ecommerceStudioPromptKey = regexp.MustCompile(`^[a-z0-9][a-z0-9.:-]{0,63}$`)
 
 var ecommerceCapabilities = []string{"planning", "suite-forge", "model-cast", "pattern", "listing", "print-pack", "pipeline", "layers", "dossier"}
 
@@ -167,6 +173,14 @@ func validateEcommerceSetting(value EcommerceSetting) error {
 	}
 	if len(value.Templates) > 200 {
 		return BadAuthRequest("套图模板最多 200 套")
+	}
+	if len(value.StudioPrompts) > 400 {
+		return BadAuthRequest("出图提示词覆盖最多 400 条")
+	}
+	for key, text := range value.StudioPrompts {
+		if !ecommerceStudioPromptKey.MatchString(key) || strings.TrimSpace(text) == "" || len([]rune(text)) > 2000 {
+			return BadAuthRequest("出图提示词的编号无效，或内容为空、超过 2000 字")
+		}
 	}
 	templateIDs := map[string]bool{}
 	for _, item := range value.Templates {

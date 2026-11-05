@@ -48,6 +48,20 @@ func RegisterEcommerceCanvasRoutes(r *gin.RouterGroup, svc *service.Service) {
 		c.Header("Cache-Control", "private, no-cache")
 		ok(c, gin.H{"template": value})
 	})
+	r.GET("/ecommerce/studio/prompts", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		prompts, err := svc.EcommerceStudioPrompts(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-cache")
+		ok(c, gin.H{"prompts": prompts})
+	})
 	r.GET("/ecommerce/studio/templates", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

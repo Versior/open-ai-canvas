@@ -13,6 +13,8 @@ export type EcommerceSetting = {
     flows: Record<EcommerceFlowId, { enabled: boolean; directorPrompt: string }>;
     models: PublicEcommerceModel[];
     templates: EcommerceSuiteTemplate[];
+    /** 生图台出图提示词的覆盖：提示词编号 → 文字，只含后台改过的条目。 */
+    studioPrompts?: Record<string, string>;
     revision: string;
 };
 export function ecommerceCapabilitySettings(setting: EcommerceSetting) {
@@ -50,6 +52,11 @@ export function parseEcommerceSetting(value: unknown): EcommerceSetting {
             ECOMMERCE_SETTING_CAPABILITIES.some(({ id }) => typeof setting.capabilities?.[id]?.enabled !== "boolean" || typeof setting.capabilities[id].directorPrompt !== "string" || setting.capabilities[id].directorPrompt.length > 20000))
     )
         throw new Error("电商能力配置无效");
+    if (
+        setting.studioPrompts !== undefined &&
+        (!setting.studioPrompts || typeof setting.studioPrompts !== "object" || Array.isArray(setting.studioPrompts) || Object.values(setting.studioPrompts).some((text) => typeof text !== "string" || [...text].length > 2000))
+    )
+        throw new Error("出图提示词配置无效");
     if (setting.templates === undefined) setting.templates = [];
     if (
         !Array.isArray(setting.templates) ||

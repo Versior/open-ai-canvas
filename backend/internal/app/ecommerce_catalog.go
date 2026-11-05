@@ -85,6 +85,21 @@ func (s *Service) allowEcommerceCatalog(actor *model.User) error {
 	return s.RequireFeature(FeatureEcommerceStudio)
 }
 
+// EcommerceStudioPrompts 返回后台改过的出图提示词，生图台出图时替换内置写法；没改过时为空表。
+func (s *Service) EcommerceStudioPrompts(actor *model.User) (map[string]string, error) {
+	if err := s.allowEcommerceCatalog(actor); err != nil {
+		return nil, err
+	}
+	_, setting, err := s.readEcommerceSetting()
+	if err != nil {
+		return nil, err
+	}
+	if setting.StudioPrompts == nil {
+		return map[string]string{}, nil
+	}
+	return setting.StudioPrompts, nil
+}
+
 // EcommerceStudioTemplates 返回后台已启用的套图模板，供生图台选择；停用的草稿不对用户可见。
 func (s *Service) EcommerceStudioTemplates(actor *model.User) ([]EcommerceSuiteTemplate, error) {
 	if err := s.allowEcommerceCatalog(actor); err != nil {

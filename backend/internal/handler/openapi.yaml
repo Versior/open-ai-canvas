@@ -90,6 +90,15 @@ paths:
         "200": {description: data.templates 为 EcommerceSuiteTemplate 数组}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/prompts:
+    get:
+      tags: [canvas]
+      summary: 读取后台改过的生图台出图提示词
+      description: 权限同套图库。data.prompts 是提示词编号到文字的映射，只含后台改过的条目；生图台出图时用它替换内置写法。
+      responses:
+        "200": {description: data.prompts 为对象，值为字符串}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /ecommerce/studio/models:
     get:
       tags: [canvas]

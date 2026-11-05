@@ -1,7 +1,7 @@
 import { ecommercePlatform, ecommerceRoleSpec, type EcommercePlatformId, type EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioLanguage, studioMarket, studioShooting } from "./brief";
 import { studioStyleReferences } from "./runs";
-import { STUDIO_FAMILY_RULES, STUDIO_TWEAKS, studioShotSpec, studioStyle, type StudioShotSpec } from "./shot-specs";
+import { studioFamilyRule, studioShotSpec, studioStyle, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
 import {
     STUDIO_FACT_GROUP_LABEL,
     STUDIO_VIEW_LABEL,
@@ -256,7 +256,7 @@ function dutyLayer(shot: StudioShot): StudioPromptLayer | undefined {
 }
 
 function compositionLayer(shot: StudioShot, spec: StudioShotSpec): StudioPromptLayer {
-    const tweaks = shot.tweaks.map((id) => STUDIO_TWEAKS.find((tweak) => tweak.id === id)?.instruction).filter((item): item is string => Boolean(item));
+    const tweaks = shot.tweaks.map(studioTweakInstruction).filter((item): item is string => Boolean(item));
     const text = [sentence(spec.composition), sentence(spec.camera), tweaks.length ? `本次调整：${tweaks.join("；")}。` : ""].filter(Boolean).join("\n");
     return { id: "composition", title: "构图与机位", source: "镜头规格", text };
 }
@@ -328,7 +328,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
         });
     }
     layers.push({ id: "set", title: "背景与道具", source: "镜头规格", text: sentence(spec.set) });
-    layers.push({ id: "category", title: "品类要求", source: "品类规则", text: STUDIO_FAMILY_RULES[family] });
+    layers.push({ id: "category", title: "品类要求", source: "品类规则", text: studioFamilyRule(family) });
     for (const layer of extra) if (layer.id !== "shooting") layers.push(layer);
     const layout = brief ? layoutLayer(brief, references, styleReferences, modelReferences.length) : undefined;
     if (layout) layers.push(layout);

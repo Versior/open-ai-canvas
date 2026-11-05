@@ -1,6 +1,7 @@
 import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
 import { studioShotSpec } from "./shot-specs";
+import { studioPromptText } from "./prompt-overrides";
 import { normalizeStudioSuite } from "./suites";
 import type { StudioModelCast, StudioModelPick, StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
 
@@ -142,7 +143,8 @@ export function studioOutputSpec(type: StudioOutputType) {
 }
 
 export function studioMarket(id: StudioMarket) {
-    return STUDIO_MARKETS.find((item) => item.id === id) || STUDIO_MARKETS[0];
+    const market = STUDIO_MARKETS.find((item) => item.id === id) || STUDIO_MARKETS[0];
+    return { ...market, prompt: studioPromptText(`market.${market.id}`, market.prompt) };
 }
 
 export function studioLanguage(id: StudioLanguage) {
@@ -150,7 +152,9 @@ export function studioLanguage(id: StudioLanguage) {
 }
 
 export function studioShooting(id: StudioShooting) {
-    return STUDIO_SHOOTINGS.find((item) => item.id === id) || STUDIO_SHOOTINGS[0];
+    const shooting = STUDIO_SHOOTINGS.find((item) => item.id === id) || STUDIO_SHOOTINGS[0];
+    // 「按出图类型」本身不加文字，不给后台改。
+    return shooting.id === "auto" ? shooting : { ...shooting, prompt: studioPromptText(`shooting.${shooting.id}`, shooting.prompt) };
 }
 
 /** 卖点与商品信息：一行一条，「标题：说明」拆成两级；前面的序号和圆点去掉。 */
