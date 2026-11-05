@@ -26,13 +26,14 @@ description: 从产品功能快速定位主要代码入口
 
 ## 电商模特库
 
-- 后台页面 `web/src/pages/admin/settings/studio-models-page.tsx`（路由 `/admin/settings/studio-models`，导航在 `admin-shell.tsx` 的「创作与扩展」）；接口模块 `web/src/services/api/studio-models.ts`。
+- 后台页面 `web/src/pages/admin/settings/studio-models-page.tsx`（路由 `/admin/settings/studio-models`，导航在 `admin-shell.tsx` 的「创作与扩展」）；接口模块 `web/src/services/api/studio-models.ts`。后台列表的分类与上下架筛选在 `app/studio_models.go` 的 `AdminStudioModels`，类型和分类条数来自 `repository/studio_models.go` 的 `StudioModelKindCounts`、`StudioModelCategoryCounts`。
+- 批量导入：`scripts/import-pose-gallery.py` 按固定提交拉取 ai-pose-gallery-zh 的一部分并写清单；`backend/cmd/studio-models-import/main.go` 直接打开数据目录，以已有管理员身份调用 `ImportStudioModelImage`，用 `AdminStudioModelKeys` / `StudioModelKey`（类型 + 分类 + 名称）跳过已导入的。图片解码与缩略图在 `decodeStudioModelImage`，后台上传和导入工具共用。
 - 服务端：`backend/internal/handler/studio_models.go`（`RegisterStudioModelRoutes`，在 `api.go` 注册）→ `app/studio_models.go`（校验、导入与缩略图、上下架、可见性、看图、复制到用户资源、删除保护 `studioModelResourceReferences`）→ `repository/studio_models.go`；模型 `model/models_studio_model.go`，迁移 85 在 `database/migrations.go`。删除保护接在 `app/admin_storage_delete.go` 与 `app/resource_deletion_worker.go`；资源类型 `studio-model` 登记在 `repository/repository_storage_resources.go` 的 `AccountExemptResourceKinds` 和 `app/resource_store.go` 的本地专用类型。
 - 出图：`web/src/lib/ecommerce-studio/prompt-compiler.ts` 的 `studioShotUsesModel` 决定哪些镜头带模特设定，参考图顺序为商品图、模特人脸与姿势、风格参考，`use-studio-runner.ts` 按同一顺序提交。
 
 ## 电商生图台后台
 
-- 页面：`web/src/pages/admin/settings/ecommerce-settings-page.tsx` 只编辑商品档案能力与套图模板，保存时整份配置提交；`ecommerce-template-editor.tsx` 与 `components/canvas/ecommerce-template-catalog.tsx` 管理模板与 EcomGen 目录（目录分一级类目栏、列表和预览三栏，类目计数来自 `GET /ecommerce/templates` 的 `categories`；预览 `renderTemplatePreview` 与生图台「后台精选」共用）；协议在 `services/api/ecommerce-canvas.ts`。
+- 页面：`web/src/pages/admin/settings/ecommerce-settings-page.tsx` 编辑商品档案能力、出图提示词与套图模板，页头放保存状态与操作，页签名带状态与未保存圆点，保存时整份配置提交；`ecommerce-dossier-panel.tsx` 的 `renderDossierPanel` 是商品档案页签（普通函数渲染，控件留在设置页元素树里，`test/ecommerce-settings-page.test.tsx` 直接遍历）；`studio-prompts-editor.tsx` 是出图提示词页签；`ecommerce-template-editor.tsx` 管后台精选列表与内置模板库，`ecommerce-template-form.tsx` 是一套模板的编辑区（用途选项 `TEMPLATE_FLOW_OPTIONS`），`ecommerce-template-import.tsx` 是 EcomGen JSON 导入弹窗；`components/canvas/ecommerce-template-catalog.tsx` 是 EcomGen 目录（一级类目栏、列表和预览三栏，类目计数来自 `GET /ecommerce/templates` 的 `categories`；预览 `renderTemplatePreview` 与生图台「后台精选」共用）；协议在 `services/api/ecommerce-canvas.ts`。样式都在 `ecommerce-settings-page.css`（`.ecm-*`）。
 - 服务端：`backend/internal/handler/ecommerce_canvas.go` 只剩模板目录、生图台可选模板（`GET /ecommerce/studio/templates`，`app/ecommerce_catalog.go` 的 `EcommerceStudioTemplates`）与后台配置接口，模板接口对普通用户按 `ecommerceStudioEnabled` 放行；`app/ecommerce_settings.go` 校验能力开关、任务模式和分析标识并在 worker 内存注入指令，`ecommerceCapabilityOpen` 让商品档案只看自身开关；`ecommerceResourceReferences` 继续保护存量模特图片；`repository/ecommerce_settings.go` 原子保存当前配置、上一版和审计。默认指令在 `app/ecommerce_defaults.go`。
 - 画布列表：`canvas/user_data_page.go` 与 `repository/project_workbench_read.go` 已恢复为上游实现，不再按 kind 过滤。
 
