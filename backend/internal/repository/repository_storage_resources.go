@@ -124,9 +124,9 @@ func (r *Repository) ReleaseDailyUpload(userID string, day string, size int64) e
 		}).Error
 }
 
-// AccountExemptResourceKinds 是管理员导入的站点外观资源（Live2D 模型、形象包、智能体形象图集）。
+// AccountExemptResourceKinds 是管理员导入的站点资源（Live2D 模型、形象包、智能体形象图集、电商模特库图片）。
 // 它们给全站用户使用，不计入导入者的个人文件容量。
-var AccountExemptResourceKinds = []string{"live2d", "agent-avatar-bundle", "agent-pet"}
+var AccountExemptResourceKinds = []string{"live2d", "agent-avatar-bundle", "agent-pet", "studio-model"}
 
 func IsAccountExemptResourceKind(kind string) bool {
 	return slices.Contains(AccountExemptResourceKinds, kind)

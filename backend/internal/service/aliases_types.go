@@ -5,6 +5,8 @@ import "yingce/backend/internal/app"
 type AgentAvatarBundleManifest = app.AgentAvatarBundleManifest
 type AgentAvatarBundleImport = app.AgentAvatarBundleImport
 type AdminAgentPetInput = app.AdminAgentPetInput
+type AdminStudioModelInput = app.AdminStudioModelInput
+type AdminStudioModelBatchInput = app.AdminStudioModelBatchInput
 type AdminAgentPetBatchInput = app.AdminAgentPetBatchInput
 
 const (

@@ -90,6 +90,107 @@ paths:
         "200": {description: data.templates 为 EcommerceSuiteTemplate 数组}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/models:
+    get:
+      tags: [canvas]
+      summary: 浏览电商模特库
+      description: 登录可读，普通用户须开放「电商生图台」，只返回已上架的素材；管理员不受开关限制。
+      parameters:
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, pose, style]}}
+        - {in: query, name: q, schema: {type: string, maxLength: 60}}
+        - {in: query, name: category, schema: {type: string}}
+        - {in: query, name: gender, schema: {type: string, enum: ["", female, male]}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
+      responses:
+        "200": {description: data 包含 items、total、page、pageSize、categories；每项含 id、kind、name、category、gender、tags、prompt、hasImage、width、height、revision}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/models/{id}/image:
+    get:
+      tags: [canvas]
+      summary: 读取模特库素材图
+      description: 权限同浏览；未上架的素材只有管理员能看。variant=thumb 给不超过 512 像素的缩略图；带 v=revision 时可缓存一天。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: variant, schema: {type: string, enum: [thumb]}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: 图片二进制}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/models/{id}/attach:
+    post:
+      tags: [canvas]
+      summary: 选用模特库素材
+      description: 把素材原图复制到当前用户的资源库并返回 data.resourceId，出图任务引用用户自己的资源。同一用户对同一张原图只复制一次，计入上传配额；按上传频率限流。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data 包含 resourceId、width、height}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/studio-models:
+    get:
+      tags: [admin]
+      summary: 管理员列出模特库素材
+      description: 包括未上架的素材；参数同浏览接口（无 category、gender）。
+      parameters:
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, pose, style]}}
+        - {in: query, name: q, schema: {type: string, maxLength: 60}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
+      responses:
+        "200": {description: 结构同浏览接口，另含 enabled、consent、sortOrder、updatedAt}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/import:
+    post:
+      tags: [admin]
+      summary: 管理员新增模特库素材
+      description: multipart 表单：kind、name、category、gender、tags（JSON 数组或逗号分隔）、prompt、consent、enabled 与可选 file（PNG/JPEG/WebP，12 MiB、4000 万像素以内）。人脸和姿势必须带图，人脸须确认肖像授权才能上架，模特样式必须写造型描述。原图与缩略图存为本地 studio-model 资源，不计入个人容量。
+      responses:
+        "200": {description: data.item 为新素材}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/{id}:
+    put:
+      tags: [admin]
+      summary: 管理员修改模特库素材
+      description: 只改文字字段、授权确认与上下架；类型和图片不能改。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data.item 为修改后的素材}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 管理员删除模特库素材
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data.affected 为删除条数}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/batch:
+    post:
+      tags: [admin]
+      summary: 管理员批量上架、下架或删除模特库素材
+      description: 请求体 {"ids":[...],"action":"enable|disable|delete"}，一次 1–200 条。上架时有人脸没确认肖像授权则整批不执行。
+      responses:
+        "200": {description: data.affected 为影响条数}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /admin/settings/ecommerce:
     get:
       tags: [admin]
