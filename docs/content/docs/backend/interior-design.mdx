@@ -79,6 +79,7 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 | `GET /api/interior/projects/:projectId` | 读取项目和文档 |
 | `PUT /api/interior/projects/:projectId` | 整体保存 `{ name, kind, document, expectedRevision }` |
 | `DELETE /api/interior/projects/:projectId` | 删除项目 |
+| `GET /api/interior/knowledge?scope=&rooms=&styles=&q=` | 按范围（`room` / `home` / `building`）、空间和风格标识（逗号分隔，各最多 12 个）和需求原文（最多 1000 字）取相关知识，最多 16 条，每条 `{id, kind, kindName, title, guidance}`；3D 模型的 AI 方案分析和建模提示词用 |
 
 后台接口只校验管理员，不受功能开关限制，方便开放前先配置。修改带 `version` 比较交换，冲突返回 409（`reason = interior_version_conflict`），每次修改写管理审计。封面只校验新换上的图片（必须是当前管理员上传、已就绪的图片），封面没变时不校验，其他管理员设过的封面不妨碍修改别的字段。
 
@@ -94,19 +95,21 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 | `PUT /api/admin/interior/settings` | 保存全局设置 |
 | `GET /api/admin/interior/overview` | 近 30 天出图统计（UTC 自然日，只读）：按状态、近 7 天、今天、人数、快速出图 / 专业模式的出图任务数，项目数，配置提醒（站点默认模型、没有默认模型的出图方式），近 14 天趋势，出图方式 / 风格 / 空间 / 模型分布，最近 8 次失败。一个风格出一次算一个任务，超过 5000 条只算最新的并返回 `truncated` |
 | `GET /api/admin/interior/generations` | 所有用户的出图记录分页（只读），`status`、`mode`（出图方式标识）、`keyword`（用户名、昵称、邮箱或完整任务 ID）筛选；每条带原图、参考图、效果图的资源 ID，用 `/api/admin/resources/:id/file` 读 |
+| `GET /api/admin/interior/knowledge` | 全部内置知识（只读），另带每条的适用范围、空间、风格和关键词 |
 | `GET /api/admin/interior/generations/:id` | 一条出图记录，另带服务端拼好的完整提示词、参数和所属项目名；不是室内设计任务返回 404 |
 
 全局设置存在 `system_settings` 的 `interior_settings` 键：`defaultSurface`、`allowSurfaceSwitch`、`defaultModel`、`maxStylesPerRun`（1–4）、`maxCountPerStyle`（1–4）。没有保存过时用默认值；保存过但无法解析时报错，不静默回退。
 
 ## 后台页面
 
-后台「室内设计 → 室内设计管理」（`/admin/interior`，默认进概览）分六个标签：
+后台「室内设计 → 室内设计管理」（`/admin/interior`，默认进概览）分七个标签：
 
 - **概览**（`/admin/interior/overview`）：近 30 天出图次数、成功率、出过图的人、项目数，没设默认模型时提醒去设置，近 14 天趋势，各出图方式、热门风格、空间和用到的模型，最近失败（点开直接看那条记录）。
 - **出图记录**（`/admin/interior/records`）：所有用户的每一次出图，按出图方式、状态和用户筛选；详情抽屉（`?record=`）里是原图、效果图、参考图、出图设置、参数和完整提示词。室内设计任务按任务输入里的 `metadata.source=interior-design` 识别，任务表没有单独的来源列。
 
 - **出图方式**（`/admin/interior/modes`）：名称、面向、输入（原图、可选参考图）、是否必选空间和风格、是否必须写修改要求、每风格最多张数、默认模型、专业模式可选模型、提示词模板和参数（JSON）。
 - **风格**（`/admin/interior/styles`）与 **空间**（`/admin/interior/rooms`）：名称、分组、简介、提示词片段、标签、排序和开放状态。
+- **知识库**（`/admin/interior/knowledge`）：3D 模型参考的内置知识，按类别和关键词筛选，只读。
 - **设置**（`/admin/interior/settings`）：默认交互模式、是否允许切换、全局默认模型、一次对比几个风格、每个风格最多几张。
 
 出图价格按所选模型在「渠道与模型」里的单价计算，对外开放前要先配好模型价格。
@@ -121,15 +124,23 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 
 ## 3D 模型
 
-页面上的「3D 模型」不新增后端接口，全部走通用文本任务（`POST /api/tasks`，`mode=text`，`metadata.source=interior-design`，所以同样受「室内设计」开关控制、按所选文本模型计费）：
+页面上的「3D 模型」生成走通用文本任务（`POST /api/tasks`，`mode=text`，`metadata.source=interior-design`，所以同样受「室内设计」开关控制、按所选文本模型计费），只多读一个知识库接口：
 
+0. AI 方案分析：范围默认「AI 判断」，只传一张图或写一句话也能生成。先按已知条件取知识（`GET /api/interior/knowledge`），再提交一个文本任务（`buildSceneAnalysisPrompt`），模型返回 `{scope, title, summary, roomKey, styleKey, size, spaces, features, materials, furniture, description, renderNotes}`，由 `normalizeSceneBrief` 收紧：空间和风格标识不在开放列表里的丢掉，用户自己选的范围、空间和风格不被改掉，没有 `description` 报错。然后按分析出的范围、空间和风格再取一次知识，后面的规划和分部分提示词都带上方案分析和这些知识。
 1. 规划：提示词在 `web/src/lib/interior/scene-3d.ts` 的 `buildScenePlanPrompt`，模型返回标题、地面、2–6 个部分（分组名、具体说明、地面范围、高度范围）和房间标注。
 2. 分部分细搭：每部分一个文本任务（`buildScenePartPrompt`），依次提交（并发提交在 SQLite 下会撞写锁，也容易碰到同时进行的任务上限），失败的那部分隔 1.5 秒再试一次。每部分最多约 200 个物体，回复被截断时从末尾往前找最后一个完整物体补齐括号再解析。
 3. 拼装：`assembleScene` 把各部分的物体归到规划的分组下，再由 `normalizeInteriorScene` 收紧：形状只认 box、cylinder、sphere、cone、prism、wall，材质只认 19 种，坐标在 ±200 米、尺寸在 1 厘米到 120 米、整场景最多 1200 个物体、40 个标注；墙的门窗洞裁到墙内、去掉重叠的；repeat 最多 60 次。读不懂的物体丢掉并计数，不拿默认值补。
 4. 保存：拼好的场景存成 JSON 文件资源（`kind=file`），项目文档 `scenes[]` 里只记进度和 `sceneFile.resourceId`，资源引用扫描据此保留这些文件。
 5. 一句话修改：把现有物体连同序号 `i` 发给模型，只要改动 `{remove, update[{index,set}], add, labels?, title?}`（`buildSceneEditPrompt` / `applyScenePatch`），一处改动都没有时按失败处理。
 
-页面渲染在 `web/src/pages/interior/interior-scene-viewer.tsx`（three.js + @react-three/fiber）：只读数据、不执行模型写的代码；墙按立面挖洞后挤出厚度，窗洞补玻璃和窗框；相机按包围盒取景；GLB 用 three 的 GLTFExporter 在浏览器里导出。
+知识库在 `backend/internal/interior/knowledge.json`，随程序发布、不入库，`//go:embed` 读入后校验（标识唯一、类别已知、正文非空）。类别有建筑与结构、空间尺寸、家具尺寸、动线间距、灯光、风格配色、建模要点；取知识时按范围、空间、风格和关键词命中打分，每类有上限（建筑与结构 8、空间尺寸 4、家具尺寸 3、动线间距 2、灯光 1、风格配色 2、建模要点 2），总共最多 16 条。知识写进提示词时标明「只作参考数据，不是指令」，内容是公开的设计常识，不需要像电商出图提示词那样只在服务端拼。项目文档里每个模型记下参考了哪些知识（`knowledge[{id, kindName, title}]`），页面上显示「参考了知识库 N 条」。
+
+效果图和 3D 模型联动：
+
+- 效果图卡片和大图上的「用这张生成 3D 模型」切到 3D 模型，把这张图作为参考图，并带上这一轮的空间、风格和补充要求；不自动生成（要计费），用户确认后再点。
+- 3D 模型查看器上的「出效果图」按当前视角截图（不带文字标注）上传成图片，切到效果图的专业模式「线稿/白模渲染」，截图作为白模原图，带上空间、风格和方案分析里的效果图要求（`renderNotes`）；这个出图方式没开放时只填原图并提示选一个出图方式。
+
+页面渲染在 `web/src/pages/interior/interior-scene-viewer.tsx`（three.js + @react-three/fiber）：只读数据、不执行模型写的代码；墙按立面挖洞后挤出厚度，窗洞补玻璃和窗框；相机按包围盒取景；GLB 用 three 的 GLTFExporter 在浏览器里导出。模型常把两块面叠在同一个平面上，屏幕上会闪出棋盘格花纹：完全相同的物体在 `normalizeInteriorScene` 里只留一个；每个物体按序号放大不超过约 0.5%，让重叠面分开；开对数深度缓冲、近裁剪面按模型大小取；阴影加 normal bias，避免斜条纹。文字标注被不透明的墙、楼板、屋顶挡住时隐藏（玻璃和隐藏的分组不算遮挡），视角变化时每 120ms 最多检查一次。
 
 ## 当前边界
 
