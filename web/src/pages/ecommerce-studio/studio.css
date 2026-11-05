@@ -476,6 +476,40 @@
     font-size: var(--fs-caption);
     line-height: 1.5;
 }
+/* 字段标题右侧带一句说明（出图类型、模特设定）。 */
+.es-field-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2px var(--space-3);
+}
+/* 出图类型：上面一排单张类型可以多选，下面一排是只能单选的成套出图。 */
+.es-type-picker {
+    display: grid;
+    gap: var(--space-2);
+}
+/* 八种单张类型排成整齐的两行四列。 */
+.es-type-picker > .es-chips {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.es-type-picker .es-chip {
+    height: 32px;
+    overflow: hidden;
+    font-size: var(--fs-ui);
+    text-overflow: ellipsis;
+}
+.es-type-sets {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px var(--space-2);
+}
+.es-type-sets > span {
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
 .es-field .ant-select,
 .es-field .es-model-picker {
     width: 100%;

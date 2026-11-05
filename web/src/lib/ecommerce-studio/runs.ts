@@ -1,4 +1,4 @@
-import { studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioTitleOf } from "./brief";
+import { STUDIO_SINGLE_TYPES, studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioSingleTypes, studioTitleOf } from "./brief";
 import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
@@ -131,20 +131,38 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
             })),
         };
     }
-    const role = spec.role || "main-selling";
+    // 单张类型（含同时选了几种）：每种按数量出，每张都按单张图写文案。
+    const types = studioSingleTypes(brief);
+    if (!types.length) throw new Error("先选择出图类型");
     const count = Math.max(1, Math.min(4, brief.count));
     return {
         ...base,
-        shots: Array.from({ length: count }, (_, index) => ({
-            id: createId(),
-            role,
-            title: count > 1 ? `${spec.label} ${index + 1}` : spec.label,
-            ratio: studioRunRatio(role, product),
-            ...studioRunShotCopy(role, product, true),
-            tweaks: [],
-            attempts: [],
-        })),
+        shots: types.flatMap((type) =>
+            Array.from({ length: count }, (_, index) => {
+                const role = type.role!;
+                return {
+                    id: createId(),
+                    role,
+                    title: count > 1 ? `${type.label} ${index + 1}` : type.label,
+                    ratio: studioRunRatio(role, product),
+                    ...studioRunShotCopy(role, product, true),
+                    tweaks: [],
+                    attempts: [],
+                };
+            }),
+        ),
     };
+}
+
+/** 结果区里一组的标题：多种组合列出包含的类型，模板套图带上模板名。 */
+export function studioRunTitle(run: Pick<StudioRun, "type" | "shots" | "suite">) {
+    if (run.type === "mix") {
+        const roles = new Set(run.shots.map((shot) => shot.role));
+        const labels = STUDIO_SINGLE_TYPES.filter((item) => item.role && roles.has(item.role)).map((item) => item.label);
+        if (labels.length) return labels.join(" · ");
+    }
+    const label = studioOutputSpec(run.type).label;
+    return run.suite ? `${label} · ${run.suite.name}` : label;
 }
 
 function runActive(run: StudioRun) {

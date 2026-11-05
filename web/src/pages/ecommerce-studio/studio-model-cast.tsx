@@ -189,7 +189,7 @@ function CastSlot({ kind, pick, onPick, onClear }: { kind: StudioModelKind; pick
     );
 }
 
-/** 表单里的「模特设定」：出上身效果或用模特拍法时，从模特库选人脸、姿势和造型。 */
+/** 表单里的「模特设定」：出上身效果或用模特拍法时，从模特库选人脸、姿势和造型。渲染成出图设置栅格里的一整行。 */
 export function StudioModelCastSection({ product, edit }: { product: StudioProduct; edit: Edit }) {
     const [picking, setPicking] = useState<StudioModelKind>();
     const cast = product.brief.model || {};
@@ -202,11 +202,14 @@ export function StudioModelCastSection({ product, edit }: { product: StudioProdu
             },
             { immediate: true },
         );
+    // 放在「出图类型」正下方：选了模特图或模特拍法，设定就出现在刚点的地方。
     return (
-        <>
-            <div className="es-section-head">
-                <h2>模特设定</h2>
-                <span className="es-section-note">只用在有模特的图上；不指定时由模型自由发挥</span>
+        <div className="es-field" data-span={6} role="group" aria-labelledby="es-cast-label">
+            <div className="es-field-row">
+                <span className="es-field-label" id="es-cast-label">
+                    模特设定
+                </span>
+                <span className="es-field-hint">只用在有模特的图上；不指定时由模型自由发挥</span>
             </div>
             <div className="es-cast">
                 {KINDS.map((kind) => (
@@ -235,6 +238,6 @@ export function StudioModelCastSection({ product, edit }: { product: StudioProdu
                     }}
                 />
             ) : null}
-        </>
+        </div>
     );
 }

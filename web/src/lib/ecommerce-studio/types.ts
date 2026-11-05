@@ -16,8 +16,8 @@ export type StudioPlanKind = "main" | "detail";
 /** model：模型直接把文字画进图里；overlay：模型只出留白底图，文字由程序排版。 */
 export type StudioTextMode = "model" | "overlay";
 export type StudioStyleId = "mist" | "warm" | "noir" | "fresh" | "vivid";
-/** 表单里的「出图类型」：单张类型按数量出图，套图类型按品类排好整组镜头。 */
-export type StudioOutputType = "main" | "white" | "scene" | "selling" | "closeup" | "model" | "angles" | "poster" | "main-set" | "detail-set" | "template-set";
+/** 表单里的「出图类型」：单张类型按数量出图，套图类型按品类排好整组镜头；mix 是同时选了几种单张类型。 */
+export type StudioOutputType = "main" | "white" | "scene" | "selling" | "closeup" | "model" | "angles" | "poster" | "main-set" | "detail-set" | "template-set" | "mix";
 export type StudioMarket = "cn" | "hk-tw" | "sea" | "jp-kr" | "west" | "mena";
 export type StudioLanguage = "zh" | "zh-hant" | "en" | "ja" | "ko" | "none";
 export type StudioShooting = "auto" | "studio" | "lifestyle" | "model" | "hand" | "flatlay" | "macro";
@@ -171,6 +171,8 @@ export type StudioBrief = {
     brand: string;
     productType: string;
     outputType: StudioOutputType;
+    /** 出图类型为 mix 时选中的单张类型（至少两种，按类型表的顺序）；数量是每种出几张。 */
+    mix?: StudioOutputType[];
     market: StudioMarket;
     language: StudioLanguage;
     shooting: StudioShooting;

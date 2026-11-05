@@ -6,19 +6,23 @@ import { Select } from "@/components/ui/base/select";
 import { ECOMMERCE_PLATFORMS, ecommercePlatform, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import {
     applyStudioSuggestion,
+    pickStudioSetType,
     resetStudioBriefParameters,
     STUDIO_COUNT_OPTIONS,
     STUDIO_LANGUAGES,
     STUDIO_MARKETS,
-    STUDIO_OUTPUT_TYPES,
+    STUDIO_SET_TYPES,
     STUDIO_SHOOTINGS,
+    STUDIO_SINGLE_TYPES,
     studioMarket,
     studioOutputSpec,
     studioPlatformForbidsText,
     studioRunRatio,
     studioInfoPoints,
+    studioSingleTypes,
     studioSuggestion,
     studioTitleOf,
+    toggleStudioSingleType,
 } from "@/lib/ecommerce-studio/brief";
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
@@ -40,7 +44,6 @@ import { useStudioAnalysis, type StudioRunner } from "./use-studio-runner";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
-const OUTPUT_OPTIONS = STUDIO_OUTPUT_TYPES.map((item) => ({ value: item.id, label: item.label, title: item.hint }));
 const PLATFORM_OPTIONS = ECOMMERCE_PLATFORMS.map((platform) => ({ value: platform.id, label: platform.name }));
 const MARKET_OPTIONS = STUDIO_MARKETS.map((item) => ({ value: item.id, label: item.label }));
 const LANGUAGE_OPTIONS = STUDIO_LANGUAGES.map((item) => ({ value: item.id, label: item.label }));
@@ -100,15 +103,17 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const ratioOptions = useMemo(() => studioRatioOptions(profile, quality), [profile, quality]);
     const [pickerOpen, setPickerOpen] = useState(false);
     const setKind = studioSetKind(product);
+    const singles = studioSingleTypes(brief);
     const entries = useMemo(() => studioSetEntries(product), [product]);
     const included = entries.filter((entry) => entry.included);
     const unit = setKind === "detail" ? "屏" : "张";
-    const images = setKind ? included.length : brief.count;
+    // 单张类型可以多选，数量是每种出几张。
+    const images = setKind ? included.length : singles.length * brief.count;
     const firstEntry = included[0] || entries[0];
-    const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(spec.role || "main-selling", product);
+    const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(singles[0]?.role || "main-selling", product);
     const truthCount = studioReferencePhotos(product.photos, 8).length;
-    // 有模特的图才用模特设定：模特图、模特拍法，或者套图清单里有上身效果。
-    const castRelevant = brief.outputType === "model" || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
+    // 有模特的图才用模特设定：选了模特图、模特拍法，或者套图清单里有上身效果。
+    const castRelevant = singles.some((item) => item.id === "model") || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
     const castReferences = castRelevant ? [brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
     const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + castReferences + product.references.length);
     const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
@@ -116,7 +121,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
     const adapter = studioModelAdapter(image.value);
     const platform = ecommercePlatform(product.platform);
-    const noTextOnMain = !spec.set && spec.role ? studioPlatformForbidsText(product, spec.role) : false;
+    const noTextOnMain = singles.some((item) => item.role && studioPlatformForbidsText(product, item.role));
+    const noTextNote = noTextOnMain ? `${platform?.name || "这个平台"}首图不加文字，标题不会写进图里` : "";
+    const typeHint = singles.length > 1 ? [`${singles.map((item) => item.label).join("、")}，每种 ${brief.count} 张，共 ${images} 张`, noTextNote].filter(Boolean).join("；") : noTextNote || spec.hint;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
     const blocked = !product.photos.length
@@ -135,6 +142,10 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
+    const pickSet = (id: StudioOutputType) => {
+        edit((current) => ({ ...current, brief: pickStudioSetType(current.brief, id) }));
+        if (id === "template-set" && !brief.suite) setPickerOpen(true);
+    };
 
     const fill = async () => {
         if (!product.photos.length) return void message.warning("先上传商品图，再识别");
@@ -281,20 +292,43 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     </Tooltip>
                 </div>
                 <div className="es-grid">
-                    <Field label="出图类型" span={2} hint={noTextOnMain ? `${platform?.name || "这个平台"}首图不加文字，标题不会写进图里` : spec.hint}>
-                        <Select
-                            appearance="field"
-                            size="large"
-                            value={brief.outputType}
-                            options={OUTPUT_OPTIONS}
-                            ariaLabel="出图类型"
-                            onChange={(value: StudioOutputType) => {
-                                // 换类型时镜头不同，清掉上一种的顺序和勾选；已选的模板保留，切回来还在。
-                                editBrief({ outputType: value, shotOrder: [], shotSkip: [] });
-                                if (value === "template-set" && !brief.suite) setPickerOpen(true);
-                            }}
-                        />
-                    </Field>
+                    {/* 单张类型可多选，一次出几种；套图只能单选。换类型时清掉套图的顺序和勾选，已选的模板保留。 */}
+                    <div className="es-field" data-span={6}>
+                        <div className="es-field-row">
+                            <span className="es-field-label" id="es-type-label">
+                                出图类型
+                            </span>
+                            <span className="es-field-hint">单张可以多选，一次出几种</span>
+                        </div>
+                        <div className="es-type-picker" role="group" aria-labelledby="es-type-label">
+                            <div className="es-chips" role="group" aria-label="单张类型，可多选">
+                                {STUDIO_SINGLE_TYPES.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        className="es-chip"
+                                        aria-pressed={singles.some((single) => single.id === item.id)}
+                                        title={item.hint}
+                                        onClick={() => edit((current) => ({ ...current, brief: toggleStudioSingleType(current.brief, item.id) }))}
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="es-type-sets" role="group" aria-label="成套出图，单选">
+                                <span>成套</span>
+                                <div className="es-chips">
+                                    {STUDIO_SET_TYPES.map((item) => (
+                                        <button key={item.id} type="button" className="es-chip" aria-pressed={brief.outputType === item.id} title={item.hint} onClick={() => pickSet(item.id)}>
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        {typeHint ? <div className="es-field-hint">{typeHint}</div> : null}
+                    </div>
+                    {castRelevant ? <StudioModelCastSection product={product} edit={edit} /> : null}
                     <Field label="视觉方向" span={2}>
                         <Select appearance="field" size="large" value={product.platform} options={PLATFORM_OPTIONS} ariaLabel="视觉方向（平台）" onChange={(value: EcommercePlatformId) => edit((current) => ({ ...current, platform: value }))} />
                     </Field>
@@ -311,10 +345,10 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <Field label="语言" span={2} hint={brief.language !== "none" && adapter.textRendering === "weak" && image.value ? `${adapter.label} 写字不稳定，建议选「不加文字」` : undefined}>
                         <Select appearance="field" size="large" value={brief.language} options={LANGUAGE_OPTIONS} ariaLabel="图上文字的语言" onChange={(value: StudioLanguage) => editBrief({ language: value })} />
                     </Field>
-                    <Field label="质感" span={2}>
+                    <Field label="质感" span={3}>
                         <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => ({ ...current, style: value }))} />
                     </Field>
-                    <Field label="拍摄方式" span={2}>
+                    <Field label="拍摄方式" span={3}>
                         <Select appearance="field" size="large" value={brief.shooting} options={SHOOTING_OPTIONS} ariaLabel="拍摄方式" onChange={(value: StudioShooting) => editBrief({ shooting: value })} />
                     </Field>
                     <Field label="目标人群" span={3} htmlFor="es-audience">
@@ -327,7 +361,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <Field label="生图模型" span={6}>
                         <StudioModelPicker kind="image" imageCount={Math.max(1, referenceCount)} placeholder="选择图片模型" />
                     </Field>
-                    <Field label="数量" span={2}>
+                    <Field label={singles.length > 1 ? "每种数量" : "数量"} span={2}>
                         <Select
                             appearance="field"
                             size="large"
@@ -374,7 +408,6 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     </div>
                 </div>
 
-                {castRelevant ? <StudioModelCastSection product={product} edit={edit} /> : null}
                 {setKind ? (
                     <>
                         <div className="es-section-head">
@@ -426,7 +459,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 </Button>
                 <Tooltip title={blocked || undefined}>
                     <Button type="primary" size="large" className="es-generate" icon={<Sparkles size={16} />} disabled={Boolean(blocked)} onClick={generate}>
-                        {setKind ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
+                        {setKind ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}` : singles.length > 1 ? `生成 ${singles.length} 种共 ${images} 张` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
                     </Button>
                 </Tooltip>
             </footer>

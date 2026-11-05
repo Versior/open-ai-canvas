@@ -4,8 +4,9 @@ import { Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, T
 import { useState } from "react";
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { studioDisplayName, studioOutputSpec } from "@/lib/ecommerce-studio/brief";
+import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioAttemptActive, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
+import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioAttemptStatus, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { configuredModelDisplayName } from "@/lib/model-selection";
@@ -39,7 +40,7 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
     const runs = product.runs.map((run) => ({
         key: `run:${run.id}`,
         ref: { runId: run.id },
-        title: run.suite ? `${studioOutputSpec(run.type).label} · ${run.suite.name}` : studioOutputSpec(run.type).label,
+        title: studioRunTitle(run),
         createdAt: run.createdAt,
         kind: run.kind,
         textMode: run.textMode,
