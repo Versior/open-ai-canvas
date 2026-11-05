@@ -98,13 +98,13 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
     const [loadError, setLoadError] = useState("");
     const [reloadKey, setReloadKey] = useState(0);
     const [filtersOpen, setFiltersOpen] = useState(false);
-    const recommendationRanks = useRef(new Map<string, number>());
     const sectionRef = useRef<HTMLElement>(null);
     const loadMoreRef = useRef<HTMLDivElement>(null);
 
     const [source, setSource] = useState<SourceFilter>("all");
     const [modeFilter, setModeFilter] = useState<ModeFilter>(creationMode ?? "all");
     // 创作页每次进入重新推荐，追加加载和数据回填不改变已有条目的顺序。
+    const recommendationRanks = useRef(new Map<string, number>());
     const [category, setCategory] = useState("all");
     const [view, setView] = useState<ViewFilter>("all");
     const [sort, setSort] = useState<SortKey>("daily");
@@ -294,15 +294,12 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
         const sentinel = loadMoreRef.current;
         if (!sentinel || !hasMore || typeof IntersectionObserver === "undefined") return;
         let advanced = false;
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                if (!entry?.isIntersecting || advanced) return;
-                advanced = true;
-                observer.disconnect();
-                setPage((current) => Math.min(current + 1, lastPage));
-            },
-            { root: sectionRef.current?.closest(".creation-home-scroll, .app-workspace-scroll") ?? null, rootMargin: "240px" },
-        );
+        const observer = new IntersectionObserver(([entry]) => {
+            if (!entry?.isIntersecting || advanced) return;
+            advanced = true;
+            observer.disconnect();
+            setPage((current) => Math.min(current + 1, lastPage));
+        }, { root: sectionRef.current?.closest(".creation-home-scroll, .app-workspace-scroll") ?? null, rootMargin: "240px" });
         observer.observe(sentinel);
         return () => observer.disconnect();
     }, [embedded, hasMore, lastPage, currentPage, hydrated]);
@@ -402,50 +399,45 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
 
     return (
         <section ref={sectionRef} id="creation-inspirations" className="inspiration-hall" aria-label="单次创作灵感">
-            {!embedded ? (
-                <div className="inspiration-hall-toolbar">
-                    <div className="inspiration-hall-modes" role="group" aria-label="按创作类型筛选灵感">
-                        {MODE_OPTIONS.map((option) => (
-                            <button key={option.value} type="button" aria-pressed={modeFilter === option.value} onClick={() => setModeFilter(option.value)}>
-                                {option.label}
-                            </button>
-                        ))}
-                    </div>
-                    <Input allowClear prefix={<Search className="size-4" />} placeholder="搜索灵感" aria-label="搜索灵感" value={search} onChange={(event) => setSearch(event.target.value)} className="inspiration-hall-search" />
-                    <Button type="text" icon={<SlidersHorizontal className="size-4" />} aria-expanded={filtersOpen} aria-controls="inspiration-hall-filters" onClick={() => setFiltersOpen((open) => !open)} className="inspiration-hall-filter-toggle">
-                        筛选{advancedFilterCount ? ` · ${advancedFilterCount}` : ""}
-                        <ChevronDown className={filtersOpen ? "is-open" : undefined} aria-hidden="true" />
-                    </Button>
-                    <div className="inspiration-hall-actions">
-                        <Button
-                            disabled={!hydrated}
-                            icon={<Plus className="size-4" />}
-                            onClick={() => {
-                                setEditing(null);
-                                setEditorOpen(true);
-                            }}
-                        >
-                            新建灵感
-                        </Button>
-                        <Dropdown
-                            trigger={["click"]}
-                            placement="bottomRight"
-                            menu={{
-                                items: [
-                                    { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
-                                    { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
-                                ],
-                                onClick: ({ key }) => {
-                                    if (key === "import") importRef.current?.click();
-                                    if (key === "export") handleExport();
-                                },
-                            }}
-                        >
-                            <Button type="text" icon={<MoreHorizontal className="size-4" />} aria-label="更多灵感管理操作" title="更多操作" />
-                        </Dropdown>
-                    </div>
+
+            {!embedded ? <div className="inspiration-hall-toolbar">
+                <div className="inspiration-hall-modes" role="group" aria-label="按创作类型筛选灵感">
+                    {MODE_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={modeFilter === option.value} onClick={() => setModeFilter(option.value)}>{option.label}</button>)}
                 </div>
-            ) : null}
+                <Input allowClear prefix={<Search className="size-4" />} placeholder="搜索灵感" aria-label="搜索灵感" value={search} onChange={(event) => setSearch(event.target.value)} className="inspiration-hall-search" />
+                <Button type="text" icon={<SlidersHorizontal className="size-4" />} aria-expanded={filtersOpen} aria-controls="inspiration-hall-filters" onClick={() => setFiltersOpen((open) => !open)} className="inspiration-hall-filter-toggle">
+                    筛选{advancedFilterCount ? ` · ${advancedFilterCount}` : ""}
+                    <ChevronDown className={filtersOpen ? "is-open" : undefined} aria-hidden="true" />
+                </Button>
+                <div className="inspiration-hall-actions">
+                    <Button
+                        disabled={!hydrated}
+                        icon={<Plus className="size-4" />}
+                        onClick={() => {
+                            setEditing(null);
+                            setEditorOpen(true);
+                        }}
+                    >
+                        新建灵感
+                    </Button>
+                    <Dropdown
+                        trigger={["click"]}
+                        placement="bottomRight"
+                        menu={{
+                            items: [
+                                { key: "import", label: "导入灵感", icon: <Import className="size-4" />, disabled: !hydrated },
+                                { key: "export", label: "导出本地灵感", icon: <Download className="size-4" />, disabled: !hydrated },
+                            ],
+                            onClick: ({ key }) => {
+                                if (key === "import") importRef.current?.click();
+                                if (key === "export") handleExport();
+                            },
+                        }}
+                    >
+                        <Button type="text" icon={<MoreHorizontal className="size-4" />} aria-label="更多灵感管理操作" title="更多操作" />
+                    </Dropdown>
+                </div>
+            </div> : null}
 
             {!embedded && filtersOpen ? (
                 <div id="inspiration-hall-filters" className="inspiration-hall-filters" role="group" aria-label="灵感进阶筛选">
@@ -537,13 +529,9 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                                 );
                             })}
                         </div>
-                        {hasMore ? (
-                            <div ref={loadMoreRef} className="inspiration-hall-load-more">
-                                <button type="button" onClick={() => setPage((current) => Math.min(current + 1, lastPage))}>
-                                    加载更多
-                                </button>
-                            </div>
-                        ) : null}
+                        {hasMore ? <div ref={loadMoreRef} className="inspiration-hall-load-more">
+                            <button type="button" onClick={() => setPage((current) => Math.min(current + 1, lastPage))}>加载更多</button>
+                        </div> : null}
                     </>
                 ) : (
                     <WorkspaceState
@@ -658,13 +646,9 @@ export function InspirationCard({
         <article ref={cardRef} className="inspiration-card">
             <button type="button" className="inspiration-card-open" aria-label={`查看灵感：${item.title}`} aria-haspopup="dialog" onClick={onOpen}>
                 <span ref={coverRef} className="inspiration-card-cover" style={{ aspectRatio: coverRatio }}>
-                    <InspirationCover
-                        key={item.image}
-                        image={item.image}
-                        onDimensions={(width, height) => {
-                            if (width > 0 && height > 0) setCoverRatio(Math.max(4 / 5, Math.min(16 / 9, width / height)));
-                        }}
-                    />
+                    <InspirationCover key={item.image} image={item.image} onDimensions={(width, height) => {
+                        if (width > 0 && height > 0) setCoverRatio(Math.max(4 / 5, Math.min(16 / 9, width / height)));
+                    }} />
                     {isFreshInspiration(item, Date.now()) ? <span className="inspiration-card-new">新</span> : null}
                     {item.mode === "video" && item.videoUrl ? (
                         <span className="inspiration-preview-hint" aria-hidden="true">
@@ -734,38 +718,20 @@ export default function InspirationsPage() {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const canvasView = searchParams.has("work") || searchParams.get("view") !== "prompt";
-    return (
-        <WorkspacePage className="inspirations-page">
-            <nav className="inspirations-view-switch" aria-label="灵感内容">
-                {[
-                    { label: "单次创作", canvas: false },
-                    { label: "画布灵感", canvas: true },
-                ].map((view) => (
-                    <button
-                        key={view.label}
-                        type="button"
-                        aria-pressed={canvasView === view.canvas}
-                        onClick={() => {
-                            const next = new URLSearchParams(searchParams);
-                            if (view.canvas) next.set("view", "canvas");
-                            else next.set("view", "prompt");
-                            next.delete("work");
-                            setSearchParams(next);
-                        }}
-                    >
-                        {view.label}
-                    </button>
-                ))}
-            </nav>
-            {canvasView ? (
-                <>
-                    <Suspense fallback={<WorkspaceLoadingState label="正在准备画布灵感" rows={3} />}>
-                        <LibTVGalleryContent />
-                    </Suspense>
-                </>
-            ) : (
-                <InspirationHall onUse={(item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } })} />
-            )}
-        </WorkspacePage>
-    );
+    return <WorkspacePage className="inspirations-page">
+        <nav className="inspirations-view-switch" aria-label="灵感内容">
+            {([{ label: "单次创作", canvas: false }, { label: "画布灵感", canvas: true }]).map((view) => (
+                <button key={view.label} type="button" aria-pressed={canvasView === view.canvas} onClick={() => {
+                    const next = new URLSearchParams(searchParams);
+                    if (view.canvas) next.set("view", "canvas");
+                    else next.set("view", "prompt");
+                    next.delete("work");
+                    setSearchParams(next);
+                }}>{view.label}</button>
+            ))}
+        </nav>
+        {canvasView ? <>
+            <Suspense fallback={<WorkspaceLoadingState label="正在准备画布灵感" rows={3} />}><LibTVGalleryContent /></Suspense>
+        </> : <InspirationHall onUse={(item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } })} />}
+    </WorkspacePage>;
 }

@@ -248,8 +248,7 @@ export function listAddedSkills(options: { force?: boolean; afterRevision?: numb
     const scope = getActiveUserScope();
     const now = Date.now();
     // Explicit refreshes only share requests started after their freshness boundary.
-    if (addedSkillsRequest?.scope === scope && addedSkillsRequest.version === addedSkillsCacheVersion && (!options.force || addedSkillsRequest.force) && (options.afterRevision === undefined || addedSkillsRequest.version > options.afterRevision))
-        return addedSkillsRequest.promise;
+    if (addedSkillsRequest?.scope === scope && addedSkillsRequest.version === addedSkillsCacheVersion && (!options.force || addedSkillsRequest.force) && (options.afterRevision === undefined || addedSkillsRequest.version > options.afterRevision)) return addedSkillsRequest.promise;
     if (!options.force && addedSkillsCache?.scope === scope && addedSkillsCache.expiresAt > now) return Promise.resolve(addedSkillsCache.value);
     const version = ++addedSkillsCacheVersion;
     addedSkillsCache = null;

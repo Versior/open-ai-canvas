@@ -41,8 +41,7 @@ export function copyChannelModelPrices(values: ChannelModelFormValues, source: C
 
 export function autoConfigureChannelModel(values: ChannelModelFormValues, models: ChannelModel[], protocols: ModelProtocolDefinition[], presets: ModelMetadataPreset[], protectedFields = new Set<string>()) {
     const id = values.providerModelKey?.trim() || values.modelKey.trim();
-    const ranked = models
-        .filter((model) => model.protocol && model.capability && protocols.some((p) => p.value === model.protocol && p.capability === model.capability && p.enabled !== false))
+    const ranked = models.filter((model) => model.protocol && model.capability && protocols.some((p) => p.value === model.protocol && p.capability === model.capability && p.enabled !== false))
         .map((model) => ({ model, score: Math.max(modelMatchScore(id, model.providerModelKey || model.modelKey, true), modelMatchScore(id, model.modelKey, true)) }));
     const score = Math.max(0, ...ranked.map((item) => item.score));
     const candidates = ranked.filter((item) => score > 0 && item.score === score);
@@ -68,12 +67,7 @@ export function autoConfigureChannelModel(values: ChannelModelFormValues, models
             }
             if (!protectedFields.has(key)) Object.assign(next, { [key]: structuredClone(defaults[key]) });
         }
-        if (
-            !protectedFields.has("priceTiers") &&
-            (!protectedFields.has("priceCurrency") || values.priceCurrency === defaults.priceCurrency) &&
-            (!protectedFields.has("protocol") || values.protocol === template.protocol) &&
-            (template.priceConfigured || template.priceTiers?.some((tier) => tier.priceConfigured))
-        ) {
+        if (!protectedFields.has("priceTiers") && (!protectedFields.has("priceCurrency") || values.priceCurrency === defaults.priceCurrency) && (!protectedFields.has("protocol") || values.protocol === template.protocol) && (template.priceConfigured || template.priceTiers?.some((tier) => tier.priceConfigured))) {
             next.priceTiers = defaults.priceTiers.map((tier) => ({ ...tier, providerModelKey: "" }));
             next.priceCurrency = defaults.priceCurrency;
             sources.push(`接口和价格参考 ${template.providerModelKey || template.modelKey}`);

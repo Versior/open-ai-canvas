@@ -101,12 +101,8 @@ func TestCloudAgentSkillReferenceReplayHonorsDisabledSkill(t *testing.T) {
 		t.Fatalf("unchanged reference did not replay from cache: %#v", replay)
 	}
 
-	row, err := s.repo.Skill(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	row.Status = 0
-	if err := s.repo.SaveSkill(row); err != nil {
+	// 整行保存不写上架状态（上游 v1.8.0 起），下架只能走 UpdateSkillStatus。
+	if err := s.repo.UpdateSkillStatus(id, 0); err != nil {
 		t.Fatal(err)
 	}
 	result, err := cloudAgentReadToolCached(nil, "user", state, call, s)
@@ -196,12 +192,8 @@ func TestCloudAgentSkillReferenceReplayTrimsSkillID(t *testing.T) {
 		t.Fatalf("unchanged reference must replay: %v", err)
 	}
 
-	row, err := s.repo.Skill(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	row.Status = 0
-	if err := s.repo.SaveSkill(row); err != nil {
+	// 整行保存不写上架状态（上游 v1.8.0 起），下架只能走 UpdateSkillStatus。
+	if err := s.repo.UpdateSkillStatus(id, 0); err != nil {
 		t.Fatal(err)
 	}
 	result, err := cloudAgentReadToolCached(nil, "user", state, call, s)

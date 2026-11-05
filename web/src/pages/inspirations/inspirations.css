@@ -408,9 +408,7 @@
 }
 
 .inspiration-card:hover .inspiration-preview-hint,
-.inspiration-card:focus-within .inspiration-preview-hint {
-    opacity: 1;
-}
+.inspiration-card:focus-within .inspiration-preview-hint { opacity: 1; }
 
 .inspiration-preview-circle {
     position: relative;
@@ -436,38 +434,17 @@
     transform: rotate(-90deg);
 }
 
-.inspiration-preview-ring-track {
-    opacity: 0.2;
-}
-.inspiration-preview-percent {
-    position: relative;
-    font-size: var(--fs-tiny);
-    font-variant-numeric: tabular-nums;
-}
-.inspiration-preview-loading {
-    display: none;
-}
-.inspiration-preview-loading[data-indeterminate="true"] .inspiration-preview-ring {
-    animation: inspiration-preview-spin 1s linear infinite;
-}
-@keyframes inspiration-preview-spin {
-    to {
-        transform: rotate(270deg);
-    }
-}
+.inspiration-preview-ring-track { opacity: 0.2; }
+.inspiration-preview-percent { position: relative; font-size: var(--fs-tiny); font-variant-numeric: tabular-nums; }
+.inspiration-preview-loading { display: none; }
+.inspiration-preview-loading[data-indeterminate="true"] .inspiration-preview-ring { animation: inspiration-preview-spin 1s linear infinite; }
+@keyframes inspiration-preview-spin { to { transform: rotate(270deg); } }
 .inspiration-card-cover[data-hover-preview-state="loading"] .inspiration-preview-play,
-.inspiration-card-cover[data-hover-preview-state="playing"] .inspiration-preview-hint {
-    display: none;
-}
-.inspiration-card-cover[data-hover-preview-state="loading"] .inspiration-preview-loading {
-    display: grid;
-    place-items: center;
-}
+.inspiration-card-cover[data-hover-preview-state="playing"] .inspiration-preview-hint { display: none; }
+.inspiration-card-cover[data-hover-preview-state="loading"] .inspiration-preview-loading { display: grid; place-items: center; }
 
 @media (hover: none), (prefers-reduced-motion: reduce) {
-    .inspiration-preview-hint {
-        display: none;
-    }
+    .inspiration-preview-hint { display: none; }
 }
 
 .inspiration-card-caption {

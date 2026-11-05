@@ -297,7 +297,14 @@ export default function CanvasPage() {
                                       ? {
                                             ...clip,
                                             // 旧素材不引用新资源，保留会被后端判为素材与资源不匹配；清空后由下方重新登记。
-                                            directMedia: { ...directMedia, assetId: undefined, storageKey: mapped.storageKey, url: mapped.url, dataUrl: directMedia.dataUrl ? mapped.url : directMedia.dataUrl, content: directMedia.content ? mapped.url : directMedia.content },
+                                            directMedia: {
+                                                ...directMedia,
+                                                assetId: undefined,
+                                                storageKey: mapped.storageKey,
+                                                url: mapped.url,
+                                                dataUrl: directMedia.dataUrl ? mapped.url : directMedia.dataUrl,
+                                                content: directMedia.content ? mapped.url : directMedia.content,
+                                            },
                                         }
                                       : clip;
                               }),
