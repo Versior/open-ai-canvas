@@ -65,6 +65,7 @@ type (
 	AdminChannelReference                  = app.AdminChannelReference
 	AdminCreditAdjustmentRequest           = app.AdminCreditAdjustmentRequest
 	AdminListQuery                         = app.AdminListQuery
+	AdminVideoReplicationQuery             = app.AdminVideoReplicationQuery
 	AdminLogicalModel                      = app.AdminLogicalModel
 	AdminLogicalRoute                      = app.AdminLogicalRoute
 	AdminPaymentOrderPage                  = app.AdminPaymentOrderPage
@@ -412,6 +413,7 @@ type (
 	VideoCapabilityConfig                  = app.VideoCapabilityConfig
 	VideoDurationConfig                    = app.VideoDurationConfig
 	VideoReferenceConfig                   = app.VideoReferenceConfig
+	VideoReplicationSettingsPatch          = app.VideoReplicationSettingsPatch
 	VideoTeardownRequest                   = app.VideoTeardownRequest
 	VoiceProfileSummary                    = app.VoiceProfileSummary
 	WalletSummary                          = app.WalletSummary

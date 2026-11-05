@@ -3651,7 +3651,7 @@ paths:
     post:
       tags: [tasks]
       summary: 从短视频平台分享链接异步导入单个视频
-      description: 需要登录。服务端把链接交给后台配置的第三方解析接口池（按设置轮询，失败自动换下一个），下载并校验不超过 3 分钟的视频，成功后将资源信息写入任务 resultJson。这个平台没有开着的解析接口时返回 400（reason=failed_precondition）。相同用户使用相同幂等键和请求参数时返回原任务。
+      description: 需要登录，后台关闭视频链接导入时返回 403。服务端把链接交给后台配置的第三方解析接口池（按设置轮询，失败自动换下一个），下载并校验不超过 3 分钟的视频，成功后将资源信息写入任务 resultJson。这个平台没有开着的解析接口时返回 400（reason=failed_precondition）。相同用户使用相同幂等键和请求参数时返回原任务。
       parameters:
         - in: header
           name: X-Idempotency-Key
@@ -3683,6 +3683,8 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
         "413":
@@ -3693,7 +3695,7 @@ paths:
     get:
       tags: [tasks]
       summary: 可导入的短视频平台
-      description: 需要登录。返回每个平台的名称、分享链接域名（hosts / shortHosts）、是否走抖音 / TikTok 的严格单视频规则（strict），以及后台是否有开着的解析接口（available）。前端据此识别粘贴的链接。
+      description: 需要登录。返回每个平台的名称、分享链接域名（hosts / shortHosts）、是否走抖音 / TikTok 的严格单视频规则（strict），以及后台是否有开着的解析接口（available）；后台关闭视频链接导入时所有平台的 available 都为 false。前端据此识别粘贴的链接。
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
@@ -4050,7 +4052,7 @@ paths:
     get:
       tags: [tasks]
       summary: 视频复刻页面的历史记录
-      description: 需要登录。按创建时间倒序返回当前账号最近 50 次拆解（含排队、失败的任务）；已保存模型分析的记录带标题、模型和分析时间。
+      description: 需要登录，视频复刻关闭时返回 403。按创建时间倒序返回当前账号最近 50 次拆解（含排队、失败的任务）；已保存模型分析的记录带标题、模型和分析时间。
       responses:
         "200":
           description: data 为记录数组
@@ -4067,10 +4069,12 @@ paths:
                           $ref: "#/components/schemas/VideoReplicationRecord"
         "401":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
     post:
       tags: [tasks]
       summary: 视频复刻：异步拆解一条视频的镜头、关键帧和口播
-      description: 需要登录。服务端用本地 ffmpeg 检测切点、截取每镜关键帧并拼成宫格，配置了转写服务时识别口播，结果写入任务 resultJson。不调用模型、不计费，关键帧和宫格作为图片资源计入存储。只接受当前账号自己的、不超过 3 分钟的视频资源。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
+      description: 需要登录，视频复刻关闭时返回 403。服务端用本地 ffmpeg 检测切点、截取每镜关键帧并拼成宫格，后台允许且配置了转写服务时识别口播，结果写入任务 resultJson。不调用模型、不计费，关键帧和宫格作为图片资源计入存储。只接受当前账号自己的、不超过后台时长上限（默认 3 分钟）的视频资源。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
       parameters:
         - in: header
           name: X-Idempotency-Key
@@ -4102,17 +4106,122 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
         "413":
           $ref: "#/components/responses/Error"
         "429":
           $ref: "#/components/responses/Error"
+  /video-replication/config:
+    get:
+      tags: [tasks]
+      summary: 视频复刻页面用的限制
+      description: 需要登录，视频复刻关闭时返回 403。返回后台设置的时长、镜头数上限，以及这台服务器现在能不能识别口播。
+      responses:
+        "200":
+          description: data 为 VideoReplicationConfig
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/VideoReplicationConfig"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/overview:
+    get:
+      tags: [admin]
+      summary: 视频复刻使用统计
+      description: 要求管理员。返回视频复刻设置、口播识别状态，拆解和链接导入任务按状态的数量、近 7 天与今天的数量、用过的人数，存过分析的拆解数，各平台的链接导入次数，近 14 个 UTC 自然日的每日数量，以及最近 8 次失败。
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/teardowns:
+    get:
+      tags: [admin]
+      summary: 所有用户的视频复刻记录
+      description: 要求管理员。按创建时间倒序分页返回拆解记录，带用户、口播来源和拆解提示；失败原因不做用户侧改写。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {in: query, name: status, schema: {type: string, enum: [queued, running, succeeded, failed, cancelled]}}
+        - {in: query, name: keyword, schema: {type: string, maxLength: 100}, description: 匹配用户名、昵称、邮箱，或完整的任务 ID}
+      responses:
+        "200":
+          description: data 为分页结果
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [records, total, page, pageSize]
+                        properties:
+                          records: {type: array, items: {$ref: "#/components/schemas/AdminVideoReplicationRecord"}}
+                          total: {type: integer}
+                          page: {type: integer}
+                          pageSize: {type: integer}
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/teardowns/{id}:
+    get:
+      tags: [admin]
+      summary: 读取任意用户的一条视频复刻记录
+      description: 要求管理员。返回拆解任务（resultJson 是镜头事实）、保存过的模型分析和记录的主人；不是拆解任务返回 404。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/settings:
+    patch:
+      tags: [admin]
+      summary: 修改视频复刻设置
+      description: 要求管理员。只改请求里给出的字段，保存后新的拆解任务和排队中的任务都按新设置执行。data.settings 为保存后的完整设置。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoReplicationSettingsPatch"
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
   /video-replication/teardowns/{id}:
     get:
       tags: [tasks]
       summary: 读取一条视频复刻记录
-      description: 需要登录。返回拆解任务（resultJson 是镜头事实）和保存过的模型分析；不是本人的拆解任务返回 404。
+      description: 需要登录，视频复刻关闭时返回 403。返回拆解任务（resultJson 是镜头事实）和保存过的模型分析；不是本人的拆解任务返回 404。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       responses:
@@ -4129,13 +4238,15 @@ paths:
                         $ref: "#/components/schemas/VideoReplicationDetail"
         "401":
           $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
   /video-replication/teardowns/{id}/analysis:
     put:
       tags: [tasks]
       summary: 保存视频复刻的模型分析
-      description: 需要登录。只接受本人已完成的拆解任务；rows 的数量和 shotNumber 必须与拆解结果的镜头一一对应。保存后覆盖这条记录之前的分析。正文不超过 512 KiB，计入账号结构化数据容量。
+      description: 需要登录，视频复刻关闭时返回 403。只接受本人已完成的拆解任务；rows 的数量和 shotNumber 必须与拆解结果的镜头一一对应。保存后覆盖这条记录之前的分析。正文不超过 512 KiB，计入账号结构化数据容量。
       parameters:
         - {in: path, name: id, required: true, schema: {type: string}}
       requestBody:
@@ -4413,8 +4524,47 @@ components:
           type: integer
           minimum: 1
           maximum: 60
-          default: 60
-          description: 镜头数上限，超过时合并最短的镜头
+          description: 镜头数上限，超过时合并最短的镜头。不传时用后台设置的上限（默认 60），传了也不能超过它
+    VideoReplicationSettings:
+      type: object
+      required: [maxDurationSeconds, maxShots, transcribeEnabled]
+      properties:
+        maxDurationSeconds: {type: integer, minimum: 10, maximum: 180, description: 能拆解的视频最长秒数，默认 180}
+        maxShots: {type: integer, minimum: 1, maximum: 60, description: 一次拆解最多几个镜头，默认 60}
+        transcribeEnabled: {type: boolean, description: 是否允许识别口播，默认 true；关闭后拆解不调用转写服务}
+    VideoReplicationSettingsPatch:
+      type: object
+      additionalProperties: false
+      description: 没传的字段保持原值
+      properties:
+        maxDurationSeconds: {type: integer, minimum: 10, maximum: 180}
+        maxShots: {type: integer, minimum: 1, maximum: 60}
+        transcribeEnabled: {type: boolean}
+    VideoReplicationConfig:
+      type: object
+      required: [maxDurationSeconds, maxShots, transcribeAvailable]
+      properties:
+        maxDurationSeconds: {type: integer}
+        maxShots: {type: integer}
+        transcribeAvailable: {type: boolean, description: 后台允许口播识别、字幕转写已开放且服务器配置了转写服务}
+        transcribeNote: {type: string, description: 不能识别口播时的原因}
+    AdminVideoReplicationRecord:
+      allOf:
+        - $ref: "#/components/schemas/VideoReplicationRecord"
+        - type: object
+          required: [user]
+          properties:
+            user:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string}
+                username: {type: string}
+                displayName: {type: string}
+            projectId: {type: string}
+            transcript: {type: string, enum: [asr, none], description: 口播来源，任务没完成时省略}
+            warnings: {type: array, items: {type: string}}
+            completedAt: {type: string, format: date-time}
     SocialVideoParseHeader:
       type: object
       required: [name, value]

@@ -10,7 +10,8 @@ import (
 	"yingce/backend/internal/service"
 )
 
-func bindSocialVideoParseJSON(c *gin.Context, limit int64, target any) bool {
+// bindLimitedJSON 按 limit 限制请求正文大小再解析 JSON；超限返回 413，格式错返回 400。
+func bindLimitedJSON(c *gin.Context, limit int64, target any) bool {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 	if err := c.ShouldBindJSON(target); err != nil {
 		var tooLarge *http.MaxBytesError
@@ -57,7 +58,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseSettings
-		if !bindSocialVideoParseJSON(c, 64<<10, &req) {
+		if !bindLimitedJSON(c, 64<<10, &req) {
 			return
 		}
 		settings, err := svc.UpdateSocialVideoParseSettings(user, req)
@@ -74,7 +75,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseAPIRequest
-		if !bindSocialVideoParseJSON(c, 64<<10, &req) {
+		if !bindLimitedJSON(c, 64<<10, &req) {
 			return
 		}
 		api, err := svc.CreateSocialVideoParseAPI(user, req)
@@ -91,7 +92,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseAPIRequest
-		if !bindSocialVideoParseJSON(c, 64<<10, &req) {
+		if !bindLimitedJSON(c, 64<<10, &req) {
 			return
 		}
 		api, err := svc.UpdateSocialVideoParseAPI(user, c.Param("id"), req)
@@ -110,7 +111,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 		var req struct {
 			Enabled bool `json:"enabled"`
 		}
-		if !bindSocialVideoParseJSON(c, 4<<10, &req) {
+		if !bindLimitedJSON(c, 4<<10, &req) {
 			return
 		}
 		api, err := svc.SetSocialVideoParseAPIEnabled(user, c.Param("id"), req.Enabled)
@@ -168,7 +169,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseTestRequest
-		if !bindSocialVideoParseJSON(c, 64<<10, &req) {
+		if !bindLimitedJSON(c, 64<<10, &req) {
 			return
 		}
 		result, err := svc.TestSocialVideoParseAPI(c.Request.Context(), user, req)
@@ -188,7 +189,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseBatchTestRequest
-		if !bindSocialVideoParseJSON(c, 16<<10, &req) {
+		if !bindLimitedJSON(c, 16<<10, &req) {
 			return
 		}
 		result, err := svc.TestSocialVideoParseAPIs(c.Request.Context(), user, req)
@@ -207,7 +208,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 		var req struct {
 			IDs []string `json:"ids"`
 		}
-		if !bindSocialVideoParseJSON(c, 16<<10, &req) {
+		if !bindLimitedJSON(c, 16<<10, &req) {
 			return
 		}
 		document, err := svc.ExportSocialVideoParseAPIs(user, req.IDs)
@@ -227,7 +228,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseImportRequest
-		if !bindSocialVideoParseJSON(c, 2<<20, &req) {
+		if !bindLimitedJSON(c, 2<<20, &req) {
 			return
 		}
 		result, err := svc.ImportSocialVideoParseAPIs(c.Request.Context(), user, req)
@@ -244,7 +245,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseSourceRequest
-		if !bindSocialVideoParseJSON(c, 16<<10, &req) {
+		if !bindLimitedJSON(c, 16<<10, &req) {
 			return
 		}
 		source, err := svc.CreateSocialVideoParseSource(user, req)
@@ -261,7 +262,7 @@ func RegisterSocialVideoParseRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		var req service.SocialVideoParseSourceRequest
-		if !bindSocialVideoParseJSON(c, 16<<10, &req) {
+		if !bindLimitedJSON(c, 16<<10, &req) {
 			return
 		}
 		source, err := svc.UpdateSocialVideoParseSource(user, c.Param("id"), req)
