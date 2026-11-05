@@ -724,6 +724,17 @@ div.admin-vr-failure {
         gap: 4px;
     }
 
+    /* 窄屏下状态和开关挪到说明下面（和「功能开放」页同样排法），说明不再挤成一窄条。 */
+    .admin-vr-switches li {
+        grid-template-columns: 32px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .admin-vr-switch-control {
+        grid-column: 2;
+        justify-content: space-between;
+    }
+
     .admin-vr-shot-frame {
         height: 64px;
         max-width: 112px;
