@@ -97,6 +97,8 @@ func newSocialVideoImportHandler(t *testing.T) (*gin.Engine, *http.Cookie) {
 	for _, item := range []any{
 		&model.User{ID: "social-video-user", Username: "social-video-user", Email: "social-video@example.invalid", Role: model.UserRoleUser, Status: model.UserStatusActive},
 		&model.AuthSession{ID: "social-video-session", UserID: "social-video-user", TokenHash: auth.HashToken("test-token"), ExpiresAt: time.Now().Add(time.Hour)},
+		// 导入前要求平台至少有一个开着的解析接口。
+		&model.SystemSetting{Key: "social_video_parse_apis", ValueJSON: `[{"id":"api-1","name":"测试接口","platforms":["douyin"],"enabled":true,"method":"GET","url":"https://parse.example.com/?url={url}"}]`},
 	} {
 		if err := db.Create(item).Error; err != nil {
 			t.Fatal(err)
