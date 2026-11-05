@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"gorm.io/gorm"
@@ -198,4 +199,26 @@ func (s *Service) prepareCloudAgentStudioPhotoInspection(userID string, state *c
 		return inspections[0], nil
 	}
 	return cloudAgentImageInspectionBatch{Receipt: map[string]any{"purpose": purpose, "images": receipts}, Inspections: inspections}, nil
+}
+
+// cloudAgentStudioMethodSkillID 是内置技能「电商出图方法库」的 ID（backend/builtin/电商出图方法库）。
+const cloudAgentStudioMethodSkillID = "ecommerce-studio-method"
+
+// cloudAgentStudioMethodReference 给生图台对话准备内置方法技能的只读快照；用户已安装或已固定时它已在本轮技能里，不再重复。
+// 读取失败只跳过这项增强，不让整轮对话失败。
+func (s *Service) cloudAgentStudioMethodReference(userID string, installed map[string]string, pinned []cloudAgentSkill) (cloudAgentSkill, bool) {
+	if _, ok := installed[cloudAgentStudioMethodSkillID]; ok {
+		return cloudAgentSkill{}, false
+	}
+	for _, skill := range pinned {
+		if skill.ID == cloudAgentStudioMethodSkillID {
+			return cloudAgentSkill{}, false
+		}
+	}
+	snapshot, err := s.cloudAgentSkillSnapshot(userID, cloudAgentStudioMethodSkillID, false)
+	if err != nil {
+		slog.Warn("studio method skill unavailable", "error", err)
+		return cloudAgentSkill{}, false
+	}
+	return snapshot, true
 }

@@ -358,13 +358,15 @@ func (s *Service) requireTaskGenerationFeatures(userID, projectID, taskType, ope
 	}
 	// The provider dispatches by mode; type and persisted kind are additional
 	// evidence so a mismatched public request cannot weaken media admission.
+	// 「图片生成」「视频生成」只管侧栏的工作台；电商 Agent 出图只看「电商 Agent」（上面已检查），商品视频只看「商品视频」。
 	if isVideoTaskType(taskType) || stringValue(input["mode"]) == "video" || workbenchKind == WorkbenchKindVideo {
 		if ecommerce {
-			if err := s.RequireFeature(FeatureEcommerceVideo); err != nil {
-				return err
-			}
+			return s.RequireFeature(FeatureEcommerceVideo)
 		}
 		return s.RequireFeature(FeatureVideoWorkbench)
+	}
+	if ecommerce {
+		return nil
 	}
 	if taskType == "canvas_image" || stringValue(input["mode"]) == "image" || workbenchKind == WorkbenchKindImage {
 		return s.RequireFeature(FeatureImageWorkbench)

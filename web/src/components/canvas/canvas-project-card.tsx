@@ -143,7 +143,7 @@ export function CanvasProjectCard({ project, projectName, variant = "library", r
                     ) : null}
                 </div>
                 <div className="canvas-project-stats">
-                    <span>{projectName || (project.kind === "ecommerce" ? "电商画布" : "自由画布")}</span>
+                    <span>{projectName || "自由画布"}</span>
                     <span aria-hidden="true">·</span>
                     <RelativeTime value={project.updatedAt} suffix="修改" />
                 </div>

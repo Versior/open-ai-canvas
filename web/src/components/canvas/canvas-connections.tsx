@@ -6,7 +6,7 @@ import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { STORYBOARD_HEADER_HEIGHT, STORYBOARD_ROW_HEIGHT, storyboardTableHeight } from "@/lib/canvas/canvas-storyboard-layout";
 import { batchReferenceHandleY } from "@/lib/canvas/canvas-batch-table";
 import { batchCellAnchor, parseBatchCellHandle, type BatchScroll } from "@/lib/canvas/canvas-batch-references";
-import { CanvasNodeType, type CanvasConnection, type CanvasNodeData, type ConnectionHandle, type Position } from "@/types/canvas";
+import type { CanvasConnection, CanvasNodeData, ConnectionHandle, Position } from "@/types/canvas";
 import { useCanvasVisualNode } from "./canvas-node-resize-motion";
 
 export const ConnectionPath = React.memo(function ConnectionPath({
@@ -126,9 +126,8 @@ export function canvasConnectionPath(connection: CanvasConnection, from: CanvasN
     if ((parseBatchCellHandle(connection.fromHandleId) && !fromCell) || (parseBatchCellHandle(connection.toHandleId) && !toCell)) return { pathD: "", startX: 0, startY: 0, endX: 0, endY: 0 };
     const startX = fromCell?.x ?? from.position.x + from.width;
     const startY = fromCell?.y ?? connectionHandleY(from, connection.fromHandleId, fromScrollTop);
-    const pin = to.type === CanvasNodeType.Product && (connection.toHandleId?.startsWith("product-view:") || connection.toHandleId?.startsWith("visual-reference:"));
-    const endX = toCell?.x ?? (pin && connection.toAnchorXRatio !== undefined ? to.position.x + to.width * connection.toAnchorXRatio : to.position.x);
-    const endY = toCell?.y ?? (pin && connection.toAnchorRatio !== undefined ? to.position.y + to.height * connection.toAnchorRatio : connectionHandleY(to, connection.toHandleId, toScrollTop));
+    const endX = toCell?.x ?? to.position.x;
+    const endY = toCell?.y ?? connectionHandleY(to, connection.toHandleId, toScrollTop);
     const dx = Math.abs(endX - startX);
     const curvature = Math.max(dx * 0.5, 50);
     return { pathD: `M ${startX} ${startY} C ${startX + curvature} ${startY}, ${endX - curvature} ${endY}, ${endX} ${endY}`, startX, startY, endX, endY };
@@ -140,9 +139,8 @@ export function activeConnectionPath(node: CanvasNodeData | undefined, handle: C
     if (parseBatchCellHandle(handle.handleId) && !nodeCell) return "";
     const startX = handle.handleType === "source" ? node.position.x + node.width : mouseWorld.x;
     const startY = handle.handleType === "source" ? connectionHandleY(node, handle.handleId, nodeScrollTop) : mouseWorld.y;
-    const productInput = node.type === CanvasNodeType.Product && (handle.handleId?.startsWith("product-view:") || handle.handleId?.startsWith("visual-reference:"));
-    const endX = handle.handleType === "source" ? mouseWorld.x : nodeCell?.x ?? node.position.x + (productInput ? node.width * (handle.anchorXRatio ?? 0) : 0);
-    const endY = handle.handleType === "source" ? mouseWorld.y : nodeCell?.y ?? (productInput ? node.position.y + node.height * (handle.anchorRatio ?? 0.5) : connectionHandleY(node, handle.handleId, nodeScrollTop));
+    const endX = handle.handleType === "source" ? mouseWorld.x : (nodeCell?.x ?? node.position.x);
+    const endY = handle.handleType === "source" ? mouseWorld.y : (nodeCell?.y ?? connectionHandleY(node, handle.handleId, nodeScrollTop));
     // 悬停目标由卡片反馈；松手前的自由端始终跟随指针。
     const distance = Math.abs(endX - startX);
     return `M ${startX} ${startY} C ${startX + distance * 0.5} ${startY}, ${endX - distance * 0.5} ${endY}, ${endX} ${endY}`;

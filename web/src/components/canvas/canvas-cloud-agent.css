@@ -1,5 +1,4 @@
-.canvas-agent-panel,
-.agent-context-popover {
+.canvas-agent-panel {
     /* Canvas theme -> material tokens. */
     --agent-material-solid: color-mix(in srgb, var(--agent-ink) 3%, var(--agent-surface-base));
     --agent-surface-soft: color-mix(in srgb, var(--agent-ink) 4%, transparent);
@@ -101,347 +100,299 @@
     font-size: var(--fs-label);
 }
 
-.agent-context-ring {
-    --agent-context-ring-color: var(--agent-accent, currentColor);
-    position: relative;
-    display: inline-flex;
-    flex: none;
+/* 输入框正上方的上下文与本轮用量：一行概览常显（面板窄时自动折成两行），明细在下方展开。
+   没有读数时整块不出现；配色只跟上下文阶段走：充足用主色，接近压缩用警告色，到压缩线用错误色。 */
+.agent-usage {
+    --agent-usage-fill: var(--agent-accent);
+    margin: 0 var(--space-1) var(--space-2);
+    color: var(--agent-caption);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+}
+
+.agent-usage.is-watch {
+    --agent-usage-fill: var(--status-warning);
+}
+
+.agent-usage.is-compress,
+.agent-usage.is-compacting {
+    --agent-usage-fill: var(--status-error);
+}
+
+.agent-usage.is-stale,
+.agent-usage.is-unknown {
+    --agent-usage-fill: color-mix(in srgb, var(--agent-ink) 38%, transparent);
+}
+
+.agent-usage strong {
+    color: var(--agent-ink);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 第一行上下文和「明细」，第二行本轮读数；只有本轮读数时读数和「明细」同一行。 */
+.agent-usage-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px 12px;
+    min-height: 22px;
+}
+
+.agent-usage-context {
+    display: flex;
+    grid-row: 1;
+    grid-column: 1;
     align-items: center;
     gap: 8px;
-    min-width: 64px;
-    height: 30px;
-    padding: 2px 8px 2px 4px;
-    border: 0;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--agent-ink) 5%, transparent);
-    color: var(--agent-caption);
-    cursor: pointer;
-    transition:
-        background-color 160ms ease,
-        color 160ms ease;
-}
-
-.agent-context-ring:hover,
-.agent-context-ring[aria-expanded="true"] {
-    background: color-mix(in srgb, var(--agent-ink) 9%, transparent);
-    color: var(--agent-ink);
-}
-
-.agent-context-ring:focus-visible {
-    outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
-}
-
-.agent-context-ring-visual {
-    position: relative;
-    display: block;
-    width: 26px;
-    height: 26px;
-    flex: none;
-    overflow: hidden;
-    border-radius: 50%;
-    background: conic-gradient(from -90deg, var(--agent-context-ring-color) 0 var(--agent-context-progress), color-mix(in srgb, var(--agent-ink) 11%, transparent) var(--agent-context-progress) 100%);
-}
-
-.agent-context-ring-visual::after {
-    position: absolute;
-    inset: 5px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--agent-surface-raised) 92%, transparent);
-    content: "";
-}
-
-.agent-context-ring-marker {
-    position: absolute;
-    inset: 2px;
-    z-index: 1;
-    border-radius: 50%;
-    transform: rotate(var(--agent-context-marker-angle));
-}
-
-.agent-context-ring-marker::after {
-    position: absolute;
-    top: -1px;
-    left: 50%;
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: var(--agent-context-ring-color);
-    content: "";
-    transform: translateX(-50%);
-}
-
-.agent-context-ring.is-watch {
-    --agent-context-ring-color: #d9973b;
-}
-
-.agent-context-ring.is-compress,
-.agent-context-ring.is-compacting {
-    --agent-context-ring-color: #d4534e;
-}
-
-.agent-context-ring.is-compacting .agent-context-ring-visual {
-    animation: agent-context-spin 1.4s linear infinite;
-}
-.agent-context-ring.is-unknown .agent-context-ring-visual,
-.agent-context-ring.is-stale .agent-context-ring-visual {
-    opacity: 0.72;
-}
-
-.agent-context-meter-copy {
-    display: grid;
     min-width: 0;
-    line-height: 1;
-    text-align: left;
-}
-
-.agent-context-meter-copy strong {
-    color: var(--agent-ink);
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-}
-
-.agent-context-meter-copy small {
-    margin-top: 2px;
-    color: var(--agent-caption);
-    font-size: 11px;
     white-space: nowrap;
 }
 
-@keyframes agent-context-spin {
-    to {
-        transform: rotate(270deg);
-    }
+.agent-usage-figure {
+    font-variant-numeric: tabular-nums;
 }
 
-.agent-context-popover.ant-popover,
-.agent-context-popover .ant-popover-content,
-.agent-context-popover .ant-popover-container {
-    box-shadow: none;
+.agent-usage-hint {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--agent-caption) 82%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.agent-context-popover .ant-popover-container {
-    max-height: calc(100dvh - 32px);
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding: 0;
-    border: 1px solid color-mix(in srgb, var(--agent-ink) 12%, transparent);
-    border-radius: 16px;
-    background: var(--agent-surface-raised, var(--background));
+/* 空态：进度条只留底槽，提示文字占满剩下的位置。 */
+.agent-usage.is-idle .agent-usage-meter {
+    flex: 0 1 72px;
 }
 
-.agent-context-popover .ant-popover-content {
-    padding: 0;
+.agent-usage.is-idle .agent-usage-hint {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-.agent-context-panel {
-    width: min(348px, calc(100vw - 32px));
-    padding: 16px 16px 12px;
-    color: var(--agent-ink, inherit);
-    font-size: 12px;
-    line-height: 1.45;
+.agent-usage-tag {
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid color-mix(in srgb, var(--agent-ink) 14%, transparent);
+    border-radius: 999px;
+    color: var(--agent-caption);
+    font-size: 11px;
 }
 
-.agent-context-eyebrow {
-    display: block;
-    margin-bottom: 4px;
+.agent-usage-metric.is-pending .agent-usage-hint::before {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--agent-usage-fill);
+    content: "";
+    vertical-align: 1px;
+    animation: agent-usage-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.agent-usage-meter {
+    position: relative;
+    flex: 1 1 56px;
+    min-width: 40px;
+    max-width: 240px;
+    height: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--agent-ink) 12%, transparent);
+}
+
+.agent-usage-meter > span {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    min-width: 4px;
+    border-radius: inherit;
+    background: var(--agent-usage-fill);
+    transition: width 240ms ease;
+}
+
+.agent-usage-meter > i {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 1px;
+    background: color-mix(in srgb, var(--agent-ink) 45%, transparent);
+}
+
+.agent-usage.is-compacting .agent-usage-meter > span {
+    animation: agent-usage-pulse 1.1s ease-in-out infinite alternate;
+}
+
+.agent-usage-badge {
+    flex: none;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--agent-usage-fill) 18%, transparent);
+    color: var(--agent-ink);
+    font-size: 11px;
+}
+
+.agent-usage-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    grid-column: 1 / -1;
+    align-items: center;
+    gap: 2px 12px;
+    min-width: 0;
+}
+
+.agent-usage-summary.is-run-only .agent-usage-metrics {
+    grid-row: 1;
+    grid-column: 1;
+}
+
+.agent-usage-metric {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.agent-usage-toggle {
+    display: inline-flex;
+    grid-row: 1;
+    grid-column: 2;
+    align-items: center;
+    gap: 2px;
+    height: 22px;
+    padding: 0 4px 0 8px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--agent-caption);
+    font: inherit;
+    cursor: pointer;
+    transition:
+        background-color 150ms ease,
+        color 150ms ease;
+}
+
+.agent-usage-toggle:hover,
+.agent-usage-toggle[aria-expanded="true"] {
+    background: var(--agent-surface-hover);
+    color: var(--agent-ink);
+}
+
+.agent-usage-toggle:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 1px;
+}
+
+.agent-usage-toggle svg {
+    transition: transform 150ms ease;
+}
+
+.agent-usage-toggle[aria-expanded="true"] svg {
+    transform: rotate(180deg);
+}
+
+.agent-usage-alert {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 6px 0 0;
+    color: var(--agent-ink);
+}
+
+.agent-usage-alert svg {
+    flex: none;
+    color: var(--status-warning);
+}
+
+.agent-usage-details {
+    display: grid;
+    gap: 10px;
+    margin-top: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--agent-surface-soft);
+}
+
+.agent-usage-details[hidden] {
+    display: none;
+}
+
+.agent-usage-group {
+    display: grid;
+    gap: 6px;
+}
+
+.agent-usage-eyebrow {
     color: var(--agent-caption);
     font-size: 11px;
     letter-spacing: 0.02em;
 }
 
-.agent-context-panel-head {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.agent-context-panel-head strong {
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: -0.015em;
-    font-variant-numeric: tabular-nums;
-}
-
-.agent-context-phase {
-    flex: none;
-    border-radius: 999px;
-    padding: 4px 8px;
-    background: color-mix(in srgb, currentColor 12%, transparent);
-    font-size: 11px;
-    line-height: 1.2;
-}
-
-.agent-context-phase.is-watch {
-    color: #9a6416;
-}
-.agent-context-phase.is-compress,
-.agent-context-phase.is-compacting {
-    color: #a33b36;
-}
-
-.agent-context-summary {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-    margin-top: 12px;
-    color: var(--agent-caption);
-    font-variant-numeric: tabular-nums;
-}
-
-.agent-context-summary strong {
-    color: var(--agent-ink);
-    font-size: 22px;
-    letter-spacing: -0.04em;
-}
-
-.agent-context-summary span {
-    font-size: 13px;
-}
-
-.agent-context-summary em {
-    margin-left: auto;
-    color: var(--agent-caption);
-    font-size: 12px;
-    font-style: normal;
-}
-
-.agent-context-progress-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 12px;
-    color: var(--agent-caption);
-    font-size: 11px;
-    font-weight: 600;
-}
-
-.agent-context-progress-head strong {
-    color: var(--agent-ink);
-    font-size: 13px;
-    font-variant-numeric: tabular-nums;
-}
-
-.agent-context-progress {
-    position: relative;
-    height: 12px;
-    margin-top: 4px;
-    overflow: visible;
-    border: 0;
-    border-radius: 999px;
-    background: rgb(255 255 255 / 14%);
-    background: color-mix(in srgb, var(--agent-ink, #fff) 24%, var(--agent-surface-raised, #252525));
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
-}
-
-.agent-context-progress > span {
-    display: block;
-    height: 100%;
-    min-width: 6px;
-    border-radius: inherit;
-    background: #8b93ff;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--agent-accent, #8b93ff) 58%, white), var(--agent-accent, #8b93ff));
-    transition: width 240ms ease;
-}
-
-.agent-context-progress > i {
-    position: absolute;
-    top: -3px;
-    bottom: -3px;
-    width: 1px;
-    background: color-mix(in srgb, var(--agent-ink) 64%, transparent);
-}
-
-.agent-context-detail {
-    margin: 8px 0 0;
-    color: var(--agent-caption);
-    font-size: 11px;
-    line-height: 1.55;
-}
-
-.agent-context-breakdown {
+.agent-usage-tiles {
     display: grid;
-    gap: 8px;
-    margin: 12px 0 0;
-    padding: 0;
-    list-style: none;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 8px 12px;
+    margin: 0;
 }
 
-.agent-context-breakdown li {
+.agent-usage-tiles > div {
     display: grid;
-    grid-template-columns: 9px minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-}
-
-.agent-context-breakdown-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--agent-accent) 62%, var(--agent-ink));
-}
-
-.agent-context-breakdown-label {
+    gap: 2px;
     min-width: 0;
+}
+
+.agent-usage-tiles dt {
     overflow: hidden;
-    color: var(--agent-ink);
+    color: var(--agent-caption);
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.agent-context-breakdown-value {
-    min-width: 58px;
-    color: var(--agent-ink);
-    font-variant-numeric: tabular-nums;
-    text-align: right;
-}
-
-.agent-context-breakdown li.is-secondary .agent-context-breakdown-dot {
-    background: color-mix(in srgb, var(--agent-ink) 42%, transparent);
-}
-
-.agent-context-breakdown li.is-secondary .agent-context-breakdown-label,
-.agent-context-breakdown li.is-secondary .agent-context-breakdown-value {
-    color: var(--agent-caption);
-}
-
-.agent-context-breakdown li.is-muted .agent-context-breakdown-dot {
-    background: color-mix(in srgb, var(--agent-ink) 24%, transparent);
-}
-
-.agent-context-breakdown li.is-muted .agent-context-breakdown-label,
-.agent-context-breakdown li.is-muted .agent-context-breakdown-value {
-    color: var(--agent-caption);
-}
-
-.agent-context-panel-foot {
+.agent-usage-tiles dd {
     display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    margin-top: 12px;
-    padding-top: 8px;
-    border-top: 1px solid color-mix(in srgb, var(--agent-ink) 9%, transparent);
-    color: var(--agent-caption);
-    font-size: 11px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 6px;
+    margin: 0;
 }
 
-.agent-context-note {
-    margin: 8px 0 0;
+.agent-usage-tiles dd strong {
+    font-size: 13px;
+}
+
+.agent-usage-tiles dd em {
     color: var(--agent-caption);
     font-size: 11px;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+}
+
+.agent-usage-note {
+    margin: 0;
+    color: var(--agent-caption);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+@keyframes agent-usage-pulse {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0.45;
+    }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .agent-context-ring.is-compacting .agent-context-ring-visual {
-        animation: none;
-    }
-    .agent-context-ring-visual,
-    .agent-context-progress > span {
+    .agent-usage-meter > span,
+    .agent-usage-toggle,
+    .agent-usage-toggle svg {
         transition: none;
+    }
+    .agent-usage.is-compacting .agent-usage-meter > span,
+    .agent-usage-metric.is-pending .agent-usage-hint::before {
+        animation: none;
     }
 }
 
@@ -1209,17 +1160,6 @@
     }
 }
 
-/* 面板不够宽时上下文只显示环，把位置让给模型名、停止和主按钮；百分比点开明细可见。 */
-@container (max-width: 519px) {
-    .agent-context-ring {
-        min-width: 30px;
-        padding: 2px 4px;
-        gap: 0;
-    }
-    .agent-context-meter-copy {
-        display: none;
-    }
-}
 @container (max-width: 400px) {
     .agent-panel-header {
         gap: var(--space-2);
@@ -1230,9 +1170,6 @@
     }
     .agent-conversation {
         padding-inline: var(--space-4);
-    }
-    .agent-context-panel-foot {
-        display: grid;
     }
 
     .agent-welcome-actions button {
@@ -3867,6 +3804,60 @@ summary.agent-tool-step:hover {
     outline-offset: 1px;
 }
 
+/* 助手回复页脚：模型、速度与用量、回复时间和操作。每轮最后一条回复常显，其余与复制按钮一样悬停或聚焦时出现。 */
+.agent-reply-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: 2px;
+    color: var(--agent-caption);
+    font-size: var(--fs-label);
+    opacity: 0;
+    transition: opacity 150ms ease;
+}
+
+.agent-reply-footer.is-pinned,
+.agent-message-row:hover .agent-reply-footer,
+.agent-reply-footer:focus-within {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .agent-reply-footer {
+        opacity: 1;
+    }
+}
+
+.agent-reply-chip {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--agent-surface-soft);
+    font-variant-numeric: tabular-nums;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-reply-time {
+    padding: 0 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.agent-reply-icon-action {
+    width: 22px;
+    justify-content: center;
+    padding: 0;
+}
+
+.agent-reply-icon-action:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
 /* ---- 权限胶囊、状态圆点、「更多」里的快捷键 ---- */
 .agent-permission-trigger {
     display: inline-flex;
@@ -3949,6 +3940,7 @@ summary.agent-tool-step:hover {
 
 @media (prefers-reduced-motion: reduce) {
     .agent-message-actions,
+    .agent-reply-footer,
     .agent-composer-add,
     .agent-scroll-latest,
     .agent-message-action,

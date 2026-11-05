@@ -135,6 +135,7 @@ export const deDE: Messages = {
             recovery: { title: "Passwort zurücksetzen", description: "Bestätige die E-Mail deines Kontos und lege ein neues Passwort fest." },
         },
         brandFilm: "{{brand}} Markenfilm",
+        brandPoster: "Markenplakat von {{brand}}",
         playVideo: "Markenfilm abspielen",
         videoPlaying: "Hier entsteht Kreativität",
         backHome: "Zur Startseite",

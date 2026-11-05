@@ -9,7 +9,6 @@ import {
     loadCanvasPage,
     loadCanvasProjectPage,
     loadCreatePage,
-    loadEcommerceCanvasPage,
     loadEcommerceStudioPage,
     loadInspirationPage,
     loadInteriorPage,
@@ -49,6 +48,7 @@ const AppearanceSettingsPage = lazyAdminPage(() => import("@/pages/admin/setting
 const AgentPetsSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/agent-pets-page"));
 const DrawingEngineSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/drawing-engine-settings-page"));
 const EcommerceSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/ecommerce-settings-page"));
+const StudioModelsPage = lazyAdminPage(() => import("@/pages/admin/settings/studio-models-page"));
 const StorageSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/storage-settings-page"));
 const ArkPrivateAssetsSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/ark-private-assets-settings-page"));
 const ResponseInterceptionSettingsPage = lazyAdminPage(() => import("@/pages/admin/settings/response-interception-settings-page"));
@@ -68,7 +68,6 @@ const LoginPage = lazy(() => import("@/pages/auth/login"));
 const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
-const EcommerceCanvasPage = lazy(loadEcommerceCanvasPage);
 const EcommerceStudioPage = lazy(loadEcommerceStudioPage);
 const InteriorPage = lazy(loadInteriorPage);
 const VideoReplicationPage = lazy(() => import("@/pages/video-replication"));
@@ -266,8 +265,8 @@ export const router = createBrowserRouter([
             },
             { path: "/projects/:projectId/*", element: <Navigate to=".." relative="path" replace /> },
             { path: "/canvas", element: <RequireAuth>{deferred(<CanvasPage />)}</RequireAuth> },
-            // 旧版电商画布列表：/ecommerce 由电商 Agent 工作区接管，存量电商画布从这里进入。
-            { path: "/ecommerce/canvas", element: <RequireAuth>{deferred(<EcommerceCanvasPage />)}</RequireAuth> },
+            // 旧版电商画布已下线：旧入口收进画布列表，存量电商画布按自由画布打开。
+            { path: "/ecommerce/canvas", element: <Navigate to="/canvas" replace /> },
             {
                 path: "/canvas/:id",
                 element: (
@@ -325,6 +324,7 @@ export const router = createBrowserRouter([
                     { path: "settings/agent-styles", element: <AgentPetsSettingsPage /> },
                     { path: "settings/drawing-engine", element: <DrawingEngineSettingsPage /> },
                     { path: "settings/ecommerce", element: <EcommerceSettingsPage /> },
+                    { path: "settings/studio-models", element: <StudioModelsPage /> },
                     { path: "settings/concurrency", element: <Navigate to="/admin/settings/runtime-policy" replace /> },
                     { path: "settings/runtime-policy", element: <RuntimePolicySettingsPage /> },
                     { path: "settings/features", element: <FeatureAvailabilityPage /> },

@@ -21,6 +21,7 @@ import { agentToolRetry, type AgentToolRetryAttempt } from "@/lib/canvas/agent-t
 import { agentErrorContent } from "@/lib/canvas/agent-error-presentation";
 import { agentCanvasUndoKey, agentCanvasUndoTarget, type AgentCanvasUndoState, type AgentCanvasUndoTarget } from "@/lib/canvas/agent-canvas-undo";
 import { AgentImagePreview } from "./canvas-cloud-agent-composer";
+import type { AgentModelUsage } from "@/lib/canvas/agent-run-stats";
 
 // 输入区已拆到 canvas-cloud-agent-composer.tsx；附件类型与引用转换在 canvas-cloud-agent-attachments.ts。
 // 这里保留再导出，既有 import 路径保持可用。
@@ -98,6 +99,12 @@ export type CloudAgentChatMessage = {
     memoryUpdate?: CloudAgentMemoryUpdate;
     /** Agent 推荐安装的技能市场技能；安装与否由用户决定。 */
     skillSuggestion?: CloudAgentSkillSuggestion;
+    /** 助手回复所属的轮次（assistant_message 事件的 runId）；升级前缓存的消息没有。 */
+    runId?: string;
+    /** 助手回复的服务端落库时间（持久 assistant_message 事件的 createdAt）。 */
+    createdAt?: string;
+    /** 产出这条回复的模型步骤用量（model_usage 事件）。 */
+    usage?: AgentModelUsage;
 };
 
 export type CloudAgentMemoryUpdate = {
@@ -416,11 +423,16 @@ export const AgentChatMessage = memo(function AgentChatMessage({
     replyOptions,
     onReplyOption,
     replyOptionsDisabled = false,
+    replyModelLabel,
+    replyUsageLabel,
+    replyTimeLabel,
+    replyPinned = false,
 }: {
     item: CloudAgentChatMessage;
     theme: (typeof canvasThemes)[keyof typeof canvasThemes];
     references?: CanvasResourceReference[];
     isStreaming?: boolean;
+    /** 失败卡片或助手回复页脚上的「重试本轮」正在提交。 */
     retrying?: boolean;
     onRejectTool?: (id: string) => void;
     onApproveTool?: (id: string) => void;
@@ -436,6 +448,12 @@ export const AgentChatMessage = memo(function AgentChatMessage({
     replyOptions?: AgentReplyOptions | null;
     onReplyOption?: (text: string) => void;
     replyOptionsDisabled?: boolean;
+    /** 助手回复页脚：模型名、这一步的速度与用量、回复时间（已格式化，没有数据就不传）。 */
+    replyModelLabel?: string;
+    replyUsageLabel?: string;
+    replyTimeLabel?: string;
+    /** 本轮最后一条回复：页脚常显，其余回复悬停或聚焦时出现。 */
+    replyPinned?: boolean;
 }) {
     const isUser = item.role === "user";
     const reducedMotion = useReducedMotion();
@@ -607,11 +625,74 @@ export const AgentChatMessage = memo(function AgentChatMessage({
                     {item.attachments?.length ? <AgentMessageAttachments attachments={item.attachments} /> : null}
                     {item.meta ? <div className="mt-1 text-[var(--fs-label)] opacity-45">{item.meta}</div> : null}
                 </div>
-                {copyable ? <AgentMessageCopyButton text={agentCopyText(item.text, references)} align={isUser ? "end" : "start"} /> : null}
+                {item.role === "assistant" ? (
+                    !isStreaming && (copyable || replyModelLabel || replyUsageLabel || replyTimeLabel || onRetry) ? (
+                        <AgentReplyFooter
+                            copyText={copyable ? agentCopyText(item.text, references) : undefined}
+                            modelLabel={replyModelLabel}
+                            usageLabel={replyUsageLabel}
+                            timeLabel={replyTimeLabel}
+                            createdAt={item.createdAt}
+                            pinned={replyPinned}
+                            onRetry={onRetry}
+                            retrying={retrying}
+                        />
+                    ) : null
+                ) : copyable ? (
+                    <AgentMessageCopyButton text={agentCopyText(item.text, references)} align={isUser ? "end" : "start"} />
+                ) : null}
             </div>
         </div>
     );
 });
+
+/** 助手回复页脚：模型、这一步的速度与用量、回复时间，以及复制和重试。没有数据的项不出现。 */
+function AgentReplyFooter({
+    copyText,
+    modelLabel,
+    usageLabel,
+    timeLabel,
+    createdAt,
+    pinned,
+    onRetry,
+    retrying,
+}: {
+    copyText?: string;
+    modelLabel?: string;
+    usageLabel?: string;
+    timeLabel?: string;
+    createdAt?: string;
+    pinned: boolean;
+    onRetry?: () => void;
+    retrying: boolean;
+}) {
+    const fullTime = createdAt ? new Date(createdAt).toLocaleString("zh-CN", { hour12: false }) : undefined;
+    return (
+        <div className={`agent-reply-footer${pinned ? " is-pinned" : ""}`}>
+            {modelLabel ? (
+                <span className="agent-reply-chip" title={`模型：${modelLabel}`}>
+                    {modelLabel}
+                </span>
+            ) : null}
+            {usageLabel ? (
+                <span className="agent-reply-chip" title="这条回复所在模型调用的生成速度与 token 用量（上游回传）">
+                    {usageLabel}
+                </span>
+            ) : null}
+            {timeLabel ? (
+                <time className="agent-reply-time" dateTime={createdAt} title={fullTime}>
+                    {timeLabel}
+                </time>
+            ) : null}
+            {copyText ? <AgentMessageCopyButton text={copyText} compact /> : null}
+            {onRetry ? (
+                <button type="button" className="agent-message-action agent-reply-icon-action" aria-label="重试这一轮" title="用同样的内容重新发起一轮（会重新计费）" disabled={retrying} onClick={onRetry}>
+                    {retrying ? <LoaderCircle className="size-3 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-3" aria-hidden="true" />}
+                </button>
+            ) : null}
+        </div>
+    );
+}
 /** 写入剪贴板：优先用异步剪贴板接口；非 HTTPS 或权限被拒时退回隐藏文本框加 execCommand。 */
 async function writeClipboardText(text: string) {
     if (navigator.clipboard?.writeText) {
@@ -636,34 +717,41 @@ async function writeClipboardText(text: string) {
         area.remove();
     }
 }
-/** 消息下方的「复制」：悬停或键盘聚焦时出现，触屏常显；复制后按钮上显示「已复制」，不弹全局提示。 */
-function AgentMessageCopyButton({ text, align }: { text: string; align: "start" | "end" }) {
+/**
+ * 消息下方的「复制」：悬停或键盘聚焦时出现，触屏常显；复制后按钮上显示「已复制」，不弹全局提示。
+ * compact 用在助手回复页脚里：只留图标，状态文字留给读屏，外层显隐由页脚负责。
+ */
+function AgentMessageCopyButton({ text, align = "start", compact = false }: { text: string; align?: "start" | "end"; compact?: boolean }) {
     const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
     useEffect(() => {
         if (state === "idle") return;
         const timer = window.setTimeout(() => setState("idle"), 1600);
         return () => window.clearTimeout(timer);
     }, [state]);
-    return (
-        <div className={`agent-message-actions ${align === "end" ? "self-end" : "self-start"}`}>
-            <button
-                type="button"
-                className="agent-message-action"
-                aria-label="复制这条消息"
-                onClick={(event) => {
-                    const trigger = event.currentTarget;
-                    void writeClipboardText(text).then((copied) => {
-                        setState(copied ? "copied" : "failed");
-                        // 旧方法会把焦点移到临时文本框，复制完放回按钮，键盘用户不丢位置。
-                        if (document.activeElement !== trigger) trigger.focus({ preventScroll: true });
-                    });
-                }}
-            >
-                {state === "copied" ? <Check className="size-3" aria-hidden="true" /> : <Copy className="size-3" aria-hidden="true" />}
-                <span aria-live="polite">{state === "copied" ? "已复制" : state === "failed" ? "复制失败" : "复制"}</span>
-            </button>
-        </div>
+    const stateLabel = state === "copied" ? "已复制" : state === "failed" ? "复制失败" : "复制";
+    const button = (
+        <button
+            type="button"
+            className={`agent-message-action${compact ? " agent-reply-icon-action" : ""}`}
+            aria-label="复制这条消息"
+            title={compact ? stateLabel : undefined}
+            onClick={(event) => {
+                const trigger = event.currentTarget;
+                void writeClipboardText(text).then((copied) => {
+                    setState(copied ? "copied" : "failed");
+                    // 旧方法会把焦点移到临时文本框，复制完放回按钮，键盘用户不丢位置。
+                    if (document.activeElement !== trigger) trigger.focus({ preventScroll: true });
+                });
+            }}
+        >
+            {state === "copied" ? <Check className="size-3" aria-hidden="true" /> : <Copy className="size-3" aria-hidden="true" />}
+            <span className={compact ? "sr-only" : undefined} aria-live="polite">
+                {stateLabel}
+            </span>
+        </button>
     );
+    if (compact) return button;
+    return <div className={`agent-message-actions ${align === "end" ? "self-end" : "self-start"}`}>{button}</div>;
 }
 
 const EMPTY_REFERENCES: CanvasResourceReference[] = [];

@@ -24,6 +24,8 @@ import { saveAs } from "file-saver";
 import { buildAgentDebugExport } from "@/lib/canvas/agent-debug-export";
 import { agentPlanVisible, latestAgentPlanItems, latestAgentPlanTerminal, pendingAgentQuestion } from "@/lib/canvas/cloud-agent-plan";
 import { emptyAgentContextUsage, presentAgentContextUsage, reduceAgentContextUsage, type AgentContextUsage } from "@/lib/canvas/agent-context-usage";
+import { agentRunStatsCovers, emptyAgentRunStats, presentAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
+import { configuredTextContextWindow } from "@/lib/model-capabilities";
 import { nanoid } from "nanoid";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -46,6 +48,7 @@ import {
     type AgentPermissionMode,
     type AgentProfileScope,
     type AgentProfileView,
+    type AgentEvent,
     type AgentReasoningMode,
     type AgentRun,
 } from "@/services/api/agent";
@@ -122,7 +125,8 @@ import { useAgentPanelLayout } from "./use-agent-panel-layout";
 import { useAgentPanelDock } from "./use-agent-panel-dock";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
-import { AgentContextRing, AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
+import { AgentUsageBar } from "./canvas-agent-usage-bar";
 import { useGlobalAgentStore, type AgentInsertedNode, type AgentPrefillRequest } from "@/stores/use-global-agent-store";
 
 type AgentPanelView = "chat" | "history" | "settings";
@@ -147,6 +151,20 @@ type AgentDraftAttachment = {
 };
 /** 来自输入框的消息额外带上的内容：附件节点引用（排在选区前作为重点），以及是否不带选区。 */
 type ComposerExtras = { attachmentNodeIds: string[]; excludeSelection: boolean };
+
+/** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计和上下文读数。 */
+async function loadAgentRunEventPrefix(runId: string, untilSeq: number, signal: AbortSignal) {
+    const events: AgentEvent[] = [];
+    let seq = 0;
+    while (seq < untilSeq) {
+        const { run } = await getAgentRun(runId, signal, { sinceSeq: seq, fromStart: seq === 0, eventLimit: 500 });
+        const page = (run.events || []).filter((event) => event.runId === runId && Number.isSafeInteger(event.seq) && event.seq > seq && event.seq <= untilSeq).sort((a, b) => a.seq - b.seq);
+        if (!page.length) break;
+        events.push(...page);
+        seq = page[page.length - 1].seq;
+    }
+    return events;
+}
 
 function approvalStateFromRun(nextRun: AgentRun | null): ApprovalState | null {
     const approval = nextRun?.approval;
@@ -191,6 +209,12 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [view, setView] = useState<AgentPanelView>("chat");
     const [run, setRun] = useState<AgentRun | null>(null);
     const [contextUsage, setContextUsage] = useState<AgentContextUsage>(() => emptyAgentContextUsage(""));
+    // 同一对话最近一份上下文读数：新一轮的读数到达前给用量栏兜底。
+    const lastContextRef = useRef<{ conversationId: string; usage: AgentContextUsage } | null>(null);
+    // 本轮统计按对话隔离；事件流续接时用 ref 判断本机是否已经有从第 1 条起的事件。
+    const [runStats, setRunStats] = useState(() => emptyAgentRunStats(""));
+    const runStatsRef = useRef(runStats);
+    runStatsRef.current = runStats;
     const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "reconnecting" | "disconnected">("connecting");
     const [connectionEpoch, setConnectionEpoch] = useState(0);
     const [messages, setMessages] = useState<CloudAgentChatMessage[]>([]);
@@ -884,7 +908,23 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const after = replayCursorRef.current.runId === run.id ? replayCursorRef.current.seq : 0;
         replayCursorRef.current = { runId: run.id, seq: after };
         lastSeqRef.current = after;
-        return subscribeAgentEvents(
+        // 续接已有轮次（刷新、切回对话）时事件流只推游标之后的事件，本轮统计和上下文读数却在这段前缀里：
+        // 本机还没有这段前缀就补读一次。补读只喂给统计和上下文读数，不重放消息，也不触发画布写回。
+        const statsPrefix = new AbortController();
+        if (after > 0 && !agentRunStatsCovers(runStatsRef.current, conversationScope, run.id, after)) {
+            void loadAgentRunEventPrefix(run.id, after, statsPrefix.signal)
+                .then((events) => {
+                    if (statsPrefix.signal.aborted || !accountIsCurrent() || currentScope.current !== conversationScope || cloudRunTransitionRef.current !== run.id) return;
+                    setRunStats((current) => events.reduce(reduceAgentRunStats, scopeAgentRunStats(current, conversationScope)));
+                    // 事件流已经推来本轮读数或压缩时，它们比前缀新，补读不能把环拨回去。
+                    setContextUsage((current) => (current.runId === run.id && (current.readingSeq > 0 || current.compactionSeq > 0) ? current : events.reduce(reduceAgentContextUsage, emptyAgentContextUsage(run.id))));
+                })
+                .catch((cause) => {
+                    // 统计只是展示读数：补读失败时本轮合计保持隐藏，对话照常进行。
+                    if (!statsPrefix.signal.aborted) console.warn("Agent 本轮统计补读失败", cause);
+                });
+        }
+        const unsubscribe = subscribeAgentEvents(
             run.id,
             (event) => {
                 if (!accountIsCurrent() || currentScope.current !== conversationScope || cloudRunTransitionRef.current !== run.id) return;
@@ -898,6 +938,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 }
                 setMessages((current) => (current.some((item) => item.id === `stream-error-${run.id}`) ? current.filter((item) => item.id !== `stream-error-${run.id}`) : current));
                 setContextUsage((current) => reduceAgentContextUsage(current, event));
+                setRunStats((current) => reduceAgentRunStats(scopeAgentRunStats(current, conversationScope), event));
                 applyAgentEvent(event, setMessages, setRun, setApproval);
                 canvasSyncRef.current?.receive(event);
                 notifyStudioAgentEvent(event);
@@ -919,6 +960,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 },
             },
         );
+        return () => {
+            statsPrefix.abort();
+            unsubscribe();
+        };
     }, [run?.id, connectionEpoch, accountScope, conversationScope]);
 
     useEffect(() => {
@@ -1915,6 +1960,14 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     };
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
+    // 输入框上方的用量栏。读数只认当前轮次的：新建对话或切走后不能残留别的对话的读数。
+    // 新一轮发出后到它的第一份读数之间（或首个读数前就失败的轮次），沿用同一对话上一轮最后的读数，栏不会闪没。
+    const liveContext = run?.id && contextUsage.runId === run.id ? contextUsage : null;
+    if (liveContext?.reading && activeConversationId) lastContextRef.current = { conversationId: activeConversationId, usage: liveContext };
+    const carriedContext = !liveContext?.reading && !liveContext?.compactionPending && lastContextRef.current?.conversationId === activeConversationId ? lastContextRef.current.usage : null;
+    const contextView = presentAgentContextUsage(carriedContext ?? liveContext ?? emptyAgentContextUsage(""));
+    const contextWindow = selectedModel ? configuredTextContextWindow(config, selectedModel) : undefined;
+    const runStatsView = run?.id && runStats.conversationId === activeConversationId ? presentAgentRunStats(runStats.runs[run.id]) : null;
     const contextBar =
         (canvasId && selectionCount > 0) || visionMissing || longTextVisible ? (
             <>
@@ -2008,16 +2061,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             addComposerFiles(Array.from(event.dataTransfer.files));
         },
     };
-    // 失败的这一轮可以原样重试：新的幂等键、当前设置，会重新计费。
+    // 最新一轮结束后可以原样重试：新的幂等键、当前设置，会重新计费。失败轮次的入口在失败卡片上，
+    // 正常结束（完成、停止、拒绝）的轮次在最后一条回复的页脚上。
     const retryableErrorId = run?.status === "failed" && run.userPrompt && !running && !busy && !otherAgentRunning && !pendingNow?.request ? `terminal-${run.id}` : null;
-    const retryFailedRun = async () => {
-        const failed = run;
-        if (!failed?.userPrompt || retryingRun) return;
-        const original = messages.find((item) => item.role === "user" && item.id === `user-${failed.idempotencyKey}`);
+    const retryableReplyRunId = run && run.status !== "failed" && agentRunTerminal(run.status) && run.userPrompt && !running && !busy && !otherAgentRunning && !pendingNow?.request ? run.id : null;
+    const retryLatestRun = async () => {
+        const latest = run;
+        if (!latest?.userPrompt || retryingRun) return;
+        const original = messages.find((item) => item.role === "user" && item.id === `user-${latest.idempotencyKey}`);
         setRetryingRun(true);
         try {
-            await submit(failed.userPrompt, {
-                ...(original && original.text !== failed.userPrompt && !original.formAnswer ? { displayText: original.text } : {}),
+            await submit(latest.userPrompt, {
+                ...(original && original.text !== latest.userPrompt && !original.formAnswer ? { displayText: original.text } : {}),
                 ...(original?.canvasReferenceNodeId ? { canvasReferenceNodeId: original.canvasReferenceNodeId } : {}),
             });
         } finally {
@@ -2367,8 +2422,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         withdrawingInterjectionId={withdrawingInterjectionId}
                                         onRequeueInterjection={outboxReady && !otherAgentRunning ? requeueInterjection : undefined}
                                         retryableErrorId={retryableErrorId}
-                                        onRetryRun={retryableErrorId ? () => void retryFailedRun() : undefined}
+                                        retryableReplyRunId={retryableReplyRunId}
+                                        onRetryRun={retryableErrorId || retryableReplyRunId ? () => void retryLatestRun() : undefined}
                                         retryingRun={retryingRun}
+                                        config={config}
                                         // ask_user 提问条在输入区上方时不再重复出选项卡片。
                                         onReplyOption={pendingQuestion ? undefined : (text) => void submit(text)}
                                         replyOptionsDisabled={
@@ -2454,7 +2511,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         stopping={stopping}
                                         references={references}
                                         includeAssetLibrary={false}
-                                        submitAccessory={<AgentContextRing view={presentAgentContextUsage(contextUsage)} theme={theme} />}
+                                        statusBar={<AgentUsageBar view={contextView} stats={runStatsView} running={running} hasRun={Boolean(run?.id)} carried={Boolean(carriedContext)} contextWindow={contextWindow} />}
                                         left={<ComposerControls config={config} selectedModel={selectedModel} permissionMode={permissionMode} theme={theme} onModelChange={setModel} onPermissionChange={setPermissionMode} />}
                                     />
                                 </motion.div>

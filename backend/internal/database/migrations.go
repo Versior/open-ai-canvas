@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 85
+const CurrentSchemaVersion int64 = 86
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -57,8 +57,10 @@ const dramaCastVoiceLooksMigrationName = "drama_cast_voice_looks"
 const dramaCastVoiceLooksMigrationChecksum = "sha256:drama-cast-voice-looks-v78-20261101"
 const agentPetSkinsMigrationName = "agent_pet_skins"
 const agentPetSkinsMigrationChecksum = "sha256:agent-pet-skins-v80-20261101"
+const studioModelLibraryMigrationName = "studio_model_library"
+const studioModelLibraryMigrationChecksum = "sha256:studio-model-library-v85-20261105"
 const interiorDesignMigrationName = "interior_design"
-const interiorDesignMigrationChecksum = "sha256:interior-design-v85-20261105"
+const interiorDesignMigrationChecksum = "sha256:interior-design-v86-20261105"
 const paymentOrderChargeMethodMigrationName = "payment_order_charge_method"
 const paymentOrderChargeMethodMigrationChecksum = "sha256:payment-order-charge-method-v80-20261104"
 const arkPortraitAssetsMigrationName = "ark_portrait_assets"
@@ -329,8 +331,12 @@ var schemaMigrations = []migration{
 	{version: 84, name: agentPetSkinsMigrationName, checksum: agentPetSkinsMigrationChecksum, apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.AgentPet{}, &model.UserAgentPet{}, &model.UserAgentPetSelection{})
 	}},
-	// Fork 自有：室内设计（模式、风格/空间预设、用户项目）。和形象迁移一样排在上游迁移之后，上游再有新迁移时一起顺延。
-	{version: 85, name: interiorDesignMigrationName, checksum: interiorDesignMigrationChecksum, apply: migrateInteriorFeature},
+	// Fork 自有：电商生图台模特库（人脸、姿势、模特样式），只建一张新表。与形象迁移一样排在所有上游迁移之后，上游再有新迁移时顺延。
+	{version: 85, name: studioModelLibraryMigrationName, checksum: studioModelLibraryMigrationChecksum, apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.StudioModelAsset{})
+	}},
+	// Fork 自有：室内设计（模式、风格/空间预设、用户项目）。排在模特库之后，上游再有新迁移时一起顺延。
+	{version: 86, name: interiorDesignMigrationName, checksum: interiorDesignMigrationChecksum, apply: migrateInteriorFeature},
 }
 
 // migratePaymentOrderChargeMethod 为支付订单增加实收金额、实收货币、汇率快照和支付方式。
@@ -1039,6 +1045,15 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 			}
 		}
 	case 85:
+		if !tx.Migrator().HasTable(&model.StudioModelAsset{}) {
+			return fmt.Errorf("模特库迁移账本与物理结构不一致：缺少 studio_model_assets 表")
+		}
+		for _, field := range []string{"Kind", "ResourceID", "ThumbResourceID", "Consent", "Enabled", "SortOrder"} {
+			if !tx.Migrator().HasColumn(&model.StudioModelAsset{}, field) {
+				return fmt.Errorf("模特库迁移账本与物理结构不一致：studio_model_assets 缺少 %s 列", field)
+			}
+		}
+	case 86:
 		for _, table := range []any{&model.InteriorMode{}, &model.InteriorPreset{}, &model.InteriorProject{}} {
 			if !tx.Migrator().HasTable(table) {
 				return fmt.Errorf("室内设计迁移账本与物理结构不一致：缺少模式、预设或项目表")
@@ -1070,7 +1085,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 
 	// 上游 main 72–81 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
 	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83。
-	// Fork 自有的形象迁移（84）排在全部上游迁移之后，搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
+	// Fork 自有的形象迁移（84）与模特库迁移（85）排在全部上游迁移之后，搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
 		forkVersion  int64

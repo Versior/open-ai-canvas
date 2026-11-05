@@ -31,49 +31,6 @@ export const DEFAULT_ECOMMERCE_BRIEF: EcommerceWorkbenchBrief = {
     identity: "",
     poses: ["正面全身", "侧面全身", "背面全身"],
 };
-export type EcommerceWorkbenchAction = EcommerceCapability | "pattern-extract" | "pattern-draft" | "pattern-derive" | "recolor" | "seams" | "save-template" | "apply-plan" | "save-model" | "save-pattern" | "add-pattern" | "export-layers" | "studio-generate" | "studio-export" | "studio-place-results" | "studio-compose" | "review-plan" | "review-delivery";
-export type EcommerceWorkbenchRequest = {
-    action: EcommerceWorkbenchAction;
-    brief: EcommerceWorkbenchBrief;
-    sourceIds: string[];
-    textModel: string;
-    imageModel: string;
-    from: string;
-    to: string;
-    tolerance: number;
-    widthCm: number;
-    heightCm: number;
-    layout: "tile" | "contain" | "cover";
-    layerVisibility: Record<string, boolean>;
-    studioId?: string;
-    shotIndices?: number[];
-    requireStudioInputs?: boolean;
-    printSpecId?: string;
-    resumeReceiptId?: string;
-    rerunFrom?: "seams" | "print-pack" | "listing";
-    patternId?: string;
-    generateAfterPlanning?: boolean;
-    retryFailed?: boolean;
-    restoreStudioInputs?: boolean;
-    resultIds?: string[];
-    composeWidth?: number;
-    composeGap?: number;
-};
-export const ecommerceActionCapability = (action: EcommerceWorkbenchAction): EcommerceCapability =>
-    action.startsWith("pattern-") || ["recolor", "seams", "save-pattern", "add-pattern"].includes(action)
-        ? "pattern"
-        : ["apply-plan", "studio-generate", "studio-export", "studio-place-results", "studio-compose", "review-plan", "review-delivery"].includes(action)
-          ? "planning"
-          : action === "save-template"
-            ? "suite-forge"
-            : action === "save-model"
-              ? "model-cast"
-              : action === "export-layers"
-                ? "layers"
-                : (action as EcommerceCapability);
-export function studioWorkbenchRequest(studioId: string, brief: EcommerceWorkbenchBrief, sourceIds: string[], action: EcommerceWorkbenchAction): EcommerceWorkbenchRequest {
-    return { studioId, brief: structuredClone(brief), sourceIds, action, textModel: "", imageModel: "", from: "#000000", to: "#ffffff", tolerance: 24, widthCm: 20, heightCm: 20, layout: "contain", layerVisibility: {}, requireStudioInputs: true };
-}
 export const ECOMMERCE_IMAGE_TYPES = [
     ["hero", "商品主图"],
     ["scene", "生活场景"],

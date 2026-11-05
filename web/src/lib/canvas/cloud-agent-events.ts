@@ -10,6 +10,7 @@ import type { CloudAgentChatMessage, CloudAgentPlanItem } from "@/components/can
 import { AGENT_APPROVAL_SUPERSEDED_BY_NODE } from "@/lib/canvas/agent-media-approval";
 import { agentToolRetry, mergeAgentToolRetry } from "@/lib/canvas/agent-tool-retry";
 import { agentErrorPresentation } from "@/lib/canvas/agent-error-presentation";
+import { parseAgentModelUsage, type AgentModelUsage } from "@/lib/canvas/agent-run-stats";
 
 /** 待用户处理的 Agent 审批（面板状态与事件归约共用）。 */
 export type ApprovalState = { approvalId: string; detail: Record<string, unknown>; reason: string };
@@ -279,12 +280,14 @@ export function applyAgentEvent(
         );
         return;
     }
-    if (event.type === "assistant_message") {
-        setMessages((current) => upsertTextMessage(current, String(payload.messageId || event.eventId), text, false));
+    if (event.type === "assistant_message" || event.type === "assistant_snapshot") {
+        const id = String(payload.messageId || event.eventId);
+        setMessages((current) => stampAssistantReply(upsertTextMessage(current, id, text, false), id, event));
         return;
     }
-    if (event.type === "assistant_snapshot") {
-        setMessages((current) => upsertTextMessage(current, String(payload.messageId || event.eventId), text, false));
+    if (event.type === "model_usage") {
+        const usage = parseAgentModelUsage(payload);
+        if (usage) setMessages((current) => attachAssistantReplyUsage(current, usage));
         return;
     }
     if (event.type === "approval_requested") {
@@ -496,6 +499,30 @@ export function upsertCloudAgentCanvasMutation(current: CloudAgentChatMessage[],
 
 export function appendUniqueMessage(current: CloudAgentChatMessage[], message: CloudAgentChatMessage) {
     return current.some((item) => item.id === message.id) ? current : [...current, message];
+}
+
+/**
+ * 记下回复所属轮次和服务端时间。只有持久事件（seq > 0）的 createdAt 是服务端时间；
+ * 运行快照合成的事件用的是本机当前时间，不能当作回复时间。
+ */
+function stampAssistantReply(current: CloudAgentChatMessage[], id: string, event: AgentEvent): CloudAgentChatMessage[] {
+    const index = current.findIndex((item) => item.id === id);
+    if (index < 0) return current;
+    const message = current[index];
+    const createdAt = event.seq > 0 && event.createdAt ? event.createdAt : message.createdAt;
+    if (message.runId === event.runId && message.createdAt === createdAt) return current;
+    const next = [...current];
+    next[index] = { ...message, runId: event.runId, createdAt };
+    return next;
+}
+
+/** 模型步骤用量挂到这一步产出的回复上（回复 messageId 就是步骤任务 ID）；只调工具的步骤没有回复，只进本轮合计。 */
+function attachAssistantReplyUsage(current: CloudAgentChatMessage[], usage: AgentModelUsage): CloudAgentChatMessage[] {
+    const index = current.findIndex((item) => item.id === usage.taskId && item.role === "assistant" && !item.reasoning);
+    if (index < 0) return current;
+    const next = [...current];
+    next[index] = { ...next[index], usage };
+    return next;
 }
 
 export function upsertTextMessage(current: CloudAgentChatMessage[], id: string, text: string, append: boolean): CloudAgentChatMessage[] {

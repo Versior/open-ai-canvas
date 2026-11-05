@@ -312,9 +312,6 @@ func (s *Service) QuoteEcommerceAgent(userID string, req ecommerceagent.Request)
 	if err := s.RequireFeature(FeatureEcommerce); err != nil {
 		return nil, err
 	}
-	if err := s.RequireFeature(FeatureImageWorkbench); err != nil {
-		return nil, err
-	}
 	platform, err := validateEcommerceAgentRequest(req, true)
 	if err != nil {
 		return nil, err
@@ -421,9 +418,6 @@ func (s *Service) GenerateEcommerceAgent(ctx context.Context, userID string, req
 		key = newID()
 	}
 	if err := s.RequireFeature(FeatureEcommerce); err != nil {
-		return nil, err
-	}
-	if err := s.RequireFeature(FeatureImageWorkbench); err != nil {
 		return nil, err
 	}
 	p, err := validateEcommerceAgentRequest(req, true)

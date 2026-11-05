@@ -20,7 +20,6 @@ import { useUserStore } from "@/stores/use-user-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { workflowProviderPluginEnabled } from "@/lib/plugins/builtin/workflows";
 import { usePluginStore } from "@/stores/use-plugin-store";
-import { hasEmbeddedEcommerceControls } from "@/lib/canvas/canvas-image-source";
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -171,9 +170,8 @@ export function useCanvasNodeOperations({
             if (workflowTitle) node.title = workflowTitle;
             commitNodes([...nodesRef.current, node]);
             selectNodes(new Set([node.id]));
-            if (type === CanvasNodeType.Script || hasEmbeddedEcommerceControls(node)) setDialogNodeId(null);
+            if (type === CanvasNodeType.Script) setDialogNodeId(null);
             if (
-                !hasEmbeddedEcommerceControls(node) &&
                 type !== CanvasNodeType.Text &&
                 type !== CanvasNodeType.Script &&
                 type !== CanvasNodeType.BatchTable &&

@@ -69,7 +69,7 @@ func cloudAgentStudioToolSchemas() []map[string]any {
 			"revision": revision, "kind": kind, "action": enum([]string{"replace", "update"}),
 			"platform": enum(studioPlatforms), "style": enum(studioStyles), "textMode": map[string]any{"type": "string", "enum": []string{"model", "overlay"}, "description": "model=模型直接写字；overlay=模型留白、程序排字（详情页默认）"},
 			"shots": list("replace 用：按顺序排列的镜头", 16, object(map[string]any{
-				"role": enum(roles), "title": str("可省略，默认按角色命名", 24), "ratio": str("画幅「宽:高」，主图默认 1:1，详情页默认 3:4", 8),
+				"role": studioRoleSchema(roles), "title": str("可省略，默认按角色命名", 24), "ratio": str("画幅「宽:高」，主图默认 1:1，详情页默认 3:4", 8),
 				"headline": str("图上主标题", 30), "subline": str("图上副标题", 48), "lines": list("要点；「标题｜说明」排成两级", 8, str("", 80)),
 				"sellingPointIds": list("这张图表达的 pointId", 6, str("", 40)),
 			}, "role")),
@@ -236,4 +236,15 @@ func cloudAgentPreviewStudioPlan(repo *repository.Repository, userID, productID 
 		title, operation = "排一套出图方案", "add_node"
 	}
 	return studioApprovalPreview("studio_plan", title, doc.str("name"), "生图台方案", operation, change), nil
+}
+
+// studioRoleSchema 是镜头角色的枚举，并在说明里写出每个值的中文含义，模型不用猜角色名。
+func studioRoleSchema(roles []string) map[string]any {
+	schema := map[string]any{"type": "string", "enum": roles}
+	pairs := make([]string, 0, len(roles))
+	for _, role := range roles {
+		pairs = append(pairs, role+" "+studioRoleTitles[role])
+	}
+	schema["description"] = "只能用这些值：" + strings.Join(pairs, "、")
+	return schema
 }

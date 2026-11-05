@@ -34,10 +34,15 @@ const { App } = await import("antd");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const canvasWork = { templateUuid: "canvas-work", projectUuid: "canvas-project", title: "画布作品案例", description: "作品描述", coverUrl: "/canvas.webp", mediaUrl: "/canvas.mp4", mediaType: "video", authorName: "", authorAvatar: "", likeCount: 0, publishedAt: "", tags: [], sourceUrl: "" };
 const imageCanvasWork = { ...canvasWork, templateUuid: "image-work", title: "图片作品案例", mediaType: "image", mediaUrl: "/image.webp" };
+const fixtureGallery = async () => ({ items: [canvasWork, imageCanvasWork], page: 1, pageSize: 20, hasMore: false, requestId: "fixture" });
+const fixtureWorkDetail = async () => ({ work: canvasWork, steps: [], nodeCount: 0, connectionCount: 0, canImport: false, warnings: [{ message: "部分引用未公开" }, { message: "暂不支持的节点类型" }] });
 mock.module("@/services/api/libtv-gallery", () => ({
     LIBTV_GALLERY_PAGE_SIZE: 20,
-    getLibTVGallery: async () => ({ items: [canvasWork, imageCanvasWork], page: 1, pageSize: 20, hasMore: false, requestId: "fixture" }),
-    getLibTVWorkDetail: async () => ({ work: canvasWork, steps: [], nodeCount: 0, connectionCount: 0, canImport: false, warnings: [{ message: "部分引用未公开" }, { message: "暂不支持的节点类型" }] }),
+    getLibTVGallery: fixtureGallery,
+    getLibTVWorkDetail: fixtureWorkDetail,
+    // 游客与登录读同一份作品数据，只是走不同接口。
+    getGuestLibTVGallery: fixtureGallery,
+    getGuestLibTVWorkDetail: fixtureWorkDetail,
 }));
 mock.module("@/lib/localforage-storage", () => ({ localForageStorageForScope: () => ({ getItem: async () => null, setItem: async () => {}, removeItem: async () => {} }) }));
 const { useInspirationStore } = await import("../../src/stores/use-inspiration-store");

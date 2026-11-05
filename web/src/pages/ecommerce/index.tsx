@@ -365,8 +365,6 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     const directionsModel = adminModels.visionModel;
     const adminModelIssue = adminModels.problem || (adminModels.loaded ? "" : "正在读取后台指定的电商 Agent 模型，请稍后重试");
     // 出图走工作台图片任务接口，受后台「功能开放 · 图片生成」控制；关闭时必须在任何付费分析之前拦下。
-    const imageWorkbenchEnabled = useUserStore((state) => state.features.imageWorkbenchEnabled);
-    const imageGenerationIssue = imageWorkbenchEnabled ? "" : "管理员尚未开放「图片生成」，电商 Agent 暂时无法出图。请联系管理员在后台「功能开放」中开启后再试";
     const planningReferenceCount = commercePlanningReferenceCount(draft);
     const planningModels = useMemo(() => commercePlanningModels(config, textModels, planningReferenceCount), [config, textModels, planningReferenceCount]);
     const imageProfile = draft.imageModel ? modelCapabilityConfigFor(config, draft.imageModel).image : undefined;
@@ -1014,8 +1012,8 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error("请先选择平台和语言");
             return;
         }
-        if (imageGenerationIssue || adminModelIssue) {
-            message.error(imageGenerationIssue || adminModelIssue);
+        if (adminModelIssue) {
+            message.error(adminModelIssue);
             return;
         }
         if (!planningModels.includes(planningModel) || !planningModels.includes(directionsModel)) {
@@ -1198,8 +1196,8 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error("请选择可用的图片模型");
             return;
         }
-        if (imageGenerationIssue || adminModelIssue) {
-            message.error(imageGenerationIssue || adminModelIssue);
+        if (adminModelIssue) {
+            message.error(adminModelIssue);
             return;
         }
         const pendingRefs = commercePlanningReferenceCount(planningDraft);
@@ -1335,10 +1333,6 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             for (const image of selectedPlan.images) assertCommerceImageReferenceCapacity(commerceRequiredImageReferenceCount(selectedDraft), modelCapabilityConfigFor(config, image.imageModel).image?.references.maxImages || 0);
         } catch (cause) {
             message.error(errorText(cause));
-            return;
-        }
-        if (imageGenerationIssue) {
-            message.error(imageGenerationIssue);
             return;
         }
         if (quote?.imageTotal == null) {
@@ -1888,10 +1882,6 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         try {
             setConfirmAction(action);
             setFlyPanel(null);
-            if (imageGenerationIssue) {
-                message.error(imageGenerationIssue);
-                return;
-            }
             if (creationMode === "ai" && adminModelIssue) {
                 message.error(adminModelIssue);
                 return;

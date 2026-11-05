@@ -135,6 +135,7 @@ export const koKR: Messages = {
             recovery: { title: "비밀번호 재설정", description: "계정 이메일을 인증한 뒤 새 비밀번호를 설정하세요." },
         },
         brandFilm: "{{brand}} 브랜드 영상",
+        brandPoster: "{{brand}} 브랜드 포스터",
         playVideo: "브랜드 영상 재생",
         videoPlaying: "창작이 진행 중입니다",
         backHome: "홈으로",

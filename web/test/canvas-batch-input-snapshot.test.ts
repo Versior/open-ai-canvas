@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import { createCanvasBatchInputSnapshot, resolveCanvasBatchInputContext } from "@/lib/canvas/canvas-batch-input-snapshot";
 import { canvasGenerationInputPrompt } from "@/lib/canvas/canvas-generation-input-prompt";
-import { createEcommerceProductProfile } from "@/lib/ecommerce/ecommerce-contract";
 import { collectImageStorageKeys } from "@/services/image-storage";
 import { collectLocalMediaKeys } from "@/services/user-data-sync-media";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "@/types/canvas";
@@ -19,43 +18,6 @@ function output(prompt = "保留人物身份"): CanvasNodeData {
 const connections: CanvasConnection[] = [{ id: "input-output", fromNodeId: "input", toNodeId: "output" }];
 
 describe("batch image input snapshot", () => {
-    test("电商队列冻结商品约束和实拍参考图，修改商品后重试仍使用原输入", () => {
-        const original = input();
-        const target = output("白底主图");
-        target.metadata!.batchInputNodeIds = undefined;
-        const profile = { ...createEcommerceProductProfile("保温杯"), appearance: "哑光黑色杯身" };
-        const product: CanvasNodeData = { ...original, id: "product", type: CanvasNodeType.Product, metadata: { productProfile: profile } };
-        const edges = [{ id: "photo-product", fromNodeId: original.id, toNodeId: product.id, toHandleId: "product-view:front" }, { id: "product-output", fromNodeId: product.id, toNodeId: target.id }];
-        const snapshot = createCanvasBatchInputSnapshot(target, [original, product, target], edges, []);
-        profile.appearance = "亮银色杯身";
-        const context = resolveCanvasBatchInputContext(snapshot, () => { throw new Error("must not read live input"); });
-        expect(context.prompt).toContain("哑光黑色杯身");
-        expect(context.prompt).not.toContain("亮银色杯身");
-        expect(context.referenceImages.map((image) => image.storageKey)).toEqual(["resource:original-image"]);
-        expect(context.referenceImages[0].dataUrl).toBe("");
-    });
-
-    test("套图批次提交只让图片模型生成无字底图，文案留给本地排版", () => {
-        const target = output("商品居中，柔和棚拍光，顶部留白");
-        target.metadata = {
-            ...target.metadata,
-            ecommerceProductId: "product",
-            ecommerceFlowId: "main",
-            ecommerceShotId: "main-1",
-            ecommerceCopy: { headline: "轻盈随行", subhead: "通勤不费力", price: "¥199", cta: "立即购买" },
-        };
-        const product: CanvasNodeData = { ...input(), id: "product", type: CanvasNodeType.Product, metadata: { productProfile: createEcommerceProductProfile("通勤包") } };
-        const snapshot = createCanvasBatchInputSnapshot(target, [product, target], [{ id: "product-output", fromNodeId: product.id, toNodeId: target.id }], []);
-        const prompt = snapshot.context.prompt;
-
-        // 合同文案改过两轮，断言只认「模型不画文案」这件事本身，不锁死句子。
-        expect(prompt).toContain("【无字底图合同】");
-        expect(prompt).toContain("图片模型只需预留对应空间，不要自行生成额外文案");
-        expect(prompt).toContain("由本地确定性排版添加");
-        expect(prompt).not.toContain("以下文字要出现在画面上");
-        expect(prompt).not.toContain("逐字准确");
-    });
-
     test("排队后源图旋转、替换或删除，执行仍传入入队时的资源版本", async () => {
         const original = input();
         const target = output();

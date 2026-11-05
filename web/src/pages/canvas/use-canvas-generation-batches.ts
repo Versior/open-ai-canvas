@@ -12,7 +12,6 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { listGenerationTasks } from "@/services/api/task-center";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import type { Asset } from "@/stores/use-asset-store";
 import type { CanvasConnection, CanvasGenerationBatch, CanvasGenerationBatchItem, CanvasGenerationBatchMode, CanvasNodeData } from "@/types/canvas";
 
@@ -95,7 +94,7 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
                         ...target,
                         status: "waiting" as const,
                         retryCount: 0,
-                        inputSnapshot: mode === "batch_image" ? (target.inputSnapshot ?? createCanvasBatchInputSnapshot(node, nodesRef.current, connectionsRef.current, assets, useEcommerceModelLibrary.getState().models)) : undefined,
+                        inputSnapshot: mode === "batch_image" ? (target.inputSnapshot ?? createCanvasBatchInputSnapshot(node, nodesRef.current, connectionsRef.current, assets)) : undefined,
                     };
                 });
             } catch (error) {

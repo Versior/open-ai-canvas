@@ -6,6 +6,7 @@ import { applyGenerationTaskResultToNodes, generationTaskCanReloadResource, gene
 import { commitCanvasGenerationResult } from "@/lib/canvas/canvas-generation-result";
 import { reconcileImageBatchRoot } from "@/lib/canvas/canvas-image-batch-retry";
 import { canvasTaskBindingStatus, markCanvasTaskRecoveryUnconfirmed } from "@/lib/canvas/canvas-task-state";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import { applyCanvasGenerationTaskNodeEffect, CanvasGenerationDurableAckError, isCanvasGenerationDurableAckError } from "@/services/canvas-generation-consumer";
 import { consumeGenerationTaskNode, ensureCanvasNodeAsset, isGenerationOutputAssetDeletedError, retryCanvasAssetSyncAfterRateLimit, subscribeCanvasProjectAssetLinkFailures } from "@/services/project-asset-sync";
 import { listGenerationTasks, listTaskLogs, queryGenerationTask, subscribeGenerationTasks, type GenerationTask, type TaskLog } from "@/services/api/task-center";
@@ -429,7 +430,8 @@ export function useCanvasGeneration({ projectId, domainProjectId, projectLoaded,
         async (startedProjectId: string, signal: AbortSignal, isCurrentProject: () => boolean) => {
             if (!isCurrentProject()) return;
             const recoveryNodes = nodesRef.current.filter((node) => {
-                if (node.type === CanvasNodeType.EcommerceStudio && node.metadata?.ecommerceWorkbench) return false;
+                // 已下线的电商节点不再恢复生成状态；旧数据只显示占位。
+                if (isRetiredEcommerceNode(node)) return false;
                 if (node.metadata?.experimentalLayerPlan) return false;
                 const pendingAgentContinuation = node.metadata?.agentGenerationContinuation?.status === "pending";
                 const aggregateBatchRoot = node.metadata?.isBatchRoot && node.metadata.batchChildIds?.length;

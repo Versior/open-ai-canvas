@@ -87,6 +87,9 @@ func (s *Service) cleanupDetachedUserResources(userID string, candidates []model
 	for resourceID := range s.agentPetResourceReferences(resourceIDs) {
 		referenced[resourceID] = struct{}{}
 	}
+	for resourceID := range s.studioModelResourceReferences(resourceIDs) {
+		referenced[resourceID] = struct{}{}
+	}
 	for _, reference := range snapshot.Direct {
 		if _, exists := candidateSet[reference.ResourceID]; exists {
 			referenced[reference.ResourceID] = struct{}{}

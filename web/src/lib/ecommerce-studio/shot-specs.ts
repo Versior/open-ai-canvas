@@ -1,4 +1,5 @@
 import type { EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
+import { studioPromptOverride, studioPromptText } from "./prompt-overrides";
 import type { StudioCategoryFamily, StudioPlanKind, StudioShotRole, StudioStyleId } from "./types";
 
 /**
@@ -257,10 +258,44 @@ const SHOT_SPECS: Record<StudioShotRole, StudioShotSpec> = {
     },
 };
 
+/** 后台能改的镜头规格字段；avoid 在后台按「；」分隔成一段文字。 */
+export const STUDIO_SHOT_PROMPT_FIELDS = ["purpose", "composition", "camera", "lighting", "set", "avoid"] as const;
+export type StudioShotPromptField = (typeof STUDIO_SHOT_PROMPT_FIELDS)[number];
+
+export function studioShotPromptKey(role: StudioShotRole, field: StudioShotPromptField) {
+    return `shot.${role}.${field}`;
+}
+
+/** 内置的镜头规格，不含后台改动；后台编辑器用它显示默认写法。 */
+export function studioDefaultShotSpec(role: StudioShotRole): StudioShotSpec {
+    return SHOT_SPECS[role];
+}
+
+/** 镜头规格：后台改过的字段替换内置写法，品类专用写法（如服装的尺码参考）仍然优先。 */
 export function studioShotSpec(role: StudioShotRole, family: StudioCategoryFamily = "generic"): StudioShotSpec {
-    const spec = SHOT_SPECS[role];
-    const override = spec.familyOverrides?.[family];
-    return override ? { ...spec, ...override } : spec;
+    const base = SHOT_SPECS[role];
+    const patched: StudioShotSpec = { ...base };
+    for (const field of STUDIO_SHOT_PROMPT_FIELDS) {
+        const text = studioPromptOverride(studioShotPromptKey(role, field));
+        if (text === undefined) continue;
+        if (field === "avoid")
+            patched.avoid = text
+                .split(/[；;\n]+/)
+                .map((item) => item.trim())
+                .filter(Boolean);
+        else patched[field] = text;
+    }
+    const override = base.familyOverrides?.[family];
+    return override ? { ...patched, ...override } : patched;
+}
+
+export function studioFamilyRule(family: StudioCategoryFamily) {
+    return studioPromptText(`family.${family}`, STUDIO_FAMILY_RULES[family]);
+}
+
+export function studioTweakInstruction(id: string) {
+    const tweak = STUDIO_TWEAKS.find((item) => item.id === id);
+    return tweak ? studioPromptText(`tweak.${id}`, tweak.instruction) : undefined;
 }
 
 export const STUDIO_MAIN_ROLES: StudioShotRole[] = ["main-white", "main-selling", "main-scene", "main-detail", "main-angle"];
@@ -378,8 +413,9 @@ export const STUDIO_STYLES: StudioStylePreset[] = [
     },
 ];
 
-export function studioStyle(id: StudioStyleId) {
-    return STUDIO_STYLES.find((style) => style.id === id) || STUDIO_STYLES[0];
+export function studioStyle(id: StudioStyleId): StudioStylePreset {
+    const style = STUDIO_STYLES.find((item) => item.id === id) || STUDIO_STYLES[0];
+    return { ...style, mood: studioPromptText(`style.${style.id}.mood`, style.mood), light: studioPromptText(`style.${style.id}.light`, style.light) };
 }
 
 /** 微调标签：只改这张图的镜头规格，不碰商品真值。 */

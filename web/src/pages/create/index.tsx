@@ -23,6 +23,7 @@ import { useAssetStore, type Asset } from "@/stores/use-asset-store";
 import { loadAssetsForUse, saveRemoteUserDataNow } from "@/services/user-data-sync";
 import { cn } from "@/lib/utils";
 import { useUserStore } from "@/stores/use-user-store";
+import { openAuthModal } from "@/stores/use-auth-modal-store";
 import type { PromptOptimizerProvider } from "@/lib/plugins/plugin-types";
 import { promptOptimizerPlugin, PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
 import { createPluginHostContext } from "@/services/plugin-host";
@@ -40,7 +41,6 @@ import { CreationFeaturedWorks } from "./creation-workspace-empty";
 import { CreationAgentEntry } from "./creation-agent-entry";
 import { createCreationSubmitGate } from "./creation-submit-gate";
 import { creationVideoConfig } from "./creation-generation-config";
-import { CreationLoginDialog } from "./creation-login-dialog";
 
 const AssetLibraryPickerModal = lazy(() => import("@/components/assets/asset-library-picker-modal").then((module) => ({ default: module.AssetLibraryPickerModal })));
 const InspirationHall = lazy(() => import("@/pages/inspirations").then((module) => ({ default: module.InspirationHall })));
@@ -117,7 +117,6 @@ export default function CreatePage() {
     const [busy, setBusy] = useState(false);
     const [referenceReplacementBusy, setReferenceReplacementBusy] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
-    const [loginDialogOpen, setLoginDialogOpen] = useState(false);
     const [libraryOpen, setLibraryOpen] = useState(false);
     const externalAssetSources = useExternalAssetSources(libraryOpen);
     const abortRef = useRef<AbortController | null>(null);
@@ -588,7 +587,17 @@ export default function CreatePage() {
             })),
         ...externalLibraryItems,
     ], [assets, externalLibraryItems, mode, videoReferenceLimits]);
+    // 上传会写入素材库：游客先登录，不能把 401 当成普通上传失败。
+    const requireAccount = () => {
+        if (useUserStore.getState().user) return true;
+        openAuthModal();
+        return false;
+    };
+    const openLibrary = () => {
+        if (requireAccount()) setLibraryOpen(true);
+    };
     const uploadCreationAsset = async (file: File) => {
+        if (!requireAccount()) throw new Error("登录后才能上传素材");
         const { uploadImage, uploadMediaFile } = await loadCreationRuntime();
         if (file.type.startsWith("video/")) {
             const uploaded = await uploadMediaFile(file, "create-upload");
@@ -735,7 +744,7 @@ export default function CreatePage() {
             return;
         }
         if (!useUserStore.getState().user) {
-            setLoginDialogOpen(true);
+            openAuthModal();
             releaseRetryLock();
             releaseSubmitGate();
             return;
@@ -1227,7 +1236,7 @@ export default function CreatePage() {
         onReorderAttachments: reorderAttachments,
         onReplaceAttachment: replaceReferenceFromTrack,
         onReplaceReferenceFiles: replaceReferenceFromFiles,
-        onOpenLibrary: () => setLibraryOpen(true),
+        onOpenLibrary: openLibrary,
         onModeChange: selectMode,
         model: selectedModel,
         modelRequirements,
@@ -1280,7 +1289,7 @@ export default function CreatePage() {
                     </motion.div> : null}
                 </AnimatePresence>
                 <main ref={threadScrollRef} onScroll={handleThreadScroll} className="creation-home-scroll creation-scrollbar">
-                <CreationInspirationTunnel mode={mode} hidden={launchpadCondensed} enabled={Boolean(userId && userSessionHydrated)} onUseInspiration={(item) => startPrompt(item.mode, fillablePrompt(item))} />
+                <CreationInspirationTunnel mode={mode} hidden={launchpadCondensed} enabled={userSessionHydrated} onUseInspiration={(item) => startPrompt(item.mode, fillablePrompt(item))} />
                 <section ref={launchpadRef} className="creation-launchpad" aria-label="开始创作">
                     <header className="creation-start-heading">
                         <h1 className="sr-only">开始创作</h1>
@@ -1292,16 +1301,16 @@ export default function CreatePage() {
                     </div>
                     <CreationEmptySuggest
                         onStartPrompt={startPrompt}
-                        onOpenLibrary={() => { setAgentMode(false); selectMode("image"); setLibraryOpen(true); }}
+                        onOpenLibrary={() => { setAgentMode(false); selectMode("image"); openLibrary(); }}
                     />
                 </section>
-                <CreationRecentCanvases onRequireLogin={() => setLoginDialogOpen(true)} />
+                <CreationRecentCanvases onRequireLogin={() => openAuthModal()} />
                 <div className="creation-inspiration-switch">
                     <h2>精选灵感</h2>
                     <Segmented value={inspirationView} onChange={setInspirationView} options={[{ label: "画布灵感", value: "canvas" }, { label: "单次创作灵感", value: "prompt" }]} />
                 </div>
-                {inspirationView === "canvas" ? (userId && userSessionHydrated ? <CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration={(item) => startPrompt(item.mode, fillablePrompt(item))} /> : <div className="creation-inspiration-load-status">
-                    <button type="button" onClick={() => setLoginDialogOpen(true)}>登录后查看画布灵感</button>
+                {inspirationView === "canvas" ? (userSessionHydrated ? <CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration={(item) => startPrompt(item.mode, fillablePrompt(item))} /> : <div className="creation-inspiration-load-status">
+                    <span role="status">正在加载画布灵感…</span>
                 </div>) : <>
                 <Suspense fallback={<div className="creation-hall-loading" role="status">正在准备灵感大厅…</div>}>
                     <InspirationHall embedded creationMode={mode} onUse={(item) => startPrompt(item.mode, fillablePrompt(item))} />
@@ -1328,7 +1337,6 @@ export default function CreatePage() {
             </div>}
         </div>
         <CreationHistoryDrawer open={historyOpen} conversations={historyConversations} activeId={activeConversation.id} onNew={startNewConversation} onClose={() => setHistoryOpen(false)} onSelect={selectConversation} onDelete={confirmDeleteConversation} onRename={renameConversationTitle} />
-        <CreationLoginDialog open={loginDialogOpen} onClose={() => setLoginDialogOpen(false)} />
         {libraryOpen ? <Suspense fallback={null}><AssetLibraryPickerModal
             remoteLibrary
             acceptRemoteItems

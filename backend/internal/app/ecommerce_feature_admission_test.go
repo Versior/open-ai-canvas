@@ -78,17 +78,20 @@ func TestEcommerceTaskAdmissionUsesOwnedProjectAndMediaKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name, taskType, mode, projectID, source, metadataProject, want string
-		ecommerce, image, video, ecommerceVideo                        bool
+		name, taskType, mode, projectID, source, kind, metadataProject, want string
+		ecommerce, image, video, ecommerceVideo                              bool
 	}{
 		{name: "project_without_source", taskType: "canvas_text", projectID: project.ID, want: "电商创作"},
 		{name: "untrusted_source", taskType: "canvas_text", source: "ecommerce-agent", ecommerce: true, want: "必须关联"},
 		{name: "foreign_project", taskType: "canvas_image", metadataProject: foreign.ID, ecommerce: true, image: true, want: "项目不存在"},
-		{name: "image_disabled", taskType: "canvas_image", projectID: project.ID, ecommerce: true, want: "生图"},
+		// 电商 Agent 出图不再要求开放侧栏的「图片生成」，侧栏工作台自己的任务仍按它准入。
+		{name: "image_without_workbench", taskType: "canvas_image", projectID: project.ID, ecommerce: true},
 		{name: "image_enabled", taskType: "canvas_image", projectID: project.ID, ecommerce: true, image: true},
+		{name: "workbench_image_disabled", taskType: "canvas_image", mode: "image", source: "workbench", kind: "image", ecommerce: true, want: "生图"},
+		{name: "workbench_video_disabled", taskType: "canvas_video", mode: "video", source: "workbench", kind: "video", ecommerce: true, ecommerceVideo: true, want: "视频暂未开放"},
 		{name: "video_as_text_type", taskType: "canvas_text", mode: "video", projectID: project.ID, ecommerce: true, video: true, want: "电商视频"},
 		{name: "new_video_disabled", taskType: "canvas_video", projectID: project.ID, ecommerce: true, video: true, want: "电商视频"},
-		{name: "old_video_disabled", taskType: "canvas_video", projectID: project.ID, ecommerce: true, ecommerceVideo: true, want: "视频暂未开放"},
+		{name: "video_without_workbench", taskType: "canvas_video", projectID: project.ID, ecommerce: true, ecommerceVideo: true},
 		{name: "video_enabled", taskType: "canvas_video", projectID: project.ID, ecommerce: true, video: true, ecommerceVideo: true},
 		{name: "planning_without_media", taskType: "canvas_text", projectID: project.ID, ecommerce: true},
 	} {
@@ -97,7 +100,7 @@ func TestEcommerceTaskAdmissionUsesOwnedProjectAndMediaKind(t *testing.T) {
 			features.EcommerceEnabled, features.ImageWorkbenchEnabled = tc.ecommerce, tc.image
 			features.VideoWorkbenchEnabled, features.EcommerceVideoEnabled = tc.video, tc.ecommerceVideo
 			saveAdmissionFeatures(t, s, features)
-			input := map[string]any{"mode": tc.mode, "metadata": map[string]any{"source": tc.source, "ecommerceProjectId": tc.metadataProject}}
+			input := map[string]any{"mode": tc.mode, "metadata": map[string]any{"source": tc.source, "workbenchKind": tc.kind, "ecommerceProjectId": tc.metadataProject}}
 			err := s.requireTaskGenerationFeatures("user", tc.projectID, tc.taskType, "", "", input)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 				t.Fatalf("admission = %v, want %q", err, tc.want)

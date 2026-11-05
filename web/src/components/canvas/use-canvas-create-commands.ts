@@ -14,7 +14,6 @@ export function useCanvasCreateCommands(context: AddNodeMenuContext, runCommand?
         icon: command.icon,
         badge: command.badge,
         section: command.section,
-        group: command.group,
         onClick: () => {
             const run = () => command.run(context);
             if (runCommand) runCommand(run);

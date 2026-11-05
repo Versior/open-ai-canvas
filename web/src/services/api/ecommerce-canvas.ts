@@ -1,5 +1,4 @@
-import { apiBaseURL, http } from "./request";
-import type { RemoteResource } from "./resources";
+import { compactApiParams, http } from "./request";
 import { canonicalize } from "json-canonicalize";
 import { ECOMMERCE_SETTING_CAPABILITIES, type EcommerceSettingCapability } from "@/lib/ecommerce/ecommerce-capabilities";
 export const ECOMMERCE_FLOW_IDS = ["detail", "main", "wear", "seed"] as const;
@@ -14,6 +13,8 @@ export type EcommerceSetting = {
     flows: Record<EcommerceFlowId, { enabled: boolean; directorPrompt: string }>;
     models: PublicEcommerceModel[];
     templates: EcommerceSuiteTemplate[];
+    /** 生图台出图提示词的覆盖：提示词编号 → 文字，只含后台改过的条目。 */
+    studioPrompts?: Record<string, string>;
     revision: string;
 };
 export function ecommerceCapabilitySettings(setting: EcommerceSetting) {
@@ -32,7 +33,7 @@ export function ecommerceSettingsEqual(a: EcommerceSetting, b: EcommerceSetting,
     return canonicalize(ignoreRevision ? { ...a, revision: "" } : a) === canonicalize(ignoreRevision ? { ...b, revision: "" } : b);
 }
 export function parseEcommerceSetting(value: unknown): EcommerceSetting {
-    if (!value || typeof value !== "object") throw new Error("电商画布配置格式无效");
+    if (!value || typeof value !== "object") throw new Error("电商生图台配置格式无效");
     const setting = structuredClone(value) as EcommerceSetting;
     if (setting.capabilities && typeof setting.capabilities === "object") {
         for (const item of Object.values(setting.capabilities)) {
@@ -51,6 +52,11 @@ export function parseEcommerceSetting(value: unknown): EcommerceSetting {
             ECOMMERCE_SETTING_CAPABILITIES.some(({ id }) => typeof setting.capabilities?.[id]?.enabled !== "boolean" || typeof setting.capabilities[id].directorPrompt !== "string" || setting.capabilities[id].directorPrompt.length > 20000))
     )
         throw new Error("电商能力配置无效");
+    if (
+        setting.studioPrompts !== undefined &&
+        (!setting.studioPrompts || typeof setting.studioPrompts !== "object" || Array.isArray(setting.studioPrompts) || Object.values(setting.studioPrompts).some((text) => typeof text !== "string" || [...text].length > 2000))
+    )
+        throw new Error("出图提示词配置无效");
     if (setting.templates === undefined) setting.templates = [];
     if (
         !Array.isArray(setting.templates) ||
@@ -104,7 +110,7 @@ export function parseEcommerceSetting(value: unknown): EcommerceSetting {
                 model.resourceIds.every((id) => typeof id === "string"),
         )
     )
-        throw new Error("电商画布配置格式无效");
+        throw new Error("电商生图台配置格式无效");
     if (
         !setting.revision ||
         setting.models.length > 200 ||
@@ -125,19 +131,23 @@ export function parseEcommerceSetting(value: unknown): EcommerceSetting {
         ) ||
         ECOMMERCE_FLOW_IDS.some((id) => [...setting.flows[id].directorPrompt].length > 20000)
     )
-        throw new Error("电商画布配置字段无效");
+        throw new Error("电商生图台配置字段无效");
     return setting;
 }
 async function readSetting(path: string) {
     const result = await http.get<{ setting: unknown }>(path);
     return parseEcommerceSetting(result.setting);
 }
-export const getEcommerceSetting = () => readSetting("/ecommerce/settings");
 export const getAdminEcommerceSetting = () => readSetting("/admin/settings/ecommerce");
 export const getAdminEcommerceDefaults = () => http.get<{ defaults: Record<string, string> }>("/admin/settings/ecommerce/defaults", { timeout: 15000 });
 export type EcommerceCatalogEntry = { id: string; name: string; category: string; description: string; count: number };
-export const getEcommerceCatalog = (q: string, page = 1, signal?: AbortSignal) =>
-    http.get<{ items: EcommerceCatalogEntry[]; total: number; page: number; pageSize: number }>("/ecommerce/templates", { params: { q, page, pageSize: 20 }, signal, timeout: 15000 });
+/** 一级类目与它在当前搜索词下的套数；不受 category 筛选影响。 */
+export type EcommerceCatalogCategory = { name: string; count: number };
+export type EcommerceCatalogPage = { items: EcommerceCatalogEntry[]; total: number; categories: EcommerceCatalogCategory[]; page: number; pageSize: number };
+export const ECOMMERCE_CATALOG_PAGE_SIZE = 20;
+/** 搜索内置套图库；category 为一级类目，空为全部。 */
+export const getEcommerceCatalog = (query: { q: string; category?: string; page?: number }, signal?: AbortSignal) =>
+    http.get<EcommerceCatalogPage>("/ecommerce/templates", { params: compactApiParams({ q: query.q, category: query.category, page: query.page ?? 1, pageSize: ECOMMERCE_CATALOG_PAGE_SIZE }), signal, timeout: 15000 });
 export const getEcommerceCatalogTemplate = (id: string, signal?: AbortSignal) => http.get<{ template: EcommerceSuiteTemplate }>("/ecommerce/templates/" + encodeURIComponent(id), { signal, timeout: 15000 });
 export const getPreviousEcommerceSetting = () => readSetting("/admin/settings/ecommerce/previous");
 export async function saveAdminEcommerceSetting(value: EcommerceSetting) {
@@ -145,12 +155,4 @@ export async function saveAdminEcommerceSetting(value: EcommerceSetting) {
     if (new TextEncoder().encode(JSON.stringify(validated)).byteLength > 2 * 1024 * 1024) throw new Error("电商配置超过 2MB，请减少模板数量或缩短内容后保存");
     const result = await http.put<{ setting: unknown }>("/admin/settings/ecommerce", validated);
     return parseEcommerceSetting(result.setting);
-}
-export function uploadEcommerceModelImage(file: File) {
-    const form = new FormData();
-    form.append("file", file);
-    return http.post<{ resource: RemoteResource }>("/admin/settings/ecommerce/images", form);
-}
-export function ecommercePublicImageUrl(modelId: string, resourceId: string) {
-    return `${apiBaseURL.replace(/\/$/, "")}/ecommerce/models/${encodeURIComponent(modelId)}/images/${encodeURIComponent(resourceId)}`;
 }

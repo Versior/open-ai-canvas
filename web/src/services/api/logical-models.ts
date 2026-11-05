@@ -219,6 +219,10 @@ export type ModelCatalogResponse = {
 export function getModelCatalog() {
     return http.get<ModelCatalogResponse>("/model-catalog");
 }
+/** 游客模型目录：默认分组的模型与价格，只用于展示；报价与生成仍要求登录。 */
+export function getGuestModelCatalog() {
+    return http.get<ModelCatalogResponse>("/public/model-catalog");
+}
 
 export function quoteLogicalModel(id: string, intent: ModelRequestIntent, signal?: AbortSignal) {
     return http.post<{ quote: LogicalModelQuote }>(`/models/${encodeURIComponent(id)}/quote`, intent, { signal });

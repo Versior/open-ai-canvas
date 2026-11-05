@@ -21,8 +21,7 @@ import { nodeGenerationPrompt } from "@/lib/canvas/generation-contract";
 import { useActiveTheme } from "@/stores/canvas/use-canvas-theme-store";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { CanvasNodeType, type CanvasNodeData, type CanvasNodeMetadata, type CanvasWorkspaceMode, type Position, type ViewportTransform } from "@/types/canvas";
-import type { CanvasKind } from "@/lib/canvas/canvas-kind";
-import { buildImageToolbarTools, isSimpleEcommerceImageToolbarTool } from "./canvas-image-toolbar-tools";
+import { buildImageToolbarTools } from "./canvas-image-toolbar-tools";
 import { CanvasGridSplitPicker } from "./canvas-grid-split-picker";
 import { useCanvasNodeResizeMotion } from "./canvas-node-resize-motion";
 
@@ -74,15 +73,12 @@ type CanvasNodeToolbarProps = {
     extractingAudio: boolean;
     trimmingVideo: boolean;
     onReversePrompt: (node: CanvasNodeData) => void;
-    onSaveAsModel?: (node: CanvasNodeData) => void;
     onRetry: (node: CanvasNodeData) => void;
     onToggleFreeResize: (node: CanvasNodeData) => void;
     onToggleLocked: (node: CanvasNodeData) => void;
     onDelete: (node: CanvasNodeData) => void;
     onNineGrid: (node: CanvasNodeData, toolId: number, label: string, icon: string) => void;
     workspaceMode?: CanvasWorkspaceMode;
-    /** 画布类型。电商画布才出现「存为模特」这类电商专属工具。 */
-    canvasKind?: CanvasKind;
 };
 
 type CanvasAssetCategory = NonNullable<NonNullable<CanvasNodeData["metadata"]>["assetCategory"]>;
@@ -151,14 +147,12 @@ export function CanvasNodeToolbar({
     extractingAudio,
     trimmingVideo,
     onReversePrompt,
-    onSaveAsModel,
     onRetry,
     onToggleFreeResize,
     onToggleLocked,
     onDelete,
     onNineGrid,
     workspaceMode = "professional",
-    canvasKind,
 }: CanvasNodeToolbarProps) {
     const [openMenuId, setOpenMenuId] = useState<string | null>(null);
     const [containerWidth, setContainerWidth] = useState(1000);
@@ -171,7 +165,6 @@ export function CanvasNodeToolbar({
     const themeName = useActiveTheme();
     const theme = canvasThemes[themeName];
     const simpleMode = workspaceMode === "simple";
-    const simpleEcommerce = canvasKind === "ecommerce" && simpleMode;
     const resizeMotion = useCanvasNodeResizeMotion();
 
     useEffect(() => {
@@ -287,7 +280,29 @@ export function CanvasNodeToolbar({
         }
         copyText(prompt, "提示词已复制");
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onAnnotationEdit, onTextEdit, onRegionEdit, onRemoveBackground, onLayerDecomposition, onEmotion, onPortraitTexture, onCrop, onUpscale, onSuperResolve, onAngle, onLighting, onPanorama, onPrevis, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt, onSaveAsModel, onNineGrid }, { ecommerce: canvasKind === "ecommerce", simpleEcommerce });
+    const imageTools = buildImageToolbarTools(node, {
+        onUpload,
+        onToggleFreeResize,
+        onAnnotate,
+        onAnnotationEdit,
+        onTextEdit,
+        onRegionEdit,
+        onRemoveBackground,
+        onLayerDecomposition,
+        onEmotion,
+        onPortraitTexture,
+        onCrop,
+        onUpscale,
+        onSuperResolve,
+        onAngle,
+        onLighting,
+        onPanorama,
+        onPrevis,
+        onViewImage,
+        onCopyPrompt: copyImagePrompt,
+        onReversePrompt,
+        onNineGrid,
+    });
 
     // 构建 ToolContext——供注册表解析工具
     const nodeHoverHandlers = {
@@ -341,11 +356,7 @@ export function CanvasNodeToolbar({
             onClick: () => tool.run(nodeHoverCtx),
         };
     });
-    const allTools: ToolbarTool[] = simpleEcommerce && isImage
-        ? [...registryToolbarTools.filter((tool) => isSimpleEcommerceImageToolbarTool(tool.id)), ...(hasImage ? imageTools : [])]
-        : hasImage && !simpleMode
-          ? [...registryToolbarTools, ...imageTools]
-          : registryToolbarTools;
+    const allTools: ToolbarTool[] = hasImage && !simpleMode ? [...registryToolbarTools, ...imageTools] : registryToolbarTools;
     const compact = layoutLevel >= 1;
     const narrow = layoutLevel >= 2;
     const inGroup = (group: NodeToolbarGroup) => allTools.filter((tool) => tool.group === group).sort(compareToolbarTools);

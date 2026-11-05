@@ -6,12 +6,13 @@ import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-anal
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
+import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { compileStudioPrompt } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioShot, studioAttemptActive, studioPlanOf, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioRunOf } from "@/lib/ecommerce-studio/runs";
-import type { StudioAttempt, StudioAttemptStatus, StudioOutput, StudioPhoto, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
+import { studioFactUsable, type StudioAttempt, type StudioAttemptStatus, type StudioOutput, type StudioPhoto, type StudioPlanKind, type StudioProduct, type StudioRun, type StudioShot, type StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
@@ -93,17 +94,39 @@ function taskOutputs(task: GenerationTask): StudioOutput[] {
         .map((output) => ({ resourceId: output.resourceId!, url: `/api/resources/${output.resourceId}/file`, ...(output.width ? { width: output.width } : {}), ...(output.height ? { height: output.height } : {}) }));
 }
 
-type Located = { shot: StudioShot; textMode: StudioTextMode; quality: string; fromForm: boolean };
+export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; fromForm: boolean; suite?: StudioRun["suite"] };
 
-export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): Located | undefined {
+export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): StudioLocatedShot | undefined {
     if ("runId" in ref) {
         const run = studioRunOf(product, ref.runId);
         const shot = run?.shots.find((item) => item.id === shotId);
-        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, fromForm: true } : undefined;
+        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, fromForm: true, suite: run.suite } : undefined;
     }
     const plan = studioPlanOf(product, ref.planKind);
     const shot = plan?.shots.find((item) => item.id === shotId);
     return plan && shot ? { shot, textMode: plan.textMode, quality: product.brief.quality, fromForm: false } : undefined;
+}
+
+type ModelConfig = Parameters<typeof modelCapabilityConfigFor>[0];
+
+/**
+ * 按出图时的规则编译这张图的提示词，提交任务和「查看提示词」共用。
+ * 助手方案的镜头由助手定好构图：只带市场、语言、人群和补充要求，不套表单里的拍法和同款版式。
+ */
+export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, imageModel: string, config: ModelConfig) {
+    const profile = modelCapabilityConfigFor(config, imageModel).image;
+    const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
+    const compiled = compileStudioPrompt({
+        product,
+        textMode: located.textMode,
+        shot: located.shot,
+        model: imageModel,
+        maxChars: profile?.references.promptMaxChars,
+        maxReferences: profile?.references.maxImages || undefined,
+        brief,
+        ...(located.suite ? { suite: located.suite } : {}),
+    });
+    return { profile, compiled };
 }
 
 export function patchStudioShotAt(product: StudioProduct, ref: StudioShotRef, shotId: string, patch: (shot: StudioShot) => StudioShot) {
@@ -145,10 +168,10 @@ export function useStudioRunner() {
         return product;
     }, []);
 
-    /** 看图识别并填表：建档、品牌、类型、主标题和卖点一次写好。已经填过的字段不覆盖。 */
+    /** 看图识别并填表：建档、品牌、类型、主标题和卖点一次写好。已经填过的字段不覆盖，档案里卖家确认过的信息保留。 */
     const fill = useCallback(
         (productId: string, textModel: string) =>
-            trackAnalysis(productId, "fill", async (): Promise<StudioFillResult & { info: string; infoKept: boolean }> => {
+            trackAnalysis(productId, "fill", async (): Promise<StudioFillResult & { info: string; infoKept: boolean; openQuestions: number; unsureFacts: number }> => {
                 const product = read(productId);
                 if (!product.photos.length) throw new Error("请先上传至少一张商品图");
                 const current = configRef.current;
@@ -178,15 +201,20 @@ export function useStudioRunner() {
                     .map(studioPointLine)
                     .join("\n");
                 let infoKept = false;
+                let openQuestions = parsed.dossier.questions.length;
+                let unsureFacts = 0;
                 update(
                     productId,
                     (value) => {
                         // 只填空着的字段：用户已经写过的内容不被识别结果覆盖。
                         infoKept = Boolean(value.sellerNotes.trim()) && Boolean(info);
+                        const dossier = mergeStudioDossier(value.dossier, parsed.dossier);
+                        openQuestions = dossier.questions.length;
+                        unsureFacts = dossier.facts.filter((fact) => !studioFactUsable(fact)).length;
                         return {
                             ...value,
                             name: value.name || parsed.dossier.name,
-                            dossier: parsed.dossier,
+                            dossier,
                             sellingPoints: parsed.sellingPoints,
                             sellerNotes: value.sellerNotes.trim() ? value.sellerNotes : info,
                             brief: { ...value.brief, brand: value.brief.brand || parsed.brand, productType: value.brief.productType || parsed.dossier.category },
@@ -195,7 +223,7 @@ export function useStudioRunner() {
                     },
                     { immediate: true },
                 );
-                return { ...parsed, info, infoKept };
+                return { ...parsed, info, infoKept, openQuestions, unsureFacts };
             }),
         [read, update],
     );
@@ -253,13 +281,11 @@ export function useStudioRunner() {
                 const located = locateStudioShot(product, ref, shotId);
                 if (!located) throw new Error("这张图已不在记录里");
                 const current = configRef.current;
-                const profile = modelCapabilityConfigFor(current, imageModel).image;
-                // 助手方案的镜头由助手定好构图：只带市场、语言、人群和补充要求，不套表单里的拍法和同款版式。
-                const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
-                const compiled = compileStudioPrompt({ product, textMode: located.textMode, shot: located.shot, model: imageModel, maxChars: profile?.references.promptMaxChars, maxReferences: profile?.references.maxImages || undefined, brief });
+                const { profile, compiled } = compileStudioShot(product, located, imageModel, current);
                 if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
                 const request = studioImageRequest(profile, located.quality, located.shot.ratio);
-                const references = [...compiled.references, ...compiled.styleReferences];
+                // 顺序就是提示词里的图号：商品图、模特（人脸或全身模特）与姿势、风格参考。
+                const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences];
                 const node = { id: `studio-${shotId}`, type: CanvasNodeType.Image, title: "", width: 0, height: 0, position: { x: 0, y: 0 }, metadata: { model: imageModel } } as CanvasNodeData;
                 const generation = buildEcommerceImageGeneration(current, node, { ...DEFAULT_ECOMMERCE_BRIEF, ...(request.aspectRatio ? { aspectRatio: request.aspectRatio } : {}), imageSettings: request.imageSettings }, inputSummary(references.length));
                 const task = await serializeSubmit(() =>
@@ -289,9 +315,11 @@ export function useStudioRunner() {
         (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string) => {
             if (!imageModel) throw new Error("请先选择图片模型");
             const attempts = shotIds.map((shotId) => ({ shotId, attempt: { id: nanoid(12), status: "submitting" as const, model: imageModel, tweaks: [], createdAt: new Date().toISOString(), outputs: [] } satisfies StudioAttempt }));
+            // 尝试记下提交时这张图的微调标签，之后改了标签也能看出每张结果是怎么出的。
             update(productId, (product) =>
                 attempts.reduce(
-                    (value, { shotId, attempt }) => patchStudioShotAt(value, ref, shotId, (shot) => (shot.attempts.some((item) => item.id === attempt.id) ? shot : { ...shot, attempts: [...shot.attempts, attempt].slice(-MAX_ATTEMPTS) })),
+                    (value, { shotId, attempt }) =>
+                        patchStudioShotAt(value, ref, shotId, (shot) => (shot.attempts.some((item) => item.id === attempt.id) ? shot : { ...shot, attempts: [...shot.attempts, { ...attempt, tweaks: [...shot.tweaks] }].slice(-MAX_ATTEMPTS) })),
                     product,
                 ),
             );

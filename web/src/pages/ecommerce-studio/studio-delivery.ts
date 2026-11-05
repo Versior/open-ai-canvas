@@ -62,7 +62,8 @@ export function releaseComposed(shots: StudioComposedShot[]) {
 }
 
 export function bindStudioDetailPage(product: StudioProduct, shots: StudioComposedShot[]) {
-    return rasterizeEcommerceDetailPage({ imageUrls: shots.map((item) => item.url), platform: studioSlicePlatform(product), code: product.name || "详情页" });
+    // 屏与屏之间不留间隔：默认的 8px 白底间隔在长图里就是一道道白条。
+    return rasterizeEcommerceDetailPage({ imageUrls: shots.map((item) => item.url), platform: studioSlicePlatform(product), code: product.name || "详情页", gap: 0 });
 }
 
 export function studioCopyText(product: StudioProduct) {

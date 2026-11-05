@@ -86,7 +86,8 @@ describe("canvas selection semantics", () => {
         const first = cache.get(nodes);
 
         expect(cache.get(nodes)).toBe(first);
-        expect(first.query({ left: -10, top: -10, right: 1000, bottom: 300 }).map((item) => item.id)).toEqual(["batch-root", "frame", "visible"]);
+        // 旧电商生图台的候选图已按普通图片显示，可以框选。
+        expect(first.query({ left: -10, top: -10, right: 1000, bottom: 300 }).map((item) => item.id)).toEqual(["batch-root", "frame", "visible", "candidate"]);
         expect(cache.get([...nodes])).not.toBe(first);
     });
 

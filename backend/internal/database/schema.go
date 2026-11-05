@@ -162,7 +162,9 @@ func Models() []any {
 		&model.AgentPet{},
 		&model.UserAgentPet{},
 		&model.UserAgentPetSelection{},
-		// Fork 自有：室内设计的出图方式、风格/空间预设和用户项目（迁移 85 建表）。
+		// Fork 自有：电商生图台模特库（迁移 85 建表）。
+		&model.StudioModelAsset{},
+		// Fork 自有：室内设计的出图方式、风格/空间预设和用户项目（迁移 86 建表）。
 		&model.InteriorMode{},
 		&model.InteriorPreset{},
 		&model.InteriorProject{},

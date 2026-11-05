@@ -4,14 +4,13 @@ import { App } from "antd";
 
 import { buildNodeGenerationContext, hydrateNodeGenerationContext } from "@/components/canvas/canvas-node-generation";
 import type { CanvasNodeGenerationMode } from "@/components/canvas/canvas-node-prompt-panel";
-import { ecommerceReferenceImageGuide, mergeEcommercePrompt, resolveEcommerceInputs, type EcommerceGenerationInputs } from "@/lib/ecommerce/ecommerce-canvas";
-import { useEcommerceModelLibrary } from "@/stores/use-ecommerce-model-library";
 import { buildGenerationConfig, isGenerationCanceled } from "@/lib/canvas/canvas-project-generation";
 import { canvasReferenceImageDimensions } from "@/lib/canvas/canvas-reference-image-size";
 import { canvasGenerationPromptMetadata, canvasGenerationRequestFingerprint, runCanvasGenerationSubmissionOnce } from "@/lib/canvas/canvas-generation-submission";
 import { isGenerationTaskCapacityError } from "@/lib/canvas/canvas-generation-batch";
 import { canvasGenerationInputPrompt } from "@/lib/canvas/canvas-generation-input-prompt";
-import { resolveCanvasBatchInputContext, resolveFrozenEcommerceTextMode } from "@/lib/canvas/canvas-batch-input-snapshot";
+import { resolveCanvasBatchInputContext } from "@/lib/canvas/canvas-batch-input-snapshot";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import { buildTextRewritePrompt } from "@/lib/prompts";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
 import { generationFailureMetadata } from "@/lib/generation-error";
@@ -129,6 +128,11 @@ export function useCanvasGenerationExecutor({
                             }),
                         );
                     };
+                    // 旧版电商画布的节点已下线，只保留数据，不再发起生成。
+                    if (isRetiredEcommerceNode(sourceNode)) {
+                        message.info("该节点类型已下线，不能生成");
+                        return;
+                    }
                     if (isCanvasNodeGenerating(sourceNode)) {
                         message.info("该节点的生成任务仍在进行中，请等待完成后再生成");
                         return;
@@ -175,19 +179,7 @@ export function useCanvasGenerationExecutor({
                     const sourceTextContent = sourceNode?.type === CanvasNodeType.Text ? sourceNode.metadata?.content?.trim() || "" : "";
                     const editingTextNode = mode === "text" && Boolean(sourceTextContent);
                     const markSourceStatus = !sourceNode?.metadata?.content && !editingTextNode;
-                    let generationPrompt = options?.inputSnapshot?.context.prompt ?? canvasGenerationInputPrompt(sourceNode, mode, prompt);
-                    const customModels = useEcommerceModelLibrary.getState().models;
-                    const ecommerceInputs: EcommerceGenerationInputs = mode === "image" && !options?.inputSnapshot ? resolveEcommerceInputs(nodeId, nodesRef.current, connectionsRef.current, customModels) : { sources: {}, prompt: "", referenceImages: [], copy: { source: "none" } };
-                    // 有快照就只认快照里冻结的那一份：排队后画布再改，重试也不能跟着漂。
-                    const ecommerceTextMode = mode === "image" ? resolveFrozenEcommerceTextMode(options?.inputSnapshot, () => ecommerceInputs.textMode) : undefined;
-                    const ecommerceIssue = options?.inputSnapshot ? options.inputSnapshot.ecommerceIssue : ecommerceInputs.issue;
-                    // 共享解析只负责标出「这一行不能生成」，拒绝必须在这里真的拦下，
-                    // 否则旧详情行的提示词会照样进模型。
-                    if (ecommerceIssue) {
-                        failPreflight(new Error(ecommerceIssue));
-                        return;
-                    }
-                    if (ecommerceInputs.prompt) generationPrompt = mergeEcommercePrompt(ecommerceInputs.prompt, generationPrompt, { visualPrompt: ecommerceInputs.sources.visualPrompt });
+                    const generationPrompt = options?.inputSnapshot?.context.prompt ?? canvasGenerationInputPrompt(sourceNode, mode, prompt);
                     const isPreparingEmptyImage = mode === "image" && sourceNode?.type === CanvasNodeType.Image && !sourceNode.metadata?.content;
                     const preparationController = startGenerationRequest(nodeId, nodeId, nodeId, options?.controller);
                     requestController = preparationController;
@@ -261,17 +253,6 @@ export function useCanvasGenerationExecutor({
                             if (compatibilityError) throw new Error(`当前模型无法支持这组输入和参数：${compatibilityError}`);
                             const referenceLimits = usesWorkflowProvider ? undefined : modelGroupReferenceLimits(effectiveConfig, generationConfig.model, mode, requirements);
                             rawGenerationContext = await hydrateNodeGenerationContext(baseContext, projectId, domainProjectId, mode, mode === "video" && Boolean(referenceLimits?.maxAudios), !promptOnly, referenceLimits, false);
-                            // 商品实拍 + 模特参考图补进参考图。
-                            //
-                            // 它们都不在连线上：用户连的是商品节点/选了模特，不是图片节点。
-                            // 而这两样恰恰是「同一件商品」「同一个人」的全部依据——
-                            // 少了它们，模型会照着文字描述自己编一个商品、编一个人。
-                            if (ecommerceInputs.referenceImages.length) {
-                                const evidenceImages = ecommerceInputs.referenceImages.filter((image) => image.storageKey || image.url || image.dataUrl).filter((image) => !rawGenerationContext.referenceImages.some((existing) => existing.id === image.id));
-                                if (evidenceImages.length)
-                                    rawGenerationContext = { ...rawGenerationContext, referenceImages: [...rawGenerationContext.referenceImages, ...evidenceImages], imageCount: rawGenerationContext.imageCount + evidenceImages.length };
-                                rawGenerationContext = { ...rawGenerationContext, prompt: mergeEcommercePrompt(rawGenerationContext.prompt, ecommerceReferenceImageGuide(rawGenerationContext.referenceImages)) };
-                            }
                             const hydratedRequirements = generationModelRequirements(mode, rawGenerationContext, sourceNode, generationConfig);
                             generationConfig = buildGenerationConfig(effectiveConfig, sourceNode, mode, hydratedRequirements, false, referenceImageSize);
                             const hydratedCompatibilityError = usesWorkflowProvider ? "" : modelCompatibilityError(generationConfig, generationConfig.model, hydratedRequirements);
@@ -429,8 +410,6 @@ export function useCanvasGenerationExecutor({
                             skillMetadata: skillExecution.metadata,
                             taskContext: options?.context,
                             retryContext: options?.retryContext,
-                            ecommerceTextMode,
-                            ecommerceIssue,
                             setNodes,
                             setConnections,
                             setSelectedNodeIds,

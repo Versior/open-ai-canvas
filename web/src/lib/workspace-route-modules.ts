@@ -2,7 +2,6 @@ const workspaceRouteLoaders = {
     assets: () => import("@/pages/assets"),
     canvas: () => import("@/pages/canvas"),
     ecommerce: () => import("@/pages/ecommerce"),
-    ecommerceCanvas: () => import("@/pages/canvas/ecommerce-entry"),
     ecommerceStudio: () => import("@/pages/ecommerce-studio"),
     "video-replication": () => import("@/pages/video-replication"),
     interior: () => import("@/pages/interior"),
@@ -17,7 +16,6 @@ const workspaceRouteLoaders = {
 export const loadAssetsPage = workspaceRouteLoaders.assets;
 export const loadCanvasPage = workspaceRouteLoaders.canvas;
 export const loadEcommercePage = workspaceRouteLoaders.ecommerce;
-export const loadEcommerceCanvasPage = workspaceRouteLoaders.ecommerceCanvas;
 export const loadEcommerceStudioPage = workspaceRouteLoaders.ecommerceStudio;
 export const loadInteriorPage = workspaceRouteLoaders.interior;
 export const loadCanvasProjectPage = () => import("@/pages/canvas/project");
@@ -44,10 +42,6 @@ export function preloadWorkspaceRoute(pathnameOrSlug: string) {
     }
     if (slug === "skills" && segments[2] === "edit") {
         void workspaceRouteLoaders.skillWorkbench();
-        return;
-    }
-    if (slug === "ecommerce" && segments[1] === "canvas") {
-        void workspaceRouteLoaders.ecommerceCanvas();
         return;
     }
     const load = workspaceRouteLoaders[slug as keyof typeof workspaceRouteLoaders];

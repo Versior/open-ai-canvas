@@ -47,8 +47,6 @@ export async function executeImageGeneration(
         applyGenerationTaskResult,
         styleMetadata,
         skillMetadata,
-        ecommerceTextMode,
-        ecommerceIssue,
         taskContext,
         retryContext,
         showError,
@@ -56,11 +54,6 @@ export async function executeImageGeneration(
     }: CanvasGenerationExecution,
     runTask?: Parameters<typeof runCanvasGenerationTaskToConsumer>[1]["runTask"],
 ) {
-    // 行级拒绝结论在入队时已冻结，必须在任何 provider 调用前拦住。
-    if (ecommerceIssue) {
-        showError(ecommerceIssue);
-        return;
-    }
     const referenceLimitError = canvasImageReferenceLimitError(generationConfig, generationContext.referenceImages);
     if (referenceLimitError) {
         showError(referenceLimitError);
@@ -238,8 +231,6 @@ export async function executeImageGeneration(
                             promptTemplateVariables: sourceNode?.metadata?.promptTemplateVariables,
                             ...styleMetadata,
                             ...skillMetadata,
-                            // 冻结值原样带给任务；unknown 不写，避免后端按默认值猜。
-                            ...(ecommerceTextMode ? { ecommerceTextMode } : {}),
                         },
                     },
                     {

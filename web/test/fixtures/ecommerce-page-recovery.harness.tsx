@@ -868,7 +868,7 @@ describe("真实电商页面生命周期", () => {
         });
         expect(paidSubmissions).toHaveLength(0);
     });
-    test("后台未开放图片生成时，在任何付费分析前拦下提交", async () => {
+    test("后台关闭侧栏图片生成时，电商 Agent 仍照常进入确认，确认前不发起付费任务", async () => {
         useUserStore.setState({ features: { ...useUserStore.getState().features, imageWorkbenchEnabled: false } });
         draft = { ...draft, instruction: "为测试商品设计主图" };
         await sessions.writeEcommerceWorkspace(scope, { sessionId: crypto.randomUUID(), draft, plan: null, project: null, creationMode: "ai", autoGenerate: false });
@@ -876,8 +876,8 @@ describe("真实电商页面生命周期", () => {
         await act(async () => {
             host.querySelector<HTMLButtonElement>(".ecs-submit")!.click();
         });
-        expect(errors.some((value) => value.includes("尚未开放「图片生成」"))).toBe(true);
-        expect(document.body.textContent).not.toContain("确认生成配置");
+        expect(errors.some((value) => value.includes("图片生成"))).toBe(false);
+        expect(Array.from(document.querySelectorAll<HTMLButtonElement>("button")).some((button) => button.textContent?.trim() === "确认并生成")).toBe(true);
         expect(paidSubmissions).toHaveLength(0);
     });
     test("提交失败时保留输入内容供用户重试", async () => {

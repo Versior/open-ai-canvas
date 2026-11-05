@@ -16,6 +16,7 @@ import { CanvasNodeType, type CanvasNodeData, type CanvasNodeTypeId, type Positi
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { ART_CRITIQUE_NODE_TYPE } from "@/lib/art-critique/contracts";
 import { getNodeDefinition } from "@/lib/canvas/node-registry";
+import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import type { NodeResizeCorner } from "@/lib/canvas/node-resize-geometry";
 import { useCanvasNodeResize } from "./use-canvas-node-resize";
 import { useCanvasConnectionTilt } from "./use-canvas-connection-tilt";
@@ -36,7 +37,6 @@ type CanvasNodeProps = {
     isFocusRelated: boolean;
     isConnectionTarget: boolean;
     isConnecting?: boolean;
-    connectionInteractionEnabled?: boolean;
     connectionApproach?: Position;
     forceInputMounted?: boolean;
     showImageInfo: boolean;
@@ -86,7 +86,6 @@ export const CanvasNode = React.memo(function CanvasNode({
     isFocusRelated,
     isConnectionTarget,
     isConnecting = false,
-    connectionInteractionEnabled = true,
     connectionApproach,
     forceInputMounted = false,
     showImageInfo,
@@ -143,11 +142,13 @@ export const CanvasNode = React.memo(function CanvasNode({
     const dramaStale = !readOnly && Boolean(dramaStaleNodeIds?.has(data.id));
     const showStatusTrack = Boolean(resourceLabel || data.metadata?.locked || isBatchRoot || (isBatchChild && !readOnly) || (hasMediaContent && !readOnly) || showVersionBadge || dramaStale);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
-    const showConnectionRails = connectionInteractionEnabled && !isConnecting && (hovered || isSelected || isFocusRelated);
+    const showConnectionRails = !isConnecting && (hovered || isSelected || isFocusRelated);
     const effectiveRenderLOD: CanvasNodeRenderLOD = renderLOD === "full" || hovered || isEditingContent || isEditingTitle || mediaActive ? "full" : renderLOD;
     const showChrome = effectiveRenderLOD === "full";
     const nodeState = isFocusRelated ? "focus" : isConnectionTarget ? "target" : isSelected ? "selected" : isRelated && !isBatchChild ? "related" : "idle";
     const showOutputConnection = getNodeDefinition(data.type)?.showOutputConnection !== false;
+    // 已下线的电商节点只保留数据和占位，两侧都不提供连接点。
+    const connectable = !isRetiredEcommerceNode(data);
     const assetTags = data.metadata?.assetTags?.filter((tag) => tag.trim()) || [];
     const scriptMinHeight = data.type === CanvasNodeType.Script ? storyboardMinNodeHeight(data.metadata?.storyboardComposerHeight) : null;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -239,7 +240,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 scale={scale}
                 dimensionLabel={mediaDimensionLabel}
                 active={isSelected || isFocusRelated}
-                editable={!readOnly && !data.metadata?.locked && !(data.type === CanvasNodeType.EcommerceStudio && data.metadata?.status === "loading") && Boolean(onTitleChange)}
+                editable={!readOnly && !data.metadata?.locked && Boolean(onTitleChange)}
                 editing={isEditingTitle}
                 draft={titleDraft}
                 theme={theme}
@@ -313,7 +314,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     }
                 >
                     {/* 节点状态徽章（对应 #97 决策2）：内容区已展示生成中/失败时不重复；完成徽章只在本次刚生成完时短暂出现。 */}
-                    {showChrome && statusBadge && data.type !== CanvasNodeType.Frame && data.type !== CanvasNodeType.EcommerceStudio ? <NodeStatusBadge status={statusBadge} /> : null}
+                    {showChrome && statusBadge && data.type !== CanvasNodeType.Frame ? <NodeStatusBadge status={statusBadge} /> : null}
                     <CanvasNodeContent
                         node={data}
                         theme={theme}
@@ -416,8 +417,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 </> : null}
             </div>
 
-            {(showChrome || forceInputMounted) && !readOnly && data.type !== CanvasNodeType.Script && (data.type !== CanvasNodeType.BatchTable || Boolean(data.metadata?.ecommerceFlowId)) ? <ConnectionSideRail side="left" scale={scale} theme={theme} visible={showConnectionRails} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "target", undefined, anchorRatio)} /> : null}
-            {showChrome && !readOnly && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.Config && showOutputConnection ? <ConnectionSideRail side="right" scale={scale} theme={theme} visible={showConnectionRails} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "source", undefined, anchorRatio)} /> : null}
+            {(showChrome || forceInputMounted) && !readOnly && connectable && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.BatchTable ? <ConnectionSideRail side="left" scale={scale} theme={theme} visible={showConnectionRails} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "target", undefined, anchorRatio)} /> : null}
+            {showChrome && !readOnly && connectable && data.type !== CanvasNodeType.Script && data.type !== CanvasNodeType.Config && showOutputConnection ? <ConnectionSideRail side="right" scale={scale} theme={theme} visible={showConnectionRails} onPointerDown={(event, anchorRatio) => onConnectStart(event, data.id, "source", undefined, anchorRatio)} /> : null}
 
         </div>
     );
@@ -436,7 +437,6 @@ function areCanvasNodePropsEqual(previous: CanvasNodeProps, next: CanvasNodeProp
         previous.isFocusRelated === next.isFocusRelated &&
         previous.isConnectionTarget === next.isConnectionTarget &&
         previous.isConnecting === next.isConnecting &&
-        previous.connectionInteractionEnabled === next.connectionInteractionEnabled &&
         previous.connectionApproach?.x === next.connectionApproach?.x &&
         previous.connectionApproach?.y === next.connectionApproach?.y &&
         previous.forceInputMounted === next.forceInputMounted &&

@@ -146,11 +146,18 @@ function contextProtocolBytes(reading: Record<string, unknown> | null): number |
     return finiteContextNumber((reading.breakdown as { envelopeBytes?: unknown }).envelopeBytes);
 }
 
-function formatContextTokens(tokens: number | undefined): string {
+export function formatContextTokens(tokens: number | undefined): string {
     if (tokens === undefined) return "—";
     if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`;
     if (tokens >= 1_000) return `${Math.round(tokens / 100) / 10}K`;
     return Math.round(tokens).toLocaleString("zh-CN");
+}
+
+export function formatContextBytes(bytes: number | undefined): string {
+    if (bytes === undefined) return "—";
+    if (bytes >= 1_000_000) return `${Math.round(bytes / 100_000) / 10} MB`;
+    if (bytes >= 1_000) return `${Math.round(bytes / 100) / 10} KB`;
+    return `${Math.round(bytes).toLocaleString("zh-CN")} 字节`;
 }
 
 /**

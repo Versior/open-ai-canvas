@@ -1,7 +1,9 @@
 import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
 import { studioShotSpec } from "./shot-specs";
-import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
+import { studioPromptText } from "./prompt-overrides";
+import { normalizeStudioSuite } from "./suites";
+import type { StudioModelCast, StudioModelPick, StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
 
 /**
  * 生图表单：出图类型、市场、语言、拍法这些选项的定义，以及表单字段的读取规则。
@@ -20,7 +22,16 @@ export const STUDIO_OUTPUT_TYPES: StudioOutputSpec[] = [
     { id: "poster", label: "海报头图", hint: "详情页首屏或活动海报", role: "detail-hero" },
     { id: "main-set", label: "主图套图（5 张）", hint: "白底、卖点、场景、细节、多角度", set: "main" },
     { id: "detail-set", label: "详情页（10 屏）", hint: "按品类排好十屏，可导出长图", set: "detail" },
+    // 实际按主图还是详情页出，看选中模板的用途；没选模板前按详情页处理。
+    { id: "template-set", label: "模板套图", hint: "从后台精选或内置模板库选一套，按模板逐张出图", set: "detail" },
+    // 同时选了几种单张类型：每种按数量各出几张，记在同一组里。不出现在类型按钮里。
+    { id: "mix", label: "多种组合", hint: "一次出几种单张图，每种按数量出" },
 ];
+
+/** 可以多选的单张类型，与只能单选的套图类型。 */
+export const STUDIO_SINGLE_TYPES = STUDIO_OUTPUT_TYPES.filter((item) => item.role);
+export const STUDIO_SET_TYPES = STUDIO_OUTPUT_TYPES.filter((item) => item.set);
+const SINGLE_IDS = STUDIO_SINGLE_TYPES.map((item) => item.id);
 
 export const STUDIO_MARKETS: { id: StudioMarket; label: string; language: StudioLanguage; prompt: string }[] = [
     { id: "cn", label: "中国大陆", language: "zh", prompt: "面向中国大陆消费者，审美简洁现代；画面里出现人物时为东亚面孔。" },
@@ -57,9 +68,10 @@ const MARKET_IDS = new Set(STUDIO_MARKETS.map((item) => item.id));
 const LANGUAGE_IDS = new Set(STUDIO_LANGUAGES.map((item) => item.id));
 const SHOOTING_IDS = new Set(STUDIO_SHOOTINGS.map((item) => item.id));
 const RATIO_PATTERN = /^([1-9]\d?):([1-9]\d?)$/;
+const SHOT_KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 
 export function createStudioBrief(): StudioBrief {
-    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", ratio: "auto" };
+    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", ratio: "auto", shotOrder: [], shotSkip: [] };
 }
 
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
@@ -71,15 +83,68 @@ function text(value: unknown, max: number) {
     return typeof value === "string" ? value.slice(0, max) : "";
 }
 
+function modelPick(value: unknown, withImage: boolean): StudioModelPick | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    if (typeof record.itemId !== "string" || !record.itemId) return undefined;
+    const resourceId = typeof record.resourceId === "string" && record.resourceId ? record.resourceId : undefined;
+    if (withImage && !resourceId) return undefined;
+    return {
+        itemId: record.itemId.slice(0, 64),
+        name: text(record.name, 60),
+        prompt: text(record.prompt, 600),
+        ...(resourceId ? { resourceId } : {}),
+        ...(Number(record.width) > 0 ? { width: Number(record.width) } : {}),
+        ...(Number(record.height) > 0 ? { height: Number(record.height) } : {}),
+    };
+}
+
+/** 读回模特设定：人脸、全身模特和姿势必须带已复制的原图，模特样式只要文字；人脸和全身模特都有时留全身模特。 */
+export function normalizeStudioModelCast(value: unknown): StudioModelCast | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    const cast: StudioModelCast = {};
+    const figure = modelPick(record.figure, true);
+    const face = figure ? undefined : modelPick(record.face, true);
+    const pose = modelPick(record.pose, true);
+    const style = modelPick(record.style, false);
+    if (face) cast.face = face;
+    if (figure) cast.figure = figure;
+    if (pose) cast.pose = pose;
+    if (style?.prompt) cast.style = style;
+    return cast.face || cast.figure || cast.pose || cast.style ? cast : undefined;
+}
+
+function shotKeys(value: unknown) {
+    return Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string" && SHOT_KEY_PATTERN.test(item)))].slice(0, 40) : [];
+}
+
+/** 单张类型按类型表的顺序排好、去重，不认识的丢掉。 */
+function singleTypes(value: unknown): StudioOutputType[] {
+    const picked = new Set(Array.isArray(value) ? value : []);
+    return SINGLE_IDS.filter((id) => picked.has(id));
+}
+
+/** 读回出图类型：mix 少于两种时退回那一种单张类型，一种都没有时用默认。 */
+function outputTypeOf(record: Record<string, unknown>, fallback: StudioOutputType): Pick<StudioBrief, "outputType" | "mix"> {
+    if (record.outputType === "mix") {
+        const mix = singleTypes(record.mix);
+        return mix.length > 1 ? { outputType: "mix", mix } : { outputType: mix[0] || fallback };
+    }
+    return { outputType: OUTPUT_IDS.has(record.outputType as StudioOutputType) ? (record.outputType as StudioOutputType) : fallback };
+}
+
 export function normalizeStudioBrief(value: unknown): StudioBrief {
     const base = createStudioBrief();
     if (!value || typeof value !== "object" || Array.isArray(value)) return base;
     const record = value as Record<string, unknown>;
     const count = Number(record.count);
+    const suite = normalizeStudioSuite(record.suite);
+    const model = normalizeStudioModelCast(record.model);
     return {
         brand: text(record.brand, 40),
         productType: text(record.productType, 40),
-        outputType: OUTPUT_IDS.has(record.outputType as StudioOutputType) ? (record.outputType as StudioOutputType) : base.outputType,
+        ...outputTypeOf(record, base.outputType),
         market: MARKET_IDS.has(record.market as StudioMarket) ? (record.market as StudioMarket) : base.market,
         language: LANGUAGE_IDS.has(record.language as StudioLanguage) ? (record.language as StudioLanguage) : base.language,
         shooting: SHOOTING_IDS.has(record.shooting as StudioShooting) ? (record.shooting as StudioShooting) : base.shooting,
@@ -90,6 +155,10 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         count: Number.isInteger(count) && STUDIO_COUNT_OPTIONS.includes(count) ? count : base.count,
         quality: text(record.quality, 20),
         ratio: typeof record.ratio === "string" && (record.ratio === "auto" || RATIO_PATTERN.test(record.ratio)) ? record.ratio : base.ratio,
+        ...(suite ? { suite } : {}),
+        ...(model ? { model } : {}),
+        shotOrder: shotKeys(record.shotOrder),
+        shotSkip: shotKeys(record.shotSkip),
     };
 }
 
@@ -97,8 +166,36 @@ export function studioOutputSpec(type: StudioOutputType) {
     return STUDIO_OUTPUT_TYPES.find((item) => item.id === type) || STUDIO_OUTPUT_TYPES[0];
 }
 
+/** 这次要出的单张类型：选了一种就是那一种，多选时是 mix 里的几种；套图返回空数组。 */
+export function studioSingleTypes(brief: Pick<StudioBrief, "outputType" | "mix">): StudioOutputSpec[] {
+    if (brief.outputType === "mix") return STUDIO_SINGLE_TYPES.filter((item) => brief.mix?.includes(item.id));
+    const spec = studioOutputSpec(brief.outputType);
+    return spec.role ? [spec] : [];
+}
+
+/** 换出图类型时镜头不同，清掉套图的顺序和勾选；多选列表只在 mix 时保留。 */
+function withOutputType(brief: StudioBrief, outputType: StudioOutputType, mix?: StudioOutputType[]): StudioBrief {
+    const { mix: _previous, ...rest } = brief;
+    return { ...rest, outputType, ...(mix ? { mix } : {}), shotOrder: [], shotSkip: [] };
+}
+
+/** 点一种单张类型：没选就加上，选了就去掉，至少留一种。正在出套图时点它就改成只出这一种。 */
+export function toggleStudioSingleType(brief: StudioBrief, id: StudioOutputType): StudioBrief {
+    if (!SINGLE_IDS.includes(id)) return brief;
+    const current = studioSingleTypes(brief).map((item) => item.id);
+    const next = current.includes(id) ? (current.length > 1 ? current.filter((item) => item !== id) : current) : [...current, id];
+    const ordered = singleTypes(next);
+    return ordered.length > 1 ? withOutputType(brief, "mix", ordered) : withOutputType(brief, ordered[0]);
+}
+
+/** 选一种套图：套图只能单选，选中后不再同时出单张类型。 */
+export function pickStudioSetType(brief: StudioBrief, id: StudioOutputType): StudioBrief {
+    return studioOutputSpec(id).set ? withOutputType(brief, id) : brief;
+}
+
 export function studioMarket(id: StudioMarket) {
-    return STUDIO_MARKETS.find((item) => item.id === id) || STUDIO_MARKETS[0];
+    const market = STUDIO_MARKETS.find((item) => item.id === id) || STUDIO_MARKETS[0];
+    return { ...market, prompt: studioPromptText(`market.${market.id}`, market.prompt) };
 }
 
 export function studioLanguage(id: StudioLanguage) {
@@ -106,7 +203,9 @@ export function studioLanguage(id: StudioLanguage) {
 }
 
 export function studioShooting(id: StudioShooting) {
-    return STUDIO_SHOOTINGS.find((item) => item.id === id) || STUDIO_SHOOTINGS[0];
+    const shooting = STUDIO_SHOOTINGS.find((item) => item.id === id) || STUDIO_SHOOTINGS[0];
+    // 「按出图类型」本身不加文字，不给后台改。
+    return shooting.id === "auto" ? shooting : { ...shooting, prompt: studioPromptText(`shooting.${shooting.id}`, shooting.prompt) };
 }
 
 /** 卖点与商品信息：一行一条，「标题：说明」拆成两级；前面的序号和圆点去掉。 */

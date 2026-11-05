@@ -293,6 +293,19 @@ func (r *Repository) APICallLogUsageForTask(userID, taskID string) (model.ApiCal
 	return log, true, nil
 }
 
+// APICallLogsByTask 按创建时间升序返回任务的上游调用日志，只取模型、状态、耗时与用量列。
+// 一个任务可能有多次上游调用（上游重试、上下文缓存管理），由调用方决定如何汇总。
+func (r *Repository) APICallLogsByTask(userID, taskID string) ([]model.ApiCallLog, error) {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(taskID) == "" {
+		return nil, nil
+	}
+	var logs []model.ApiCallLog
+	err := r.db.Select("id", "model", "status", "request_kind", "duration_ms", "input_tokens", "output_tokens", "cached_tokens", "usage_available", "created_at").
+		Where("user_id = ? AND task_id = ?", userID, taskID).
+		Order("created_at ASC").Find(&logs).Error
+	return logs, err
+}
+
 // LatestAPICallForTask 返回任务最近一次非轮询上游调用的失败摘要。
 func (r *Repository) LatestAPICallForTask(taskID string) (model.ApiCallLog, error) {
 	if strings.TrimSpace(taskID) == "" {

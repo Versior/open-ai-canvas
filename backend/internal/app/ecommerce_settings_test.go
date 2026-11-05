@@ -42,14 +42,6 @@ func TestEcommercePlannerDefaultsAndOverrides(t *testing.T) {
 	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil || input.Config.SystemPrompt != "private planning override" {
 		t.Fatal("admin override not applied")
 	}
-	public, err := s.EcommerceSetting(&model.User{ID: "user"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, _ := json.Marshal(public)
-	if strings.Contains(string(encoded), "directorPrompt") || strings.Contains(string(encoded), "private planning override") {
-		t.Fatal("private capability prompt leaked")
-	}
 }
 
 func TestDefaultEcommerceDirectorPromptMatchesSuiteGenerationContract(t *testing.T) {
@@ -170,26 +162,17 @@ func TestEcommerceCapabilityAdmission(t *testing.T) {
 	}
 }
 
-func TestEcommerceTemplatePublicationAndValidation(t *testing.T) {
+func TestEcommerceTemplateStorageAndValidation(t *testing.T) {
 	s, _, _, admin := newAdminStorageDeleteTestService(t)
 	setting := defaultEcommerceSetting()
 	template := EcommerceSuiteTemplate{ID: "template", Name: "Product story", Flow: "main", Enabled: true, Style: "Warm light", Shots: []EcommerceTemplateShot{{Title: "Hero", Duty: "Show true product"}}}
 	setting.Templates = []EcommerceSuiteTemplate{template, {ID: "draft", Name: "Draft", Flow: "main", Shots: template.Shots}}
-	stored, err := s.UpdateEcommerceSetting(admin, setting)
-	if err != nil {
+	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
 		t.Fatal(err)
 	}
-	public, err := s.EcommerceSetting(&model.User{ID: "user"})
-	if err != nil || len(public.Templates) != 1 || public.Templates[0].Style != template.Style {
-		t.Fatal("published template missing or private draft exposed")
-	}
-	stored.Flows["main"] = EcommerceFlowSetting{Enabled: false}
-	if _, err := s.UpdateEcommerceSetting(admin, *stored); err != nil {
-		t.Fatal(err)
-	}
-	public, err = s.EcommerceSetting(&model.User{ID: "user"})
-	if err != nil || len(public.Templates) != 0 {
-		t.Fatal("disabled flow template exposed")
+	stored, err := s.AdminEcommerceSetting(admin)
+	if err != nil || len(stored.Templates) != 2 || stored.Templates[0].Style != template.Style {
+		t.Fatalf("stored templates: %+v %v", stored, err)
 	}
 	for _, bad := range []EcommerceSuiteTemplate{{ID: "bad", Name: "Bad", Flow: "unknown", Shots: template.Shots}, {ID: "empty", Name: "Empty", Flow: "main"}} {
 		setting.Templates = []EcommerceSuiteTemplate{bad}
@@ -331,9 +314,6 @@ func TestEcommerceProviderLogsExcludePrivatePayloads(t *testing.T) {
 func TestEcommerceSettingsPermissionsAndValidation(t *testing.T) {
 	s := &Service{}
 	user := &model.User{ID: "user", Role: model.UserRoleUser}
-	if _, err := s.EcommerceSetting(nil); err == nil {
-		t.Fatal("anonymous settings accepted")
-	}
 	if _, err := s.AdminEcommerceSetting(user); err == nil {
 		t.Fatal("non-admin read accepted")
 	}
@@ -342,9 +322,6 @@ func TestEcommerceSettingsPermissionsAndValidation(t *testing.T) {
 	}
 	if _, err := s.PreviousEcommerceSetting(user); err == nil {
 		t.Fatal("non-admin rollback accepted")
-	}
-	if _, err := s.UploadEcommerceModelImage(user, nil); err == nil {
-		t.Fatal("non-admin upload accepted")
 	}
 	for _, mutate := range []func(*EcommerceSetting){
 		func(v *EcommerceSetting) { delete(v.Flows, "detail") },
@@ -374,14 +351,6 @@ func TestEcommerceInstructionsStayOnServer(t *testing.T) {
 	setting.Flows["main"] = EcommerceFlowSetting{Enabled: true, DirectorPrompt: "private administrator direction"}
 	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
 		t.Fatal(err)
-	}
-	public, err := s.EcommerceSetting(&model.User{ID: "ordinary-user", Role: model.UserRoleUser})
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(public)
-	if err != nil || strings.Contains(string(encoded), "directorPrompt") || strings.Contains(string(encoded), "private administrator") {
-		t.Fatal("public settings exposed analysis instruction")
 	}
 	stored, err := s.AdminEcommerceSetting(admin)
 	if err != nil || stored.Flows["main"].DirectorPrompt != "private administrator direction" {
@@ -478,16 +447,24 @@ func TestEcommerceImageCapabilityInstructionInjection(t *testing.T) {
 	}
 }
 
-func TestEcommerceSettingsPublishRollbackAndProtectImages(t *testing.T) {
+// 公共模特的上传与读取接口已随旧版电商画布删除，但存量配置里的模特仍引用资源：
+// 当前版与上一版都要挡住资源删除，回滚照常可用。
+func uploadEcommerceTestImage(t *testing.T, s *Service, userID string) *model.Resource {
+	t.Helper()
+	resource, err := s.uploadLocalResource(userID, contentUploadHeader(t, mediaTestPNG(t)), "image", 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resource
+}
+
+func TestEcommerceSettingsRollbackAndProtectImages(t *testing.T) {
 	s, db, _, admin := newAdminStorageDeleteTestService(t)
 	initial, err := s.AdminEcommerceSetting(admin)
 	if err != nil || !initial.Enabled || len(initial.Flows) != 4 || initial.Models == nil {
 		t.Fatalf("default: %+v %v", initial, err)
 	}
-	resource, err := s.UploadEcommerceModelImage(admin, contentUploadHeader(t, mediaTestPNG(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	resource := uploadEcommerceTestImage(t, s, admin.ID)
 	value := *initial
 	value.Models = []EcommercePublicModel{{ID: "public", Name: "Test model", Enabled: true, Tags: []string{"studio"}, ResourceIDs: []string{resource.ID}}}
 	published, err := s.UpdateEcommerceSetting(admin, value)
@@ -496,21 +473,6 @@ func TestEcommerceSettingsPublishRollbackAndProtectImages(t *testing.T) {
 	}
 	if _, err := s.UpdateEcommerceSetting(admin, value); err == nil {
 		t.Fatal("stale revision accepted")
-	}
-	user := &model.User{ID: "user", Role: model.UserRoleUser}
-	public, err := s.EcommerceSetting(user)
-	if err != nil || len(public.Models) != 1 {
-		t.Fatalf("public models: %+v %v", public, err)
-	}
-	delivery, err := s.PrepareEcommerceModelDelivery(user, "public", resource.ID, ResourceAccessOptions{}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if delivery.Stream != nil && delivery.Stream.Body != nil {
-		delivery.Stream.Body.Close()
-	}
-	if _, err := s.PrepareEcommerceModelDelivery(user, "other", resource.ID, ResourceAccessOptions{}, ""); err == nil {
-		t.Fatal("unpublished model accessible")
 	}
 	blocked, err := s.DeleteAdminResources(admin, AdminResourceDeleteRequest{ResourceIDs: []string{resource.ID}})
 	if err != nil || len(blocked.Blocked) != 1 || len(blocked.Deleted) != 0 {
@@ -521,9 +483,6 @@ func TestEcommerceSettingsPublishRollbackAndProtectImages(t *testing.T) {
 	current, err := s.UpdateEcommerceSetting(admin, removed)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if _, err := s.PrepareEcommerceModelDelivery(user, "public", resource.ID, ResourceAccessOptions{}, ""); err == nil {
-		t.Fatal("removed model accessible")
 	}
 	refs := s.ecommerceResourceReferences([]string{resource.ID})
 	if len(refs[resource.ID]) != 1 || refs[resource.ID][0].ID != ecommerceSettingKey+"_previous" {
@@ -543,38 +502,50 @@ func TestEcommerceSettingsPublishRollbackAndProtectImages(t *testing.T) {
 	if err != nil || len(restored.Models) != 1 {
 		t.Fatalf("restore by another admin: %+v %v", restored, err)
 	}
-	restored.Models[0].Enabled = false
-	if _, err := s.UpdateEcommerceSetting(secondAdmin, *restored); err != nil {
-		t.Fatal(err)
-	}
-	public, err = s.EcommerceSetting(user)
-	if err != nil || len(public.Models) != 0 {
-		t.Fatalf("disabled filter: %+v %v", public, err)
-	}
-	if _, err := s.PrepareEcommerceModelDelivery(user, "public", resource.ID, ResourceAccessOptions{}, ""); err == nil {
-		t.Fatal("disabled image accessible")
+	if refs := s.ecommerceResourceReferences([]string{resource.ID}); len(refs[resource.ID]) != 1 || refs[resource.ID][0].ID != ecommerceSettingKey {
+		t.Fatalf("restored model should be referenced by the current setting: %+v", refs)
 	}
 }
 
-func TestEcommerceRejectsForeignImagesAndMalformedUpload(t *testing.T) {
+func TestEcommerceRejectsForeignImages(t *testing.T) {
 	s, _, _, admin := newAdminStorageDeleteTestService(t)
-	other := &model.User{ID: "other-admin", Role: model.UserRoleAdmin}
-	resource, err := s.UploadEcommerceModelImage(other, contentUploadHeader(t, mediaTestPNG(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	resource := uploadEcommerceTestImage(t, s, "other-admin")
 	value := defaultEcommerceSetting()
 	value.Models = []EcommercePublicModel{{ID: "foreign", Name: "Foreign", Tags: []string{}, ResourceIDs: []string{resource.ID}}}
 	if _, err := s.UpdateEcommerceSetting(admin, value); err == nil {
 		t.Fatal("foreign unpublished image accepted")
 	}
-	if _, err := s.UploadEcommerceModelImage(admin, contentUploadHeader(t, []byte("<html>not an image</html>"))); err == nil {
-		t.Fatal("spoofed image accepted")
+}
+
+func TestEcommerceStudioDossierIgnoresRetiredCanvasSwitch(t *testing.T) {
+	s, _, _, admin := newAdminStorageDeleteTestService(t)
+	setting := defaultEcommerceSetting()
+	setting.Enabled = false
+	if _, err := s.UpdateEcommerceSetting(admin, setting); err != nil {
+		t.Fatal(err)
 	}
-	header := contentUploadHeader(t, mediaTestPNG(t))
-	header.Size = 11 << 20
-	if _, err := s.UploadEcommerceModelImage(admin, header); err == nil {
-		t.Fatal("oversized upload accepted")
+	dossier := func() canvasGenerationInput {
+		return canvasGenerationInput{Mode: "text", Prompt: "product photo", Metadata: map[string]interface{}{"ecommerceCapability": "dossier", "ecommerceAnalysisFlow": "cap:dossier"}}
+	}
+	input := dossier()
+	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil || !strings.HasPrefix(input.Config.SystemPrompt, defaultEcommerceCapabilityPrompt("dossier")) {
+		t.Fatalf("studio dossier blocked by the retired canvas switch: %v", err)
+	}
+	planning := canvasGenerationInput{Mode: "text", Metadata: map[string]interface{}{"ecommerceCapability": "planning", "ecommerceAnalysisFlow": "cap:planning"}}
+	if s.validateEcommerceCapability(&planning) == nil {
+		t.Fatal("retired canvas capability ignored the canvas switch")
+	}
+	current, err := s.AdminEcommerceSetting(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Capabilities["dossier"] = EcommerceFlowSetting{Enabled: false}
+	if _, err := s.UpdateEcommerceSetting(admin, *current); err != nil {
+		t.Fatal(err)
+	}
+	disabled := dossier()
+	if s.validateEcommerceCapability(&disabled) == nil {
+		t.Fatal("disabled dossier capability accepted")
 	}
 }
 

@@ -3,15 +3,13 @@ import { Window } from "happy-dom";
 import type { Dispatch, SetStateAction } from "react";
 
 import { buildNodeGenerationContext } from "../src/components/canvas/canvas-node-generation";
-import { ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE, createEcommerceTeardown, ecommerceTeardownPlanRequest } from "../src/lib/ecommerce/ecommerce-teardown";
-import { ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE, ecommerceVideoCreativePlanRequest, ecommerceVideoCreativePlanSourceSignature } from "../src/lib/ecommerce/ecommerce-video";
 import { CanvasNodeType, type CanvasConnection, type CanvasNodeData } from "../src/types/canvas";
 
 let dom: Window | undefined;
 const originals = new Map<string, PropertyDescriptor | undefined>();
 
 type MediaToolsController = {
-    createImageReversePromptNodes: (node: CanvasNodeData, prompt?: string) => void;
+    createImageReversePromptNodes: (node: CanvasNodeData) => void;
 };
 
 function installDom() {
@@ -120,7 +118,7 @@ describe("媒体反推节点", () => {
         const source = sourceNode(CanvasNodeType.Image);
         const fixture = await mountMediaTools(source);
         try {
-            fixture.controller.createImageReversePromptNodes(source, "拆解图片结构");
+            fixture.controller.createImageReversePromptNodes(source);
             const result = fixture.nodesRef.current.at(-1)!;
             expect(result.metadata?.composerContent).toBe("参考图片：@图片1\n任务说明：@文本1");
             expect(fixture.connectionsRef.current.map(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId])).toEqual([
@@ -136,7 +134,7 @@ describe("媒体反推节点", () => {
         const source = sourceNode(CanvasNodeType.Video);
         const fixture = await mountMediaTools(source);
         try {
-            fixture.controller.createImageReversePromptNodes(source, "按秒拆解视频结构");
+            fixture.controller.createImageReversePromptNodes(source);
             const result = fixture.nodesRef.current.at(-1)!;
             expect(fixture.nodesRef.current).toHaveLength(3);
             expect(result.metadata?.composerContent).toBe("参考视频：@视频1\n任务说明：@文本1");
@@ -148,162 +146,12 @@ describe("媒体反推节点", () => {
             await fixture.dispose();
         }
     }, 15_000);
-    test("详情页拆解生成结构化结果并回连目标节点", async () => {
-        const source = sourceNode(CanvasNodeType.Image);
-        const fixture = await mountMediaTools(source);
-        const target: CanvasNodeData = {
-            id: "teardown-target",
-            type: CanvasNodeType.Teardown,
-            title: "竞品详情页",
-            position: { x: 900, y: 200 },
-            metadata: { ecommerceTeardown: { ...createEcommerceTeardown("竞品详情页"), dimensions: ["structure", "evidence"] } },
-        };
-        const product: CanvasNodeData = {
-            id: "confirmed-product",
-            type: CanvasNodeType.Product,
-            title: "轻量保温杯",
-            position: { x: 500, y: 100 },
-            metadata: {
-                productProfile: {
-                    name: "轻量保温杯",
-                    category: "保温杯",
-                    appearance: "雾白色杯身",
-                    marks: "YINGCE 标识",
-                    forbidden: "不得改变杯盖结构",
-                    audience: "通勤人群",
-                    facts: "净重 210g",
-                    price: "99 元",
-                    views: {},
-                },
-            },
-        };
-        fixture.nodesRef.current.push(product, target);
-        fixture.connectionsRef.current.push({ id: "product-to-teardown", fromNodeId: product.id, toNodeId: target.id });
-        try {
-            fixture.controller.createImageReversePromptNodes(source, ecommerceTeardownPlanRequest(target.id, "只输出 Teardown Plan JSON"));
-            const instruction = fixture.nodesRef.current.at(-2)!;
-            const result = fixture.nodesRef.current.at(-1)!;
-            const sourceMetadata = result.metadata as typeof result.metadata & {
-                ecommerceTeardownPlanSource?: { targetNodeId: string; referenceImageId: string; productNodeId?: string; signature: string };
-            };
-
-            expect(instruction.metadata?.content).not.toContain("yingce:ecommerce-teardown-plan");
-            expect(instruction.metadata?.content).toContain("只输出 Teardown Plan JSON");
-            expect(instruction.metadata?.content).toContain("商品名：轻量保温杯");
-            expect(result.title).toBe(ECOMMERCE_TEARDOWN_PLAN_RESULT_TITLE);
-            expect(sourceMetadata?.ecommerceTeardownPlanSource).toEqual({
-                targetNodeId: target.id,
-                referenceImageId: source.id,
-                productNodeId: product.id,
-                signature: expect.any(String),
-            });
-            expect(fixture.connectionsRef.current.map(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId])).toContainEqual([result.id, target.id]);
-        } finally {
-            await fixture.dispose();
-        }
-    }, 15_000);
-    test("电商视频拆解结果回连目标节点且不把内部回填标记发给模型", async () => {
-        const source = sourceNode(CanvasNodeType.Video);
-        const fixture = await mountMediaTools(source);
-        const target: CanvasNodeData = { id: "ecommerce-video-target", type: CanvasNodeType.EcommerceVideo, position: { x: 900, y: 200 } };
-        fixture.nodesRef.current.push(target);
-        try {
-            fixture.controller.createImageReversePromptNodes(source, ecommerceVideoCreativePlanRequest(target.id, "只输出 Creative Plan JSON"));
-            const instruction = fixture.nodesRef.current.at(-2)!;
-            const result = fixture.nodesRef.current.at(-1)!;
-
-            expect(instruction.metadata?.content).toBe("只输出 Creative Plan JSON");
-            expect(result.title).toBe(ECOMMERCE_VIDEO_CREATIVE_PLAN_RESULT_TITLE);
-            expect(fixture.connectionsRef.current.map(({ fromNodeId, toNodeId }) => [fromNodeId, toNodeId])).toContainEqual([result.id, target.id]);
-        } finally {
-            await fixture.dispose();
-        }
-    }, 15_000);
-    test("电商视频拆解把有限商品图和已确认商品资料交给真实生成上下文", async () => {
-        const source = sourceNode(CanvasNodeType.Video);
-        const fixture = await mountMediaTools(source);
-        const target: CanvasNodeData = { id: "ecommerce-video-target", type: CanvasNodeType.EcommerceVideo, position: { x: 900, y: 200 } };
-        const product: CanvasNodeData = {
-            id: "confirmed-product",
-            type: CanvasNodeType.Product,
-            title: "轻量保温杯",
-            position: { x: 500, y: 100 },
-            metadata: {
-                productProfile: {
-                    name: "轻量保温杯",
-                    category: "保温杯",
-                    appearance: "雾白色杯身，银色杯盖",
-                    marks: "杯身正面 YINGCE 标识",
-                    forbidden: "不得改变杯盖结构",
-                    audience: "通勤人群",
-                    facts: "轻量：净重 210g",
-                    price: "99 元",
-                    views: {},
-                },
-            },
-        };
-        const productImages: CanvasNodeData[] = Array.from({ length: 6 }, (_, index) => ({
-            id: `product-image-${index + 1}`,
-            type: CanvasNodeType.Image,
-            title: `商品图 ${index + 1}`,
-            position: { x: 500, y: 300 + index * 20 },
-            metadata: { content: `data:image/png;base64,product-${index + 1}` },
-        }));
-        fixture.nodesRef.current.push(product, ...productImages, target);
-        fixture.connectionsRef.current.push(
-            { id: "product-to-video", fromNodeId: product.id, toNodeId: target.id },
-            ...productImages.map((image, index) => ({ id: `image-to-video-${index + 1}`, fromNodeId: image.id, toNodeId: target.id })),
-        );
-        try {
-            fixture.controller.createImageReversePromptNodes(source, ecommerceVideoCreativePlanRequest(target.id, "只输出 Creative Plan JSON"));
-            const result = fixture.nodesRef.current.at(-1)!;
-            const context = buildNodeGenerationContext(result.id, fixture.nodesRef.current, fixture.connectionsRef.current, result.metadata?.composerContent || "", []);
-
-            expect(context.referenceVideos.map((video) => video.id)).toEqual([source.id]);
-            expect(context.referenceImages.map((image) => image.id)).toEqual(productImages.slice(0, 4).map((image) => image.id));
-            expect(context.prompt).toContain("【已确认商品资料】");
-            expect(context.prompt).toContain("商品名：轻量保温杯");
-            expect(context.prompt).toContain("卖点与依据：轻量：净重 210g");
-            expect(context.prompt).toContain("只输出 Creative Plan JSON");
-            expect(result.metadata?.ecommerceVideoCreativePlanSource).toEqual({
-                targetNodeId: target.id,
-                referenceVideoId: source.id,
-                signature: ecommerceVideoCreativePlanSourceSignature({ target, referenceVideo: source, product, productImages: productImages.slice(0, 4) }),
-            });
-        } finally {
-            await fixture.dispose();
-        }
-    }, 15_000);
-    test("电商视频拆解不把历史占位商品名交给模型", async () => {
-        const source = sourceNode(CanvasNodeType.Video);
-        const fixture = await mountMediaTools(source);
-        const target: CanvasNodeData = { id: "legacy-video-target", type: CanvasNodeType.EcommerceVideo, position: { x: 900, y: 200 } };
-        const product: CanvasNodeData = {
-            id: "legacy-product",
-            type: CanvasNodeType.Product,
-            title: "未命名商品",
-            position: { x: 500, y: 100 },
-            metadata: { productProfile: { name: "未命名商品", category: "保温杯", appearance: "雾白色杯身", marks: "", forbidden: "", audience: "", facts: "", price: "", views: {} } },
-        };
-        fixture.nodesRef.current.push(product, target);
-        fixture.connectionsRef.current.push({ id: "legacy-product-to-video", fromNodeId: product.id, toNodeId: target.id });
-        try {
-            fixture.controller.createImageReversePromptNodes(source, ecommerceVideoCreativePlanRequest(target.id, "只输出 Creative Plan JSON"));
-            const result = fixture.nodesRef.current.at(-1)!;
-            const context = buildNodeGenerationContext(result.id, fixture.nodesRef.current, fixture.connectionsRef.current, result.metadata?.composerContent || "", []);
-
-            expect(context.prompt).toContain("品类：保温杯");
-            expect(context.prompt).not.toContain("未命名商品");
-        } finally {
-            await fixture.dispose();
-        }
-    }, 15_000);
     test("仅有 storageKey 的视频仍作为真实视频引用进入拆解链路", async () => {
         const source = sourceNode(CanvasNodeType.Video);
         source.metadata = { storageKey: "video:stored-only", mimeType: "video/mp4" };
         const fixture = await mountMediaTools(source);
         try {
-            fixture.controller.createImageReversePromptNodes(source, "按秒拆解视频结构");
+            fixture.controller.createImageReversePromptNodes(source);
             const result = fixture.nodesRef.current.at(-1)!;
             const context = buildNodeGenerationContext(result.id, fixture.nodesRef.current, fixture.connectionsRef.current, result.metadata?.composerContent || "", []);
 

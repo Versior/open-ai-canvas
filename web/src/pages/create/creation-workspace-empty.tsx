@@ -9,7 +9,7 @@ import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { aceternityMotion } from "@/lib/aceternity-motion";
 import { libTVGalleryInfiniteQuery, shuffleLibTVGalleryPages } from "@/lib/libtv-gallery";
-import { getLibTVGallery } from "@/services/api/libtv-gallery";
+import { useLibTVGalleryFetcher } from "@/hooks/use-libtv-gallery-fetcher";
 import { LibTVWorkDetailDialog } from "@/pages/inspiration/work-detail-dialog";
 import { LibTVGalleryCard } from "@/pages/inspiration/gallery-card";
 import { InspirationHall } from "@/pages/inspirations";
@@ -95,8 +95,9 @@ export function CreationFeaturedWorks({ showHeading = true, creationMode, onUseI
     const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
     const [activeTemplateUuid, setActiveTemplateUuid] = useState<string>();
     const [shuffleSeed] = useState(() => Math.floor(Math.random() * 0x100000000));
+    const fetchGallery = useLibTVGalleryFetcher();
     const loadMoreRef = useRef<HTMLDivElement>(null);
-    const { data, isLoading, isError, error, refetch, isFetching, fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: "" }, getLibTVGallery));
+    const { data, isLoading, isError, error, refetch, isFetching, fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword: "" }, fetchGallery));
 
     const allItems = useMemo(() => shuffleLibTVGalleryPages(data?.pages ?? [], shuffleSeed), [data?.pages, shuffleSeed]);
     const items = useMemo(() => allItems.filter((item) => !unavailable.has(item.templateUuid) && (!(creationMode === "image" || creationMode === "video") || item.mediaType === creationMode)), [allItems, creationMode, unavailable]);
