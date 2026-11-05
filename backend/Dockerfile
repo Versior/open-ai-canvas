@@ -67,9 +67,9 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:22.19-alpine
 
-# ffmpeg/ffprobe：短剧抽取剧情段视频最后一帧、时间线合成成片与视频播放转码；yt-dlp：社交视频导入。
-RUN apk add --no-cache ca-certificates tzdata wget ffmpeg yt-dlp \
-	&& yt-dlp --version \
+# ffmpeg/ffprobe：短剧抽取剧情段视频最后一帧、时间线合成成片、视频播放转码、视频复刻切镜，以及校验链接导入下载的视频。
+# 链接导入改走后台配置的第三方解析接口，镜像不再带 yt-dlp。
+RUN apk add --no-cache ca-certificates tzdata wget ffmpeg \
 	&& ffprobe -version \
     && addgroup -S app \
     && adduser -S app -G app
