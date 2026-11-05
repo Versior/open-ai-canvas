@@ -98,17 +98,17 @@ function taskOutputs(task: GenerationTask): StudioOutput[] {
         .map((output) => ({ resourceId: output.resourceId!, url: `/api/resources/${output.resourceId}/file`, ...(output.width ? { width: output.width } : {}), ...(output.height ? { height: output.height } : {}) }));
 }
 
-export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; fromForm: boolean; suite?: StudioRun["suite"] };
+export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; suite?: StudioRun["suite"] };
 
 export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): StudioLocatedShot | undefined {
     if ("runId" in ref) {
         const run = studioRunOf(product, ref.runId);
         const shot = run?.shots.find((item) => item.id === shotId);
-        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, fromForm: true, suite: run.suite } : undefined;
+        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite } : undefined;
     }
     const plan = studioPlanOf(product, ref.planKind);
     const shot = plan?.shots.find((item) => item.id === shotId);
-    return plan && shot ? { shot, textMode: plan.textMode, quality: product.brief.quality, fromForm: false } : undefined;
+    return plan && shot ? { shot, textMode: plan.textMode, quality: product.brief.quality, resolution: product.brief.resolution, fromForm: false } : undefined;
 }
 
 type ModelConfig = Parameters<typeof modelCapabilityConfigFor>[0];
@@ -323,7 +323,7 @@ export function useStudioRunner() {
                 const current = configRef.current;
                 const { profile, compiled } = compileStudioShot(product, located, imageModel, current);
                 if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
-                const request = studioImageRequest(profile, located.quality, located.shot.ratio);
+                const request = studioImageRequest(profile, located.quality, located.shot.ratio, located.resolution);
                 // 顺序就是提示词里的图号：商品图、模特（人脸或全身模特）与姿势、风格参考。
                 const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences];
                 const node = { id: `studio-${shotId}`, type: CanvasNodeType.Image, title: "", width: 0, height: 0, position: { x: 0, y: 0 }, metadata: { model: imageModel } } as CanvasNodeData;

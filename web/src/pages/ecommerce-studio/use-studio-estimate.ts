@@ -15,7 +15,7 @@ type Estimate = { credits: number | null; tone: "quote" | "local" | "loading" | 
  * 「本次预计消耗」：按一张图的报价乘以张数。系统渠道先用服务端报价，取不到时用本地价格表；
  * 按用量结算的模型不给固定数字。未开启积分时不显示。
  */
-export function useStudioEstimate({ model, images, references, quality, ratio }: { model: string; images: number; references: number; quality: string; ratio: string }) {
+export function useStudioEstimate({ model, images, references, quality, resolution, ratio }: { model: string; images: number; references: number; quality: string; resolution: string; ratio: string }) {
     const config = useEffectiveConfig();
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const [estimate, setEstimate] = useState<Estimate>({ credits: null, tone: "unavailable" });
@@ -26,7 +26,7 @@ export function useStudioEstimate({ model, images, references, quality, ratio }:
             return;
         }
         const profile = modelCapabilityConfigFor(config, model).image;
-        const request = studioImageRequest(profile, quality, ratio);
+        const request = studioImageRequest(profile, quality, ratio, resolution);
         const input = { textCount: 1, imageCount: references, referenceImageCount: references, videoCount: 0, audioCount: 0, characterCount: 0 };
         let generation: ReturnType<typeof buildEcommerceImageGeneration>["config"];
         try {
@@ -58,7 +58,7 @@ export function useStudioEstimate({ model, images, references, quality, ratio }:
                 if (!controller.signal.aborted) setEstimate({ credits: local, tone: local === null ? "unavailable" : "local" });
             });
         return () => controller.abort();
-    }, [config, creditsEnabled, images, model, quality, ratio, references]);
+    }, [config, creditsEnabled, images, model, quality, ratio, references, resolution]);
 
     if (!creditsEnabled) return "";
     if (estimate.credits !== null) return `本次预计消耗 ${estimate.credits.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 积分`;

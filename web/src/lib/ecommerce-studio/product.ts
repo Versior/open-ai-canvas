@@ -1,10 +1,12 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
-import { STUDIO_SHOT_VISUAL_MAX } from "./detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import {
     STUDIO_PRODUCT_SCHEMA,
+    STUDIO_SHOT_ADJUST_MAX,
+    type StudioDetailLayoutId,
     studioFactUsable,
     type StudioAttempt,
     type StudioAttemptStatus,
@@ -32,7 +34,7 @@ const STEPS: StudioStep[] = ["dossier", "plan", "generate", "deliver"];
 const VIEWS = new Set<string>(["front", "side", "back", "detail", "tag", "package", "scene", "other"]);
 const STATUSES = new Set<string>(["submitting", "queued", "running", "succeeded", "failed", "cancelled"]);
 const PLATFORM_IDS = new Set(ECOMMERCE_PLATFORMS.map((platform) => platform.id));
-const STYLE_IDS = new Set(STUDIO_STYLES.map((style) => style.id));
+const STYLE_IDS = new Set<string>(["auto", ...STUDIO_STYLES.map((style) => style.id)]);
 const OUTPUT_IDS = new Set(STUDIO_OUTPUT_TYPES.map((item) => item.id));
 const FAMILIES = new Set<string>(["apparel", "bags-shoes", "jewelry", "beauty", "food", "electronics", "home", "baby-toys", "generic"]);
 const GROUPS = new Set<string>(["identity", "appearance", "material", "structure", "text", "spec", "usage", "package"]);
@@ -48,7 +50,7 @@ export function createStudioProduct(id: string, now = new Date().toISOString()):
         createdAt: now,
         updatedAt: now,
         platform: "taobao",
-        style: "mist",
+        style: "auto",
         step: "dossier",
         sellerNotes: "",
         photos: [],
@@ -237,6 +239,9 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         lines: strings(shot.lines),
         sellingPointIds: strings(shot.sellingPointIds),
         tweaks: strings(shot.tweaks),
+        ...(typeof shot.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(shot.layout as StudioDetailLayoutId) ? { layout: shot.layout as StudioDetailLayoutId } : {}),
+        ...(typeof shot.eyebrow === "string" && shot.eyebrow.trim() ? { eyebrow: shot.eyebrow.trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.eyebrow) } : {}),
+        ...(typeof shot.adjust === "string" && shot.adjust.trim() ? { adjust: shot.adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX) } : {}),
         ...(typeof shot.duty === "string" && shot.duty.trim() ? { duty: shot.duty.slice(0, STUDIO_SUITE_LIMITS.duty) } : {}),
         ...(typeof shot.visual === "string" && shot.visual.trim() ? { visual: shot.visual.slice(0, STUDIO_SHOT_VISUAL_MAX) } : {}),
         attempts: arrayOf(shot.attempts, (attempt) => normalizeAttempt(attempt, fallbackTime)),
@@ -255,6 +260,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
         ...(run.kind === "main" || run.kind === "detail" ? { kind: run.kind } : {}),
         textMode: run.textMode === "overlay" ? "overlay" : "model",
         quality: str(run.quality),
+        ...(typeof run.resolution === "string" && /^(1k|1\.5k|2k|4k)$/.test(run.resolution) ? { resolution: run.resolution } : {}),
         ...(isRecord(run.suite) && typeof run.suite.id === "string" && typeof run.suite.name === "string"
             ? { suite: { id: run.suite.id, name: run.suite.name.slice(0, STUDIO_SUITE_LIMITS.name), style: str(run.suite.style).slice(0, STUDIO_SUITE_LIMITS.style) } }
             : {}),

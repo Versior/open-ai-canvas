@@ -3,7 +3,7 @@ import { STUDIO_DETAIL_PLAN_NAME, studioDetailPlanKey, studioPlannedShotVisual }
 import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
-import type { StudioBrief, StudioPhoto, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
+import type { StudioBrief, StudioDetailLayoutId, StudioPhoto, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
 
 /**
  * 表单生成的记录：点一次「生成商品图」就是一组镜头。
@@ -62,6 +62,9 @@ export type StudioSetEntry = {
     noText?: boolean;
     planIndex?: number;
     visual?: string;
+    layout?: StudioDetailLayoutId;
+    elements?: string;
+    eyebrow?: string;
     copy?: Pick<StudioShot, "headline" | "subline" | "lines">;
     included: boolean;
 };
@@ -89,6 +92,9 @@ function baseEntries(product: StudioProduct, kind: StudioPlanKind): Omit<StudioS
             purpose: screen.purpose || studioShotSpec(screen.role, family).purpose,
             planIndex: index,
             visual: screen.visual,
+            layout: screen.layout,
+            elements: screen.elements,
+            ...(screen.eyebrow ? { eyebrow: screen.eyebrow } : {}),
             copy: { headline: screen.headline, subline: screen.subline, lines: screen.lines },
             ...(screen.noText ? { noText: true } : {}),
         }));
@@ -144,7 +150,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const brief = product.brief;
     const spec = studioOutputSpec(brief.outputType);
     const kind = studioSetKind(product);
-    const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality };
+    const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
     if (kind) {
         if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");
         const entries = studioSetEntries(product).filter((entry) => entry.included);
@@ -169,7 +175,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
                     ratio: studioEntryRatio(entry, product),
                     ...copy,
                     ...(entry.duty ? { duty: entry.duty } : {}),
-                    ...(visual ? { visual } : {}),
+                    ...(visual ? { visual, ...(entry.layout ? { layout: entry.layout } : {}), ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}) } : {}),
                     tweaks: [],
                     attempts: [],
                 };

@@ -17,6 +17,7 @@ import {
     studioMarket,
     studioOutputSpec,
     studioPlatformForbidsText,
+    studioRatioValid,
     studioRunRatio,
     studioInfoPoints,
     studioSingleTypes,
@@ -25,11 +26,11 @@ import {
     toggleStudioSingleType,
 } from "@/lib/ecommerce-studio/brief";
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
-import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
+import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioDetailPlanScreen, STUDIO_DETAIL_PLAN_LIMITS } from "@/lib/ecommerce-studio/detail-plan";
 import { moveStudioSetEntry, studioActiveDetailPlan, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
-import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
+import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { configuredModelDisplayName } from "@/lib/model-selection";
@@ -48,7 +49,7 @@ type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { imm
 const PLATFORM_OPTIONS = ECOMMERCE_PLATFORMS.map((platform) => ({ value: platform.id, label: platform.name }));
 const MARKET_OPTIONS = STUDIO_MARKETS.map((item) => ({ value: item.id, label: item.label }));
 const LANGUAGE_OPTIONS = STUDIO_LANGUAGES.map((item) => ({ value: item.id, label: item.label }));
-const STYLE_OPTIONS = STUDIO_STYLES.map((style) => ({ value: style.id, label: style.name, title: style.mood }));
+const STYLE_OPTIONS = [{ value: "auto", label: "按商品推荐", title: "策划详情页时由策划挑；不策划时按品类挑" }, ...STUDIO_STYLES.map((style) => ({ value: style.id, label: style.name, title: style.mood }))];
 const SHOOTING_OPTIONS = STUDIO_SHOOTINGS.map((item) => ({ value: item.id, label: item.label }));
 const INFO_PLACEHOLDER = "每行一条卖点或商品信息，例如：\n316 不锈钢内胆：长效保温 12 小时\n一键弹盖，单手就能打开\n容量 500ml，重约 280g";
 
@@ -62,6 +63,61 @@ function Field({ label, span, hint, children, htmlFor }: { label: string; span: 
             {hint ? <div className="es-field-hint">{hint}</div> : null}
         </div>
     );
+}
+
+/** 自定义比例：宽和高各填 1–99，长边不超过短边的 3 倍时才写进表单。 */
+function CustomRatioInput({ ratio, onChange }: { ratio: string; onChange: (ratio: string) => void }) {
+    const [initialWidth = "", initialHeight = ""] = ratio === "auto" ? [] : ratio.split(":");
+    const [width, setWidth] = useState(initialWidth);
+    const [height, setHeight] = useState(initialHeight);
+    const commit = (nextWidth: string, nextHeight: string) => {
+        const [width, height] = [Number(nextWidth), Number(nextHeight)];
+        if (!width || !height) return;
+        // 约分后再存：33:55 和 3:5 是同一个比例。
+        let [a, b] = [width, height];
+        while (b) [a, b] = [b, a % b];
+        const next = `${width / a}:${height / a}`;
+        if (studioRatioValid(next)) onChange(next);
+    };
+    const digits = (value: string) => value.replace(/\D/g, "").slice(0, 2);
+    return (
+        <span className="es-ratio-custom">
+            <Input
+                aria-label="自定义比例的宽"
+                inputMode="numeric"
+                variant="filled"
+                value={width}
+                placeholder="宽"
+                onChange={(event) => {
+                    const value = digits(event.target.value);
+                    setWidth(value);
+                    commit(value, height);
+                }}
+            />
+            <span aria-hidden>:</span>
+            <Input
+                aria-label="自定义比例的高"
+                inputMode="numeric"
+                variant="filled"
+                value={height}
+                placeholder="高"
+                onChange={(event) => {
+                    const value = digits(event.target.value);
+                    setHeight(value);
+                    commit(width, value);
+                }}
+            />
+        </span>
+    );
+}
+
+/** 自定义比例实际怎么出：能算出具体尺寸就写尺寸，模型不支持时写会落到哪个比例。 */
+function CustomRatioNote({ ratio, request }: { ratio: string; request: StudioImageRequest }) {
+    if (!studioRatioValid(ratio)) return <>宽高各填 1–99，长边不超过短边的 3 倍</>;
+    const size = request.imageSettings.size && /^\d+x\d+$/.test(request.imageSettings.size) ? request.imageSettings.size.replace("x", "×") : "";
+    // 落到了别的预设比例时如实说明，不把预设尺寸当成自定义比例的结果。
+    if (request.aspectRatio && request.aspectRatio !== ratio) return <>{`这个模型不支持 ${ratio}，按最接近的 ${request.aspectRatio}${size ? `（${size}）` : ""} 出`}</>;
+    return <>按 {size || ratio} 出图</>;
 }
 
 /** 识别和策划用的文本模型（同一个）：按钮上直接写着当前模型，点开浮层更换。 */
@@ -103,7 +159,12 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const profile = image.value ? modelCapabilityConfigFor(image.config, image.value).image : undefined;
     const qualityOptions = useMemo(() => studioQualityOptions(profile), [profile]);
     const quality = studioEffectiveQuality(profile, brief.quality);
-    const ratioOptions = useMemo(() => studioRatioOptions(profile, quality), [profile, quality]);
+    const resolutionOptions = useMemo(() => studioResolutionOptions(profile), [profile]);
+    const resolution = studioEffectiveResolution(profile, brief.resolution);
+    const ratioOptions = useMemo(() => studioRatioOptions(profile, quality, resolution), [profile, quality, resolution]);
+    // 自定义比例：选了「自定义」或者表单里的比例不在这个模型的预设里时，显示宽高输入框。
+    const [customRatioOpen, setCustomRatioOpen] = useState(false);
+    const customRatio = customRatioOpen || (brief.ratio !== "auto" && !ratioOptions.includes(brief.ratio));
     const [pickerOpen, setPickerOpen] = useState(false);
     const setKind = studioSetKind(product);
     const singles = studioSingleTypes(brief);
@@ -119,7 +180,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const castRelevant = singles.some((item) => item.id === "model") || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
     const castReferences = castRelevant ? [brief.model?.figure ?? brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
     const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + castReferences + product.references.length);
-    const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
+    const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, resolution, ratio: firstRatio });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
     const adapter = studioModelAdapter(image.value);
@@ -148,6 +209,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     ? "镜头清单里至少留一张"
                     : "";
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
+    // 质感选「按商品推荐」：详情页由策划挑，其他出图类型按品类挑。
+    const styleHint = product.style !== "auto" ? "" : detailPlan?.styleId ? `策划挑了「${studioProductStyle(product).name}」` : brief.outputType === "detail-set" ? "策划时按这件商品挑" : `按品类用「${studioProductStyle(product).name}」`;
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
     const pickSet = (id: StudioOutputType) => {
@@ -373,7 +436,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <Field label="语言" span={2} hint={brief.language !== "none" && adapter.textRendering === "weak" && image.value ? `${adapter.label} 写字不稳定，建议选「不加文字」` : undefined}>
                         <Select appearance="field" size="large" value={brief.language} options={LANGUAGE_OPTIONS} ariaLabel="图上文字的语言" onChange={(value: StudioLanguage) => editBrief({ language: value })} />
                     </Field>
-                    <Field label="质感" span={3}>
+                    <Field label="质感" span={3} hint={styleHint || undefined}>
                         <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => ({ ...current, style: value }))} />
                     </Field>
                     <Field label="拍摄方式" span={3}>
@@ -400,27 +463,34 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                             onChange={(value: number) => editBrief({ count: value })}
                         />
                     </Field>
-                    <Field label="质量" span={2}>
-                        <Select
-                            appearance="field"
-                            size="large"
-                            value={qualityOptions.length ? quality : "default"}
-                            disabled={!qualityOptions.length}
-                            options={qualityOptions.length ? qualityOptions : [{ value: "default", label: "模型默认" }]}
-                            ariaLabel="质量"
-                            onChange={(value: string) => editBrief({ quality: value })}
-                        />
+                    <Field label={resolutionOptions.length ? "清晰度 · 质量" : "质量"} span={2}>
+                        <span className={resolutionOptions.length ? "es-field-pair" : undefined}>
+                            {resolutionOptions.length ? <Select appearance="field" size="large" value={resolution} options={resolutionOptions} ariaLabel="清晰度" onChange={(value: string) => editBrief({ resolution: value })} /> : null}
+                            <Select
+                                appearance="field"
+                                size="large"
+                                value={qualityOptions.length ? quality : "default"}
+                                disabled={!qualityOptions.length}
+                                options={qualityOptions.length ? qualityOptions : [{ value: "default", label: "模型默认" }]}
+                                ariaLabel="质量"
+                                onChange={(value: string) => editBrief({ quality: value })}
+                            />
+                        </span>
                     </Field>
-                    <Field label="比例" span={2}>
+                    <Field label="比例" span={2} hint={customRatio ? <CustomRatioNote ratio={brief.ratio} request={studioImageRequest(profile, quality, brief.ratio, resolution)} /> : undefined}>
                         <Select
                             appearance="field"
                             size="large"
-                            value={brief.ratio === "auto" || ratioOptions.includes(brief.ratio) ? brief.ratio : "auto"}
+                            value={customRatio ? "custom" : brief.ratio === "auto" || ratioOptions.includes(brief.ratio) ? brief.ratio : "auto"}
                             disabled={!ratioOptions.length}
-                            options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio }))]}
+                            options={[{ value: "auto", label: ratioOptions.length ? ratioLabel : "模型决定" }, ...ratioOptions.map((ratio) => ({ value: ratio, label: ratio })), ...(ratioOptions.length ? [{ value: "custom", label: "自定义" }] : [])]}
                             ariaLabel="比例"
-                            onChange={(value: string) => editBrief({ ratio: value })}
+                            onChange={(value: string) => {
+                                setCustomRatioOpen(value === "custom");
+                                if (value !== "custom") editBrief({ ratio: value });
+                            }}
                         />
+                        {customRatio ? <CustomRatioInput ratio={brief.ratio} onChange={(ratio) => editBrief({ ratio })} /> : null}
                     </Field>
                     <Field label="补充要求" span={6} htmlFor="es-extra">
                         <Input id="es-extra" variant="filled" size="large" value={brief.extra} placeholder="例如：白底、强质感、不要多余文字、保留商品结构" maxLength={300} onChange={(event) => editBrief({ extra: event.target.value })} />

@@ -15,7 +15,13 @@ export type StudioStep = "dossier" | "plan" | "generate" | "deliver";
 export type StudioPlanKind = "main" | "detail";
 /** model：模型直接把文字画进图里；overlay：模型只出留白底图，文字由程序排版。 */
 export type StudioTextMode = "model" | "overlay";
-export type StudioStyleId = "mist" | "warm" | "noir" | "fresh" | "vivid";
+/** 详情页一屏的版式：决定画面怎么分区、要点文字排成图标标签、引线标签还是参数行。 */
+export type StudioDetailLayoutId = "poster" | "split" | "icons" | "callout" | "compare" | "grid" | "scene" | "data" | "spec" | "closing";
+/** 「调整这一张」里修改要求的字数上限。 */
+export const STUDIO_SHOT_ADJUST_MAX = 200;
+/** 质感预设；auto 表示按商品推荐：策划详情页时由策划挑，不策划时按品类挑。 */
+export type StudioStylePresetId = "mist" | "warm" | "noir" | "fresh" | "vivid" | "pure" | "wood" | "cream" | "tech" | "oriental" | "luxe" | "sport" | "candy" | "organic" | "editorial";
+export type StudioStyleId = StudioStylePresetId | "auto";
 /** 表单里的「出图类型」：单张类型按数量出图，套图类型按品类排好整组镜头；mix 是同时选了几种单张类型。 */
 export type StudioOutputType = "main" | "white" | "scene" | "selling" | "closeup" | "model" | "angles" | "poster" | "main-set" | "detail-set" | "template-set" | "mix";
 export type StudioMarket = "cn" | "hk-tw" | "sea" | "jp-kr" | "west" | "mena";
@@ -130,6 +136,12 @@ export type StudioShot = {
     duty?: string;
     /** 详情页策划给这一屏写的目的与画面；有它时代替镜头规格的构图、光线和背景。 */
     visual?: string;
+    /** 详情页策划给这一屏选的版式，决定要点文字怎么排（图标标签、引线标签等）。 */
+    layout?: StudioDetailLayoutId;
+    /** 主标题上方的英文或编号小标题。 */
+    eyebrow?: string;
+    /** 用户在「调整这一张」里写的修改要求，只影响这一张。 */
+    adjust?: string;
     attempts: StudioAttempt[];
     adopted?: StudioOutput;
 };
@@ -154,6 +166,12 @@ export type StudioPlannedScreen = {
     purpose: string;
     /** 具体画面：场景、商品摆放与角度、人物、道具、色调、光线和文字位置。 */
     visual: string;
+    /** 版式：海报大字、图标卖点、引线标注、细节拼格等。 */
+    layout: StudioDetailLayoutId;
+    /** 信息元素：几个图标各画什么、引线指向哪些部位、拼格每格放什么。 */
+    elements: string;
+    /** 主标题上方的英文或编号小标题，可以为空。 */
+    eyebrow: string;
     headline: string;
     subline: string;
     lines: string[];
@@ -172,6 +190,8 @@ export type StudioDetailPlan = {
     summary: string;
     /** 整套视觉规范，出图时代替风格锁。 */
     style: string;
+    /** 质感选「按商品推荐」时策划挑的质感预设。 */
+    styleId?: StudioStylePresetId;
     screens: StudioPlannedScreen[];
 };
 
@@ -218,7 +238,9 @@ export type StudioBrief = {
     count: number;
     /** 质量或分辨率档位，取值随模型变化；空字符串表示用模型默认值。 */
     quality: string;
-    /** "auto" 表示按出图类型和平台推荐。 */
+    /** 清晰度档位（1k、2k、4k）：模型的质量和尺寸档位分开时才用；空字符串表示生图台默认（有 2K 用 2K）。 */
+    resolution: string;
+    /** "auto" 表示按出图类型和平台推荐；也可以是自定义的「宽:高」（各 1–99，长短边不超过 3:1）。 */
     ratio: string;
     /** 出图类型为「模板套图」时选中的模板。 */
     suite?: StudioSuite;
@@ -240,6 +262,8 @@ export type StudioRun = {
     kind?: StudioPlanKind;
     textMode: StudioTextMode;
     quality: string;
+    /** 点生成那一刻的清晰度，重出这一组的图也按它。 */
+    resolution?: string;
     /** 模板套图：模板名与整套视觉规范，在点生成那一刻定下来。 */
     suite?: { id: string; name: string; style: string };
     shots: StudioShot[];

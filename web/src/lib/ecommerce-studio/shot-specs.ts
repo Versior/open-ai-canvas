@@ -1,6 +1,6 @@
 import type { EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioPromptOverride, studioPromptText } from "./prompt-overrides";
-import type { StudioCategoryFamily, StudioPlanKind, StudioShotRole, StudioStyleId } from "./types";
+import type { StudioBrief, StudioCategoryFamily, StudioPlanKind, StudioProduct, StudioShotRole, StudioStyleId, StudioStylePresetId } from "./types";
 
 /**
  * 镜头规格：每种图承担一个目标，并写清"怎么拍"——构图占比、机位焦段、具名布光、布景上限。
@@ -335,7 +335,7 @@ export const STUDIO_FAMILY_RULES: Record<StudioCategoryFamily, string> = {
 };
 
 export type StudioStylePreset = {
-    id: StudioStyleId;
+    id: StudioStylePresetId;
     name: string;
     mood: string;
     palette: { name: string; hex: string }[];
@@ -411,11 +411,161 @@ export const STUDIO_STYLES: StudioStylePreset[] = [
         ink: "#2A1A14",
         inkSoft: "#5A4036",
     },
+    {
+        id: "pure",
+        name: "纯净高级白",
+        mood: "干净、理性、科技感的极简",
+        palette: [
+            { name: "纯白", hex: "#FFFFFF" },
+            { name: "浅银灰", hex: "#EEF0F2" },
+            { name: "深空灰", hex: "#1D1D1F" },
+        ],
+        light: "高调棚拍，大面积柔光箱，边缘高光清晰，阴影极淡",
+        ink: "#1D1D1F",
+        inkSoft: "#6E6E73",
+    },
+    {
+        id: "wood",
+        name: "日系原木",
+        mood: "安静、自然、有生活温度",
+        palette: [
+            { name: "米白", hex: "#F3EEE6" },
+            { name: "原木", hex: "#B8916A" },
+            { name: "墨绿点缀", hex: "#3F5A4A" },
+        ],
+        light: "柔和的侧窗自然光，色温约 5000K，带一点树影或百叶光影",
+        ink: "#2E2A24",
+        inkSoft: "#6B6255",
+    },
+    {
+        id: "cream",
+        name: "奶油治愈",
+        mood: "柔软、温柔、亲近，适合母婴和居家",
+        palette: [
+            { name: "奶油黄", hex: "#FBF3E2" },
+            { name: "杏粉", hex: "#F2D3C4" },
+            { name: "燕麦", hex: "#D9C7AE" },
+        ],
+        light: "大面积柔光，暖调，阴影圆润浅淡",
+        ink: "#4A3B30",
+        inkSoft: "#7D6A5C",
+    },
+    {
+        id: "tech",
+        name: "科技冷感",
+        mood: "理性、精密、有未来感",
+        palette: [
+            { name: "深蓝黑", hex: "#0E1624" },
+            { name: "冷银", hex: "#C9D2DC" },
+            { name: "电光蓝", hex: "#2F7BFF" },
+        ],
+        light: "暗背景上的冷色轮廓光与条形高光，局部蓝色辉光",
+        ink: "#F2F6FA",
+        inkSoft: "#A9B6C4",
+    },
+    {
+        id: "oriental",
+        name: "新中式东方",
+        mood: "雅致、留白、有东方韵味",
+        palette: [
+            { name: "宣纸白", hex: "#F4EFE4" },
+            { name: "朱砂红", hex: "#B23A2E" },
+            { name: "墨黑", hex: "#262422" },
+        ],
+        light: "柔和侧光，带一点窗格或竹影，低饱和",
+        ink: "#262422",
+        inkSoft: "#6A625A",
+    },
+    {
+        id: "luxe",
+        name: "轻奢金属",
+        mood: "精致、明亮、有分寸的奢华",
+        palette: [
+            { name: "象牙白", hex: "#F7F3EC" },
+            { name: "香槟金", hex: "#C9A66B" },
+            { name: "烟灰", hex: "#5C5852" },
+        ],
+        light: "柔光主光加细窄的金属反光，高光干净，阴影柔和",
+        ink: "#2B2824",
+        inkSoft: "#6F6A62",
+    },
+    {
+        id: "sport",
+        name: "运动能量",
+        mood: "速度、力量、高对比",
+        palette: [
+            { name: "炭黑", hex: "#141414" },
+            { name: "荧光绿", hex: "#C6F432" },
+            { name: "纯白", hex: "#FFFFFF" },
+        ],
+        light: "硬朗的侧逆光，高对比，边缘有动感的高光",
+        ink: "#FFFFFF",
+        inkSoft: "#C9C9C9",
+    },
+    {
+        id: "candy",
+        name: "童趣糖果",
+        mood: "明亮、可爱、轻松，适合儿童和年轻用户",
+        palette: [
+            { name: "天空蓝", hex: "#BFE3FF" },
+            { name: "柠檬黄", hex: "#FFE27A" },
+            { name: "草莓粉", hex: "#FFB4C6" },
+        ],
+        light: "明亮均匀的高调光，阴影短而柔，色彩饱满不刺眼",
+        ink: "#24324A",
+        inkSoft: "#5A6680",
+    },
+    {
+        id: "organic",
+        name: "自然植萃",
+        mood: "天然、清爽、可信赖",
+        palette: [
+            { name: "鼠尾草绿", hex: "#A9BFA0" },
+            { name: "亚麻", hex: "#EFE8DC" },
+            { name: "陶土", hex: "#C07A55" },
+        ],
+        light: "自然日光，带植物叶影，色温约 5300K",
+        ink: "#2F3A2C",
+        inkSoft: "#66705F",
+    },
+    {
+        id: "editorial",
+        name: "杂志大片",
+        mood: "时髦、利落、像时尚杂志的版面",
+        palette: [
+            { name: "灰白", hex: "#EDEDEB" },
+            { name: "纯黑", hex: "#111111" },
+            { name: "一抹正红", hex: "#D72B2B" },
+        ],
+        light: "硬朗的单侧光，影子清楚，构图大胆留白",
+        ink: "#111111",
+        inkSoft: "#555555",
+    },
 ];
+
+/** 质感选「按商品推荐」又没有策划时，按品类挑一个。 */
+const STUDIO_FAMILY_STYLE: Record<StudioCategoryFamily, StudioStylePresetId> = {
+    apparel: "editorial",
+    "bags-shoes": "luxe",
+    jewelry: "luxe",
+    beauty: "organic",
+    food: "warm",
+    electronics: "tech",
+    home: "wood",
+    "baby-toys": "cream",
+    generic: "pure",
+};
 
 export function studioStyle(id: StudioStyleId): StudioStylePreset {
     const style = STUDIO_STYLES.find((item) => item.id === id) || STUDIO_STYLES[0];
     return { ...style, mood: studioPromptText(`style.${style.id}.mood`, style.mood), light: studioPromptText(`style.${style.id}.light`, style.light) };
+}
+
+/** 这件商品实际用的质感：选了预设就用预设；选「按商品推荐」时用策划挑的，没有策划按品类挑。 */
+export function studioProductStyle(product: Pick<StudioProduct, "style" | "dossier"> & { brief?: Pick<StudioBrief, "detailPlan" | "outputType"> }): StudioStylePreset {
+    if (product.style !== "auto") return studioStyle(product.style);
+    const planned = product.brief?.outputType === "detail-set" ? product.brief.detailPlan?.styleId : undefined;
+    return studioStyle(planned || STUDIO_FAMILY_STYLE[product.dossier?.family || "generic"]);
 }
 
 /** 微调标签：只改这张图的镜头规格，不碰商品真值。 */

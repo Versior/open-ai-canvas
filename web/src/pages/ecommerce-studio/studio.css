@@ -475,6 +475,29 @@
     font-size: var(--fs-caption);
     line-height: 1.5;
 }
+/* 清晰度和质量两个下拉框并排放在同一格里。 */
+.es-field-pair {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-1);
+    min-width: 0;
+}
+/* 大号统一下拉框全局最小 144px，两个并排时放不下，这里只在并排的格子里取消。 */
+.es-field .es-field-pair > .ant-select.app-unified-select {
+    width: 100%;
+    min-width: 0;
+}
+.es-ratio-custom {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--es-ink-3);
+}
+.es-ratio-custom .ant-input {
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
 /* 字段标题右侧带一句说明（出图类型、模特设定）。 */
 .es-field-row {
     display: flex;

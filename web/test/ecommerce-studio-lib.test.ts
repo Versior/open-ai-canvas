@@ -5,6 +5,10 @@ import { buildFillPrompt, buildRecognitionPrompt, extractStudioJson, parseFill, 
 import { compileStudioPrompt, studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { createStudioProduct, normalizeStudioProduct, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { createStudioRun, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { studioRatioValid } from "@/lib/ecommerce-studio/brief";
+import { studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions } from "@/lib/ecommerce-studio/image-options";
+import { defaultImageCapabilityConfig } from "@/lib/model-capabilities";
+import { studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import { planStudioTypeset, wrapStudioText } from "@/lib/ecommerce-studio/typeset";
 import type { StudioPhoto, StudioProduct } from "@/lib/ecommerce-studio/types";
 
@@ -20,6 +24,7 @@ function photo(id: string, view: StudioPhoto["view"], truth = true): StudioPhoto
 function cupProduct(): StudioProduct {
     const product = createStudioProduct("product_cup", "2026-11-01T00:00:00Z");
     product.name = "雾蓝保温杯";
+    product.style = "mist";
     product.photos = [photo("tag", "tag"), photo("side", "side"), photo("front", "front")];
     product.dossier = {
         name: "雾蓝保温杯",
@@ -225,13 +230,24 @@ describe("ecommerce studio detail plan", () => {
         summary: "先讲一天的饮水，再证明容量，最后收尾。",
         style: "雾蓝灰 #DDE5EC 渐变背景，柔和侧光，细黑体",
         screens: [
-            { role: "detail-hero", title: "首屏", purpose: "一眼认出这只杯子", visual: "雾蓝渐变背景上，保温杯三分之四侧立，上方三分之一留标题区", headline: "一杯装下一整天", subline: "500ml 真空保温", lines: [], facts: ["容量"] },
+            {
+                role: "detail-hero",
+                layout: "poster",
+                eyebrow: "01 ALL DAY CUP",
+                title: "首屏",
+                purpose: "一眼认出这只杯子",
+                visual: "雾蓝渐变背景上，保温杯三分之四侧立，上方三分之一留标题区",
+                headline: "一杯装下一整天",
+                subline: "500ml 真空保温",
+                lines: [],
+                facts: ["容量"],
+            },
             { role: "detail-spec", title: "参数", purpose: "核对参数", visual: "参数表", headline: "产品参数", lines: ["重量 约 280g"] },
             { role: "detail-scene", title: "通勤", purpose: "带着出门", visual: "清晨地铁站，一只手握着杯身，背景虚化，文字放左上", headline: "通勤随手带", subline: "保温 12 小时", lines: ["约 280g 轻巧", "单手开盖"] },
             { role: "detail-size", title: "容量", purpose: "知道能装多少", visual: "杯子与 A4 纸并排平放，俯拍", headline: "500ml 容量", lines: [] },
-            { role: "detail-closeup", title: "杯盖", purpose: "看清杯盖做工", visual: "杯盖微距，侧光勾出边缘", headline: "杯盖细节", lines: [] },
-            { role: "detail-model", title: "握持", purpose: "知道拿在手里的样子", visual: "半身人物单手握杯，浅色针织衫，窗边自然光", headline: "单手就能握住", lines: [] },
-            { role: "detail-scene", title: "办公桌", purpose: "想象放在工位上", visual: "木质办公桌一角，杯子立在笔记本旁，暖色台灯", noText: true },
+            { role: "detail-closeup", layout: "callout", elements: "3 条引线指向杯盖、提环和杯口", title: "杯盖", purpose: "看清杯盖做工", visual: "杯盖微距，侧光勾出边缘", headline: "杯盖细节", lines: ["一键弹盖", "银色提环", "宽口杯身"] },
+            { role: "detail-model", layout: "fancy", title: "握持", purpose: "知道拿在手里的样子", visual: "半身人物单手握杯，浅色针织衫，窗边自然光", headline: "单手就能握住", lines: [] },
+            { role: "detail-scene", eyebrow: "500ML DESK", title: "办公桌", purpose: "想象放在工位上", visual: "木质办公桌一角，杯子立在笔记本旁，暖色台灯", noText: true },
             { role: "detail-closing", title: "收尾", purpose: "促成下单", visual: "杯子居中，背景回到首屏的雾蓝", headline: "最好的保温杯", lines: ["500ml 大容量"] },
         ],
     });
@@ -287,13 +303,64 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled.prompt).toContain("【这一屏的画面】");
         expect(compiled.prompt).toContain("清晨地铁站");
         expect(compiled.prompt).toContain("整套视觉规范「按商品策划」");
-        expect(compiled.prompt).toContain("按「这一屏的画面」里安排的文字位置");
+        expect(compiled.prompt).toContain("按「这一屏的画面」里的版式和文字位置排");
         for (const title of ["【构图与机位】", "【光线】", "【背景与道具】"]) expect(compiled.prompt).not.toContain(title);
         const skipped = { ...product, brief: toggleStudioSetEntry(product, "p1") };
         expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "杯盖", "握持", "办公桌", "收尾"]);
         // 不加文字时策划的文案也不进图。
         const textless = { ...product, brief: { ...product.brief, language: "none" as const } };
         expect(createStudioRun(textless, ids(), "2026-11-01T00:00:00Z").shots.every((shot) => !shot.headline && !shot.lines.length)).toBe(true);
+    });
+
+    test("each screen gets a layout, info elements and a design system", () => {
+        const { product, roles, result } = planned();
+        const [hero, , , closeup, model, desk] = result.plan.screens;
+        expect(hero).toMatchObject({ layout: "poster", eyebrow: "01 ALL DAY CUP" });
+        expect(closeup).toMatchObject({ layout: "callout", elements: "3 条引线指向杯盖、提环和杯口", lines: ["一键弹盖", "银色提环", "宽口杯身"] });
+        // 不认识的版式按屏型补；带了数字的英文小标题不收。
+        expect(model.layout).toBe("scene");
+        expect(desk.eyebrow).toBe("");
+        const prompt = buildDetailPlanPrompt(product, roles);
+        expect(prompt).toContain("【可以用的版式】");
+        expect(prompt).toContain("icons（图标卖点）");
+        expect(prompt).toContain("整套至少用到 6 种版式");
+        expect(prompt).toContain("字体（中文标题的字重和气质");
+        expect(prompt).toContain("以「雾感极简」为基础");
+        expect(prompt).not.toContain('"styleId"');
+
+        // 出图：版式和信息元素进画面层，标签按版式写成引线标签，允许图标、引线这类设计元素。
+        const run = createStudioRun(product, ids(), "2026-11-01T00:00:00Z");
+        const shot = run.shots[3];
+        expect(shot).toMatchObject({ layout: "callout" });
+        expect(shot.visual).toContain("版式「引线标注」");
+        expect(shot.visual).toContain("信息元素：3 条引线指向杯盖、提环和杯口");
+        const compiled = compileStudioPrompt({ product, textMode: run.textMode, shot, model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt;
+        expect(compiled).toContain("引线标签（每条引线末端一条，指向标签说的那个部位）：「一键弹盖」 「银色提环」 「宽口杯身」");
+        expect(compiled).toContain("可以有图标、细线、引线");
+        expect(compiled).toContain("整张是排过版的电商详情页画面");
+        expect(compileStudioPrompt({ product, textMode: run.textMode, shot: run.shots[0], model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt).toContain("栏目小标题「01 ALL DAY CUP」");
+
+        // 调整这一张写的修改要求只进这一张，读回时保留。
+        const adjusted = compileStudioPrompt({ product, textMode: run.textMode, shot: { ...shot, adjust: "背景换成浅木纹桌面" }, model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt;
+        expect(adjusted).toContain("【这一张的修改要求】\n背景换成浅木纹桌面。");
+        const withRun = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...product, runs: [{ ...run, shots: [{ ...shot, adjust: "背景换成浅木纹桌面" }] }] })))!;
+        expect(withRun.runs[0].shots[0]).toMatchObject({ adjust: "背景换成浅木纹桌面", layout: "callout" });
+    });
+
+    test("with the style left to the product, the planner picks one", () => {
+        const { product, roles } = planned();
+        const auto = { ...product, style: "auto" as const };
+        const prompt = buildDetailPlanPrompt(auto, roles);
+        expect(prompt).toContain('"styleId"');
+        expect(prompt).toContain("candy（童趣糖果）");
+        const picked = parseDetailPlan(JSON.stringify({ ...JSON.parse(reply), styleId: "candy" }), auto, roles, { id: "p2", model: "m", createdAt: "" }).plan;
+        expect(picked.styleId).toBe("candy");
+        expect(studioProductStyle({ ...auto, brief: { ...auto.brief, detailPlan: picked } }).name).toBe("童趣糖果");
+        // 没有策划时按品类挑；选了具体质感时不收策划挑的。
+        expect(studioProductStyle({ ...auto, brief: { ...auto.brief, detailPlan: undefined } }).name).toBe("纯净高级白");
+        expect(parseDetailPlan(JSON.stringify({ ...JSON.parse(reply), styleId: "candy" }), product, roles, { id: "p3", model: "m", createdAt: "" }).plan.styleId).toBeUndefined();
+        expect(normalizeStudioProduct({ id: "p_style", style: "auto" })!.style).toBe("auto");
+        expect(createStudioProduct("p_new").style).toBe("auto");
     });
 
     test("plans survive normalization and are only used by the detail set", () => {
@@ -339,5 +406,58 @@ describe("ecommerce studio typesetting", () => {
         expect(ops[0]).toMatchObject({ text: "一杯装下一整天", weight: 700, tone: "ink" });
         const last = ops[ops.length - 1];
         expect(last.y + last.size).toBeLessThanOrEqual(100 + 300 + 1);
+    });
+});
+
+describe("ecommerce studio image size options", () => {
+    // 与 GPT Image 2 的能力配置一致：质量 auto/low/medium/high，尺寸按 1K/2K/4K 三档预设，允许自定义尺寸。
+    const presets = [
+        ["1k", "1:1", 1024, 1024],
+        ["1k", "3:4", 1024, 1360],
+        ["2k", "1:1", 2048, 2048],
+        ["2k", "3:4", 1728, 2304],
+        ["4k", "1:1", 2880, 2880],
+        ["4k", "3:4", 2448, 3264],
+    ].map(([tier, ratio, width, height]) => ({ tier: tier as "1k", ratio: ratio as string, width: width as number, height: height as number, size: `${width}x${height}` }));
+    const base = defaultImageCapabilityConfig();
+    const profile = {
+        ...base,
+        size: { ...base.size, parameter: "size" as const, values: presets.map((preset) => preset.size), default: "1024x1360", allowCustom: true, presets },
+        quality: { supported: true, values: ["auto", "low", "medium", "high"], default: "auto" },
+        resolution: { ...base.resolution, supported: false },
+    };
+
+    test("quality and resolution are chosen separately and the size follows the tier", () => {
+        expect(studioQualityOptions(profile).map((option) => option.value)).toEqual(["auto", "low", "medium", "high"]);
+        expect(studioResolutionOptions(profile).map((option) => option.label)).toEqual(["1K", "2K", "4K"]);
+        // 没选过清晰度时用 2K；选了就按选的档位给具体尺寸，质量照常写进 quality。
+        expect(studioEffectiveResolution(profile, "")).toBe("2k");
+        expect(studioImageRequest(profile, "high", "3:4", "")).toEqual({ aspectRatio: "3:4", imageSettings: { quality: "high", size: "1728x2304" } });
+        expect(studioImageRequest(profile, "auto", "1:1", "4k").imageSettings.size).toBe("2880x2880");
+        expect(studioRatioOptions(profile, "auto", "1k")).toEqual(["1:1", "3:4"]);
+        // 按参数声明的模型（后台模型配置的写法）：画布只给默认档位，生图台按模型声明的尺寸取值放开 2K、4K。
+        const declared = { ...profile, parameters: [], size: { ...profile.size, allowCustom: false } };
+        expect(studioResolutionOptions(declared).map((option) => option.value)).toEqual(["1k", "2k", "4k"]);
+        expect(studioImageRequest(declared, "high", "3:4", "").imageSettings).toEqual({ quality: "high", size: "1728x2304" });
+        // 没有尺寸档位的模型不出现清晰度。
+        expect(studioResolutionOptions({ ...profile, size: { ...profile.size, presets: presets.filter((preset) => preset.tier === "1k") } })).toEqual([]);
+    });
+
+    test("a custom ratio becomes a computed size when the model allows custom sizes", () => {
+        expect(studioRatioValid("3:5")).toBe(true);
+        expect(studioRatioValid("1:4")).toBe(false);
+        expect(studioRatioValid("0:3")).toBe(false);
+        expect(studioImageRequest(profile, "auto", "3:5", "2k").aspectRatio).toBe("3:5");
+        const custom = studioImageRequest(profile, "auto", "3:5", "2k").imageSettings.size!;
+        const [width, height] = custom.split("x").map(Number);
+        expect(width % 16).toBe(0);
+        expect(height % 16).toBe(0);
+        expect(Math.abs(width / height - 3 / 5)).toBeLessThan(0.02);
+        // 不许自定义尺寸的模型落到最接近的预设比例。
+        const fixed = studioImageRequest({ ...profile, size: { ...profile.size, allowCustom: false } }, "auto", "3:5", "2k");
+        expect(fixed).toEqual({ aspectRatio: "3:4", imageSettings: { quality: "auto", size: "1728x2304" } });
+        // 表单读回时自定义比例保留，越界的回到自动。
+        expect(normalizeStudioProduct({ id: "p_ratio", brief: { ratio: "3:5", resolution: "4k" } })!.brief).toMatchObject({ ratio: "3:5", resolution: "4k" });
+        expect(normalizeStudioProduct({ id: "p_ratio", brief: { ratio: "1:5", resolution: "8k" } })!.brief).toMatchObject({ ratio: "auto", resolution: "" });
     });
 });

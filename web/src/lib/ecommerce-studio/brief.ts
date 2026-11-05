@@ -69,10 +69,19 @@ const MARKET_IDS = new Set(STUDIO_MARKETS.map((item) => item.id));
 const LANGUAGE_IDS = new Set(STUDIO_LANGUAGES.map((item) => item.id));
 const SHOOTING_IDS = new Set(STUDIO_SHOOTINGS.map((item) => item.id));
 const RATIO_PATTERN = /^([1-9]\d?):([1-9]\d?)$/;
+const RESOLUTION_PATTERN = /^(1k|1\.5k|2k|4k)$/;
 const SHOT_KEY_PATTERN = /^[a-z0-9-]{1,40}$/;
 
+/** 比例写法「宽:高」，宽高各 1–99，长边不超过短边的 3 倍（模型出不了更极端的画幅）。 */
+export function studioRatioValid(ratio: string) {
+    const match = ratio.match(RATIO_PATTERN);
+    if (!match) return false;
+    const [width, height] = [Number(match[1]), Number(match[2])];
+    return Math.max(width, height) / Math.min(width, height) <= 3;
+}
+
 export function createStudioBrief(): StudioBrief {
-    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", ratio: "auto", shotOrder: [], shotSkip: [] };
+    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", resolution: "", ratio: "auto", shotOrder: [], shotSkip: [] };
 }
 
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
@@ -157,7 +166,8 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         sameLayout: record.sameLayout === true,
         count: Number.isInteger(count) && STUDIO_COUNT_OPTIONS.includes(count) ? count : base.count,
         quality: text(record.quality, 20),
-        ratio: typeof record.ratio === "string" && (record.ratio === "auto" || RATIO_PATTERN.test(record.ratio)) ? record.ratio : base.ratio,
+        resolution: typeof record.resolution === "string" && RESOLUTION_PATTERN.test(record.resolution) ? record.resolution : base.resolution,
+        ratio: typeof record.ratio === "string" && (record.ratio === "auto" || studioRatioValid(record.ratio)) ? record.ratio : base.ratio,
         ...(suite ? { suite } : {}),
         ...(detailPlan ? { detailPlan } : {}),
         ...(model ? { model } : {}),

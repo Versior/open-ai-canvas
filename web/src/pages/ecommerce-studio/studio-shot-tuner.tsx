@@ -3,11 +3,11 @@ import { Copy, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { studioPlatformForbidsText } from "@/lib/ecommerce-studio/brief";
 import { STUDIO_TWEAKS, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
-import type { StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
+import { STUDIO_SHOT_ADJUST_MAX, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { compileStudioShot, locateStudioShot, type StudioShotRef } from "./use-studio-runner";
 
-export type StudioShotPatch = Pick<StudioShot, "tweaks" | "headline" | "subline" | "lines">;
+export type StudioShotPatch = Pick<StudioShot, "tweaks" | "headline" | "subline" | "lines" | "adjust">;
 
 const LAYER_SOURCE_HINT = "每层标出来源；超出模型字数上限时，先裁掉质感、品类、风格这些修饰层。";
 
@@ -42,6 +42,7 @@ export function StudioShotTuner({
     const [headline, setHeadline] = useState(shot.headline);
     const [subline, setSubline] = useState(shot.subline);
     const [lines, setLines] = useState(shot.lines.join("\n"));
+    const [adjust, setAdjust] = useState(shot.adjust || "");
     const [promptOpen, setPromptOpen] = useState(false);
     const spec = studioShotSpec(shot.role, product.dossier?.family || "generic");
     const copyAllowed = spec.copySlot !== "none" && product.brief.language !== "none" && !studioPlatformForbidsText(product, shot.role);
@@ -58,10 +59,11 @@ export function StudioShotTuner({
                 .map((line) => line.trim())
                 .filter(Boolean)
                 .slice(0, 6),
+            adjust: adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX),
         }),
-        [headline, lines, subline, tweaks],
+        [adjust, headline, lines, subline, tweaks],
     );
-    const changed = !sameList(patch.tweaks, shot.tweaks) || patch.headline !== shot.headline || patch.subline !== shot.subline || !sameList(patch.lines, shot.lines);
+    const changed = !sameList(patch.tweaks, shot.tweaks) || patch.headline !== shot.headline || patch.subline !== shot.subline || !sameList(patch.lines, shot.lines) || patch.adjust !== (shot.adjust || "");
 
     const preview = useMemo(() => {
         if (!promptOpen) return undefined;
@@ -98,6 +100,10 @@ export function StudioShotTuner({
                     </button>
                 ))}
             </div>
+            <label className="es-tuner-field">
+                <span>还想怎么改（只改这一张）</span>
+                <Input.TextArea value={adjust} autoSize={{ minRows: 2, maxRows: 5 }} maxLength={STUDIO_SHOT_ADJUST_MAX} placeholder="例如：背景换成浅木纹桌面，商品往左放一点，标题改成深蓝色" onChange={(event) => setAdjust(event.target.value)} />
+            </label>
             {copyAllowed ? (
                 <div className="es-tuner-copy">
                     <label className="es-tuner-field">
