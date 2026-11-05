@@ -229,6 +229,9 @@ describe("ecommerce studio detail plan", () => {
             { role: "detail-spec", title: "参数", purpose: "核对参数", visual: "参数表", headline: "产品参数", lines: ["重量 约 280g"] },
             { role: "detail-scene", title: "通勤", purpose: "带着出门", visual: "清晨地铁站，一只手握着杯身，背景虚化，文字放左上", headline: "通勤随手带", subline: "保温 12 小时", lines: ["约 280g 轻巧", "单手开盖"] },
             { role: "detail-size", title: "容量", purpose: "知道能装多少", visual: "杯子与 A4 纸并排平放，俯拍", headline: "500ml 容量", lines: [] },
+            { role: "detail-closeup", title: "杯盖", purpose: "看清杯盖做工", visual: "杯盖微距，侧光勾出边缘", headline: "杯盖细节", lines: [] },
+            { role: "detail-model", title: "握持", purpose: "知道拿在手里的样子", visual: "半身人物单手握杯，浅色针织衫，窗边自然光", headline: "单手就能握住", lines: [] },
+            { role: "detail-scene", title: "办公桌", purpose: "想象放在工位上", visual: "木质办公桌一角，杯子立在笔记本旁，暖色台灯", noText: true },
             { role: "detail-closing", title: "收尾", purpose: "促成下单", visual: "杯子居中，背景回到首屏的雾蓝", headline: "最好的保温杯", lines: ["500ml 大容量"] },
         ],
     });
@@ -252,20 +255,32 @@ describe("ecommerce studio detail plan", () => {
         expect(prompt).not.toContain("detail-spec（");
         expect(prompt).toContain("没有确认的信息（不能写进文案，也不能画成参数或数字）：内胆");
         expect(prompt).toContain("容量 500ml");
-        expect(result.plan.screens.map((screen) => screen.role)).toEqual(["detail-hero", "detail-scene", "detail-size", "detail-closing"]);
+        // 详情页固定 10 屏：要求模型正好排 10 屏，屏型可以重复，先分析买家关心什么。
+        expect(prompt).toContain("共 10 屏");
+        expect(prompt).toContain("正好排 10 屏");
+        expect(prompt).toContain("屏型可以重复使用");
+        expect(prompt).toContain("买这件商品的人下单前最关心什么");
+        expect(prompt).not.toContain("信息少就少排");
+        expect(result.plan.screens.map((screen) => screen.role)).toEqual(["detail-hero", "detail-scene", "detail-size", "detail-closeup", "detail-model", "detail-scene", "detail-closing"]);
         expect(result.dropped).toBe(1);
         expect(result.ungrounded).toBe(2);
         expect(result.plan.screens[1]).toMatchObject({ subline: "", lines: ["单手开盖"] });
         expect(result.plan.screens[0].subline).toBe("500ml 真空保温");
         expect(result.issues.some((issue) => issue.term.includes("最"))).toBe(true);
         expect(() => parseDetailPlan(JSON.stringify({ screens: [{ role: "detail-hero", visual: "x" }] }), product, roles, { id: "p", model: "m", createdAt: "" })).toThrow("策划结果不完整");
+        // 去掉依据不够的屏后不到 6 屏，也要求重新策划。
+        const short = JSON.stringify({ screens: (JSON.parse(reply) as { screens: unknown[] }).screens.slice(0, 5) });
+        expect(() => parseDetailPlan(short, product, roles, { id: "p", model: "m", createdAt: "" })).toThrow("策划结果不完整");
+        // 多给的屏只收前 10 屏。
+        const long = JSON.stringify({ screens: Array.from({ length: 12 }, (_, index) => ({ role: "detail-scene", title: `场景 ${index + 1}`, visual: `场景 ${index + 1} 的画面` })) });
+        expect(parseDetailPlan(long, product, roles, { id: "p", model: "m", createdAt: "" }).plan.screens).toHaveLength(10);
     });
 
     test("a planned detail page drives the run, the shot list and the prompt", () => {
         const { product } = planned();
         const run = createStudioRun(product, ids(), "2026-11-01T00:00:00Z");
         expect(run.suite).toEqual({ id: "plan_1", name: "按商品策划", style: "雾蓝灰 #DDE5EC 渐变背景，柔和侧光，细黑体" });
-        expect(run.shots.map((shot) => shot.title)).toEqual(["首屏", "通勤", "容量", "收尾"]);
+        expect(run.shots.map((shot) => shot.title)).toEqual(["首屏", "通勤", "容量", "杯盖", "握持", "办公桌", "收尾"]);
         expect(run.shots[0]).toMatchObject({ headline: "一杯装下一整天", subline: "500ml 真空保温" });
         expect(run.shots[0].visual).toContain("这一屏要让买家明白：一眼认出这只杯子");
         const compiled = compileStudioPrompt({ product, textMode: run.textMode, shot: run.shots[1], model: "gpt-image-2", brief: product.brief, suite: run.suite });
@@ -275,7 +290,7 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled.prompt).toContain("按「这一屏的画面」里安排的文字位置");
         for (const title of ["【构图与机位】", "【光线】", "【背景与道具】"]) expect(compiled.prompt).not.toContain(title);
         const skipped = { ...product, brief: toggleStudioSetEntry(product, "p1") };
-        expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "收尾"]);
+        expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "杯盖", "握持", "办公桌", "收尾"]);
         // 不加文字时策划的文案也不进图。
         const textless = { ...product, brief: { ...product.brief, language: "none" as const } };
         expect(createStudioRun(textless, ids(), "2026-11-01T00:00:00Z").shots.every((shot) => !shot.headline && !shot.lines.length)).toBe(true);
@@ -284,7 +299,7 @@ describe("ecommerce studio detail plan", () => {
     test("plans survive normalization and are only used by the detail set", () => {
         const { product } = planned();
         const restored = normalizeStudioProduct(JSON.parse(JSON.stringify(product)))!;
-        expect(restored.brief.detailPlan?.screens).toHaveLength(4);
+        expect(restored.brief.detailPlan?.screens).toHaveLength(7);
         expect(normalizeStudioProduct({ ...product, brief: { ...product.brief, detailPlan: { id: "x", screens: [{ role: "detail-hero", visual: "a" }] } } })!.brief.detailPlan).toBeUndefined();
         const main = { ...product, brief: { ...product.brief, outputType: "main-set" as const } };
         expect(createStudioRun(main, ids(), "2026-11-01T00:00:00Z").suite).toBeUndefined();

@@ -27,7 +27,7 @@ import {
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
-import { patchStudioDetailPlanScreen } from "@/lib/ecommerce-studio/detail-plan";
+import { patchStudioDetailPlanScreen, STUDIO_DETAIL_PLAN_LIMITS } from "@/lib/ecommerce-studio/detail-plan";
 import { moveStudioSetEntry, studioActiveDetailPlan, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
@@ -129,6 +129,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const typeHint = singles.length > 1 ? [`${singles.map((item) => item.label).join("、")}，每种 ${brief.count} 张，共 ${images} 张`, noTextNote].filter(Boolean).join("；") : noTextNote || spec.hint;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
+    // 详情页固定 10 屏，每屏由策划按这件商品排；只有没有可用的文本模型时才按品类默认的 10 屏出。
+    const planScreens = STUDIO_DETAIL_PLAN_LIMITS.screens;
+    const planMissing = brief.outputType === "detail-set" && !detailPlan && Boolean(text.value);
     const blocked = !product.photos.length
         ? "先上传商品图"
         : !truthCount
@@ -139,9 +142,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
               ? "图片上传中，请稍候"
               : suiteMissing
                 ? "先选择一套模板"
-                : setKind && !included.length
-                  ? "镜头清单里至少留一张"
-                  : "";
+                : planMissing
+                  ? `先策划这 ${planScreens} 屏`
+                  : setKind && !included.length
+                    ? "镜头清单里至少留一张"
+                    : "";
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
 
     const editBrief = (patch: Partial<StudioBrief>) => edit((current) => ({ ...current, brief: { ...current.brief, ...patch } }));
@@ -173,8 +178,12 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const runPlan = async () => {
         try {
             const result = await runner.plan(ensure(), text.value);
+            const count = result.plan.screens.length;
             const notes = [result.dropped ? `${result.dropped} 屏依据不够没收进来` : "", result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "", result.issues.length ? `${result.issues.length} 处用词需要留意` : ""].filter(Boolean);
-            message.success(`已按这件商品排好 ${result.plan.screens.length} 屏${notes.length ? `，${notes.join("，")}` : ""}，可以展开修改`);
+            const summary = `已按这件商品排好 ${count} 屏${notes.length ? `，${notes.join("，")}` : ""}`;
+            // 不足 10 屏时如实说明，让用户决定直接出还是重新策划。
+            if (count < planScreens) message.warning(`${summary}，比 ${planScreens} 屏少 ${planScreens - count} 屏，可以重新策划`);
+            else message.success(`${summary}，可以展开修改`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "策划失败，请重试");
         }
@@ -185,21 +194,6 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         if (!detailPlan) return void runPlan();
         modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。", okText: "重新策划", cancelText: "取消", onOk: () => void runPlan() });
     };
-    const restorePlan = () =>
-        modal.confirm({
-            title: "恢复按品类排的 10 屏？",
-            content: "这次的策划会被删除，需要时可以再策划一次。",
-            okText: "恢复默认",
-            cancelText: "取消",
-            onOk: () =>
-                edit(
-                    (current) => {
-                        const { detailPlan: _removed, ...rest } = current.brief;
-                        return { ...current, brief: { ...rest, shotOrder: [], shotSkip: [] } };
-                    },
-                    { immediate: true },
-                ),
-        });
 
     const generate = () => {
         if (blocked) return void message.warning(blocked);
@@ -446,9 +440,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <>
                         <div className="es-section-head">
                             <h2>镜头清单</h2>
-                            <span className="es-section-note">
-                                已选 {included.length}/{entries.length} {unit} · 勾掉这次不出的，箭头调整顺序
-                            </span>
+                            <span className="es-section-note">{planMissing ? "策划好后可以逐屏修改、勾掉这次不出的、调整顺序" : `已选 ${included.length}/${entries.length} ${unit} · 勾掉这次不出的，箭头调整顺序`}</span>
                         </div>
                         {brief.outputType === "template-set" ? (
                             <div className="es-suite-card" data-empty={brief.suite ? undefined : true}>
@@ -466,29 +458,28 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                             </div>
                         ) : null}
                         {brief.outputType === "detail-set" ? (
-                            <div className="es-suite-card es-plan-card" data-planned={detailPlan ? true : undefined}>
+                            <div className="es-suite-card es-plan-card" data-empty={planMissing ? true : undefined} data-planned={detailPlan ? true : undefined}>
                                 <span className="es-suite-card-text">
-                                    <strong>{detailPlan ? `已按这件商品策划 ${detailPlan.screens.length} 屏` : "按品类排好的 10 屏"}</strong>
+                                    <strong>{detailPlan ? `已按这件商品策划 ${detailPlan.screens.length} 屏` : planMissing ? `先策划这 ${planScreens} 屏` : `按品类默认的 ${entries.length} 屏`}</strong>
                                     <span>
                                         {detailPlan
                                             ? detailPlan.summary || "每一屏的画面和文案按这件商品写好，点笔形按钮可以修改。"
-                                            : `每件商品都是同一套。按商品策划会参考电商知识库，按这件商品的卖点和已确认信息重新排每一屏${product.dossier ? "" : "；先识别商品，策划会更准"}。`}
+                                            : planMissing
+                                              ? `策划会参考电商知识库，先分析这件商品的买家最关心什么，再定每一屏讲什么、画面怎么拍、文案写什么；排好后可以逐屏修改再生成${product.dossier ? "" : "。先识别商品，策划会更准"}。`
+                                              : "没有可用的文本模型，没法按商品策划，这次按品类默认的清单出。添加文本模型后可以按商品策划。"}
                                     </span>
                                 </span>
                                 <span className="es-plan-card-actions">
-                                    {detailPlan ? (
-                                        <Button type="text" disabled={planning} onClick={restorePlan}>
-                                            恢复默认
+                                    {detailPlan || planMissing ? (
+                                        <Button type={planMissing ? "primary" : "default"} icon={<ListChecks size={14} />} loading={planning} disabled={filling || !product.photos.length} onClick={planDetail}>
+                                            {planning ? "策划中…" : detailPlan ? "重新策划" : `策划 ${planScreens} 屏`}
                                         </Button>
                                     ) : null}
-                                    <Button icon={<ListChecks size={14} />} loading={planning} disabled={filling || !product.photos.length} onClick={planDetail}>
-                                        {planning ? "策划中…" : detailPlan ? "重新策划" : "按商品策划"}
-                                    </Button>
                                     <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
                                 </span>
                             </div>
                         ) : null}
-                        {entries.length ? (
+                        {entries.length && !planMissing ? (
                             <StudioShotList
                                 entries={entries}
                                 unit={unit}

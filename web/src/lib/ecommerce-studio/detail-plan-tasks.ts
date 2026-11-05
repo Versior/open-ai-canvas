@@ -47,7 +47,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
     const cast = brief.model ? [brief.model.figure ? "全身模特" : brief.model.face ? "模特人脸" : "", brief.model.pose ? "姿势" : "", brief.model.style ? "造型" : ""].filter(Boolean) : [];
     const language = brief.language === "none" ? "这套图不放文字：每一屏都写 noText: true，文案留空。" : `图上文字最终用${studioLanguage(brief.language).name}呈现；这里的文案先用简体中文写。`;
     const lines: (string | undefined)[] = [
-        `为这件商品策划一套${platform}手机端详情页，长图按屏从上到下排列，每屏画幅 3:4。`,
+        `为这件商品策划一套${platform}手机端详情页，共 ${STUDIO_DETAIL_PLAN_LIMITS.screens} 屏，长图按屏从上到下排列，每屏画幅 3:4。`,
         "",
         "【商品】",
         `名称：${product.dossier?.name || product.name || productType || "见商品图"}`,
@@ -78,17 +78,18 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         }),
         "",
         "【要求】",
-        "1. 按信息量排 6–10 屏，信息少就少排，不凑数；第一屏用 detail-hero，最后一屏用 detail-closing。",
-        "2. 每屏只承担一个目的。相邻两屏的景别、机位和场景不能相同，商品不能连续几屏都是同一个角度。",
-        "3. visual 写成能直接交给图片模型的一段话（不超过 150 个字）：场景或背景、商品怎么摆、什么角度、人物和动作（如有）、道具（不超过 3 件）、主色调、光线，以及文字放在画面哪个位置。",
-        "4. 商品图里看不到的角度、内部结构、配件和包装不要安排成画面主体。",
-        "5. 文案：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 4 条，每条不超过 14 个字。只用上面的核心标题、卖点和已确认的事实，可以改写得更口语，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
-        "6. 同一条卖点最多用在一屏（头图和收尾可以回顾）。素材不够写文案的屏，headline 写一个短栏目名或设 noText: true。",
-        "7. style 写整套共用的视觉规范：色板（色名和 #色值）、光线气质、字体气质和反复出现的装饰元素，所有屏一致；每屏的背景和场景写在各自的 visual 里。",
-        "8. facts 写这一屏用到的事实名称或卖点标题，没有就留空数组。",
+        "1. 先想清楚：买这件商品的人下单前最关心什么、最担心什么，这件商品凭什么值得买。整套详情页围绕这些回答来排，不要套一份各品类通用的模板。",
+        `2. 正好排 ${STUDIO_DETAIL_PLAN_LIMITS.screens} 屏：第一屏用 detail-hero，最后一屏用 detail-closing，中间各屏的主题和顺序按第 1 条的分析来定。屏型可以重复使用（比如两屏卖点、两屏不同的使用场景、两屏不同部位的细节），但每屏讲的内容和画面都不能重复。信息不够时多排使用场景、使用效果和商品图里看得到的细节，不编参数，也不把同一个卖点换个说法再讲一遍。`,
+        "3. 每屏只承担一个目的。相邻两屏的景别、机位和场景不能相同，商品不能连续几屏都是同一个角度。",
+        "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字）：场景或背景、商品怎么摆、什么角度、人物和动作（如有）、道具（不超过 3 件）、主色调、光线，以及文字放在画面哪个位置。",
+        "5. 商品图里看不到的角度、内部结构、配件和包装不要安排成画面主体。",
+        "6. 文案：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 4 条，每条不超过 14 个字。只用上面的核心标题、卖点和已确认的事实，可以改写得更口语，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
+        "7. 同一条卖点最多用在一屏（头图和收尾可以回顾）。素材不够写文案的屏，headline 写一个短栏目名或设 noText: true。",
+        "8. style 写整套共用的视觉规范：色板（色名和 #色值）、光线气质、字体气质和反复出现的装饰元素，所有屏一致；每屏的背景和场景写在各自的 visual 里。",
+        "9. facts 写这一屏用到的事实名称或卖点标题，没有就留空数组。",
         "",
         "只输出下面这个 JSON，不要任何解释：",
-        `{"summary":"一两句话说明这套详情页的叙事思路","style":"整套视觉规范","screens":[{"role":"detail-hero","title":"不超过 8 个字的屏名","purpose":"这一屏要让买家明白什么","visual":"具体画面","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
+        `{"summary":"一两句话说明买家最关心什么，这 ${STUDIO_DETAIL_PLAN_LIMITS.screens} 屏按什么顺序回答","style":"整套视觉规范","screens":[{"role":"detail-hero","title":"不超过 8 个字的屏名","purpose":"这一屏要让买家明白什么","visual":"具体画面","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
     ];
     return lines.filter((line): line is string => line !== undefined).join("\n");
 }
@@ -102,7 +103,7 @@ export type StudioDetailPlanResult = {
     issues: EcommerceComplianceIssue[];
 };
 
-/** 读回策划结果：屏型必须在这件商品能排的范围里，文案的数字必须有出处；不够三屏时要求重试。 */
+/** 读回策划结果：屏型必须在这件商品能排的范围里，文案的数字必须有出处；去掉依据不够的屏后剩得太少时要求重试。 */
 export function parseDetailPlan(raw: string, product: StudioProduct, roles: StudioShotRole[], meta: { id: string; model: string; createdAt: string }): StudioDetailPlanResult {
     const data = extractStudioJson(raw);
     const allowed = new Set(roles);

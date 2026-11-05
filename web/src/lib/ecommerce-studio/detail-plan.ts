@@ -1,7 +1,8 @@
 import { studioFactUsable, type StudioBrief, type StudioDetailPlan, type StudioFact, type StudioPlannedScreen, type StudioProduct, type StudioShotRole } from "./types";
 
 /**
- * 详情页策划：出详情页前先让文本模型按这件商品排每一屏，代替按品类固定的十屏。
+ * 详情页策划：详情页固定 10 屏，每一屏讲什么、画面和文案由文本模型按这件商品排，不再每件商品都用按品类固定的同一套。
+ * 没有可用的文本模型时才退回按品类的默认 10 屏。
  * 这里是策划的数据规则（能排哪些屏型、读回与修改）；提示词和解析在 detail-plan-tasks.ts。
  */
 export const STUDIO_DETAIL_PLAN_CAPABILITY = "detail-plan";
@@ -9,8 +10,11 @@ export const STUDIO_DETAIL_PLAN_CAPABILITY = "detail-plan";
 export const STUDIO_DETAIL_PLAN_NAME = "按商品策划";
 
 export const STUDIO_DETAIL_PLAN_LIMITS = {
-    minScreens: 3,
-    maxScreens: 12,
+    /** 详情页固定的屏数，策划按这个数排。 */
+    screens: 10,
+    /** 屏型依据不够被去掉后，少于这个数就要求重新策划。 */
+    minScreens: 6,
+    maxScreens: 10,
     title: 16,
     purpose: 80,
     visual: 400,
@@ -100,7 +104,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
     };
 }
 
-/** 读回表单里的策划：字段不全或不到三屏时当作没有策划。 */
+/** 读回表单里的策划：字段不全或屏数不够时当作没有策划。 */
 export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
     const record = value as Record<string, unknown>;

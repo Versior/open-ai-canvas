@@ -162,7 +162,7 @@ export type StudioPlannedScreen = {
     noText?: boolean;
 };
 
-/** 详情页策划：按这件商品排的整套详情页，选了「一键详情页」时代替按品类固定的十屏。 */
+/** 详情页策划：按这件商品排的整套详情页（固定 10 屏），选了「一键详情页」时由它决定每一屏。 */
 export type StudioDetailPlan = {
     id: string;
     createdAt: string;
@@ -222,7 +222,7 @@ export type StudioBrief = {
     ratio: string;
     /** 出图类型为「模板套图」时选中的模板。 */
     suite?: StudioSuite;
-    /** 「一键详情页」按这件商品排好的策划；没有时按品类固定的十屏出。 */
+    /** 「一键详情页」按这件商品排好的策划；有文本模型时要先策划才能出图，没有文本模型时按品类默认的清单出。 */
     detailPlan?: StudioDetailPlan;
     /** 套图的镜头清单：调整后的顺序与这次不出的镜头。元素是镜头 key，内置套图为镜头角色，模板套图为 s 加序号。 */
     shotOrder: string[];
