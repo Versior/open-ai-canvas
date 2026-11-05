@@ -38,13 +38,13 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 支持的平台以 `GET /api/social-video/platforms` 为准，目前是抖音、TikTok、快手、小红书、哔哩哔哩、微博和 YouTube。分享文本必须且只能包含一个 URL，禁止 URL 认证信息、片段和非 443 端口。抖音和 TikTok 只接受 HTTPS 单视频地址或受控短链；其他平台只认域名，分享里常见的 http 链接会升级成 https，链接是否有效交给解析接口判断。
 
-服务端不在本机运行下载器，而是交给管理员在后台「视频解析接口」里配置的第三方解析接口池（见下一节）。建任务时这个平台一条启用的接口都没有，直接返回 400、`reason=failed_precondition`，不排队。任务按设置的轮询方式依次尝试，最多 `maxAttempts` 条：调用接口、按字段映射取出视频地址、下载、用 ffprobe 校验，一条成功就停。抖音 / TikTok 会先展开短链拿视频 ID，每次跳转都重新校验平台域名、单视频路径与出站安全规则；展开后交给接口的是去掉查询参数的标准单视频地址（抖音统一为 `https://www.douyin.com/video/<id>`），不把分享人的 `u_code`、`did` 等跟踪参数发给第三方，展开失败时才把原链接交给接口。解析接口地址和接口给出的视频地址都走出站安全校验，默认拒绝本机和私网。最终视频不超过 3 分钟，文件不超过 `min(ResourceUploadMB, 50 MiB)`；视频超时长或超大小属于内容问题，直接失败，不再换接口，也不计入接口失败。任务最长 10 分钟，入库前复查项目活动状态；同一平台同一视频 ID 复用已存的资源。Task 的 `provider` 是平台标识，`model` 固定为 `parse-api`。
+服务端不在本机运行下载器，而是交给管理员在后台「视频复刻 → 解析接口」里配置的第三方解析接口池（见下一节）。「功能开放」里的 `socialVideoImportEnabled`（视频链接导入，默认 `true`）关闭时，建导入任务返回 403「视频链接导入暂未开放」。建任务时这个平台一条启用的接口都没有，直接返回 400、`reason=failed_precondition`，不排队。任务按设置的轮询方式依次尝试，最多 `maxAttempts` 条：调用接口、按字段映射取出视频地址、下载、用 ffprobe 校验，一条成功就停。抖音 / TikTok 会先展开短链拿视频 ID，每次跳转都重新校验平台域名、单视频路径与出站安全规则；展开后交给接口的是去掉查询参数的标准单视频地址（抖音统一为 `https://www.douyin.com/video/<id>`），不把分享人的 `u_code`、`did` 等跟踪参数发给第三方，展开失败时才把原链接交给接口。解析接口地址和接口给出的视频地址都走出站安全校验，默认拒绝本机和私网。最终视频不超过 3 分钟，文件不超过 `min(ResourceUploadMB, 50 MiB)`；视频超时长或超大小属于内容问题，直接失败，不再换接口，也不计入接口失败。任务最长 10 分钟，入库前复查项目活动状态；同一平台同一视频 ID 复用已存的资源。Task 的 `provider` 是平台标识，`model` 固定为 `parse-api`。
 
-同步请求可能返回 400（链接、幂等键、项目或任务额度无效；平台没有可用解析接口时 `reason=failed_precondition`）、401（未登录）、409（幂等键冲突）、413（正文超过 4 KiB）或 429（创建任务限流）。已入队后的解析、下载、校验或入库失败体现在 Task 的 `status=failed` 与 `error` 中：只试了一条接口时是「解析接口没能处理这个链接：原因」，试了多条时是「已依次尝试 N 个解析接口，都没能处理这个链接。最后一个的原因：……」。原因来自接口的 HTTP 状态和返回里的错误说明，接口回显的密钥会换成 `***`。
+同步请求可能返回 400（链接、幂等键、项目或任务额度无效；平台没有可用解析接口时 `reason=failed_precondition`）、401（未登录）、403（视频链接导入已关闭）、409（幂等键冲突）、413（正文超过 4 KiB）或 429（创建任务限流）。已入队后的解析、下载、校验或入库失败体现在 Task 的 `status=failed` 与 `error` 中：只试了一条接口时是「解析接口没能处理这个链接：原因」，试了多条时是「已依次尝试 N 个解析接口，都没能处理这个链接。最后一个的原因：……」。原因来自接口的 HTTP 状态和返回里的错误说明，接口回显的密钥会换成 `***`。
 
 ## 视频解析接口池
 
-`GET /api/social-video/platforms` 登录即可调用，返回 `data.platforms`，每项为 `{ id, name, hosts, shortHosts, strict, available }`。`strict=true` 的平台（抖音、TikTok）按单视频路径校验；`available` 表示这个平台至少有一条启用的接口（自动停用的也算，导入时会试探）。前端据此识别分享链接，并在没有接口的平台上提示「暂时无法导入」。
+`GET /api/social-video/platforms` 登录即可调用，返回 `data.platforms`，每项为 `{ id, name, hosts, shortHosts, strict, available }`。`strict=true` 的平台（抖音、TikTok）按单视频路径校验；`available` 表示这个平台至少有一条启用的接口（自动停用的也算，导入时会试探），视频链接导入关闭时全部为 `false`。前端据此识别分享链接，并在没有接口的平台上提示「暂时无法导入」；接口在功能关闭时也正常返回，画布粘贴据此按普通文字处理。后台 `GET /admin/social-video/parse` 里的 `platforms` 只按接口池算，不看这个开关。
 
 以下接口都要求管理员，数据存在 `system_settings` 的四个键里（见 [后端数据库](./backend-database) 的「视频解析接口池」）：
 
@@ -67,7 +67,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 测试结果 `data` 包含 `ok`、失败的步骤 `stage`（`request` / `response` / `mapping` / `media`）、`message`、`latencyMs`、`httpStatus`、取到的字段 `result`、视频地址检查 `media`（只读开头 64 KiB 确认是视频，不下载整段）和接口返回的前 4 KiB `responsePreview`（密钥换成 `***`）。测试已保存的接口、批量测试、巡检和用户导入的结果都计入运行状态：连续失败达到阈值自动停用，成功一次清零并恢复。一个平台的接口全部被自动停用时，导入会挑最早停用的那条试探一次。
 
-后台每分钟巡检一次（多实例用协调租约，同一时间只有一个实例在跑）：冷却期满的自动停用接口有测试链接就测一次，通过即恢复，没有测试链接就先放行、连续失败次数停在阈值减一；开了定期巡检时按间隔测试开着的接口，每轮最多 10 条；到期的订阅源自动同步。订阅源和导入按「请求方式 + 地址模板 + 请求体」去重：已有的只更新定义，启用状态、运行状态和密钥（清单里没给时）保留；新接口先停用。
+后台每分钟巡检一次（多实例用协调租约，同一时间只有一个实例在跑；视频链接导入关闭时整轮跳过，不在后台调用第三方接口和订阅地址）：冷却期满的自动停用接口有测试链接就测一次，通过即恢复，没有测试链接就先放行、连续失败次数停在阈值减一；开了定期巡检时按间隔测试开着的接口，每轮最多 10 条；到期的订阅源自动同步。订阅源和导入按「请求方式 + 地址模板 + 请求体」去重：已有的只更新定义，启用状态、运行状态和密钥（清单里没给时）保留；新接口先停用。
 
 ## 视频复刻：拆解准备
 
@@ -83,7 +83,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 }
 ```
 
-`transcribe` 省略时为 `true`；`language` 可留空或填 `auto`；`maxShots` 为 1–60，省略时 60。视频必须是本人已就绪的视频资源，时长不超过 3 分钟。`data` 是 `type="replication_teardown"` 的异步 Task（`provider=local`、`model=ffmpeg`），不调用模型渠道、不计模型费用，最长运行 10 分钟。成功时 `resultJson` 解析后为：
+`transcribe` 省略时为 `true`；`language` 可留空或填 `auto`；`maxShots` 为 1 到后台设置的镜头数上限（默认 60），省略时取上限。视频必须是本人已就绪的视频资源，时长不超过后台设置的时长上限（默认 180 秒，最多 180 秒）；超时长返回 400「视频超过 N 分钟，请先截取片段再拆解」。「功能开放」里的 `videoReplicationEnabled`（默认 `true`）关闭时，本节所有视频复刻接口都返回 403「视频复刻暂未开放」。`data` 是 `type="replication_teardown"` 的异步 Task（`provider=local`、`model=ffmpeg`），不调用模型渠道、不计模型费用，最长运行 10 分钟。成功时 `resultJson` 解析后为：
 
 ```json
 {
@@ -100,13 +100,29 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 - 切点用 ffmpeg 场景分数检测（主要看亮度变化），短于 400ms 的镜头并入前一镜；没有切点的长镜头按不超过 10 秒切开，`boundary` 为 `split`（画面连续），检测到的切点为 `cut`。镜头数超过 `maxShots` 时先把切开的长镜头拼回去，再合并最短的镜头。
 - 每镜截开头、中间、结尾三帧（长边 512px）；中间帧存成关键帧图片资源。宫格每张放 3 个镜头，一行一个镜头，三列依次是开头、中间、结尾；底色和间隔为中灰（纯白、黑场画面也能分清），左侧 80px 编号栏写着每行的镜头编号。关键帧和宫格计入存储容量，上传标识带任务 ID，任务被重新领取时复用已存的图片。
-- 口播转写复用 `CANVAS_WHISPER_BASE_URL` 指向的 whisper.cpp 服务，并受字幕转写功能开关约束。视频没有音轨、功能未开放、服务没配置或识别失败时，`transcript.source` 为 `none`，任务仍然成功，原因写在 `warnings`。
+- 口播转写复用 `CANVAS_WHISPER_BASE_URL` 指向的 whisper.cpp 服务，并受字幕转写功能开关和后台「允许识别口播」约束。视频没有音轨、后台关了口播识别、功能未开放、服务没配置或识别失败时，`transcript.source` 为 `none`，任务仍然成功，原因写在 `warnings`。
+- 时长上限和口播识别在执行时按当时的设置再查一次：排队期间后台调低了时长上限或关了口播识别，排队中的任务也按新设置执行。
+
+`GET /api/video-replication/config` 给视频复刻页面读限制：`{ maxDurationSeconds, maxShots, transcribeAvailable, transcribeNote? }`。`transcribeAvailable` 要求后台允许口播识别、字幕转写已开放且配置了转写服务，不满足时 `transcribeNote` 写原因；页面据此显示上限、在上传前拦下超时长的视频，并禁用「识别口播」。
 
 视频复刻页面（`/video-replication`）的历史记录走下面三个接口，都只读写当前账号自己的拆解任务，别人的或不是拆解类型的任务一律返回 404：
 
 - `GET /api/video-replication/teardowns`：按创建时间倒序返回最近 50 次拆解，含排队、失败的任务。每条有 `id`（拆解任务 ID）、`status`、`stage`、`progress`、`error`、`durationMs`、`shotCount`、`coverResourceId`（第一镜关键帧）、`previewResourceIds`（均匀取自全片的最多 4 张关键帧）、`width` / `height`（原视频画幅）；保存过分析的再带 `title`、`model`、`analyzedAt`。
 - `GET /api/video-replication/teardowns/:id`：返回 `{ task, analysis?, analyzedAt? }`，`task.resultJson` 是上面的镜头事实。
 - `PUT /api/video-replication/teardowns/:id/analysis`：保存前端解析好的模型分析，正文为 `{ "version": 1, "model": "...", "title": "...", "summary": {...} | null, "rows": [{ "shotNumber": 1, ... }] }`，不超过 512 KiB。只接受已完成的拆解；`rows` 的数量和 `shotNumber` 必须与 `shots` 一一对应，缺镜头、重复或越界都返回 400。分析存在 `results` 表（`kind=replication_analysis`，`task_id` 为拆解任务），同一任务只留最新一份，计入账号结构化数据容量。
+
+## 视频复刻：后台管理
+
+以下接口都要求管理员（service 层校验），不受视频复刻开关影响；设置存在 `system_settings` 的 `video_replication_settings`（见 [后端数据库](./backend-database) 的「视频复刻记录」）。
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /admin/video-replication/overview` | `settings`；口播识别状态 `transcription`（`enabled`、`featureEnabled`、`serviceConfigured`、`available`、`note`）；拆解 `teardowns` 和链接导入 `imports` 各自按状态的数量、`users`（用过的人数）、`last7Days`、`today`；`analyzed`（存过分析的拆解数）；`importPlatforms`（各平台导入的总数、成功、失败）；`daily`（近 14 个 UTC 自然日每天新建的拆解、导入和其中失败的数量）；`recentFailures`（最近 8 次失败，`kind` 为 `teardown` 或 `import`，带用户和原始失败原因） |
+| `GET /admin/video-replication/teardowns` | 所有用户的拆解记录，按创建时间倒序分页（`page`、`pageSize` 默认 20、最多 100）；`status` 按状态筛选，`keyword`（最多 100 字）匹配用户名、昵称、邮箱或完整任务 ID。每条在用户侧记录字段之外带 `user`（`id`、`username`、`displayName`）、`projectId`、`transcript`（`asr` / `none`）、`warnings`、`completedAt`，`error` 不做用户侧改写；状态值不合法返回 400 |
+| `GET /admin/video-replication/teardowns/:id` | 一条记录的 `{ task, analysis?, analyzedAt?, user }`；不是拆解任务返回 404。关键帧、宫格和原视频用 `GET /admin/resources/:id/file` 读 |
+| `PATCH /admin/video-replication/settings` | 正文 `{ maxDurationSeconds?, maxShots?, transcribeEnabled? }`，只改给出的字段；超出范围返回 400，不按边界收紧。返回 `data.settings`，记管理审计 `video_replication.settings.update` |
+
+两个开关在 `GET/PATCH /admin/settings/features` 里：`videoReplicationEnabled`、`socialVideoImportEnabled`，都默认 `true`，`PATCH` 可以只传其中一个。
 
 ## 电商画布配置与公共模特
 

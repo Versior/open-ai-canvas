@@ -25,6 +25,8 @@ description: 影策后端核心持久化表与状态边界
 
 视频复刻不新增表或列。拆解任务是 `tasks.type = replication_teardown`，镜头事实写在 `tasks.result_json`；关键帧和宫格是普通图片资源。页面保存的模型分析写在既有 `results` 表：`kind = replication_analysis`，`task_id` 指向拆解任务，`payload` 是分析 JSON（不超过 512 KiB）。同一用户、同一任务只保留一条，保存时在事务里先删旧行再插入；`results.payload` 计入账号结构化数据容量。
 
+后台设置存在 `system_settings` 的 `video_replication_settings`：`maxDurationSeconds`（10–180，默认 180）、`maxShots`（1–60，默认 60）、`transcribeEnabled`（默认 `true`）。没有这一行时用默认值，缺字段的旧配置以默认值为底；按读到的原文比较交换写入。功能开关 `videoReplicationEnabled`（视频复刻）和 `socialVideoImportEnabled`（视频链接导入，画布粘贴和视频复刻共用）在 `feature_availability` JSON 里，默认开放。后台统计和记录列表直接按 `tasks.type`、`tasks.status`、`tasks.provider` 和 `results.kind` 查，不另建统计表。
+
 ## 视频解析接口池（不改结构）
 
 视频链接导入用的第三方解析接口池复用 `system_settings`，不新增表、列或 Schema 迁移。四个键的值都是 JSON：
