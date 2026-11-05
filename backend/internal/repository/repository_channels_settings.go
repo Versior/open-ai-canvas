@@ -196,3 +196,15 @@ func (r *Repository) SaveArkPrivateAssetBinding(binding *model.ArkPrivateAssetBi
 func (r *Repository) DeleteSystemSetting(key string) error {
 	return r.db.Delete(&model.SystemSetting{}, "key = ?", key).Error
 }
+
+// CompareAndSwapSystemSetting 只在这一行仍是 previous 时写入 next，用于多实例并发更新同一个 JSON 配置。
+// exists 为假表示读取时还没有这一行，此时只在没人抢先插入时创建。
+func (r *Repository) CompareAndSwapSystemSetting(key, previous string, exists bool, next, updatedBy string) (bool, error) {
+	now := time.Now()
+	if !exists {
+		result := r.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.SystemSetting{Key: key, ValueJSON: next, UpdatedBy: updatedBy, CreatedAt: now, UpdatedAt: now})
+		return result.RowsAffected == 1, result.Error
+	}
+	result := r.db.Model(&model.SystemSetting{}).Where("key = ? AND value_json = ?", key, previous).Updates(map[string]any{"value_json": next, "updated_by": updatedBy, "updated_at": now})
+	return result.RowsAffected == 1, result.Error
+}

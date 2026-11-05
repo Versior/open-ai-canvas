@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +46,24 @@ func TestParseSocialVideoShareText(t *testing.T) {
 			platform: "tiktok",
 			wantURL:  "https://www.tiktok.com/@shop/video/7461234567890123456",
 		},
+		{
+			name:     "xiaohongshu http short link is upgraded",
+			text:     "复制后打开【小红书】查看笔记！ http://xhslink.com/a/AbCdEf12",
+			platform: "xiaohongshu",
+			wantURL:  "https://xhslink.com/a/AbCdEf12",
+		},
+		{
+			name:     "bilibili short link",
+			text:     "【开箱】 https://b23.tv/Ab12Cd",
+			platform: "bilibili",
+			wantURL:  "https://b23.tv/Ab12Cd",
+		},
+		{
+			name:     "youtube watch link keeps query",
+			text:     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			platform: "youtube",
+			wantURL:  "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			parsed, err := parseSocialVideoShareText(test.text)
@@ -76,6 +93,9 @@ func TestParseSocialVideoShareTextRejectsUnsafeOrAmbiguousURLs(t *testing.T) {
 		{name: "missing short token", text: "https://v.douyin.com/"},
 		{name: "unsupported douyin path", text: "https://www.douyin.com/user/123"},
 		{name: "unsupported tiktok path", text: "https://www.tiktok.com/@shop"},
+		{name: "unknown platform", text: "https://example.com/video/7391234567890123456"},
+		{name: "kuaishou without video path", text: "https://v.kuaishou.com/"},
+		{name: "plain HTTP on strict platform", text: "http://www.tiktok.com/@shop/video/7461234567890123456"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if parsed, err := parseSocialVideoShareText(test.text); err == nil {
@@ -87,6 +107,7 @@ func TestParseSocialVideoShareTextRejectsUnsafeOrAmbiguousURLs(t *testing.T) {
 
 func TestCreateSocialVideoImportTaskIsAccountScopedAndIdempotent(t *testing.T) {
 	svc, db := newSocialVideoImportTestService(t)
+	seedSocialVideoParseAPIs(t, svc, socialVideoParseAPI{ID: "api-douyin", Name: "测试接口", Platforms: []string{"douyin"}, Enabled: true, Method: "GET", URL: "https://parse.example.com/?url={url}"})
 	validated := 0
 	svc.socialVideoURLValidator = func(raw string) (*url.URL, error) {
 		validated++
@@ -142,6 +163,21 @@ func TestCreateSocialVideoImportTaskIsAccountScopedAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestCreateSocialVideoImportTaskRequiresEnabledParseAPI(t *testing.T) {
+	svc, db := newSocialVideoImportTestService(t)
+	svc.socialVideoURLValidator = url.Parse
+	seedSocialVideoParseAPIs(t, svc, socialVideoParseAPI{ID: "api-off", Name: "停用的接口", Platforms: []string{"douyin"}, Enabled: false, Method: "GET", URL: "https://parse.example.com/?url={url}"})
+	_, err := svc.CreateSocialVideoImportTask("user-a", "request-key-0002", SocialVideoImportRequest{URL: "https://www.douyin.com/video/7391234567890123456"})
+	var appErr *AppError
+	if !errors.As(err, &appErr) || appErr.Status != http.StatusBadRequest || appErr.Reason != ReasonFailedPrecondition || !strings.Contains(appErr.Message, "抖音") {
+		t.Fatalf("error = %#v, want failed precondition naming the platform", err)
+	}
+	var count int64
+	if err := db.Model(&model.Task{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("task count = %d, %v", count, err)
+	}
+}
+
 func TestCreateSocialVideoImportTaskValidatesIdempotencyKey(t *testing.T) {
 	svc, _ := newSocialVideoImportTestService(t)
 	svc.socialVideoURLValidator = url.Parse
@@ -151,55 +187,6 @@ func TestCreateSocialVideoImportTaskValidatesIdempotencyKey(t *testing.T) {
 		if task, err := svc.CreateSocialVideoImportTask("user", key, req); err == nil {
 			t.Fatalf("key length %d created task %#v", len(key), task)
 		}
-	}
-}
-
-func TestParseSocialVideoMetadata(t *testing.T) {
-	t.Parallel()
-	raw := []byte(`{"extractor":"TikTok","id":"7461234567890123456","title":"商品展示","duration":15.25,"filesize_approx":1024000}`)
-	metadata, err := parseSocialVideoMetadata(raw, "tiktok", 2<<20)
-	if err != nil {
-		t.Fatalf("parseSocialVideoMetadata() error = %v", err)
-	}
-	if metadata.CanonicalID != "7461234567890123456" || metadata.Title != "商品展示" || metadata.Duration != 15.25 {
-		t.Fatalf("metadata = %#v", metadata)
-	}
-}
-
-func TestParseSocialVideoMetadataAcceptsRealExtractorKey(t *testing.T) {
-	t.Parallel()
-	raw := []byte(`{"extractor":"TikTok","extractor_key":"TikTok","id":"7461234567890123456","duration":15}`)
-	if _, err := parseSocialVideoMetadata(raw, "tiktok", 2<<20); err != nil {
-		t.Fatalf("parseSocialVideoMetadata() error = %v", err)
-	}
-	raw = []byte(`{"extractor":"generic","extractor_key":"TikTok","id":"7461234567890123456","duration":15}`)
-	if _, err := parseSocialVideoMetadata(raw, "tiktok", 2<<20); err == nil {
-		t.Fatal("generic extractor with forged extractor_key should be rejected")
-	}
-}
-
-func TestParseSocialVideoMetadataRejectsUnsafeResults(t *testing.T) {
-	t.Parallel()
-	for _, test := range []struct {
-		name string
-		raw  map[string]any
-	}{
-		{name: "generic extractor", raw: map[string]any{"extractor": "generic", "id": "1", "duration": 10}},
-		{name: "wrong platform", raw: map[string]any{"extractor": "Douyin", "id": "1", "duration": 10}},
-		{name: "playlist", raw: map[string]any{"extractor": "TikTok", "id": "1", "duration": 10, "entries": []any{map[string]any{"id": "1"}}}},
-		{name: "missing id", raw: map[string]any{"extractor": "TikTok", "duration": 10}},
-		{name: "duration limit", raw: map[string]any{"extractor": "TikTok", "id": "1", "duration": 181}},
-		{name: "declared size limit", raw: map[string]any{"extractor": "TikTok", "id": "1", "duration": 10, "filesize": 2049}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			raw, err := json.Marshal(test.raw)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if metadata, err := parseSocialVideoMetadata(raw, "tiktok", 2048); err == nil {
-				t.Fatalf("parseSocialVideoMetadata() = %#v, want error", metadata)
-			}
-		})
 	}
 }
 
@@ -221,24 +208,6 @@ func TestParseSocialVideoProbeRequiresBoundedVideo(t *testing.T) {
 		if result, err := parseSocialVideoProbe([]byte(raw)); err == nil {
 			t.Fatalf("parseSocialVideoProbe(%s) = %#v, want error", raw, result)
 		}
-	}
-}
-
-func TestSocialVideoCommandArgumentsAreNonInteractiveAndSingleVideo(t *testing.T) {
-	t.Parallel()
-	videoURL := "https://www.tiktok.com/@shop/video/7461234567890123456"
-	if got, want := socialVideoMetadataArgs(videoURL), []string{
-		"--ignore-config", "--no-playlist", "--no-netrc", "--no-cache-dir", "--skip-download", "--dump-single-json",
-		"--socket-timeout", "15", "--retries", "2", "--", videoURL,
-	}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("metadata args = %#v", got)
-	}
-	if got, want := socialVideoDownloadArgs(videoURL, "/tmp/job/video.%(ext)s", 52428800), []string{
-		"--ignore-config", "--no-playlist", "--no-netrc", "--no-cache-dir", "--no-overwrites",
-		"--socket-timeout", "15", "--retries", "2", "--fragment-retries", "2", "--max-filesize", "52428800",
-		"-f", "b[ext=mp4]/b", "-o", "/tmp/job/video.%(ext)s", "--", videoURL,
-	}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("download args = %#v", got)
 	}
 }
 
@@ -296,6 +265,17 @@ func TestResolveSocialVideoURLRejectsCrossPlatformRedirect(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return fn(req) }
+
+func seedSocialVideoParseAPIs(t *testing.T, svc *Service, apis ...socialVideoParseAPI) {
+	t.Helper()
+	raw, err := json.Marshal(apis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: socialVideoParseAPIsKey, ValueJSON: string(raw)}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func newSocialVideoImportTestService(t *testing.T) (*Service, *gorm.DB) {
 	t.Helper()

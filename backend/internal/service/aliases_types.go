@@ -320,6 +320,12 @@ type (
 	Service                                = app.Service
 	ShotRevisionInput                      = app.ShotRevisionInput
 	SocialVideoImportRequest               = app.SocialVideoImportRequest
+	SocialVideoParseAPIRequest             = app.SocialVideoParseAPIRequest
+	SocialVideoParseBatchTestRequest       = app.SocialVideoParseBatchTestRequest
+	SocialVideoParseImportRequest          = app.SocialVideoParseImportRequest
+	SocialVideoParseSettings               = app.SocialVideoParseSettings
+	SocialVideoParseSourceRequest          = app.SocialVideoParseSourceRequest
+	SocialVideoParseTestRequest            = app.SocialVideoParseTestRequest
 	SkillCategory                          = app.SkillCategory
 	SkillLibraryCategory                   = app.SkillLibraryCategory
 	SkillLibraryCategoryList               = app.SkillLibraryCategoryList

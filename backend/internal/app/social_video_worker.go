@@ -9,12 +9,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/gabriel-vasile/mimetype"
 	"yingce/backend/internal/model"
-	"yingce/backend/internal/outbound"
 	"yingce/backend/internal/repository"
 )
 
@@ -61,11 +60,17 @@ func (w *taskWorkerCoordinator) processSocialVideoImport(task *model.Task, paren
 	return nil
 }
 
+// runSocialVideoImport 把分享链接交给后台配置的第三方解析接口池：解析出视频地址、下载、ffprobe 校验，再存成本人的视频资源。
+// 抖音 / TikTok 先展开短链拿到视频 ID（展开失败就把原链接交给接口）；同一平台同一视频 ID 复用已存资源。
 func (w *taskWorkerCoordinator) runSocialVideoImport(ctx context.Context, task *model.Task) (socialVideoImportResult, error) {
 	s := w.service
 	var input socialVideoImportInput
 	if err := json.Unmarshal([]byte(task.InputJSON), &input); err != nil || input.URL == "" || input.Platform == "" {
 		return socialVideoImportResult{}, errors.New("导入任务缺少有效链接")
+	}
+	platform := socialVideoPlatformByID(input.Platform)
+	if platform == nil {
+		return socialVideoImportResult{}, errors.New("不支持这个视频平台")
 	}
 	if err := s.ensureTaskProjectActive(task.UserID, task.ProjectID); err != nil {
 		return socialVideoImportResult{}, errors.New("项目已删除、归档或无权访问")
@@ -73,9 +78,15 @@ func (w *taskWorkerCoordinator) runSocialVideoImport(ctx context.Context, task *
 	if err := w.progress(task, "解析视频链接", 15); err != nil {
 		return socialVideoImportResult{}, err
 	}
-	finalURL, err := resolveSocialVideoURL(ctx, socialVideoURL{URL: input.URL, Platform: input.Platform}, outbound.OutboundHTTPClient(30*time.Second), outbound.ValidateOutboundURL)
-	if err != nil {
-		return socialVideoImportResult{}, err
+	targetURL, canonicalID := input.URL, ""
+	if platform.Strict {
+		validator := s.socialVideoURLValidator
+		resolved, err := resolveSocialVideoURL(ctx, socialVideoURL{URL: input.URL, Platform: input.Platform}, s.socialVideoParseClient(30*time.Second), validator)
+		if err == nil {
+			targetURL, canonicalID = resolved, socialVideoCanonicalIDFromURL(input.Platform, resolved)
+		} else {
+			s.logInfo(task.UserID, task.ID, "短链接展开失败，直接把原链接交给解析接口", socialVideoShortError(err))
+		}
 	}
 
 	policy, err := s.RuntimePolicy()
@@ -91,45 +102,19 @@ func (w *taskWorkerCoordinator) runSocialVideoImport(ctx context.Context, task *
 		return socialVideoImportResult{}, errors.New("无法创建视频导入临时目录")
 	}
 	defer os.RemoveAll(workDir)
-	homeDir, downloadDir := filepath.Join(workDir, "home"), filepath.Join(workDir, "download")
-	if err := os.MkdirAll(filepath.Join(homeDir, ".config"), 0o700); err != nil {
-		return socialVideoImportResult{}, errors.New("无法初始化视频导入环境")
-	}
-	if err := os.MkdirAll(downloadDir, 0o700); err != nil {
-		return socialVideoImportResult{}, errors.New("无法初始化视频下载目录")
-	}
-	env := isolatedSocialVideoEnv(homeDir)
 
-	metadataRaw, err := runSocialVideoOutput(ctx, "yt-dlp", socialVideoMetadataArgs(finalURL), env)
-	if err != nil {
-		return socialVideoImportResult{}, errors.New("无法读取平台视频信息")
-	}
-	metadata, err := parseSocialVideoMetadata(metadataRaw, input.Platform, maxBytes)
-	if err != nil {
-		return socialVideoImportResult{}, err
-	}
-	if err := w.progress(task, "下载视频", 35); err != nil {
-		return socialVideoImportResult{}, err
-	}
-	outputTemplate := filepath.Join(downloadDir, "video.%(ext)s")
-	if err := runSocialVideoDownload(ctx, finalURL, outputTemplate, downloadDir, homeDir, maxBytes, env); err != nil {
-		return socialVideoImportResult{}, errors.New("平台视频下载失败")
-	}
-	videoPath, size, err := singleSocialVideoFile(downloadDir, maxBytes)
+	outcome, err := s.downloadSocialVideoWithPool(ctx, socialVideoParseJob{
+		Platform: input.Platform, URL: targetURL, WorkDir: workDir, MaxBytes: maxBytes,
+		Progress: func(stage string, percent int) { _ = w.progress(task, stage, percent) },
+	})
 	if err != nil {
 		return socialVideoImportResult{}, err
 	}
-
-	if err := w.progress(task, "校验视频", 70); err != nil {
-		return socialVideoImportResult{}, err
+	if canonicalID == "" {
+		canonicalID = outcome.Result.ID
 	}
-	probeRaw, err := runSocialVideoOutput(ctx, "ffprobe", []string{"-v", "error", "-show_streams", "-show_format", "-of", "json", videoPath}, env)
-	if err != nil {
-		return socialVideoImportResult{}, errors.New("下载结果无法识别为视频")
-	}
-	probe, err := parseSocialVideoProbe(probeRaw)
-	if err != nil {
-		return socialVideoImportResult{}, err
+	if canonicalID == "" {
+		canonicalID = socialVideoCanonicalIDFromURL(input.Platform, input.URL)
 	}
 	if err := s.ensureTaskProjectActive(task.UserID, task.ProjectID); err != nil {
 		return socialVideoImportResult{}, errors.New("项目已删除、归档或无权访问")
@@ -137,21 +122,29 @@ func (w *taskWorkerCoordinator) runSocialVideoImport(ctx context.Context, task *
 	if err := w.progress(task, "保存视频资源", 85); err != nil {
 		return socialVideoImportResult{}, err
 	}
-	file, err := os.Open(videoPath)
+	file, err := os.Open(outcome.Path)
 	if err != nil {
 		return socialVideoImportResult{}, errors.New("无法读取下载完成的视频")
 	}
 	defer file.Close()
-	identity := "social-video:" + input.Platform + ":" + metadata.CanonicalID
-	resource, err := s.UploadResourceFile(task.UserID, filepath.Base(videoPath), size, "video", probe.Width, probe.Height, probe.DurationMs, file, identity)
+	identity := "social-video:" + input.Platform + ":" + canonicalID
+	resource, err := s.UploadResourceFile(task.UserID, socialVideoFileName(input.Platform, canonicalID, outcome.Path), outcome.Size, "video", outcome.Probe.Width, outcome.Probe.Height, outcome.Probe.DurationMs, file, identity)
 	if err != nil || resource == nil || !strings.HasPrefix(resource.MimeType, "video/") {
 		return socialVideoImportResult{}, errors.New("视频资源保存失败")
 	}
 	return socialVideoImportResult{
-		Platform: input.Platform, CanonicalID: metadata.CanonicalID, Title: metadata.Title,
-		ResourceID: resource.ID, Width: probe.Width, Height: probe.Height, DurationMs: probe.DurationMs,
+		Platform: input.Platform, CanonicalID: canonicalID, Title: outcome.Result.Title,
+		ResourceID: resource.ID, Width: outcome.Probe.Width, Height: outcome.Probe.Height, DurationMs: outcome.Probe.DurationMs,
 		MimeType: resource.MimeType, Size: resource.Size,
 	}, nil
+}
+
+func socialVideoFileName(platform, canonicalID, path string) string {
+	extension := ".mp4"
+	if detected, err := mimetype.DetectFile(path); err == nil && strings.HasPrefix(detected.String(), "video/") && detected.Extension() != "" {
+		extension = detected.Extension()
+	}
+	return platform + "-" + trimmedRunes(canonicalID, 60) + extension
 }
 
 func runSocialVideoOutput(ctx context.Context, name string, args, env []string) ([]byte, error) {
@@ -169,117 +162,6 @@ func runSocialVideoOutput(ctx context.Context, name string, args, env []string) 
 		return nil, errors.New("command output exceeded limit")
 	}
 	return capture.Bytes(), nil
-}
-
-func runSocialVideoDownload(ctx context.Context, rawURL, outputTemplate, downloadDir, homeDir string, maxBytes int64, env []string) error {
-	bin, err := exec.LookPath("yt-dlp")
-	if err != nil {
-		return err
-	}
-	downloadCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	cmd := exec.CommandContext(downloadCtx, bin, socialVideoDownloadArgs(rawURL, outputTemplate, maxBytes)...)
-	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = homeDir, env, io.Discard, io.Discard
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case err := <-done:
-			if err != nil {
-				return err
-			}
-			total, scanErr := socialVideoDirectoryBytes(downloadDir)
-			if scanErr != nil || total > maxBytes {
-				return errors.New("download exceeded size limit")
-			}
-			return nil
-		case <-ticker.C:
-			total, scanErr := socialVideoDirectoryBytes(downloadDir)
-			if scanErr != nil || total > maxBytes {
-				cancel()
-				<-done
-				return errors.New("download exceeded size limit")
-			}
-		case <-ctx.Done():
-			cancel()
-			<-done
-			return ctx.Err()
-		}
-	}
-}
-
-func socialVideoDirectoryBytes(root string) (int64, error) {
-	var total int64
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return errors.New("download created a symbolic link")
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !info.Mode().IsRegular() {
-			return errors.New("download created a non-regular file")
-		}
-		total += info.Size()
-		return nil
-	})
-	return total, err
-}
-
-func singleSocialVideoFile(root string, maxBytes int64) (string, int64, error) {
-	var path string
-	var size int64
-	err := filepath.WalkDir(root, func(current string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return errors.New("视频下载结果包含不安全链接")
-		}
-		if entry.IsDir() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() {
-			return errors.New("视频下载结果包含无效文件")
-		}
-		if path != "" {
-			return errors.New("视频下载结果不是单个文件")
-		}
-		path, size = current, info.Size()
-		return nil
-	})
-	if err != nil {
-		return "", 0, err
-	}
-	if path == "" || size <= 0 || size > maxBytes {
-		return "", 0, errors.New("视频文件为空或超过大小限制")
-	}
-	return path, size, nil
-}
-
-func isolatedSocialVideoEnv(home string) []string {
-	result := make([]string, 0, len(os.Environ())+2)
-	for _, item := range os.Environ() {
-		key, _, _ := strings.Cut(item, "=")
-		if strings.EqualFold(key, "HOME") || strings.EqualFold(key, "XDG_CONFIG_HOME") {
-			continue
-		}
-		result = append(result, item)
-	}
-	return append(result, "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, ".config"))
 }
 
 type boundedCommandOutput struct {

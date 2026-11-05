@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -114,6 +115,9 @@ type Service struct {
 	dramaTailFrameHook      func(userID, resourceID string) (string, error)
 	dramaTaskHook           func(userID string, req CreateTaskRequest, timeline *renderProject) (*model.Task, error)
 	socialVideoURLValidator func(string) (*url.URL, error)
+	// 视频解析接口池的出站请求与地址校验；测试里换成本地假接口，生产为空时走 outbound 默认值。
+	socialVideoParseHTTPClient   func(time.Duration) *http.Client
+	socialVideoParseURLValidator func(string) (*url.URL, error)
 }
 
 const taskWorkerConcurrency = 3
@@ -201,6 +205,7 @@ func (s *Service) StartWorker() {
 	s.startPaymentWorker(ctx)
 	s.startBillingAutoRefundWorker()
 	s.startDramaScheduler()
+	s.startSocialVideoParseMaintenance()
 	go s.syncAgentSessionLimit()
 	s.runWorkerLoop(func(ctx context.Context) {
 		ticker := time.NewTicker(3 * time.Second)

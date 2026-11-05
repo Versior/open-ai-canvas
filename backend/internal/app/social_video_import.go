@@ -50,79 +50,10 @@ type socialVideoImportInput struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-type socialVideoMetadata struct {
-	CanonicalID string
-	Title       string
-	Duration    float64
-}
-
 type socialVideoProbe struct {
 	Width      int
 	Height     int
 	DurationMs int64
-}
-
-func socialVideoMetadataArgs(rawURL string) []string {
-	return []string{
-		"--ignore-config", "--no-playlist", "--no-netrc", "--no-cache-dir", "--skip-download", "--dump-single-json",
-		"--socket-timeout", "15", "--retries", "2", "--", rawURL,
-	}
-}
-
-func socialVideoDownloadArgs(rawURL, outputTemplate string, maxBytes int64) []string {
-	return []string{
-		"--ignore-config", "--no-playlist", "--no-netrc", "--no-cache-dir", "--no-overwrites",
-		"--socket-timeout", "15", "--retries", "2", "--fragment-retries", "2", "--max-filesize", strconv.FormatInt(maxBytes, 10),
-		"-f", "b[ext=mp4]/b", "-o", outputTemplate, "--", rawURL,
-	}
-}
-
-func parseSocialVideoMetadata(raw []byte, platform string, maxBytes int64) (socialVideoMetadata, error) {
-	var value struct {
-		Extractor      string          `json:"extractor"`
-		ExtractorKey   string          `json:"extractor_key"`
-		ID             string          `json:"id"`
-		Title          string          `json:"title"`
-		Duration       float64         `json:"duration"`
-		Filesize       int64           `json:"filesize"`
-		FilesizeApprox int64           `json:"filesize_approx"`
-		Entries        json.RawMessage `json:"entries"`
-	}
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return socialVideoMetadata{}, BadAuthRequest("无法读取视频元数据")
-	}
-	extractors := []string{}
-	for _, extractor := range []string{value.Extractor, value.ExtractorKey} {
-		if strings.TrimSpace(extractor) != "" {
-			extractors = append(extractors, normalizeSocialVideoExtractor(extractor))
-		}
-	}
-	if len(extractors) == 0 {
-		return socialVideoMetadata{}, BadAuthRequest("视频来源与链接平台不一致")
-	}
-	for _, extractor := range extractors {
-		if extractor != platform {
-			return socialVideoMetadata{}, BadAuthRequest("视频来源与链接平台不一致")
-		}
-	}
-	if len(value.Entries) > 0 && string(value.Entries) != "null" {
-		return socialVideoMetadata{}, BadAuthRequest("仅支持导入单个视频")
-	}
-	if !socialVideoCanonicalID.MatchString(value.ID) {
-		return socialVideoMetadata{}, BadAuthRequest("视频标识无效")
-	}
-	if value.Duration <= 0 || value.Duration > socialVideoMaxDurationSeconds || math.IsNaN(value.Duration) || math.IsInf(value.Duration, 0) {
-		return socialVideoMetadata{}, BadAuthRequest("视频时长无效或超过 3 分钟")
-	}
-	if maxBytes <= 0 || value.Filesize > maxBytes || value.FilesizeApprox > maxBytes {
-		return socialVideoMetadata{}, BadAuthRequest("视频文件超过导入大小限制")
-	}
-	return socialVideoMetadata{CanonicalID: value.ID, Title: strings.TrimSpace(value.Title), Duration: value.Duration}, nil
-}
-
-func normalizeSocialVideoExtractor(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	return strings.NewReplacer("-", "", "_", "", " ", "").Replace(value)
 }
 
 func resolveSocialVideoURL(ctx context.Context, source socialVideoURL, client *http.Client, validator func(string) (*url.URL, error)) (string, error) {
@@ -227,6 +158,8 @@ func parseSocialVideoProbe(raw []byte) (socialVideoProbe, error) {
 	return socialVideoProbe{Width: width, Height: height, DurationMs: int64(math.Round(duration * 1000))}, nil
 }
 
+// parseSocialVideoShareText 从分享文字里取出唯一的视频链接并认出平台。
+// 抖音 / TikTok 只认 HTTPS 和单视频路径；其他平台只认域名（分享里常见的 http 短链升级成 https），链接交给解析接口判断。
 func parseSocialVideoShareText(text string) (socialVideoURL, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || len([]byte(text)) > socialVideoShareTextLimit {
@@ -241,7 +174,13 @@ func parseSocialVideoShareText(text string) (socialVideoURL, error) {
 	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" {
 		return socialVideoURL{}, BadAuthRequest("视频链接无效")
 	}
-	if !strings.EqualFold(parsed.Scheme, "https") {
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	platform, short := socialVideoPlatformForHost(host)
+	if platform == nil {
+		return socialVideoURL{}, BadAuthRequest("仅支持" + socialVideoPlatformNames() + "的视频链接")
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "https" && (platform.Strict || scheme != "http") {
 		return socialVideoURL{}, BadAuthRequest("视频链接必须使用 HTTPS")
 	}
 	if parsed.User != nil {
@@ -254,41 +193,22 @@ func parseSocialVideoShareText(text string) (socialVideoURL, error) {
 		return socialVideoURL{}, BadAuthRequest("视频链接不能包含片段")
 	}
 
-	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
-	platform, short := socialVideoPlatform(host)
-	if platform == "" {
-		return socialVideoURL{}, BadAuthRequest("仅支持抖音和 TikTok 视频链接")
-	}
 	path := parsed.EscapedPath()
 	if path == "" {
 		path = "/"
 	}
-	if short {
-		if strings.Trim(path, "/") == "" {
-			return socialVideoURL{}, BadAuthRequest("短链接缺少视频标识")
+	switch {
+	case short || !platform.Strict:
+		if strings.Trim(path, "/") == "" && parsed.RawQuery == "" {
+			return socialVideoURL{}, BadAuthRequest("链接缺少视频标识")
 		}
-	} else if !socialVideoIDPathPattern.MatchString(path) && !(platform == "tiktok" && tiktokVideoPathPattern.MatchString(path)) {
+	case !socialVideoIDPathPattern.MatchString(path) && !(platform.ID == "tiktok" && tiktokVideoPathPattern.MatchString(path)):
 		return socialVideoURL{}, BadAuthRequest("链接不是受支持的单视频地址")
 	}
 
 	parsed.Scheme = "https"
 	parsed.Host = host
-	return socialVideoURL{URL: parsed.String(), Platform: platform}, nil
-}
-
-func socialVideoPlatform(host string) (platform string, short bool) {
-	switch host {
-	case "v.douyin.com":
-		return "douyin", true
-	case "douyin.com", "www.douyin.com", "m.douyin.com", "www.iesdouyin.com":
-		return "douyin", false
-	case "vm.tiktok.com", "vt.tiktok.com":
-		return "tiktok", true
-	case "tiktok.com", "www.tiktok.com", "m.tiktok.com":
-		return "tiktok", false
-	default:
-		return "", false
-	}
+	return socialVideoURL{URL: parsed.String(), Platform: platform.ID}, nil
 }
 
 func socialVideoTaskID(userID, idempotencyKey string) string {
@@ -338,6 +258,10 @@ func (s *Service) CreateSocialVideoImportTask(userID, idempotencyKey string, req
 	} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 		return nil, lookupErr
 	}
+	// 后台这个平台一个开着的解析接口都没有时直接告诉用户，不让任务白排队。
+	if err := s.requireSocialVideoParseAPI(parsed.Platform); err != nil {
+		return nil, err
+	}
 
 	policy, err := s.RuntimePolicy()
 	if err != nil {
@@ -351,7 +275,7 @@ func (s *Service) CreateSocialVideoImportTask(userID, idempotencyKey string, req
 		ID: id, UserID: userID, ProjectID: projectID,
 		Type: model.TaskTypeSocialVideoImport, Status: model.TaskStatusQueued,
 		Stage: "等待导入", Progress: 5, Prompt: "社交视频导入",
-		Provider: parsed.Platform, Model: "yt-dlp", InputJSON: string(inputJSON),
+		Provider: parsed.Platform, Model: socialVideoParseTaskModel, InputJSON: string(inputJSON),
 	}
 	if err := s.createTaskWithinStorageQuota(&task, nil, policy); err != nil {
 		if existing, lookupErr := s.repo.TaskForUser(userID, id); lookupErr == nil {
