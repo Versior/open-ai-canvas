@@ -157,6 +157,18 @@ export function useInteriorProjects(userId: string) {
         [update],
     );
 
+    // 轮次和 3D 模型的 id 都是随机串，共用一份「本地删掉的」记录，合并冲突时不会把删掉的又加回来。
+    const removeScene = useCallback(
+        (projectId: string, sceneId: string) => {
+            deletedRoundsRef.current.add(sceneId);
+            update(projectId, (document) => {
+                const scenes = (document.scenes || []).filter((item) => item.id !== sceneId);
+                return scenes.length ? { ...document, scenes } : { version: 1, rounds: document.rounds };
+            });
+        },
+        [update],
+    );
+
     const open = useCallback(
         async (projectId: string, discardUnsaved = false) => {
             await ensureSaved(discardUnsaved);
@@ -268,5 +280,5 @@ export function useInteriorProjects(userId: string) {
         [flush],
     );
 
-    return { projects, listError, current, projectLoading, projectError, saveState, saveError, update, removeRound, open, create, rename, remove, retrySave, reloadList };
+    return { projects, listError, current, projectLoading, projectError, saveState, saveError, update, removeRound, removeScene, open, create, rename, remove, retrySave, reloadList };
 }

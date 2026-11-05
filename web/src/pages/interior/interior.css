@@ -16,6 +16,8 @@
 .itd-shell {
     display: grid;
     grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+    /* 行高固定为页面高度：左右两栏在里面各自滚动，3D 模型的画布不会把整页撑高。 */
+    grid-template-rows: minmax(0, 1fr);
     gap: var(--space-4);
     height: 100%;
     min-height: 0;
@@ -720,5 +722,287 @@
 
     .itd-source {
         max-width: 220px;
+    }
+}
+
+/* 3D 模型：右侧上面是可以旋转缩放的模型，下面是标题、一句话修改和这个项目的模型列表。 */
+.itd-board-switches {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+.itd-scene-body {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    gap: var(--space-3);
+    min-height: 0;
+    padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.itd-scene-stage {
+    position: relative;
+    min-height: 320px;
+    overflow: hidden;
+    border-radius: var(--r-xl);
+    background: var(--itd-muted);
+}
+
+/* 模型画布用固定的浅灰渐变底：明暗主题下模型颜色一致，材质不会被深色背景吃掉。 */
+.itd-scene-frame {
+    --itd-media-ink: #ffffff;
+    --itd-media-scrim: rgba(8, 8, 10, 0.55);
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 50% 30%, #f4f5f7 0%, #dfe3e8 60%, #c9cfd6 100%);
+}
+
+.itd-scene-frame:fullscreen {
+    border-radius: 0;
+}
+
+.itd-scene-toolbar {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: var(--r-lg);
+    background: var(--itd-media-scrim);
+    backdrop-filter: blur(8px);
+}
+
+.itd-scene-tool {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 30px;
+    height: 30px;
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--itd-media-ink);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--itd-motion);
+}
+
+.itd-scene-tool:hover:not(:disabled),
+.itd-scene-tool[aria-pressed="true"] {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.itd-scene-tool:disabled {
+    cursor: progress;
+    opacity: 0.6;
+}
+
+.itd-scene-tool-gap {
+    width: 1px;
+    height: 18px;
+    margin: 0 2px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.itd-scene-groups {
+    position: absolute;
+    bottom: var(--space-3);
+    left: var(--space-3);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    max-width: calc(100% - 200px);
+}
+
+.itd-scene-group {
+    padding: 3px var(--space-2);
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--itd-media-scrim);
+    color: var(--itd-media-ink);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+
+.itd-scene-group[aria-pressed="false"] {
+    opacity: 0.5;
+    text-decoration: line-through;
+}
+
+.itd-scene-hint {
+    position: absolute;
+    right: var(--space-3);
+    bottom: var(--space-3);
+    margin: 0;
+    padding: 3px var(--space-2);
+    border-radius: var(--r-md);
+    background: var(--itd-media-scrim);
+    color: var(--itd-media-ink);
+    font-size: var(--fs-caption);
+    pointer-events: none;
+}
+
+.itd-scene-label {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: var(--r-md);
+    background: rgba(8, 8, 10, 0.62);
+    color: #ffffff;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.itd-scene-empty {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    color: var(--itd-ink-3);
+    text-align: center;
+}
+
+.itd-scene-empty strong {
+    color: var(--itd-ink);
+    font-size: var(--fs-ui);
+}
+
+.itd-scene-empty span {
+    max-width: 420px;
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+.itd-scene-empty.is-error strong {
+    color: var(--status-error);
+}
+
+.itd-scene-meta {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr);
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.itd-scene-meta-copy {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.itd-scene-meta-copy strong {
+    overflow: hidden;
+    color: var(--itd-ink);
+    font-size: var(--fs-ui);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itd-scene-meta-copy span {
+    color: var(--itd-ink-3);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
+.itd-scene-meta-copy .itd-scene-warning {
+    color: var(--product-accent-orange);
+}
+
+.itd-scene-edit {
+    display: flex;
+    gap: var(--space-2);
+}
+
+.itd-scene-list {
+    display: flex;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0 0 2px;
+    overflow-x: auto;
+    list-style: none;
+}
+
+.itd-scene-list li {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.itd-scene-card {
+    display: grid;
+    gap: 2px;
+    width: 180px;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--itd-line);
+    border-radius: var(--r-lg);
+    background: var(--itd-panel);
+    color: var(--itd-ink);
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color var(--itd-motion),
+        background var(--itd-motion);
+}
+
+.itd-scene-card:hover {
+    background: var(--itd-hover);
+}
+
+.itd-scene-card.is-active {
+    border-color: var(--control-selected-border);
+    background: var(--control-selected-bg);
+}
+
+.itd-scene-card strong {
+    overflow: hidden;
+    padding-right: var(--space-4);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itd-scene-card span,
+.itd-scene-card small {
+    color: var(--itd-ink-3);
+    font-size: 12px;
+}
+
+.itd-scene-card-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    padding: 4px;
+    border: 0;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--itd-ink-3);
+    cursor: pointer;
+}
+
+.itd-scene-card-remove:hover {
+    background: var(--itd-hover);
+    color: var(--status-error);
+}
+
+@media (max-width: 900px) {
+    .itd-scene-stage {
+        min-height: 360px;
+    }
+
+    .itd-scene-meta {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

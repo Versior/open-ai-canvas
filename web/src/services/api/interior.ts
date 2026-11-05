@@ -1,3 +1,4 @@
+import type { InteriorSceneScope, ScenePlan } from "@/lib/interior/scene-3d";
 import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
@@ -114,7 +115,44 @@ export type InteriorRound = {
     references: InteriorImageRef[];
     items: InteriorRoundItem[];
 };
-export type InteriorProjectDocument = { version: 1; rounds: InteriorRound[] };
+/**
+ * 一个 3D 模型。生成分几步：先请求一次规划（stage=plan），再按规划分几部分并行搭（stage=parts），拼好后把场景 JSON
+ * 存成资源（sceneFile）；一句话修改是 stage=edit，在 parentId 那一版上应用改动。项目文档里只存进度和场景文件的资源 ID。
+ */
+export type InteriorSceneItem = {
+    id: string;
+    createdAt: string;
+    status: InteriorRoundItemStatus;
+    scope: InteriorSceneScope;
+    description: string;
+    roomKey?: string;
+    roomName?: string;
+    styleKey?: string;
+    styleName?: string;
+    /** 风格的简介，后面几步的提示词要用。 */
+    styleHint?: string;
+    model: string;
+    reference?: InteriorImageRef;
+    parentId?: string;
+    instruction?: string;
+    stage?: "plan" | "parts" | "edit";
+    /** 规划或修改那一步的任务。 */
+    taskId?: string;
+    plan?: ScenePlan;
+    /** 各部分的任务；没提交成功的部分是 null。 */
+    partTaskIds?: (string | null)[];
+    error?: string;
+    sceneFile?: { resourceId: string };
+    title?: string;
+    summary?: string;
+    objectCount?: number;
+    /** 没搭出来、被跳过的部分。 */
+    failedParts?: string[];
+    /** 读不懂、被去掉的物体数。 */
+    dropped?: number;
+};
+
+export type InteriorProjectDocument = { version: 1; rounds: InteriorRound[]; scenes?: InteriorSceneItem[] };
 
 export type InteriorProjectSummary = { id: string; name: string; kind: InteriorProjectKind; revision: number; createdAt: string; updatedAt: string };
 export type InteriorProject = InteriorProjectSummary & { document: InteriorProjectDocument };

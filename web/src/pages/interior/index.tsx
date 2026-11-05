@@ -13,11 +13,13 @@ import { useUserStore } from "@/stores/use-user-store";
 import { InteriorBoard, InteriorViewer, type InteriorOutputTarget } from "./interior-board";
 import { InteriorComposer, interiorCountLimit, interiorDraftProblem, uploadInteriorImage, visibleInteriorModes, type InteriorDraft, type InteriorUpload } from "./interior-composer";
 import { interiorDownloadName, interiorImageModelOptions, interiorInitialModel, interiorModelRef, newInteriorId } from "./interior-models";
+import { InteriorSceneStudio } from "./interior-scene-studio";
 import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
 import "./interior.css";
 
 const SURFACE_KEY = "interior:surface";
+const WORKSPACE_KEY = "interior:workspace";
 const TEXT_EDIT_MODE = "text-edit";
 const DOWNLOAD_GAP_MS = 400;
 const SAVE_LABEL: Record<InteriorSaveState, string> = { saved: "已保存", saving: "保存中…", error: "保存失败，点击重试" };
@@ -56,6 +58,13 @@ function delay(ms: number) {
 
 type ProjectDialog = { mode: "create" | "rename"; name: string; kind: InteriorProjectKind } | null;
 
+/** 效果图（生图）和 3D 模型（文本模型搭三维场景）共用项目，页面上切换。 */
+type InteriorWorkspace = "images" | "scene";
+
+function initialWorkspace(): InteriorWorkspace {
+    return window.localStorage.getItem(WORKSPACE_KEY) === "scene" ? "scene" : "images";
+}
+
 /** 室内设计：房间照片、毛坯、线稿出装修效果图；快速出图给业主，专业模式给设计师和装企。 */
 export default function InteriorPage() {
     const { message, modal } = App.useApp();
@@ -71,6 +80,7 @@ export default function InteriorPage() {
     const [dialog, setDialog] = useState<ProjectDialog>(null);
     const [dialogBusy, setDialogBusy] = useState(false);
     const [downloadingRound, setDownloadingRound] = useState("");
+    const [workspace, setWorkspace] = useState<InteriorWorkspace>(initialWorkspace);
     // 本地预览用的 blob 地址，离开页面时统一释放。
     const previewUrls = useRef(new Set<string>());
 
@@ -175,7 +185,7 @@ export default function InteriorPage() {
     // Ctrl+V 粘贴图片：没有原图时填原图；已有原图且出图方式要参考图时填参考图。
     const pasteRef = useRef<(file: File) => boolean>(() => false);
     pasteRef.current = (file) => {
-        if (busy || !mode) return false;
+        if (busy || !mode || workspace !== "images") return false;
         const needsReference = mode.slots.some((slot) => slot.key === "reference") && !draft.references.length;
         if (draft.source && needsReference) pickReference(file);
         else pickSource(file);
@@ -423,8 +433,131 @@ export default function InteriorPage() {
         );
     }
 
+    const changeWorkspace = (next: InteriorWorkspace) => {
+        setWorkspace(next);
+        window.localStorage.setItem(WORKSPACE_KEY, next);
+    };
+    const projectBar = (
+        <div className="itd-project-bar">
+            <Select
+                className="itd-project-select"
+                value={current?.id}
+                placeholder={projects.projects?.length ? "选择项目" : "第一次出图时自动新建项目"}
+                options={(projects.projects || []).map((item) => ({ value: item.id, label: `${item.kind === "client" ? "客户 · " : ""}${item.name}` }))}
+                onChange={(id: string) => openProject(id)}
+                loading={projects.projectLoading}
+                disabled={busy}
+                aria-label="当前项目"
+            />
+            <Tooltip title="新建项目">
+                <button type="button" className="itd-icon-button" aria-label="新建项目" disabled={busy} onClick={() => setDialog({ mode: "create", name: "", kind: surface === "pro" ? "client" : "home" })}>
+                    <FolderPlus className="size-4" aria-hidden />
+                </button>
+            </Tooltip>
+            {current ? (
+                <>
+                    <Tooltip title="重命名">
+                        <button type="button" className="itd-icon-button" aria-label="重命名项目" onClick={() => setDialog({ mode: "rename", name: current.name, kind: current.kind })}>
+                            <PencilLine className="size-4" aria-hidden />
+                        </button>
+                    </Tooltip>
+                    <Tooltip title="删除项目">
+                        <button type="button" className="itd-icon-button" aria-label="删除项目" disabled={busy} onClick={deleteProject}>
+                            <Trash2 className="size-4" aria-hidden />
+                        </button>
+                    </Tooltip>
+                    {projects.saveState === "error" ? (
+                        <Tooltip title={projects.saveError}>
+                            <button type="button" className="itd-save is-error" onClick={projects.retrySave}>
+                                {SAVE_LABEL.error}
+                            </button>
+                        </Tooltip>
+                    ) : (
+                        <span className="itd-save" role="status">
+                            {SAVE_LABEL[projects.saveState]}
+                        </span>
+                    )}
+                </>
+            ) : null}
+        </div>
+    );
+    const workspaceSwitch = (
+        <SegmentedControl<InteriorWorkspace>
+            size="sm"
+            ariaLabel="出图还是 3D 模型"
+            value={workspace}
+            onChange={changeWorkspace}
+            disabled={busy}
+            options={[
+                { value: "images", label: "效果图" },
+                { value: "scene", label: "3D 模型" },
+            ]}
+        />
+    );
+    // 快速出图 / 专业模式只管效果图；3D 模型不分交互模式。
+    const surfaceSwitch =
+        catalog.settings.allowSurfaceSwitch && workspace === "images" ? (
+            <SegmentedControl<InteriorSurface>
+                size="sm"
+                ariaLabel="交互模式"
+                value={surface}
+                onChange={changeSurface}
+                disabled={busy}
+                options={[
+                    { value: "quick", label: "快速出图" },
+                    { value: "pro", label: "专业模式" },
+                ]}
+            />
+        ) : null;
+    const boardHeader = (
+        <header className="itd-board-head">
+            {projectBar}
+            <div className="itd-board-switches">
+                {workspaceSwitch}
+                {surfaceSwitch}
+            </div>
+        </header>
+    );
+
+    const projectDialog = (
+        <AppModal
+            open={Boolean(dialog)}
+            title={dialog?.mode === "rename" ? "重命名项目" : "新建项目"}
+            okText={dialog?.mode === "rename" ? "保存" : "新建"}
+            cancelText="取消"
+            confirmLoading={dialogBusy}
+            onOk={() => void submitDialog()}
+            onCancel={() => setDialog(null)}
+        >
+            {dialog ? (
+                <Form layout="vertical" onFinish={() => void submitDialog()}>
+                    <Form.Item label="项目名称" required>
+                        <Input autoFocus maxLength={120} value={dialog.name} placeholder={dialog.kind === "client" ? "例如：张女士 · 滨江花园 3-2-1801" : "例如：我的新家"} onChange={(event) => setDialog({ ...dialog, name: event.target.value })} />
+                    </Form.Item>
+                    {dialog.mode === "create" ? (
+                        <Form.Item label="项目类型">
+                            <Radio.Group value={dialog.kind} onChange={(event) => setDialog({ ...dialog, kind: event.target.value as InteriorProjectKind })}>
+                                <Radio value="home">我的房子</Radio>
+                                <Radio value="client">客户方案</Radio>
+                            </Radio.Group>
+                        </Form.Item>
+                    ) : null}
+                </Form>
+            ) : null}
+        </AppModal>
+    );
+
+    if (workspace === "scene") {
+        return (
+            <WorkspacePage scroll={false} fluid className="itd-page">
+                <InteriorSceneStudio catalog={catalog} config={config} project={current} header={boardHeader} ensureProject={ensureProject} update={projects.update} removeScene={projects.removeScene} />
+                {projectDialog}
+            </WorkspacePage>
+        );
+    }
+
     return (
-        <WorkspacePage scroll={false} className="itd-page">
+        <WorkspacePage scroll={false} fluid className="itd-page">
             <div className="itd-shell">
                 <InteriorComposer
                     catalog={catalog}
@@ -440,63 +573,7 @@ export default function InteriorPage() {
                     onSubmit={() => void submit()}
                 />
                 <section className="itd-board" aria-label="出图记录">
-                    <header className="itd-board-head">
-                        <div className="itd-project-bar">
-                            <Select
-                                className="itd-project-select"
-                                value={current?.id}
-                                placeholder={projects.projects?.length ? "选择项目" : "第一次出图时自动新建项目"}
-                                options={(projects.projects || []).map((item) => ({ value: item.id, label: `${item.kind === "client" ? "客户 · " : ""}${item.name}` }))}
-                                onChange={(id: string) => openProject(id)}
-                                loading={projects.projectLoading}
-                                disabled={busy}
-                                aria-label="当前项目"
-                            />
-                            <Tooltip title="新建项目">
-                                <button type="button" className="itd-icon-button" aria-label="新建项目" disabled={busy} onClick={() => setDialog({ mode: "create", name: "", kind: surface === "pro" ? "client" : "home" })}>
-                                    <FolderPlus className="size-4" aria-hidden />
-                                </button>
-                            </Tooltip>
-                            {current ? (
-                                <>
-                                    <Tooltip title="重命名">
-                                        <button type="button" className="itd-icon-button" aria-label="重命名项目" onClick={() => setDialog({ mode: "rename", name: current.name, kind: current.kind })}>
-                                            <PencilLine className="size-4" aria-hidden />
-                                        </button>
-                                    </Tooltip>
-                                    <Tooltip title="删除项目">
-                                        <button type="button" className="itd-icon-button" aria-label="删除项目" disabled={busy} onClick={deleteProject}>
-                                            <Trash2 className="size-4" aria-hidden />
-                                        </button>
-                                    </Tooltip>
-                                    {projects.saveState === "error" ? (
-                                        <Tooltip title={projects.saveError}>
-                                            <button type="button" className="itd-save is-error" onClick={projects.retrySave}>
-                                                {SAVE_LABEL.error}
-                                            </button>
-                                        </Tooltip>
-                                    ) : (
-                                        <span className="itd-save" role="status">
-                                            {SAVE_LABEL[projects.saveState]}
-                                        </span>
-                                    )}
-                                </>
-                            ) : null}
-                        </div>
-                        {catalog.settings.allowSurfaceSwitch ? (
-                            <SegmentedControl<InteriorSurface>
-                                size="sm"
-                                ariaLabel="交互模式"
-                                value={surface}
-                                onChange={changeSurface}
-                                disabled={busy}
-                                options={[
-                                    { value: "quick", label: "快速出图" },
-                                    { value: "pro", label: "专业模式" },
-                                ]}
-                            />
-                        ) : null}
-                    </header>
+                    {boardHeader}
                     <div className="itd-board-scroll thin-scrollbar">
                         {projects.listError ? <WorkspaceErrorState compact title="项目列表读取失败" description={projects.listError} onRetry={() => void projects.reloadList()} /> : null}
                         {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError} onRetry={() => (current ? openProject(current.id) : void projects.reloadList())} /> : null}
@@ -521,31 +598,7 @@ export default function InteriorPage() {
                 </section>
             </div>
             <InteriorViewer target={viewing} onClose={() => setViewing(null)} onDownload={download} onContinue={continueFrom} />
-            <AppModal
-                open={Boolean(dialog)}
-                title={dialog?.mode === "rename" ? "重命名项目" : "新建项目"}
-                okText={dialog?.mode === "rename" ? "保存" : "新建"}
-                cancelText="取消"
-                confirmLoading={dialogBusy}
-                onOk={() => void submitDialog()}
-                onCancel={() => setDialog(null)}
-            >
-                {dialog ? (
-                    <Form layout="vertical" onFinish={() => void submitDialog()}>
-                        <Form.Item label="项目名称" required>
-                            <Input autoFocus maxLength={120} value={dialog.name} placeholder={dialog.kind === "client" ? "例如：张女士 · 滨江花园 3-2-1801" : "例如：我的新家"} onChange={(event) => setDialog({ ...dialog, name: event.target.value })} />
-                        </Form.Item>
-                        {dialog.mode === "create" ? (
-                            <Form.Item label="项目类型">
-                                <Radio.Group value={dialog.kind} onChange={(event) => setDialog({ ...dialog, kind: event.target.value as InteriorProjectKind })}>
-                                    <Radio value="home">我的房子</Radio>
-                                    <Radio value="client">客户方案</Radio>
-                                </Radio.Group>
-                            </Form.Item>
-                        ) : null}
-                    </Form>
-                ) : null}
-            </AppModal>
+            {projectDialog}
         </WorkspacePage>
     );
 }

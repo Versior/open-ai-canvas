@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 import { resourceFileUrl } from "@/services/api/resources";
-import type { InteriorMode, InteriorModelRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem } from "@/services/api/interior";
+import type { InteriorMode, InteriorModelRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem, InteriorSceneItem } from "@/services/api/interior";
 
 /**
  * 模型选项值转成服务端认可的模型引用。室内设计只接受系统渠道或前台逻辑模型，
@@ -70,13 +70,17 @@ export function emptyInteriorDocument(): InteriorProjectDocument {
 export function normalizeInteriorDocument(value: unknown): InteriorProjectDocument {
     if (!value || typeof value !== "object") return emptyInteriorDocument();
     const rounds = (value as { rounds?: unknown }).rounds;
-    if (!Array.isArray(rounds)) return emptyInteriorDocument();
-    return {
+    const scenes = (value as { scenes?: unknown }).scenes;
+    const document: InteriorProjectDocument = {
         version: 1,
-        rounds: rounds.filter((round): round is InteriorRound =>
-            Boolean(round && typeof round === "object" && typeof (round as InteriorRound).id === "string" && (round as InteriorRound).source?.resourceId && Array.isArray((round as InteriorRound).items)),
-        ),
+        rounds: Array.isArray(rounds)
+            ? rounds.filter((round): round is InteriorRound => Boolean(round && typeof round === "object" && typeof (round as InteriorRound).id === "string" && (round as InteriorRound).source?.resourceId && Array.isArray((round as InteriorRound).items)))
+            : [],
     };
+    // 3D 模型：只认有 id 的；生成好的必须带场景文件，没有时按失败显示，不丢记录。
+    const sceneItems = Array.isArray(scenes) ? scenes.filter((item): item is InteriorSceneItem => Boolean(item && typeof item === "object" && typeof (item as InteriorSceneItem).id === "string")) : [];
+    if (sceneItems.length) document.scenes = sceneItems.map((item) => (item.status === "succeeded" && !item.sceneFile?.resourceId ? { ...item, status: "failed", error: "这个 3D 模型的数据读不出来" } : item));
+    return document;
 }
 
 export function newInteriorId() {
@@ -95,13 +99,24 @@ export function patchInteriorItem(document: InteriorProjectDocument, roundId: st
  * 保存冲突时合并两边：以服务端为底，本地有而服务端没有的轮次补上，同一轮次以本地为准。
  * 只有本页会写室内项目，冲突多半来自另一个窗口新增或删除了轮次。
  */
-export function mergeInteriorDocuments(server: InteriorProjectDocument, local: InteriorProjectDocument, deletedRoundIds: ReadonlySet<string>): InteriorProjectDocument {
-    const localById = new Map(local.rounds.map((round) => [round.id, round]));
-    const merged = server.rounds.filter((round) => !deletedRoundIds.has(round.id)).map((round) => localById.get(round.id) || round);
-    const known = new Set(merged.map((round) => round.id));
-    for (const round of local.rounds) if (!known.has(round.id)) merged.push(round);
+export function mergeInteriorDocuments(server: InteriorProjectDocument, local: InteriorProjectDocument, deletedIds: ReadonlySet<string>): InteriorProjectDocument {
+    const rounds = mergeById(server.rounds, local.rounds, deletedIds);
+    const scenes = mergeById(server.scenes || [], local.scenes || [], deletedIds);
+    return scenes.length ? { version: 1, rounds, scenes } : { version: 1, rounds };
+}
+
+/** 以服务端为底按 id 合并：本地删掉的去掉，同一条以本地为准，本地新增的补上，按时间倒序。 */
+function mergeById<T extends { id: string; createdAt: string }>(server: T[], local: T[], deletedIds: ReadonlySet<string>) {
+    const localById = new Map(local.map((item) => [item.id, item]));
+    const merged = server.filter((item) => !deletedIds.has(item.id)).map((item) => localById.get(item.id) || item);
+    const known = new Set(merged.map((item) => item.id));
+    for (const item of local) if (!known.has(item.id)) merged.push(item);
     merged.sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
-    return { version: 1, rounds: merged };
+    return merged;
+}
+
+export function patchInteriorScene(document: InteriorProjectDocument, sceneId: string, patch: Partial<InteriorSceneItem>): InteriorProjectDocument {
+    return { ...document, scenes: (document.scenes || []).map((item) => (item.id === sceneId ? { ...item, ...patch } : item)) };
 }
 
 export function interiorDownloadName(round: InteriorRound, item: InteriorRoundItem, index: number) {

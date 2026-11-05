@@ -80,7 +80,7 @@ export function interiorDraftProblem(draft: InteriorDraft, mode: InteriorMode | 
     return "";
 }
 
-function groupPresets(items: InteriorPreset[]) {
+export function groupPresets(items: InteriorPreset[]) {
     const groups = new Map<string, InteriorPreset[]>();
     for (const item of items) {
         const key = item.groupName || "其他";
@@ -89,7 +89,7 @@ function groupPresets(items: InteriorPreset[]) {
     return [...groups.entries()];
 }
 
-function UploadSlot({ label, value, onPick, onClear, disabled }: { label: string; value: InteriorUpload | null; onPick: (file: File) => void; onClear: () => void; disabled?: boolean }) {
+export function UploadSlot({ label, value, onPick, onClear, disabled }: { label: string; value: InteriorUpload | null; onPick: (file: File) => void; onClear: () => void; disabled?: boolean }) {
     const input = useRef<HTMLInputElement>(null);
     const [dragging, setDragging] = useState(false);
     const drop = (event: DragEvent<HTMLElement>) => {
