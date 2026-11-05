@@ -282,7 +282,7 @@ type studioModelUpload struct {
 	thumbH   int
 }
 
-// readStudioModelUpload 读入并核对一张素材图，同时生成不超过 512 像素的 JPEG 缩略图供列表浏览。
+// readStudioModelUpload 读入后台上传的一张素材图，核对与缩略图交给 decodeStudioModelImage。
 func readStudioModelUpload(file *multipart.FileHeader) (*studioModelUpload, error) {
 	if file.Size <= 0 || file.Size > StudioModelImportMaxBytes {
 		return nil, BadAuthRequest("图片须在 12 MiB 以内")
@@ -296,7 +296,12 @@ func readStudioModelUpload(file *multipart.FileHeader) (*studioModelUpload, erro
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > StudioModelImportMaxBytes {
+	return decodeStudioModelImage(data)
+}
+
+// decodeStudioModelImage 核对一张素材图（格式、大小、像素），同时生成不超过 512 像素的 JPEG 缩略图供列表浏览。
+func decodeStudioModelImage(data []byte) (*studioModelUpload, error) {
+	if len(data) == 0 || len(data) > StudioModelImportMaxBytes {
 		return nil, BadAuthRequest("图片须在 12 MiB 以内")
 	}
 	mimeType := http.DetectContentType(data)
@@ -332,10 +337,47 @@ func readStudioModelUpload(file *multipart.FileHeader) (*studioModelUpload, erro
 
 // ImportStudioModel 新增一条素材；人脸和姿势必须带图，模特样式可以只有文字。
 func (s *Service) ImportStudioModel(actor *model.User, input AdminStudioModelInput, file *multipart.FileHeader) (*StudioModelView, error) {
+	if file == nil {
+		return s.importStudioModel(actor, input, "", nil)
+	}
+	return s.importStudioModel(actor, input, file.Filename, func() (*studioModelUpload, error) { return readStudioModelUpload(file) })
+}
+
+// ImportStudioModelImage 给后台批量导入工具用：图片以字节传入，校验、缩略图、存储和审计与后台上传完全一致。
+func (s *Service) ImportStudioModelImage(actor *model.User, input AdminStudioModelInput, fileName string, data []byte) (*StudioModelView, error) {
+	return s.importStudioModel(actor, input, fileName, func() (*studioModelUpload, error) { return decodeStudioModelImage(data) })
+}
+
+// AdminStudioModelKeys 列出某类素材已有的「分类 + 名称」，批量导入工具据此跳过已经导入过的条目。
+func (s *Service) AdminStudioModelKeys(actor *model.User, kind string) (map[string]bool, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
-	normalized, err := normalizeStudioModelInput(input, file != nil)
+	keys := map[string]bool{}
+	for offset := 0; ; offset += 500 {
+		items, _, err := s.repo.StudioModelAssets(repository.StudioModelQuery{Kind: kind, Offset: offset, Limit: 500})
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			keys[StudioModelKey(item.Category, item.Name)] = true
+		}
+		if len(items) < 500 {
+			return keys, nil
+		}
+	}
+}
+
+// StudioModelKey 是导入去重用的键：同一类素材里分类和名称都相同视为同一条。
+func StudioModelKey(category, name string) string {
+	return strings.TrimSpace(category) + "\x00" + strings.TrimSpace(name)
+}
+
+func (s *Service) importStudioModel(actor *model.User, input AdminStudioModelInput, fileName string, load func() (*studioModelUpload, error)) (*StudioModelView, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	normalized, err := normalizeStudioModelInput(input, load != nil)
 	if err != nil {
 		return nil, err
 	}
@@ -345,12 +387,12 @@ func (s *Service) ImportStudioModel(actor *model.User, input AdminStudioModelInp
 	}
 	tags, _ := json.Marshal(normalized.Tags)
 	item.TagsJSON = string(tags)
-	if file != nil {
-		upload, err := readStudioModelUpload(file)
+	if load != nil {
+		upload, err := load()
 		if err != nil {
 			return nil, err
 		}
-		stem := strings.TrimSuffix(filepath.Base(file.Filename), filepath.Ext(file.Filename))
+		stem := strings.TrimSuffix(filepath.Base(fileName), filepath.Ext(fileName))
 		original, _, err := s.storeResource(actor.ID, studioModelResourceKind, stem+studioModelMimes[upload.mimeType], upload.mimeType, int64(len(upload.data)), upload.width, upload.height, 0, bytes.NewReader(upload.data), nil, true)
 		if err != nil {
 			return nil, err
