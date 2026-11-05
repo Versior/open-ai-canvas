@@ -295,8 +295,10 @@ export const router = createBrowserRouter([
                     { path: "ecommerce-knowledge", element: <Navigate to="/admin/ecommerce/library" replace /> },
                     { path: "ecommerce-skills", element: <Navigate to="/admin/ecommerce/library/skills" replace /> },
                     { path: "ecommerce-categories", element: <Navigate to="/admin/ecommerce/library/categories" replace /> },
-                    // 室内设计配置不受功能开关限制，方便开放前先配好模式、风格和默认模型。
-                    { path: "interior", element: <Navigate to="/admin/interior/modes" replace /> },
+                    // 室内设计后台不受功能开关限制，方便开放前先配好模式、风格和默认模型。
+                    { path: "interior", element: <Navigate to="/admin/interior/overview" replace /> },
+                    { path: "interior/overview", element: <InteriorAdminPage /> },
+                    { path: "interior/records", element: <InteriorAdminPage /> },
                     { path: "interior/modes", element: <InteriorAdminPage /> },
                     { path: "interior/styles", element: <InteriorAdminPage /> },
                     { path: "interior/rooms", element: <InteriorAdminPage /> },

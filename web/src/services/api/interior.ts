@@ -1,4 +1,4 @@
-import { http } from "@/services/api/request";
+import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
 export type InteriorAudience = "quick" | "pro" | "both";
@@ -213,6 +213,70 @@ export function getAdminInteriorSettings() {
 
 export function saveAdminInteriorSettings(input: InteriorSettings) {
     return http.put<InteriorSettings>("/admin/interior/settings", input);
+}
+
+/** 后台出图统计和记录里的用户；用户已删除时只有 id。 */
+export type InteriorAdminUser = { id: string; username?: string; displayName?: string };
+
+/** 一个出图方式、风格、空间或模型在统计窗口里的出图次数，failed 是其中失败的。 */
+export type InteriorAdminCount = { key: string; name: string; total: number; failed: number };
+
+/** 近 30 天（UTC 自然日）的室内设计出图统计；一个风格一次算一个任务，超过 5000 条只算最新的并标 truncated。 */
+export type AdminInteriorOverview = {
+    windowDays: number;
+    truncated: boolean;
+    generations: { total: number; queued: number; running: number; succeeded: number; failed: number; cancelled: number; users: number; last7Days: number; today: number; quick: number; pro: number };
+    projects: { total: number; home: number; client: number; users: number };
+    config: { siteDefaultModel: boolean; enabledModes: number; modesWithoutModel: string[] };
+    daily: { date: string; total: number; failed: number }[];
+    modes: InteriorAdminCount[];
+    styles: InteriorAdminCount[];
+    rooms: InteriorAdminCount[];
+    models: InteriorAdminCount[];
+    recentFailures: { id: string; user: InteriorAdminUser; modeName?: string; error: string; createdAt: string }[];
+};
+
+/** 后台出图记录的一条；图片都是资源 ID，用管理员资源接口读。 */
+export type AdminInteriorGeneration = {
+    id: string;
+    user: InteriorAdminUser;
+    status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+    stage?: string;
+    progress: number;
+    error?: string;
+    modeKey?: string;
+    modeName?: string;
+    surface?: "quick" | "pro";
+    roomName?: string;
+    styleName?: string;
+    model?: string;
+    sourceResourceId?: string;
+    referenceResourceIds: string[];
+    outputResourceIds: string[];
+    projectId?: string;
+    createdAt: string;
+    completedAt?: string;
+};
+
+export type AdminInteriorGenerationDetail = AdminInteriorGeneration & { prompt: string; params: Record<string, string>; projectName?: string };
+
+export type AdminInteriorGenerationPage = { records: AdminInteriorGeneration[]; total: number; page: number; pageSize: number };
+
+export type AdminInteriorGenerationQuery = { status?: string; mode?: string; keyword?: string; page?: number; pageSize?: number };
+
+export function getAdminInteriorOverview(signal?: AbortSignal) {
+    return http.get<AdminInteriorOverview>("/admin/interior/overview", { signal });
+}
+
+export function listAdminInteriorGenerations(query: AdminInteriorGenerationQuery, signal?: AbortSignal) {
+    return http.get<AdminInteriorGenerationPage>("/admin/interior/generations", {
+        params: compactApiParams({ ...query, status: query.status === "all" ? undefined : query.status, mode: query.mode === "all" ? undefined : query.mode }),
+        signal,
+    });
+}
+
+export function getAdminInteriorGeneration(id: string, signal?: AbortSignal) {
+    return http.get<AdminInteriorGenerationDetail>(`/admin/interior/generations/${encodeURIComponent(id)}`, { signal });
 }
 
 /** 后台列表返回的模式转回保存请求，保留服务端版本号做并发校验。 */

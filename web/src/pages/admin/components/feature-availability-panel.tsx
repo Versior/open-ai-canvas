@@ -169,7 +169,7 @@ const featureGroups: FeatureGroup[] = [
                 location: "侧栏 · 室内设计",
                 description: "房间照片、毛坯、线稿出装修效果图。关闭后隐藏入口且不能出图，已保存的项目和效果图保留。",
                 icon: <Sofa className="size-4" aria-hidden="true" />,
-                link: { to: "/admin/interior", label: "室内设计配置" },
+                link: { to: "/admin/interior", label: "室内设计管理" },
             },
         ],
     },

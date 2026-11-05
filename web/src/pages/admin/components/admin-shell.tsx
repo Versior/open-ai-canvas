@@ -142,7 +142,7 @@ const adminNavigation: AdminNavigationGroup[] = [
     {
         key: "interior",
         label: "室内设计",
-        items: [{ path: "/admin/interior", label: "室内设计配置", shortLabel: "室内", icon: <Sofa className="size-4" /> }],
+        items: [{ path: "/admin/interior", label: "室内设计管理", shortLabel: "室内", icon: <Sofa className="size-4" /> }],
     },
     {
         key: "settings",

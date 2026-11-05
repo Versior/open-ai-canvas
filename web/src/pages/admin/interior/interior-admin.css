@@ -70,3 +70,385 @@ textarea.itd-admin-code {
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* 概览和出图记录：卡片、统计、分布条和原图/效果图缩略，颜色用后台 token。 */
+
+.itd-admin-overview {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.itd-admin-stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.itd-admin-footnote {
+    margin: -4px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.itd-admin-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 12px;
+}
+
+.itd-admin-columns.is-three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.itd-admin-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+}
+
+.itd-admin-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.itd-admin-card-head h2 {
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.itd-admin-card-head p {
+    margin: 4px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.itd-admin-chart {
+    height: 220px;
+    color: var(--admin-text-muted);
+}
+
+.itd-admin-empty {
+    display: flex;
+    min-height: 96px;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--admin-text-muted);
+    font-size: 13px;
+}
+
+.itd-admin-counts {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+/* 每行各自成栅格，名称和次数列给定宽，几行的比例条才能对齐。 */
+.itd-admin-counts li {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr) 112px;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+}
+
+.itd-admin-count-name {
+    overflow: hidden;
+    color: var(--admin-text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itd-admin-count-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: var(--admin-layer-2);
+}
+
+.itd-admin-count-bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--admin-chart-primary);
+}
+
+.itd-admin-count-numbers {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.itd-admin-failures {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.itd-admin-failures li + li {
+    border-top: 1px solid var(--admin-divider);
+}
+
+.itd-admin-failure {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 96px auto minmax(80px, 160px) minmax(0, 1fr) 16px;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 4px;
+    border: 0;
+    background: transparent;
+    color: var(--admin-text);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.itd-admin-failure:hover {
+    background: var(--admin-nav-hover);
+}
+
+.itd-admin-failure:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: -2px;
+}
+
+.itd-admin-load-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+    color: var(--admin-status-error);
+    font-size: 13px;
+}
+
+.itd-admin-records-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.itd-admin-records-toolbar .ant-select {
+    min-width: 140px;
+}
+
+.itd-admin-thumb {
+    display: block;
+    border-radius: var(--admin-radius-sm);
+    background: var(--admin-layer-2);
+    object-fit: contain;
+}
+
+.itd-admin-thumb.is-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--admin-text-placeholder);
+    font-size: 12px;
+}
+
+.itd-admin-thumb.is-empty svg {
+    width: 16px;
+    height: 16px;
+}
+
+.itd-admin-pair {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.itd-admin-pair-image {
+    width: 88px;
+    height: 66px;
+    flex: 0 0 auto;
+}
+
+.itd-admin-pair-arrow {
+    color: var(--admin-text-placeholder);
+}
+
+.itd-admin-pair-more {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.itd-admin-cell {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.itd-admin-cell strong {
+    overflow: hidden;
+    color: var(--admin-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itd-admin-cell small {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.itd-admin-ellipsis {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.itd-admin-muted {
+    color: var(--admin-text-muted);
+}
+
+.itd-admin-error {
+    color: var(--admin-status-error);
+}
+
+.itd-admin-mono {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 12px;
+}
+
+.itd-admin-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.itd-admin-detail h3 {
+    margin: 0 0 8px;
+    color: var(--admin-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.itd-admin-detail-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.itd-admin-compare {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+}
+
+.itd-admin-compare figure {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+}
+
+.itd-admin-compare figcaption {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.itd-admin-compare-image {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+}
+
+.itd-admin-refs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.itd-admin-ref {
+    width: 120px;
+    height: 90px;
+}
+
+.itd-admin-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 16px;
+    margin: 0;
+}
+
+.itd-admin-facts div {
+    min-width: 0;
+}
+
+.itd-admin-facts dt {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.itd-admin-facts dd {
+    margin: 2px 0 0;
+    color: var(--admin-text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.itd-admin-prompt {
+    max-height: 320px;
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    border-radius: var(--admin-radius);
+    background: var(--admin-layer-2);
+    color: var(--admin-text);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+@media (max-width: 1100px) {
+    .itd-admin-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .itd-admin-columns,
+    .itd-admin-columns.is-three {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .itd-admin-stats,
+    .itd-admin-facts {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .itd-admin-failure {
+        grid-template-columns: minmax(0, 1fr) 16px;
+    }
+
+    .itd-admin-failure > :not(.itd-admin-error):not(svg) {
+        display: none;
+    }
+}
