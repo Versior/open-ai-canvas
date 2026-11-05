@@ -104,7 +104,7 @@ func (w *taskWorkerCoordinator) runSocialVideoImport(ctx context.Context, task *
 	defer os.RemoveAll(workDir)
 
 	outcome, err := s.downloadSocialVideoWithPool(ctx, socialVideoParseJob{
-		Platform: input.Platform, URL: targetURL, WorkDir: workDir, MaxBytes: maxBytes,
+		Platform: input.Platform, URL: targetURL, WorkDir: workDir, MaxBytes: maxBytes, MaxDurationSeconds: input.MaxDurationSeconds,
 		Progress: func(stage string, percent int) { _ = w.progress(task, stage, percent) },
 	})
 	if err != nil {

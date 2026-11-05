@@ -36,6 +36,9 @@ var (
 type SocialVideoImportRequest struct {
 	URL       string `json:"url"`
 	ProjectID string `json:"projectId"`
+	// MaxDurationSeconds 是这次导入能接受的最长秒数（1 到 180），不传按 180。视频复刻按后台的时长上限传，
+	// 解析接口给了时长时下载前就拦下，没给时下载后校验，超长的视频不存成资源。
+	MaxDurationSeconds int `json:"maxDurationSeconds"`
 }
 
 type socialVideoURL struct {
@@ -44,10 +47,23 @@ type socialVideoURL struct {
 }
 
 type socialVideoImportInput struct {
-	Version     int    `json:"version"`
-	URL         string `json:"url"`
-	Platform    string `json:"platform"`
-	Fingerprint string `json:"fingerprint"`
+	Version            int    `json:"version"`
+	URL                string `json:"url"`
+	Platform           string `json:"platform"`
+	MaxDurationSeconds int    `json:"maxDurationSeconds,omitempty"`
+	Fingerprint        string `json:"fingerprint"`
+}
+
+// socialVideoDurationLimit 把导入的时长上限收进 1 到 180 秒；没指定（0）时按 180。
+func socialVideoDurationLimit(seconds int) int {
+	if seconds <= 0 || seconds > socialVideoMaxDurationSeconds {
+		return socialVideoMaxDurationSeconds
+	}
+	return seconds
+}
+
+func socialVideoTooLongMessage(seconds int) string {
+	return "视频时长超过 " + videoReplicationDurationLabel(socialVideoDurationLimit(seconds))
 }
 
 type socialVideoProbe struct {
@@ -233,8 +249,13 @@ func socialVideoTaskID(userID, idempotencyKey string) string {
 	return "sv" + hex.EncodeToString(sum[:16])
 }
 
-func socialVideoFingerprint(normalizedURL, projectID string) string {
-	sum := sha256.Sum256([]byte(normalizedURL + "\x00" + strings.TrimSpace(projectID)))
+// socialVideoFingerprint 只在指定了时长上限时把它算进去，不指定的请求和加这个参数之前的指纹一致。
+func socialVideoFingerprint(normalizedURL, projectID string, maxDurationSeconds int) string {
+	value := normalizedURL + "\x00" + strings.TrimSpace(projectID)
+	if maxDurationSeconds > 0 {
+		value += "\x00" + strconv.Itoa(maxDurationSeconds)
+	}
+	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -259,6 +280,9 @@ func (s *Service) CreateSocialVideoImportTask(userID, idempotencyKey string, req
 	if err != nil {
 		return nil, err
 	}
+	if req.MaxDurationSeconds < 0 || req.MaxDurationSeconds > socialVideoMaxDurationSeconds {
+		return nil, BadAuthRequest(fmt.Sprintf("视频时长上限必须在 1 到 %d 秒之间", socialVideoMaxDurationSeconds))
+	}
 	validator := s.socialVideoURLValidator
 	if validator == nil {
 		validator = outbound.ValidateOutboundURL
@@ -272,7 +296,7 @@ func (s *Service) CreateSocialVideoImportTask(userID, idempotencyKey string, req
 	}
 
 	id := socialVideoTaskID(userID, idempotencyKey)
-	fingerprint := socialVideoFingerprint(parsed.URL, projectID)
+	fingerprint := socialVideoFingerprint(parsed.URL, projectID, req.MaxDurationSeconds)
 	if existing, lookupErr := s.repo.TaskForUser(userID, id); lookupErr == nil {
 		return socialVideoIdempotentReplay(existing, fingerprint)
 	} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
@@ -287,7 +311,7 @@ func (s *Service) CreateSocialVideoImportTask(userID, idempotencyKey string, req
 	if err != nil {
 		return nil, err
 	}
-	inputJSON, err := json.Marshal(socialVideoImportInput{Version: 1, URL: parsed.URL, Platform: parsed.Platform, Fingerprint: fingerprint})
+	inputJSON, err := json.Marshal(socialVideoImportInput{Version: 1, URL: parsed.URL, Platform: parsed.Platform, MaxDurationSeconds: req.MaxDurationSeconds, Fingerprint: fingerprint})
 	if err != nil {
 		return nil, err
 	}

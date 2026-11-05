@@ -182,13 +182,14 @@ func (s *Service) recordSocialVideoParseOutcome(api socialVideoParseAPI, platfor
 	}
 }
 
-// socialVideoParseJob 是一次「解析 + 下载 + 校验」。
+// socialVideoParseJob 是一次「解析 + 下载 + 校验」。MaxDurationSeconds 为 0 时按 180 秒。
 type socialVideoParseJob struct {
-	Platform string
-	URL      string
-	WorkDir  string
-	MaxBytes int64
-	Progress func(stage string, percent int)
+	Platform           string
+	URL                string
+	WorkDir            string
+	MaxBytes           int64
+	MaxDurationSeconds int
+	Progress           func(stage string, percent int)
 }
 
 type socialVideoParseOutcome struct {
@@ -247,8 +248,10 @@ func (s *Service) trySocialVideoParseAPI(ctx context.Context, api socialVideoPar
 	if err != nil {
 		return nil, err
 	}
-	if result.DurationMs > int64(socialVideoMaxDurationSeconds)*1000 {
-		return nil, &socialVideoContentError{Message: "视频时长超过 3 分钟"}
+	// 接口给了时长时下载前就拦下超长的视频；没给时下载后按 ffprobe 的结果再拦。
+	limitMs := int64(socialVideoDurationLimit(job.MaxDurationSeconds)) * 1000
+	if result.DurationMs > limitMs {
+		return nil, &socialVideoContentError{Message: socialVideoTooLongMessage(job.MaxDurationSeconds)}
 	}
 	if job.Progress != nil {
 		job.Progress("下载视频", 40)
@@ -271,9 +274,13 @@ func (s *Service) trySocialVideoParseAPI(ctx context.Context, api socialVideoPar
 	if err != nil {
 		_ = os.Remove(path)
 		if socialVideoProbeTooLong(probeRaw) {
-			return nil, &socialVideoContentError{Message: "视频时长超过 3 分钟"}
+			return nil, &socialVideoContentError{Message: socialVideoTooLongMessage(job.MaxDurationSeconds)}
 		}
 		return nil, parseStageError("probe", "接口给的文件不是有效视频")
+	}
+	if probe.DurationMs > limitMs {
+		_ = os.Remove(path)
+		return nil, &socialVideoContentError{Message: socialVideoTooLongMessage(job.MaxDurationSeconds)}
 	}
 	return &socialVideoParseOutcome{API: api, Result: result, Path: path, Size: size, Probe: probe}, nil
 }

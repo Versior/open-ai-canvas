@@ -365,6 +365,63 @@ func TestDownloadSocialVideoWithPoolStopsOnTooLongVideoWithoutPenalty(t *testing
 	}
 }
 
+// 视频复刻按后台的时长上限导入：接口给了时长时下载前就拦，没给时下载后按 ffprobe 拦，提示写的是这次的上限。
+func TestDownloadSocialVideoWithPoolHonorsTheRequestedDurationLimit(t *testing.T) {
+	media := socialVideoTestMP4(t) // 1 秒的测试视频
+	server, _ := newSocialVideoParseServer(t, media)
+	svc, _ := newSocialVideoImportTestService(t)
+	useLocalSocialVideoParseNetwork(svc)
+	seedSocialVideoParseAPIs(t, svc, socialVideoParseAPI{ID: "api-long", Name: "长视频接口", Platforms: []string{"kuaishou"}, Enabled: true, Method: "GET", URL: server.URL + "/long?url={url}", TimeoutSeconds: 5, Mapping: SocialVideoParseMapping{DurationPath: "data.duration", DurationUnit: "s"}})
+	var appErr *AppError
+	// 接口报 200 秒：上限 30 秒时下载前就拦下。
+	if _, err := svc.downloadSocialVideoWithPool(context.Background(), socialVideoParseJob{Platform: "kuaishou", URL: "https://v.kuaishou.com/AbCd12", WorkDir: t.TempDir(), MaxBytes: 10 << 20, MaxDurationSeconds: 30}); !errors.As(err, &appErr) || appErr.Message != "视频时长超过 30 秒" {
+		t.Fatalf("pre-download limit err = %v", err)
+	}
+	if socialVideoTooLongMessage(0) != "视频时长超过 3 分钟" || socialVideoTooLongMessage(90) != "视频时长超过 1 分 30 秒" {
+		t.Fatalf("messages = %q, %q", socialVideoTooLongMessage(0), socialVideoTooLongMessage(90))
+	}
+	if socialVideoDurationLimit(0) != 180 || socialVideoDurationLimit(500) != 180 || socialVideoDurationLimit(45) != 45 {
+		t.Fatal("duration limit is not clamped to 1-180 seconds")
+	}
+	// 接口没给时长：下载后按 ffprobe 读到的 1 秒判断，上限 1 秒放行。
+	seedSocialVideoParseAPIs(t, svc, socialVideoParseAPI{ID: "api-good", Name: "好接口", Platforms: []string{"kuaishou"}, Enabled: true, Method: "GET", URL: server.URL + "/good?url={url}", TimeoutSeconds: 5, Mapping: SocialVideoParseMapping{SuccessPath: "code", SuccessValues: "200"}})
+	if outcome, err := svc.downloadSocialVideoWithPool(context.Background(), socialVideoParseJob{Platform: "kuaishou", URL: "https://v.kuaishou.com/AbCd12", WorkDir: t.TempDir(), MaxBytes: 10 << 20, MaxDurationSeconds: 1}); err != nil || outcome.Probe.DurationMs <= 0 || outcome.Probe.DurationMs > 1000 {
+		t.Fatalf("1 second video with a 1 second limit = %+v, %v", outcome, err)
+	}
+}
+
+func TestSocialVideoImportValidatesTheDurationLimitAndFingerprintsIt(t *testing.T) {
+	svc, _ := newSocialVideoImportTestService(t)
+	useLocalSocialVideoParseNetwork(svc)
+	server, _ := newSocialVideoParseServer(t, []byte("unused"))
+	seedSocialVideoParseAPIs(t, svc, socialVideoParseAPI{ID: "api-good", Name: "好接口", Platforms: []string{"kuaishou"}, Enabled: true, Method: "GET", URL: server.URL + "/good?url={url}", TimeoutSeconds: 5})
+	var appErr *AppError
+	for _, seconds := range []int{-1, 181} {
+		if _, err := svc.CreateSocialVideoImportTask("usr-import", "duration-key-0001", SocialVideoImportRequest{URL: "https://v.kuaishou.com/AbCd12", MaxDurationSeconds: seconds}); !errors.As(err, &appErr) || appErr.Status != 400 {
+			t.Fatalf("maxDurationSeconds %d err = %v", seconds, err)
+		}
+	}
+	created, err := svc.CreateSocialVideoImportTask("usr-import", "duration-key-0002", SocialVideoImportRequest{URL: "https://v.kuaishou.com/AbCd12", MaxDurationSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := svc.repo.Task(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input socialVideoImportInput
+	if err := json.Unmarshal([]byte(stored.InputJSON), &input); err != nil || input.MaxDurationSeconds != 60 {
+		t.Fatalf("input = %+v, %v", input, err)
+	}
+	// 同一幂等键换了时长上限算不同的请求；不传时长的指纹和加这个参数之前一致。
+	if _, err := svc.CreateSocialVideoImportTask("usr-import", "duration-key-0002", SocialVideoImportRequest{URL: "https://v.kuaishou.com/AbCd12", MaxDurationSeconds: 30}); !errors.As(err, &appErr) || appErr.Status != 409 {
+		t.Fatalf("changed limit replay err = %v", err)
+	}
+	if socialVideoFingerprint("https://v.kuaishou.com/AbCd12", "", 0) != socialVideoFingerprint("https://v.kuaishou.com/AbCd12", "", 0) || socialVideoFingerprint("u", "", 0) == socialVideoFingerprint("u", "", 60) {
+		t.Fatal("fingerprint does not distinguish the duration limit")
+	}
+}
+
 func TestAdminSocialVideoParseAPIsHideSecretsAndRequireAdmin(t *testing.T) {
 	svc, _ := newSocialVideoImportTestService(t)
 	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}

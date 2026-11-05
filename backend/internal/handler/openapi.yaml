@@ -4694,6 +4694,11 @@ components:
         projectId:
           type: string
           description: 可选；关联的当前用户活动项目 ID
+        maxDurationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 180
+          description: 可选；这次导入能接受的最长秒数，不传按 180。解析接口给了时长时下载前就拦下，没给时下载后校验，超长的视频不存成资源。同一幂等键换了这个值算不同的请求
     Task:
       type: object
       required: [id, type, status, stage, progress, createdAt, updatedAt]
