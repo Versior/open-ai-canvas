@@ -1,0 +1,1887 @@
+/* 视频复刻：首页（拆解入口 + 最近拆解）和单条记录工作区（时间线、原视频、逐镜分镜）。
+   颜色、圆角、阴影都取用户工作台 token，明暗主题自动跟随；卡片 hover 只换表面和描边，不位移。 */
+
+.vr-page {
+    position: relative;
+    min-height: 100%;
+}
+
+/* ── 首页 ─────────────────────────────────────────── */
+.vr-home {
+    position: relative;
+    isolation: isolate;
+    width: min(1180px, 100%);
+    margin: 0 auto;
+    padding: var(--space-12) var(--space-6) var(--space-16);
+}
+
+/* 标题背后一团很淡的主色光，只在首页顶部。 */
+.vr-home::before {
+    position: absolute;
+    z-index: -1;
+    top: -80px;
+    left: 50%;
+    width: min(960px, 120%);
+    height: 420px;
+    background: radial-gradient(50% 50% at 50% 50%, color-mix(in srgb, var(--user-accent) 13%, transparent) 0%, transparent 72%);
+    content: "";
+    pointer-events: none;
+    transform: translateX(-50%);
+}
+
+.vr-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-8);
+    text-align: center;
+}
+
+.vr-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--r-full);
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.vr-eyebrow svg {
+    width: 14px;
+    height: 14px;
+    color: var(--user-accent);
+}
+
+.vr-hero-title {
+    margin-top: var(--space-1);
+    color: var(--user-ink);
+    font-size: clamp(28px, 3.4vw, 40px);
+    font-weight: 650;
+    line-height: 1.18;
+    letter-spacing: -0.025em;
+    text-wrap: balance;
+}
+
+.vr-hero-sub {
+    max-width: 600px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-body);
+    line-height: 1.75;
+    text-wrap: pretty;
+}
+
+/* 拆解入口：与创作页输入框同一套外观（大圆角卡片、柔和投影、悬停描边流光）。 */
+.vr-composer-wrap {
+    width: min(820px, 100%);
+    margin: 0 auto;
+}
+
+.vr-composer-shell {
+    border-radius: 18px;
+    box-shadow:
+        0 1px 2px color-mix(in srgb, var(--user-ink) 5%, transparent),
+        0 14px 36px -14px color-mix(in srgb, var(--user-ink) 20%, transparent);
+}
+
+.dark .vr-composer-shell {
+    box-shadow:
+        0 1px 2px rgba(0, 0, 0, 0.32),
+        0 18px 44px -18px rgba(0, 0, 0, 0.7);
+}
+
+.vr-composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) var(--space-3);
+    border-radius: inherit;
+    transition: background var(--user-motion);
+}
+
+.vr-composer[data-dragging] {
+    background: color-mix(in srgb, var(--user-accent) 7%, var(--user-surface));
+}
+
+.vr-composer-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.vr-composer-limit {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-link-field {
+    position: relative;
+    min-height: 112px;
+}
+
+.vr-link-field .vr-textarea {
+    padding: 6px 2px 36px;
+    color: var(--user-ink);
+    font-size: var(--fs-heading);
+    line-height: 1.6;
+    caret-color: var(--user-accent);
+    resize: none;
+}
+
+.vr-link-field .vr-textarea::placeholder {
+    color: var(--user-ink-soft);
+}
+
+.vr-paste {
+    position: absolute;
+    right: 0;
+    bottom: 4px;
+}
+
+.vr-drop {
+    display: flex;
+    min-height: 136px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px dashed var(--user-border-strong);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--user-ink-muted);
+    cursor: pointer;
+    transition:
+        border-color var(--user-motion),
+        background var(--user-motion);
+}
+
+.vr-drop:hover,
+.vr-composer[data-dragging] .vr-drop {
+    border-color: color-mix(in srgb, var(--user-ink) 32%, transparent);
+    background: var(--user-surface-hover);
+}
+
+.vr-drop:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+
+.vr-drop-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    margin-bottom: 4px;
+    place-items: center;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+}
+
+.vr-drop-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.vr-drop-title {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 550;
+}
+
+.vr-drop-hint {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-file {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 112px;
+    padding: 10px 12px 10px 10px;
+    border-radius: 12px;
+    background: var(--user-surface-muted);
+}
+
+.vr-file-preview {
+    display: grid;
+    width: 68px;
+    height: 92px;
+    flex-shrink: 0;
+    place-items: center;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #0b0b0f;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.vr-file-preview video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.vr-file-copy {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.vr-file-name {
+    overflow: hidden;
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-file-meta {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-file-actions {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+}
+
+.vr-field-error {
+    color: var(--destructive);
+    font-size: var(--fs-ui);
+    line-height: 1.5;
+}
+
+.vr-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding-top: var(--space-1);
+}
+
+.vr-toolbar-model {
+    min-width: 0;
+    max-width: min(340px, 100%);
+}
+
+.vr-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: var(--button-height, 34px);
+    padding: 0 12px 0 10px;
+    border-radius: var(--button-radius, 8px);
+    background: var(--button-tonal-bg);
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    cursor: pointer;
+    transition: background var(--user-motion);
+}
+
+.vr-chip:hover {
+    background: var(--button-tonal-hover-bg);
+}
+
+.vr-toolbar-end {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-left: auto;
+}
+
+.vr-toolbar-hint {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    white-space: nowrap;
+}
+
+.vr-composer-progress {
+    margin-top: var(--space-3);
+}
+
+/* 已经建好任务、在后台跑的拆解：首页上给一条入口。 */
+.vr-run-banner {
+    display: flex;
+    width: min(820px, 100%);
+    align-items: center;
+    gap: 10px;
+    margin: var(--space-3) auto 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    text-align: left;
+    transition:
+        background var(--user-motion),
+        box-shadow var(--user-motion);
+}
+
+.vr-run-banner:hover {
+    background: var(--user-card-hover);
+    box-shadow: inset 0 0 0 1px var(--user-border-strong);
+}
+
+.vr-run-banner:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+
+.vr-run-banner > svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--user-accent);
+}
+
+.vr-run-banner-text {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: var(--user-ink-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-run-banner-text strong {
+    margin-right: 8px;
+    color: var(--user-ink);
+    font-weight: 600;
+}
+
+.vr-run-banner-link {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 4px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 550;
+}
+
+.vr-run-banner-link svg {
+    width: 14px;
+    height: 14px;
+}
+
+.vr-hints {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-5);
+    width: min(820px, 100%);
+    margin: var(--space-8) auto 0;
+}
+
+.vr-hint {
+    display: flex;
+    gap: var(--space-3);
+}
+
+.vr-hint-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: 10px;
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    color: var(--user-ink-muted);
+}
+
+.vr-hint-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
+.vr-hint-title {
+    display: block;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.vr-hint-text {
+    display: block;
+    margin-top: 2px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    line-height: 1.55;
+}
+
+.vr-home-note {
+    width: min(820px, 100%);
+    margin: var(--space-6) auto 0;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    line-height: 1.7;
+    text-align: center;
+}
+
+/* 最近拆解 */
+.vr-recent {
+    margin-top: var(--space-12);
+}
+
+.vr-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+
+.vr-section-title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--user-ink);
+    font-size: var(--fs-heading);
+    font-weight: 600;
+}
+
+.vr-section-title svg {
+    width: 16px;
+    height: 16px;
+    color: var(--user-ink-muted);
+}
+
+.vr-section-meta {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-recent-note {
+    padding: var(--space-8) var(--space-6);
+    border-radius: var(--user-radius-card);
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    text-align: center;
+}
+
+.vr-recent-note[data-tone="error"] {
+    margin-bottom: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    color: var(--destructive);
+    text-align: left;
+}
+
+.vr-recent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--space-4);
+}
+
+.vr-card-item {
+    min-width: 0;
+    animation: product-card-enter var(--product-enter, 360ms) var(--product-ease, ease) backwards;
+}
+
+.vr-card-item:nth-child(2) {
+    animation-delay: 40ms;
+}
+
+.vr-card-item:nth-child(3) {
+    animation-delay: 80ms;
+}
+
+.vr-card-item:nth-child(4) {
+    animation-delay: 120ms;
+}
+
+.vr-card-item:nth-child(n + 5) {
+    animation-delay: 160ms;
+}
+
+.vr-card {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
+    padding: 6px 6px 12px;
+    border-radius: var(--user-radius-card);
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background var(--user-motion),
+        box-shadow var(--user-motion);
+}
+
+.vr-card:hover {
+    background: var(--user-card-hover);
+    box-shadow:
+        inset 0 0 0 1px var(--user-border-strong),
+        var(--canvas-card-hover-shadow, 0 18px 36px -22px rgb(0 0 0 / 45%));
+}
+
+.vr-card[data-skeleton] {
+    cursor: default;
+}
+
+.vr-card:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+
+/* 胶片条：竖屏关键帧排成一行，横屏拼成四宫格（不足四张时只放第一张）。 */
+.vr-card-strip {
+    position: relative;
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 2px;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--user-surface-muted);
+}
+
+.vr-card-strip[data-layout="grid"] {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.vr-card-strip img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    object-fit: cover;
+    transition: filter var(--user-motion);
+}
+
+.vr-card:hover .vr-card-strip img {
+    filter: brightness(1.06);
+}
+
+.vr-card-empty {
+    display: grid;
+    place-items: center;
+    color: var(--user-ink-soft);
+}
+
+.vr-card-empty svg {
+    width: 22px;
+    height: 22px;
+}
+
+.vr-card-badge {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--r-full);
+    background: rgba(12, 12, 16, 0.62);
+    color: #fff;
+    font-size: var(--fs-label);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    backdrop-filter: blur(8px);
+}
+
+.vr-card-badge svg {
+    width: 12px;
+    height: 12px;
+}
+
+.vr-card-badge[data-position="end"] {
+    right: 8px;
+    bottom: 8px;
+}
+
+.vr-card-badge[data-position="start"] {
+    top: 8px;
+    left: 8px;
+    max-width: calc(100% - 16px);
+}
+
+.vr-card-badge[data-tone="failed"] {
+    background: color-mix(in srgb, var(--destructive) 86%, transparent);
+}
+
+.vr-card-badge[data-tone="pending"] {
+    background: rgba(255, 255, 255, 0.88);
+    color: #1d1d21;
+}
+
+.vr-card-body {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+    padding: 0 6px;
+}
+
+.vr-card-title {
+    overflow: hidden;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    line-height: 1.4;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-card-meta {
+    display: flex;
+    min-width: 0;
+    gap: 6px;
+    overflow: hidden;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    white-space: nowrap;
+}
+
+.vr-card-meta > * + *::before {
+    margin-right: 6px;
+    content: "·";
+}
+
+/* ── 单条记录工作区 ───────────────────────────────── */
+.vr-workspace {
+    width: min(1440px, 100%);
+    margin: 0 auto;
+    padding: var(--space-5) var(--space-6) var(--space-16);
+}
+
+.vr-ws-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
+}
+
+.vr-ws-heading {
+    min-width: 0;
+    flex: 1 1 360px;
+}
+
+.vr-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    margin: 0 0 var(--space-2) -6px;
+    padding: 0 8px 0 6px;
+    border-radius: 6px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 550;
+    transition:
+        background var(--user-motion),
+        color var(--user-motion);
+}
+
+.vr-back svg {
+    width: 14px;
+    height: 14px;
+}
+
+.vr-back:hover {
+    background: var(--user-surface-muted);
+    color: var(--user-ink);
+}
+
+.vr-back:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 1px;
+}
+
+.vr-ws-title {
+    overflow: hidden;
+    color: var(--user-ink);
+    font-size: 24px;
+    font-weight: 650;
+    line-height: 1.3;
+    letter-spacing: -0.015em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-ws-subtitle {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    margin-top: 6px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-ws-subtitle > * + *::before {
+    margin-right: 8px;
+    content: "·";
+}
+
+.vr-ws-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.vr-ws-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.vr-panel {
+    border-radius: var(--user-radius-card);
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+}
+
+.vr-ws-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+}
+
+@media (min-width: 1100px) {
+    .vr-ws-body {
+        grid-template-columns: 340px minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .vr-player {
+        position: sticky;
+        top: var(--space-4);
+        max-height: calc(100dvh - 96px);
+        overflow-y: auto;
+        scrollbar-width: none;
+    }
+}
+
+/* 还没分析：时间线上方的分析入口。 */
+.vr-analyze {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-5);
+}
+
+.vr-analyze-copy {
+    min-width: 0;
+    flex: 1 1 320px;
+}
+
+.vr-analyze-title {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+
+.vr-analyze-text {
+    margin-top: 2px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+.vr-analyze-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.vr-analyze-model {
+    width: 260px;
+    max-width: 100%;
+}
+
+.vr-analyze-controls .vr-field-error {
+    width: 100%;
+}
+
+.vr-reanalyze {
+    display: flex;
+    width: min(320px, calc(100vw - 48px));
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.vr-reanalyze-title {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+
+.vr-reanalyze-text {
+    margin-bottom: var(--space-1);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+.vr-reanalyze .vr-analyze-model {
+    width: 100%;
+}
+
+.vr-reanalyze .vr-analyze-controls > .ant-btn {
+    width: 100%;
+}
+
+/* 时间线：镜头按真实时长铺开，节拍在上、刻度在下，播放头跟随原视频。 */
+.vr-timeline {
+    padding: var(--space-4) var(--space-5) var(--space-3);
+}
+
+.vr-timeline-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.vr-timeline-heading {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+}
+
+.vr-timeline-title {
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+
+.vr-timeline-meta {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-timeline-clock {
+    flex-shrink: 0;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-timeline-total {
+    color: var(--user-ink-soft);
+    font-weight: 500;
+}
+
+.vr-track-scroll {
+    margin: 0 calc(-1 * var(--space-1));
+    padding: 6px var(--space-1) 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.vr-track {
+    position: relative;
+}
+
+.vr-beats {
+    position: relative;
+    height: 24px;
+    margin-bottom: 6px;
+}
+
+.vr-beat {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    padding: 0 8px;
+    overflow: hidden;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--user-accent) 12%, var(--user-surface));
+    color: color-mix(in srgb, var(--user-accent) 70%, var(--user-ink));
+    font-size: var(--fs-caption);
+    font-weight: 600;
+}
+
+.vr-beat[data-tone="even"] {
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+}
+
+.vr-beat-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-strip-wrap {
+    position: relative;
+}
+
+.vr-strip {
+    position: relative;
+    height: 88px;
+}
+
+.vr-seg-item {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+}
+
+.vr-seg {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--user-surface-muted);
+    container-type: inline-size;
+    cursor: pointer;
+}
+
+.vr-seg img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: filter var(--user-motion);
+}
+
+.vr-seg:hover img {
+    filter: brightness(1.12);
+}
+
+.vr-seg::after {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, transparent 48%, rgba(0, 0, 0, 0.56));
+    content: "";
+    pointer-events: none;
+}
+
+.vr-seg-label {
+    position: absolute;
+    z-index: 1;
+    bottom: 5px;
+    left: 6px;
+    color: #fff;
+    font-size: var(--fs-label);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* 镜头太窄时不放序号，免得压在画面上挤成一团。 */
+@container (max-width: 20px) {
+    .vr-seg-label {
+        display: none;
+    }
+}
+
+.vr-seg[data-active="true"] {
+    box-shadow:
+        0 0 0 2px var(--user-surface),
+        0 0 0 4px var(--user-ink);
+}
+
+.vr-seg:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+
+.vr-playhead {
+    position: absolute;
+    z-index: 2;
+    top: -6px;
+    bottom: -4px;
+    left: 0;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 2px;
+    background: var(--user-accent);
+    pointer-events: none;
+}
+
+.vr-playhead::before {
+    position: absolute;
+    top: -3px;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    border: 2px solid var(--user-surface);
+    border-radius: 50%;
+    background: var(--user-accent);
+    content: "";
+    transform: translateX(-50%);
+}
+
+.vr-ruler {
+    position: relative;
+    height: 22px;
+    margin-top: 6px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-label);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-tick {
+    position: absolute;
+    top: 6px;
+    transform: translateX(-50%);
+}
+
+.vr-tick::before {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    width: 1px;
+    height: 4px;
+    background: var(--user-border-strong);
+    content: "";
+}
+
+.vr-tick:first-child {
+    transform: none;
+}
+
+.vr-tick:first-child::before {
+    left: 0;
+}
+
+/* 原视频栏 */
+.vr-player {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.vr-video {
+    display: flex;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: var(--user-radius-card);
+    background: #0b0b0f;
+}
+
+.vr-video video {
+    display: block;
+    width: 100%;
+    max-height: min(58vh, 600px);
+    object-fit: contain;
+}
+
+.vr-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    border-radius: 12px;
+    background: var(--user-border);
+    box-shadow: inset 0 0 0 1px var(--user-border);
+}
+
+.vr-stat {
+    min-width: 0;
+    padding: 10px 14px 11px;
+    background: var(--user-surface);
+}
+
+.vr-stat dt {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-stat dd {
+    margin-top: 2px;
+    overflow: hidden;
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-callout {
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--user-accent) 7%, var(--user-surface));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--user-accent) 16%, transparent);
+}
+
+.vr-callout-label {
+    color: color-mix(in srgb, var(--user-accent) 72%, var(--user-ink));
+    font-size: var(--fs-label);
+    font-weight: 650;
+    letter-spacing: 0.06em;
+}
+
+.vr-callout-text {
+    margin-top: 4px;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    line-height: 1.65;
+}
+
+.vr-footnote {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 2px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+}
+
+/* 分镜 / 结构切换 */
+.vr-ws-main {
+    min-width: 0;
+}
+
+.vr-tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--user-border);
+}
+
+.vr-tab {
+    position: relative;
+    display: inline-flex;
+    height: 40px;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-body);
+    font-weight: 550;
+    transition: color var(--user-motion);
+}
+
+.vr-tab:hover,
+.vr-tab[aria-selected="true"] {
+    color: var(--user-ink);
+}
+
+.vr-tab[aria-selected="true"]::after {
+    position: absolute;
+    right: 10px;
+    bottom: -1px;
+    left: 10px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--user-ink);
+    content: "";
+}
+
+.vr-tab:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: -2px;
+}
+
+.vr-tab-count {
+    display: inline-grid;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    place-items: center;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-label);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-tabs-hint {
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 分镜列表：一张面板里用分隔线排开，正在播放的镜头整行提亮。 */
+.vr-shots {
+    overflow: hidden;
+}
+
+.vr-shot {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-4) var(--space-5);
+    padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
+    border-top: 1px solid var(--user-border);
+    scroll-margin-top: var(--space-4);
+    transition: background var(--user-motion);
+}
+
+.vr-shot:first-child {
+    border-top: 0;
+}
+
+.vr-shot[data-active="true"] {
+    background: color-mix(in srgb, var(--user-accent) 6%, var(--user-surface));
+}
+
+.vr-shot-thumb {
+    position: relative;
+    display: block;
+    height: 148px;
+    max-width: 248px;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--user-surface-muted);
+    cursor: pointer;
+}
+
+.vr-shot-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.vr-shot-thumb::after {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--user-ink) 10%, transparent);
+    content: "";
+    pointer-events: none;
+}
+
+.vr-shot[data-active="true"] .vr-shot-thumb::after {
+    box-shadow: inset 0 0 0 2px var(--user-ink);
+}
+
+.vr-shot-play {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0);
+    color: #fff;
+    opacity: 0;
+    transition:
+        opacity var(--user-motion),
+        background var(--user-motion);
+}
+
+.vr-shot-play svg {
+    width: 22px;
+    height: 22px;
+    fill: currentColor;
+}
+
+.vr-shot-thumb:hover .vr-shot-play,
+.vr-shot-thumb:focus-visible .vr-shot-play {
+    background: rgba(0, 0, 0, 0.3);
+    opacity: 1;
+}
+
+.vr-shot-thumb:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 2px;
+}
+
+.vr-shot-duration {
+    position: absolute;
+    z-index: 1;
+    right: 6px;
+    bottom: 6px;
+    height: 18px;
+    padding: 0 6px;
+    border-radius: var(--r-full);
+    background: rgba(12, 12, 16, 0.62);
+    color: #fff;
+    font-size: var(--fs-label);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 18px;
+    backdrop-filter: blur(6px);
+}
+
+.vr-shot-content {
+    min-width: 0;
+    padding-top: 2px;
+}
+
+.vr-shot-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+}
+
+.vr-shot-index {
+    color: var(--user-ink);
+    font-size: 15px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-shot-time {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: var(--space-2);
+}
+
+.vr-tag {
+    display: inline-flex;
+    max-width: 100%;
+    height: 22px;
+    align-items: center;
+    padding: 0 8px;
+    overflow: hidden;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-shot-plot {
+    margin-top: var(--space-2);
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    line-height: 1.7;
+}
+
+.vr-shot-plot[data-empty] {
+    color: var(--user-ink-soft);
+}
+
+.vr-dl {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 6px 14px;
+    margin-top: var(--space-3);
+    font-size: var(--fs-ui);
+    line-height: 1.6;
+}
+
+.vr-dl dt {
+    color: var(--user-ink-soft);
+}
+
+.vr-dl dd {
+    min-width: 0;
+    color: var(--user-ink);
+}
+
+.vr-prompts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+}
+
+@media (min-width: 1360px) {
+    .vr-prompts {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.vr-prompt {
+    min-width: 0;
+    padding: 10px 12px 12px;
+    border-radius: 10px;
+    background: var(--user-surface-muted);
+}
+
+.vr-prompt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.vr-prompt-label {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    letter-spacing: 0.04em;
+}
+
+.vr-prompt-text {
+    margin-top: 2px;
+    color: var(--user-ink);
+    font-size: var(--fs-caption);
+    line-height: 1.7;
+}
+
+.vr-icon-button {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: 7px;
+    color: var(--user-ink-muted);
+    transition:
+        background var(--user-motion),
+        color var(--user-motion);
+}
+
+.vr-icon-button svg {
+    width: 14px;
+    height: 14px;
+}
+
+.vr-icon-button:hover {
+    background: var(--user-surface-hover);
+    color: var(--user-ink);
+}
+
+.vr-icon-button:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 1px;
+}
+
+/* 全片结构 */
+.vr-structure {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    padding: var(--space-6);
+}
+
+.vr-list-title {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+.vr-hook-text {
+    margin-top: var(--space-2);
+    color: var(--user-ink);
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.6;
+    text-wrap: pretty;
+}
+
+.vr-beat-list {
+    display: flex;
+    flex-direction: column;
+    margin-top: var(--space-2);
+}
+
+.vr-beat-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-3);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--user-border);
+}
+
+.vr-beat-row:first-child {
+    border-top: 0;
+}
+
+.vr-beat-no {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-beat-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+    color: var(--user-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+
+.vr-beat-time {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-beat-purpose {
+    margin-top: 2px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    line-height: 1.65;
+}
+
+.vr-beat-thumbs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.vr-beat-thumbs button {
+    display: block;
+    width: 32px;
+    height: 44px;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--user-surface-muted);
+    cursor: pointer;
+}
+
+.vr-beat-thumbs img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: filter var(--user-motion);
+}
+
+.vr-beat-thumbs button:hover img {
+    filter: brightness(1.1);
+}
+
+.vr-beat-thumbs button:focus-visible {
+    outline: 2px solid var(--control-focus-ring);
+    outline-offset: 1px;
+}
+
+.vr-beat-more {
+    padding: 0 4px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-structure-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+}
+
+@media (min-width: 1280px) {
+    .vr-structure-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.vr-numbered {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+    counter-reset: vr-item;
+}
+
+.vr-numbered li {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: var(--space-3);
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    line-height: 1.7;
+    counter-increment: vr-item;
+}
+
+.vr-numbered li::before {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    place-items: center;
+    border-radius: 6px;
+    background: var(--user-surface-muted);
+    color: var(--user-ink-muted);
+    content: counter(vr-item);
+    font-size: var(--fs-label);
+    font-weight: 650;
+}
+
+/* 状态面板：读取失败、拆解失败、还没有全片结构。 */
+.vr-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: var(--space-12) var(--space-6);
+    text-align: center;
+}
+
+.vr-state-title {
+    color: var(--user-ink);
+    font-size: var(--fs-heading);
+    font-weight: 600;
+}
+
+.vr-state[data-tone="error"] .vr-state-title {
+    color: var(--destructive);
+}
+
+.vr-state-text {
+    max-width: 480px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    line-height: 1.7;
+}
+
+.vr-state-action {
+    margin-top: var(--space-3);
+}
+
+/* 进度 */
+.vr-progress {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+}
+
+.vr-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+.vr-step {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-step[data-state="active"] {
+    color: var(--user-ink);
+    font-weight: 600;
+}
+
+.vr-step[data-state="done"] {
+    color: var(--user-ink-muted);
+}
+
+.vr-step-bar {
+    position: relative;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--r-full);
+    background: var(--user-surface-muted);
+}
+
+.vr-step-bar > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    border-radius: inherit;
+    background: var(--user-ink);
+    transition: width 400ms var(--ease-product-enter, ease);
+}
+
+.vr-step[data-state="done"] .vr-step-bar > span {
+    width: 100%;
+}
+
+.vr-step[data-state="active"] .vr-step-bar > span {
+    width: 40%;
+    animation: vr-indeterminate 1.4s ease-in-out infinite;
+}
+
+.vr-step[data-state="failed"] .vr-step-bar > span {
+    width: 100%;
+    background: var(--destructive);
+}
+
+.vr-step[data-state="failed"] {
+    color: var(--destructive);
+}
+
+@keyframes vr-indeterminate {
+    0% {
+        left: -40%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+.vr-skeleton {
+    border-radius: 8px;
+    background: linear-gradient(90deg, var(--user-surface-muted) 0%, var(--user-surface-hover) 50%, var(--user-surface-muted) 100%);
+    background-size: 200% 100%;
+    animation: vr-shimmer 1.6s linear infinite;
+}
+
+.vr-skeleton-video {
+    display: block;
+    width: 100%;
+    max-width: 340px;
+    aspect-ratio: 9 / 16;
+    max-height: 520px;
+    border-radius: var(--user-radius-card);
+}
+
+@keyframes vr-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+    100% {
+        background-position: -100% 0;
+    }
+}
+
+.vr-spin {
+    animation: vr-spin 1s linear infinite;
+}
+
+@keyframes vr-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vr-step[data-state="active"] .vr-step-bar > span {
+        left: 0;
+        animation: none;
+    }
+
+    .vr-skeleton,
+    .vr-spin,
+    .vr-card-item {
+        animation: none;
+    }
+}
+
+/* 平板：原视频和数据并排。 */
+@media (min-width: 700px) and (max-width: 1099px) {
+    .vr-player {
+        display: grid;
+        grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .vr-player > .vr-video {
+        grid-row: span 3;
+    }
+}
+
+@media (max-width: 860px) {
+    .vr-hints {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .vr-steps {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .vr-tabs-hint {
+        display: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .vr-home {
+        padding: var(--space-8) var(--space-4) var(--space-12);
+    }
+
+    .vr-workspace {
+        padding: var(--space-3) var(--space-4) var(--space-12);
+    }
+
+    .vr-ws-title {
+        font-size: var(--fs-title);
+        white-space: normal;
+    }
+
+    .vr-hints {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-4);
+    }
+
+    .vr-toolbar-end {
+        width: 100%;
+        justify-content: space-between;
+        margin-left: 0;
+    }
+
+    .vr-timeline {
+        padding: var(--space-3) var(--space-3) var(--space-2);
+    }
+
+    .vr-shot {
+        gap: var(--space-3);
+        padding: var(--space-3);
+    }
+
+    .vr-shot-thumb {
+        height: 112px;
+        max-width: 132px;
+    }
+
+    .vr-dl {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+    }
+
+    .vr-dl dd + dt {
+        margin-top: 6px;
+    }
+
+    .vr-structure {
+        padding: var(--space-4);
+    }
+
+    .vr-beat-row {
+        grid-template-columns: 28px minmax(0, 1fr);
+    }
+
+    .vr-beat-thumbs {
+        grid-column: 2;
+    }
+}
