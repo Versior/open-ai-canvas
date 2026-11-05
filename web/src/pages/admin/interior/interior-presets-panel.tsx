@@ -2,6 +2,7 @@ import { Alert, App, AutoComplete, Button, Form, Input, InputNumber, Select, Spa
 import { Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppModal } from "@/components/ui/product/app-modal";
+import { InteriorCoverUpload, type InteriorCover } from "./interior-cover-upload";
 import { ApiError } from "@/services/api/request";
 import { INTERIOR_VERSION_CONFLICT, interiorPresetInput, listAdminInteriorPresets, saveAdminInteriorPreset, type InteriorPreset, type InteriorPresetInput, type InteriorPresetType } from "@/services/api/interior";
 
@@ -45,7 +46,8 @@ export function InteriorPresetsPanel({ type }: { type: InteriorPresetType }) {
     const [presets, setPresets] = useState<InteriorPreset[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [editing, setEditing] = useState<{ preset?: InteriorPreset } | null>(null);
+    const [editing, setEditing] = useState<{ preset?: InteriorPreset; cover: InteriorCover } | null>(null);
+    const [coverUploading, setCoverUploading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [toggling, setToggling] = useState("");
     const [query, setQuery] = useState("");
@@ -76,7 +78,7 @@ export function InteriorPresetsPanel({ type }: { type: InteriorPresetType }) {
 
     const open = (preset?: InteriorPreset) => {
         form.setFieldsValue(formValues(preset));
-        setEditing({ preset });
+        setEditing({ preset, cover: { resourceId: preset?.coverResourceId || "", ...(preset?.coverUrl ? { url: preset.coverUrl } : {}) } });
     };
 
     const saveFailed = (cause: unknown) => {
@@ -98,7 +100,7 @@ export function InteriorPresetsPanel({ type }: { type: InteriorPresetType }) {
             groupName: (values.groupName || "").trim(),
             name: values.name.trim(),
             summary: (values.summary || "").trim(),
-            coverResourceId: editing.preset?.coverResourceId || "",
+            coverResourceId: editing.cover.resourceId,
             prompt: (values.prompt || "").trim(),
             tags: values.tags || [],
             sortOrder: values.sortOrder || 0,
@@ -188,11 +190,16 @@ export function InteriorPresetsPanel({ type }: { type: InteriorPresetType }) {
                 open={Boolean(editing)}
                 title={editing?.preset ? `编辑：${editing.preset.name}` : `新增${copy.noun}`}
                 width={640}
-                okText="保存"
+                okText={coverUploading ? "等待封面上传" : "保存"}
+                okButtonProps={{ disabled: coverUploading }}
                 cancelText="取消"
                 confirmLoading={saving}
                 onOk={() => void save()}
-                onCancel={() => setEditing(null)}
+                onCancel={() => !coverUploading && setEditing(null)}
+                cancelButtonProps={{ disabled: coverUploading }}
+                closable={!coverUploading}
+                maskClosable={!coverUploading}
+                keyboard={!coverUploading}
                 forceRender
                 destroyOnHidden={false}
             >
@@ -211,6 +218,9 @@ export function InteriorPresetsPanel({ type }: { type: InteriorPresetType }) {
                             <Input maxLength={240} />
                         </Form.Item>
                     </div>
+                    <Form.Item label="封面" extra={type === "style" ? "显示在前台风格按钮上，建议用这个风格的代表效果图。" : "可选，前台暂未展示空间封面。"}>
+                        <InteriorCoverUpload value={editing?.cover || { resourceId: "" }} disabled={saving} onUploadingChange={setCoverUploading} onChange={(cover) => setEditing((current) => (current ? { ...current, cover } : current))} />
+                    </Form.Item>
                     <Form.Item name="prompt" label={copy.promptLabel} extra={copy.promptHelp} rules={type === "style" ? [{ required: true, message: "风格必须填写提示词片段" }] : []}>
                         <Input.TextArea autoSize={{ minRows: 3, maxRows: 8 }} maxLength={2000} showCount />
                     </Form.Item>

@@ -1,6 +1,6 @@
 import { App, Form, Input, Radio, Select, Tooltip } from "antd";
 import { FolderPlus, PencilLine, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { WorkspaceErrorState, WorkspaceLoadingState } from "@/components/layout/workspace-state";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
@@ -12,13 +12,14 @@ import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { InteriorBoard, InteriorViewer, type InteriorOutputTarget } from "./interior-board";
 import { InteriorComposer, interiorCountLimit, interiorDraftProblem, uploadInteriorImage, visibleInteriorModes, type InteriorDraft, type InteriorUpload } from "./interior-composer";
-import { interiorDownloadName, interiorImageModelOptions, interiorModelRef, newInteriorId } from "./interior-models";
-import { useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
+import { interiorDownloadName, interiorImageModelOptions, interiorInitialModel, interiorModelRef, newInteriorId } from "./interior-models";
+import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
 import "./interior.css";
 
 const SURFACE_KEY = "interior:surface";
 const TEXT_EDIT_MODE = "text-edit";
+const DOWNLOAD_GAP_MS = 400;
 const SAVE_LABEL: Record<InteriorSaveState, string> = { saved: "已保存", saving: "保存中…", error: "保存失败，点击重试" };
 
 function errorText(error: unknown, fallback: string) {
@@ -35,8 +36,22 @@ function defaultParams(mode: InteriorMode) {
     return Object.fromEntries(mode.params.map((param) => [param.key, param.default]));
 }
 
+/** 沿用旧轮次的参数，只保留当前出图方式里仍然存在的参数和选项。 */
+function reusableParams(mode: InteriorMode, previous: Record<string, string>) {
+    return Object.fromEntries(mode.params.map((param) => [param.key, param.options.some((option) => option.value === previous[param.key]) ? previous[param.key] : param.default]));
+}
+
 function emptyDraft(mode: InteriorMode | undefined, modelValue: string): InteriorDraft {
     return { modeId: mode?.id || "", roomKey: "", styleKeys: [], params: mode ? defaultParams(mode) : {}, notes: "", count: 1, size: "auto", quality: "auto", modelValue, source: null, references: [] };
+}
+
+function surfaceFor(mode: InteriorMode, current: InteriorSurface): InteriorSurface {
+    if (mode.audience === "both" || mode.audience === current) return current;
+    return mode.audience;
+}
+
+function delay(ms: number) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 type ProjectDialog = { mode: "create" | "rename"; name: string; kind: InteriorProjectKind } | null;
@@ -55,6 +70,9 @@ export default function InteriorPage() {
     const [viewing, setViewing] = useState<InteriorOutputTarget | null>(null);
     const [dialog, setDialog] = useState<ProjectDialog>(null);
     const [dialogBusy, setDialogBusy] = useState(false);
+    const [downloadingRound, setDownloadingRound] = useState("");
+    // 本地预览用的 blob 地址，离开页面时统一释放。
+    const previewUrls = useRef(new Set<string>());
 
     const projects = useInteriorProjects(user?.id || "");
     const { current } = projects;
@@ -66,6 +84,10 @@ export default function InteriorPage() {
         return modelOptions.find((item) => item.value === configured)?.value || modelOptions[0]?.value || "";
     }, [config.imageModel, config.model, modelOptions]);
 
+    const modes = useMemo(() => (catalog ? visibleInteriorModes(catalog, surface) : []), [catalog, surface]);
+    const mode = modes.find((item) => item.id === draft.modeId);
+    const siteDefault = catalog?.settings.defaultModel;
+
     const loadCatalog = useCallback(async () => {
         setCatalogError("");
         try {
@@ -73,46 +95,56 @@ export default function InteriorPage() {
             const nextSurface = initialSurface(next);
             setCatalog(next);
             setSurface(nextSurface);
-            setDraft((value) => (value.modeId ? value : emptyDraft(visibleInteriorModes(next, nextSurface)[0], preferredModel)));
+            setDraft((value) => (value.modeId ? value : emptyDraft(visibleInteriorModes(next, nextSurface)[0], "")));
         } catch (error) {
             setCatalogError(errorText(error, "室内设计目录读取失败"));
         }
-    }, [preferredModel]);
-
-    useEffect(() => {
-        void loadCatalog();
-        // 目录只在进入页面时读取；模型目录稍后到达时由下面的 effect 补上默认模型。
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     useEffect(() => {
-        if (!draft.modelValue && preferredModel) setDraft((value) => ({ ...value, modelValue: preferredModel }));
-    }, [draft.modelValue, preferredModel]);
+        void loadCatalog();
+    }, [loadCatalog]);
 
-    const modes = useMemo(() => (catalog ? visibleInteriorModes(catalog, surface) : []), [catalog, surface]);
-    const mode = modes.find((item) => item.id === draft.modeId);
+    // 模型目录可能比室内设计目录晚到；草稿还没有模型时按推荐规则补上。
+    useEffect(() => {
+        if (draft.modelValue || !modelOptions.length) return;
+        const next = mode ? interiorInitialModel(config, mode, siteDefault, preferredModel, surface) : preferredModel;
+        if (next) setDraft((value) => (value.modelValue ? value : { ...value, modelValue: next }));
+    }, [config, draft.modelValue, mode, modelOptions.length, preferredModel, siteDefault, surface]);
+
+    useEffect(() => {
+        const urls = previewUrls.current;
+        return () => {
+            for (const url of urls) URL.revokeObjectURL(url);
+            urls.clear();
+        };
+    }, []);
 
     const patchDraft = useCallback((patch: Partial<InteriorDraft>) => {
         setSubmitError("");
         setDraft((value) => ({ ...value, ...patch }));
     }, []);
 
+    // targetSurface 显式传入：切换交互模式时 setSurface 还没生效，不能读闭包里的旧值。
     const selectMode = useCallback(
-        (next: InteriorMode) => {
+        (next: InteriorMode, targetSurface: InteriorSurface = surface) => {
             if (!catalog) return;
             const limit = interiorCountLimit(catalog, next);
             const hasReference = next.slots.some((slot) => slot.key === "reference");
+            const usesRoom = next.requiresRoom || next.requiresStyle;
             setSubmitError("");
             setDraft((value) => ({
                 ...value,
                 modeId: next.id,
                 params: defaultParams(next),
+                roomKey: usesRoom ? value.roomKey : "",
                 styleKeys: next.requiresStyle ? value.styleKeys : [],
                 references: hasReference ? value.references : [],
                 count: Math.min(value.count, limit),
+                modelValue: interiorInitialModel(config, next, catalog.settings.defaultModel, value.modelValue || preferredModel, targetSurface),
             }));
         },
-        [catalog],
+        [catalog, config, preferredModel, surface],
     );
 
     const changeSurface = (next: InteriorSurface) => {
@@ -120,11 +152,14 @@ export default function InteriorPage() {
         setSurface(next);
         window.localStorage.setItem(SURFACE_KEY, next);
         const available = visibleInteriorModes(catalog, next);
-        if (!available.some((item) => item.id === draft.modeId) && available[0]) selectMode(available[0]);
+        const kept = available.find((item) => item.id === draft.modeId);
+        // 出图方式不变也要按新模式重新预选模型（快速出图跟推荐走，专业模式保留用户的选择）。
+        if (kept || available[0]) selectMode(kept || available[0], next);
     };
 
     const upload = useCallback(async (file: File, apply: (value: InteriorUpload | null) => void) => {
         const previewUrl = URL.createObjectURL(file);
+        previewUrls.current.add(previewUrl);
         apply({ resourceId: "", name: file.name, uploading: true, previewUrl });
         try {
             const image = await uploadInteriorImage(file);
@@ -137,6 +172,47 @@ export default function InteriorPage() {
     const pickSource = (file: File) => void upload(file, (source) => setDraft((value) => ({ ...value, source })));
     const pickReference = (file: File) => void upload(file, (reference) => setDraft((value) => ({ ...value, references: reference ? [reference] : [] })));
 
+    // Ctrl+V 粘贴图片：没有原图时填原图；已有原图且出图方式要参考图时填参考图。
+    const pasteRef = useRef<(file: File) => boolean>(() => false);
+    pasteRef.current = (file) => {
+        if (busy || !mode) return false;
+        const needsReference = mode.slots.some((slot) => slot.key === "reference") && !draft.references.length;
+        if (draft.source && needsReference) pickReference(file);
+        else pickSource(file);
+        return true;
+    };
+    useEffect(() => {
+        const onPaste = (event: ClipboardEvent) => {
+            const target = event.target instanceof Element ? event.target : null;
+            // 弹窗里的粘贴交给弹窗；在输入框里粘贴文字（Office 复制的文字会同时带一张位图）不当成图片。
+            if (target?.closest(".ant-modal-wrap")) return;
+            if (target?.closest("input, textarea, [contenteditable]") && event.clipboardData?.types.includes("text/plain")) return;
+            const file = Array.from(event.clipboardData?.files || []).find((item) => item.type.startsWith("image/"));
+            if (file && pasteRef.current(file)) event.preventDefault();
+        };
+        window.addEventListener("paste", onPaste);
+        return () => window.removeEventListener("paste", onPaste);
+    }, []);
+
+    /** 当前项目存不上时询问是否放弃；保存失败多半是网络问题，先给重试的机会。 */
+    const confirmDiscard = (action: string, proceed: () => Promise<unknown>) => {
+        modal.confirm({
+            title: "当前项目有出图记录没保存成功",
+            content: `可以先关掉这个提示，点项目栏的「保存失败，点击重试」。如果项目已在别的窗口删掉、怎么也存不上，可以放弃这些记录再${action}；生成的图片仍在资产里。`,
+            okText: `放弃并${action}`,
+            okButtonProps: { danger: true },
+            cancelText: "先不切换",
+            onOk: () => proceed().catch((error: unknown) => message.error(errorText(error, `${action}失败`))),
+        });
+    };
+
+    const openProject = (id: string) => {
+        void projects.open(id).catch((error: unknown) => {
+            if (error instanceof InteriorUnsavedError) confirmDiscard("切换", () => projects.open(id, true));
+            else message.error(errorText(error, "切换项目失败"));
+        });
+    };
+
     const ensureProject = async () => {
         if (current) return current;
         return projects.create(surface === "pro" ? "未命名方案" : "我的家", surface === "pro" ? "client" : "home");
@@ -144,7 +220,7 @@ export default function InteriorPage() {
 
     const submit = async () => {
         if (!catalog || !mode || !draft.source || busy) return;
-        const problem = interiorDraftProblem(draft, mode, surface, config);
+        const problem = interiorDraftProblem(draft, mode, surface, config, siteDefault);
         if (problem) {
             setSubmitError(problem);
             return;
@@ -158,17 +234,20 @@ export default function InteriorPage() {
             const sourceRef = { resourceId: draft.source.resourceId, ...(draft.source.width ? { width: draft.source.width } : {}), ...(draft.source.height ? { height: draft.source.height } : {}) };
             const references = draft.references.filter((item) => item.resourceId).map((item) => ({ resourceId: item.resourceId }));
             const model = interiorModelRef(config, draft.modelValue);
+            const notes = draft.notes.trim();
+            // 比例和画质只在专业模式里显示，快速出图不提交，避免带上切换前的旧选择。
+            const size = surface === "pro" && draft.size !== "auto" ? draft.size : "";
             const result = await generateInterior({
                 surface,
                 modeId: mode.id,
                 ...(draft.roomKey ? { roomKey: draft.roomKey } : {}),
                 ...(mode.requiresStyle ? { styleKeys: draft.styleKeys } : {}),
                 params: draft.params,
-                ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}),
+                ...(notes ? { notes } : {}),
                 sourceResourceId: sourceRef.resourceId,
                 ...(references.length ? { referenceResourceIds: references.map((item) => item.resourceId) } : {}),
                 count: draft.count,
-                ...(draft.size !== "auto" ? { size: draft.size } : {}),
+                ...(size ? { size } : {}),
                 ...(surface === "pro" && draft.quality !== "auto" ? { quality: draft.quality } : {}),
                 ...(model ? { model } : {}),
                 projectId: project.id,
@@ -182,9 +261,9 @@ export default function InteriorPage() {
                 modeName: mode.name,
                 ...(room ? { roomKey: room.key, roomName: room.name } : {}),
                 params: result.params,
-                ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}),
+                ...(notes ? { notes } : {}),
                 count: result.count,
-                ...(draft.size !== "auto" ? { size: draft.size } : {}),
+                ...(size ? { size } : {}),
                 model: result.model.label || result.model.model,
                 source: sourceRef,
                 references,
@@ -213,6 +292,23 @@ export default function InteriorPage() {
         void downloadBrowserMedia({ fileName: interiorDownloadName(target.round, target.item, target.index), storageKey: resourceStorageKey(target.output.resourceId) }).catch((error: unknown) => message.error(errorText(error, "下载失败")));
     };
 
+    /** 整轮下载：逐张交给浏览器，中间留一点间隔，避免浏览器把连续下载当成弹窗拦掉。 */
+    const downloadRound = async (round: InteriorRound) => {
+        const targets = round.items.flatMap((item) => (item.status === "succeeded" ? item.outputs.map((output, index) => ({ round, item, output, index })) : []));
+        if (!targets.length || downloadingRound) return;
+        setDownloadingRound(round.id);
+        try {
+            for (const [index, target] of targets.entries()) {
+                if (index) await delay(DOWNLOAD_GAP_MS);
+                await downloadBrowserMedia({ fileName: interiorDownloadName(target.round, target.item, target.index), storageKey: resourceStorageKey(target.output.resourceId) });
+            }
+        } catch (error) {
+            message.error(errorText(error, "下载失败"));
+        } finally {
+            setDownloadingRound("");
+        }
+    };
+
     /** 把效果图当作新原图；有「文字微调」模式时直接切过去，方便一句话改局部。 */
     const continueFrom = (target: InteriorOutputTarget) => {
         setViewing(null);
@@ -220,6 +316,47 @@ export default function InteriorPage() {
         if (editMode) selectMode(editMode);
         setDraft((value) => ({ ...value, source: { ...target.output, name: "效果图" }, notes: editMode ? "" : value.notes }));
         message.info(editMode ? "已把这张图作为原图，写下要改的地方就能生成" : "已把这张图作为原图");
+    };
+
+    /** 用某一轮的设置回填左侧表单；styleKey 只重试这一个风格。不自动提交，用户确认后再点生成。 */
+    const reuseRound = (round: InteriorRound, styleKey?: string) => {
+        if (!catalog || busy) return;
+        const target = catalog.modes.find((item) => item.key === round.modeKey);
+        if (!target) {
+            message.warning("这一轮用的出图方式已经下架");
+            return;
+        }
+        // 优先回到这一轮当时用的交互模式，比例、画质和模型才和当时一致。
+        const roundSurface = catalog.settings.allowSurfaceSwitch && (target.audience === "both" || target.audience === round.surface) ? round.surface : surface;
+        const nextSurface = surfaceFor(target, roundSurface);
+        if (nextSurface !== surface) {
+            if (!catalog.settings.allowSurfaceSwitch) {
+                message.warning("当前模式下不能使用这个出图方式");
+                return;
+            }
+            setSurface(nextSurface);
+            window.localStorage.setItem(SURFACE_KEY, nextSurface);
+        }
+        const enabledStyles = new Set(catalog.styles.map((item) => item.key));
+        const previousStyles = styleKey ? [styleKey] : round.items.map((item) => item.styleKey || "");
+        const styleKeys = target.requiresStyle ? previousStyles.filter((key) => enabledStyles.has(key)).slice(0, Math.max(1, catalog.settings.maxStylesPerRun)) : [];
+        const hasReference = target.slots.some((slot) => slot.key === "reference");
+        const roomKey = round.roomKey && catalog.rooms.some((item) => item.key === round.roomKey) ? round.roomKey : "";
+        setSubmitError("");
+        setDraft((value) => ({
+            ...value,
+            modeId: target.id,
+            roomKey,
+            styleKeys,
+            params: reusableParams(target, round.params),
+            notes: round.notes || "",
+            count: Math.min(Math.max(1, round.count), interiorCountLimit(catalog, target)),
+            size: round.size || "auto",
+            source: { ...round.source, name: "原图" },
+            references: hasReference ? round.references.map((item) => ({ ...item, name: "参考图" })) : [],
+            modelValue: interiorInitialModel(config, target, catalog.settings.defaultModel, value.modelValue || preferredModel, nextSurface),
+        }));
+        message.info(styleKey ? "已填好这个风格的设置，确认后点生成" : "已填好这一轮的设置，确认后点生成");
     };
 
     const deleteRound = (round: InteriorRound) => {
@@ -254,12 +391,18 @@ export default function InteriorPage() {
             return;
         }
         setDialogBusy(true);
+        const { kind } = dialog;
         try {
-            if (dialog.mode === "create") await projects.create(name, dialog.kind);
+            if (dialog.mode === "create") await projects.create(name, kind);
             else await projects.rename(name);
             setDialog(null);
         } catch (error) {
-            message.error(errorText(error, dialog.mode === "create" ? "新建项目失败" : "重命名失败"));
+            if (dialog.mode === "create" && error instanceof InteriorUnsavedError) {
+                confirmDiscard("新建", async () => {
+                    await projects.create(name, kind, true);
+                    setDialog(null);
+                });
+            } else message.error(errorText(error, dialog.mode === "create" ? "新建项目失败" : "重命名失败"));
         } finally {
             setDialogBusy(false);
         }
@@ -304,13 +447,13 @@ export default function InteriorPage() {
                                 value={current?.id}
                                 placeholder={projects.projects?.length ? "选择项目" : "第一次出图时自动新建项目"}
                                 options={(projects.projects || []).map((item) => ({ value: item.id, label: `${item.kind === "client" ? "客户 · " : ""}${item.name}` }))}
-                                onChange={(id: string) => void projects.open(id)}
+                                onChange={(id: string) => openProject(id)}
                                 loading={projects.projectLoading}
                                 disabled={busy}
                                 aria-label="当前项目"
                             />
                             <Tooltip title="新建项目">
-                                <button type="button" className="itd-icon-button" aria-label="新建项目" onClick={() => setDialog({ mode: "create", name: "", kind: surface === "pro" ? "client" : "home" })}>
+                                <button type="button" className="itd-icon-button" aria-label="新建项目" disabled={busy} onClick={() => setDialog({ mode: "create", name: "", kind: surface === "pro" ? "client" : "home" })}>
                                     <FolderPlus className="size-4" aria-hidden />
                                 </button>
                             </Tooltip>
@@ -322,7 +465,7 @@ export default function InteriorPage() {
                                         </button>
                                     </Tooltip>
                                     <Tooltip title="删除项目">
-                                        <button type="button" className="itd-icon-button" aria-label="删除项目" onClick={deleteProject}>
+                                        <button type="button" className="itd-icon-button" aria-label="删除项目" disabled={busy} onClick={deleteProject}>
                                             <Trash2 className="size-4" aria-hidden />
                                         </button>
                                     </Tooltip>
@@ -356,11 +499,23 @@ export default function InteriorPage() {
                     </header>
                     <div className="itd-board-scroll thin-scrollbar">
                         {projects.listError ? <WorkspaceErrorState compact title="项目列表读取失败" description={projects.listError} onRetry={() => void projects.reloadList()} /> : null}
-                        {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError} onRetry={() => (current ? void projects.open(current.id) : void projects.reloadList())} /> : null}
+                        {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError} onRetry={() => (current ? openProject(current.id) : void projects.reloadList())} /> : null}
                         {projects.projectLoading && !current ? (
                             <WorkspaceLoadingState label="正在读取项目" rows={2} />
                         ) : (
-                            <InteriorBoard document={current?.document || { version: 1, rounds: [] }} stalled={tasks.stalled} onRetryWatch={tasks.retry} onOpen={setViewing} onDownload={download} onContinue={continueFrom} onDeleteRound={deleteRound} />
+                            <InteriorBoard
+                                document={current?.document || { version: 1, rounds: [] }}
+                                stalled={tasks.stalled}
+                                busy={busy}
+                                downloadingRound={downloadingRound}
+                                onRetryWatch={tasks.retry}
+                                onOpen={setViewing}
+                                onDownload={download}
+                                onDownloadRound={(round) => void downloadRound(round)}
+                                onContinue={continueFrom}
+                                onReuse={reuseRound}
+                                onDeleteRound={deleteRound}
+                            />
                         )}
                     </div>
                 </section>

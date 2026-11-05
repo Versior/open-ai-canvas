@@ -81,6 +81,8 @@ type InteriorPublicSettings struct {
 	AllowSurfaceSwitch bool   `json:"allowSurfaceSwitch"`
 	MaxStylesPerRun    int    `json:"maxStylesPerRun"`
 	MaxCountPerStyle   int    `json:"maxCountPerStyle"`
+	// DefaultModel 只含系统渠道或前台逻辑模型的标识，页面据此预选模型。
+	DefaultModel *interior.ModelRef `json:"defaultModel,omitempty"`
 }
 
 // EnsureBuiltinInteriorCatalog 在启动时补齐内置的模式、风格和空间；已有记录不覆盖。
@@ -128,7 +130,7 @@ func (s *Service) InteriorCatalog(actor *model.User) (*InteriorCatalog, error) {
 		return nil, err
 	}
 	catalog := &InteriorCatalog{
-		Settings: InteriorPublicSettings{DefaultSurface: settings.DefaultSurface, AllowSurfaceSwitch: settings.AllowSurfaceSwitch, MaxStylesPerRun: settings.MaxStylesPerRun, MaxCountPerStyle: settings.MaxCountPerStyle},
+		Settings: InteriorPublicSettings{DefaultSurface: settings.DefaultSurface, AllowSurfaceSwitch: settings.AllowSurfaceSwitch, MaxStylesPerRun: settings.MaxStylesPerRun, MaxCountPerStyle: settings.MaxCountPerStyle, DefaultModel: settings.DefaultModel},
 		Modes:    make([]InteriorModeView, 0, len(modes)),
 		Styles:   []InteriorPresetView{},
 		Rooms:    []InteriorPresetView{},
@@ -179,7 +181,7 @@ func (s *Service) CreateInteriorMode(actor *model.User, input InteriorModeInput)
 	if err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
-	if err := s.requireInteriorCover(actor, normalized.CoverResource); err != nil {
+	if err := s.requireInteriorCover(actor, normalized.CoverResource, ""); err != nil {
 		return nil, err
 	}
 	if _, err := s.repo.InteriorModeByKey(normalized.Key); err == nil {
@@ -219,7 +221,7 @@ func (s *Service) UpdateInteriorMode(actor *model.User, id string, input Interio
 	if err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
-	if err := s.requireInteriorCover(actor, normalized.CoverResource); err != nil {
+	if err := s.requireInteriorCover(actor, normalized.CoverResource, current.CoverResourceID); err != nil {
 		return nil, err
 	}
 	if input.Version != current.Version {
@@ -269,7 +271,7 @@ func (s *Service) CreateInteriorPreset(actor *model.User, input InteriorPresetIn
 	if err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
-	if err := s.requireInteriorCover(actor, normalized.CoverResource); err != nil {
+	if err := s.requireInteriorCover(actor, normalized.CoverResource, ""); err != nil {
 		return nil, err
 	}
 	existing, err := s.repo.InteriorPresetsByKeys(normalized.Type, []string{normalized.Key})
@@ -311,7 +313,7 @@ func (s *Service) UpdateInteriorPreset(actor *model.User, id string, input Inter
 	if err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
-	if err := s.requireInteriorCover(actor, normalized.CoverResource); err != nil {
+	if err := s.requireInteriorCover(actor, normalized.CoverResource, current.CoverResourceID); err != nil {
 		return nil, err
 	}
 	if input.Version != current.Version {
@@ -393,8 +395,10 @@ func (s *Service) interiorSettings() (InteriorSettings, error) {
 	return interior.NormalizeSettings(value)
 }
 
-func (s *Service) requireInteriorCover(actor *model.User, resourceID string) error {
-	if resourceID == "" {
+// requireInteriorCover 只校验新换上的封面：必须是当前管理员自己上传、已就绪的图片。
+// 封面没变时跳过，别的管理员设过的封面不妨碍修改其他字段。
+func (s *Service) requireInteriorCover(actor *model.User, resourceID, previous string) error {
+	if resourceID == "" || resourceID == previous {
 		return nil
 	}
 	resource, err := s.repo.ResourceForUser(actor.ID, resourceID)

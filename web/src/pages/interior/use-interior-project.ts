@@ -31,6 +31,14 @@ function errorText(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
 }
 
+/** 当前项目保存失败时切换或新建项目会抛出它；页面据此询问是否放弃未保存的记录。 */
+export class InteriorUnsavedError extends Error {
+    constructor() {
+        super("当前项目还有出图记录没保存成功，可以先点「保存失败，点击重试」");
+        this.name = "InteriorUnsavedError";
+    }
+}
+
 /**
  * 室内设计项目的读取与保存。页面先改本地文档，再串行保存到服务端；
  * 修订号冲突时取回最新文档、按轮次合并后重试，不会覆盖另一个窗口新增的轮次。
@@ -47,6 +55,8 @@ export function useInteriorProjects(userId: string) {
     const currentRef = useRef<InteriorProject | null>(null);
     const revisionRef = useRef(0);
     const dirtyRef = useRef(false);
+    // 最近一次保存是否失败；和 dirtyRef 分开，保存途中有新改动时不会被当成失败。
+    const saveFailedRef = useRef(false);
     const deletedRoundsRef = useRef(new Set<string>());
     const chainRef = useRef<Promise<void>>(Promise.resolve());
     const timerRef = useRef<number | undefined>(undefined);
@@ -83,10 +93,12 @@ export function useInteriorProjects(userId: string) {
                     setLocal({ ...local, revision: server.revision, document: mergeInteriorDocuments(normalizeInteriorDocument(server.document), local.document, deletedRoundsRef.current) });
                 }
             }
+            saveFailedRef.current = false;
             setSaveError("");
             setSaveState(dirtyRef.current ? "saving" : "saved");
         } catch (error) {
             dirtyRef.current = true;
+            saveFailedRef.current = true;
             setSaveError(errorText(error, "项目保存失败"));
             setSaveState("error");
         }
@@ -103,6 +115,26 @@ export function useInteriorProjects(userId: string) {
         window.clearTimeout(timerRef.current);
         timerRef.current = window.setTimeout(() => void flush(), SAVE_DELAY_MS);
     }, [flush]);
+
+    /**
+     * 切换或新建项目前先把当前项目存好；存不上就不切换，避免已扣费的出图记录被丢掉。
+     * 保存期间又有任务结果写回时再存一次；只有保存真的失败才拦下。discard 表示用户确认放弃未保存的记录。
+     */
+    const ensureSaved = useCallback(
+        async (discard = false) => {
+            if (discard) {
+                window.clearTimeout(timerRef.current);
+                await chainRef.current;
+                dirtyRef.current = false;
+                saveFailedRef.current = false;
+                return;
+            }
+            await flush();
+            if (dirtyRef.current && !saveFailedRef.current) await flush();
+            if (saveFailedRef.current) throw new InteriorUnsavedError();
+        },
+        [flush],
+    );
 
     /** 修改当前项目文档；projectId 不是当前项目时忽略，避免切换项目后旧任务写错地方。 */
     const update = useCallback(
@@ -126,8 +158,8 @@ export function useInteriorProjects(userId: string) {
     );
 
     const open = useCallback(
-        async (projectId: string) => {
-            await flush();
+        async (projectId: string, discardUnsaved = false) => {
+            await ensureSaved(discardUnsaved);
             setProjectLoading(true);
             setProjectError("");
             try {
@@ -135,6 +167,7 @@ export function useInteriorProjects(userId: string) {
                 revisionRef.current = project.revision;
                 deletedRoundsRef.current = new Set();
                 dirtyRef.current = false;
+                saveFailedRef.current = false;
                 setLocal(project);
                 setSaveState("saved");
                 setSaveError("");
@@ -145,23 +178,24 @@ export function useInteriorProjects(userId: string) {
                 setProjectLoading(false);
             }
         },
-        [flush, lastProjectKey, setLocal],
+        [ensureSaved, lastProjectKey, setLocal],
     );
 
     const create = useCallback(
-        async (name: string, kind: InteriorProjectKind) => {
-            await flush();
+        async (name: string, kind: InteriorProjectKind, discardUnsaved = false) => {
+            await ensureSaved(discardUnsaved);
             const project = withDocument(await createInteriorProject({ name, kind, document: emptyInteriorDocument() }));
             revisionRef.current = project.revision;
             deletedRoundsRef.current = new Set();
             dirtyRef.current = false;
+            saveFailedRef.current = false;
             setProjects((list) => [summaryOf(project), ...(list || [])]);
             setLocal(project);
             setSaveState("saved");
             window.localStorage.setItem(lastProjectKey, project.id);
             return project;
         },
-        [flush, lastProjectKey, setLocal],
+        [ensureSaved, lastProjectKey, setLocal],
     );
 
     const rename = useCallback(
@@ -183,8 +217,14 @@ export function useInteriorProjects(userId: string) {
         async (projectId: string) => {
             window.clearTimeout(timerRef.current);
             await chainRef.current;
-            await deleteInteriorProject(projectId);
+            try {
+                await deleteInteriorProject(projectId);
+            } catch (error) {
+                // 项目已在别的窗口删掉时照常从本地移除。
+                if (!(error instanceof ApiError && error.status === 404)) throw error;
+            }
             dirtyRef.current = false;
+            saveFailedRef.current = false;
             const rest = (projects || []).filter((item) => item.id !== projectId);
             setProjects(rest);
             if (currentRef.current?.id === projectId) {

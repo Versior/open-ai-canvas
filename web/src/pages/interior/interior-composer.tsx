@@ -5,9 +5,9 @@ import { ModelPicker } from "@/components/model-picker";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { cn } from "@/lib/utils";
 import { uploadResourceFile } from "@/services/api/resources";
-import type { InteriorCatalog, InteriorImageRef, InteriorMode, InteriorPreset, InteriorSurface } from "@/services/api/interior";
+import type { InteriorCatalog, InteriorImageRef, InteriorMode, InteriorModelRef, InteriorPreset, InteriorSurface } from "@/services/api/interior";
 import type { AiConfig } from "@/stores/use-config-store";
-import { interiorImageUrl, interiorModelRef, sameInteriorModel } from "./interior-models";
+import { interiorImageUrl, interiorModelPermitted, interiorModelRef } from "./interior-models";
 
 export type InteriorUpload = InteriorImageRef & { name: string; uploading?: boolean; error?: string; previewUrl?: string };
 
@@ -62,7 +62,7 @@ export function interiorCountLimit(catalog: InteriorCatalog, mode: InteriorMode 
 }
 
 /** 提交前的阻断原因；返回空串表示可以提交。 */
-export function interiorDraftProblem(draft: InteriorDraft, mode: InteriorMode | undefined, surface: InteriorSurface, config: AiConfig) {
+export function interiorDraftProblem(draft: InteriorDraft, mode: InteriorMode | undefined, surface: InteriorSurface, config: AiConfig, siteDefault?: InteriorModelRef) {
     if (!mode) return "请选择出图方式";
     if (!draft.source) return `请上传${mode.slots.find((slot) => slot.key === "source")?.name || "原图"}`;
     if (draft.source.uploading || draft.references.some((item) => item.uploading)) return "图片还在上传";
@@ -72,7 +72,11 @@ export function interiorDraftProblem(draft: InteriorDraft, mode: InteriorMode | 
     if (mode.requiresRoom && !draft.roomKey) return "请选择空间";
     if (mode.requiresStyle && !draft.styleKeys.length) return "请至少选择一个风格";
     if (mode.notesRequired && !draft.notes.trim()) return "请写下要修改的内容";
-    if (surface === "pro" && !mode.defaultModel && !interiorModelRef(config, draft.modelValue)) return "请选择出图模型";
+    if (surface === "pro") {
+        const ref = interiorModelRef(config, draft.modelValue);
+        if (!ref && !(mode.defaultModel || siteDefault)) return "请选择出图模型";
+        if (ref && !interiorModelPermitted(mode, siteDefault, ref)) return "所选模型不在这个出图方式的可选范围内";
+    }
     return "";
 }
 
@@ -123,7 +127,7 @@ function UploadSlot({ label, value, onPick, onClear, disabled }: { label: string
                 <button type="button" className="itd-upload-empty" onClick={() => input.current?.click()} disabled={disabled}>
                     <ImagePlus className="size-5" aria-hidden />
                     <span>{label}</span>
-                    <small>点击或拖入图片</small>
+                    <small>点击、拖入或 Ctrl+V 粘贴</small>
                 </button>
             )}
             <input
@@ -164,13 +168,11 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
     const showRoom = Boolean(mode && (mode.requiresRoom || mode.requiresStyle));
     const maxStyles = Math.max(1, catalog.settings.maxStylesPerRun || 1);
     const countLimit = interiorCountLimit(catalog, mode);
-    const problem = interiorDraftProblem(draft, mode, surface, config);
+    const siteDefault = catalog.settings.defaultModel;
+    const recommended = mode?.defaultModel || siteDefault;
+    const problem = interiorDraftProblem(draft, mode, surface, config, siteDefault);
     const total = (mode?.requiresStyle ? Math.max(1, draft.styleKeys.length) : 1) * draft.count;
-    const allowed = mode?.allowedModels || [];
-    const modelFilter = (value: string) => {
-        const ref = interiorModelRef(config, value);
-        return Boolean(ref) && (!allowed.length || allowed.some((item) => sameInteriorModel(item, ref)) || sameInteriorModel(mode?.defaultModel, ref));
-    };
+    const modelFilter = (value: string) => Boolean(mode) && interiorModelPermitted(mode!, siteDefault, interiorModelRef(config, value));
 
     const toggleStyle = (key: string) => {
         if (draft.styleKeys.includes(key)) onChange({ styleKeys: draft.styleKeys.filter((item) => item !== key) });
@@ -183,14 +185,27 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
             <div className="itd-composer-scroll thin-scrollbar">
                 <section className="itd-section">
                     <h2 className="itd-section-title">出图方式</h2>
-                    <div className="itd-mode-grid" role="radiogroup" aria-label="出图方式">
-                        {modes.map((item) => (
-                            <button key={item.id} type="button" role="radio" aria-checked={item.id === draft.modeId} className={cn("itd-mode", item.id === draft.modeId && "is-active")} onClick={() => onModeChange(item)} disabled={busy}>
-                                <strong>{item.name}</strong>
-                                <span>{item.subtitle}</span>
-                            </button>
-                        ))}
-                    </div>
+                    {modes.length ? (
+                        <div className="itd-mode-grid" role="radiogroup" aria-label="出图方式">
+                            {modes.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={item.id === draft.modeId}
+                                    className={cn("itd-mode", item.id === draft.modeId && "is-active", item.coverUrl && "has-cover")}
+                                    onClick={() => onModeChange(item)}
+                                    disabled={busy}
+                                >
+                                    {item.coverUrl ? <img src={item.coverUrl} alt="" aria-hidden loading="lazy" /> : null}
+                                    <strong>{item.name}</strong>
+                                    <span>{item.subtitle}</span>
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="itd-muted-note is-left">{surface === "pro" ? "专业模式下暂时没有开放的出图方式。" : "暂时没有开放的出图方式。"}</p>
+                    )}
                 </section>
 
                 {mode ? (
@@ -312,7 +327,7 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
                                     <Select size="small" className="itd-select" value={draft.quality} options={QUALITY_OPTIONS} onChange={(quality) => onChange({ quality })} disabled={busy} />
                                 </div>
                                 <div className="itd-field is-block">
-                                    <span className="itd-field-label">出图模型{mode.defaultModel ? <small>未选择时用 {mode.defaultModel.label || mode.defaultModel.model}</small> : null}</span>
+                                    <span className="itd-field-label">出图模型{recommended ? <small>推荐 {recommended.label || recommended.model}</small> : null}</span>
                                     <ModelPicker
                                         config={config}
                                         value={draft.modelValue}

@@ -3,11 +3,13 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"yingce/backend/internal/interior"
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/service"
 )
@@ -53,14 +55,26 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if !allowed {
 			return
 		}
-		policy, available := loadRuntimePolicy(c, svc)
-		if !available || !enforceRateLimit(c, "tasks:"+actor.ID, policy.Request.TaskCreatePerMinute, time.Minute) {
-			return
-		}
 		var req service.InteriorGenerateInput
 		if err := decodeInteriorJSON(c, &req); err != nil {
 			fail(c, http.StatusBadRequest, err)
 			return
+		}
+		policy, available := loadRuntimePolicy(c, svc)
+		if !available {
+			return
+		}
+		// 每个风格各建一个任务，任务频控按风格数计（上限与 interior.MaxStylesPerRun 一致）。
+		// 风格数本身超过每分钟上限时直接说明原因，不先消耗计数。
+		tasks := min(max(1, len(req.StyleKeys)), interior.MaxStylesPerRun)
+		if limit := policy.Request.TaskCreatePerMinute; limit > 0 && tasks > limit {
+			failService(c, service.RateLimited(fmt.Sprintf("每分钟最多创建 %d 个任务，这次选了 %d 个风格，请少选几个", limit, tasks)))
+			return
+		}
+		for range tasks {
+			if !enforceRateLimit(c, "tasks:"+actor.ID, policy.Request.TaskCreatePerMinute, time.Minute) {
+				return
+			}
 		}
 		value, err := svc.GenerateInterior(actor, req, TraceID(c), RequestID(c))
 		if err != nil {

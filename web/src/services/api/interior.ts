@@ -59,7 +59,7 @@ export type InteriorPreset = {
 };
 
 export type InteriorCatalog = {
-    settings: { defaultSurface: InteriorSurface; allowSurfaceSwitch: boolean; maxStylesPerRun: number; maxCountPerStyle: number };
+    settings: { defaultSurface: InteriorSurface; allowSurfaceSwitch: boolean; maxStylesPerRun: number; maxCountPerStyle: number; defaultModel?: InteriorModelRef };
     modes: InteriorMode[];
     styles: InteriorPreset[];
     rooms: InteriorPreset[];

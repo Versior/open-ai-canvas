@@ -15,6 +15,7 @@ import {
     type InteriorModelRef,
     type InteriorParamDef,
 } from "@/services/api/interior";
+import { InteriorCoverUpload, type InteriorCover } from "./interior-cover-upload";
 import { InteriorModelMultiSelect, InteriorModelSelect } from "./interior-model-select";
 
 const AUDIENCE_OPTIONS: Array<{ value: InteriorAudience; label: string }> = [
@@ -46,7 +47,7 @@ type ModeForm = {
     enabled: boolean;
 };
 
-type Editing = { mode?: InteriorMode; defaultModel?: InteriorModelRef; allowedModels: InteriorModelRef[] };
+type Editing = { mode?: InteriorMode; defaultModel?: InteriorModelRef; allowedModels: InteriorModelRef[]; cover: InteriorCover };
 
 function formValues(mode?: InteriorMode): ModeForm {
     const source = mode?.slots.find((slot) => slot.key === "source");
@@ -83,7 +84,7 @@ function errorText(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
 }
 
-/** 出图方式：每种方式的输入、参数、提示词模板和可用模型。提示词只在服务端编译，不会下发给用户。 */
+/** 出图方式：每种方式的输入、参数、提示词模板和可用模型。模板在服务端拼接，前台目录不返回。 */
 export function InteriorModesPanel() {
     const { message } = App.useApp();
     const [modes, setModes] = useState<InteriorMode[]>([]);
@@ -92,6 +93,7 @@ export function InteriorModesPanel() {
     const [editing, setEditing] = useState<Editing | null>(null);
     const [saving, setSaving] = useState(false);
     const [toggling, setToggling] = useState("");
+    const [coverUploading, setCoverUploading] = useState(false);
     const [form] = Form.useForm<ModeForm>();
 
     const reload = useCallback(async () => {
@@ -112,7 +114,7 @@ export function InteriorModesPanel() {
 
     const open = (mode?: InteriorMode) => {
         form.setFieldsValue(formValues(mode));
-        setEditing({ mode, ...(mode?.defaultModel ? { defaultModel: mode.defaultModel } : {}), allowedModels: mode?.allowedModels || [] });
+        setEditing({ mode, ...(mode?.defaultModel ? { defaultModel: mode.defaultModel } : {}), allowedModels: mode?.allowedModels || [], cover: { resourceId: mode?.coverResourceId || "", ...(mode?.coverUrl ? { url: mode.coverUrl } : {}) } });
     };
 
     const saveFailed = (cause: unknown) => {
@@ -143,7 +145,7 @@ export function InteriorModesPanel() {
             subtitle: values.subtitle.trim(),
             description: values.description.trim(),
             audience: values.audience,
-            coverResourceId: editing.mode?.coverResourceId || "",
+            coverResourceId: editing.cover.resourceId,
             slots,
             params,
             promptTemplate: values.promptTemplate,
@@ -241,11 +243,16 @@ export function InteriorModesPanel() {
                 open={Boolean(editing)}
                 title={editing?.mode ? `编辑：${editing.mode.name}` : "新增出图方式"}
                 width={820}
-                okText="保存"
+                okText={coverUploading ? "等待封面上传" : "保存"}
+                okButtonProps={{ disabled: coverUploading }}
                 cancelText="取消"
                 confirmLoading={saving}
                 onOk={() => void save()}
-                onCancel={() => setEditing(null)}
+                onCancel={() => !coverUploading && setEditing(null)}
+                cancelButtonProps={{ disabled: coverUploading }}
+                closable={!coverUploading}
+                maskClosable={!coverUploading}
+                keyboard={!coverUploading}
                 forceRender
                 destroyOnHidden={false}
             >
@@ -266,6 +273,9 @@ export function InteriorModesPanel() {
                     </div>
                     <Form.Item name="description" label="说明">
                         <Input.TextArea autoSize={{ minRows: 1, maxRows: 3 }} maxLength={2000} />
+                    </Form.Item>
+                    <Form.Item label="封面" extra="显示在前台出图方式卡片上，建议 16:9 的示例效果图。">
+                        <InteriorCoverUpload value={editing?.cover || { resourceId: "" }} disabled={saving} onUploadingChange={setCoverUploading} onChange={(cover) => setEditing((current) => (current ? { ...current, cover } : current))} />
                     </Form.Item>
                     <div className="itd-admin-grid">
                         <Form.Item name="sourceName" label="原图输入名称" rules={[{ required: true, message: "请填写名称" }]}>

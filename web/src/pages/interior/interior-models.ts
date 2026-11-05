@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 import { resourceFileUrl } from "@/services/api/resources";
-import type { InteriorModelRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem } from "@/services/api/interior";
+import type { InteriorMode, InteriorModelRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem } from "@/services/api/interior";
 
 /**
  * 模型选项值转成服务端认可的模型引用。室内设计只接受系统渠道或前台逻辑模型，
@@ -21,6 +21,34 @@ export function interiorModelRef(config: AiConfig, value: string): InteriorModel
 export function sameInteriorModel(left?: InteriorModelRef | null, right?: InteriorModelRef | null) {
     if (!left || !right) return false;
     return left.model === right.model && (left.channelId || "") === (right.channelId || "") && (left.logicalModelId || "") === (right.logicalModelId || "");
+}
+
+/** 和服务端 interiorModelChoice 同一规则：可选范围为空时不限制；默认模型总是允许。 */
+export function interiorModelPermitted(mode: Pick<InteriorMode, "allowedModels" | "defaultModel">, siteDefault: InteriorModelRef | undefined, ref: InteriorModelRef | null) {
+    if (!ref) return false;
+    if (!mode.allowedModels.length) return true;
+    return mode.allowedModels.some((item) => sameInteriorModel(item, ref)) || sameInteriorModel(mode.defaultModel || siteDefault, ref);
+}
+
+/** 模型引用转回选择器的选项值；当前账号不可用时返回空串。 */
+export function interiorModelValue(config: AiConfig, ref?: InteriorModelRef | null) {
+    if (!ref) return "";
+    return interiorImageModelOptions(config).find((item) => sameInteriorModel(item.ref, ref))?.value || "";
+}
+
+/**
+ * 切换出图方式时预选模型，和服务端顺序一致。
+ * 专业模式：当前模型（在可选范围内时）> 推荐的默认模型 > 可选范围里第一个可用的。
+ * 快速出图：推荐的默认模型 > 当前模型（在可选范围内时）> 可选范围里第一个可用的。
+ */
+export function interiorInitialModel(config: AiConfig, mode: InteriorMode, siteDefault: InteriorModelRef | undefined, current: string, surface: "quick" | "pro") {
+    const currentPermitted = Boolean(current) && interiorModelPermitted(mode, siteDefault, interiorModelRef(config, current));
+    // 专业模式尊重用户已经选的模型；快速出图没有选择器，跟着推荐走。
+    if (surface === "pro" && currentPermitted) return current;
+    const recommended = interiorModelValue(config, mode.defaultModel || siteDefault);
+    if (recommended) return recommended;
+    if (currentPermitted) return current;
+    return interiorImageModelOptions(config).find((item) => interiorModelPermitted(mode, siteDefault, item.ref))?.value || current;
 }
 
 /** 当前账号能用来出图的系统图片模型（选项值沿用全局模型选择的编码）。 */

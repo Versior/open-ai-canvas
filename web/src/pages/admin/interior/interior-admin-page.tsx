@@ -25,7 +25,7 @@ export default function InteriorAdminPage() {
     return (
         <AdminPageFrame
             title="室内设计配置"
-            description="配置室内设计页的出图方式、风格、空间和默认模型。提示词只在服务端使用，不会下发给用户。"
+            description="配置室内设计页的出图方式、风格、空间和默认模型。模板和片段只在服务端拼接，前台目录不返回；拼好的完整提示词会记在用户自己的任务里。"
             actions={
                 <AdminSegmented<Tab>
                     ariaLabel="室内设计配置视图"

@@ -328,8 +328,10 @@ func interiorCount(requested, modeMax, settingsMax int) (int, error) {
 	return requested, nil
 }
 
-// interiorModelChoice 决定本次使用的模型。快速出图优先用管理员配置的默认模型；
-// 专业模式优先用用户选择。用户选择的模型必须在模式的可选范围内（未限制时由系统渠道准入兜底）。
+// interiorModelChoice 决定本次使用的模型。
+// 快速出图没有模型选择器：管理员默认模型 > 用户当前模型（在可选范围内时）> 可选范围里的第一个。
+// 专业模式：用户选择（必须在可选范围内）> 默认模型 > 可选范围里的第一个。
+// 可选范围为空时不限制，是否能用由系统渠道准入决定。
 func interiorModelChoice(surface string, requested, modeDefault, siteDefault *interior.ModelRef, allowed []interior.ModelRef) (interior.ModelRef, error) {
 	chosen, err := interior.NormalizeModelRef(requested)
 	if err != nil {
@@ -339,27 +341,35 @@ func interiorModelChoice(surface string, requested, modeDefault, siteDefault *in
 	if configured == nil {
 		configured = siteDefault
 	}
+	permitted := func(ref interior.ModelRef) bool {
+		if len(allowed) == 0 || (configured != nil && configured.Same(ref)) {
+			return true
+		}
+		for _, item := range allowed {
+			if item.Same(ref) {
+				return true
+			}
+		}
+		return false
+	}
 	if surface == interior.SurfaceQuick && configured != nil {
 		return *configured, nil
 	}
-	if chosen == nil {
-		if configured == nil {
-			return interior.ModelRef{}, BadAuthRequest("请选择出图模型，或让管理员配置默认模型")
+	if chosen != nil {
+		if permitted(*chosen) {
+			return *chosen, nil
 		}
+		if surface == interior.SurfacePro {
+			return interior.ModelRef{}, BadAuthRequest("所选模型不在当前出图方式的可选范围内")
+		}
+	}
+	if configured != nil {
 		return *configured, nil
 	}
 	if len(allowed) > 0 {
-		for _, item := range allowed {
-			if item.Same(*chosen) {
-				return *chosen, nil
-			}
-		}
-		if configured != nil && configured.Same(*chosen) {
-			return *chosen, nil
-		}
-		return interior.ModelRef{}, BadAuthRequest("所选模型不在当前模式的可选范围内")
+		return allowed[0], nil
 	}
-	return *chosen, nil
+	return interior.ModelRef{}, BadAuthRequest("请选择出图模型，或让管理员配置默认模型")
 }
 
 // interiorTaskScope 校验任务关联的项目归属；轮次标识只做格式校验，用于页面把结果回填到对应轮次。

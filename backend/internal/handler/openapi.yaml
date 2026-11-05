@@ -214,7 +214,7 @@ paths:
     get:
       tags: [canvas]
       summary: 读取室内设计的出图方式、风格、空间和前台设置
-      description: 需要登录并打开「室内设计」功能开关。只返回开放的条目；不包含提示词模板、风格片段和参数片段。Cache-Control 为 no-store。
+      description: 需要登录并打开「室内设计」功能开关。只返回开放的条目；不包含提示词模板、风格片段和参数片段。settings.defaultModel 是站点默认出图模型（可能为空）。Cache-Control 为 no-store。
       responses:
         "200": {description: data 包含 settings、modes、styles、rooms}
         "401": {$ref: "#/components/responses/Error"}
@@ -223,7 +223,7 @@ paths:
     post:
       tags: [canvas]
       summary: 室内设计出图
-      description: 服务端按出图方式的模板编译提示词，每个所选风格创建一个 canvas_image 任务（metadata.source=interior-design），计费、并发与取消走通用任务。原图和参考图须是本人已就绪的图片资源；快速出图使用管理员配置的默认模型，专业模式可在允许范围内选择系统模型。第一个任务失败直接返回错误，之后的失败在 items 里逐项说明。受任务创建频率限制。
+      description: 服务端按出图方式的模板编译提示词，每个所选风格创建一个 canvas_image 任务（metadata.source=interior-design），编译后的提示词写在任务 prompt 里。计费、并发与取消走通用任务。原图和参考图须是本人已就绪的图片资源；快速出图使用管理员配置的默认模型，专业模式可在允许范围内选择系统模型。第一个任务失败直接返回错误，之后的失败在 items 里逐项说明。任务创建频率按所选风格数计次。
       requestBody:
         required: true
         content:

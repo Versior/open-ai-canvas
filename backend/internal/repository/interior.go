@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -183,8 +184,19 @@ func (r *Repository) interiorResourceReferences(userID string, resourceIDs []str
 	if !r.db.Migrator().HasTable(&model.InteriorProject{}) {
 		return nil
 	}
+	// 资源 ID 不多时先按 ID 文本预筛，只读可能引用它们的项目文档；最终是否引用仍由 service 解析 JSON 判定。
+	query := r.db.Select("id", "name", "document_json").Where("user_id = ?", userID)
+	if len(resourceIDs) <= 100 {
+		conditions := make([]string, 0, len(resourceIDs))
+		args := make([]any, 0, len(resourceIDs))
+		for _, id := range resourceIDs {
+			conditions = append(conditions, "document_json LIKE ?")
+			args = append(args, "%"+id+"%")
+		}
+		query = query.Where(strings.Join(conditions, " OR "), args...)
+	}
 	var projects []model.InteriorProject
-	if err := r.db.Select("id", "name", "document_json").Where("user_id = ?", userID).Find(&projects).Error; err != nil {
+	if err := query.Find(&projects).Error; err != nil {
 		return err
 	}
 	for _, project := range projects {
