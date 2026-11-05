@@ -321,7 +321,7 @@ func (s *Service) AdminInteriorOverview(actor *model.User) (*AdminInteriorOvervi
 	now := time.Now().UTC()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	windowStart := today.AddDate(0, 0, -(adminInteriorWindowDays - 1))
-	tasks, err := s.repo.InteriorTasksSince(windowStart, adminInteriorStatsLimit+1)
+	tasks, err := s.repo.InteriorTasksBetween(windowStart, today.AddDate(0, 0, 1), adminInteriorStatsLimit+1)
 	if err != nil {
 		return nil, err
 	}

@@ -75,10 +75,11 @@ func (r *Repository) AdminInteriorTask(id string) (*model.Task, error) {
 	return &task, nil
 }
 
-// InteriorTasksSince 取某时刻之后新建的室内设计任务（最新的在前，最多 limit 条），只带统计要用的列。
-func (r *Repository) InteriorTasksSince(from time.Time, limit int) ([]model.Task, error) {
+// InteriorTasksBetween 取 [from, to) 里新建的室内设计任务（最新的在前，最多 limit 条），只带统计要用的列。
+// 时间按时刻比较（SQLite 走 created_at_epoch），不按带时区的文本比较。
+func (r *Repository) InteriorTasksBetween(from, to time.Time, limit int) ([]model.Task, error) {
 	var tasks []model.Task
-	err := r.interiorTasks().Where("created_at >= ?", from).
+	err := whereTimeRange(r.interiorTasks(), "created_at", from, to).
 		Select("id", "user_id", "status", "model", "input_json", "error", "created_at").
 		Order("created_at desc, id desc").Limit(limit).Find(&tasks).Error
 	return tasks, err
