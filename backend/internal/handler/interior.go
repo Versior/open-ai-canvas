@@ -156,6 +156,50 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 	})
 
 	admin := r.Group("/admin/interior")
+	admin.GET("/overview", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		overview, err := svc.AdminInteriorOverview(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, overview)
+	})
+	admin.GET("/generations", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		page, limit, err := parsePaginationQuery(c, 20)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		records, err := svc.AdminInteriorGenerations(actor, service.AdminInteriorGenerationQuery{Status: c.Query("status"), Keyword: c.Query("keyword"), Mode: c.Query("mode"), Page: page, Limit: limit})
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, records)
+	})
+	admin.GET("/generations/:id", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		detail, err := svc.AdminInteriorGeneration(actor, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
+	})
 	admin.GET("/modes", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

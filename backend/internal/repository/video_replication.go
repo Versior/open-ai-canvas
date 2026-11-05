@@ -2,7 +2,6 @@ package repository
 
 import (
 	"errors"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -52,12 +51,7 @@ func (r *Repository) AdminTasksByType(filter AdminTypedTaskFilter) ([]model.Task
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
 	}
-	if value := strings.TrimSpace(filter.Keyword); value != "" {
-		// 关键字里的 % 和 _ 按字面匹配，不当通配符。
-		pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(value)) + "%"
-		users := r.db.Model(&model.User{}).Select("id").Where(`lower(username) LIKE ? ESCAPE '\' OR lower(display_name) LIKE ? ESCAPE '\' OR lower(email) LIKE ? ESCAPE '\'`, pattern, pattern, pattern)
-		query = query.Where("(user_id IN (?) OR id = ?)", users, value)
-	}
+	query = r.adminTaskKeyword(query, filter.Keyword)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

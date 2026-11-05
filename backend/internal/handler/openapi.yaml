@@ -457,6 +457,47 @@ paths:
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/Error"}
+  /admin/interior/overview:
+    get:
+      tags: [admin]
+      summary: 室内设计近 30 天出图统计
+      description: >-
+        要求管理员，不受功能开关限制。按 UTC 自然日统计近 30 天室内设计页提交的出图任务（一个风格一次算一个任务，超过 5000 条只算最新的并返回 truncated=true）：
+        generations（按状态、近 7 天、今天、人数、快速出图 / 专业模式）、projects（项目总数、我的房子、客户方案、人数，不限时间）、
+        config（站点默认模型是否设置、开着的出图方式里没有默认模型的名称）、daily（近 14 天每天的出图和失败数）、
+        modes / styles / rooms / models（出图次数和失败数，风格、空间、模型取前 10）、recentFailures（最近 8 次失败，原因不做用户侧改写）。
+      responses:
+        "200": {description: data 为统计}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/generations:
+    get:
+      tags: [admin]
+      summary: 所有用户的室内设计出图记录
+      description: 要求管理员。按创建时间倒序分页返回室内设计页提交的出图任务，每条带用户、状态与失败原因、出图方式、空间、风格、模型、原图 / 参考图 / 效果图的资源 ID（用 GET /admin/resources/{id}/file 读）和所属项目 ID。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {in: query, name: status, schema: {type: string, enum: [queued, running, succeeded, failed, cancelled]}}
+        - {in: query, name: mode, schema: {type: string}, description: 出图方式的机器标识，例如 style-redesign}
+        - {in: query, name: keyword, schema: {type: string, maxLength: 100}, description: 匹配用户名、昵称、邮箱，或完整的任务 ID}
+      responses:
+        "200": {description: "data 为 { records, total, page, pageSize }"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/generations/{id}:
+    get:
+      tags: [admin]
+      summary: 一条室内设计出图记录
+      description: 要求管理员。在列表字段之外带服务端拼好的完整提示词 prompt、参数 params 和所属项目名 projectName；不是室内设计任务返回 404。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data 为出图记录}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
   /admin/interior/modes:
     get:
       tags: [admin]
