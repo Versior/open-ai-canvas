@@ -36,6 +36,7 @@ const EmailSettingsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-
 const FeatureAvailabilityPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.FeatureAvailabilityPage })));
 const AgentLessonsPage = lazyAdminPage(() => import("@/pages/admin/admin-route-pages").then((module) => ({ default: module.AgentLessonsPage })));
 const ChannelsPage = lazyAdminPage(() => import("@/pages/admin/channels/channels-page"));
+const VideoParsePage = lazyAdminPage(() => import("@/pages/admin/video-parse/video-parse-page"));
 const LogicalModelsPage = lazyAdminPage(() => import("@/pages/admin/logical-models/logical-models-page"));
 const AdminPluginsPage = lazyAdminPage(() => import("@/pages/admin/plugins/plugins-page"));
 const SkillCurationPage = lazyAdminPage(() => import("@/pages/admin/skill-curation-page"));
@@ -276,6 +277,7 @@ export const router = createBrowserRouter([
                     { path: "channels", element: <ChannelsPage /> },
                     // 关闭前台模型只影响用户端模型来源；后台仍可进入，便于开启前先配置。
                     { path: "models", element: <LogicalModelsPage /> },
+                    { path: "video-parse", element: <VideoParsePage /> },
                     { path: "ecommerce", element: <Navigate to="/admin/ecommerce/agent" replace /> },
                     { path: "ecommerce/agent", element: <EcommerceAgentConfigPage /> },
                     { path: "ecommerce/library", element: <EcommerceManagementPage /> },

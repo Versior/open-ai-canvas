@@ -1,0 +1,383 @@
+/* 后台「视频解析接口」页：只用管理后台 token。 */
+.admin-video-parse {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin-video-parse-stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.admin-video-parse-views {
+    align-self: flex-start;
+}
+
+.admin-video-parse-panel {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.admin-video-parse-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.admin-video-parse-panel-head p {
+    max-width: 760px;
+}
+
+.admin-video-parse-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-video-parse-toolbar .ant-select {
+    width: 160px;
+}
+
+.admin-video-parse-toolbar .ant-input-affix-wrapper {
+    max-width: 320px;
+}
+
+.admin-video-parse-load-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+    color: var(--admin-status-error);
+}
+
+.admin-video-parse-main {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+}
+
+.admin-video-parse-main strong {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    color: var(--admin-text);
+}
+
+.admin-video-parse-main small {
+    max-width: 520px;
+    overflow: hidden;
+    color: var(--admin-text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-video-parse-tag {
+    display: inline-flex;
+    height: 18px;
+    align-items: center;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: var(--admin-layer-2);
+    color: var(--admin-text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.admin-video-parse-platforms {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.admin-video-parse-platforms span {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--admin-layer-2);
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+
+.admin-video-parse-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-video-parse-track {
+    display: inline-flex;
+    gap: 3px;
+}
+
+.admin-video-parse-track span {
+    width: 6px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--admin-layer-3);
+}
+
+.admin-video-parse-track span[data-state="ok"] {
+    background: var(--admin-status-success);
+}
+
+.admin-video-parse-track span[data-state="fail"] {
+    background: var(--admin-status-error);
+}
+
+.admin-video-parse-muted {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.admin-video-parse-error {
+    color: var(--admin-status-error) !important;
+}
+
+.admin-video-parse-mono {
+    font-family: var(--admin-font-mono);
+}
+
+.admin-video-parse-break {
+    overflow-wrap: anywhere;
+}
+
+.admin-video-parse-nowrap {
+    white-space: nowrap;
+}
+
+.admin-video-parse-notes {
+    display: flex;
+    max-height: 280px;
+    flex-direction: column;
+    gap: 4px;
+    margin: 8px 0 0;
+    padding-left: 18px;
+    overflow: auto;
+    list-style: disc;
+}
+
+/* 编辑弹窗 */
+.admin-video-parse-editor .ant-modal-body {
+    max-height: min(76vh, 860px);
+    overflow: auto;
+}
+
+.admin-video-parse-form section {
+    padding: 4px 0 16px;
+    border-bottom: 1px solid var(--admin-divider);
+}
+
+.admin-video-parse-form section + section {
+    padding-top: 16px;
+}
+
+.admin-video-parse-form section:last-child {
+    border-bottom: 0;
+}
+
+.admin-video-parse-form h3 {
+    margin: 0 0 10px;
+    color: var(--admin-text);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.admin-video-parse-form p.admin-video-parse-muted {
+    margin: -4px 0 12px;
+}
+
+.admin-video-parse-form code,
+.admin-video-parse-result code {
+    padding: 0 4px;
+    border-radius: 4px;
+    background: var(--admin-layer-2);
+    font-family: var(--admin-font-mono);
+    font-size: 12px;
+}
+
+.admin-video-parse-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+}
+
+.admin-video-parse-grid.is-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.admin-video-parse-grid.is-4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.admin-video-parse-grid.is-method {
+    grid-template-columns: auto minmax(0, 1fr);
+}
+
+.admin-video-parse-headers {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.admin-video-parse-header-row {
+    display: grid;
+    width: 100%;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+    gap: 8px;
+}
+
+.admin-video-parse-test-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+/* 测试结果 */
+.admin-video-parse-result {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 12px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface-2);
+}
+
+.admin-video-parse-result-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-video-parse-result-message {
+    color: var(--admin-text);
+    font-weight: 500;
+}
+
+.admin-video-parse-fields {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 0;
+    font-size: 13px;
+}
+
+.admin-video-parse-fields dt {
+    color: var(--admin-text-muted);
+}
+
+.admin-video-parse-fields dd {
+    margin: 0;
+    color: var(--admin-text);
+}
+
+.admin-video-parse-path {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.admin-video-parse-preview summary {
+    cursor: pointer;
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+
+.admin-video-parse-preview pre {
+    max-height: 260px;
+    margin: 8px 0 0;
+    padding: 10px;
+    overflow: auto;
+    border-radius: var(--admin-radius-sm);
+    background: var(--admin-layer-1);
+    color: var(--admin-text-secondary);
+    font-family: var(--admin-font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.admin-video-parse-batch ul {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0;
+    padding: 0;
+    list-style: none;
+}
+
+.admin-video-parse-batch li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-video-parse-batch ul.admin-video-parse-notes {
+    padding-left: 18px;
+    list-style: disc;
+}
+
+.admin-video-parse-import {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.admin-video-parse-import .ant-input {
+    width: 100%;
+}
+
+.admin-video-parse-settings {
+    display: flex;
+    max-width: 960px;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.admin-video-parse-settings-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+    .admin-video-parse-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 720px) {
+    .admin-video-parse-stats,
+    .admin-video-parse-grid,
+    .admin-video-parse-grid.is-3,
+    .admin-video-parse-grid.is-4 {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-video-parse-panel-head {
+        flex-direction: column;
+    }
+}

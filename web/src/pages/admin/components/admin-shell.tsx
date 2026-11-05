@@ -44,6 +44,7 @@ import {
     TicketCheck,
     ToggleLeft,
     UsersRound,
+    Link2,
 } from "lucide-react";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router";
@@ -109,6 +110,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         items: [
             { path: "/admin/channels", label: "渠道与模型", shortLabel: "渠道", icon: <RadioTower className="size-4" /> },
             { path: "/admin/models", label: "前台模型", shortLabel: "模型", icon: <Layers3 className="size-4" />, requireFeature: "frontendModelsEnabled" },
+            { path: "/admin/video-parse", label: "视频解析接口", shortLabel: "解析", icon: <Link2 className="size-4" /> },
         ],
     },
     {
