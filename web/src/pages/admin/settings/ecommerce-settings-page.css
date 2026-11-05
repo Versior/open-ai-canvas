@@ -65,6 +65,19 @@
     gap: var(--space-3);
     margin-block: var(--space-3);
 }
+.admin-ecommerce-template-switch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+.admin-ecommerce-template-switch > span {
+    flex: 1 1 280px;
+    color: var(--admin-text-muted);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
 .admin-ecommerce-template-import {
     margin-block: var(--space-4);
     color: var(--admin-text-muted);

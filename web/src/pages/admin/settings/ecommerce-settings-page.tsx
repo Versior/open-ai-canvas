@@ -208,9 +208,9 @@ export default function EcommerceSettingsPage() {
                             },
                             {
                                 key: "templates",
-                                label: `套图模板（${draft.templates.length}）`,
+                                label: "套图模板",
                                 children: (
-                                    <SettingsSectionCard title="套图模板" description="维护画面顺序、每张职责与整套视觉规范。启用的模板会出现在生图台「模板套图」的后台精选里，修改保存后生效。" layout="stacked">
+                                    <SettingsSectionCard title="套图模板" description="生图台「模板套图」可以直接选内置的 1173 套模板；这里把常用的加入后台精选并按需改写画面顺序、每张职责与整套视觉规范。修改保存后生效。" layout="stacked">
                                         <EcommerceTemplateEditor templates={draft.templates} disabled={busy} onChange={(templates) => setDraft({ ...draft, templates })} />
                                     </SettingsSectionCard>
                                 ),
