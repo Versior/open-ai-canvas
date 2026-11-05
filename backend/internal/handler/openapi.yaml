@@ -147,14 +147,17 @@ paths:
     get:
       tags: [admin]
       summary: 管理员列出模特库素材
-      description: 包括未上架的素材；参数同浏览接口（无 category、gender）。
+      description: 包括未上架的素材；可按分类和上下架筛选（无 gender）。
       parameters:
         - {in: query, name: kind, required: true, schema: {type: string, enum: [face, pose, style]}}
         - {in: query, name: q, schema: {type: string, maxLength: 60}}
+        - {in: query, name: category, schema: {type: string, maxLength: 24}}
+        - {in: query, name: status, description: 空为全部, schema: {type: string, enum: [enabled, disabled]}}
         - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
         - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
       responses:
-        "200": {description: 结构同浏览接口，另含 enabled、consent、sortOrder、updatedAt}
+        "200": {description: 结构同浏览接口，素材另含 enabled、consent、sortOrder、updatedAt；data 另含 kindCounts（face、pose、style 各自总条数）与 categoryCounts（当前类型各分类的 name、count，条数多的在前，不含未分类）}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
   /admin/studio-models/import:

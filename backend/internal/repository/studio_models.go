@@ -8,21 +8,32 @@ import (
 	"yingce/backend/internal/model"
 )
 
-// StudioModelQuery 是模特库列表的筛选条件；EnabledOnly 给用户端用，后台列出全部。
+// StudioModelQuery 是模特库列表的筛选条件；EnabledOnly 给用户端用，后台默认列出全部，
+// 也可以用 EnabledOnly / DisabledOnly 只看已上架或未上架的。
 type StudioModelQuery struct {
-	Kind        string
-	Query       string
-	Category    string
-	Gender      string
-	EnabledOnly bool
-	Offset      int
-	Limit       int
+	Kind         string
+	Query        string
+	Category     string
+	Gender       string
+	EnabledOnly  bool
+	DisabledOnly bool
+	Offset       int
+	Limit        int
+}
+
+// StudioModelCount 是按类型或分类汇总的素材条数。
+type StudioModelCount struct {
+	Name  string
+	Count int64
 }
 
 func (r *Repository) studioModelScope(query StudioModelQuery) *gorm.DB {
 	db := r.db.Model(&model.StudioModelAsset{}).Where("kind = ?", query.Kind)
 	if query.EnabledOnly {
 		db = db.Where("enabled = ?", true)
+	}
+	if query.DisabledOnly {
+		db = db.Where("enabled = ?", false)
 	}
 	if query.Category != "" {
 		db = db.Where("category = ?", query.Category)
@@ -55,6 +66,20 @@ func (r *Repository) StudioModelCategories(kind string, enabledOnly bool) ([]str
 	}
 	err := db.Distinct("category").Order("category asc").Pluck("category", &categories).Error
 	return categories, err
+}
+
+// StudioModelKindCounts 是每种素材的总条数，后台类型页签用。
+func (r *Repository) StudioModelKindCounts() ([]StudioModelCount, error) {
+	counts := []StudioModelCount{}
+	err := r.db.Model(&model.StudioModelAsset{}).Select("kind AS name, COUNT(*) AS count").Group("kind").Scan(&counts).Error
+	return counts, err
+}
+
+// StudioModelCategoryCounts 是某种素材每个分类的条数（不含未分类），条数多的在前，后台分类筛选用。
+func (r *Repository) StudioModelCategoryCounts(kind string) ([]StudioModelCount, error) {
+	counts := []StudioModelCount{}
+	err := r.db.Model(&model.StudioModelAsset{}).Select("category AS name, COUNT(*) AS count").Where("kind = ? AND category <> ''", kind).Group("category").Order("COUNT(*) DESC, category ASC").Scan(&counts).Error
+	return counts, err
 }
 
 func (r *Repository) StudioModelAsset(id string) (*model.StudioModelAsset, error) {

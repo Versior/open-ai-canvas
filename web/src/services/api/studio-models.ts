@@ -22,7 +22,13 @@ export type StudioModelItem = {
     updatedAt: string;
 };
 
-export type StudioModelPage = { items: StudioModelItem[]; total: number; page: number; pageSize: number; categories: string[] };
+export type StudioModelCategoryCount = { name: string; count: number };
+
+/** kindCounts、categoryCounts 只有后台列表返回：每种素材的总条数和当前类型每个分类的条数。 */
+export type StudioModelPage = { items: StudioModelItem[]; total: number; page: number; pageSize: number; categories: string[]; kindCounts?: Partial<Record<StudioModelKind, number>>; categoryCounts?: StudioModelCategoryCount[] };
+
+/** 后台列表的上下架筛选；空串看全部。 */
+export type StudioModelStatusFilter = "" | "enabled" | "disabled";
 
 export type StudioModelInput = {
     kind: StudioModelKind;
@@ -59,8 +65,12 @@ export function attachStudioModel(id: string) {
     return http.post<{ resourceId: string; width: number; height: number }>(`/ecommerce/studio/models/${encodeURIComponent(id)}/attach`, undefined, { timeout: 30000 });
 }
 
-export function listAdminStudioModels(params: { kind: StudioModelKind; q?: string; page?: number; pageSize?: number }, signal?: AbortSignal) {
-    return http.get<StudioModelPage>("/admin/studio-models", { params: { kind: params.kind, q: params.q || undefined, page: params.page || 1, pageSize: params.pageSize || 24 }, signal, timeout: 15000 });
+export function listAdminStudioModels(params: { kind: StudioModelKind; q?: string; category?: string; status?: StudioModelStatusFilter; page?: number; pageSize?: number }, signal?: AbortSignal) {
+    return http.get<StudioModelPage>("/admin/studio-models", {
+        params: { kind: params.kind, q: params.q || undefined, category: params.category || undefined, status: params.status || undefined, page: params.page || 1, pageSize: params.pageSize || 24 },
+        signal,
+        timeout: 15000,
+    });
 }
 
 export async function importAdminStudioModel(input: StudioModelInput, file?: File) {

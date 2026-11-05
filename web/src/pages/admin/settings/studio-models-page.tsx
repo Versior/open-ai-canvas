@@ -1,5 +1,5 @@
 import { App, Button, Input } from "antd";
-import { ImageOff, Pencil, RefreshCw, Trash2, Upload } from "lucide-react";
+import { ImageOff, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import {
@@ -16,16 +16,23 @@ import {
     type StudioModelItem,
     type StudioModelKind,
     type StudioModelPage,
+    type StudioModelStatusFilter,
 } from "@/services/api/studio-models";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminSearchInput } from "../components/admin-search-input";
 import { AdminBatchBar, AdminEmpty, AdminStatusBadge, PaginationBar } from "../components/admin-ui";
-import { AdminCheckbox, AdminSegmented, AdminSelect, AdminSwitch } from "../ui/controls";
+import { AdminCallout, AdminCheckbox, AdminIconButton, AdminSegmented, AdminSelect, AdminSwitch } from "../ui/controls";
 import "./studio-models-page.css";
 
 const KINDS: StudioModelKind[] = ["face", "pose", "style"];
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 48;
 const GENDER_OPTIONS = (Object.keys(STUDIO_MODEL_GENDER_LABEL) as StudioModelGender[]).map((value) => ({ value, label: STUDIO_MODEL_GENDER_LABEL[value] }));
+type StatusFilter = "all" | Exclude<StudioModelStatusFilter, "">;
+const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
+    { value: "all", label: "全部状态" },
+    { value: "enabled", label: "已上架" },
+    { value: "disabled", label: "未上架" },
+];
 const KIND_HINT: Record<StudioModelKind, { category: string; prompt: string; note: string }> = {
     face: { category: "例如：东亚女性、欧美男性、儿童", prompt: "外貌描述，例如：东亚女性，二十多岁，鹅蛋脸，黑色齐肩短发，气质干净", note: "上传清晰的正脸或半身照。只上传已获得肖像使用授权的人像，AI 生成的人像也要确认可商用。" },
     pose: { category: "例如：站姿、坐姿、走动、手部展示", prompt: "姿势描述，例如：站姿，重心在右腿，左手叉腰，右手自然下垂，身体微侧", note: "上传姿势参考图（白模、线稿或照片都可以），出图时只参考身体姿势，不照搬服装和背景。" },
@@ -145,7 +152,7 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
                     {kind === "face" ? (
                         <label className="studio-model-field">
                             <span>性别</span>
-                            <AdminSelect<StudioModelGender> ariaLabel="性别" value={draft.gender} options={GENDER_OPTIONS} disabled={busy} onChange={(gender) => patch({ gender })} />
+                            <AdminSelect<StudioModelGender> ariaLabel="性别" appearance="field" value={draft.gender} options={GENDER_OPTIONS} disabled={busy} onChange={(gender) => patch({ gender })} />
                         </label>
                     ) : null}
                 </div>
@@ -179,26 +186,58 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
     );
 }
 
+function statusOf(item: StudioModelItem): { label: string; tone: "success" | "warning" | "neutral" } {
+    if (item.enabled) return { label: "已上架", tone: "success" };
+    return item.kind === "face" && !item.consent ? { label: "待确认授权", tone: "warning" } : { label: "未上架", tone: "neutral" };
+}
+
 /** 后台「电商模特库」：维护生图台出模特图时可选的人脸、姿势和模特样式。 */
 export default function StudioModelsPage() {
     const { message, modal } = App.useApp();
     const [kind, setKind] = useState<StudioModelKind>("face");
+    // 输入框里的字和真正拿去查的关键词分开：停顿 300ms 再查，打字时不连发请求。
+    const [search, setSearch] = useState("");
     const [query, setQuery] = useState("");
+    const [category, setCategory] = useState("");
+    const [status, setStatus] = useState<StatusFilter>("all");
     const [page, setPage] = useState(1);
     const [data, setData] = useState<StudioModelPage>();
+    const [kindCounts, setKindCounts] = useState<Partial<Record<StudioModelKind, number>>>({});
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [selected, setSelected] = useState<string[]>([]);
     const [editor, setEditor] = useState<EditorState>();
     const [reload, setReload] = useState(0);
 
+    // 换类型、筛选或翻页时清掉选择：批量操作只作用在眼前这一页看得到的素材上。
+    const changeView = useCallback((apply: () => void, keepPage = false) => {
+        apply();
+        if (!keepPage) setPage(1);
+        setSelected([]);
+    }, []);
+
+    useEffect(() => {
+        const next = search.trim();
+        if (next === query) return;
+        const timer = setTimeout(() => changeView(() => setQuery(next)), 300);
+        return () => clearTimeout(timer);
+    }, [search, query, changeView]);
+
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
         setError("");
-        void listAdminStudioModels({ kind, q: query, page, pageSize: PAGE_SIZE }, controller.signal)
+        void listAdminStudioModels({ kind, q: query, category, status: status === "all" ? "" : status, page, pageSize: PAGE_SIZE }, controller.signal)
             .then((value) => {
-                if (!controller.signal.aborted) setData(value);
+                if (controller.signal.aborted) return;
+                if (value.kindCounts) setKindCounts(value.kindCounts);
+                // 批量删除后当前页可能空了，退回最后一页。
+                const pages = Math.max(1, Math.ceil(value.total / PAGE_SIZE));
+                if (!value.items.length && page > pages) {
+                    setPage(pages);
+                    return;
+                }
+                setData(value);
             })
             .catch((failure) => {
                 if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "读取失败");
@@ -207,7 +246,7 @@ export default function StudioModelsPage() {
                 if (!controller.signal.aborted) setLoading(false);
             });
         return () => controller.abort();
-    }, [kind, query, page, reload]);
+    }, [kind, query, category, status, page, reload]);
 
     const refresh = useCallback(() => {
         setSelected([]);
@@ -235,7 +274,20 @@ export default function StudioModelsPage() {
         });
 
     const items = data?.items || [];
+    const pageIds = items.map((item) => item.id);
+    const allSelected = pageIds.length > 0 && pageIds.every((id) => selected.includes(id));
     const toggle = (id: string) => setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+    const filtered = Boolean(query || category || status !== "all");
+    // 当前分类被删空后仍留在筛选条里标 0，免得选中项凭空消失。
+    const categoryCounts = data?.categoryCounts ?? [];
+    const chips = category && !categoryCounts.some((item) => item.name === category) ? [...categoryCounts, { name: category, count: 0 }] : categoryCounts;
+    const clearFilters = () =>
+        changeView(() => {
+            setSearch("");
+            setQuery("");
+            setCategory("");
+            setStatus("all");
+        });
 
     return (
         <AdminPageFrame
@@ -258,22 +310,44 @@ export default function StudioModelsPage() {
                     <AdminSegmented<StudioModelKind>
                         ariaLabel="素材类型"
                         value={kind}
-                        onChange={(value) => {
-                            setKind(value);
-                            setPage(1);
-                            setSelected([]);
-                        }}
-                        options={KINDS.map((value) => ({ value, label: STUDIO_MODEL_KIND_LABEL[value] }))}
+                        onChange={(value) =>
+                            changeView(() => {
+                                setKind(value);
+                                setCategory("");
+                                setData(undefined);
+                            })
+                        }
+                        options={KINDS.map((value) => ({
+                            value,
+                            label: (
+                                <span className="studio-models-kind">
+                                    {STUDIO_MODEL_KIND_LABEL[value]}
+                                    {kindCounts[value] !== undefined ? <em>{kindCounts[value]}</em> : null}
+                                </span>
+                            ),
+                        }))}
                     />
-                    <AdminSearchInput
-                        allowClear
-                        placeholder="搜索名称、分类、标签或描述"
-                        value={query}
-                        onValueChange={(value) => {
-                            setQuery(value);
-                            setPage(1);
-                        }}
-                    />
+                    <AdminSearchInput className="studio-models-search" allowClear prefix={<Search className="size-3.5" aria-hidden />} placeholder="搜索名称、分类、标签或描述" value={search} onValueChange={setSearch} />
+                    <AdminSelect<StatusFilter> ariaLabel="上架状态" className="studio-models-status" value={status} options={STATUS_OPTIONS} onChange={(value) => changeView(() => setStatus(value))} />
+                </div>
+                {chips.length ? (
+                    <div className="studio-models-categories" role="group" aria-label="按分类筛选">
+                        <button type="button" aria-pressed={!category} onClick={() => changeView(() => setCategory(""))}>
+                            全部<em>{kindCounts[kind] ?? ""}</em>
+                        </button>
+                        {chips.map((item) => (
+                            <button key={item.name} type="button" aria-pressed={category === item.name} onClick={() => changeView(() => setCategory(item.name))}>
+                                {item.name}
+                                <em>{item.count}</em>
+                            </button>
+                        ))}
+                    </div>
+                ) : null}
+                <div className="studio-models-meta">
+                    <AdminCheckbox checked={allSelected} indeterminate={selected.length > 0 && !allSelected} disabled={!items.length} onChange={(event) => setSelected(event.target.checked ? pageIds : [])}>
+                        全选本页
+                    </AdminCheckbox>
+                    <span>{data ? (filtered ? `筛出 ${data.total} 条` : `共 ${data.total} 条`) : loading ? "读取中…" : ""}</span>
                 </div>
                 <AdminBatchBar count={selected.length} onClear={() => setSelected([])}>
                     <Button size="small" onClick={() => void runBatch(selected, "enable")}>
@@ -287,55 +361,74 @@ export default function StudioModelsPage() {
                     </Button>
                 </AdminBatchBar>
                 {error ? (
-                    <div className="studio-models-error" role="alert">
-                        {error}
-                        <Button size="small" onClick={refresh}>
-                            重试
-                        </Button>
-                    </div>
-                ) : null}
-                {!loading && !items.length && !error ? (
-                    <AdminEmpty
-                        title={query ? "没有匹配的素材" : `还没有${STUDIO_MODEL_KIND_LABEL[kind]}`}
-                        description={query ? "换个关键词试试" : KIND_HINT[kind].note}
+                    <AdminCallout
+                        tone="error"
+                        title="模特库读取失败"
                         action={
-                            <Button icon={<Upload className="size-4" />} onClick={() => setEditor({ mode: "create", kind })}>
-                                新增{STUDIO_MODEL_KIND_LABEL[kind]}
+                            <Button size="small" onClick={refresh}>
+                                重试
                             </Button>
+                        }
+                    >
+                        {error}
+                    </AdminCallout>
+                ) : null}
+                {data && !items.length && !error ? (
+                    <AdminEmpty
+                        title={filtered ? "没有符合条件的素材" : `还没有${STUDIO_MODEL_KIND_LABEL[kind]}`}
+                        description={filtered ? "换个关键词或分类，或者清除筛选看全部。" : KIND_HINT[kind].note}
+                        action={
+                            filtered ? (
+                                <Button onClick={clearFilters}>清除筛选</Button>
+                            ) : (
+                                <Button icon={<Upload className="size-4" />} onClick={() => setEditor({ mode: "create", kind })}>
+                                    新增{STUDIO_MODEL_KIND_LABEL[kind]}
+                                </Button>
+                            )
                         }
                     />
                 ) : null}
                 <div className="studio-models-grid" aria-busy={loading}>
-                    {items.map((item) => (
-                        <article key={item.id} className="studio-model-card" data-selected={selected.includes(item.id) || undefined}>
-                            <div className="studio-model-thumb">
-                                {item.hasImage ? (
-                                    <img src={studioModelImageUrl(item, true)} alt={item.name} loading="lazy" />
-                                ) : (
-                                    <span className="studio-model-thumb-text">
-                                        <ImageOff className="size-4" aria-hidden />
-                                        {item.prompt.slice(0, 40)}
-                                    </span>
-                                )}
-                                <AdminCheckbox className="studio-model-select" checked={selected.includes(item.id)} aria-label={`选择 ${item.name}`} onChange={() => toggle(item.id)} />
-                            </div>
-                            <div className="studio-model-body">
-                                <strong title={item.name}>{item.name}</strong>
-                                <span>{[item.category || "未分类", item.kind === "face" ? STUDIO_MODEL_GENDER_LABEL[item.gender] : ""].filter(Boolean).join(" · ")}</span>
-                                {item.tags.length ? <span className="studio-model-tags">{item.tags.slice(0, 4).join(" · ")}</span> : null}
-                                <div className="studio-model-actions">
-                                    <AdminStatusBadge label={item.enabled ? "已上架" : item.kind === "face" && !item.consent ? "待确认授权" : "未上架"} tone={item.enabled ? "success" : item.kind === "face" && !item.consent ? "warning" : "neutral"} />
-                                    <span>
-                                        <AdminSwitch size="sm" aria-label={item.enabled ? `下架 ${item.name}` : `上架 ${item.name}`} checked={item.enabled} onChange={(enabled) => void runBatch([item.id], enabled ? "enable" : "disable")} />
-                                        <Button size="small" type="text" icon={<Pencil className="size-3.5" />} aria-label={`修改 ${item.name}`} onClick={() => setEditor({ mode: "edit", item })} />
-                                        <Button size="small" type="text" danger icon={<Trash2 className="size-3.5" />} aria-label={`删除 ${item.name}`} onClick={() => confirmDelete([item.id])} />
-                                    </span>
-                                </div>
-                            </div>
-                        </article>
-                    ))}
+                    {!data && loading && !error
+                        ? Array.from({ length: 12 }, (_, index) => <div key={index} className="studio-model-card is-placeholder" aria-hidden />)
+                        : items.map((item) => {
+                              const state = statusOf(item);
+                              const checked = selected.includes(item.id);
+                              return (
+                                  <article key={item.id} className="studio-model-card" data-selected={checked || undefined} data-off={!item.enabled || undefined}>
+                                      <div className="studio-model-thumb">
+                                          {item.hasImage ? (
+                                              <img src={studioModelImageUrl(item, true)} alt={item.name} loading="lazy" />
+                                          ) : (
+                                              <span className="studio-model-thumb-text">
+                                                  <ImageOff className="size-4" aria-hidden />
+                                                  {item.prompt.slice(0, 40)}
+                                              </span>
+                                          )}
+                                          <AdminCheckbox className="studio-model-select" checked={checked} aria-label={`选择 ${item.name}`} onChange={() => toggle(item.id)} />
+                                      </div>
+                                      <div className="studio-model-body">
+                                          <strong title={item.name}>{item.name}</strong>
+                                          <span>{[item.category || "未分类", item.kind === "face" ? STUDIO_MODEL_GENDER_LABEL[item.gender] : ""].filter(Boolean).join(" · ")}</span>
+                                          {item.tags.length ? (
+                                              <span className="studio-model-tags" title={item.tags.join(" · ")}>
+                                                  {item.tags.slice(0, 4).join(" · ")}
+                                              </span>
+                                          ) : null}
+                                          <div className="studio-model-actions">
+                                              <AdminSwitch size="sm" aria-label={item.enabled ? `下架 ${item.name}` : `上架 ${item.name}`} checked={item.enabled} onChange={(enabled) => void runBatch([item.id], enabled ? "enable" : "disable")} />
+                                              <AdminStatusBadge label={state.label} tone={state.tone} />
+                                              <span className="studio-model-tools">
+                                                  <AdminIconButton icon={Pencil} aria-label={`修改 ${item.name}`} title="修改" onClick={() => setEditor({ mode: "edit", item })} />
+                                                  <AdminIconButton icon={Trash2} className="studio-model-delete" aria-label={`删除 ${item.name}`} title="删除" onClick={() => confirmDelete([item.id])} />
+                                              </span>
+                                          </div>
+                                      </div>
+                                  </article>
+                              );
+                          })}
                 </div>
-                {data && data.total > PAGE_SIZE ? <PaginationBar current={page} pageSize={PAGE_SIZE} total={data.total} pageSizeOptions={[PAGE_SIZE]} onChange={(next) => setPage(next)} /> : null}
+                {data && data.total > PAGE_SIZE ? <PaginationBar current={page} pageSize={PAGE_SIZE} total={data.total} pageSizeOptions={[PAGE_SIZE]} onChange={(next) => changeView(() => setPage(next), true)} /> : null}
             </div>
             {editor ? (
                 <StudioModelEditor

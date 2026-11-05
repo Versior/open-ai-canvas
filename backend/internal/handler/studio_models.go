@@ -95,7 +95,7 @@ func RegisterStudioModelRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if !valid {
 			return
 		}
-		value, err := svc.AdminStudioModels(actor, c.Query("kind"), c.Query("q"), page, size)
+		value, err := svc.AdminStudioModels(actor, c.Query("kind"), c.Query("q"), c.Query("category"), c.Query("status"), page, size)
 		if err != nil {
 			failService(c, err)
 			return

@@ -1,28 +1,98 @@
-/* 后台「电商模特库」：只用后台 token，卡片栅格与上下架开关。 */
+/* 后台「电商模特库」：只用后台 token，类型页签、分类筛选、卡片栅格与上下架开关。 */
 .studio-models {
     display: grid;
-    gap: var(--space-4);
+    gap: var(--space-3);
+    min-width: 0;
 }
 .studio-models-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-3);
+    gap: var(--space-2) var(--space-3);
 }
-.studio-models-toolbar .ant-input-affix-wrapper {
+.studio-models-search.ant-input-affix-wrapper {
     flex: 1 1 240px;
     max-width: 360px;
 }
-.studio-models-error {
+/* 和同一行的搜索框（32px）等高。 */
+.studio-models-status.ant-select.app-unified-select {
+    width: 128px;
+    min-height: 32px;
+    height: 32px;
+}
+.studio-models-kind {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+.studio-models-kind em,
+.studio-models-categories em {
+    color: var(--admin-text-muted);
+    font-size: 11px;
+    font-style: normal;
+    font-variant-numeric: tabular-nums;
+}
+.studio-models-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.studio-models-categories button {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 10px;
+    border: 1px solid var(--admin-border);
+    border-radius: 999px;
+    background: var(--admin-surface);
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    line-height: 18px;
+    cursor: pointer;
+    transition:
+        background-color var(--admin-motion),
+        border-color var(--admin-motion),
+        color var(--admin-motion);
+}
+.studio-models-categories button:hover {
+    border-color: var(--admin-border-strong);
+    color: var(--admin-text);
+}
+.studio-models-categories button[aria-pressed="true"] {
+    border-color: var(--admin-border-strong);
+    background: var(--admin-nav-active);
+    color: var(--admin-text);
+    font-weight: 600;
+}
+.studio-models-categories button[aria-pressed="true"] em {
+    color: var(--admin-text-secondary);
+}
+.studio-models-categories button:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 2px;
+}
+.studio-models-meta {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: var(--space-3);
-    color: var(--admin-status-error);
+    min-height: 28px;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+.studio-models-meta .admin-checkbox {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
 }
 .studio-models-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
     gap: var(--space-3);
+    transition: opacity var(--admin-motion);
+}
+.studio-models-grid[aria-busy="true"] {
+    opacity: 0.6;
 }
 .studio-model-card {
     display: grid;
@@ -33,9 +103,20 @@
     border: 1px solid var(--admin-card-border);
     border-radius: var(--admin-radius-lg);
     background: var(--admin-layer-1);
+    transition:
+        border-color var(--admin-motion),
+        box-shadow var(--admin-motion);
+}
+.studio-model-card:hover {
+    border-color: var(--admin-border-strong);
 }
 .studio-model-card[data-selected] {
-    border-color: var(--admin-border-strong);
+    border-color: var(--admin-text);
+    box-shadow: 0 0 0 1px var(--admin-text);
+}
+.studio-model-card.is-placeholder {
+    aspect-ratio: 4 / 6.2;
+    background: color-mix(in srgb, var(--admin-text) 5%, var(--admin-surface));
 }
 .studio-model-thumb {
     position: relative;
@@ -46,6 +127,11 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+    transition: opacity var(--admin-motion);
+}
+/* 未上架的素材图片压暗，和上架的一眼分开。 */
+.studio-model-card[data-off] .studio-model-thumb img {
+    opacity: 0.5;
 }
 .studio-model-thumb-text {
     display: grid;
@@ -64,8 +150,15 @@
     top: var(--space-2);
     left: var(--space-2);
 }
+/* 有指针悬停的设备上，选择框在悬停、选中或有焦点时才出现；触屏一直显示。 */
+@media (hover: hover) {
+    .studio-model-card:not([data-selected]):not(:hover):not(:focus-within) .studio-model-select {
+        opacity: 0;
+    }
+}
 .studio-model-body {
     display: grid;
+    align-content: start;
     gap: 2px;
     min-width: 0;
     padding: var(--space-2) var(--space-3) var(--space-3);
@@ -87,14 +180,22 @@
 .studio-model-actions {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--space-2);
     margin-top: var(--space-2);
 }
-.studio-model-actions > span {
+.studio-model-actions .admin-status-badge {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 11px;
+}
+.studio-model-tools {
     display: inline-flex;
     align-items: center;
     gap: 2px;
+    margin-left: auto;
+}
+.studio-model-delete.ant-btn:not(:disabled):hover {
+    color: var(--admin-status-error);
 }
 .studio-model-editor {
     display: grid;
@@ -131,6 +232,12 @@
     color: var(--admin-text-secondary);
     font-size: var(--fs-caption);
 }
+/* 统一选择器默认 36px 高，这里和同一行的输入框对齐。 */
+.studio-model-field .ant-select.app-unified-select {
+    width: 100%;
+    min-height: 32px;
+    height: 32px;
+}
 .studio-model-field-row {
     display: flex;
     gap: var(--space-3);
@@ -146,4 +253,20 @@
     display: flex;
     justify-content: flex-end;
     gap: var(--space-2);
+}
+@media (max-width: 640px) {
+    .studio-models-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .studio-models-search.ant-input-affix-wrapper {
+        max-width: none;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .studio-models-grid,
+    .studio-model-card,
+    .studio-model-thumb img,
+    .studio-models-categories button {
+        transition: none;
+    }
 }

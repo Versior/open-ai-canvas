@@ -72,7 +72,18 @@ type StudioModelPage struct {
 	Page       int               `json:"page"`
 	PageSize   int               `json:"pageSize"`
 	Categories []string          `json:"categories"`
+	// 以下两项只有后台列表返回：每种素材的总条数（类型页签）和当前类型每个分类的条数（分类筛选）。
+	KindCounts     map[string]int64           `json:"kindCounts,omitempty"`
+	CategoryCounts []StudioModelCategoryCount `json:"categoryCounts,omitempty"`
 }
+
+type StudioModelCategoryCount struct {
+	Name  string `json:"name"`
+	Count int64  `json:"count"`
+}
+
+// 后台列表的上下架筛选：空串看全部。
+var studioModelStatuses = map[string]bool{"": true, "enabled": true, "disabled": true}
 
 // AdminStudioModelInput 是后台新增或修改素材时的文字字段；图片只在导入时上传。
 type AdminStudioModelInput struct {
@@ -254,22 +265,48 @@ func (s *Service) StudioModels(actor *model.User, kind, query, category, gender 
 	return s.studioModelPage(repository.StudioModelQuery{Kind: kind, Query: query, Category: category, Gender: gender, EnabledOnly: true}, page, pageSize)
 }
 
-// AdminStudioModels 是后台列表，包括未上架的素材。
-func (s *Service) AdminStudioModels(actor *model.User, kind, query string, page, pageSize int) (*StudioModelPage, error) {
+// AdminStudioModels 是后台列表，包括未上架的素材；可按分类和上下架（status 为 enabled / disabled）筛选，
+// 另带每种素材的总条数和当前类型每个分类的条数。
+func (s *Service) AdminStudioModels(actor *model.User, kind, query, category, status string, page, pageSize int) (*StudioModelPage, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
 	}
 	if _, ok := studioModelKinds[kind]; !ok {
 		return nil, BadAuthRequest("素材类型无效")
 	}
-	if !runeLimit(query, 60) {
+	if !runeLimit(query, 60) || !runeLimit(category, 24) || !studioModelStatuses[status] {
 		return nil, BadAuthRequest("筛选条件无效")
 	}
 	page, pageSize, err := studioModelPaging(page, pageSize)
 	if err != nil {
 		return nil, err
 	}
-	return s.studioModelPage(repository.StudioModelQuery{Kind: kind, Query: query}, page, pageSize)
+	result, err := s.studioModelPage(repository.StudioModelQuery{Kind: kind, Query: query, Category: category, EnabledOnly: status == "enabled", DisabledOnly: status == "disabled"}, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	kinds, err := s.repo.StudioModelKindCounts()
+	if err != nil {
+		return nil, err
+	}
+	result.KindCounts = map[string]int64{}
+	for name := range studioModelKinds {
+		result.KindCounts[name] = 0
+	}
+	for _, item := range kinds {
+		if _, ok := result.KindCounts[item.Name]; ok {
+			result.KindCounts[item.Name] = item.Count
+		}
+	}
+	categories, err := s.repo.StudioModelCategoryCounts(kind)
+	if err != nil {
+		return nil, err
+	}
+	result.CategoryCounts = make([]StudioModelCategoryCount, 0, len(categories))
+	for _, item := range categories {
+		result.CategoryCounts = append(result.CategoryCounts, StudioModelCategoryCount{Name: item.Name, Count: item.Count})
+	}
+	return result, nil
 }
 
 type studioModelUpload struct {

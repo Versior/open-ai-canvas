@@ -153,7 +153,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 | `GET /api/ecommerce/studio/models` | 参数 `kind`（`face` / `pose` / `style`，必填）、`q`（60 字内）、`category`、`gender`、`page`、`pageSize`（最多 60，默认 24）；只返回已上架的素材。`data` 为 `items`、`total`、`page`、`pageSize`、`categories`（这一类已上架素材的分类） |
 | `GET /api/ecommerce/studio/models/:id/image` | 素材图；`variant=thumb` 给缩略图。未上架的只有管理员能看。带 `v=<revision>` 时 `Cache-Control: private, max-age=86400`，否则 `no-cache` |
 | `POST /api/ecommerce/studio/models/:id/attach` | 把原图复制到当前用户的资源库，返回 `data.resourceId`、`width`、`height`。同一用户对同一张原图重复调用返回同一个资源；计入上传配额，按上传频率限流。纯文字的模特样式返回 400 |
-| `GET /api/admin/studio-models` | 参数 `kind`、`q`、`page`、`pageSize`，包括未上架的素材 |
+| `GET /api/admin/studio-models` | 参数 `kind`、`q`、`category`（24 字内）、`status`（空为全部，`enabled` / `disabled` 只看已上架或未上架）、`page`、`pageSize`，包括未上架的素材；其他取值返回 400。`data` 在浏览接口的字段之外另带 `kindCounts`（`face`、`pose`、`style` 各自的总条数）和 `categoryCounts`（当前类型每个分类的 `name`、`count`，条数多的在前，不含未分类），两项都不随 `q`、`status` 变化 |
 | `POST /api/admin/studio-models/import` | multipart：`kind`、`name`（60 字内）、`category`（24 字内）、`gender`、`tags`（JSON 数组或逗号分隔，最多 12 个、每个 16 字内）、`prompt`（600 字内）、`consent`、`enabled` 和可选的 `file`（PNG / JPEG / WebP，12 MiB、4000 万像素以内）。人脸、姿势必须带图，模特样式必须有 `prompt`，人脸 `consent` 为假时不能上架。返回 `data.item` |
 | `PUT /api/admin/studio-models/:id` | JSON 修改文字字段、`consent`、`enabled`、`sortOrder`；类型和图片不能改 |
 | `POST /api/admin/studio-models/batch` | `{ "ids": [...], "action": "enable" \| "disable" \| "delete" }`，一次 1–200 条；上架时有人脸没确认肖像授权则整批不执行。返回 `data.affected` |
