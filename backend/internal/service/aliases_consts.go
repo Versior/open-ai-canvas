@@ -53,6 +53,8 @@ const (
 	FeatureEcommerceVideo              = app.FeatureEcommerceVideo
 	FeatureEcommerceStudio             = app.FeatureEcommerceStudio
 	FeatureSiteAssistant               = app.FeatureSiteAssistant
+	FeatureVideoReplication            = app.FeatureVideoReplication
+	FeatureSocialVideoImport           = app.FeatureSocialVideoImport
 	ModelCatalogSourceSystem           = app.ModelCatalogSourceSystem
 	PaymentPluginAlipayPage            = app.PaymentPluginAlipayPage
 	PaymentPluginWeChatNative          = app.PaymentPluginWeChatNative

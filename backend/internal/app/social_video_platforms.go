@@ -116,7 +116,24 @@ func socialVideoURLDigest(raw string) string {
 }
 
 // SocialVideoPlatforms 列出能导入的平台；登录用户都能看，用来在前端识别分享链接。
+// 后台关了链接导入时每个平台都标成不可用：画布粘贴按普通文字处理，不去建注定失败的导入任务。
 func (s *Service) SocialVideoPlatforms() ([]SocialVideoPlatformView, error) {
+	enabled, err := s.FeatureEnabled(FeatureSocialVideoImport)
+	if err != nil {
+		return nil, err
+	}
+	views, err := s.socialVideoPlatformViews()
+	if err != nil || enabled {
+		return views, err
+	}
+	for index := range views {
+		views[index].Available = false
+	}
+	return views, nil
+}
+
+// socialVideoPlatformViews 按解析接口池算每个平台有没有开着的接口，不看链接导入开关；后台接口管理用。
+func (s *Service) socialVideoPlatformViews() ([]SocialVideoPlatformView, error) {
 	apis, err := s.socialVideoParseAPIs()
 	if err != nil {
 		return nil, err

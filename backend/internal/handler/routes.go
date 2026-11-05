@@ -81,6 +81,18 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, task)
 	})
+	r.GET("/video-replication/config", func(c *gin.Context) {
+		if _, err := currentUser(c, svc); err != nil {
+			failService(c, err)
+			return
+		}
+		config, err := svc.VideoReplicationConfig()
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, config)
+	})
 	r.POST("/video-replication/teardowns", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

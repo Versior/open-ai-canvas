@@ -165,7 +165,7 @@ func TestCreateVideoTeardownTaskValidatesTheVideoAndReplays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if input := storedInput(defaults.ID); !input.Transcribe || input.MaxShots != videoTeardownDefaultMaxShots {
+	if input := storedInput(defaults.ID); !input.Transcribe || input.MaxShots != videoTeardownMaxShotsLimit {
 		t.Fatalf("default input = %+v", input)
 	}
 }

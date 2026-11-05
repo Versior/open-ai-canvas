@@ -30,6 +30,8 @@ const (
 	FeatureEcommerceVideo        = "ecommerceVideo"
 	FeatureEcommerceStudio       = "ecommerceStudio"
 	FeatureSiteAssistant         = "siteAssistant"
+	FeatureVideoReplication      = "videoReplication"
+	FeatureSocialVideoImport     = "socialVideoImport"
 )
 
 type FeatureAvailability struct {
@@ -49,6 +51,9 @@ type FeatureAvailability struct {
 	EcommerceVideoEnabled        bool `json:"ecommerceVideoEnabled"`
 	EcommerceStudioEnabled       bool `json:"ecommerceStudioEnabled"`
 	SiteAssistantEnabled         bool `json:"siteAssistantEnabled"`
+	VideoReplicationEnabled      bool `json:"videoReplicationEnabled"`
+	// SocialVideoImportEnabled 管粘贴短视频分享链接导入（画布粘贴和视频复刻共用）。
+	SocialVideoImportEnabled bool `json:"socialVideoImportEnabled"`
 }
 
 type PublicFeatureAvailability struct {
@@ -77,6 +82,8 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		EcommerceVideoEnabled:        false,
 		EcommerceStudioEnabled:       false,
 		SiteAssistantEnabled:         false,
+		VideoReplicationEnabled:      true,
+		SocialVideoImportEnabled:     true,
 	}
 }
 
@@ -156,6 +163,10 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 		return value.EcommerceStudioEnabled, nil
 	case FeatureSiteAssistant:
 		return value.SiteAssistantEnabled, nil
+	case FeatureVideoReplication:
+		return value.VideoReplicationEnabled, nil
+	case FeatureSocialVideoImport:
+		return value.SocialVideoImportEnabled, nil
 	default:
 		return false, errors.New("未知功能开放配置")
 	}
@@ -200,6 +211,10 @@ func (s *Service) RequireFeature(feature string) error {
 		return kernel.Forbidden("电商生图台暂未开放")
 	case FeatureSiteAssistant:
 		return kernel.Forbidden("站内助手暂未开放")
+	case FeatureVideoReplication:
+		return kernel.Forbidden("视频复刻暂未开放")
+	case FeatureSocialVideoImport:
+		return kernel.Forbidden("视频链接导入暂未开放")
 	default:
 		return kernel.Forbidden("该功能暂未开放")
 	}

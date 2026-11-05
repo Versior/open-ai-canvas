@@ -59,55 +59,82 @@ type videoReplicationAnalysisHead struct {
 	Rows    []json.RawMessage `json:"rows"`
 }
 
+// VideoReplications 列出本人最近的拆解记录；视频复刻关闭时和创建拆解一样返回 403。
 func (s *Service) VideoReplications(userID string) ([]VideoReplicationRecord, error) {
+	if err := s.RequireFeature(FeatureVideoReplication); err != nil {
+		return nil, err
+	}
 	tasks, err := s.repo.TasksForUserByType(userID, model.TaskTypeReplicationTeardown, videoReplicationHistoryLimit)
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		ids = append(ids, task.ID)
-	}
-	results, err := s.repo.TaskResultsByKind(userID, ids, videoReplicationAnalysisKind)
+	results, err := s.repo.TaskResultsByKind(userID, idsOfTasks(tasks), videoReplicationAnalysisKind)
 	if err != nil {
 		return nil, err
 	}
-	analyses := make(map[string]model.Result, len(results))
-	for _, result := range results {
-		if _, seen := analyses[result.TaskID]; !seen {
-			analyses[result.TaskID] = result
-		}
-	}
+	analyses := latestResultsByTask(results)
 	records := make([]VideoReplicationRecord, 0, len(tasks))
 	for _, task := range tasks {
-		record := VideoReplicationRecord{ID: task.ID, Status: task.Status, Stage: task.Stage, Progress: task.Progress, Error: taskForOutput(task).Error, CreatedAt: task.CreatedAt}
-		var bundle videoTeardownBundle
-		if task.Status == model.TaskStatusSucceeded && json.Unmarshal([]byte(task.ResultJSON), &bundle) == nil {
-			record.DurationMs = bundle.Source.DurationMs
-			record.ShotCount = len(bundle.Shots)
-			record.Width, record.Height = bundle.Source.Width, bundle.Source.Height
-			if len(bundle.Shots) > 0 {
-				record.CoverResourceID = bundle.Shots[0].KeyframeResourceID
-			}
-			count := min(len(bundle.Shots), videoReplicationPreviewFrames)
-			for index := range count {
-				record.PreviewResourceIDs = append(record.PreviewResourceIDs, bundle.Shots[index*len(bundle.Shots)/count].KeyframeResourceID)
-			}
-		}
-		if result, found := analyses[task.ID]; found {
-			var head videoReplicationAnalysisHead
-			if json.Unmarshal([]byte(result.Payload), &head) == nil {
-				record.Title, record.Model = head.Title, head.Model
-			}
-			analyzedAt := result.CreatedAt
-			record.AnalyzedAt = &analyzedAt
-		}
+		record, _ := videoReplicationRecordFrom(task, analyses[task.ID])
+		record.Error = taskForOutput(task).Error
 		records = append(records, record)
 	}
 	return records, nil
 }
 
+func idsOfTasks(tasks []model.Task) []string {
+	ids := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	return ids
+}
+
+// latestResultsByTask 把按时间倒序的结果按任务收成一条（最新的）。
+func latestResultsByTask(results []model.Result) map[string]*model.Result {
+	latest := make(map[string]*model.Result, len(results))
+	for index := range results {
+		if _, seen := latest[results[index].TaskID]; !seen {
+			latest[results[index].TaskID] = &results[index]
+		}
+	}
+	return latest
+}
+
+// videoReplicationRecordFrom 由拆解任务和保存过的分析（可以没有）拼出列表里的一条；第二个返回值是解析出的镜头事实，任务没完成时为空。
+// Error 是任务原始的失败原因，给普通用户看之前要换成 taskForOutput 处理过的。
+func videoReplicationRecordFrom(task model.Task, analysis *model.Result) (VideoReplicationRecord, *videoTeardownBundle) {
+	record := VideoReplicationRecord{ID: task.ID, Status: task.Status, Stage: task.Stage, Progress: task.Progress, Error: task.Error, CreatedAt: task.CreatedAt}
+	var bundle *videoTeardownBundle
+	var parsed videoTeardownBundle
+	if task.Status == model.TaskStatusSucceeded && json.Unmarshal([]byte(task.ResultJSON), &parsed) == nil {
+		bundle = &parsed
+		record.DurationMs = parsed.Source.DurationMs
+		record.ShotCount = len(parsed.Shots)
+		record.Width, record.Height = parsed.Source.Width, parsed.Source.Height
+		if len(parsed.Shots) > 0 {
+			record.CoverResourceID = parsed.Shots[0].KeyframeResourceID
+		}
+		count := min(len(parsed.Shots), videoReplicationPreviewFrames)
+		for index := range count {
+			record.PreviewResourceIDs = append(record.PreviewResourceIDs, parsed.Shots[index*len(parsed.Shots)/count].KeyframeResourceID)
+		}
+	}
+	if analysis != nil {
+		var head videoReplicationAnalysisHead
+		if json.Unmarshal([]byte(analysis.Payload), &head) == nil {
+			record.Title, record.Model = head.Title, head.Model
+		}
+		analyzedAt := analysis.CreatedAt
+		record.AnalyzedAt = &analyzedAt
+	}
+	return record, bundle
+}
+
 func (s *Service) VideoReplication(userID, taskID string) (*VideoReplicationDetail, error) {
+	if err := s.RequireFeature(FeatureVideoReplication); err != nil {
+		return nil, err
+	}
 	task, err := s.replicationTeardownTask(userID, taskID)
 	if err != nil {
 		return nil, err
@@ -128,6 +155,9 @@ func (s *Service) VideoReplication(userID, taskID string) (*VideoReplicationDeta
 // SaveVideoReplicationAnalysis 保存前端解析好的模型分析。只接受本人已完成的拆解任务；
 // 镜头行数和编号必须与拆解结果一一对应，缺镜头、多出来的行或重复编号都拒绝。
 func (s *Service) SaveVideoReplicationAnalysis(userID, taskID string, payload []byte) (*VideoReplicationDetail, error) {
+	if err := s.RequireFeature(FeatureVideoReplication); err != nil {
+		return nil, err
+	}
 	task, err := s.replicationTeardownTask(userID, taskID)
 	if err != nil {
 		return nil, err

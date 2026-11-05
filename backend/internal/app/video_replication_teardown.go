@@ -27,10 +27,10 @@ import (
 // 前端再把宫格和镜头清单交给能看图的文本模型补全画面、口播、运镜等语义。
 // 这一步不调用模型、不计费；关键帧和宫格作为图片资源计入用户存储。
 
+// 时长和镜头数的实际上限由后台的视频复刻设置决定（见 video_replication_settings.go），不超过这里的硬上限。
 const (
-	videoTeardownMaxDurationMs   = int64(socialVideoMaxDurationSeconds) * 1000
-	videoTeardownDefaultMaxShots = 60
-	videoTeardownTimeout         = 10 * time.Minute
+	videoTeardownMaxShotsLimit = 60
+	videoTeardownTimeout       = 10 * time.Minute
 )
 
 var videoTeardownLanguagePattern = regexp.MustCompile(`^(?:auto|[a-z]{2,3}(?:-[A-Za-z]{2,4})?)$`)
@@ -96,7 +96,8 @@ type videoTeardownTranscript struct {
 	Segments []timelineTranscriptionSegment `json:"segments"`
 }
 
-func normalizeVideoTeardownRequest(req VideoTeardownRequest) (videoTeardownInput, error) {
+// normalizeVideoTeardownRequest 校验入参；没指定镜头数上限时用后台设置的上限，指定了也不能超过它。
+func normalizeVideoTeardownRequest(req VideoTeardownRequest, maxShots int) (videoTeardownInput, error) {
 	input := videoTeardownInput{Version: 1, ResourceID: strings.TrimSpace(req.ResourceID), Transcribe: req.Transcribe == nil || *req.Transcribe, Language: strings.TrimSpace(req.Language), MaxShots: req.MaxShots}
 	if input.ResourceID == "" || len(input.ResourceID) > 128 {
 		return videoTeardownInput{}, BadAuthRequest("必须指定要拆解的视频")
@@ -105,10 +106,10 @@ func normalizeVideoTeardownRequest(req VideoTeardownRequest) (videoTeardownInput
 		return videoTeardownInput{}, BadAuthRequest("口播语言格式无效，例如 zh、en 或 auto")
 	}
 	if input.MaxShots == 0 {
-		input.MaxShots = videoTeardownDefaultMaxShots
+		input.MaxShots = maxShots
 	}
-	if input.MaxShots < 1 || input.MaxShots > videoTeardownDefaultMaxShots {
-		return videoTeardownInput{}, BadAuthRequest(fmt.Sprintf("镜头数上限必须在 1 到 %d 之间", videoTeardownDefaultMaxShots))
+	if input.MaxShots < 1 || input.MaxShots > maxShots {
+		return videoTeardownInput{}, BadAuthRequest(fmt.Sprintf("镜头数上限必须在 1 到 %d 之间", maxShots))
 	}
 	return input, nil
 }
@@ -124,16 +125,23 @@ func videoTeardownFingerprint(input videoTeardownInput, projectID string) string
 }
 
 // CreateVideoTeardownTask 校验视频归属、类型和时长后排队拆解任务；同一幂等键重放返回原任务，
-// 换了参数则返回冲突。
+// 换了参数则返回冲突。功能关闭时拒绝，时长和镜头数按后台的视频复刻设置校验。
 func (s *Service) CreateVideoTeardownTask(userID, idempotencyKey string, req VideoTeardownRequest) (*model.Task, error) {
 	if s.IsDraining() {
 		return nil, &AppError{Status: http.StatusServiceUnavailable, Code: http.StatusServiceUnavailable, Message: "服务正在维护，暂不接受新任务", Retryable: true}
+	}
+	if err := s.RequireFeature(FeatureVideoReplication); err != nil {
+		return nil, err
 	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		return nil, BadAuthRequest("X-Idempotency-Key 长度必须为 8 到 128 个字符")
 	}
-	input, err := normalizeVideoTeardownRequest(req)
+	settings, err := s.videoReplicationSettings()
+	if err != nil {
+		return nil, err
+	}
+	input, err := normalizeVideoTeardownRequest(req, settings.MaxShots)
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +159,8 @@ func (s *Service) CreateVideoTeardownTask(userID, idempotencyKey string, req Vid
 	if !strings.HasPrefix(strings.ToLower(resource.MimeType), "video/") {
 		return nil, BadAuthRequest("只能拆解视频文件")
 	}
-	if resource.DurationMs > videoTeardownMaxDurationMs {
-		return nil, BadAuthRequest("视频超过 3 分钟，请先截取片段再拆解")
+	if resource.DurationMs > int64(settings.MaxDurationSeconds)*1000 {
+		return nil, BadAuthRequest(videoReplicationDurationError(settings.MaxDurationSeconds))
 	}
 
 	id := videoTeardownTaskID(userID, idempotencyKey)
@@ -234,6 +242,11 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	if err := s.ensureTaskProjectActive(task.UserID, task.ProjectID); err != nil {
 		return videoTeardownBundle{}, errors.New("项目已删除、归档或无权访问")
 	}
+	// 按执行时的设置校验：排队期间后台调低了时长上限或关了口播识别，也照新设置执行。
+	settings, err := s.videoReplicationSettings()
+	if err != nil {
+		return videoTeardownBundle{}, errors.New("无法读取视频复刻设置")
+	}
 	ffmpeg, err := videoTeardownFFmpeg()
 	if err != nil {
 		return videoTeardownBundle{}, err
@@ -260,8 +273,8 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	if probe.Width <= 0 || probe.Height <= 0 || probe.DurationMs <= 0 {
 		return videoTeardownBundle{}, errors.New("文件里没有可拆解的视频画面")
 	}
-	if probe.DurationMs > videoTeardownMaxDurationMs {
-		return videoTeardownBundle{}, errors.New("视频超过 3 分钟，请先截取片段再拆解")
+	if probe.DurationMs > int64(settings.MaxDurationSeconds)*1000 {
+		return videoTeardownBundle{}, errors.New(videoReplicationDurationError(settings.MaxDurationSeconds))
 	}
 	hasAudio, _ := probeHasAudioStream(ctx, sourcePath)
 
@@ -311,7 +324,7 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 		if err := w.progress(task, "识别口播", 65); err != nil {
 			return videoTeardownBundle{}, err
 		}
-		transcript, warning := s.transcribeVideoTeardown(ctx, sourcePath, mimeType, hasAudio, input.Language)
+		transcript, warning := s.transcribeVideoTeardown(ctx, settings, sourcePath, mimeType, hasAudio, input.Language)
 		bundle.Transcript = transcript
 		if warning != "" {
 			bundle.Warnings = append(bundle.Warnings, warning)
@@ -380,12 +393,15 @@ func (s *Service) materializeVideoTeardownSource(userID, resourceID, workDir str
 	return path, resource.MimeType, nil
 }
 
-// transcribeVideoTeardown 调用已配置的 whisper.cpp 服务识别口播。转写不可用或失败时不让整个拆解失败，
+// transcribeVideoTeardown 调用已配置的 whisper.cpp 服务识别口播。后台关了口播识别、转写不可用或失败时不让整个拆解失败，
 // 返回的 warning 会展示给用户，前端改让模型从画面字幕读口播。
-func (s *Service) transcribeVideoTeardown(ctx context.Context, sourcePath, mimeType string, hasAudio bool, language string) (videoTeardownTranscript, string) {
+func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoReplicationSettings, sourcePath, mimeType string, hasAudio bool, language string) (videoTeardownTranscript, string) {
 	none := videoTeardownTranscript{Source: "none", Segments: []timelineTranscriptionSegment{}}
 	if !hasAudio {
 		return none, "视频没有音轨，没有识别口播"
+	}
+	if !settings.TranscribeEnabled {
+		return none, "后台已关闭口播识别，口播改从画面字幕识别"
 	}
 	if err := s.RequireFeature(FeatureTimelineTranscription); err != nil {
 		return none, "字幕转写暂未开放，口播改从画面字幕识别"

@@ -24,7 +24,7 @@ const (
 	socialVideoParseSourceTimeout = 20 * time.Second
 )
 
-// SocialVideoParseOverview 是后台「视频解析接口」页一次拿到的全部数据。
+// SocialVideoParseOverview 是后台「视频复刻 · 解析接口」一次拿到的全部数据。
 type SocialVideoParseOverview struct {
 	Settings  SocialVideoParseSettings  `json:"settings"`
 	APIs      []SocialVideoParseAPIView `json:"apis"`
@@ -108,7 +108,7 @@ func (s *Service) AdminSocialVideoParseOverview(actor *model.User) (*SocialVideo
 	if err != nil {
 		return nil, err
 	}
-	platforms, err := s.SocialVideoPlatforms()
+	platforms, err := s.socialVideoPlatformViews()
 	if err != nil {
 		return nil, err
 	}

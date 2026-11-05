@@ -248,6 +248,9 @@ func (s *Service) CreateSocialVideoImportTask(userID, idempotencyKey string, req
 	if s.IsDraining() {
 		return nil, &AppError{Status: http.StatusServiceUnavailable, Code: http.StatusServiceUnavailable, Message: "服务正在维护，暂不接受新任务", Retryable: true}
 	}
+	if err := s.RequireFeature(FeatureSocialVideoImport); err != nil {
+		return nil, err
+	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if len(idempotencyKey) < 8 || len(idempotencyKey) > 128 {
 		return nil, BadAuthRequest("X-Idempotency-Key 长度必须为 8 到 128 个字符")
