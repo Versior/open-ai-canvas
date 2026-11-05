@@ -251,11 +251,6 @@
 .ecm-prompt {
     display: grid;
     gap: 6px;
-    padding-left: var(--space-3);
-    border-left: 2px solid transparent;
-}
-.ecm-prompt.is-custom {
-    border-left-color: color-mix(in srgb, var(--admin-status-info) 60%, transparent);
 }
 
 /* ---------- 套图模板 ---------- */

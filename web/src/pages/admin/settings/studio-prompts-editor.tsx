@@ -2,7 +2,6 @@ import { Button, Input } from "antd";
 import { Search, Undo2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { compactStudioPrompts, studioPromptGroups, type StudioPromptGroup } from "@/lib/ecommerce-studio/prompt-registry";
-import { cn } from "@/lib/utils";
 import { AdminEmpty, AdminStatusBadge } from "../components/admin-ui";
 
 /** 左侧分组栏的三段：主图镜头、详情页镜头，以及拍摄方式、市场等通用规则。 */
@@ -93,7 +92,7 @@ export function StudioPromptsEditor({ value, disabled, onChange }: { value: Reco
                             const custom = overrides[entry.key] !== undefined;
                             const id = `ecm-prompt-${entry.key}`;
                             return (
-                                <div key={entry.key} className={cn("ecm-prompt", custom && "is-custom")}>
+                                <div key={entry.key} className="ecm-prompt">
                                     <div className="ecm-field-head">
                                         <label htmlFor={id}>{entry.label}</label>
                                         {custom ? <AdminStatusBadge label="已改" tone="info" /> : <span className="ecm-field-count">内置</span>}
