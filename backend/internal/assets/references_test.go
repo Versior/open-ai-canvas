@@ -31,6 +31,20 @@ func TestCollectDocumentResourceReferencesUsesExplicitFieldsOnly(t *testing.T) {
 	}
 }
 
+// 视频复刻的拆解结果：原视频、每镜关键帧和宫格都要算作引用，否则关键帧会被游离资源清理删掉。
+func TestCollectDocumentResourceReferencesIncludesTeardownKeyframes(t *testing.T) {
+	raw := `{"version":1,"source":{"resourceId":"res-src"},"shots":[{"index":1,"keyframeResourceId":"res-key-1"},{"index":2,"keyframeResourceId":"res-key-2"}],"grids":[{"resourceId":"res-grid-1","shotIndexes":[1,2]}]}`
+	found := DocumentReferencedIDs(raw, map[string]struct{}{"res-src": {}, "res-key-1": {}, "res-key-2": {}, "res-grid-1": {}, "res-other": {}})
+	for _, id := range []string{"res-src", "res-key-1", "res-key-2", "res-grid-1"} {
+		if _, ok := found[id]; !ok {
+			t.Fatalf("teardown bundle reference %s missing: %v", id, found)
+		}
+	}
+	if _, ok := found["res-other"]; ok || len(found) != 4 {
+		t.Fatalf("references = %v", found)
+	}
+}
+
 func TestCollectDocumentResourceReferencesReportsInvalidJSON(t *testing.T) {
 	if _, err := CollectDocumentResourceReferences(`{"nodes":`); err == nil {
 		t.Fatal("expected malformed document to be rejected")

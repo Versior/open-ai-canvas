@@ -168,7 +168,9 @@ func isCanvasCollectionPath(path string) bool {
 
 func isBareResourceIDField(field string) bool {
 	switch field {
-	case "resourceId", "resourceIds", "sampleResourceId", "referenceResourceId", "referenceResourceIds":
+	// keyframeResourceId：视频复刻拆解结果里每个镜头的关键帧。漏掉它时，拆解后 24 小时没被画布用到的关键帧
+	// 会被当成游离资源清理掉，记录里的关键帧就打不开了。
+	case "resourceId", "resourceIds", "sampleResourceId", "referenceResourceId", "referenceResourceIds", "keyframeResourceId":
 		return true
 	default:
 		return false

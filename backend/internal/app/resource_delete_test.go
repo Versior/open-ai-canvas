@@ -453,6 +453,33 @@ func TestDetachedResourceCleanupRemovesOrphanAndKeepsAssetBackedResource(t *test
 	}
 }
 
+// 视频复刻的关键帧只写在拆解任务结果的 keyframeResourceId 里：过了 24 小时也不能当游离资源清掉。
+func TestDetachedResourceCleanupKeepsVideoTeardownKeyframes(t *testing.T) {
+	svc, db, _ := newResourceDeletionTestService(t)
+	old := time.Now().Add(-48 * time.Hour)
+	keyframe := model.Resource{ID: "res-teardown-key", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady, Provider: "unsupported-test-provider", ObjectKey: "users/user-1/image/keyframe-001.jpg", CreatedAt: old, UpdatedAt: old}
+	orphan := model.Resource{ID: "res-teardown-orphan", UserID: "user-1", Kind: "image", Status: model.ResourceStatusReady, ObjectKey: "", CreatedAt: old, UpdatedAt: old}
+	for _, resource := range []model.Resource{keyframe, orphan} {
+		if err := db.Create(&resource).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	bundle := `{"version":1,"source":{"resourceId":"res-src"},"shots":[{"index":1,"keyframeResourceId":"res-teardown-key"}],"grids":[]}`
+	if err := db.Create(&model.Task{ID: "vt-keeps-keyframes", UserID: "user-1", Type: model.TaskTypeReplicationTeardown, Status: model.TaskStatusSucceeded, ResultJSON: bundle, CreatedAt: old}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.cleanupDetachedUserResources("user-1", []model.Resource{keyframe, orphan}); err != nil {
+		t.Fatal(err)
+	}
+	var kept []string
+	if err := db.Model(&model.Resource{}).Where("id IN ?", []string{keyframe.ID, orphan.ID}).Pluck("id", &kept).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(kept) != 1 || kept[0] != keyframe.ID {
+		t.Fatalf("resources left after cleanup = %v, want only the teardown keyframe", kept)
+	}
+}
+
 func TestDetachedResourceCleanupKeepsAppearanceAssets(t *testing.T) {
 	for _, setting := range []string{
 		`{"logoResourceId":"logo","darkLogoResourceId":"dark","authVideoResourceId":"video","authVideoPosterResourceId":"poster"}`,
