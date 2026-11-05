@@ -107,7 +107,7 @@ export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { ac
         {
             title: "状态",
             key: "status",
-            width: 200,
+            width: 150,
             render: (_, record) => {
                 const meta = teardownStatusMeta(record.status, record.progress);
                 return (
@@ -127,8 +127,21 @@ export function ReplicationRecordsPanel({ active, recordId, onOpenRecord }: { ac
         {
             title: "口播",
             key: "transcript",
-            width: 96,
-            render: (_, record) => (record.transcript ? TRANSCRIPT_LABELS[record.transcript] : "—"),
+            width: 150,
+            render: (_, record) =>
+                record.transcript ? (
+                    <div className="admin-vr-record-state">
+                        <span>{TRANSCRIPT_LABELS[record.transcript]}</span>
+                        {/* 没有转写的原因只在这里写一次，「状态」那栏不再重复成「1 条提示」。 */}
+                        {record.transcriptNote ? (
+                            <small className="admin-vr-ellipsis" title={record.transcriptNote}>
+                                {record.transcriptNote}
+                            </small>
+                        ) : null}
+                    </div>
+                ) : (
+                    "—"
+                ),
         },
         {
             title: "分析",

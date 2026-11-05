@@ -4,13 +4,21 @@ import { AdminStatusBadge } from "@/pages/admin/components/admin-ui";
 import { AdminDrawer } from "@/pages/admin/ui/overlays";
 import { formatTeardownTime, orientationLabel, readVideoReplicationAnalysis, teardownTimeRange, videoTeardownShotTranscripts } from "@/lib/canvas/video-teardown";
 import { adminResourceFileUrl } from "@/services/api/admin-storage";
-import { parseVideoTeardownBundle } from "@/services/api/video-replication";
+import { parseVideoTeardownBundle, type VideoTeardownBundle } from "@/services/api/video-replication";
 import { adminUserLabel, getAdminVideoReplication, type AdminVideoReplicationDetail } from "@/services/api/video-replication-admin";
 import { formatParseTime } from "./parse-shared";
 import { AdminResourceThumb, modelLabel, teardownInProgress, teardownStatusMeta, TRANSCRIPT_LABELS } from "./replication-admin-shared";
 
 const BOUNDARY_LABELS = { start: "开头", cut: "切点", split: "长镜头切开" } as const;
 const IN_PROGRESS_REFRESH_MS = 3000;
+
+/** 「口播」一行：来源、识别出的语言；没有转写时括号里写原因（原因只在这里说一次）。 */
+function transcriptFact(bundle: VideoTeardownBundle) {
+    const label = TRANSCRIPT_LABELS[bundle.transcript.source];
+    if (bundle.transcript.source === "asr") return bundle.transcript.language ? `${label}（${bundle.transcript.language}）` : label;
+    const note = bundle.transcript.note || (bundle.source.hasAudio ? "" : "视频没有音轨");
+    return note ? `${label}（${note}）` : label;
+}
 
 /** 一条拆解记录的详情：原视频、镜头事实、口播和保存过的分析。展示路径，结果读不出来时说明原因，不拿默认值补。 */
 export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: () => void }) {
@@ -70,7 +78,7 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
                         ["时长", formatTeardownTime(bundle.source.durationMs)],
                         ["画幅", `${orientationLabel(bundle.source.width, bundle.source.height)} ${bundle.source.width}×${bundle.source.height}`],
                         ["镜头", `${bundle.shots.length} 个，${bundle.grids.length} 张宫格`],
-                        ["口播", `${TRANSCRIPT_LABELS[bundle.transcript.source]}${bundle.transcript.language ? `（${bundle.transcript.language}）` : ""}${bundle.source.hasAudio ? "" : "，视频没有音轨"}`],
+                        ["口播", transcriptFact(bundle)],
                     ] as [string, string][])
                   : []),
               ["分析", analysis ? `${modelLabel(analysis.model) || "未记录模型"} · ${formatParseTime(detail.analyzedAt)}` : detail.analysis ? "保存的分析和镜头对不上，读不出来" : "还没有分析"],

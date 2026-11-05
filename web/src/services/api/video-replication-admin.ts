@@ -36,6 +36,9 @@ export type AdminVideoReplicationRecord = VideoReplicationRecord & {
     projectId?: string;
     /** 口播来源：asr 为语音转写，none 为没有转写；任务没完成时省略。 */
     transcript?: "asr" | "none";
+    /** 没有转写的原因短句。 */
+    transcriptNote?: string;
+    /** 口播原因以外的拆解提示。 */
     warnings?: string[];
     completedAt?: string;
 };

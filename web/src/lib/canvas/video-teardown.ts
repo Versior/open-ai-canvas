@@ -428,7 +428,7 @@ export function videoTeardownReportMarkdown(bundle: VideoTeardownBundle, analysi
         `# 拆解报告：${analysis.title || "视频拆解"}`,
         "",
         `- 时长 ${(source.durationMs / 1000).toFixed(1)} 秒 · ${bundle.shots.length} 个镜头 · ${source.width}×${source.height}（${orientationLabel(source.width, source.height)}）`,
-        `- 口播：${bundle.transcript.source === "asr" ? "来自语音转写" : "没有语音转写，来自画面字幕"}`,
+        `- 口播：${bundle.transcript.source === "asr" ? "来自语音转写" : `没有语音转写${bundle.transcript.note ? `（${bundle.transcript.note}）` : ""}，来自画面字幕`}`,
     ];
     if (summary?.genre) lines.push(`- 题材：${summary.genre}`);
     if (summary?.hook) lines.push("", "## 钩子", "", summary.hook);

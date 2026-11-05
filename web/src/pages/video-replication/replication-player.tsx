@@ -23,13 +23,20 @@ export function ReplicationPlayer({ bundle, videoRef }: Props) {
                 <Stat label="画幅" value={`${orientationLabel(source.width, source.height)} ${source.width}×${source.height}`} />
             </dl>
             <ul className="vr-footnote">
-                <li>{bundle.transcript.source === "asr" ? "口播来自语音转写。" : source.hasAudio ? "没有语音转写，口播从画面字幕读。" : "视频没有音轨，口播从画面字幕读。"}</li>
+                <li>{transcriptFootnote(bundle)}</li>
                 {bundle.warnings.map((warning) => (
                     <li key={warning}>{warning}</li>
                 ))}
             </ul>
         </aside>
     );
+}
+
+/** 口播从哪来：有转写写一句；没有时带上原因说一次，不再在下面的提示里重复。 */
+function transcriptFootnote(bundle: VideoTeardownBundle) {
+    if (bundle.transcript.source === "asr") return "口播来自语音转写。";
+    if (!bundle.source.hasAudio) return "视频没有音轨，口播从画面字幕读。";
+    return bundle.transcript.note ? `没有语音转写（${bundle.transcript.note}），口播从画面字幕读。` : "没有语音转写，口播从画面字幕读。";
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

@@ -72,6 +72,20 @@ describe("video replication duration limit", () => {
 });
 
 describe("video teardown bundle", () => {
+    test("keeps the transcription reason in transcript.note and splits it out of legacy warnings", () => {
+        const current = parseVideoTeardownBundle(task(bundle({ transcript: { source: "none", segments: [], note: "服务器没有配置转写服务" }, warnings: [] })));
+        expect(current.transcript.note).toBe("服务器没有配置转写服务");
+        expect(current.warnings).toEqual([]);
+        // 早期结果：原因在 warnings 里，句尾带着「口播改从画面字幕识别」。
+        const legacy = parseVideoTeardownBundle(task(bundle({ transcript: { source: "none", segments: [] }, warnings: ["后台已关闭口播识别，口播改从画面字幕识别"] })));
+        expect(legacy.transcript.note).toBe("后台已关闭口播识别");
+        expect(legacy.warnings).toEqual([]);
+        const failed = parseVideoTeardownBundle(task(bundle({ transcript: { source: "none", segments: [] }, warnings: ["口播识别失败（超时），改从画面字幕识别"] })));
+        expect(failed.transcript.note).toBe("口播识别失败（超时）");
+        // 有转写时提示原样保留。
+        expect(parseVideoTeardownBundle(task(bundle({ warnings: ["别的提示"] }))).warnings).toEqual(["别的提示"]);
+    });
+
     test("accepts a well-formed bundle", () => {
         expect(parseVideoTeardownBundle(task(bundle())).shots).toHaveLength(4);
     });
@@ -83,6 +97,7 @@ describe("video teardown bundle", () => {
         expect(() => parseVideoTeardownBundle(task({ ...broken, grids: [broken.grids[0], { ...broken.grids[1], shotIndexes: [3, 4] }] }))).toThrow("镜头编号无效");
         expect(() => parseVideoTeardownBundle(task({ ...broken, shots: [] }))).toThrow("没有镜头");
         expect(() => parseVideoTeardownBundle({ ...task(bundle()), resultJson: "{" } as GenerationTask)).toThrow("拆解结果无效");
+        expect(() => parseVideoTeardownBundle(task(bundle({ transcript: { source: "none", segments: [], note: 3 as unknown as string } })))).toThrow("口播转写无效");
     });
 });
 

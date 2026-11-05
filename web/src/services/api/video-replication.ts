@@ -33,8 +33,9 @@ export type VideoTeardownBundle = {
     source: { resourceId: string; durationMs: number; width: number; height: number; hasAudio: boolean };
     shots: VideoTeardownShot[];
     grids: VideoTeardownGrid[];
-    /** source 为 none 表示没有语音转写，口播改从画面字幕读。 */
-    transcript: { source: "asr" | "none"; language?: string; segments: VideoTeardownTranscriptSegment[] };
+    /** source 为 none 表示没有语音转写，口播改从画面字幕读；note 是没有转写的原因。 */
+    transcript: { source: "asr" | "none"; language?: string; segments: VideoTeardownTranscriptSegment[]; note?: string };
+    /** 口播原因以外的拆解提示。 */
     warnings: string[];
 };
 
@@ -122,7 +123,12 @@ export function parseVideoTeardownBundle(task: GenerationTask): VideoTeardownBun
     });
     if (covered.size !== shots.length) throw new Error("拆解结果的宫格没有覆盖全部镜头");
     const transcript = value.transcript;
-    if ((transcript.source !== "asr" && transcript.source !== "none") || !Array.isArray(transcript.segments) || (transcript.language !== undefined && typeof transcript.language !== "string")) {
+    if (
+        (transcript.source !== "asr" && transcript.source !== "none") ||
+        !Array.isArray(transcript.segments) ||
+        (transcript.language !== undefined && typeof transcript.language !== "string") ||
+        (transcript.note !== undefined && typeof transcript.note !== "string")
+    ) {
         throw new Error("拆解结果里的口播转写无效");
     }
     const segments = transcript.segments.map((segment): VideoTeardownTranscriptSegment => {
@@ -132,14 +138,27 @@ export function parseVideoTeardownBundle(task: GenerationTask): VideoTeardownBun
         return { startMs: segment.startMs, endMs: segment.endMs, text: segment.text };
     });
     if (!value.warnings.every((warning) => typeof warning === "string")) throw new Error("拆解结果无效");
+    const { note, warnings } = transcriptNoteAndWarnings(transcript.source, typeof transcript.note === "string" ? transcript.note.trim() : "", value.warnings as string[]);
     return {
         version: 1,
         source: { resourceId: source.resourceId, durationMs, width: source.width, height: source.height, hasAudio: source.hasAudio },
         shots,
         grids,
-        transcript: { source: transcript.source, ...(transcript.language ? { language: transcript.language } : {}), segments },
-        warnings: value.warnings as string[],
+        transcript: { source: transcript.source, ...(transcript.language ? { language: transcript.language } : {}), segments, ...(note ? { note } : {}) },
+        warnings,
     };
+}
+
+const LEGACY_TRANSCRIPT_SUFFIXES = ["，口播改从画面字幕识别", "，改从画面字幕识别", "，没有识别口播"];
+
+/**
+ * 没有转写的原因短句和其余提示分开。早期的拆解结果没有 transcript.note，原因写在 warnings 里
+ * （那时 warnings 只会有这一条，句尾带着「口播改从画面字幕识别」）；这里拆回原因短句，和后端 transcriptNoteAndWarnings 同一规则。
+ */
+function transcriptNoteAndWarnings(source: "asr" | "none", note: string, warnings: string[]) {
+    if (note || source !== "none" || !warnings.length) return { note, warnings };
+    const suffix = LEGACY_TRANSCRIPT_SUFFIXES.find((item) => warnings[0].endsWith(item));
+    return { note: suffix ? warnings[0].slice(0, -suffix.length) : warnings[0], warnings: warnings.slice(1) };
 }
 
 /** 视频复刻页面的历史记录：id 是拆解任务 ID；保存过分析的带标题、模型和分析时间。 */
