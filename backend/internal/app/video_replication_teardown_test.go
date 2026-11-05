@@ -220,7 +220,8 @@ func TestReplicationTeardownSplitsShotsAndSavesKeyframes(t *testing.T) {
 	if len(bundle.Grids) != 1 || !slices.Equal(bundle.Grids[0].ShotIndexes, []int{1, 2, 3}) || bundle.Grids[0].Width != 976 || bundle.Grids[0].Height != 1568 {
 		t.Fatalf("grids = %+v", bundle.Grids)
 	}
-	if bundle.Transcript.Source != "none" || len(bundle.Transcript.Segments) != 0 || len(bundle.Warnings) != 1 {
+	// 没能转写的原因写在 transcript.note，不再重复进 warnings。
+	if bundle.Transcript.Source != "none" || len(bundle.Transcript.Segments) != 0 || bundle.Transcript.Note == "" || len(bundle.Warnings) != 0 {
 		t.Fatalf("transcript = %+v, warnings = %v", bundle.Transcript, bundle.Warnings)
 	}
 

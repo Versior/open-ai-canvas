@@ -137,9 +137,19 @@ func TestVideoTeardownFollowsReplicationSettingsAndFeatureSwitch(t *testing.T) {
 		t.Fatalf("new request after lowering the limit err = %v", err)
 	}
 	// 后台关了口播识别：有音轨也不调转写服务，拆解照常完成并提示原因。
-	transcript, warning := svc.transcribeVideoTeardown(context.Background(), VideoReplicationSettings{TranscribeEnabled: false}, "/missing.mp4", "video/mp4", true, "")
-	if transcript.Source != "none" || !strings.Contains(warning, "后台已关闭口播识别") {
-		t.Fatalf("transcript = %+v, warning = %q", transcript, warning)
+	transcript := svc.transcribeVideoTeardown(context.Background(), VideoReplicationSettings{TranscribeEnabled: false}, "/missing.mp4", "video/mp4", true, "")
+	if transcript.Source != "none" || !strings.Contains(transcript.Note, "后台已关闭口播识别") {
+		t.Fatalf("transcript = %+v", transcript)
+	}
+	// 原因面向用户：服务没配置时不把服务器的配置项名写出来。
+	features := platform.DefaultFeatureAvailability()
+	features.TimelineTranscriptionEnabled = true
+	if _, err := svc.UpdateFeatureAvailability(videoReplicationTestAdmin, features); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(whisperLangEnv, "")
+	if missing := svc.transcribeVideoTeardown(context.Background(), VideoReplicationSettings{TranscribeEnabled: true}, "/missing.mp4", "video/mp4", true, ""); missing.Note != "服务器没有配置转写服务" {
+		t.Fatalf("missing service note = %q", missing.Note)
 	}
 
 	finished := seedSucceededTeardownTask(t, db, "usr-a", 2)
@@ -190,7 +200,7 @@ func TestReplicationTeardownAppliesCurrentSettings(t *testing.T) {
 	if err := json.Unmarshal([]byte(stored.ResultJSON), &bundle); err != nil {
 		t.Fatal(err)
 	}
-	if len(bundle.Shots) != 2 || bundle.Transcript.Source != "none" || len(bundle.Warnings) != 1 || !strings.Contains(bundle.Warnings[0], "后台已关闭口播识别") {
+	if len(bundle.Shots) != 2 || bundle.Transcript.Source != "none" || len(bundle.Warnings) != 0 || !strings.Contains(bundle.Transcript.Note, "后台已关闭口播识别") {
 		t.Fatalf("shots = %d, transcript = %+v, warnings = %v", len(bundle.Shots), bundle.Transcript, bundle.Warnings)
 	}
 }

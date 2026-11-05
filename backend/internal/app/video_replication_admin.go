@@ -102,9 +102,11 @@ type AdminVideoReplicationRecord struct {
 	User      AdminUserReference `json:"user"`
 	ProjectID string             `json:"projectId,omitempty"`
 	// Transcript 是口播来源：asr 为语音转写，none 为没有转写；任务没完成时为空。
-	Transcript  string     `json:"transcript,omitempty"`
-	Warnings    []string   `json:"warnings,omitempty"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	Transcript string `json:"transcript,omitempty"`
+	// TranscriptNote 是没有转写的原因；Warnings 是其余的拆解提示，不再重复口播的原因。
+	TranscriptNote string     `json:"transcriptNote,omitempty"`
+	Warnings       []string   `json:"warnings,omitempty"`
+	CompletedAt    *time.Time `json:"completedAt,omitempty"`
 }
 
 type AdminVideoReplicationPage struct {
@@ -297,7 +299,8 @@ func (s *Service) AdminVideoReplications(actor *model.User, query AdminVideoRepl
 		record, bundle := videoReplicationRecordFrom(task, analyses[task.ID])
 		item := AdminVideoReplicationRecord{VideoReplicationRecord: record, User: adminUserReferenceFor(users, task.UserID), ProjectID: task.ProjectID, CompletedAt: task.CompletedAt}
 		if bundle != nil {
-			item.Transcript, item.Warnings = bundle.Transcript.Source, bundle.Warnings
+			item.Transcript = bundle.Transcript.Source
+			item.TranscriptNote, item.Warnings = bundle.transcriptNoteAndWarnings()
 		}
 		records = append(records, item)
 	}

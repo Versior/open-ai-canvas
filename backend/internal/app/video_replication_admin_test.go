@@ -40,6 +40,27 @@ func seedVideoReplicationAdminData(t *testing.T, db *gorm.DB) (aliceTasks []*mod
 	return []*model.Task{newer, older}, failed
 }
 
+// 口播原因只说一次：新结果放在 transcript.note；早期结果放在 warnings 里（只有这一条），拆回原因。
+func TestVideoTeardownTranscriptNoteAndWarnings(t *testing.T) {
+	for name, item := range map[string]struct {
+		bundle   videoTeardownBundle
+		note     string
+		warnings []string
+	}{
+		"current":       {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none", Note: "视频没有音轨"}, Warnings: []string{}}, "视频没有音轨", []string{}},
+		"legacy":        {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"后台已关闭口播识别，口播改从画面字幕识别"}}, "后台已关闭口播识别", []string{}},
+		"legacy-failed": {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"口播识别失败（超时），改从画面字幕识别"}}, "口播识别失败（超时）", []string{}},
+		"legacy-silent": {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"视频没有音轨，没有识别口播"}}, "视频没有音轨", []string{}},
+		"asr":           {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "asr"}, Warnings: []string{"别的提示"}}, "", []string{"别的提示"}},
+		"none":          {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}}, "", nil},
+	} {
+		note, warnings := item.bundle.transcriptNoteAndWarnings()
+		if note != item.note || len(warnings) != len(item.warnings) || (len(warnings) > 0 && warnings[0] != item.warnings[0]) {
+			t.Fatalf("%s: note = %q, warnings = %v", name, note, warnings)
+		}
+	}
+}
+
 func TestAdminVideoReplicationListDetailAndOverview(t *testing.T) {
 	svc, db := newTimelineTaskTestService(t)
 	alice, failed := seedVideoReplicationAdminData(t, db)

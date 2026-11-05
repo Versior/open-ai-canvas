@@ -63,6 +63,23 @@ type videoTeardownBundle struct {
 	Warnings   []string                `json:"warnings"`
 }
 
+// transcriptNoteAndWarnings 返回没有转写的原因和其余的拆解提示。早期的拆解结果没有 transcript.note，
+// 原因写在 warnings 里（那时 warnings 只会有这一条，句尾带着「口播改从画面字幕识别」），这里拆回原因短句。
+// 前端 parseVideoTeardownBundle 用同一规则。
+func (bundle videoTeardownBundle) transcriptNoteAndWarnings() (string, []string) {
+	if bundle.Transcript.Note != "" || bundle.Transcript.Source != "none" || len(bundle.Warnings) == 0 {
+		return bundle.Transcript.Note, bundle.Warnings
+	}
+	note := bundle.Warnings[0]
+	for _, suffix := range []string{"，口播改从画面字幕识别", "，改从画面字幕识别", "，没有识别口播"} {
+		if trimmed, found := strings.CutSuffix(note, suffix); found {
+			note = trimmed
+			break
+		}
+	}
+	return note, bundle.Warnings[1:]
+}
+
 type videoTeardownSource struct {
 	ResourceID string `json:"resourceId"`
 	DurationMs int64  `json:"durationMs"`
@@ -94,6 +111,9 @@ type videoTeardownTranscript struct {
 	Source   string                         `json:"source"`
 	Language string                         `json:"language,omitempty"`
 	Segments []timelineTranscriptionSegment `json:"segments"`
+	// Note 是没有转写的原因短句（「视频没有音轨」「服务器没有配置转写服务」等），页面在「口播」那一栏补上
+	// 「口播从画面字幕读」说明一次。原因只放这里，不再写进 warnings；早期的拆解结果没有这个字段，见 transcriptNoteAndWarnings。
+	Note string `json:"note,omitempty"`
 }
 
 // normalizeVideoTeardownRequest 校验不依赖后台设置的入参。MaxShots 保留请求原值（0 表示不指定），
@@ -242,7 +262,11 @@ func (w *taskWorkerCoordinator) processReplicationTeardown(task *model.Task, par
 	if err := w.service.repo.SaveTaskCompletion(task, model.TaskStatusRunning, nil); err != nil {
 		return fmt.Errorf("保存视频拆解完成状态失败: %w", err)
 	}
-	w.service.logInfo(task.UserID, task.ID, fmt.Sprintf("视频拆解完成：%d 个镜头，%d 张宫格", len(bundle.Shots), len(bundle.Grids)), strings.Join(bundle.Warnings, "；"))
+	notes := bundle.Warnings
+	if bundle.Transcript.Note != "" {
+		notes = append([]string{bundle.Transcript.Note}, bundle.Warnings...)
+	}
+	w.service.logInfo(task.UserID, task.ID, fmt.Sprintf("视频拆解完成：%d 个镜头，%d 张宫格", len(bundle.Shots), len(bundle.Grids)), strings.Join(notes, "；"))
 	return nil
 }
 
@@ -338,11 +362,9 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 		if err := w.progress(task, "识别口播", 65); err != nil {
 			return videoTeardownBundle{}, err
 		}
-		transcript, warning := s.transcribeVideoTeardown(ctx, settings, sourcePath, mimeType, hasAudio, input.Language)
-		bundle.Transcript = transcript
-		if warning != "" {
-			bundle.Warnings = append(bundle.Warnings, warning)
-		}
+		bundle.Transcript = s.transcribeVideoTeardown(ctx, settings, sourcePath, mimeType, hasAudio, input.Language)
+	} else {
+		bundle.Transcript.Note = "拆解时没有选择识别口播"
 	}
 
 	if err := s.ensureTaskProjectActive(task.UserID, task.ProjectID); err != nil {
@@ -408,25 +430,27 @@ func (s *Service) materializeVideoTeardownSource(userID, resourceID, workDir str
 }
 
 // transcribeVideoTeardown 调用已配置的 whisper.cpp 服务识别口播。后台关了口播识别、转写不可用或失败时不让整个拆解失败，
-// 返回的 warning 会展示给用户，前端改让模型从画面字幕读口播。
-func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoReplicationSettings, sourcePath, mimeType string, hasAudio bool, language string) (videoTeardownTranscript, string) {
-	none := videoTeardownTranscript{Source: "none", Segments: []timelineTranscriptionSegment{}}
+// 原因写在 Note 里展示给用户，前端改让模型从画面字幕读口播。原因面向用户，不写服务器的配置项名。
+func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoReplicationSettings, sourcePath, mimeType string, hasAudio bool, language string) videoTeardownTranscript {
+	none := func(note string) videoTeardownTranscript {
+		return videoTeardownTranscript{Source: "none", Segments: []timelineTranscriptionSegment{}, Note: note}
+	}
 	if !hasAudio {
-		return none, "视频没有音轨，没有识别口播"
+		return none("视频没有音轨")
 	}
 	if !settings.TranscribeEnabled {
-		return none, "后台已关闭口播识别，口播改从画面字幕识别"
+		return none("后台已关闭口播识别")
 	}
 	if err := s.RequireFeature(FeatureTimelineTranscription); err != nil {
-		return none, "字幕转写暂未开放，口播改从画面字幕识别"
+		return none("字幕转写暂未开放")
 	}
 	baseURL := strings.TrimSpace(os.Getenv(whisperLangEnv))
 	if baseURL == "" {
-		return none, "未配置转写服务（" + whisperLangEnv + "），口播改从画面字幕识别"
+		return none("服务器没有配置转写服务")
 	}
 	file, err := os.Open(sourcePath)
 	if err != nil {
-		return none, "读取视频音轨失败，口播改从画面字幕识别"
+		return none("读取视频音轨失败")
 	}
 	defer file.Close()
 	wavPath, cleanup, err := prepareWhisperWav(ctx, file, mimeType)
@@ -434,16 +458,16 @@ func (s *Service) transcribeVideoTeardown(ctx context.Context, settings VideoRep
 		defer cleanup()
 	}
 	if err != nil {
-		return none, "提取音轨失败，口播改从画面字幕识别"
+		return none("提取音轨失败")
 	}
 	if language == "auto" {
 		language = ""
 	}
 	segments, detected, err := newWhisperClient(baseURL).transcribe(ctx, wavPath, language)
 	if err != nil {
-		return none, "口播识别失败（" + videoTeardownErrorMessage(err) + "），改从画面字幕识别"
+		return none("口播识别失败（" + videoTeardownErrorMessage(err) + "）")
 	}
-	return videoTeardownTranscript{Source: "asr", Language: detected, Segments: segments}, ""
+	return videoTeardownTranscript{Source: "asr", Language: detected, Segments: segments}
 }
 
 // saveVideoTeardownImage 把关键帧或宫格存成图片资源。上传标识带任务 ID 和文件名，
