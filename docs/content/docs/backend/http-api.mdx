@@ -151,11 +151,11 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 | `PUT /api/admin/settings/ecommerce` | 提交完整配置及读取时的 `revision`；冲突拒绝覆盖；响应为保存后的 `data.setting` |
 | `GET /api/admin/settings/ecommerce/previous` | 读取上一版供草稿恢复，不立即生效；首次保存前返回 404 |
 
-配置字段为 `enabled`、`modelLibraryEnabled`、`autoBindEnabled`、`flows`、`capabilities`、`models`、`templates`、`studioPrompts`、`revision`。`studioPrompts` 是可选的出图提示词覆盖，键为前端登记的编号（小写字母、数字、点和短横线，64 字符内，如 `shot.main-white.composition`、`shooting.studio`、`market.west`、`style.mist.light`、`family.apparel`、`tweak.brighter`），值为 1–2000 字，最多 400 条；与配置一起按 `revision` 保存并保留上一版。后台页面只编辑 `capabilities.dossier`（商品档案）与 `templates`，其余字段是旧版电商画布遗留，保存时原样提交并照旧校验：`flows` 必须完整包含 `detail/main/wear/seed`；`capabilities` 包含 `planning/suite-forge/model-cast/pattern/listing/print-pack/pipeline/layers/dossier` 的开关与可选 `directorPrompt`，旧配置未提供时初始化为启用，提供时须完整；`models` 每项 `id/name/enabled/tags/resourceIds`，最多 200 个。`directorPrompt` 仅管理员接口可读写，空串使用服务端内置默认。写请求上限 2 MiB。
+配置字段为 `enabled`、`modelLibraryEnabled`、`autoBindEnabled`、`flows`、`capabilities`、`models`、`templates`、`studioPrompts`、`revision`。`studioPrompts` 是可选的出图提示词覆盖，键为前端登记的编号（小写字母、数字、点和短横线，64 字符内，如 `shot.main-white.composition`、`shooting.studio`、`market.west`、`style.mist.light`、`family.apparel`、`tweak.brighter`），值为 1–2000 字，最多 400 条；与配置一起按 `revision` 保存并保留上一版。后台页面只编辑 `capabilities.dossier`（商品档案）、`capabilities.detail-plan`（详情页策划）与 `templates`，其余字段是旧版电商画布遗留，保存时原样提交并照旧校验：`flows` 必须完整包含 `detail/main/wear/seed`；`capabilities` 包含 `planning/suite-forge/model-cast/pattern/listing/print-pack/pipeline/layers/dossier/detail-plan` 的开关与可选 `directorPrompt`，旧配置未提供或缺少某项时按启用补齐，提供时须完整；`GET /api/admin/settings/ecommerce/defaults` 相应多出 `cap:detail-plan`；`models` 每项 `id/name/enabled/tags/resourceIds`，最多 200 个。`directorPrompt` 仅管理员接口可读写，空串使用服务端内置默认。写请求上限 2 MiB。
 
 `templates` 最多 200 套，各含 `id/name/flow/category/enabled/style/source/shots`；名称最多 100 字、类目 200 字、视觉规范 6000 字、来源 500 字，每套 1–30 张，每张标题 100 字、职责 12000 字。项目内置目录独立压缩嵌入后端，按页摘要和单套正文读取，不占 200 套额度；后台可载入为停用草稿再编辑保存。生图台的「模板套图」从后台已启用的模板和内置目录里选一套，选中时把模板快照存进商品的 `brief.suite`，之后后台改模板不影响已选的这一套。
 
-生图台识别商品提交 `metadata.ecommerceCapability=dossier` 与 `metadata.ecommerceAnalysisFlow=cap:dossier`，并带 `metadata.source=ecommerce-studio`。服务端在准入和 worker 执行时复查能力开关、模式与分析标识，拒绝 AgentRequests 混用；商品档案只看自身开关，不受旧画布总开关 `enabled` 约束，另需「功能开放 → 电商生图台」。worker 在内存中注入后台指令和电商知识库片段，持久任务输入不写入这些内容，上游请求/响应正文日志整体隐藏，失败任务不回显上游原文。其余旧画布能力与四种用途的任务仍按原规则校验，前端不再提交。
+生图台识别商品提交 `metadata.ecommerceCapability=dossier` 与 `metadata.ecommerceAnalysisFlow=cap:dossier`，详情页按商品策划提交 `detail-plan` 与 `cap:detail-plan`，都带 `metadata.source=ecommerce-studio`。服务端在准入和 worker 执行时复查能力开关、模式与分析标识，这两项只接受文本任务，拒绝 AgentRequests 混用；生图台的这两项能力只看自身开关，不受旧画布总开关 `enabled` 约束，另需「功能开放 → 电商生图台」。worker 在内存中注入后台指令和电商知识库片段，持久任务输入不写入这些内容，上游请求/响应正文日志整体隐藏，失败任务不回显上游原文。其余旧画布能力与四种用途的任务仍按原规则校验，前端不再提交。
 
 当前配置、上一版与审计同事务提交，并比较持久化快照防止并发覆盖。当前及上一版 `models` 里的图片引用仍阻止后台删除和自动清理；配置损坏时暂停删除。这些业务开关不替代模型权限与额度策略，也不取消已提交任务。
 
@@ -198,7 +198,9 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 - 商品 `id` 须为至少 6 位的合法资源标识，并与地址中的 `:productId` 一致；`name` 不超过 120 字；单个商品不超过 1 MiB，每人最多 200 个商品，整个工作区不超过 8 MiB。商品里不能内嵌 `data:` 图片，照片与成品先上传为资源，再以 `resourceId` 引用，这些引用参与素材删除保护与孤儿清理。
 - 每个商品带服务端维护的 `product.revision`。`expectedRevision` 与当前值不一致时返回 409，`reason` 为 `studio_product_conflict`，`details.revision` 为当前值。写入在服务端存储锁内按工作区 `revision` 比较交换，冲突自动重试 3 次；已有数据无法解析时拒绝写入。写请求按用户限流，上限沿用运行策略里的画布写入上限。
-- 识别商品提交普通文本任务，带 `metadata.source=ecommerce-studio`、`ecommerceCapability=dossier`、`ecommerceAnalysisFlow=cap:dossier`，可选 `studioPlatform`、`studioCategory`、`studioProductName`。worker 注入后台「商品档案」分析指令，再按这三项从电商知识库检索已审核、来源已启用的知识（只取商品知识、营销策略、文案和平台规则类），作为参考数据追加到系统提示词；检索失败只跳过这一步并记录告警。出图提交普通图片任务（`metadata.source=ecommerce-studio`）。带这个来源的任务都要求「电商生图台」已开放。
+- 识别商品提交普通文本任务，带 `metadata.source=ecommerce-studio`、`ecommerceCapability=dossier`、`ecommerceAnalysisFlow=cap:dossier`，可选 `studioPlatform`、`studioCategory`、`studioProductName`。worker 注入后台「商品档案」分析指令，再按这三项从电商知识库检索已审核、来源已启用的知识（只取商品知识、营销策略、文案和平台规则类），作为参考数据追加到系统提示词；检索失败只跳过这一步并记录告警。
+- 详情页按商品策划同样提交普通文本任务，`ecommerceCapability=detail-plan`、`ecommerceAnalysisFlow=cap:detail-plan`、`studioStep=plan`，商品图（模型收图时最多两张）作为参考图。worker 注入「详情页策划」指令，并按详情页创作类型检索知识：在全部候选里按类型取，详情页、版式、摄影、场景各最多 3 条，创作规则、模特、视觉风格、提示词写法、质检、文案写法和平台规则各最多 2 条，文案规则、营销策略和行业方法各 1 条，合计不超过 20 条，每条正文截到 320 字。策划结果由页面解析后存进商品的 `brief.detailPlan`，服务端不解析。
+- 出图提交普通图片任务（`metadata.source=ecommerce-studio`）。带这个来源的任务都要求「电商生图台」已开放。
 - 全局助手：`POST /api/agent/runs` 传 `contextScope: ["studio"]` 与 `studioProductId` 时，这一轮绑定本人的一个生图台商品，`canvasId` 与焦点必须为空；生图台未开放时拒绝建 run。本轮只开放通用工具和 `studio_get_state`、`studio_inspect_photos`、`studio_update_dossier`、`studio_plan_shots`、`studio_request_generation`；写工具要传最近读到的 `revision`，出图请求只交给页面确认，不由 Agent 提交任务。
 
 

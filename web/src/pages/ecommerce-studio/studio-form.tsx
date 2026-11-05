@@ -1,5 +1,5 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
-import { ChevronDown, LayoutTemplate, RotateCcw, ScanSearch } from "lucide-react";
+import { ChevronDown, LayoutTemplate, ListChecks, RotateCcw, ScanSearch } from "lucide-react";
 import { useMemo, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
@@ -27,7 +27,8 @@ import {
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioQualityOptions, studioRatioOptions } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
-import { moveStudioSetEntry, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { patchStudioDetailPlanScreen } from "@/lib/ecommerce-studio/detail-plan";
+import { moveStudioSetEntry, studioActiveDetailPlan, studioEntryRatio, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
@@ -35,7 +36,7 @@ import { configuredModelDisplayName } from "@/lib/model-selection";
 import { StudioDossierCard } from "./studio-dossier";
 import { StudioModelCastSection } from "./studio-model-cast";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
-import { StudioShotList } from "./studio-shot-list";
+import { StudioShotList, type StudioPlannedScreenPatch } from "./studio-shot-list";
 import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
 import { studioImageFiles } from "./studio-upload";
@@ -63,10 +64,10 @@ function Field({ label, span, hint, children, htmlFor }: { label: string; span: 
     );
 }
 
-/** 识别用的文本模型：按钮上直接写着当前模型，点开浮层更换。 */
-function FillModelPopover({ imageCount }: { imageCount: number }) {
+/** 识别和策划用的文本模型（同一个）：按钮上直接写着当前模型，点开浮层更换。 */
+function FillModelPopover({ imageCount, purpose = "识别" }: { imageCount: number; purpose?: "识别" | "策划" }) {
     const { config, models, value } = useStudioModel("text");
-    const label = value ? configuredModelDisplayName(config, value) : models.length ? "选择识别模型" : "没有可用的文本模型";
+    const label = value ? configuredModelDisplayName(config, value) : models.length ? `选择${purpose}模型` : "没有可用的文本模型";
     return (
         <Popover
             trigger="click"
@@ -74,14 +75,14 @@ function FillModelPopover({ imageCount }: { imageCount: number }) {
             rootClassName="es-portal"
             content={
                 <div className="es-popover">
-                    <span className="es-popover-title">识别用的模型</span>
+                    <span className="es-popover-title">{purpose}用的模型</span>
                     <StudioModelPicker kind="text" imageCount={Math.max(1, imageCount)} placeholder="选择能看图的文本模型" />
-                    <span className="es-popover-note">需要能看图的文本模型，按模型计费。</span>
+                    <span className="es-popover-note">识别商品和策划详情页用同一个能看图的文本模型，按模型计费。</span>
                 </div>
             }
         >
-            <button type="button" className="es-model-chip" aria-label={`识别用的模型：${label}，点击更换`} title="识别用的模型，点击更换">
-                <span className="es-model-chip-label">识别模型</span>
+            <button type="button" className="es-model-chip" aria-label={`${purpose}用的模型：${label}，点击更换`} title={`${purpose}用的模型，点击更换`}>
+                <span className="es-model-chip-label">{purpose}模型</span>
                 <span className="es-model-chip-value">{label}</span>
                 <ChevronDown size={12} aria-hidden />
             </button>
@@ -95,7 +96,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const text = useStudioModel("text");
     const uploads = useStudioUploads(ensure);
     const filling = useStudioAnalysis((state) => state.running[product.id] === "fill");
+    const planning = useStudioAnalysis((state) => state.running[product.id] === "plan");
     const brief = product.brief;
+    const detailPlan = studioActiveDetailPlan(product);
     const spec = studioOutputSpec(brief.outputType);
     const profile = image.value ? modelCapabilityConfigFor(image.config, image.value).image : undefined;
     const qualityOptions = useMemo(() => studioQualityOptions(profile), [profile]);
@@ -167,6 +170,37 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         }
     };
 
+    const runPlan = async () => {
+        try {
+            const result = await runner.plan(ensure(), text.value);
+            const notes = [result.dropped ? `${result.dropped} 屏依据不够没收进来` : "", result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "", result.issues.length ? `${result.issues.length} 处用词需要留意` : ""].filter(Boolean);
+            message.success(`已按这件商品排好 ${result.plan.screens.length} 屏${notes.length ? `，${notes.join("，")}` : ""}，可以展开修改`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "策划失败，请重试");
+        }
+    };
+    const planDetail = () => {
+        if (!truthCount) return void message.warning("先上传商品图并点亮星标，再策划");
+        if (!text.value) return void message.warning("没有可用的文本模型，先到模型设置里添加");
+        if (!detailPlan) return void runPlan();
+        modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。", okText: "重新策划", cancelText: "取消", onOk: () => void runPlan() });
+    };
+    const restorePlan = () =>
+        modal.confirm({
+            title: "恢复按品类排的 10 屏？",
+            content: "这次的策划会被删除，需要时可以再策划一次。",
+            okText: "恢复默认",
+            cancelText: "取消",
+            onOk: () =>
+                edit(
+                    (current) => {
+                        const { detailPlan: _removed, ...rest } = current.brief;
+                        return { ...current, brief: { ...rest, shotOrder: [], shotSkip: [] } };
+                    },
+                    { immediate: true },
+                ),
+        });
+
     const generate = () => {
         if (blocked) return void message.warning(blocked);
         try {
@@ -229,7 +263,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <h2>商品信息</h2>
                     <span className="es-field-actions">
                         <Tooltip title={product.photos.length ? "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖" : "先上传商品图"}>
-                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling} disabled={!product.photos.length} onClick={() => void fill()}>
+                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling} disabled={planning || !product.photos.length} onClick={() => void fill()}>
                                 {filling ? "识别中…" : "识别商品自动填写"}
                             </Button>
                         </Tooltip>
@@ -431,12 +465,36 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                 </Button>
                             </div>
                         ) : null}
+                        {brief.outputType === "detail-set" ? (
+                            <div className="es-suite-card es-plan-card" data-planned={detailPlan ? true : undefined}>
+                                <span className="es-suite-card-text">
+                                    <strong>{detailPlan ? `已按这件商品策划 ${detailPlan.screens.length} 屏` : "按品类排好的 10 屏"}</strong>
+                                    <span>
+                                        {detailPlan
+                                            ? detailPlan.summary || "每一屏的画面和文案按这件商品写好，点笔形按钮可以修改。"
+                                            : `每件商品都是同一套。按商品策划会参考电商知识库，按这件商品的卖点和已确认信息重新排每一屏${product.dossier ? "" : "；先识别商品，策划会更准"}。`}
+                                    </span>
+                                </span>
+                                <span className="es-plan-card-actions">
+                                    {detailPlan ? (
+                                        <Button type="text" disabled={planning} onClick={restorePlan}>
+                                            恢复默认
+                                        </Button>
+                                    ) : null}
+                                    <Button icon={<ListChecks size={14} />} loading={planning} disabled={filling || !product.photos.length} onClick={planDetail}>
+                                        {planning ? "策划中…" : detailPlan ? "重新策划" : "按商品策划"}
+                                    </Button>
+                                    <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
+                                </span>
+                            </div>
+                        ) : null}
                         {entries.length ? (
                             <StudioShotList
                                 entries={entries}
                                 unit={unit}
                                 onToggle={(key) => edit((current) => ({ ...current, brief: toggleStudioSetEntry(current, key) }))}
                                 onMove={(key, delta) => edit((current) => ({ ...current, brief: moveStudioSetEntry(current, key, delta) }))}
+                                {...(detailPlan ? { onEditPlan: (index: number, patch: StudioPlannedScreenPatch) => edit((current) => ({ ...current, brief: patchStudioDetailPlanScreen(current.brief, index, patch) })) } : {})}
                             />
                         ) : null}
                     </>

@@ -6,10 +6,12 @@ import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-anal
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
+import { STUDIO_DETAIL_PLAN_CAPABILITY, studioDetailPlanRoles } from "@/lib/ecommerce-studio/detail-plan";
+import { buildDetailPlanPrompt, parseDetailPlan, type StudioDetailPlanResult } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
-import { compileStudioPrompt } from "@/lib/ecommerce-studio/prompt-compiler";
+import { compileStudioPrompt, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioShot, studioAttemptActive, studioPlanOf, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioRunOf } from "@/lib/ecommerce-studio/runs";
 import { studioFactUsable, type StudioAttempt, type StudioAttemptStatus, type StudioOutput, type StudioPhoto, type StudioPlanKind, type StudioProduct, type StudioRun, type StudioShot, type StudioTextMode } from "@/lib/ecommerce-studio/types";
@@ -65,13 +67,15 @@ function pump() {
     }
 }
 
-export type StudioAnalysisKind = "fill";
+/** fill：识别商品自动填写；plan：详情页按商品策划。 */
+export type StudioAnalysisKind = "fill" | "plan";
 
-/** 正在进行的识别，按商品记录；切换商品再回来也能看到进度。 */
+/** 正在进行的识别或策划，按商品记录；切换商品再回来也能看到进度。 */
 export const useStudioAnalysis = create<{ running: Record<string, StudioAnalysisKind | undefined> }>(() => ({ running: {} }));
 
 async function trackAnalysis<T>(productId: string, kind: StudioAnalysisKind, run: () => Promise<T>) {
-    if (useStudioAnalysis.getState().running[productId]) throw new Error("这个商品正在识别，请等它完成");
+    const running = useStudioAnalysis.getState().running[productId];
+    if (running) throw new Error(running === "plan" ? "这个商品正在策划详情页，请等它完成" : "这个商品正在识别，请等它完成");
     useStudioAnalysis.setState((state) => ({ running: { ...state.running, [productId]: kind } }));
     try {
         return await run();
@@ -224,6 +228,42 @@ export function useStudioRunner() {
                     { immediate: true },
                 );
                 return { ...parsed, info, infoKept, openQuestions, unsureFacts };
+            }),
+        [read, update],
+    );
+
+    /**
+     * 按这件商品策划详情页：服务端按「详情页策划」能力带上电商知识库的详情页、版式、摄影和场景方法，
+     * 模型看商品图和表单信息排每一屏。结果存进表单，镜头清单换成策划的屏，原来的勾选和顺序清掉。
+     */
+    const plan = useCallback(
+        (productId: string, textModel: string) =>
+            trackAnalysis(productId, "plan", async (): Promise<StudioDetailPlanResult> => {
+                const product = read(productId);
+                const current = configRef.current;
+                const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
+                // 商品图只用来让模型看清外观，最多带两张；模型不收图时只按表单和档案的文字策划。
+                const maxImages = modelCapabilityConfigFor(current, draft.model).text?.references.maxImages;
+                const limit = Math.min(2, maxImages ?? 2);
+                const photos = limit > 0 ? studioReferencePhotos(product.photos, limit) : [];
+                const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(photos.length));
+                const roles = studioDetailPlanRoles(product);
+                const result = await runBackendGenerationTask({
+                    mode: "text",
+                    prompt: buildDetailPlanPrompt(product, roles),
+                    config: generation,
+                    referenceImages: photos.map(photoReference),
+                    streamText: false,
+                    metadata: studioAnalysisMetadata(
+                        productId,
+                        "plan",
+                        { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name },
+                        STUDIO_DETAIL_PLAN_CAPABILITY,
+                    ),
+                });
+                const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() });
+                update(productId, (value) => ({ ...value, brief: { ...value.brief, detailPlan: parsed.plan, ...(value.brief.outputType === "detail-set" ? { shotOrder: [], shotSkip: [] } : {}) } }), { immediate: true });
+                return parsed;
             }),
         [read, update],
     );
@@ -386,7 +426,7 @@ export function useStudioRunner() {
         [update, watch],
     );
 
-    return { fill, generate, rerun, resume };
+    return { fill, plan, generate, rerun, resume };
 }
 
 export type StudioRunner = ReturnType<typeof useStudioRunner>;

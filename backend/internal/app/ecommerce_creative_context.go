@@ -32,9 +32,20 @@ type ecommerceKnowledgeRetrieval struct {
 // from enabled sources, adds shipped KB entries only for never-bootstrapped
 // domains, ranks them and keeps one entry per KB domain before filling up.
 func (s *Service) retrieveEcommerceKnowledge(req EcommerceCreativeDirectionsRequest) (*ecommerceKnowledgeRetrieval, error) {
-	skillPolicy, err := s.ecommerceManagedSkillPolicy()
+	result, ranked, err := s.rankEcommerceKnowledge(req)
 	if err != nil {
 		return nil, err
+	}
+	result.Selected = selectEcommerceKnowledge(ranked, ecommerceKnowledgeSelectionLimit)
+	return result, nil
+}
+
+// rankEcommerceKnowledge returns every applicable entry, best first, before any
+// selection limit; callers that need specific knowledge types filter this list.
+func (s *Service) rankEcommerceKnowledge(req EcommerceCreativeDirectionsRequest) (*ecommerceKnowledgeRetrieval, []model.EcommerceKnowledgeEntry, error) {
+	skillPolicy, err := s.ecommerceManagedSkillPolicy()
+	if err != nil {
+		return nil, nil, err
 	}
 	category := ecommerceProductCategory(req)
 	query := strings.Join([]string{req.ProductName, req.Category, req.Description, req.Instruction, req.Style, req.StylePrompt, req.MaterialPlan, ecommerceKnowledgeContentType(req), req.Platform}, " ")
@@ -44,7 +55,7 @@ func (s *Service) retrieveEcommerceKnowledge(req EcommerceCreativeDirectionsRequ
 	}
 	entries, err := s.repo.SearchEcommerceKnowledgeEntries(category, query)
 	if err != nil {
-		return nil, fmt.Errorf("知识检索失败：%w", err)
+		return nil, nil, fmt.Errorf("知识检索失败：%w", err)
 	}
 	match := ecommercecatalog.ResolveProduct(req.Category, req.ProductName)
 	var specificIDs []string
@@ -56,12 +67,12 @@ func (s *Service) retrieveEcommerceKnowledge(req EcommerceCreativeDirectionsRequ
 	}
 	specific, err := s.repo.EcommerceKnowledgeByIDs(specificIDs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	entries = append(entries, specific...)
 	sources, err := s.repo.EcommerceKnowledgeSources()
 	if err != nil {
-		return nil, fmt.Errorf("知识来源查询失败：%w", err)
+		return nil, nil, fmt.Errorf("知识来源查询失败：%w", err)
 	}
 	available, anyAvailable := map[string]bool{}, false
 	for _, source := range sources {
@@ -99,8 +110,7 @@ func (s *Service) retrieveEcommerceKnowledge(req EcommerceCreativeDirectionsRequ
 		}
 	}
 	sort.SliceStable(matched, func(i, j int) bool { return scores[matched[i].ID] > scores[matched[j].ID] })
-	result.Selected = selectEcommerceKnowledge(matched, ecommerceKnowledgeSelectionLimit)
-	return result, nil
+	return result, matched, nil
 }
 
 // selectEcommerceKnowledge combines two layers:

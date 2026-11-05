@@ -45,6 +45,8 @@ export function StudioShotTuner({
     const [promptOpen, setPromptOpen] = useState(false);
     const spec = studioShotSpec(shot.role, product.dossier?.family || "generic");
     const copyAllowed = spec.copySlot !== "none" && product.brief.language !== "none" && !studioPlatformForbidsText(product, shot.role);
+    // 详情页策划的屏文案不按角色的版位走，主标题、副标题和要点都可以改。
+    const planned = Boolean(shot.visual?.trim());
 
     const patch = useMemo<StudioShotPatch>(
         () => ({
@@ -102,13 +104,13 @@ export function StudioShotTuner({
                         <span>图上主标题</span>
                         <Input placeholder="留空则不写" value={headline} maxLength={30} onChange={(event) => setHeadline(event.target.value)} />
                     </label>
-                    {spec.copySlot === "headline-subline" ? (
+                    {spec.copySlot === "headline-subline" || planned ? (
                         <label className="es-tuner-field">
                             <span>副标题</span>
                             <Input placeholder="留空则不写" value={subline} maxLength={40} onChange={(event) => setSubline(event.target.value)} />
                         </label>
                     ) : null}
-                    {spec.copySlot === "points" ? (
+                    {spec.copySlot === "points" || planned ? (
                         <label className="es-tuner-field">
                             <span>要点（每行一条，最多 6 条）</span>
                             <Input.TextArea value={lines} autoSize={{ minRows: 2, maxRows: 6 }} maxLength={300} onChange={(event) => setLines(event.target.value)} />

@@ -1,6 +1,7 @@
 import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
 import { studioShotSpec } from "./shot-specs";
+import { normalizeStudioDetailPlan } from "./detail-plan";
 import { studioPromptText } from "./prompt-overrides";
 import { normalizeStudioSuite } from "./suites";
 import type { StudioModelCast, StudioModelPick, StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
@@ -21,7 +22,7 @@ export const STUDIO_OUTPUT_TYPES: StudioOutputSpec[] = [
     { id: "angles", label: "多角度图", hint: "正面、侧面、背面一张看全", role: "detail-angles" },
     { id: "poster", label: "海报头图", hint: "详情页首屏或活动海报", role: "detail-hero" },
     { id: "main-set", label: "主图套图（5 张）", hint: "白底、卖点、场景、细节、多角度", set: "main" },
-    { id: "detail-set", label: "详情页（10 屏）", hint: "按品类排好十屏，可导出长图", set: "detail" },
+    { id: "detail-set", label: "详情页（10 屏）", hint: "按品类排好十屏，也可以按这件商品重新策划，可导出长图", set: "detail" },
     // 实际按主图还是详情页出，看选中模板的用途；没选模板前按详情页处理。
     { id: "template-set", label: "模板套图", hint: "从后台精选或内置模板库选一套，按模板逐张出图", set: "detail" },
     // 同时选了几种单张类型：每种按数量各出几张，记在同一组里。不出现在类型按钮里。
@@ -76,7 +77,8 @@ export function createStudioBrief(): StudioBrief {
 
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
 export function resetStudioBriefParameters(brief: StudioBrief): StudioBrief {
-    return { ...createStudioBrief(), brand: brief.brand, productType: brief.productType };
+    // 详情页策划是按这件商品排出来的结果，和品牌、类型一样跟着商品走，不随参数重置。
+    return { ...createStudioBrief(), brand: brief.brand, productType: brief.productType, ...(brief.detailPlan ? { detailPlan: brief.detailPlan } : {}) };
 }
 
 function text(value: unknown, max: number) {
@@ -140,6 +142,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const record = value as Record<string, unknown>;
     const count = Number(record.count);
     const suite = normalizeStudioSuite(record.suite);
+    const detailPlan = normalizeStudioDetailPlan(record.detailPlan);
     const model = normalizeStudioModelCast(record.model);
     return {
         brand: text(record.brand, 40),
@@ -156,6 +159,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         quality: text(record.quality, 20),
         ratio: typeof record.ratio === "string" && (record.ratio === "auto" || RATIO_PATTERN.test(record.ratio)) ? record.ratio : base.ratio,
         ...(suite ? { suite } : {}),
+        ...(detailPlan ? { detailPlan } : {}),
         ...(model ? { model } : {}),
         shotOrder: shotKeys(record.shotOrder),
         shotSkip: shotKeys(record.shotSkip),

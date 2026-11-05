@@ -15,8 +15,11 @@ const MAX_POINTS = 6;
 export type StudioIdFactory = () => string;
 
 export type StudioKnowledgeContext = { platform?: string; category?: string; productName?: string };
-/** 服务端按平台、商品类型和名称检索电商知识库（与电商 Agent 共用），作为写卖点和文案的参考。 */
-export function studioAnalysisMetadata(productId: string, step: "recognize" | "copy", context: StudioKnowledgeContext = {}) {
+/**
+ * 生图台分析任务的标记。服务端按平台、商品类型和名称检索电商知识库（与电商 Agent 共用）：
+ * 商品档案拿写卖点和文案的方法，详情页策划（capability 传 detail-plan）再拿详情页、版式、摄影和场景方法。
+ */
+export function studioAnalysisMetadata(productId: string, step: "recognize" | "copy" | "plan", context: StudioKnowledgeContext = {}, capability: string = STUDIO_DOSSIER_CAPABILITY) {
     const category = context.category?.trim().slice(0, 60);
     const productName = context.productName?.trim().slice(0, 120);
     return {
@@ -26,8 +29,8 @@ export function studioAnalysisMetadata(productId: string, step: "recognize" | "c
         ...(context.platform ? { studioPlatform: context.platform } : {}),
         ...(category ? { studioCategory: category } : {}),
         ...(productName ? { studioProductName: productName } : {}),
-        ecommerceCapability: STUDIO_DOSSIER_CAPABILITY,
-        ecommerceAnalysisFlow: `cap:${STUDIO_DOSSIER_CAPABILITY}`,
+        ecommerceCapability: capability,
+        ecommerceAnalysisFlow: `cap:${capability}`,
     };
 }
 

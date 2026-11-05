@@ -31,7 +31,7 @@ export type StudioModelAdapter = {
     textRendering: "strong" | "fair" | "weak";
 };
 
-export type StudioPromptLayerId = "truth" | "goal" | "duty" | "model" | "composition" | "shooting" | "lighting" | "style" | "set" | "category" | "market" | "audience" | "layout" | "copy" | "extra" | "quality";
+export type StudioPromptLayerId = "truth" | "goal" | "duty" | "visual" | "model" | "composition" | "shooting" | "lighting" | "style" | "set" | "category" | "market" | "audience" | "layout" | "copy" | "extra" | "quality";
 
 export type StudioPromptLayer = {
     id: StudioPromptLayerId;
@@ -217,11 +217,22 @@ function truthLayer(product: StudioProduct, references: StudioPhoto[], styleRefe
     return { id: "truth", title: `商品真值｜${range}是外观唯一依据`, source: brief ? "商品图 + 表单里的商品信息 + 已确认的档案事实" : "商品档案（只取图片可见与已确认的事实）", text: lines.join("\n") };
 }
 
-function goalLayer(product: StudioProduct, shot: StudioShot, spec: StudioShotSpec, hasCopy: boolean): StudioPromptLayer {
+function goalLayer(product: StudioProduct, shot: StudioShot, spec: StudioShotSpec, hasCopy: boolean, planned: boolean): StudioPromptLayer {
     const platform = ecommercePlatform(product.platform);
     const rule = studioPlatformRuleText(product.platform, spec.platformRole, hasCopy);
-    const text = `${platform?.name || "电商平台"}·${shot.title || spec.title}，画幅 ${shot.ratio}。${sentence(spec.purpose)}${rule ? `\n${rule}` : ""}`;
-    return { id: "goal", title: "这张图做什么", source: "镜头规格 + 平台规则", text };
+    // 详情页策划的屏把这一屏的目的写在画面层里，不再套镜头规格的通用目的。
+    const text = `${platform?.name || "电商平台"}·${shot.title || spec.title}，画幅 ${shot.ratio}。${planned ? "" : sentence(spec.purpose)}${rule ? `\n${rule}` : ""}`;
+    return { id: "goal", title: "这张图做什么", source: planned ? "详情页策划 + 平台规则" : "镜头规格 + 平台规则", text };
+}
+
+/** 详情页策划给这一屏写的目的与画面：代替镜头规格的构图、机位、光线和背景；商品外观仍只看商品图。 */
+function visualLayer(shot: StudioShot): StudioPromptLayer {
+    return {
+        id: "visual",
+        title: "这一屏的画面",
+        source: "详情页策划",
+        text: `${shot.visual!.trim()}\n画面里提到的商品外观和属性以上面的商品真值为准，不新增商品没有的部件、功能和配件。`,
+    };
 }
 
 /** 表单里的市场、语言、拍法、人群和补充要求；没填的项不出现。 */
@@ -265,13 +276,27 @@ function dutyLayer(shot: StudioShot): StudioPromptLayer | undefined {
     };
 }
 
-function compositionLayer(shot: StudioShot, spec: StudioShotSpec): StudioPromptLayer {
+/** 构图与机位。详情页策划的屏构图已写在画面层里，这里只剩微调标签，没有微调时不出现。 */
+function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boolean): StudioPromptLayer | undefined {
     const tweaks = shot.tweaks.map(studioTweakInstruction).filter((item): item is string => Boolean(item));
-    const text = [sentence(spec.composition), sentence(spec.camera), tweaks.length ? `本次调整：${tweaks.join("；")}。` : ""].filter(Boolean).join("\n");
+    const adjust = tweaks.length ? `本次调整：${tweaks.join("；")}。` : "";
+    if (planned) return adjust ? { id: "composition", title: "本次调整", source: "微调标签", text: adjust } : undefined;
+    const text = [sentence(spec.composition), sentence(spec.camera), adjust].filter(Boolean).join("\n");
     return { id: "composition", title: "构图与机位", source: "镜头规格", text };
 }
 
-function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode, hasCopy: boolean, brief?: StudioBrief): StudioPromptLayer | undefined {
+function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode, hasCopy: boolean, brief?: StudioBrief, planned = false): StudioPromptLayer | undefined {
+    if (planned && !hasCopy) return { id: "copy", title: "文字", source: "详情页策划", text: "这一屏不放文字，画面中不生成任何文字（商品本身的标识除外）。" };
+    if (planned && mode === "model") {
+        const lines: string[] = ["位置：按「这一屏的画面」里安排的文字位置；没写到时放在画面留白处，不压在商品上。"];
+        if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：粗体无衬线字体，字高约为画面高度的 8%。`);
+        if (shot.subline.trim()) lines.push(`副标题${quote(shot.subline)}：常规字重，字号约为主标题的一半，紧贴主标题下方。`);
+        const items = shot.lines.map((line) => line.trim()).filter(Boolean);
+        if (items.length) lines.push(`要点（每行一条，行距宽松）：${items.map(quote).join(" ")}`);
+        if (brief && brief.language !== "zh" && brief.language !== "none") lines.push(`图内文字使用${studioLanguage(brief.language).name}：上面的文案不是这种语言时，先准确翻译，再逐字呈现译文。`);
+        lines.push("画面中不出现其他文字、数字、价格、角标或水印。");
+        return { id: "copy", title: "图内文字（逐字呈现，不增不减）", source: "详情页策划的文案", text: lines.join("\n") };
+    }
     if (!hasCopy) {
         if (spec.copySlot === "none") return undefined;
         // 表单选了不加文字：不再预留文字区，整张图都给商品和场景。
@@ -317,19 +342,23 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const hasCopy = studioShotHasCopy(shot, spec);
     const effective = hasCopy ? studioEffectiveTextMode({ textMode }, adapter) : { mode: textMode };
     const style = studioStyle(product.style);
-    const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief, modelReferences), goalLayer(product, shot, spec, hasCopy)];
+    // 详情页策划的屏：画面层代替镜头规格的构图、光线、背景和避坑项，免得每件商品都套同一套写法。
+    const planned = Boolean(shot.visual?.trim());
+    const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief, modelReferences), goalLayer(product, shot, spec, hasCopy, planned)];
     const duty = dutyLayer(shot);
     if (duty) layers.push(duty);
-    layers.push(compositionLayer(shot, spec));
+    if (planned) layers.push(visualLayer(shot));
+    const composition = compositionLayer(shot, spec, planned);
+    if (composition) layers.push(composition);
     const extra = brief ? briefLayers(brief, hasCopy) : [];
     const shooting = extra.find((layer) => layer.id === "shooting");
     if (shooting) layers.push(shooting);
     const modelSetting = cast ? modelLayer(cast, modelReferences, references.length) : undefined;
     if (modelSetting) layers.push(modelSetting);
-    layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
+    if (!planned) layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
     const suite = input.suite?.style.trim() ? input.suite : undefined;
     if (!spec.neutralBackground && suite) {
-        layers.push({ id: "style", title: `整套视觉规范「${suite.name}」`, source: "套图模板", text: `${sentence(suite.style)}整套图共用这一规范。` });
+        layers.push({ id: "style", title: `整套视觉规范「${suite.name}」`, source: planned ? "详情页策划" : "套图模板", text: `${sentence(suite.style)}整套图共用这一规范。` });
     } else if (!spec.neutralBackground) {
         layers.push({
             id: "style",
@@ -338,17 +367,17 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
             text: `气质${style.mood}；色板 ${style.palette.map((color) => `${color.name} ${color.hex}`).join("、")}；光影${style.light}。整套图共用这一风格。`,
         });
     }
-    layers.push({ id: "set", title: "背景与道具", source: "镜头规格", text: sentence(spec.set) });
+    if (!planned) layers.push({ id: "set", title: "背景与道具", source: "镜头规格", text: sentence(spec.set) });
     layers.push({ id: "category", title: "品类要求", source: "品类规则", text: studioFamilyRule(family) });
     for (const layer of extra) if (layer.id !== "shooting") layers.push(layer);
     const layout = brief ? layoutLayer(brief, references, styleReferences, modelReferences.length) : undefined;
     if (layout) layers.push(layout);
-    const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief);
+    const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief, planned);
     if (copy) layers.push(copy);
     if (brief?.extra.trim()) layers.push({ id: "extra", title: "补充要求", source: "生图表单", text: `${sentence(brief.extra)}（以上要求不改变商品外观。）` });
-    const avoid = [...spec.avoid];
-    if (spec.copySlot === "none") avoid.push("画面中不出现任何文字（商品本身的标识除外）");
-    layers.push({ id: "quality", title: "质感与约束", source: "镜头规格", text: `材质表现真实，边缘干净，没有塑料感和过度锐化；${avoid.join("；")}；商品自带的标识与文字按商品图保留，不出现乱码。` });
+    const avoid = planned ? ["只出现商品图里有的部件、配件和细节", "不出现其他品牌、价格、促销角标和水印"] : [...spec.avoid];
+    if (!planned && spec.copySlot === "none") avoid.push("画面中不出现任何文字（商品本身的标识除外）");
+    layers.push({ id: "quality", title: "质感与约束", source: planned ? "详情页策划" : "镜头规格", text: `材质表现真实，边缘干净，没有塑料感和过度锐化；${avoid.join("；")}；商品自带的标识与文字按商品图保留，不出现乱码。` });
 
     const budget = Math.max(400, input.maxChars || DEFAULT_MAX_CHARS);
     const trimmed: StudioPromptLayerId[] = [];

@@ -14,7 +14,10 @@ export const ECOMMERCE_CAPABILITIES = [
 ] as const;
 export type EcommerceCapability = (typeof ECOMMERCE_CAPABILITIES)[number]["id"];
 /** 生图台专用能力：出现在后台能力配置里，不进画布工作台的标签页。 */
-export const ECOMMERCE_STUDIO_CAPABILITIES = [{ id: "dossier", name: "商品档案", description: "生图台看图识别商品事实，并按已确认事实写卖点与文案" }] as const;
+export const ECOMMERCE_STUDIO_CAPABILITIES = [
+    { id: "dossier", name: "商品档案", description: "生图台看图识别商品事实，并按已确认事实写卖点与文案" },
+    { id: "detail-plan", name: "详情页策划", description: "生图台出详情页前，参考电商知识库按这件商品排每一屏的画面和文案" },
+] as const;
 /** 后台配置与服务端设置里完整的能力清单（画布能力 + 生图台能力）。 */
 export const ECOMMERCE_SETTING_CAPABILITIES = [...ECOMMERCE_CAPABILITIES, ...ECOMMERCE_STUDIO_CAPABILITIES] as const;
 export type EcommerceSettingCapability = (typeof ECOMMERCE_SETTING_CAPABILITIES)[number]["id"];
@@ -79,11 +82,39 @@ export type EcommerceWorkbenchBrief = {
     imageSettings?: import("./ecommerce-image-generation").EcommerceImageSettings;
 };
 export function validateEcommerceWorkbenchBrief(brief: EcommerceWorkbenchBrief) {
-    if (brief.imageSettings !== undefined && (!brief.imageSettings || typeof brief.imageSettings !== "object" || Array.isArray(brief.imageSettings) || Object.entries(brief.imageSettings).some(([key, value]) => !["size", "quality", "imageResolution", "imageParameters", "transparentBackground"].includes(key) || typeof value !== "string" || value.length > 12000))) throw new Error("生图参数无效，请重新选择尺寸和质量");
+    if (
+        brief.imageSettings !== undefined &&
+        (!brief.imageSettings ||
+            typeof brief.imageSettings !== "object" ||
+            Array.isArray(brief.imageSettings) ||
+            Object.entries(brief.imageSettings).some(([key, value]) => !["size", "quality", "imageResolution", "imageParameters", "transparentBackground"].includes(key) || typeof value !== "string" || value.length > 12000))
+    )
+        throw new Error("生图参数无效，请重新选择尺寸和质量");
     const limits = { name: 100, facts: 12000, forbidden: 6000, direction: 6000, market: 200, platform: 200, language: 200, identity: 2000 };
-    if (Object.entries(limits).some(([key, limit]) => typeof brief[key as keyof typeof limits] !== "string" || [...brief[key as keyof typeof limits]].length > limit) || !brief.name.trim() || !Number.isInteger(brief.count) || brief.count < 1 || brief.count > 30) throw new Error("请填写有效名称，张数须为 1–30，商品信息不能超长");
-    if (!Array.isArray(brief.imageTypes) || brief.imageTypes.length > 25 || brief.imageTypes.some((item) => typeof item !== "string" || !item.trim() || item.length > 100) || !Array.isArray(brief.poses) || brief.poses.length > 8 || brief.poses.some((item) => typeof item !== "string" || !item.trim() || item.length > 100)) throw new Error("图型或姿态选项无效");
-    if (brief.brand !== undefined && (typeof brief.brand !== "string" || brief.brand.length > 6000) || brief.generationMode !== undefined && !["standard", "product-protected"].includes(brief.generationMode) || brief.reviewRequired !== undefined && typeof brief.reviewRequired !== "boolean" || brief.aspectRatio && !/^([1-9]\d?):([1-9]\d?)$/.test(brief.aspectRatio)) throw new Error("品牌、生成模式、审核或画幅设置无效");
+    if (
+        Object.entries(limits).some(([key, limit]) => typeof brief[key as keyof typeof limits] !== "string" || [...brief[key as keyof typeof limits]].length > limit) ||
+        !brief.name.trim() ||
+        !Number.isInteger(brief.count) ||
+        brief.count < 1 ||
+        brief.count > 30
+    )
+        throw new Error("请填写有效名称，张数须为 1–30，商品信息不能超长");
+    if (
+        !Array.isArray(brief.imageTypes) ||
+        brief.imageTypes.length > 25 ||
+        brief.imageTypes.some((item) => typeof item !== "string" || !item.trim() || item.length > 100) ||
+        !Array.isArray(brief.poses) ||
+        brief.poses.length > 8 ||
+        brief.poses.some((item) => typeof item !== "string" || !item.trim() || item.length > 100)
+    )
+        throw new Error("图型或姿态选项无效");
+    if (
+        (brief.brand !== undefined && (typeof brief.brand !== "string" || brief.brand.length > 6000)) ||
+        (brief.generationMode !== undefined && !["standard", "product-protected"].includes(brief.generationMode)) ||
+        (brief.reviewRequired !== undefined && typeof brief.reviewRequired !== "boolean") ||
+        (brief.aspectRatio && !/^([1-9]\d?):([1-9]\d?)$/.test(brief.aspectRatio))
+    )
+        throw new Error("品牌、生成模式、审核或画幅设置无效");
 }
 export function patchEcommerceWorkbenchBrief(brief: EcommerceWorkbenchBrief, change: Partial<EcommerceWorkbenchBrief>): EcommerceWorkbenchBrief {
     const next = { ...brief, ...change };
@@ -143,14 +174,18 @@ export function parseEcommerceWorkbenchPlan(text: string): EcommerceWorkbenchPla
     const raw = clean.startsWith(fence) ? clean.slice(clean.indexOf("\n") + 1, clean.lastIndexOf(fence)).trim() : clean;
     if (!raw.startsWith("{") || !raw.endsWith("}")) throw new Error("规划结果不完整，已保留原任务，请重新规划；尚未提交图片任务");
     let value;
-    try { value = JSON.parse(raw); } catch {
+    try {
+        value = JSON.parse(raw);
+    } catch {
         try {
             const repaired = jsonrepair(raw);
             // Only accept escaping/whitespace repairs, never invented fields or closing brackets.
             const unescaped = (input: string) => input.replace(/\\(["\\])/g, "$1").replace(/\s/g, "");
             if (unescaped(raw) !== unescaped(repaired)) throw new Error("incomplete plan");
             value = JSON.parse(repaired);
-        } catch { throw new Error("规划结果格式无效，已保留原任务；尚未提交图片任务"); }
+        } catch {
+            throw new Error("规划结果格式无效，已保留原任务；尚未提交图片任务");
+        }
     }
     if (
         !value ||

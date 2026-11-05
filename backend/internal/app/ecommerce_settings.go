@@ -94,7 +94,7 @@ type EcommerceSetting struct {
 
 var ecommerceStudioPromptKey = regexp.MustCompile(`^[a-z0-9][a-z0-9.:-]{0,63}$`)
 
-var ecommerceCapabilities = []string{"planning", "suite-forge", "model-cast", "pattern", "listing", "print-pack", "pipeline", "layers", "dossier"}
+var ecommerceCapabilities = []string{"planning", "suite-forge", "model-cast", "pattern", "listing", "print-pack", "pipeline", "layers", "dossier", "detail-plan"}
 
 func normalizeEcommerceCapabilities(value *EcommerceSetting) {
 	if value.Capabilities == nil {
@@ -260,11 +260,9 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 			director = defaultEcommerceCapabilityPrompt(strings.TrimPrefix(id, "cap:"))
 		}
 		input.Config.SystemPrompt = director
-		// 生图台的商品档案与电商 Agent 共用知识库；只在 worker 的内存请求里追加，不进入任务记录。
-		if strings.TrimPrefix(id, "cap:") == ecommerceStudioDossierCapability {
-			if knowledge := s.ecommerceStudioKnowledgePrompt(input.Metadata); knowledge != "" {
-				input.Config.SystemPrompt += "\n\n" + knowledge
-			}
+		// 生图台的商品档案与详情页策划和电商 Agent 共用知识库；只在 worker 的内存请求里追加，不进入任务记录。
+		if knowledge := s.ecommerceStudioKnowledgePrompt(strings.TrimPrefix(id, "cap:"), input.Metadata); knowledge != "" {
+			input.Config.SystemPrompt += "\n\n" + knowledge
 		}
 		return nil
 	}
@@ -298,10 +296,10 @@ func (s *Service) applyEcommerceImageCapabilityInstruction(input *canvasGenerati
 	return nil
 }
 
-// 生图台的商品档案只看自己的能力开关。setting.Enabled 是已下线的旧版电商画布总开关，
+// 生图台的能力（商品档案、详情页策划）只看自己的开关。setting.Enabled 是已下线的旧版电商画布总开关，
 // 后台不再提供，不能再拦住生图台；其余旧画布能力仍受它约束。
 func ecommerceCapabilityOpen(setting EcommerceSetting, id string, capability EcommerceFlowSetting) bool {
-	return capability.Enabled && (setting.Enabled || id == ecommerceStudioDossierCapability)
+	return capability.Enabled && (setting.Enabled || ecommerceStudioCapability(id))
 }
 
 // Validate on admission and again in the worker, before any provider request.
@@ -337,7 +335,7 @@ func (s *Service) validateEcommerceCapability(input *canvasGenerationInput) erro
 		}
 	}
 	if input.Mode == "text" {
-		if (id != "planning" && id != "suite-forge" && id != "listing" && id != "pipeline" && id != "dossier") || flow != "cap:"+id {
+		if (id != "planning" && id != "suite-forge" && id != "listing" && id != "pipeline" && !ecommerceStudioCapability(id)) || flow != "cap:"+id {
 			return BadAuthRequest("电商文本任务与分析能力不一致")
 		}
 	} else if (id != "model-cast" && id != "pattern" && id != "planning") || input.Metadata["ecommerceAnalysisFlow"] != nil {

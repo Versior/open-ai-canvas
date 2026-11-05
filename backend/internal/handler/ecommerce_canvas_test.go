@@ -88,7 +88,7 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 			Defaults map[string]string `json:"defaults"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &defaults); err != nil || response.Code != 200 || len(defaults.Data.Defaults) != 13 || defaults.Data.Defaults["cap:planning"] == "" || defaults.Data.Defaults["cap:dossier"] == "" {
+	if err := json.Unmarshal(response.Body.Bytes(), &defaults); err != nil || response.Code != 200 || len(defaults.Data.Defaults) != 14 || defaults.Data.Defaults["cap:planning"] == "" || defaults.Data.Defaults["cap:dossier"] == "" || defaults.Data.Defaults["cap:detail-plan"] == "" {
 		t.Fatal("default instruction HTTP contract incomplete")
 	}
 	response = profileRequest(router, "GET", "/api/ecommerce/templates?q=&page=1&pageSize=20", "", cookie)

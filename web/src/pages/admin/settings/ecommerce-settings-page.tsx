@@ -7,7 +7,7 @@ import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatusBadge } from "../components/admin-ui";
 import { AdminCallout } from "../ui/controls";
 import { ecommerceCapabilitySettings, ecommerceSettingsEqual, getAdminEcommerceDefaults, getAdminEcommerceSetting, getPreviousEcommerceSetting, saveAdminEcommerceSetting, type EcommerceSetting } from "@/services/api/ecommerce-canvas";
-import { DOSSIER, DOSSIER_DEFAULT_KEY, renderDossierPanel } from "./ecommerce-dossier-panel";
+import { DETAIL_PLAN, DOSSIER, DOSSIER_DEFAULT_KEY, renderStudioCapabilityPanel, studioCapabilityDefaultKey, type StudioCapability } from "./ecommerce-dossier-panel";
 import { EcommerceTemplateEditor } from "./ecommerce-template-editor";
 import { StudioPromptsEditor } from "./studio-prompts-editor";
 import "./ecommerce-settings-page.css";
@@ -135,20 +135,36 @@ export default function EcommerceSettingsPage() {
         }
     };
     const dossier = draft ? ecommerceCapabilitySettings(draft)[DOSSIER.id] : undefined;
-    const patchDossier = (change: Partial<NonNullable<typeof dossier>>) => {
-        if (!draft || !dossier) return;
-        const capabilities = { ...ecommerceCapabilitySettings(draft), [DOSSIER.id]: { ...dossier, ...change } };
+    const detailPlan = draft ? ecommerceCapabilitySettings(draft)[DETAIL_PLAN.id] : undefined;
+    const patchCapability = (capability: StudioCapability, change: Partial<NonNullable<typeof dossier>>) => {
+        const current = draft ? ecommerceCapabilitySettings(draft)[capability.id] : undefined;
+        if (!draft || !current) return;
+        const capabilities = { ...ecommerceCapabilitySettings(draft), [capability.id]: { ...current, ...change } };
         // 读到的是未配置过能力的旧设置时，改回全默认就保持字段缺省，避免无改动也算脏草稿。
         const originalDefaults = !saved?.capabilities && Object.values(capabilities).every((item) => item.enabled && !item.directorPrompt);
         setDraft({ ...draft, capabilities: originalDefaults ? undefined : capabilities });
     };
+    const capabilityTab = (capability: StudioCapability, value: NonNullable<typeof dossier>) => ({
+        key: capability.id,
+        label: tabLabel(capability.name, value.enabled ? "已开启" : "已关闭", saved ? !same(value, ecommerceCapabilitySettings(saved)[capability.id]) : false),
+        children: renderStudioCapabilityPanel({
+            capability,
+            value,
+            defaultText: defaults[studioCapabilityDefaultKey(capability)] || "",
+            defaultsLoading,
+            defaultsError,
+            disabled: busy,
+            onChange: (change) => patchCapability(capability, change),
+            onRetryDefaults: loadDefaults,
+        }),
+    });
     const ready = Boolean(draft && dossier && !loading);
     const promptCount = Object.keys(draft?.studioPrompts ?? {}).length;
     const enabledTemplates = draft?.templates.filter((item) => item.enabled).length ?? 0;
     return (
         <AdminPageFrame
             title="电商生图台"
-            description="商品档案指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
+            description="商品档案与详情页策划指令、出图提示词与套图模板；电商 Agent 的模型与知识在「电商 Agent」分组配置"
             scroll
             actions={
                 <>
@@ -195,19 +211,8 @@ export default function EcommerceSettingsPage() {
                     <Tabs
                         className="ecm-tabs"
                         items={[
-                            {
-                                key: "dossier",
-                                label: tabLabel(DOSSIER.name, dossier.enabled ? "已开启" : "已关闭", !same(dossier, ecommerceCapabilitySettings(saved)[DOSSIER.id])),
-                                children: renderDossierPanel({
-                                    value: dossier,
-                                    defaultText: defaults[DOSSIER_DEFAULT_KEY] || "",
-                                    defaultsLoading,
-                                    defaultsError,
-                                    disabled: busy,
-                                    onChange: patchDossier,
-                                    onRetryDefaults: loadDefaults,
-                                }),
-                            },
+                            capabilityTab(DOSSIER, dossier),
+                            ...(detailPlan ? [capabilityTab(DETAIL_PLAN, detailPlan)] : []),
                             {
                                 key: "prompts",
                                 label: tabLabel("出图提示词", promptCount ? `已改 ${promptCount}` : "内置", !same(draft.studioPrompts, saved.studioPrompts)),

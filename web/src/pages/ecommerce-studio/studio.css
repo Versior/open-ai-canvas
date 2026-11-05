@@ -972,6 +972,24 @@
     color: var(--es-ink-3);
     font-size: var(--fs-caption);
 }
+/* 详情页策划：沿用模板卡片的样子，按钮和策划模型排在右侧，窄时换到下一行。 */
+.es-plan-card {
+    flex-wrap: wrap;
+}
+.es-plan-card .es-suite-card-text {
+    flex: 1 1 260px;
+}
+.es-plan-card .es-suite-card-text span {
+    line-height: 1.5;
+}
+.es-plan-card-actions {
+    display: inline-flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+}
 .es-shots {
     display: grid;
     gap: 2px;
@@ -981,6 +999,7 @@
 }
 .es-shot {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
@@ -1000,9 +1019,10 @@
     font-size: var(--fs-caption);
     font-variant-numeric: tabular-nums;
 }
+/* 宽度从 0 起算：一行放不下时文字省略，不把右侧按钮挤到下一行；只有展开的编辑区会换行。 */
 .es-shot-text {
     display: grid;
-    flex: 1 1 auto;
+    flex: 1 1 0;
     gap: 2px;
     min-width: 0;
 }
@@ -1020,6 +1040,38 @@
 .es-shot-move {
     display: inline-flex;
     flex: 0 0 auto;
+}
+.es-shot[data-open] {
+    background: var(--es-muted);
+}
+/* 展开的一屏：占满整行，屏名、主副标题两列，画面和要点占两列。 */
+.es-shot-edit {
+    display: grid;
+    flex: 1 0 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2) var(--space-3);
+    /* 与屏名对齐：勾选框 16px + 序号 22px + 两段间距。 */
+    padding: var(--space-1) 0 var(--space-2) calc(16px + 22px + var(--space-3) * 2);
+}
+.es-shot-edit-field {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+.es-shot-edit-field[data-span="2"] {
+    grid-column: 1 / -1;
+}
+.es-shot-edit-field > span,
+.es-shot-edit-note {
+    margin: 0;
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
+@container (max-width: 520px) {
+    .es-shot-edit {
+        grid-template-columns: minmax(0, 1fr);
+        padding-left: 0;
+    }
 }
 
 @container (max-width: 520px) {

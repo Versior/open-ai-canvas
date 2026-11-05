@@ -293,6 +293,7 @@ func ecommerceAutoSkillQuery(flow, prompt string) string {
 		"cap:listing":     "电商上架 ecommerce 商品标题 卖点文案",
 		"cap:pipeline":    "电商成包 ecommerce 详情主图 商品上架",
 		"cap:dossier":     "电商商品识别 ecommerce 商品卖点 详情页文案",
+		"cap:detail-plan": "电商详情页 ecommerce 逐屏策划 版式场景 卖点文案",
 	}
 	prefix := keywords[strings.TrimSpace(flow)]
 	if prefix == "" {

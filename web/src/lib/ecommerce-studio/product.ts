@@ -1,5 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
+import { STUDIO_SHOT_VISUAL_MAX } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import {
@@ -237,6 +238,7 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         sellingPointIds: strings(shot.sellingPointIds),
         tweaks: strings(shot.tweaks),
         ...(typeof shot.duty === "string" && shot.duty.trim() ? { duty: shot.duty.slice(0, STUDIO_SUITE_LIMITS.duty) } : {}),
+        ...(typeof shot.visual === "string" && shot.visual.trim() ? { visual: shot.visual.slice(0, STUDIO_SHOT_VISUAL_MAX) } : {}),
         attempts: arrayOf(shot.attempts, (attempt) => normalizeAttempt(attempt, fallbackTime)),
         adopted: isRecord(shot.adopted) ? normalizeOutput(shot.adopted) : undefined,
     };

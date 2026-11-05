@@ -128,6 +128,8 @@ export type StudioShot = {
     tweaks: string[];
     /** 模板套图里模板给这张图的职责；出图时优先于镜头规格的构图与光线。 */
     duty?: string;
+    /** 详情页策划给这一屏写的目的与画面；有它时代替镜头规格的构图、光线和背景。 */
+    visual?: string;
     attempts: StudioAttempt[];
     adopted?: StudioOutput;
 };
@@ -140,6 +142,38 @@ export type StudioModelCast = { face?: StudioModelPick; figure?: StudioModelPick
 
 /** 模板里的一张图。ratio 来自模板的画幅；noText 表示模板要求这张图不放文字。 */
 export type StudioSuiteShot = { title: string; duty: string; ratio?: string; noText?: boolean };
+
+/**
+ * 「详情页策划」给这件商品排的一屏。role 对到最接近的镜头规格（平台规则、模特设定沿用）；
+ * visual 写到能直接出图，文案只用表单里的标题、卖点和已确认的事实。
+ */
+export type StudioPlannedScreen = {
+    role: StudioShotRole;
+    title: string;
+    /** 这一屏要让买家明白什么。 */
+    purpose: string;
+    /** 具体画面：场景、商品摆放与角度、人物、道具、色调、光线和文字位置。 */
+    visual: string;
+    headline: string;
+    subline: string;
+    lines: string[];
+    /** 依据的事实名称，只用于展示。 */
+    facts: string[];
+    noText?: boolean;
+};
+
+/** 详情页策划：按这件商品排的整套详情页，选了「一键详情页」时代替按品类固定的十屏。 */
+export type StudioDetailPlan = {
+    id: string;
+    createdAt: string;
+    /** 策划用的文本模型。 */
+    model: string;
+    /** 策划思路。 */
+    summary: string;
+    /** 整套视觉规范，出图时代替风格锁。 */
+    style: string;
+    screens: StudioPlannedScreen[];
+};
 
 /** 选中的套图模板快照：选中那一刻存进表单，之后后台改模板不影响已选的这一套。 */
 export type StudioSuite = {
@@ -188,6 +222,8 @@ export type StudioBrief = {
     ratio: string;
     /** 出图类型为「模板套图」时选中的模板。 */
     suite?: StudioSuite;
+    /** 「一键详情页」按这件商品排好的策划；没有时按品类固定的十屏出。 */
+    detailPlan?: StudioDetailPlan;
     /** 套图的镜头清单：调整后的顺序与这次不出的镜头。元素是镜头 key，内置套图为镜头角色，模板套图为 s 加序号。 */
     shotOrder: string[];
     shotSkip: string[];
