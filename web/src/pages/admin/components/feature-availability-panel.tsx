@@ -20,6 +20,7 @@ import {
     ShieldCheck,
     ShoppingBag,
     SlidersHorizontal,
+    Sofa,
     Video,
     Wallet,
 } from "lucide-react";
@@ -46,7 +47,8 @@ type FeatureKey =
     | "ecommerceEnabled"
     | "ecommerceVideoEnabled"
     | "ecommerceStudioEnabled"
-    | "siteAssistantEnabled";
+    | "siteAssistantEnabled"
+    | "interiorEnabled";
 
 /** 跨分组的依赖：开关本身可以打开，但缺少这一项时功能只部分可用。 */
 type FeatureRequirement = { key: FeatureKey; effect: string };
@@ -83,6 +85,7 @@ const editableFeatureKeys: FeatureKey[] = [
     "ecommerceEnabled",
     "ecommerceVideoEnabled",
     "ecommerceStudioEnabled",
+    "interiorEnabled",
     "siteAssistantEnabled",
     "frontendModelsEnabled",
     "pluginCenterEnabled",
@@ -142,6 +145,14 @@ const featureGroups: FeatureGroup[] = [
                 location: "侧栏 · 电商生图台",
                 description: "独立的商品出图工作台，与电商 Agent 共用电商知识库。关闭后隐藏入口，已保存的商品和成品保留。",
                 icon: <Package className="size-4" aria-hidden="true" />,
+            },
+            {
+                key: "interiorEnabled",
+                title: "室内设计",
+                location: "侧栏 · 室内设计",
+                description: "房间照片、毛坯、线稿出装修效果图。关闭后隐藏入口且不能出图，已保存的项目和效果图保留。",
+                icon: <Sofa className="size-4" aria-hidden="true" />,
+                link: { to: "/admin/interior", label: "室内设计配置" },
             },
         ],
     },
@@ -571,6 +582,7 @@ function toEditablePayload(features: FeatureAvailability) {
         ecommerceEnabled: features.ecommerceEnabled,
         ecommerceVideoEnabled: features.ecommerceVideoEnabled,
         ecommerceStudioEnabled: features.ecommerceStudioEnabled,
+        interiorEnabled: features.interiorEnabled,
         siteAssistantEnabled: features.siteAssistantEnabled,
         frontendModelsEnabled: features.frontendModelsEnabled,
         pluginCenterEnabled: features.pluginCenterEnabled,
@@ -600,6 +612,7 @@ function parseFeatureAvailability(value: unknown): FeatureAvailability {
         ecommerceEnabled: record.ecommerceEnabled as boolean,
         ecommerceVideoEnabled: record.ecommerceVideoEnabled as boolean,
         ecommerceStudioEnabled: record.ecommerceStudioEnabled as boolean,
+        interiorEnabled: record.interiorEnabled as boolean,
         siteAssistantEnabled: record.siteAssistantEnabled as boolean,
         frontendModelsEnabled: record.frontendModelsEnabled as boolean,
         pluginCenterEnabled: record.pluginCenterEnabled as boolean,

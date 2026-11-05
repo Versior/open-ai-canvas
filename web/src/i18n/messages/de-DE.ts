@@ -37,6 +37,7 @@ export const deDE: Messages = {
         },
         sidebar: {
             ecommerceStudio: "E-Commerce-Studio",
+            interior: "Innenarchitektur",
             videoReplication: "Video-Nachbau",
             home: "Erstellen",
             projects: "Kurzserien",
@@ -53,6 +54,7 @@ export const deDE: Messages = {
         },
         collapsed: {
             videoReplication: "Nachbau",
+            interior: "Innen",
             inspiration: "Ideen",
             home: "Start",
             projects: "Serien",
@@ -66,6 +68,7 @@ export const deDE: Messages = {
             ecommerce: "E-Commerce",
             studio: "E-Commerce-Studio",
             videoReplication: "Video-Nachbau",
+            interior: "Innenarchitektur",
             inspiration: "Inspiration",
             home: "Erstellen",
             projects: "Kurzserien",

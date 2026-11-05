@@ -1,0 +1,207 @@
+{
+  "modes": [
+    {
+      "key": "style-redesign",
+      "name": "风格改造",
+      "subtitle": "上传房间照片，换成新风格",
+      "description": "保留房屋结构，替换墙地顶材质、家具和软装。",
+      "audience": "both",
+      "slots": [{ "key": "source", "name": "房间照片", "required": true, "maxCount": 1 }],
+      "params": [
+        {
+          "key": "strength",
+          "label": "改造强度",
+          "default": "hard",
+          "options": [
+            { "value": "soft", "label": "只换软装", "prompt": "必须保持不变：墙面、地面、顶面的材质和颜色，门窗，固定柜体，灯位，拍摄角度和透视。只替换家具、布艺、灯饰、装饰品和绿植。" },
+            { "value": "hard", "label": "软装+硬装", "prompt": "必须保持不变：墙体位置，门窗的位置和大小，梁柱，层高，地面和顶面的边界，拍摄角度和透视。不要新增或去掉门窗。可以改变墙面、地面、顶面的材质和颜色，以及家具、灯具、窗帘、地毯、装饰品和绿植。" },
+            { "value": "full", "label": "全部重做", "prompt": "只保留建筑结构（墙体、门窗洞口、梁柱、层高）和拍摄角度，硬装和软装都可以重新设计。不要新增或去掉门窗。" }
+          ]
+        }
+      ],
+      "promptTemplate": "任务：把这张室内照片重新设计成「{{style}}」风格的装修效果图。\n空间：{{room}}。{{room_prompt}}\n{{params}}\n风格要点：{{style_prompt}}\n{{notes_line}}\n画面要求：真实室内摄影质感，光线自然，细节清晰；家具和物品的尺寸符合真实比例；不出现文字、水印和人物。",
+      "requiresRoom": true,
+      "requiresStyle": true,
+      "maxCount": 4,
+      "enabled": true
+    },
+    {
+      "key": "rough-to-finished",
+      "name": "毛坯出图",
+      "subtitle": "毛坯房照片直接出精装效果图",
+      "description": "在毛坯或清水房的原有结构上完成硬装和软装。",
+      "audience": "both",
+      "slots": [{ "key": "source", "name": "毛坯照片", "required": true, "maxCount": 1 }],
+      "params": [
+        {
+          "key": "budget",
+          "label": "预算档",
+          "default": "quality",
+          "options": [
+            { "value": "economy", "label": "经济", "prompt": "预算档：经济。选材实用耐看，造型简洁，不做复杂吊顶和大面积护墙板。" },
+            { "value": "quality", "label": "品质", "prompt": "预算档：品质。选材讲究，适度做吊顶、灯带和定制柜体。" },
+            { "value": "premium", "label": "高端", "prompt": "预算档：高端。使用高级石材、木饰面和定制家具，灯光层次丰富。" }
+          ]
+        }
+      ],
+      "promptTemplate": "任务：这是一张毛坯房（或清水房）照片。请在原有结构上完成硬装和软装，生成「{{style}}」风格的完工效果图。\n空间：{{room}}。{{room_prompt}}\n必须保持不变：墙体，门窗洞口的位置和大小，梁柱，层高，拍摄角度和透视。\n需要补全：吊顶和灯光，墙面，地面和踢脚线，门套和窗套，按空间需要的固定柜体，家具和软装。原图里裸露的管线、水泥面和杂物都按装修完成后的样子处理。\n{{params}}\n风格要点：{{style_prompt}}\n{{notes_line}}\n画面要求：真实室内摄影质感，光线自然，细节清晰；家具和物品的尺寸符合真实比例；不出现文字、水印和人物。",
+      "requiresRoom": true,
+      "requiresStyle": true,
+      "maxCount": 4,
+      "enabled": true
+    },
+    {
+      "key": "reference-transfer",
+      "name": "参考图迁移",
+      "subtitle": "照着喜欢的案例装我家",
+      "description": "把参考案例的风格用到自家房间，房屋结构保持不变。",
+      "audience": "both",
+      "slots": [
+        { "key": "source", "name": "我家照片", "required": true, "maxCount": 1 },
+        { "key": "reference", "name": "参考案例", "required": true, "maxCount": 1 }
+      ],
+      "params": [
+        {
+          "key": "transfer",
+          "label": "迁移程度",
+          "default": "full",
+          "options": [
+            { "value": "full", "label": "整体迁移", "prompt": "请把第 2 张图的设计风格用到第 1 张图的房间上，包括配色、墙地顶材质、家具款式、灯光和软装氛围。" },
+            { "value": "soft", "label": "只换软装和配色", "prompt": "请只参考第 2 张图的配色、家具款式和软装，替换第 1 张图里的家具、布艺、灯具和装饰品；第 1 张图的墙面、地面、顶面和固定柜体保持不变。" }
+          ]
+        }
+      ],
+      "promptTemplate": "任务：第 1 张图是我家的房间照片，第 2 张图是我喜欢的装修案例。\n{{params}}\n必须保持第 1 张图的墙体、门窗、梁柱、层高、拍摄角度和透视不变；不要照搬第 2 张图的空间结构和布局。\n空间：{{room}}。{{room_prompt}}\n{{notes_line}}\n画面要求：真实室内摄影质感，光线自然，细节清晰；家具和物品的尺寸符合真实比例；不出现文字、水印和人物。",
+      "requiresRoom": true,
+      "requiresStyle": false,
+      "maxCount": 4,
+      "enabled": true
+    },
+    {
+      "key": "sketch-render",
+      "name": "线稿/白模渲染",
+      "subtitle": "手绘线稿、SketchUp 白模、CAD 截图转写实效果图",
+      "description": "按原图的结构、布局和视角赋材质、打光。",
+      "audience": "pro",
+      "slots": [{ "key": "source", "name": "线稿或白模", "required": true, "maxCount": 1 }],
+      "params": [
+        {
+          "key": "drawing",
+          "label": "图纸类型",
+          "default": "whitemodel",
+          "options": [
+            { "value": "sketch", "label": "手绘线稿", "prompt": "原图是一张手绘线稿。" },
+            { "value": "whitemodel", "label": "白模截图", "prompt": "原图是一张 SketchUp 或酷家乐的白模截图。" },
+            { "value": "cad", "label": "CAD 截图", "prompt": "原图是一张 CAD 立面或透视截图，按图中线条推断空间和家具。" }
+          ]
+        },
+        {
+          "key": "lighting",
+          "label": "光照",
+          "default": "day",
+          "options": [
+            { "value": "day", "label": "白天自然光", "prompt": "光照：白天自然光，从窗户进入，明亮通透。" },
+            { "value": "dusk", "label": "黄昏暖光", "prompt": "光照：黄昏，窗外是暖色天光，室内开启暖色灯光。" },
+            { "value": "night", "label": "夜景灯光", "prompt": "光照：夜景，窗外天色已暗，室内灯光层次分明。" }
+          ]
+        }
+      ],
+      "promptTemplate": "任务：把这张室内设计图纸渲染成「{{style}}」风格的写实室内效果图。\n{{params}}\n空间：{{room}}。{{room_prompt}}\n严格按照原图的空间结构、家具布局、物体轮廓和视角渲染；不要增加或删除家具，不要改变构图。\n给所有表面赋予真实材质，表现出木纹、石材纹理、布料质感和金属反光。\n风格要点：{{style_prompt}}\n{{notes_line}}\n画面要求：真实室内摄影质感，细节清晰；家具和物品的尺寸符合真实比例；不出现文字、水印和人物。",
+      "requiresRoom": false,
+      "requiresStyle": true,
+      "maxCount": 4,
+      "enabled": true
+    },
+    {
+      "key": "virtual-staging",
+      "name": "虚拟布置",
+      "subtitle": "空房间摆上家具和软装",
+      "description": "不动硬装，只添加家具和软装，适合出租、民宿和售房展示。",
+      "audience": "pro",
+      "slots": [{ "key": "source", "name": "空房照片", "required": true, "maxCount": 1 }],
+      "params": [
+        {
+          "key": "usage",
+          "label": "用途",
+          "default": "self",
+          "options": [
+            { "value": "self", "label": "自住", "prompt": "用途：自住，布置舒适实用。" },
+            { "value": "rent", "label": "出租", "prompt": "用途：出租，布置简洁耐用，适合拍房源照片。" },
+            { "value": "homestay", "label": "民宿", "prompt": "用途：民宿，布置有记忆点，适合拍照分享。" },
+            { "value": "sale", "label": "售房展示", "prompt": "用途：售房展示，布置明亮大气，突出空间感。" }
+          ]
+        }
+      ],
+      "promptTemplate": "任务：这是一间空房间的照片。请保持房间原样，只添加家具和软装，生成「{{style}}」风格的布置效果图。\n空间：{{room}}。{{room_prompt}}\n{{params}}\n必须保持不变：墙面、地面、顶面的材质和颜色，门窗，灯具，开关插座，拍摄角度和透视。\n家具尺寸符合真实比例，靠墙摆放合理，通道留出正常的活动空间。\n风格要点（只体现在家具和软装上）：{{style_prompt}}\n{{notes_line}}\n画面要求：真实室内摄影质感，光线自然，细节清晰；不出现文字、水印和人物。",
+      "requiresRoom": true,
+      "requiresStyle": true,
+      "maxCount": 4,
+      "enabled": true
+    },
+    {
+      "key": "text-edit",
+      "name": "文字微调",
+      "subtitle": "一句话改一处，其他保持不变",
+      "description": "在已有效果图上按描述修改局部，例如换沙发颜色、换地板。",
+      "audience": "both",
+      "slots": [{ "key": "source", "name": "要修改的图", "required": true, "maxCount": 1 }],
+      "params": [],
+      "promptTemplate": "任务：按下面的要求只修改这张图里提到的部分，其他所有内容（墙面、地面、家具、光线、拍摄角度和透视）保持不变。\n修改要求：{{notes}}\n画面要求：真实室内摄影质感，修改处与周围的光影和透视自然衔接；不出现文字和水印。",
+      "requiresRoom": false,
+      "requiresStyle": false,
+      "notesRequired": true,
+      "maxCount": 2,
+      "enabled": true
+    }
+  ],
+  "presets": [
+    { "type": "style", "key": "modern-minimal", "groupName": "现代", "name": "现代简约", "summary": "黑白灰，线条利落", "prompt": "以白色、浅灰为主，黑色少量点缀；平板无把手柜门；简洁吊灯或无主灯，配线性灯带；哑光墙面，浅色大板瓷砖或木地板；线条利落的布艺沙发和细腿金属家具；软装少而精。", "enabled": true },
+    { "type": "style", "key": "cream", "groupName": "现代", "name": "奶油风", "summary": "奶白暖调，圆润柔和", "prompt": "以奶白、米色、燕麦色为主；圆角和弧形造型；微水泥或肌理漆墙面；浅色木地板；云朵沙发、羊羔绒单椅、弧形茶几；暖白光，整体柔和温暖。", "enabled": true },
+    { "type": "style", "key": "japanese-wood", "groupName": "东方", "name": "原木日式", "summary": "原木色，自然安静", "prompt": "白橡等浅色原木做护墙板、柜体和家具；白色墙面；浅色木地板；棉麻布艺；藤编、陶器和绿植点缀；自然光充足，安静克制，留白多。", "enabled": true },
+    { "type": "style", "key": "new-chinese", "groupName": "东方", "name": "新中式", "summary": "胡桃木，对称，东方元素", "prompt": "胡桃木等深色木作；布局讲究对称；格栅、屏风、回纹等简化的中式元素；米白墙面配石材；中式圈椅、条案；茶色和墨绿点缀；宣纸质感灯具，暖光。", "enabled": true },
+    { "type": "style", "key": "light-luxury", "groupName": "现代", "name": "轻奢", "summary": "大理石，金属线条", "prompt": "白色或灰色纹理大理石；拉丝黄铜或香槟金金属线条；皮革和丝绒家具；灰色、香槟金、墨绿点缀；精致吊灯配灯带；适量镜面和玻璃元素；整洁高级。", "enabled": true },
+    { "type": "style", "key": "nordic", "groupName": "欧美", "name": "北欧", "summary": "白墙原木，明亮温馨", "prompt": "白色墙面，浅色木地板；简洁的布艺沙发和原木家具；几何图案地毯和抱枕；绿植点缀；采光充足，整体明亮温馨。", "enabled": true },
+    { "type": "style", "key": "minimalist", "groupName": "现代", "name": "极简", "summary": "大面留白，少即是多", "prompt": "以白色、浅灰和原木色为主，几乎不做装饰；隐藏式收纳和无把手柜门；无主灯，配线性灯带和筒灯；家具造型简单，数量少。", "enabled": true },
+    { "type": "style", "key": "wabi-sabi", "groupName": "东方", "name": "侘寂", "summary": "粗粝自然，安静质朴", "prompt": "以土色、米灰、暖白为主；肌理涂料或夯土质感墙面；做旧的原木和石材；手工陶器、亚麻布艺；光线柔和，装饰极少。", "enabled": true },
+    { "type": "style", "key": "italian-minimal", "groupName": "现代", "name": "意式极简", "summary": "高级灰，质感面料", "prompt": "以深灰、咖啡色、暖灰为主；岩板或大理石背景墙，皮革和羊绒面料沙发；低矮的家具和细金属线条；无主灯，配洗墙灯和灯带。", "enabled": true },
+    { "type": "style", "key": "song-oriental", "groupName": "东方", "name": "宋式东方", "summary": "素雅留白，东方意境", "prompt": "以米白、浅木色和淡青色为主；造型简洁的实木家具和低矮坐具；竹、石、陶和宣纸灯等自然材料；大面积留白，配一两件东方意境的摆件和插花。", "enabled": true },
+    { "type": "style", "key": "french", "groupName": "欧美", "name": "法式", "summary": "石膏线条，浪漫优雅", "prompt": "白色或奶油色墙面配石膏线条和护墙板；人字拼木地板；弧形线条的家具和丝绒面料；黄铜或水晶灯具；整体浪漫优雅。", "enabled": true },
+    { "type": "style", "key": "american", "groupName": "欧美", "name": "美式", "summary": "厚重实木，舒适大气", "prompt": "深色实木家具和护墙板；皮质或布艺大沙发；壁炉或装饰柜；暖色调，灯光温暖，整体舒适大气。", "enabled": true },
+    { "type": "style", "key": "mid-century", "groupName": "欧美", "name": "中古风", "summary": "复古家具，暖色木作", "prompt": "胡桃木等暖色木作；细腿的复古家具和标志性单椅；橙色、芥末黄、墨绿点缀；几何图案和球形吊灯。", "enabled": true },
+    { "type": "style", "key": "industrial", "groupName": "个性", "name": "工业风", "summary": "裸露结构，金属和水泥", "prompt": "水泥或微水泥墙面，裸露的管线和梁；黑色金属框架、做旧皮革和实木家具；红砖或深色墙面点缀；轨道灯和工业吊灯。", "enabled": true },
+    { "type": "style", "key": "british-vintage", "groupName": "欧美", "name": "英式复古", "summary": "深色墙面，复古格调", "prompt": "墨绿、深蓝或酒红的墙面；切斯特菲尔德皮沙发；格纹和花卉图案面料；黄铜灯具和复古挂画；整体沉稳有格调。", "enabled": true },
+    { "type": "style", "key": "art-deco", "groupName": "欧美", "name": "Art Deco", "summary": "几何对称，金属奢华", "prompt": "对称的几何造型和扇形图案；黑金、墨绿和深蓝配色；大理石、丝绒和黄铜；装饰性很强的灯具和镜面。", "enabled": true },
+    { "type": "style", "key": "bauhaus", "groupName": "个性", "name": "包豪斯", "summary": "功能主义，原色几何", "prompt": "以白色和灰色为底，红黄蓝原色点缀；钢管家具和几何造型；功能优先，没有多余装饰。", "enabled": true },
+    { "type": "style", "key": "mediterranean", "groupName": "自然", "name": "地中海", "summary": "蓝白配色，拱形门洞", "prompt": "白色墙面配蓝色点缀；拱形门洞和窗洞；仿古砖和马赛克；藤编和铁艺家具；整体清爽通透。", "enabled": true },
+    { "type": "style", "key": "tropical", "groupName": "自然", "name": "南洋", "summary": "热带植物，藤编木作", "prompt": "深色木作和藤编家具；芭蕉叶、龟背竹等热带植物；亚麻和棉布；百叶窗和吊扇；整体放松，有度假感。", "enabled": true },
+    { "type": "style", "key": "boho", "groupName": "自然", "name": "波西米亚", "summary": "民族图案，自由混搭", "prompt": "民族图案地毯和挂毯；藤编、流苏和编织装饰；多种暖色混搭；大量绿植；整体随性自由。", "enabled": true },
+    { "type": "style", "key": "country", "groupName": "自然", "name": "田园", "summary": "碎花木作，温暖质朴", "prompt": "碎花或格纹布艺；做旧的白色或原木家具；砖墙或木梁；绿植和干花；整体温暖质朴。", "enabled": true },
+    { "type": "style", "key": "memphis", "groupName": "个性", "name": "孟菲斯", "summary": "撞色几何，活泼大胆", "prompt": "高饱和的撞色；几何图形和波点、条纹；造型夸张的家具和装饰；整体活泼大胆。", "enabled": true },
+    { "type": "style", "key": "futuristic", "groupName": "个性", "name": "未来感", "summary": "流线造型，科技光影", "prompt": "白色或银灰为主；流线型和曲面造型；隐藏式灯带和氛围光；光滑的漆面和金属材质；整体有科技感。", "enabled": true },
+    { "type": "style", "key": "modern-classic", "groupName": "现代", "name": "现代经典", "summary": "经典线条，简洁大方", "prompt": "在现代简约的基础上加入简化的护墙板和线条；深浅木色搭配；经典款家具；整体简洁大方、耐看。", "enabled": true },
+
+    { "type": "room", "key": "living-room", "groupName": "住宅", "name": "客厅", "prompt": "客厅需要有沙发、茶几、电视墙或背景墙，留出通往其他房间的通道。", "enabled": true },
+    { "type": "room", "key": "dining-room", "groupName": "住宅", "name": "餐厅", "prompt": "餐厅以餐桌椅为中心，配餐边柜和吊灯，桌椅数量与空间大小匹配。", "enabled": true },
+    { "type": "room", "key": "living-dining", "groupName": "住宅", "name": "客餐厅", "prompt": "客厅和餐厅连通，沙发区和餐桌区分区清楚，动线顺畅。", "enabled": true },
+    { "type": "room", "key": "master-bedroom", "groupName": "住宅", "name": "主卧", "prompt": "主卧以双人床为中心，配床头柜、衣柜或梳妆台，氛围安静放松。", "enabled": true },
+    { "type": "room", "key": "second-bedroom", "groupName": "住宅", "name": "次卧", "prompt": "次卧放置 1.5 米或 1.8 米的床、衣柜和小书桌，布置简洁实用。", "enabled": true },
+    { "type": "room", "key": "kids-room", "groupName": "住宅", "name": "儿童房", "prompt": "儿童房有单人床、书桌和收纳柜，配色明快，边角圆润安全。", "enabled": true },
+    { "type": "room", "key": "elderly-room", "groupName": "住宅", "name": "老人房", "prompt": "老人房家具稳固、通道宽敞，照明柔和均匀，地面防滑。", "enabled": true },
+    { "type": "room", "key": "study", "groupName": "住宅", "name": "书房", "prompt": "书房有书桌、办公椅和书柜，桌面有充足照明。", "enabled": true },
+    { "type": "room", "key": "kitchen", "groupName": "住宅", "name": "厨房", "prompt": "厨房有橱柜、台面、灶台、水槽和抽油烟机，操作动线合理。", "enabled": true },
+    { "type": "room", "key": "bathroom", "groupName": "住宅", "name": "卫生间", "prompt": "卫生间有洗手台、马桶和淋浴区或浴缸，干湿分区，墙地面使用防水材料。", "enabled": true },
+    { "type": "room", "key": "balcony", "groupName": "住宅", "name": "阳台", "prompt": "阳台可以布置休闲椅、绿植或洗衣区，采光通透。", "enabled": true },
+    { "type": "room", "key": "entrance", "groupName": "住宅", "name": "玄关", "prompt": "玄关有鞋柜、换鞋凳和穿衣镜，收纳充足。", "enabled": true },
+    { "type": "room", "key": "cloakroom", "groupName": "住宅", "name": "衣帽间", "prompt": "衣帽间以衣柜和开放挂衣区为主，配中岛或穿衣镜。", "enabled": true },
+    { "type": "room", "key": "tea-room", "groupName": "住宅", "name": "茶室", "prompt": "茶室以茶桌和座椅为中心，配置展示柜，氛围安静雅致。", "enabled": true },
+    { "type": "room", "key": "media-room", "groupName": "住宅", "name": "影音室", "prompt": "影音室有大尺寸屏幕或投影和舒适的沙发座椅，灯光可以调暗。", "enabled": true },
+    { "type": "room", "key": "office", "groupName": "商业", "name": "办公室", "prompt": "办公室有办公桌椅、文件柜和会客区，照明明亮均匀。", "enabled": true },
+    { "type": "room", "key": "meeting-room", "groupName": "商业", "name": "会议室", "prompt": "会议室以会议桌为中心，配会议椅和显示屏。", "enabled": true },
+    { "type": "room", "key": "cafe", "groupName": "商业", "name": "咖啡店", "prompt": "咖啡店有吧台、操作区和多种座位，氛围放松，适合拍照。", "enabled": true },
+    { "type": "room", "key": "restaurant", "groupName": "商业", "name": "餐饮店", "prompt": "餐饮店有用餐座位区和收银台，桌椅排布便于通行和服务。", "enabled": true },
+    { "type": "room", "key": "hotel-room", "groupName": "商业", "name": "酒店客房", "prompt": "酒店客房有双人床或两张单人床、床头柜、书桌和行李架，整洁舒适。", "enabled": true },
+    { "type": "room", "key": "homestay", "groupName": "商业", "name": "民宿", "prompt": "民宿房间有床、休闲座椅和有特色的装饰，适合拍照分享。", "enabled": true },
+    { "type": "room", "key": "retail-store", "groupName": "商业", "name": "零售店", "prompt": "零售店有展示货架、收银台和体验区，商品陈列清楚。", "enabled": true },
+    { "type": "room", "key": "beauty-salon", "groupName": "商业", "name": "美容院", "prompt": "美容院有接待区和护理床或美容椅，环境干净，灯光柔和。", "enabled": true }
+  ]
+}

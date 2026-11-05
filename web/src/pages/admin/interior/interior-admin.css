@@ -1,0 +1,41 @@
+/* 室内设计后台：列表工具栏和编辑表单的排布，颜色交给 AntD 后台主题。 */
+
+.itd-admin-panel {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.itd-admin-panel.is-narrow {
+    max-width: 640px;
+}
+
+.itd-admin-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.itd-admin-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-4);
+}
+
+.itd-admin-grid.is-four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.itd-admin-code textarea,
+textarea.itd-admin-code {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--fs-caption);
+}
+
+@media (max-width: 760px) {
+    .itd-admin-grid,
+    .itd-admin-grid.is-four {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

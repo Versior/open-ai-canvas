@@ -47,6 +47,7 @@ export type FeatureAvailability = {
     ecommerceVideoEnabled: boolean;
     ecommerceStudioEnabled: boolean;
     siteAssistantEnabled: boolean;
+    interiorEnabled: boolean;
     configured?: boolean;
     updatedBy?: string;
     updatedAt?: string;
@@ -68,6 +69,7 @@ export const defaultFeatureAvailability: FeatureAvailability = {
     ecommerceVideoEnabled: false,
     ecommerceStudioEnabled: false,
     siteAssistantEnabled: false,
+    interiorEnabled: false,
 };
 
 type UserStore = {

@@ -12,6 +12,7 @@ import {
     loadEcommerceCanvasPage,
     loadEcommerceStudioPage,
     loadInspirationPage,
+    loadInteriorPage,
     loadProjectCreatePage,
     loadProjectDetailPage,
     loadProjectsPage,
@@ -59,6 +60,7 @@ const StoryboardPromptsPage = lazyAdminPage(() => import("@/pages/admin/storyboa
 const AdminFeedbacksPage = lazyAdminPage(() => import("@/pages/admin/feedbacks/feedbacks-page"));
 const UsersPage = lazyAdminPage(() => import("@/pages/admin/users/users-page"));
 const UserGroupsPage = lazyAdminPage(() => import("@/pages/admin/user-groups/user-groups-page"));
+const InteriorAdminPage = lazyAdminPage(() => import("@/pages/admin/interior/interior-admin-page"));
 const AssetsPage = lazy(loadAssetsPage);
 const InspirationGalleryPage = lazy(loadInspirationPage);
 const WorkDetailPage = lazy(() => import("@/pages/inspiration/work-detail"));
@@ -68,6 +70,7 @@ const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
 const EcommerceCanvasPage = lazy(loadEcommerceCanvasPage);
 const EcommerceStudioPage = lazy(loadEcommerceStudioPage);
+const InteriorPage = lazy(loadInteriorPage);
 const VideoReplicationPage = lazy(() => import("@/pages/video-replication"));
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
@@ -163,6 +166,15 @@ export const router = createBrowserRouter([
                 element: (
                     <RequireAuth>
                         <RequireFeature feature="ecommerceStudioEnabled">{deferred(<EcommerceStudioPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            // 室内设计：房间照片、毛坯、线稿出装修效果图。
+            {
+                path: "/interior",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="interiorEnabled">{deferred(<InteriorPage />)}</RequireFeature>
                     </RequireAuth>
                 ),
             },
@@ -287,6 +299,12 @@ export const router = createBrowserRouter([
                     { path: "ecommerce-knowledge", element: <Navigate to="/admin/ecommerce/library" replace /> },
                     { path: "ecommerce-skills", element: <Navigate to="/admin/ecommerce/library/skills" replace /> },
                     { path: "ecommerce-categories", element: <Navigate to="/admin/ecommerce/library/categories" replace /> },
+                    // 室内设计配置不受功能开关限制，方便开放前先配好模式、风格和默认模型。
+                    { path: "interior", element: <Navigate to="/admin/interior/modes" replace /> },
+                    { path: "interior/modes", element: <InteriorAdminPage /> },
+                    { path: "interior/styles", element: <InteriorAdminPage /> },
+                    { path: "interior/rooms", element: <InteriorAdminPage /> },
+                    { path: "interior/settings", element: <InteriorAdminPage /> },
                     { path: "plugins", element: <AdminPluginsPage /> },
                     { path: "workbench-tools", element: <WorkbenchToolsPage /> },
                     { path: "skill-curation", element: <SkillCurationPage /> },

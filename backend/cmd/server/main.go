@@ -197,7 +197,16 @@ func run(ctx context.Context) error {
 }
 
 func ensureBuiltinWorkbenchCatalog(svc *service.Service) error {
-	return svc.EnsureBuiltinWorkbenchCatalog()
+	if err := svc.EnsureBuiltinWorkbenchCatalog(); err != nil {
+		return err
+	}
+	// 室内设计的内置模式、风格和空间只补缺失项，管理员改过的内容不覆盖。
+	if inserted, err := svc.EnsureBuiltinInteriorCatalog(); err != nil {
+		return fmt.Errorf("initialize builtin interior catalog: %w", err)
+	} else if inserted > 0 {
+		slog.Info("builtin interior catalog ready", "inserted", inserted)
+	}
+	return nil
 }
 
 func redactCanvasSharePath(path string) string {

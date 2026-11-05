@@ -339,6 +339,12 @@ func (s *Service) requireTaskGenerationFeatures(userID, projectID, taskType, ope
 			return err
 		}
 	}
+	// 室内设计任务受「室内设计」开关控制，和生图台一样只收紧不放宽。
+	if stringValue(metadata["source"]) == interiorTaskSource {
+		if err := s.RequireFeature(FeatureInterior); err != nil {
+			return err
+		}
+	}
 	if ecommerce {
 		if err := s.RequireFeature(FeatureEcommerce); err != nil {
 			return err

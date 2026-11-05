@@ -30,6 +30,7 @@ const (
 	FeatureEcommerceVideo        = "ecommerceVideo"
 	FeatureEcommerceStudio       = "ecommerceStudio"
 	FeatureSiteAssistant         = "siteAssistant"
+	FeatureInterior              = "interior"
 )
 
 type FeatureAvailability struct {
@@ -49,6 +50,7 @@ type FeatureAvailability struct {
 	EcommerceVideoEnabled        bool `json:"ecommerceVideoEnabled"`
 	EcommerceStudioEnabled       bool `json:"ecommerceStudioEnabled"`
 	SiteAssistantEnabled         bool `json:"siteAssistantEnabled"`
+	InteriorEnabled              bool `json:"interiorEnabled"`
 }
 
 type PublicFeatureAvailability struct {
@@ -77,6 +79,7 @@ func DefaultFeatureAvailability() FeatureAvailability {
 		EcommerceVideoEnabled:        false,
 		EcommerceStudioEnabled:       false,
 		SiteAssistantEnabled:         false,
+		InteriorEnabled:              false,
 	}
 }
 
@@ -156,6 +159,8 @@ func (s *Service) FeatureEnabled(feature string) (bool, error) {
 		return value.EcommerceStudioEnabled, nil
 	case FeatureSiteAssistant:
 		return value.SiteAssistantEnabled, nil
+	case FeatureInterior:
+		return value.InteriorEnabled, nil
 	default:
 		return false, errors.New("未知功能开放配置")
 	}
@@ -200,6 +205,8 @@ func (s *Service) RequireFeature(feature string) error {
 		return kernel.Forbidden("电商生图台暂未开放")
 	case FeatureSiteAssistant:
 		return kernel.Forbidden("站内助手暂未开放")
+	case FeatureInterior:
+		return kernel.Forbidden("室内设计暂未开放")
 	default:
 		return kernel.Forbidden("该功能暂未开放")
 	}

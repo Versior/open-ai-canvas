@@ -5,6 +5,22 @@ description: 影策后端核心持久化表与状态边界
 
 # 后端数据库
 
+## 室内设计（Schema 85）
+
+版本 85 `interior_design` 是 Fork 自有迁移，新建三张表，不改动既有表。它和智能体形象迁移一样排在全部上游迁移之后，上游再有新迁移时一起顺延，名称和校验值不变。
+
+| 表 | 主要字段 | 约束与语义 |
+| --- | --- | --- |
+| `interior_modes` | `id`、`key`（唯一）、`name`、`subtitle`、`description`、`audience`（`quick` / `pro` / `both`）、`cover_resource_id`、`slots_json`、`params_json`、`prompt_template`、`requires_room`、`requires_style`、`notes_required`、`default_model_json`、`allowed_models_json`、`max_count`、`sort_order`、`enabled`、`builtin`、`version`、`created_by` / `updated_by` | 出图方式。模板和参数里每个选项的提示词片段只在服务端使用。`version` 是管理员修改的比较交换版本，保存时加一 |
+| `interior_presets` | `id`、`type`（`style` / `room`）、`key`（与 `type` 组成唯一索引）、`group_name`、`name`、`summary`、`cover_resource_id`、`prompt`、`tags_json`、`sort_order`、`enabled`、`builtin`、`version` | 风格和空间，横跨所有出图方式共用 |
+| `interior_projects` | `id`、`user_id`、`name`、`kind`（`home` / `client`）、`document_json`、`revision`，索引 `(user_id, updated_at)` | 用户的房屋或客户方案。文档保存出图轮次，图片只写 `resourceId`；`revision` 是保存时的比较交换修订号。每个用户最多 200 个 |
+
+内置出图方式、风格和空间随程序嵌入，服务启动时按 `key`（预设按 `type + key`）只插入缺失项，管理员改过的内容不覆盖。全局设置复用 `system_settings` 的 `interior_settings` 键，不建表。
+
+资源引用快照读取 `interior_projects.document_json`（按 `resourceId` 字段识别）以及出图方式、风格、空间的 `cover_resource_id`，素材删除和孤儿清理会保留它们引用的图片。删除项目只删记录，不删资源。
+
+三张表登记在 `database.Models()`，SQLite → PostgreSQL 搬迁（`cmd/migrate-sqlite-postgres`）也复制这三张表。启动时版本 85 的物理结构校验检查三张表都存在。接口与提示词编译见 [室内设计效果图](/docs/backend/interior-design)。
+
 ## 智能体形象库与形象购买（Schema 84）
 
 版本 84 `agent_pet_skins` 是 Fork 自有迁移，新建三张表，不改动既有表。它排在全部上游迁移之后：智能体形象分支上原为版本 80，合入电商分支时为 82，同步上游 80、81（Fork 中为 82、83）后顺延为 84，名称和校验值不变。上游再有新迁移时同样排在它前面。
