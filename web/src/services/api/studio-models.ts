@@ -1,7 +1,7 @@
 import { apiBaseURL, http } from "./request";
 
-/** 电商生图台的模特库：模特人脸、姿势参考图、模特样式（造型）。后台维护，生图台按需选用。 */
-export type StudioModelKind = "face" | "pose" | "style";
+/** 电商生图台的模特库：模特人脸、全身模特（站立等整个人的全身照）、姿势参考图、模特样式（造型）。后台维护，生图台按需选用。 */
+export type StudioModelKind = "face" | "figure" | "pose" | "style";
 export type StudioModelGender = "" | "female" | "male";
 
 export type StudioModelItem = {
@@ -42,7 +42,12 @@ export type StudioModelInput = {
     sortOrder?: number;
 };
 
-export const STUDIO_MODEL_KIND_LABEL: Record<StudioModelKind, string> = { face: "模特人脸", pose: "姿势", style: "模特样式" };
+export const STUDIO_MODEL_KIND_LABEL: Record<StudioModelKind, string> = { face: "模特人脸", figure: "全身模特", pose: "姿势", style: "模特样式" };
+
+/** 真人肖像类素材（模特人脸、全身模特）：要确认肖像授权才能上架。 */
+export function studioModelPortrait(kind: StudioModelKind) {
+    return kind === "face" || kind === "figure";
+}
 export const STUDIO_MODEL_GENDER_LABEL: Record<StudioModelGender, string> = { "": "不限", female: "女", male: "男" };
 export const STUDIO_MODEL_IMPORT_MAX_BYTES = 12 * 1024 * 1024;
 
@@ -95,4 +100,24 @@ export async function updateAdminStudioModel(id: string, input: StudioModelInput
 
 export function batchAdminStudioModels(ids: string[], action: "enable" | "disable" | "delete") {
     return http.post<{ affected: number }>("/admin/studio-models/batch", { ids, action });
+}
+
+/** 后台可以一键拉取的内置来源。 */
+export type StudioModelSource = { id: string; name: string; description: string; notice: string };
+export type StudioModelImportReport = { total: number; done: number; imported: number; skipped: number; failed: number; failures: { name: string; error: string }[] };
+export type StudioModelRemoteImportStatus = "idle" | "running" | "done" | "failed" | "cancelled";
+/** 远程拉取的进度：一次只跑一个，在服务端后台进行，关掉页面也会继续。 */
+export type StudioModelRemoteImport = { status: StudioModelRemoteImportStatus; source: string; startedAt?: string; finishedAt?: string; error?: string; report: StudioModelImportReport; sources: StudioModelSource[] };
+
+export function getStudioModelRemoteImport(signal?: AbortSignal) {
+    return http.get<StudioModelRemoteImport>("/admin/studio-models/remote-import", { signal, timeout: 15000 });
+}
+
+/** 开始远程拉取：source 选内置来源，manifestUrl 给一份清单地址，二选一。 */
+export function startStudioModelRemoteImport(input: { source?: string; manifestUrl?: string; faceConsentAttested: boolean }) {
+    return http.post<StudioModelRemoteImport>("/admin/studio-models/remote-import", input);
+}
+
+export function cancelStudioModelRemoteImport() {
+    return http.delete<StudioModelRemoteImport>("/admin/studio-models/remote-import");
 }

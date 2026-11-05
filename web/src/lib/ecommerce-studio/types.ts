@@ -132,11 +132,11 @@ export type StudioShot = {
     adopted?: StudioOutput;
 };
 
-/** 从模特库选中的一项。人脸和姿势带 resourceId（已复制到自己资源库的原图），模特样式只用文字。 */
+/** 从模特库选中的一项。人脸、全身模特和姿势带 resourceId（已复制到自己资源库的原图），模特样式只用文字。 */
 export type StudioModelPick = { itemId: string; name: string; prompt: string; resourceId?: string; width?: number; height?: number };
 
-/** 这个商品出模特图时用的模特设定：长相、姿势、造型各选一项，都可以不选。 */
-export type StudioModelCast = { face?: StudioModelPick; pose?: StudioModelPick; style?: StudioModelPick };
+/** 这个商品出模特图时用的模特设定：人脸或全身模特（二选一）定是谁，姿势定动作，造型定妆发穿搭，都可以不选。 */
+export type StudioModelCast = { face?: StudioModelPick; figure?: StudioModelPick; pose?: StudioModelPick; style?: StudioModelPick };
 
 /** 模板里的一张图。ratio 来自模板的画幅；noText 表示模板要求这张图不放文字。 */
 export type StudioSuiteShot = { title: string; duty: string; ratio?: string; noText?: boolean };

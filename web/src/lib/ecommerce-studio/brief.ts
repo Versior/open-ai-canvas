@@ -99,18 +99,20 @@ function modelPick(value: unknown, withImage: boolean): StudioModelPick | undefi
     };
 }
 
-/** 读回模特设定：人脸和姿势必须带已复制的原图，模特样式只要文字。 */
+/** 读回模特设定：人脸、全身模特和姿势必须带已复制的原图，模特样式只要文字；人脸和全身模特都有时留全身模特。 */
 export function normalizeStudioModelCast(value: unknown): StudioModelCast | undefined {
     if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
     const record = value as Record<string, unknown>;
     const cast: StudioModelCast = {};
-    const face = modelPick(record.face, true);
+    const figure = modelPick(record.figure, true);
+    const face = figure ? undefined : modelPick(record.face, true);
     const pose = modelPick(record.pose, true);
     const style = modelPick(record.style, false);
     if (face) cast.face = face;
+    if (figure) cast.figure = figure;
     if (pose) cast.pose = pose;
     if (style?.prompt) cast.style = style;
-    return cast.face || cast.pose || cast.style ? cast : undefined;
+    return cast.face || cast.figure || cast.pose || cast.style ? cast : undefined;
 }
 
 function shotKeys(value: unknown) {

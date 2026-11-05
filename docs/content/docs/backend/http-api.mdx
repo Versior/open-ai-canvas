@@ -146,20 +146,27 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 ### 电商模特库
 
-模特库给生图台出模特图用：模特人脸、姿势参考图和模特样式（造型）。用户端接口需要登录，普通用户还要开放「电商生图台」，管理员不受开关限制；后台接口需要管理员。
+模特库给生图台出模特图用：模特人脸、全身模特（站立等整个人的全身照）、姿势参考图和模特样式（造型）。用户端接口需要登录，普通用户还要开放「电商生图台」，管理员不受开关限制；后台接口需要管理员。
 
 | 接口 | 合同 |
 | --- | --- |
-| `GET /api/ecommerce/studio/models` | 参数 `kind`（`face` / `pose` / `style`，必填）、`q`（60 字内）、`category`、`gender`、`page`、`pageSize`（最多 60，默认 24）；只返回已上架的素材。`data` 为 `items`、`total`、`page`、`pageSize`、`categories`（这一类已上架素材的分类） |
+| `GET /api/ecommerce/studio/models` | 参数 `kind`（`face` / `figure` / `pose` / `style`，必填）、`q`（60 字内）、`category`、`gender`、`page`、`pageSize`（最多 60，默认 24）；只返回已上架的素材。`data` 为 `items`、`total`、`page`、`pageSize`、`categories`（这一类已上架素材的分类） |
 | `GET /api/ecommerce/studio/models/:id/image` | 素材图；`variant=thumb` 给缩略图。未上架的只有管理员能看。带 `v=<revision>` 时 `Cache-Control: private, max-age=86400`，否则 `no-cache` |
 | `POST /api/ecommerce/studio/models/:id/attach` | 把原图复制到当前用户的资源库，返回 `data.resourceId`、`width`、`height`。同一用户对同一张原图重复调用返回同一个资源；计入上传配额，按上传频率限流。纯文字的模特样式返回 400 |
-| `GET /api/admin/studio-models` | 参数 `kind`、`q`、`category`（24 字内）、`status`（空为全部，`enabled` / `disabled` 只看已上架或未上架）、`page`、`pageSize`，包括未上架的素材；其他取值返回 400。`data` 在浏览接口的字段之外另带 `kindCounts`（`face`、`pose`、`style` 各自的总条数）和 `categoryCounts`（当前类型每个分类的 `name`、`count`，条数多的在前，不含未分类），两项都不随 `q`、`status` 变化 |
-| `POST /api/admin/studio-models/import` | multipart：`kind`、`name`（60 字内）、`category`（24 字内）、`gender`、`tags`（JSON 数组或逗号分隔，最多 12 个、每个 16 字内）、`prompt`（600 字内）、`consent`、`enabled` 和可选的 `file`（PNG / JPEG / WebP，12 MiB、4000 万像素以内）。人脸、姿势必须带图，模特样式必须有 `prompt`，人脸 `consent` 为假时不能上架。返回 `data.item` |
+| `GET /api/admin/studio-models` | 参数 `kind`、`q`、`category`（24 字内）、`status`（空为全部，`enabled` / `disabled` 只看已上架或未上架）、`page`、`pageSize`，包括未上架的素材；其他取值返回 400。`data` 在浏览接口的字段之外另带 `kindCounts`（`face`、`figure`、`pose`、`style` 各自的总条数）和 `categoryCounts`（当前类型每个分类的 `name`、`count`，条数多的在前，不含未分类），两项都不随 `q`、`status` 变化 |
+| `POST /api/admin/studio-models/import` | multipart：`kind`、`name`（60 字内）、`category`（24 字内）、`gender`、`tags`（JSON 数组或逗号分隔，最多 12 个、每个 16 字内）、`prompt`（600 字内）、`consent`、`enabled` 和可选的 `file`（PNG / JPEG / WebP，12 MiB、4000 万像素以内）。人脸、全身模特和姿势必须带图，模特样式必须有 `prompt`，人脸和全身模特 `consent` 为假时不能上架。返回 `data.item` |
 | `PUT /api/admin/studio-models/:id` | JSON 修改文字字段、`consent`、`enabled`、`sortOrder`；类型和图片不能改 |
-| `POST /api/admin/studio-models/batch` | `{ "ids": [...], "action": "enable" \| "disable" \| "delete" }`，一次 1–200 条；上架时有人脸没确认肖像授权则整批不执行。返回 `data.affected` |
+| `POST /api/admin/studio-models/batch` | `{ "ids": [...], "action": "enable" \| "disable" \| "delete" }`，一次 1–200 条；上架时有人脸或全身模特没确认肖像授权则整批不执行。返回 `data.affected` |
 | `DELETE /api/admin/studio-models/:id` | 删除一条，返回 `data.affected` |
+| `GET /api/admin/studio-models/remote-import` | 最近一次远程拉取的进度：`status`（`idle` / `running` / `done` / `failed` / `cancelled`）、`source`（来源名称，或去掉查询串的清单地址）、`startedAt`、`finishedAt`、`error`、`report`（`total`、`done`、`imported`、`skipped`、`failed`、`failures`，失败明细只留前 50 条），以及可以一键拉取的内置来源 `sources`（`id`、`name`、`description`、`notice`）。进度只存在本进程内存里，后端重启后回到 `idle` |
+| `POST /api/admin/studio-models/remote-import` | `{ "source": "ai-pose-gallery-zh" }` 或 `{ "manifestUrl": "https://…" }`，二选一，可带 `faceConsentAttested`。服务端在后台下载清单和图片并逐条导入，立即返回 `status=running` 的进度。两项都填、都不填、来源不存在或地址不合规返回 400；已经有一次在跑返回 409 |
+| `DELETE /api/admin/studio-models/remote-import` | 停止正在进行的拉取，已经导入的保留，再拉会跳过它们；返回当前进度 |
 
-导入、修改和批量操作都写管理员审计（`studio_model.import`、`studio_model.update`、`studio_model.batch_*`）。
+导入、修改和批量操作都写管理员审计（`studio_model.import`、`studio_model.update`、`studio_model.batch_*`）。远程拉取开始时记 `studio_model.remote_import`（来源或去掉查询串的地址、是否带肖像授权），结束时记 `studio_model.remote_import_done`（新增、跳过、失败条数），拉进来的每一条另记 `studio_model.import`。
+
+远程拉取的清单是 JSON：`{ "source": "说明", "items": [...] }`，`items` 1–5000 条，整份不超过 8 MiB。每条有 `kind`、`name`、`category`、`gender`、`tags`、`prompt`、`enabled`、`sortOrder` 和图片地址 `url`；字段规则同上面的新增接口，`enabled` 为真才上架。清单和图片都按出站规则下载，拒绝本机、内网和链路本地地址，网络错误、5xx 与 429 重试三次；单张图片的限制同新增接口。每条按「类型 + 分类 + 名称」跳过已有的，所以同一份清单可以反复拉。`faceConsentAttested` 为假时人脸和全身模特不标授权、一律不上架，确认后可以在后台批量上架。进度、审计和错误信息都不带地址里的查询串，带签名的清单地址不会因此泄露。
+
+内置来源 `ai-pose-gallery-zh` 固定在该仓库的一个提交上：服务端从 raw.githubusercontent.com 读取它的 `data/pose-zh.json`、`portrait-zh.json`、`costume-zh.json`，按 `app/studio_models_sources.go` 的规则取约 2451 条（约 350 MB），图片也从同一提交下载。它的图片和数据著作权归原作者、标注非商用，拉取前须取得权利人授权。连不上外网的服务器可以在别处用 `backend/cmd/studio-models-import -source ai-pose-gallery-zh -export <目录>` 下载图片并写出 `manifest.json`，再拷到服务器上用 `-manifest` 导入；命令行的清单条目可以用 `file`（相对清单所在目录）代替 `url`。
 ## 注册与签到积分策略
 
 `GET /api/admin/settings/credits` 和 `PATCH /api/admin/settings/credits` 均要求管理员，返回 `data={policy}`。PATCH 提交完整策略：`signupBonusMicrocredits`、`checkinBonusMicrocredits`、`defaultMultiplierBasisPoints`、`modelMultiplierBasisPoints`；停止赠送只将前两项设为 0，保留倍率。金额为微积分（1000000 = 1 积分），倍率为万分比（10000 = 1 倍）。

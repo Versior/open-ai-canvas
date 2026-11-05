@@ -42,7 +42,7 @@ const (
 )
 
 var (
-	studioModelKinds   = map[string]string{model.StudioModelKindFace: "模特人脸", model.StudioModelKindPose: "姿势", model.StudioModelKindStyle: "模特样式"}
+	studioModelKinds   = map[string]string{model.StudioModelKindFace: "模特人脸", model.StudioModelKindFigure: "全身模特", model.StudioModelKindPose: "姿势", model.StudioModelKindStyle: "模特样式"}
 	studioModelGenders = map[string]bool{"": true, "female": true, "male": true}
 	studioModelMimes   = map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp"}
 	studioModelTagSep  = regexp.MustCompile(`[,，、;；\s]+`)
@@ -180,13 +180,17 @@ func normalizeStudioModelInput(input AdminStudioModelInput, hasImage bool) (Admi
 		return input, BadAuthRequest("标签最多 12 个")
 	}
 	input.Tags = tags
+	if StudioModelPortrait(input.Kind) && input.Enabled && !input.Consent {
+		return input, BadAuthRequest(studioModelKinds[input.Kind] + "要先确认已获得肖像使用授权才能上架")
+	}
 	switch input.Kind {
 	case model.StudioModelKindFace:
 		if !hasImage {
 			return input, BadAuthRequest("模特人脸需要上传一张清晰的正脸图")
 		}
-		if input.Enabled && !input.Consent {
-			return input, BadAuthRequest("人脸素材要先确认已获得肖像使用授权才能上架")
+	case model.StudioModelKindFigure:
+		if !hasImage {
+			return input, BadAuthRequest("全身模特需要上传一张完整的全身照")
 		}
 	case model.StudioModelKindPose:
 		if !hasImage {
@@ -198,6 +202,11 @@ func normalizeStudioModelInput(input AdminStudioModelInput, hasImage bool) (Admi
 		}
 	}
 	return input, nil
+}
+
+// StudioModelPortrait 表示这类素材是真人肖像（模特人脸、全身模特）：要确认肖像授权才能上架。
+func StudioModelPortrait(kind string) bool {
+	return kind == model.StudioModelKindFace || kind == model.StudioModelKindFigure
 }
 
 // ParseStudioModelTags 把表单里的标签文本拆成列表：支持 JSON 数组，也支持逗号、顿号或空格分隔。
@@ -483,7 +492,7 @@ func (s *Service) UpdateStudioModel(actor *model.User, id string, input AdminStu
 	return &view, nil
 }
 
-// BatchStudioModels 批量上架、下架或删除。上架时人脸素材都要已确认肖像授权，否则整批不执行。
+// BatchStudioModels 批量上架、下架或删除。上架时人脸和全身模特都要已确认肖像授权，否则整批不执行。
 func (s *Service) BatchStudioModels(actor *model.User, input AdminStudioModelBatchInput) (map[string]any, error) {
 	if err := s.RequireAdmin(actor); err != nil {
 		return nil, err
@@ -512,7 +521,7 @@ func (s *Service) BatchStudioModels(actor *model.User, input AdminStudioModelBat
 		enabled := input.Action == "enable"
 		if enabled {
 			for _, item := range items {
-				if item.Kind == model.StudioModelKindFace && !item.Consent {
+				if StudioModelPortrait(item.Kind) && !item.Consent {
 					return nil, BadAuthRequest("「" + item.Name + "」还没确认肖像使用授权，不能上架")
 				}
 			}

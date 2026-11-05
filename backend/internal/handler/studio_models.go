@@ -103,6 +103,52 @@ func RegisterStudioModelRoutes(r *gin.RouterGroup, svc *service.Service) {
 		c.Header("Cache-Control", "no-store")
 		ok(c, value)
 	})
+	r.GET("/admin/studio-models/remote-import", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		value, err := svc.StudioModelRemoteImportStatus(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		ok(c, value)
+	})
+	r.POST("/admin/studio-models/remote-import", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var input service.StudioModelRemoteImportInput
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
+		if err := c.ShouldBindJSON(&input); err != nil {
+			fail(c, http.StatusBadRequest, errStudioModelRequestInvalid)
+			return
+		}
+		value, err := svc.StartStudioModelRemoteImport(actor, input)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, value)
+	})
+	r.DELETE("/admin/studio-models/remote-import", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		value, err := svc.CancelStudioModelRemoteImport(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, value)
+	})
 	r.POST("/admin/studio-models/import", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

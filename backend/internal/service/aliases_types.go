@@ -7,6 +7,11 @@ type AgentAvatarBundleImport = app.AgentAvatarBundleImport
 type AdminAgentPetInput = app.AdminAgentPetInput
 type AdminStudioModelInput = app.AdminStudioModelInput
 type AdminStudioModelBatchInput = app.AdminStudioModelBatchInput
+type StudioModelManifest = app.StudioModelManifest
+type StudioModelManifestItem = app.StudioModelManifestItem
+type StudioModelImportOptions = app.StudioModelImportOptions
+type StudioModelImportReport = app.StudioModelImportReport
+type StudioModelRemoteImportInput = app.StudioModelRemoteImportInput
 type AdminAgentPetBatchInput = app.AdminAgentPetBatchInput
 
 const (

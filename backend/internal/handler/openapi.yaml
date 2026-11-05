@@ -104,9 +104,9 @@ paths:
     get:
       tags: [canvas]
       summary: 浏览电商模特库
-      description: 登录可读，普通用户须开放「电商生图台」，只返回已上架的素材；管理员不受开关限制。
+      description: 登录可读，普通用户须开放「电商生图台」，只返回已上架的素材；管理员不受开关限制。kind 为 face 模特人脸、figure 全身模特、pose 姿势、style 模特样式。
       parameters:
-        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, pose, style]}}
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, figure, pose, style]}}
         - {in: query, name: q, schema: {type: string, maxLength: 60}}
         - {in: query, name: category, schema: {type: string}}
         - {in: query, name: gender, schema: {type: string, enum: ["", female, male]}}
@@ -149,14 +149,14 @@ paths:
       summary: 管理员列出模特库素材
       description: 包括未上架的素材；可按分类和上下架筛选（无 gender）。
       parameters:
-        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, pose, style]}}
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, figure, pose, style]}}
         - {in: query, name: q, schema: {type: string, maxLength: 60}}
         - {in: query, name: category, schema: {type: string, maxLength: 24}}
         - {in: query, name: status, description: 空为全部, schema: {type: string, enum: [enabled, disabled]}}
         - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
         - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
       responses:
-        "200": {description: 结构同浏览接口，素材另含 enabled、consent、sortOrder、updatedAt；data 另含 kindCounts（face、pose、style 各自总条数）与 categoryCounts（当前类型各分类的 name、count，条数多的在前，不含未分类）}
+        "200": {description: 结构同浏览接口，素材另含 enabled、consent、sortOrder、updatedAt；data 另含 kindCounts（face、figure、pose、style 各自总条数）与 categoryCounts（当前类型各分类的 name、count，条数多的在前，不含未分类）}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
@@ -164,7 +164,7 @@ paths:
     post:
       tags: [admin]
       summary: 管理员新增模特库素材
-      description: multipart 表单：kind、name、category、gender、tags（JSON 数组或逗号分隔）、prompt、consent、enabled 与可选 file（PNG/JPEG/WebP，12 MiB、4000 万像素以内）。人脸和姿势必须带图，人脸须确认肖像授权才能上架，模特样式必须写造型描述。原图与缩略图存为本地 studio-model 资源，不计入个人容量。
+      description: multipart 表单：kind、name、category、gender、tags（JSON 数组或逗号分隔）、prompt、consent、enabled 与可选 file（PNG/JPEG/WebP，12 MiB、4000 万像素以内）。人脸、全身模特和姿势必须带图，人脸和全身模特须确认肖像授权才能上架，模特样式必须写造型描述。原图与缩略图存为本地 studio-model 资源，不计入个人容量。
       responses:
         "200": {description: data.item 为新素材}
         "400": {$ref: "#/components/responses/Error"}
@@ -197,13 +197,50 @@ paths:
     post:
       tags: [admin]
       summary: 管理员批量上架、下架或删除模特库素材
-      description: 请求体 {"ids":[...],"action":"enable|disable|delete"}，一次 1–200 条。上架时有人脸没确认肖像授权则整批不执行。
+      description: 请求体 {"ids":[...],"action":"enable|disable|delete"}，一次 1–200 条。上架时有人脸或全身模特没确认肖像授权则整批不执行。
       responses:
         "200": {description: data.affected 为影响条数}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/remote-import:
+    get:
+      tags: [admin]
+      summary: 管理员查看模特库远程拉取进度
+      description: 返回最近一次拉取的进度与可以一键拉取的内置来源。进度只存在本进程内存里，后端重启后回到 idle。
+      responses:
+        "200": {description: data 包含 status（idle、running、done、failed、cancelled）、source（来源名称或去掉查询串的清单地址）、startedAt、finishedAt、error、report（total、done、imported、skipped、failed、failures，failures 只留前 50 条）与 sources（每项 id、name、description、notice）}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 管理员开始远程拉取模特库
+      description: 请求体 {"source":"ai-pose-gallery-zh"} 或 {"manifestUrl":"https://…"}，二选一，可带 faceConsentAttested。服务端在后台下载清单与图片，逐条走与后台新增相同的校验、缩略图和存储，按类型 + 分类 + 名称跳过已有的；faceConsentAttested 为假时人脸和全身模特不标授权、不上架。清单地址按出站规则拒绝本机、内网和链路本地地址。一次只跑一个。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source: {type: string, enum: [ai-pose-gallery-zh]}
+                manifestUrl: {type: string, maxLength: 2048}
+                faceConsentAttested: {type: boolean}
+      responses:
+        "200": {description: data 结构同 GET，status 为 running}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 管理员停止模特库远程拉取
+      description: 停止正在进行的拉取，已经导入的保留，再拉会跳过它们。没有在跑时原样返回进度。
+      responses:
+        "200": {description: data 结构同 GET}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/settings/ecommerce:
     get:
       tags: [admin]

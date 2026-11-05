@@ -254,12 +254,132 @@
     justify-content: flex-end;
     gap: var(--space-2);
 }
+
+/* 远程拉取弹窗 */
+.studio-remote {
+    display: grid;
+    gap: var(--space-3);
+}
+.studio-remote-state {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface-2);
+}
+.studio-remote-state-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+}
+.studio-remote-state-head strong {
+    flex: none;
+    color: var(--admin-text);
+    font-size: 13px;
+}
+.studio-remote-state[data-status="failed"] .studio-remote-state-head strong {
+    color: var(--admin-status-error);
+}
+.studio-remote-state[data-status="done"] .studio-remote-state-head strong {
+    color: var(--admin-status-success);
+}
+.studio-remote-state-head span {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.studio-remote-counts {
+    margin: 0;
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.studio-remote-failures summary {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+}
+.studio-remote-failures ul {
+    display: grid;
+    gap: 4px;
+    max-height: 160px;
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+.studio-remote-failures li {
+    display: grid;
+    gap: 2px;
+    font-size: 12px;
+}
+.studio-remote-failures li strong {
+    color: var(--admin-text);
+    font-weight: 500;
+}
+.studio-remote-failures li span {
+    color: var(--admin-text-muted);
+}
+.studio-remote-sources {
+    display: grid;
+    gap: var(--space-2);
+}
+.studio-remote-source {
+    display: grid;
+    gap: 4px;
+    padding: var(--space-3);
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+    color: var(--admin-text);
+    text-align: left;
+    cursor: pointer;
+}
+.studio-remote-source[aria-checked="true"] {
+    border-color: var(--admin-border-strong);
+    background: var(--admin-nav-active);
+}
+.studio-remote-source:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 2px;
+}
+.studio-remote-source strong {
+    font-size: 13px;
+}
+.studio-remote-source span,
+.studio-remote-hint {
+    margin: 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.studio-remote-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+.studio-remote-foot > span {
+    flex: 1 1 200px;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
 @media (max-width: 640px) {
     .studio-models-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .studio-models-search.ant-input-affix-wrapper {
         max-width: none;
+    }
+    /* 窄屏时说明单独一行，按钮并排留在下一行。 */
+    .studio-remote-foot > span {
+        flex-basis: 100%;
     }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -5,7 +5,8 @@ import "yingce/backend/internal/app"
 var (
 	ErrPlaybackNotReady                        = app.ErrPlaybackNotReady
 	ParseStudioModelTags                       = app.ParseStudioModelTags
-	StudioModelKey                             = app.StudioModelKey
+	DownloadStudioModelFile                    = app.DownloadStudioModelFile
+	FetchStudioModelSourceManifest             = app.FetchStudioModelSourceManifest
 	ErrNotBuiltinSkill                         = app.ErrNotBuiltinSkill
 	AllowedPrivateUpstreamHost                 = app.AllowedPrivateUpstreamHost
 	AppearanceAssetMaxBytes                    = app.AppearanceAssetMaxBytes

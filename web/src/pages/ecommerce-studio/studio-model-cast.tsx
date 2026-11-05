@@ -4,16 +4,27 @@ import { useEffect, useState } from "react";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import type { StudioModelCast, StudioModelPick, StudioProduct } from "@/lib/ecommerce-studio/types";
-import { attachStudioModel, listStudioModels, STUDIO_MODEL_GENDER_LABEL, STUDIO_MODEL_KIND_LABEL, studioModelImageUrl, type StudioModelGender, type StudioModelItem, type StudioModelKind, type StudioModelPage } from "@/services/api/studio-models";
+import {
+    attachStudioModel,
+    listStudioModels,
+    STUDIO_MODEL_GENDER_LABEL,
+    STUDIO_MODEL_KIND_LABEL,
+    studioModelImageUrl,
+    studioModelPortrait,
+    type StudioModelGender,
+    type StudioModelItem,
+    type StudioModelKind,
+    type StudioModelPage,
+} from "@/services/api/studio-models";
 import { studioImageUrl } from "./studio-parts";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
-const KINDS: StudioModelKind[] = ["face", "pose", "style"];
+const KINDS: StudioModelKind[] = ["face", "figure", "pose", "style"];
 const PAGE_SIZE = 24;
 const GENDERS: StudioModelGender[] = ["", "female", "male"];
 
-/** 从模特库挑人脸、姿势或造型。人脸与姿势选中时把原图复制到自己的资源库，出图引用自己的那份。 */
+/** 从模特库挑人脸、全身模特、姿势或造型。带图的素材选中时把原图复制到自己的资源库，出图引用自己的那份。 */
 function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: StudioModelKind; onClose: () => void; onPick: (kind: StudioModelKind, pick: StudioModelPick) => void }) {
     const { message } = App.useApp();
     const [kind, setKind] = useState(initialKind);
@@ -30,7 +41,7 @@ function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: Studio
         const controller = new AbortController();
         setError("");
         const timer = setTimeout(() => {
-            void listStudioModels({ kind, q: query, category, gender: kind === "face" ? gender : "", page, pageSize: PAGE_SIZE }, controller.signal)
+            void listStudioModels({ kind, q: query, category, gender: studioModelPortrait(kind) ? gender : "", page, pageSize: PAGE_SIZE }, controller.signal)
                 .then((value) => {
                     if (!controller.signal.aborted) setData(value);
                 })
@@ -72,7 +83,7 @@ function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: Studio
                 <header className="es-suite-picker-head">
                     <div>
                         <h3>模特库</h3>
-                        <span>人脸定长相，姿势定动作，造型定妆发与穿搭；商品外观仍以你的商品图为准。</span>
+                        <span>人脸定长相，全身模特定整个人（和人脸二选一），姿势定动作，造型定妆发与穿搭；商品外观仍以你的商品图为准。</span>
                     </div>
                     <SegmentedControl<StudioModelKind> ariaLabel="素材类型" value={kind} onChange={switchKind} options={KINDS.map((value) => ({ value, label: STUDIO_MODEL_KIND_LABEL[value] }))} />
                 </header>
@@ -88,7 +99,7 @@ function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: Studio
                                 setPage(1);
                             }}
                         />
-                        {kind === "face" ? (
+                        {studioModelPortrait(kind) ? (
                             <div className="es-chips" role="group" aria-label="性别">
                                 {GENDERS.map((value) => (
                                     <button key={value || "all"} type="button" className="es-chip" aria-pressed={gender === value} onClick={() => (setGender(value), setPage(1))}>
@@ -146,7 +157,7 @@ function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: Studio
                                         ) : null}
                                     </span>
                                     <strong>{item.name}</strong>
-                                    <span>{[item.category, item.kind === "face" && item.gender ? STUDIO_MODEL_GENDER_LABEL[item.gender] : "", ...item.tags.slice(0, 2)].filter(Boolean).join(" · ") || " "}</span>
+                                    <span>{[item.category, studioModelPortrait(item.kind) && item.gender ? STUDIO_MODEL_GENDER_LABEL[item.gender] : "", ...item.tags.slice(0, 2)].filter(Boolean).join(" · ") || " "}</span>
                                 </button>
                             ))}
                         </div>
@@ -189,7 +200,10 @@ function CastSlot({ kind, pick, onPick, onClear }: { kind: StudioModelKind; pick
     );
 }
 
-/** 表单里的「模特设定」：出上身效果或用模特拍法时，从模特库选人脸、姿势和造型。渲染成出图设置栅格里的一整行。 */
+/**
+ * 表单里的「模特设定」：出上身效果或用模特拍法时，从模特库选人脸或全身模特、姿势和造型。渲染成出图设置栅格里的一整行。
+ * 人脸和全身模特都决定「是谁」，只能留一个：选了其中一个就清掉另一个。
+ */
 export function StudioModelCastSection({ product, edit }: { product: StudioProduct; edit: Edit }) {
     const [picking, setPicking] = useState<StudioModelKind>();
     const cast = product.brief.model || {};
@@ -197,7 +211,7 @@ export function StudioModelCastSection({ product, edit }: { product: StudioProdu
         edit(
             (current) => {
                 const next = patch(current.brief.model || {});
-                const model = next.face || next.pose || next.style ? next : undefined;
+                const model = next.face || next.figure || next.pose || next.style ? next : undefined;
                 return { ...current, brief: { ...current.brief, model } };
             },
             { immediate: true },
@@ -209,7 +223,7 @@ export function StudioModelCastSection({ product, edit }: { product: StudioProdu
                 <span className="es-field-label" id="es-cast-label">
                     模特设定
                 </span>
-                <span className="es-field-hint">只用在有模特的图上；不指定时由模型自由发挥</span>
+                <span className="es-field-hint">人脸和全身模特二选一；只用在有模特的图上，不指定时由模型自由发挥</span>
             </div>
             <div className="es-cast">
                 {KINDS.map((kind) => (
@@ -233,7 +247,12 @@ export function StudioModelCastSection({ product, edit }: { product: StudioProdu
                     kind={picking}
                     onClose={() => setPicking(undefined)}
                     onPick={(kind, pick) => {
-                        update((current) => ({ ...current, [kind]: pick }));
+                        update((current) => {
+                            const next = { ...current, [kind]: pick };
+                            if (kind === "face") delete next.figure;
+                            if (kind === "figure") delete next.face;
+                            return next;
+                        });
                         setPicking(undefined);
                     }}
                 />

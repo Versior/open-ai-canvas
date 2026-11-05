@@ -1,5 +1,5 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
-import { ChevronDown, LayoutTemplate, RotateCcw, ScanSearch, Sparkles } from "lucide-react";
+import { ChevronDown, LayoutTemplate, RotateCcw, ScanSearch } from "lucide-react";
 import { useMemo, useState, type ClipboardEvent, type ReactNode } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
@@ -114,7 +114,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const truthCount = studioReferencePhotos(product.photos, 8).length;
     // 有模特的图才用模特设定：选了模特图、模特拍法，或者套图清单里有上身效果。
     const castRelevant = singles.some((item) => item.id === "model") || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
-    const castReferences = castRelevant ? [brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
+    const castReferences = castRelevant ? [brief.model?.figure ?? brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
     const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + castReferences + product.references.length);
     const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, ratio: firstRatio });
     const suggestion = studioSuggestion(product);
@@ -458,7 +458,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     重置参数
                 </Button>
                 <Tooltip title={blocked || undefined}>
-                    <Button type="primary" size="large" className="es-generate" icon={<Sparkles size={16} />} disabled={Boolean(blocked)} onClick={generate}>
+                    <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked)} onClick={generate}>
                         {setKind ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}` : singles.length > 1 ? `生成 ${singles.length} 种共 ${images} 张` : brief.count > 1 ? `生成 ${brief.count} 张商品图` : "生成商品图"}
                     </Button>
                 </Tooltip>

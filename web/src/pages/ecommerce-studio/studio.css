@@ -787,9 +787,10 @@
 }
 
 /* ---------- 模特设定与模特库 ---------- */
+/* 人脸、全身模特、姿势、造型四项排成两行两列，名字有地方显示。 */
 .es-cast {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-2);
 }
 .es-cast-slot {

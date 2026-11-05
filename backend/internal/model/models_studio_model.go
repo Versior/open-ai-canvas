@@ -2,11 +2,13 @@ package model
 
 import "time"
 
-// 电商生图台「模特库」的素材种类：模特人脸、姿势参考、模特样式（造型）。
+// 电商生图台「模特库」的素材种类：模特人脸、全身模特（站立等整个人的全身照）、姿势参考、模特样式（造型）。
+// 人脸和全身模特都是真人肖像，需要确认肖像授权才能上架。
 const (
-	StudioModelKindFace  = "face"
-	StudioModelKindPose  = "pose"
-	StudioModelKindStyle = "style"
+	StudioModelKindFace   = "face"
+	StudioModelKindFigure = "figure"
+	StudioModelKindPose   = "pose"
+	StudioModelKindStyle  = "style"
 )
 
 // StudioModelAsset 是模特库里的一条素材，由管理员维护。
@@ -26,7 +28,7 @@ type StudioModelAsset struct {
 	ThumbResourceID string `json:"thumbResourceId" gorm:"size:36;not null;default:'';index"`
 	Width           int    `json:"width" gorm:"not null;default:0"`
 	Height          int    `json:"height" gorm:"not null;default:0"`
-	// Consent 是人脸素材的肖像授权确认；没确认的人脸不能上架。
+	// Consent 是人脸、全身模特的肖像授权确认；没确认的不能上架。
 	Consent   bool      `json:"consent" gorm:"not null;default:false"`
 	Enabled   bool      `json:"enabled" gorm:"not null;index"`
 	SortOrder int       `json:"sortOrder" gorm:"not null;default:0;index"`

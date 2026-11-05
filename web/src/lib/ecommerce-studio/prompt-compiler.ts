@@ -149,18 +149,28 @@ export function studioShotUsesModel(shot: Pick<StudioShot, "role">, brief?: Pick
     return shot.role === "detail-model" || brief?.shooting === "model";
 }
 
-function castReference(kind: "face" | "pose", pick: StudioModelPick): StudioPhoto {
-    return { id: `model-${kind}-${pick.itemId}`, resourceId: pick.resourceId!, url: "", view: "other", truth: false, name: `${kind === "face" ? "模特人脸" : "姿势"}-${pick.name}`, width: pick.width, height: pick.height, addedAt: "" };
+type CastImageKind = "face" | "figure" | "pose";
+const CAST_IMAGE_LABEL: Record<CastImageKind, string> = { face: "模特人脸", figure: "全身模特", pose: "姿势" };
+
+function castReference(kind: CastImageKind, pick: StudioModelPick): StudioPhoto {
+    return { id: `model-${kind}-${pick.itemId}`, resourceId: pick.resourceId!, url: "", view: "other", truth: false, name: `${CAST_IMAGE_LABEL[kind]}-${pick.name}`, width: pick.width, height: pick.height, addedAt: "" };
 }
 
-/** 模特设定：人脸和姿势有参考图时按图号说明用法，放不下参考图时退回文字描述；造型只用文字。 */
+/** 模特设定：人脸、全身模特和姿势有参考图时按图号说明用法，放不下参考图时退回文字描述；造型只用文字。全身模特和人脸二选一，都有时用全身模特。 */
 function modelLayer(cast: StudioModelCast, modelReferences: StudioPhoto[], offset: number): StudioPromptLayer | undefined {
     const lines: string[] = [];
-    const indexOf = (kind: "face" | "pose") => {
+    const indexOf = (kind: CastImageKind) => {
         const index = modelReferences.findIndex((photo) => photo.id.startsWith(`model-${kind}-`));
         return index < 0 ? 0 : offset + index + 1;
     };
-    if (cast.face) {
+    if (cast.figure) {
+        const index = indexOf("figure");
+        if (index)
+            lines.push(
+                `画面里的模特以图${index}的人物为准：长相、发型、肤色、身材比例与气质保持一致，是同一个人${cast.pose ? "" : `，没有另选姿势时可以参考图${index}的站姿`}；图${index}只提供人物本身，不照搬它的服装、配饰、背景和光线。${cast.figure.prompt ? `外貌与身材：${sentence(cast.figure.prompt)}` : ""}`,
+            );
+        else lines.push(`模特外貌与身材：${sentence(cast.figure.prompt || cast.figure.name)}`);
+    } else if (cast.face) {
         const index = indexOf("face");
         if (index) lines.push(`画面里的模特以图${index}的人物为准：脸型、五官、肤色、发型与气质保持一致，是同一个人；图${index}只提供人物长相，不照搬它的服装、背景和光线。${cast.face.prompt ? `外貌：${sentence(cast.face.prompt)}` : ""}`);
         else lines.push(`模特外貌：${sentence(cast.face.prompt || cast.face.name)}`);
@@ -198,7 +208,7 @@ function truthLayer(product: StudioProduct, references: StudioPhoto[], styleRefe
     }
     const attached = [
         ...references.map((photo, index) => `图${index + 1} ${STUDIO_VIEW_LABEL[photo.view]}`),
-        ...modelReferences.map((photo, index) => `图${references.length + index + 1} ${photo.id.startsWith("model-face-") ? "模特长相参考" : "模特姿势参考"}（不是这件商品）`),
+        ...modelReferences.map((photo, index) => `图${references.length + index + 1} ${photo.id.startsWith("model-face-") ? "模特长相参考" : photo.id.startsWith("model-figure-") ? "模特全身参考" : "模特姿势参考"}（不是这件商品）`),
         ...styleReferences.map((_, index) => `图${references.length + modelReferences.length + index + 1} 参考图（不是这件商品）`),
     ];
     if (attached.length) lines.push(`附图：${attached.join("，")}。`);
@@ -293,9 +303,10 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const spec = studioShotSpec(shot.role, family);
     const adapter = studioModelAdapter(input.model);
     const maxReferences = Math.max(1, input.maxReferences || DEFAULT_MAX_REFERENCES);
-    // 商品图优先占参考图名额，至少一张；剩下的依次给模特人脸、姿势和风格参考，模型只收一张图时只带商品图。
+    // 商品图优先占参考图名额，至少一张；剩下的依次给模特（全身模特或人脸）、姿势和风格参考，模型只收一张图时只带商品图。
     const cast = brief && studioShotUsesModel(shot, brief) ? brief.model : undefined;
-    const wantedModel = [cast?.face ? castReference("face", cast.face) : undefined, cast?.pose ? castReference("pose", cast.pose) : undefined].filter((photo): photo is StudioPhoto => Boolean(photo?.resourceId));
+    const person = cast?.figure ? castReference("figure", cast.figure) : cast?.face ? castReference("face", cast.face) : undefined;
+    const wantedModel = [person, cast?.pose ? castReference("pose", cast.pose) : undefined].filter((photo): photo is StudioPhoto => Boolean(photo?.resourceId));
     const wantedStyle = brief ? studioStyleReferences({ ...product, brief }, maxReferences) : [];
     const extras = wantedModel.length + (wantedStyle.length ? 1 : 0);
     const references = studioReferencePhotos(product.photos, Math.max(1, maxReferences - Math.min(extras, maxReferences - 1)));

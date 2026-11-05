@@ -1,30 +1,34 @@
 import { App, Button, Input } from "antd";
-import { ImageOff, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
+import { CloudDownload, ImageOff, Pencil, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import {
     batchAdminStudioModels,
+    getStudioModelRemoteImport,
     importAdminStudioModel,
     listAdminStudioModels,
     STUDIO_MODEL_GENDER_LABEL,
     STUDIO_MODEL_IMPORT_MAX_BYTES,
     STUDIO_MODEL_KIND_LABEL,
     studioModelImageUrl,
+    studioModelPortrait,
     updateAdminStudioModel,
     type StudioModelGender,
     type StudioModelInput,
     type StudioModelItem,
     type StudioModelKind,
     type StudioModelPage,
+    type StudioModelRemoteImport,
     type StudioModelStatusFilter,
 } from "@/services/api/studio-models";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminSearchInput } from "../components/admin-search-input";
 import { AdminBatchBar, AdminEmpty, AdminStatusBadge, PaginationBar } from "../components/admin-ui";
 import { AdminCallout, AdminCheckbox, AdminIconButton, AdminSegmented, AdminSelect, AdminSwitch } from "../ui/controls";
+import { StudioModelRemoteImportModal } from "./studio-models-remote";
 import "./studio-models-page.css";
 
-const KINDS: StudioModelKind[] = ["face", "pose", "style"];
+const KINDS: StudioModelKind[] = ["face", "figure", "pose", "style"];
 const PAGE_SIZE = 48;
 const GENDER_OPTIONS = (Object.keys(STUDIO_MODEL_GENDER_LABEL) as StudioModelGender[]).map((value) => ({ value, label: STUDIO_MODEL_GENDER_LABEL[value] }));
 type StatusFilter = "all" | Exclude<StudioModelStatusFilter, "">;
@@ -35,6 +39,11 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
 ];
 const KIND_HINT: Record<StudioModelKind, { category: string; prompt: string; note: string }> = {
     face: { category: "例如：东亚女性、欧美男性、儿童", prompt: "外貌描述，例如：东亚女性，二十多岁，鹅蛋脸，黑色齐肩短发，气质干净", note: "上传清晰的正脸或半身照。只上传已获得肖像使用授权的人像，AI 生成的人像也要确认可商用。" },
+    figure: {
+        category: "例如：站立、坐姿、街拍",
+        prompt: "外貌与身材描述，例如：东亚女性，二十多岁，身高约 168cm，黑色长发，身材匀称",
+        note: "上传一张完整的全身照（比如站立模特），出图时按这个人的长相和身材穿戴或使用商品，不照搬原图的服装和背景。只上传已获得肖像使用授权的照片。",
+    },
     pose: { category: "例如：站姿、坐姿、走动、手部展示", prompt: "姿势描述，例如：站姿，重心在右腿，左手叉腰，右手自然下垂，身体微侧", note: "上传姿势参考图（白模、线稿或照片都可以），出图时只参考身体姿势，不照搬服装和背景。" },
     style: { category: "例如：通勤、休闲、运动、街头", prompt: "造型描述，例如：米色西装外套配白T，低马尾，淡妆，干练知性", note: "模特样式靠文字描述妆发、穿搭和气质，示意图可选。" },
 };
@@ -52,7 +61,7 @@ function parseTags(text: string) {
 }
 
 function emptyInput(kind: StudioModelKind): StudioModelInput {
-    return { kind, name: "", category: "", gender: "", tags: [], prompt: "", consent: false, enabled: kind !== "face" };
+    return { kind, name: "", category: "", gender: "", tags: [], prompt: "", consent: false, enabled: !studioModelPortrait(kind) };
 }
 
 function fileStem(file: File) {
@@ -74,6 +83,7 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
     const busy = Boolean(progress);
     const patch = (value: Partial<StudioModelInput>) => setDraft((current) => ({ ...current, ...value }));
     const needsImage = kind !== "style";
+    const portrait = studioModelPortrait(kind);
     const many = state.mode === "create" && files.length > 1;
 
     const pick = (list: FileList | null) => {
@@ -88,7 +98,7 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
     const save = async () => {
         const value: StudioModelInput = { ...draft, name: draft.name.trim(), tags: parseTags(tags) };
         if (!many && !value.name) return void message.warning("请填写名称");
-        if (kind === "face" && value.enabled && !value.consent) return void message.warning("人脸素材要先确认已获得肖像使用授权才能上架");
+        if (portrait && value.enabled && !value.consent) return void message.warning(`${STUDIO_MODEL_KIND_LABEL[kind]}要先确认已获得肖像使用授权才能上架`);
         if (kind === "style" && !value.prompt.trim()) return void message.warning("模特样式要写清造型描述");
         if (state.mode === "edit") {
             setProgress({ done: 0, total: 1 });
@@ -149,7 +159,7 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
                         <span>分类</span>
                         <Input value={draft.category} maxLength={24} placeholder={hint.category} disabled={busy} onChange={(event) => patch({ category: event.target.value })} />
                     </label>
-                    {kind === "face" ? (
+                    {portrait ? (
                         <label className="studio-model-field">
                             <span>性别</span>
                             <AdminSelect<StudioModelGender> ariaLabel="性别" appearance="field" value={draft.gender} options={GENDER_OPTIONS} disabled={busy} onChange={(gender) => patch({ gender })} />
@@ -164,13 +174,13 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
                     <span>{kind === "style" ? "造型描述（必填）" : "出图描述"}</span>
                     <Input.TextArea value={draft.prompt} maxLength={600} autoSize={{ minRows: 2, maxRows: 6 }} placeholder={hint.prompt} disabled={busy} onChange={(event) => patch({ prompt: event.target.value })} />
                 </label>
-                {kind === "face" ? (
+                {portrait ? (
                     <AdminCheckbox checked={draft.consent} disabled={busy} onChange={(event) => patch({ consent: event.target.checked, enabled: event.target.checked ? draft.enabled : false })}>
                         已获得这张人像的肖像使用授权（或确认是可商用的 AI 人像）
                     </AdminCheckbox>
                 ) : null}
                 <label className="studio-model-switch">
-                    <AdminSwitch aria-label="上架" checked={draft.enabled} disabled={busy || (kind === "face" && !draft.consent)} onChange={(enabled) => patch({ enabled })} />
+                    <AdminSwitch aria-label="上架" checked={draft.enabled} disabled={busy || (portrait && !draft.consent)} onChange={(enabled) => patch({ enabled })} />
                     <span>{draft.enabled ? "上架：生图台用户可以选用" : "暂不上架：只在后台可见"}</span>
                 </label>
                 <footer className="studio-model-editor-foot">
@@ -188,10 +198,10 @@ function StudioModelEditor({ state, onClose, onSaved }: { state: EditorState; on
 
 function statusOf(item: StudioModelItem): { label: string; tone: "success" | "warning" | "neutral" } {
     if (item.enabled) return { label: "已上架", tone: "success" };
-    return item.kind === "face" && !item.consent ? { label: "待确认授权", tone: "warning" } : { label: "未上架", tone: "neutral" };
+    return studioModelPortrait(item.kind) && !item.consent ? { label: "待确认授权", tone: "warning" } : { label: "未上架", tone: "neutral" };
 }
 
-/** 后台「电商模特库」：维护生图台出模特图时可选的人脸、姿势和模特样式。 */
+/** 后台「电商模特库」：维护生图台出模特图时可选的人脸、全身模特、姿势和模特样式，可以从远程来源拉取。 */
 export default function StudioModelsPage() {
     const { message, modal } = App.useApp();
     const [kind, setKind] = useState<StudioModelKind>("face");
@@ -208,6 +218,28 @@ export default function StudioModelsPage() {
     const [selected, setSelected] = useState<string[]>([]);
     const [editor, setEditor] = useState<EditorState>();
     const [reload, setReload] = useState(0);
+    const [remote, setRemote] = useState<StudioModelRemoteImport>();
+    const [remoteOpen, setRemoteOpen] = useState(false);
+    const remoteRunning = remote?.status === "running";
+    const remoteStatus = useRef(remote?.status);
+
+    // 远程拉取在服务端后台跑：进页面读一次进度，进行中每 2 秒刷新；读不到进度时按钮保持可用，弹窗里再读。
+    useEffect(() => {
+        const controller = new AbortController();
+        void getStudioModelRemoteImport(controller.signal)
+            .then(setRemote)
+            .catch(() => undefined);
+        return () => controller.abort();
+    }, []);
+    useEffect(() => {
+        if (!remoteRunning) return;
+        const timer = setInterval(() => {
+            void getStudioModelRemoteImport()
+                .then(setRemote)
+                .catch(() => undefined);
+        }, 2000);
+        return () => clearInterval(timer);
+    }, [remoteRunning]);
 
     // 换类型、筛选或翻页时清掉选择：批量操作只作用在眼前这一页看得到的素材上。
     const changeView = useCallback((apply: () => void, keepPage = false) => {
@@ -253,6 +285,23 @@ export default function StudioModelsPage() {
         setReload((value) => value + 1);
     }, []);
 
+    // 拉取从进行中变成结束时刷新列表和各类条数。
+    useEffect(() => {
+        if (remoteStatus.current === "running" && remote && remote.status !== "running") refresh();
+        remoteStatus.current = remote?.status;
+    }, [remote, refresh]);
+
+    const openRemote = async () => {
+        if (!remote) {
+            try {
+                setRemote(await getStudioModelRemoteImport());
+            } catch (failure) {
+                return void message.error(failure instanceof Error ? failure.message : "拉取状态读取失败");
+            }
+        }
+        setRemoteOpen(true);
+    };
+
     const runBatch = async (ids: string[], action: "enable" | "disable" | "delete") => {
         try {
             const result = await batchAdminStudioModels(ids, action);
@@ -292,10 +341,13 @@ export default function StudioModelsPage() {
     return (
         <AdminPageFrame
             title="电商模特库"
-            description="生图台出模特图时可选的模特人脸、姿势和模特样式；上架后生图台用户可见，人脸须确认肖像授权"
+            description="生图台出模特图时可选的模特人脸、全身模特、姿势和模特样式；上架后生图台用户可见，人脸和全身模特须确认肖像授权"
             scroll
             actions={
                 <>
+                    <Button icon={<CloudDownload className="size-4" />} onClick={() => void openRemote()}>
+                        {remoteRunning && remote ? `拉取中 ${remote.report.done.toLocaleString()}/${remote.report.total ? remote.report.total.toLocaleString() : "…"}` : "远程拉取"}
+                    </Button>
                     <Button icon={<RefreshCw className="size-4" />} disabled={loading} onClick={refresh}>
                         刷新
                     </Button>
@@ -409,7 +461,7 @@ export default function StudioModelsPage() {
                                       </div>
                                       <div className="studio-model-body">
                                           <strong title={item.name}>{item.name}</strong>
-                                          <span>{[item.category || "未分类", item.kind === "face" ? STUDIO_MODEL_GENDER_LABEL[item.gender] : ""].filter(Boolean).join(" · ")}</span>
+                                          <span>{[item.category || "未分类", studioModelPortrait(item.kind) ? STUDIO_MODEL_GENDER_LABEL[item.gender] : ""].filter(Boolean).join(" · ")}</span>
                                           {item.tags.length ? (
                                               <span className="studio-model-tags" title={item.tags.join(" · ")}>
                                                   {item.tags.slice(0, 4).join(" · ")}
@@ -440,6 +492,7 @@ export default function StudioModelsPage() {
                     }}
                 />
             ) : null}
+            {remoteOpen && remote ? <StudioModelRemoteImportModal state={remote} onClose={() => setRemoteOpen(false)} onChange={setRemote} /> : null}
         </AdminPageFrame>
     );
 }
