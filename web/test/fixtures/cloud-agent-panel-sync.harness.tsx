@@ -73,6 +73,8 @@ mock.module("antd", () => ({
 }));
 mock.module("@/services/api/agent", () => ({
     ...agent,
+    // 续接轮次时面板会补读事件前缀给本轮统计；这里不提供历史事件，也不发真实请求。
+    getAgentRun: async (id: string) => ({ run: { ...makeRun(id), events: [] } }),
     getAgentProfile: async () => ({ revision: "profile", hash: "hash", layers: [] }),
     getAgentCapabilities: async () => (capabilitiesOverride ? capabilitiesOverride() : { permissionModes: ["request_approval"], skills: true }),
     subscribeAgentEvents: (id: string, event: (event: AgentEvent) => void, options: any) => {

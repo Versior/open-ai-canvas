@@ -3,7 +3,7 @@ import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState
 import { App, Button } from "antd";
 import { appQueryClient } from "@/lib/query-client";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { EyeOff, FileText, ImagePlus, MoveDiagonal2, SquareDashedMousePointer, X } from "lucide-react";
+import { EyeOff, FileText, Gauge, ImagePlus, MoveDiagonal2, SquareDashedMousePointer, X } from "lucide-react";
 import { canvasNodeMentionToken } from "@/lib/canvas/canvas-resource-references";
 import { CANVAS_IMAGE_ASSET_DND_TYPE } from "@/lib/canvas/canvas-asset-dnd";
 import {
@@ -24,6 +24,7 @@ import { saveAs } from "file-saver";
 import { buildAgentDebugExport } from "@/lib/canvas/agent-debug-export";
 import { agentPlanVisible, latestAgentPlanItems, latestAgentPlanTerminal, pendingAgentQuestion } from "@/lib/canvas/cloud-agent-plan";
 import { emptyAgentContextUsage, presentAgentContextUsage, reduceAgentContextUsage, type AgentContextUsage } from "@/lib/canvas/agent-context-usage";
+import { agentRunStatsCovers, agentUsageSummaryText, emptyAgentRunStats, presentAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
 import { nanoid } from "nanoid";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -46,6 +47,7 @@ import {
     type AgentPermissionMode,
     type AgentProfileScope,
     type AgentProfileView,
+    type AgentEvent,
     type AgentReasoningMode,
     type AgentRun,
 } from "@/services/api/agent";
@@ -148,6 +150,20 @@ type AgentDraftAttachment = {
 /** 来自输入框的消息额外带上的内容：附件节点引用（排在选区前作为重点），以及是否不带选区。 */
 type ComposerExtras = { attachmentNodeIds: string[]; excludeSelection: boolean };
 
+/** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计。 */
+async function loadAgentRunEventPrefix(runId: string, untilSeq: number, signal: AbortSignal) {
+    const events: AgentEvent[] = [];
+    let seq = 0;
+    while (seq < untilSeq) {
+        const { run } = await getAgentRun(runId, signal, { sinceSeq: seq, fromStart: seq === 0, eventLimit: 500 });
+        const page = (run.events || []).filter((event) => event.runId === runId && Number.isSafeInteger(event.seq) && event.seq > seq && event.seq <= untilSeq).sort((a, b) => a.seq - b.seq);
+        if (!page.length) break;
+        events.push(...page);
+        seq = page[page.length - 1].seq;
+    }
+    return events;
+}
+
 function approvalStateFromRun(nextRun: AgentRun | null): ApprovalState | null {
     const approval = nextRun?.approval;
     if (!approval?.approvalId || approval.decision) return null;
@@ -191,6 +207,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [view, setView] = useState<AgentPanelView>("chat");
     const [run, setRun] = useState<AgentRun | null>(null);
     const [contextUsage, setContextUsage] = useState<AgentContextUsage>(() => emptyAgentContextUsage(""));
+    // 本轮统计按对话隔离；事件流续接时用 ref 判断本机是否已经有从第 1 条起的事件。
+    const [runStats, setRunStats] = useState(() => emptyAgentRunStats(""));
+    const runStatsRef = useRef(runStats);
+    runStatsRef.current = runStats;
     const [connectionStatus, setConnectionStatus] = useState<"connecting" | "connected" | "reconnecting" | "disconnected">("connecting");
     const [connectionEpoch, setConnectionEpoch] = useState(0);
     const [messages, setMessages] = useState<CloudAgentChatMessage[]>([]);
@@ -884,7 +904,21 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const after = replayCursorRef.current.runId === run.id ? replayCursorRef.current.seq : 0;
         replayCursorRef.current = { runId: run.id, seq: after };
         lastSeqRef.current = after;
-        return subscribeAgentEvents(
+        // 续接已有轮次（刷新、切回对话）时事件流只推游标之后的事件，本轮统计却要从第 1 条算起：
+        // 本机还没有这段前缀就补读一次。补读只喂给统计，不重放消息，也不触发画布写回。
+        const statsPrefix = new AbortController();
+        if (after > 0 && !agentRunStatsCovers(runStatsRef.current, conversationScope, run.id, after)) {
+            void loadAgentRunEventPrefix(run.id, after, statsPrefix.signal)
+                .then((events) => {
+                    if (statsPrefix.signal.aborted || !accountIsCurrent() || currentScope.current !== conversationScope || cloudRunTransitionRef.current !== run.id) return;
+                    setRunStats((current) => events.reduce(reduceAgentRunStats, scopeAgentRunStats(current, conversationScope)));
+                })
+                .catch((cause) => {
+                    // 统计只是展示读数：补读失败时本轮合计保持隐藏，对话照常进行。
+                    if (!statsPrefix.signal.aborted) console.warn("Agent 本轮统计补读失败", cause);
+                });
+        }
+        const unsubscribe = subscribeAgentEvents(
             run.id,
             (event) => {
                 if (!accountIsCurrent() || currentScope.current !== conversationScope || cloudRunTransitionRef.current !== run.id) return;
@@ -898,6 +932,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 }
                 setMessages((current) => (current.some((item) => item.id === `stream-error-${run.id}`) ? current.filter((item) => item.id !== `stream-error-${run.id}`) : current));
                 setContextUsage((current) => reduceAgentContextUsage(current, event));
+                setRunStats((current) => reduceAgentRunStats(scopeAgentRunStats(current, conversationScope), event));
                 applyAgentEvent(event, setMessages, setRun, setApproval);
                 canvasSyncRef.current?.receive(event);
                 notifyStudioAgentEvent(event);
@@ -919,6 +954,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 },
             },
         );
+        return () => {
+            statsPrefix.abort();
+            unsubscribe();
+        };
     }, [run?.id, connectionEpoch, accountScope, conversationScope]);
 
     useEffect(() => {
@@ -1915,8 +1954,12 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     };
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
+    // 上下文环和输入框上方的摘要共用同一份读数；本轮统计只看当前对话的当前轮次。
+    const contextView = presentAgentContextUsage(contextUsage);
+    const runStatsView = run?.id && runStats.conversationId === activeConversationId ? presentAgentRunStats(runStats.runs[run.id]) : null;
+    const usageSummary = agentUsageSummaryText(contextView, runStatsView);
     const contextBar =
-        (canvasId && selectionCount > 0) || visionMissing || longTextVisible ? (
+        (canvasId && selectionCount > 0) || visionMissing || longTextVisible || usageSummary ? (
             <>
                 {canvasId && selectionCount > 0 ? (
                     <AgentContextChip
@@ -1970,6 +2013,11 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         粘贴了 {agentTextLength(longTextOffer.text).toLocaleString()} 字，转成画布文本节点更稳
                     </AgentContextChip>
                 ) : null}
+                {usageSummary ? (
+                    <AgentContextChip icon={<Gauge className="size-3.5 shrink-0" aria-hidden="true" />} title={`${usageSummary}（点输入框右下角的上下文环看明细）`}>
+                        {usageSummary}
+                    </AgentContextChip>
+                ) : null}
             </>
         ) : null;
     // 拖进面板：文件和素材托盘的图片都接住，面板范围内的拖放一律拦下，避免浏览器打开文件。
@@ -2008,16 +2056,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             addComposerFiles(Array.from(event.dataTransfer.files));
         },
     };
-    // 失败的这一轮可以原样重试：新的幂等键、当前设置，会重新计费。
+    // 最新一轮结束后可以原样重试：新的幂等键、当前设置，会重新计费。失败轮次的入口在失败卡片上，
+    // 正常结束（完成、停止、拒绝）的轮次在最后一条回复的页脚上。
     const retryableErrorId = run?.status === "failed" && run.userPrompt && !running && !busy && !otherAgentRunning && !pendingNow?.request ? `terminal-${run.id}` : null;
-    const retryFailedRun = async () => {
-        const failed = run;
-        if (!failed?.userPrompt || retryingRun) return;
-        const original = messages.find((item) => item.role === "user" && item.id === `user-${failed.idempotencyKey}`);
+    const retryableReplyRunId = run && run.status !== "failed" && agentRunTerminal(run.status) && run.userPrompt && !running && !busy && !otherAgentRunning && !pendingNow?.request ? run.id : null;
+    const retryLatestRun = async () => {
+        const latest = run;
+        if (!latest?.userPrompt || retryingRun) return;
+        const original = messages.find((item) => item.role === "user" && item.id === `user-${latest.idempotencyKey}`);
         setRetryingRun(true);
         try {
-            await submit(failed.userPrompt, {
-                ...(original && original.text !== failed.userPrompt && !original.formAnswer ? { displayText: original.text } : {}),
+            await submit(latest.userPrompt, {
+                ...(original && original.text !== latest.userPrompt && !original.formAnswer ? { displayText: original.text } : {}),
                 ...(original?.canvasReferenceNodeId ? { canvasReferenceNodeId: original.canvasReferenceNodeId } : {}),
             });
         } finally {
@@ -2367,8 +2417,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         withdrawingInterjectionId={withdrawingInterjectionId}
                                         onRequeueInterjection={outboxReady && !otherAgentRunning ? requeueInterjection : undefined}
                                         retryableErrorId={retryableErrorId}
-                                        onRetryRun={retryableErrorId ? () => void retryFailedRun() : undefined}
+                                        retryableReplyRunId={retryableReplyRunId}
+                                        onRetryRun={retryableErrorId || retryableReplyRunId ? () => void retryLatestRun() : undefined}
                                         retryingRun={retryingRun}
+                                        config={config}
                                         // ask_user 提问条在输入区上方时不再重复出选项卡片。
                                         onReplyOption={pendingQuestion ? undefined : (text) => void submit(text)}
                                         replyOptionsDisabled={
@@ -2454,7 +2506,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         stopping={stopping}
                                         references={references}
                                         includeAssetLibrary={false}
-                                        submitAccessory={<AgentContextRing view={presentAgentContextUsage(contextUsage)} theme={theme} />}
+                                        submitAccessory={<AgentContextRing view={contextView} stats={runStatsView} theme={theme} />}
                                         left={<ComposerControls config={config} selectedModel={selectedModel} permissionMode={permissionMode} theme={theme} onModelChange={setModel} onPermissionChange={setPermissionMode} />}
                                     />
                                 </motion.div>

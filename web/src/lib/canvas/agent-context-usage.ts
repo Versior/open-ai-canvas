@@ -146,7 +146,7 @@ function contextProtocolBytes(reading: Record<string, unknown> | null): number |
     return finiteContextNumber((reading.breakdown as { envelopeBytes?: unknown }).envelopeBytes);
 }
 
-function formatContextTokens(tokens: number | undefined): string {
+export function formatContextTokens(tokens: number | undefined): string {
     if (tokens === undefined) return "—";
     if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`;
     if (tokens >= 1_000) return `${Math.round(tokens / 100) / 10}K`;

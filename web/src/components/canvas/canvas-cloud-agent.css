@@ -435,6 +435,33 @@
     font-size: 11px;
 }
 
+/* 本轮统计：沿用上下文明细列表，去掉色点；数值列可换行，百分比等补充读数用次要色。 */
+.agent-context-stats {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--agent-ink) 9%, transparent);
+}
+
+.agent-context-stats .agent-context-breakdown {
+    margin-top: 4px;
+}
+
+.agent-context-stats .agent-context-breakdown li {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+}
+
+.agent-context-stats .agent-context-breakdown-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.agent-context-stats .agent-context-breakdown-value em {
+    margin-left: 6px;
+    color: var(--agent-caption);
+    font-style: normal;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .agent-context-ring.is-compacting .agent-context-ring-visual {
         animation: none;
@@ -3867,6 +3894,60 @@ summary.agent-tool-step:hover {
     outline-offset: 1px;
 }
 
+/* 助手回复页脚：模型、速度与用量、回复时间和操作。每轮最后一条回复常显，其余与复制按钮一样悬停或聚焦时出现。 */
+.agent-reply-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: 2px;
+    color: var(--agent-caption);
+    font-size: var(--fs-label);
+    opacity: 0;
+    transition: opacity 150ms ease;
+}
+
+.agent-reply-footer.is-pinned,
+.agent-message-row:hover .agent-reply-footer,
+.agent-reply-footer:focus-within {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .agent-reply-footer {
+        opacity: 1;
+    }
+}
+
+.agent-reply-chip {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--agent-surface-soft);
+    font-variant-numeric: tabular-nums;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agent-reply-time {
+    padding: 0 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.agent-reply-icon-action {
+    width: 22px;
+    justify-content: center;
+    padding: 0;
+}
+
+.agent-reply-icon-action:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
 /* ---- 权限胶囊、状态圆点、「更多」里的快捷键 ---- */
 .agent-permission-trigger {
     display: inline-flex;
@@ -3949,6 +4030,7 @@ summary.agent-tool-step:hover {
 
 @media (prefers-reduced-motion: reduce) {
     .agent-message-actions,
+    .agent-reply-footer,
     .agent-composer-add,
     .agent-scroll-latest,
     .agent-message-action,

@@ -31,6 +31,8 @@ import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
 import { Button, Input, Popover } from "antd";
 import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
 import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
+import { agentContextStatRows, formatAgentClockTime, formatAgentTokenSpeed, presentAgentModelUsage, type AgentRunStatsView } from "@/lib/canvas/agent-run-stats";
+import { configuredModelDisplayName } from "@/lib/model-selection";
 import { cloudAgentConversationServerId, type CloudAgentConversation } from "@/services/cloud-agent-conversations";
 import { AgentChatMessage, AgentOperationFeed, AgentReasoningFeed, AgentWorkingMessage, type CloudAgentChatMessage } from "./canvas-cloud-agent-chat-ui";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -454,8 +456,17 @@ export function formatContextBytes(bytes: number | undefined) {
     return `${Math.round(bytes).toLocaleString("zh-CN")} 字节`;
 }
 
-export function AgentContextRing({ view, theme }: { view: AgentContextUsageView; theme: CanvasTheme }) {
+function agentRunUsageNote(stats: AgentRunStatsView | null | undefined) {
+    if (!stats?.steps) return null;
+    const missing = stats.steps - stats.usageSteps;
+    if (missing <= 0) return null;
+    return stats.usageSteps ? `有 ${missing} 次模型调用上游没有回传用量，合计不含这些调用。` : "上游没有回传这一轮的 token 用量。";
+}
+
+export function AgentContextRing({ view, stats, theme }: { view: AgentContextUsageView; stats?: AgentRunStatsView | null; theme: CanvasTheme }) {
     const [open, setOpen] = useState(false);
+    const statRows = agentContextStatRows(view, stats);
+    const usageNote = agentRunUsageNote(stats);
     const popoverRef = usePopoverAnchorAlign(open);
     const marker = view.compactRatio && view.compactRatio > 0 && view.compactRatio < 1 ? view.compactRatio : undefined;
     const percent = view.ratio === undefined ? view.label : `${Math.round(view.ratio * 100)}%`;
@@ -550,6 +561,24 @@ export function AgentContextRing({ view, theme }: { view: AgentContextUsageView;
                         </p>
                     ) : view.lastCompaction ? (
                         <p className="agent-context-note">本轮已完成一次上下文压缩，下一次读数会刷新。</p>
+                    ) : null}
+                    {statRows.length ? (
+                        <section className="agent-context-stats" aria-label="本轮统计">
+                            <span className="agent-context-eyebrow">本轮统计</span>
+                            <ul className="agent-context-breakdown">
+                                {statRows.map((row) => (
+                                    <li key={row.key} title={row.title}>
+                                        <span className="agent-context-breakdown-label">{row.label}</span>
+                                        <span className="agent-context-breakdown-value">
+                                            {row.value}
+                                            {row.detail ? <em>{row.detail}</em> : null}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                            {usageNote ? <p className="agent-context-note">{usageNote}</p> : null}
+                            {stats?.totalTokens !== undefined ? <p className="agent-context-note">合计、速度与模型用量来自上游调用记录；剩余与上下文窗口为 Pi 会话估算。</p> : null}
+                        </section>
                     ) : null}
                 </div>
             }
@@ -709,6 +738,28 @@ function useLinkStableReferences(references: CanvasResourceReference[]) {
     return stable;
 }
 
+/** 每一轮最后一条助手回复（runId → messageId）：页脚常显，并承载「重试这一轮」。升级前缓存的消息没有 runId，不参与。 */
+function agentFinalReplyIds(messages: readonly CloudAgentChatMessage[]) {
+    const byRun = new Map<string, string>();
+    for (const message of messages) {
+        if (message.role === "assistant" && !message.reasoning && message.runId && message.text.trim()) byRun.set(message.runId, message.id);
+    }
+    return byRun;
+}
+
+/** 助手回复页脚的展示文字；没有数据的项返回 undefined，页脚就不显示它。 */
+function agentReplyFooterLabels(message: CloudAgentChatMessage, modelLabel: (model: string) => string): { model?: string; usage?: string; time?: string } {
+    if (message.role !== "assistant" || message.reasoning) return {};
+    const usage = presentAgentModelUsage(message.usage);
+    const speed = formatAgentTokenSpeed(usage.tokensPerSecond);
+    const total = usage.totalTokens === undefined ? undefined : `${formatContextCount(usage.totalTokens)} tokens`;
+    return {
+        model: usage.model ? modelLabel(usage.model) : undefined,
+        usage: speed && total ? `${speed} · ${total}` : total,
+        time: formatAgentClockTime(message.createdAt),
+    };
+}
+
 /**
  * 只有对话停在 Agent 的最后一条回复上（之后没有用户发言）时，这条回复末尾的编号选项
  * 才变成可点击卡片；更早的回复保持原文，便于回看。
@@ -749,8 +800,10 @@ export function AgentConversation({
     onReplyOption,
     replyOptionsDisabled = false,
     retryableErrorId = null,
+    retryableReplyRunId = null,
     onRetryRun,
     retryingRun = false,
+    config,
 }: {
     theme: CanvasTheme;
     messages: CloudAgentChatMessage[];
@@ -779,8 +832,12 @@ export function AgentConversation({
     replyOptionsDisabled?: boolean;
     /** 可以重试的失败卡片（本轮失败且空闲时）；重试用新的幂等键重新发起一轮，会重新计费。 */
     retryableErrorId?: string | null;
+    /** 已结束（非失败）且可以原样重试的最新一轮：重试入口放在它最后一条回复的页脚上。 */
+    retryableReplyRunId?: string | null;
     onRetryRun?: () => void;
     retryingRun?: boolean;
+    /** 用于把回复页脚里的模型 ID 换成配置里的显示名；缺省时显示原始 ID。 */
+    config?: ReturnType<typeof useEffectiveConfig>;
 }) {
     const appearance = useAppearanceStore((state) => state.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
     const reducedMotion = useReducedMotion();
@@ -799,6 +856,21 @@ export function AgentConversation({
     const lastMessage = messages.at(-1);
     const replyOptionsEnabled = Boolean(onReplyOption) && !busy && !approval;
     const replyTarget = useMemo(() => (replyOptionsEnabled ? agentReplyOptionsTarget(messages) : null), [messages, replyOptionsEnabled]);
+    const finalReplyByRun = useMemo(() => agentFinalReplyIds(messages), [messages]);
+    const finalReplyIds = useMemo(() => new Set(finalReplyByRun.values()), [finalReplyByRun]);
+    const retryReplyId = retryableReplyRunId ? finalReplyByRun.get(retryableReplyRunId) : undefined;
+    // 模型显示名按当前配置缓存，配置变了才重新解析。
+    const modelLabel = useMemo(() => {
+        const cache = new Map<string, string>();
+        return (model: string) => {
+            let label = cache.get(model);
+            if (label === undefined) {
+                label = config ? configuredModelDisplayName(config, model) : model;
+                cache.set(model, label);
+            }
+            return label;
+        };
+    }, [config]);
     // 父组件每次渲染（例如输入框每敲一个字）都会传入新的回调和引用表。消息组件已 memo，
     // 这里换成稳定的回调和“只看链接字段”的引用表，消息才能跳过与它无关的重渲染。
     const handlersRef = useRef({ onUndo, onWithdrawInterjection, onRequeueInterjection, onReplyOption, onRetryRun });
@@ -868,6 +940,7 @@ export function AgentConversation({
                     ) : null}
                     {segments.slice(startIndex).map((segment, offset) => {
                         const index = startIndex + offset;
+                        const footer = segment.kind === "message" ? agentReplyFooterLabels(segment.item, modelLabel) : undefined;
                         return segment.kind === "operations" ? (
                             // 只有"对话末尾那一段 + 还在跑"才流光：历史段落留在静态态，任务完成即停。
                             <AgentOperationFeed
@@ -886,6 +959,10 @@ export function AgentConversation({
                             <AgentChatMessage
                                 key={segment.key}
                                 item={segment.item}
+                                replyModelLabel={footer?.model}
+                                replyUsageLabel={footer?.usage}
+                                replyTimeLabel={footer?.time}
+                                replyPinned={finalReplyIds.has(segment.item.id)}
                                 theme={theme}
                                 references={linkReferences}
                                 onFocusNode={onFocusNode}
@@ -898,8 +975,8 @@ export function AgentConversation({
                                 replyOptions={replyTarget?.id === segment.item.id ? replyTarget.options : null}
                                 onReplyOption={replyTarget?.id === segment.item.id && onReplyOption ? stableReply : undefined}
                                 replyOptionsDisabled={replyOptionsDisabled}
-                                onRetry={onRetryRun && retryableErrorId === segment.item.id ? stableRetry : undefined}
-                                retrying={retryingRun && retryableErrorId === segment.item.id}
+                                onRetry={onRetryRun && (retryableErrorId === segment.item.id || retryReplyId === segment.item.id) ? stableRetry : undefined}
+                                retrying={retryingRun && (retryableErrorId === segment.item.id || retryReplyId === segment.item.id)}
                             />
                         );
                     })}
