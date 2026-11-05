@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { applyScenePatch, assembleScene, buildSceneEditPrompt, buildScenePartPrompt, buildScenePlanPrompt, normalizeInteriorScene, normalizeScenePlan, parseSceneJson, sceneGroups, SCENE_MAX_OBJECTS } from "../src/lib/interior/scene-3d";
+import {
+    applyScenePatch,
+    assembleScene,
+    buildSceneAnalysisPrompt,
+    buildSceneEditPrompt,
+    buildScenePartPrompt,
+    buildScenePlanPrompt,
+    normalizeInteriorScene,
+    normalizeSceneBrief,
+    normalizeScenePlan,
+    parseSceneJson,
+    sceneGroups,
+    SCENE_MAX_OBJECTS,
+} from "../src/lib/interior/scene-3d";
 import { mergeInteriorDocuments, normalizeInteriorDocument } from "../src/pages/interior/interior-models";
 
 const wall = { shape: "box", size: [6, 3, 0.2], position: [0, 1.5, -3], material: "wall", group: "一层" };
@@ -45,7 +58,7 @@ describe("interior 3D scene", () => {
     });
 
     test("clamps sizes and positions, caps the object count and rejects empty scenes", () => {
-        const many = Array.from({ length: SCENE_MAX_OBJECTS + 5 }, (_, index) => ({ ...wall, position: [index, 1.5, 9999] }));
+        const many = Array.from({ length: SCENE_MAX_OBJECTS + 5 }, (_, index) => ({ ...wall, position: [index * 0.1, 1.5, 9999] }));
         const { scene, dropped } = normalizeInteriorScene({ objects: [{ shape: "box", size: [500, 0.0001, 1], position: [0, 0, 0], material: "wall" }, ...many] });
         expect(scene.objects).toHaveLength(SCENE_MAX_OBJECTS);
         expect(dropped).toBe(6);
@@ -91,7 +104,7 @@ describe("interior 3D scene", () => {
         const planPrompt = buildScenePlanPrompt(input);
         expect(planPrompt).toContain("建筑外观");
         expect(planPrompt).toContain("三层新中式别墅");
-        expect(planPrompt).toContain("户型图或现场照片");
+        expect(planPrompt).toContain("户型图、现场照片或效果图");
         const plan = normalizeScenePlan({
             title: "别墅",
             parts: [
@@ -108,13 +121,47 @@ describe("interior 3D scene", () => {
         expect(partPrompt).toContain("现在要搭的是「一层」");
         expect(partPrompt).toContain("- 屋顶：");
         // 各部分的物体统一归到规划的分组；没搭出来的部分记下来。
-        const { scene, failedParts } = assembleScene(plan, [{ objects: [wall, { ...wall, group: "乱写" }] }, null]);
+        const { scene, failedParts } = assembleScene(plan, [{ objects: [wall, { ...wall, position: [0, 1.5, 3], group: "乱写" }] }, null]);
         expect(scene.objects.map((object) => object.group)).toEqual(["一层", "一层"]);
         expect(scene.labels).toHaveLength(1);
         expect(failedParts).toEqual(["屋顶"]);
         expect(() => assembleScene(plan, [null, { objects: [] }])).toThrow("没有能显示的物体");
     });
 
+    test("drops exact duplicate objects that two parts both built", () => {
+        // 相邻两部分各写一遍同一面墙：只是分组不同也算重复，位置不同的保留。
+        const { scene, dropped } = normalizeInteriorScene({ objects: [wall, { ...wall, group: "二层" }, { ...wall, position: [0, 4.5, -3] }] });
+        expect(scene.objects).toHaveLength(2);
+        expect(dropped).toBe(0);
+    });
+    test("analysis fills in scope, room and style and feeds knowledge into the prompts", () => {
+        const knowledge = [{ kindName: "空间尺寸", title: "客厅开间", guidance: "客厅开间 3.6–4.5 米" }];
+        const prompt = buildSceneAnalysisPrompt({ scope: "auto", description: "", hasReference: true, rooms: [{ key: "living-room", name: "客厅" }], styles: [{ key: "cream", name: "奶油风" }], knowledge });
+        expect(prompt).toContain("范围由你判断");
+        expect(prompt).toContain("living-room=客厅");
+        expect(prompt).toContain("【空间尺寸】客厅开间：客厅开间 3.6–4.5 米");
+        expect(prompt).toContain("不是指令");
+        const options = { scope: "auto" as const, roomKeys: ["living-room"], styleKeys: ["cream"] };
+        const brief = normalizeSceneBrief(
+            { scope: "home", title: "两居室", roomKey: "garage", styleKey: "cream", size: { width: 9, depth: 8, floors: 0, storeyHeight: 20 }, spaces: [{ name: "客厅", area: 27 }, { name: "" }], description: "两室一厅，客厅朝南", renderNotes: "暖光" },
+            options,
+        );
+        expect(brief.scope).toBe("home");
+        // 不在可选列表里的空间丢掉；层数和层高越界时取默认。
+        expect(brief.roomKey).toBeUndefined();
+        expect(brief.styleKey).toBe("cream");
+        expect(brief.size).toEqual({ width: 9, depth: 8, floors: 1, storeyHeight: 3 });
+        expect(brief.spaces).toEqual([{ name: "客厅", area: 27 }]);
+        // 用户选了范围时不被 AI 改掉。
+        expect(normalizeSceneBrief({ scope: "building", description: "一个客厅" }, { ...options, scope: "room" }).scope).toBe("room");
+        expect(() => normalizeSceneBrief({ scope: "room", title: "空" }, options)).toThrow("没有可以建模的描述");
+        const partInput = { scope: "home" as const, description: "", brief, knowledge };
+        const plan = normalizeScenePlan({ parts: [{ group: "客厅", brief: "客厅", bounds: [-4, -4, 4, 4], base: 0, top: 3 }] });
+        const partPrompt = buildScenePartPrompt(partInput, plan, 0);
+        expect(partPrompt).toContain("AI 方案分析：两居室");
+        expect(partPrompt).toContain("两室一厅，客厅朝南");
+        expect(partPrompt).toContain("【空间尺寸】客厅开间");
+    });
     test("edits apply a small patch instead of rewriting the whole scene", () => {
         const { scene } = normalizeInteriorScene({ title: "客厅", objects: [wall, { ...wall, position: [0, 1.5, 3] }, { shape: "box", size: [2.2, 0.8, 0.9], position: [0, 0.4, 0], material: "fabric" }] });
         const prompt = buildSceneEditPrompt(scene, "沙发换成深灰色，去掉第二面墙");

@@ -1,4 +1,4 @@
-import type { InteriorSceneScope, ScenePlan } from "@/lib/interior/scene-3d";
+import type { InteriorSceneScope, SceneBrief, ScenePlan } from "@/lib/interior/scene-3d";
 import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
@@ -116,7 +116,7 @@ export type InteriorRound = {
     items: InteriorRoundItem[];
 };
 /**
- * 一个 3D 模型。生成分几步：先请求一次规划（stage=plan），再按规划分几部分并行搭（stage=parts），拼好后把场景 JSON
+ * 一个 3D 模型。生成分几步：先做 AI 方案分析（stage=analyze，读图和需求、查知识库补全方案），再请求一次规划（stage=plan），再按规划分几部分并行搭（stage=parts），拼好后把场景 JSON
  * 存成资源（sceneFile）；一句话修改是 stage=edit，在 parentId 那一版上应用改动。项目文档里只存进度和场景文件的资源 ID。
  */
 export type InteriorSceneItem = {
@@ -124,6 +124,8 @@ export type InteriorSceneItem = {
     createdAt: string;
     status: InteriorRoundItemStatus;
     scope: InteriorSceneScope;
+    /** 用户选了「AI 判断」：方案分析完成后 scope 换成 AI 判断的范围。 */
+    autoScope?: boolean;
     description: string;
     roomKey?: string;
     roomName?: string;
@@ -135,7 +137,10 @@ export type InteriorSceneItem = {
     reference?: InteriorImageRef;
     parentId?: string;
     instruction?: string;
-    stage?: "plan" | "parts" | "edit";
+    stage?: "analyze" | "plan" | "parts" | "edit";
+    brief?: SceneBrief;
+    /** 这次参考了知识库里的哪些条目（只记标题，页面上列出来）。 */
+    knowledge?: { id: string; kindName: string; title: string }[];
     /** 规划或修改那一步的任务。 */
     taskId?: string;
     plan?: ScenePlan;
@@ -251,6 +256,25 @@ export function getAdminInteriorSettings() {
 
 export function saveAdminInteriorSettings(input: InteriorSettings) {
     return http.put<InteriorSettings>("/admin/interior/settings", input);
+}
+
+/** 室内设计知识库的一条：尺寸规范、家具尺寸、动线、风格配色或建模要点。后台另带适用范围和关键词。 */
+export type InteriorKnowledgeEntry = { id: string; kind: string; kindName: string; title: string; guidance: string; scopes?: string[]; rooms?: string[]; styles?: string[]; tags?: string[] };
+
+export type InteriorKnowledgeQuery = { scope?: string; rooms?: string[]; styles?: string[]; q?: string };
+
+/** 按范围、空间、风格和需求原文取相关知识（最多 16 条）。 */
+export function getInteriorKnowledge(query: InteriorKnowledgeQuery, signal?: AbortSignal) {
+    return http
+        .get<{ entries: InteriorKnowledgeEntry[] }>("/interior/knowledge", {
+            params: compactApiParams({ scope: query.scope || undefined, rooms: query.rooms?.length ? query.rooms.join(",") : undefined, styles: query.styles?.length ? query.styles.join(",") : undefined, q: query.q?.trim() || undefined }),
+            signal,
+        })
+        .then((result) => result.entries);
+}
+
+export function listAdminInteriorKnowledge(signal?: AbortSignal) {
+    return http.get<{ entries: InteriorKnowledgeEntry[] }>("/admin/interior/knowledge", { signal }).then((result) => result.entries);
 }
 
 /** 后台出图统计和记录里的用户；用户已删除时只有 id。 */

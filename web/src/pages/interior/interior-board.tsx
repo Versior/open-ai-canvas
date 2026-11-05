@@ -1,5 +1,5 @@
 import { Button, Tooltip } from "antd";
-import { Download, Images, LoaderCircle, PencilLine, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Box, Download, Images, LoaderCircle, PencilLine, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useState, type CSSProperties } from "react";
 import { EmptyState } from "@/components/ui/product/empty-state";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
@@ -19,6 +19,8 @@ type BoardProps = {
     onDownload: (target: InteriorOutputTarget) => void;
     onDownloadRound: (round: InteriorRound) => void;
     onContinue: (target: InteriorOutputTarget) => void;
+    /** 用这张效果图生成 3D 模型。 */
+    onTo3D: (target: InteriorOutputTarget) => void;
     onReuse: (round: InteriorRound, styleKey?: string) => void;
     onDeleteRound: (round: InteriorRound) => void;
 };
@@ -68,7 +70,7 @@ function ItemStatus({ item, stalled, busy, onRetryWatch, onRetry }: { item: Inte
     );
 }
 
-export function InteriorBoard({ document, stalled, busy, downloadingRound, onRetryWatch, onOpen, onDownload, onDownloadRound, onContinue, onReuse, onDeleteRound }: BoardProps) {
+export function InteriorBoard({ document, stalled, busy, downloadingRound, onRetryWatch, onOpen, onDownload, onDownloadRound, onContinue, onTo3D, onReuse, onDeleteRound }: BoardProps) {
     if (!document.rounds.length) {
         return <EmptyState icon={Images} title="还没有效果图" description="上传一张房间照片，选好空间和风格，就能生成装修效果图。也可以直接按 Ctrl+V 粘贴图片。" className="itd-empty" />;
     }
@@ -134,6 +136,11 @@ export function InteriorBoard({ document, stalled, busy, downloadingRound, onRet
                                                                           <PencilLine className="size-3.5" aria-hidden />
                                                                       </button>
                                                                   </Tooltip>
+                                                                  <Tooltip title="用这张生成 3D 模型">
+                                                                      <button type="button" aria-label="用这张生成 3D 模型" disabled={busy} onClick={() => onTo3D(target)}>
+                                                                          <Box className="size-3.5" aria-hidden />
+                                                                      </button>
+                                                                  </Tooltip>
                                                               </div>
                                                           </div>
                                                       );
@@ -175,7 +182,19 @@ function CompareStage({ before, after }: { before: string; after: string }) {
     );
 }
 
-export function InteriorViewer({ target, onClose, onDownload, onContinue }: { target: InteriorOutputTarget | null; onClose: () => void; onDownload: (target: InteriorOutputTarget) => void; onContinue: (target: InteriorOutputTarget) => void }) {
+export function InteriorViewer({
+    target,
+    onClose,
+    onDownload,
+    onContinue,
+    onTo3D,
+}: {
+    target: InteriorOutputTarget | null;
+    onClose: () => void;
+    onDownload: (target: InteriorOutputTarget) => void;
+    onContinue: (target: InteriorOutputTarget) => void;
+    onTo3D: (target: InteriorOutputTarget) => void;
+}) {
     const [side, setSide] = useState<ViewSide>("compare");
     // 每次打开新图都回到拖动对比。
     useEffect(() => {
@@ -207,6 +226,9 @@ export function InteriorViewer({ target, onClose, onDownload, onContinue }: { ta
                         <div className="itd-viewer-actions">
                             <Button icon={<Download className="size-4" aria-hidden />} onClick={() => onDownload(target)}>
                                 下载
+                            </Button>
+                            <Button icon={<Box className="size-4" aria-hidden />} onClick={() => onTo3D(target)}>
+                                生成 3D 模型
                             </Button>
                             <Button type="primary" icon={<PencilLine className="size-4" aria-hidden />} onClick={() => onContinue(target)}>
                                 用这张继续改

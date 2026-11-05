@@ -1,10 +1,10 @@
 import { Html, OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
-import { Download, Eye, EyeOff, Maximize2, RotateCcw, Square, Box as BoxIcon } from "lucide-react";
+import { Canvas, useFrame, useThree, type RootState } from "@react-three/fiber";
+import { Download, Eye, EyeOff, ImagePlay, Maximize2, RotateCcw, Square, Box as BoxIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Box3, BoxGeometry, BufferGeometry, ConeGeometry, CylinderGeometry, Euler, ExtrudeGeometry, Group, Mesh, MeshStandardMaterial, Path, PlaneGeometry, Shape, SphereGeometry, Vector3, type Material } from "three";
+import { Box3, BoxGeometry, BufferGeometry, ConeGeometry, CylinderGeometry, Euler, ExtrudeGeometry, Group, Matrix4, Mesh, MeshStandardMaterial, Path, PlaneGeometry, Raycaster, Shape, SphereGeometry, Vector3, type Material, type Object3D } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
-import { SCENE_MAX_MESHES, sceneGroups, type InteriorScene3D, type SceneMaterial, type SceneObject } from "@/lib/interior/scene-3d";
+import { SCENE_MAX_MESHES, sceneGroups, type InteriorScene3D, type SceneLabel, type SceneMaterial, type SceneObject } from "@/lib/interior/scene-3d";
 import { cn } from "@/lib/utils";
 
 type MaterialLook = { color: string; roughness: number; metalness: number; opacity?: number; emissive?: boolean };
@@ -145,7 +145,7 @@ function buildSceneRoot(scene: InteriorScene3D) {
         return mesh;
     };
     let meshes = 0;
-    for (const object of scene.objects) {
+    for (const [objectIndex, object] of scene.objects.entries()) {
         if (meshes >= SCENE_MAX_MESHES) break;
         // 先搭出一份（墙连同门窗是一组），repeat 时按步长复制这一份，几何体共用。
         const template = new Group();
@@ -163,6 +163,9 @@ function buildSceneRoot(scene: InteriorScene3D) {
             template.position.set(...object.position!);
             if (object.rotation) template.rotation.copy(new Euler(object.rotation[0] * DEGREE, object.rotation[1] * DEGREE, object.rotation[2] * DEGREE));
         }
+        // 模型常把两块面叠在同一个平面上（外墙和楼板边、两段墙），屏幕会在它们之间来回闪出花纹。
+        // 每个物体按序号放大一点点（最多约 0.5%），重叠的面就分开了，肉眼看不出尺寸变化。
+        template.scale.multiplyScalar(1 + (objectIndex % 9) * 0.0006);
         if (object.name) template.name = object.name;
         const groupName = object.group || "";
         let parent = groups.get(groupName);
@@ -223,8 +226,73 @@ function safeFileName(value: string) {
     return value.replace(/[\\/:*?"<>|\s]+/g, "_") || "3D模型";
 }
 
+/** 挡住标注的物体要离标注至少这么远（米，另加距离的 1%）：标注常放在台阶、家具上或树冠里，贴着的不算挡住。 */
+const LABEL_OCCLUDE_MARGIN = 0.6;
+const LABEL_CHECK_MS = 120;
+
+function shownInScene(object: Object3D | null) {
+    for (let node = object; node; node = node.parent) if (!node.visible) return false;
+    return true;
+}
+
+/**
+ * 文字标注：被墙、楼板、屋顶挡住时隐藏，避免室内的标注透过外墙叠在一起；玻璃和隐藏的分组不算遮挡。
+ * 视角变化时最多每 120ms 用射线检查一次。
+ */
+function SceneLabels({ labels, root, hidden }: { labels: SceneLabel[]; root: Object3D; hidden: ReadonlySet<string> }) {
+    const camera = useThree((state) => state.camera);
+    const [occluded, setOccluded] = useState("");
+    const check = useRef({ matrix: new Matrix4(), at: 0, stale: true });
+    const raycaster = useMemo(() => new Raycaster(), []);
+    useEffect(() => {
+        check.current.stale = true;
+    }, [hidden, labels, root]);
+    useFrame(({ clock }) => {
+        const state = check.current;
+        const now = clock.elapsedTime * 1000;
+        if (!state.stale && (state.matrix.equals(camera.matrixWorld) || now - state.at < LABEL_CHECK_MS)) return;
+        state.matrix.copy(camera.matrixWorld);
+        state.at = now;
+        state.stale = false;
+        const origin = camera.getWorldPosition(new Vector3());
+        const result: number[] = [];
+        for (const [index, label] of labels.entries()) {
+            const target = new Vector3(...label.position);
+            const distance = origin.distanceTo(target);
+            raycaster.set(origin, target.sub(origin).normalize());
+            raycaster.far = Math.max(0, distance - LABEL_OCCLUDE_MARGIN - distance * 0.01);
+            const blocked = raycaster.intersectObject(root, true).some((hit) => {
+                const material = (hit.object as Mesh).material as Material | undefined;
+                return !material?.transparent && shownInScene(hit.object);
+            });
+            if (blocked) result.push(index);
+        }
+        const next = result.join(",");
+        setOccluded((current) => (current === next ? current : next));
+    });
+    const hiddenIndexes = useMemo(() => new Set(occluded ? occluded.split(",").map(Number) : []), [occluded]);
+    return labels.map((label, index) => (
+        <Html key={`${label.text}-${index}`} position={label.position} center zIndexRange={[20, 0]}>
+            <span className={cn("itd-scene-label", hiddenIndexes.has(index) && "is-occluded")}>{label.text}</span>
+        </Html>
+    ));
+}
+
 /** 可以拖动旋转、滚轮缩放、右键平移的三维模型；能按分组隐藏、切到俯视、全屏，下载 GLB（通用三维格式）或场景数据。 */
-export function InteriorSceneViewer({ scene, className, onError }: { scene: InteriorScene3D; className?: string; onError?: (message: string) => void }) {
+export function InteriorSceneViewer({
+    scene,
+    className,
+    onError,
+    onSnapshot,
+    snapshotBusy,
+}: {
+    scene: InteriorScene3D;
+    className?: string;
+    onError?: (message: string) => void;
+    /** 按当前视角截一张图（不带标注），交给调用方去出效果图。 */
+    onSnapshot?: (image: Blob) => void;
+    snapshotBusy?: boolean;
+}) {
     const built = useMemo(() => buildSceneRoot(scene), [scene]);
     useEffect(() => () => built.dispose(), [built]);
     const groups = useMemo(() => sceneGroups(scene), [scene]);
@@ -234,6 +302,7 @@ export function InteriorSceneViewer({ scene, className, onError }: { scene: Inte
     const [resetKey, setResetKey] = useState(0);
     const [exporting, setExporting] = useState(false);
     const frameRef = useRef<HTMLDivElement>(null);
+    const glRef = useRef<RootState["gl"] | null>(null);
 
     useEffect(() => {
         setHidden(new Set());
@@ -268,6 +337,11 @@ export function InteriorSceneViewer({ scene, className, onError }: { scene: Inte
         }
     };
     const exportJson = () => downloadBlob(new Blob([JSON.stringify(scene, null, 2)], { type: "application/json" }), `${safeFileName(scene.title)}.json`);
+    const snapshot = () => {
+        const canvas = glRef.current?.domElement;
+        if (!canvas || !onSnapshot) return;
+        canvas.toBlob((blob) => (blob ? onSnapshot(blob) : onError?.("截图失败，请再试一次")), "image/png");
+    };
     const fullscreen = () => {
         const frame = frameRef.current;
         if (!frame) return;
@@ -277,7 +351,15 @@ export function InteriorSceneViewer({ scene, className, onError }: { scene: Inte
 
     return (
         <div ref={frameRef} className={cn("itd-scene-frame", className)}>
-            <Canvas key={`${view}-${resetKey}`} shadows dpr={[1, 2]} gl={{ antialias: true, alpha: true }} camera={{ position: camera.position, fov: 42, near: 0.05, far: camera.far }} aria-label={`${scene.title}，可以拖动旋转、滚轮缩放`}>
+            <Canvas
+                key={`${view}-${resetKey}`}
+                shadows
+                dpr={[1, 2]}
+                gl={{ antialias: true, alpha: true, logarithmicDepthBuffer: true, preserveDrawingBuffer: true }}
+                camera={{ position: camera.position, fov: 42, near: Math.max(0.05, span / 400), far: camera.far }}
+                aria-label={`${scene.title}，可以拖动旋转、滚轮缩放`}
+                onCreated={(state) => (glRef.current = state.gl)}
+            >
                 <hemisphereLight args={["#ffffff", "#8d8577", 0.85]} />
                 <directionalLight
                     castShadow
@@ -289,14 +371,11 @@ export function InteriorSceneViewer({ scene, className, onError }: { scene: Inte
                     shadow-camera-top={span}
                     shadow-camera-bottom={-span}
                     shadow-camera-far={span * 4}
-                    shadow-bias={-0.0004}
+                    shadow-bias={-0.0002}
+                    shadow-normalBias={Math.max(0.02, span / 600)}
                 />
                 <primitive object={built.root} dispose={null} />
-                {visibleLabels.map((label, index) => (
-                    <Html key={`${label.text}-${index}`} position={label.position} center zIndexRange={[20, 0]}>
-                        <span className="itd-scene-label">{label.text}</span>
-                    </Html>
-                ))}
+                <SceneLabels labels={visibleLabels} root={built.root} hidden={hidden} />
                 <OrbitControls makeDefault target={camera.target} enableDamping dampingFactor={0.12} maxPolarAngle={view === "top" ? Math.PI / 2 : Math.PI * 0.49} minDistance={0.5} maxDistance={span * 6} />
             </Canvas>
             <div className="itd-scene-toolbar" role="toolbar" aria-label="3D 模型查看">
@@ -318,6 +397,12 @@ export function InteriorSceneViewer({ scene, className, onError }: { scene: Inte
                     <Maximize2 className="size-4" aria-hidden />
                 </button>
                 <span className="itd-scene-tool-gap" aria-hidden />
+                {onSnapshot ? (
+                    <button type="button" className="itd-scene-tool is-text" disabled={snapshotBusy} onClick={snapshot} title="按现在的视角截图，用白模渲染出装修效果图">
+                        <ImagePlay className="size-4" aria-hidden />
+                        出效果图
+                    </button>
+                ) : null}
                 <button type="button" className="itd-scene-tool is-text" disabled={exporting} onClick={() => void exportGlb()} title="下载 GLB，可以在 Blender、SketchUp 等软件里打开">
                     <Download className="size-4" aria-hidden />
                     GLB

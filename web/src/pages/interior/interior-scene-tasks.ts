@@ -1,12 +1,12 @@
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
-import { normalizeInteriorScene, type InteriorScene3D, type ScenePromptInput } from "@/lib/interior/scene-3d";
+import { normalizeInteriorScene, type InteriorScene3D, type InteriorSceneScope, type SceneKnowledge, type ScenePromptInput } from "@/lib/interior/scene-3d";
 import { modelCompatibilityError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
 import { submitBackendGenerationTask } from "@/services/api/generation-task";
+import { getInteriorKnowledge, type InteriorCatalog, type InteriorImageRef, type InteriorKnowledgeEntry, type InteriorSceneItem } from "@/services/api/interior";
 import { resourceFileUrl, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
-import type { InteriorImageRef, InteriorSceneItem } from "@/services/api/interior";
 import type { AiConfig } from "@/stores/use-config-store";
 
-/** 搭 3D 模型的文本任务对模型的要求：一段文字，带户型图时还要能看一张图。 */
+/** 搭 3D 模型的文本任务对模型的要求：一段文字，带图时还要能看一张图。 */
 export function sceneModelRequirements(config: AiConfig, imageCount: number): ModelRequirements {
     return { capability: "text", input: { textCount: 1, imageCount, videoCount: 0, audioCount: 0, characterCount: 0 }, options: modelRequestOptions(config, "text") };
 }
@@ -23,14 +23,33 @@ export function submitSceneTask(config: AiConfig, model: string, prompt: string,
         mode: "text",
         prompt,
         config: { ...buildGenerationConfig(config, undefined, "text", requirements), model },
-        referenceImages: image ? [{ id: image.resourceId, name: "户型图", type: "image/jpeg", dataUrl: "", storageKey: resourceStorageKey(image.resourceId), width: image.width, height: image.height }] : [],
+        referenceImages: image ? [{ id: image.resourceId, name: "参考图", type: "image/jpeg", dataUrl: "", storageKey: resourceStorageKey(image.resourceId), width: image.width, height: image.height }] : [],
         streamText: false,
         metadata: { source: "interior-design", interior: { kind: "scene", stage } },
     });
 }
 
-export function scenePromptInput(item: InteriorSceneItem): ScenePromptInput {
-    return { scope: item.scope, description: item.description, roomName: item.roomName, styleName: item.styleName, stylePrompt: item.styleHint, hasReference: Boolean(item.reference) };
+/** 按范围、空间、风格和需求查知识库；查不到时报错往上抛，不当成「没有相关知识」。 */
+export async function fetchSceneKnowledge(query: { scope?: InteriorSceneScope; roomKey?: string; styleKey?: string; text: string }) {
+    const entries = await getInteriorKnowledge({ scope: query.scope, rooms: query.roomKey ? [query.roomKey] : [], styles: query.styleKey ? [query.styleKey] : [], q: query.text.slice(0, 1000) });
+    return { knowledge: entries.map(promptKnowledge), refs: entries.map((entry) => ({ id: entry.id, kindName: entry.kindName, title: entry.title })) };
+}
+
+function promptKnowledge(entry: InteriorKnowledgeEntry): SceneKnowledge {
+    return { kindName: entry.kindName, title: entry.title, guidance: entry.guidance };
+}
+
+/** 一个模型后面几步查知识用的条件：方案分析之后以分析结果为准。 */
+export function sceneKnowledgeQuery(item: InteriorSceneItem) {
+    return { scope: item.scope, roomKey: item.roomKey, styleKey: item.styleKey, text: [item.description, item.brief?.description].filter(Boolean).join("\n") };
+}
+
+export function scenePromptInput(item: InteriorSceneItem, knowledge?: SceneKnowledge[]): ScenePromptInput {
+    return { scope: item.scope, description: item.description, roomName: item.roomName, styleName: item.styleName, stylePrompt: item.styleHint, hasReference: Boolean(item.reference), brief: item.brief, knowledge };
+}
+
+export function catalogKeys(catalog: InteriorCatalog) {
+    return { rooms: catalog.rooms.map((item) => ({ key: item.key, name: item.name })), styles: catalog.styles.map((item) => ({ key: item.key, name: item.name })) };
 }
 
 /** 拼好的场景存成 JSON 资源；项目文档里只记资源 ID，文档不会被大场景撑满。 */

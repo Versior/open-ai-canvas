@@ -13,7 +13,7 @@ import { useUserStore } from "@/stores/use-user-store";
 import { InteriorBoard, InteriorViewer, type InteriorOutputTarget } from "./interior-board";
 import { InteriorComposer, interiorCountLimit, interiorDraftProblem, uploadInteriorImage, visibleInteriorModes, type InteriorDraft, type InteriorUpload } from "./interior-composer";
 import { interiorDownloadName, interiorImageModelOptions, interiorInitialModel, interiorModelRef, newInteriorId } from "./interior-models";
-import { InteriorSceneStudio } from "./interior-scene-studio";
+import { InteriorSceneStudio, type InteriorRenderHandoff, type InteriorSceneHandoff } from "./interior-scene-studio";
 import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
 import "./interior.css";
@@ -21,6 +21,8 @@ import "./interior.css";
 const SURFACE_KEY = "interior:surface";
 const WORKSPACE_KEY = "interior:workspace";
 const TEXT_EDIT_MODE = "text-edit";
+/** 3D 模型截图出效果图时用的出图方式（白模渲染）。 */
+const SKETCH_RENDER_MODE = "sketch-render";
 const DOWNLOAD_GAP_MS = 400;
 const SAVE_LABEL: Record<InteriorSaveState, string> = { saved: "已保存", saving: "保存中…", error: "保存失败，点击重试" };
 
@@ -81,6 +83,8 @@ export default function InteriorPage() {
     const [dialogBusy, setDialogBusy] = useState(false);
     const [downloadingRound, setDownloadingRound] = useState("");
     const [workspace, setWorkspace] = useState<InteriorWorkspace>(initialWorkspace);
+    // 效果图带去 3D 模型时的预填内容；3D 模型页用完就清掉。
+    const [sceneHandoff, setSceneHandoff] = useState<InteriorSceneHandoff | null>(null);
     // 本地预览用的 blob 地址，离开页面时统一释放。
     const previewUrls = useRef(new Set<string>());
 
@@ -129,6 +133,11 @@ export default function InteriorPage() {
             urls.clear();
         };
     }, []);
+
+    const changeWorkspace = (next: InteriorWorkspace) => {
+        setWorkspace(next);
+        window.localStorage.setItem(WORKSPACE_KEY, next);
+    };
 
     const patchDraft = useCallback((patch: Partial<InteriorDraft>) => {
         setSubmitError("");
@@ -328,6 +337,46 @@ export default function InteriorPage() {
         message.info(editMode ? "已把这张图作为原图，写下要改的地方就能生成" : "已把这张图作为原图");
     };
 
+    /** 用这张效果图生成 3D 模型：切到 3D 模型页并预填参考图、空间和风格；不自动生成（要计费）。 */
+    const to3D = (target: InteriorOutputTarget) => {
+        setViewing(null);
+        setSceneHandoff({
+            id: newInteriorId(),
+            image: target.output,
+            ...(target.round.roomKey ? { roomKey: target.round.roomKey } : {}),
+            ...(target.item.styleKey ? { styleKey: target.item.styleKey } : {}),
+            ...(target.round.notes ? { description: target.round.notes } : {}),
+        });
+        changeWorkspace("scene");
+    };
+    const clearSceneHandoff = useCallback(() => setSceneHandoff(null), []);
+
+    /** 3D 模型截图出效果图：截图当白模原图，切到「线稿/白模渲染」并带上空间、风格和方案分析里的要求。 */
+    const renderFrom3D = (handoff: InteriorRenderHandoff) => {
+        if (!catalog) return;
+        const target = catalog.modes.find((item) => item.key === SKETCH_RENDER_MODE);
+        const targetSurface = target ? surfaceFor(target, surface) : surface;
+        const usable = target && (targetSurface === surface || catalog.settings.allowSurfaceSwitch) && visibleInteriorModes(catalog, targetSurface).some((item) => item.id === target.id);
+        changeWorkspace("images");
+        if (usable) {
+            if (targetSurface !== surface) {
+                setSurface(targetSurface);
+                window.localStorage.setItem(SURFACE_KEY, targetSurface);
+            }
+            selectMode(target, targetSurface);
+        }
+        const enabledStyles = new Set(catalog.styles.map((item) => item.key));
+        const enabledRooms = new Set(catalog.rooms.map((item) => item.key));
+        setDraft((value) => ({
+            ...value,
+            source: { ...handoff.image, name: "3D 模型截图" },
+            styleKeys: handoff.styleKey && enabledStyles.has(handoff.styleKey) ? [handoff.styleKey] : value.styleKeys,
+            roomKey: handoff.roomKey && enabledRooms.has(handoff.roomKey) ? handoff.roomKey : value.roomKey,
+            notes: handoff.notes || value.notes,
+        }));
+        message.info(usable ? "已把模型截图作为白模原图，确认风格后点生成" : "已把模型截图作为原图；当前没有开放「线稿/白模渲染」，请选一个出图方式");
+    };
+
     /** 用某一轮的设置回填左侧表单；styleKey 只重试这一个风格。不自动提交，用户确认后再点生成。 */
     const reuseRound = (round: InteriorRound, styleKey?: string) => {
         if (!catalog || busy) return;
@@ -433,10 +482,6 @@ export default function InteriorPage() {
         );
     }
 
-    const changeWorkspace = (next: InteriorWorkspace) => {
-        setWorkspace(next);
-        window.localStorage.setItem(WORKSPACE_KEY, next);
-    };
     const projectBar = (
         <div className="itd-project-bar">
             <Select
@@ -550,7 +595,18 @@ export default function InteriorPage() {
     if (workspace === "scene") {
         return (
             <WorkspacePage scroll={false} fluid className="itd-page">
-                <InteriorSceneStudio catalog={catalog} config={config} project={current} header={boardHeader} ensureProject={ensureProject} update={projects.update} removeScene={projects.removeScene} />
+                <InteriorSceneStudio
+                    catalog={catalog}
+                    config={config}
+                    project={current}
+                    header={boardHeader}
+                    ensureProject={ensureProject}
+                    update={projects.update}
+                    removeScene={projects.removeScene}
+                    handoff={sceneHandoff}
+                    onHandoffUsed={clearSceneHandoff}
+                    onRender={renderFrom3D}
+                />
                 {projectDialog}
             </WorkspacePage>
         );
@@ -590,6 +646,7 @@ export default function InteriorPage() {
                                 onDownload={download}
                                 onDownloadRound={(round) => void downloadRound(round)}
                                 onContinue={continueFrom}
+                                onTo3D={to3D}
                                 onReuse={reuseRound}
                                 onDeleteRound={deleteRound}
                             />
@@ -597,7 +654,7 @@ export default function InteriorPage() {
                     </div>
                 </section>
             </div>
-            <InteriorViewer target={viewing} onClose={() => setViewing(null)} onDownload={download} onContinue={continueFrom} />
+            <InteriorViewer target={viewing} onClose={() => setViewing(null)} onDownload={download} onContinue={continueFrom} onTo3D={to3D} />
             {projectDialog}
         </WorkspacePage>
     );

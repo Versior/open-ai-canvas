@@ -861,6 +861,9 @@
     white-space: nowrap;
     pointer-events: none;
 }
+.itd-scene-label.is-occluded {
+    visibility: hidden;
+}
 
 .itd-scene-empty {
     display: flex;
@@ -919,6 +922,13 @@
 
 .itd-scene-meta-copy .itd-scene-warning {
     color: var(--product-accent-orange);
+}
+.itd-scene-meta-copy .itd-scene-knowledge {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 4px;
+    cursor: help;
 }
 
 .itd-scene-edit {
