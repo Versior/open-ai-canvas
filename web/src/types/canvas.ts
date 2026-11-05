@@ -206,10 +206,14 @@ export type StoryboardRow = {
     sourceStartMs?: number;
     sourceEndMs?: number;
     keyframeTimeMs?: number;
-    /** 视频复刻拆解记下的原片信息：切点类型、画面文字、制作方式判断、口播来源和关键帧资源。 */
+    /** 视频复刻拆解记下的原片信息：切点类型、画面文字、商品出镜和关键颜色、制作方式判断、口播来源和关键帧资源。 */
     sourceAnalysis?: {
         boundary?: "start" | "cut" | "split";
         onScreenText?: string;
+        /** 商品怎么出现；productRole 为 none / dynamic / hero_real / package_text，早期分析里为空。 */
+        product?: string;
+        productRole?: "" | "none" | "dynamic" | "hero_real" | "package_text";
+        keyColors?: string;
         production?: string;
         productionConfidence?: string;
         dialogueSource?: "asr" | "subtitle" | "none";

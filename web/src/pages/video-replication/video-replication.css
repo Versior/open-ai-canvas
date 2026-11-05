@@ -1552,6 +1552,13 @@
     text-wrap: pretty;
 }
 
+.vr-structure-text {
+    margin-top: var(--space-2);
+    color: var(--user-ink);
+    line-height: 1.7;
+    text-wrap: pretty;
+}
+
 .vr-beat-list {
     display: flex;
     flex-direction: column;

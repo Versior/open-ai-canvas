@@ -2,7 +2,7 @@ import { Alert, Button, Skeleton } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminStatusBadge } from "@/pages/admin/components/admin-ui";
 import { AdminDrawer } from "@/pages/admin/ui/overlays";
-import { formatTeardownTime, orientationLabel, readVideoReplicationAnalysis, teardownTimeRange, videoTeardownShotTranscripts } from "@/lib/canvas/video-teardown";
+import { formatTeardownTime, orientationLabel, readVideoReplicationAnalysis, teardownTimeRange, videoTeardownProductLabel, videoTeardownShotTranscripts } from "@/lib/canvas/video-teardown";
 import { adminResourceFileUrl } from "@/services/api/admin-storage";
 import { parseVideoTeardownBundle, type VideoTeardownBundle } from "@/services/api/video-replication";
 import { adminUserLabel, getAdminVideoReplication, type AdminVideoReplicationDetail } from "@/services/api/video-replication-admin";
@@ -138,6 +138,12 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
                                     <dt>开头钩子</dt>
                                     <dd>{analysis.summary.hook || "—"}</dd>
                                 </div>
+                                {analysis.summary.product ? (
+                                    <div>
+                                        <dt>原片商品</dt>
+                                        <dd>{analysis.summary.product}</dd>
+                                    </div>
+                                ) : null}
                             </dl>
                             {analysis.summary.beats.length ? (
                                 <ol className="admin-vr-beats">
@@ -179,6 +185,7 @@ export function ReplicationRecordDrawer({ id, onClose }: { id: string; onClose: 
                                                 {row?.plotDescription ? <p>{row.plotDescription}</p> : null}
                                                 {dialogue ? <p className="admin-vr-dialogue">{`口播：${dialogue}`}</p> : null}
                                                 {row?.onScreenText ? <p className="admin-vr-muted">{`画面文字：${row.onScreenText}`}</p> : null}
+                                                {videoTeardownProductLabel(row) ? <p className="admin-vr-muted">{`商品：${videoTeardownProductLabel(row)}${row?.keyColors ? `；关键颜色：${row.keyColors}` : ""}`}</p> : null}
                                             </div>
                                         </li>
                                     );

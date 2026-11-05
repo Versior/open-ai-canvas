@@ -30,6 +30,8 @@ const ROW_TEXT_FIELDS = [
     "plotDescription",
     "dialogue",
     "onScreenText",
+    "product",
+    "keyColors",
     "shotSize",
     "camera",
     "motion",
@@ -45,12 +47,37 @@ const ROW_TEXT_FIELDS = [
 
 export type VideoTeardownDialogueSource = "asr" | "subtitle" | "none";
 
-export type VideoTeardownAnalysisRow = { shotNumber: number; dialogueSource: VideoTeardownDialogueSource } & Record<(typeof ROW_TEXT_FIELDS)[number], string>;
+/**
+ * 商品在这一镜里的角色，决定复刻时怎么重做（参考 daihuo-fanpai 的 product_role）：
+ * none 没有商品；dynamic 商品出镜但质感不必极真；hero_real 质感特写，AI 难画对，要用真实商品图；
+ * package_text 包装上的字要看清，要用包装真图或后期贴字。空字符串表示早期分析没有这一项。
+ */
+export type VideoTeardownProductRole = "" | "none" | "dynamic" | "hero_real" | "package_text";
+
+const PRODUCT_ROLES: VideoTeardownProductRole[] = ["none", "dynamic", "hero_real", "package_text"];
+
+export const PRODUCT_ROLE_LABELS: Record<Exclude<VideoTeardownProductRole, "">, string> = {
+    none: "没有商品",
+    dynamic: "商品出镜",
+    hero_real: "商品质感特写",
+    package_text: "包装文字要清楚",
+};
+
+export type VideoTeardownAnalysisRow = { shotNumber: number; dialogueSource: VideoTeardownDialogueSource; productRole: VideoTeardownProductRole } & Record<(typeof ROW_TEXT_FIELDS)[number], string>;
+
+/** 「商品」一栏：角色和出镜方式，例如「商品质感特写：一只手把海参掰开，占画面一半」。没有商品时为空。 */
+export function videoTeardownProductLabel(row: Pick<VideoTeardownAnalysisRow, "product" | "productRole"> | undefined) {
+    if (!row || row.productRole === "none") return "";
+    const role = row.productRole ? PRODUCT_ROLE_LABELS[row.productRole] : "";
+    return [role, row.product].filter(Boolean).join("：");
+}
 
 export type VideoTeardownBeat = { name: string; shots: number[]; purpose: string };
 
 export type VideoTeardownSummary = {
     genre: string;
+    /** 原片卖的是什么：商品名称或品类和外观；不是带货视频时为空。 */
+    product: string;
     hook: string;
     beats: VideoTeardownBeat[];
     whyItWorks: string[];
@@ -63,10 +90,13 @@ export type VideoTeardownAnalysis = { title: string; summary: VideoTeardownSumma
 
 const ROW_SCHEMA = `    {
       "shotNumber": 1,
-      "plotDescription": "画面里发生了什么：主体、动作、场景",
+      "plotDescription": "画面里发生了什么：主体、动作的过程（手怎么动、东西怎么变）、场景",
       "dialogue": "这一镜的口播或台词，没有就写空字符串",
       "dialogueSource": "asr | subtitle | none",
       "onScreenText": "画面上的字幕、花字、标题、价格贴纸，没有就写空字符串",
+      "product": "商品在这一镜怎么出现：是哪件、占画面多大、怎么被拿或用；没有商品就写空字符串",
+      "productRole": "none | dynamic | hero_real | package_text",
+      "keyColors": "关键物体的颜色，例如橙色液体、红色瓶盖；没有就写空字符串",
       "shotSize": "景别",
       "camera": "机位和构图",
       "motion": "运镜",
@@ -75,14 +105,15 @@ const ROW_SCHEMA = `    {
       "audioEffects": "画面里能看出的声音线索（歌词字幕、音效花字等），没有线索就写空字符串",
       "production": "实拍 | AI生成 | 3D | 录屏 | 图文动效 | 混合",
       "productionConfidence": "高 | 中 | 低",
-      "imageGenerationPrompt": "还原这一镜首帧的画面提示词",
-      "videoMotionPrompt": "主体动作和运镜，便于用视频模型重做同样结构的镜头",
+      "imageGenerationPrompt": "还原这一镜首帧的画面提示词，写进主体、商品和关键颜色",
+      "videoMotionPrompt": "主体动作的过程和运镜，便于用视频模型重做同样结构的镜头",
       "continuityOut": "这一镜结尾时的画面状态"
     }`;
 
 const SUMMARY_SCHEMA = `  "title": "给这条视频起一个简短标题",
   "summary": {
     "genre": "题材和类型，例如口播种草、开箱测评、剧情、教程",
+    "product": "原片卖的是什么：商品名称或品类和外观（包装、颜色、形状）；不是带货视频就写空字符串",
     "hook": "前 3 秒用什么抓住人",
     "beats": [{ "name": "节拍名，例如钩子、痛点、卖点、证明、行动号召", "shots": [1, 2], "purpose": "这一段要达到什么目的" }],
     "whyItWorks": ["这条视频吸引人的原因，每条一句"],
@@ -160,7 +191,9 @@ export function buildVideoTeardownPrompt(bundle: VideoTeardownBundle, grids: Vid
         "4. 画面里的人只描述外观和动作，不要猜测真实身份。",
         "5. 你只能看到画面，听不到声音。配乐、音效只写画面里看得出的线索，不要编造。",
         "6. 纯白、全黑、纯色或糊得看不清的画面就照实写，不要套用前后镜头的内容。",
-        "7. 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释。",
+        "7. 动作写过程，不要只写结果：写“一只手把海参掰开”，不要只写“海参剖面”。imageGenerationPrompt 和 videoMotionPrompt 要把这一镜的主体、动作和 keyColors 原样写进去，不要概括掉。",
+        "8. productRole 只能是四个值之一：none 画面里没有商品；dynamic 商品出镜，质感不必极真（拿在手里、摆在桌上）；hero_real 商品质感特写（剖面、质地、弹性等细节，AI 很难画对）；package_text 包装上的字要看清。",
+        "9. 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释。",
         "",
         "输出格式：",
         "{",
@@ -186,6 +219,8 @@ export function buildVideoTeardownSummaryPrompt(bundle: VideoTeardownBundle, row
             const parts = [`镜头 ${shot.index}｜${teardownTimeRange(shot)}`, `画面：${row?.plotDescription || "（无）"}`];
             if (row?.dialogue) parts.push(`口播：${row.dialogue}`);
             if (row?.onScreenText) parts.push(`画面文字：${row.onScreenText}`);
+            const product = videoTeardownProductLabel(row);
+            if (product) parts.push(`商品：${product}`);
             if (row?.motion) parts.push(`运镜：${row.motion}`);
             return `- ${parts.join("｜")}`;
         }),
@@ -251,6 +286,12 @@ function dialogueSource(value: unknown, dialogue: string): VideoTeardownDialogue
     return dialogue ? "subtitle" : "none";
 }
 
+/** 不认识的值和早期分析里没有的都记成空，页面不猜。 */
+function productRole(value: unknown): VideoTeardownProductRole {
+    const role = textValue(value).toLowerCase() as VideoTeardownProductRole;
+    return PRODUCT_ROLES.includes(role) ? role : "";
+}
+
 function parseSummary(value: unknown): VideoTeardownSummary | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const summary = value as Record<string, unknown>;
@@ -265,6 +306,7 @@ function parseSummary(value: unknown): VideoTeardownSummary | null {
         : [];
     return {
         genre: textValue(summary.genre),
+        product: textValue(summary.product),
         hook: textValue(summary.hook),
         beats,
         whyItWorks: textList(summary.whyItWorks),
@@ -289,7 +331,7 @@ export function parseVideoTeardownAnalysis(text: string, expectedShots: number[]
             const shotNumber = Number(record.shotNumber);
             if (!expectedShots.includes(shotNumber) || byShot.has(shotNumber)) continue;
             const fields = Object.fromEntries(ROW_TEXT_FIELDS.map((field) => [field, textValue(record[field])])) as Record<(typeof ROW_TEXT_FIELDS)[number], string>;
-            byShot.set(shotNumber, { ...fields, shotNumber, dialogueSource: dialogueSource(record.dialogueSource, fields.dialogue) });
+            byShot.set(shotNumber, { ...fields, shotNumber, dialogueSource: dialogueSource(record.dialogueSource, fields.dialogue), productRole: productRole(record.productRole) });
         }
         const absent = expectedShots.filter((shot) => !byShot.has(shot));
         if (absent.length) {
@@ -338,6 +380,9 @@ export function videoTeardownStoryboardRows(bundle: VideoTeardownBundle, rows: V
             sourceAnalysis: {
                 boundary: shot.boundary,
                 onScreenText: row?.onScreenText || "",
+                product: row?.product || "",
+                productRole: row?.productRole || "",
+                keyColors: row?.keyColors || "",
                 production: row?.production || "",
                 productionConfidence: row?.productionConfidence || "",
                 dialogueSource: row?.dialogueSource || "none",
@@ -353,6 +398,8 @@ const TEARDOWN_TABLE_COLUMNS: Array<{ id: string; label: string }> = [
     { id: "storyboard-plotDescription", label: "画面描述" },
     { id: "storyboard-dialogue", label: "台词/旁白" },
     { id: "teardown-onScreenText", label: "画面文字" },
+    { id: "teardown-product", label: "商品出镜" },
+    { id: "teardown-keyColors", label: "关键颜色" },
     { id: "storyboard-shotSize", label: "景别" },
     { id: "storyboard-camera", label: "镜头设计" },
     { id: "storyboard-motion", label: "运镜" },
@@ -397,6 +444,8 @@ export function videoTeardownBatchTable(storyboardRows: StoryboardRow[], options
                 "storyboard-plotDescription": row.plotDescription,
                 "storyboard-dialogue": row.dialogue,
                 "teardown-onScreenText": row.sourceAnalysis?.onScreenText || "",
+                "teardown-product": videoTeardownProductLabel({ product: row.sourceAnalysis?.product || "", productRole: row.sourceAnalysis?.productRole || "" }),
+                "teardown-keyColors": row.sourceAnalysis?.keyColors || "",
                 "storyboard-shotSize": row.shotSize,
                 "storyboard-camera": row.camera,
                 "storyboard-motion": row.motion,
@@ -431,6 +480,7 @@ export function videoTeardownReportMarkdown(bundle: VideoTeardownBundle, analysi
         `- 口播：${bundle.transcript.source === "asr" ? "来自语音转写" : `没有语音转写${bundle.transcript.note ? `（${bundle.transcript.note}）` : ""}，来自画面字幕`}`,
     ];
     if (summary?.genre) lines.push(`- 题材：${summary.genre}`);
+    if (summary?.product) lines.push(`- 原片商品：${summary.product}`);
     if (summary?.hook) lines.push("", "## 钩子", "", summary.hook);
     if (summary?.beats.length) {
         lines.push("", "## 节拍", "", "| 节拍 | 镜头 | 原片时间 | 目的 |", "| --- | --- | --- | --- |");
@@ -448,9 +498,10 @@ export function videoTeardownReportMarkdown(bundle: VideoTeardownBundle, analysi
         if (summary.textStyle) lines.push(`- 字幕与花字：${summary.textStyle}`);
     }
     if (summary?.replicationTips.length) lines.push("", "## 复刻建议", "", ...summary.replicationTips.map((item) => `- ${item}`));
-    lines.push("", "## 逐镜速览", "", "| 镜头 | 原片时间 | 画面 | 口播 | 制作方式 |", "| --- | --- | --- | --- | --- |");
+    lines.push("", "## 逐镜速览", "", "| 镜头 | 原片时间 | 画面 | 口播 | 商品 | 制作方式 |", "| --- | --- | --- | --- | --- | --- |");
     for (const row of rows) {
-        lines.push(`| ${row.shotNumber} | ${shotTime(row.shotNumber)} | ${markdownCell(row.plotDescription)} | ${markdownCell(row.dialogue)} | ${markdownCell(productionLabel(row))} |`);
+        const product = videoTeardownProductLabel({ product: row.sourceAnalysis?.product || "", productRole: row.sourceAnalysis?.productRole || "" });
+        lines.push(`| ${row.shotNumber} | ${shotTime(row.shotNumber)} | ${markdownCell(row.plotDescription)} | ${markdownCell(row.dialogue)} | ${markdownCell(product)} | ${markdownCell(productionLabel(row))} |`);
     }
     lines.push("", "## 说明", "");
     for (const warning of bundle.warnings) lines.push(`- ${warning}`);

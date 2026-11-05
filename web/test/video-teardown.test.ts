@@ -10,6 +10,7 @@ import {
     videoTeardownBatchTable,
     videoTeardownReportMarkdown,
     videoTeardownShotTranscripts,
+    videoTeardownProductLabel,
     videoTeardownStoryboardRows,
 } from "@/lib/canvas/video-teardown";
 import { parseVideoTeardownBundle, type VideoTeardownBundle } from "@/services/api/video-replication";
@@ -170,7 +171,7 @@ describe("video teardown analysis", () => {
             [3, 4200, 6600, 5400, 2],
             [4, 6600, 9000, 7800, 2],
         ]);
-        expect(rows[0].sourceAnalysis).toEqual({ boundary: "start", onScreenText: "好物分享", production: "实拍", productionConfidence: "中", dialogueSource: "asr", keyframeResourceId: "kf-1" });
+        expect(rows[0].sourceAnalysis).toEqual({ boundary: "start", onScreenText: "好物分享", product: "", productRole: "", keyColors: "", production: "实拍", productionConfidence: "中", dialogueSource: "asr", keyframeResourceId: "kf-1" });
         expect(rows[0].imageGenerationPrompt).toBe("画面 1");
         const table = videoTeardownBatchTable(rows, { title: "杯子种草", sourceNodeId: "video-1", keyframeNodeIds: ["f1", "f2", "f3", "f4"] });
         expect(table.contentKind).toBe("storyboard");
@@ -179,6 +180,51 @@ describe("video teardown analysis", () => {
         expect(table.rows[0].cells?.["teardown-time"]).toBe("0:00.0–0:01.8");
         expect(table.rows[0].cells?.["teardown-production"]).toBe("实拍（把握中）");
         expect(table.rows[0].cells?.["teardown-onScreenText"]).toBe("好物分享");
+    });
+
+    // 参考 daihuo-fanpai：每镜记下商品怎么出现、商品角色和关键颜色，复刻时据此决定重做方式，提示词里也要带上。
+    test("keeps product presence, product role and key colours per shot", () => {
+        const analysis = parseVideoTeardownAnalysis(
+            JSON.stringify({
+                title: "海参",
+                summary: { genre: "开箱", product: "鲜食海参，深蓝金色礼盒", hook: "掰开海参", beats: [], whyItWorks: [], replicationTips: [] },
+                rows: [
+                    row(1, { product: "一只手把海参掰开，占画面一半", productRole: "HERO_REAL", keyColors: "橙色汤汁" }),
+                    row(2, { product: "礼盒摆在桌上", productRole: "package_text" }),
+                    row(3, { productRole: "none" }),
+                    row(4, { productRole: "很重要" }),
+                ],
+            }),
+            [1, 2, 3, 4],
+            true,
+        );
+        expect(analysis.summary?.product).toBe("鲜食海参，深蓝金色礼盒");
+        expect(analysis.rows.map((item) => item.productRole)).toEqual(["hero_real", "package_text", "none", ""]);
+        expect(analysis.rows.map((item) => videoTeardownProductLabel(item))).toEqual(["商品质感特写：一只手把海参掰开，占画面一半", "包装文字要清楚：礼盒摆在桌上", "", ""]);
+        expect(analysis.rows[0].keyColors).toBe("橙色汤汁");
+        const storyboard = videoTeardownStoryboardRows(bundle(), analysis.rows);
+        expect(storyboard[0].sourceAnalysis).toMatchObject({ product: "一只手把海参掰开，占画面一半", productRole: "hero_real", keyColors: "橙色汤汁" });
+        const table = videoTeardownBatchTable(storyboard, { title: "海参", sourceNodeId: "video-1", keyframeNodeIds: ["f1", "f2", "f3", "f4"] });
+        expect(table.textColumns?.map((column) => column.label)).toContain("商品出镜");
+        expect(table.rows[0].cells?.["teardown-product"]).toBe("商品质感特写：一只手把海参掰开，占画面一半");
+        expect(table.rows[0].cells?.["teardown-keyColors"]).toBe("橙色汤汁");
+        const report = videoTeardownReportMarkdown(bundle(), analysis, storyboard);
+        expect(report).toContain("- 原片商品：鲜食海参，深蓝金色礼盒");
+        expect(report).toContain("| 商品质感特写：一只手把海参掰开，占画面一半 |");
+        // 早期保存的分析没有这几项：读出来是空，不猜。
+        const legacy = parseVideoTeardownAnalysis(JSON.stringify({ rows: [row(1)] }), [1], false).rows[0];
+        expect([legacy.product, legacy.productRole, legacy.keyColors]).toEqual(["", "", ""]);
+    });
+
+    test("asks for actions, product role and key colours and to carry them into the prompts", () => {
+        const prompt = buildVideoTeardownPrompt(bundle(), [bundle().grids[0]], true);
+        expect(prompt).toContain('"productRole": "none | dynamic | hero_real | package_text"');
+        expect(prompt).toContain('"keyColors"');
+        expect(prompt).toContain('"product": "原片卖的是什么');
+        expect(prompt).toContain("动作写过程，不要只写结果");
+        expect(prompt).toContain("原样写进去");
+        const summaryPrompt = buildVideoTeardownSummaryPrompt(bundle(), [parseVideoTeardownAnalysis(JSON.stringify({ rows: [row(1, { product: "杯子拿在手里", productRole: "dynamic" })] }), [1], false).rows[0]]);
+        expect(summaryPrompt).toContain("商品：商品出镜：杯子拿在手里");
     });
 
     test("writes a report with beats, warnings and the usage note", () => {

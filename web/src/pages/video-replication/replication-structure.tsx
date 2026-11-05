@@ -17,6 +17,14 @@ export function ReplicationStructure({ bundle, summary, onPlay }: Props) {
     const sound = [summary.music ? ["节奏与配乐", summary.music] : null, summary.textStyle ? ["字幕与花字", summary.textStyle] : null].filter((item): item is [string, string] => Boolean(item));
     return (
         <div className="vr-panel vr-structure">
+            {summary.product ? (
+                <section aria-labelledby="vr-structure-product">
+                    <h3 id="vr-structure-product" className="vr-list-title">
+                        原片商品
+                    </h3>
+                    <p className="vr-structure-text">{summary.product}</p>
+                </section>
+            ) : null}
             {summary.hook ? (
                 <section aria-labelledby="vr-structure-hook">
                     <h3 id="vr-structure-hook" className="vr-list-title">

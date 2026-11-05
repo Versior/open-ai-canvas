@@ -1,7 +1,7 @@
 import { Copy, Play } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
 
-import { teardownTimeRange, type VideoTeardownAnalysisRow } from "@/lib/canvas/video-teardown";
+import { teardownTimeRange, videoTeardownProductLabel, type VideoTeardownAnalysisRow } from "@/lib/canvas/video-teardown";
 import { resourceFileUrl } from "@/services/api/resources";
 import type { VideoTeardownBundle, VideoTeardownShot } from "@/services/api/video-replication";
 
@@ -74,6 +74,8 @@ function ShotRow({ shot, row, ratio, active, onPlay, onCopy }: { shot: VideoTear
         ["镜头设计", row?.camera],
         [dialogueSource ? `口播 · ${dialogueSource}` : "口播", row?.dialogue],
         ["画面文字", row?.onScreenText],
+        ["商品", videoTeardownProductLabel(row)],
+        ["关键颜色", row?.keyColors],
         ["光影情绪", [row?.lightingAndAtmosphere, row?.emotion].filter(Boolean).join("；")],
         ["声音线索", row?.audioEffects],
     ].filter((item): item is [string, string] => Boolean(item[1]));
