@@ -23,7 +23,9 @@ export function ReplicationProgress({ run, className }: { run: ReplicationRun; c
                     );
                 })}
             </ol>
-            <p className={failed ? "text-sm text-destructive" : "text-sm text-[var(--user-ink-muted)]"}>{detail}</p>
+            <p className="vr-progress-detail" data-tone={failed ? "error" : undefined}>
+                {detail}
+            </p>
             {!failed ? <p className="vr-footnote">可以离开这个页面，拆解会在后台继续；刷新或关掉页面后再回来，也会接着分析。</p> : null}
         </div>
     );

@@ -1,7 +1,7 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
 import { ArrowLeft, Download, LayoutPanelLeft, RefreshCw, Sparkles } from "lucide-react";
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { RelativeTime } from "@/components/ui/product/relative-time";
@@ -182,8 +182,8 @@ function RecordWorkspace({ detail, bundle, analysis, ownRun, busy, opening, conf
                 </div>
             ) : null}
             <ReplicationTimeline bundle={bundle} summary={summary} activeIndex={playback.activeIndex} video={playback.video} onPick={playback.playShot} />
-            <div className="vr-ws-body">
-                <ReplicationPlayer bundle={bundle} summary={summary} videoRef={playback.videoRef} />
+            <div className="vr-ws-body" style={{ "--vr-ratio": `${bundle.source.width || 9} / ${bundle.source.height || 16}` } as CSSProperties}>
+                <ReplicationPlayer bundle={bundle} videoRef={playback.videoRef} />
                 <div className="vr-ws-main">
                     <div className="vr-tabs" role="tablist" aria-label="拆解内容">
                         <button type="button" role="tab" id="vr-tab-shots" className="vr-tab" aria-selected={tab === "shots"} aria-controls="vr-tabpanel" tabIndex={tab === "shots" ? 0 : -1} onClick={() => setTab("shots")} onKeyDown={switchTab}>

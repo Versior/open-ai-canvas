@@ -15,8 +15,12 @@ type Props = {
 };
 
 const DIALOGUE_SOURCE_LABELS: Record<VideoTeardownAnalysisRow["dialogueSource"], string> = { asr: "语音转写", subtitle: "画面字幕", none: "" };
+/** 模型对「没有运镜」之类常写成「无」，做成标签没有信息量，不显示。 */
+const EMPTY_VALUE = /^(无|没有|暂无|none|n\/a|-|—)$/i;
 /** 用户自己滚动后，这么久之内不自动跟随播放进度。 */
 const FOLLOW_PAUSE_MS = 2500;
+/** 吸顶的分镜 / 结构切换栏高度，被它盖住的镜头不算在视野里。 */
+const STICKY_TABS_PX = 60;
 
 /** 逐镜分镜：一张面板里按镜头排开，正在播放的那一镜提亮；播放时列表跟着走。 */
 export function ReplicationShots({ bundle, rows, activeIndex, playing, onPlay, onCopy }: Props) {
@@ -35,14 +39,19 @@ export function ReplicationShots({ bundle, rows, activeIndex, playing, onPlay, o
         };
     }, []);
 
-    // 播放时当前镜头不在视野里，就把它滚到可视区顶部；用户刚滚过页面则先不动。
+    // 已经滚进分镜列表在看时，播放到的镜头不在视野里就把它滚到可视区顶部。
+    // 还停在页面上方看时间线、或刚自己滚过页面，都先不动。
     useEffect(() => {
-        if (!playing || !activeIndex || Date.now() - userScrollAt.current < FOLLOW_PAUSE_MS) return;
-        const item = listRef.current?.querySelector<HTMLElement>(`[data-shot="${activeIndex}"]`);
+        const list = listRef.current;
+        if (!list || !playing || !activeIndex || Date.now() - userScrollAt.current < FOLLOW_PAUSE_MS) return;
+        const item = list.querySelector<HTMLElement>(`[data-shot="${activeIndex}"]`);
         if (!item) return;
+        const bounds = list.closest(".app-workspace-scroll")?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
+        const top = bounds.top + STICKY_TABS_PX;
+        if (list.getBoundingClientRect().top > top) return;
+        // 这一镜的顶端落在可视区上半部分就算看得见，不用滚。
         const rect = item.getBoundingClientRect();
-        const bounds = item.closest(".app-workspace-scroll")?.getBoundingClientRect() || { top: 0, bottom: window.innerHeight };
-        if (rect.top >= bounds.top && rect.top <= bounds.bottom - 96) return;
+        if (rect.top >= top && rect.top <= top + (bounds.bottom - top) * 0.55) return;
         item.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }, [activeIndex, playing]);
 
@@ -57,7 +66,9 @@ export function ReplicationShots({ bundle, rows, activeIndex, playing, onPlay, o
 
 function ShotRow({ shot, row, ratio, active, onPlay, onCopy }: { shot: VideoTeardownShot; row: VideoTeardownAnalysisRow | undefined; ratio: string; active: boolean; onPlay: (shot: VideoTeardownShot) => void; onCopy: (text: string) => void }) {
     const seconds = ((shot.endMs - shot.startMs) / 1000).toFixed(1);
-    const tags = [row?.shotSize, row?.motion, row?.production ? `${row.production}${row.productionConfidence ? ` · 把握${row.productionConfidence}` : ""}` : "", shot.boundary === "split" ? "长镜头切开" : ""].filter(Boolean);
+    const tags = [row?.shotSize, row?.motion, row?.production ? `${row.production}${row.productionConfidence ? ` · 把握${row.productionConfidence}` : ""}` : "", shot.boundary === "split" ? "长镜头切开" : ""].filter((tag): tag is string =>
+        Boolean(tag && !EMPTY_VALUE.test(tag.trim())),
+    );
     const dialogueSource = row ? DIALOGUE_SOURCE_LABELS[row.dialogueSource] : "";
     const details = [
         ["镜头设计", row?.camera],

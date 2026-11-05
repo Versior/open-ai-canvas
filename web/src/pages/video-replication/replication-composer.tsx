@@ -1,5 +1,5 @@
 import { App, Button, Input } from "antd";
-import { ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
+import { CircleCheck, ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -60,7 +60,8 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
     const canPaste = typeof window !== "undefined" && window.isSecureContext && typeof navigator.clipboard?.readText === "function";
 
     const modelError = videoTeardownModelError(config, model);
-    const linkValid = Boolean(socialVideoURLFromText(linkText));
+    const linkUrl = socialVideoURLFromText(linkText);
+    const linkValid = Boolean(linkUrl);
     const fileValid = Boolean(file && file.type.startsWith("video/") && (!fileInfo || fileInfo.durationMs <= MAX_DURATION_MS));
     const sourceError =
         mode === "link"
@@ -151,6 +152,12 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                 placeholder="粘贴抖音或 TikTok 的分享内容，或直接粘贴视频链接"
                                 aria-label="视频链接或分享内容"
                             />
+                            {linkUrl ? (
+                                <span className="vr-link-ok">
+                                    <CircleCheck aria-hidden />
+                                    {`识别到${new URL(linkUrl).hostname.includes("douyin") ? "抖音" : " TikTok "}视频链接`}
+                                </span>
+                            ) : null}
                             {canPaste && !linkText ? (
                                 <Button size="small" className="vr-paste" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void paste()}>
                                     粘贴

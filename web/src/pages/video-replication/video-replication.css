@@ -15,27 +15,27 @@
     padding: var(--space-12) var(--space-6) var(--space-16);
 }
 
-/* 标题背后一团很淡的主色光，只在首页顶部。 */
-.vr-home::before {
-    position: absolute;
-    z-index: -1;
-    top: -80px;
-    left: 50%;
-    width: min(960px, 120%);
-    height: 420px;
-    background: radial-gradient(50% 50% at 50% 50%, color-mix(in srgb, var(--user-accent) 13%, transparent) 0%, transparent 72%);
-    content: "";
-    pointer-events: none;
-    transform: translateX(-50%);
-}
-
 .vr-hero {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: var(--space-3);
     margin-bottom: var(--space-8);
     text-align: center;
+}
+
+/* 标题背后一层很淡的点阵，四周渐隐，没有硬边。 */
+.vr-hero::before {
+    position: absolute;
+    z-index: -1;
+    inset: -64px -12% -40px;
+    background-image: radial-gradient(circle, color-mix(in srgb, var(--user-ink) 16%, transparent) 1px, transparent 1.6px);
+    background-size: 22px 22px;
+    content: "";
+    pointer-events: none;
+    -webkit-mask-image: radial-gradient(ellipse 50% 46% at 50% 52%, #000 10%, transparent 100%);
+    mask-image: radial-gradient(ellipse 50% 46% at 50% 52%, #000 10%, transparent 100%);
 }
 
 .vr-eyebrow {
@@ -144,6 +144,25 @@
     position: absolute;
     right: 0;
     bottom: 4px;
+}
+
+.vr-link-ok {
+    position: absolute;
+    bottom: 8px;
+    left: 2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+    font-weight: 550;
+    pointer-events: none;
+}
+
+.vr-link-ok svg {
+    width: 14px;
+    height: 14px;
+    color: var(--status-success, #16a34a);
 }
 
 .vr-drop {
@@ -757,7 +776,10 @@
     box-shadow: inset 0 0 0 1px var(--user-border);
 }
 
+/* 原视频栏宽度跟着画幅走：竖屏收窄到视频本身的宽度，横屏最宽 440px。 */
 .vr-ws-body {
+    --vr-video-h: min(56vh, 600px);
+    --vr-player-w: clamp(272px, calc(var(--vr-video-h) * var(--vr-ratio, 9 / 16)), 440px);
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
@@ -765,7 +787,7 @@
 
 @media (min-width: 1100px) {
     .vr-ws-body {
-        grid-template-columns: 340px minmax(0, 1fr);
+        grid-template-columns: var(--vr-player-w) minmax(0, 1fr);
         align-items: start;
     }
 
@@ -1085,8 +1107,9 @@
 }
 
 .vr-video {
-    display: flex;
-    justify-content: center;
+    width: min(100%, calc(var(--vr-video-h) * var(--vr-ratio, 9 / 16)));
+    aspect-ratio: var(--vr-ratio, 9 / 16);
+    margin-inline: auto;
     overflow: hidden;
     border-radius: var(--user-radius-card);
     background: #0b0b0f;
@@ -1095,7 +1118,7 @@
 .vr-video video {
     display: block;
     width: 100%;
-    max-height: min(58vh, 600px);
+    height: 100%;
     object-fit: contain;
 }
 
@@ -1131,27 +1154,6 @@
     white-space: nowrap;
 }
 
-.vr-callout {
-    padding: 12px 14px;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--user-accent) 7%, var(--user-surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--user-accent) 16%, transparent);
-}
-
-.vr-callout-label {
-    color: color-mix(in srgb, var(--user-accent) 72%, var(--user-ink));
-    font-size: var(--fs-label);
-    font-weight: 650;
-    letter-spacing: 0.06em;
-}
-
-.vr-callout-text {
-    margin-top: 4px;
-    color: var(--user-ink);
-    font-size: var(--fs-ui);
-    line-height: 1.65;
-}
-
 .vr-footnote {
     display: flex;
     flex-direction: column;
@@ -1167,12 +1169,19 @@
     min-width: 0;
 }
 
+/* 分镜很长时切换栏吸顶，滚到哪都能切到全片结构；底色与页面一致，压住下面滚过的内容。 */
 .vr-tabs {
+    position: sticky;
+    z-index: 3;
+    top: 0;
     display: flex;
     align-items: center;
     gap: var(--space-1);
-    margin-bottom: var(--space-3);
+    /* 上面多出的 16px 用负外边距抵掉：平时与左栏顶端对齐，吸顶时与吸顶的原视频对齐。 */
+    margin: calc(-1 * var(--space-4)) 0 var(--space-3);
+    padding-top: var(--space-4);
     border-bottom: 1px solid var(--user-border);
+    background: var(--user-page-bg);
 }
 
 .vr-tab {
@@ -1246,7 +1255,8 @@
     gap: var(--space-4) var(--space-5);
     padding: var(--space-4) var(--space-5) var(--space-4) var(--space-4);
     border-top: 1px solid var(--user-border);
-    scroll-margin-top: var(--space-4);
+    /* 让开吸顶的切换栏（16px 留白 + 40px 高 + 1px 分隔线）。 */
+    scroll-margin-top: 57px;
     transition: background var(--user-motion);
 }
 
@@ -1255,7 +1265,7 @@
 }
 
 .vr-shot[data-active="true"] {
-    background: color-mix(in srgb, var(--user-accent) 6%, var(--user-surface));
+    background: color-mix(in srgb, var(--user-accent) 4%, var(--user-surface));
 }
 
 .vr-shot-thumb {
@@ -1376,7 +1386,7 @@
     padding: 0 8px;
     overflow: hidden;
     border-radius: var(--r-full);
-    background: var(--user-surface-muted);
+    background: color-mix(in srgb, var(--user-ink) 6%, transparent);
     color: var(--user-ink-muted);
     font-size: var(--fs-caption);
     text-overflow: ellipsis;
@@ -1429,7 +1439,7 @@
     min-width: 0;
     padding: 10px 12px 12px;
     border-radius: 10px;
-    background: var(--user-surface-muted);
+    background: color-mix(in srgb, var(--user-ink) 4%, transparent);
 }
 
 .vr-prompt-head {
@@ -1679,8 +1689,18 @@
 .vr-progress {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: 10px;
     padding: var(--space-4) var(--space-5);
+}
+
+.vr-progress-detail {
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    line-height: 1.5;
+}
+
+.vr-progress-detail[data-tone="error"] {
+    color: var(--destructive);
 }
 
 .vr-steps {
@@ -1798,16 +1818,20 @@
     }
 }
 
-/* 平板：原视频和数据并排。 */
+/* 平板：原视频和数据并排，视频列宽就是视频本身的宽度。 */
 @media (min-width: 700px) and (max-width: 1099px) {
     .vr-player {
         display: grid;
-        grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+        grid-template-columns: min(calc(var(--vr-video-h) * var(--vr-ratio, 9 / 16)), 46%) minmax(0, 1fr);
+        grid-template-rows: auto 1fr;
         align-items: start;
+        column-gap: var(--space-5);
     }
 
     .vr-player > .vr-video {
-        grid-row: span 3;
+        grid-row: span 2;
+        width: 100%;
+        margin-inline: 0;
     }
 }
 

@@ -1,15 +1,14 @@
-import { orientationLabel, type VideoTeardownSummary } from "@/lib/canvas/video-teardown";
+import { orientationLabel } from "@/lib/canvas/video-teardown";
 import { resourceFileUrl } from "@/services/api/resources";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 
 type Props = {
     bundle: VideoTeardownBundle;
-    summary: VideoTeardownSummary | null | undefined;
     videoRef: (element: HTMLVideoElement | null) => void;
 };
 
-/** 左栏：原视频、四个基本数据、开头钩子，以及口播来源和拆解时的提示。宽屏下随页面吸顶。 */
-export function ReplicationPlayer({ bundle, summary, videoRef }: Props) {
+/** 左栏：原视频（外框按原画幅收紧，不留黑边）、四个基本数据，以及口播来源和拆解时的提示。宽屏下随页面吸顶。 */
+export function ReplicationPlayer({ bundle, videoRef }: Props) {
     const { source, shots } = bundle;
     const seconds = source.durationMs / 1000;
     return (
@@ -23,12 +22,6 @@ export function ReplicationPlayer({ bundle, summary, videoRef }: Props) {
                 <Stat label="平均每镜" value={`${shots.length ? (seconds / shots.length).toFixed(1) : "0"} 秒`} />
                 <Stat label="画幅" value={`${orientationLabel(source.width, source.height)} ${source.width}×${source.height}`} />
             </dl>
-            {summary?.hook ? (
-                <div className="vr-callout">
-                    <p className="vr-callout-label">开头钩子</p>
-                    <p className="vr-callout-text">{summary.hook}</p>
-                </div>
-            ) : null}
             <ul className="vr-footnote">
                 <li>{bundle.transcript.source === "asr" ? "口播来自语音转写。" : source.hasAudio ? "没有语音转写，口播从画面字幕读。" : "视频没有音轨，口播从画面字幕读。"}</li>
                 {bundle.warnings.map((warning) => (
