@@ -51,8 +51,6 @@ export type ToolbarHandlers = {
     onOpenPrevis: () => void;
     // 主工具栏——资源
     onUpload: () => void;
-    /** 打开视频复刻：粘贴平台链接或上传视频后拆解；只在可编辑画布提供。 */
-    onOpenVideoReplication?: () => void;
     onOpenWorkspace?: () => void;
     onOpenMyAssets: () => void;
     onOpenProjectCharacters: () => void;
@@ -104,8 +102,6 @@ export type ToolbarHandlers = {
     onNodeTrimVideoSegments: (node: CanvasNodeData) => void;
     /** 视频画质增强；只在存在 processing 视频模型时由项目页提供。 */
     onNodeEnhanceVideo?: (node: CanvasNodeData) => void;
-    /** 视频复刻：拆出镜头、关键帧和口播，生成拆解分镜表和报告；只在可编辑画布提供。 */
-    onNodeVideoTeardown?: (node: CanvasNodeData) => void;
     onNodeSubtitles: (node: CanvasNodeData) => void;
     onNodeTimeline: (node: CanvasNodeData) => void;
     /** 打开媒体版本面板；只读分享页不提供。 */
@@ -169,7 +165,6 @@ export type AddNodeMenuContext = {
         | "onChooseStyle"
         | "onOpenPrevis"
         | "onUpload"
-        | "onOpenVideoReplication"
         | "onOpenMyAssets"
         | "onOpenProjectCharacters"
     >;

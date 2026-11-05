@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -107,6 +108,56 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 			return
 		}
 		ok(c, task)
+	})
+	r.GET("/video-replication/teardowns", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		records, err := svc.VideoReplications(user.ID)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, records)
+	})
+	r.GET("/video-replication/teardowns/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		detail, err := svc.VideoReplication(user.ID, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
+	})
+	r.PUT("/video-replication/teardowns/:id/analysis", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
+		payload, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				fail(c, http.StatusRequestEntityTooLarge, errors.New("分析结果不能超过 512 KiB"))
+				return
+			}
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		detail, err := svc.SaveVideoReplicationAnalysis(user.ID, c.Param("id"), payload)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
 	})
 	r.POST("/timeline/transcriptions", func(c *gin.Context) {
 		user, err := currentUser(c, svc)

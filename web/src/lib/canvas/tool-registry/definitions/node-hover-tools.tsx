@@ -1,4 +1,4 @@
-import { AudioLines, Captions, CircleCheckBig, Clapperboard, Download, FolderPlus, History, Images, Image as ImageIcon, Info, LoaderCircle, Lock, Maximize2, MessageSquare, Minus, Music2, Plus, RefreshCw, RotateCcw, RotateCw, ScanSearch, Scissors, Settings2, Trash2, Unlock, Upload, UserRound, Video, ImageUpscale } from "lucide-react";
+import { AudioLines, Captions, CircleCheckBig, Clapperboard, Download, FolderPlus, History, Images, Image as ImageIcon, Info, LoaderCircle, Lock, Maximize2, MessageSquare, Minus, Music2, Plus, RefreshCw, RotateCcw, RotateCw, Scissors, Settings2, Trash2, Unlock, Upload, UserRound, Video, ImageUpscale } from "lucide-react";
 
 import { CONTENT_MODERATION_ERROR_CODE, isContentModerationError } from "@/lib/generation-error";
 import { registerToolbarTools, type ToolContext, type ToolDefinition } from "@/lib/canvas/tool-registry";
@@ -149,20 +149,6 @@ export const nodeHoverToolbarTools: ToolDefinition[] = [
         applicable: (ctx) => hasVideo(ctx) && !simpleMode(ctx),
         disabled: (ctx) => ctx.extractingAudio || ctx.trimmingVideo,
         run: (ctx) => ctx.handlers.onNodeTrimVideoSegments(ctx.node!),
-    },
-    {
-        id: "videoTeardown",
-        toolbar: "node-hover",
-        category: "node-state",
-        label: "拆解复刻：切镜头、截关键帧、识别口播，生成拆解分镜表和拆解报告",
-        displayLabel: "拆解复刻",
-        icon: <ScanSearch className="size-3.5" />,
-        defaultVisible: true,
-        defaultOrder: 39,
-        nodeToolbar: { group: "primary", order: 5, description: "切镜抽帧，生成分镜表和拆解报告" },
-        applicable: (ctx) => hasVideo(ctx) && Boolean(ctx.handlers.onNodeVideoTeardown) && ctx.nodeMetadata?.status !== "loading",
-        disabled: (ctx) => Boolean(ctx.nodeMetadata?.fileUpload) || !ctx.nodeMetadata?.storageKey,
-        run: (ctx) => ctx.handlers.onNodeVideoTeardown?.(ctx.node!),
     },
     {
         id: "enhanceVideo",

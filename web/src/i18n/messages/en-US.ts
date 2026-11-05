@@ -36,6 +36,7 @@ export const enUS: Messages = {
         },
         sidebar: {
             ecommerceStudio: "E-commerce Studio",
+            videoReplication: "Video replication",
             home: "Create",
             projects: "Short dramas",
             ecommerce: "E-commerce Agent",
@@ -50,6 +51,7 @@ export const enUS: Messages = {
             headingAssets: "Assets & history",
         },
         collapsed: {
+            videoReplication: "Replicate",
             inspiration: "Ideas",
             home: "Create",
             projects: "Drama",
@@ -62,6 +64,7 @@ export const enUS: Messages = {
         pageTitles: {
             ecommerce: "E-commerce",
             studio: "E-commerce Studio",
+            videoReplication: "Video replication",
             inspiration: "Inspiration",
             home: "Create",
             projects: "Short dramas",

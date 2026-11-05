@@ -1,4 +1,5 @@
 import { createClientId } from "@/lib/client-id";
+import type { VideoReplicationAnalysisDocument } from "@/lib/canvas/video-teardown";
 import { http } from "@/services/api/request";
 import type { GenerationTask } from "@/services/api/task-center";
 
@@ -138,4 +139,35 @@ export function parseVideoTeardownBundle(task: GenerationTask): VideoTeardownBun
         transcript: { source: transcript.source, ...(transcript.language ? { language: transcript.language } : {}), segments },
         warnings: value.warnings as string[],
     };
+}
+
+/** 视频复刻页面的历史记录：id 是拆解任务 ID；保存过分析的带标题、模型和分析时间。 */
+export type VideoReplicationRecord = {
+    id: string;
+    status: GenerationTask["status"];
+    stage: string;
+    progress: number;
+    error?: string;
+    createdAt: string;
+    durationMs: number;
+    shotCount: number;
+    coverResourceId?: string;
+    title?: string;
+    model?: string;
+    analyzedAt?: string;
+};
+
+/** 一条记录的全部内容：拆解任务（resultJson 是镜头事实）和保存过的分析原文，分析由调用方再校验。 */
+export type VideoReplicationDetail = { task: GenerationTask; analysis?: unknown; analyzedAt?: string };
+
+export function listVideoReplications(signal?: AbortSignal) {
+    return http.get<VideoReplicationRecord[]>("/video-replication/teardowns", { signal });
+}
+
+export function getVideoReplication(id: string, signal?: AbortSignal) {
+    return http.get<VideoReplicationDetail>(`/video-replication/teardowns/${encodeURIComponent(id)}`, { signal });
+}
+
+export function saveVideoReplicationAnalysis(id: string, analysis: VideoReplicationAnalysisDocument, signal?: AbortSignal) {
+    return http.put<VideoReplicationDetail>(`/video-replication/teardowns/${encodeURIComponent(id)}/analysis`, analysis, { signal });
 }

@@ -73,6 +73,12 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 - 每镜截开头、中间、结尾三帧（长边 512px）；中间帧存成关键帧图片资源。宫格每张放 3 个镜头，一行一个镜头，三列依次是开头、中间、结尾；底色和间隔为中灰（纯白、黑场画面也能分清），左侧 80px 编号栏写着每行的镜头编号。关键帧和宫格计入存储容量，上传标识带任务 ID，任务被重新领取时复用已存的图片。
 - 口播转写复用 `CANVAS_WHISPER_BASE_URL` 指向的 whisper.cpp 服务，并受字幕转写功能开关约束。视频没有音轨、功能未开放、服务没配置或识别失败时，`transcript.source` 为 `none`，任务仍然成功，原因写在 `warnings`。
 
+视频复刻页面（`/video-replication`）的历史记录走下面三个接口，都只读写当前账号自己的拆解任务，别人的或不是拆解类型的任务一律返回 404：
+
+- `GET /api/video-replication/teardowns`：按创建时间倒序返回最近 50 次拆解，含排队、失败的任务。每条有 `id`（拆解任务 ID）、`status`、`stage`、`progress`、`error`、`durationMs`、`shotCount`、`coverResourceId`（第一镜关键帧）；保存过分析的再带 `title`、`model`、`analyzedAt`。
+- `GET /api/video-replication/teardowns/:id`：返回 `{ task, analysis?, analyzedAt? }`，`task.resultJson` 是上面的镜头事实。
+- `PUT /api/video-replication/teardowns/:id/analysis`：保存前端解析好的模型分析，正文为 `{ "version": 1, "model": "...", "title": "...", "summary": {...} | null, "rows": [{ "shotNumber": 1, ... }] }`，不超过 512 KiB。只接受已完成的拆解；`rows` 的数量和 `shotNumber` 必须与 `shots` 一一对应，缺镜头、重复或越界都返回 400。分析存在 `results` 表（`kind=replication_analysis`，`task_id` 为拆解任务），同一任务只留最新一份，计入账号结构化数据容量。
+
 ## 电商生图台配置与套图模板
 
 管理页为 `/admin/settings/ecommerce`（后台菜单「电商生图台」），配置与上一版读取在 service 层校验管理员权限。旧版电商画布已下线，`GET /api/ecommerce/settings`（公开配置）、`POST /api/admin/settings/ecommerce/images`（公共模特上传）与 `GET /api/ecommerce/models/:modelId/images/:resourceId`（公共模特图片）已删除，请求返回 404。

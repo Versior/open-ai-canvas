@@ -21,6 +21,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
     projects: "nav.pageTitles.projects",
     ecommerce: "nav.pageTitles.ecommerce",
     studio: "nav.pageTitles.studio",
+    "video-replication": "nav.pageTitles.videoReplication",
     canvas: "nav.pageTitles.canvas",
     tasks: "nav.pageTitles.tasks",
     assets: "nav.pageTitles.assets",

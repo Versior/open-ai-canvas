@@ -38,6 +38,7 @@ export const zhCN = {
         },
         sidebar: {
             ecommerceStudio: "电商生图台",
+            videoReplication: "视频复刻",
             home: "创作",
             projects: "短剧制作",
             ecommerce: "电商 Agent",
@@ -52,6 +53,7 @@ export const zhCN = {
             headingAssets: "资产与历史",
         },
         collapsed: {
+            videoReplication: "复刻",
             inspiration: "灵感",
             home: "创作",
             projects: "短剧",
@@ -64,6 +66,7 @@ export const zhCN = {
         pageTitles: {
             ecommerce: "电商创作",
             studio: "电商生图台",
+            videoReplication: "视频复刻",
             inspiration: "灵感广场",
             home: "创作",
             projects: "短剧制作",

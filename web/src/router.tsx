@@ -56,6 +56,7 @@ const RegisterPage = lazy(() => import("@/pages/auth/register"));
 const ForgotPasswordPage = lazy(() => import("@/pages/auth/forgot-password"));
 const CanvasPage = lazy(loadCanvasPage);
 const EcommerceStudioPage = lazy(loadEcommerceStudioPage);
+const VideoReplicationPage = lazy(() => import("@/pages/video-replication"));
 const CanvasProjectPage = lazy(loadCanvasProjectPage);
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const CreatePage = lazy(loadCreatePage);
@@ -153,6 +154,8 @@ export const router = createBrowserRouter([
                     </RequireAuth>
                 ),
             },
+            // 视频复刻：上传视频或粘贴平台链接，拆出镜头、口播和节奏。
+            { path: "/video-replication", element: <RequireAuth>{deferred(<VideoReplicationPage />)}</RequireAuth> },
             {
                 path: "/toolbox/image",
                 element: (
