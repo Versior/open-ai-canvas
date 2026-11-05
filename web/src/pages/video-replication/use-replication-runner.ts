@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 import { appQueryClient } from "@/lib/query-client";
-import { videoReplicationAnalysisDocument, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
+import { formatDurationLimit, videoReplicationAnalysisDocument, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope, scopedLocalStorage } from "@/lib/user-scope";
 import { getResource, uploadResourceFile } from "@/services/api/resources";
 import { createSocialVideoImport, loadSocialVideoPlatforms, parseSocialVideoImportResult, socialVideoLinkFromText, socialVideoPlatformNames, validateSocialVideoResource } from "@/services/api/social-video";
@@ -32,12 +32,19 @@ const PENDING_KEY = "video-replication:pending";
 const PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const IMPORT_TIMEOUT_MS = 10 * 60 * 1000;
 const TEARDOWN_TIMEOUT_MS = 11 * 60 * 1000;
-const MAX_DURATION_MS = 180_000;
 
 export const videoReplicationKeys = {
     list: (scope: string) => ["video-replications", scope] as const,
     detail: (scope: string, id: string) => ["video-replication", scope, id] as const,
+    config: (scope: string) => ["video-replication-config", scope] as const,
 };
+
+/** 后台设置的时长上限；还没读到时为空，只由服务端校验。 */
+export type ReplicationLimits = { maxDurationSeconds: number } | undefined;
+
+function durationError(limits: ReplicationLimits, durationMs: number) {
+    return limits && durationMs > limits.maxDurationSeconds * 1000 ? `视频超过 ${formatDurationLimit(limits.maxDurationSeconds)}，请先剪短再拆解` : "";
+}
 
 const useReplicationRunStore = create<{ run: ReplicationRun | null }>(() => ({ run: null }));
 
@@ -80,7 +87,7 @@ function refresh(scope: string, id?: string) {
     if (id) void appQueryClient.invalidateQueries({ queryKey: videoReplicationKeys.detail(scope, id) });
 }
 
-/** 上传前在浏览器里读出尺寸和时长：超过 3 分钟直接拦下，不白传。 */
+/** 上传前在浏览器里读出尺寸和时长：超过后台时长上限直接拦下，不白传。 */
 function readVideoFileInfo(file: File): Promise<{ width: number; height: number; durationMs: number }> {
     const url = URL.createObjectURL(file);
     const video = document.createElement("video");
@@ -161,7 +168,7 @@ async function finishReplication(pending: PendingReplication, config: AiConfig, 
     refresh(context.scope, id);
 }
 
-export function startReplication(source: ReplicationSource, options: VideoTeardownOptions, config: AiConfig) {
+export function startReplication(source: ReplicationSource, options: VideoTeardownOptions, config: AiConfig, limits: ReplicationLimits) {
     return execute({ stage: source.kind === "link" ? "import" : "upload", detail: "" }, async (context) => {
         const { signal, assertCurrent, update } = context;
         let resourceId = "";
@@ -181,11 +188,15 @@ export function startReplication(source: ReplicationSource, options: VideoTeardo
             const result = parseSocialVideoImportResult(task);
             const resource = validateSocialVideoResource(result, await getResource(result.resourceId));
             assertCurrent();
+            // 链接导入最长 3 分钟，后台可能把拆解上限设得更短：导入好了也先比一下，不白建拆解任务。
+            const tooLong = durationError(limits, result.durationMs);
+            if (tooLong) throw new Error(tooLong);
             resourceId = resource.id;
             fallbackTitle = result.title.trim();
         } else {
             const info = await readVideoFileInfo(source.file);
-            if (info.durationMs > MAX_DURATION_MS) throw new Error("视频超过 3 分钟，请先剪短再拆解");
+            const tooLong = durationError(limits, info.durationMs);
+            if (tooLong) throw new Error(tooLong);
             update({ detail: source.file.name, percent: 0 });
             const resource = await uploadResourceFile(source.file, "video", { ...info, fileName: source.file.name }, (uploaded, total) => update({ percent: total ? Math.round((uploaded / total) * 100) : undefined }), {
                 signal,

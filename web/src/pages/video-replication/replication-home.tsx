@@ -34,7 +34,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                     视频复刻
                 </span>
                 <h1 className="vr-hero-title">把爆款视频拆成可复刻的分镜</h1>
-                <p className="vr-hero-sub">粘贴短视频平台的分享链接或上传视频，自动切出每个镜头，逐镜分析画面、口播和运镜，得到能直接用的分镜表和提示词。</p>
+                <p className="vr-hero-sub">{`${composer.linkImportEnabled ? "粘贴短视频平台的分享链接或上传视频" : "上传视频"}，自动切出每个镜头，逐镜分析画面、口播和运镜，得到能直接用的分镜表和提示词。`}</p>
             </header>
             <ReplicationComposer {...composer} />
             {activeRun && activeId ? (

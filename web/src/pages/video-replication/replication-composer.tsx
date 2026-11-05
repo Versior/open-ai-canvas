@@ -7,9 +7,10 @@ import { ModelPicker } from "@/components/model-picker";
 import { HoverBorderGradient } from "@/components/ui/aceternity/hover-border-gradient";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { Switch } from "@/components/ui/base/switch";
-import { formatTeardownTime, orientationLabel, videoTeardownModelError, videoTeardownTextRequirements, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
+import { formatDurationLimit, formatTeardownTime, orientationLabel, videoTeardownModelError, videoTeardownTextRequirements, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { BUILTIN_SOCIAL_VIDEO_PLATFORMS, listSocialVideoPlatforms, socialVideoLinkFromText, socialVideoPlatformNames } from "@/services/api/social-video";
+import type { VideoReplicationConfig } from "@/services/api/video-replication";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ReplicationProgress } from "./replication-progress";
 import type { ReplicationRun, ReplicationSource } from "./use-replication-runner";
@@ -19,7 +20,13 @@ type Props = {
     model: string;
     onModelChange: (model: string) => void;
     transcribe: boolean;
+    /** 不能识别口播的原因；有值时开关保持关闭、不能切换。 */
+    transcribeNote: string;
     onTranscribeChange: (value: boolean) => void;
+    /** 后台设置的时长和镜头数上限；还没读到时不显示，也不在前端拦。 */
+    limits: VideoReplicationConfig | undefined;
+    /** 后台关了视频链接导入时只能上传文件。 */
+    linkImportEnabled: boolean;
     busy: boolean;
     /** 还没建出拆解任务（导入、上传中）或在这一步失败的那次运行。 */
     run: ReplicationRun | null;
@@ -27,8 +34,6 @@ type Props = {
 };
 
 type FileInfo = { durationMs: number; width: number; height: number };
-
-const MAX_DURATION_MS = 180_000;
 
 /** 选中的本地视频做成 blob 地址给预览用，换文件或卸载时释放。 */
 function useObjectUrl(file: File | null) {
@@ -49,9 +54,10 @@ function useObjectUrl(file: File | null) {
  * 拆解入口：和创作页输入框同一套外观。粘贴平台分享内容，或点选 / 拖入本地视频（拖进来自动切到上传）；
  * 底栏选看图模型、是否识别口播，再开始拆解。
  */
-export function ReplicationComposer({ config, model, onModelChange, transcribe, onTranscribeChange, busy, run, onStart }: Props) {
+export function ReplicationComposer({ config, model, onModelChange, transcribe, transcribeNote, onTranscribeChange, limits, linkImportEnabled, busy, run, onStart }: Props) {
     const { message } = App.useApp();
-    const [mode, setMode] = useState<"link" | "file">("link");
+    const [pickedMode, setMode] = useState<"link" | "file">("link");
+    const mode = linkImportEnabled ? pickedMode : "file";
     const [linkText, setLinkText] = useState("");
     const [file, setFile] = useState<File | null>(null);
     const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -69,9 +75,10 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
     const modelError = videoTeardownModelError(config, model);
     const link = socialVideoLinkFromText(linkText, platforms);
     const linkValid = Boolean(link?.platform.available);
-    const fileValid = Boolean(file && file.type.startsWith("video/") && (!fileInfo || fileInfo.durationMs <= MAX_DURATION_MS));
+    const tooLong = Boolean(limits && fileInfo && fileInfo.durationMs > limits.maxDurationSeconds * 1000);
+    const fileValid = Boolean(file && file.type.startsWith("video/") && !tooLong);
     const linkError = !linkText.trim() ? "" : !link ? `只支持${platformNames}的单视频链接或分享文字` : !link.platform.available ? `${link.platform.name}链接暂时无法导入：后台还没有可用的解析接口` : "";
-    const fileError = file && !file.type.startsWith("video/") ? "请选择视频文件" : fileInfo && fileInfo.durationMs > MAX_DURATION_MS ? "视频超过 3 分钟，请先剪短再拆解" : "";
+    const fileError = file && !file.type.startsWith("video/") ? "请选择视频文件" : limits && tooLong ? `视频超过 ${formatDurationLimit(limits.maxDurationSeconds)}，请先剪短再拆解` : "";
     // 链接的问题显示在输入框里；这里只放文件和模型的问题。
     const footerError = (mode === "file" ? fileError : "") || modelError;
     const ready = (mode === "link" ? linkValid : fileValid) && !modelError && !busy;
@@ -124,17 +131,24 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                     onDrop={drop}
                 >
                     <div className="vr-composer-head">
-                        <SegmentedControl
-                            ariaLabel="视频来源"
-                            size="sm"
-                            value={mode}
-                            onChange={setMode}
-                            options={[
-                                { value: "link", label: "粘贴链接", icon: <Link2 className="size-3.5" aria-hidden /> },
-                                { value: "file", label: "上传视频", icon: <Upload className="size-3.5" aria-hidden /> },
-                            ]}
-                        />
-                        <span className="vr-composer-limit">最长 3 分钟 · 最多 60 个镜头</span>
+                        {linkImportEnabled ? (
+                            <SegmentedControl
+                                ariaLabel="视频来源"
+                                size="sm"
+                                value={mode}
+                                onChange={setMode}
+                                options={[
+                                    { value: "link", label: "粘贴链接", icon: <Link2 className="size-3.5" aria-hidden /> },
+                                    { value: "file", label: "上传视频", icon: <Upload className="size-3.5" aria-hidden /> },
+                                ]}
+                            />
+                        ) : (
+                            <span className="vr-composer-source">
+                                <Upload className="size-3.5" aria-hidden />
+                                上传视频
+                            </span>
+                        )}
+                        {limits ? <span className="vr-composer-limit">{`最长 ${formatDurationLimit(limits.maxDurationSeconds)} · 最多 ${limits.maxShots} 个镜头`}</span> : null}
                     </div>
                     {mode === "link" ? (
                         <div className="vr-link-field" data-hint={link && linkValid ? "ok" : linkError ? "error" : undefined}>
@@ -242,8 +256,8 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         <div className="vr-toolbar-model">
                             <ModelPicker config={config} capability="text" value={model} onChange={onModelChange} requirements={videoTeardownTextRequirements(config, 1)} placeholder="选择能看图的文本模型" />
                         </div>
-                        <label className="vr-chip">
-                            <Switch size="sm" checked={transcribe} onChange={onTranscribeChange} aria-label="识别口播" />
+                        <label className="vr-chip" title={transcribeNote || undefined} data-disabled={transcribeNote ? true : undefined}>
+                            <Switch size="sm" checked={transcribe} disabled={Boolean(transcribeNote)} onChange={onTranscribeChange} aria-label="识别口播" aria-describedby={transcribeNote ? "vr-transcribe-note" : undefined} />
                             <span>识别口播</span>
                         </label>
                         <span className="vr-toolbar-end">
@@ -253,6 +267,11 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                             </Button>
                         </span>
                     </div>
+                    {transcribeNote ? (
+                        <p id="vr-transcribe-note" className="vr-composer-note">
+                            {transcribeNote}
+                        </p>
+                    ) : null}
                 </div>
             </HoverBorderGradient>
             {run ? <ReplicationProgress run={run} className="vr-composer-progress" /> : null}

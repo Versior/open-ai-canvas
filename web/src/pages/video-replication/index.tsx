@@ -6,8 +6,9 @@ import { useNavigate, useSearchParams } from "react-router";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { videoTeardownModelError, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { getVideoReplication, listVideoReplications, type VideoTeardownBundle } from "@/services/api/video-replication";
+import { getVideoReplication, getVideoReplicationConfig, listVideoReplications, type VideoTeardownBundle } from "@/services/api/video-replication";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
+import { useUserStore } from "@/stores/use-user-store";
 import { openVideoTeardownInCanvas } from "./replication-canvas";
 import { ReplicationHome } from "./replication-home";
 import { ReplicationWorkspace } from "./replication-workspace";
@@ -36,6 +37,13 @@ export default function VideoReplicationPage() {
     const [transcribe, setTranscribe] = useState(true);
     const [opening, setOpening] = useState(false);
     const rootRef = useRef<HTMLDivElement>(null);
+    const linkImportEnabled = useUserStore((state) => state.features.socialVideoImportEnabled);
+
+    // 时长、镜头数上限和能不能识别口播以后台设置为准；没读到时不在前端拦，由服务端校验。
+    const limitsQuery = useQuery({ queryKey: videoReplicationKeys.config(scope), queryFn: ({ signal }) => getVideoReplicationConfig(signal), staleTime: 60_000 });
+    const limits = limitsQuery.data;
+    const transcribeNote = limits && !limits.transcribeAvailable ? limits.transcribeNote || "暂时不能识别口播，口播从画面字幕识别" : "";
+    const effectiveTranscribe = transcribe && !transcribeNote;
 
     const history = useQuery({
         queryKey: videoReplicationKeys.list(scope),
@@ -66,7 +74,7 @@ export default function VideoReplicationPage() {
 
     const startRun = (source: ReplicationSource, options: { model: string; transcribe: boolean }) => {
         dismissReplicationError();
-        void startReplication(source, options, config);
+        void startReplication(source, options, config, limits);
     };
     const reanalyzeSelected = (fallbackTitle: string) => {
         const error = videoTeardownModelError(config, model);
@@ -75,7 +83,7 @@ export default function VideoReplicationPage() {
             return;
         }
         dismissReplicationError();
-        void reanalyzeReplication(selectedId, { model, transcribe }, fallbackTitle, config);
+        void reanalyzeReplication(selectedId, { model, transcribe: effectiveTranscribe }, fallbackTitle, config);
     };
     const openInCanvas = async (bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis & { model: string }) => {
         setOpening(true);
@@ -110,7 +118,19 @@ export default function VideoReplicationPage() {
                     />
                 ) : (
                     <ReplicationHome
-                        composer={{ config, model, onModelChange: setPickedModel, transcribe, onTranscribeChange: setTranscribe, busy: running, run: run && !run.id ? run : null, onStart: startRun }}
+                        composer={{
+                            config,
+                            model,
+                            onModelChange: setPickedModel,
+                            transcribe: effectiveTranscribe,
+                            transcribeNote,
+                            onTranscribeChange: setTranscribe,
+                            limits,
+                            linkImportEnabled,
+                            busy: running,
+                            run: run && !run.id ? run : null,
+                            onStart: startRun,
+                        }}
                         records={records}
                         loading={history.isPending}
                         error={errorText(history.error)}

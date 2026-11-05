@@ -46,6 +46,7 @@ export type CreateVideoTeardownInput = {
     maxShots?: number;
 };
 
+// 校验拆解结果用的硬上限，等于后台时长上限能设的最大值；实际能拆多长以 getVideoReplicationConfig 为准。
 const MAX_DURATION_MS = 180_000;
 const MAX_DIMENSION = 16_384;
 const BOUNDARIES = new Set<VideoTeardownBoundary>(["start", "cut", "split"]);
@@ -174,4 +175,11 @@ export function getVideoReplication(id: string, signal?: AbortSignal) {
 
 export function saveVideoReplicationAnalysis(id: string, analysis: VideoReplicationAnalysisDocument, signal?: AbortSignal) {
     return http.put<VideoReplicationDetail>(`/video-replication/teardowns/${encodeURIComponent(id)}/analysis`, analysis, { signal });
+}
+
+/** 后台设置的拆解限制，以及这台服务器现在能不能识别口播；不能时 transcribeNote 写原因。 */
+export type VideoReplicationConfig = { maxDurationSeconds: number; maxShots: number; transcribeAvailable: boolean; transcribeNote?: string };
+
+export function getVideoReplicationConfig(signal?: AbortSignal) {
+    return http.get<VideoReplicationConfig>("/video-replication/config", { signal });
 }

@@ -122,6 +122,23 @@
     font-size: var(--fs-caption);
 }
 
+/* 后台关了链接导入时只剩上传，来源切换换成一个静态标签。 */
+.vr-composer-source {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-ui);
+    font-weight: 500;
+}
+
+.vr-composer-note {
+    margin: calc(var(--space-1) * -1) 0 0;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
 .vr-link-field {
     position: relative;
     min-height: 112px;
@@ -324,6 +341,15 @@
 
 .vr-chip:hover {
     background: var(--button-tonal-hover-bg);
+}
+
+.vr-chip[data-disabled] {
+    color: var(--user-ink-soft);
+    cursor: not-allowed;
+}
+
+.vr-chip[data-disabled]:hover {
+    background: var(--button-tonal-bg);
 }
 
 .vr-toolbar-end {
