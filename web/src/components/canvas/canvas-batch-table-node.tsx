@@ -84,6 +84,7 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
     const batchItemByRowId = useMemo(() => new Map((batch?.items || []).map((item) => [item.rowId, item])), [batch?.items]);
     const connectedImageCount = useMemo(() => new Set(connections.filter((connection) => connection.toNodeId === node.id && connection.relation !== "batch-output").map((connection) => connection.fromNodeId)).size, [connections, node.id]);
     const completed = table.rows.filter((row) => hasNodeMedia(row.outputNodeId ? nodeById.get(row.outputNodeId) : undefined)).length;
+    const storyboardTable = table.contentKind === "storyboard";
     const unfinishedReadyCount = table.rows.filter((row) => rowReady(row, table, nodeById) && !hasNodeMedia(row.outputNodeId ? nodeById.get(row.outputNodeId) : undefined)).length;
     const gridTemplateColumns = `64px repeat(${referenceColumns.length}, 88px) ${textColumns.length ? `repeat(${textColumns.length}, minmax(168px, 0.75fr)) ` : ""}minmax(280px, 1fr) 88px 80px`;
     const subtleSurface = `color-mix(in srgb, ${theme.node.text} 4%, transparent)`;
@@ -229,7 +230,12 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
             <div className="shrink-0 overflow-hidden rounded-t-[inherit] border-b" style={{ borderColor: theme.node.stroke, background: subtleSurface }}>
                 <div data-canvas-batch-drag className="flex h-11 cursor-grab items-center gap-2 px-3 active:cursor-grabbing">
                     <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden" onPointerDown={(event) => event.stopPropagation()}>
-                        <BatchChoiceGroup ariaLabel="批量任务类型" theme={theme} disabled={readOnly} options={OPERATION_OPTIONS} value={table.operation} onChange={(operation) => onPatchTable({ operation: operation as CanvasBatchOperation })} />
+                        {/* 拆解分镜表的下一步是视频脚本；换装、创意生图、电商创作这几种图片任务类型对它没有意义。 */}
+                        {storyboardTable ? (
+                            <span className="flex h-8 shrink-0 items-center rounded-lg px-2 font-medium" style={{ background: theme.node.panel, color: theme.node.text }}>分镜表</span>
+                        ) : (
+                            <BatchChoiceGroup ariaLabel="批量任务类型" theme={theme} disabled={readOnly} options={OPERATION_OPTIONS} value={table.operation} onChange={(operation) => onPatchTable({ operation: operation as CanvasBatchOperation })} />
+                        )}
                         <div className="flex h-8 shrink-0 items-center gap-2 rounded-lg px-2" style={{ background: theme.node.panel }}>
                             <span className="font-medium" style={{ color: theme.node.muted }}>并发</span>
                             <BatchChoiceGroup ariaLabel="并发数" theme={theme} disabled={readOnly} compact options={CONCURRENCY_OPTIONS.map((value) => ({ value, label: String(value) }))} value={table.concurrency} onChange={(concurrency) => onPatchTable({ concurrency: Number(concurrency) })} />
@@ -258,10 +264,14 @@ export function CanvasBatchTableNodeContent({ node, nodes, connections, batch, t
                             <Tooltip title="列端口已自动生效。用列图片重新填充手动修改过的格子，覆盖前需确认">
                                 <Button size="small" type="text" icon={<Rows3 className="size-3.5" />} onClick={onFillRows}>按列填充</Button>
                             </Tooltip>
-                            {table.contentKind === "storyboard" && onCreateStoryboard ? <Button size="small" icon={<Film className="size-3.5" />} onClick={onCreateStoryboard}>创建视频脚本</Button> : null}
-                            <Button size="small" type="primary" icon={<Play className="size-3.5" />} disabled={!unfinishedReadyCount} onClick={() => onGenerate()}>
-                                生成未完成项{unfinishedReadyCount ? ` · ${unfinishedReadyCount}` : ""}
+                            <Button size="small" type={storyboardTable ? "default" : "primary"} icon={<Play className="size-3.5" />} disabled={!unfinishedReadyCount} onClick={() => onGenerate()}>
+                                {storyboardTable ? "只生成分镜图" : "生成未完成项"}{unfinishedReadyCount ? ` · ${unfinishedReadyCount}` : ""}
                             </Button>
+                            {storyboardTable && onCreateStoryboard ? (
+                                <Tooltip title="把分镜表转成视频脚本，在脚本里生成首帧、视频并合并成片">
+                                    <Button size="small" type="primary" icon={<Film className="size-3.5" />} onClick={onCreateStoryboard}>创建视频脚本</Button>
+                                </Tooltip>
+                            ) : null}
                         </div>
                     ) : null}
                 </div>
