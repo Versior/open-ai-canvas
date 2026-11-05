@@ -59,13 +59,14 @@ paths:
     get:
       tags: [canvas]
       summary: 搜索分页读取项目内置套图库
-      description: 登录可读，普通用户须开放「电商生图台」；管理员不受开关限制。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。
+      description: 登录可读，普通用户须开放「电商生图台」；管理员不受开关限制。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。category 只取这个一级类目；categories 按搜索词统计每个一级类目的套数（不受 category 影响），数量多的在前。
       parameters:
         - {in: query, name: q, schema: {type: string, maxLength: 100}}
+        - {in: query, name: category, description: 一级类目名，空为全部, schema: {type: string, maxLength: 50}}
         - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
         - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
       responses:
-        "200": {description: data 包含 items、total、page、pageSize；每项含 id、name、category、description、count}
+        "200": {description: data 包含 items、total、categories、page、pageSize；每项含 id、name、category、description、count；categories 每项含 name、count}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}

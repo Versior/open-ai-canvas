@@ -26,7 +26,7 @@ func RegisterEcommerceCanvasRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, http.StatusBadRequest, err)
 			return
 		}
-		value, err := svc.EcommerceCatalog(actor, c.Query("q"), page, size)
+		value, err := svc.EcommerceCatalog(actor, c.Query("q"), c.Query("category"), page, size)
 		if err != nil {
 			failService(c, err)
 			return

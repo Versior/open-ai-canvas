@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -97,10 +98,24 @@ func TestEcommerceHTTPPermissionsAndSave(t *testing.T) {
 			Items []struct {
 				ID string `json:"id"`
 			} `json:"items"`
+			Categories []struct {
+				Name  string `json:"name"`
+				Count int    `json:"count"`
+			} `json:"categories"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || response.Code != 200 || catalog.Data.Total != 1173 || len(catalog.Data.Items) != 20 {
+	if err := json.Unmarshal(response.Body.Bytes(), &catalog); err != nil || response.Code != 200 || catalog.Data.Total != 1173 || len(catalog.Data.Items) != 20 || len(catalog.Data.Categories) != 24 {
 		t.Fatal("catalog HTTP contract failed")
+	}
+	first := catalog.Data.Categories[0]
+	response = profileRequest(router, "GET", "/api/ecommerce/templates?q=&category="+url.QueryEscape(first.Name)+"&page=1&pageSize=20", "", cookie)
+	var byCategory struct {
+		Data struct {
+			Total int `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &byCategory); err != nil || response.Code != 200 || byCategory.Data.Total != first.Count {
+		t.Fatalf("catalog category filter: %d %v total=%d want %d", response.Code, err, byCategory.Data.Total, first.Count)
 	}
 	response = profileRequest(router, "GET", "/api/ecommerce/templates/"+catalog.Data.Items[0].ID, "", cookie)
 	var detail struct {

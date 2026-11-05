@@ -83,7 +83,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 | 接口 | 合同 |
 | --- | --- |
-| `GET /api/ecommerce/templates` | 内置 1173 套目录，支持 q（100 字内）、page、pageSize（最多 50）；返回 items/total/page/pageSize 摘要 |
+| `GET /api/ecommerce/templates` | 内置 1173 套目录，支持 q（100 字内）、category（一级类目，50 字内，空为全部）、page、pageSize（最多 50）；返回 items/total/page/pageSize 摘要，以及 categories：按搜索词统计的一级类目与套数（不受 category 影响，多的在前） |
 | `GET /api/ecommerce/templates/:templateId` | 返回 data.template，含完整视觉规范、逐张镜头/布光/留白及参考提示词；原库只读 |
 | `GET /api/ecommerce/studio/templates` | 返回 data.templates：后台已启用的套图模板（停用草稿不返回），供生图台「模板套图」选择 |
 | `GET /api/ecommerce/studio/prompts` | 返回 data.prompts：后台改过的出图提示词（编号 → 文字），没改过时为空对象；生图台出图时替换内置写法 |
