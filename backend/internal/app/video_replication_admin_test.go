@@ -51,6 +51,7 @@ func TestVideoTeardownTranscriptNoteAndWarnings(t *testing.T) {
 		"legacy":        {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"后台已关闭口播识别，口播改从画面字幕识别"}}, "后台已关闭口播识别", []string{}},
 		"legacy-failed": {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"口播识别失败（超时），改从画面字幕识别"}}, "口播识别失败（超时）", []string{}},
 		"legacy-silent": {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"视频没有音轨，没有识别口播"}}, "视频没有音轨", []string{}},
+		"legacy-config": {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}, Warnings: []string{"未配置转写服务（CANVAS_WHISPER_BASE_URL），口播改从画面字幕识别"}}, "服务器没有配置转写服务", []string{}},
 		"asr":           {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "asr"}, Warnings: []string{"别的提示"}}, "", []string{"别的提示"}},
 		"none":          {videoTeardownBundle{Transcript: videoTeardownTranscript{Source: "none"}}, "", nil},
 	} {

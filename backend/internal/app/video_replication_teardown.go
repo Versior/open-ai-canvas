@@ -77,6 +77,10 @@ func (bundle videoTeardownBundle) transcriptNoteAndWarnings() (string, []string)
 			break
 		}
 	}
+	// 早期的「未配置转写服务（配置项名）」改成和现在一样的说法，不把服务器配置项名露出去。
+	if strings.HasPrefix(note, "未配置转写服务") {
+		note = "服务器没有配置转写服务"
+	}
 	return note, bundle.Warnings[1:]
 }
 
