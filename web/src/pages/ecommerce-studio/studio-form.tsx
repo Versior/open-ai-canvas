@@ -274,6 +274,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 {product.dossier ? <StudioDossierCard key={product.dossier.recognizedAt || "dossier"} dossier={product.dossier} edit={edit} /> : null}
                 <div className="es-section-head">
                     <h2>出图设置</h2>
+                    <Tooltip title="从后台精选或 1173 套内置模板里挑一套，按模板逐张出图">
+                        <Button size="small" icon={<LayoutTemplate size={14} />} onClick={() => setPickerOpen(true)}>
+                            套图模板库
+                        </Button>
+                    </Tooltip>
                 </div>
                 <div className="es-grid">
                     <Field label="出图类型" span={2} hint={noTextOnMain ? `${platform?.name || "这个平台"}首图不加文字，标题不会写进图里` : spec.hint}>

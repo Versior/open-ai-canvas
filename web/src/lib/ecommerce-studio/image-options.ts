@@ -1,5 +1,5 @@
 import { imageQualityLabel } from "@/lib/image-quality";
-import { imageQualityForTier, imageResolutionTiers, imageResolutionUsesQuality, imageSizePresets, imageTierAvailable } from "@/lib/image-size-presets";
+import { imagePresetValue, imageQualityForTier, imageResolutionTiers, imageResolutionUsesQuality, imageSizePresets, imageTierAvailable } from "@/lib/image-size-presets";
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
 import { studioNearestRatio } from "./brief";
 
@@ -9,11 +9,32 @@ import { studioNearestRatio } from "./brief";
  */
 export type StudioQualityOption = { value: string; label: string };
 
-/** 这个模型「质量」下拉框的选项：有独立分辨率参数时选分辨率，否则选质量档；都没有时为空。 */
+const TIER_ORDER = ["1k", "1.5k", "2k", "4k"];
+
+/** 按像素尺寸出图的模型：尺寸预设分了几档清晰度（1K、2K…），按档位排好。 */
+function sizeTiers(profile: ImageCapabilityConfig) {
+    if (profile.size.parameter !== "size") return [];
+    const tiers = [...new Set(imageSizePresets(profile).map((preset) => String(preset.tier)))];
+    return tiers.sort((a, b) => (TIER_ORDER.indexOf(a) + 1 || 99) - (TIER_ORDER.indexOf(b) + 1 || 99));
+}
+
+/**
+ * 「质量」选的是哪种参数：独立分辨率参数、质量档，或者——质量只声明了 auto 的按尺寸出图模型（如 GPT Image）——
+ * 尺寸预设的清晰度档位，选中档位后按比例落到这一档的具体尺寸。
+ */
+function qualityMode(profile: ImageCapabilityConfig): "resolution" | "quality" | "tier" | "none" {
+    if (profile.resolution.supported) return "resolution";
+    if (profile.quality.supported && profile.quality.values.length >= 2) return "quality";
+    return sizeTiers(profile).length >= 2 ? "tier" : "none";
+}
+
+/** 这个模型「质量」下拉框的选项：有独立分辨率参数时选分辨率，有多档质量时选质量，否则选尺寸档位；都没有时为空。 */
 export function studioQualityOptions(profile: ImageCapabilityConfig | undefined): StudioQualityOption[] {
     if (!profile) return [];
-    if (profile.resolution.supported) return profile.resolution.values.map((value) => ({ value, label: imageQualityLabel(value) }));
-    if (!profile.quality.supported || profile.quality.values.length < 2) return [];
+    const mode = qualityMode(profile);
+    if (mode === "resolution") return profile.resolution.values.map((value) => ({ value, label: imageQualityLabel(value) }));
+    if (mode === "tier") return sizeTiers(profile).map((tier) => ({ value: tier, label: tier.toUpperCase() }));
+    if (mode === "none") return [];
     const tiered = imageResolutionUsesQuality(profile);
     return profile.quality.values.map((value) => {
         const tier = tiered ? imageResolutionTiers(profile).find((item) => imageQualityForTier(profile, item) === value) : undefined;
@@ -23,7 +44,13 @@ export function studioQualityOptions(profile: ImageCapabilityConfig | undefined)
 
 export function studioDefaultQuality(profile: ImageCapabilityConfig | undefined) {
     if (!profile) return "";
-    if (profile.resolution.supported) return profile.resolution.default;
+    const mode = qualityMode(profile);
+    if (mode === "resolution") return profile.resolution.default;
+    if (mode === "tier") {
+        const tiers = sizeTiers(profile);
+        const preset = imageSizePresets(profile).find((item) => item.size === profile.size.default);
+        return preset && tiers.includes(String(preset.tier)) ? String(preset.tier) : tiers[0];
+    }
     return profile.quality.supported ? profile.quality.default : "";
 }
 
@@ -35,6 +62,7 @@ export function studioEffectiveQuality(profile: ImageCapabilityConfig | undefine
 
 function presetTier(profile: ImageCapabilityConfig, quality: string) {
     if (profile.resolution.supported) return quality.toLowerCase() || profile.resolution.default.toLowerCase();
+    if (qualityMode(profile) === "tier") return quality || studioDefaultQuality(profile);
     return profile.size.defaultTier || imageSizePresets(profile).find((preset) => preset.size === profile.size.default)?.tier;
 }
 
@@ -59,6 +87,11 @@ export function studioSupportedRatio(ratio: string, options: string[]) {
 export function studioImageRequest(profile: ImageCapabilityConfig | undefined, quality: string, ratio: string) {
     const effective = studioEffectiveQuality(profile, quality);
     const aspectRatio = studioSupportedRatio(ratio, studioRatioOptions(profile, effective));
+    if (profile && effective && qualityMode(profile) === "tier") {
+        // 选的是尺寸档位：直接给这一档里对应比例的具体尺寸，模型的质量参数保持默认。
+        const preset = imageSizePresets(profile).find((item) => String(item.tier) === effective && item.ratio === aspectRatio);
+        return { ...(aspectRatio ? { aspectRatio } : {}), imageSettings: preset ? { size: imagePresetValue(profile, preset) } : {} };
+    }
     const imageSettings = !profile || !effective ? {} : profile.resolution.supported ? { imageResolution: effective } : profile.quality.supported ? { quality: effective } : {};
     return { ...(aspectRatio ? { aspectRatio } : {}), imageSettings };
 }
