@@ -25,6 +25,19 @@ description: 影策后端核心持久化表与状态边界
 
 视频复刻不新增表或列。拆解任务是 `tasks.type = replication_teardown`，镜头事实写在 `tasks.result_json`；关键帧和宫格是普通图片资源。页面保存的模型分析写在既有 `results` 表：`kind = replication_analysis`，`task_id` 指向拆解任务，`payload` 是分析 JSON（不超过 512 KiB）。同一用户、同一任务只保留一条，保存时在事务里先删旧行再插入；`results.payload` 计入账号结构化数据容量。
 
+## 视频解析接口池（不改结构）
+
+视频链接导入用的第三方解析接口池复用 `system_settings`，不新增表、列或 Schema 迁移。四个键的值都是 JSON：
+
+| 键 | 内容 |
+| --- | --- |
+| `social_video_parse_settings` | 轮询方式 `strategy`（`priority` / `round_robin` / `weighted` / `fastest`）、一次导入最多尝试几条 `maxAttempts`（1–10，默认 3）、连续失败几次自动停用 `failureThreshold`（1–20，默认 3）、`autoRecover` 与冷却分钟数 `recoverAfterMinutes`（5–1440，默认 30）、定期巡检间隔 `healthCheckMinutes`（0 关闭，开启时 10–1440）、各平台测试链接 `sampleLinks` |
+| `social_video_parse_apis` | 接口定义数组，最多 200 条：名称、平台、启用、优先级、权重、请求方式与地址模板、请求体、请求头、密钥、超时、返回字段映射、下载请求头、备注，以及采集它的订阅源 `sourceId` |
+| `social_video_parse_sources` | 订阅源数组，最多 20 个：清单地址、同步间隔（1–168 小时，默认 24）、新接口是否测试通过后直接启用，以及上次同步的时间、错误和条数 |
+| `social_video_parse_state` | 运行状态：每条接口的连续失败次数、自动停用时间与原因、累计成功 / 失败、最近 10 次结果、平均耗时，以及最近 100 条调用记录 |
+
+接口密钥用数据目录里的 `.settings-key` 以 AES-GCM 加密后存入（`enc:v1:` 前缀），概览、导出和调用记录都不返回密钥；接口在错误信息里回显密钥时换成 `***`。定义和运行状态分开存：用户导入、后台测试和巡检只写 `social_video_parse_state`，不会覆盖管理员正在改的接口定义。所有写入都按读到的原文做比较交换（`Repository.CompareAndSwapSystemSetting`），被其他实例抢先写入时重读重试，最多 8 次。删除接口时同时清掉它的运行状态；删除订阅源可选择连同它采集的接口一起删除。
+
 ## Agent 记忆文件列补齐（Schema 79）
 
 版本 79 `agent_memory_document_columns` 只做补列：确保 `agent_memory_documents.next_entry_seq` 与 `agent_memory_document_revisions.call_id` 存在，并把空值回填为 `0` / 空串。开发期的早期构建执行 v78 时这两列还没加入模型，v78 已记为完成、校验和不能再改，缺列会让创建 Agent 轮次时读取记忆文件失败（`no column named next_entry_seq`）。新库由 v78 一次建全，v79 是空操作；不改写既有记忆内容。

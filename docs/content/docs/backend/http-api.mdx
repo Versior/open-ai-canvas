@@ -36,9 +36,38 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 `resourceId` 指向已入库的标准视频资源。该任务不调用模型渠道、不计模型费用；前端取得资源后创建普通 Video 节点，后续拆解复刻复用既有电商视频节点。
 
-导入只接受抖音和 TikTok 的 HTTPS 单视频地址或受控短链：禁止 URL 认证信息、片段和非 443 端口，分享文本必须且只能包含一个 URL；最终视频不超过 3 分钟，文件不超过 `min(ResourceUploadMB, 50 MiB)`。短链每次跳转都会重新校验平台域名、单视频路径与出站安全规则，最终提取器必须与链接平台一致；playlist、多条目、多个下载文件、符号链接和无有效视频流的结果都会拒绝。下载在隔离配置目录中通过非 shell 子进程执行，任务最长 10 分钟，并在下载中和入库前复查大小、时长及项目活动状态。
+支持的平台以 `GET /api/social-video/platforms` 为准，目前是抖音、TikTok、快手、小红书、哔哩哔哩、微博和 YouTube。分享文本必须且只能包含一个 URL，禁止 URL 认证信息、片段和非 443 端口。抖音和 TikTok 只接受 HTTPS 单视频地址或受控短链；其他平台只认域名，分享里常见的 http 链接会升级成 https，链接是否有效交给解析接口判断。
 
-同步请求可能返回 400（链接、幂等键、项目或任务额度无效）、401（未登录）、409（幂等键冲突）、413（正文超过 4 KiB）或 429（创建任务限流）；已入队后的平台解析、下载、校验或入库失败体现在 Task 的 `status=failed` 与脱敏 `error` 中。
+服务端不在本机运行下载器，而是交给管理员在后台「视频解析接口」里配置的第三方解析接口池（见下一节）。建任务时这个平台一条启用的接口都没有，直接返回 400、`reason=failed_precondition`，不排队。任务按设置的轮询方式依次尝试，最多 `maxAttempts` 条：调用接口、按字段映射取出视频地址、下载、用 ffprobe 校验，一条成功就停。抖音 / TikTok 会先展开短链拿视频 ID，每次跳转都重新校验平台域名、单视频路径与出站安全规则；展开失败时把原链接交给接口。解析接口地址和接口给出的视频地址都走出站安全校验，默认拒绝本机和私网。最终视频不超过 3 分钟，文件不超过 `min(ResourceUploadMB, 50 MiB)`；视频超时长或超大小属于内容问题，直接失败，不再换接口，也不计入接口失败。任务最长 10 分钟，入库前复查项目活动状态；同一平台同一视频 ID 复用已存的资源。Task 的 `provider` 是平台标识，`model` 固定为 `parse-api`。
+
+同步请求可能返回 400（链接、幂等键、项目或任务额度无效；平台没有可用解析接口时 `reason=failed_precondition`）、401（未登录）、409（幂等键冲突）、413（正文超过 4 KiB）或 429（创建任务限流）。已入队后的解析、下载、校验或入库失败体现在 Task 的 `status=failed` 与 `error` 中：只试了一条接口时是「解析接口没能处理这个链接：原因」，试了多条时是「已依次尝试 N 个解析接口，都没能处理这个链接。最后一个的原因：……」。原因来自接口的 HTTP 状态和返回里的错误说明，接口回显的密钥会换成 `***`。
+
+## 视频解析接口池
+
+`GET /api/social-video/platforms` 登录即可调用，返回 `data.platforms`，每项为 `{ id, name, hosts, shortHosts, strict, available }`。`strict=true` 的平台（抖音、TikTok）按单视频路径校验；`available` 表示这个平台至少有一条启用的接口（自动停用的也算，导入时会试探）。前端据此识别分享链接，并在没有接口的平台上提示「暂时无法导入」。
+
+以下接口都要求管理员，数据存在 `system_settings` 的四个键里（见 [后端数据库](./backend-database) 的「视频解析接口池」）：
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /admin/social-video/parse` | 一次返回 `settings`、`apis`、`sources`、`platforms` 和最近 100 条 `logs` |
+| `PATCH /admin/social-video/parse/settings` | 保存轮询方式、最多尝试条数、自动停用阈值、自动恢复与冷却时间、定期巡检间隔和各平台测试链接；超出范围的数值按边界收紧 |
+| `POST /admin/social-video/parse-apis`、`PATCH /admin/social-video/parse-apis/:id`、`DELETE /admin/social-video/parse-apis/:id` | 新建、修改、删除接口；正文上限 64 KiB |
+| `PUT /admin/social-video/parse-apis/:id/enabled` | 正文 `{ "enabled": true }`，手动启停 |
+| `POST /admin/social-video/parse-apis/:id/duplicate` | 复制一条（带密钥），副本先停用 |
+| `POST /admin/social-video/parse-apis/:id/reset` | 「恢复使用」：清掉自动停用和连续失败次数 |
+| `POST /admin/social-video/parse-apis/test` | 测试一条：传 `id` 测已保存的，传 `api` 测编辑中的草稿（不保存）；`url` 可换成别的分享链接，`platform` 指定用哪个平台的测试链接。每用户每分钟 30 次 |
+| `POST /admin/social-video/parse-apis/test-all` | 按 `platform` 或 `ids` 批量测试启用的接口，同时最多 4 条；没有测试链接的放进 `skipped`。每用户每分钟 4 次 |
+| `POST /admin/social-video/parse-apis/export` | 导出接口定义（不含密钥），`format=yingce.social-video-parse-apis`，可直接当订阅内容用 |
+| `POST /admin/social-video/parse-apis/import` | 导入导出格式或接口数组，最多 200 条，正文上限 2 MiB；`autoEnable=true` 时用测试链接测新接口，通过的直接启用。每用户每分钟 6 次 |
+| `POST /admin/social-video/parse-sources`、`PATCH /admin/social-video/parse-sources/:id`、`DELETE /admin/social-video/parse-sources/:id` | 订阅源增改删；删除带 `?removeApis=1` 时连同它采集的接口一起删除 |
+| `POST /admin/social-video/parse-sources/:id/sync` | 立即拉取一次订阅源（20 秒超时，内容最多 1 MiB）。每用户每分钟 6 次 |
+
+接口定义里，地址、请求体和请求头的值可以用 `{url}`（分享链接）、`{platform}` 和 `{key}`（解密后的密钥）：地址和表单请求体里按 URL 编码代入，JSON 请求体里按 JSON 字符串转义，请求头原样代入。返回字段映射用 `data.url`、`data.items[0].play` 这样的路径；没填视频地址字段时，按字段名（video、play、nwm 等）和地址特征（`.mp4`、`/play/`）自动找，排除封面、头像和音乐，测试结果会给出找到的路径。填了成功标记字段时，值不在「成功取值」里就算失败，并从错误信息字段取说明。
+
+测试结果 `data` 包含 `ok`、失败的步骤 `stage`（`request` / `response` / `mapping` / `media`）、`message`、`latencyMs`、`httpStatus`、取到的字段 `result`、视频地址检查 `media`（只读开头 64 KiB 确认是视频，不下载整段）和接口返回的前 4 KiB `responsePreview`（密钥换成 `***`）。测试已保存的接口、批量测试、巡检和用户导入的结果都计入运行状态：连续失败达到阈值自动停用，成功一次清零并恢复。一个平台的接口全部被自动停用时，导入会挑最早停用的那条试探一次。
+
+后台每分钟巡检一次（多实例用协调租约，同一时间只有一个实例在跑）：冷却期满的自动停用接口有测试链接就测一次，通过即恢复，没有测试链接就先放行、连续失败次数停在阈值减一；开了定期巡检时按间隔测试开着的接口，每轮最多 10 条；到期的订阅源自动同步。订阅源和导入按「请求方式 + 地址模板 + 请求体」去重：已有的只更新定义，启用状态、运行状态和密钥（清单里没给时）保留；新接口先停用。
 
 ## 视频复刻：拆解准备
 
