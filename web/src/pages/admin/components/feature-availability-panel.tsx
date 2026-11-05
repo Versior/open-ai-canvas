@@ -107,14 +107,14 @@ const featureGroups: FeatureGroup[] = [
                 key: "imageWorkbenchEnabled",
                 title: "图片生成",
                 location: "侧栏 · 图片生成",
-                description: "电商 Agent 生成商品图也需要开启。关闭后历史作品保留。",
+                description: "只控制侧栏的图片生成页面；电商 Agent、电商生图台和画布出图不受影响。关闭后历史作品保留。",
                 icon: <ImageIcon className="size-4" aria-hidden="true" />,
             },
             {
                 key: "videoWorkbenchEnabled",
                 title: "视频生成",
                 location: "侧栏 · 视频生成",
-                description: "商品视频也需要开启。关闭后历史作品保留。",
+                description: "只控制侧栏的视频生成页面；商品视频看下面「商品视频」的开关。关闭后历史作品保留。",
                 icon: <Video className="size-4" aria-hidden="true" />,
             },
             {
@@ -123,7 +123,6 @@ const featureGroups: FeatureGroup[] = [
                 location: "侧栏 · 电商 Agent",
                 description: "关闭后隐藏入口且不能新建商品创作，已有项目和作品保留。",
                 icon: <ShoppingBag className="size-4" aria-hidden="true" />,
-                requires: [{ key: "imageWorkbenchEnabled", effect: "用户不能生成商品图" }],
                 link: { to: "/admin/ecommerce/agent", label: "电商 Agent 配置" },
                 children: [
                     {
@@ -132,7 +131,6 @@ const featureGroups: FeatureGroup[] = [
                         location: "电商 Agent 内",
                         description: "从商品图片制作视频。",
                         icon: <Clapperboard className="size-4" aria-hidden="true" />,
-                        requires: [{ key: "videoWorkbenchEnabled", effect: "商品视频不能生成" }],
                     },
                 ],
             },

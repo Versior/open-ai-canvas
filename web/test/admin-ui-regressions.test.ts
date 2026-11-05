@@ -228,7 +228,9 @@ test("task-first settings reveal dependent configuration only after the primary 
     expect(featureSource).toContain('title: "插件与记录"');
     expect(featureSource).toContain('title: "模型与计费"');
     expect(featureSource).toContain('disabled={savingKey !== null || state === "blocked"}');
-    expect(featureSource).toContain('requires: [{ key: "imageWorkbenchEnabled"');
+    // 电商 Agent 出图与商品视频只看自己的开关，不再依赖侧栏的图片 / 视频生成。
+    expect(featureSource).not.toContain('requires: [{ key: "imageWorkbenchEnabled"');
+    expect(featureSource).not.toContain('requires: [{ key: "videoWorkbenchEnabled"');
     expect(appearanceSource).toContain("<WelcomeSetting />");
     expect(welcomeSource).toContain("<strong>启用欢迎页</strong>");
     expect(welcomeSource).toContain("updateAdminFeatureAvailability({ welcomeEnabled: value })");
