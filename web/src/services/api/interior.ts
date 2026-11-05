@@ -1,4 +1,4 @@
-import type { InteriorSceneScope, SceneBrief, ScenePlan } from "@/lib/interior/scene-3d";
+import type { InteriorSceneScope, SceneBrief } from "@/lib/interior/scene-3d";
 import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
@@ -116,7 +116,7 @@ export type InteriorRound = {
     items: InteriorRoundItem[];
 };
 /**
- * 一个 3D 模型。生成分几步：先做 AI 方案分析（stage=analyze，读图和需求、查知识库补全方案），再请求一次规划（stage=plan），再按规划分几部分并行搭（stage=parts），拼好后把场景 JSON
+ * 一个 3D 模型。生成分两步：先做 AI 方案分析（stage=analyze，读图和需求、查知识库补全方案），再按分析写出整份 3D 方案（stage=spec，房间、门窗、家具、屋顶和庭院），把方案 JSON
  * 存成资源（sceneFile）；一句话修改是 stage=edit，在 parentId 那一版上应用改动。项目文档里只存进度和场景文件的资源 ID。
  */
 export type InteriorSceneItem = {
@@ -137,13 +137,15 @@ export type InteriorSceneItem = {
     reference?: InteriorImageRef;
     parentId?: string;
     instruction?: string;
-    stage?: "analyze" | "plan" | "parts" | "edit";
+    /** spec：按方案出整份 3D 方案（第二版）；plan、parts 是旧版分部分搭的进度，已不再产生。 */
+    stage?: "analyze" | "spec" | "plan" | "parts" | "edit";
     brief?: SceneBrief;
     /** 这次参考了知识库里的哪些条目（只记标题，页面上列出来）。 */
     knowledge?: { id: string; kindName: string; title: string }[];
     /** 规划或修改那一步的任务。 */
     taskId?: string;
-    plan?: ScenePlan;
+    /** 旧版分部分搭留下的规划，只读不用。 */
+    plan?: unknown;
     /** 各部分的任务；没提交成功的部分是 null。 */
     partTaskIds?: (string | null)[];
     error?: string;
@@ -151,6 +153,10 @@ export type InteriorSceneItem = {
     title?: string;
     summary?: string;
     objectCount?: number;
+    /** 规模说明，例如「3 层 · 18 个空间」；旧版模型没有，显示物体数。 */
+    stats?: string;
+    /** 生成时的提醒（例如回复被截断）。 */
+    notice?: string;
     /** 没搭出来、被跳过的部分。 */
     failedParts?: string[];
     /** 读不懂、被去掉的物体数。 */

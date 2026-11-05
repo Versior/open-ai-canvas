@@ -2,7 +2,9 @@ import { App, Button, Input, Tooltip } from "antd";
 import { BookOpen, Box, LoaderCircle, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
-import { buildSceneAnalysisPrompt, buildSceneEditPrompt, SCENE_SCOPES, type InteriorScene3D, type InteriorSceneScope } from "@/lib/interior/scene-3d";
+import { buildSceneAnalysisPrompt, buildSceneEditPrompt, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
+import { sceneStats } from "@/lib/interior/scene-compile";
+import { buildSceneSpecEditPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
 import { modelCompatibilityError } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 import type { InteriorCatalog, InteriorImageRef, InteriorProject, InteriorProjectDocument, InteriorSceneItem } from "@/services/api/interior";
@@ -16,7 +18,7 @@ import { useInteriorSceneTasks } from "./use-interior-scene-tasks";
 /** 一个项目最多保存的 3D 模型数。 */
 const MAX_SCENES = 30;
 
-const STAGE_LABELS: Record<NonNullable<InteriorSceneItem["stage"]>, string> = { analyze: "AI 正在分析方案", plan: "正在规划", parts: "正在分部分搭", edit: "正在改" };
+const STAGE_LABELS: Record<NonNullable<InteriorSceneItem["stage"]>, string> = { analyze: "AI 正在分析方案", spec: "正在出 3D 方案", plan: "正在规划", parts: "正在分部分搭", edit: "正在改" };
 
 type ScopeChoice = InteriorSceneScope | "auto";
 
@@ -106,7 +108,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const scenes = project?.document.scenes || [];
     const selected = scenes.find((item) => item.id === selectedId) || scenes[0];
     const selectedFile = selected?.status === "succeeded" ? selected.sceneFile?.resourceId || "" : "";
-    const [loaded, setLoaded] = useState<{ resourceId: string; scene?: InteriorScene3D; error?: string } | null>(null);
+    const [loaded, setLoaded] = useState<{ resourceId: string; scene?: InteriorSceneData; error?: string } | null>(null);
     useEffect(() => {
         if (!selectedFile) return;
         let cancelled = false;
@@ -220,7 +222,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 parentId: selected.id,
                 instruction: instruction.trim(),
             },
-            buildSceneEditPrompt(selectedScene, instruction),
+            selectedScene.version === 2 ? buildSceneSpecEditPrompt(selectedScene.spec, instruction) : buildSceneEditPrompt(selectedScene, instruction),
         );
         if (ok) setInstruction("");
     };
@@ -345,7 +347,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                     >
                         {submitting ? "正在提交" : reference?.resourceId && !description.trim() ? "AI 分析并生成 3D 模型" : "生成 3D 模型"}
                     </Button>
-                    <p className="itd-muted-note">{problem && !submitting ? problem : "AI 先看图读需求、查知识库补全方案，再用基础几何体搭出示意模型；按所选文本模型计费。"}</p>
+                    <p className="itd-muted-note">{problem && !submitting ? problem : "AI 先看图读需求、查知识库补全方案，再按方案自动生成墙体、门窗、屋顶和家具；按所选文本模型计费。"}</p>
                 </footer>
             </aside>
             <section className="itd-board" aria-label="3D 模型">
@@ -378,11 +380,11 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 <strong>{stalledText ? "查询结果中断" : pendingLabel}</strong>
                                 <span>
                                     {stalledText ||
-                                        (selected.stage === "parts" && selected.plan
-                                            ? `分 ${selected.plan.parts.length} 部分同时搭：${selected.plan.parts.map((part) => part.group).join("、")}。一般 1–3 分钟，离开页面不会中断。`
-                                            : selected.stage === "analyze"
-                                              ? "AI 正在看图、读需求、查知识库补全方案，接着规划和分部分搭。离开页面不会中断。"
-                                              : "正在规划整体尺寸和分几部分，接着分部分细搭。离开页面不会中断，回来接着看。")}
+                                        (selected.stage === "analyze"
+                                            ? "AI 正在看图、读需求、查知识库补全方案，接着出 3D 方案。离开页面不会中断。"
+                                            : selected.stage === "edit"
+                                              ? "AI 正在按你的要求改方案，一般不到一分钟。"
+                                              : "AI 正在排每层的房间、门窗、楼梯和家具，墙体、屋顶和家具模型会按方案自动生成。一般 1–2 分钟，离开页面不会中断。")}
                                 </span>
                                 {stalledText ? (
                                     <Button size="small" icon={<RefreshCw className="size-3.5" aria-hidden />} onClick={() => tasks.retry(selected.id)}>
@@ -401,7 +403,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                         <div className="itd-scene-meta">
                             <div className="itd-scene-meta-copy">
                                 <strong>{selectedScene.title}</strong>
-                                <span>{[selectedScene.summary, `${selectedScene.objects.length} 个物体`, selected.instruction ? `在「${parent ? sceneTitle(parent) : "上一版"}」上改：${selected.instruction}` : ""].filter(Boolean).join(" · ")}</span>
+                                <span>{[selectedScene.summary, sceneStats(selectedScene), selected.instruction ? `在「${parent ? sceneTitle(parent) : "上一版"}」上改：${selected.instruction}` : ""].filter(Boolean).join(" · ")}</span>
                                 {selected.knowledge?.length ? (
                                     <Tooltip title={selected.knowledge.map((item) => `【${item.kindName}】${item.title}`).join("\n")} styles={{ root: { maxWidth: 360, whiteSpace: "pre-line" } }}>
                                         <span className="itd-scene-knowledge" tabIndex={0}>
@@ -410,9 +412,9 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                         </span>
                                     </Tooltip>
                                 ) : null}
-                                {selected.failedParts?.length || selected.dropped ? (
+                                {selected.failedParts?.length || selected.dropped || selected.notice ? (
                                     <span className="itd-scene-warning">
-                                        {[selected.failedParts?.length ? `「${selected.failedParts.join("、")}」没搭出来，已跳过` : "", selected.dropped ? `${selected.dropped} 个物体读不懂，已去掉` : ""].filter(Boolean).join("；")}
+                                        {[selected.notice || "", selected.failedParts?.length ? `「${selected.failedParts.join("、")}」没搭出来，已跳过` : "", selected.dropped ? `${selected.dropped} 个物体读不懂，已去掉` : ""].filter(Boolean).join("；")}
                                     </span>
                                 ) : null}
                             </div>
@@ -438,7 +440,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 <li key={item.id}>
                                     <button type="button" className={cn("itd-scene-card", item.id === selected?.id && "is-active")} aria-pressed={item.id === selected?.id} onClick={() => setSelectedId(item.id)}>
                                         <strong>{sceneTitle(item)}</strong>
-                                        <span>{item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : `${item.objectCount || 0} 个物体`}</span>
+                                        <span>{item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : item.stats || `${item.objectCount || 0} 个物体`}</span>
                                         <small>{[item.instruction ? "改过一版" : SCENE_SCOPES.find((scope) => scope.value === item.scope)?.label, formatTime(item.createdAt)].filter(Boolean).join(" · ")}</small>
                                     </button>
                                     <button type="button" className="itd-scene-card-remove" aria-label={`删除「${sceneTitle(item)}」`} onClick={() => remove(item)}>

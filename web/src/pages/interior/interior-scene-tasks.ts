@@ -1,5 +1,6 @@
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
-import { normalizeInteriorScene, type InteriorScene3D, type InteriorSceneScope, type SceneKnowledge, type ScenePromptInput } from "@/lib/interior/scene-3d";
+import { normalizeInteriorScene, type InteriorSceneScope, type SceneKnowledge } from "@/lib/interior/scene-3d";
+import { normalizeSceneV2, type InteriorSceneData, type SpecPromptInput } from "@/lib/interior/scene-spec";
 import { modelCompatibilityError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
 import { submitBackendGenerationTask } from "@/services/api/generation-task";
 import { getInteriorKnowledge, type InteriorCatalog, type InteriorImageRef, type InteriorKnowledgeEntry, type InteriorSceneItem } from "@/services/api/interior";
@@ -44,7 +45,7 @@ export function sceneKnowledgeQuery(item: InteriorSceneItem) {
     return { scope: item.scope, roomKey: item.roomKey, styleKey: item.styleKey, text: [item.description, item.brief?.description].filter(Boolean).join("\n") };
 }
 
-export function scenePromptInput(item: InteriorSceneItem, knowledge?: SceneKnowledge[]): ScenePromptInput {
+export function scenePromptInput(item: InteriorSceneItem, knowledge?: SceneKnowledge[]): SpecPromptInput {
     return { scope: item.scope, description: item.description, roomName: item.roomName, styleName: item.styleName, stylePrompt: item.styleHint, hasReference: Boolean(item.reference), brief: item.brief, knowledge };
 }
 
@@ -53,22 +54,24 @@ export function catalogKeys(catalog: InteriorCatalog) {
 }
 
 /** 拼好的场景存成 JSON 资源；项目文档里只记资源 ID，文档不会被大场景撑满。 */
-export async function saveSceneFile(scene: InteriorScene3D) {
+export async function saveSceneFile(scene: InteriorSceneData) {
     const blob = new Blob([JSON.stringify(scene)], { type: "application/json" });
     const resource = await uploadResourceFile(blob, "file", { fileName: "interior-scene.json" });
     return { resourceId: resource.id };
 }
 
-const sceneCache = new Map<string, Promise<InteriorScene3D>>();
+const sceneCache = new Map<string, Promise<InteriorSceneData>>();
 
-/** 读一个场景文件，再按同样的规则收紧一遍；同一个文件在这次打开页面期间只下载一次。 */
+/** 读一个场景文件（第一版几何体或第二版方案），再按同样的规则收紧一遍；同一个文件在这次打开页面期间只下载一次。 */
 export function loadSceneFile(resourceId: string) {
     let pending = sceneCache.get(resourceId);
     if (!pending) {
         pending = fetch(resourceFileUrl(resourceId), { credentials: "include" })
             .then(async (response) => {
                 if (!response.ok) throw new Error(response.status === 404 ? "这个 3D 模型的文件已经不在了" : `读取 3D 模型失败（${response.status}）`);
-                return normalizeInteriorScene(await response.json()).scene;
+                const value: unknown = await response.json();
+                if (value && typeof value === "object" && (value as { version?: unknown }).version === 2) return normalizeSceneV2(value as Record<string, unknown>);
+                return normalizeInteriorScene(value).scene;
             })
             .catch((error: unknown) => {
                 sceneCache.delete(resourceId);
