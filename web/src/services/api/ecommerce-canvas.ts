@@ -1,4 +1,4 @@
-import { http } from "./request";
+import { compactApiParams, http } from "./request";
 import { canonicalize } from "json-canonicalize";
 import { ECOMMERCE_SETTING_CAPABILITIES, type EcommerceSettingCapability } from "@/lib/ecommerce/ecommerce-capabilities";
 export const ECOMMERCE_FLOW_IDS = ["detail", "main", "wear", "seed"] as const;
@@ -141,8 +141,13 @@ async function readSetting(path: string) {
 export const getAdminEcommerceSetting = () => readSetting("/admin/settings/ecommerce");
 export const getAdminEcommerceDefaults = () => http.get<{ defaults: Record<string, string> }>("/admin/settings/ecommerce/defaults", { timeout: 15000 });
 export type EcommerceCatalogEntry = { id: string; name: string; category: string; description: string; count: number };
-export const getEcommerceCatalog = (q: string, page = 1, signal?: AbortSignal) =>
-    http.get<{ items: EcommerceCatalogEntry[]; total: number; page: number; pageSize: number }>("/ecommerce/templates", { params: { q, page, pageSize: 20 }, signal, timeout: 15000 });
+/** 一级类目与它在当前搜索词下的套数；不受 category 筛选影响。 */
+export type EcommerceCatalogCategory = { name: string; count: number };
+export type EcommerceCatalogPage = { items: EcommerceCatalogEntry[]; total: number; categories: EcommerceCatalogCategory[]; page: number; pageSize: number };
+export const ECOMMERCE_CATALOG_PAGE_SIZE = 20;
+/** 搜索内置套图库；category 为一级类目，空为全部。 */
+export const getEcommerceCatalog = (query: { q: string; category?: string; page?: number }, signal?: AbortSignal) =>
+    http.get<EcommerceCatalogPage>("/ecommerce/templates", { params: compactApiParams({ q: query.q, category: query.category, page: query.page ?? 1, pageSize: ECOMMERCE_CATALOG_PAGE_SIZE }), signal, timeout: 15000 });
 export const getEcommerceCatalogTemplate = (id: string, signal?: AbortSignal) => http.get<{ template: EcommerceSuiteTemplate }>("/ecommerce/templates/" + encodeURIComponent(id), { signal, timeout: 15000 });
 export const getPreviousEcommerceSetting = () => readSetting("/admin/settings/ecommerce/previous");
 export async function saveAdminEcommerceSetting(value: EcommerceSetting) {

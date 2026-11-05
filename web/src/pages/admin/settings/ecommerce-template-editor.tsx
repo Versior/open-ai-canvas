@@ -51,6 +51,7 @@ export function EcommerceTemplateEditor({ templates, disabled, onChange }: { tem
             {view === "library" ? (
                 <EcommerceTemplateCatalog
                     disabled={disabled}
+                    note="模板提供视觉方向；商品属性、价格与功效由生图台按当前商品事实重写。"
                     applyLabel="加入后台精选"
                     onApply={(template) => {
                         if (add({ ...template, flow, enabled: true })) message.success(`已加入后台精选：${template.name}，保存修改后生效`);

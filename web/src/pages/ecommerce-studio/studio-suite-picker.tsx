@@ -1,6 +1,6 @@
 import { Button, Spin } from "antd";
 import { useCallback, useEffect, useState } from "react";
-import { EcommerceTemplateCatalog } from "@/components/canvas/ecommerce-template-catalog";
+import { EcommerceTemplateCatalog, renderTemplatePreview } from "@/components/canvas/ecommerce-template-catalog";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import { studioSuiteFromTemplate } from "@/lib/ecommerce-studio/suites";
@@ -12,11 +12,7 @@ type Tab = "admin" | "library";
 
 const FLOW_LABEL: Record<string, string> = { main: "主图", detail: "详情页", wear: "穿搭", seed: "种草" };
 
-function firstLine(value: string) {
-    return value.split("\n").find((line) => line.trim()) || "";
-}
-
-/** 后台精选：管理员在「后台 → 电商生图台 → 套图模板」里启用的模板。 */
+/** 后台精选：管理员在「后台 → 电商生图台 → 套图模板」里启用的模板。列表和预览与内置模板库同一套样式。 */
 function AdminTemplates({ open, onPick, onLoaded }: { open: boolean; onPick: (suite: StudioSuite) => void; onLoaded: (count: number) => void }) {
     const [templates, setTemplates] = useState<EcommerceSuiteTemplate[]>();
     const [error, setError] = useState("");
@@ -67,32 +63,27 @@ function AdminTemplates({ open, onPick, onLoaded }: { open: boolean; onPick: (su
     }
     const selected = templates.find((item) => item.id === selectedId) || templates[0];
     return (
-        <div className="es-suite-admin">
-            <div className="es-suite-list" role="listbox" aria-label="后台精选模板">
-                {templates.map((item) => (
-                    <button key={item.id} type="button" role="option" aria-selected={item.id === selected.id} className="es-suite-option" onClick={() => setSelectedId(item.id)}>
-                        <strong>{item.name}</strong>
-                        <span>{[FLOW_LABEL[item.flow] || "套图", item.category, `${item.shots.length} 张`].filter(Boolean).join(" · ")}</span>
-                    </button>
-                ))}
+        <div className="ecommerce-template-catalog is-curated">
+            <div className="etc-layout">
+                <div className="etc-list">
+                    <div className="etc-list-head">
+                        <strong>后台精选</strong>
+                        <span>{templates.length} 套</span>
+                    </div>
+                    <div className="etc-rows" aria-label="后台精选模板">
+                        {templates.map((item) => (
+                            <button key={item.id} type="button" className="etc-row" aria-pressed={item.id === selected.id} onClick={() => setSelectedId(item.id)}>
+                                <span className="etc-row-head">
+                                    <strong>{item.name}</strong>
+                                    <em>{item.shots.length} 张</em>
+                                </span>
+                                <span className="etc-row-path">{[FLOW_LABEL[item.flow] || "套图", item.category].filter(Boolean).join(" · ")}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {renderTemplatePreview(selected, { applyLabel: "使用这套", tags: [FLOW_LABEL[selected.flow] || "套图"], onApply: () => onPick(studioSuiteFromTemplate(selected, "admin")) })}
             </div>
-            <section className="es-suite-preview" aria-label="模板内容">
-                <header>
-                    <strong>{selected.name}</strong>
-                    <Button type="primary" onClick={() => onPick(studioSuiteFromTemplate(selected, "admin"))}>
-                        使用这套
-                    </Button>
-                </header>
-                {selected.style.trim() ? <p className="es-suite-style">{selected.style}</p> : null}
-                <ol>
-                    {selected.shots.map((shot, index) => (
-                        <li key={index}>
-                            <strong>{shot.title}</strong>
-                            <span>{firstLine(shot.duty)}</span>
-                        </li>
-                    ))}
-                </ol>
-            </section>
         </div>
     );
 }
@@ -107,8 +98,8 @@ export function StudioSuitePicker({ open, query, onClose, onPick }: { open: bool
         if (!count) setTab("library");
     }, []);
     return (
-        <AppModal open={open} onCancel={onClose} footer={null} width={880} centered flush rootClassName="es-portal" title={null}>
-            <div className="es-suite-picker">
+        <AppModal open={open} onCancel={onClose} footer={null} width={1080} centered flush rootClassName="es-portal" title={null}>
+            <div className="es-suite-picker is-templates">
                 <header className="es-suite-picker-head">
                     <div>
                         <h3>选择套图模板</h3>

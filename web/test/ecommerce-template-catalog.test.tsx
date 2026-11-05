@@ -23,7 +23,9 @@ test("catalog searches, retries details without losing selection, clones applied
     let detailReads = 0,
         listReads = 0;
     let lastSignal: AbortSignal | undefined;
-    let lastQuery = "";
+    let lastQuery: string | undefined = "";
+    let lastCategory: string | undefined;
+    let lastPage: number | undefined;
     let failList = false;
     apiClient.request = (async (config) => {
         let data;
@@ -31,8 +33,19 @@ test("catalog searches, retries details without losing selection, clones applied
             listReads++;
             lastSignal = config.signal as AbortSignal;
             lastQuery = config.params.q;
+            lastCategory = config.params.category;
+            lastPage = config.params.page;
             if (failList) throw new Error("catalog unavailable");
-            data = { items: [{ id: template.id, name: template.name, category: template.category, description: "", count: 1 }], total: 21, page: config.params.page, pageSize: 20 };
+            data = {
+                items: [{ id: template.id, name: template.name, category: "Cups / Mugs", description: "Double wall", count: 1 }],
+                total: 21,
+                categories: [
+                    { name: "Cups", count: 21 },
+                    { name: "Bowls", count: 3 },
+                ],
+                page: config.params.page,
+                pageSize: 20,
+            };
         } else if (config.url === "/ecommerce/templates/suite") {
             if (++detailReads === 1) throw new Error("detail unavailable");
             data = { template };
@@ -70,9 +83,10 @@ test("catalog searches, retries details without losing selection, clones applied
         });
         await settle();
         expect(listReads).toBe(1);
-        await act(async () => {
-            find(tree, (props) => props["aria-pressed"] === false)!.onClick!();
-        });
+        // 列表读完自动选中第一套去读详情；详情失败时保留选中，重试只重读详情。
+        await settle();
+        expect(detailReads).toBe(1);
+        expect(find(tree, (props) => props["aria-pressed"] === true)).toBeDefined();
         await click("重新读取模板详情");
         expect(detailReads).toBe(2);
         expect(listReads).toBe(1);
@@ -80,6 +94,14 @@ test("catalog searches, retries details without losing selection, clones applied
         expect(applied?.shots[0].duty).toBe(template.shots[0].duty);
         applied!.shots[0].duty = "Edited";
         expect(template.shots[0].duty).not.toBe("Edited");
+        // 类目栏来自接口的 categories；点一个类目带上 category 并回到第一页。
+        await act(async () => {
+            find(tree, (props) => props["aria-label"] === "Cups，21 套")!.onClick!();
+        });
+        await settle();
+        expect(listReads).toBe(2);
+        expect(lastCategory).toBe("Cups");
+        expect(lastPage).toBe(1);
         const oldSignal = lastSignal!;
         await act(async () => {
             find(tree, (props) => props["aria-label"] === "搜索内置套图库")!.onChange!({ target: { value: "cup" } });
@@ -87,6 +109,9 @@ test("catalog searches, retries details without losing selection, clones applied
         expect(oldSignal.aborted).toBe(true);
         await settle();
         expect(lastQuery).toBe("cup");
+        expect(lastCategory).toBe("Cups");
+        // 同一套还在新列表里，不重读详情。
+        expect(detailReads).toBe(2);
         failList = true;
         await click("下一页");
         await settle();

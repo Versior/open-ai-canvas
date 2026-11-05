@@ -1445,82 +1445,16 @@
     color: var(--es-ink-2);
     font-size: var(--fs-caption);
 }
-.es-suite-admin {
+/* 套图模板：目录自己分栏滚动，弹窗主体不再整体滚动，目录撑满剩余高度。 */
+.es-suite-picker.is-templates {
+    height: min(84vh, 760px);
+}
+.es-suite-picker.is-templates .es-suite-picker-body {
     display: grid;
-    grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
-    gap: var(--space-4);
-    min-height: 0;
+    overflow: hidden;
 }
-.es-suite-list {
-    display: grid;
-    align-content: start;
-    gap: 2px;
-}
-.es-suite-option {
-    display: grid;
-    gap: 2px;
-    padding: var(--space-2) var(--space-3);
-    border: 0;
-    border-radius: var(--es-radius-control);
-    background: transparent;
-    color: var(--es-ink);
-    text-align: left;
-    cursor: pointer;
-    transition: background-color var(--es-motion);
-}
-.es-suite-option:hover {
-    background: var(--es-hover);
-}
-.es-suite-option[aria-selected="true"] {
-    background: var(--es-muted);
-}
-.es-suite-option strong {
-    font-size: var(--fs-ui);
-    font-weight: 600;
-}
-.es-suite-option span {
-    color: var(--es-ink-3);
-    font-size: var(--fs-caption);
-}
-.es-suite-preview {
-    display: grid;
-    align-content: start;
-    gap: var(--space-3);
-    min-width: 0;
-}
-.es-suite-preview header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-}
-.es-suite-preview header strong {
-    font-size: var(--fs-ui);
-    font-weight: 600;
-}
-.es-suite-style {
-    max-height: 96px;
-    margin: 0;
-    overflow: auto;
-    color: var(--es-ink-2);
-    font-size: var(--fs-caption);
-    line-height: 1.6;
-    white-space: pre-wrap;
-}
-.es-suite-preview ol {
-    display: grid;
-    gap: var(--space-2);
-    margin: 0;
-    padding-left: 1.4em;
-}
-.es-suite-preview li {
-    display: grid;
-    gap: 2px;
-    font-size: var(--fs-ui);
-}
-.es-suite-preview li span {
-    color: var(--es-ink-3);
-    font-size: var(--fs-caption);
+.es-suite-picker.is-templates .ecommerce-template-catalog {
+    --etc-height: 100%;
 }
 
 /* ---------- 响应式 ---------- */
@@ -1560,9 +1494,6 @@
     }
     .es-suite-picker-head {
         flex-direction: column;
-    }
-    .es-suite-admin {
-        grid-template-columns: minmax(0, 1fr);
     }
     .es-cast {
         grid-template-columns: minmax(0, 1fr);
