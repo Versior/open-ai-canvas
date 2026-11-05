@@ -171,6 +171,30 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, detail)
 	})
+	r.PUT("/video-replication/teardowns/:id/plan", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 256<<10)
+		payload, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			var maxBytesErr *http.MaxBytesError
+			if errors.As(err, &maxBytesErr) {
+				fail(c, http.StatusRequestEntityTooLarge, errors.New("复刻方案不能超过 256 KiB"))
+				return
+			}
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		detail, err := svc.SaveVideoReplicationPlan(user.ID, c.Param("id"), payload)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, detail)
+	})
 	r.POST("/timeline/transcriptions", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

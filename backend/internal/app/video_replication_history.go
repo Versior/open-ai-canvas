@@ -44,11 +44,13 @@ type VideoReplicationRecord struct {
 	AnalyzedAt         *time.Time `json:"analyzedAt,omitempty"`
 }
 
-// VideoReplicationDetail 是一条记录的全部内容：拆解任务（resultJson 里是镜头事实）和保存过的分析。
+// VideoReplicationDetail 是一条记录的全部内容：拆解任务（resultJson 里是镜头事实）、保存过的分析和复刻方案。
 type VideoReplicationDetail struct {
-	Task       *model.Task     `json:"task"`
-	Analysis   json.RawMessage `json:"analysis,omitempty"`
-	AnalyzedAt *time.Time      `json:"analyzedAt,omitempty"`
+	Task          *model.Task     `json:"task"`
+	Analysis      json.RawMessage `json:"analysis,omitempty"`
+	AnalyzedAt    *time.Time      `json:"analyzedAt,omitempty"`
+	Plan          json.RawMessage `json:"plan,omitempty"`
+	PlanUpdatedAt *time.Time      `json:"planUpdatedAt,omitempty"`
 }
 
 // videoReplicationAnalysisHead 只取校验和列表要用的字段；画面描述等语义字段由前端负责。
@@ -148,6 +150,15 @@ func (s *Service) VideoReplication(userID, taskID string) (*VideoReplicationDeta
 		detail.Analysis = json.RawMessage(results[0].Payload)
 		analyzedAt := results[0].CreatedAt
 		detail.AnalyzedAt = &analyzedAt
+	}
+	plans, err := s.repo.TaskResultsByKind(userID, []string{task.ID}, videoReplicationPlanKind)
+	if err != nil {
+		return nil, err
+	}
+	if len(plans) > 0 {
+		detail.Plan = json.RawMessage(plans[0].Payload)
+		planUpdatedAt := plans[0].CreatedAt
+		detail.PlanUpdatedAt = &planUpdatedAt
 	}
 	return detail, nil
 }

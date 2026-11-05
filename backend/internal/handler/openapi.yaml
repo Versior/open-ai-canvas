@@ -4834,6 +4834,41 @@ paths:
           $ref: "#/components/responses/Error"
         "413":
           $ref: "#/components/responses/Error"
+  /video-replication/teardowns/{id}/plan:
+    put:
+      tags: [tasks]
+      summary: 保存视频复刻的复刻方案
+      description: 需要登录，受视频复刻开关控制。只接受本人已完成的拆解任务；shots 的数量和 shotNumber 必须与拆解结果的镜头一一对应，treatment 只能是 remake、product、original、skip，至少保留一个镜头；original 需要 authorized 为 true；商品图最多 4 张，必须是本人已就绪的图片资源。整份覆盖之前的方案。正文不超过 256 KiB，计入账号结构化数据容量。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoReplicationPlan"
+      responses:
+        "200":
+          description: data 为保存后的 VideoReplicationDetail
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/VideoReplicationDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "413":
+          $ref: "#/components/responses/Error"
   /tasks/{id}/recover-media:
     post:
       tags: [tasks]
@@ -5042,6 +5077,53 @@ components:
         analysis:
           $ref: "#/components/schemas/VideoReplicationAnalysis"
         analyzedAt: {type: string, format: date-time}
+        plan:
+          $ref: "#/components/schemas/VideoReplicationPlan"
+        planUpdatedAt: {type: string, format: date-time}
+    VideoReplicationPlan:
+      type: object
+      description: 复刻方案。服务端只校验版本、镜头、处理方式、授权和商品图归属，台词和提示词等字段由前端定义。
+      required: [version, shots]
+      additionalProperties: true
+      properties:
+        version: {type: integer, enum: [1]}
+        authorized: {type: boolean, description: 用户确认是自己的视频或已获授权；为 false 时不能用 original}
+        product:
+          type: object
+          additionalProperties: true
+          properties:
+            name: {type: string, maxLength: 60}
+            sellingPoints: {type: string}
+            audience: {type: string}
+            look: {type: string}
+            images:
+              type: array
+              maxItems: 4
+              items:
+                type: object
+                required: [resourceId]
+                additionalProperties: true
+                properties:
+                  resourceId: {type: string}
+                  width: {type: integer}
+                  height: {type: integer}
+        scripts:
+          type: array
+          items: {type: object, additionalProperties: true}
+        activeScriptId: {type: string}
+        shots:
+          type: array
+          items:
+            type: object
+            required: [shotNumber, treatment]
+            additionalProperties: true
+            properties:
+              shotNumber: {type: integer, minimum: 1}
+              treatment: {type: string, enum: [remake, product, original, skip]}
+              dialogue: {type: string}
+              onScreenText: {type: string}
+              imagePrompt: {type: string}
+              videoPrompt: {type: string}
     VideoReplicationAnalysis:
       type: object
       required: [version, model, rows]
