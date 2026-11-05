@@ -162,7 +162,13 @@
 .vr-link-ok svg {
     width: 14px;
     height: 14px;
+    flex: none;
     color: var(--status-success, #16a34a);
+}
+
+.vr-link-ok[data-tone="error"],
+.vr-link-ok[data-tone="error"] svg {
+    color: var(--destructive);
 }
 
 .vr-drop {

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { App, Button, Input } from "antd";
-import { CircleCheck, ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
+import { CircleAlert, CircleCheck, ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -72,7 +72,8 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
     const fileValid = Boolean(file && file.type.startsWith("video/") && (!fileInfo || fileInfo.durationMs <= MAX_DURATION_MS));
     const linkError = !linkText.trim() ? "" : !link ? `只支持${platformNames}的单视频链接或分享文字` : !link.platform.available ? `${link.platform.name}链接暂时无法导入：后台还没有可用的解析接口` : "";
     const fileError = file && !file.type.startsWith("video/") ? "请选择视频文件" : fileInfo && fileInfo.durationMs > MAX_DURATION_MS ? "视频超过 3 分钟，请先剪短再拆解" : "";
-    const sourceError = mode === "link" ? linkError : fileError;
+    // 链接的问题显示在输入框里；这里只放文件和模型的问题。
+    const footerError = (mode === "file" ? fileError : "") || modelError;
     const ready = (mode === "link" ? linkValid : fileValid) && !modelError && !busy;
 
     const start = () => {
@@ -157,6 +158,12 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                     <CircleCheck aria-hidden />
                                     {`识别到${link.platform.name}视频链接`}
                                 </span>
+                            ) : linkError ? (
+                                // 链接问题和识别成功的提示放在同一处，输入框高度不跳。
+                                <span className="vr-link-ok" data-tone="error" role="alert">
+                                    <CircleAlert aria-hidden />
+                                    {linkError}
+                                </span>
                             ) : null}
                             {canPaste && !linkText ? (
                                 <Button size="small" className="vr-paste" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void paste()}>
@@ -226,9 +233,9 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                             event.target.value = "";
                         }}
                     />
-                    {sourceError || modelError ? (
+                    {footerError ? (
                         <p role="alert" className="vr-field-error">
-                            {sourceError || modelError}
+                            {footerError}
                         </p>
                     ) : null}
                     <div className="vr-toolbar">
