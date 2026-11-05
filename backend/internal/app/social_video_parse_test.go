@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -315,6 +316,30 @@ func TestSocialVideoParseErrorsQuoteUpstreamMessageWithoutSecret(t *testing.T) {
 	state, _ := svc.socialVideoParseState()
 	if encoded, _ := json.Marshal(state); strings.Contains(string(encoded), secret) {
 		t.Fatalf("call log leaks the secret: %s", encoded)
+	}
+}
+
+func TestSocialVideoParseTestSendsCleanDouyinURLAfterResolvingShortLink(t *testing.T) {
+	media := socialVideoTestMP4(t)
+	server, lastURL := newSocialVideoParseServer(t, media)
+	svc, _ := newSocialVideoImportTestService(t)
+	useLocalSocialVideoParseNetwork(svc)
+	// 短链跳到带分享人跟踪参数的 iesdouyin 分享页；交给解析接口的应是干净的标准地址。
+	svc.socialVideoParseHTTPClient = func(timeout time.Duration) *http.Client {
+		return &http.Client{Timeout: timeout, Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			if req.URL.Host == "v.douyin.com" {
+				return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {"https://www.iesdouyin.com/share/video/7391234567890123456/?region=CN&u_code=sharer&did=42"}}, Body: io.NopCloser(strings.NewReader("")), Request: req}, nil
+			}
+			return http.DefaultTransport.RoundTrip(req)
+		})}
+	}
+	api := socialVideoParseAPI{ID: "api-good", Name: "好接口", Platforms: []string{"douyin"}, Enabled: true, Method: "GET", URL: server.URL + "/good?url={url}", TimeoutSeconds: 5}
+	result, err := svc.runSocialVideoParseTest(context.Background(), api, "douyin", "https://v.douyin.com/abc123/")
+	if err != nil || !result.OK {
+		t.Fatalf("runSocialVideoParseTest() = %#v, %v", result, err)
+	}
+	if got := lastURL.Load(); got != "https://www.douyin.com/video/7391234567890123456" {
+		t.Fatalf("parse API received url %v, want the clean canonical URL", got)
 	}
 }
 

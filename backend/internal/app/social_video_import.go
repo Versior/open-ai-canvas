@@ -107,6 +107,23 @@ func resolveSocialVideoURL(ctx context.Context, source socialVideoURL, client *h
 	return "", BadAuthRequest("视频短链接跳转次数过多")
 }
 
+// socialVideoAPIURL 把展开后的抖音 / TikTok 单视频地址收成不带查询参数的标准地址，再交给第三方解析接口。
+// 短链展开后带着分享人的 u_code、did 等跟踪参数，不该发给第三方；有的接口也不认 iesdouyin 的分享页地址。
+func socialVideoAPIURL(platform, resolved string) string {
+	parsed, err := url.Parse(resolved)
+	if err != nil {
+		return resolved
+	}
+	if platform == "douyin" {
+		segments := strings.Split(strings.Trim(parsed.EscapedPath(), "/"), "/")
+		if id := segments[len(segments)-1]; id != "" && strings.Trim(id, "0123456789") == "" {
+			return "https://www.douyin.com/video/" + id
+		}
+	}
+	parsed.RawQuery, parsed.Fragment = "", ""
+	return parsed.String()
+}
+
 func validateSocialVideoHop(raw, expectedPlatform string, validator func(string) (*url.URL, error)) (*url.URL, bool, error) {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || !strings.EqualFold(parsed.Scheme, "https") || parsed.User != nil || parsed.Fragment != "" {

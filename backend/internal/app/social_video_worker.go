@@ -83,7 +83,7 @@ func (w *taskWorkerCoordinator) runSocialVideoImport(ctx context.Context, task *
 		validator := s.socialVideoURLValidator
 		resolved, err := resolveSocialVideoURL(ctx, socialVideoURL{URL: input.URL, Platform: input.Platform}, s.socialVideoParseClient(30*time.Second), validator)
 		if err == nil {
-			targetURL, canonicalID = resolved, socialVideoCanonicalIDFromURL(input.Platform, resolved)
+			targetURL, canonicalID = socialVideoAPIURL(input.Platform, resolved), socialVideoCanonicalIDFromURL(input.Platform, resolved)
 		} else {
 			s.logInfo(task.UserID, task.ID, "短链接展开失败，直接把原链接交给解析接口", socialVideoShortError(err))
 		}

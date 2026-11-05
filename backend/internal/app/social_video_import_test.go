@@ -53,6 +53,12 @@ func TestParseSocialVideoShareText(t *testing.T) {
 			wantURL:  "https://xhslink.com/a/AbCdEf12",
 		},
 		{
+			name:     "xiaohongshu ios share uses the cn short domain",
+			text:     "看看这篇笔记 https://xhslink.cn/o/AxnRePgIokn 复制后打开【小红书】",
+			platform: "xiaohongshu",
+			wantURL:  "https://xhslink.cn/o/AxnRePgIokn",
+		},
+		{
 			name:     "bilibili short link",
 			text:     "【开箱】 https://b23.tv/Ab12Cd",
 			platform: "bilibili",
@@ -74,6 +80,19 @@ func TestParseSocialVideoShareText(t *testing.T) {
 				t.Fatalf("parseSocialVideoShareText() = %#v", parsed)
 			}
 		})
+	}
+}
+
+func TestSocialVideoAPIURLDropsShareTrackingParameters(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct{ platform, resolved, want string }{
+		{"douyin", "https://www.iesdouyin.com/share/video/7525380501322911011/?region=CN&mid=1&u_code=abc&did=2&share_sign=x", "https://www.douyin.com/video/7525380501322911011"},
+		{"douyin", "https://www.douyin.com/video/7391234567890123456?previous_page=web_code_link", "https://www.douyin.com/video/7391234567890123456"},
+		{"tiktok", "https://www.tiktok.com/@shop/video/7461234567890123456?_r=1&_t=ZT-abc", "https://www.tiktok.com/@shop/video/7461234567890123456"},
+	} {
+		if got := socialVideoAPIURL(test.platform, test.resolved); got != test.want {
+			t.Errorf("socialVideoAPIURL(%s, %s) = %s, want %s", test.platform, test.resolved, got, test.want)
+		}
 	}
 }
 

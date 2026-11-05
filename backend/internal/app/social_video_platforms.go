@@ -21,7 +21,8 @@ var socialVideoPlatforms = []socialVideoPlatformInfo{
 	{ID: "douyin", Name: "抖音", Hosts: []string{"douyin.com", "www.douyin.com", "m.douyin.com", "www.iesdouyin.com"}, ShortHosts: []string{"v.douyin.com"}, Strict: true},
 	{ID: "tiktok", Name: "TikTok", Hosts: []string{"tiktok.com", "www.tiktok.com", "m.tiktok.com"}, ShortHosts: []string{"vm.tiktok.com", "vt.tiktok.com"}, Strict: true},
 	{ID: "kuaishou", Name: "快手", Hosts: []string{"kuaishou.com", "www.kuaishou.com", "m.kuaishou.com", "v.m.chenzhongtech.com", "m.gifshow.com", "www.gifshow.com"}, ShortHosts: []string{"v.kuaishou.com"}},
-	{ID: "xiaohongshu", Name: "小红书", Hosts: []string{"xiaohongshu.com", "www.xiaohongshu.com"}, ShortHosts: []string{"xhslink.com"}},
+	// 小红书 iOS 新版分享出来的是 xhslink.cn，旧分享和网页端是 xhslink.com。
+	{ID: "xiaohongshu", Name: "小红书", Hosts: []string{"xiaohongshu.com", "www.xiaohongshu.com"}, ShortHosts: []string{"xhslink.com", "xhslink.cn"}},
 	{ID: "bilibili", Name: "哔哩哔哩", Hosts: []string{"bilibili.com", "www.bilibili.com", "m.bilibili.com"}, ShortHosts: []string{"b23.tv"}},
 	{ID: "weibo", Name: "微博", Hosts: []string{"weibo.com", "www.weibo.com", "m.weibo.cn", "video.weibo.com"}},
 	{ID: "youtube", Name: "YouTube", Hosts: []string{"youtube.com", "www.youtube.com", "m.youtube.com"}, ShortHosts: []string{"youtu.be"}},

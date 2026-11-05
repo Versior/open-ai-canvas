@@ -454,7 +454,7 @@ func (s *Service) runSocialVideoParseTest(ctx context.Context, api socialVideoPa
 	target := link
 	if info := socialVideoPlatformByID(platform); info != nil && info.Strict {
 		if resolved, err := resolveSocialVideoURL(ctx, socialVideoURL{URL: link, Platform: platform}, s.socialVideoParseClient(30*time.Second), s.socialVideoURLValidator); err == nil {
-			target = resolved
+			target = socialVideoAPIURL(platform, resolved)
 		}
 	}
 	finish := func(err error) (SocialVideoParseTestResult, error) {
