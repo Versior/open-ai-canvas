@@ -147,13 +147,48 @@ func (s *Service) callSocialVideoParseAPI(ctx context.Context, api socialVideoPa
 		return resp.StatusCode, nil, parseStageError("response", "接口返回超过 1 MiB")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if message := socialVideoParseUpstreamMessage(raw, api.Mapping.MessagePath, api.Secret); message != "" {
+			return resp.StatusCode, raw, parseStageError("response", "接口返回 HTTP %d：%s", resp.StatusCode, message)
+		}
 		return resp.StatusCode, raw, parseStageError("response", "接口返回 HTTP %d", resp.StatusCode)
 	}
 	return resp.StatusCode, raw, nil
 }
 
+// socialVideoParseUpstreamMessage 从出错的返回里找一句说明：先看配置的错误信息字段，再看常见的 msg / message / error。
+func socialVideoParseUpstreamMessage(raw []byte, messagePath, secret string) string {
+	var root any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if decoder.Decode(&root) != nil {
+		return ""
+	}
+	paths := []string{"msg", "message", "error.message", "error", "errmsg", "error_msg", "detail"}
+	if messagePath != "" {
+		paths = append([]string{messagePath}, paths...)
+	}
+	for _, path := range paths {
+		if value, ok := socialVideoJSONPath(root, path); ok {
+			if text, isText := value.(string); isText && strings.TrimSpace(text) != "" {
+				return trimmedRunes(redactSocialVideoSecret(strings.TrimSpace(text), secret), 80)
+			}
+		}
+	}
+	return ""
+}
+
+// redactSocialVideoSecret 把接口回显的密钥换成 ***：错误说明会写进调用记录，也会显示给导入链接的用户。
+// 要在截断之前调用，否则截到一半的密钥换不掉。
+func redactSocialVideoSecret(text, secret string) string {
+	if secret == "" || text == "" {
+		return text
+	}
+	return strings.ReplaceAll(text, secret, "***")
+}
+
 // mapSocialVideoParseResponse 按字段映射从返回里取视频地址等信息；没配视频地址路径时自动识别。
-func mapSocialVideoParseResponse(raw []byte, mapping SocialVideoParseMapping) (socialVideoParseResult, error) {
+// secret 是这条接口的明文密钥，只用来从接口回显的错误信息里抹掉它。
+func mapSocialVideoParseResponse(raw []byte, mapping SocialVideoParseMapping, secret string) (socialVideoParseResult, error) {
 	var root any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
@@ -167,11 +202,11 @@ func mapSocialVideoParseResponse(raw []byte, mapping SocialVideoParseMapping) (s
 			message := ""
 			if mapping.MessagePath != "" {
 				if text, ok := socialVideoJSONPath(root, mapping.MessagePath); ok {
-					message = trimmedRunes(socialVideoJSONString(text), 120)
+					message = trimmedRunes(redactSocialVideoSecret(socialVideoJSONString(text), secret), 120)
 				}
 			}
 			if message == "" {
-				message = fmt.Sprintf("%s = %s", mapping.SuccessPath, trimmedRunes(actual, 40))
+				message = fmt.Sprintf("%s = %s", mapping.SuccessPath, trimmedRunes(redactSocialVideoSecret(actual, secret), 40))
 			}
 			return socialVideoParseResult{}, parseStageError("mapping", "接口返回失败：%s", message)
 		}

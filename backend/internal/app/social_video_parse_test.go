@@ -76,14 +76,14 @@ func TestNormalizeSocialVideoParseAPIRequestValidatesDefinition(t *testing.T) {
 func TestMapSocialVideoParseResponseReadsConfiguredAndDetectedFields(t *testing.T) {
 	t.Parallel()
 	raw := []byte(`{"code":200,"msg":"ok","data":{"title":"开箱","cover":"https://p3.example.com/c.jpeg~tplv-noop.image","music":{"url":"https://m.example.com/a.mp3"},"author":{"avatar_url":"https://p.example.com/a.jpg"},"video":{"play_addr":"https://v.example.com/obj/video/abc.mp4?sig=1"},"aweme_id":"7391234567890123456","duration":15200}}`)
-	detected, err := mapSocialVideoParseResponse(raw, SocialVideoParseMapping{SuccessPath: "code", SuccessValues: "200", IDPath: "data.aweme_id", DurationPath: "data.duration", DurationUnit: "ms"})
+	detected, err := mapSocialVideoParseResponse(raw, SocialVideoParseMapping{SuccessPath: "code", SuccessValues: "200", IDPath: "data.aweme_id", DurationPath: "data.duration", DurationUnit: "ms"}, "")
 	if err != nil {
 		t.Fatalf("map detected: %v", err)
 	}
 	if detected.VideoURL != "https://v.example.com/obj/video/abc.mp4?sig=1" || detected.VideoURLPath != "data.video.play_addr" || detected.Title != "开箱" || detected.ID != "7391234567890123456" || detected.DurationMs != 15200 {
 		t.Fatalf("detected = %#v", detected)
 	}
-	configured, err := mapSocialVideoParseResponse([]byte(`{"status":"success","result":{"items":[{"url":"//cdn.example.com/x"}],"len":"12.5"}}`), SocialVideoParseMapping{SuccessPath: "status", SuccessValues: "SUCCESS", VideoURLPath: "result.items[0].url", DurationPath: "result.len"})
+	configured, err := mapSocialVideoParseResponse([]byte(`{"status":"success","result":{"items":[{"url":"//cdn.example.com/x"}],"len":"12.5"}}`), SocialVideoParseMapping{SuccessPath: "status", SuccessValues: "SUCCESS", VideoURLPath: "result.items[0].url", DurationPath: "result.len"}, "")
 	if err != nil {
 		t.Fatalf("map configured: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestMapSocialVideoParseResponseReadsConfiguredAndDetectedFields(t *testing.
 		"not json":                  {`<html>blocked</html>`, SocialVideoParseMapping{}, "不是 JSON"},
 		"invalid media url":         {`{"data":{"url":"javascript:alert(1)"}}`, SocialVideoParseMapping{VideoURLPath: "data.url"}, "视频地址无效"},
 	} {
-		if _, err := mapSocialVideoParseResponse([]byte(test.raw), test.mapping); err == nil || !strings.Contains(err.Error(), test.want) {
+		if _, err := mapSocialVideoParseResponse([]byte(test.raw), test.mapping, ""); err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Errorf("%s: err = %v, want containing %q", name, err, test.want)
 		}
 	}
@@ -274,6 +274,47 @@ func TestDownloadSocialVideoWithPoolFallsBackToNextAPI(t *testing.T) {
 	}
 	if len(state.Logs) != 2 || !state.Logs[0].OK || state.Logs[1].OK || state.Logs[1].Stage != "response" {
 		t.Fatalf("logs = %#v", state.Logs)
+	}
+}
+
+func TestSocialVideoParseErrorsQuoteUpstreamMessageWithoutSecret(t *testing.T) {
+	const secret = "sk-live-secret"
+	mux := http.NewServeMux()
+	mux.HandleFunc("/down", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprintf(w, `{"code":502,"error":{"message":"额度用完：%s"}}`, r.URL.Query().Get("key"))
+	})
+	mux.HandleFunc("/plain", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "upstream down", http.StatusServiceUnavailable)
+	})
+	mux.HandleFunc("/refused", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, `{"code":401,"msg":"密钥 %s 无效"}`, r.URL.Query().Get("key"))
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	svc, _ := newSocialVideoImportTestService(t)
+	useLocalSocialVideoParseNetwork(svc)
+	link := "https://www.douyin.com/video/7391234567890123456"
+	call := func(path string) error {
+		api := socialVideoParseAPI{ID: "api-1", Name: "接口一", Platforms: []string{"douyin"}, Enabled: true, Method: "GET", URL: server.URL + path + "?url={url}&key={key}", Secret: secret, TimeoutSeconds: 5}
+		_, _, err := svc.callSocialVideoParseAPI(context.Background(), api, link, "douyin")
+		return err
+	}
+	if err := call("/down"); err == nil || err.Error() != "接口返回 HTTP 502：额度用完：***" {
+		t.Fatalf("down error = %v", err)
+	}
+	if err := call("/plain"); err == nil || err.Error() != "接口返回 HTTP 503" {
+		t.Fatalf("plain error = %v", err)
+	}
+	// 成功标记不对时，从配置的错误信息字段取说明，同样不能带出密钥；这也是导入失败时用户看到的原因。
+	seedSocialVideoParseAPIs(t, svc, socialVideoParseAPI{ID: "api-refused", Name: "拒绝接口", Platforms: []string{"douyin"}, Enabled: true, Method: "GET", URL: server.URL + "/refused?url={url}&key={key}", Secret: secret, TimeoutSeconds: 5, Mapping: SocialVideoParseMapping{SuccessPath: "code", SuccessValues: "200", MessagePath: "msg"}})
+	_, err := svc.downloadSocialVideoWithPool(context.Background(), socialVideoParseJob{Platform: "douyin", URL: link, WorkDir: t.TempDir(), MaxBytes: 10 << 20})
+	if err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), "密钥 *** 无效") {
+		t.Fatalf("pool error = %v", err)
+	}
+	state, _ := svc.socialVideoParseState()
+	if encoded, _ := json.Marshal(state); strings.Contains(string(encoded), secret) {
+		t.Fatalf("call log leaks the secret: %s", encoded)
 	}
 }
 

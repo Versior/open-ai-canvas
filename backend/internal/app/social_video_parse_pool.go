@@ -243,7 +243,7 @@ func (s *Service) trySocialVideoParseAPI(ctx context.Context, api socialVideoPar
 	if err != nil {
 		return nil, err
 	}
-	result, err := mapSocialVideoParseResponse(raw, api.Mapping)
+	result, err := mapSocialVideoParseResponse(raw, api.Mapping, api.Secret)
 	if err != nil {
 		return nil, err
 	}

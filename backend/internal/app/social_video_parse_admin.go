@@ -482,7 +482,7 @@ func (s *Service) runSocialVideoParseTest(ctx context.Context, api socialVideoPa
 	if err != nil {
 		return finish(err)
 	}
-	mapped, err := mapSocialVideoParseResponse(raw, api.Mapping)
+	mapped, err := mapSocialVideoParseResponse(raw, api.Mapping, api.Secret)
 	if err != nil {
 		return finish(err)
 	}
