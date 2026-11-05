@@ -218,11 +218,22 @@ describe("Usage bar above the composer", () => {
         );
     const contextView = reading(47_700);
 
-    it("stays out of the way until there is a real reading", () => {
+    it("keeps its place before the first reading and never invents numbers", () => {
         const idle = presentAgentContextUsage(emptyAgentContextUsage(""));
         expect(agentUsageHeadline(null)).toEqual([]);
         expect(agentUsageDetails(idle, null)).toEqual({ context: [], run: [] });
-        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} />)).toBe("");
+        // 没有读数时仍占着同一个位置：给出模型的上下文窗口和下一步会发生什么，没有「明细」。
+        const fresh = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} contextWindow={1_000_000} />);
+        expect(fresh).toContain("agent-usage is-idle");
+        expect(fresh).toContain("— / 1M");
+        expect(fresh).toContain("发出消息后开始统计");
+        expect(fresh).not.toContain("明细");
+        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />)).toContain("这一轮进行中，读数稍后出现");
+        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} hasRun />)).toContain("这一轮还没有上下文读数");
+        // 新一轮的读数到达前沿用上一轮的，标「上一轮」；这一轮还没有数字时标进行中。
+        const carried = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} running carried />);
+        expect(carried).toContain("上一轮");
+        expect(carried).toContain("进行中，模型回复后出现 token 与速度");
 
         expect(agentUsageDetails(contextView, null)).toEqual({
             context: [

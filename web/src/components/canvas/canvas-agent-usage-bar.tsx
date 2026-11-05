@@ -49,15 +49,48 @@ function UsageTiles({ items }: { items: AgentUsageItem[] }) {
 }
 
 /**
- * 输入框正上方的上下文与本轮用量。概览一直显示：上下文占用和本轮 token、速度、耗时、工具调用；
- * 「明细」展开剩余、压缩线、输入输出与缓存、模型与工具耗时。展开与否记在本机。还没有任何读数时不占位置。
+ * 输入框正上方的上下文与本轮用量，一直占着同一个位置，不会时有时无：
+ * - 还没有读数：显示所选模型的上下文窗口和「发出消息后开始统计」；
+ * - 新一轮的读数还没回来：沿用同一对话上一轮最后的读数，标「上一轮」；轮次进行中但还没有数字时标「进行中」；
+ * - 有读数：上下文占用和本轮 token、速度、耗时、工具调用；「明细」展开剩余、压缩线、输入输出与缓存、模型与工具耗时，展开与否记在本机。
  */
-export function AgentUsageBar({ view, stats }: { view: AgentContextUsageView; stats?: AgentRunStatsView | null }) {
+export function AgentUsageBar({
+    view,
+    stats,
+    running = false,
+    hasRun = false,
+    carried = false,
+    contextWindow,
+}: {
+    view: AgentContextUsageView;
+    stats?: AgentRunStatsView | null;
+    /** 当前轮次还在进行。 */
+    running?: boolean;
+    /** 当前对话已经有轮次（刷新后读数补读完成前、或首个读数前就结束的轮次）。 */
+    hasRun?: boolean;
+    /** view 是同一对话上一轮的读数（这一轮的还没到）。 */
+    carried?: boolean;
+    /** 所选模型声明的上下文窗口，没有读数时用来提示。 */
+    contextWindow?: number;
+}) {
     const [expanded, setExpanded] = useState(readExpanded);
     const detailsId = useId();
     const headline = agentUsageHeadline(stats);
     const showContext = view.phase !== "idle";
-    if (!showContext && !headline.length) return null;
+    if (!showContext && !headline.length) {
+        return (
+            <section className="agent-usage is-idle" aria-label="上下文与本轮用量">
+                <div className="agent-usage-summary is-run-only">
+                    <span className="agent-usage-context">
+                        <span>上下文</span>
+                        {contextWindow ? <span className="agent-usage-figure">— / {formatContextTokens(contextWindow)}</span> : null}
+                        <span className="agent-usage-meter" aria-hidden="true" />
+                        <span className="agent-usage-hint">{running ? "这一轮进行中，读数稍后出现" : hasRun ? "这一轮还没有上下文读数" : "发出消息后开始统计"}</span>
+                    </span>
+                </div>
+            </section>
+        );
+    }
     const details = agentUsageDetails(view, stats);
     const hasDetails = details.context.length > 0 || details.run.length > 0;
     const notes = usageNotes(view, stats);
@@ -103,6 +136,11 @@ export function AgentUsageBar({ view, stats }: { view: AgentContextUsageView; st
                         ) : null}
                         {percent ? <strong>{percent}</strong> : null}
                         {badge ? <span className="agent-usage-badge">{badge}</span> : null}
+                        {carried ? (
+                            <span className="agent-usage-tag" title="这一轮的上下文读数还没回来，先显示同一对话上一轮最后的读数">
+                                上一轮
+                            </span>
+                        ) : null}
                     </span>
                 ) : null}
                 {headline.length ? (
@@ -113,6 +151,13 @@ export function AgentUsageBar({ view, stats }: { view: AgentContextUsageView; st
                                 <strong>{item.value}</strong>
                             </span>
                         ))}
+                    </span>
+                ) : running ? (
+                    <span className="agent-usage-metrics">
+                        <span className="agent-usage-metric is-pending">
+                            <span>本轮</span>
+                            <span className="agent-usage-hint">进行中，模型回复后出现 token 与速度</span>
+                        </span>
                     </span>
                 ) : null}
                 {hasDetails ? (

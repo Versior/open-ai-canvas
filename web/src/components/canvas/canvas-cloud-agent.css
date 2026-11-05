@@ -153,6 +153,44 @@
     font-variant-numeric: tabular-nums;
 }
 
+.agent-usage-hint {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--agent-caption) 82%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 空态：进度条只留底槽，提示文字占满剩下的位置。 */
+.agent-usage.is-idle .agent-usage-meter {
+    flex: 0 1 72px;
+}
+
+.agent-usage.is-idle .agent-usage-hint {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.agent-usage-tag {
+    flex: none;
+    padding: 1px 6px;
+    border: 1px solid color-mix(in srgb, var(--agent-ink) 14%, transparent);
+    border-radius: 999px;
+    color: var(--agent-caption);
+    font-size: 11px;
+}
+
+.agent-usage-metric.is-pending .agent-usage-hint::before {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--agent-usage-fill);
+    content: "";
+    vertical-align: 1px;
+    animation: agent-usage-pulse 1.1s ease-in-out infinite alternate;
+}
+
 .agent-usage-meter {
     position: relative;
     flex: 1 1 56px;
@@ -352,7 +390,8 @@
     .agent-usage-toggle svg {
         transition: none;
     }
-    .agent-usage.is-compacting .agent-usage-meter > span {
+    .agent-usage.is-compacting .agent-usage-meter > span,
+    .agent-usage-metric.is-pending .agent-usage-hint::before {
         animation: none;
     }
 }

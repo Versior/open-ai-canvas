@@ -25,6 +25,7 @@ import { buildAgentDebugExport } from "@/lib/canvas/agent-debug-export";
 import { agentPlanVisible, latestAgentPlanItems, latestAgentPlanTerminal, pendingAgentQuestion } from "@/lib/canvas/cloud-agent-plan";
 import { emptyAgentContextUsage, presentAgentContextUsage, reduceAgentContextUsage, type AgentContextUsage } from "@/lib/canvas/agent-context-usage";
 import { agentRunStatsCovers, emptyAgentRunStats, presentAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
+import { configuredTextContextWindow } from "@/lib/model-capabilities";
 import { nanoid } from "nanoid";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -208,6 +209,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [view, setView] = useState<AgentPanelView>("chat");
     const [run, setRun] = useState<AgentRun | null>(null);
     const [contextUsage, setContextUsage] = useState<AgentContextUsage>(() => emptyAgentContextUsage(""));
+    // 同一对话最近一份上下文读数：新一轮的读数到达前给用量栏兜底。
+    const lastContextRef = useRef<{ conversationId: string; usage: AgentContextUsage } | null>(null);
     // 本轮统计按对话隔离；事件流续接时用 ref 判断本机是否已经有从第 1 条起的事件。
     const [runStats, setRunStats] = useState(() => emptyAgentRunStats(""));
     const runStatsRef = useRef(runStats);
@@ -1957,8 +1960,13 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     };
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
-    // 输入框上方的用量栏：上下文读数按轮次隔离，本轮统计只看当前对话的当前轮次。
-    const contextView = presentAgentContextUsage(contextUsage);
+    // 输入框上方的用量栏。读数只认当前轮次的：新建对话或切走后不能残留别的对话的读数。
+    // 新一轮发出后到它的第一份读数之间（或首个读数前就失败的轮次），沿用同一对话上一轮最后的读数，栏不会闪没。
+    const liveContext = run?.id && contextUsage.runId === run.id ? contextUsage : null;
+    if (liveContext?.reading && activeConversationId) lastContextRef.current = { conversationId: activeConversationId, usage: liveContext };
+    const carriedContext = !liveContext?.reading && !liveContext?.compactionPending && lastContextRef.current?.conversationId === activeConversationId ? lastContextRef.current.usage : null;
+    const contextView = presentAgentContextUsage(carriedContext ?? liveContext ?? emptyAgentContextUsage(""));
+    const contextWindow = selectedModel ? configuredTextContextWindow(config, selectedModel) : undefined;
     const runStatsView = run?.id && runStats.conversationId === activeConversationId ? presentAgentRunStats(runStats.runs[run.id]) : null;
     const contextBar =
         (canvasId && selectionCount > 0) || visionMissing || longTextVisible ? (
@@ -2503,7 +2511,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         stopping={stopping}
                                         references={references}
                                         includeAssetLibrary={false}
-                                        statusBar={<AgentUsageBar view={contextView} stats={runStatsView} />}
+                                        statusBar={<AgentUsageBar view={contextView} stats={runStatsView} running={running} hasRun={Boolean(run?.id)} carried={Boolean(carriedContext)} contextWindow={contextWindow} />}
                                         left={<ComposerControls config={config} selectedModel={selectedModel} permissionMode={permissionMode} theme={theme} onModelChange={setModel} onPermissionChange={setPermissionMode} />}
                                     />
                                 </motion.div>
