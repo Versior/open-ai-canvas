@@ -15,6 +15,7 @@ import type { ModelChannel } from "@/stores/use-config-store";
 import { priceCurrencyOptions } from "@/services/api/user-groups";
 import { defaultPriceTier, normalizeUpstreamModelKey, priceTierPayloadFromForm } from "./channel-model-price-tier-form";
 import { PriceTierFields } from "./channel-model-price-tier-fields";
+import { TokenPriceRulesSection } from "./channel-model-token-rules";
 import { ChannelModelTagsEditor } from "./channel-model-tags-editor";
 import { ChannelModelPresetPicker } from "./channel-model-preset-picker";
 import { applyModelMetadataPreset, loadModelMetadataPresets } from "@/lib/model-metadata-presets";
@@ -567,6 +568,14 @@ export function ChannelModelEditor({
                                             </Form.List>
                                         </div>
                                     </section>
+                                    {modelCapability === "text" ? (
+                                        <TokenPriceRulesSection
+                                            form={form}
+                                            onDirty={() => {
+                                                dirtyRef.current = true;
+                                            }}
+                                        />
+                                    ) : null}
                                 </div>
                             ),
                         },

@@ -647,7 +647,7 @@ describe("LibTV inspiration navigation", () => {
         expect(resources).toContain('toolItem("inspiration", "/inspiration", t)');
         expect(resources.indexOf('toolItem("plugins", "/plugins", t)')).toBeLessThan(resources.indexOf('toolItem("inspiration", "/inspiration", t)'));
         expect(sidebar).toContain('inspiration: "nav.collapsed.inspiration"');
-        expect(source("../src/components/layout/workspace-top-bar.tsx")).toContain('inspiration: "nav.pageTitles.inspiration"');
+        expect(source("../src/lib/workspace-page-title.ts")).toContain('inspiration: "nav.pageTitles.inspiration"');
         expect(source("../src/components/layout/workspace-command-palette.tsx")).toContain('toolEntry("inspiration", "/inspiration")');
         const modules = source("../src/lib/workspace-route-modules.ts");
         expect(modules).toContain('inspiration: preloadableLazy(() => import("@/pages/inspirations"))');

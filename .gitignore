@@ -33,6 +33,10 @@ docs/content/docs/backend/*
 !docs/content/docs/backend/creative-agent-runtime.mdx
 !docs/content/docs/backend/ecommerce-agent.mdx
 !docs/content/docs/backend/interior-design.mdx
+# Keep the pose library operator guide versioned without unignoring generated docs.
+!docs/content/docs/canvas/
+docs/content/docs/canvas/*
+!docs/content/docs/canvas/pose-library.mdx
 # Keep the creative Agent design versioned without unignoring generated docs.
 !docs/content/docs/overview/
 docs/content/docs/overview/*

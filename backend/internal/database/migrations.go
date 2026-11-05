@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"yingce/backend/internal/kernel"
@@ -12,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 87
+const CurrentSchemaVersion int64 = 92
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -67,6 +68,16 @@ const paymentOrderChargeMethodMigrationName = "payment_order_charge_method"
 const paymentOrderChargeMethodMigrationChecksum = "sha256:payment-order-charge-method-v80-20261104"
 const arkPortraitAssetsMigrationName = "ark_portrait_assets"
 const arkPortraitAssetsMigrationChecksum = "sha256:ark-portrait-assets-v81-20261104"
+const skillAdminEditsMigrationName = "skill_admin_edits"
+const skillAdminEditsMigrationChecksum = "sha256:skill-admin-edits-v83-20261105"
+const tokenPriceRulesMigrationName = "token_price_rules"
+const tokenPriceRulesMigrationChecksum = "sha256:token-price-rules-v84-20261105"
+const poseLibraryMigrationName = "pose_library"
+const poseLibraryMigrationChecksum = "sha256:pose-library-v85-20261105"
+const arkAssetGroupsMigrationName = "ark_asset_groups"
+const arkAssetGroupsMigrationChecksum = "sha256:ark-asset-groups-v86-20261105"
+const inspirationFeedMigrationName = "inspiration_feed"
+const inspirationFeedMigrationChecksum = "sha256:inspiration-feed-v87-20261105"
 
 const postgresSchemaMigrationLockID int64 = 73123910420260830
 
@@ -342,6 +353,204 @@ var schemaMigrations = []migration{
 	// 上游 main 的 82（文本 Token 缓存写入价）。Fork 的 84–86 已在多个库里执行过，从这一条起上游新迁移接在 Fork 自有迁移之后，
 	// 不再把 Fork 自有迁移往后挪；名称和校验和与上游一致。
 	{version: 87, name: tokenCacheWritePriceMigrationName, checksum: tokenCacheWritePriceMigrationChecksum, apply: migrateTokenCacheWritePrice},
+	// 上游 main 的 83–87（技能后台修改、Token 分时与上下文价格档、姿势库、方舟素材组、灵感上新）。Fork 的 84–87 已占用，
+	// 接在 Fork 87 之后顺延五位为 88–92，名称和校验和与上游一致；上游库启动时由 normalizeUpstreamMigrations 搬迁。
+	{version: 88, name: skillAdminEditsMigrationName, checksum: skillAdminEditsMigrationChecksum, apply: migrateSkillAdminEdits},
+	{version: 89, name: tokenPriceRulesMigrationName, checksum: tokenPriceRulesMigrationChecksum, apply: migrateTokenPriceRules},
+	{version: 90, name: poseLibraryMigrationName, checksum: poseLibraryMigrationChecksum, apply: func(tx *gorm.DB) error {
+		// 站点级姿势库：来源署名与参考图条目，只建新表；图片文件在数据目录 pose-library/ 下。
+		return tx.AutoMigrate(&model.PoseLibrarySource{}, &model.PoseLibraryItem{})
+	}},
+	{version: 91, name: arkAssetGroupsMigrationName, checksum: arkAssetGroupsMigrationChecksum, apply: migrateArkAssetGroups},
+	{version: 92, name: inspirationFeedMigrationName, checksum: inspirationFeedMigrationChecksum, apply: func(tx *gorm.DB) error {
+		// 灵感上新：定时同步的上游灵感条目，只建新表；开关与同步记录存 system_settings。
+		return tx.AutoMigrate(&model.InspirationFeedEntry{})
+	}},
+}
+
+// migrateArkAssetGroups 把方舟真人素材库扩展为真人 / 虚拟 / 版权 IP 三类素材组：
+//   - 会话、素材组、素材补列；旧素材组均为用户自建的真人组，旧素材无需审核。
+//   - 新建平台素材组授权表。
+//   - 设置 JSON 的 portraitEnabled 改名为 realEnabled，保留管理员已开放的状态。
+//   - 由旧版「加入素材库」写入的真人素材（metadata.source=ark-portrait）转为方舟认证分类，
+//     并删除已废弃的手动 portraitCertified 标记。
+func migrateArkAssetGroups(tx *gorm.DB) error {
+	for _, target := range []struct {
+		entity  any
+		columns []string
+	}{
+		{&model.ArkPortraitSession{}, []string{"scope", "description", "billing_order_id"}},
+		{&model.ArkPortraitGroup{}, []string{"kind", "scope", "description", "grant_all", "authorized_at", "expires_at", "billing_order_id"}},
+		{&model.ArkPortraitAsset{}, []string{"library_asset_id", "reviewed_by", "reviewed_at"}},
+	} {
+		if !tx.Migrator().HasTable(target.entity) {
+			continue
+		}
+		for _, column := range target.columns {
+			if tx.Migrator().HasColumn(target.entity, column) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(target.entity, column); err != nil {
+				return fmt.Errorf("补充方舟素材列 %s：%w", column, err)
+			}
+		}
+	}
+	for _, index := range []struct {
+		entity any
+		field  string
+	}{
+		{&model.ArkPortraitGroup{}, "Kind"},
+		{&model.ArkPortraitGroup{}, "Scope"},
+		{&model.ArkPortraitAsset{}, "LibraryAssetID"},
+	} {
+		if !tx.Migrator().HasTable(index.entity) || tx.Migrator().HasIndex(index.entity, index.field) {
+			continue
+		}
+		if err := tx.Migrator().CreateIndex(index.entity, index.field); err != nil {
+			return fmt.Errorf("创建方舟素材索引 %s：%w", index.field, err)
+		}
+	}
+	if err := tx.AutoMigrate(&model.ArkPortraitGroupGrant{}); err != nil {
+		return fmt.Errorf("创建方舟素材组授权表：%w", err)
+	}
+	if err := migrateArkPortraitSettingKey(tx); err != nil {
+		return err
+	}
+	return migrateArkPortraitLibraryAssets(tx)
+}
+
+func migrateArkPortraitSettingKey(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.SystemSetting{}) {
+		return nil
+	}
+	var setting model.SystemSetting
+	err := tx.Where("key = ?", "ark_private_assets").Limit(1).Find(&setting).Error
+	if err != nil {
+		return fmt.Errorf("读取方舟素材库配置：%w", err)
+	}
+	if setting.Key == "" || strings.TrimSpace(setting.ValueJSON) == "" {
+		return nil
+	}
+	var value map[string]any
+	if err := json.Unmarshal([]byte(setting.ValueJSON), &value); err != nil {
+		return fmt.Errorf("解析方舟素材库配置：%w", err)
+	}
+	legacy, ok := value["portraitEnabled"]
+	if !ok {
+		return nil
+	}
+	if _, exists := value["realEnabled"]; !exists {
+		value["realEnabled"] = legacy
+	}
+	delete(value, "portraitEnabled")
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	return tx.Model(&model.SystemSetting{}).Where("key = ?", setting.Key).Update("value_json", string(encoded)).Error
+}
+
+func migrateArkPortraitLibraryAssets(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.Asset{}) {
+		return nil
+	}
+	var assets []model.Asset
+	if err := tx.Where("payload_json LIKE ?", `%portraitCertified%`).Find(&assets).Error; err != nil {
+		return fmt.Errorf("读取旧人像认证素材：%w", err)
+	}
+	now := time.Now().UTC()
+	for _, asset := range assets {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(asset.PayloadJSON), &payload); err != nil {
+			// 无法解析的历史记录保持原样，交给现有坏数据隔离逻辑。
+			continue
+		}
+		if _, ok := payload["portraitCertified"]; !ok {
+			continue
+		}
+		delete(payload, "portraitCertified")
+		category := asset.Category
+		metadata, _ := payload["metadata"].(map[string]any)
+		arkAssetID, _ := payload["arkAssetId"].(string)
+		if source, _ := metadata["source"].(string); source == "ark-portrait" && strings.TrimSpace(arkAssetID) != "" && asset.Kind == "image" {
+			certifiedAt := asset.UpdatedAt
+			if certifiedAt.IsZero() {
+				certifiedAt = now
+			}
+			certification := map[string]any{"kind": "real", "scope": "user", "certifiedAt": certifiedAt.UTC().Format(time.RFC3339Nano), "previousCategory": string(asset.Category)}
+			if arkGroupID, _ := metadata["arkPortraitGroupId"].(string); arkGroupID != "" {
+				certification["arkGroupId"] = arkGroupID
+			}
+			var portrait model.ArkPortraitAsset
+			if tx.Migrator().HasTable(&model.ArkPortraitAsset{}) {
+				if err := tx.Where("user_id = ? AND ark_asset_id = ?", asset.UserID, strings.TrimSpace(arkAssetID)).Limit(1).Find(&portrait).Error; err != nil {
+					return fmt.Errorf("读取方舟真人素材：%w", err)
+				}
+			}
+			if portrait.ID != "" {
+				certification["portraitAssetId"] = portrait.ID
+				certification["groupId"] = portrait.GroupID
+				if portrait.LibraryAssetID == "" {
+					if err := tx.Model(&model.ArkPortraitAsset{}).Where("id = ?", portrait.ID).Update("library_asset_id", asset.ID).Error; err != nil {
+						return fmt.Errorf("关联方舟真人素材：%w", err)
+					}
+				}
+			}
+			payload["arkCertification"] = certification
+			payload["category"] = string(model.AssetCategoryArk)
+			category = model.AssetCategoryArk
+		}
+		payload["updatedAt"] = now.Format(time.RFC3339Nano)
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&model.Asset{}).Where("id = ? AND user_id = ?", asset.ID, asset.UserID).Updates(map[string]any{"payload_json": string(encoded), "category": category, "updated_at": now}).Error; err != nil {
+			return fmt.Errorf("更新旧人像认证素材：%w", err)
+		}
+	}
+	return nil
+}
+
+// migrateTokenPriceRules 为 Token 价格档增加分时与上下文规则，为订单增加规则快照与命中序号。
+// 旧价格档规则为空且关闭，旧订单快照为空串，结算仍只用基础 Token 单价。
+func migrateTokenPriceRules(tx *gorm.DB) error {
+	for _, target := range []struct {
+		entity  any
+		columns []string
+	}{
+		{&model.ChannelModelPriceTier{}, []string{"token_price_rules_enabled", "token_price_rules"}},
+		{&model.BillingOrder{}, []string{"token_price_rules_json", "token_price_rule"}},
+	} {
+		if !tx.Migrator().HasTable(target.entity) {
+			continue
+		}
+		for _, column := range target.columns {
+			if tx.Migrator().HasColumn(target.entity, column) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(target.entity, column); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// migrateSkillAdminEdits 为技能增加管理员修改时间。旧技能两列为空，内置技能启动同步和 GitHub 同步行为不变。
+func migrateSkillAdminEdits(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.Skill{}) {
+		return nil
+	}
+	for _, column := range []string{"admin_info_edited_at", "admin_content_edited_at"} {
+		if tx.Migrator().HasColumn(&model.Skill{}, column) {
+			continue
+		}
+		if err := tx.Migrator().AddColumn(&model.Skill{}, column); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateTokenCacheWritePrice 为文本 Token 定价增加缓存写入单价，为调用日志和账单增加缓存写入用量。
@@ -1113,6 +1322,44 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 				}
 			}
 		}
+	case 88:
+		for _, column := range []string{"admin_info_edited_at", "admin_content_edited_at"} {
+			if tx.Migrator().HasTable(&model.Skill{}) && !tx.Migrator().HasColumn(&model.Skill{}, column) {
+				return fmt.Errorf("技能后台修改迁移账本与物理结构不一致：skills 缺少 %s", column)
+			}
+		}
+	case 89:
+		for _, target := range []struct {
+			entity  any
+			columns []string
+		}{
+			{&model.ChannelModelPriceTier{}, []string{"token_price_rules_enabled", "token_price_rules"}},
+			{&model.BillingOrder{}, []string{"token_price_rules_json", "token_price_rule"}},
+		} {
+			if !tx.Migrator().HasTable(target.entity) {
+				continue
+			}
+			for _, column := range target.columns {
+				if !tx.Migrator().HasColumn(target.entity, column) {
+					return fmt.Errorf("Token 价格规则迁移账本与物理结构不一致：缺少 %s", column)
+				}
+			}
+		}
+	case 90:
+		if !tx.Migrator().HasTable(&model.PoseLibrarySource{}) || !tx.Migrator().HasTable(&model.PoseLibraryItem{}) {
+			return fmt.Errorf("姿势库迁移账本与物理结构不一致：缺少姿势来源或条目表")
+		}
+	case 91:
+		if !tx.Migrator().HasTable(&model.ArkPortraitGroupGrant{}) {
+			return fmt.Errorf("方舟素材组迁移账本与物理结构不一致：缺少素材组授权表")
+		}
+		if tx.Migrator().HasTable(&model.ArkPortraitGroup{}) && !tx.Migrator().HasColumn(&model.ArkPortraitGroup{}, "kind") {
+			return fmt.Errorf("方舟素材组迁移账本与物理结构不一致：ark_portrait_groups 缺少 kind")
+		}
+	case 92:
+		if !tx.Migrator().HasTable(&model.InspirationFeedEntry{}) {
+			return fmt.Errorf("灵感上新迁移账本与物理结构不一致：缺少灵感上新表")
+		}
 	}
 	return nil
 }
@@ -1139,8 +1386,8 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 
 	// 上游 main 72–82 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
 	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83；
-	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87。Fork 自有的形象（84）、模特库（85）、室内设计（86）
-	// 在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
+	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87，上游 83–87 顺延五位为 88–92。Fork 自有的形象（84）、
+	// 模特库（85）、室内设计（86）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
 		forkVersion  int64
@@ -1157,9 +1404,14 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 80, name: paymentOrderChargeMethodMigrationName, checksum: paymentOrderChargeMethodMigrationChecksum}, 82, paymentOrderChargeMethodMigrationChecksum},
 		{migration{version: 81, name: arkPortraitAssetsMigrationName, checksum: arkPortraitAssetsMigrationChecksum}, 83, arkPortraitAssetsMigrationChecksum},
 		{migration{version: 82, name: tokenCacheWritePriceMigrationName, checksum: tokenCacheWritePriceMigrationChecksum}, 87, tokenCacheWritePriceMigrationChecksum},
+		{migration{version: 83, name: skillAdminEditsMigrationName, checksum: skillAdminEditsMigrationChecksum}, 88, skillAdminEditsMigrationChecksum},
+		{migration{version: 84, name: tokenPriceRulesMigrationName, checksum: tokenPriceRulesMigrationChecksum}, 89, tokenPriceRulesMigrationChecksum},
+		{migration{version: 85, name: poseLibraryMigrationName, checksum: poseLibraryMigrationChecksum}, 90, poseLibraryMigrationChecksum},
+		{migration{version: 86, name: arkAssetGroupsMigrationName, checksum: arkAssetGroupsMigrationChecksum}, 91, arkAssetGroupsMigrationChecksum},
+		{migration{version: 87, name: inspirationFeedMigrationName, checksum: inspirationFeedMigrationChecksum}, 92, inspirationFeedMigrationChecksum},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 82 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 87 后仍有记录，拒绝自动重排")
 	}
 	for index, applied := range records {
 		expected := upstream[index]
@@ -1176,7 +1428,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		}
 	}
 
-	// 逆序搬迁避免主键槽位碰撞：上游 82→87、81→83 的目标都高于上游最大版本，80→82 等之后每条的目标槽位都已腾空。
+	// 逆序搬迁避免主键槽位碰撞：上游 87→92 … 83→88 的目标都高于上游最大版本，之后 82→87、81→83、80→82 等每条的目标槽位都已腾空。
 	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]

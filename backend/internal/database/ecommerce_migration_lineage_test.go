@@ -135,6 +135,15 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 			return tx.AutoMigrate(&model.ArkPortraitSession{}, &model.ArkPortraitGroup{}, &model.ArkPortraitAsset{})
 		}, time.Date(2026, 11, 4, 9, 1, 0, 0, time.UTC)},
 		{82, tokenCacheWritePriceMigrationName, tokenCacheWritePriceMigrationChecksum, migrateTokenCacheWritePrice, time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)},
+		{83, skillAdminEditsMigrationName, skillAdminEditsMigrationChecksum, migrateSkillAdminEdits, time.Date(2026, 11, 5, 9, 1, 0, 0, time.UTC)},
+		{84, tokenPriceRulesMigrationName, tokenPriceRulesMigrationChecksum, migrateTokenPriceRules, time.Date(2026, 11, 5, 9, 2, 0, 0, time.UTC)},
+		{85, poseLibraryMigrationName, poseLibraryMigrationChecksum, func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.PoseLibrarySource{}, &model.PoseLibraryItem{})
+		}, time.Date(2026, 11, 5, 9, 3, 0, 0, time.UTC)},
+		{86, arkAssetGroupsMigrationName, arkAssetGroupsMigrationChecksum, migrateArkAssetGroups, time.Date(2026, 11, 5, 9, 4, 0, 0, time.UTC)},
+		{87, inspirationFeedMigrationName, inspirationFeedMigrationChecksum, func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.InspirationFeedEntry{})
+		}, time.Date(2026, 11, 5, 9, 5, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -167,7 +176,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 87 {
+	if CurrentSchemaVersion != 92 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -187,6 +196,11 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 85, Name: studioModelLibraryMigrationName, Checksum: studioModelLibraryMigrationChecksum},
 		{Version: 86, Name: interiorDesignMigrationName, Checksum: interiorDesignMigrationChecksum},
 		{Version: 87, Name: tokenCacheWritePriceMigrationName, Checksum: tokenCacheWritePriceMigrationChecksum},
+		{Version: 88, Name: skillAdminEditsMigrationName, Checksum: skillAdminEditsMigrationChecksum},
+		{Version: 89, Name: tokenPriceRulesMigrationName, Checksum: tokenPriceRulesMigrationChecksum},
+		{Version: 90, Name: poseLibraryMigrationName, Checksum: poseLibraryMigrationChecksum},
+		{Version: 91, Name: arkAssetGroupsMigrationName, Checksum: arkAssetGroupsMigrationChecksum},
+		{Version: 92, Name: inspirationFeedMigrationName, Checksum: inspirationFeedMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -221,7 +235,7 @@ func TestMigrateSchemaPreservesForkSchema74(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -258,6 +272,12 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 85, Name: studioModelLibraryMigrationName, Checksum: studioModelLibraryMigrationChecksum},
 				{Version: 86, Name: interiorDesignMigrationName, Checksum: interiorDesignMigrationChecksum},
 				{Version: 87, Name: tokenCacheWritePriceMigrationName, Checksum: tokenCacheWritePriceMigrationChecksum, AppliedAt: applied[82]},
+				// 上游 83–87 顺延五位为 88–92。
+				{Version: 88, Name: skillAdminEditsMigrationName, Checksum: skillAdminEditsMigrationChecksum, AppliedAt: applied[83]},
+				{Version: 89, Name: tokenPriceRulesMigrationName, Checksum: tokenPriceRulesMigrationChecksum, AppliedAt: applied[84]},
+				{Version: 90, Name: poseLibraryMigrationName, Checksum: poseLibraryMigrationChecksum, AppliedAt: applied[85]},
+				{Version: 91, Name: arkAssetGroupsMigrationName, Checksum: arkAssetGroupsMigrationChecksum, AppliedAt: applied[86]},
+				{Version: 92, Name: inspirationFeedMigrationName, Checksum: inspirationFeedMigrationChecksum, AppliedAt: applied[87]},
 			} {
 				requireMigration(t, db, want)
 			}

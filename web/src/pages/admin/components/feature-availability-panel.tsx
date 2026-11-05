@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { getAdminFeatureAvailability, updateAdminFeatureAvailability } from "@/services/api/auth";
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
 import { AdminStatusBadge } from "./admin-ui";
+import { InspirationFeedRow } from "./inspiration-feed-row";
 import "./feature-availability-panel.css";
 
 type FeatureKey =
@@ -463,6 +464,7 @@ export default function FeatureAvailabilityPanel() {
                                     ))}
                                 </div>
                             ))}
+                            {group.id === "assist" ? <InspirationFeedRow /> : null}
                         </div>
                     </section>
                 );

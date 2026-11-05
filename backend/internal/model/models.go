@@ -154,6 +154,8 @@ const (
 	AssetCategoryMaterial    AssetCategory = "material"
 	AssetCategoryProduct     AssetCategory = "product"
 	AssetCategoryOther       AssetCategory = "other"
+	// AssetCategoryArk 是方舟认证素材：方舟素材组审核通过后由服务端移入，用户不能手动选择。
+	AssetCategoryArk AssetCategory = "ark"
 
 	AssetVersionStatusDraft     AssetVersionStatus = "draft"
 	AssetVersionStatusReview    AssetVersionStatus = "review"

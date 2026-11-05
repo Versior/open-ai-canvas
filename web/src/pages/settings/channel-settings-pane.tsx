@@ -1,26 +1,19 @@
 import { App, Button, Form, Input, Popconfirm, Segmented } from "antd";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
 import { Pencil, Plus, RefreshCw, Trash2, Workflow } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { ModelEditorModal } from "@/components/model-editor-modal";
 import { ChannelHeadersEditor, validateChannelHeaders } from "@/components/channel-headers-editor";
 import { WorkspaceState } from "@/components/layout/workspace-state";
+import { secretKeyProtocolIds, useUserProtocolCatalog } from "@/hooks/use-user-protocol-catalog";
 import { translate } from "@/i18n";
 import { autoConfigureUserChannelModels, mergeFetchedChannelModelCosts } from "@/lib/channel-model-catalog";
 import { loadModelMetadataPresets, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
 import { fetchChannelModels } from "@/services/api/image";
 import { fetchPluginProviderCatalog } from "@/services/api/plugin-catalog";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
-import {
-    createModelChannel,
-    defaultBaseUrlForApiFormat,
-    filterModelsByCapability,
-    modelOptionsFromChannels,
-    useConfigStore,
-    type AiConfig,
-    type ModelChannel,
-} from "@/stores/use-config-store";
+import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionsFromChannels, useConfigStore, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { ChannelModelSettings } from "./channel-video-pricing";
 import { Select } from "@/components/ui/base/select";
 import { useTranslation } from "react-i18next";
@@ -34,6 +27,9 @@ type ChannelSettingsPaneProps = {
 export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelSettingsPaneProps) {
     const { t } = useTranslation();
     const { message } = App.useApp();
+    const protocolCatalog = useUserProtocolCatalog();
+    const secretKeyProtocols = useMemo(() => secretKeyProtocolIds(protocolCatalog), [protocolCatalog]);
+    const channelConnectionError = (channel: ModelChannel) => channelConnectionErrorFor(channel, secretKeyProtocols);
     const config = useConfigStore((state) => state.config);
     const replaceConfig = useConfigStore((state) => state.replaceConfig);
     const [loadingChannelIds, setLoadingChannelIds] = useState<string[]>([]);
@@ -43,15 +39,29 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
     const [protocols, setProtocols] = useState<ModelProtocolDefinition[]>([]);
     useEffect(() => {
         let active = true;
-        void fetchPluginProviderCatalog("user.custom-channel").then((items) => { if (active) setProtocols(items); })
-            .catch(() => { if (active) message.warning("协议目录读取失败，图片与视频模型仍可手动配置"); });
-        return () => { active = false; };
+        void fetchPluginProviderCatalog("user.custom-channel")
+            .then((items) => {
+                if (active) setProtocols(items);
+            })
+            .catch(() => {
+                if (active) message.warning("协议目录读取失败，图片与视频模型仍可手动配置");
+            });
+        return () => {
+            active = false;
+        };
     }, [message]);
     useEffect(() => {
         let active = true;
-        void loadModelMetadataPresets().then((items) => { if (active) setPresets(items); })
-            .catch(() => { if (active) message.warning("模型参数目录读取失败，仍可手动配置模型"); });
-        return () => { active = false; };
+        void loadModelMetadataPresets()
+            .then((items) => {
+                if (active) setPresets(items);
+            })
+            .catch(() => {
+                if (active) message.warning("模型参数目录读取失败，仍可手动配置模型");
+            });
+        return () => {
+            active = false;
+        };
     }, [message]);
     useEffect(() => {
         if (!presets.length) return;
@@ -74,16 +84,18 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
     };
 
     const updateChannel = (id: string, patch: Partial<ModelChannel>) => {
-        updateChannels(config.channels.map((channel) => {
-            if (channel.id !== id) return channel;
-            const models = patch.models ? uniqueModels(patch.models) : channel.models;
-            return {
-                ...channel,
-                ...patch,
-                models,
-                modelCosts: patch.modelCosts !== undefined ? patch.modelCosts : (patch.models ? autoConfigureUserChannelModels({ ...channel, models }, presets, protocols) : channel.modelCosts),
-            };
-        }));
+        updateChannels(
+            config.channels.map((channel) => {
+                if (channel.id !== id) return channel;
+                const models = patch.models ? uniqueModels(patch.models) : channel.models;
+                return {
+                    ...channel,
+                    ...patch,
+                    models,
+                    modelCosts: patch.modelCosts !== undefined ? patch.modelCosts : patch.models ? autoConfigureUserChannelModels({ ...channel, models }, presets, protocols) : channel.modelCosts,
+                };
+            }),
+        );
     };
 
     const updateChannelConnection = (channel: ModelChannel, connection: UserChannelConnection) => {
@@ -212,31 +224,48 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
             <div className="settings-pane-header">
                 <div className="min-w-0">
                     <h2>{t("settings.sections.channels.label")}</h2>
-                    <p>{t("account.settings.channels.description")}<Button type="link" size="small" className="h-auto p-0 text-xs font-semibold" onClick={onOpenModels}>{t("account.layout.modelGuide.open")}</Button></p>
+                    <p>
+                        {t("account.settings.channels.description")}
+                        <Button type="link" size="small" className="h-auto p-0 text-xs font-semibold" onClick={onOpenModels}>
+                            {t("account.layout.modelGuide.open")}
+                        </Button>
+                    </p>
                 </div>
                 <div className="flex w-full gap-2 sm:w-auto sm:shrink-0">
-                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" icon={<RefreshCw className="size-4" />} loading={loadingChannelIds.includes("all")} disabled={loadingChannelIds.some((id) => id !== "all")} onClick={() => void refreshAllModels()}>{t("account.settings.channels.fetchAll")}</Button>
-                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>{t("account.settings.channels.add")}</Button>
+                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" icon={<RefreshCw className="size-4" />} loading={loadingChannelIds.includes("all")} disabled={loadingChannelIds.some((id) => id !== "all")} onClick={() => void refreshAllModels()}>
+                        {t("account.settings.channels.fetchAll")}
+                    </Button>
+                    <Button className="h-10 flex-1 sm:h-8 sm:flex-none" type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
+                        {t("account.settings.channels.add")}
+                    </Button>
                 </div>
             </div>
-            {onOpenRunningHub ? <section className="settings-section mb-3">
-                <div className="mb-3">
-                    <h3 className="text-sm font-semibold">{t("account.settings.channels.workflowTitle")}</h3>
-                    <p className="mt-1 text-xs text-foreground/55">{t("account.settings.channels.workflowDescription")}</p>
-                </div>
-                <div className="grid gap-2 lg:grid-cols-2">
-                    {onOpenRunningHub ? (
-                        <WorkflowChannelEntry
-                            icon={<Workflow className="size-4" />}
-                            title="RunningHub"
-                            description={t("account.settings.channels.runningHubDescription")}
-                            status={runningHubReady ? t("account.settings.channels.workflowsConfigured", { count: config.runningHub.workflows.length }) : config.runningHub.enabled ? t("account.settings.channels.workflowPending") : t("account.settings.channels.disabled")}
-                            ready={runningHubReady}
-                            onOpen={onOpenRunningHub}
-                        />
-                    ) : null}
-                </div>
-            </section> : null}
+            {onOpenRunningHub ? (
+                <section className="settings-section mb-3">
+                    <div className="mb-3">
+                        <h3 className="text-sm font-semibold">{t("account.settings.channels.workflowTitle")}</h3>
+                        <p className="mt-1 text-xs text-foreground/55">{t("account.settings.channels.workflowDescription")}</p>
+                    </div>
+                    <div className="grid gap-2 lg:grid-cols-2">
+                        {onOpenRunningHub ? (
+                            <WorkflowChannelEntry
+                                icon={<Workflow className="size-4" />}
+                                title="RunningHub"
+                                description={t("account.settings.channels.runningHubDescription")}
+                                status={
+                                    runningHubReady
+                                        ? t("account.settings.channels.workflowsConfigured", { count: config.runningHub.workflows.length })
+                                        : config.runningHub.enabled
+                                          ? t("account.settings.channels.workflowPending")
+                                          : t("account.settings.channels.disabled")
+                                }
+                                ready={runningHubReady}
+                                onOpen={onOpenRunningHub}
+                            />
+                        ) : null}
+                    </div>
+                </section>
+            ) : null}
             {userChannels.length ? (
                 <div className="settings-channel-list space-y-2">
                     {userChannels.map((channel) => {
@@ -245,17 +274,54 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                             <section key={channel.id} aria-labelledby={`channel-${channel.id}-title`} className="settings-channel p-2 sm:p-3">
                                 <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
                                     <div className="min-w-0 flex-1 basis-52">
-                                        <h3 id={`channel-${channel.id}-title`} className="truncate text-sm font-semibold">{channel.name || t("account.settings.channels.unnamed")}</h3>
+                                        <h3 id={`channel-${channel.id}-title`} className="truncate text-sm font-semibold">
+                                            {channel.name || t("account.settings.channels.unnamed")}
+                                        </h3>
                                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-foreground/55">
                                             {t("account.settings.channels.summary", { protocol: channelProtocolLabel(channel), count: channel.models.length })}
-                                            <ChannelStatus channel={channel} />
+                                            <ChannelStatus channel={channel} secretKeyProtocols={secretKeyProtocols} />
                                         </div>
                                     </div>
                                     <div className="flex w-full justify-end gap-2 sm:w-auto sm:shrink-0">
-                                        <Button className="h-10 sm:h-8" size="small" icon={<RefreshCw className="size-3.5" />} loading={loadingChannelIds.includes(channel.id)} disabled={loadingChannelIds.includes("all")} onClick={() => void refreshChannelModels(channel)}>{t("account.settings.channels.fetch")}</Button>
-                                        <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => { setNewChannelId(null); setEditingChannelId(channel.id); }}>{t("account.settings.channels.edit")}</Button>
-                                        <Popconfirm title={t("account.settings.channels.deleteTitle")} description={t("account.settings.channels.deleteDescription")} okText={t("common.delete")} cancelText={t("common.cancel")} okButtonProps={{ danger: true }} onConfirm={() => deleteChannel(channel.id)}>
-                                            <Tooltip title={t("account.settings.channels.delete")}><Button className="size-10 p-0 sm:size-8" aria-label={t("account.settings.channels.deleteNamed", { name: channel.name || t("account.settings.channels.unnamed") })} size="small" type="text" danger disabled={loadingChannelIds.includes(channel.id) || loadingChannelIds.includes("all")} icon={<Trash2 className="size-3.5" />} /></Tooltip>
+                                        <Button
+                                            className="h-10 sm:h-8"
+                                            size="small"
+                                            icon={<RefreshCw className="size-3.5" />}
+                                            loading={loadingChannelIds.includes(channel.id)}
+                                            disabled={loadingChannelIds.includes("all")}
+                                            onClick={() => void refreshChannelModels(channel)}
+                                        >
+                                            {t("account.settings.channels.fetch")}
+                                        </Button>
+                                        <Button
+                                            size="small"
+                                            icon={<Pencil className="size-3.5" />}
+                                            onClick={() => {
+                                                setNewChannelId(null);
+                                                setEditingChannelId(channel.id);
+                                            }}
+                                        >
+                                            {t("account.settings.channels.edit")}
+                                        </Button>
+                                        <Popconfirm
+                                            title={t("account.settings.channels.deleteTitle")}
+                                            description={t("account.settings.channels.deleteDescription")}
+                                            okText={t("common.delete")}
+                                            cancelText={t("common.cancel")}
+                                            okButtonProps={{ danger: true }}
+                                            onConfirm={() => deleteChannel(channel.id)}
+                                        >
+                                            <Tooltip title={t("account.settings.channels.delete")}>
+                                                <Button
+                                                    className="size-10 p-0 sm:size-8"
+                                                    aria-label={t("account.settings.channels.deleteNamed", { name: channel.name || t("account.settings.channels.unnamed") })}
+                                                    size="small"
+                                                    type="text"
+                                                    danger
+                                                    disabled={loadingChannelIds.includes(channel.id) || loadingChannelIds.includes("all")}
+                                                    icon={<Trash2 className="size-3.5" />}
+                                                />
+                                            </Tooltip>
                                         </Popconfirm>
                                     </div>
                                 </div>
@@ -265,13 +331,19 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                                         title={channel.id === newChannelId ? t("account.settings.channels.addCustom") : t("account.settings.channels.editCustom")}
                                         subtitle={channel.name}
                                         onClose={closeChannelEditor}
-                                        footer={<div className="model-editor-footer">
-                                            <span className="text-xs text-foreground/50">{t("account.settings.channels.autoSave")}</span>
-                                            <div className="model-editor-footer-actions">
-                                                <Button loading={loadingChannelIds.includes(channel.id)} onClick={() => void refreshChannelModels(channel)}>{t("account.settings.channels.fetch")}</Button>
-                                                <Button type="primary" onClick={closeChannelEditor}>{t("account.payment.done")}</Button>
+                                        footer={
+                                            <div className="model-editor-footer">
+                                                <span className="text-xs text-foreground/50">{t("account.settings.channels.autoSave")}</span>
+                                                <div className="model-editor-footer-actions">
+                                                    <Button loading={loadingChannelIds.includes(channel.id)} onClick={() => void refreshChannelModels(channel)}>
+                                                        {t("account.settings.channels.fetch")}
+                                                    </Button>
+                                                    <Button type="primary" onClick={closeChannelEditor}>
+                                                        {t("account.payment.done")}
+                                                    </Button>
+                                                </div>
                                             </div>
-                                        </div>}
+                                        }
                                     >
                                         <div className="model-editor-panel">
                                             <section className="model-editor-section">
@@ -280,12 +352,59 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                                                     <p className="mt-1 text-xs text-foreground/50">{t("account.settings.channels.connectionDescription")}</p>
                                                 </div>
                                                 <div className="model-editor-connection-fields grid gap-3 sm:grid-cols-2">
-                                                    <Form.Item label={t("account.settings.channels.name")} htmlFor={`channel-${channel.id}-name`} className="mb-0 sm:col-span-1"><Input id={`channel-${channel.id}-name`} value={channel.name} placeholder={t("account.settings.channels.namePlaceholder")} onChange={(event) => updateChannel(channel.id, { name: event.target.value })} onBlur={(event) => updateChannel(channel.id, { name: event.target.value.trim() || t("account.settings.channels.unnamed") })} /></Form.Item>
-                                                    <Form.Item label={t("account.settings.channels.connectionType")} className="mb-0 sm:col-span-1" extra={t("account.settings.channels.connectionTypeHint")}><Segmented<UserChannelConnection> block value={channelConnectionMode(channel)} options={[{ label: "OpenAI", value: "openai" }, { label: "Gemini", value: "gemini" }]} onChange={(value) => updateChannelConnection(channel, value)} /></Form.Item>
-                                                    <Form.Item label="Base URL" htmlFor={`channel-${channel.id}-base-url`} className="mb-0 sm:col-span-1"><Input id={`channel-${channel.id}-base-url`} inputMode="url" value={channel.baseUrl} placeholder={t("account.settings.channels.baseUrlPlaceholder")} onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })} onBlur={(event) => updateChannel(channel.id, { baseUrl: event.target.value.trim().replace(/\/+$/u, "") })} /></Form.Item>
-                                                    <Form.Item label="API Key" htmlFor={`channel-${channel.id}-api-key`} className="mb-0 sm:col-span-1"><Input.Password id={`channel-${channel.id}-api-key`} autoComplete="new-password" value={channel.apiKey} placeholder={channel.apiFormat === "gemini" ? t("account.settings.channels.geminiKeyPlaceholder") : t("account.settings.channels.apiKeyPlaceholder")} onChange={(event) => updateChannel(channel.id, { apiKey: event.target.value })} onBlur={(event) => updateChannel(channel.id, { apiKey: event.target.value.trim() })} /></Form.Item>
-                                                    <Form.Item label={t("account.settings.channels.secretKey")} htmlFor={`channel-${channel.id}-secret-key`} className="mb-0 sm:col-span-1" extra={t("account.settings.channels.secretKeyHint")}><Input.Password id={`channel-${channel.id}-secret-key`} autoComplete="new-password" value={channel.secretKey || ""} placeholder={t("account.settings.channels.secretKeyPlaceholder")} onChange={(event) => updateChannel(channel.id, { secretKey: event.target.value })} onBlur={(event) => updateChannel(channel.id, { secretKey: event.target.value.trim() })} /></Form.Item>
-                                                    <div className="sm:col-span-2"><ChannelHeadersEditor value={channel.headers} onChange={(headers) => updateChannel(channel.id, { headers })} /></div>
+                                                    <Form.Item label={t("account.settings.channels.name")} htmlFor={`channel-${channel.id}-name`} className="mb-0 sm:col-span-1">
+                                                        <Input
+                                                            id={`channel-${channel.id}-name`}
+                                                            value={channel.name}
+                                                            placeholder={t("account.settings.channels.namePlaceholder")}
+                                                            onChange={(event) => updateChannel(channel.id, { name: event.target.value })}
+                                                            onBlur={(event) => updateChannel(channel.id, { name: event.target.value.trim() || t("account.settings.channels.unnamed") })}
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item label={t("account.settings.channels.connectionType")} className="mb-0 sm:col-span-1" extra={t("account.settings.channels.connectionTypeHint")}>
+                                                        <Segmented<UserChannelConnection>
+                                                            block
+                                                            value={channelConnectionMode(channel)}
+                                                            options={[
+                                                                { label: "OpenAI", value: "openai" },
+                                                                { label: "Gemini", value: "gemini" },
+                                                            ]}
+                                                            onChange={(value) => updateChannelConnection(channel, value)}
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item label="Base URL" htmlFor={`channel-${channel.id}-base-url`} className="mb-0 sm:col-span-1">
+                                                        <Input
+                                                            id={`channel-${channel.id}-base-url`}
+                                                            inputMode="url"
+                                                            value={channel.baseUrl}
+                                                            placeholder={t("account.settings.channels.baseUrlPlaceholder")}
+                                                            onChange={(event) => updateChannel(channel.id, { baseUrl: event.target.value })}
+                                                            onBlur={(event) => updateChannel(channel.id, { baseUrl: event.target.value.trim().replace(/\/+$/u, "") })}
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item label="API Key" htmlFor={`channel-${channel.id}-api-key`} className="mb-0 sm:col-span-1">
+                                                        <Input.Password
+                                                            id={`channel-${channel.id}-api-key`}
+                                                            autoComplete="new-password"
+                                                            value={channel.apiKey}
+                                                            placeholder={channel.apiFormat === "gemini" ? t("account.settings.channels.geminiKeyPlaceholder") : t("account.settings.channels.apiKeyPlaceholder")}
+                                                            onChange={(event) => updateChannel(channel.id, { apiKey: event.target.value })}
+                                                            onBlur={(event) => updateChannel(channel.id, { apiKey: event.target.value.trim() })}
+                                                        />
+                                                    </Form.Item>
+                                                    <Form.Item label={t("account.settings.channels.secretKey")} htmlFor={`channel-${channel.id}-secret-key`} className="mb-0 sm:col-span-1" extra={t("account.settings.channels.secretKeyHint")}>
+                                                        <Input.Password
+                                                            id={`channel-${channel.id}-secret-key`}
+                                                            autoComplete="new-password"
+                                                            value={channel.secretKey || ""}
+                                                            placeholder={t("account.settings.channels.secretKeyPlaceholder")}
+                                                            onChange={(event) => updateChannel(channel.id, { secretKey: event.target.value })}
+                                                            onBlur={(event) => updateChannel(channel.id, { secretKey: event.target.value.trim() })}
+                                                        />
+                                                    </Form.Item>
+                                                    <div className="sm:col-span-2">
+                                                        <ChannelHeadersEditor value={channel.headers} onChange={(headers) => updateChannel(channel.id, { headers })} />
+                                                    </div>
                                                 </div>
                                             </section>
                                             <section className="model-editor-section">
@@ -293,7 +412,19 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                                                     <h2>{t("account.settings.channels.modelsTitle")}</h2>
                                                     <p className="mt-1 text-xs text-foreground/50">{t("account.settings.channels.modelsDescription")}</p>
                                                 </div>
-                                                <Form.Item label={t("account.settings.channels.modelList")} htmlFor={`channel-${channel.id}-models`} className="mb-0"><Select id={`channel-${channel.id}-models`} mode="tags" showSearch allowClear maxTagCount="responsive" tokenSeparators={[",", "\n"]} placeholder={t("account.settings.channels.modelListPlaceholder")} value={channel.models} onChange={(models) => updateChannel(channel.id, { models: uniqueModels(models) })} /></Form.Item>
+                                                <Form.Item label={t("account.settings.channels.modelList")} htmlFor={`channel-${channel.id}-models`} className="mb-0">
+                                                    <Select
+                                                        id={`channel-${channel.id}-models`}
+                                                        mode="tags"
+                                                        showSearch
+                                                        allowClear
+                                                        maxTagCount="responsive"
+                                                        tokenSeparators={[",", "\n"]}
+                                                        placeholder={t("account.settings.channels.modelListPlaceholder")}
+                                                        value={channel.models}
+                                                        onChange={(models) => updateChannel(channel.id, { models: uniqueModels(models) })}
+                                                    />
+                                                </Form.Item>
                                                 <ChannelModelSettings channel={channel} onChange={(modelCosts) => updateChannel(channel.id, { modelCosts })} />
                                             </section>
                                         </div>
@@ -303,7 +434,19 @@ export function ChannelSettingsPane({ onOpenModels, onOpenRunningHub }: ChannelS
                         );
                     })}
                 </div>
-            ) : <WorkspaceState icon="settings" compact title={t("account.settings.channels.emptyTitle")} description={t("account.settings.channels.emptyDescription")} action={<Button icon={<Plus className="size-4" />} onClick={addChannel}>{t("account.settings.channels.addPersonal")}</Button>} />}
+            ) : (
+                <WorkspaceState
+                    icon="settings"
+                    compact
+                    title={t("account.settings.channels.emptyTitle")}
+                    description={t("account.settings.channels.emptyDescription")}
+                    action={
+                        <Button icon={<Plus className="size-4" />} onClick={addChannel}>
+                            {t("account.settings.channels.addPersonal")}
+                        </Button>
+                    }
+                />
+            )}
         </Form>
     );
 }
@@ -313,29 +456,37 @@ function WorkflowChannelEntry({ icon, title, description, status, ready, onOpen 
     return (
         <div className="settings-channel flex min-w-0 items-center justify-between gap-3 p-3">
             <div className="flex min-w-0 items-start gap-2">
-                <span className="mt-0.5 shrink-0 text-[var(--workspace-accent)]" aria-hidden="true">{icon}</span>
+                <span className="mt-0.5 shrink-0 text-[var(--workspace-accent)]" aria-hidden="true">
+                    {icon}
+                </span>
                 <div className="min-w-0">
                     <h4 className="text-sm font-semibold">{title}</h4>
                     <p className="mt-0.5 truncate text-xs text-foreground/55">{description}</p>
-                    <span className={`settings-channel-status mt-2 ${ready ? "is-ready" : "is-warning"}`}><i aria-hidden="true" />{status}</span>
+                    <span className={`settings-channel-status mt-2 ${ready ? "is-ready" : "is-warning"}`}>
+                        <i aria-hidden="true" />
+                        {status}
+                    </span>
                 </div>
             </div>
-            <Button size="small" onClick={onOpen} disabled={!onOpen}>{t("account.settings.channels.configure")}</Button>
+            <Button size="small" onClick={onOpen} disabled={!onOpen}>
+                {t("account.settings.channels.configure")}
+            </Button>
         </div>
     );
 }
 
-export function channelValidationError(channel: ModelChannel) {
-    return channelConnectionError(channel) || validateChannelHeaders(channel.headers) || (!channel.models.length ? translate("account.settings.channels.needModel") : "");
+// secretKeyProtocols 来自插件目录（见 secretKeyProtocolIds）：是否需要 Secret Key 只看插件 auth 声明。
+export function channelValidationError(channel: ModelChannel, secretKeyProtocols: ReadonlySet<string>) {
+    return channelConnectionErrorFor(channel, secretKeyProtocols) || validateChannelHeaders(channel.headers) || (!channel.models.length ? translate("account.settings.channels.needModel") : "");
 }
 
-export function isChannelReady(channel: ModelChannel) {
-    return !channelValidationError(channel);
+export function isChannelReady(channel: ModelChannel, secretKeyProtocols: ReadonlySet<string>) {
+    return !channelValidationError(channel, secretKeyProtocols);
 }
 
-export function focusInvalidChannelField(channel: ModelChannel) {
-    const baseUrlError = channelConnectionError({ ...channel, apiKey: "valid", secretKey: "valid" });
-    const field = baseUrlError ? "base-url" : !channel.apiKey.trim() ? "api-key" : requiresSecretKey(channel) && !channel.secretKey?.trim() ? "secret-key" : "models";
+export function focusInvalidChannelField(channel: ModelChannel, secretKeyProtocols: ReadonlySet<string>) {
+    const baseUrlError = channelConnectionErrorFor({ ...channel, apiKey: "valid", secretKey: "valid" }, secretKeyProtocols);
+    const field = baseUrlError ? "base-url" : !channel.apiKey.trim() ? "api-key" : requiresSecretKey(channel, secretKeyProtocols) && !channel.secretKey?.trim() ? "secret-key" : "models";
     requestAnimationFrame(() => {
         const element = document.getElementById(`channel-${channel.id}-${field}`);
         element?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -343,9 +494,9 @@ export function focusInvalidChannelField(channel: ModelChannel) {
     });
 }
 
-function ChannelStatus({ channel }: { channel: ModelChannel }) {
+function ChannelStatus({ channel, secretKeyProtocols }: { channel: ModelChannel; secretKeyProtocols: ReadonlySet<string> }) {
     const { t } = useTranslation();
-    const error = channelValidationError(channel);
+    const error = channelValidationError(channel, secretKeyProtocols);
     return (
         <span className={`settings-channel-status ${error ? "is-warning" : "is-ready"}`}>
             <i aria-hidden="true" />
@@ -360,7 +511,22 @@ function withChannels(config: AiConfig, channels: ModelChannel[]): AiConfig {
     const videoModels = filterModelsByCapability(models, "video", channels);
     const textModels = filterModelsByCapability(models, "text", channels);
     const audioModels = filterModelsByCapability(models, "audio", channels);
-    return { ...config, channels, models, baseUrl: channels[0]?.baseUrl || config.baseUrl, apiKey: channels[0]?.apiKey || config.apiKey, apiFormat: channels[0]?.apiFormat || config.apiFormat, imageModels, videoModels, textModels, audioModels, imageModel: normalizeDefaultModel(config.imageModel, imageModels), videoModel: normalizeDefaultModel(config.videoModel, videoModels), textModel: normalizeDefaultModel(config.textModel, textModels), audioModel: normalizeDefaultModel(config.audioModel, audioModels) };
+    return {
+        ...config,
+        channels,
+        models,
+        baseUrl: channels[0]?.baseUrl || config.baseUrl,
+        apiKey: channels[0]?.apiKey || config.apiKey,
+        apiFormat: channels[0]?.apiFormat || config.apiFormat,
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+        imageModel: normalizeDefaultModel(config.imageModel, imageModels),
+        videoModel: normalizeDefaultModel(config.videoModel, videoModels),
+        textModel: normalizeDefaultModel(config.textModel, textModels),
+        audioModel: normalizeDefaultModel(config.audioModel, audioModels),
+    };
 }
 
 function normalizeDefaultModel(value: string, options: string[]) {
@@ -382,7 +548,7 @@ function channelConnectionMode(channel: ModelChannel): UserChannelConnection {
     return channel.apiFormat === "gemini" ? "gemini" : "openai";
 }
 
-function channelConnectionError(channel: ModelChannel) {
+function channelConnectionErrorFor(channel: ModelChannel, secretKeyProtocols: ReadonlySet<string>) {
     const baseUrl = channel.baseUrl.trim();
     if (!baseUrl) return translate("account.settings.channels.baseUrlRequired");
     try {
@@ -392,7 +558,7 @@ function channelConnectionError(channel: ModelChannel) {
         return translate("account.settings.channels.baseUrlInvalid");
     }
     if (!channel.apiKey.trim()) return translate("account.settings.channels.apiKeyRequired");
-    if (requiresSecretKey(channel) && !channel.secretKey?.trim()) return translate("account.settings.channels.secretKeyRequired");
+    if (requiresSecretKey(channel, secretKeyProtocols) && !channel.secretKey?.trim()) return translate("account.settings.channels.secretKeyRequired");
     return "";
 }
 
@@ -410,6 +576,6 @@ function isKnownDefaultBaseUrl(value: string) {
     return [defaultBaseUrlForApiFormat("openai"), defaultBaseUrlForApiFormat("gemini")].some((candidate) => candidate.replace(/\/+$/, "") === normalized);
 }
 
-function requiresSecretKey(channel: ModelChannel) {
-    return channel.modelCosts?.some((item) => item.protocol?.startsWith("volcengine-jimeng-")) === true;
+function requiresSecretKey(channel: ModelChannel, secretKeyProtocols: ReadonlySet<string>) {
+    return channel.modelCosts?.some((item) => Boolean(item.protocol && secretKeyProtocols.has(item.protocol))) === true;
 }

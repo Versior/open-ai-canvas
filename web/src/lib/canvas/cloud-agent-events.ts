@@ -11,11 +11,22 @@ import { AGENT_APPROVAL_SUPERSEDED_BY_NODE } from "@/lib/canvas/agent-media-appr
 import { agentToolRetry, mergeAgentToolRetry } from "@/lib/canvas/agent-tool-retry";
 import { agentErrorPresentation } from "@/lib/canvas/agent-error-presentation";
 import { parseAgentModelUsage, type AgentModelUsage } from "@/lib/canvas/agent-run-stats";
+import { mergeAgentMediaBatchProgress } from "@/lib/canvas/cloud-agent-media-batch";
 
 /** 待用户处理的 Agent 审批（面板状态与事件归约共用）。 */
 export type ApprovalState = { approvalId: string; detail: Record<string, unknown>; reason: string };
 
-const CANVAS_MUTATION_TOOLS = new Set(["canvas_apply_ops", "canvas_arrange_nodes", "canvas_create_storyboard", "canvas_edit_storyboard", "canvas_create_character", "canvas_edit_batch_table", "previs_scene_create", "previs_apply_patch"]);
+const CANVAS_MUTATION_TOOLS = new Set([
+    "canvas_apply_ops",
+    "canvas_arrange_nodes",
+    "canvas_build_board",
+    "canvas_create_storyboard",
+    "canvas_edit_storyboard",
+    "canvas_create_character",
+    "canvas_edit_batch_table",
+    "previs_scene_create",
+    "previs_apply_patch",
+]);
 
 export function positiveNumber(value: string) {
     const number = Number(value);
@@ -117,6 +128,22 @@ export function applyAgentEvent(
     if (event.type === "reasoning_delta" || event.type === "reasoning_message") {
         const id = String(payload.messageId || `${event.runId}:reasoning`);
         setMessages((current) => upsertTextMessage(current, id, text, event.type === "reasoning_delta").map((item) => (item.id === id ? { ...item, reasoning: true } : item)));
+        return;
+    }
+    if (event.type === "media_batch_progress") {
+        const batchId = typeof payload.batchId === "string" ? payload.batchId : "";
+        if (!batchId) return;
+        const id = `media-batch-${event.runId}-${batchId}`;
+        setMessages((current) => {
+            const index = current.findIndex((entry) => entry.id === id);
+            const mediaBatch = mergeAgentMediaBatchProgress(index >= 0 ? current[index].mediaBatch : undefined, payload);
+            if (!mediaBatch) return current;
+            const message: CloudAgentChatMessage = { id, role: "tool", text: "", mediaBatch };
+            if (index < 0) return [...current, message];
+            const next = [...current];
+            next[index] = message;
+            return next;
+        });
         return;
     }
     if (event.type === "plan_updated" && Array.isArray(payload.items)) {
@@ -254,6 +281,7 @@ export function applyAgentEvent(
                       required: field.required === true,
                       allowCustom: field.allowCustom === true,
                       placeholder: field.placeholder === undefined ? undefined : String(field.placeholder),
+                      ...(typeof field.section === "string" && field.section.trim() ? { section: field.section.trim() } : {}),
                   }))
                   .filter((field) => field.id && field.title)
             : [];
@@ -275,6 +303,7 @@ export function applyAgentEvent(
                     allowFreeform: payload.allowFreeform !== false,
                     round: Number.isFinite(Number(payload.round)) ? Number(payload.round) : undefined,
                     maxRounds: Number.isFinite(Number(payload.maxRounds)) ? Number(payload.maxRounds) : undefined,
+                    ...(isForm && payload.recordDecision === true ? { recordDecision: true } : {}),
                 },
             }),
         );
