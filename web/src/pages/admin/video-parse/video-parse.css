@@ -49,6 +49,187 @@
     max-width: 320px;
 }
 
+.admin-video-parse-toolbar-end {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.admin-video-parse-toolbar-end .ant-select {
+    width: 116px;
+}
+
+.admin-video-parse-toolbar-end .ant-input-affix-wrapper {
+    width: 200px;
+}
+
+/* 平台筛选：持久切换用 aria-pressed，选中用普通选中色，不用主操作色。 */
+.admin-video-parse-platform-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.admin-video-parse-chip {
+    display: inline-flex;
+    height: var(--admin-control-h);
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius);
+    background: var(--admin-surface);
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition:
+        background var(--admin-motion),
+        border-color var(--admin-motion),
+        color var(--admin-motion);
+}
+
+.admin-video-parse-chip:hover {
+    background: var(--admin-nav-hover);
+    color: var(--admin-text);
+}
+
+.admin-video-parse-chip[aria-pressed="true"] {
+    border-color: var(--admin-border-strong);
+    background: var(--admin-nav-active);
+    color: var(--admin-text);
+    font-weight: 600;
+}
+
+.admin-video-parse-chip:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 1px;
+}
+
+.admin-video-parse-chip-dot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--admin-text-placeholder);
+}
+
+.admin-video-parse-chip-dot[data-available="true"] {
+    background: var(--admin-status-success);
+}
+
+.admin-video-parse-chip-count {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+}
+
+.admin-video-parse-order-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    margin: -4px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.admin-video-parse-order-note .ant-btn {
+    height: auto;
+    padding: 0 2px;
+    font-size: 12px;
+}
+
+/* 接口列表的单元格：每行一件事，超长截断，悬停看全文。 */
+.admin-video-parse-api,
+.admin-video-parse-state,
+.admin-video-parse-health {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.admin-video-parse-api small,
+.admin-video-parse-state small,
+.admin-video-parse-health small {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+
+.admin-video-parse-api-name {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+}
+
+.admin-video-parse-api-name strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--admin-text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-video-parse-api-name .admin-video-parse-tag {
+    flex: none;
+}
+
+.admin-video-parse-api-request {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+
+.admin-video-parse-method {
+    flex: none;
+    padding: 0 4px;
+    border-radius: var(--admin-radius-sm);
+    background: var(--admin-layer-2);
+    color: var(--admin-text-secondary);
+    font-family: var(--admin-font-mono);
+    font-size: 11px;
+    line-height: 16px;
+}
+
+.admin-video-parse-ellipsis {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-video-parse-health-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.admin-video-parse-latency,
+.admin-video-parse-order {
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-video-parse-health-line {
+    display: flex;
+    min-width: 0;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.admin-video-parse-health-line > span:first-child {
+    flex: none;
+}
+
 .admin-video-parse-load-error {
     display: flex;
     align-items: center;
@@ -198,6 +379,16 @@
 
 .admin-video-parse-form p.admin-video-parse-muted {
     margin: -4px 0 12px;
+}
+
+/* antd 的数字框自带固定宽度，w-full 在层叠层里压不过它。 */
+.admin-video-parse-form .ant-input-number {
+    width: 100%;
+}
+
+.admin-video-parse-form .ant-form-item-extra {
+    color: var(--admin-text-muted);
+    font-size: 12px;
 }
 
 .admin-video-parse-form code,
@@ -358,9 +549,44 @@
     gap: 16px;
 }
 
+/* 区块内容默认没有左右留白（[data-admin-root] .admin-settings-section-content 只给上下 4px）。 */
+.admin-video-parse-settings .admin-settings-section-content {
+    padding: 18px 20px 2px;
+}
+
+.admin-video-parse-grid.is-wide-first {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+}
+
+/* 保存栏放在表单末尾；有没保存的修改时贴住滚动区底部浮起来提醒。 */
 .admin-video-parse-settings-actions {
     display: flex;
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+}
+
+.admin-video-parse-settings-actions[data-dirty] {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    border-color: var(--admin-border-strong);
+    box-shadow: var(--admin-shadow-overlay);
+}
+
+.admin-video-parse-settings-actions[data-dirty] > span {
+    color: var(--admin-status-warning);
+}
+
+.admin-video-parse-settings-buttons {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
 }
 
 @media (max-width: 1100px) {
@@ -373,8 +599,13 @@
     .admin-video-parse-stats,
     .admin-video-parse-grid,
     .admin-video-parse-grid.is-3,
-    .admin-video-parse-grid.is-4 {
+    .admin-video-parse-grid.is-4,
+    .admin-video-parse-grid.is-wide-first {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .admin-video-parse-toolbar-end {
+        margin-left: 0;
     }
 
     .admin-video-parse-panel-head {

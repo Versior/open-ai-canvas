@@ -21,16 +21,44 @@ import {
     type SocialVideoParseBatchTestResult,
     type SocialVideoParseImportResult,
     type SocialVideoParseOverview,
+    type SocialVideoParseSettings,
     type SocialVideoParseTestResult,
 } from "@/services/api/social-video-parse";
 import { ParseAPIEditor } from "./parse-api-editor";
 import { ParseLogsPanel } from "./parse-logs-panel";
 import { ParseSettingsPanel } from "./parse-settings-panel";
 import { importResultSummary, ParseSourcesPanel } from "./parse-sources-panel";
-import { PARSE_STATUS_META, ParseHealthTrack, ParseTestResultView, formatLatency, formatParseTime, platformName } from "./parse-shared";
+import { PARSE_STATUS_META, ParseHealthTrack, ParseTestResultView, formatLatency, formatParseClock, formatParseTime, platformName } from "./parse-shared";
 import "./video-parse.css";
 
 type View = "apis" | "sources" | "logs" | "settings";
+
+/** 表格按导入时的尝试顺序排：和后端 orderSocialVideoParseAPIs 的排序口径一致（轮流在此基础上转圈，按权重随机时权重大的靠前）。 */
+const ORDER_NOTES: Record<SocialVideoParseSettings["strategy"], (attempts: number) => string> = {
+    priority: (attempts) => `轮询方式：优先级。导入时按下表从上往下试，最多 ${attempts} 条，停用的跳过。`,
+    round_robin: (attempts) => `轮询方式：轮流。每次导入从下一条接口开始，最多试 ${attempts} 条，停用的跳过。`,
+    weighted: (attempts) => `轮询方式：按权重随机。权重越大越常被先用，最多试 ${attempts} 条，停用的跳过。`,
+    fastest: (attempts) => `轮询方式：最快优先。按平均耗时从快到慢试（即下表顺序），最多 ${attempts} 条，停用的跳过。`,
+};
+
+function compareAPIs(strategy: SocialVideoParseSettings["strategy"]) {
+    const byPriority = (left: SocialVideoParseAPI, right: SocialVideoParseAPI) => left.priority - right.priority || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
+    if (strategy === "weighted") return (left: SocialVideoParseAPI, right: SocialVideoParseAPI) => right.weight - left.weight || byPriority(left, right);
+    if (strategy === "fastest") {
+        const latency = (api: SocialVideoParseAPI) => api.state.avgLatencyMs || Number.MAX_SAFE_INTEGER;
+        return (left: SocialVideoParseAPI, right: SocialVideoParseAPI) => latency(left) - latency(right) || byPriority(left, right);
+    }
+    return byPriority;
+}
+
+/** 自动停用的接口什么时候会被自动重试：冷却期从最近一次失败算起，后台每分钟巡检一次。 */
+function recoverHint(api: SocialVideoParseAPI, settings?: SocialVideoParseSettings) {
+    if (api.status !== "auto_disabled" || !settings) return "";
+    if (!settings.autoRecover) return "需手动恢复";
+    const at = api.state.autoDisabledAt ? new Date(api.state.autoDisabledAt).getTime() + settings.recoverAfterMinutes * 60_000 : Number.NaN;
+    if (Number.isNaN(at)) return "";
+    return at <= Date.now() ? "即将自动重试" : `${formatParseClock(at)} 自动重试`;
+}
 
 function downloadJSON(filename: string, value: unknown) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
@@ -95,17 +123,25 @@ export default function VideoParsePage() {
         void reload();
     }, [reload]);
 
+    const settings = overview?.settings;
+    const strategy = settings?.strategy ?? "priority";
     const platforms = useMemo(() => overview?.platforms || [], [overview?.platforms]);
     const apis = useMemo(() => overview?.apis || [], [overview?.apis]);
     const visibleAPIs = useMemo(() => {
         const query = keyword.trim().toLowerCase();
-        return apis.filter(
-            (api) =>
-                (platform === "all" || api.platforms.includes(platform)) &&
-                (status === "all" || api.status === status) &&
-                (!query || api.name.toLowerCase().includes(query) || api.url.toLowerCase().includes(query) || api.remark.toLowerCase().includes(query)),
-        );
-    }, [apis, keyword, platform, status]);
+        return apis
+            .filter(
+                (api) =>
+                    (platform === "all" || api.platforms.includes(platform)) &&
+                    (status === "all" || api.status === status) &&
+                    (!query || api.name.toLowerCase().includes(query) || api.url.toLowerCase().includes(query) || api.remark.toLowerCase().includes(query)),
+            )
+            .sort(compareAPIs(strategy));
+    }, [apis, keyword, platform, status, strategy]);
+    const platformFilters = useMemo(
+        () => [{ id: "all", name: "全部", count: apis.length, available: true }, ...platforms.map((item) => ({ id: item.id, name: item.name, count: apis.filter((api) => api.platforms.includes(item.id)).length, available: item.available }))],
+        [apis, platforms],
+    );
     const stats = useMemo(() => {
         const recent = apis.flatMap((api) => api.state.recent);
         return {
@@ -195,23 +231,33 @@ export default function VideoParsePage() {
         }
     };
 
+    const orderField = strategy === "priority" || strategy === "round_robin" ? "priority" : strategy === "weighted" ? "weight" : null;
     const columns: ColumnsType<SocialVideoParseAPI> = [
         {
             title: "接口",
+            key: "api",
             render: (_, api) => (
-                <div className="admin-video-parse-main">
-                    <strong>
-                        {api.name}
+                <div className="admin-video-parse-api">
+                    <div className="admin-video-parse-api-name">
+                        <strong title={api.name}>{api.name}</strong>
                         {api.sourceId ? <span className="admin-video-parse-tag">订阅</span> : null}
                         {api.hasSecret ? <span className="admin-video-parse-tag">密钥</span> : null}
-                    </strong>
-                    <small className="admin-video-parse-mono" title={api.url}>{`${api.method} ${api.url}`}</small>
-                    {api.remark ? <small>{api.remark}</small> : null}
+                    </div>
+                    <div className="admin-video-parse-api-request" title={`${api.method} ${api.url}`}>
+                        <span className="admin-video-parse-method">{api.method}</span>
+                        <span className="admin-video-parse-mono admin-video-parse-ellipsis">{api.url}</span>
+                    </div>
+                    {api.remark ? (
+                        <small className="admin-video-parse-ellipsis" title={api.remark}>
+                            {api.remark}
+                        </small>
+                    ) : null}
                 </div>
             ),
         },
         {
             title: "平台",
+            key: "platforms",
             width: 170,
             render: (_, api) => (
                 <div className="admin-video-parse-platforms">
@@ -223,47 +269,66 @@ export default function VideoParsePage() {
         },
         {
             title: "状态",
-            width: 150,
+            key: "status",
+            width: 136,
             render: (_, api) => {
                 const meta = PARSE_STATUS_META[api.status];
+                const hint = recoverHint(api, settings);
                 return (
-                    <div className="admin-video-parse-status">
-                        <AdminStatusBadge label={meta.label} tone={meta.tone} title={api.state.autoDisabledReason || undefined} />
-                        <Switch
-                            size="small"
-                            checked={api.enabled}
-                            aria-label={`${api.enabled ? "停用" : "启用"}${api.name}`}
-                            onChange={(checked) => void runAction(() => setSocialVideoParseAPIEnabled(api.id, checked), checked ? "接口已启用" : "接口已停用", "修改接口失败")}
-                        />
+                    <div className="admin-video-parse-state">
+                        <div className="admin-video-parse-status">
+                            <AdminStatusBadge label={meta.label} tone={meta.tone} title={api.state.autoDisabledReason || undefined} />
+                            <Switch
+                                size="small"
+                                checked={api.enabled}
+                                aria-label={`${api.enabled ? "停用" : "启用"}${api.name}`}
+                                onChange={(checked) => void runAction(() => setSocialVideoParseAPIEnabled(api.id, checked), checked ? "接口已启用" : "接口已停用", "修改接口失败")}
+                            />
+                        </div>
+                        {hint ? <small title={api.state.autoDisabledReason || undefined}>{hint}</small> : null}
                     </div>
                 );
             },
         },
         {
             title: "最近调用",
-            width: 190,
-            render: (_, api) => (
-                <div className="admin-video-parse-main">
-                    <ParseHealthTrack recent={api.state.recent} />
-                    <small>{`成功 ${api.state.successCount} · 失败 ${api.state.failureCount}${api.state.consecutiveFailures ? ` · 连续失败 ${api.state.consecutiveFailures}` : ""}`}</small>
-                </div>
-            ),
+            key: "health",
+            width: 230,
+            render: (_, api) => {
+                const error = api.state.lastError;
+                return (
+                    <div className="admin-video-parse-health">
+                        <div className="admin-video-parse-health-head">
+                            <ParseHealthTrack recent={api.state.recent} successCount={api.state.successCount} failureCount={api.state.failureCount} />
+                            {api.state.avgLatencyMs ? (
+                                <span className="admin-video-parse-latency" title="平均耗时">
+                                    {formatLatency(api.state.avgLatencyMs)}
+                                </span>
+                            ) : null}
+                        </div>
+                        <small className="admin-video-parse-health-line" title={error ? `${formatParseTime(api.state.lastFailureAt)} ${error}` : formatParseTime(api.state.lastCheckedAt)}>
+                            <span>{api.state.lastCheckedAt ? formatParseClock(api.state.lastCheckedAt) : "还没调用过"}</span>
+                            {error ? <span className="admin-video-parse-error admin-video-parse-ellipsis">{error}</span> : null}
+                        </small>
+                    </div>
+                );
+            },
         },
-        { title: "平均耗时", width: 100, render: (_, api) => formatLatency(api.state.avgLatencyMs) },
-        { title: "顺序", width: 100, render: (_, api) => <span className="admin-video-parse-muted">{`优先级 ${api.priority} · 权重 ${api.weight}`}</span> },
-        {
-            title: "最近一次",
-            width: 220,
-            render: (_, api) => (
-                <div className="admin-video-parse-main">
-                    <span>{formatParseTime(api.state.lastCheckedAt)}</span>
-                    {api.state.autoDisabledReason ? <small className="admin-video-parse-error">{api.state.autoDisabledReason}</small> : api.state.lastError ? <small className="admin-video-parse-error">{api.state.lastError}</small> : null}
-                </div>
-            ),
-        },
+        ...(orderField
+            ? [
+                  {
+                      title: orderField === "priority" ? "优先级" : "权重",
+                      key: "order",
+                      width: 76,
+                      align: "center" as const,
+                      render: (_: unknown, api: SocialVideoParseAPI) => <span className="admin-video-parse-order">{orderField === "priority" ? api.priority : api.weight}</span>,
+                  },
+              ]
+            : []),
         {
             title: "操作",
-            width: 210,
+            key: "actions",
+            width: 208,
             fixed: "right",
             render: (_, api) => (
                 <AdminRowActions
@@ -292,7 +357,7 @@ export default function VideoParsePage() {
     return (
         <AdminPageFrame
             title="视频解析接口"
-            description="用户粘贴的短视频链接靠这里的第三方接口解析和下载：按平台分类，按设置轮询，连续失败自动停用、到点自动恢复，订阅源定时采集新接口。"
+            description="用户粘贴短视频链接时，由这里的第三方接口解析并下载视频。"
             scroll
             actions={
                 <>
@@ -351,30 +416,50 @@ export default function VideoParsePage() {
                 {view === "apis" ? (
                     <div className="admin-video-parse-panel">
                         <div className="admin-video-parse-toolbar">
-                            <Select
-                                aria-label="按平台筛选"
-                                value={platform}
-                                onChange={setPlatform}
-                                options={[{ label: "全部平台", value: "all" }, ...platforms.map((item) => ({ label: `${item.name}（${apis.filter((api) => api.platforms.includes(item.id)).length}）`, value: item.id }))]}
-                            />
-                            <Select
-                                aria-label="按状态筛选"
-                                value={status}
-                                onChange={setStatus}
-                                options={[
-                                    { label: "全部状态", value: "all" },
-                                    { label: "正常", value: "active" },
-                                    { label: "自动停用", value: "auto_disabled" },
-                                    { label: "已停用", value: "disabled" },
-                                ]}
-                            />
-                            <Input aria-label="搜索接口" allowClear prefix={<Search className="size-4" />} placeholder="搜索名称、地址或备注" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
-                            <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void reload()}>
-                                刷新
-                            </Button>
+                            <div className="admin-video-parse-platform-filter" role="group" aria-label="按平台筛选">
+                                {platformFilters.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        className="admin-video-parse-chip"
+                                        aria-pressed={platform === item.id}
+                                        title={item.id === "all" ? undefined : item.available ? `${item.name}有可用接口，用户可以导入这个平台的链接` : `${item.name}没有可用接口，用户粘贴这个平台的链接会提示暂不支持`}
+                                        onClick={() => setPlatform(item.id)}
+                                    >
+                                        {item.id === "all" ? null : <span className="admin-video-parse-chip-dot" data-available={item.available} aria-hidden="true" />}
+                                        <span>{item.name}</span>
+                                        <span className="admin-video-parse-chip-count">{item.count}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="admin-video-parse-toolbar-end">
+                                <Select
+                                    aria-label="按状态筛选"
+                                    value={status}
+                                    onChange={setStatus}
+                                    options={[
+                                        { label: "全部状态", value: "all" },
+                                        { label: "正常", value: "active" },
+                                        { label: "自动停用", value: "auto_disabled" },
+                                        { label: "已停用", value: "disabled" },
+                                    ]}
+                                />
+                                <Input aria-label="搜索接口" allowClear prefix={<Search className="size-4" />} placeholder="搜索名称、地址或备注" value={keyword} onChange={(event) => setKeyword(event.target.value)} />
+                                <Button icon={<RefreshCw className="size-4" />} loading={loading} onClick={() => void reload()}>
+                                    刷新
+                                </Button>
+                            </div>
                         </div>
+                        {settings && apis.length ? (
+                            <p className="admin-video-parse-order-note">
+                                <span>{ORDER_NOTES[strategy](settings.maxAttempts)}</span>
+                                <Button type="link" size="small" onClick={() => setView("settings")}>
+                                    修改
+                                </Button>
+                            </p>
+                        ) : null}
                         <AdminDataTable
-                            table={{ rowKey: "id", loading, pagination: false, columns, dataSource: visibleAPIs, scroll: { x: 1280 } }}
+                            table={{ rowKey: "id", loading, pagination: false, columns, dataSource: visibleAPIs, scroll: { x: orderField ? 1122 : 1046 } }}
                             empty={
                                 apis.length ? (
                                     <AdminTableEmpty filtered />
@@ -395,7 +480,12 @@ export default function VideoParsePage() {
                 ) : null}
                 {view === "sources" && overview ? <ParseSourcesPanel sources={overview.sources} apis={apis} onChanged={() => void reload()} /> : null}
                 {view === "logs" && overview ? <ParseLogsPanel logs={overview.logs} platforms={platforms} /> : null}
-                {view === "settings" && overview ? <ParseSettingsPanel settings={overview.settings} platforms={platforms} onSaved={() => void reload()} /> : null}
+                {/* 设置页切走时不卸载，没保存的修改留在表单里。 */}
+                {overview ? (
+                    <div hidden={view !== "settings"}>
+                        <ParseSettingsPanel settings={overview.settings} platforms={platforms} onSaved={() => void reload()} />
+                    </div>
+                ) : null}
             </div>
             <ParseAPIEditor
                 open={editorOpen}

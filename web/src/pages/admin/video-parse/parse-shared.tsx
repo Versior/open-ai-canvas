@@ -31,16 +31,26 @@ export function formatParseTime(value?: string) {
     return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+/** 列表里的短时间：当天只显示时分，其他日子带上月日。 */
+export function formatParseClock(value?: string | number) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const clock = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    return date.toDateString() === new Date().toDateString() ? clock : `${date.getMonth() + 1}/${date.getDate()} ${clock}`;
+}
+
 export function formatLatency(ms?: number) {
     if (!ms) return "—";
     return ms >= 1000 ? `${(ms / 1000).toFixed(1)} 秒` : `${ms} ms`;
 }
 
 /** 最近 10 次调用：左旧右新，绿成功、红失败、灰为还没调用。 */
-export function ParseHealthTrack({ recent }: { recent: boolean[] }) {
+export function ParseHealthTrack({ recent, successCount, failureCount }: { recent: boolean[]; successCount?: number; failureCount?: number }) {
     const slots = Array.from({ length: 10 }, (_, index) => recent[recent.length - 10 + index]);
     const success = recent.filter(Boolean).length;
-    const label = recent.length ? `最近 ${recent.length} 次：${success} 次成功，${recent.length - success} 次失败` : "还没有调用记录";
+    const total = successCount !== undefined && failureCount !== undefined ? `；累计成功 ${successCount} 次，失败 ${failureCount} 次` : "";
+    const label = recent.length ? `最近 ${recent.length} 次：${success} 次成功，${recent.length - success} 次失败${total}` : "还没有调用记录";
     return (
         <span className="admin-video-parse-track" role="img" aria-label={label} title={label}>
             {slots.map((value, index) => (
