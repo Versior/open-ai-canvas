@@ -39,6 +39,7 @@ export const jaJP: Messages = {
             ecommerceStudio: "EC 画像スタジオ",
             interior: "インテリアデザイン",
             videoReplication: "動画リメイク",
+            productVideo: "商品動画",
             home: "作成",
             projects: "ショートドラマ制作",
             ecommerce: "EC エージェント",
@@ -54,6 +55,7 @@ export const jaJP: Messages = {
         },
         collapsed: {
             videoReplication: "リメイク",
+            productVideo: "動画",
             interior: "内装",
             inspiration: "ひらめき",
             home: "作成",
@@ -68,6 +70,7 @@ export const jaJP: Messages = {
             ecommerce: "EC 制作",
             studio: "EC 画像スタジオ",
             videoReplication: "動画リメイク",
+            productVideo: "商品動画",
             interior: "インテリアデザイン",
             inspiration: "インスピレーション",
             home: "作成",

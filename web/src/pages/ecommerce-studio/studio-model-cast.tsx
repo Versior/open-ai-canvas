@@ -25,7 +25,7 @@ const PAGE_SIZE = 24;
 const GENDERS: StudioModelGender[] = ["", "female", "male"];
 
 /** 从模特库挑人脸、全身模特、姿势或造型。带图的素材选中时把原图复制到自己的资源库，出图引用自己的那份。 */
-function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: StudioModelKind; onClose: () => void; onPick: (kind: StudioModelKind, pick: StudioModelPick) => void }) {
+export function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: StudioModelKind; onClose: () => void; onPick: (kind: StudioModelKind, pick: StudioModelPick) => void }) {
     const { message } = App.useApp();
     const [kind, setKind] = useState(initialKind);
     const [query, setQuery] = useState("");

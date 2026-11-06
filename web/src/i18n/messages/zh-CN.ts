@@ -40,6 +40,7 @@ export const zhCN = {
             ecommerceStudio: "电商生图台",
             interior: "室内设计",
             videoReplication: "视频复刻",
+            productVideo: "商品视频",
             home: "创作",
             projects: "短剧制作",
             ecommerce: "电商 Agent",
@@ -55,6 +56,7 @@ export const zhCN = {
         },
         collapsed: {
             videoReplication: "复刻",
+            productVideo: "视频",
             interior: "室内",
             inspiration: "灵感",
             home: "创作",
@@ -69,6 +71,7 @@ export const zhCN = {
             ecommerce: "电商创作",
             studio: "电商生图台",
             videoReplication: "视频复刻",
+            productVideo: "商品视频",
             interior: "室内设计",
             inspiration: "灵感广场",
             home: "创作",

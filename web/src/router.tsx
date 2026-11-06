@@ -64,6 +64,7 @@ const CanvasPage = workspaceRoutePages.canvas;
 const EcommerceStudioPage = workspaceRoutePages.ecommerceStudio;
 const InteriorPage = workspaceRoutePages.interior;
 const VideoReplicationPage = workspaceRoutePages.videoReplication;
+const ProductVideoPage = workspaceRoutePages.productVideo;
 const CanvasProjectPage = workspaceRoutePages.canvasProject;
 const SharedCanvasPage = lazy(() => import("@/pages/canvas/shared"));
 const ArkPortraitResultPage = lazy(() => import("@/pages/ark-portrait-result"));
@@ -161,6 +162,15 @@ export const router = createBrowserRouter([
                 element: (
                     <RequireAuth>
                         <RequireFeature feature="ecommerceStudioEnabled">{deferred(<EcommerceStudioPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            // 商品视频（元素替换）：用参考视频的动作和镜头，换上自己的商品、模特和背景。
+            {
+                path: "/product-video",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="ecommerceStudioEnabled">{deferred(<ProductVideoPage />)}</RequireFeature>
                     </RequireAuth>
                 ),
             },

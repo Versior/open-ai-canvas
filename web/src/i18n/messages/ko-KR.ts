@@ -39,6 +39,7 @@ export const koKR: Messages = {
             ecommerceStudio: "이커머스 스튜디오",
             interior: "인테리어 디자인",
             videoReplication: "영상 리메이크",
+            productVideo: "상품 영상",
             home: "창작",
             projects: "숏드라마 제작",
             ecommerce: "이커머스 에이전트",
@@ -54,6 +55,7 @@ export const koKR: Messages = {
         },
         collapsed: {
             videoReplication: "리메이크",
+            productVideo: "영상",
             interior: "인테리어",
             inspiration: "영감",
             home: "창작",
@@ -68,6 +70,7 @@ export const koKR: Messages = {
             ecommerce: "이커머스",
             studio: "이커머스 스튜디오",
             videoReplication: "영상 리메이크",
+            productVideo: "상품 영상",
             interior: "인테리어 디자인",
             inspiration: "영감",
             home: "창작",

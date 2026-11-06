@@ -1,0 +1,690 @@
+/* 商品视频 · 元素替换（/product-video）。和电商生图台同一套用户端 token：表面与文字来自 --user-*，
+   卡片无边、hover 只换表面、按钮不加渐变与发光。弹窗里的模特库沿用生图台的 .es-portal 样式。 */
+.pv-shell {
+    --pv-page: var(--user-page-bg);
+    --pv-panel: var(--user-surface);
+    --pv-muted: var(--user-surface-muted);
+    --pv-hover: var(--user-surface-hover);
+    --pv-line: var(--user-border);
+    --pv-ink: var(--user-ink);
+    --pv-ink-2: var(--user-ink-muted);
+    --pv-ink-3: var(--user-ink-soft);
+    --pv-radius: var(--user-radius-card, 16px);
+    --pv-radius-control: var(--user-radius-control, 12px);
+    --pv-radius-media: var(--user-radius-media, 8px);
+    --pv-motion: var(--user-motion, 180ms cubic-bezier(0.16, 1, 0.3, 1));
+    --pv-glass: rgba(16, 16, 20, 0.62);
+    --pv-on-media: #ffffff;
+    /* 视频留边固定黑底，不随主题反相。 */
+    --pv-media-bg: #000000;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+    background: var(--pv-page);
+    color: var(--pv-ink);
+}
+.pv-page {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+.pv-page > div:first-child {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+}
+.pv-head {
+    flex: 0 0 auto;
+    padding: 0 var(--space-1);
+}
+.pv-head h1 {
+    margin: 0;
+    font-size: var(--fs-heading);
+    font-weight: 600;
+}
+.pv-head p {
+    margin: 2px 0 0;
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+}
+.pv-body {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: minmax(520px, 46%) minmax(0, 1fr);
+    gap: var(--space-3);
+    min-height: 0;
+}
+.pv-left {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* ---------- 左栏：素材、参考视频、设置 ---------- */
+.pv-composer {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: var(--pv-radius);
+    background: var(--pv-panel);
+}
+.pv-composer-scroll {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-5);
+    min-height: 0;
+    padding: var(--space-5);
+    overflow-y: auto;
+}
+.pv-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--pv-radius-control);
+    background: var(--pv-muted);
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+}
+.pv-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-width: 0;
+}
+.pv-section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-1) var(--space-3);
+}
+.pv-section-head h3 {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+.pv-section-head > span {
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+.pv-slots {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+.pv-slot,
+.pv-reference {
+    min-width: 0;
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    border: 1px solid var(--pv-line);
+    border-radius: var(--pv-radius-control);
+    transition:
+        border-color var(--pv-motion),
+        background-color var(--pv-motion);
+}
+.pv-slot[data-dragging],
+.pv-reference[data-dragging] {
+    border-color: var(--control-selected-border);
+    background: var(--control-selected-bg);
+}
+.pv-slot-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+.pv-slot-head strong {
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+.pv-slot-head strong span,
+.pv-slot-head > span {
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+    font-weight: 400;
+}
+.pv-slot-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.pv-thumb,
+.pv-add {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    overflow: hidden;
+    border-radius: var(--pv-radius-media);
+    background: var(--pv-muted);
+}
+.pv-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.pv-thumb-remove {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: var(--pv-glass);
+    color: var(--pv-on-media);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--pv-motion);
+}
+.pv-thumb:is(:hover, :focus-within) .pv-thumb-remove {
+    opacity: 1;
+}
+.pv-add {
+    gap: 2px;
+    align-content: center;
+    border: 1px dashed var(--pv-line);
+    background: transparent;
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+    transition:
+        background-color var(--pv-motion),
+        color var(--pv-motion);
+}
+.pv-add:hover {
+    background: var(--pv-hover);
+    color: var(--pv-ink);
+}
+.pv-add:focus-visible,
+.pv-thumb-remove:focus-visible,
+.pv-reference-drop:focus-visible,
+.pv-work-expand:focus-visible {
+    outline: 2px solid var(--ring, var(--control-selected-border));
+    outline-offset: 2px;
+}
+
+/* 参考视频 */
+.pv-reference-empty {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.pv-reference-drop {
+    display: grid;
+    justify-items: center;
+    gap: var(--space-1);
+    padding: var(--space-5) var(--space-3);
+    border: 1px dashed var(--pv-line);
+    border-radius: var(--pv-radius-control);
+    background: transparent;
+    color: var(--pv-ink-2);
+    cursor: pointer;
+    transition: background-color var(--pv-motion);
+}
+.pv-reference-drop:hover {
+    background: var(--pv-hover);
+}
+.pv-reference-drop strong {
+    color: var(--pv-ink);
+    font-size: var(--fs-body);
+}
+.pv-reference-drop span {
+    font-size: var(--fs-caption);
+}
+.pv-link {
+    display: flex;
+    gap: var(--space-2);
+}
+.pv-link .ant-input-affix-wrapper {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.pv-reference-busy {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-4) var(--space-3);
+    color: var(--pv-ink-2);
+}
+.pv-reference-busy .ant-progress {
+    grid-column: 1 / -1;
+    margin: 0;
+}
+.pv-reference-body {
+    display: grid;
+    grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+    gap: var(--space-3) var(--space-4);
+}
+.pv-reference-player {
+    overflow: hidden;
+    border-radius: var(--pv-radius-media);
+    background: var(--pv-media-bg);
+}
+.pv-reference-player video {
+    display: block;
+    width: 100%;
+    max-height: 320px;
+    aspect-ratio: 9 / 16;
+    object-fit: contain;
+}
+.pv-reference-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+.pv-reference-meta strong {
+    overflow: hidden;
+    color: var(--pv-ink);
+    font-size: var(--fs-body);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pv-reference-meta [data-error] {
+    color: var(--status-error);
+}
+.pv-reference-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+.pv-trim {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+
+/* 设置 */
+.pv-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-4);
+}
+.pv-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+.pv-field-wide {
+    grid-column: 1 / -1;
+}
+.pv-field-label {
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+}
+.pv-field-hint {
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+.pv-field-error,
+.pv-foot-error {
+    color: var(--status-error);
+    font-size: var(--fs-caption);
+}
+.pv-assess {
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--pv-radius-control);
+    background: var(--pv-muted);
+}
+.pv-assess p {
+    margin: 0;
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+}
+.pv-assess ul {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding-left: 1.2em;
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+.pv-level {
+    padding: 0 var(--space-2);
+    border-radius: var(--r-full, 999px);
+    background: var(--pv-panel);
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+    font-weight: 500;
+    line-height: 20px;
+}
+.pv-assess[data-level="高"] .pv-level {
+    color: var(--status-error);
+}
+.pv-composer-foot {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-5);
+    border-top: 1px solid var(--pv-line);
+}
+.pv-composer-foot .ant-btn-lg {
+    min-width: 152px;
+}
+.pv-estimate {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+.pv-estimate strong {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--pv-ink);
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+.pv-foot-error {
+    margin: 0;
+    padding: 0 var(--space-5) var(--space-3);
+}
+
+/* ---------- 右栏：视频作品 ---------- */
+.pv-works {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: var(--pv-radius);
+    background: var(--pv-panel);
+}
+.pv-works-head {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-5) var(--space-2);
+}
+.pv-works-head h2 {
+    margin: 0;
+    font-size: var(--fs-body);
+    font-weight: 600;
+}
+.pv-works-head span {
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+.pv-works-scroll {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    align-content: start;
+    gap: var(--space-3);
+    min-height: 0;
+    padding: var(--space-2) var(--space-5) var(--space-5);
+    overflow-y: auto;
+}
+.pv-works-scroll > .pv-works-loading,
+.pv-works-scroll > :not(.pv-work) {
+    grid-column: 1 / -1;
+}
+.pv-works-loading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-6) 0;
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+.pv-work {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    overflow: hidden;
+    border-radius: var(--pv-radius-control);
+    background: var(--pv-muted);
+}
+.pv-work-media {
+    position: relative;
+    display: grid;
+    place-items: center;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: var(--pv-media-bg);
+    color: var(--pv-on-media);
+}
+.pv-work-media :is(img, video) {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.pv-work-overlay {
+    position: absolute;
+    inset: auto var(--space-2) var(--space-2) var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--pv-radius-media);
+    background: var(--pv-glass);
+    color: var(--pv-on-media);
+    font-size: var(--fs-caption);
+}
+.pv-work-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3);
+}
+.pv-work-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+.pv-tag {
+    padding: 0 var(--space-2);
+    border-radius: var(--r-full, 999px);
+    background: var(--pv-panel);
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 20px;
+}
+.pv-tag[data-tone="accent"] {
+    background: var(--control-selected-bg);
+    color: var(--control-selected-fg);
+}
+.pv-tag[data-status="failed"] {
+    color: var(--status-error);
+}
+.pv-work-title {
+    overflow: hidden;
+    font-size: var(--fs-body);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pv-work-meta,
+.pv-work-note {
+    margin: 0;
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+.pv-work-error {
+    margin: 0;
+    color: var(--status-error);
+    font-size: var(--fs-caption);
+}
+.pv-work-progress {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+.pv-work-progress .ant-progress {
+    margin: 0;
+}
+.pv-work-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+.pv-work-expand {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--pv-ink-2);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+.pv-work-expand svg {
+    transition: transform var(--pv-motion);
+}
+.pv-work-expand[aria-expanded="true"] svg {
+    transform: rotate(180deg);
+}
+.pv-shots {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.pv-shot {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--pv-radius-media);
+    background: var(--pv-panel);
+}
+.pv-shot-media {
+    width: 72px;
+    height: 72px;
+    overflow: hidden;
+    border-radius: var(--pv-radius-media);
+    background: var(--pv-media-bg);
+}
+.pv-shot-media :is(img, video) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.pv-shot-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    color: var(--pv-ink-3);
+    font-size: var(--fs-caption);
+}
+.pv-shot-text strong {
+    color: var(--pv-ink);
+    font-weight: 500;
+}
+.pv-shot[data-status="failed"] .pv-shot-text span:first-of-type {
+    color: var(--status-error);
+}
+.pv-shot-fix {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.pv-redo {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: 280px;
+}
+.pv-redo > span {
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+.pv-redo-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2);
+}
+
+@media (max-width: 1279px) {
+    .pv-body {
+        grid-template-columns: minmax(460px, 52%) minmax(0, 1fr);
+    }
+}
+@media (max-width: 1023px) {
+    .pv-shell {
+        gap: var(--space-2);
+        padding: var(--space-2);
+        overflow-y: auto;
+    }
+    .pv-body {
+        grid-template-columns: minmax(0, 1fr);
+        min-height: auto;
+    }
+    .pv-composer,
+    .pv-works {
+        overflow: visible;
+    }
+    .pv-composer-scroll,
+    .pv-works-scroll {
+        overflow: visible;
+    }
+}
+@media (max-width: 640px) {
+    .pv-composer-scroll {
+        padding: var(--space-4);
+    }
+    .pv-reference-body,
+    .pv-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .pv-link {
+        flex-wrap: wrap;
+    }
+}
+@media (hover: none) {
+    .pv-thumb-remove {
+        opacity: 1;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .pv-shell * {
+        transition: none !important;
+    }
+}
