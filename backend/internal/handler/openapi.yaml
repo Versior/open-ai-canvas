@@ -4822,7 +4822,7 @@ paths:
     get:
       tags: [tasks]
       summary: 视频复刻页面的历史记录
-      description: 需要登录，视频复刻关闭时返回 403。按创建时间倒序返回当前账号最近 50 次拆解（含排队、失败的任务）；已保存模型分析的记录带标题、模型和分析时间。
+      description: 需要登录，视频复刻关闭时返回 403。按创建时间倒序返回当前账号最近 50 次拆解（含排队、失败的任务）；已保存模型分析的记录带标题、模型和分析时间；有复刻方案的另带方案保存时间 planUpdatedAt 和按方案建过的画布数 canvasCount。
       responses:
         "200":
           description: data 为记录数组
@@ -5357,6 +5357,8 @@ components:
         title: {type: string, description: 已保存分析的标题}
         model: {type: string, description: 已保存分析所用的模型}
         analyzedAt: {type: string, format: date-time}
+        planUpdatedAt: {type: string, format: date-time, description: 复刻方案最后保存的时间}
+        canvasCount: {type: integer, description: 按复刻方案建过几块画布}
     VideoReplicationDetail:
       type: object
       required: [task]
@@ -5400,6 +5402,19 @@ components:
           type: array
           items: {type: object, additionalProperties: true}
         activeScriptId: {type: string}
+        canvases:
+          type: array
+          maxItems: 20
+          description: 按方案建过的画布，只用来在页面上列出和打开。
+          items:
+            type: object
+            required: [id]
+            additionalProperties: true
+            properties:
+              id: {type: string, maxLength: 64}
+              title: {type: string}
+              createdAt: {type: string}
+              shots: {type: integer}
         shots:
           type: array
           items:
