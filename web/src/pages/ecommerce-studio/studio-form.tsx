@@ -593,7 +593,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                               ? `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。不策划也可以直接生成" : ""}。`
                                               : "添加文本模型后可以按商品策划。"}
                                     </span>
+                                    {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
                                     {activePlan?.concept ? <span>创意主线：{activePlan.concept}</span> : null}
+                                    {activePlan?.motifs?.length ? <span>视觉元素：{activePlan.motifs.join(" · ")}</span> : null}
                                     {activePlan?.inspiration ? <span>借鉴：{activePlan.inspiration}</span> : null}
                                 </span>
                                 {text.value ? (

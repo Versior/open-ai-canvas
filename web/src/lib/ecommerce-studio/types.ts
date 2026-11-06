@@ -208,8 +208,12 @@ export type StudioDetailPlan = {
     styleId?: StudioStylePresetId;
     /** 策划挑的设计调性。 */
     tone?: StudioDesignToneId;
-    /** 创意主线：从这件商品最独特的地方出发、贯穿整组的视觉母题，每张图都要体现。 */
+    /** 差异化定位：这件商品和同类比凭什么不一样。 */
+    positioning?: string;
+    /** 创意主线：由定位推出的视觉主题，一个具体的世界或场景。 */
     concept?: string;
+    /** 视觉元素库：从主题里取的几个能反复使用的元素，每张选用一两个。 */
+    motifs?: string[];
     /** 从同类爆款套图和卖家给的参考图里借鉴了什么。 */
     inspiration?: string;
     /** 单张图策划：策划时选中的类型和数量。 */
@@ -293,7 +297,7 @@ export type StudioRun = {
     /** 点生成那一刻的清晰度，重出这一组的图也按它。 */
     resolution?: string;
     /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性和创意主线。 */
-    suite?: { id: string; name: string; style: string; tone?: StudioDesignToneId; concept?: string };
+    suite?: { id: string; name: string; style: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[] };
     shots: StudioShot[];
 };
 

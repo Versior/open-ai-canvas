@@ -88,6 +88,15 @@ function photoReference(photo: StudioPhoto): ReferenceImage {
     return { id: photo.id, name: photo.name || `${photo.view}.png`, type: "image/png", dataUrl: "", storageKey: resourceStorageKey(photo.resourceId), ...(photo.width ? { width: photo.width } : {}), ...(photo.height ? { height: photo.height } : {}) };
 }
 
+/** 商品档案里能用的材质、外观和结构，给服务端挑布光方法；没有时为空。 */
+function studioPlanMaterials(product: StudioProduct) {
+    return (product.dossier?.facts || [])
+        .filter((fact) => ["material", "appearance", "structure"].includes(fact.group) && studioFactUsable(fact))
+        .map((fact) => `${fact.label} ${fact.value}`)
+        .join("；")
+        .slice(0, 200);
+}
+
 function inputSummary(imageCount: number) {
     return { textCount: 0, imageCount, videoCount: 0, audioCount: 0, characterCount: 0 };
 }
@@ -274,6 +283,8 @@ export function useStudioRunner() {
                         // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事；品类大类用来在同类爆款套图对不上时取同大类的参考。
                         studioPlanKind: scope,
                         ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
+                        // 档案里的材质和外观：服务端按它从设计策划知识库挑布光方法。
+                        ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),
                     },
                 });
                 const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);

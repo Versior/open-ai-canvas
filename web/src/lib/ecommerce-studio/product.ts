@@ -1,6 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanTone } from "./detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanMotifs, studioPlanTone } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import {
@@ -270,6 +270,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
                       style: str(run.suite.style).slice(0, Math.max(STUDIO_SUITE_LIMITS.style, STUDIO_DETAIL_PLAN_LIMITS.style)),
                       ...(studioPlanTone(run.suite.tone) ? { tone: studioPlanTone(run.suite.tone) } : {}),
                       ...(str(run.suite.concept).trim() ? { concept: str(run.suite.concept).trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
+                      ...(studioPlanMotifs(run.suite.motifs).length ? { motifs: studioPlanMotifs(run.suite.motifs) } : {}),
                   },
               }
             : {}),

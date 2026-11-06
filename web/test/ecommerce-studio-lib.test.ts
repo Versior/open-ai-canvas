@@ -529,10 +529,19 @@ describe("ecommerce studio plans for every output type", () => {
         const prompt = buildDetailPlanPrompt(product, roles, { scope: "detail", images: { photos: 2, references: 1 } });
         expect(prompt).toContain("附图：图1–图2 是商品图（外观唯一依据）；图3 是卖家给的参考图（大牌或爆款的图，不是这件商品）。");
         expect(prompt).toContain("参考图怎么用：先看懂它好在哪里");
-        expect(prompt).toContain("再定一条创意主线写进 concept");
+        // 先做视觉策划：同质化、差异化定位、视觉主题和视觉元素库；元素每张只选用一两个，商品完整摆拍不超过一半。
+        expect(prompt).toContain("1. 先做视觉策划，再排每一张");
+        expect(prompt).toContain("写进 positioning");
+        expect(prompt).toContain("放进 concept");
+        expect(prompt).toContain("写进 motifs");
         expect(prompt).toContain("换成别的商品就不成立");
+        expect(prompt).toContain("至少三张不出现");
+        expect(prompt).toContain("整件商品连同包装完整摆拍的张数不超过一半");
+        expect(prompt).toContain("不写说明书口吻（该有的、就这么简单");
+        expect(prompt).toContain('"positioning":"差异化定位"');
+        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("至少两张不出现");
         expect(prompt).toContain("11. inspiration 用一句话");
-        expect(prompt).toContain('"concept":"创意主线","inspiration":"借鉴了什么"');
+        expect(prompt).toContain('"concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么"');
         // 视觉节奏与创意：背景、机位和创意手法都有要求，信息少时不拿标识凑数；主色要撑得起整屏。
         expect(prompt).toContain("【视觉节奏与创意】");
         expect(prompt).toContain("整套至少用到三种明显不同的处理");
@@ -546,9 +555,20 @@ describe("ecommerce studio plans for every output type", () => {
         expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
 
         const flat = Array.from({ length: 10 }, (_, index) => screen(index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene", `屏${"一二三四五六七八九十"[index]}`, { layout: "scene" }));
-        const reply = JSON.stringify({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章", style: "雾蓝", screens: flat });
+        flat[2] = { ...flat[2], headline: "该有的，都写在身上" };
+        const reply = JSON.stringify({
+            positioning: "通勤人的第一口热水",
+            concept: "清晨第一口热水的雾气，每屏都有一缕热气",
+            motifs: ["热气", "晨光", "热气", "地铁站台", "笔记本", "围巾", "钥匙"],
+            inspiration: "同类爆款的色块分区和编号徽章",
+            style: "雾蓝",
+            screens: flat,
+        });
         const result = parseDetailPlan(reply, product, roles, meta);
-        expect(result.plan).toMatchObject({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
+        expect(result.plan).toMatchObject({ positioning: "通勤人的第一口热水", concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
+        // 视觉元素去重，最多 5 个；说明书口吻的标题会被提示。
+        expect(result.plan.motifs).toEqual(["热气", "晨光", "地铁站台", "笔记本", "围巾"]);
+        expect(result.tacky).toEqual(["该有的", "都写在"]);
         expect(result.layoutKinds).toBe(1);
         expect(result.layoutRepeats).toBe(9);
 
@@ -557,10 +577,21 @@ describe("ecommerce studio plans for every output type", () => {
         const run = createStudioRun(plannedProduct, ids(), "2026-11-01T00:00:00Z");
         expect(run.suite?.concept).toBe("清晨第一口热水的雾气，每屏都有一缕热气");
         const compiled = compileStudioPrompt({ product: plannedProduct, textMode: run.textMode, shot: run.shots[1], model: "gpt-image-2", brief: plannedProduct.brief, suite: run.suite }).prompt;
-        expect(compiled).toContain("创意主线：清晨第一口热水的雾气，每屏都有一缕热气。这张图也要体现它。");
+        expect(compiled).toContain("创意主线：清晨第一口热水的雾气，每屏都有一缕热气。视觉元素库：热气、晨光、地铁站台、笔记本、围巾，这张图按画面需要选用其中一两个");
+        expect(compiled).not.toContain("这张图也要体现它");
+        // 画面没写包装盒时，不把包装盒摆进来；策划的屏按材质补布光。
+        expect(compiled).toContain("不要把包装盒也摆进来");
+        expect(compileStudioPrompt({ product: plannedProduct, textMode: run.textMode, shot: { ...run.shots[1], visual: "纸盒立在台面上" }, model: "gpt-image-2", brief: plannedProduct.brief, suite: run.suite }).prompt).not.toContain(
+            "不要把包装盒也摆进来",
+        );
+        const clearFrame = { ...plannedProduct, dossier: { ...plannedProduct.dossier!, facts: [...plannedProduct.dossier!.facts, { id: "f_frame", group: "appearance" as const, label: "镜框", value: "透明亚克力", evidence: "visible" as const }] } };
+        const lit = compileStudioPrompt({ product: clearFrame, textMode: run.textMode, shot: run.shots[1], model: "gpt-image-2", brief: clearFrame.brief, suite: run.suite }).prompt;
+        expect(lit).toContain("【按材质布光】");
+        expect(lit).toContain("透明部分用背光或侧逆光打亮");
         const restored = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...plannedProduct, runs: [run] })))!;
-        expect(restored.brief.detailPlan).toMatchObject({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
-        expect(restored.runs[0].suite?.concept).toBe("清晨第一口热水的雾气，每屏都有一缕热气");
+        expect(restored.brief.detailPlan).toMatchObject({ positioning: "通勤人的第一口热水", concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
+        expect(restored.brief.detailPlan?.motifs).toEqual(["热气", "晨光", "地铁站台", "笔记本", "围巾"]);
+        expect(restored.runs[0].suite).toMatchObject({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", motifs: ["热气", "晨光", "地铁站台", "笔记本", "围巾"] });
     });
 
     test("new single types each map to their own shot", () => {

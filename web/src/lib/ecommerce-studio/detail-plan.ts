@@ -41,8 +41,13 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     line: 30,
     facts: 6,
     summary: 200,
-    /** 创意主线：从这件商品最独特的地方出发、贯穿整组的视觉母题。 */
+    /** 差异化定位：这件商品和同类比凭什么不一样。 */
+    positioning: 80,
+    /** 创意主线：由定位推出的视觉主题，一个具体的世界或场景。 */
     concept: 100,
+    /** 视觉元素库：从主题里取的几个能反复使用的元素。 */
+    motifs: 5,
+    motif: 12,
     /** 从同类爆款和参考图里借鉴了什么。 */
     inspiration: 100,
     style: 800,
@@ -325,13 +330,20 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         model: text(record.model, 120),
         summary: text(record.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
         style: text(record.style, STUDIO_DETAIL_PLAN_LIMITS.style),
+        ...(text(record.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) ? { positioning: text(record.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) } : {}),
         ...(text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
+        ...(studioPlanMotifs(record.motifs).length ? { motifs: studioPlanMotifs(record.motifs) } : {}),
         ...(text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
         ...(styleId ? { styleId } : {}),
         ...(tone ? { tone } : {}),
         ...(targets.length ? { targets } : {}),
         screens,
     };
+}
+
+/** 视觉元素库：只收短文字，去重，最多 5 个。 */
+export function studioPlanMotifs(value: unknown): string[] {
+    return [...new Set(textList(value, STUDIO_DETAIL_PLAN_LIMITS.motifs * 2, STUDIO_DETAIL_PLAN_LIMITS.motif))].slice(0, STUDIO_DETAIL_PLAN_LIMITS.motifs);
 }
 
 export function studioPlanTone(value: unknown): StudioDesignToneId | undefined {

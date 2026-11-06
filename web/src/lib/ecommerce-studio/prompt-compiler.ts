@@ -74,7 +74,7 @@ export type StudioCompileInput = {
     /** 表单参数：传入时追加市场与语言、拍法、人群定位、参考图和补充要求。 */
     brief?: StudioBrief;
     /** 模板套图的模板名与整套视觉规范：有规范时代替风格锁。 */
-    suite?: { name: string; style: string; tone?: StudioDesignToneId; concept?: string };
+    suite?: { name: string; style: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[] };
 };
 
 const DEFAULT_MAX_CHARS = 4000;
@@ -233,7 +233,7 @@ function visualLayer(shot: StudioShot): StudioPromptLayer {
         id: "visual",
         title: "这一屏的画面",
         source: "出图策划",
-        text: `${shot.visual!.trim()}\n画面里提到的商品外观和属性以上面的商品真值为准，不新增商品没有的部件、功能和配件。`,
+        text: `${shot.visual!.trim()}\n画面里提到的商品外观和属性以上面的商品真值为准，不新增商品没有的部件、功能和配件。${/包装|盒/.test(shot.visual!) ? "" : "这一屏只出现画面里写到的商品部分，不要把包装盒也摆进来。"}`,
     };
 }
 
@@ -330,6 +330,26 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
     return { id: "copy", title: "图内文字（逐字呈现，不增不减）", source: brief ? "生图表单里的标题与卖点" : "商品档案里的已确认文案", text: lines.join("\n") };
 }
 
+/**
+ * 按商品材质的布光（与知识库 KB20 的布光条目同一套方法，这里是给图片模型的短句）：策划的屏不再套镜头规格的光线，
+ * 商品是透明、凝胶、亮面瓶身或金属时，图片模型最容易拍得灰、平、脏，这里补一两句。
+ */
+const STUDIO_MATERIAL_LIGHTING: { pattern: RegExp; text: string }[] = [
+    { pattern: /透明|亚克力|玻璃|镜片|水晶|通透/, text: "透明部分用背光或侧逆光打亮，边缘有清楚的深色轮廓线，透出背景的颜色，不要正面平光拍得发灰。" },
+    { pattern: /凝胶|啫喱|乳液|精华|膏|霜|液|油/, text: "质地要看得见光泽和通透感：侧逆光让膏体或凝胶发亮，能看到细小气泡和柔和高光。" },
+    { pattern: /软管|瓶|塑料|亮面|光面|罐/, text: "瓶身或软管沿形体方向有一条干净的长条高光，另一侧压暗出体积，标签面迎光清楚，底部有真实的接触阴影。" },
+    { pattern: /金属|不锈钢|铝|铜|镀|钛|合金/, text: "金属用大面积柔光做平滑的渐变高光，边缘有轮廓光，不要杂乱的亮点。" },
+    { pattern: /棉|面料|针织|绒|皮革|丝|麻/, text: "面料用侧光掠过表面，打出纹理和起伏。" },
+];
+
+export function studioMaterialLighting(product: Pick<StudioProduct, "dossier" | "brief">) {
+    const facts = (product.dossier?.facts || []).filter((fact) => ["material", "appearance", "structure"].includes(fact.group) && fact.evidence !== "pending").map((fact) => `${fact.label}${fact.value}`);
+    const text = [product.brief.productType, product.dossier?.category, product.dossier?.name, ...facts].filter(Boolean).join(" ");
+    return STUDIO_MATERIAL_LIGHTING.filter((item) => item.pattern.test(text))
+        .slice(0, 2)
+        .map((item) => item.text);
+}
+
 export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPrompt {
     const { product, shot, brief } = input;
     const textMode = input.textMode ?? input.plan?.textMode ?? "model";
@@ -365,13 +385,18 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const modelSetting = cast ? modelLayer(cast, modelReferences, references.length) : undefined;
     if (modelSetting) layers.push(modelSetting);
     if (!planned) layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
+    else {
+        const lighting = studioMaterialLighting(product);
+        if (lighting.length) layers.push({ id: "lighting", title: "按材质布光", source: "设计策划知识（KB20）", text: lighting.join("\n") });
+    }
     const suite = input.suite?.style.trim() ? input.suite : undefined;
     if (!spec.neutralBackground && suite) {
         layers.push({
             id: "style",
             title: `整套视觉规范「${suite.name}」`,
             source: planned ? "出图策划" : "套图模板",
-            text: `${sentence(suite.style)}${suite.concept?.trim() ? `创意主线：${sentence(suite.concept)}这张图也要体现它。` : ""}整套图共用这一规范。`,
+            // 创意主线和视觉元素是整套的方向，不是每张都要贴上的图形：每张只选用一两个，换着形式出现。
+            text: `${sentence(suite.style)}${suite.concept?.trim() ? `创意主线：${sentence(suite.concept)}` : ""}${suite.motifs?.length ? `视觉元素库：${suite.motifs.join("、")}，这张图按画面需要选用其中一两个，换着形式出现，不是每张都要全用。` : ""}整套图共用这一规范。`,
         });
     } else if (!spec.neutralBackground) {
         layers.push({

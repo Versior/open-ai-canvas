@@ -11,6 +11,7 @@ import {
     STUDIO_PLAN_SCOPES,
     studioDetailPlanFacts,
     studioPlannedScreenOf,
+    studioPlanMotifs,
     studioPlanStyleId,
     studioPlanTone,
 } from "./detail-plan";
@@ -206,6 +207,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "",
         "【文案要求】（大牌和头部爆款的文案像品牌在说话，不像地摊吆喝）",
         "- 主标题讲买家得到的感受或结果，不讲「这是什么」；把卖点翻译成画面和感受，比如把「重量轻」写成「轻到忘了它在」，把「防滑」写成「低头也不跑」。",
+        "- 不写说明书口吻（该有的、就这么简单、记清楚、一次看清、都写在）和空洞大词（品质之选、匠心、臻品、甄选、高端大气）。写完逐条自查：这句话换到同类任何一件商品上都成立，或者只是在描述商品长什么样，就重写。",
         "- 主标题不能只是罗列外观或参数（比如「透明框，绿镜腿」「四个地方，记清楚」），要说出买家在意的结果、情绪或一个画面；买的人和用的人不同时（比如家长给孩子买），对买的人说话。",
         "- 短、准、有节奏：可以用短句、对仗、留白和数字，口语但不油腻；同一组里的标题句式要有变化。",
         `- 不写土味和口号腔的词：${STUDIO_TACKY_COPY.join("、")}，不用感叹号，不堆四字成语。`,
@@ -215,7 +217,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         ...rhythmLines(request),
         "",
         "【要求】",
-        "1. 先想清楚：买这件商品的人下单前最关心什么、最担心什么，这件商品凭什么值得买，同类商品里它的气质是什么。整组图围绕这些回答来排，不要套一份各品类通用的模板。再定一条创意主线写进 concept（不超过 60 个字）：从这件商品最独特的地方（外观、材质、颜色、使用时刻、人群）出发，想一个贯穿整组的视觉母题（一种光、一个道具、一个动作、一种图形或一种色块），每张都出现它的变化，让这组图一眼就是这件商品的，换成别的商品就不成立。不用放在任何商品上都成立的通用画面（纯色背景加商品居中、泛泛的居家场景、空洞的大理石台面）。",
+        "1. 先做视觉策划，再排每一张（详见系统提示里的设计策划知识）：① 想清楚买这件商品的人下单前最关心什么、最担心什么，买的人和用的人是不是同一个人；② 同类商品的详情页通常长什么样，这组图要避开哪些套路；③ 用一句话写差异化定位，写进 positioning（不超过 40 个字）；④ 由定位推出一个具体的视觉主题，写成创意主线放进 concept（不超过 60 个字）：一个具体的世界或场景，不是一种颜色，换成别的商品就不成立；⑤ 从主题里取 3–5 个能反复使用的视觉元素写进 motifs（每个不超过 8 个字，比如道具、自然物、光影、图形、动作）。不用放在任何商品上都成立的通用画面（纯色背景加商品居中、泛泛的居家场景、空洞的大理石台面、整套同一条波浪曲线）。",
         scopeRequirement(product, request),
         `3. 每张只承担一个目的，并选一个最适合讲这件事的 layout。${request.scope === "detail" ? "相邻两屏的版式不能相同，整套至少用到 6 种版式；同一种屏型不能连续超过两屏；" : "相邻两张的版式尽量不同；"}相邻两张的景别、机位和场景也不能相同。`,
         "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字），像摄影师和美术指导的分镜说明：背景或场景、商品怎么摆、什么角度和焦段、人物和动作（如有）、道具（不超过 3 件）、主色调、光线的方向和质感，以及按版式怎么分区、文字放在哪里。visual 和 style 里不写任何品牌名（上面提到的大牌只用来定调性），也不写「参考某某官网」。",
@@ -226,15 +228,20 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "9. style 是整组共用的设计规范（不超过 300 个字），像设计师交给出图的规范：色板（底色、主色、强调色，各写色名和 #色值；主色要撑得起整屏，是深色或饱和色，按上面的节奏用在几屏的大色块背景上，不要整套都是同一档浅色）、背景体系、光线、字体（中文标题的字重和气质、英文小标题的样式、数字的样式）、栏目标题的样式（比如英文小标题加中文标题加一条细线，不用序号）、图标样式（线框还是面性、线条粗细、有没有底板）、反复出现的装饰元素。所有图一致，每张的背景和场景写在各自的 visual 里。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
+        request.scope === "single"
+            ? "12. 视觉元素选用一两个融进画面，不要把所有元素堆在一张里。visual 里没写包装盒时，画面里就只有 visual 写到的商品部分。"
+            : `12. 视觉元素每张选用一两个，换着形式出现（实物、光影、局部、图形），至少${request.scope === "main" ? "两" : "三"}张不出现；不要把同一个图形贴在每一张上。整件商品连同包装完整摆拍的张数不超过一半，包装盒最多出现在两三张，其余张用质地、局部、使用中的手和人、场景、机理示意来讲；visual 里没写包装盒的张，画面里就只有 visual 写到的商品部分。`,
         "",
         "只输出下面这个 JSON，不要任何解释：",
-        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","concept":"创意主线","inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${request.scope === "single" ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene" : request.scope === "main" ? "main-white" : "detail-hero"}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
+        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${request.scope === "single" ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene" : request.scope === "main" ? "main-white" : "detail-hero"}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
     ];
     return lines.filter((line): line is string => line !== undefined).join("\n");
 }
 
 /** 土味和口号腔的写法：提示词里禁止，读回时发现了也提示用户。 */
 export const STUDIO_TACKY_COPY = ["神器", "必入", "闭眼入", "yyds", "绝绝子", "天花板", "谁用谁知道", "一眼就认", "颜值担当", "您值得拥有", "爆款", "种草了", "上头"];
+/** 说明书口吻和空洞大词：不土，但低端，读回时一样提示。 */
+export const STUDIO_FLAT_COPY = ["该有的", "就这么简单", "记清楚", "一次看清", "都写在", "品质之选", "匠心", "臻品", "甄选", "高端大气"];
 
 export type StudioDetailPlanResult = {
     plan: StudioDetailPlan;
@@ -293,7 +300,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     }
     const copies = screens.flatMap((screen) => [screen.headline, screen.subline, ...screen.lines]);
     const issues = screens.flatMap((screen, index) => [screen.headline, screen.subline, ...screen.lines].flatMap((value) => checkEcommerceText(value, `第 ${index + 1} 张`)));
-    const tacky = STUDIO_TACKY_COPY.filter((word) => copies.some((value) => value.toLowerCase().includes(word.toLowerCase())));
+    const tacky = [...STUDIO_TACKY_COPY, ...STUDIO_FLAT_COPY].filter((word) => copies.some((value) => value.toLowerCase().includes(word.toLowerCase())));
     const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
     // 只有质感选了「按商品推荐」时才收策划挑的质感。
     const styleId = product.style === "auto" ? studioPlanStyleId(data.styleId) : undefined;
@@ -305,7 +312,9 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             model: meta.model,
             summary: text(data.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
             style: text(data.style, STUDIO_DETAIL_PLAN_LIMITS.style),
+            ...(text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) ? { positioning: text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) } : {}),
             ...(text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
+            ...(studioPlanMotifs(data.motifs).length ? { motifs: studioPlanMotifs(data.motifs) } : {}),
             ...(text(data.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(data.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
             ...(styleId ? { styleId } : {}),
             ...(tone ? { tone } : {}),

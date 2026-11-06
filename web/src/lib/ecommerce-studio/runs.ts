@@ -199,7 +199,9 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
     const plan = studioActivePlan(product);
     // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性和创意主线），结果区的组名带上「按商品策划」。
-    const planSuite = plan ? { id: plan.id, name: STUDIO_DETAIL_PLAN_NAME, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}), ...(plan.concept ? { concept: plan.concept } : {}) } : undefined;
+    const planSuite = plan
+        ? { id: plan.id, name: STUDIO_DETAIL_PLAN_NAME, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}), ...(plan.concept ? { concept: plan.concept } : {}), ...(plan.motifs?.length ? { motifs: plan.motifs } : {}) }
+        : undefined;
     if (kind) {
         if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");
         const entries = studioSetEntries(product).filter((entry) => entry.included);
