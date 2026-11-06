@@ -12,7 +12,8 @@ import (
 // 时间线渲染：把前端 TimelineProject 快照（tracks/clips 平铺，见
 // web/src/types/timeline.ts TimelineProject v2）展开为可执行的 ffmpeg 步骤。
 // 与前端 timeline-to-ffmpeg.ts 保持同一数据流：trim（按 sourceStartMs 裁切）
-// → 空隙补黑场静音 → concat。字幕不烧录（依赖 libass），单独产出 SRT。
+// → 空隙补黑场静音 → concat。字幕片段不烧录（依赖 libass 和字体），单独产出 SRT；要烧录时由前端
+// 把字幕画成整幅透明 PNG，作为 overlay 图片片段叠上去。
 //
 // 输入布局统一为「每个片段两个输入：视频源 + 音频源」，空隙展开为独立
 // 黑场片段，因此第 i 个片段的视频输入为 2i、音频输入为 2i+1。
@@ -27,12 +28,18 @@ type renderClip struct {
 	SourceDurationMs int64   `json:"sourceDurationMs"`
 	Volume           float64 `json:"volume"`
 	Text             string  `json:"text"`
+	// Title 只用于导出剪映草稿时给素材文件起名，渲染不用。
+	Title string `json:"title,omitempty"`
 	// FadeIn/FadeOut 是片段首尾的纯色淡入淡出（短剧黑场、闪白转场）；为 0 时是硬切。
 	FadeInMs     int64  `json:"fadeInMs,omitempty"`
 	FadeInColor  string `json:"fadeInColor,omitempty"`
 	FadeOutMs    int64  `json:"fadeOutMs,omitempty"`
 	FadeOutColor string `json:"fadeOutColor,omitempty"`
-	DirectMedia  *struct {
+	// Overlay 只对 image 片段有效：整幅透明 PNG 按 startMs 叠在成片画面上（烧录字幕），不进主序列。
+	Overlay bool `json:"overlay,omitempty"`
+	// Loop 只对音频轨片段有效：素材比片段短时从头循环（背景音乐）。
+	Loop        bool `json:"loop,omitempty"`
+	DirectMedia *struct {
 		ID         string `json:"id"`
 		Kind       string `json:"kind"`
 		StorageKey string `json:"storageKey"`
@@ -86,6 +93,8 @@ type renderPlan struct {
 	Segments []renderSegment
 	// AudioOverlays 是音频轨上的独立片段（配音、音乐），在主序列拼接后按 startMs 混入。
 	AudioOverlays []renderSegment
+	// ImageOverlays 是叠在成片画面上的整幅透明图（烧录字幕），按 startMs 排序且互不重叠。
+	ImageOverlays []renderSegment
 	SubtitleSRT   string
 	HasMedia      bool
 	Width         int
@@ -107,8 +116,15 @@ func buildRenderPlan(project renderProject) renderPlan {
 	}
 	clips := make([]renderClip, 0, len(project.Clips))
 	overlays := make([]renderSegment, 0)
+	images := make([]renderSegment, 0)
 	for _, clip := range project.Clips {
 		if !visible[clip.TrackID] || clip.DurationMs <= 0 {
+			continue
+		}
+		if clip.Kind == "image" && clip.Overlay {
+			if _, ok := mediaResourceID(clip); ok && clip.StartMs >= 0 {
+				images = append(images, renderSegment{Kind: "overlay", DurationMs: clip.DurationMs, Clip: clip})
+			}
 			continue
 		}
 		if clip.Kind == "audio" {
@@ -136,7 +152,7 @@ func buildRenderPlan(project renderProject) renderPlan {
 		return clips[i].StartMs < clips[j].StartMs
 	})
 
-	plan := renderPlan{SubtitleSRT: buildRenderSubtitleSRT(project), AudioOverlays: overlays, Width: renderWidth, Height: renderHeight, Fit: normalizeRenderFit(project.Fit)}
+	plan := renderPlan{SubtitleSRT: buildRenderSubtitleSRT(project), AudioOverlays: overlays, ImageOverlays: renderImageOverlays(images), Width: renderWidth, Height: renderHeight, Fit: normalizeRenderFit(project.Fit)}
 	if project.Width >= 16 && project.Height >= 16 && project.Width <= 4096 && project.Height <= 4096 {
 		// libx264 yuv420p 要求偶数尺寸。
 		plan.Width, plan.Height = project.Width&^1, project.Height&^1
@@ -156,6 +172,24 @@ func buildRenderPlan(project renderProject) renderPlan {
 		}
 	}
 	return plan
+}
+
+// renderImageOverlays 按起点排序叠加图，后一张和前一张重叠时从前一张结束处开始，完全被盖住的丢掉。
+// 字幕同一时刻只显示一条，互不重叠后可以拼成一路透明画面，只做一次叠加。
+func renderImageOverlays(images []renderSegment) []renderSegment {
+	sort.SliceStable(images, func(i, j int) bool { return images[i].Clip.StartMs < images[j].Clip.StartMs })
+	result := make([]renderSegment, 0, len(images))
+	var cursor int64
+	for _, image := range images {
+		start, end := max(image.Clip.StartMs, cursor), image.Clip.StartMs+image.Clip.DurationMs
+		if end <= start {
+			continue
+		}
+		image.Clip.StartMs, image.Clip.DurationMs, image.DurationMs = start, end-start, end-start
+		result = append(result, image)
+		cursor = end
+	}
+	return result
 }
 
 // mediaResourceID 从片段的 directMedia.storageKey（resource:<id>）还原资源 ID。
@@ -247,14 +281,27 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 		if overlay.Source == nil {
 			continue
 		}
+		if overlay.Clip.Loop {
+			// 背景音乐比成片短时从头循环；-t 限定输出时长，不会无限读。
+			args = append(args, "-stream_loop", "-1")
+		}
 		if overlay.Clip.SourceStartMs > 0 {
 			args = append(args, "-ss", fmt.Sprintf("%.3f", float64(overlay.Clip.SourceStartMs)/1000))
 		}
 		args = append(args, "-t", fmt.Sprintf("%.3f", float64(overlay.DurationMs)/1000), "-i", overlay.Source.Path)
 		overlays = append(overlays, overlay)
 	}
+	imageBase := overlayBase + len(overlays)
+	images := make([]renderSegment, 0, len(plan.ImageOverlays))
+	for _, image := range plan.ImageOverlays {
+		if image.Source == nil {
+			continue
+		}
+		args = append(args, "-loop", "1", "-t", fmt.Sprintf("%.3f", float64(image.DurationMs)/1000), "-i", image.Source.Path)
+		images = append(images, image)
+	}
 
-	filters := make([]string, 0, len(plan.Segments)*2+len(overlays)+2)
+	filters := make([]string, 0, len(plan.Segments)*2+len(overlays)+len(images)*2+4)
 	labels := make([]string, 0, len(plan.Segments)*2)
 	for i, seg := range plan.Segments {
 		videoIn, audioIn := 2*i, 2*i+1
@@ -282,11 +329,14 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 	for _, label := range labels {
 		fmt.Fprintf(&concatInputs, "[%s]", label)
 	}
-	audioOut := "aout"
+	audioOut, videoOut := "aout", "vout"
 	if len(overlays) > 0 {
 		audioOut = "abase"
 	}
-	filters = append(filters, fmt.Sprintf("%sconcat=n=%d:v=1:a=1[vout][%s]", concatInputs.String(), len(plan.Segments), audioOut))
+	if len(images) > 0 {
+		videoOut = "vbase"
+	}
+	filters = append(filters, fmt.Sprintf("%sconcat=n=%d:v=1:a=1[%s][%s]", concatInputs.String(), len(plan.Segments), videoOut, audioOut))
 	if len(overlays) > 0 {
 		var mixInputs strings.Builder
 		mixInputs.WriteString("[abase]")
@@ -300,12 +350,15 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 				delay = 0
 			}
 			label := fmt.Sprintf("o%d", i)
-			filters = append(filters, fmt.Sprintf("[%d:a]aformat=sample_fmts=fltp:sample_rates=%d:channel_layouts=stereo,volume=%.3f,adelay=%d|%d[%s]",
-				overlayBase+i, renderSampleRate, volume, delay, delay, label))
+			filters = append(filters, fmt.Sprintf("[%d:a]aformat=sample_fmts=fltp:sample_rates=%d:channel_layouts=stereo,volume=%.3f%s,adelay=%d|%d[%s]",
+				overlayBase+i, renderSampleRate, volume, renderAudioFadeFilters(overlay.Clip, float64(overlay.DurationMs)/1000), delay, delay, label))
 			fmt.Fprintf(&mixInputs, "[%s]", label)
 		}
-		// amix 会按输入数衰减音量，混音后乘回，保证配音响度不随片段数量变化。
-		filters = append(filters, fmt.Sprintf("%samix=inputs=%d:duration=first:dropout_transition=0,volume=%d[aout]", mixInputs.String(), len(overlays)+1, len(overlays)+1))
+		// normalize=0 直接相加：各路音量由片段 volume 决定，配音和音乐结束前后整体响度不跳变。
+		filters = append(filters, fmt.Sprintf("%samix=inputs=%d:duration=first:dropout_transition=0:normalize=0[aout]", mixInputs.String(), len(overlays)+1))
+	}
+	if len(images) > 0 {
+		filters = append(filters, renderImageOverlayFilters(images, imageBase, width, height)...)
 	}
 
 	args = append(args,
@@ -385,7 +438,7 @@ type renderSourceRecord struct {
 // renderSourceRecords 按成片顺序列出画面片段与音频轨片段的来源。
 func renderSourceRecords(plan renderPlan) []renderSourceRecord {
 	width, height := plan.size()
-	records := make([]renderSourceRecord, 0, len(plan.Segments)+len(plan.AudioOverlays))
+	records := make([]renderSourceRecord, 0, len(plan.Segments)+len(plan.AudioOverlays)+len(plan.ImageOverlays))
 	for _, seg := range plan.Segments {
 		if seg.Source == nil {
 			continue
@@ -401,6 +454,12 @@ func renderSourceRecords(plan renderPlan) []renderSourceRecord {
 			continue
 		}
 		records = append(records, renderSourceRecord{ClipID: overlay.Clip.ID, ResourceID: overlay.Source.ResourceID, Kind: overlay.Kind, AIGC: overlay.Source.AIGC})
+	}
+	for _, image := range plan.ImageOverlays {
+		if image.Source == nil {
+			continue
+		}
+		records = append(records, renderSourceRecord{ClipID: image.Clip.ID, ResourceID: image.Source.ResourceID, Kind: image.Kind, Width: image.Source.Width, Height: image.Source.Height})
 	}
 	return records
 }
@@ -513,6 +572,45 @@ func planTotalSeconds(plan renderPlan) float64 {
 		total += seg.DurationMs
 	}
 	return float64(total) / 1000
+}
+
+// renderImageOverlayFilters 把叠加图和中间的透明空隙拼成一路 RGBA 画面，再一次叠到 [vbase] 上输出 [vout]。
+// 叠加图流比成片短时（最后一条字幕之后）eof_action=pass 让主画面原样通过。
+func renderImageOverlayFilters(images []renderSegment, inputBase int, width int, height int) []string {
+	filters := make([]string, 0, len(images)*2+2)
+	var parts strings.Builder
+	count := 0
+	var cursor int64
+	for i, image := range images {
+		if gap := image.Clip.StartMs - cursor; gap > 0 {
+			label := fmt.Sprintf("sg%d", i)
+			filters = append(filters, fmt.Sprintf("color=c=black@0.0:s=%dx%d:r=%d:d=%.3f,format=rgba,setsar=1,settb=AVTB[%s]", width, height, renderFPS, float64(gap)/1000, label))
+			fmt.Fprintf(&parts, "[%s]", label)
+			count++
+		}
+		label := fmt.Sprintf("si%d", i)
+		duration := float64(image.DurationMs) / 1000
+		filters = append(filters, fmt.Sprintf("[%d:v]fps=%d,scale=%d:%d,format=rgba,setsar=1,trim=duration=%.3f,setpts=PTS-STARTPTS,settb=AVTB[%s]", inputBase+i, renderFPS, width, height, duration, label))
+		fmt.Fprintf(&parts, "[%s]", label)
+		count++
+		cursor = image.Clip.StartMs + image.DurationMs
+	}
+	filters = append(filters, fmt.Sprintf("%sconcat=n=%d:v=1:a=0[subs]", parts.String(), count))
+	filters = append(filters, "[vbase][subs]overlay=0:0:eof_action=pass,format=yuv420p[vout]")
+	return filters
+}
+
+// renderAudioFadeFilters 是音频轨片段首尾的音量淡入淡出（背景音乐收尾）；时长最多取片段的一半。
+func renderAudioFadeFilters(clip renderClip, duration float64) string {
+	var b strings.Builder
+	if clip.FadeInMs > 0 {
+		fmt.Fprintf(&b, ",afade=t=in:st=0:d=%.3f", min(float64(clip.FadeInMs)/1000, duration/2))
+	}
+	if clip.FadeOutMs > 0 {
+		fade := min(float64(clip.FadeOutMs)/1000, duration/2)
+		fmt.Fprintf(&b, ",afade=t=out:st=%.3f:d=%.3f", duration-fade, fade)
+	}
+	return b.String()
 }
 
 // renderFadeFilters 生成片段首尾的纯色淡入淡出；颜色只接受白名单，避免拼进滤镜表达式。

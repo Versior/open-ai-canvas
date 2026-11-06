@@ -434,6 +434,27 @@ paths:
         "413": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
+  /timeline/jianying-draft:
+    post:
+      tags: [tasks]
+      summary: 把一份时间线快照导出成剪映草稿 ZIP
+      description: 需要登录。表单提交（application/x-www-form-urlencoded），正文不超过 512 KiB。timeline 与 POST /timeline/renders 的 timeline 同结构（v2 tracks/clips，片段用 directMedia.storageKey=resource:<id> 引用本人就绪的资源，最多 600 个片段）。video 片段按 startMs/sourceStartMs 放在主轨，静音轨上的片段音量为 0；audio 片段按 trackId 分到音频轨（loop=true 时按素材时长切成几段），可以引用音频文件或视频文件里的声音；subtitle 片段的 text 进字幕轨并附 SRT；overlay 图片片段不导出。任何素材不可用时返回 400，不导出缺素材的草稿。成功时直接返回 application/zip 附件，压缩包里是草稿文件夹（draft_content.json、draft_info.json、draft_meta_info.json、materials/、导入说明.txt）。超容量只读时仍可导出。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [draftRoot, timeline]
+              properties:
+                draftRoot: {type: string, description: 用户本机剪映草稿目录的绝对路径，素材路径按它写入草稿}
+                name: {type: string, description: 草稿名，会加上导出时间}
+                timeline: {type: string, description: 时间线快照 JSON 字符串}
+      responses:
+        "200": {description: 剪映草稿 ZIP 附件}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
   /interior/catalog:
     get:
       tags: [canvas]

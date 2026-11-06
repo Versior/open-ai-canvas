@@ -44,6 +44,7 @@ var storageReadOnlyExemptRoutes = map[string]struct{}{
 	// 导出只读取已有资源，超容量只读时仍允许用户把作品带走。
 	"/dramas/:id/episodes/:episodeId/jianying-draft": {},
 	"/dramas/:id/asset-package":                      {},
+	"/timeline/jianying-draft":                       {},
 	"/creation-runs/:id/release":                     {},
 	"/creation-runs/:id/heartbeat":                   {},
 }
