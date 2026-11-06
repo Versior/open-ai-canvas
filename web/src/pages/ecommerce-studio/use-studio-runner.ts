@@ -6,7 +6,7 @@ import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-anal
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioCleanNotes, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
-import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, studioDetailPlanRoles } from "@/lib/ecommerce-studio/detail-plan";
+import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, studioDetailPlanRoles, studioTemplatePlanRoles } from "@/lib/ecommerce-studio/detail-plan";
 import { buildDetailPlanPrompt, parseDetailPlan, studioPlanTargetRoles, type StudioDetailPlanResult, type StudioPlanRequest } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
@@ -242,7 +242,7 @@ export function useStudioRunner() {
     );
 
     /**
-     * 按这件商品策划当前出图类型（详情页、主图套图或选中的单张图）：服务端按「出图策划」能力和策划范围
+     * 按这件商品策划当前出图类型（详情页、主图套图、选中的单张图或选中的模板）：服务端按「出图策划」能力和策划范围
      * 带上电商知识库的对应方法，模型看商品图和表单信息排每一张。结果存进表单对应的策划，镜头清单换成策划的屏，
      * 原来的勾选和顺序清掉。revise 时带上这一版策划，按补充调整修改。
      */
@@ -251,7 +251,8 @@ export function useStudioRunner() {
             trackAnalysis(productId, "plan", async (): Promise<StudioDetailPlanResult> => {
                 const product = read(productId);
                 const scope = studioPlanScopeOf(product);
-                if (!scope) throw new Error("模板套图按模板出图，不需要策划");
+                if (!scope) throw new Error("先选择一套模板，再按模板策划");
+                const suite = scope === "template" ? product.brief.suite : undefined;
                 const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
                 const current = configRef.current;
                 const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
@@ -271,7 +272,7 @@ export function useStudioRunner() {
                     ...(options.revise ? { previous: studioActivePlan(product) } : {}),
                     ...(images.length ? { images: { photos: photos.length, references: references.length } } : {}),
                 };
-                const roles = scope === "single" ? studioPlanTargetRoles(targets || []) : studioDetailPlanRoles(product, scope);
+                const roles = scope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, scope === "main" ? "main" : "detail");
                 const result = await runBackendGenerationTask({
                     mode: "text",
                     prompt: buildDetailPlanPrompt(product, roles, request),
@@ -280,8 +281,8 @@ export function useStudioRunner() {
                     streamText: false,
                     metadata: {
                         ...studioAnalysisMetadata(productId, "plan", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }, STUDIO_DETAIL_PLAN_CAPABILITY),
-                        // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事；品类大类用来在同类爆款套图对不上时取同大类的参考。
-                        studioPlanKind: scope,
+                        // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事，模板套图按模板用途取；品类大类用来在同类爆款套图对不上时取同大类的参考。
+                        studioPlanKind: suite ? suite.kind : scope,
                         // 单张图策划选中的类型：服务端按它带对应的单张图打法（海报、种草、白底、信息图、模特）。
                         ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
                         ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),

@@ -188,8 +188,8 @@ export type StudioPlannedScreen = {
     noText?: boolean;
 };
 
-/** 策划的范围：详情页（10 屏）、主图套图（5 张）或选中的几种单张图。 */
-export type StudioPlanScope = "detail" | "main" | "single";
+/** 策划的范围：详情页（10 屏）、主图套图（5 张）、选中的几种单张图，或按选中的套图模板逐张策划。 */
+export type StudioPlanScope = "detail" | "main" | "single" | "template";
 /** 单张图策划时选中的类型和每种几张；选择变了策划就不再适用。 */
 export type StudioPlanTarget = { type: StudioOutputType; count: number };
 /** 设计调性：决定版面节奏、字体、文案语气和摄影，由策划按商品挑。 */
@@ -218,6 +218,8 @@ export type StudioDetailPlan = {
     inspiration?: string;
     /** 单张图策划：策划时选中的类型和数量。 */
     targets?: StudioPlanTarget[];
+    /** 模板套图策划：按哪套模板排的；换了模板策划就不再适用。 */
+    suiteId?: string;
     screens: StudioPlannedScreen[];
 };
 
@@ -276,6 +278,8 @@ export type StudioBrief = {
     mainPlan?: StudioDetailPlan;
     /** 单张图的策划：只在选中的类型和数量与策划时一致时使用。 */
     singlePlan?: StudioDetailPlan;
+    /** 模板套图的策划：模板定每张的顺序和职责，画面、版式和文案按这件商品排；只在选中的还是同一套模板时使用。 */
+    templatePlan?: StudioDetailPlan;
     /** 写给策划的补充调整，每次策划和重新策划都带上。 */
     planNote?: string;
     /** 套图的镜头清单：调整后的顺序与这次不出的镜头。元素是镜头 key，内置套图为镜头角色，模板套图为 s 加序号。 */

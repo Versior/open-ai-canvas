@@ -99,8 +99,16 @@ export function createStudioBrief(): StudioBrief {
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
 export function resetStudioBriefParameters(brief: StudioBrief): StudioBrief {
     // 策划是按这件商品排出来的结果，和品牌、类型一样跟着商品走，不随参数重置。
-    const { detailPlan, mainPlan, singlePlan } = brief;
-    return { ...createStudioBrief(), brand: brief.brand, productType: brief.productType, ...(detailPlan ? { detailPlan } : {}), ...(mainPlan ? { mainPlan } : {}), ...(singlePlan ? { singlePlan } : {}) };
+    const { detailPlan, mainPlan, singlePlan, templatePlan } = brief;
+    return {
+        ...createStudioBrief(),
+        brand: brief.brand,
+        productType: brief.productType,
+        ...(detailPlan ? { detailPlan } : {}),
+        ...(mainPlan ? { mainPlan } : {}),
+        ...(singlePlan ? { singlePlan } : {}),
+        ...(templatePlan ? { templatePlan } : {}),
+    };
 }
 
 function text(value: unknown, max: number) {
@@ -167,6 +175,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const detailPlan = normalizeStudioDetailPlan(record.detailPlan);
     const mainPlan = normalizeStudioDetailPlan(record.mainPlan);
     const singlePlan = normalizeStudioDetailPlan(record.singlePlan);
+    const templatePlan = normalizeStudioDetailPlan(record.templatePlan);
     const planNote = text(record.planNote, STUDIO_PLAN_NOTE_MAX).trim();
     const model = normalizeStudioModelCast(record.model);
     return {
@@ -188,6 +197,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         ...(detailPlan ? { detailPlan } : {}),
         ...(mainPlan ? { mainPlan } : {}),
         ...(singlePlan?.targets?.length ? { singlePlan } : {}),
+        ...(templatePlan?.suiteId ? { templatePlan } : {}),
         ...(planNote ? { planNote } : {}),
         ...(model ? { model } : {}),
         shotOrder: shotKeys(record.shotOrder),

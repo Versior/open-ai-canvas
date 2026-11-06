@@ -76,12 +76,12 @@ export function studioSetKind(product: StudioProduct): StudioPlanKind | undefine
     return product.brief.outputType === "template-set" ? product.brief.suite?.kind || spec.set : spec.set;
 }
 
-/** 这件商品当前的出图类型对应哪种策划：详情页、主图套图或单张图；模板套图按模板出，不策划。 */
+/** 这件商品当前的出图类型对应哪种策划：详情页、主图套图、单张图，或选了模板之后的模板套图。 */
 export function studioPlanScopeOf(product: Pick<StudioProduct, "brief">): StudioPlanScope | undefined {
     const type = product.brief.outputType;
     if (type === "detail-set") return "detail";
     if (type === "main-set") return "main";
-    if (type === "template-set") return undefined;
+    if (type === "template-set") return product.brief.suite ? "template" : undefined;
     return studioSingleTypes(product.brief).length ? "single" : undefined;
 }
 
@@ -91,22 +91,30 @@ export function studioSingleTargets(brief: Pick<StudioBrief, "outputType" | "mix
     return studioSingleTypes(brief).map((type) => ({ type: type.id, count }));
 }
 
-/** 当前出图类型正在用的策划；单张图的选择和策划时不一样时不用。 */
+/** 当前出图类型正在用的策划；单张图的选择和策划时不一样、模板换了一套（或张数变了）时不用。 */
 export function studioActivePlan(product: Pick<StudioProduct, "brief">): StudioDetailPlan | undefined {
     const scope = studioPlanScopeOf(product);
     if (!scope) return undefined;
     const plan = product.brief[STUDIO_PLAN_FIELD[scope]];
     if (!plan) return undefined;
-    return scope === "single" && !studioSameTargets(plan.targets, studioSingleTargets(product.brief)) ? undefined : plan;
+    if (scope === "single") return studioSameTargets(plan.targets, studioSingleTargets(product.brief)) ? plan : undefined;
+    if (scope === "template") {
+        const suite = product.brief.suite;
+        return suite && plan.suiteId === suite.id && plan.screens.length === suite.shots.length ? plan : undefined;
+    }
+    return plan;
 }
 
 function planEntries(product: StudioProduct, plan: StudioDetailPlan): Omit<StudioSetEntry, "included">[] {
     const family = product.dossier?.family || "generic";
+    // 模板套图的策划和模板一张对一张：画幅仍按模板。
+    const templateShots = product.brief.outputType === "template-set" ? product.brief.suite?.shots : undefined;
     return plan.screens.map((screen, index) => ({
         key: studioDetailPlanKey(index),
         role: screen.role,
         title: screen.title,
         purpose: screen.purpose || studioShotSpec(screen.role, family).purpose,
+        ...(templateShots?.[index]?.ratio ? { ratio: templateShots[index].ratio } : {}),
         planIndex: index,
         visual: screen.visual,
         layout: screen.layout,
@@ -198,10 +206,10 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const kind = studioSetKind(product);
     const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
     const plan = studioActivePlan(product);
-    // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性和创意主线），结果区的组名带上「按商品策划」。
-    const planSuite = plan
-        ? { id: plan.id, name: STUDIO_DETAIL_PLAN_NAME, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}), ...(plan.concept ? { concept: plan.concept } : {}), ...(plan.motifs?.length ? { motifs: plan.motifs } : {}) }
-        : undefined;
+    // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性和创意主线），结果区的组名带上「按商品策划」；
+    // 按模板策划的组名前面再带上模板名。
+    const planName = brief.outputType === "template-set" && brief.suite ? `${brief.suite.name} · ${STUDIO_DETAIL_PLAN_NAME}` : STUDIO_DETAIL_PLAN_NAME;
+    const planSuite = plan ? { id: plan.id, name: planName, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}), ...(plan.concept ? { concept: plan.concept } : {}), ...(plan.motifs?.length ? { motifs: plan.motifs } : {}) } : undefined;
     if (kind) {
         if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");
         const entries = studioSetEntries(product).filter((entry) => entry.included);

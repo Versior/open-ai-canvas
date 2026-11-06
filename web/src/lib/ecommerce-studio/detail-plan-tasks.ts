@@ -14,6 +14,7 @@ import {
     studioPlanMotifs,
     studioPlanStyleId,
     studioPlanTone,
+    studioTemplateShotRoles,
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
@@ -57,8 +58,8 @@ function styleLines(product: StudioProduct): string[] {
 }
 
 /**
- * 这次策划的范围：详情页 10 屏、主图 5 张，或者按选中的单张类型逐张出；previous 是要按补充调整修改的上一版。
- * images 是随任务附带的图：先是商品图，后面是卖家上传的参考图（大牌或爆款截图）。
+ * 这次策划的范围：详情页 10 屏、主图 5 张、按选中的单张类型逐张出，或按表单里选中的模板一张对一张排；
+ * previous 是要按补充调整修改的上一版。images 是随任务附带的图：先是商品图，后面是卖家上传的参考图（大牌或爆款截图）。
  */
 export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; images?: { photos: number; references: number } };
 
@@ -84,12 +85,41 @@ export function studioPlanTargetRoles(targets: StudioPlanTarget[]): StudioShotRo
     });
 }
 
-function screenCount(request: StudioPlanRequest) {
-    return request.scope === "single" ? studioPlanTargetRoles(request.targets || []).length : STUDIO_PLAN_SCOPES[request.scope].screens;
+function screenCount(product: StudioProduct, request: StudioPlanRequest) {
+    if (request.scope === "single") return studioPlanTargetRoles(request.targets || []).length;
+    if (request.scope === "template") return product.brief.suite?.shots.length || 0;
+    return STUDIO_PLAN_SCOPES[request.scope].screens;
+}
+
+/** 模板每张的职责写进策划提示词时的上限：内置模板一张有七八行镜头、布光、背景说明。 */
+const TEMPLATE_DUTY_CHARS = 240;
+
+/**
+ * 选中的模板：每张的标题、建议屏型、画幅和职责。模板只定每张讲什么、大致怎么拍；
+ * 模板原本是给别的商品做的，里面的商品、颜色和属性不照搬。
+ */
+function templateLines(product: StudioProduct): string[] {
+    const suite = product.brief.suite;
+    if (!suite) return [];
+    const roles = studioTemplateShotRoles(suite);
+    return [
+        "",
+        `【套图模板「${suite.name}」】（卖家选的模板，${suite.kind === "main" ? "按主图出" : "按详情页出"}${suite.category ? `，原本是给「${suite.category}」做的` : ""}；只学它每张讲什么、怎么拍，模板里写到的商品、材质、颜色、属性、价格和功效都不照搬）`,
+        suite.style.trim() ? `模板的整套风格：${oneLine(suite.style).slice(0, 300)}` : undefined,
+        ...suite.shots.map((shot, index) => {
+            const tags = [`建议 role：${roles[index]}`, shot.ratio ? `画幅 ${shot.ratio}` : "", shot.noText ? "这张不放文字" : ""].filter(Boolean).join(" · ");
+            const duty = oneLine(shot.duty);
+            return `${index + 1}. 「${shot.title}」（${tags}）${duty ? `：${duty.length > TEMPLATE_DUTY_CHARS ? `${duty.slice(0, TEMPLATE_DUTY_CHARS - 1)}…` : duty}` : ""}`;
+        }),
+    ].filter((line): line is string => line !== undefined);
 }
 
 function introLine(product: StudioProduct, request: StudioPlanRequest, platform: string) {
-    const count = screenCount(request);
+    const count = screenCount(product, request);
+    if (request.scope === "template") {
+        const suite = product.brief.suite;
+        return `为这件商品按卖家选的套图模板「${suite?.name || "模板"}」策划一套${platform}${suite?.kind === "main" ? "主图套图" : "详情页"}，共 ${count} 张。模板定了每张的顺序和要讲的事；画面、版式和文案要按这件商品重新设计，做得比照模板原样出更好看、更像大牌。`;
+    }
     if (request.scope === "detail") return `为这件商品策划一套${platform}手机端详情页，共 ${count} 屏，长图按屏从上到下排列，每屏画幅 3:4。`;
     if (request.scope === "main") return `为这件商品策划${platform}主图套图，共 ${count} 张，用在搜索列表和商品页顶部的轮播，画幅按平台主图规格。`;
     const list = (request.targets || []).map((target) => `${studioOutputSpec(target.type).label} ${target.count} 张`).join("、");
@@ -98,7 +128,9 @@ function introLine(product: StudioProduct, request: StudioPlanRequest, platform:
 
 /** 范围不同的排法要求：详情页讲完整的故事，主图争取点击，单张图按选中的类型逐张出。 */
 function scopeRequirement(product: StudioProduct, request: StudioPlanRequest): string {
-    const count = screenCount(request);
+    const count = screenCount(product, request);
+    if (request.scope === "template")
+        return `2. 按模板的顺序正好给出 ${count} 张，第 N 张对应模板第 N 张：保留模板这一张的目的和大致的画面类型（白底、场景、细节、模特、参数……），画面、构图、版式和文案按这件商品重新写。role 优先用模板这一张的建议 role，必须从可以排的屏型里选；模板这一张要讲的东西（参数、材质、尺寸、包装、几种颜色款式、某项功能、某个痛点）这件商品没有依据时，换成有依据的内容讲同一个目的，不编参数、款式和功能。模板标了「这张不放文字」的写 noText: true。${product.brief.suite?.kind === "main" ? "这是主图模板，文字比详情页更少：主标题不超过 8 个字，最多一行副标题，不排参数表。" : ""}`;
     if (request.scope === "detail")
         return `2. 正好排 ${count} 屏：第一屏用 detail-hero，最后一屏用 detail-closing，中间各屏的主题和顺序按第 1 条的分析来定。屏型可以重复使用（比如两屏卖点、两屏不同的使用场景、两屏不同部位的细节），但每屏讲的内容和画面都不能重复。信息不够时多排使用场景、种草、使用效果和商品图里看得到的细节，不编参数，也不把同一个卖点换个说法再讲一遍。整套像一个品牌故事：开头抓人，中段证明，结尾收束，节奏有起伏（大图屏和信息屏交替）。`;
     if (request.scope === "main") {
@@ -128,6 +160,13 @@ function rhythmLines(request: StudioPlanRequest): string[] {
         ];
     if (request.scope === "main")
         return [head, "- 5 张里至少用到两种明显不同的背景处理（比如浅色棚拍和深色或饱和色块），首图之外每张换一个机位和景别。", `- 首图之外每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`, "- 商品标识、印字和型号不当卖点。"];
+    if (request.scope === "template")
+        return [
+            head,
+            "- 模板只定了每张讲什么，不要照着模板的镜头说明平铺直叙：整套至少用到两种明显不同的背景处理（浅色棚拍底、深色或饱和色块底、真实场景），相邻两张换机位和景别。",
+            `- 白底图之外的首张和关键几张要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`,
+            "- 商品标识、印字和型号不当卖点。",
+        ];
     return [head, `- 每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual；同一类型的几张换不同的手法和机位。`, "- 商品标识、印字和型号不当卖点。"];
 }
 
@@ -160,8 +199,18 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
     );
     const cast = brief.model ? [brief.model.figure ? "全身模特" : brief.model.face ? "模特人脸" : "", brief.model.pose ? "姿势" : "", brief.model.style ? "造型" : ""].filter(Boolean) : [];
     const language = brief.language === "none" ? "这组图不放文字：每一张都写 noText: true，文案留空。" : `图上文字最终用${studioLanguage(brief.language).name}呈现；这里的文案先用简体中文写。`;
-    const count = screenCount(request);
+    const count = screenCount(product, request);
     const note = brief.planNote?.trim();
+    // 主图类的范围（主图套图、按主图出的模板）文字更少、视觉元素可以少出现几张。
+    const mainLike = request.scope === "main" || (request.scope === "template" && brief.suite?.kind === "main");
+    const exampleRole =
+        request.scope === "single"
+            ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene"
+            : request.scope === "template"
+              ? (brief.suite ? studioTemplateShotRoles(brief.suite)[0] : undefined) || "detail-hero"
+              : request.scope === "main"
+                ? "main-white"
+                : "detail-hero";
     const lines: (string | undefined)[] = [
         introLine(product, request, platform),
         "",
@@ -187,6 +236,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         brief.extra.trim() ? `卖家补充要求：${oneLine(brief.extra)}` : undefined,
         ...styleLines(product),
         cast.length ? `已在模特库选了${cast.join("、")}：有人物的图用 detail-model，人物会按模特库出图。` : undefined,
+        ...(request.scope === "template" ? templateLines(product) : []),
         note ? "" : undefined,
         note ? `【卖家对这次策划的补充调整】（优先照做；和商品事实、平台规则冲突时以事实和规则为准）\n${note}` : undefined,
         ...previousLines(request.previous),
@@ -230,10 +280,10 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
         request.scope === "single"
             ? "12. 视觉元素选用一两个融进画面，不要把所有元素堆在一张里。visual 里没写包装盒时，画面里就只有 visual 写到的商品部分。"
-            : `12. 视觉元素每张选用一两个，换着形式出现（实物、光影、局部、图形），至少${request.scope === "main" ? "两" : "三"}张不出现；不要把同一个图形贴在每一张上。整件商品连同包装完整摆拍的张数不超过一半，包装盒最多出现在两三张，其余张用质地、局部、使用中的手和人、场景、机理示意来讲；visual 里没写包装盒的张，画面里就只有 visual 写到的商品部分。`,
+            : `12. 视觉元素每张选用一两个，换着形式出现（实物、光影、局部、图形），至少${mainLike ? "两" : "三"}张不出现；不要把同一个图形贴在每一张上。整件商品连同包装完整摆拍的张数不超过一半，包装盒最多出现在两三张，其余张用质地、局部、使用中的手和人、场景、机理示意来讲；visual 里没写包装盒的张，画面里就只有 visual 写到的商品部分。`,
         "",
         "只输出下面这个 JSON，不要任何解释：",
-        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${request.scope === "single" ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene" : request.scope === "main" ? "main-white" : "detail-hero"}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
+        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${exampleRole}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
     ];
     return lines.filter((line): line is string => line !== undefined).join("\n");
 }
@@ -276,7 +326,22 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         return { ...screen, headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
     };
     let screens: StudioPlannedScreen[];
-    if (request.scope === "single") {
+    const suite = request.scope === "template" ? product.brief.suite : undefined;
+    if (request.scope === "template") {
+        // 模板套图：和模板一张对一张。模型给的屏型不能排时改用模板对上的屏型，那个也没依据时按场景出；模板不放文字的张保持不放。
+        const shots = suite?.shots || [];
+        const expected = suite ? studioTemplateShotRoles(suite) : [];
+        const fallback: StudioShotRole = suite?.kind === "main" ? "main-scene" : "detail-scene";
+        screens = shots
+            .map((shot, index) => {
+                const screen = studioPlannedScreenOf(offered[index]);
+                if (!screen) return undefined;
+                const role = allowed.has(screen.role) ? screen.role : allowed.has(expected[index]) ? expected[index] : fallback;
+                return finish({ ...screen, role, ...(shot.noText ? { noText: true } : {}) });
+            })
+            .filter((screen): screen is StudioPlannedScreen => Boolean(screen));
+        if (!shots.length || screens.length < shots.length) throw new Error(`策划结果不完整（模板 ${shots.length} 张，只排好 ${screens.length} 张），请重试或换一个文本模型`);
+    } else if (request.scope === "single") {
         // 单张图：张数和每张的类型由用户的选择决定，模型写错屏型时按位置改回来。
         const expected = studioPlanTargetRoles(request.targets || []);
         screens = expected
@@ -319,9 +384,10 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             ...(styleId ? { styleId } : {}),
             ...(tone ? { tone } : {}),
             ...(request.scope === "single" ? { targets: request.targets } : {}),
+            ...(suite ? { suiteId: suite.id } : {}),
             screens,
         },
-        dropped: request.scope === "single" ? 0 : offered.length - screens.length,
+        dropped: request.scope === "single" || request.scope === "template" ? 0 : offered.length - screens.length,
         ungrounded,
         issues,
         tacky,

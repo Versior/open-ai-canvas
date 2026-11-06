@@ -155,7 +155,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const filling = useStudioAnalysis((state) => state.running[product.id] === "fill");
     const planning = useStudioAnalysis((state) => state.running[product.id] === "plan");
     const brief = product.brief;
-    // 当前出图类型的策划：详情页、主图套图和单张图各有一份，模板套图按模板出。
+    // 当前出图类型的策划：详情页、主图套图、单张图和模板套图各有一份；模板套图要先选模板。
     const scope = studioPlanScopeOf(product);
     const activePlan = studioActivePlan(product);
     const scopeMeta = scope ? STUDIO_PLAN_SCOPES[scope] : undefined;
@@ -195,9 +195,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
     // 详情页 10 屏、主图 5 张都由策划按这件商品排，策划前不能生成；只有没有可用的文本模型时才按品类默认的清单出。
-    // 单张图可以直接出，也可以先策划。
-    const planScreens = scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
-    const planUnit = scopeMeta?.unit || "张";
+    // 单张图和模板套图可以直接出，也可以先策划；模板套图按模板的张数策划。
+    const planScreens = scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scope === "template" ? brief.suite?.shots.length || 0 : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
+    const planUnit = scope === "template" ? unit : scopeMeta?.unit || "张";
     const planMissing = (scope === "detail" || scope === "main") && !activePlan && Boolean(text.value);
     const planField = scope ? STUDIO_PLAN_FIELD[scope] : "detailPlan";
     const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
@@ -302,13 +302,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。只想改几处的话，先在「补充调整」里写下要改的地方。", okText: "重新策划", cancelText: "取消", onOk: () => void analyzeAndPlan() });
     };
 
-    // 单张图没策划时，有文本模型就先策划再出图：不策划的图只能套固定构图，文案直接用卖点原文，是最普通的出法。
-    // 「不策划，直接生成」跳过这一步。
-    const planBeforeGenerate = scope === "single" && !activePlan && Boolean(text.value);
+    // 单张图和模板套图没策划时，有文本模型就先策划再出图：不策划的单张图只能套固定构图，模板套图照搬模板的镜头说明，
+    // 文案直接用卖点原文，是最普通的出法。「不策划，直接生成」跳过这一步。
+    const lazyPlan = scope === "single" || scope === "template";
+    const planBeforeGenerate = lazyPlan && !activePlan && Boolean(text.value);
     const generate = async ({ direct = false } = {}) => {
         if (blocked) return void message.warning(blocked);
         if (planBeforeGenerate && !direct) {
-            message.info(`先按这件商品策划这 ${planScreens} 张，策划好就开始出图`);
+            message.info(`先按这件商品策划这 ${planScreens} ${planUnit}，策划好就开始出图`);
             if (!(await analyzeAndPlan())) return;
         }
         try {
@@ -591,16 +592,22 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                             : !text.value
                                               ? scope === "single"
                                                   ? "没有可用的文本模型，按出图类型直接出"
-                                                  : `按品类默认的 ${entries.length} ${planUnit}`
+                                                  : scope === "template"
+                                                    ? "没有可用的文本模型，按模板直接出"
+                                                    : `按品类默认的 ${entries.length} ${planUnit}`
                                               : scope === "single"
                                                 ? `可以先让 AI 策划这 ${planScreens} 张`
-                                                : `先策划这 ${planScreens} ${planUnit}`}
+                                                : scope === "template"
+                                                  ? `可以先让 AI 按模板策划这 ${planScreens} ${planUnit}`
+                                                  : `先策划这 ${planScreens} ${planUnit}`}
                                     </strong>
                                     <span>
                                         {activePlan
                                             ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
                                             : text.value
-                                              ? `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。点生成时会先策划再出图，也可以不策划直接生成" : ""}。`
+                                              ? scope === "template"
+                                                  ? `模板定每${planUnit}讲什么；AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再按模板的顺序重写每一${planUnit}的画面、版式和文案，排好后可以逐${planUnit}修改。点生成时会先策划再出图，也可以按模板直接生成。`
+                                                  : `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。点生成时会先策划再出图，也可以不策划直接生成" : ""}。`
                                               : "添加文本模型后可以按商品策划。"}
                                     </span>
                                     {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
@@ -626,7 +633,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                         <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
                                         {planBeforeGenerate ? (
                                             <Button type="link" size="small" disabled={Boolean(blocked) || planning || filling} onClick={() => void generate({ direct: true })}>
-                                                不策划，直接生成
+                                                {scope === "template" ? "不策划，按模板直接生成" : "不策划，直接生成"}
                                             </Button>
                                         ) : null}
                                     </span>
@@ -675,12 +682,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 </Button>
                 <Tooltip title={blocked || undefined}>
                     <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked) || planning || filling} loading={planBeforeGenerate && (planning || filling)} onClick={() => void generate()}>
-                        {setKind
-                            ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}`
-                            : activePlan
-                              ? `按策划生成 ${images} 张`
-                              : planBeforeGenerate
-                                ? `AI 策划并生成 ${images} 张`
+                        {planBeforeGenerate
+                            ? setKind
+                                ? `AI 策划并生成${setLabel}（${images} ${unit}）`
+                                : `AI 策划并生成 ${images} 张`
+                            : setKind
+                              ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}`
+                              : activePlan
+                                ? `按策划生成 ${images} 张`
                                 : singles.length > 1
                                   ? `生成 ${singles.length} 种共 ${images} 张`
                                   : brief.count > 1

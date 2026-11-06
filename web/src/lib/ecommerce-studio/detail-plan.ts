@@ -1,4 +1,5 @@
 import { STUDIO_STYLES } from "./shot-specs";
+import { STUDIO_SUITE_LIMITS, studioSuiteShotRole } from "./suites";
 import {
     studioFactUsable,
     type StudioBrief,
@@ -6,12 +7,14 @@ import {
     type StudioDetailLayoutId,
     type StudioDetailPlan,
     type StudioFact,
+    type StudioPlanKind,
     type StudioPlannedScreen,
     type StudioPlanScope,
     type StudioPlanTarget,
     type StudioProduct,
     type StudioShotRole,
     type StudioStylePresetId,
+    type StudioSuite,
 } from "./types";
 
 /**
@@ -28,7 +31,8 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     screens: 10,
     /** 屏型依据不够被去掉后，少于这个数就要求重新策划。 */
     minScreens: 6,
-    maxScreens: 10,
+    /** 读回策划时最多收几屏：模板套图按模板的张数排，最多和模板一样多。 */
+    maxScreens: STUDIO_SUITE_LIMITS.shots,
     title: 16,
     purpose: 80,
     visual: 400,
@@ -233,15 +237,16 @@ export const STUDIO_DETAIL_SCREEN_GUIDE: Record<StudioShotRole, { label: string;
 };
 const SCREEN_ROLES = Object.keys(STUDIO_DETAIL_SCREEN_GUIDE) as StudioShotRole[];
 /** 各策划范围能排的屏型：详情页用详情页屏型（不含活动海报和随手拍）；主图用主图屏型加几种适合做主图的。 */
-const SCOPE_ROLES: Record<Exclude<StudioPlanScope, "single">, StudioShotRole[]> = {
+const SCOPE_ROLES: Record<StudioPlanKind, StudioShotRole[]> = {
     detail: SCREEN_ROLES.filter((role) => role.startsWith("detail-") && role !== "detail-campaign" && role !== "detail-ugc"),
     main: ["main-white", "main-selling", "main-scene", "main-detail", "main-angle", "main-flatlay", "detail-model", "detail-compare", "detail-size", "detail-seeding"],
 };
-/** 每种策划范围排几张、读回时最少收几张；单张图的张数按选中的类型和数量算。 */
+/** 每种策划范围排几张、读回时最少收几张；单张图按选中的类型和数量算，模板套图按模板的张数算。 */
 export const STUDIO_PLAN_SCOPES: Record<StudioPlanScope, { label: string; unit: string; screens: number; minScreens: number }> = {
     detail: { label: "详情页", unit: "屏", screens: 10, minScreens: 6 },
     main: { label: "主图", unit: "张", screens: 5, minScreens: 4 },
     single: { label: "单张图", unit: "张", screens: 0, minScreens: 1 },
+    template: { label: "模板套图", unit: "张", screens: 0, minScreens: 1 },
 };
 const SIZE_LABEL = /尺寸|尺码|长|宽|高|厚|直径|口径|容量|重量|规格/;
 
@@ -254,7 +259,21 @@ export function studioDetailPlanFacts(product: StudioProduct, predicate: (fact: 
  * 这件商品能排的屏型：材质、参数、尺寸、包装要有已确认的事实，多角度要有侧面或背面的商品图。
  * 没有依据的屏型不交给模型，也不接受模型排进来，避免出现空屏或编出来的参数。
  */
-export function studioDetailPlanRoles(product: StudioProduct, scope: Exclude<StudioPlanScope, "single"> = "detail"): StudioShotRole[] {
+export function studioDetailPlanRoles(product: StudioProduct, scope: StudioPlanKind = "detail"): StudioShotRole[] {
+    return studioReadyRoles(product, SCOPE_ROLES[scope]);
+}
+
+/** 模板里第 index 张按标题和职责对上的屏型（和不策划时出图用的同一套规则）。 */
+export function studioTemplateShotRoles(suite: Pick<StudioSuite, "kind" | "shots">): StudioShotRole[] {
+    return suite.shots.map((shot, index) => studioSuiteShotRole(shot, suite.kind, index, suite.shots.length));
+}
+
+/** 模板套图能排的屏型：按模板用途的屏型，加上模板里对上的屏型（详情页模板的首张常是白底主图）；同样要有依据。 */
+export function studioTemplatePlanRoles(product: StudioProduct, suite: Pick<StudioSuite, "kind" | "shots">): StudioShotRole[] {
+    return studioReadyRoles(product, [...new Set([...SCOPE_ROLES[suite.kind], ...studioTemplateShotRoles(suite)])]);
+}
+
+function studioReadyRoles(product: StudioProduct, roles: StudioShotRole[]): StudioShotRole[] {
     const views = new Set(product.photos.filter((photo) => photo.truth).map((photo) => photo.view));
     const angles = views.has("side") || views.has("back");
     const ready: Partial<Record<StudioShotRole, boolean>> = {
@@ -265,7 +284,7 @@ export function studioDetailPlanRoles(product: StudioProduct, scope: Exclude<Stu
         "detail-size": studioDetailPlanFacts(product, (fact) => SIZE_LABEL.test(fact.label)).length > 0,
         "detail-package": studioDetailPlanFacts(product, (fact) => fact.group === "package").length > 0,
     };
-    return SCOPE_ROLES[scope].filter((role) => ready[role] !== false);
+    return roles.filter((role) => ready[role] !== false);
 }
 
 function text(value: unknown, max: number) {
@@ -324,6 +343,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
     const styleId = studioPlanStyleId(record.styleId);
     const tone = studioPlanTone(record.tone);
     const targets = studioPlanTargets(record.targets);
+    const suiteId = text(record.suiteId, 150);
     return {
         id: record.id.slice(0, 40),
         createdAt: text(record.createdAt, 40),
@@ -337,6 +357,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         ...(styleId ? { styleId } : {}),
         ...(tone ? { tone } : {}),
         ...(targets.length ? { targets } : {}),
+        ...(suiteId ? { suiteId } : {}),
         screens,
     };
 }
@@ -370,10 +391,10 @@ export function studioPlanStyleId(value: unknown): StudioStylePresetId | undefin
     return typeof value === "string" && STUDIO_STYLES.some((style) => style.id === value) ? (value as StudioStylePresetId) : undefined;
 }
 
-export type StudioPlanField = "detailPlan" | "mainPlan" | "singlePlan";
+export type StudioPlanField = "detailPlan" | "mainPlan" | "singlePlan" | "templatePlan";
 
 /** 各策划范围的策划存在表单的哪个字段。 */
-export const STUDIO_PLAN_FIELD: Record<StudioPlanScope, StudioPlanField> = { detail: "detailPlan", main: "mainPlan", single: "singlePlan" };
+export const STUDIO_PLAN_FIELD: Record<StudioPlanScope, StudioPlanField> = { detail: "detailPlan", main: "mainPlan", single: "singlePlan", template: "templatePlan" };
 
 /** 改策划里的一屏（标题、版式、画面、信息元素和文案），返回新的表单参数；超出上限的部分截掉。 */
 export function patchStudioDetailPlanScreen(brief: StudioBrief, index: number, patch: Partial<Pick<StudioPlannedScreen, "title" | "layout" | "visual" | "elements" | "headline" | "subline" | "lines">>, field: StudioPlanField = "detailPlan"): StudioBrief {
