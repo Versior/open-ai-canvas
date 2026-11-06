@@ -463,3 +463,20 @@ textarea.itd-admin-code {
         display: none;
     }
 }
+
+/* 知识库：停用的条目整行变淡；标题旁的来源标签；操作列按钮不换行。 */
+.itd-admin-cell[data-disabled] {
+    opacity: 0.55;
+}
+
+.itd-admin-knowledge-tag {
+    margin-inline: 6px 0;
+    font-weight: 400;
+}
+
+.itd-admin-knowledge-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+}

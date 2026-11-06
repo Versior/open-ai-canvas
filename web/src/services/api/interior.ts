@@ -264,8 +264,33 @@ export function saveAdminInteriorSettings(input: InteriorSettings) {
     return http.put<InteriorSettings>("/admin/interior/settings", input);
 }
 
-/** 室内设计知识库的一条：尺寸规范、家具尺寸、动线、风格配色或建模要点。后台另带适用范围和关键词。 */
-export type InteriorKnowledgeEntry = { id: string; kind: string; kindName: string; title: string; guidance: string; scopes?: string[]; rooms?: string[]; styles?: string[]; tags?: string[] };
+/** 室内设计知识库的一条：尺寸规范、家具尺寸、动线、风格配色或建模要点。id 是条目标识。 */
+export type InteriorKnowledgeEntry = { id: string; kind: string; kindName: string; title: string; guidance: string };
+
+/** 后台的一条知识：id 是记录 ID，key 是条目标识；edited 表示内置条目被管理员改过内容。 */
+export type AdminInteriorKnowledgeEntry = {
+    id: string;
+    key: string;
+    kind: string;
+    kindName: string;
+    title: string;
+    guidance: string;
+    scopes: string[];
+    rooms: string[];
+    styles: string[];
+    tags: string[];
+    sortOrder: number;
+    enabled: boolean;
+    builtin: boolean;
+    edited: boolean;
+    version: number;
+    updatedAt: string;
+};
+
+/** 知识类别和每次最多取几条。 */
+export type InteriorKnowledgeKind = { value: string; label: string; limit: number };
+
+export type InteriorKnowledgeInput = Pick<AdminInteriorKnowledgeEntry, "key" | "kind" | "title" | "guidance" | "scopes" | "rooms" | "styles" | "tags" | "sortOrder" | "enabled" | "version">;
 
 export type InteriorKnowledgeQuery = { scope?: string; rooms?: string[]; styles?: string[]; q?: string };
 
@@ -280,7 +305,28 @@ export function getInteriorKnowledge(query: InteriorKnowledgeQuery, signal?: Abo
 }
 
 export function listAdminInteriorKnowledge(signal?: AbortSignal) {
-    return http.get<{ entries: InteriorKnowledgeEntry[] }>("/admin/interior/knowledge", { signal }).then((result) => result.entries);
+    return http.get<{ entries: AdminInteriorKnowledgeEntry[]; kinds: InteriorKnowledgeKind[] }>("/admin/interior/knowledge", { signal });
+}
+
+/** 新增（没有 id）或修改一条知识；修改带上次读到的 version，冲突返回 409。 */
+export function saveAdminInteriorKnowledge(id: string | undefined, input: InteriorKnowledgeInput) {
+    const request = id ? http.put<{ entry: AdminInteriorKnowledgeEntry }>(`/admin/interior/knowledge/${encodeURIComponent(id)}`, input) : http.post<{ entry: AdminInteriorKnowledgeEntry }>("/admin/interior/knowledge", input);
+    return request.then((result) => result.entry);
+}
+
+/** 删除管理员新增的条目；内置条目只能停用。 */
+export function deleteAdminInteriorKnowledge(entry: Pick<AdminInteriorKnowledgeEntry, "id" | "version">) {
+    return http.delete<{ deleted: boolean }>(`/admin/interior/knowledge/${encodeURIComponent(entry.id)}`, { params: { version: entry.version } });
+}
+
+/** 把改过的内置条目恢复成程序自带的内容。 */
+export function resetAdminInteriorKnowledge(entry: Pick<AdminInteriorKnowledgeEntry, "id" | "version">) {
+    return http.post<{ entry: AdminInteriorKnowledgeEntry }>(`/admin/interior/knowledge/${encodeURIComponent(entry.id)}/reset`, { version: entry.version }).then((result) => result.entry);
+}
+
+export function interiorKnowledgeInput(entry: AdminInteriorKnowledgeEntry, patch: Partial<InteriorKnowledgeInput> = {}): InteriorKnowledgeInput {
+    const { key, kind, title, guidance, scopes, rooms, styles, tags, sortOrder, enabled, version } = entry;
+    return { key, kind, title, guidance, scopes, rooms, styles, tags, sortOrder, enabled, version, ...patch };
 }
 
 /** 后台出图统计和记录里的用户；用户已删除时只有 id。 */

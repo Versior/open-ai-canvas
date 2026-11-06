@@ -49,7 +49,7 @@ export default function InteriorAdminPage() {
     return (
         <AdminPageFrame
             title="室内设计"
-            description="看用户的出图量、成功率和每一次出图的原图、效果图与提示词；配置出图方式、风格、空间和默认模型；查看 3D 模型参考的内置知识库。模板和片段只在服务端拼接，前台目录不返回。"
+            description="看用户的出图量、成功率和每一次出图的原图、效果图与提示词；配置出图方式、风格、空间和默认模型；维护 AI 方案分析和 3D 建模参考的知识库。模板和片段只在服务端拼接，前台目录不返回。"
             actions={<AdminSegmented<InteriorAdminTab> ariaLabel="室内设计后台视图" value={active} onChange={openTab} options={tabs.map((tab) => ({ value: tab.value, label: tab.label }))} />}
             scroll
         >
