@@ -180,10 +180,14 @@ func TestProductVideoClipSize(t *testing.T) {
 
 func TestCreateProductVideoSplitTaskValidatesAndReplays(t *testing.T) {
 	svc, db := newTimelineTaskTestService(t)
-	if _, err := svc.CreateProductVideoSplitTask("usr-a", "split-key-0000", ProductVideoSplitRequest{ResourceID: "res-ref", EndMs: 10_000}); err == nil || !strings.Contains(err.Error(), "暂未开放") {
-		t.Fatalf("closed studio must refuse splits: %v", err)
+	// 元素替换并在视频复刻里，跟视频复刻开关走；电商生图台关着也能用。
+	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"videoReplicationEnabled":false}`}); err != nil {
+		t.Fatal(err)
 	}
-	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"ecommerceStudioEnabled":true}`}); err != nil {
+	if _, err := svc.CreateProductVideoSplitTask("usr-a", "split-key-0000", ProductVideoSplitRequest{ResourceID: "res-ref", EndMs: 10_000}); err == nil || !strings.Contains(err.Error(), "视频复刻暂未开放") {
+		t.Fatalf("closed video replication must refuse splits: %v", err)
+	}
+	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"videoReplicationEnabled":true,"ecommerceStudioEnabled":false}`}); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Create(&model.Resource{ID: "res-ref", UserID: "usr-a", Kind: "video", Status: model.ResourceStatusReady, Provider: "local", MimeType: "video/mp4", Size: 1024, DurationMs: 150_000}).Error; err != nil {

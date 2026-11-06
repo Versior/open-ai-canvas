@@ -336,8 +336,8 @@ paths:
   /ecommerce/product-videos:
     get:
       tags: [canvas]
-      summary: 商品视频（元素替换）的作品列表
-      description: 需要登录并打开「电商生图台」开关。只返回本人的作品；作品对象由前端定义（素材、参考视频片段、每段生成任务、成片）。revision 是电商私有数据整行的修订号。Cache-Control 为 no-store。
+      summary: 视频复刻 · 元素替换的作品列表
+      description: 需要登录并打开「视频复刻」开关。只返回本人的作品；作品对象由前端定义（素材、参考视频片段、每段生成任务、成片）。revision 是电商私有数据整行的修订号。Cache-Control 为 no-store。
       responses:
         "200": {description: data 包含 revision 与 items；items 为作品对象数组，每条带服务端维护的 revision}
         "401": {$ref: "#/components/responses/Error"}
@@ -345,7 +345,7 @@ paths:
   /ecommerce/product-videos/{videoId}:
     get:
       tags: [canvas]
-      summary: 读取一条商品视频作品
+      summary: 读取一条元素替换作品
       description: 只返回本人的作品；保存冲突后用它载入最新版本。Cache-Control 为 no-store。
       parameters:
         - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
@@ -357,7 +357,7 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
     put:
       tags: [canvas]
-      summary: 新建或整体替换一条商品视频作品
+      summary: 新建或整体替换一条元素替换作品
       description: 请求体只能是 {item, expectedRevision}，item.id 必须与地址一致。expectedRevision 必填，是上次读到的作品修订号（新作品为 0），不一致时返回 409、reason=product_video_conflict、details.revision 为当前值。item.revision 由服务端写入。单条不超过 128 KiB、最多 100 条，和生图台共用的电商私有数据整行不超过 8 MiB；不能内嵌 data URL，素材和成片以 resourceId / keyframeResourceId 字段引用，孤儿清理会据此保留这些资源。与生图台共用一行数据，其他键原样保留。受画布写入频率限制。
       parameters:
         - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
@@ -381,7 +381,7 @@ paths:
         "429": {$ref: "#/components/responses/Error"}
     delete:
       tags: [canvas]
-      summary: 删除一条商品视频作品
+      summary: 删除一条元素替换作品
       description: 幂等，作品不存在时同样成功。只删除作品记录，不删除已上传的素材、参考片段、生成任务与成片资源。
       parameters:
         - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
@@ -395,8 +395,8 @@ paths:
   /ecommerce/product-videos/splits:
     post:
       tags: [tasks]
-      summary: 商品视频：把参考视频按镜头切成一次生成能参考的片段
-      description: 需要登录并打开「电商生图台」开关。异步任务（type=product_video_split），服务端用本地 ffmpeg 在选段内检测镜头切点，尽量在切点处断开，每段不超过 maxSegmentSeconds（8–30 秒，默认 15）、不短于 4 秒；单个镜头超长时均分。每段重新编码为短边不超过 720、30fps 的 H.264/AAC mp4，并截一帧封面，都作为本人的资源保存。结果写入任务 resultJson：source（原视频尺寸、时长、有无音轨）、startMs/endMs、segments[{index, startMs, endMs, durationMs, boundary, resourceId, width, height, keyframeResourceId}]、warnings。选段须在 4–120 秒之间。不调用模型、不计费。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
+      summary: 视频复刻 · 元素替换：把参考视频按镜头切成一次生成能参考的片段
+      description: 需要登录并打开「视频复刻」开关。异步任务（type=product_video_split），服务端用本地 ffmpeg 在选段内检测镜头切点，尽量在切点处断开，每段不超过 maxSegmentSeconds（8–30 秒，默认 15）、不短于 4 秒；单个镜头超长时均分。每段重新编码为短边不超过 720、30fps 的 H.264/AAC mp4，并截一帧封面，都作为本人的资源保存。结果写入任务 resultJson：source（原视频尺寸、时长、有无音轨）、startMs/endMs、segments[{index, startMs, endMs, durationMs, boundary, resourceId, width, height, keyframeResourceId}]、warnings。选段须在 4–120 秒之间。不调用模型、不计费。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
       parameters:
         - in: header
           name: X-Idempotency-Key

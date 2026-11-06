@@ -13,7 +13,7 @@ import (
 // 单条作品上限 128 KiB，外加信封留白。
 const productVideoRequestBytes = (128 << 10) + (16 << 10)
 
-// RegisterProductVideoRoutes 注册商品视频（元素替换）的作品读写与参考视频切段接口，受「电商生图台」开关控制。
+// RegisterProductVideoRoutes 注册视频复刻 · 元素替换的作品读写与参考视频切段接口，受「视频复刻」开关控制。
 func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {
 	r.GET("/ecommerce/product-videos", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
@@ -21,7 +21,7 @@ func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		if err := svc.RequireFeature(service.FeatureEcommerceStudio); err != nil {
+		if err := svc.RequireFeature(service.FeatureVideoReplication); err != nil {
 			failService(c, err)
 			return
 		}
@@ -39,7 +39,7 @@ func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		if err := svc.RequireFeature(service.FeatureEcommerceStudio); err != nil {
+		if err := svc.RequireFeature(service.FeatureVideoReplication); err != nil {
 			failService(c, err)
 			return
 		}
@@ -57,7 +57,7 @@ func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		if err := svc.RequireFeature(service.FeatureEcommerceStudio); err != nil {
+		if err := svc.RequireFeature(service.FeatureVideoReplication); err != nil {
 			failService(c, err)
 			return
 		}
@@ -90,7 +90,7 @@ func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		if err := svc.RequireFeature(service.FeatureEcommerceStudio); err != nil {
+		if err := svc.RequireFeature(service.FeatureVideoReplication); err != nil {
 			failService(c, err)
 			return
 		}

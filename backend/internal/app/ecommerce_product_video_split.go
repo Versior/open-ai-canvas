@@ -125,12 +125,12 @@ func productVideoSplitFingerprint(input productVideoSplitInput) string {
 }
 
 // CreateProductVideoSplitTask 校验参考视频归属、类型和选段后排队切段任务；同一幂等键重放返回原任务，
-// 换了参数返回冲突。受「电商生图台」开关控制。
+// 换了参数返回冲突。受「视频复刻」开关控制。
 func (s *Service) CreateProductVideoSplitTask(userID, idempotencyKey string, req ProductVideoSplitRequest) (*model.Task, error) {
 	if s.IsDraining() {
 		return nil, &AppError{Status: http.StatusServiceUnavailable, Code: http.StatusServiceUnavailable, Message: "服务正在维护，暂不接受新任务", Retryable: true}
 	}
-	if err := s.RequireFeature(FeatureEcommerceStudio); err != nil {
+	if err := s.RequireFeature(FeatureVideoReplication); err != nil {
 		return nil, err
 	}
 	idempotencyKey = strings.TrimSpace(idempotencyKey)

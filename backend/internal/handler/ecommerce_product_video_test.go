@@ -36,7 +36,8 @@ func TestProductVideoHTTPRoundTrip(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := db.Create(&model.SystemSetting{Key: "feature_availability", ValueJSON: `{"ecommerceStudioEnabled":true}`}).Error; err != nil {
+	// 元素替换跟视频复刻开关走，电商生图台关着也能用。
+	if err := db.Create(&model.SystemSetting{Key: "feature_availability", ValueJSON: `{"videoReplicationEnabled":true,"ecommerceStudioEnabled":false}`}).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := service.New(repository.New(db), dir)
