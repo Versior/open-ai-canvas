@@ -339,6 +339,7 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled).toContain("可以有图标、细线、引线");
         expect(compiled).toContain("整张是排过版的电商画面");
         expect(compiled).toContain("摄影是商业大片级别");
+        expect(compiled).toContain("有一个一眼抓住人的视觉焦点");
         // 模型写字的图都带上防土味的禁止项。
         expect(compiled).toContain("不用描边字、渐变字、发光字");
         expect(compileStudioPrompt({ product, textMode: run.textMode, shot: run.shots[0], model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt).toContain("栏目小标题「01 ALL DAY CUP」");
@@ -520,6 +521,15 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("换成别的商品就不成立");
         expect(prompt).toContain("11. inspiration 用一句话");
         expect(prompt).toContain('"concept":"创意主线","inspiration":"借鉴了什么"');
+        // 视觉节奏与创意：背景、机位和创意手法都有要求，信息少时不拿标识凑数；主色要撑得起整屏。
+        expect(prompt).toContain("【视觉节奏与创意】");
+        expect(prompt).toContain("整套至少用到三种明显不同的处理");
+        expect(prompt).toContain("同一个商品角度和景别整套最多用两次");
+        expect(prompt).toContain("首屏必须有");
+        expect(prompt).toContain("商品标识、印字和型号不单独成屏");
+        expect(prompt).toContain("主色要撑得起整屏");
+        expect(prompt).toContain("主标题不能只是罗列外观或参数");
+        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张里至少用到两种明显不同的背景处理");
         // 没有附图时不写附图说明。
         expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
 
@@ -625,6 +635,11 @@ describe("ecommerce studio image size options", () => {
         const declared = { ...profile, parameters: [], size: { ...profile.size, allowCustom: false } };
         expect(studioResolutionOptions(declared).map((option) => option.value)).toEqual(["1k", "2k", "4k"]);
         expect(studioImageRequest(declared, "high", "3:4", "").imageSettings).toEqual({ quality: "high", size: "1728x2304" });
+        // 质量只有 auto 的渠道：「质量」选的是尺寸档位，没选过时也是 2K（模型默认尺寸是 1K）。
+        const tierOnly = { ...profile, size: { ...profile.size, default: "1024x1024" }, quality: { supported: true, values: ["auto"], default: "auto" } };
+        expect(studioQualityOptions(tierOnly).map((option) => option.value)).toEqual(["1k", "2k", "4k"]);
+        expect(studioImageRequest(tierOnly, "", "3:4").imageSettings).toEqual({ size: "1728x2304" });
+        expect(studioImageRequest(tierOnly, "1k", "3:4").imageSettings).toEqual({ size: "1024x1360" });
         // 没有尺寸档位的模型不出现清晰度。
         expect(studioResolutionOptions({ ...profile, size: { ...profile.size, presets: presets.filter((preset) => preset.tier === "1k") } })).toEqual([]);
     });

@@ -57,7 +57,9 @@ export function studioDefaultQuality(profile: ImageCapabilityConfig | undefined)
     const mode = qualityMode(profile);
     if (mode === "resolution") return profile.resolution.default;
     if (mode === "tier") {
+        // 质量只有 auto、靠尺寸档位分清晰度的模型（如部分渠道的 GPT Image 2）：和「清晰度」一样默认 2K，模型默认的 1K 放大看会糊。
         const tiers = sizeTiers(profile);
+        if (tiers.includes(STUDIO_PREFERRED_TIER)) return STUDIO_PREFERRED_TIER;
         const preset = studioSizePresets(profile).find((item) => item.size === profile.size.default);
         return preset && tiers.includes(String(preset.tier)) ? String(preset.tier) : tiers[0];
     }

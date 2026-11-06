@@ -394,7 +394,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const avoid = planned ? ["只出现商品图里有的部件、配件和细节", "不出现其他品牌、价格、促销角标和水印"] : [...spec.avoid];
     if (!planned && spec.copySlot === "none") avoid.push("画面中不出现任何文字（商品本身的标识除外）");
     // 策划的屏要像设计过的详情页，而不是一张商品照片加一行字。
-    const designed = planned && hasCopy ? "整张是排过版的电商画面，不是单纯的商品照片：视觉层级清楚，元素对齐，留白充足，图标和装饰的风格整组统一；摄影是商业大片级别，光线有方向和质感；" : "";
+    const designed = planned && hasCopy ? "整张是排过版的电商画面，不是单纯的商品照片：有一个一眼抓住人的视觉焦点，视觉层级清楚，元素对齐，疏密有致，图标和装饰的风格整组统一；摄影是商业大片级别，光线有方向和明暗层次，不要平光和灰蒙蒙的低对比；" : "";
     // 有字的图都不许出现显得廉价的字效和装饰。
     if (hasCopy && effective.mode === "model") avoid.push(STUDIO_TACKY_DESIGN);
     layers.push({ id: "quality", title: "质感与约束", source: planned ? "出图策划" : "镜头规格", text: `${designed}材质表现真实，边缘干净，没有塑料感和过度锐化；${avoid.join("；")}；商品自带的标识与文字按商品图保留，不出现乱码。` });

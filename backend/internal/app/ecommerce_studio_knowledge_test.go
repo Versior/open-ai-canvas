@@ -146,18 +146,18 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 }
 
 func TestEcommerceStudioPlanViralReferences(t *testing.T) {
-	// 同类：保温杯取到套图库里的保温杯套图，带视觉语法和逐屏结构，文案槽位换成「文案」。
-	docs, related := ecommerceStudioViralReferences("保温杯", "一杯装下一整天", "home")
-	if !related || len(docs) != ecommerceStudioReferenceLimit {
-		t.Fatalf("expected %d related suites, got %d related=%v", ecommerceStudioReferenceLimit, len(docs), related)
+	// 同类：保温杯取到套图库里的 3 套保温杯，带视觉语法和逐屏结构，文案槽位换成「文案」。
+	refs := ecommerceStudioViralReferences("保温杯", "一杯装下一整天", "home")
+	if len(refs) != ecommerceStudioReferenceLimit {
+		t.Fatalf("expected %d suites, got %d", ecommerceStudioReferenceLimit, len(refs))
 	}
-	for _, doc := range docs {
-		if !strings.Contains(doc.Name+doc.Category.Leaf+strings.Join(doc.Category.Keywords, " "), "保温杯") {
-			t.Fatalf("unrelated suite picked for 保温杯: %s", doc.Name)
+	for _, ref := range refs {
+		if !ref.related || !strings.Contains(ref.doc.Name+ref.doc.Category.Leaf+strings.Join(ref.doc.Category.Keywords, " "), "保温杯") {
+			t.Fatalf("unrelated suite picked for 保温杯: %s", ref.doc.Name)
 		}
 	}
 	prompt := ecommerceStudioViralReferencePrompt("保温杯", "一杯装下一整天", "home")
-	for _, text := range []string{"内置爆款套图库", docs[0].Name, "视觉语法：", "色板 ", "逐屏：", "inspiration"} {
+	for _, text := range []string{"内置爆款套图库", "1.【同类】「" + refs[0].doc.Name, "视觉语法：", "色板 ", "逐屏：", "inspiration"} {
 		if !strings.Contains(prompt, text) {
 			t.Fatalf("reference prompt is missing %q: %s", text, prompt)
 		}
@@ -166,23 +166,35 @@ func TestEcommerceStudioPlanViralReferences(t *testing.T) {
 		t.Fatalf("suite placeholders leaked into the planner prompt: %s", prompt)
 	}
 
-	// 同类对不上：从同大类里取两套并写明只学版式和视觉体系；同一件商品每次取到的一样。
-	docs, related = ecommerceStudioViralReferences("儿童眼镜", "防蓝光眼镜", "apparel")
-	if related || len(docs) != 2 {
-		t.Fatalf("expected two family suites, got %d related=%v", len(docs), related)
+	// 儿童眼镜：按中心词「眼镜」对上套图库里的眼镜，不够 3 套时按人群推断的母婴玩具大类补，结果稳定。
+	refs = ecommerceStudioViralReferences("儿童眼镜", "透明椭圆框儿童眼镜", "generic")
+	if len(refs) != ecommerceStudioReferenceLimit {
+		t.Fatalf("expected the list to be filled to %d, got %d", ecommerceStudioReferenceLimit, len(refs))
 	}
-	apparel := map[string]bool{}
-	for _, l1 := range ecommerceStudioFamilyCatalogL1["apparel"] {
-		apparel[l1] = true
+	baby := map[string]bool{}
+	for _, l1 := range ecommerceStudioFamilyCatalogL1["baby-toys"] {
+		baby[l1] = true
 	}
-	again, _ := ecommerceStudioViralReferences("儿童眼镜", "防蓝光眼镜", "apparel")
-	for index, doc := range docs {
-		if !apparel[doc.Category.L1] || again[index].ID != doc.ID {
-			t.Fatalf("family fallback is wrong or unstable: %s / %s", doc.Category.L1, again[index].ID)
+	again := ecommerceStudioViralReferences("儿童眼镜", "透明椭圆框儿童眼镜", "generic")
+	related := 0
+	for index, ref := range refs {
+		if ref.related {
+			related++
+			if !strings.Contains(ref.doc.Category.Leaf+ref.doc.Name, "镜") {
+				t.Fatalf("related suite is not eyewear: %s", ref.doc.Name)
+			}
+		} else if !baby[ref.doc.Category.L1] {
+			t.Fatalf("family fill should come from 母婴玩具: %s", ref.doc.Category.L1)
+		}
+		if again[index].doc.ID != ref.doc.ID {
+			t.Fatal("reference choice must be stable for the same product")
 		}
 	}
-	if !strings.Contains(ecommerceStudioViralReferencePrompt("儿童眼镜", "防蓝光眼镜", "apparel"), "只学它们的版式、色彩和视觉体系") {
-		t.Fatal("family fallback must say it only borrows layout and visual system")
+	if related == 0 || related == ecommerceStudioReferenceLimit {
+		t.Fatalf("expected a mix of eyewear and family suites, got %d related", related)
+	}
+	if !strings.Contains(ecommerceStudioViralReferencePrompt("儿童眼镜", "透明椭圆框儿童眼镜", "generic"), "【同大类】") {
+		t.Fatal("family fill must be tagged so the planner only borrows layout and visual system")
 	}
 
 	// 没有商品类型和名称、也对不上大类时不附参考。
