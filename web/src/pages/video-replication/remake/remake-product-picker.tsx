@@ -20,11 +20,27 @@ export function remakeProductFromStudio(product: StudioProduct): RemakeProduct {
     };
 }
 
-/** 从电商生图台选一件商品：照片和档案一起带过来，不用重填。 */
-export function RemakeProductPicker({ onClose, onPick }: { onClose: () => void; onPick: (product: RemakeProduct) => void }) {
+/**
+ * 从电商生图台选商品：照片和档案一起带过来，不用重填。multiple 时可以勾选多件（套用到其他商品），
+ * 底部确认后一次交给 onPickMany。
+ */
+export function RemakeProductPicker({
+    onClose,
+    onPick,
+    multiple,
+    onPickMany,
+    title = "从电商生图台选商品",
+}: {
+    onClose: () => void;
+    onPick?: (product: RemakeProduct) => void;
+    multiple?: boolean;
+    onPickMany?: (products: RemakeProduct[]) => void;
+    title?: string;
+}) {
     const [products, setProducts] = useState<StudioProduct[]>();
     const [error, setError] = useState("");
     const [retry, setRetry] = useState(0);
+    const [chosen, setChosen] = useState<string[]>([]);
     useEffect(() => {
         let alive = true;
         setError("");
@@ -36,7 +52,24 @@ export function RemakeProductPicker({ onClose, onPick }: { onClose: () => void; 
         };
     }, [retry]);
     return (
-        <AppModal open onCancel={onClose} footer={null} width={760} centered title="从电商生图台选商品">
+        <AppModal
+            open
+            onCancel={onClose}
+            width={760}
+            centered
+            title={title}
+            footer={
+                multiple ? (
+                    <div className="rw-picker-foot">
+                        <span>已选 {chosen.length} 件</span>
+                        <Button onClick={onClose}>取消</Button>
+                        <Button type="primary" disabled={!chosen.length || !products} onClick={() => onPickMany?.(products!.filter((product) => chosen.includes(product.id)).map(remakeProductFromStudio))}>
+                            每件做一条
+                        </Button>
+                    </div>
+                ) : null
+            }
+        >
             <div className="rw-picker">
                 {error ? (
                     <EmptyState size="compact" title="读取失败" description={error} action={<Button onClick={() => setRetry((value) => value + 1)}>重试</Button>} />
@@ -52,7 +85,13 @@ export function RemakeProductPicker({ onClose, onPick }: { onClose: () => void; 
                             const value = remakeProductFromStudio(product);
                             const cover = value.images[0];
                             return (
-                                <button key={product.id} type="button" className="rw-picker-item" onClick={() => onPick(value)}>
+                                <button
+                                    key={product.id}
+                                    type="button"
+                                    className="rw-picker-item"
+                                    aria-pressed={multiple ? chosen.includes(product.id) : undefined}
+                                    onClick={() => (multiple ? setChosen((current) => (current.includes(product.id) ? current.filter((id) => id !== product.id) : [...current, product.id])) : onPick?.(value))}
+                                >
                                     <span className="rw-picker-cover">{cover ? <img src={productVideoThumbUrl(cover.resourceId)} alt="" loading="lazy" /> : <Package size={18} aria-hidden />}</span>
                                     <strong>{value.name || "未命名商品"}</strong>
                                     <span>

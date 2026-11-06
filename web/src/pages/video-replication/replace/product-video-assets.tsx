@@ -1,5 +1,5 @@
 import { App, Spin } from "antd";
-import { Images, Plus, UserRound, X } from "lucide-react";
+import { Images, Plus, Sparkles, UserRound, X } from "lucide-react";
 import { nanoid } from "nanoid";
 import { lazy, Suspense, useRef, useState } from "react";
 import { PRODUCT_VIDEO_LIMITS, PRODUCT_VIDEO_SLOT_LABEL, type ProductVideoImage, type ProductVideoSlot } from "@/lib/product-video/job";
@@ -42,8 +42,25 @@ function probeSize(url: string) {
     });
 }
 
-/** 一类替换素材（商品图、模特图或背景图）：本机上传、拖入、素材库选取；模特图还能从模特库选。 */
-export function ProductVideoImageSlot({ slot, items, disabled, onAdd, onRemove }: { slot: ProductVideoSlot; items: ProductVideoImage[]; disabled?: boolean; onAdd: (images: ProductVideoImage[]) => void; onRemove: (id: string) => void }) {
+/**
+ * 一类替换素材（商品图、模特图或背景图）：本机上传、拖入、素材库选取；模特图还能从模特库选。
+ * generate 是调用方提供的「AI 生成」入口（复刻工作台的 AI 生成模特），生成好后由调用方经 onAdd 放进来。
+ */
+export function ProductVideoImageSlot({
+    slot,
+    items,
+    disabled,
+    onAdd,
+    onRemove,
+    generate,
+}: {
+    slot: ProductVideoSlot;
+    items: ProductVideoImage[];
+    disabled?: boolean;
+    onAdd: (images: ProductVideoImage[]) => void;
+    onRemove: (id: string) => void;
+    generate?: { label: string; onClick: () => void };
+}) {
     const { message } = App.useApp();
     const input = useRef<HTMLInputElement>(null);
     const [pending, setPending] = useState(0);
@@ -142,6 +159,12 @@ export function ProductVideoImageSlot({ slot, items, disabled, onAdd, onRemove }
                             <button type="button" className="pv-add" aria-label="从模特库选择模特" onClick={() => setPicker("cast")}>
                                 <UserRound size={16} strokeWidth={1.75} />
                                 <span>模特库</span>
+                            </button>
+                        ) : null}
+                        {generate ? (
+                            <button type="button" className="pv-add" aria-label={generate.label} onClick={generate.onClick}>
+                                <Sparkles size={16} strokeWidth={1.75} />
+                                <span>{generate.label}</span>
                             </button>
                         ) : null}
                     </>

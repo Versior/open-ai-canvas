@@ -3,7 +3,7 @@ import { Download, Film, FolderOpen, RefreshCw, Square, Trash2 } from "lucide-re
 import { EmptyState } from "@/components/ui/product/empty-state";
 import { PRODUCT_VIDEO_ACTIVE, PRODUCT_VIDEO_STATUS_LABEL, type ProductVideoJob } from "@/lib/product-video/job";
 import { formatProductVideoSeconds } from "@/lib/product-video/media";
-import { isRemakeJob, REMAKE_ACTIVE, REMAKE_STATUS_LABEL, remakeKeptDurationMs, type RemakeJob } from "@/lib/remake/job";
+import { isRemakeJob, REMAKE_ACTIVE, REMAKE_STATUS_LABEL, remakeKeptDurationMs, remakeLanguage, type RemakeJob } from "@/lib/remake/job";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceFileUrl, resourceStorageKey } from "@/services/api/resources";
 import type { StoredWork } from "@/services/api/product-video";
@@ -84,6 +84,12 @@ function RemakeCard({ job, onOpen }: { job: RemakeJob; onOpen: (id: string) => v
                     <span className="rw-tag" data-status={job.status}>
                         {REMAKE_STATUS_LABEL[job.status]}
                     </span>
+                    {job.variantOf ? (
+                        <span className="rw-tag" title={`从「${job.variantOf.title}」复制`}>
+                            复制版
+                        </span>
+                    ) : null}
+                    {job.language !== "zh" ? <span className="rw-tag">{remakeLanguage(job.language).label}</span> : null}
                 </div>
                 <strong className="rw-work-title" title={job.title}>
                     {job.title}

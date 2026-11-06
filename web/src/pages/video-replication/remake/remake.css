@@ -1,6 +1,6 @@
 /* 复刻工作台（/video-replication?remake=）与「我的作品」。只组合用户端 token：表面与文字来自 --user-*，
    每镜做法有自己的语义色（换元素、重新拍、保留、删掉），分镜表、时间线和摘要统一用它。 */
-:is(.rw-shell, .rw-works, .rw-picker, .vr-home) {
+:is(.rw-shell, .rw-works, .rw-picker, .rw-picker-foot, .rw-persona, .rw-persona-foot, .rw-jianying, .vr-home) {
     --rw-page: var(--user-page-bg);
     --rw-panel: var(--user-surface);
     --rw-muted: var(--user-surface-muted);
@@ -694,6 +694,9 @@
     background: transparent;
 }
 .rw-voice-track {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
     margin-top: var(--space-3);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--rw-radius-media);
@@ -791,6 +794,150 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* ---------- 口播语言、配音、字幕和音乐 ---------- */
+.rw-field-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--rw-ink-2);
+    font-size: var(--fs-caption);
+}
+.rw-field-row .ant-select {
+    justify-self: start;
+    min-width: 140px;
+}
+.rw-music {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+.rw-music-add {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.rw-music-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--rw-radius-control);
+    background: var(--rw-muted);
+    color: var(--rw-ink-2);
+}
+.rw-music-item span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+.rw-music-item strong {
+    overflow: hidden;
+    color: var(--rw-ink);
+    font-size: var(--fs-body);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rw-music-item small {
+    color: var(--rw-ink-3);
+    font-size: var(--fs-caption);
+}
+.rw-rail-more {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-1);
+}
+
+/* ---------- AI 生成模特 ---------- */
+.rw-persona {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: var(--space-4);
+    padding-top: var(--space-2);
+}
+.rw-persona-form {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.rw-persona-row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--rw-ink-2);
+    font-size: var(--fs-caption);
+}
+.rw-persona-row > :last-child {
+    overflow-x: auto;
+}
+.rw-persona-preview {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 3 / 4;
+    overflow: hidden;
+    border-radius: var(--rw-radius-control);
+    background: var(--rw-muted);
+    color: var(--rw-ink-3);
+}
+.rw-persona-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.rw-persona-foot,
+.rw-picker-foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+.rw-picker-foot {
+    margin-top: 0;
+}
+.rw-picker-foot > span {
+    margin-right: auto;
+    color: var(--rw-ink-3);
+    font-size: var(--fs-caption);
+}
+
+/* ---------- 剪映草稿 ---------- */
+.rw-jianying {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding-top: var(--space-2);
+    color: var(--rw-ink-2);
+    font-size: var(--fs-caption);
+}
+.rw-jianying-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+.rw-jianying-field > span {
+    color: var(--rw-ink);
+    font-size: var(--fs-body);
+}
+.rw-jianying-field small {
+    color: var(--rw-ink-3);
+}
+.rw-jianying-field small[data-problem] {
+    color: var(--status-warning);
+}
+.rw-jianying ol {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin: 0;
+    padding-left: var(--space-4);
+}
+
 /* ---------- 生图台商品选择 ---------- */
 .rw-picker {
     min-height: 240px;
@@ -838,6 +985,7 @@
     height: 100%;
     object-fit: cover;
 }
+.rw-picker-item[aria-pressed="true"] .rw-picker-cover,
 .rw-picker-item:is(:hover, :focus-visible) .rw-picker-cover {
     outline: 2px solid var(--control-selected-border);
     outline-offset: 1px;
@@ -853,6 +1001,11 @@
     /* 单列时时间线紧跟播放区，选中某段后的详情放最后。 */
     .rw-inspector {
         order: 1;
+    }
+}
+@media (max-width: 720px) {
+    .rw-persona {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 @media (max-width: 1023px) {
