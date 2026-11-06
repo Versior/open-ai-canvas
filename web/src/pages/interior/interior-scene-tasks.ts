@@ -25,7 +25,8 @@ export function submitSceneTask(config: AiConfig, model: string, prompt: string,
         prompt,
         config: { ...buildGenerationConfig(config, undefined, "text", requirements), model },
         referenceImages: image ? [{ id: image.resourceId, name: "参考图", type: "image/jpeg", dataUrl: "", storageKey: resourceStorageKey(image.resourceId), width: image.width, height: image.height }] : [],
-        streamText: false,
+        // 流式返回：页面边收边读方案、边搭模型，用户不用干等。
+        streamText: true,
         metadata: { source: "interior-design", interior: { kind: "scene", stage } },
     });
 }

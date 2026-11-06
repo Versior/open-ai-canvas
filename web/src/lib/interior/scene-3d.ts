@@ -9,11 +9,15 @@ export type SceneMaterial = (typeof SCENE_MATERIALS)[number];
 
 /** 模型直接写的第一版场景能用的形状。 */
 export const SCENE_SHAPES = ["box", "cylinder", "sphere", "cone", "prism", "wall"] as const;
-/** 渲染用的形状：第二版方案由程序生成，另有圆角方块（家具）和四坡屋顶。 */
-export type SceneShape = (typeof SCENE_SHAPES)[number] | "rbox" | "hip";
+/**
+ * 渲染用的形状：第二版方案由程序生成，另有圆角方块（家具）、四坡屋顶、
+ * 旋转体（lathe：灯罩、花盆、洁具，按 profile 的 [半径, 高度] 绕竖轴转一圈）和
+ * 挤出体（extrude：轮廓 outline 沿 axis 挤出 depth，用来做桌面、扶手、浴缸、窗帘）。
+ */
+export type SceneShape = (typeof SCENE_SHAPES)[number] | "rbox" | "hip" | "lathe" | "extrude";
 
-/** 程序生成的表面纹理（按米铺），只用于第二版方案生成的楼板、屋顶和庭院。 */
-export type SceneTexture = "planks" | "tiles" | "roof" | "grass" | "paving" | "brick" | "stone";
+/** 程序生成的表面纹理（按米铺），只用于第二版方案生成的几何体。 */
+export type SceneTexture = "planks" | "tiles" | "roof" | "grass" | "paving" | "brick" | "stone" | "grain" | "weave" | "marble";
 
 export type SceneVector = [number, number, number];
 
@@ -50,14 +54,30 @@ export type SceneObject = {
     scale?: SceneVector;
     /** rbox 的圆角半径。 */
     round?: number;
+    /** lathe 用：轮廓点 [半径, 高度]（相对 position），从下往上；segments 是一圈分几段。 */
+    profile?: [number, number][];
+    segments?: number;
+    /** extrude 用：轮廓点（axis 为 z 时是 [x, y]，为 y 时是平面上的 [x, z]），可带洞；沿 axis 挤出 depth，居中在 position。 */
+    outline?: [number, number][];
+    holes?: [number, number][][];
+    depth?: number;
+    axis?: "y" | "z";
+    /** extrude 的倒角（米），让边缘圆一点。 */
+    bevel?: number;
     texture?: SceneTexture;
     material: SceneMaterial;
     color?: string;
     name?: string;
     group?: string;
+    /**
+     * 外墙剖开：同一面外墙和它上面的门窗共用 id，normal 是朝外的方向 [x, z]。看室内时朝向镜头的外墙整面隐藏，
+     * 换成 curb 那一截矮墙（curb 平时不显示）。
+     */
+    facade?: { id: string; normal: [number, number]; curb?: boolean };
 };
 
-export type SceneLabel = { text: string; position: SceneVector };
+/** 文字标注；detail 是第二行的尺寸说明（开间 × 进深、面积），打开「尺寸」时显示。 */
+export type SceneLabel = { text: string; position: SceneVector; detail?: string };
 
 export type InteriorScene3D = {
     version: 1;

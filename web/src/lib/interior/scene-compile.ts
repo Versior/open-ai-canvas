@@ -3,12 +3,32 @@
  *
  * 墙：按房间矩形自动求出外墙（一侧没有房间）和内墙（两侧是不同房间），同一条线上连续的合成一面墙。
  * 拐角和丁字口按固定规则一面延长、一面截短，墙体之间不重叠、没有共面，所以不会闪。
- * 楼板：每层一块结构板（盖住这层和下一层的平面，外沿露在立面上就是层间线），房间地面另铺一层薄面层。
- * 门窗、窗框、窗台、门扇、台阶、雨棚、栏杆、楼梯踏步、屋顶、庭院和家具都由程序按真实尺寸生成。
+ * 门窗按方案写的位置开洞（没写就居中或均匀排开），平开门按开向半开，另有飘窗、窗帘、踢脚线、柱子、挂画；
+ * 楼板、楼梯、栏杆、屋顶、庭院和家具都由程序按真实尺寸生成。房间标注带开间 × 进深和面积，外围出尺寸线，方便和图纸对照。
+ * 户型和单个房间的外墙带 facade 标记，查看器把朝向镜头的外墙剖开，从外面能直接看到室内。
  */
 import type { SceneLabel, SceneMaterial, SceneObject, SceneOpening, SceneTexture, SceneVector } from "./scene-3d";
 import { buildFurniture, place, type FurniturePart } from "./scene-furniture";
-import { FURNITURE_TYPES, type InteriorSceneData, type SceneSpec, type SpecAnchor, type SpecFloor, type SpecFloorFinish, type SpecFurnitureType, type SpecRect, type SpecRoom, type SpecRoomType, type SpecSide } from "./scene-spec";
+import {
+    floorBounds,
+    furnitureInfo,
+    rectArea,
+    sharedEdge,
+    type InteriorSceneData,
+    type SceneSpec,
+    type SpecAnchor,
+    type SpecDoor,
+    type SpecFloor,
+    type SpecFloorFinish,
+    type SpecFurnitureType,
+    type SpecRect,
+    type SpecRoom,
+    type SpecRoomType,
+    type SpecSide,
+} from "./scene-spec";
+
+/** 尺寸线：平面上从 a 到 b，text 是毫米数；total 是最外一道总尺寸。 */
+export type SceneDimension = { a: [number, number]; b: [number, number]; text: string; y: number; total?: boolean };
 
 export type CompiledScene = {
     title: string;
@@ -16,7 +36,10 @@ export type CompiledScene = {
     ground: { material: SceneMaterial; size: [number, number]; center: [number, number]; y: number; holes: SpecRect[]; texture?: SceneTexture; color?: string };
     objects: SceneObject[];
     labels: SceneLabel[];
+    dimensions: SceneDimension[];
     floors: string[];
+    /** 第一层平面（含阳台）的外包框，叠图纸、取景用。 */
+    plan: SpecRect;
 };
 
 /** cutFloor：剖切看某一层（更高的楼层和屋顶不显示，这层的墙只砌到 1.2 米）。 */
@@ -32,16 +55,36 @@ const PLINTH = 0.45;
 const FINISH = 0.012;
 const EPS = 1e-4;
 const CUT_HEIGHT = 1.2;
-const DOLLHOUSE_HEIGHT = 0.9;
+/** 外墙剖开后留下的矮墙高度。 */
+const CURB = 0.12;
+const BASE_H = 0.08;
+const BASE_T = 0.012;
 
 type Adj = { sign: -1 | 0 | 1; other: number };
-type Hole = { center: number; width: number; bottom: number; height: number; kind: "window" | "floor" | "high" | "door" | "entry" | "slide" };
+type HoleKind = "window" | "floor" | "high" | "bay" | "door" | "double" | "slide" | "entry" | "opening";
+/** swing：门扇开向墙的哪一侧（沿垂直墙的方向，+1 是坐标变大的一侧）；hinge：门轴在洞口哪一头（沿墙方向）。 */
+type Hole = { center: number; width: number; bottom: number; height: number; kind: HoleKind; swing?: -1 | 1; hinge?: -1 | 1; depth?: number };
 type Seg = { axis: "x" | "z"; line: number; a: number; b: number; ext: boolean; out: -1 | 0 | 1; t: number; adjA: Adj; adjB: Adj; holes: Hole[] };
+type Facade = NonNullable<SceneObject["facade"]>;
+type Interval = { seg: Seg; from: number; to: number };
 
 const NONE: Adj = { sign: 0, other: 0 };
+const DOOR_KINDS = new Set<HoleKind>(["door", "double", "slide", "entry", "opening"]);
+const SIDES: SpecSide[] = ["n", "s", "w", "e"];
+const OPPOSITE: Record<SpecSide, SpecSide> = { n: "s", s: "n", e: "w", w: "e" };
+/** 靠在哪面墙 → 家具绕竖轴转多少度（家具局部正面朝 +z）。 */
+const ANCHOR_ROTATION: Record<SpecSide, number> = { n: 0, s: 180, w: 90, e: 270 };
 
 function r3(value: number) {
     return Math.round(value * 1000) / 1000;
+}
+
+function clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function normalizeAngle(value: number) {
+    return ((Math.round(value) % 360) + 360) % 360;
 }
 
 function inRect(rect: SpecRect, x: number, z: number) {
@@ -211,10 +254,10 @@ function shade(hex: string, amount: number) {
 const FINISH_LOOK: Record<SpecFloorFinish, { material: SceneMaterial; color?: string; texture?: SceneTexture }> = {
     wood: { material: "wood", texture: "planks" },
     tile: { material: "tile", color: "#dcd9d3", texture: "tiles" },
-    marble: { material: "marble", color: "#ece9e4", texture: "tiles" },
+    marble: { material: "marble", color: "#ece9e4", texture: "marble" },
     stone: { material: "stone", color: "#a9a49c", texture: "paving" },
     concrete: { material: "concrete", color: "#bdbab4" },
-    carpet: { material: "fabric", color: "#cfc6b8" },
+    carpet: { material: "fabric", color: "#cfc6b8", texture: "weave" },
 };
 
 function defaultFinish(type: SpecRoomType): SpecFloorFinish {
@@ -235,7 +278,7 @@ function roomEdge(rect: SpecRect, side: SpecSide): Edge {
 }
 
 /** 一条边上属于某类墙的区间（裁到边的范围内），从长到短排。 */
-function edgeIntervals(segs: Seg[], edge: Edge, ext: boolean) {
+function edgeIntervals(segs: Seg[], edge: Edge, ext: boolean): Interval[] {
     return segs
         .filter((seg) => seg.axis === edge.axis && Math.abs(seg.line - edge.line) < EPS && seg.ext === ext)
         .map((seg) => ({ seg, from: Math.max(seg.a, edge.from), to: Math.min(seg.b, edge.to) }))
@@ -243,150 +286,305 @@ function edgeIntervals(segs: Seg[], edge: Edge, ext: boolean) {
         .sort((x, y) => y.to - y.from - (x.to - x.from));
 }
 
-function addHole(seg: Seg, hole: Hole) {
-    const left = hole.center - hole.width / 2;
-    const right = hole.center + hole.width / 2;
-    if (left < seg.a + 0.12 || right > seg.b - 0.12) return false;
-    if (seg.holes.some((other) => left < other.center + other.width / 2 + 0.15 && right > other.center - other.width / 2 - 0.15)) return false;
-    seg.holes.push(hole);
-    return true;
+/** 写了 at 就用 at 落在的那段（落在外面取最近的），没写取最长的一段。 */
+function chooseInterval<T extends Interval>(intervals: T[], at?: number): T | undefined {
+    if (!intervals.length) return undefined;
+    if (at === undefined) return intervals.reduce((best, item) => (item.to - item.from > best.to - best.from ? item : best));
+    const distance = (item: Interval) => (at < item.from ? item.from - at : at > item.to ? at - item.to : 0);
+    return intervals.reduce((best, item) => (distance(item) < distance(best) ? item : best));
 }
 
-type FloorLevel = { floor: SpecFloor; index: number; top: number; wallBase: number; wallTop: number; segs: Seg[]; group: string };
+/** 两个矩形共用的那条边（不相邻时是 null）。 */
+function sharedLine(a: SpecRect, b: SpecRect): Edge | null {
+    if (Math.abs(a[3] - b[1]) < EPS || Math.abs(a[1] - b[3]) < EPS) {
+        const from = Math.max(a[0], b[0]);
+        const to = Math.min(a[2], b[2]);
+        return to - from > 0.3 ? { axis: "x", line: Math.abs(a[3] - b[1]) < EPS ? a[3] : a[1], from, to } : null;
+    }
+    if (Math.abs(a[2] - b[0]) < EPS || Math.abs(a[0] - b[2]) < EPS) {
+        const from = Math.max(a[1], b[1]);
+        const to = Math.min(a[3], b[3]);
+        return to - from > 0.3 ? { axis: "z", line: Math.abs(a[2] - b[0]) < EPS ? a[2] : a[0], from, to } : null;
+    }
+    return null;
+}
 
-function windowSize(kind: Hole["kind"], clear: number, height?: number) {
+/** 矩形在一条边线的哪一侧。 */
+function sideOfLine(edge: Pick<Edge, "axis" | "line">, rect: SpecRect): -1 | 1 {
+    const center = edge.axis === "x" ? (rect[1] + rect[3]) / 2 : (rect[0] + rect[2]) / 2;
+    return center > edge.line ? 1 : -1;
+}
+
+/** 房间连同 L 形拆出来的几块。 */
+function family(floor: SpecFloor, name: string) {
+    return floor.rooms.filter((room) => room.name === name || room.part === name);
+}
+
+function subtractIntervals(list: [number, number][], blocks: [number, number][], min = 0.3) {
+    let result = list;
+    for (const [left, right] of blocks)
+        result = result.flatMap(([a, b]): [number, number][] =>
+            right <= a || left >= b
+                ? [[a, b]]
+                : (
+                      [
+                          [a, left],
+                          [right, b],
+                      ] as [number, number][]
+                  ).filter(([p, q]) => q - p > min),
+        );
+    return result;
+}
+
+function longestRun(list: [number, number][]) {
+    return list.reduce((max, [a, b]) => Math.max(max, b - a), 0);
+}
+
+type FloorLevel = { floor: SpecFloor; index: number; top: number; wallBase: number; wallTop: number; segs: Seg[]; group: string; facades: boolean };
+
+/** 户型和单个房间的外墙标上剖开用的 id 和朝外方向；建筑外观、剖切的那层不标。 */
+function facadeOf(level: FloorLevel, seg: Seg): Facade | undefined {
+    if (!level.facades || !seg.ext) return undefined;
+    const out = seg.out || 1;
+    return { id: `${level.index}:${seg.axis}:${r3(seg.line)}:${r3(seg.a)}`, normal: seg.axis === "x" ? [0, out] : [out, 0] };
+}
+
+function windowSize(kind: HoleKind, clear: number, height?: number, bottom?: number) {
     if (kind === "floor") return { bottom: 0, height: Math.min(height ?? clear - 0.3, clear - 0.25) };
-    if (kind === "high") return { bottom: Math.min(1.5, clear - 0.9), height: Math.min(height ?? 0.6, 0.8) };
-    const bottom = 0.9;
-    return { bottom, height: Math.max(0.5, Math.min(height ?? 1.6, clear - bottom - 0.35)) };
+    if (kind === "high") {
+        const low = bottom ?? Math.min(1.5, clear - 0.9);
+        return { bottom: low, height: Math.max(0.4, Math.min(height ?? 0.6, clear - low - 0.2)) };
+    }
+    if (kind === "bay") {
+        const low = bottom ?? 0.45;
+        return { bottom: low, height: Math.max(0.8, Math.min(height ?? clear - low - 0.4, clear - low - 0.25)) };
+    }
+    const low = bottom ?? 0.9;
+    return { bottom: low, height: Math.max(0.5, Math.min(height ?? 1.6, clear - low - 0.3)) };
 }
 
-/** 把方案里的门窗落到墙上；没写门的房间自动开一扇门通向相邻的房间，首层没写入户门时自动开一扇。 */
+/** 在墙的 [from, to] 一段里给洞口找位置：尽量靠近 desired，避开已有的洞口；放不下时收窄，窄过 minWidth 就不开。 */
+function placeHole(seg: Seg, from: number, to: number, desired: number, width: number, minWidth: number, hole: Omit<Hole, "center" | "width">) {
+    let free: [number, number][] = [[Math.max(from, seg.a + 0.12), Math.min(to, seg.b - 0.12)]];
+    for (const other of seg.holes) free = subtractIntervals(free, [[other.center - other.width / 2 - 0.12, other.center + other.width / 2 + 0.12]], 0.05);
+    const distance = ([x, y]: [number, number]) => (desired < x ? x - desired : desired > y ? desired - y : 0);
+    const fits = free.filter(([x, y]) => y - x >= width).sort((p, q) => distance(p) - distance(q));
+    let size = width;
+    let slot = fits[0];
+    if (!slot) {
+        slot = [...free].sort((p, q) => q[1] - q[0] - (p[1] - p[0]))[0];
+        if (!slot || slot[1] - slot[0] < minWidth) return null;
+        size = slot[1] - slot[0];
+    }
+    const center = clamp(desired, slot[0] + size / 2, slot[1] - size / 2);
+    const placed: Hole = { ...hole, center: r3(center), width: r3(size) };
+    seg.holes.push(placed);
+    return placed;
+}
+
+/** 门默认开向更私密的房间（卫生间、卧室开向自己，客厅、过道一侧不占地方）。 */
+const PRIVACY: Partial<Record<SpecRoomType, number>> = { bathroom: 4, closet: 4, storage: 4, laundry: 3, master: 3, bedroom: 3, kids: 3, study: 3, tea: 2, gym: 2, theater: 2, kitchen: 1, garage: 1 };
+
+function doorWidth(kind: SpecDoor["kind"], scope: SceneSpec["scope"], rooms: SpecRoom[]) {
+    if (kind === "double") return 1.5;
+    if (kind === "slide") return rooms.some((room) => room.type === "balcony") ? 2.4 : 1.6;
+    if (kind === "entry") return scope === "building" ? 1.2 : 1.0;
+    if (kind === "opening") return 1.2;
+    return rooms.some((room) => room.type === "bathroom") ? 0.8 : 0.9;
+}
+
+function doorHeight(kind: HoleKind, clear: number, exterior: boolean, scope: SceneSpec["scope"]) {
+    const height = kind === "slide" ? (exterior ? 2.4 : 2.3) : kind === "entry" ? (scope === "building" ? 2.4 : 2.2) : 2.1;
+    return r3(Math.min(height, clear - 0.2));
+}
+
+function hingeOf(axis: "x" | "z", hinge: SpecSide | undefined, hole: Hole, from: number, to: number): -1 | 1 {
+    if (hinge && axis === "x" && (hinge === "w" || hinge === "e")) return hinge === "w" ? -1 : 1;
+    if (hinge && axis === "z" && (hinge === "n" || hinge === "s")) return hinge === "n" ? -1 : 1;
+    // 默认门轴靠近墙角那头，门开到底时贴着旁边的墙。
+    return hole.center - from <= to - hole.center ? -1 : 1;
+}
+
+/**
+ * 把方案里的门窗落到墙上。门窗写了 at 就按 at 开，没写门放在共用墙中间、窗在外墙上均匀排开；
+ * 和已有洞口挤在一起时就近挪开。没有门也没有连通的房间自动开一扇门，建筑首层没写入户门时自动开一扇。
+ */
 function placeOpenings(level: FloorLevel, scope: SceneSpec["scope"]) {
     const { floor, segs } = level;
     const clear = level.wallTop - level.top;
-    const byName = new Map(floor.rooms.map((room) => [room.name, room]));
-    // 只算房间之间的连通：只有通向室外或阳台的门的房间，也还要一扇通往室内的门。
+    const mainOf = (name: string) => floor.rooms.find((room) => room.name === name)?.part || name;
     const connected = new Set<string>();
-    for (const [a, b] of floor.open) connected.add(a).add(b);
-    const doorBetween = (a: SpecRoom, b: SpecRoom, kind: Hole["kind"], width?: number) => {
-        const candidates: Edge[] = [];
-        const overlap = (from1: number, to1: number, from2: number, to2: number) => [Math.max(from1, from2), Math.min(to1, to2)] as const;
-        if (Math.abs(a.rect[3] - b.rect[1]) < EPS || Math.abs(a.rect[1] - b.rect[3]) < EPS) {
-            const [from, to] = overlap(a.rect[0], a.rect[2], b.rect[0], b.rect[2]);
-            candidates.push({ axis: "x", line: Math.abs(a.rect[3] - b.rect[1]) < EPS ? a.rect[3] : a.rect[1], from, to });
-        }
-        if (Math.abs(a.rect[2] - b.rect[0]) < EPS || Math.abs(a.rect[0] - b.rect[2]) < EPS) {
-            const [from, to] = overlap(a.rect[1], a.rect[3], b.rect[1], b.rect[3]);
-            candidates.push({ axis: "z", line: Math.abs(a.rect[2] - b.rect[0]) < EPS ? a.rect[2] : a.rect[0], from, to });
-        }
-        for (const edge of candidates) {
-            const interval = edgeIntervals(segs, edge, false)[0];
-            if (!interval) continue;
-            const doorWidth = Math.min(width ?? (kind === "slide" ? 1.6 : 0.9), interval.to - interval.from - 0.3);
-            if (doorWidth < 0.7) continue;
-            const height = Math.min(kind === "slide" ? 2.3 : 2.1, clear - 0.2);
-            if (addHole(interval.seg, { center: r3((interval.from + interval.to) / 2), width: r3(doorWidth), bottom: 0, height: r3(height), kind })) return true;
-        }
-        return false;
+    for (const [a, b] of floor.open) if (mainOf(a) !== mainOf(b)) connected.add(mainOf(a)).add(mainOf(b));
+    const interiorDoor = (nameA: string, nameB: string, door: Pick<SpecDoor, "kind" | "width" | "at" | "into" | "hinge">) => {
+        const intervals: (Interval & { ra: SpecRoom; rb: SpecRoom; edge: Edge })[] = [];
+        for (const ra of family(floor, nameA))
+            for (const rb of family(floor, nameB)) {
+                const edge = sharedLine(ra.rect, rb.rect);
+                if (edge) for (const interval of edgeIntervals(segs, edge, false)) intervals.push({ ...interval, ra, rb, edge });
+            }
+        const pick = chooseInterval(intervals, door.at);
+        if (!pick) return false;
+        const kind: HoleKind = door.kind;
+        const width = door.width ?? doorWidth(door.kind, scope, [pick.ra, pick.rb]);
+        const into = door.into === nameA ? pick.ra : door.into === nameB ? pick.rb : (PRIVACY[pick.ra.type] || 0) > (PRIVACY[pick.rb.type] || 0) ? pick.ra : pick.rb;
+        const hole = placeHole(pick.seg, pick.from + 0.05, pick.to - 0.05, door.at ?? (pick.from + pick.to) / 2, width, 0.6, { bottom: 0, height: doorHeight(kind, clear, false, scope), kind, swing: sideOfLine(pick.edge, into.rect) });
+        if (!hole) return false;
+        hole.hinge = hingeOf(pick.edge.axis, door.hinge, hole, pick.from, pick.to);
+        return true;
     };
     for (const door of floor.doors) {
         if (door.between) {
-            const [a, b] = door.between.map((name) => byName.get(name));
-            if (a && b && doorBetween(a, b, door.kind === "slide" ? "slide" : "door", door.width)) connected.add(a.name).add(b.name);
+            if (interiorDoor(door.between[0], door.between[1], door)) connected.add(mainOf(door.between[0])).add(mainOf(door.between[1]));
             continue;
         }
-        const room = door.room ? byName.get(door.room) : undefined;
-        if (!room || !door.side) continue;
-        const interval = edgeIntervals(segs, roomEdge(room.rect, door.side), true)[0];
-        if (!interval) continue;
-        const kind: Hole["kind"] = door.kind === "door" ? "door" : door.kind;
-        const width = Math.min(door.width ?? (kind === "entry" ? 1.2 : kind === "slide" ? 2.4 : 0.9), interval.to - interval.from - 0.3);
-        const height = Math.min(kind === "entry" ? 2.4 : kind === "slide" ? 2.6 : 2.1, clear - 0.2);
-        if (width >= 0.7) addHole(interval.seg, { center: r3((interval.from + interval.to) / 2), width: r3(width), bottom: 0, height: r3(height), kind });
+        if (!door.room || !door.side) continue;
+        const rooms = family(floor, door.room);
+        const edges = rooms.map((room) => ({ room, edge: roomEdge(room.rect, door.side!) }));
+        // 写成通向室外的门其实开在内墙上时，照样在那面墙上开，门扇开向这个房间。
+        const exterior = edges.flatMap(({ room, edge }) => edgeIntervals(segs, edge, true).map((item) => ({ ...item, room, edge })));
+        const list = exterior.length ? exterior : edges.flatMap(({ room, edge }) => edgeIntervals(segs, edge, false).map((item) => ({ ...item, room, edge })));
+        const pick = chooseInterval(list, door.at);
+        if (!pick) continue;
+        const kind: HoleKind = door.kind;
+        const width = door.width ?? doorWidth(door.kind, scope, rooms);
+        const swing = sideOfLine(pick.edge, pick.room.rect);
+        const hole = placeHole(pick.seg, pick.from + 0.05, pick.to - 0.05, door.at ?? (pick.from + pick.to) / 2, width, 0.7, { bottom: 0, height: doorHeight(kind, clear, exterior.length > 0, scope), kind, swing });
+        if (hole) hole.hinge = hingeOf(pick.edge.axis, door.hinge, hole, pick.from, pick.to);
     }
-    // 没有门也没有连通的房间：和共用边最长的相邻房间之间开一扇门。
-    for (const room of floor.rooms) {
+    // 没有门也没有连通的房间：和共用边最长的相邻房间之间开一扇门（优先通向走廊、客厅、门厅）。
+    const mains = floor.rooms.filter((room) => !room.part);
+    for (const room of mains) {
         if (connected.has(room.name)) continue;
-        const neighbors = floor.rooms
+        const neighbors = mains
             .filter((other) => other !== room)
-            .map((other) => ({ other, length: sharedLength(room.rect, other.rect) }))
+            .map((other) => ({ other, length: Math.max(0, ...family(floor, room.name).flatMap((a) => family(floor, other.name).map((b) => sharedEdge(a.rect, b.rect)))) }))
             .filter((item) => item.length >= 1)
             .sort((x, y) => preferNeighbor(y.other.type) - preferNeighbor(x.other.type) || y.length - x.length);
         for (const { other } of neighbors) {
-            if (doorBetween(room, other, "door")) {
+            if (interiorDoor(room.name, other.name, { kind: "door" })) {
                 connected.add(room.name).add(other.name);
                 break;
             }
         }
     }
-    if (scope === "building" && level.index === 0 && !level.segs.some((seg) => seg.holes.some((hole) => hole.kind === "entry"))) {
+    if (scope === "building" && level.index === 0 && !segs.some((seg) => seg.holes.some((hole) => hole.kind === "entry"))) {
         const order: Partial<Record<SpecRoomType, number>> = { entry: 5, living: 4, corridor: 3, dining: 2, stair: 1 };
-        const candidates = [...floor.rooms].sort((x, y) => (order[y.type] || 0) - (order[x.type] || 0));
-        const sides: SpecSide[] = ["s", "e", "w", "n"];
+        const candidates = [...mains].sort((x, y) => (order[y.type] || 0) - (order[x.type] || 0));
         candidates.some((room) =>
-            sides.some((side) => {
+            (["s", "e", "w", "n"] as SpecSide[]).some((side) => {
                 const interval = edgeIntervals(segs, roomEdge(room.rect, side), true)[0];
-                return Boolean(interval && interval.to - interval.from >= 1.6 && addHole(interval.seg, { center: r3((interval.from + interval.to) / 2), width: 1.2, bottom: 0, height: Math.min(2.4, clear - 0.2), kind: "entry" }));
+                if (!interval || interval.to - interval.from < 1.6) return false;
+                const hole = placeHole(interval.seg, interval.from, interval.to, (interval.from + interval.to) / 2, 1.2, 1.0, { bottom: 0, height: doorHeight("entry", clear, true, scope), kind: "entry", swing: -(interval.seg.out || 1) as -1 | 1 });
+                if (hole) hole.hinge = -1;
+                return Boolean(hole);
             }),
         );
     }
     for (const spec of floor.windows) {
-        const room = byName.get(spec.room);
-        if (!room) continue;
-        const interval = edgeIntervals(segs, roomEdge(room.rect, spec.side), true)[0];
-        if (!interval) continue;
-        const from = interval.from + 0.25;
-        const to = interval.to - 0.25;
+        const rooms = family(floor, spec.room);
+        const intervals = rooms.flatMap((room) => edgeIntervals(segs, roomEdge(room.rect, spec.side), true));
+        if (!intervals.length) continue;
+        const kind: HoleKind = spec.kind;
+        const { bottom, height } = windowSize(kind, clear, spec.height, spec.bottom);
+        const props = { bottom: r3(bottom), height: r3(height), kind, ...(kind === "bay" ? { depth: spec.depth ?? 0.6 } : {}) };
+        if (spec.at !== undefined) {
+            const pick = chooseInterval(intervals, spec.at)!;
+            placeHole(pick.seg, pick.from + 0.1, pick.to - 0.1, spec.at, spec.width, 0.4, props);
+            continue;
+        }
+        const pick = chooseInterval(intervals)!;
+        const from = pick.from + 0.25;
+        const to = pick.to - 0.25;
         const slot = (to - from) / spec.count;
         const width = Math.min(spec.width, slot - 0.3);
         if (width < 0.4) continue;
-        const { bottom, height } = windowSize(spec.kind, clear, spec.height);
-        for (let index = 0; index < spec.count; index += 1) addHole(interval.seg, { center: r3(from + slot * (index + 0.5)), width: r3(width), bottom: r3(bottom), height: r3(height), kind: spec.kind });
+        for (let index = 0; index < spec.count; index += 1) placeHole(pick.seg, from + slot * index, from + slot * (index + 1), from + slot * (index + 0.5), width, 0.4, props);
     }
-}
-
-function sharedLength(a: SpecRect, b: SpecRect) {
-    if (Math.abs(a[3] - b[1]) < EPS || Math.abs(a[1] - b[3]) < EPS) return Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
-    if (Math.abs(a[2] - b[0]) < EPS || Math.abs(a[0] - b[2]) < EPS) return Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
-    return 0;
 }
 
 function preferNeighbor(type: SpecRoomType) {
     return type === "corridor" ? 4 : type === "living" ? 3 : type === "entry" ? 3 : type === "stair" ? 2 : type === "dining" ? 2 : 0;
 }
 
-/** 窗框、玻璃、窗台、门框、门扇、推拉门、入户台阶和雨棚。 */
-function openingDetails(level: FloorLevel, seg: Seg, hole: Hole, spec: SceneSpec, objects: SceneObject[]) {
+type Push = (object: SceneObject) => void;
+
+/** 窗框（边框、竖梃、高窗的横档）和玻璃，plane 是窗框中心离墙中线的偏移。 */
+function windowFrame(seg: Seg, center: number, plane: number, bottomY: number, width: number, height: number, trim: string, push: Push) {
+    const frame = 0.06;
+    const depth = 0.08;
+    const half = width / 2;
+    push(segBox(seg, center - half + frame / 2, plane, bottomY + height / 2, frame, height, depth, "metal-dark", trim));
+    push(segBox(seg, center + half - frame / 2, plane, bottomY + height / 2, frame, height, depth, "metal-dark", trim));
+    push(segBox(seg, center, plane, bottomY + frame / 2, width - frame * 2, frame, depth, "metal-dark", trim));
+    push(segBox(seg, center, plane, bottomY + height - frame / 2, width - frame * 2, frame, depth, "metal-dark", trim));
+    const mullions = Math.max(0, Math.round(width / 1.1) - 1);
+    for (let index = 1; index <= mullions; index += 1) push(segBox(seg, center - half + (width / (mullions + 1)) * index, plane, bottomY + height / 2, 0.04, height - frame * 2, depth - 0.01, "metal-dark", trim));
+    if (height > 2.4) push(segBox(seg, center, plane, bottomY + height - 0.55, width - frame * 2, 0.04, depth - 0.01, "metal-dark", trim));
+    push(segBox(seg, center, plane, bottomY + height / 2, width - frame * 2, height - frame * 2, 0.02, "glass"));
+}
+
+/** 飘窗：窗台板从室内伸到外沿，外面一圈上下板和两侧玻璃，正面是窗；台面放坐垫和靠枕。 */
+function bayWindow(seg: Seg, hole: Hole, level: FloorLevel, spec: SceneSpec, push: Push) {
+    const out = seg.out || 1;
+    const depth = hole.depth ?? 0.6;
+    const t = seg.t;
+    const outer = t / 2 + depth;
+    const bottomY = level.top + hole.bottom;
+    const topY = bottomY + hole.height;
+    const length = hole.width + 0.1;
+    const inner = -(t / 2 + 0.04);
+    push(segBox(seg, hole.center, (out * (outer + inner)) / 2, bottomY - 0.01, length, 0.06, outer - inner, "stone", "#e4e0d9"));
+    push(segBox(seg, hole.center, out * (t / 2 + depth / 2), bottomY - 0.1, length, 0.12, depth, "wall", spec.palette.wall));
+    push(segBox(seg, hole.center, out * (t / 2 + depth / 2), topY + 0.06, length, 0.12, depth, "wall", spec.palette.wall));
+    for (const end of [-1, 1]) push(segBox(seg, hole.center + end * (hole.width / 2 + 0.03), out * (t / 2 + depth / 2), (bottomY + 0.02 + topY) / 2, 0.02, topY - bottomY - 0.02, depth - 0.02, "glass"));
+    windowFrame(seg, hole.center, out * (outer - 0.05), bottomY + 0.02, hole.width, hole.height - 0.02, spec.palette.trim, push);
+    const cushionAcross = (out * (outer - 0.12 + inner + 0.04)) / 2;
+    const [x, z] = onSeg(seg, hole.center, cushionAcross);
+    const cushionDepth = outer - 0.12 - (inner + 0.04);
+    push({
+        shape: "rbox",
+        position: [x, r3(bottomY + 0.06), z],
+        size: seg.axis === "x" ? [r3(hole.width - 0.12), 0.08, r3(cushionDepth)] : [r3(cushionDepth), 0.08, r3(hole.width - 0.12)],
+        round: 0.03,
+        material: "fabric",
+        color: shade(spec.palette.fabric, 0.04),
+        texture: "weave",
+    });
+    for (const end of [-1, 1]) {
+        const [px, pz] = onSeg(seg, hole.center + end * (hole.width / 2 - 0.3), cushionAcross);
+        push({ shape: "rbox", position: [px, r3(bottomY + 0.27), pz], size: seg.axis === "x" ? [0.42, 0.36, 0.14] : [0.14, 0.36, 0.42], rotation: [0, end * 12, 0], round: 0.05, material: "fabric", color: spec.palette.accent });
+    }
+}
+
+/** 窗框、玻璃、窗台、飘窗、门框、门扇（按开向半开）、推拉门、入户门、台阶和雨棚。tag 是外墙剖开的标记。 */
+function openingDetails(level: FloorLevel, seg: Seg, hole: Hole, spec: SceneSpec, objects: SceneObject[], tag: Partial<SceneObject>) {
     const trim = spec.palette.trim;
     const out = seg.out || 1;
     const bottomY = level.top + hole.bottom;
     const half = hole.width / 2;
-    const frame = 0.06;
-    const push = (object: SceneObject) => objects.push({ ...object, group: level.group });
+    const push: Push = (object) => objects.push({ ...object, group: level.group, ...tag });
     if (hole.kind === "window" || hole.kind === "floor" || hole.kind === "high") {
-        const plane = out * (seg.t / 2 - 0.07);
-        const depth = 0.08;
-        push(segBox(seg, hole.center - half + frame / 2, plane, bottomY + hole.height / 2, frame, hole.height, depth, "metal-dark", trim));
-        push(segBox(seg, hole.center + half - frame / 2, plane, bottomY + hole.height / 2, frame, hole.height, depth, "metal-dark", trim));
-        push(segBox(seg, hole.center, plane, bottomY + frame / 2, hole.width - frame * 2, frame, depth, "metal-dark", trim));
-        push(segBox(seg, hole.center, plane, bottomY + hole.height - frame / 2, hole.width - frame * 2, frame, depth, "metal-dark", trim));
-        const mullions = Math.max(0, Math.round(hole.width / 1.1) - 1);
-        for (let index = 1; index <= mullions; index += 1) push(segBox(seg, hole.center - half + (hole.width / (mullions + 1)) * index, plane, bottomY + hole.height / 2, 0.04, hole.height - frame * 2, depth - 0.01, "metal-dark", trim));
-        if (hole.height > 2.4) push(segBox(seg, hole.center, plane, bottomY + hole.height - 0.55, hole.width - frame * 2, 0.04, depth - 0.01, "metal-dark", trim));
-        push(segBox(seg, hole.center, plane, bottomY + hole.height / 2, hole.width - frame * 2, hole.height - frame * 2, 0.02, "glass"));
+        windowFrame(seg, hole.center, out * (seg.t / 2 - 0.07), bottomY, hole.width, hole.height, trim, push);
         // 窗台顶面比洞口下沿低 5 毫米，不和墙洞的底面共面。
         if (hole.kind !== "floor") push(segBox(seg, hole.center, out * (seg.t / 2 + 0.03), bottomY - 0.025, hole.width + 0.14, 0.04, 0.2, "stone", "#d9d4cc"));
+        if (hole.kind === "window") push(segBox(seg, hole.center, -out * (seg.t / 2 + 0.015), bottomY - 0.02, hole.width + 0.1, 0.03, 0.05, "stone", "#e4e0d9"));
+        return;
+    }
+    if (hole.kind === "bay") {
+        bayWindow(seg, hole, level, spec, push);
         return;
     }
     const jamb = 0.05;
     const depth = seg.t + 0.02;
-    const leafColor = shade(spec.palette.wood, -0.35);
-    push(segBox(seg, hole.center - half + jamb / 2, 0, bottomY + hole.height / 2, jamb, hole.height, depth, "wood-dark", hole.kind === "door" ? spec.palette.wood : trim));
-    push(segBox(seg, hole.center + half - jamb / 2, 0, bottomY + hole.height / 2, jamb, hole.height, depth, "wood-dark", hole.kind === "door" ? spec.palette.wood : trim));
-    push(segBox(seg, hole.center, 0, bottomY + hole.height - jamb / 2, hole.width - jamb * 2, jamb, depth, "wood-dark", hole.kind === "door" ? spec.palette.wood : trim));
+    const wood = spec.palette.wood;
+    const frameColor = hole.kind === "door" || hole.kind === "double" || hole.kind === "opening" ? shade(wood, -0.1) : trim;
+    push(segBox(seg, hole.center - half + jamb / 2, 0, bottomY + hole.height / 2, jamb, hole.height, depth, "wood-dark", frameColor));
+    push(segBox(seg, hole.center + half - jamb / 2, 0, bottomY + hole.height / 2, jamb, hole.height, depth, "wood-dark", frameColor));
+    push(segBox(seg, hole.center, 0, bottomY + hole.height - jamb / 2, hole.width - jamb * 2, jamb, depth, "wood-dark", frameColor));
     const inner = hole.width - jamb * 2;
     const leafHeight = hole.height - jamb - 0.01;
+    const leafColor = shade(wood, -0.35);
+    if (hole.kind === "opening") return;
     if (hole.kind === "entry") {
         const leaves = hole.width > 1.4 ? 2 : 1;
         for (let index = 0; index < leaves; index += 1) {
@@ -403,7 +601,7 @@ function openingDetails(level: FloorLevel, seg: Seg, hole: Hole, spec: SceneSpec
                 push(segBox(seg, hole.center, out * (seg.t / 2 + 0.16 + index * 0.32), height / 2, hole.width + 0.8, height, 0.32, "stone", "#b8b3aa"));
             }
         }
-        push(segBox(seg, hole.center, out * (seg.t / 2 + 0.6), bottomY + hole.height + 0.3, hole.width + 1.2, 0.12, 1.2, "concrete", shade(spec.palette.wall, -0.06)));
+        if (spec.scope === "building") push(segBox(seg, hole.center, out * (seg.t / 2 + 0.6), bottomY + hole.height + 0.3, hole.width + 1.2, 0.12, 1.2, "concrete", shade(spec.palette.wall, -0.06)));
         return;
     }
     if (hole.kind === "slide") {
@@ -417,6 +615,25 @@ function openingDetails(level: FloorLevel, seg: Seg, hole: Hole, spec: SceneSpec
             push(segBox(seg, center, across, bottomY + 0.02, panel - 0.08, 0.04, 0.04, "metal-dark", trim));
             push(segBox(seg, center, across, bottomY + leafHeight - 0.02, panel - 0.08, 0.04, 0.04, "metal-dark", trim));
         }
+        return;
+    }
+    // 平开门：门扇按开向转开 78 度，门轴在 hinge 那头；双开门两扇各自从两头开。
+    const leaves = hole.kind === "double" ? 2 : 1;
+    const swing = hole.swing ?? 1;
+    const leafWidth = inner / leaves - 0.01;
+    const angle = (78 * Math.PI) / 180;
+    for (let index = 0; index < leaves; index += 1) {
+        const end = leaves === 2 ? (index === 0 ? -1 : 1) : (hole.hinge ?? -1);
+        const hingeAlong = hole.center + end * (inner / 2 - 0.005);
+        const hingeAcross = swing * (seg.t / 2 - 0.025);
+        const dirAlong = -end * Math.cos(angle);
+        const dirAcross = swing * Math.sin(angle);
+        const [dx, dz] = seg.axis === "x" ? [dirAlong, dirAcross] : [dirAcross, dirAlong];
+        const yaw = r3((Math.atan2(-dz, dx) * 180) / Math.PI);
+        const [x, z] = onSeg(seg, hingeAlong + (dirAlong * leafWidth) / 2, hingeAcross + (dirAcross * leafWidth) / 2);
+        push({ shape: "box", position: [x, r3(bottomY + leafHeight / 2), z], size: [r3(leafWidth), r3(leafHeight), 0.04], rotation: [0, yaw, 0], material: "wood", color: leafColor, texture: "grain" });
+        const [hx, hz] = onSeg(seg, hingeAlong + dirAlong * (leafWidth - 0.08), hingeAcross + dirAcross * (leafWidth - 0.08));
+        push({ shape: "box", position: [hx, r3(bottomY + 1.0), hz], size: [0.12, 0.02, 0.09], rotation: [0, yaw, 0], material: "metal", color: "#c9a46a" });
     }
 }
 
@@ -482,9 +699,8 @@ function stairs(level: FloorLevel, next: FloorLevel, spec: SceneSpec, objects: S
             // 踏步不取整：相邻两级的侧面在同一平面上，取整后会互相压住一点点而闪烁。
             const position: SceneVector = alongZ ? [center, level.top + height / 2, along] : [along, level.top + height / 2, center];
             const size: SceneVector = alongZ ? [width, height, tread] : [tread, height, width];
-            objects.push({ shape: "box", position, size, material: "wood", color: spec.palette.wood, group: level.group });
+            objects.push({ shape: "box", position, size, material: "wood", color: spec.palette.wood, texture: "grain", group: level.group });
         }
-        // 扶手：沿楼梯一侧斜着上去。
         const slope = Math.atan2(rise, run);
         const length = Math.hypot(run, rise);
         const side = alongZ ? x1 + 0.06 : z1 + 0.06;
@@ -498,186 +714,10 @@ function stairs(level: FloorLevel, next: FloorLevel, spec: SceneSpec, objects: S
 }
 
 type Placement = { type: SpecFurnitureType; x: number; z: number; w: number; d: number; rotation: number; color?: string };
-
-type RoomFurniture = { type: SpecFurnitureType; at: SpecAnchor; rotate?: number; size?: [number, number]; color?: string };
-
-/** 没写家具的房间按类型自动配一套。 */
-function defaultFurniture(room: SpecRoom, width: number, depth: number): RoomFurniture[] {
-    const area = width * depth;
-    switch (room.type) {
-        case "living":
-            return [
-                { type: width >= 4.2 && depth >= 4 ? "sofa-l" : "sofa", at: "n" },
-                { type: "tv-cabinet", at: "s" },
-                { type: "rug", at: "c" },
-                { type: "coffee-table", at: "c" },
-                { type: "floor-lamp", at: "nw" },
-                { type: "plant", at: "se" },
-                { type: "pendant", at: "c" },
-            ];
-        case "dining":
-            return [{ type: "dining-table", at: "c" }, { type: "pendant", at: "c" }, ...(width >= 3 ? [{ type: "cabinet", at: "w" } as RoomFurniture] : [])];
-        case "kitchen":
-            return [{ type: "kitchen-line", at: "n" }, ...(depth >= 2.4 ? [{ type: "fridge", at: "e" } as RoomFurniture] : []), ...(area >= 12 ? [{ type: "kitchen-island", at: "c" } as RoomFurniture] : [])];
-        case "master":
-        case "bedroom":
-            return [{ type: "bed", at: "n" }, { type: "wardrobe", at: "w" }, ...(room.type === "master" && width >= 3.6 ? [{ type: "dresser", at: "e" } as RoomFurniture] : []), { type: "plant", at: "se" }, { type: "pendant", at: "c" }];
-        case "kids":
-            return [
-                { type: "bed-single", at: "w" },
-                { type: "desk", at: "e" },
-                { type: "wardrobe", at: "n" },
-                { type: "rug", at: "c" },
-            ];
-        case "study":
-            return [
-                { type: "desk", at: "n" },
-                { type: "bookshelf", at: "w" },
-                { type: "armchair", at: "se" },
-                { type: "plant", at: "ne" },
-            ];
-        case "bathroom":
-            return [{ type: "vanity", at: "n" }, { type: "toilet", at: "n" }, area >= 6 ? { type: "bathtub", at: "s" } : { type: "shower", at: "e" }];
-        case "entry":
-            return [
-                { type: "shoe-cabinet", at: "w" },
-                { type: "plant", at: "ne" },
-            ];
-        case "tea":
-            return [
-                { type: "tea-table", at: "c" },
-                { type: "bookshelf", at: "n" },
-                { type: "plant", at: "se" },
-            ];
-        case "theater":
-            return [
-                { type: "sofa", at: "n" },
-                { type: "tv-cabinet", at: "s" },
-                { type: "rug", at: "c" },
-            ];
-        case "garage":
-            return width >= 2.4 && depth >= 4.8 ? [{ type: "car", at: "c" }] : [];
-        case "laundry":
-            return [
-                { type: "washer", at: "n" },
-                { type: "washer", at: "n" },
-            ];
-        case "closet":
-            return [
-                { type: "wardrobe", at: "n" },
-                { type: "wardrobe", at: "w" },
-            ];
-        case "balcony":
-            return [
-                { type: "plant", at: "ne" },
-                { type: "armchair", at: "c" },
-            ];
-        default:
-            return [];
-    }
-}
-
-const ANCHOR_ROTATION: Record<SpecSide, number> = { n: 0, s: 180, w: 90, e: -90 };
-
-/**
- * 摆家具：靠墙的按顺序沿那面墙排（避开门），不靠墙的放在剩下空间的中央或角上。
- * 家具大于可用空间时按比例缩小，缩到原来六成以下就不摆。
- */
-function layoutRoom(clear: SpecRect, doors: Record<SpecSide, [number, number][]>, walled: Set<SpecSide>, requested: RoomFurniture[]): Placement[] {
-    const placements: Placement[] = [];
-    // 靠墙的家具写在没有墙的一边（开放式连通）时，改靠对面的墙，再不行靠两侧，四面都没墙就放中间。
-    const opposite: Record<SpecSide, SpecSide[]> = { n: ["s", "w", "e"], s: ["n", "w", "e"], w: ["e", "n", "s"], e: ["w", "n", "s"] };
-    const items = requested.map((item) => {
-        if (!(["n", "s", "e", "w"] as SpecAnchor[]).includes(item.at) || !FURNITURE_TYPES[item.type].wall || walled.has(item.at as SpecSide)) return item;
-        const side = opposite[item.at as SpecSide].find((candidate) => walled.has(candidate));
-        return { ...item, at: side || ("c" as SpecAnchor) };
-    });
-    const used: Record<SpecSide, number> = { n: 0, s: 0, e: 0, w: 0 };
-    const [cx1, cz1, cx2, cz2] = clear;
-    for (const side of ["n", "s", "w", "e"] as SpecSide[]) {
-        const onWall = items.filter((item) => item.at === side && FURNITURE_TYPES[item.type].wall);
-        if (!onWall.length) continue;
-        const [from, to] = side === "n" || side === "s" ? [cx1 + 0.05, cx2 - 0.05] : [cz1 + 0.05, cz2 - 0.05];
-        let free: [number, number][] = [[from, to]];
-        for (const [doorFrom, doorTo] of doors[side]) {
-            free = free.flatMap(([a, b]) => {
-                if (doorTo <= a || doorFrom >= b) return [[a, b] as [number, number]];
-                return [
-                    [a, doorFrom],
-                    [doorTo, b],
-                ].filter(([x, y]) => y - x > 0.3) as [number, number][];
-            });
-        }
-        const sizes = onWall.map((item) => item.size || ([...FURNITURE_TYPES[item.type].size] as [number, number]));
-        const total = sizes.reduce((sum, [w]) => sum + w, 0) + 0.1 * (onWall.length - 1);
-        const largest = [...free].sort((x, y) => y[1] - y[0] - (x[1] - x[0]))[0];
-        let cursor: number | null = largest && largest[1] - largest[0] >= total ? (largest[0] + largest[1]) / 2 - total / 2 : null;
-        onWall.forEach((item, index) => {
-            let [w, d] = sizes[index];
-            let center: number | null = null;
-            if (cursor !== null) {
-                center = cursor + w / 2;
-                cursor += w + 0.1;
-            } else {
-                const fit = free.find(([a, b]) => b - a >= w) || [...free].sort((x, y) => y[1] - y[0] - (x[1] - x[0]))[0];
-                if (!fit) return;
-                if (fit[1] - fit[0] < w) {
-                    if (fit[1] - fit[0] < w * 0.6) return;
-                    w = fit[1] - fit[0];
-                }
-                center = fit[0] + w / 2;
-                fit[0] += w + 0.1;
-            }
-            const roomDepth = side === "n" || side === "s" ? cz2 - cz1 : cx2 - cx1;
-            d = Math.min(d, roomDepth * 0.7);
-            used[side] = Math.max(used[side], d);
-            const across = side === "n" ? cz1 + d / 2 + 0.02 : side === "s" ? cz2 - d / 2 - 0.02 : side === "w" ? cx1 + d / 2 + 0.02 : cx2 - d / 2 - 0.02;
-            const [x, z] = side === "n" || side === "s" ? [center, across] : [across, center];
-            placements.push({ type: item.type, x, z, w, d, rotation: ANCHOR_ROTATION[side], color: item.color });
-        });
-    }
-    // 剩下的空间：去掉靠墙家具占的深度。
-    const region: SpecRect = [cx1 + used.w, cz1 + used.n, cx2 - used.e, cz2 - used.s];
-    const regionW = Math.max(0.6, region[2] - region[0]);
-    const regionD = Math.max(0.6, region[3] - region[1]);
-    for (const item of items) {
-        const isWall = (["n", "s", "e", "w"] as SpecAnchor[]).includes(item.at) && FURNITURE_TYPES[item.type].wall && walled.has(item.at as SpecSide);
-        if (isWall) continue;
-        let [w, d] = item.size || ([...FURNITURE_TYPES[item.type].size] as [number, number]);
-        let rotation = item.rotate ?? 0;
-        if (item.rotate === undefined && w > d && regionD > regionW && item.type !== "car") rotation = 90;
-        if (item.type === "car" && regionW > regionD) rotation = 90;
-        const turned = rotation % 180 !== 0;
-        const spanW = turned ? d : w;
-        const spanD = turned ? w : d;
-        const scale = Math.min(1, (regionW - 0.1) / spanW, (regionD - 0.1) / spanD);
-        if (item.type !== "pendant" && scale < 0.6) continue;
-        if (item.type === "rug" || item.type === "dining-table" || item.type === "kitchen-island" || item.type === "tea-table") {
-            w *= Math.min(1, scale);
-            d *= Math.min(1, scale);
-        }
-        const footW = (turned ? d : w) / 2 + 0.05;
-        const footD = (turned ? w : d) / 2 + 0.05;
-        const anchor = item.at;
-        const centerX = (region[0] + region[2]) / 2;
-        const centerZ = (region[1] + region[3]) / 2;
-        const x = anchor.includes("e") ? region[2] - footW : anchor.includes("w") ? region[0] + footW : centerX;
-        const z = anchor.includes("n") ? region[1] + footD : anchor.includes("s") ? region[3] - footD : centerZ;
-        placements.push({ type: item.type, x: item.type === "pendant" ? (cx1 + cx2) / 2 : x, z: item.type === "pendant" ? (cz1 + cz2) / 2 : z, w, d, rotation, color: item.color });
-    }
-    return placements;
-}
-
-/** 房间哪几面有墙（墙占这条边六成以上）。 */
-function walledSides(room: SpecRoom, segs: Seg[]) {
-    const sides = new Set<SpecSide>();
-    for (const side of ["n", "s", "e", "w"] as SpecSide[]) {
-        const edge = roomEdge(room.rect, side);
-        const covered = segs.filter((seg) => seg.axis === edge.axis && Math.abs(seg.line - edge.line) < EPS).reduce((sum, seg) => sum + Math.max(0, Math.min(seg.b, edge.to) - Math.max(seg.a, edge.from)), 0);
-        if (covered >= (edge.to - edge.from) * 0.6) sides.add(side);
-    }
-    return sides;
-}
+type RoomFurniture = { type: SpecFurnitureType; at: SpecAnchor; rotate?: number; size?: [number, number]; color?: string; pos?: [number, number] };
+/** 一面墙的情况：free 是去掉门洞、落地窗、飘窗和柱子后能靠墙摆的区间；open 再去掉普通窗（高柜、床头不挡窗）。 */
+type SideInfo = { walled: boolean; length: number; depth: number; free: [number, number][]; open: [number, number][]; window: boolean; door: boolean };
+type RoomContext = { room: SpecRoom; clear: SpecRect; width: number; depth: number; area: number; sides: Record<SpecSide, SideInfo> };
 
 function clearRect(room: SpecRoom, segs: Seg[]): SpecRect {
     const inset = (side: SpecSide) => {
@@ -689,26 +729,541 @@ function clearRect(room: SpecRoom, segs: Seg[]): SpecRect {
     return [room.rect[0] + inset("w"), room.rect[1] + inset("n"), room.rect[2] - inset("e"), room.rect[3] - inset("s")];
 }
 
-function doorIntervals(room: SpecRoom, segs: Seg[]): Record<SpecSide, [number, number][]> {
-    const result: Record<SpecSide, [number, number][]> = { n: [], s: [], e: [], w: [] };
-    for (const side of ["n", "s", "e", "w"] as SpecSide[]) {
+function roomContext(room: SpecRoom, segs: Seg[], pillars: SpecRect[]): RoomContext {
+    const clear = clearRect(room, segs);
+    const width = clear[2] - clear[0];
+    const depth = clear[3] - clear[1];
+    const sides = {} as Record<SpecSide, SideInfo>;
+    for (const side of SIDES) {
         const edge = roomEdge(room.rect, side);
-        for (const seg of segs) {
-            if (seg.axis !== edge.axis || Math.abs(seg.line - edge.line) > EPS) continue;
+        const horizontal = side === "n" || side === "s";
+        const along: [number, number] = horizontal ? [clear[0] + 0.05, clear[2] - 0.05] : [clear[1] + 0.05, clear[3] - 0.05];
+        const onLine = segs.filter((seg) => seg.axis === edge.axis && Math.abs(seg.line - edge.line) < EPS);
+        const covered = onLine.reduce((sum, seg) => sum + Math.max(0, Math.min(seg.b, edge.to) - Math.max(seg.a, edge.from)), 0);
+        const walled = covered >= (edge.to - edge.from) * 0.6;
+        const runs = walled ? onLine.map((seg): [number, number] => [Math.max(seg.a, along[0]), Math.min(seg.b, along[1])]).filter(([a, b]) => b - a > 0.3) : [];
+        const blocked: [number, number][] = [];
+        const windows: [number, number][] = [];
+        let door = false;
+        for (const seg of onLine)
             for (const hole of seg.holes) {
-                if (hole.kind !== "door" && hole.kind !== "entry" && hole.kind !== "slide") continue;
-                const from = hole.center - hole.width / 2 - 0.15;
-                const to = hole.center + hole.width / 2 + 0.15;
-                if (to > edge.from && from < edge.to) result[side].push([from, to]);
+                if (hole.center < edge.from - EPS || hole.center > edge.to + EPS) continue;
+                const pad = DOOR_KINDS.has(hole.kind) ? 0.15 : 0.05;
+                const span: [number, number] = [hole.center - hole.width / 2 - pad, hole.center + hole.width / 2 + pad];
+                if (DOOR_KINDS.has(hole.kind)) door = true;
+                if (DOOR_KINDS.has(hole.kind) || hole.kind === "floor" || hole.kind === "bay") blocked.push(span);
+                else windows.push(span);
+            }
+        for (const [px1, pz1, px2, pz2] of pillars) {
+            const near = side === "n" ? pz1 <= clear[1] + 0.3 && pz2 > clear[1] : side === "s" ? pz2 >= clear[3] - 0.3 && pz1 < clear[3] : side === "w" ? px1 <= clear[0] + 0.3 && px2 > clear[0] : px2 >= clear[2] - 0.3 && px1 < clear[2];
+            const span: [number, number] = horizontal ? [px1 - 0.05, px2 + 0.05] : [pz1 - 0.05, pz2 + 0.05];
+            if (near && span[1] > along[0] && span[0] < along[1]) blocked.push(span);
+        }
+        const free = subtractIntervals(runs, blocked);
+        sides[side] = { walled, length: along[1] - along[0], depth: horizontal ? depth : width, free, open: subtractIntervals(free, windows), window: windows.length > 0, door };
+    }
+    return { room, clear, width, depth, area: width * depth, sides };
+}
+
+/** 在有墙的几面里挑分数最高的一面；分数都不大于 0 时返回 undefined。 */
+function bestSide(ctx: RoomContext, score: (side: SpecSide, info: SideInfo) => number, sides: SpecSide[] = SIDES) {
+    let best: SpecSide | undefined;
+    let bestScore = 0;
+    for (const side of sides) {
+        const info = ctx.sides[side];
+        if (!info.walled) continue;
+        const value = score(side, info);
+        if (value > bestScore) {
+            bestScore = value;
+            best = side;
+        }
+    }
+    return best;
+}
+
+function adjacentSides(side: SpecSide): SpecSide[] {
+    return side === "n" || side === "s" ? ["w", "e"] : ["n", "s"];
+}
+
+/** 两面墙夹出来的那个角。 */
+function cornerOf(a: SpecSide, b: SpecSide): SpecAnchor {
+    const ns = a === "n" || a === "s" ? a : b;
+    const ew = a === "e" || a === "w" ? a : b;
+    return `${ns}${ew}` as SpecAnchor;
+}
+
+/**
+ * 没写家具的房间按类型配一套，并按墙的情况选位置：沙发和电视墙选一对相对、都够长的墙，床头靠不开窗的实墙，
+ * 衣柜靠床旁边的墙，书桌靠窗，卫生间的淋浴、马桶靠门对面的墙。
+ */
+function defaultFurniture(ctx: RoomContext): RoomFurniture[] {
+    const { room, sides, area, width, depth } = ctx;
+    const longest = (pick: (info: SideInfo) => [number, number][], exclude: SpecSide[] = []) => bestSide(ctx, (side, info) => (exclude.includes(side) ? 0 : longestRun(pick(info))));
+    switch (room.type) {
+        case "living": {
+            const sofaSide =
+                bestSide(ctx, (side, info) => {
+                    const tv = sides[OPPOSITE[side]];
+                    const sofaRun = longestRun(info.free);
+                    if (sofaRun < 1.6) return 0;
+                    const tvRun = tv.walled ? longestRun(tv.open) : 0;
+                    return Math.min(sofaRun, 3.2) + Math.min(tvRun, 2.4) + (info.depth >= 3 && info.depth <= 6 ? 1.5 : 0) - (info.window ? 0.3 : 0);
+                }) || "n";
+            const run = longestRun(sides[sofaSide].free);
+            const items: RoomFurniture[] = [{ type: run >= 2.9 && sides[sofaSide].depth >= 3.9 ? "sofa-l" : "sofa", at: sofaSide }];
+            if (sides[OPPOSITE[sofaSide]].walled) items.push({ type: "tv-cabinet", at: OPPOSITE[sofaSide] });
+            items.push({ type: "rug", at: "c" }, { type: "coffee-table", at: "c" });
+            if (sides[sofaSide].length >= 4.4 && sides[sofaSide].depth >= 3.6) items.push({ type: "armchair", at: "c" });
+            items.push({ type: "floor-lamp", at: "c" }, { type: "side-table", at: "c" }, { type: "plant", at: cornerOf(OPPOSITE[sofaSide], adjacentSides(sofaSide)[1]) });
+            return items;
+        }
+        case "dining": {
+            const side = longest((info) => info.free);
+            return [{ type: "dining-table", at: "c" }, { type: "pendant", at: "c" }, ...(side && longestRun(sides[side].free) >= 1.4 && Math.min(width, depth) >= 2.8 ? [{ type: "cabinet", at: side } as RoomFurniture] : [])];
+        }
+        case "kitchen": {
+            const side = longest((info) => info.free) || "n";
+            const items: RoomFurniture[] = [{ type: "kitchen-line", at: side, size: [Math.min(longestRun(sides[side].free), 3.6), 0.62] }];
+            const fridgeSide = bestSide(ctx, (other, info) => (other === side ? 0 : longestRun(info.open) - (other === OPPOSITE[side] ? 0.2 : 0)));
+            if (fridgeSide && longestRun(sides[fridgeSide].open) >= 0.8) items.push({ type: "fridge", at: fridgeSide });
+            if (area >= 13) items.push({ type: "kitchen-island", at: "c" });
+            return items;
+        }
+        case "master":
+        case "bedroom": {
+            const bedSide =
+                bestSide(ctx, (side, info) => {
+                    const open = longestRun(info.open);
+                    const fits = Math.max(open, longestRun(info.free) * 0.8);
+                    if (fits < 1.7 || info.depth < 2.6) return 0;
+                    return fits + (open >= 1.8 ? 1 : 0) - (info.window ? 0.5 : 0) - (info.door ? 0.3 : 0);
+                }) || "n";
+            const items: RoomFurniture[] = [{ type: "bed", at: bedSide, size: [Math.min(2.8, Math.max(1.8, longestRun(sides[bedSide].free))), 2.1] }];
+            const neighbors = adjacentSides(bedSide);
+            const wardSide = bestSide(ctx, (side, info) => (neighbors.includes(side) ? longestRun(info.open) : side === OPPOSITE[bedSide] ? longestRun(info.open) - 0.4 : 0));
+            if (wardSide && longestRun(sides[wardSide].open) >= 1.0) items.push({ type: "wardrobe", at: wardSide, size: [Math.min(2.4, longestRun(sides[wardSide].open)), 0.6] });
+            const rest = SIDES.filter((side) => side !== bedSide && side !== wardSide);
+            if (room.type === "master" && area >= 12.5) {
+                const dressSide = bestSide(ctx, (side, info) => (rest.includes(side) ? longestRun(info.free) : 0));
+                if (dressSide && longestRun(sides[dressSide].free) >= 1.0) items.push({ type: "dresser", at: dressSide });
+            }
+            if (sides[bedSide].depth >= 3.6) items.push({ type: "bench", at: "c" });
+            items.push({ type: "plant", at: cornerOf(OPPOSITE[bedSide], neighbors[0]) });
+            return items;
+        }
+        case "kids": {
+            const bedSide = longest((info) => info.open) || "n";
+            const deskSide = bestSide(ctx, (side, info) => (side === bedSide ? 0 : longestRun(info.free) + (info.window ? 1.5 : 0)));
+            const items: RoomFurniture[] = [{ type: "bed-single", at: bedSide }];
+            if (deskSide) items.push({ type: "desk", at: deskSide, size: [1.2, 0.6] });
+            const wardSide = bestSide(ctx, (side, info) => (side === bedSide || side === deskSide ? 0 : longestRun(info.open)));
+            if (wardSide && longestRun(sides[wardSide].open) >= 1.0) items.push({ type: "wardrobe", at: wardSide, size: [Math.min(1.8, longestRun(sides[wardSide].open)), 0.6] });
+            items.push({ type: "rug", at: "c", size: [1.6, 1.2] });
+            return items;
+        }
+        case "study": {
+            const deskSide = bestSide(ctx, (side, info) => longestRun(info.free) + (info.window ? 1.5 : 0)) || "n";
+            const shelfSide = bestSide(ctx, (side, info) => (side === deskSide ? 0 : longestRun(info.open)));
+            return [
+                { type: "desk", at: deskSide },
+                ...(shelfSide ? [{ type: "bookshelf", at: shelfSide, size: [Math.min(2.4, longestRun(sides[shelfSide].open)), 0.35] } as RoomFurniture] : []),
+                { type: "armchair", at: "se" },
+                { type: "plant", at: "ne" },
+            ];
+        }
+        case "bathroom": {
+            const doorSide = SIDES.find((side) => sides[side].door);
+            const back = (doorSide && sides[OPPOSITE[doorSide]].walled ? OPPOSITE[doorSide] : longest((info) => info.free)) || "n";
+            const wet: RoomFurniture = area >= 5.5 && longestRun(sides[back].free) >= 2.4 ? { type: "bathtub", at: back } : { type: "shower", at: back };
+            const vanitySide = bestSide(ctx, (side, info) => (side === back ? 0 : longestRun(info.free) + (side === doorSide ? 0.2 : 0)));
+            return [wet, { type: "toilet", at: back }, ...(vanitySide ? [{ type: "vanity", at: vanitySide } as RoomFurniture] : [{ type: "vanity", at: back } as RoomFurniture])];
+        }
+        case "entry": {
+            const side = longest((info) => info.free) || "w";
+            return [
+                { type: "shoe-cabinet", at: side, size: [Math.min(1.8, longestRun(sides[side].free)), 0.36] },
+                { type: "plant", at: "ne" },
+            ];
+        }
+        case "tea":
+            return [{ type: "tea-table", at: "c" }, ...(longest((info) => info.open) ? [{ type: "bookshelf", at: longest((info) => info.open)! } as RoomFurniture] : []), { type: "plant", at: "se" }];
+        case "theater": {
+            const screenSide = longest((info) => info.open) || "s";
+            return [
+                { type: "screen", at: screenSide },
+                { type: "sofa", at: OPPOSITE[screenSide] },
+                { type: "rug", at: "c" },
+                { type: "coffee-table", at: "c" },
+            ];
+        }
+        case "gym":
+            return [
+                { type: "treadmill", at: "c" },
+                { type: "mirror", at: longest((info) => info.open) || "n" },
+                { type: "plant", at: "ne" },
+            ];
+        case "garage":
+            return width >= 2.4 && depth >= 4.8 ? [{ type: "car", at: "c" }] : [];
+        case "laundry": {
+            const side = longest((info) => info.free) || "n";
+            return [
+                { type: "washer", at: side },
+                { type: "washer", at: side },
+                { type: "cabinet", at: side, size: [0.8, 0.45] },
+            ];
+        }
+        case "closet": {
+            const first = longest((info) => info.open) || "n";
+            const second = bestSide(ctx, (side, info) => (side === first ? 0 : longestRun(info.open)));
+            return [
+                { type: "wardrobe", at: first, size: [Math.min(3, longestRun(sides[first].open)), 0.6] },
+                ...(second ? [{ type: "wardrobe", at: second, size: [Math.min(3, longestRun(sides[second].open)), 0.6] } as RoomFurniture] : []),
+                { type: "bench", at: "c" },
+            ];
+        }
+        case "balcony": {
+            const end = bestSide(ctx, (side, info) => (info.length <= Math.min(width, depth) + 0.3 ? longestRun(info.free) : 0));
+            return [...(end && Math.max(width, depth) >= 3.2 ? [{ type: "washer", at: end } as RoomFurniture] : []), { type: "armchair", at: "c" }, { type: "plant", at: "ne" }, { type: "plant", at: "sw" }];
+        }
+        case "storage":
+            return [{ type: "bookshelf", at: longest((info) => info.open) || "n" }];
+        default:
+            return [];
+    }
+}
+
+/** 家具朝向转角 → 背靠哪面墙。 */
+function backSide(rotation: number): SpecSide {
+    const angle = normalizeAngle(rotation);
+    return angle === 90 ? "w" : angle === 180 ? "s" : angle === 270 ? "e" : "n";
+}
+
+function nearestWallRotation(ctx: RoomContext, [x, z]: [number, number]) {
+    const [cx1, cz1, cx2, cz2] = ctx.clear;
+    const distances: [SpecSide, number][] = [
+        ["n", z - cz1],
+        ["s", cz2 - z],
+        ["w", x - cx1],
+        ["e", cx2 - x],
+    ];
+    const walled = distances.filter(([side]) => ctx.sides[side].walled);
+    return ANCHOR_ROTATION[(walled.length ? walled : distances).sort((a, b) => a[1] - b[1])[0][0]];
+}
+
+const SCALABLE = new Set<SpecFurnitureType>(["rug", "dining-table", "round-table", "kitchen-island", "tea-table", "bar-counter"]);
+const SEATS = new Set<SpecFurnitureType>(["sofa", "sofa-l"]);
+const BEDS = new Set<SpecFurnitureType>(["bed", "bed-single", "bunk-bed"]);
+
+function footprint(placement: Pick<Placement, "x" | "z" | "w" | "d" | "rotation">): SpecRect {
+    const turned = Math.round(placement.rotation / 90) % 2 !== 0;
+    const hw = (turned ? placement.d : placement.w) / 2;
+    const hd = (turned ? placement.w : placement.d) / 2;
+    return [placement.x - hw, placement.z - hd, placement.x + hw, placement.z + hd];
+}
+
+/** 家具局部坐标（x 向右、z 向前）→ 平面坐标。 */
+function localPoint(anchor: Placement, lx: number, lz: number): [number, number] {
+    const angle = (anchor.rotation * Math.PI) / 180;
+    return [anchor.x + lx * Math.cos(angle) + lz * Math.sin(angle), anchor.z - lx * Math.sin(angle) + lz * Math.cos(angle)];
+}
+
+/**
+ * 摆家具：方案写了 pos 的按 pos（离墙不到 0.4 米的贴墙）；靠墙的按顺序沿那面墙排，避开门、落地窗和柱子，高柜不挡窗；
+ * 茶几、地毯、单椅、落地灯、边几跟着沙发摆，床尾凳跟着床；其余放在剩下空间的中央或角上，互相不重叠。
+ * 家具大于可用空间时按比例缩小，缩到原来六成以下就不摆。
+ */
+function layoutRoom(ctx: RoomContext, requested: RoomFurniture[], within: SpecRect[]): Placement[] {
+    const placements: Placement[] = [];
+    const taken: SpecRect[] = [];
+    const [cx1, cz1, cx2, cz2] = ctx.clear;
+    const covered = (x: number, z: number) => within.some((rect) => x >= rect[0] - 0.03 && x <= rect[2] + 0.03 && z >= rect[1] - 0.03 && z <= rect[3] + 0.03);
+    const inside = (rect: SpecRect) => covered(rect[0], rect[1]) && covered(rect[2], rect[1]) && covered(rect[0], rect[3]) && covered(rect[2], rect[3]) && covered((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2);
+    const overlaps = (a: SpecRect, b: SpecRect) => Math.min(a[2], b[2]) - Math.max(a[0], b[0]) > 0.03 && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) > 0.03;
+    const free = (rect: SpecRect) => inside(rect) && !taken.some((other) => overlaps(rect, other));
+    const flat = (type: SpecFurnitureType) => type === "rug" || type === "pendant";
+    const commit = (placement: Placement) => {
+        placements.push({ ...placement, rotation: normalizeAngle(placement.rotation) });
+        if (!flat(placement.type)) taken.push(footprint(placement));
+    };
+    const sizeOf = (item: RoomFurniture): [number, number] => (item.size ? [item.size[0], item.size[1]] : [furnitureInfo(item.type).size[0], furnitureInfo(item.type).size[1]]);
+    const pending: RoomFurniture[] = [];
+    for (const item of requested) {
+        if (!item.pos) {
+            pending.push(item);
+            continue;
+        }
+        const info = furnitureInfo(item.type);
+        let [w, d] = sizeOf(item);
+        const rotation = item.rotate ?? (info.wall ? nearestWallRotation(ctx, item.pos) : 0);
+        const [px, pz] = item.pos;
+        const area = within.find((rect) => px >= rect[0] - 0.3 && px <= rect[2] + 0.3 && pz >= rect[1] - 0.3 && pz <= rect[3] + 0.3) || ctx.clear;
+        const turned = Math.round(rotation / 90) % 2 !== 0;
+        const scale = Math.min(1, (area[2] - area[0] - 0.04) / (turned ? d : w), (area[3] - area[1] - 0.04) / (turned ? w : d));
+        if (scale < 0.5) continue;
+        if (scale < 1 && item.type !== "pendant") {
+            w *= scale;
+            d *= scale;
+        }
+        const hw = (turned ? d : w) / 2;
+        const hd = (turned ? w : d) / 2;
+        let x = clamp(px, area[0] + hw + 0.02, area[2] - hw - 0.02);
+        let z = clamp(pz, area[1] + hd + 0.02, area[3] - hd - 0.02);
+        if (info.wall) {
+            const back = backSide(rotation);
+            const gap = back === "n" ? z - hd - area[1] : back === "s" ? area[3] - z - hd : back === "w" ? x - hw - area[0] : area[2] - x - hw;
+            if (gap > 0.025 && gap < 0.4) {
+                if (back === "n") z = area[1] + hd + 0.02;
+                else if (back === "s") z = area[3] - hd - 0.02;
+                else if (back === "w") x = area[0] + hw + 0.02;
+                else x = area[2] - hw - 0.02;
+            }
+        }
+        commit({ type: item.type, x, z, w, d, rotation, color: item.color });
+    }
+    const isWallItem = (item: RoomFurniture) => SIDES.includes(item.at as SpecSide) && furnitureInfo(item.type).wall;
+    const redirect: Record<SpecSide, SpecSide[]> = { n: ["s", "w", "e"], s: ["n", "w", "e"], w: ["e", "n", "s"], e: ["w", "n", "s"] };
+    const items = pending.map((item) => {
+        if (!isWallItem(item) || ctx.sides[item.at as SpecSide].walled) return item;
+        const side = redirect[item.at as SpecSide].find((candidate) => ctx.sides[candidate].walled);
+        return { ...item, at: side || ("c" as SpecAnchor) };
+    });
+    const used: Record<SpecSide, number> = { n: 0, s: 0, e: 0, w: 0 };
+    for (const side of SIDES) {
+        const onWall = items.filter((item) => item.at === side && isWallItem(item));
+        if (!onWall.length) continue;
+        const info = ctx.sides[side];
+        const horizontal = side === "n" || side === "s";
+        const lanes = { tall: (info.open.some(([a, b]) => b - a >= 0.6) ? info.open : info.free).map(([a, b]): [number, number] => [a, b]), low: info.free.map(([a, b]): [number, number] => [a, b]) };
+        const sizes = onWall.map(sizeOf);
+        const anyTall = onWall.some((item) => furnitureInfo(item.type).tall);
+        const total = sizes.reduce((sum, [w]) => sum + w, 0) + 0.06 * (onWall.length - 1);
+        const widest = [...(anyTall ? lanes.tall : lanes.low)].sort((x, y) => y[1] - y[0] - (x[1] - x[0]))[0];
+        let cursor = widest && widest[1] - widest[0] >= total ? (widest[0] + widest[1]) / 2 - total / 2 : null;
+        onWall.forEach((item, index) => {
+            let [w, d] = sizes[index];
+            const tall = Boolean(furnitureInfo(item.type).tall);
+            d = Math.min(d, info.depth * 0.7);
+            let center: number;
+            if (cursor !== null) {
+                center = cursor + w / 2;
+                cursor += w + 0.06;
+            } else {
+                const lane = tall ? lanes.tall : lanes.low;
+                let fit = lane.find(([a, b]) => b - a >= w);
+                if (!fit) {
+                    fit = [...lane].sort((x, y) => y[1] - y[0] - (x[1] - x[0]))[0];
+                    if (!fit || fit[1] - fit[0] < w * 0.6) return;
+                    w = fit[1] - fit[0];
+                }
+                center = fit[0] + w / 2;
+                lanes.tall = subtractIntervals(lanes.tall, [[center - w / 2 - 0.03, center + w / 2 + 0.03]], 0.2);
+                lanes.low = subtractIntervals(lanes.low, [[center - w / 2 - 0.03, center + w / 2 + 0.03]], 0.2);
+            }
+            const across = side === "n" ? cz1 + d / 2 + 0.02 : side === "s" ? cz2 - d / 2 - 0.02 : side === "w" ? cx1 + d / 2 + 0.02 : cx2 - d / 2 - 0.02;
+            let placement: Placement = { type: item.type, x: horizontal ? center : across, z: horizontal ? across : center, w, d, rotation: ANCHOR_ROTATION[side], color: item.color };
+            if (!free(footprint(placement))) {
+                // 和别的墙上的家具在墙角撞了：沿墙挪到最近的空位，挪不开就不摆。
+                const options: number[] = [];
+                for (const [a, b] of tall ? info.open : info.free) for (let value = a + w / 2; value <= b - w / 2 + 1e-6; value += 0.05) options.push(value);
+                options.sort((p, q) => Math.abs(p - center) - Math.abs(q - center));
+                const value = options.find((option) => free(footprint({ ...placement, ...(horizontal ? { x: option } : { z: option }) })));
+                if (value === undefined) return;
+                placement = { ...placement, ...(horizontal ? { x: value } : { z: value }) };
+            }
+            commit(placement);
+            used[side] = Math.max(used[side], d);
+        });
+    }
+    const seat = placements.find((item) => SEATS.has(item.type));
+    const bed = placements.find((item) => BEDS.has(item.type));
+    const seatFront = (anchor: Placement) => (anchor.type === "sofa-l" ? -anchor.d / 2 + Math.min(0.92, anchor.d - 0.5) : anchor.d / 2);
+    const seatShift = (anchor: Placement) => (anchor.type === "sofa-l" ? -Math.min(0.95, anchor.w * 0.35) / 2 : 0);
+    const relate = (item: RoomFurniture): Placement[] => {
+        const [w, d] = sizeOf(item);
+        const build = (anchor: Placement, lx: number, lz: number, rotation: number, size: [number, number] = [w, d]): Placement => {
+            const [x, z] = localPoint(anchor, lx, lz);
+            return { type: item.type, x, z, w: size[0], d: size[1], rotation, color: item.color };
+        };
+        if (seat && item.type === "coffee-table") return [build(seat, seatShift(seat), seatFront(seat) + 0.42 + d / 2, seat.rotation)];
+        if (seat && item.type === "rug") {
+            const size: [number, number] = item.size ? [w, d] : [clamp(seat.w * 0.95, 1.6, 3.0), 1.7];
+            return [build(seat, seatShift(seat), seatFront(seat) + size[1] / 2 - 0.3, seat.rotation, size)];
+        }
+        if (seat && item.type === "armchair") {
+            const table = placements.find((other) => other.type === "coffee-table");
+            const lz = seatFront(seat) + 0.42 + (table?.d ?? 0.62) / 2;
+            return [1, -1].map((sign) => build(seat, seatShift(seat) + sign * ((table?.w ?? 1.2) / 2 + 0.62), lz, seat.rotation - sign * 90));
+        }
+        if (seat && (item.type === "floor-lamp" || item.type === "side-table")) return (item.type === "floor-lamp" ? [-1, 1] : [1, -1]).map((sign) => build(seat, sign * (seat.w / 2 + w / 2 + 0.06), -seat.d / 2 + d / 2 + 0.06, seat.rotation));
+        if (bed && item.type === "bench") return [build(bed, 0, bed.d / 2 + d / 2 + 0.1, bed.rotation)];
+        if (bed && item.type === "rug") {
+            const size: [number, number] = item.size ? [w, d] : [Math.min(bed.w, 2.4), 1.6];
+            return [build(bed, 0, bed.d / 2 - 0.35, bed.rotation, size)];
+        }
+        return [];
+    };
+    const region: SpecRect = [cx1 + used.w, cz1 + used.n, cx2 - used.e, cz2 - used.s];
+    const regionW = Math.max(0.6, region[2] - region[0]);
+    const regionD = Math.max(0.6, region[3] - region[1]);
+    const corners: SpecAnchor[] = ["ne", "nw", "se", "sw"];
+    for (const item of items) {
+        if (isWallItem(item) && ctx.sides[item.at as SpecSide]?.walled) continue;
+        const related = relate(item).find((candidate) => flat(candidate.type) || free(footprint(candidate)));
+        if (related) {
+            commit(related);
+            continue;
+        }
+        if (relate(item).length && (item.type === "floor-lamp" || item.type === "side-table" || item.type === "armchair" || item.type === "bench")) continue;
+        let [w, d] = sizeOf(item);
+        let rotation = item.rotate ?? 0;
+        if (item.rotate === undefined && w > d && regionD > regionW && item.type !== "car") rotation = 90;
+        if (item.type === "car" && regionW > regionD) rotation = 90;
+        const turned = rotation % 180 !== 0;
+        const scale = Math.min(1, (regionW - 0.1) / (turned ? d : w), (regionD - 0.1) / (turned ? w : d));
+        if (item.type !== "pendant" && scale < 0.6) continue;
+        if (SCALABLE.has(item.type)) {
+            w *= Math.min(1, scale);
+            d *= Math.min(1, scale);
+        }
+        const anchors: SpecAnchor[] = corners.includes(item.at) ? [item.at, ...corners.filter((corner) => corner !== item.at)] : [item.at];
+        for (const anchor of anchors) {
+            const footW = (turned ? d : w) / 2 + 0.05;
+            const footD = (turned ? w : d) / 2 + 0.05;
+            let placement: Placement = {
+                type: item.type,
+                x: anchor.includes("e") ? region[2] - footW : anchor.includes("w") ? region[0] + footW : (region[0] + region[2]) / 2,
+                z: anchor.includes("n") ? region[1] + footD : anchor.includes("s") ? region[3] - footD : (region[1] + region[3]) / 2,
+                w,
+                d,
+                rotation,
+                color: item.color,
+            };
+            if (item.type === "pendant") {
+                const target = placements.find((other) => other.type === "dining-table" || other.type === "round-table" || other.type === "tea-table" || other.type === "kitchen-island");
+                placement = { ...placement, x: target?.x ?? (cx1 + cx2) / 2, z: target?.z ?? (cz1 + cz2) / 2 };
+            }
+            if (flat(item.type) || free(footprint(placement))) {
+                commit(placement);
+                break;
             }
         }
     }
-    return result;
+    return placements;
 }
 
-function furnitureObjects(placement: Placement, spec: SceneSpec, y: number, ceiling: number, group: string, seed: number): SceneObject[] {
+/** 家具背靠的那面外墙（剖开用的标记）：背面离外墙中线不到半个墙厚加 0.4 米，且家具中心在这段墙的范围里。 */
+function backFacade(level: FloorLevel, segs: Seg[], placement: Placement): Facade | undefined {
+    if (!level.facades) return undefined;
+    const side = backSide(placement.rotation);
+    const axis: "x" | "z" = side === "n" || side === "s" ? "x" : "z";
+    const back = side === "n" ? placement.z - placement.d / 2 : side === "s" ? placement.z + placement.d / 2 : side === "w" ? placement.x - placement.d / 2 : placement.x + placement.d / 2;
+    const along = axis === "x" ? placement.x : placement.z;
+    const seg = segs.find((item) => item.ext && item.axis === axis && Math.abs(item.line - back) < item.t / 2 + 0.4 && along > item.a && along < item.b);
+    return seg ? facadeOf(level, seg) : undefined;
+}
+
+/** 拼出一件家具放到位；挂墙的零件（mount）带上背靠那面外墙的标记，墙剖开时一起隐藏。 */
+function furnitureObjects(placement: Placement, spec: SceneSpec, y: number, ceiling: number, group: string, seed: number, facade?: Facade): SceneObject[] {
     const parts: FurniturePart[] = buildFurniture(placement.type, placement.w, placement.d, { palette: spec.palette, color: placement.color, ceiling, seed });
-    return parts.map((part) => ({ ...place(part, [r3(placement.x), r3(y), r3(placement.z)], placement.rotation), euler: "YXZ", group }));
+    return parts.map(({ mount, ...part }) => ({ ...place(part, [r3(placement.x), r3(y), r3(placement.z)], placement.rotation), euler: "YXZ", group, ...(mount && facade ? { facade } : {}) }));
+}
+
+/** 踢脚线：沿房间每面墙的内侧，门洞、落地窗、推拉门处断开。 */
+function baseboards(level: FloorLevel, room: SpecRoom, segs: Seg[], spec: SceneSpec, objects: SceneObject[]) {
+    const clear = clearRect(room, segs);
+    const color = shade(spec.palette.interior, -0.16);
+    const y = level.top + FINISH + BASE_H / 2;
+    for (const side of SIDES) {
+        const edge = roomEdge(room.rect, side);
+        const horizontal = side === "n" || side === "s";
+        const range: [number, number] = horizontal ? [clear[0], clear[2]] : [clear[1], clear[3]];
+        const inward = side === "n" || side === "w" ? 1 : -1;
+        for (const seg of segs) {
+            if (seg.axis !== edge.axis || Math.abs(seg.line - edge.line) > EPS) continue;
+            const span: [number, number] = [Math.max(seg.a, edge.from, range[0]), Math.min(seg.b, edge.to, range[1])];
+            if (span[1] - span[0] < 0.1) continue;
+            const pieces = subtractIntervals(
+                [span],
+                seg.holes.filter((hole) => hole.bottom < 0.1).map((hole): [number, number] => [hole.center - hole.width / 2, hole.center + hole.width / 2]),
+                0.1,
+            );
+            const facade = facadeOf(level, seg);
+            for (const [from, to] of pieces) objects.push({ ...segBox(seg, (from + to) / 2, inward * (seg.t / 2 + BASE_T / 2), y, to - from, BASE_H, BASE_T, "wood", color), group: level.group, ...(facade ? { facade } : {}) });
+        }
+    }
+}
+
+const CURTAIN_ROOMS = new Set<SpecRoomType>(["living", "dining", "master", "bedroom", "kids", "study", "tea", "theater", "other"]);
+
+/** 一片窗帘：俯视是一条波浪形的布，沿竖直方向挤出。 */
+function curtainShape(width: number, height: number): Pick<SceneObject, "shape" | "outline" | "depth" | "axis"> {
+    const folds = Math.max(2, Math.round(width / 0.14));
+    const steps = folds * 4;
+    const front: [number, number][] = [];
+    for (let index = 0; index <= steps; index += 1) front.push([r3(-width / 2 + (width * index) / steps), r3(Math.sin((index / steps) * folds * Math.PI * 2) * 0.03)]);
+    const back = front.map(([x, z]): [number, number] => [x, r3(z - 0.016)]).reverse();
+    return { shape: "extrude", outline: [...front, ...back], depth: r3(height), axis: "y" };
+}
+
+/** 窗帘和窗帘轨：客厅、卧室、书房这些房间的外窗两侧各挂一片，落地长度。 */
+function curtains(level: FloorLevel, type: SpecRoomType, rooms: SpecRoom[], segs: Seg[], spec: SceneSpec, objects: SceneObject[]) {
+    if (!CURTAIN_ROOMS.has(type)) return;
+    const color = shade(spec.palette.fabric, 0.06);
+    for (const room of rooms)
+        for (const side of SIDES) {
+            const edge = roomEdge(room.rect, side);
+            const inward = side === "n" || side === "w" ? 1 : -1;
+            for (const seg of segs) {
+                if (!seg.ext || seg.axis !== edge.axis || Math.abs(seg.line - edge.line) > EPS) continue;
+                for (const hole of seg.holes) {
+                    if ((hole.kind !== "window" && hole.kind !== "floor" && hole.kind !== "bay") || hole.center < edge.from || hole.center > edge.to) continue;
+                    const facade = facadeOf(level, seg);
+                    const push = (object: SceneObject) => objects.push({ ...object, group: level.group, ...(facade ? { facade } : {}) });
+                    const trackY = Math.min(level.wallTop - 0.04, level.top + hole.bottom + hole.height + 0.15);
+                    const bottom = level.top + FINISH + 0.02;
+                    const across = inward * (seg.t / 2 + 0.1);
+                    const panel = clamp(hole.width * 0.2, 0.3, 0.55);
+                    const low = Math.max(edge.from + 0.15, Math.max(seg.a, edge.from) + 0.1);
+                    const high = Math.min(edge.to - 0.15, Math.min(seg.b, edge.to) - 0.1);
+                    const left = clamp(hole.center - hole.width / 2 + panel / 2 - 0.1, low + panel / 2, high - panel / 2);
+                    const right = clamp(hole.center + hole.width / 2 - panel / 2 + 0.1, low + panel / 2, high - panel / 2);
+                    const trackFrom = Math.max(low, left - panel / 2);
+                    const trackTo = Math.min(high, right + panel / 2);
+                    if (trackTo - trackFrom < 0.6) continue;
+                    push(segBox(seg, (trackFrom + trackTo) / 2, across, trackY, trackTo - trackFrom, 0.03, 0.05, "metal-dark", spec.palette.trim));
+                    for (const along of [left, right]) {
+                        const [x, z] = onSeg(seg, along, across);
+                        push({ ...curtainShape(panel, trackY - 0.02 - bottom), position: [x, r3((bottom + trackY - 0.02) / 2), z], rotation: [0, seg.axis === "x" ? 0 : 90, 0], material: "fabric", color, texture: "weave" });
+                    }
+                }
+            }
+        }
+}
+
+/** 挂画：沙发背后、床头上方的墙上挂一两幅，墙上有窗的地方不挂。 */
+function wallArt(level: FloorLevel, ctx: RoomContext, placements: Placement[], segs: Seg[], spec: SceneSpec, objects: SceneObject[]) {
+    const anchor = placements.find((item) => SEATS.has(item.type)) || placements.find((item) => item.type === "bed" || item.type === "bed-single");
+    if (!anchor) return;
+    const side = backSide(anchor.rotation);
+    if (!ctx.sides[side].walled) return;
+    const edge = roomEdge(ctx.room.rect, side);
+    const along = edge.axis === "x" ? anchor.x : anchor.z;
+    const seg = segs.find((item) => item.axis === edge.axis && Math.abs(item.line - edge.line) < EPS && along > item.a && along < item.b);
+    if (!seg) return;
+    const inward = side === "n" || side === "w" ? 1 : -1;
+    const facade = facadeOf(level, seg);
+    const pair = anchor.w >= 2.1;
+    const [artW, artH] = pair ? [0.6, 0.8] : [0.8, 0.6];
+    const y = level.top + (BEDS.has(anchor.type) ? 1.62 : 1.5);
+    const colors = [spec.palette.accent, shade(spec.palette.fabric, -0.18)];
+    (pair ? [-1, 1] : [0]).forEach((offset, index) => {
+        const center = along + offset * (artW / 2 + 0.06);
+        if (seg.holes.some((hole) => Math.abs(hole.center - center) < hole.width / 2 + artW / 2 + 0.05 && hole.bottom < y + artH / 2 && hole.bottom + hole.height > y - artH / 2)) return;
+        if (center - artW / 2 < seg.a + 0.2 || center + artW / 2 > seg.b - 0.2) return;
+        const tag = facade ? { facade } : {};
+        objects.push({ ...segBox(seg, center, inward * (seg.t / 2 + 0.015), y, artW, artH, 0.03, "wood-dark", "#2b2d30"), group: level.group, ...tag });
+        objects.push({ ...segBox(seg, center, inward * (seg.t / 2 + 0.035), y, artW - 0.07, artH - 0.07, 0.01, "fabric", colors[index % 2]), group: level.group, ...tag });
+    });
 }
 
 function tree(at: [number, number], size: "s" | "m" | "l", kind: "round" | "cone" | "shrub", seed: number): SceneObject[] {
@@ -818,7 +1373,7 @@ function site(spec: SceneSpec, objects: SceneObject[]) {
     for (const [x, z] of yard.lights)
         objects.push({ shape: "cylinder", radius: 0.04, height: 0.7, position: [x, 0.35, z], material: "metal-dark", color: "#2b2d30", group }, { shape: "box", size: [0.14, 0.14, 0.14], position: [x, 0.75, z], material: "light", group });
     yard.furniture.forEach((item, index) => {
-        const [w, d] = item.size || [...FURNITURE_TYPES[item.type].size];
+        const [w, d] = item.size || [furnitureInfo(item.type).size[0], furnitureInfo(item.type).size[1]];
         objects.push(...furnitureObjects({ type: item.type, x: item.at[0], z: item.at[1], w, d, rotation: item.rotate ?? 0, color: item.color }, spec, 0, 3, group, index));
     });
     const fence = yard.fence;
@@ -857,11 +1412,11 @@ function site(spec: SceneSpec, objects: SceneObject[]) {
 
 type Roofed = { rect: SpecRect; pitch: number };
 
-function roofRects(footprint: SpecRect[]): SpecRect[] {
-    const bounds: SpecRect = [Math.min(...footprint.map((rect) => rect[0])), Math.min(...footprint.map((rect) => rect[1])), Math.max(...footprint.map((rect) => rect[2])), Math.max(...footprint.map((rect) => rect[3]))];
-    const area = footprint.reduce((sum, rect) => sum + (rect[2] - rect[0]) * (rect[3] - rect[1]), 0);
+function roofRects(footprintRects: SpecRect[]): SpecRect[] {
+    const bounds: SpecRect = [Math.min(...footprintRects.map((rect) => rect[0])), Math.min(...footprintRects.map((rect) => rect[1])), Math.max(...footprintRects.map((rect) => rect[2])), Math.max(...footprintRects.map((rect) => rect[3]))];
+    const area = footprintRects.reduce((sum, rect) => sum + (rect[2] - rect[0]) * (rect[3] - rect[1]), 0);
     if (area >= (bounds[2] - bounds[0]) * (bounds[3] - bounds[1]) * 0.85) return [bounds];
-    return [...footprint].sort((a, b) => (b[2] - b[0]) * (b[3] - b[1]) - (a[2] - a[0]) * (a[3] - a[1])).slice(0, 4);
+    return [...footprintRects].sort((a, b) => (b[2] - b[0]) * (b[3] - b[1]) - (a[2] - a[0]) * (a[3] - a[1])).slice(0, 4);
 }
 
 function pitchedRoof(item: Roofed, spec: SceneSpec, y: number, objects: SceneObject[]) {
@@ -915,6 +1470,39 @@ function pitchedRoof(item: Roofed, spec: SceneSpec, y: number, objects: SceneObj
     );
 }
 
+/** 外围尺寸线：北面和西面各两道，里面一道是轴线分段（有轴网用轴网），外面一道是总尺寸，单位毫米，和图纸的标注一样。 */
+function dimensionChains(floor: SpecFloor, spec: SceneSpec, y: number): SceneDimension[] {
+    const [x1, z1, x2, z2] = floorBounds(floor);
+    const rects = [...floor.rooms.map((room) => room.rect), ...floor.balconies.map((item) => item.rect)];
+    const values = (grid: number[] | undefined, edges: number[], low: number, high: number) => {
+        const fromGrid = (grid || []).filter((value) => value > low + 0.05 && value < high - 0.05);
+        return uniqueSorted([low, high, ...(fromGrid.length ? fromGrid : edges.filter((value) => value > low + 0.05 && value < high - 0.05))]);
+    };
+    const mm = (value: number) => String(Math.round(value * 1000));
+    const xs = values(
+        spec.grid?.x,
+        rects.flatMap((rect) => [rect[0], rect[2]]),
+        x1,
+        x2,
+    );
+    const zs = values(
+        spec.grid?.z,
+        rects.flatMap((rect) => [rect[1], rect[3]]),
+        z1,
+        z2,
+    );
+    const result: SceneDimension[] = [];
+    for (let index = 0; index < xs.length - 1; index += 1) if (xs[index + 1] - xs[index] >= 0.3) result.push({ a: [xs[index], z1 - 1], b: [xs[index + 1], z1 - 1], text: mm(xs[index + 1] - xs[index]), y });
+    if (xs.length > 2) result.push({ a: [x1, z1 - 1.7], b: [x2, z1 - 1.7], text: mm(x2 - x1), y, total: true });
+    for (let index = 0; index < zs.length - 1; index += 1) if (zs[index + 1] - zs[index] >= 0.3) result.push({ a: [x1 - 1, zs[index]], b: [x1 - 1, zs[index + 1]], text: mm(zs[index + 1] - zs[index]), y });
+    if (zs.length > 2) result.push({ a: [x1 - 1.7, z1], b: [x1 - 1.7, z2], text: mm(z2 - z1), y, total: true });
+    return result;
+}
+
+function formatMeters(value: number) {
+    return String(Math.round(value * 100) / 100);
+}
+
 /** 编译整份方案。 */
 export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}): CompiledScene {
     const objects: SceneObject[] = [];
@@ -927,7 +1515,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
     spec.floors.forEach((floor, index) => {
         const last = index === spec.floors.length - 1;
         const wallTop = last ? top + floor.height : top + floor.height - SLAB;
-        const level: FloorLevel = { floor, index, top, wallBase: top, wallTop, segs: solveWalls(floor.rooms, floor.open), group: floor.name };
+        const level: FloorLevel = { floor, index, top, wallBase: top, wallTop, segs: solveWalls(floor.rooms, floor.open), group: floor.name, facades: !building && cut !== index };
         placeOpenings(level, spec.scope);
         levels.push(level);
         top += floor.height;
@@ -936,6 +1524,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
     for (const [index, level] of levels.entries()) {
         if (index >= visibleFloors.length) break;
         const { floor, segs, group } = level;
+        const capped = cut === index;
         const below = levels[index - 1];
         const extRects = (item: FloorLevel) => item.segs.filter((seg) => seg.ext).map((seg) => segRect(seg));
         // 结构板：盖住这一层和下一层的平面（下一层多出来的部分就是露台），减去下面一层的楼梯洞。
@@ -982,42 +1571,42 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
                 texture: "paving",
                 group,
             });
-        // 墙。
+        // 墙：户型和单个房间的外墙另出一截矮墙，剖开时换上。
         const extMaterial: SceneMaterial = floor.wallMaterial || "wall";
         const extColor = floor.wallColor || (extMaterial === "wall" ? spec.palette.wall : undefined);
         for (const seg of segs) {
-            let cap = level.wallTop;
-            if (cut === index) cap = Math.min(cap, level.top + CUT_HEIGHT);
-            if (spec.scope === "room" && seg.ext && seg.out === 1) cap = Math.min(cap, level.top + DOLLHOUSE_HEIGHT);
+            const cap = capped ? Math.min(level.wallTop, level.top + CUT_HEIGHT) : level.wallTop;
             const height = cap - level.wallBase;
+            const facade = facadeOf(level, seg);
+            const tag = facade ? { facade } : {};
             const openings: SceneOpening[] = [];
-            const { a } = segEnds(seg);
+            const { a, b } = segEnds(seg);
             for (const hole of seg.holes) {
                 const bottom = level.top - level.wallBase + hole.bottom;
                 const holeHeight = Math.min(hole.height, height - bottom - 0.05);
                 // 墙被剖低时：门洞照样开着，窗洞只开一截就不开了（矮墙上留个缺口很难看）。
-                const isDoor = hole.kind === "door" || hole.kind === "entry" || hole.kind === "slide";
-                if (holeHeight < 0.3 || (!isDoor && holeHeight < hole.height - 0.01)) continue;
+                if (holeHeight < 0.3 || (!DOOR_KINDS.has(hole.kind) && holeHeight < hole.height - 0.01)) continue;
                 openings.push({ kind: "hole", offset: r3(hole.center - a), width: hole.width, bottom: r3(bottom), height: r3(holeHeight) });
-                if (holeHeight >= hole.height - 0.01) openingDetails(level, seg, hole, spec, objects);
+                if (holeHeight >= hole.height - 0.01) openingDetails(level, seg, hole, spec, objects, tag);
             }
-            const { b } = segEnds(seg);
             const [sx, sz] = onSeg(seg, a, 0);
             const [ex, ez] = onSeg(seg, b, 0);
-            objects.push({
-                shape: "wall",
-                start: [sx, sz],
-                end: [ex, ez],
-                base: r3(level.wallBase),
-                height: r3(height),
-                thickness: seg.t,
-                ...(openings.length ? { openings } : {}),
-                material: seg.ext ? extMaterial : "wall",
+            const look = {
+                material: seg.ext ? extMaterial : ("wall" as SceneMaterial),
                 ...(seg.ext ? (extColor ? { color: extColor } : {}) : { color: spec.palette.interior }),
                 ...(seg.ext && extMaterial === "brick" ? { texture: "brick" as const } : seg.ext && extMaterial === "stone" ? { texture: "stone" as const } : {}),
-                group,
-            });
+            };
+            objects.push({ shape: "wall", start: [sx, sz], end: [ex, ez], base: r3(level.wallBase), height: r3(height), thickness: seg.t, ...(openings.length ? { openings } : {}), ...look, group, ...tag });
+            if (facade) objects.push({ shape: "wall", start: [sx, sz], end: [ex, ez], base: r3(level.wallBase), height: CURB, thickness: seg.t, ...look, group, facade: { ...facade, curb: true } });
         }
+        // 柱子、烟道：到顶的实心块，和墙重叠的部分去掉。
+        const wallRects = segs.map((seg) => segRect(seg));
+        const pillarTop = capped ? Math.min(level.wallTop, level.top + CUT_HEIGHT) : level.wallTop;
+        for (const pillar of floor.pillars)
+            for (const [x1, z1, x2, z2] of gridRegion([pillar], wallRects)) {
+                if (x2 - x1 < 0.02 || z2 - z1 < 0.02) continue;
+                objects.push({ shape: "box", position: [r3((x1 + x2) / 2), r3((level.top + pillarTop) / 2), r3((z1 + z2) / 2)], size: [r3(x2 - x1), r3(pillarTop - level.top), r3(z2 - z1)], material: "wall", color: spec.palette.interior, group });
+            }
         // 露台边：下一层外墙露在外面的地方加栏杆。
         if (below) {
             const breaks = floor.rooms.flatMap((room) => [room.rect[0], room.rect[1], room.rect[2], room.rect[3]]);
@@ -1035,7 +1624,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
         for (const balcony of floor.balconies) {
             const breaks = floor.rooms.flatMap((room) => [room.rect[0], room.rect[1], room.rect[2], room.rect[3]]);
             const covered = (x: number, z: number) => roomAt(floor.rooms, x, z) >= 0;
-            for (const side of ["n", "s", "e", "w"] as SpecSide[]) {
+            for (const side of SIDES) {
                 const edge = roomEdge(balcony.rect, side);
                 const outward = side === "n" || side === "w" ? -1 : 1;
                 for (const [from, to] of exposedIntervals(edge, outward, covered, breaks)) objects.push(...railing(edge.axis, edge.line + outward * -0.04, from, to, level.top, balcony.rail, spec, group));
@@ -1043,26 +1632,35 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
         }
         const next = levels[index + 1];
         if (next && index + 1 < visibleFloors.length) stairs(level, next, spec, objects);
-        // 家具和标注。
-        floor.rooms.forEach((room, roomIndex) => {
-            const clear = clearRect(room, segs);
-            const width = clear[2] - clear[0];
-            const depth = clear[3] - clear[1];
-            const listed = floor.furniture.filter((item) => item.room === room.name);
-            const items = listed.length ? listed : defaultFurniture(room, width, depth);
-            const ceiling = level.wallTop - level.top;
-            for (const placement of layoutRoom(clear, doorIntervals(room, segs), walledSides(room, segs), items))
-                objects.push(...furnitureObjects(placement, spec, level.top + FINISH, cut === index ? Math.min(ceiling, CUT_HEIGHT + 1.4) : ceiling, group, roomIndex));
-            if (width * depth >= 2.5 && room.type !== "stair") labels.push({ text: room.name, position: [r3((room.rect[0] + room.rect[2]) / 2), r3(level.top + Math.min(1.5, ceiling * 0.5)), r3((room.rect[1] + room.rect[3]) / 2)] });
+        // 家具、踢脚线、窗帘、挂画和标注。
+        const ceiling = level.wallTop - level.top;
+        floor.rooms.forEach((main, roomIndex) => {
+            if (main.part) return;
+            const members = family(floor, main.name);
+            const ctx = roomContext(main, segs, floor.pillars);
+            const within = members.map((room) => clearRect(room, segs));
+            const listed = floor.furniture.filter((item) => item.room === main.name);
+            const placements = layoutRoom(ctx, listed.length ? listed : defaultFurniture(ctx), within);
+            const lampCeiling = capped ? Math.min(ceiling, CUT_HEIGHT + 1.4) : ceiling;
+            placements.forEach((placement, order) => objects.push(...furnitureObjects(placement, spec, level.top + FINISH, lampCeiling, group, roomIndex * 7 + order, backFacade(level, segs, placement))));
+            for (const room of members) baseboards(level, room, segs, spec, objects);
+            if (!capped) {
+                curtains(level, main.type, members, segs, spec, objects);
+                wallArt(level, ctx, placements, segs, spec, objects);
+            }
+            const area = members.reduce((sum, room) => sum + rectArea(room.rect), 0);
+            if (main.type === "stair" || area < 1.5) return;
+            const detail = members.length > 1 ? `约 ${formatMeters(area)} ㎡` : `${formatMeters(main.rect[2] - main.rect[0])} × ${formatMeters(main.rect[3] - main.rect[1])} m · ${formatMeters(area)} ㎡`;
+            labels.push({ text: main.name, detail, position: [r3((main.rect[0] + main.rect[2]) / 2), r3(level.top + Math.min(1.4, ceiling * 0.5)), r3((main.rect[1] + main.rect[3]) / 2)] });
         });
     }
     // 屋顶。
     const topLevel = levels[levels.length - 1];
     if (cut === undefined && spec.roof.type !== "none") {
-        const footprint = gridRegion([...topLevel.floor.rooms.map((room) => room.rect), ...topLevel.segs.filter((seg) => seg.ext).map((seg) => segRect(seg))]);
+        const roofFootprint = gridRegion([...topLevel.floor.rooms.map((room) => room.rect), ...topLevel.segs.filter((seg) => seg.ext).map((seg) => segRect(seg))]);
         const y = topLevel.wallTop;
         if (spec.roof.type === "flat") {
-            for (const rect of footprint)
+            for (const rect of roofFootprint)
                 objects.push({
                     shape: "box",
                     position: [r3((rect[0] + rect[2]) / 2), r3(y + 0.11), r3((rect[1] + rect[3]) / 2)],
@@ -1087,15 +1685,15 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
                     ...(topLevel.floor.wallColor || !topLevel.floor.wallMaterial ? { color: topLevel.floor.wallColor || spec.palette.wall } : {}),
                     group: ROOF_GROUP,
                 });
-                const cap = segEnds(seg, 0.06);
-                objects.push({ ...segBox(seg, (cap.a + cap.b) / 2, 0, y + 0.85, cap.b - cap.a, 0.06, seg.t + 0.06, "stone", "#d9d4cc"), group: ROOF_GROUP });
+                const capEnds = segEnds(seg, 0.06);
+                objects.push({ ...segBox(seg, (capEnds.a + capEnds.b) / 2, 0, y + 0.85, capEnds.b - capEnds.a, 0.06, seg.t + 0.06, "stone", "#d9d4cc"), group: ROOF_GROUP });
             }
         } else {
-            roofRects(footprint).forEach((rect, index) => pitchedRoof({ rect, pitch: spec.roof.pitch * (1 - index * 0.06) }, spec, y, objects));
+            roofRects(roofFootprint).forEach((rect, index) => pitchedRoof({ rect, pitch: spec.roof.pitch * (1 - index * 0.06) }, spec, y, objects));
         }
     }
     if (cut === undefined) site(spec, objects);
-    // 地面：建筑按庭院大小，房间和户型按平面外扩一圈。
+    // 地面：建筑按庭院大小，房间和户型按平面外扩一圈（留出尺寸线的位置）。
     const allRooms = spec.floors.flatMap((floor) => floor.rooms.map((room) => room.rect));
     const bounds: SpecRect = [Math.min(...allRooms.map((rect) => rect[0])), Math.min(...allRooms.map((rect) => rect[1])), Math.max(...allRooms.map((rect) => rect[2])), Math.max(...allRooms.map((rect) => rect[3]))];
     const center: [number, number] = [r3((bounds[0] + bounds[2]) / 2), r3((bounds[1] + bounds[3]) / 2)];
@@ -1108,8 +1706,10 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
               holes: cut === undefined ? spec.site.pools : [],
               ...(spec.site.ground === "grass" ? { texture: "grass" as const } : spec.site.ground === "stone" ? { texture: "paving" as const } : {}),
           }
-        : { material: "concrete", color: "#e4e1dc", size: [r3(bounds[2] - bounds[0] + (building ? 12 : 3)), r3(bounds[3] - bounds[1] + (building ? 12 : 3))], center, y: groundY, holes: [] };
-    return { title: spec.title, summary: spec.summary, ground, objects, labels, floors: spec.floors.map((floor) => floor.name) };
+        : { material: "concrete", color: "#e4e1dc", size: [r3(bounds[2] - bounds[0] + (building ? 12 : 5)), r3(bounds[3] - bounds[1] + (building ? 12 : 5))], center, y: groundY, holes: [] };
+    const dimensionLevel = levels[cut ?? 0];
+    const dimensions = dimensionChains(dimensionLevel.floor, spec, building ? 0.08 : groundY + 0.01);
+    return { title: spec.title, summary: spec.summary, ground, objects, labels, dimensions, floors: spec.floors.map((floor) => floor.name), plan: floorBounds(levels[0].floor) };
 }
 
 /** 页面渲染用：第一版场景直接用模型写的物体，第二版按方案现算。legacy 的场景物体可能互相重叠，渲染时要错开一点。 */
@@ -1125,13 +1725,26 @@ export function renderModel(scene: InteriorSceneData, options: CompileOptions = 
     }
     const groups: string[] = [];
     for (const object of scene.objects) if (object.group && !groups.includes(object.group)) groups.push(object.group);
-    return { title: scene.title, summary: scene.summary, ground: { material: scene.ground.material, size: scene.ground.size, center: [0, 0], y: -0.005, holes: [] }, objects: scene.objects, labels: scene.labels, floors: [], legacy: true, groups };
+    const [width, depth] = scene.ground.size;
+    return {
+        title: scene.title,
+        summary: scene.summary,
+        ground: { material: scene.ground.material, size: scene.ground.size, center: [0, 0], y: -0.005, holes: [] },
+        objects: scene.objects,
+        labels: scene.labels,
+        dimensions: [],
+        floors: [],
+        plan: [-width / 2, -depth / 2, width / 2, depth / 2],
+        legacy: true,
+        groups,
+    };
 }
 
 /** 模型列表和说明里的规模：第二版按房间和家具数，第一版按物体数。 */
 export function sceneStats(scene: InteriorSceneData) {
     if (scene.version !== 2) return `${scene.objects.length} 个物体`;
-    const rooms = scene.spec.floors.reduce((sum, floor) => sum + floor.rooms.length, 0);
+    const rooms = scene.spec.floors.reduce((sum, floor) => sum + floor.rooms.filter((room) => !room.part).length, 0);
     const floors = scene.spec.floors.length;
-    return [floors > 1 ? `${floors} 层` : "", `${rooms} 个空间`].filter(Boolean).join(" · ");
+    const [x1, z1, x2, z2] = floorBounds(scene.spec.floors[0]);
+    return [floors > 1 ? `${floors} 层` : "", `${rooms} 个空间`, `${formatMeters(x2 - x1)} × ${formatMeters(z2 - z1)} m`].filter(Boolean).join(" · ");
 }

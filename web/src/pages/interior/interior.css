@@ -1137,3 +1137,260 @@
         grid-template-columns: minmax(0, 1fr);
     }
 }
+
+/* 3D 模型：房间标注第二行（开间 × 进深、面积）、尺寸线上的数字、附图对照。 */
+.itd-scene-label small {
+    display: block;
+    font-size: 10px;
+    opacity: 0.85;
+    text-align: center;
+}
+
+.itd-scene-label.is-building {
+    animation: itd-pop-in 320ms ease-out both;
+}
+
+.itd-scene-dimension {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: var(--r-md);
+    background: rgba(255, 255, 255, 0.88);
+    color: #33373c;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.itd-scene-dimension.is-total {
+    font-weight: 700;
+}
+
+.itd-scene-drawing {
+    position: absolute;
+    top: 56px;
+    right: var(--space-3);
+    width: min(38%, 360px);
+    margin: 0;
+    padding: var(--space-1);
+    border-radius: var(--r-lg);
+    background: var(--itd-media-scrim);
+    backdrop-filter: blur(8px);
+}
+
+.itd-scene-drawing img {
+    display: block;
+    width: 100%;
+    max-height: 52vh;
+    border-radius: var(--r-md);
+    background: #ffffff;
+    object-fit: contain;
+}
+
+.itd-scene-drawing figcaption {
+    padding: 4px 2px 0;
+    color: var(--itd-media-ink);
+    font-size: var(--fs-caption);
+}
+
+/* 正在生成：左边是边写边搭的模型，右边是步骤、读图记录和附图。底色和查看器一致。 */
+.itd-build {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    background: radial-gradient(circle at 50% 30%, #f4f5f7 0%, #dfe3e8 60%, #c9cfd6 100%);
+}
+
+.itd-build-canvas {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+}
+
+.itd-build-waiting {
+    position: absolute;
+    bottom: var(--space-4);
+    left: 50%;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: calc(100% - var(--space-6, 32px));
+    padding: 6px var(--space-3);
+    border-radius: var(--r-full);
+    background: rgba(8, 8, 10, 0.55);
+    color: #ffffff;
+    font-size: var(--fs-caption);
+    transform: translateX(-50%);
+}
+
+.itd-build-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--space-3);
+    border-left: 1px solid var(--itd-line);
+    background: var(--itd-panel);
+    color: var(--itd-ink);
+}
+
+.itd-build-panel header {
+    display: grid;
+    gap: 2px;
+}
+
+.itd-build-panel header strong {
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.itd-build-panel header span {
+    color: var(--itd-ink-3);
+    font-size: var(--fs-caption);
+    font-variant-numeric: tabular-nums;
+}
+
+.itd-build-steps {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.itd-build-step {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--itd-ink-3);
+    font-size: var(--fs-caption);
+}
+
+.itd-build-step small {
+    color: var(--itd-ink-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.itd-build-step-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--itd-line-strong);
+    border-radius: var(--r-full);
+}
+
+.itd-build-step.is-active {
+    color: var(--itd-ink);
+    font-weight: 600;
+}
+
+.itd-build-step.is-active .itd-build-step-mark {
+    border-color: var(--control-selected-border);
+    color: var(--control-selected-fg);
+}
+
+.itd-build-step.is-done {
+    color: var(--itd-ink-2);
+}
+
+.itd-build-step.is-done .itd-build-step-mark {
+    border-color: var(--control-selected-border);
+    background: var(--control-selected-bg);
+    color: var(--control-selected-fg);
+}
+
+.itd-build-reading h3 {
+    margin: 0 0 6px;
+    color: var(--itd-ink-2);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+}
+
+.itd-build-reading ul {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 1.1em;
+    font-size: var(--fs-caption);
+    line-height: 1.5;
+}
+
+.itd-build-reading li {
+    animation: itd-pop-in 320ms ease-out both;
+}
+
+.itd-build-reference {
+    margin: 0;
+}
+
+.itd-build-reference img {
+    display: block;
+    width: 100%;
+    max-height: 220px;
+    border-radius: var(--r-md);
+    background: var(--itd-muted);
+    object-fit: contain;
+}
+
+.itd-build-reference figcaption,
+.itd-build-note {
+    margin: 4px 0 0;
+    color: var(--itd-ink-3);
+    font-size: var(--fs-caption);
+}
+
+.itd-build-note {
+    margin-top: auto;
+}
+
+.itd-build-tail {
+    margin: 0;
+    color: var(--itd-ink-2);
+    font-size: var(--fs-caption);
+    line-height: 1.6;
+    word-break: break-all;
+}
+
+.itd-build-stalled {
+    display: grid;
+    gap: var(--space-2);
+    color: var(--itd-ink-2);
+    font-size: var(--fs-caption);
+}
+
+@keyframes itd-pop-in {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .itd-scene-label.is-building,
+    .itd-build-reading li {
+        animation: none;
+    }
+}
+
+@media (max-width: 900px) {
+    .itd-build {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    .itd-build-panel {
+        max-height: 45%;
+        border-top: 1px solid var(--itd-line);
+        border-left: 0;
+    }
+}

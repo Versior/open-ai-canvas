@@ -1,16 +1,17 @@
 import { App, Button, Input, Tooltip } from "antd";
-import { BookOpen, Box, LoaderCircle, RefreshCw, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { BookOpen, Box, LoaderCircle, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
-import { buildSceneAnalysisPrompt, buildSceneEditPrompt, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
+import { buildSceneEditPrompt, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
-import { buildSceneSpecEditPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
+import { buildSceneSpecEditPrompt, buildSceneSpecPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
 import { modelCompatibilityError } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 import type { InteriorCatalog, InteriorImageRef, InteriorProject, InteriorProjectDocument, InteriorSceneItem } from "@/services/api/interior";
 import { selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 import { groupPresets, uploadInteriorImage, UploadSlot, type InteriorUpload } from "./interior-composer";
-import { newInteriorId, patchInteriorScene } from "./interior-models";
+import { interiorImageUrl, newInteriorId, patchInteriorScene } from "./interior-models";
+import { InteriorSceneBuildStage } from "./interior-scene-build";
 import { catalogKeys, fetchSceneKnowledge, loadSceneFile, sceneModelProblem, sceneModelRequirements, submitSceneTask } from "./interior-scene-tasks";
 import { InteriorSceneViewer } from "./interior-scene-viewer";
 import { useInteriorSceneTasks } from "./use-interior-scene-tasks";
@@ -18,7 +19,7 @@ import { useInteriorSceneTasks } from "./use-interior-scene-tasks";
 /** 一个项目最多保存的 3D 模型数。 */
 const MAX_SCENES = 30;
 
-const STAGE_LABELS: Record<NonNullable<InteriorSceneItem["stage"]>, string> = { analyze: "AI 正在分析方案", spec: "正在出 3D 方案", plan: "正在规划", parts: "正在分部分搭", edit: "正在改" };
+const STAGE_LABELS: Record<NonNullable<InteriorSceneItem["stage"]>, string> = { analyze: "AI 正在分析方案", spec: "AI 正在读图建模", plan: "正在规划", parts: "正在分部分搭", edit: "正在改" };
 
 type ScopeChoice = InteriorSceneScope | "auto";
 
@@ -165,31 +166,34 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
         }
     };
 
-    /** 先查知识库，再提交 AI 方案分析；分析完成后由监听接着规划、分部分搭。 */
+    /**
+     * 先查知识库，再一次提交「读图 + 出方案」：模型先写读图记录，再写轴网、房间、门窗和家具，
+     * 页面边收边搭（以前要先等一轮方案分析，再等一轮方案，两次看图）。
+     */
     const generate = async () => {
         if (problem) {
             setError(problem);
             return;
         }
         const image = reference?.resourceId ? { resourceId: reference.resourceId, ...(reference.width ? { width: reference.width } : {}), ...(reference.height ? { height: reference.height } : {}) } : undefined;
-        const item: Omit<InteriorSceneItem, "id" | "createdAt" | "status" | "model"> = {
-            scope: scope === "auto" ? "room" : scope,
-            ...(scope === "auto" ? { autoScope: true } : {}),
-            description: description.trim(),
-            stage: "analyze",
-            ...(room ? { roomKey: room.key, roomName: room.name } : {}),
-            ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
-            ...(image ? { reference: image } : {}),
-        };
-        let knowledge;
+        let found: Awaited<ReturnType<typeof fetchSceneKnowledge>>;
         try {
-            ({ knowledge } = await fetchSceneKnowledge({ scope: scope === "auto" ? undefined : scope, roomKey: room?.key, styleKey: style?.key, text: description }));
+            found = await fetchSceneKnowledge({ scope: scope === "auto" ? undefined : scope, roomKey: room?.key, styleKey: style?.key, text: description });
         } catch (cause) {
             setError(`读取室内设计知识库失败：${errorText(cause, "请稍后重试")}`);
             return;
         }
-        const keys = catalogKeys(catalog);
-        void start(item, buildSceneAnalysisPrompt({ scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), rooms: keys.rooms, styles: keys.styles, knowledge }));
+        const item: Omit<InteriorSceneItem, "id" | "createdAt" | "status" | "model"> = {
+            scope: scope === "auto" ? "room" : scope,
+            ...(scope === "auto" ? { autoScope: true } : {}),
+            description: description.trim(),
+            stage: "spec",
+            knowledge: found.refs,
+            ...(room ? { roomKey: room.key, roomName: room.name } : {}),
+            ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
+            ...(image ? { reference: image } : {}),
+        };
+        void start(item, buildSceneSpecPrompt({ scope, description, roomName: room?.name, styleName: style?.name, stylePrompt: style?.summary, hasReference: Boolean(image), knowledge: found.knowledge, ...catalogKeys(catalog) }));
     };
 
     /** 按当前视角截一张图存成素材，带去「效果图」用白模渲染出图。 */
@@ -240,8 +244,8 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     };
 
     const parent = selected?.parentId ? scenes.find((item) => item.id === selected.parentId) : undefined;
-    const pendingLabel = selected?.status === "pending" ? STAGE_LABELS[selected.stage || "plan"] : "";
     const stalledText = selected ? tasks.stalled[selected.id] : "";
+    const referenceUrl = selected?.reference?.resourceId ? interiorImageUrl(selected.reference.resourceId) : undefined;
 
     return (
         <div className="itd-shell">
@@ -347,7 +351,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                     >
                         {submitting ? "正在提交" : reference?.resourceId && !description.trim() ? "AI 分析并生成 3D 模型" : "生成 3D 模型"}
                     </Button>
-                    <p className="itd-muted-note">{problem && !submitting ? problem : "AI 先看图读需求、查知识库补全方案，再按方案自动生成墙体、门窗、屋顶和家具；按所选文本模型计费。"}</p>
+                    <p className="itd-muted-note">{problem && !submitting ? problem : "AI 看图读尺寸、查知识库出方案，边写边搭出墙体、门窗和家具，过程实时可见；按所选文本模型计费。"}</p>
                 </footer>
             </aside>
             <section className="itd-board" aria-label="3D 模型">
@@ -362,7 +366,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             </div>
                         ) : selected.status === "succeeded" ? (
                             selectedScene ? (
-                                <InteriorSceneViewer scene={selectedScene} onError={(text) => message.error(text)} onSnapshot={(blob) => void render(blob)} snapshotBusy={rendering} />
+                                <InteriorSceneViewer scene={selectedScene} onError={(text) => message.error(text)} onSnapshot={(blob) => void render(blob)} snapshotBusy={rendering} referenceUrl={referenceUrl} />
                             ) : selectedLoad?.error ? (
                                 <div className="itd-scene-empty is-error" role="alert">
                                     <strong>打不开这个模型</strong>
@@ -375,23 +379,16 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 </div>
                             )
                         ) : selected.status === "pending" ? (
-                            <div className="itd-scene-empty" role="status">
-                                <LoaderCircle className="size-6 motion-safe:animate-spin" aria-hidden />
-                                <strong>{stalledText ? "查询结果中断" : pendingLabel}</strong>
-                                <span>
-                                    {stalledText ||
-                                        (selected.stage === "analyze"
-                                            ? "AI 正在看图、读需求、查知识库补全方案，接着出 3D 方案。离开页面不会中断。"
-                                            : selected.stage === "edit"
-                                              ? "AI 正在按你的要求改方案，一般不到一分钟。"
-                                              : "AI 正在排每层的房间、门窗、楼梯和家具，墙体、屋顶和家具模型会按方案自动生成。一般 1–2 分钟，离开页面不会中断。")}
-                                </span>
-                                {stalledText ? (
-                                    <Button size="small" icon={<RefreshCw className="size-3.5" aria-hidden />} onClick={() => tasks.retry(selected.id)}>
-                                        重新查询
-                                    </Button>
-                                ) : null}
-                            </div>
+                            <InteriorSceneBuildStage
+                                key={selected.id}
+                                text={tasks.live[selected.id] || ""}
+                                scope={selected.autoScope ? "auto" : selected.scope}
+                                startedAt={selected.createdAt}
+                                stage={selected.stage}
+                                stalled={stalledText || undefined}
+                                referenceUrl={referenceUrl}
+                                onRetry={() => tasks.retry(selected.id)}
+                            />
                         ) : (
                             <div className="itd-scene-empty is-error" role="alert">
                                 <strong>这次没有搭出来</strong>

@@ -153,7 +153,7 @@ describe("interior 3D scene plan (v2)", () => {
         const cut = renderModel({ version: 2, title: spec.title, summary: "", spec }, { cutFloor: 0 });
         expect(cut.groups).toEqual(["一层"]);
         expect(Math.max(...cut.objects.filter((object) => object.shape === "wall").map((object) => (object.base ?? 0) + object.height!))).toBeCloseTo(1.65, 2);
-        expect(sceneStats({ version: 2, title: "", summary: "", spec })).toBe("2 层 · 8 个空间");
+        expect(sceneStats({ version: 2, title: "", summary: "", spec })).toBe("2 层 · 8 个空间 · 10 × 9 m");
     });
 
     test("prompts carry the brief and knowledge; edits send the whole plan back", () => {
