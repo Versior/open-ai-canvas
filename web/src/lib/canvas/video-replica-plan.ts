@@ -37,9 +37,12 @@ export type ReplicaScript = { id: string; angle: string; hook: string; lines: Re
 
 export type ReplicaShotPlan = { shotNumber: number; treatment: ReplicaShotTreatment; dialogue: string; onScreenText: string; imagePrompt: string; videoPrompt: string };
 
-export type VideoReplicaPlan = { version: 1; authorized: boolean; product: ReplicaProduct; scripts: ReplicaScript[]; activeScriptId: string; shots: ReplicaShotPlan[] };
+/** 按方案建过的一块画布：只用来在页面上列出和打开，画布本身在画布列表里。 */
+export type ReplicaCanvasRef = { id: string; title: string; createdAt: string; shots: number };
 
-export const REPLICA_LIMITS = { productName: 60, sellingPoints: 400, audience: 80, look: 120, images: 4, scripts: 6, dialogue: 300, onScreenText: 120, prompt: 2000 };
+export type VideoReplicaPlan = { version: 1; authorized: boolean; product: ReplicaProduct; scripts: ReplicaScript[]; activeScriptId: string; shots: ReplicaShotPlan[]; canvases: ReplicaCanvasRef[] };
+
+export const REPLICA_LIMITS = { productName: 60, sellingPoints: 400, audience: 80, look: 120, images: 4, scripts: 6, dialogue: 300, onScreenText: 120, prompt: 2000, canvases: 20 };
 
 const TREATMENTS = REPLICA_TREATMENTS.map((item) => item.value);
 /** 中文口播大约每秒 4–5 个字；改写时按每秒 5 个字给上限。 */
@@ -75,6 +78,7 @@ export function defaultReplicaPlan(bundle: VideoTeardownBundle, analysis: Pick<V
         scripts: [],
         activeScriptId: "",
         shots: bundle.shots.map((shot) => defaultShot(shot.index, rows.get(shot.index))),
+        canvases: [],
     };
 }
 
@@ -147,6 +151,16 @@ export function readReplicaPlan(value: unknown, bundle: VideoTeardownBundle, ana
               .slice(0, REPLICA_LIMITS.scripts)
         : [];
     const activeScriptId = str(record.activeScriptId, 64);
+    const canvases = Array.isArray(record.canvases)
+        ? record.canvases
+              .flatMap((item): ReplicaCanvasRef[] => {
+                  if (!item || typeof item !== "object") return [];
+                  const canvas = item as Record<string, unknown>;
+                  const id = str(canvas.id, 64);
+                  return id ? [{ id, title: str(canvas.title, 120), createdAt: str(canvas.createdAt, 40), shots: positive(canvas.shots) }] : [];
+              })
+              .slice(0, REPLICA_LIMITS.canvases)
+        : [];
     return {
         version: 1,
         authorized,
@@ -160,6 +174,7 @@ export function readReplicaPlan(value: unknown, bundle: VideoTeardownBundle, ana
         scripts,
         activeScriptId: scripts.some((script) => script.id === activeScriptId) ? activeScriptId : "",
         shots: shots.some((shot) => shot.treatment !== "skip") ? shots : fallback.shots,
+        canvases,
     };
 }
 
@@ -279,4 +294,9 @@ export function applyReplicaScript(plan: VideoReplicaPlan, script: ReplicaScript
 /** 把逐镜改回分析里的原样（台词、画面字和提示词），处理方式保留。 */
 export function resetReplicaShot(shot: ReplicaShotPlan, row: VideoTeardownAnalysisRow | undefined): ReplicaShotPlan {
     return { ...defaultShot(shot.shotNumber, row), treatment: shot.treatment };
+}
+
+/** 记下按方案新建的画布，最新的排前面，最多留 20 块。 */
+export function addReplicaCanvas(plan: VideoReplicaPlan, canvas: ReplicaCanvasRef): VideoReplicaPlan {
+    return { ...plan, canvases: [canvas, ...plan.canvases.filter((item) => item.id !== canvas.id)].slice(0, REPLICA_LIMITS.canvases) };
 }

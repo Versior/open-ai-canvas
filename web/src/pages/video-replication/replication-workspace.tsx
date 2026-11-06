@@ -1,6 +1,6 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { ArrowLeft, Download, ListChecks, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Sparkles } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -16,10 +16,14 @@ import { ReplicationTimeline } from "./replication-timeline";
 import { useReplicationPlayback } from "./use-replication-playback";
 import type { ReplicationRun } from "./use-replication-runner";
 import type { VideoReplicaOptions } from "./replication-canvas";
-import { ReplicationPlan } from "./replication-plan";
+import { ReplicationCanvasStep, ReplicationPlan } from "./replication-plan";
 import { useReplicaPlan } from "./use-replica-plan";
+import type { VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
 
-export type ReplicationView = "teardown" | "plan";
+/** 工作区的三步：拆解分析、复刻方案、画布生成；没有分析时只有拆解分析。 */
+export type ReplicationView = "teardown" | "plan" | "canvas";
+
+const EMPTY_ANALYSIS = { rows: [] };
 
 type Analysis = VideoTeardownAnalysis & { model: string };
 
@@ -35,7 +39,7 @@ type Props = {
     model: string;
     onModelChange: (model: string) => void;
     onReanalyze: (fallbackTitle: string) => void;
-    onOpenCanvas: (bundle: VideoTeardownBundle, analysis: Analysis, options: VideoReplicaOptions) => Promise<void>;
+    onOpenCanvas: (bundle: VideoTeardownBundle, analysis: Analysis, options: VideoReplicaOptions) => Promise<{ id: string; title: string } | null>;
     onBack: () => void;
     /** 拆解结果还是复刻方案；没有分析时只有拆解结果。 */
     view: ReplicationView;
@@ -101,8 +105,8 @@ export function ReplicationWorkspace(props: Props) {
                 <StatePanel tone="error" title="拆解结果无法读取" description={bundleError || "请重新拆解这个视频。"} action={<Button onClick={onBack}>重新拆解</Button>} />
             </WorkspaceShell>
         );
-    // 按记录重建：换一条记录时切换栏、浮层和播放位置都从头开始。
-    return <RecordWorkspace key={task.id} {...props} bundle={bundle} analysis={analysis} ownRun={ownRun} />;
+    // 按记录重建：换一条记录时切换栏、浮层和播放位置都从头开始。分析从无到有时也重建一次，复刻方案按分析结果初始化。
+    return <RecordWorkspace key={`${task.id}:${analysis ? "analyzed" : "pending"}`} {...props} bundle={bundle} analysis={analysis} ownRun={ownRun} />;
 }
 
 function RecordWorkspace({
@@ -125,6 +129,9 @@ function RecordWorkspace({
     const [tab, setTab] = useState<"shots" | "structure">("shots");
     const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
     const view: ReplicationView = analysis ? requestedView : "teardown";
+    // 方案状态放在这一层：切到拆解分析再回来时，没存上的改动还在；步骤条也要读方案的进度。
+    // 没有分析时用空分析占位，不显示也不保存（没有改动就不会触发保存）。
+    const planState = useReplicaPlan(detail?.task.id || "", bundle, analysis ?? EMPTY_ANALYSIS, detail?.plan, detail?.planUpdatedAt);
     const playback = useReplicationPlayback(bundle.shots);
     const rows = useMemo(() => new Map(analysis?.rows.map((row) => [row.shotNumber, row])), [analysis]);
     const analyzing = Boolean(ownRun && !ownRun.error);
@@ -156,16 +163,6 @@ function RecordWorkspace({
     );
     const actions = (
         <>
-            {analysis ? (
-                <div className="vr-view-switch" role="group" aria-label="工作区内容">
-                    <button type="button" aria-pressed={view === "teardown"} onClick={() => onViewChange("teardown")}>
-                        拆解结果
-                    </button>
-                    <button type="button" aria-pressed={view === "plan"} onClick={() => onViewChange("plan")}>
-                        复刻方案
-                    </button>
-                </div>
-            ) : null}
             {analysis && view === "teardown" ? (
                 <Popover
                     trigger="click"
@@ -176,7 +173,7 @@ function RecordWorkspace({
                     content={
                         <div className="vr-reanalyze">
                             <p className="vr-reanalyze-title">换个模型重新分析</p>
-                            <p className="vr-reanalyze-text">切镜结果不变，只重做逐镜分析和全片结构，按所选模型计费。</p>
+                            <p className="vr-reanalyze-text">切镜结果不变，只重做逐镜分析和全片结构，按所选模型计费。复刻方案里已经改过的口播和提示词不会被覆盖。</p>
                             <AnalyzeControls
                                 config={config}
                                 model={model}
@@ -196,37 +193,32 @@ function RecordWorkspace({
                     </Button>
                 </Popover>
             ) : null}
-            <Button icon={<Download className="size-4" />} disabled={!analysis || analyzing} onClick={downloadReport}>
-                下载报告
-            </Button>
             {view === "teardown" ? (
-                <Button type="primary" icon={<ListChecks className="size-4" />} disabled={!analysis || analyzing} onClick={() => onViewChange("plan")}>
-                    做复刻方案
+                <Button icon={<Download className="size-4" />} disabled={!analysis || analyzing} onClick={downloadReport}>
+                    下载报告
+                </Button>
+            ) : null}
+            {view === "teardown" && analysis ? (
+                <Button type="primary" disabled={analyzing} onClick={() => onViewChange("plan")}>
+                    下一步：复刻方案
+                    <ArrowRight className="size-4" aria-hidden />
                 </Button>
             ) : null}
         </>
     );
+    const openCanvas = (plan: VideoReplicaPlan) => (analysis ? onOpenCanvas(bundle, analysis, { plan }) : Promise.resolve(null));
+    const steps = <ReplicationSteps view={view} bundle={bundle} analysis={analysis} analyzing={analyzing} plan={analysis ? planState.plan : null} planSaved={Boolean(detail?.planUpdatedAt) || planState.save.status === "saved"} onChange={onViewChange} />;
 
     return (
-        <WorkspaceShell title={title} meta={meta} actions={actions} onBack={onBack}>
+        <WorkspaceShell title={title} meta={meta} actions={actions} steps={steps} onBack={onBack}>
             {ownRun ? <ReplicationProgress run={ownRun} /> : null}
-            {/* 方案一直挂着（只是藏起来），切回拆解结果再回来时没存上的改动还在。 */}
-            {analysis && detail ? (
-                <PlanHost
-                    hidden={view !== "plan"}
-                    id={detail.task.id}
-                    bundle={bundle}
-                    analysis={analysis}
-                    saved={detail.plan}
-                    savedAt={detail.planUpdatedAt}
-                    config={config}
-                    model={model}
-                    onModelChange={onModelChange}
-                    opening={opening}
-                    onOpenCanvas={(plan) => onOpenCanvas(bundle, analysis, { plan })}
-                />
+            {analysis && view === "plan" ? (
+                <ReplicationPlan bundle={bundle} analysis={analysis} {...planState} config={config} model={model} onModelChange={onModelChange} opening={opening} onOpenCanvas={openCanvas} onNext={() => onViewChange("canvas")} />
             ) : null}
-            {view === "plan" ? null : (
+            {analysis && view === "canvas" ? (
+                <ReplicationCanvasStep bundle={bundle} analysis={analysis} {...planState} config={config} model={model} onModelChange={onModelChange} opening={opening} onOpenCanvas={openCanvas} onBack={() => onViewChange("plan")} />
+            ) : null}
+            {view !== "teardown" ? null : (
                 <>
                     {/* 还没有分析、也没在分析（含上次分析失败）时，在这里选模型开始或重试。 */}
                     {!analysis && !analyzing ? (
@@ -280,20 +272,53 @@ function RecordWorkspace({
     );
 }
 
-function PlanHost({
-    hidden,
-    id,
-    bundle,
-    analysis,
-    saved,
-    savedAt,
-    ...rest
-}: { hidden: boolean; id: string; bundle: VideoTeardownBundle; analysis: Analysis; saved: unknown; savedAt?: string } & Pick<Parameters<typeof ReplicationPlan>[0], "config" | "model" | "onModelChange" | "opening" | "onOpenCanvas">) {
-    const state = useReplicaPlan(id, bundle, analysis, saved, savedAt);
+type StepProps = {
+    view: ReplicationView;
+    bundle: VideoTeardownBundle;
+    analysis: Analysis | null;
+    analyzing: boolean;
+    plan: VideoReplicaPlan | null;
+    planSaved: boolean;
+    onChange: (view: ReplicationView) => void;
+};
+
+/**
+ * 工作区顶部的三步：拆解分析 → 复刻方案 → 画布生成。每一步写着现在的进度，点哪一步就切到哪一步；
+ * 还没分析完时后两步不能点。
+ */
+function ReplicationSteps({ view, bundle, analysis, analyzing, plan, planSaved, onChange }: StepProps) {
+    const kept = plan ? plan.shots.filter((shot) => shot.treatment !== "skip").length : 0;
+    const swapped = plan ? plan.shots.filter((shot) => shot.treatment === "product").length : 0;
+    const canvases = plan?.canvases.length || 0;
+    const items: { value: ReplicationView; title: string; detail: string; done: boolean; disabled: boolean }[] = [
+        { value: "teardown", title: "拆解分析", detail: analyzing ? "正在分析…" : analysis ? `${bundle.shots.length} 个镜头 · 已分析` : `${bundle.shots.length} 个镜头 · 还没分析`, done: Boolean(analysis), disabled: false },
+        {
+            value: "plan",
+            title: "复刻方案",
+            detail: !analysis ? "分析完成后可以做" : planSaved && plan ? [plan.product.name || "还没填商品", `${kept} 镜`, swapped ? `换商品 ${swapped} 镜` : ""].filter(Boolean).join(" · ") : "换成你的商品、改写口播",
+            done: planSaved && Boolean(plan?.product.name || plan?.activeScriptId),
+            disabled: !analysis,
+        },
+        { value: "canvas", title: "画布生成", detail: !analysis ? "分析完成后可以做" : canvases ? `已建 ${canvases} 块画布` : "首帧、视频、合并成片", done: canvases > 0, disabled: !analysis },
+    ];
     return (
-        <div hidden={hidden}>
-            <ReplicationPlan bundle={bundle} analysis={analysis} {...state} {...rest} />
-        </div>
+        <nav className="vr-stepbar" aria-label="复刻步骤">
+            <ol>
+                {items.map((item, index) => (
+                    <li key={item.value}>
+                        <button type="button" className="vr-stepbar-item" aria-current={view === item.value ? "step" : undefined} data-done={item.done || undefined} disabled={item.disabled} onClick={() => onChange(item.value)}>
+                            <span className="vr-stepbar-index" aria-hidden>
+                                {item.done && view !== item.value ? <Check /> : index + 1}
+                            </span>
+                            <span className="vr-stepbar-copy">
+                                <strong>{item.title}</strong>
+                                <small>{item.detail}</small>
+                            </span>
+                        </button>
+                    </li>
+                ))}
+            </ol>
+        </nav>
     );
 }
 
@@ -316,7 +341,7 @@ function AnalyzeControls({ config, model, onModelChange, busy, label, onStart }:
     );
 }
 
-function WorkspaceShell({ title, meta, actions, onBack, children }: { title: ReactNode; meta?: ReactNode; actions?: ReactNode; onBack: () => void; children: ReactNode }) {
+function WorkspaceShell({ title, meta, actions, steps, onBack, children }: { title: ReactNode; meta?: ReactNode; actions?: ReactNode; steps?: ReactNode; onBack: () => void; children: ReactNode }) {
     return (
         <div className="vr-workspace">
             <header className="vr-ws-head">
@@ -330,6 +355,7 @@ function WorkspaceShell({ title, meta, actions, onBack, children }: { title: Rea
                 </div>
                 {actions ? <div className="vr-ws-actions">{actions}</div> : null}
             </header>
+            {steps}
             <div className="vr-ws-stack">{children}</div>
         </div>
     );

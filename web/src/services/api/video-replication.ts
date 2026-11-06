@@ -182,6 +182,10 @@ export type VideoReplicationRecord = {
     title?: string;
     model?: string;
     analyzedAt?: string;
+    /** 复刻方案最后保存的时间；没有方案时为空。 */
+    planUpdatedAt?: string;
+    /** 按复刻方案建过几块画布。 */
+    canvasCount?: number;
 };
 
 /** 一条记录的全部内容：拆解任务（resultJson 是镜头事实）、保存过的分析原文和复刻方案原文，都由调用方再校验。 */

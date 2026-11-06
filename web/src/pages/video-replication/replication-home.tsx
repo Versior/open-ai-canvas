@@ -1,4 +1,4 @@
-import { ArrowRight, Clapperboard, LoaderCircle, ScanEye, Scissors } from "lucide-react";
+import { ArrowRight, Clapperboard, ListChecks, LoaderCircle, ScanEye } from "lucide-react";
 import type { ComponentProps } from "react";
 
 import type { VideoReplicationRecord } from "@/services/api/video-replication";
@@ -6,10 +6,11 @@ import { ReplicationComposer } from "./replication-composer";
 import { ReplicationRecent } from "./replication-recent";
 import { REPLICATION_STAGE_LABELS, type ReplicationRun } from "./use-replication-runner";
 
+// 和记录工作区顶部的三步一致。
 const FLOW = [
-    { icon: Scissors, title: "拆镜头", text: "自动切镜、截关键帧" },
-    { icon: ScanEye, title: "逐镜分析", text: "画面、口播、运镜、商品" },
-    { icon: Clapperboard, title: "去画布复刻", text: "换商品重拍、合成成片" },
+    { icon: ScanEye, title: "拆解分析", text: "切镜头，逐镜看画面、口播和商品" },
+    { icon: ListChecks, title: "复刻方案", text: "换成你的商品，改写口播" },
+    { icon: Clapperboard, title: "画布生成", text: "出首帧和视频，合并成片" },
 ];
 
 type Props = {
@@ -30,7 +31,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
             <header className="vr-home-head">
                 <div className="vr-home-heading">
                     <h1 className="vr-home-title">视频复刻</h1>
-                    <p className="vr-home-sub">把爆款视频拆成可复刻的分镜，再去画布换成你的商品重拍。拆解用来学结构和节奏，复刻请用你有权使用的素材和形象。</p>
+                    <p className="vr-home-sub">把爆款视频拆成分镜，按你的商品做复刻方案，再去画布生成。复刻请用你有权使用的素材和形象。</p>
                 </div>
                 <ol className="vr-flow" aria-label="复刻流程">
                     {FLOW.map(({ icon: Icon, title, text }, index) => (

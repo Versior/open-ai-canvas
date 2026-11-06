@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { App } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { videoTeardownModelError, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
@@ -26,7 +26,6 @@ function errorText(error: unknown) {
  */
 export default function VideoReplicationPage() {
     const { message } = App.useApp();
-    const navigate = useNavigate();
     const config = useEffectiveConfig();
     const [params, setParams] = useSearchParams();
     const scope = getActiveUserScope();
@@ -52,7 +51,8 @@ export default function VideoReplicationPage() {
     });
     const records = history.data;
     const selectedId = params.get("id") || "";
-    const view: ReplicationView = params.get("view") === "plan" ? "plan" : "teardown";
+    const requestedView = params.get("view");
+    const view: ReplicationView = requestedView === "plan" || requestedView === "canvas" ? requestedView : "teardown";
     const detail = useQuery({
         queryKey: videoReplicationKeys.detail(scope, selectedId),
         queryFn: ({ signal }) => getVideoReplication(selectedId, signal),
@@ -61,7 +61,7 @@ export default function VideoReplicationPage() {
     });
 
     const select = useCallback((id: string) => setParams(id ? { id } : {}), [setParams]);
-    const changeView = useCallback((next: ReplicationView) => setParams(next === "plan" ? { id: selectedId, view: next } : { id: selectedId }), [selectedId, setParams]);
+    const changeView = useCallback((next: ReplicationView) => setParams(next === "teardown" ? { id: selectedId } : { id: selectedId, view: next }), [selectedId, setParams]);
     const { run, running } = useReplicationRun(select);
     const configRef = useRef(config);
     configRef.current = config;
@@ -96,9 +96,11 @@ export default function VideoReplicationPage() {
         try {
             const created = await openVideoTeardownInCanvas(bundle, analysis, analysis.model || model, options);
             if (created.syncError) message.warning("画布已在本机创建，云端同步稍后自动重试");
-            navigate(`/canvas/${created.id}`);
+            // 跳转交给画布生成这一步：它先把新画布记进方案再打开。
+            return { id: created.id, title: `复刻 · ${analysis.title || "视频拆解"}` };
         } catch (error) {
             message.error(`打开画布失败：${errorText(error)}`);
+            return null;
         } finally {
             setOpening(false);
         }
@@ -107,7 +109,7 @@ export default function VideoReplicationPage() {
     return (
         <WorkspacePage fluid>
             {/* 复刻方案整页滚动；拆解结果在宽屏下是一屏布局。 */}
-            <div ref={rootRef} className="vr-page" data-view={selectedId ? (view === "plan" && detail.data?.analysis ? "plan" : "record") : "home"}>
+            <div ref={rootRef} className="vr-page" data-view={selectedId ? (view !== "teardown" && detail.data?.analysis ? "plan" : "record") : "home"}>
                 {selectedId ? (
                     <ReplicationWorkspace
                         detail={detail.data}

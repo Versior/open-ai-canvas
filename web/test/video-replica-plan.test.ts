@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyReplicaScript, buildReplicaScriptPrompt, defaultReplicaPlan, parseReplicaScripts, readReplicaPlan, replicaPlanIssues, resetReplicaShot } from "@/lib/canvas/video-replica-plan";
+import { addReplicaCanvas, applyReplicaScript, buildReplicaScriptPrompt, defaultReplicaPlan, parseReplicaScripts, readReplicaPlan, replicaPlanIssues, resetReplicaShot } from "@/lib/canvas/video-replica-plan";
 import type { VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 
@@ -130,5 +130,16 @@ describe("复刻方案", () => {
         expect(plan.shots[0].onScreenText).toBe("保温 12 小时");
         const reset = resetReplicaShot({ ...plan.shots[0], treatment: "skip" }, analysis.rows[0]);
         expect(reset).toMatchObject({ treatment: "skip", dialogue: "这纸巾真的厚", onScreenText: "原片标题" });
+    });
+
+    test("canvases created from the plan are kept newest first, deduplicated and read back", () => {
+        let plan = defaultReplicaPlan(bundle, analysis);
+        expect(plan.canvases).toEqual([]);
+        plan = addReplicaCanvas(plan, { id: "c1", title: "复刻 · 一", createdAt: "t1", shots: 3 });
+        plan = addReplicaCanvas(plan, { id: "c2", title: "复刻 · 二", createdAt: "t2", shots: 2 });
+        plan = addReplicaCanvas(plan, { id: "c1", title: "复刻 · 一", createdAt: "t3", shots: 3 });
+        expect(plan.canvases.map((canvas) => canvas.id)).toEqual(["c1", "c2"]);
+        const read = readReplicaPlan({ ...JSON.parse(JSON.stringify(plan)), canvases: [...plan.canvases, { id: "" }, { title: "没有 ID" }] }, bundle, analysis);
+        expect(read.canvases).toEqual(plan.canvases);
     });
 });

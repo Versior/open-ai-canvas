@@ -305,8 +305,10 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         </p>
                     ) : null}
                     <div className="vr-toolbar">
+                        {/* 分析模型是次要设置：不显示单价，选择器里仍能看到各模型价格。 */}
                         <div className="vr-toolbar-model">
-                            <ModelPicker config={config} capability="text" value={model} onChange={onModelChange} requirements={videoTeardownTextRequirements(config, 1)} placeholder="选择能看图的文本模型" />
+                            <span className="vr-toolbar-label">分析模型</span>
+                            <ModelPicker config={config} capability="text" value={model} onChange={onModelChange} requirements={videoTeardownTextRequirements(config, 1)} placeholder="选择能看图的文本模型" showSelectedPrice={false} showOptionPrices />
                         </div>
                         <label className="vr-chip" title={transcribeNote || undefined} data-disabled={transcribeNote ? true : undefined}>
                             <Switch size="sm" checked={transcribe} disabled={Boolean(transcribeNote)} onChange={onTranscribeChange} aria-label="识别口播" aria-describedby={transcribeNote ? "vr-transcribe-note" : undefined} />

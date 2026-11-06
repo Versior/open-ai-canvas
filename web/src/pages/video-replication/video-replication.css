@@ -433,8 +433,11 @@
 }
 
 .vr-toolbar-model {
+    display: inline-flex;
     min-width: 0;
-    max-width: min(340px, 100%);
+    max-width: min(360px, 100%);
+    align-items: center;
+    gap: var(--space-2);
 }
 
 .vr-chip {
@@ -2244,39 +2247,199 @@
     height: 18px;
 }
 
-/* ── 拆解结果 / 复刻方案切换 ─────────────────────── */
-.vr-view-switch {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 8px;
-    background: var(--user-surface-muted);
+/* ── 工作区三步：拆解分析 → 复刻方案 → 画布生成 ───── */
+.vr-stepbar {
+    flex-shrink: 0;
+    margin-bottom: var(--space-3);
 }
 
-.vr-view-switch button {
-    height: 28px;
-    padding: 0 12px;
-    border-radius: 6px;
+.vr-stepbar ol {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+}
+
+.vr-stepbar li {
+    position: relative;
+    min-width: 0;
+}
+
+/* 步骤之间的连线：画在每一步的右边，压在间距里。 */
+.vr-stepbar li + li::before {
+    position: absolute;
+    top: 50%;
+    left: calc(-1 * var(--space-2));
+    width: var(--space-2);
+    height: 1px;
+    background: var(--user-border-strong);
+    content: "";
+}
+
+.vr-stepbar-item {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: var(--user-radius-card);
+    background: var(--user-surface);
+    box-shadow: inset 0 0 0 1px var(--user-border);
     color: var(--user-ink-muted);
-    font-size: var(--fs-ui);
-    font-weight: 550;
+    text-align: left;
     transition:
         background var(--user-motion),
+        box-shadow var(--user-motion),
         color var(--user-motion);
 }
 
-.vr-view-switch button:hover {
+.vr-stepbar-item:hover:not(:disabled) {
+    background: var(--user-surface-hover);
     color: var(--user-ink);
 }
 
-.vr-view-switch button[aria-pressed="true"] {
-    background: var(--user-surface);
-    box-shadow: inset 0 0 0 1px var(--user-border);
+.vr-stepbar-item[aria-current="step"] {
+    box-shadow: inset 0 0 0 2px var(--user-ink);
     color: var(--user-ink);
 }
 
-.vr-view-switch button:focus-visible {
+.vr-stepbar-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.vr-stepbar-item:focus-visible {
     outline: 2px solid var(--control-focus-ring);
-    outline-offset: 1px;
+    outline-offset: 2px;
+}
+
+.vr-stepbar-index {
+    display: inline-grid;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    place-items: center;
+    border-radius: var(--r-full);
+    box-shadow: inset 0 0 0 1px var(--user-border-strong);
+    font-size: var(--fs-caption);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.vr-stepbar-item[aria-current="step"] .vr-stepbar-index,
+.vr-stepbar-item[data-done] .vr-stepbar-index {
+    background: var(--user-ink);
+    box-shadow: none;
+    color: var(--user-surface);
+}
+
+.vr-stepbar-index svg {
+    width: 14px;
+    height: 14px;
+}
+
+.vr-stepbar-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.vr-stepbar-copy strong {
+    color: inherit;
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+
+.vr-stepbar-copy small {
+    overflow: hidden;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+    .vr-stepbar-item {
+        padding: 8px 10px;
+    }
+
+    .vr-stepbar-copy small {
+        display: none;
+    }
+}
+
+/* 复刻方案底部的「下一步」。 */
+.vr-plan-next {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-1) var(--space-4);
+}
+
+/* 画布生成：新建一块和建过的列表。 */
+.vr-canvas-step {
+    display: flex;
+    width: min(960px, 100%);
+    flex-direction: column;
+    gap: var(--space-4);
+    margin: 0 auto;
+}
+
+.vr-canvas-list {
+    display: flex;
+    flex-direction: column;
+    border-radius: 10px;
+    box-shadow: inset 0 0 0 1px var(--user-border);
+}
+
+.vr-canvas-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 12px 14px;
+}
+
+.vr-canvas-list li + li {
+    border-top: 1px solid var(--user-border);
+}
+
+.vr-canvas-list-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vr-canvas-list-copy strong {
+    overflow: hidden;
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.vr-canvas-list-copy small {
+    display: flex;
+    gap: 6px;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+
+.vr-canvas-list-copy small > * + *::before {
+    margin-right: 6px;
+    content: "·";
+}
+
+/* 首页：分析模型是次要设置，前面加一个小标签。 */
+.vr-toolbar-label {
+    flex-shrink: 0;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
 }
 
 /* ── 复刻方案：左侧步骤条吸顶，右侧四段整页滚动 ─────── */

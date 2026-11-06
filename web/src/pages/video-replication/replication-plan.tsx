@@ -1,11 +1,13 @@
 import { App, Button, Checkbox, Input, Select } from "antd";
-import { Check, Clapperboard, ImagePlus, LoaderCircle, RotateCcw, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { ArrowRight, Check, Clapperboard, ExternalLink, ImagePlus, LoaderCircle, RotateCcw, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router";
 
 import { ModelPicker } from "@/components/model-picker";
-import { applyReplicaScript, REPLICA_LIMITS, REPLICA_TREATMENTS, replicaPlanIssues, resetReplicaShot, type ReplicaShotPlan, type ReplicaShotTreatment, type VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
+import { addReplicaCanvas, applyReplicaScript, REPLICA_LIMITS, REPLICA_TREATMENTS, replicaPlanIssues, resetReplicaShot, type ReplicaShotPlan, type ReplicaShotTreatment, type VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
 import { formatTeardownTime, teardownTimeRange, videoTeardownProductLabel, videoTeardownTextRequirements, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { RelativeTime } from "@/components/ui/product/relative-time";
 import { resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { uploadImage } from "@/services/image-storage";
@@ -27,27 +29,27 @@ type Props = {
     model: string;
     onModelChange: (model: string) => void;
     opening: boolean;
-    onOpenCanvas: (plan: VideoReplicaPlan) => Promise<void>;
+    /** 按方案新建画布；成功返回画布 ID 和标题，失败时已提示，返回 null。 */
+    onOpenCanvas: (plan: VideoReplicaPlan) => Promise<{ id: string; title: string } | null>;
 };
 
 const STEPS = [
     { id: "vr-plan-product", label: "商品档案" },
     { id: "vr-plan-script", label: "改写脚本" },
     { id: "vr-plan-shots", label: "逐镜计划" },
-    { id: "vr-plan-canvas", label: "去画布生成" },
 ];
 
 /**
- * 复刻方案：商品档案 → 按商品改写口播（多个版本挑一个）→ 逐镜决定怎么做、改台词和提示词 → 去画布生成。
- * 整页滚动，左侧步骤条吸顶；改动自动保存到服务端。
+ * 复刻方案：商品档案 → 按商品改写口播（多个版本挑一个）→ 逐镜决定怎么做、改台词和提示词。
+ * 整页滚动，左侧小节导航吸顶；改动自动保存到服务端。做完点「下一步」去画布生成。
  */
-export function ReplicationPlan(props: Props) {
+export function ReplicationPlan(props: Props & { onNext: () => void }) {
     const { plan, save } = props;
     const issues = useMemo(() => replicaPlanIssues(plan), [plan]);
-    const done = [Boolean(plan.product.name || plan.product.images.length), Boolean(plan.activeScriptId), plan.shots.some((shot) => shot.treatment !== "skip") && !issues.errors.length, false];
+    const done = [Boolean(plan.product.name || plan.product.images.length), Boolean(plan.activeScriptId), plan.shots.some((shot) => shot.treatment !== "skip") && !issues.errors.length];
     return (
         <div className="vr-plan">
-            <nav className="vr-plan-rail" aria-label="复刻步骤">
+            <nav className="vr-plan-rail" aria-label="复刻方案的小节">
                 <ol>
                     {STEPS.map((step, index) => (
                         <li key={step.id}>
@@ -64,7 +66,13 @@ export function ReplicationPlan(props: Props) {
                 <ProductSection {...props} />
                 <ScriptSection {...props} />
                 <ShotsSection {...props} />
-                <CanvasSection {...props} issues={issues} />
+                <div className="vr-plan-next">
+                    <span className="vr-plan-muted">{issues.errors[0] || "方案会自动保存。下一步按这份方案建画布，在画布里出首帧和视频。"}</span>
+                    <Button type="primary" size="large" disabled={Boolean(issues.errors.length)} onClick={props.onNext}>
+                        下一步：画布生成
+                        <ArrowRight className="size-4" aria-hidden />
+                    </Button>
+                </div>
             </div>
         </div>
     );
@@ -439,61 +447,117 @@ function ShotsSection({ bundle, analysis, plan, update }: Props) {
     );
 }
 
-function CanvasSection({ bundle, plan, opening, flush, onOpenCanvas, issues }: Props & { issues: ReturnType<typeof replicaPlanIssues> }) {
+/**
+ * 第三步「画布生成」：按方案建画布，列出之前按这条拆解建过的画布。
+ * 新建的画布记进方案（只记 ID、标题和时间），保存后再跳过去。
+ */
+export function ReplicationCanvasStep({ bundle, plan, update, opening, flush, onOpenCanvas, onBack }: Props & { onBack: () => void }) {
+    const navigate = useNavigate();
+    const issues = useMemo(() => replicaPlanIssues(plan), [plan]);
     const kept = plan.shots.filter((shot) => shot.treatment !== "skip");
-    const seconds = kept.reduce((total, shot) => {
+    const duration = kept.reduce((total, shot) => {
         const source = bundle.shots[shot.shotNumber - 1];
         return total + (source ? source.endMs - source.startMs : 0);
     }, 0);
-    // 方案没存上（网络问题）也照样建画布：画布按页面上的方案铺，保存失败在步骤条下面照实提示，可以重试。
-    const open = async () => {
+    const count = (treatment: ReplicaShotTreatment) => kept.filter((shot) => shot.treatment === treatment).length;
+    // 方案没存上（网络问题）也照样建画布：画布按页面上的方案铺，保存失败在页面上照实提示，可以重试。
+    const create = async () => {
         await flush();
-        await onOpenCanvas(plan);
+        const created = await onOpenCanvas(plan);
+        if (!created) return;
+        update((current) => addReplicaCanvas(current, { id: created.id, title: created.title, createdAt: new Date().toISOString(), shots: kept.length }));
+        await flush();
+        navigate(`/canvas/${created.id}`);
     };
     return (
-        <Section id="vr-plan-canvas" index={4} title="去画布生成" description="按这份方案新建一块画布：复刻分镜、原片关键帧、商品图和拆解报告。在画布里先出首帧，检查后出视频，最后合并成片。">
-            <dl className="vr-plan-summary">
-                <div>
-                    <dt>镜头</dt>
-                    <dd>
-                        {kept.length} / {bundle.shots.length}
-                    </dd>
+        <div className="vr-canvas-step">
+            <section className="vr-panel vr-plan-section" aria-labelledby="vr-canvas-new-title">
+                <header className="vr-plan-section-head">
+                    <div>
+                        <h2 id="vr-canvas-new-title" className="vr-plan-section-title">
+                            按方案新建画布
+                        </h2>
+                        <p className="vr-plan-section-text">画布里放原视频、关键帧、复刻分镜、商品图和拆解报告。在复刻分镜的「更多」里先「生成未完成分镜图」做首帧，检查后「生成未完成视频」，最后「合并成片」。</p>
+                    </div>
+                    <Button onClick={onBack}>检查方案</Button>
+                </header>
+                <dl className="vr-plan-summary">
+                    <div>
+                        <dt>镜头</dt>
+                        <dd>
+                            {kept.length} / {bundle.shots.length}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt>成片约</dt>
+                        <dd>{formatTeardownTime(duration)}</dd>
+                    </div>
+                    <div>
+                        <dt>换商品</dt>
+                        <dd>{count("product")} 镜</dd>
+                    </div>
+                    <div>
+                        <dt>按描述重做</dt>
+                        <dd>{count("remake")} 镜</dd>
+                    </div>
+                    <div>
+                        <dt>沿用原片</dt>
+                        <dd>{count("original")} 镜</dd>
+                    </div>
+                </dl>
+                {[...issues.errors, ...issues.warnings].length ? (
+                    <ul className="vr-plan-issues">
+                        {issues.errors.map((item) => (
+                            <li key={item} data-tone="error">
+                                <TriangleAlert aria-hidden />
+                                {item}
+                            </li>
+                        ))}
+                        {issues.warnings.map((item) => (
+                            <li key={item}>
+                                <TriangleAlert aria-hidden />
+                                {item}
+                            </li>
+                        ))}
+                    </ul>
+                ) : null}
+                <div className="vr-plan-canvas-actions">
+                    <Button type="primary" size="large" icon={<Clapperboard className="size-4" />} loading={opening} disabled={Boolean(issues.errors.length)} onClick={() => void create()}>
+                        创建画布并打开
+                    </Button>
+                    <span className="vr-plan-muted">创建画布不扣费；在画布里生成首帧和视频时按所选模型计费。</span>
                 </div>
-                <div>
-                    <dt>成片约</dt>
-                    <dd>{formatTeardownTime(seconds)}</dd>
-                </div>
-                <div>
-                    <dt>换商品</dt>
-                    <dd>{kept.filter((shot) => shot.treatment === "product").length} 镜</dd>
-                </div>
-                <div>
-                    <dt>沿用原片</dt>
-                    <dd>{kept.filter((shot) => shot.treatment === "original").length} 镜</dd>
-                </div>
-            </dl>
-            {[...issues.errors, ...issues.warnings].length ? (
-                <ul className="vr-plan-issues">
-                    {issues.errors.map((item) => (
-                        <li key={item} data-tone="error">
-                            <TriangleAlert aria-hidden />
-                            {item}
-                        </li>
-                    ))}
-                    {issues.warnings.map((item) => (
-                        <li key={item}>
-                            <TriangleAlert aria-hidden />
-                            {item}
-                        </li>
-                    ))}
-                </ul>
-            ) : null}
-            <div className="vr-plan-canvas-actions">
-                <Button type="primary" size="large" icon={<Clapperboard className="size-4" />} loading={opening} disabled={Boolean(issues.errors.length)} onClick={() => void open()}>
-                    创建画布并打开
-                </Button>
-                <span className="vr-plan-muted">创建画布不扣费；在画布里生成首帧和视频时按所选模型计费。</span>
-            </div>
-        </Section>
+            </section>
+            <section className="vr-panel vr-plan-section" aria-labelledby="vr-canvas-list-title">
+                <header className="vr-plan-section-head">
+                    <div>
+                        <h2 id="vr-canvas-list-title" className="vr-plan-section-title">
+                            建过的画布
+                        </h2>
+                        <p className="vr-plan-section-text">每次创建都是一块新画布，之前的不会被覆盖。在画布里删掉的画布，这里的链接会打不开。</p>
+                    </div>
+                </header>
+                {plan.canvases.length ? (
+                    <ul className="vr-canvas-list">
+                        {plan.canvases.map((canvas) => (
+                            <li key={canvas.id}>
+                                <span className="vr-canvas-list-copy">
+                                    <strong>{canvas.title || "复刻画布"}</strong>
+                                    <small>
+                                        {canvas.createdAt ? <RelativeTime value={canvas.createdAt} /> : null}
+                                        {canvas.shots ? <span>{canvas.shots} 镜</span> : null}
+                                    </small>
+                                </span>
+                                <Button icon={<ExternalLink className="size-4" />} onClick={() => navigate(`/canvas/${canvas.id}`)}>
+                                    打开
+                                </Button>
+                            </li>
+                        ))}
+                    </ul>
+                ) : (
+                    <p className="vr-plan-empty">还没有按这份方案建过画布。</p>
+                )}
+            </section>
+        </div>
     );
 }

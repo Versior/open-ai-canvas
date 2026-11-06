@@ -74,6 +74,8 @@ function RecordCard({ record, running, onOpen }: { record: VideoReplicationRecor
     const shown = layout === "single" ? frames.slice(0, 1) : frames.slice(0, 4);
     const title = record.title || (record.status === "succeeded" ? "未命名拆解" : "视频拆解");
     const meta = [record.shotCount ? `${record.shotCount} 个镜头` : "", record.width && record.height ? orientationLabel(record.width, record.height) : ""].filter(Boolean);
+    // 走到了哪一步：建过画布 > 有复刻方案 > 只拆解分析了。
+    const progress = record.canvasCount ? `已建 ${record.canvasCount} 块画布` : record.planUpdatedAt ? "有复刻方案" : "";
     return (
         <li className="vr-card-item">
             <button type="button" className="vr-card" onClick={() => onOpen(record.id)}>
@@ -89,6 +91,10 @@ function RecordCard({ record, running, onOpen }: { record: VideoReplicationRecor
                         <span className="vr-card-badge" data-position="start" data-tone={status.tone}>
                             {status.tone === "running" ? <LoaderCircle className="vr-spin" aria-hidden /> : null}
                             {status.label}
+                        </span>
+                    ) : progress ? (
+                        <span className="vr-card-badge" data-position="start">
+                            {progress}
                         </span>
                     ) : null}
                     {record.durationMs ? (
