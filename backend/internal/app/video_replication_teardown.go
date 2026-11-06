@@ -323,7 +323,7 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	if err := w.progress(task, "检测镜头切点", 20); err != nil {
 		return videoTeardownBundle{}, err
 	}
-	cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, sourcePath)
+	cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, sourcePath, 0, 0)
 	if err != nil {
 		return videoTeardownBundle{}, err
 	}

@@ -10,4 +10,6 @@ const (
 	// 视频复刻的拆解准备：本地切镜、抽关键帧、拼宫格、可选转写。不以 video_ 开头，
 	// 否则会按视频生成的超时处理。
 	TaskTypeReplicationTeardown = "replication_teardown"
+	// 商品视频（元素替换）的参考视频切段：本地按镜头切点把参考视频切成一次生成能覆盖的片段。
+	TaskTypeProductVideoSplit = "product_video_split"
 )

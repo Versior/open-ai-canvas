@@ -183,10 +183,16 @@ func videoTeardownFFmpeg() (string, error) {
 }
 
 // detectVideoTeardownCuts 用场景分数找硬切和明显转场：先缩到 320 宽再算，3 分钟视频通常几秒内完成。
-func detectVideoTeardownCuts(ctx context.Context, ffmpeg, path string) ([]int64, error) {
+// windowMs > 0 时只检测从 startMs 起这一段，返回的切点仍是相对这一段开头的毫秒数。
+func detectVideoTeardownCuts(ctx context.Context, ffmpeg, path string, startMs, windowMs int64) ([]int64, error) {
 	filter := fmt.Sprintf("scale=320:-2,select='gt(scene,%.2f)',showinfo", videoTeardownSceneThreshold)
 	stderr := &boundedCommandOutput{limit: videoTeardownStderrLimit}
-	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-nostats", "-i", path, "-an", "-sn", "-dn", "-vf", filter, "-f", "null", "-")
+	args := []string{"-hide_banner", "-nostdin", "-nostats"}
+	if windowMs > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(float64(startMs)/1000, 'f', 3, 64), "-t", strconv.FormatFloat(float64(windowMs)/1000, 'f', 3, 64))
+	}
+	args = append(args, "-i", path, "-an", "-sn", "-dn", "-vf", filter, "-f", "null", "-")
+	cmd := exec.CommandContext(ctx, ffmpeg, args...)
 	cmd.Stdout, cmd.Stderr = io.Discard, stderr
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
