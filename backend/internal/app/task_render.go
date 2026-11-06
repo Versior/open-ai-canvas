@@ -177,12 +177,15 @@ func materializeRenderSources(ctx context.Context, s *Service, userID string, pl
 	}
 	cleanup := func() { _ = os.RemoveAll(tmpDir) }
 	cache := map[string]renderSourceFile{}
-	segments := make([]*renderSegment, 0, len(plan.Segments)+len(plan.AudioOverlays))
+	segments := make([]*renderSegment, 0, len(plan.Segments)+len(plan.AudioOverlays)+len(plan.ImageOverlays))
 	for i := range plan.Segments {
 		segments = append(segments, &plan.Segments[i])
 	}
 	for i := range plan.AudioOverlays {
 		segments = append(segments, &plan.AudioOverlays[i])
+	}
+	for i := range plan.ImageOverlays {
+		segments = append(segments, &plan.ImageOverlays[i])
 	}
 	for _, seg := range segments {
 		resourceID, ok := mediaResourceID(seg.Clip)

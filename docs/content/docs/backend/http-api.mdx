@@ -154,6 +154,24 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
   - 不调用模型、不计费，片段和封面计入存储。
 - 每段的生成走通用 `POST /api/tasks`（`canvas_video`，元素替换旧作品是 `metadata.source=product-video`，复刻工作台是 `metadata.source=video-remake`，带 `remakeId`、`remakeUnit`），拼接走 `POST /api/timeline/renders`（`projectId` 为空）。
 - 复刻工作台的作品和元素替换旧作品用同一组作品接口，`item.version` 为 2 的是复刻工作台作品，前端按它区分。
+- AI 配音每句一个 `canvas_audio` 任务（`metadata.source=video-remake`，带 `remakeVoice` 镜头号）；AI 生成模特是一个 `canvas_image` 任务（`metadata.source=video-remake-persona`）；烧录字幕的透明 PNG 走普通图片上传。
+
+## 时间线渲染的叠加图和循环音频
+
+`POST /api/timeline/renders` 的时间线片段多认两个字段，前端 `TimelineClip` 之外的扩展（复刻工作台用）：
+
+- `overlay: true`（只对 `kind: "image"` 有效）：图片按 `startMs` / `durationMs` 叠在成片画面上（PNG 透明部分透出），不进主序列、不推后后面的片段。叠加图按起点排序，后一张和前一张重叠时从前一张结束处开始。
+- `loop: true`（只对音频轨片段有效）：素材比片段短时从头循环。音频轨片段的 `fadeInMs` / `fadeOutMs` 是音量淡入淡出。
+- 音频轨混音改为直接相加（`amix normalize=0`），各路音量只由片段 `volume` 决定，配音或音乐结束前后整体响度不跳变。
+- 结果 `sources` 里多出叠加图的记录（`kind: "overlay"`）。
+
+## 时间线导出剪映草稿
+
+`POST /api/timeline/jianying-draft`，需要登录，表单提交（`draftRoot`、`name`、`timeline`），正文不超过 512 KiB；`timeline` 与渲染同结构（最多 600 个片段）。
+
+- 每个素材必须是本人就绪的资源，任何一个不可用时返回 400，不导出缺素材的草稿。同一个资源只打包一次，多段共用一份素材。
+- `video` 片段按 `startMs` / `sourceStartMs` 放在主轨，静音轨上（或 `volume < 0`）的片段音量为 0；`audio` 片段按 `trackId` 分到不同音频轨，可以引用音频文件或视频文件里的声音，`loop` 的片段按素材时长切成几段首尾相接；`subtitle` 片段进字幕轨并附 `字幕.srt`；叠加图不导出。
+- 成功时直接返回 `application/zip` 附件：草稿文件夹里是 `draft_content.json`、内容相同的 `draft_info.json`、`draft_meta_info.json`、`materials/` 和 `导入说明.txt`。超容量只读时仍可导出。
 
 ## 电商生图台配置与套图模板
 

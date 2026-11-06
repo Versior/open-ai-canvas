@@ -2,7 +2,7 @@ import { createClientUUID } from "@/lib/client-id";
 import { scopedLocalStorage } from "@/lib/user-scope";
 import { apiBaseURL } from "@/services/api/request";
 
-// 短剧导出由后端校验后流式返回 ZIP。用隐藏表单提交到 iframe：大文件交给浏览器下载管理器，
+// 短剧导出和时间线导出剪映草稿由后端校验后流式返回 ZIP。用隐藏表单提交到 iframe：大文件交给浏览器下载管理器，
 // 不在页面内存里拼包；校验失败时 iframe 收到 JSON 信封，读出 msg 交给调用方提示。
 
 const JIANYING_ROOT_KEY = "yingce.drama.jianyingDraftRoot";
@@ -47,6 +47,19 @@ export function exportDramaJianyingDraft(projectId: string, episodeId: string, o
         [
             ["draftRoot", options.draftRoot.trim()],
             ["captions", options.captions ? "1" : "0"],
+        ],
+        onError,
+    );
+}
+
+/** 把一份时间线快照（与时间线渲染同结构）导出成剪映草稿；复刻工作台用。 */
+export function exportTimelineJianyingDraft(timeline: object, options: { draftRoot: string; name: string }, onError: (message: string) => void) {
+    submitArchiveForm(
+        "/timeline/jianying-draft",
+        [
+            ["draftRoot", options.draftRoot.trim()],
+            ["name", options.name.trim()],
+            ["timeline", JSON.stringify(timeline)],
         ],
         onError,
     );

@@ -27,5 +27,6 @@ export async function rewriteRemakeDialogue(job: RemakeJob, options: { config: A
     return parseRemakeDialogue(
         result.text || "",
         job.shots.filter((shot) => shot.treatment !== "skip"),
+        job.language,
     );
 }

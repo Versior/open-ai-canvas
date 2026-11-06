@@ -241,6 +241,27 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, task)
 	})
+	// 时间线导出剪映草稿：表单字段 draftRoot（本机剪映草稿目录）、name（草稿名）、timeline（与渲染同结构的 JSON）。
+	// 用表单 POST 让浏览器直接下载 ZIP，本机路径不进访问日志。
+	r.POST("/timeline/jianying-draft", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512<<10)
+		req := service.TimelineJianyingDraftRequest{DraftRoot: c.PostForm("draftRoot"), Name: c.PostForm("name")}
+		if err := json.Unmarshal([]byte(c.PostForm("timeline")), &req.Timeline); err != nil {
+			fail(c, http.StatusBadRequest, errors.New("时间线格式错误"))
+			return
+		}
+		archive, err := svc.PrepareTimelineJianyingDraft(user.ID, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		streamDramaArchive(c, svc, user.ID, archive)
+	})
 	r.GET("/tasks", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

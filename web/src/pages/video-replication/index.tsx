@@ -163,10 +163,12 @@ export default function VideoReplicationPage() {
     if (remakeId)
         return (
             <RemakeWorkbench
+                key={remakeId}
                 id={remakeId}
                 step={remakeStep}
                 onStep={(next) => setParams(next === "produce" ? { remake: remakeId, step: "produce" } : { remake: remakeId })}
                 onBack={() => setParams({ tab: "works" })}
+                onOpen={(next) => setParams({ remake: next })}
                 onOpenTeardown={(teardownId) => setParams({ id: teardownId })}
             />
         );

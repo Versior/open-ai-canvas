@@ -1,22 +1,38 @@
 import { App, Button, Input, Spin } from "antd";
-import { ArrowLeft, Check, Download, FileText, Play, RefreshCw, Square } from "lucide-react";
+import { ArrowLeft, Check, Clapperboard, Copy, Download, FileText, PackagePlus, Play, RefreshCw, Square } from "lucide-react";
+import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { EmptyState } from "@/components/ui/product/empty-state";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { productVideoDefaultRatio } from "@/lib/product-video/media";
-import { isRemakeJob, REMAKE_ACTIVE, REMAKE_AUDIO_LABEL, REMAKE_STATUS_LABEL, REMAKE_TREATMENT_LABEL, REMAKE_TREATMENTS, remakeJobError, remakeKeptDurationMs, type RemakeJob } from "@/lib/remake/job";
-import { remakeSubtitleSRT } from "@/lib/remake/timeline";
+import {
+    duplicateRemakeJob,
+    isRemakeJob,
+    REMAKE_ACTIVE,
+    REMAKE_AUDIO_LABEL,
+    REMAKE_STATUS_LABEL,
+    REMAKE_TREATMENT_LABEL,
+    REMAKE_TREATMENTS,
+    remakeJobError,
+    remakeKeptDurationMs,
+    remakeLanguage,
+    type RemakeJob,
+    type RemakeProduct,
+} from "@/lib/remake/job";
+import { remakeLines, remakeSubtitleSRT } from "@/lib/remake/timeline";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
 import { productVideoThumbUrl } from "../replace/product-video-assets";
 import { productVideoLimitsFor } from "../replace/product-video-config";
-import { useProductVideoStore, updateRemake } from "../replace/use-product-video-store";
+import { createProductVideo, useProductVideoStore, updateRemake } from "../replace/use-product-video-store";
 import { formatProductVideoCredits } from "../replace/use-product-video-estimate";
 import { rewriteRemakeDialogue } from "./remake-dialogue";
+import { RemakeJianyingModal } from "./remake-jianying";
 import { RemakeProduce } from "./remake-produce";
-import { RemakeRecipeCards, RemakeStoryboard, type RemakeEdit } from "./remake-recipe";
+import { RemakeProductPicker } from "./remake-product-picker";
+import { RemakeRecipeCards, RemakeStoryboard, remakeWritesDialogue, type RemakeEdit } from "./remake-recipe";
 import { assembleRemake, remakeUnitsFor, retryRemake, startRemake, stopRemake, useRemakeRuntime } from "./remake-runner";
 import { useRemakeEstimate } from "./use-remake-estimate";
 import "./remake.css";
@@ -25,8 +41,8 @@ export type RemakeStep = "recipe" | "produce";
 
 /** 配方里用户能改的字段：保存时只把这些套到服务端最新版本上，不覆盖生成流程写入的单元和状态。 */
 function recipeFields(job: RemakeJob) {
-    const { title, product, people, models, backgrounds, audio, authorized, note, model, ratio, resolution, shots } = job;
-    return { title, product, people, models, backgrounds, audio, authorized, note, model, ratio, resolution, shots };
+    const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots } = job;
+    return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots };
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -46,7 +62,22 @@ function downloadText(fileName: string, text: string) {
  * 复刻工作台：一条拆解过的爆款视频 → 换成我的（配方 + 逐镜做法）→ 出片对比。
  * 配方在本地先改、停手 0.7 秒后保存；生成开始后配方锁定，改做法要等停止或完成。
  */
-export function RemakeWorkbench({ id, step, onStep, onBack, onOpenTeardown }: { id: string; step: RemakeStep; onStep: (step: RemakeStep) => void; onBack: () => void; onOpenTeardown: (teardownId: string) => void }) {
+export function RemakeWorkbench({
+    id,
+    step,
+    onStep,
+    onBack,
+    onOpen,
+    onOpenTeardown,
+}: {
+    id: string;
+    step: RemakeStep;
+    onStep: (step: RemakeStep) => void;
+    onBack: () => void;
+    /** 打开另一条作品（再做一版之后）。 */
+    onOpen: (id: string) => void;
+    onOpenTeardown: (teardownId: string) => void;
+}) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
     const configRef = useRef(config);
@@ -63,6 +94,9 @@ export function RemakeWorkbench({ id, step, onStep, onBack, onOpenTeardown }: { 
     const [rewriting, setRewriting] = useState(false);
     const [textModel, setTextModel] = useState("");
     const [starting, setStarting] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const [applying, setApplying] = useState(false);
+    const versions = useProductVideoStore((state) => state.jobs.filter((item) => isRemakeJob(item) && item.variantOf?.id === id).length);
     const locked = Boolean(job && (REMAKE_ACTIVE.includes(job.status) || active));
 
     // 换了作品或生成流程改了作品（单元、状态）时，配方之外的字段跟着服务端走；配方以本地为准，直到保存。
@@ -151,6 +185,30 @@ export function RemakeWorkbench({ id, step, onStep, onBack, onOpenTeardown }: { 
             message.error(errorText(error, "改写失败"));
         } finally {
             setRewriting(false);
+        }
+    };
+    // 再做一版：同一条爆款、同一份配方复制一条新作品，已有候选都带过去，只重做改了的部分。
+    const another = async () => {
+        try {
+            await flush();
+            const copy = duplicateRemakeJob(draftRef.current!, nanoid(12), { title: `${job.title} · 版本 ${versions + 2}` });
+            await createProductVideo(copy);
+            message.success("已复制成新的一版，改完做法或口播再开始生成");
+            onOpen(copy.id);
+        } catch (error) {
+            message.error(`没能复制：${errorText(error, "请重试")}`);
+        }
+    };
+    // 套用到其他商品：同一套做法和节奏，每件商品各做一条（口播和候选清空，参考片段照用）。
+    const applyTo = async (products: RemakeProduct[]) => {
+        setApplying(false);
+        try {
+            await flush();
+            for (const product of products) await createProductVideo(duplicateRemakeJob(draftRef.current!, nanoid(12), { title: `复刻 · ${product.name || "新商品"}`, product }));
+            message.success(`已新建 ${products.length} 条作品，在「我的作品」里逐条改写口播后开始生成`);
+            onBack();
+        } catch (error) {
+            message.error(`没能新建：${errorText(error, "请重试")}`);
         }
     };
     const download = async () => {
@@ -244,7 +302,12 @@ export function RemakeWorkbench({ id, step, onStep, onBack, onOpenTeardown }: { 
                             <dt>场景</dt>
                             <dd>{draft.backgrounds.length ? `换成背景图（${draft.backgrounds.length} 张）` : "沿用原片布局"}</dd>
                             <dt>口播</dt>
-                            <dd>{REMAKE_AUDIO_LABEL[draft.audio]}</dd>
+                            <dd>
+                                {REMAKE_AUDIO_LABEL[draft.audio]}
+                                {remakeWritesDialogue(draft.audio) ? ` · ${remakeLanguage(draft.language).label}` : ""}
+                            </dd>
+                            <dt>收尾</dt>
+                            <dd>{[draft.subtitles.burn && draft.audio !== "mute" ? "烧录字幕" : "不烧字幕", draft.music ? "有背景音乐" : ""].filter(Boolean).join(" · ")}</dd>
                             <dt>做法</dt>
                             <dd>
                                 {REMAKE_TREATMENTS.map((treatment) => [treatment, draft.shots.filter((shot) => shot.treatment === treatment).length] as const)
@@ -261,16 +324,30 @@ export function RemakeWorkbench({ id, step, onStep, onBack, onOpenTeardown }: { 
                             ) : null}
                             <span>
                                 成片约 {(keptMs / 1000).toFixed(1).replace(/\.0$/, "")} 秒{estimate.units ? ` · 要生成 ${estimate.units} 段` : ""}
+                                {draft.audio === "voice" ? " · 配音按配音模型另计" : ""}
                             </span>
                         </div>
                         {currentStep === "recipe" && inputError ? <p className="rw-warn">{inputError}</p> : null}
                         {currentStep === "produce" && job.error ? <p className="rw-warn">{job.error}</p> : null}
                         {cta}
-                        {currentStep === "produce" && job.audio === "rewrite" ? (
-                            <Button block icon={<FileText size={14} />} onClick={() => downloadText(`${job.title || "复刻成片"}.srt`, remakeSubtitleSRT(draft) || "")} disabled={!draft.shots.some((shot) => shot.dialogue.trim())}>
+                        {currentStep === "produce" && job.render?.resourceId ? (
+                            <Button block icon={<Clapperboard size={14} />} onClick={() => setExporting(true)}>
+                                导出剪映草稿
+                            </Button>
+                        ) : null}
+                        {currentStep === "produce" && remakeLines(draft).length ? (
+                            <Button block icon={<FileText size={14} />} onClick={() => downloadText(`${job.title || "复刻成片"}.srt`, remakeSubtitleSRT(draft))}>
                                 导出字幕（SRT）
                             </Button>
                         ) : null}
+                        <div className="rw-rail-more">
+                            <Button size="small" type="text" icon={<Copy size={14} />} disabled={locked} onClick={() => void another()} title="同一条爆款再做一版：换钩子、换模型或换口播，已有候选都保留">
+                                再做一版
+                            </Button>
+                            <Button size="small" type="text" icon={<PackagePlus size={14} />} disabled={locked} onClick={() => setApplying(true)} title="同一套做法和节奏，给其他商品各做一条">
+                                套用到其他商品
+                            </Button>
+                        </div>
                     </div>
                 </aside>
                 <main className="rw-main">
@@ -284,6 +361,8 @@ export function RemakeWorkbench({ id, step, onStep, onBack, onOpenTeardown }: { 
                     )}
                 </main>
             </div>
+            {exporting ? <RemakeJianyingModal job={job} onClose={() => setExporting(false)} /> : null}
+            {applying ? <RemakeProductPicker multiple title="套用到其他商品：选商品，每件做一条" onClose={() => setApplying(false)} onPickMany={(products) => void applyTo(products)} /> : null}
         </WorkspacePage>
     );
 }

@@ -328,12 +328,7 @@ func (s *Service) dramaDraftCover(userID string, resourceID string) []byte {
 func dramaJianyingReadme(draft jianying.Draft, skipped []string) string {
 	var builder strings.Builder
 	builder.WriteString("影策短剧 · 剪映草稿\n\n")
-	builder.WriteString("使用方法：\n")
-	builder.WriteString("1. 关闭剪映专业版。\n")
-	fmt.Fprintf(&builder, "2. 把压缩包解压到剪映草稿目录，确保文件夹「%s」直接位于：\n   %s\n", draft.Name, draft.Root)
-	fmt.Fprintf(&builder, "   解压后的完整路径应为：%s\n", draft.FolderPath())
-	builder.WriteString("3. 打开剪映，在首页草稿列表里找到同名草稿。\n\n")
-	builder.WriteString("注意：素材按上面的完整路径写入草稿；解压到别处或改了文件夹名，剪映会提示素材丢失，可在剪映里重新链接 materials 目录下的视频。\n")
+	builder.WriteString(jianyingImportSteps(draft))
 	if len(draft.Captions) > 0 {
 		builder.WriteString("台词字幕按分镜时长估算，与配音可能有偏差；需要精确对齐时可删除字幕轨，用剪映「识别字幕」重新生成。台词字幕.srt 可单独导入。\n")
 	}
@@ -343,6 +338,18 @@ func dramaJianyingReadme(draft jianying.Draft, skipped []string) string {
 			builder.WriteString("- " + item + "\n")
 		}
 	}
+	return builder.String()
+}
+
+// jianyingImportSteps 是剪映草稿导入说明里的使用方法和路径提醒（短剧和时间线导出共用）。
+func jianyingImportSteps(draft jianying.Draft) string {
+	var builder strings.Builder
+	builder.WriteString("使用方法：\n")
+	builder.WriteString("1. 关闭剪映专业版。\n")
+	fmt.Fprintf(&builder, "2. 把压缩包解压到剪映草稿目录，确保文件夹「%s」直接位于：\n   %s\n", draft.Name, draft.Root)
+	fmt.Fprintf(&builder, "   解压后的完整路径应为：%s\n", draft.FolderPath())
+	builder.WriteString("3. 打开剪映，在首页草稿列表里找到同名草稿。\n\n")
+	builder.WriteString("注意：素材按上面的完整路径写入草稿；解压到别处或改了文件夹名，剪映会提示素材丢失，可在剪映里重新链接 materials 目录下的视频。\n")
 	return builder.String()
 }
 

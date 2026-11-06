@@ -393,6 +393,7 @@ type (
 	TextReferenceConfig                    = app.TextReferenceConfig
 	TextReplayResult                       = app.TextReplayResult
 	TimelineRenderCreateRequest            = app.TimelineRenderCreateRequest
+	TimelineJianyingDraftRequest           = app.TimelineJianyingDraftRequest
 	TimelineTranscriptionCreateRequest     = app.TimelineTranscriptionCreateRequest
 	RevokeStorageGrantRequest              = app.RevokeStorageGrantRequest
 	TopupProductRequest                    = app.TopupProductRequest

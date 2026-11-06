@@ -25,9 +25,55 @@ export const REMAKE_TREATMENT_HINT: Record<RemakeTreatment, string> = {
 export type RemakeRisk = "product" | "face" | "speech" | "brand" | "text";
 export const REMAKE_RISK_LABEL: Record<RemakeRisk, string> = { product: "有原商品", face: "真人露脸", speech: "有人说话", brand: "他人品牌", text: "画面文字" };
 
-/** 口播：按原节奏改写成我的卖点、保留原声（要授权）、不要人声。 */
-export type RemakeAudio = "rewrite" | "original" | "mute";
-export const REMAKE_AUDIO_LABEL: Record<RemakeAudio, string> = { rewrite: "改写口播", original: "保留原声", mute: "不要人声" };
+/**
+ * 口播：改写口播（视频模型说新台词、对口型）、AI 配音（新台词由配音模型统一音色朗读，视频不出声）、
+ * 保留原声（要授权）、不要人声。
+ */
+export type RemakeAudio = "rewrite" | "voice" | "original" | "mute";
+export const REMAKE_AUDIOS: RemakeAudio[] = ["rewrite", "voice", "original", "mute"];
+export const REMAKE_AUDIO_LABEL: Record<RemakeAudio, string> = { rewrite: "改写口播", voice: "AI 配音", original: "保留原声", mute: "不要人声" };
+
+/** 新口播用的语言：改写口播、配音和字幕都按它。cps 是每秒大约能说的字符数，用来限长。 */
+export type RemakeLanguage = "zh" | "en" | "ja" | "ko" | "es" | "pt" | "id" | "th" | "vi" | "fr" | "de";
+export const REMAKE_LANGUAGES: { value: RemakeLanguage; label: string; speech: string; tts: string; cps: number }[] = [
+    { value: "zh", label: "中文", speech: "中文普通话", tts: "zh-cn", cps: 4 },
+    { value: "en", label: "English", speech: "英语", tts: "en", cps: 14 },
+    { value: "ja", label: "日本語", speech: "日语", tts: "ja", cps: 7 },
+    { value: "ko", label: "한국어", speech: "韩语", tts: "ko", cps: 6 },
+    { value: "es", label: "Español", speech: "西班牙语", tts: "es-mx", cps: 14 },
+    { value: "pt", label: "Português", speech: "葡萄牙语（巴西）", tts: "pt-br", cps: 14 },
+    { value: "id", label: "Bahasa Indonesia", speech: "印尼语", tts: "id", cps: 14 },
+    { value: "th", label: "ไทย", speech: "泰语", tts: "th", cps: 10 },
+    { value: "vi", label: "Tiếng Việt", speech: "越南语", tts: "vi", cps: 12 },
+    { value: "fr", label: "Français", speech: "法语", tts: "fr", cps: 14 },
+    { value: "de", label: "Deutsch", speech: "德语", tts: "de", cps: 13 },
+];
+
+export function remakeLanguage(value: RemakeLanguage | undefined) {
+    return REMAKE_LANGUAGES.find((item) => item.value === value) || REMAKE_LANGUAGES[0];
+}
+
+/** AI 配音的设置：配音模型、音色和语速（与全局音频设置同一套取值）。 */
+export type RemakeVoice = { model: string; voice: string; speed: string };
+
+/** 一句配音：signature 记下生成它时的模型、音色、语速、语言和台词，任何一项变了就重新生成。 */
+export type RemakeVoiceLine = {
+    shotIndex: number;
+    text: string;
+    signature: string;
+    status: "pending" | "running" | "succeeded" | "failed";
+    attempt: number;
+    taskId?: string;
+    resourceId?: string;
+    durationMs?: number;
+    error?: string;
+};
+
+/** 背景音乐：从素材库或本机选的一段音频，比成片短时循环，结尾 1.5 秒淡出。volume 是 0.05–1。 */
+export type RemakeMusic = { resourceId: string; name: string; durationMs?: number; volume: number };
+
+/** 烧录字幕用的整幅透明图：signature 是画幅加全部字幕文字，变了就重画。 */
+export type RemakeSubtitleImages = { signature: string; items: { shotIndex: number; resourceId: string }[] };
 
 /** 人物：换成模特图、保留原人物（要授权）、不出人。 */
 export type RemakePeople = "model" | "original" | "none";
@@ -105,6 +151,15 @@ export type RemakeJob = {
     models: ProductVideoImage[];
     backgrounds: ProductVideoImage[];
     audio: RemakeAudio;
+    language: RemakeLanguage;
+    voice: RemakeVoice;
+    voiceLines: RemakeVoiceLine[];
+    /** 把字幕烧进成片（不勾时只能导出 SRT 或在剪映里编辑）。 */
+    subtitles: { burn: boolean };
+    subtitleImages?: RemakeSubtitleImages;
+    music?: RemakeMusic;
+    /** 从哪条作品复制来的（再做一版、套用到其他商品）。 */
+    variantOf?: { id: string; title: string };
     /** 用户确认对原片有使用授权：保留原片画面、原人物或原声时必须勾选。 */
     authorized: boolean;
     note: string;
@@ -184,6 +239,10 @@ export function createRemakeJob(id: string, input: { teardownId: string; bundle:
         models: [],
         backgrounds: [],
         audio: source.hasAudio ? "rewrite" : "mute",
+        language: "zh",
+        voice: { model: "", voice: "", speed: "1" },
+        voiceLines: [],
+        subtitles: { burn: false },
         authorized: false,
         note: "",
         model: "",
@@ -203,8 +262,48 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
     if (!job.authorized && (active.some((shot) => shot.treatment === "keep") || job.audio === "original" || job.people === "original")) return "保留原片画面、原人物或原声，需要先确认你有使用授权";
     if (generated.length && !job.model) return "请选择视频模型";
     if (limits && job.product.images.length + job.models.length + job.backgrounds.length > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
-    if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「不要人声」";
+    if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「AI 配音」";
+    if (job.audio === "voice" && active.some((shot) => shot.dialogue.trim()) && !job.voice.model) return "请选择配音模型";
     return "";
+}
+
+/** 这一镜在成片里说的话（字幕和配音都按它）：改写口播和 AI 配音用新口播，保留原声用原口播，不要人声没有。 */
+export function remakeSpokenText(job: Pick<RemakeJob, "audio">, shot: Pick<RemakeShot, "dialogue" | "originalDialogue" | "treatment">) {
+    if (shot.treatment === "skip") return "";
+    if (job.audio === "rewrite" || job.audio === "voice") return shot.dialogue.trim();
+    if (job.audio === "original") return shot.originalDialogue.trim();
+    return "";
+}
+
+/**
+ * 复制一条作品：再做一版时沿用全部候选（只重做改了的部分）；换商品时清掉候选和口播，参考片段照用。
+ * 成片、报价和切段任务都不带过去。
+ */
+export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title: string; product?: RemakeProduct }, now = new Date()): RemakeJob {
+    const time = now.toISOString();
+    const swap = Boolean(options.product);
+    return {
+        ...job,
+        id,
+        revision: 0,
+        title: options.title.slice(0, 60),
+        createdAt: time,
+        updatedAt: time,
+        status: "draft",
+        error: undefined,
+        render: undefined,
+        credits: undefined,
+        clips: undefined,
+        variantOf: { id: job.id, title: job.title },
+        ...(swap
+            ? {
+                  product: options.product!,
+                  shots: job.shots.map((shot) => ({ ...shot, dialogue: "" })),
+                  units: job.units.map((unit) => ({ ...unit, status: "pending" as const, attempt: 1, taskId: undefined, error: undefined, fix: undefined, takes: [], chosen: 0 })),
+                  voiceLines: [],
+              }
+            : { units: job.units.map((unit) => (unit.status === "running" ? { ...unit, status: "pending" as const, taskId: undefined } : unit)) }),
+    };
 }
 
 export function remakeKeptDurationMs(job: Pick<RemakeJob, "shots">) {
@@ -220,6 +319,23 @@ const count = (value: unknown, fallback = 0) => (typeof value === "number" && Nu
 const positive = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined);
 const oneOf = <T extends string>(values: readonly T[], value: unknown, fallback: T) => (values.includes(value as T) ? (value as T) : fallback);
 const RISKS: RemakeRisk[] = ["product", "face", "speech", "brand", "text"];
+const LANGUAGE_VALUES = REMAKE_LANGUAGES.map((item) => item.value);
+
+function voiceLine(value: unknown): RemakeVoiceLine | undefined {
+    const raw = record(value);
+    if (!raw || !count(raw.shotIndex) || !text(raw.signature)) return undefined;
+    return {
+        shotIndex: count(raw.shotIndex),
+        text: text(raw.text),
+        signature: text(raw.signature),
+        status: oneOf(["pending", "running", "succeeded", "failed"] as const, raw.status, "pending"),
+        attempt: Math.max(1, count(raw.attempt, 1)),
+        ...(text(raw.taskId) ? { taskId: text(raw.taskId) } : {}),
+        ...(text(raw.resourceId) ? { resourceId: text(raw.resourceId) } : {}),
+        ...(positive(raw.durationMs) ? { durationMs: positive(raw.durationMs) } : {}),
+        ...(text(raw.error) ? { error: text(raw.error) } : {}),
+    };
+}
 const STATUSES: RemakeStatus[] = ["draft", "clipping", "generating", "assembling", "succeeded", "failed"];
 
 function images(value: unknown, limit: number): ProductVideoImage[] {
@@ -294,6 +410,10 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
     const summary = record(raw.sourceSummary) || {};
     const clips = record(raw.clips);
     const render = record(raw.render);
+    const voice = record(raw.voice) || {};
+    const subtitleImages = record(raw.subtitleImages);
+    const music = record(raw.music);
+    const variantOf = record(raw.variantOf);
     const createdAt = text(raw.createdAt, new Date(0).toISOString());
     return {
         version: REMAKE_VERSION,
@@ -318,7 +438,33 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
         people: oneOf(["model", "original", "none"] as const, raw.people, "model"),
         models: images(raw.models, 3),
         backgrounds: images(raw.backgrounds, 3),
-        audio: oneOf(["rewrite", "original", "mute"] as const, raw.audio, "rewrite"),
+        audio: oneOf(REMAKE_AUDIOS, raw.audio, "rewrite"),
+        language: oneOf(LANGUAGE_VALUES, raw.language, "zh"),
+        voice: { model: text(voice.model), voice: text(voice.voice), speed: text(voice.speed, "1") || "1" },
+        voiceLines: (Array.isArray(raw.voiceLines) ? raw.voiceLines : []).map(voiceLine).filter((item): item is RemakeVoiceLine => Boolean(item)),
+        subtitles: { burn: record(raw.subtitles)?.burn === true },
+        ...(subtitleImages && text(subtitleImages.signature)
+            ? {
+                  subtitleImages: {
+                      signature: text(subtitleImages.signature),
+                      items: (Array.isArray(subtitleImages.items) ? subtitleImages.items : []).flatMap((item) => {
+                          const entry = record(item);
+                          return entry && count(entry.shotIndex) && text(entry.resourceId) ? [{ shotIndex: count(entry.shotIndex), resourceId: text(entry.resourceId) }] : [];
+                      }),
+                  },
+              }
+            : {}),
+        ...(music && text(music.resourceId)
+            ? {
+                  music: {
+                      resourceId: text(music.resourceId),
+                      name: text(music.name),
+                      ...(positive(music.durationMs) ? { durationMs: positive(music.durationMs) } : {}),
+                      volume: Math.min(1, Math.max(0.05, typeof music.volume === "number" ? music.volume : 0.25)),
+                  },
+              }
+            : {}),
+        ...(variantOf && text(variantOf.id) ? { variantOf: { id: text(variantOf.id), title: text(variantOf.title) } } : {}),
         authorized: raw.authorized === true,
         note: text(raw.note),
         model: text(raw.model),

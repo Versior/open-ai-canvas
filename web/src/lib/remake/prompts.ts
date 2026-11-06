@@ -2,17 +2,19 @@ import { jsonCandidates } from "@/lib/canvas/video-teardown";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import type { ProductVideoImage } from "@/lib/product-video/job";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
-import type { RemakeJob, RemakeShot, RemakeUnit } from "./job";
+import { remakeLanguage, type RemakeJob, type RemakeLanguage, type RemakeShot, type RemakeUnit } from "./job";
 
 // 复刻工作台的提示词：生成单元的视频提示词（换元素 / 重新拍）和改写口播的文本提示词。
 // 参考图按角色绑定：商品图定商品、模特图定人物、背景图定场景；换元素时参考视频定动作、运镜和节奏。
 // 结构可以借，内容要换：不出现原片的品牌、Logo、水印和原话。
 
-/** 中文口播大约每秒 4 个字；说话镜头要对口型，按 4 字/秒估上限。 */
-export const REMAKE_CHARS_PER_SECOND = 4;
-
-export function remakeDialogueBudget(shot: Pick<RemakeShot, "startMs" | "endMs">) {
-    return Math.max(4, Math.floor(((shot.endMs - shot.startMs) / 1000) * REMAKE_CHARS_PER_SECOND));
+/**
+ * 每镜新口播的字数上限：按语言每秒能说的字符数（中文约 4 字/秒，英语约 14 个字母/秒）乘镜头时长，
+ * 说话镜头要对口型、配音要放得下，宁短勿长。
+ */
+export function remakeDialogueBudget(shot: Pick<RemakeShot, "startMs" | "endMs">, language: RemakeLanguage = "zh") {
+    const { cps } = remakeLanguage(language);
+    return Math.max(cps, Math.floor(((shot.endMs - shot.startMs) / 1000) * cps));
 }
 
 export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; background: string };
@@ -43,12 +45,14 @@ function peopleLine(job: Pick<RemakeJob, "people">, refs: RemakeReferenceImages,
     return video ? `人物：${video}里的人物换成一位外观不同的普通人，不要还原原片人物的长相。` : "人物：如果需要出镜，用一位外观普通的人，不要模仿任何真人。";
 }
 
-function speechLines(job: Pick<RemakeJob, "audio">, shots: readonly RemakeShot[]) {
+function speechLines(job: Pick<RemakeJob, "audio" | "language">, shots: readonly RemakeShot[]) {
     if (job.audio === "original") return ["声音：成片会换回原视频的声音，这里只要画面；人物口型和动作节拍跟原视频保持同步。"];
     if (job.audio === "mute") return ["声音：不要人声和旁白，只保留轻微的环境声。"];
+    if (job.audio === "voice") return ["声音：不要人声和旁白（成片会另配旁白配音），只保留轻微的环境声；出镜的人可以做讲解的表情和手势，嘴部动作自然，不必对口型。"];
     const spoken = shots.filter((shot) => shot.dialogue.trim());
     if (!spoken.length) return ["声音：这一段没有台词，只要环境声，不要人声。"];
-    return ["台词（中文普通话，语速自然，只说这些话，不要加词）：", ...spoken.map((shot) => `- 镜头 ${shot.index}：${shot.speaker ? "人物对着镜头说" : "画外音旁白"}「${shot.dialogue.trim()}」`), "说话镜头的口型和台词同步；没有台词的镜头只要环境声。"];
+    const { speech } = remakeLanguage(job.language);
+    return [`台词（${speech}，语速自然，只说这些话，不要加词）：`, ...spoken.map((shot) => `- 镜头 ${shot.index}：${shot.speaker ? "人物对着镜头说" : "画外音旁白"}「${shot.dialogue.trim()}」`), "说话镜头的口型和台词同步；没有台词的镜头只要环境声。"];
 }
 
 function shotSeconds(shot: Pick<RemakeShot, "startMs" | "endMs">) {
@@ -81,8 +85,9 @@ export function remakeShotDescription(shot: Pick<RemakeShot, "plot" | "motion" |
 
 // ---------- 改写口播 ----------
 
-export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shots" | "sourceSummary" | "note">) {
+export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shots" | "sourceSummary" | "note" | "language">) {
     const shots = job.shots.filter((shot) => shot.treatment !== "skip");
+    const language = remakeLanguage(job.language);
     const lines = [
         "你是带货短视频的口播编剧。下面是一条爆款视频逐镜头的原口播和画面。请保留它的节奏和说服结构（开头怎么抓人、痛点、卖点、证明、行动号召），把内容改写成我的商品。",
         "",
@@ -95,11 +100,11 @@ export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shot
         "逐镜头：",
         ...shots.map(
             (shot) =>
-                `- 镜头 ${shot.index}｜${shotSeconds(shot)} 秒｜最多 ${remakeDialogueBudget(shot)} 个字｜${shot.speaker ? "有人对着镜头说话" : "旁白或无人说话"}｜原口播：${shot.originalDialogue.trim() || "（无）"}｜画面：${shot.plot.trim() || "（无）"}`,
+                `- 镜头 ${shot.index}｜${shotSeconds(shot)} 秒｜最多 ${remakeDialogueBudget(shot, job.language)} 个${language.value === "zh" ? "字" : "字符"}｜${shot.speaker ? "有人对着镜头说话" : "旁白或无人说话"}｜原口播：${shot.originalDialogue.trim() || "（无）"}｜画面：${shot.plot.trim() || "（无）"}`,
         ),
         "",
         "要求：",
-        "1. 每个镜头的新口播不能超过标注的字数，原片这一镜没有口播的，新口播也写空字符串。",
+        `1. 新口播一律用${language.speech}写${language.value === "zh" ? "" : "（面向当地观众的自然口语，不是逐字翻译）"}；每个镜头不能超过标注的${language.value === "zh" ? "字数" : "字符数（含空格和标点）"}，原片这一镜没有口播的，新口播也写空字符串。`,
         "2. 不要出现原片的品牌、店铺、人名和原话，不要照抄原句；不要夸大功效，不写价格和极限词（最、第一、100%）。",
         "3. 口语化、短句，像真人说话；开头一镜要有让人停下来的钩子。",
         "4. 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释：",
@@ -109,7 +114,7 @@ export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shot
 }
 
 /** 解析改写结果：只认清单里的镜头，超出字数的截到上限。缺镜头时报错让调用方重试。 */
-export function parseRemakeDialogue(text: string, shots: readonly Pick<RemakeShot, "index" | "startMs" | "endMs">[]) {
+export function parseRemakeDialogue(text: string, shots: readonly Pick<RemakeShot, "index" | "startMs" | "endMs">[], language: RemakeLanguage = "zh") {
     const expected = new Map(shots.map((shot) => [shot.index, shot]));
     for (const candidate of jsonCandidates(text)) {
         if (!Array.isArray(candidate.lines)) continue;
@@ -124,7 +129,7 @@ export function parseRemakeDialogue(text: string, shots: readonly Pick<RemakeSho
             result.set(
                 index,
                 Array.from(dialogue)
-                    .slice(0, remakeDialogueBudget(shot) + 4)
+                    .slice(0, remakeDialogueBudget(shot, language) + remakeLanguage(language).cps)
                     .join(""),
             );
         }

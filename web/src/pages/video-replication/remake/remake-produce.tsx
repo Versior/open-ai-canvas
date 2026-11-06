@@ -3,7 +3,7 @@ import { Film, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
 import { REMAKE_TREATMENT_LABEL, type RemakeJob, type RemakeUnit } from "@/lib/remake/job";
-import { remakePieces, remakeSourceTime } from "@/lib/remake/timeline";
+import { remakeLines, remakePieces, remakeSourceTime } from "@/lib/remake/timeline";
 import { remakeUnitTake } from "@/lib/remake/units";
 import { resourceFileUrl } from "@/services/api/resources";
 import type { AiConfig } from "@/stores/use-config-store";
@@ -35,6 +35,7 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
     const unit = selection.kind === "unit" ? job.units.find((item) => item.key === selection.key) : undefined;
     const take = unit ? remakeUnitTake(unit) : undefined;
     const pieces = useMemo(() => remakePieces(job), [job]);
+    const lines = useMemo(() => remakeLines(job), [job]);
     const leftRef = useRef<HTMLVideoElement>(null);
     const rightRef = useRef<HTMLVideoElement>(null);
     const [hearOriginal, setHearOriginal] = useState(false);
@@ -212,13 +213,20 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
                             ))}
                     </div>
                 </div>
-                {job.audio === "rewrite" ? (
+                {lines.length || job.music ? (
                     <div className="rw-voice-track">
-                        口播：
-                        {job.shots
-                            .filter((shot) => shot.treatment !== "skip" && shot.dialogue.trim())
-                            .map((shot) => `「${shot.dialogue.trim()}」`)
-                            .join(" ") || "没有台词"}
+                        {lines.length ? (
+                            <span>
+                                {job.audio === "voice" ? `配音 ${job.voiceLines.filter((line) => line.status === "succeeded").length}/${lines.length} 句：` : job.audio === "original" ? "原声：" : "口播："}
+                                {lines.map((line) => `「${line.text}」`).join(" ")}
+                            </span>
+                        ) : null}
+                        {job.music ? (
+                            <span>
+                                背景音乐：{job.music.name || "已选"} · 音量 {Math.round(job.music.volume * 100)}%
+                            </span>
+                        ) : null}
+                        {job.subtitles.burn && lines.length ? <span>字幕烧进成片</span> : null}
                     </div>
                 ) : null}
             </section>

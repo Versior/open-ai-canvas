@@ -6,13 +6,28 @@ import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import type { ProductVideoImage } from "@/lib/product-video/job";
-import { REMAKE_AUDIO_LABEL, REMAKE_RISK_LABEL, REMAKE_TREATMENT_HINT, REMAKE_TREATMENT_LABEL, REMAKE_TREATMENTS, type RemakeAudio, type RemakeJob, type RemakePeople, type RemakeShot, type RemakeTreatment } from "@/lib/remake/job";
+import {
+    REMAKE_AUDIO_LABEL,
+    REMAKE_AUDIOS,
+    REMAKE_RISK_LABEL,
+    REMAKE_TREATMENT_HINT,
+    REMAKE_TREATMENT_LABEL,
+    REMAKE_TREATMENTS,
+    type RemakeAudio,
+    type RemakeJob,
+    type RemakeLanguage,
+    type RemakePeople,
+    type RemakeShot,
+    type RemakeTreatment,
+} from "@/lib/remake/job";
 import { remakeDialogueBudget } from "@/lib/remake/prompts";
 import { remakeRecommendReason } from "@/lib/remake/recommend";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ProductVideoImageSlot, productVideoThumbUrl } from "../replace/product-video-assets";
 import { productVideoLimitsFor } from "../replace/product-video-config";
+import { RemakePersonaModal } from "./remake-persona";
 import { RemakeProductPicker } from "./remake-product-picker";
+import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields } from "./remake-sound";
 
 export type RemakeEdit = (updater: (job: RemakeJob) => RemakeJob) => void;
 
@@ -21,12 +36,17 @@ const PEOPLE_OPTIONS: { value: RemakePeople; label: string }[] = [
     { value: "original", label: "保留原人物" },
     { value: "none", label: "不出人" },
 ];
-const AUDIO_OPTIONS: RemakeAudio[] = ["rewrite", "original", "mute"];
 const AUDIO_HINT: Record<RemakeAudio, string> = {
     rewrite: "按原片的节奏和说服结构，把口播改写成你的卖点；说话镜头由视频模型同时生成口型和声音",
+    voice: "新口播由配音模型用同一个音色朗读，视频模型不出声；音色稳定，适合旁白类视频，说话镜头不对口型",
     original: "成片换回原视频的声音，只替换画面；原声里可能有别人的品牌和原话",
     mute: "成片不带人声，适合后期另配口播或音乐",
 };
+
+/** 这个口播方式要不要写新口播。 */
+export function remakeWritesDialogue(audio: RemakeAudio) {
+    return audio === "rewrite" || audio === "voice";
+}
 
 function Card({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
     return (
@@ -43,6 +63,7 @@ function Card({ title, extra, children }: { title: string; extra?: ReactNode; ch
 /** 复刻配方：我的商品、人物、场景、口播、授权与生成设置。 */
 export function RemakeRecipeCards({ job, config, edit, disabled }: { job: RemakeJob; config: AiConfig; edit: RemakeEdit; disabled?: boolean }) {
     const [picking, setPicking] = useState(false);
+    const [persona, setPersona] = useState(false);
     const profile = useMemo(() => (job.model ? modelCapabilityConfigFor(config, job.model).video : undefined), [config, job.model]);
     const limits = useMemo(() => productVideoLimitsFor(config, job.model), [config, job.model]);
     const imageCount = job.product.images.length + (job.people === "model" ? job.models.length : 0) + job.backgrounds.length;
@@ -94,6 +115,7 @@ export function RemakeRecipeCards({ job, config, edit, disabled }: { job: Remake
                         disabled={disabled}
                         onAdd={(images) => patchImages("models", (current) => [...current, ...images].slice(0, 3))}
                         onRemove={(id) => patchImages("models", (current) => current.filter((image) => image.id !== id))}
+                        generate={{ label: "AI 生成", onClick: () => setPersona(true) }}
                     />
                 ) : (
                     <p className="rw-hint">{job.people === "original" ? "保留原片里的人，需要你有肖像使用授权。" : "画面里不出现人脸，需要时只出现手。"}</p>
@@ -118,11 +140,14 @@ export function RemakeRecipeCards({ job, config, edit, disabled }: { job: Remake
                     size="sm"
                     disabled={disabled}
                     onChange={(audio) => edit((value) => ({ ...value, audio }))}
-                    options={AUDIO_OPTIONS.map((value) => ({ value, label: REMAKE_AUDIO_LABEL[value], disabled: value === "original" && !job.source.hasAudio }))}
+                    options={REMAKE_AUDIOS.map((value) => ({ value, label: REMAKE_AUDIO_LABEL[value], disabled: value === "original" && !job.source.hasAudio }))}
                 />
                 <p className="rw-hint">{AUDIO_HINT[job.audio]}</p>
-                {job.audio === "rewrite" && typeof limits !== "string" && !limits.generateAudio ? <p className="rw-warn">所选视频模型不能生成声音，换一个能出声的模型才能用新口播。</p> : null}
+                {remakeWritesDialogue(job.audio) ? <RemakeLanguageField job={job} edit={edit} disabled={disabled} /> : null}
+                {job.audio === "voice" ? <RemakeVoiceFields job={job} config={config} edit={edit} disabled={disabled} /> : null}
+                {job.audio === "rewrite" && typeof limits !== "string" && !limits.generateAudio ? <p className="rw-warn">所选视频模型不能生成声音，换一个能出声的模型，或改用「AI 配音」。</p> : null}
             </Card>
+            <RemakeFinishCard job={job} edit={edit} disabled={disabled} />
             <Card title="生成设置">
                 <div className="rw-fields">
                     <ModelPicker
@@ -175,6 +200,7 @@ export function RemakeRecipeCards({ job, config, edit, disabled }: { job: Remake
                     <small>保留原片画面、原人物或原声时需要。只借结构不用原片内容时不用勾。</small>
                 </span>
             </label>
+            {persona ? <RemakePersonaModal config={config} left={3 - job.models.length} onClose={() => setPersona(false)} onAdd={(image) => patchImages("models", (current) => [...current, image].slice(0, 3))} /> : null}
             {picking ? (
                 <RemakeProductPicker
                     onClose={() => setPicking(false)}
@@ -190,9 +216,9 @@ export function RemakeRecipeCards({ job, config, edit, disabled }: { job: Remake
 
 const TREATMENT_SHORT: Record<RemakeTreatment, string> = { replace: "换元素", remake: "重拍", keep: "保留", skip: "删掉" };
 
-function ShotRow({ shot, audio, disabled, edit }: { shot: RemakeShot; audio: RemakeAudio; disabled?: boolean; edit: RemakeEdit }) {
+function ShotRow({ shot, audio, language, disabled, edit }: { shot: RemakeShot; audio: RemakeAudio; language: RemakeLanguage; disabled?: boolean; edit: RemakeEdit }) {
     const patch = (next: Partial<RemakeShot>) => edit((value) => ({ ...value, shots: value.shots.map((item) => (item.index === shot.index ? { ...item, ...next } : item)) }));
-    const budget = remakeDialogueBudget(shot);
+    const budget = remakeDialogueBudget(shot, language);
     const length = Array.from(shot.dialogue).length;
     const reason = remakeRecommendReason(shot.risks, shot.treatment);
     return (
@@ -225,7 +251,7 @@ function ShotRow({ shot, audio, disabled, edit }: { shot: RemakeShot; audio: Rem
             </div>
             <div className="rw-shot-voice">
                 {shot.originalDialogue ? <span className="rw-shot-original">原：{shot.originalDialogue}</span> : <span className="rw-shot-original">原片这一镜没有口播</span>}
-                {audio === "rewrite" && shot.treatment !== "skip" ? (
+                {remakeWritesDialogue(audio) && shot.treatment !== "skip" ? (
                     <>
                         <Input.TextArea
                             value={shot.dialogue}
@@ -236,8 +262,8 @@ function ShotRow({ shot, audio, disabled, edit }: { shot: RemakeShot; audio: Rem
                             aria-label={`镜头 ${shot.index} 的新口播`}
                         />
                         <span className="rw-shot-count" data-over={length > budget || undefined}>
-                            {shot.speaker ? "对口型 · " : ""}
-                            {length}/{budget} 字
+                            {shot.speaker && audio === "rewrite" ? "对口型 · " : ""}
+                            {length}/{budget} {language === "zh" ? "字" : "字符"}
                         </span>
                     </>
                 ) : null}
@@ -286,7 +312,7 @@ export function RemakeStoryboard({
                             全部按推荐
                         </Button>
                     ) : null}
-                    {job.audio === "rewrite" ? (
+                    {remakeWritesDialogue(job.audio) ? (
                         <>
                             <div className="rw-text-model">
                                 <ModelPicker config={config} capability="text" value={textModel} onChange={onTextModel} showSelectedPrice={false} showOptionPrices placeholder="改写用的文本模型" />
@@ -302,7 +328,7 @@ export function RemakeStoryboard({
             </header>
             <ol className="rw-shots">
                 {job.shots.map((shot) => (
-                    <ShotRow key={shot.index} shot={shot} audio={job.audio} disabled={disabled} edit={edit} />
+                    <ShotRow key={shot.index} shot={shot} audio={job.audio} language={job.language} disabled={disabled} edit={edit} />
                 ))}
             </ol>
             {!job.shots.some((shot) => shot.plot) ? (

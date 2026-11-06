@@ -23,7 +23,8 @@ const MaterialsDir = "materials"
 // CoverFile 是草稿封面文件名，剪映列表页读取它显示缩略图。
 const CoverFile = "draft_cover.jpg"
 
-// Clip 是主视频轨上按顺序首尾相接的一段视频。
+// Clip 是主视频轨上的一段视频。默认按顺序首尾相接；Draft.Placed 时按 StartUs 放置，并从素材的
+// SourceStartUs 处开始取。同一个文件的多段共用一份素材。
 type Clip struct {
 	// FileName 是 materials 目录内的文件名。
 	FileName   string
@@ -31,6 +32,26 @@ type Clip struct {
 	DurationUs int64
 	Width      int
 	Height     int
+	// 以下字段只在 Draft.Placed 时使用。MaterialDurationUs 是素材文件的总时长（0 表示按片段算）。
+	StartUs            int64
+	SourceStartUs      int64
+	MaterialDurationUs int64
+	// Muted 为 true 时片段静音（原片画面只借画面、声音另配时）。
+	Muted bool
+}
+
+// AudioClip 是音频轨上的一段声音（配音、音乐、原声）。素材可以是音频文件，也可以是视频文件里的声音。
+// Track 相同的片段放在同一条音频轨上。
+type AudioClip struct {
+	FileName           string
+	Name               string
+	Track              string
+	StartUs            int64
+	SourceStartUs      int64
+	DurationUs         int64
+	MaterialDurationUs int64
+	// Volume 是 0–1 的音量，0 按 1 处理。
+	Volume float64
 }
 
 // Caption 是字幕轨上的一条文字。
@@ -49,6 +70,9 @@ type Draft struct {
 	FPS      int
 	Clips    []Clip
 	Captions []Caption
+	// Placed 为 true 时视频片段按各自的 StartUs / SourceStartUs 放置（时间线导出）；短剧导出按顺序首尾相接。
+	Placed   bool
+	Audios   []AudioClip
 	HasCover bool
 	Now      time.Time
 }
@@ -108,13 +132,34 @@ func (d Draft) MaterialPath(fileName string) string {
 	return d.FolderPath() + sep + MaterialsDir + sep + fileName
 }
 
-// DurationUs 是主视频轨总时长。
+// DurationUs 是草稿总时长：首尾相接时是各段之和，按时间线放置时是最晚结束的片段。
 func (d Draft) DurationUs() int64 {
 	var total int64
 	for _, clip := range d.Clips {
-		total += clip.DurationUs
+		if d.Placed {
+			total = max(total, clip.StartUs+clip.DurationUs)
+		} else {
+			total += clip.DurationUs
+		}
+	}
+	if d.Placed {
+		for _, audio := range d.Audios {
+			total = max(total, audio.StartUs+audio.DurationUs)
+		}
 	}
 	return total
+}
+
+// audioMaterial 按 pyJianYingDraft 的本地音频素材写法：视频文件里的声音同样用 extract_music 引用。
+func audioMaterial(id string, name string, path string, durationUs int64) map[string]any {
+	return map[string]any{
+		"app_id": 0, "category_id": "", "category_name": "local", "check_flag": 1, "copyright_limit_type": "none", "duration": durationUs,
+		"effect_id": "", "formula_id": "", "id": id, "intensifies_path": "", "is_ai_clone_tone": false, "is_text_edit_overdub": false,
+		"is_ugc": false, "local_material_id": id, "music_id": id, "name": name, "path": path, "query": "", "request_id": "", "resource_id": "",
+		"search_id": "", "source_from": "", "source_platform": 0, "team_id": "", "text_id": "", "tone_category_id": "", "tone_category_name": "",
+		"tone_effect_id": "", "tone_effect_name": "", "tone_platform": "", "tone_second_category_id": "", "tone_second_category_name": "",
+		"tone_speaker": "", "tone_type": "", "type": "extract_music", "video_id": "", "wave_points": []any{},
+	}
 }
 
 func newUUID() string {
@@ -207,32 +252,81 @@ func Build(d Draft) ([]byte, []byte, error) {
 	videos := []any{}
 	speeds := []any{}
 	videoSegments := []any{}
+	videoMaterials := map[string]string{}
 	var cursor int64
 	for _, clip := range d.Clips {
 		if clip.DurationUs <= 0 || clip.FileName == "" {
 			return nil, nil, fmt.Errorf("视频片段 %q 缺少时长或文件名", clip.Name)
 		}
-		width, height := clip.Width, clip.Height
-		if width <= 0 || height <= 0 {
-			width, height = d.Width, d.Height
+		start, sourceStart := cursor, int64(0)
+		if d.Placed {
+			start, sourceStart = clip.StartUs, clip.SourceStartUs
+			if start < 0 || sourceStart < 0 {
+				return nil, nil, fmt.Errorf("视频片段 %q 的位置无效", clip.Name)
+			}
 		}
-		materialID := newUUID()
-		videos = append(videos, map[string]any{
-			"audio_fade": nil, "category_id": "", "category_name": "local", "check_flag": 63487,
-			"crop":       map[string]any{"upper_left_x": 0.0, "upper_left_y": 0.0, "upper_right_x": 1.0, "upper_right_y": 0.0, "lower_left_x": 0.0, "lower_left_y": 1.0, "lower_right_x": 1.0, "lower_right_y": 1.0},
-			"crop_ratio": "free", "crop_scale": 1.0, "duration": clip.DurationUs, "height": height, "width": width,
-			"id": materialID, "local_material_id": "", "material_id": materialID, "material_name": firstNonEmpty(clip.Name, clip.FileName),
-			"media_path": "", "path": d.MaterialPath(clip.FileName), "type": "video",
-		})
+		materialID, ok := videoMaterials[clip.FileName]
+		if !ok {
+			width, height := clip.Width, clip.Height
+			if width <= 0 || height <= 0 {
+				width, height = d.Width, d.Height
+			}
+			materialID = newUUID()
+			videoMaterials[clip.FileName] = materialID
+			videos = append(videos, map[string]any{
+				"audio_fade": nil, "category_id": "", "category_name": "local", "check_flag": 63487,
+				"crop":       map[string]any{"upper_left_x": 0.0, "upper_left_y": 0.0, "upper_right_x": 1.0, "upper_right_y": 0.0, "lower_left_x": 0.0, "lower_left_y": 1.0, "lower_right_x": 1.0, "lower_right_y": 1.0},
+				"crop_ratio": "free", "crop_scale": 1.0, "duration": max(clip.MaterialDurationUs, sourceStart+clip.DurationUs), "height": height, "width": width,
+				"id": materialID, "local_material_id": "", "material_id": materialID, "material_name": firstNonEmpty(clip.Name, clip.FileName),
+				"media_path": "", "path": d.MaterialPath(clip.FileName), "type": "video",
+			})
+		}
 		speed := speedMaterial()
 		speeds = append(speeds, speed)
-		segment := baseSegment(materialID, cursor, clip.DurationUs, 0, []string{speed["id"].(string)}, clipSettings(0))
-		segment["source_timerange"] = timerange(0, clip.DurationUs)
+		segment := baseSegment(materialID, start, clip.DurationUs, 0, []string{speed["id"].(string)}, clipSettings(0))
+		segment["source_timerange"] = timerange(sourceStart, clip.DurationUs)
 		segment["hdr_settings"] = map[string]any{"intensity": 1.0, "mode": 1, "nits": 1000}
+		if clip.Muted {
+			segment["volume"] = 0.0
+		}
 		videoSegments = append(videoSegments, segment)
 		cursor += clip.DurationUs
 	}
+	cursor = d.DurationUs()
 	tracks := []any{track("video", "", videoSegments)}
+	audios := []any{}
+	if d.Placed && len(d.Audios) > 0 {
+		audioMaterials := map[string]string{}
+		trackOrder := []string{}
+		trackSegments := map[string][]any{}
+		for _, audio := range d.Audios {
+			if audio.DurationUs <= 0 || audio.FileName == "" || audio.StartUs < 0 || audio.SourceStartUs < 0 {
+				return nil, nil, fmt.Errorf("音频片段 %q 缺少时长、文件名或位置", audio.Name)
+			}
+			materialID, ok := audioMaterials[audio.FileName]
+			if !ok {
+				materialID = newUUID()
+				audioMaterials[audio.FileName] = materialID
+				audios = append(audios, audioMaterial(materialID, firstNonEmpty(audio.Name, audio.FileName), d.MaterialPath(audio.FileName), max(audio.MaterialDurationUs, audio.SourceStartUs+audio.DurationUs)))
+			}
+			speed := speedMaterial()
+			speeds = append(speeds, speed)
+			segment := baseSegment(materialID, audio.StartUs, audio.DurationUs, 0, []string{speed["id"].(string)}, nil)
+			delete(segment, "uniform_scale")
+			segment["source_timerange"] = timerange(audio.SourceStartUs, audio.DurationUs)
+			segment["hdr_settings"] = nil
+			if audio.Volume > 0 {
+				segment["volume"] = audio.Volume
+			}
+			if _, seen := trackSegments[audio.Track]; !seen {
+				trackOrder = append(trackOrder, audio.Track)
+			}
+			trackSegments[audio.Track] = append(trackSegments[audio.Track], segment)
+		}
+		for _, name := range trackOrder {
+			tracks = append(tracks, track("audio", name, trackSegments[name]))
+		}
+	}
 	texts := []any{}
 	if len(d.Captions) > 0 {
 		textSegments := []any{}
@@ -258,6 +352,7 @@ func Build(d Draft) ([]byte, []byte, error) {
 		}
 	}
 	materials["videos"] = videos
+	materials["audios"] = audios
 	materials["speeds"] = speeds
 	materials["texts"] = texts
 	platform := map[string]any{"app_id": 3704, "app_source": "lv", "app_version": "5.9.0", "os": "windows"}
