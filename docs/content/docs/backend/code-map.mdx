@@ -24,6 +24,22 @@ description: 从产品功能快速定位主要代码入口
 - 接口 `web/src/services/api/ecommerce-studio.ts` → `backend/internal/handler/ecommerce_studio.go`（`RegisterEcommerceStudioRoutes`，在 `api.go` 单独注册）→ `app/ecommerce_studio.go`，复用 `repository/ecommerce_library.go` 的修订号保存，资源引用扫描在 `repository/resource_reference.go`。「商品档案」与「出图策划」能力的默认指令与准入在 `app/ecommerce_defaults.go`、`app/ecommerce_settings.go`（`ecommerceStudioCapability` 让这两项不受旧画布总开关约束）；与电商 Agent 共用知识库的检索与注入在 `app/ecommerce_studio_knowledge.go`：商品档案复用 `retrieveEcommerceKnowledge` 后按类型过滤，出图策划用 `rankEcommerceKnowledge`（创作类型按 `studioPlanKind`），`app/ecommerce_studio_references.go` 再从内置套图库（`ecommerce_catalog.go` 的 `loadEcommerceCatalog`）挑同类爆款套图附在后面（`app/ecommerce_creative_context.go`，限量前的全部候选）按 `ecommerceStudioPlanKnowledgeTypes` 分类型取。功能开关 `ecommerceStudioEnabled` 定义在 `internal/platform/feature_availability.go`，任务准入在 `app/task_creation.go` 的 `requireTaskGenerationFeatures`。
 - 助手：工具名与可见性在 `backend/internal/agent/tool/policy_studio.go`；`app/cloud_agent_studio.go` 负责 studio 范围校验、建 run 时的商品归属与 `studio_context` 数据消息；`app/cloud_agent_studio_tools.go` 是工具 schema、处理器与审批预演；`app/ecommerce_studio_doc.go`、`app/ecommerce_studio_agent_ops.go` 是商品文档的读取、改写与批量校验。前端 `stores/use-global-agent-store.ts` 的 `studio` 上下文、`components/canvas/canvas-cloud-agent-panel.tsx` 发送时的 `studioProductId` 与 `services/agent-studio-sync.ts` 的写入广播。方法知识在内置技能 `backend/builtin/电商出图方法库/`。
 
+## 商品视频（元素替换）
+
+- 后端切段：`backend/internal/app/ecommerce_product_video_split.go` 负责 `POST /api/ecommerce/product-videos/splits`。任务类型是 `product_video_split`（`model.TaskTypeProductVideoSplit`），由 `task_worker.go` 分发，超时 10 分钟。
+  - 镜头切点复用 `video_replication_media.go` 的 `detectVideoTeardownCuts`，可以只检测选段内的一段。
+  - `planProductVideoSegments` 尽量在切点处断开，每段不超过上限、不短于 4 秒。
+  - 每段重新编码成短边不超过 720、30fps 的 H.264/AAC 片段，并截一帧封面，都存成用户资源。
+  - 请求类型别名是 `service.ProductVideoSplitRequest`。
+- 后端作品记录：`app/ecommerce_product_video.go`，存在 `ecommerce_libraries.payload_json` 的 `productVideos` 键，每条作品按 revision 比较交换。HTTP 在 `handler/ecommerce_product_video.go`（`RegisterProductVideoRoutes`，在 `api.go` 注册），受 `ecommerceStudioEnabled` 控制。
+- 前端：
+  - 页面在 `web/src/pages/product-video/`：`index.tsx`（参数与操作）、`product-video-composer.tsx`（左栏）、`product-video-assets.tsx`（素材格，模特库复用生图台 `StudioCastPicker`，经 `product-video-cast-picker.tsx` 懒加载生图台样式）、`product-video-reference.tsx`（参考视频上传、链接导入、裁剪）、`product-video-works.tsx`（作品卡片、分段与单段重做）。
+  - 流程编排在 `product-video-runner.ts`：切段 → 每段 `submitBackendGenerationTask` → `createTimelineRenderTask` 拼接，任务 ID 先写进作品，打开页面时 `resumeProductVideos` 接着跑。
+  - 作品保存队列在 `use-product-video-store.ts`：未确认的操作在冲突后重新套用。
+  - 模型配置与报价在 `product-video-config.ts`、`use-product-video-estimate.ts`。
+  - 纯函数在 `web/src/lib/product-video/`：`job.ts`（作品结构与解析）、`prompt.ts`（角色绑定提示词、难度评估）、`media.ts`（模型能力换算、分段时长、时间线快照）。
+  - 接口在 `web/src/services/api/product-video.ts`，测试在 `web/test/product-video-lib.test.ts`。
+
 ## 室内设计
 
 - 页面 `web/src/pages/interior/`：`index.tsx` 页面主体（目录读取、交互模式切换、提交出图、下载、「用这张继续改」、项目新建 / 重命名 / 删除）；`interior-composer.tsx` 左侧出图设置与上传；`interior-board.tsx` 右侧出图记录（再来一次、单风格重试、下载整轮）与拖动对比弹窗；`use-interior-project.ts` 项目列表、去抖串行保存、修订号冲突合并与切换前保存检查；`use-interior-tasks.ts` 监听生成中的任务并把结果写回轮次；`interior-models.ts` 模型引用转换、可选范围判断、切换出图方式时的模型预选、文档合并与下载文件名。3D 模型：`interior-scene-studio.tsx`（左侧设置、右侧查看与修改、模型列表），`use-interior-scene-tasks.ts`（AI 方案分析 → 设计方案 → 生成几何保存、修改的推进，离开页面后接着走），`interior-scene-tasks.ts`（取知识库、提交文本任务、存取场景文件，读新旧两版），`interior-scene-viewer.tsx`（three.js 查看器、按材质合并、剖切与 GLB 导出），`interior-scene-textures.ts`（程序纹理）。设计方案的类型、提示词和收紧在 `web/src/lib/interior/scene-spec.ts`，方案生成几何（墙体求解、门窗、楼板露台、楼梯、屋顶、庭院）在 `scene-compile.ts`，家具拼装在 `scene-furniture.ts`；几何体格式、旧版场景和方案分析在 `scene-3d.ts`。知识库：内置条目在 `backend/internal/interior/knowledge.json`，`knowledge.go` 负责读入校验、按条件取（`RetrieveKnowledge`）和后台输入校验（`NormalizeKnowledgeInput`）；入库与启动补齐、前台取知识和后台增改删恢复在 `backend/internal/app/interior_knowledge.go`，持久化在 `repository/interior.go`（`EnsureInteriorKnowledge` 等），模型 `model.InteriorKnowledgeEntry`，迁移 93 在 `database/interior_migration.go`；后台知识库页签 `web/src/pages/admin/interior/interior-knowledge-panel.tsx`。路由 `/interior` 在 `web/src/router.tsx`，受 `RequireFeature feature="interiorEnabled"` 保护；侧栏入口在 `workspace-sidebar-nav.tsx`。

@@ -131,6 +131,28 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 两个开关在 `GET/PATCH /admin/settings/features` 里：`videoReplicationEnabled`、`socialVideoImportEnabled`，都默认 `true`。`PATCH` 把正文合并到当前配置上，后台「功能开放」页和视频复刻设置页每次都只提交切换的那一个开关，两处同时打开也不会把对方刚改的开关盖回去。
 
+## 商品视频（元素替换）
+
+以下接口都需要登录，且受「电商生图台」开关控制，关闭时返回 403。
+
+- `GET /api/ecommerce/product-videos`：返回 `{ revision, items }`。`items` 是本人的作品对象，结构由前端定义，每条带服务端维护的 `revision`。响应带 `Cache-Control: no-store`。
+- `GET /api/ecommerce/product-videos/:videoId`：读一条作品，用于保存冲突后载入最新版本。不存在或不属于本人时返回 404。
+- `PUT /api/ecommerce/product-videos/:videoId`：新建或整体替换一条作品。
+  - 正文只能是 `{ item, expectedRevision }`。`expectedRevision` 必填，新作品传 0。
+  - 版本不一致时返回 409，`reason=product_video_conflict`，`details.revision` 是当前值。
+  - `item.id` 必须与地址一致，6–80 位。
+  - 单条不超过 128 KiB，最多 100 条。和生图台共用的整行数据不超过 8 MiB。
+  - 不能内嵌 data URL。素材以 `resourceId` / `keyframeResourceId` 引用。
+  - 受画布写入频率限制。
+- `DELETE /api/ecommerce/product-videos/:videoId`：幂等，只删除作品记录，不删除资源和任务。
+- `POST /api/ecommerce/product-videos/splits`：创建参考视频切段任务（`product_video_split`）。
+  - 必须带 `X-Idempotency-Key`（8–128 个字符），正文不超过 4 KiB：`{ resourceId, startMs?, endMs?, maxSegmentSeconds? }`。
+  - `endMs` 为 0 表示到结尾。选段须在 4–120 秒之间。`maxSegmentSeconds` 取 8–30，传 0 时按 15。
+  - 视频必须是本人已就绪的视频资源。相同幂等键加相同参数返回原任务，参数不同返回 409。
+  - 结果写在任务 `resultJson`：`source`（`resourceId`、`durationMs`、`width`、`height`、`hasAudio`）、`startMs`、`endMs`、`segments[{ index, startMs, endMs, durationMs, boundary, resourceId, width, height, keyframeResourceId }]`、`warnings`。
+  - 不调用模型、不计费，片段和封面计入存储。
+- 每段的生成走通用 `POST /api/tasks`（`canvas_video`，`metadata.source=product-video`），拼接走 `POST /api/timeline/renders`（`projectId` 为空）。
+
 ## 电商生图台配置与套图模板
 
 管理页为 `/admin/settings/ecommerce`（后台菜单「电商生图台」），配置与上一版读取在 service 层校验管理员权限。旧版电商画布已下线，`GET /api/ecommerce/settings`（公开配置）、`POST /api/admin/settings/ecommerce/images`（公共模特上传）与 `GET /api/ecommerce/models/:modelId/images/:resourceId`（公共模特图片）已删除，请求返回 404。
