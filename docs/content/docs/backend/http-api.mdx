@@ -131,9 +131,9 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 两个开关在 `GET/PATCH /admin/settings/features` 里：`videoReplicationEnabled`、`socialVideoImportEnabled`，都默认 `true`。`PATCH` 把正文合并到当前配置上，后台「功能开放」页和视频复刻设置页每次都只提交切换的那一个开关，两处同时打开也不会把对方刚改的开关盖回去。
 
-## 商品视频（元素替换）
+## 视频复刻 · 元素替换
 
-以下接口都需要登录，且受「电商生图台」开关控制，关闭时返回 403。
+以下接口都需要登录，且受「视频复刻」开关控制，关闭时返回 403（与电商生图台开关无关）。
 
 - `GET /api/ecommerce/product-videos`：返回 `{ revision, items }`。`items` 是本人的作品对象，结构由前端定义，每条带服务端维护的 `revision`。响应带 `Cache-Control: no-store`。
 - `GET /api/ecommerce/product-videos/:videoId`：读一条作品，用于保存冲突后载入最新版本。不存在或不属于本人时返回 404。
