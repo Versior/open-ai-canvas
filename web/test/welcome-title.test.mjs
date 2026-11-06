@@ -27,8 +27,12 @@ test("welcome effects preserve configured SEO title", () => {
             vm.runInNewContext(`(() => {${body}\n})()`, {
                 document,
                 window: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} },
-                storyRef: { current: null }, restorePickerFocus: { current: false },
-                setReduced() {}, setLook() {}, getWelcomeLook() {},
+                storyRef: { current: null },
+                dialogRef: { current: null },
+                restorePickerFocus: { current: false },
+                setReduced() {},
+                setLook() {},
+                getWelcomeLook() {},
             });
         }
         assert.equal(document.title, title, "welcome must preserve appearance metadata title");

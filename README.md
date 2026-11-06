@@ -342,6 +342,8 @@ cd docs && bun run types:check
 
 KINOVO 基于 [Open AI Canvas](https://github.com/ddcat-ai/open-ai-canvas) / 影策二次开发。感谢原项目作者和所有贡献者提供的产品基础与开源工作。
 
+原项目贡献者名单见 [项目贡献者](CONTRIBUTORS.md)，欢迎页从该名单展示团队信息。
+
 本项目继续采用 [MIT License](LICENSE)。依据许可证要求，原版权声明完整保留：
 
 > Copyright (c) 2026 ddcat and Open AI Canvas contributors
