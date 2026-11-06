@@ -176,7 +176,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 92 {
+	if CurrentSchemaVersion != 93 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -201,6 +201,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 90, Name: poseLibraryMigrationName, Checksum: poseLibraryMigrationChecksum},
 		{Version: 91, Name: arkAssetGroupsMigrationName, Checksum: arkAssetGroupsMigrationChecksum},
 		{Version: 92, Name: inspirationFeedMigrationName, Checksum: inspirationFeedMigrationChecksum},
+		{Version: 93, Name: interiorKnowledgeMigrationName, Checksum: interiorKnowledgeMigrationChecksum},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -278,6 +279,7 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 90, Name: poseLibraryMigrationName, Checksum: poseLibraryMigrationChecksum, AppliedAt: applied[85]},
 				{Version: 91, Name: arkAssetGroupsMigrationName, Checksum: arkAssetGroupsMigrationChecksum, AppliedAt: applied[86]},
 				{Version: 92, Name: inspirationFeedMigrationName, Checksum: inspirationFeedMigrationChecksum, AppliedAt: applied[87]},
+				{Version: 93, Name: interiorKnowledgeMigrationName, Checksum: interiorKnowledgeMigrationChecksum},
 			} {
 				requireMigration(t, db, want)
 			}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -174,12 +175,85 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		items, err := svc.AdminInteriorKnowledge(actor)
+		items, kinds, err := svc.AdminInteriorKnowledge(actor)
 		if err != nil {
 			failService(c, err)
 			return
 		}
-		ok(c, gin.H{"entries": items})
+		ok(c, gin.H{"entries": items, "kinds": kinds})
+	})
+	admin.POST("/knowledge", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req service.InteriorKnowledgeInput
+		if err := decodeInteriorJSON(c, &req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		item, err := svc.CreateInteriorKnowledge(actor, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"entry": item})
+	})
+	admin.PUT("/knowledge/:id", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req service.InteriorKnowledgeInput
+		if err := decodeInteriorJSON(c, &req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		item, err := svc.UpdateInteriorKnowledge(actor, c.Param("id"), req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"entry": item})
+	})
+	admin.DELETE("/knowledge/:id", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		version, err := strconv.Atoi(c.Query("version"))
+		if err != nil || version < 1 {
+			fail(c, http.StatusBadRequest, errors.New("缺少有效的 version"))
+			return
+		}
+		if err := svc.DeleteInteriorKnowledge(actor, c.Param("id"), version); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"deleted": true})
+	})
+	admin.POST("/knowledge/:id/reset", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req struct {
+			Version int `json:"version"`
+		}
+		if err := decodeInteriorJSON(c, &req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		item, err := svc.ResetInteriorKnowledge(actor, c.Param("id"), req.Version)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"entry": item})
 	})
 	admin.GET("/overview", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)

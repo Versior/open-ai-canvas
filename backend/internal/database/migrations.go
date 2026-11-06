@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 92
+const CurrentSchemaVersion int64 = 93
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -62,6 +62,8 @@ const studioModelLibraryMigrationName = "studio_model_library"
 const studioModelLibraryMigrationChecksum = "sha256:studio-model-library-v85-20261105"
 const interiorDesignMigrationName = "interior_design"
 const interiorDesignMigrationChecksum = "sha256:interior-design-v86-20261105"
+const interiorKnowledgeMigrationName = "interior_knowledge"
+const interiorKnowledgeMigrationChecksum = "sha256:interior-knowledge-v93-20261106"
 const tokenCacheWritePriceMigrationName = "token_cache_write_price"
 const tokenCacheWritePriceMigrationChecksum = "sha256:token-cache-write-price-v82-20261105"
 const paymentOrderChargeMethodMigrationName = "payment_order_charge_method"
@@ -366,6 +368,8 @@ var schemaMigrations = []migration{
 		// 灵感上新：定时同步的上游灵感条目，只建新表；开关与同步记录存 system_settings。
 		return tx.AutoMigrate(&model.InspirationFeedEntry{})
 	}},
+	// Fork 自有：室内设计知识库改为入库，管理员可在后台编辑（只建一张新表，内置条目启动时补齐）。排在上游 83–87（Fork 88–92）之后，不再挪动。
+	{version: 93, name: interiorKnowledgeMigrationName, checksum: interiorKnowledgeMigrationChecksum, apply: migrateInteriorKnowledge},
 }
 
 // migrateArkAssetGroups 把方舟真人素材库扩展为真人 / 虚拟 / 版权 IP 三类素材组：
@@ -1360,6 +1364,15 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasTable(&model.InspirationFeedEntry{}) {
 			return fmt.Errorf("灵感上新迁移账本与物理结构不一致：缺少灵感上新表")
 		}
+	case 93:
+		if !tx.Migrator().HasTable(&model.InteriorKnowledgeEntry{}) {
+			return fmt.Errorf("室内设计知识库迁移账本与物理结构不一致：缺少 interior_knowledge_entries 表")
+		}
+		for _, field := range []string{"Key", "Kind", "Guidance", "Enabled", "Builtin", "Edited", "Version"} {
+			if !tx.Migrator().HasColumn(&model.InteriorKnowledgeEntry{}, field) {
+				return fmt.Errorf("室内设计知识库迁移账本与物理结构不一致：interior_knowledge_entries 缺少 %s 列", field)
+			}
+		}
 	}
 	return nil
 }
@@ -1387,7 +1400,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 	// 上游 main 72–82 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
 	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83；
 	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87，上游 83–87 顺延五位为 88–92。Fork 自有的形象（84）、
-	// 模特库（85）、室内设计（86）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
+	// 模特库（85）、室内设计（86）和室内设计知识库（93）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
 		forkVersion  int64

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 )
 
-// 室内设计知识库：随程序发布的尺寸规范、家具尺寸、动线间距、风格配色和建模要点。
-// AI 方案分析和 3D 建模按范围、空间、风格和需求里的关键词取出相关条目，写进提示词当参考数据。
+// 室内设计知识库：尺寸规范、家具尺寸、动线间距、风格配色和建模要点。knowledge.json 是随程序发布的内置条目，
+// 启动时补进数据库，管理员可以在后台修改、停用或新增；AI 方案分析和 3D 建模按范围、空间、风格和需求里的关键词
+// 取出启用的相关条目，写进提示词当参考数据。
 
 //go:embed knowledge.json
 var knowledgeJSON []byte
@@ -52,6 +54,87 @@ type KnowledgeQuery struct {
 
 func KnowledgeKindName(kind string) string {
 	return knowledgeKindNames[kind]
+}
+
+// KnowledgeKindLimit 是这一类每次最多取几条。
+func KnowledgeKindLimit(kind string) int {
+	return knowledgeKindLimit[kind]
+}
+
+// KnowledgeKinds 是类别的固定顺序，后台下拉框按它排。
+var KnowledgeKinds = []string{KnowledgeBuilding, KnowledgeDimension, KnowledgeFurniture, KnowledgeClearance, KnowledgeLighting, KnowledgeStyle, KnowledgeModeling}
+
+var knowledgeScopes = map[string]bool{"room": true, "home": true, "building": true}
+
+const (
+	maxKnowledgeTitleRunes    = 60
+	maxKnowledgeGuidanceRunes = 1200
+	maxKnowledgeKeys          = 30
+	maxKnowledgeTags          = 16
+)
+
+// KnowledgeInput 是管理员提交的一条知识；Key 新建后不能改。
+type KnowledgeInput struct {
+	Key       string   `json:"key"`
+	Kind      string   `json:"kind"`
+	Title     string   `json:"title"`
+	Guidance  string   `json:"guidance"`
+	Scopes    []string `json:"scopes"`
+	Rooms     []string `json:"rooms"`
+	Styles    []string `json:"styles"`
+	Tags      []string `json:"tags"`
+	SortOrder int      `json:"sortOrder"`
+	Enabled   bool     `json:"enabled"`
+	Version   int      `json:"version"`
+}
+
+// NormalizeKnowledgeInput 去掉首尾空白和重复项，校验类别、范围、空间与风格标识、长度和个数。
+func NormalizeKnowledgeInput(input KnowledgeInput) (KnowledgeInput, error) {
+	input.Key = strings.TrimSpace(input.Key)
+	input.Kind = strings.TrimSpace(input.Kind)
+	input.Title = strings.TrimSpace(input.Title)
+	input.Guidance = strings.TrimSpace(input.Guidance)
+	if !ValidKey(input.Key) {
+		return input, fmt.Errorf("知识标识只能使用小写字母、数字和短横线")
+	}
+	if _, ok := knowledgeKindLimit[input.Kind]; !ok {
+		return input, fmt.Errorf("知识类别无效")
+	}
+	if input.Title == "" || utf8.RuneCountInString(input.Title) > maxKnowledgeTitleRunes {
+		return input, fmt.Errorf("标题须为 1–%d 字", maxKnowledgeTitleRunes)
+	}
+	if input.Guidance == "" || utf8.RuneCountInString(input.Guidance) > maxKnowledgeGuidanceRunes {
+		return input, fmt.Errorf("内容须为 1–%d 字", maxKnowledgeGuidanceRunes)
+	}
+	var err error
+	if input.Scopes, err = knowledgeList(input.Scopes, len(knowledgeScopes), func(value string) bool { return knowledgeScopes[value] }, "范围只能是单个房间、整套户型或建筑外观"); err != nil {
+		return input, err
+	}
+	if input.Rooms, err = knowledgeList(input.Rooms, maxKnowledgeKeys, ValidKey, "空间标识无效或超过 30 个"); err != nil {
+		return input, err
+	}
+	if input.Styles, err = knowledgeList(input.Styles, maxKnowledgeKeys, ValidKey, "风格标识无效或超过 30 个"); err != nil {
+		return input, err
+	}
+	if input.Tags, err = knowledgeList(input.Tags, maxKnowledgeTags, func(value string) bool { return utf8.RuneCountInString(value) <= 20 }, "关键词最多 16 个，每个不超过 20 字"); err != nil {
+		return input, err
+	}
+	return input, nil
+}
+
+func knowledgeList(values []string, limit int, valid func(string) bool, message string) ([]string, error) {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || slices.Contains(out, value) {
+			continue
+		}
+		if !valid(value) || len(out) >= limit {
+			return nil, fmt.Errorf("%s", message)
+		}
+		out = append(out, value)
+	}
+	return out, nil
 }
 
 // BuiltinKnowledge 读内置知识库并校验：标识唯一、类别已知、正文非空。

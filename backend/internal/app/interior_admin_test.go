@@ -114,11 +114,14 @@ func TestAdminInteriorOverviewAndGenerations(t *testing.T) {
 		t.Fatalf("bad mode err = %v", err)
 	}
 
-	all, err := svc.AdminInteriorKnowledge(videoReplicationTestAdmin)
-	if err != nil || len(all) < 50 || all[0].KindName == "" {
+	if _, _, err := svc.EnsureBuiltinInteriorKnowledge(); err != nil {
+		t.Fatal(err)
+	}
+	all, kinds, err := svc.AdminInteriorKnowledge(videoReplicationTestAdmin)
+	if err != nil || len(all) < 50 || all[0].KindName == "" || len(kinds) != 7 {
 		t.Fatalf("admin knowledge = %d entries, %v", len(all), err)
 	}
-	if _, err := svc.AdminInteriorKnowledge(&model.User{ID: "usr-int-a", Role: model.UserRoleUser}); !errors.As(err, &authErr) || authErr.Status != 403 {
+	if _, _, err := svc.AdminInteriorKnowledge(&model.User{ID: "usr-int-a", Role: model.UserRoleUser}); !errors.As(err, &authErr) || authErr.Status != 403 {
 		t.Fatalf("non-admin knowledge err = %v", err)
 	}
 	if _, err := svc.InteriorKnowledge(&model.User{ID: "usr-int-a"}, InteriorKnowledgeQuery{Scope: "building"}); !errors.As(err, &authErr) || authErr.Status != 403 {
@@ -130,7 +133,7 @@ func TestAdminInteriorOverviewAndGenerations(t *testing.T) {
 		t.Fatal(err)
 	}
 	picked, err := svc.InteriorKnowledge(&model.User{ID: "usr-int-a"}, InteriorKnowledgeQuery{Scope: "building", Styles: []string{"new-chinese"}, Text: "三层别墅带前院"})
-	if err != nil || len(picked) == 0 || len(picked) > 16 || picked[0].Scopes != nil {
+	if err != nil || len(picked) == 0 || len(picked) > 16 || picked[0].Guidance == "" {
 		t.Fatalf("knowledge = %+v, %v", picked, err)
 	}
 	for name, query := range map[string]InteriorKnowledgeQuery{"scope": {Scope: "garden"}, "key": {Rooms: []string{"Bad Key"}}} {

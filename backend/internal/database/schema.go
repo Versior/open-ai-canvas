@@ -172,6 +172,8 @@ func Models() []any {
 		&model.InteriorMode{},
 		&model.InteriorPreset{},
 		&model.InteriorProject{},
+		// Fork 自有：室内设计知识库（迁移 93 建表）。
+		&model.InteriorKnowledgeEntry{},
 	}
 }
 

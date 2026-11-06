@@ -481,12 +481,66 @@ paths:
   /admin/interior/knowledge:
     get:
       tags: [admin]
-      summary: 室内设计内置知识库
-      description: 要求管理员。全部内置知识条目，另带每条的适用范围 scopes、空间 rooms、风格 styles 和关键词 tags。知识随程序发布，后台只读。
+      summary: 室内设计知识库
+      description: 要求管理员。全部条目（含停用的），每条带记录 ID、标识 key、类别、标题、正文、适用范围 scopes、空间 rooms、风格 styles、关键词 tags、排序、启用、是否内置、内置条目是否改过（edited）和 version；kinds 是类别和每类每次最多取几条。
       responses:
-        "200": {description: data.entries}
+        "200": {description: data.entries、data.kinds}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 新增室内设计知识
+      description: key 只能用小写字母、数字和短横线，不能和已有条目重复；kind 是七个类别之一；scopes 只能是 room、home、building；rooms、styles 是空间和风格标识，各最多 30 个；tags 最多 16 个；标题不超过 60 字，正文不超过 1200 字。
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        "200": {description: data.entry}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/knowledge/{id}:
+    put:
+      tags: [admin]
+      summary: 修改室内设计知识
+      description: key 不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。改了内置条目的内容会标成 edited，之后程序更新不再覆盖它；只改启用或排序不算改内容。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        "200": {description: data.entry}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 删除管理员新增的室内设计知识
+      description: 内置条目不能删除（400），只能停用。version 不一致返回 409。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: version, required: true, schema: {type: integer}}
+      responses:
+        "200": {description: data.deleted}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /admin/interior/knowledge/{id}/reset:
+    post:
+      tags: [admin]
+      summary: 恢复内置知识的原内容
+      description: 只用于内置条目：内容恢复成程序自带的版本、去掉 edited 标记，启用状态不动。请求体 {version}，不一致返回 409。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {version: {type: integer}}}}}}
+      responses:
+        "200": {description: data.entry}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
   /admin/interior/overview:
     get:
       tags: [admin]

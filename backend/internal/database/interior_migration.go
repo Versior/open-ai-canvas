@@ -9,3 +9,8 @@ import (
 func migrateInteriorFeature(tx *gorm.DB) error {
 	return tx.AutoMigrate(&model.InteriorMode{}, &model.InteriorPreset{}, &model.InteriorProject{})
 }
+
+// migrateInteriorKnowledge 建立室内设计知识库表；内置条目由启动时的补齐写入，迁移本身不写数据。
+func migrateInteriorKnowledge(tx *gorm.DB) error {
+	return tx.AutoMigrate(&model.InteriorKnowledgeEntry{})
+}

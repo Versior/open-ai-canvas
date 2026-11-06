@@ -64,3 +64,27 @@ type InteriorProject struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt" gorm:"index:idx_interior_projects_owner_updated,priority:2"`
 }
+
+// InteriorKnowledgeEntry 是室内设计知识库的一条（尺寸规范、家具尺寸、风格配色、建模要点等），
+// AI 方案分析和 3D 建模按条件取出写进提示词。内置条目在启动时从程序自带的知识补齐；
+// Edited 表示管理员改过内置条目的内容，之后版本更新不再覆盖它。Key 是对外的标识，项目里记的也是它。
+type InteriorKnowledgeEntry struct {
+	ID         string    `json:"id" gorm:"primaryKey;size:36"`
+	Key        string    `json:"key" gorm:"size:64;not null;uniqueIndex"`
+	Kind       string    `json:"kind" gorm:"size:24;not null;index:idx_interior_knowledge_kind_sort,priority:1"`
+	Title      string    `json:"title" gorm:"size:120;not null"`
+	Guidance   string    `json:"guidance" gorm:"type:text;not null"`
+	ScopesJSON string    `json:"scopesJson" gorm:"type:text"`
+	RoomsJSON  string    `json:"roomsJson" gorm:"type:text"`
+	StylesJSON string    `json:"stylesJson" gorm:"type:text"`
+	TagsJSON   string    `json:"tagsJson" gorm:"type:text"`
+	SortOrder  int       `json:"sortOrder" gorm:"not null;default:0;index:idx_interior_knowledge_kind_sort,priority:2"`
+	Enabled    bool      `json:"enabled"`
+	Builtin    bool      `json:"builtin"`
+	Edited     bool      `json:"edited"`
+	Version    int       `json:"version" gorm:"not null;default:1"`
+	CreatedBy  string    `json:"createdBy" gorm:"size:36"`
+	UpdatedBy  string    `json:"updatedBy" gorm:"size:36"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}

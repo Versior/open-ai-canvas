@@ -218,3 +218,101 @@ func (r *Repository) interiorResourceReferences(userID string, resourceIDs []str
 	}
 	return nil
 }
+
+// InteriorKnowledgeEntries 按排序列出知识条目；enabledOnly 时只要启用的（前台取知识用）。
+func (r *Repository) InteriorKnowledgeEntries(enabledOnly bool) ([]model.InteriorKnowledgeEntry, error) {
+	var items []model.InteriorKnowledgeEntry
+	query := r.db.Order("sort_order asc").Order("created_at asc")
+	if enabledOnly {
+		query = query.Where("enabled = ?", true)
+	}
+	err := query.Find(&items).Error
+	return items, err
+}
+
+func (r *Repository) InteriorKnowledgeEntry(id string) (*model.InteriorKnowledgeEntry, error) {
+	var item model.InteriorKnowledgeEntry
+	if err := r.db.First(&item, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repository) InteriorKnowledgeKeyExists(key string) (bool, error) {
+	var count int64
+	err := r.db.Model(&model.InteriorKnowledgeEntry{}).Where("key = ?", key).Count(&count).Error
+	return count > 0, err
+}
+
+func (r *Repository) CreateInteriorKnowledgeEntry(item *model.InteriorKnowledgeEntry) error {
+	return r.db.Create(item).Error
+}
+
+// SaveInteriorKnowledgeEntry 按版本号比较交换保存；标识、内置标记和创建信息不改。
+func (r *Repository) SaveInteriorKnowledgeEntry(item *model.InteriorKnowledgeEntry, expectedVersion int) error {
+	result := r.db.Model(&model.InteriorKnowledgeEntry{}).Where("id = ? AND version = ?", item.ID, expectedVersion).Updates(map[string]any{
+		"kind": item.Kind, "title": item.Title, "guidance": item.Guidance, "scopes_json": item.ScopesJSON, "rooms_json": item.RoomsJSON,
+		"styles_json": item.StylesJSON, "tags_json": item.TagsJSON, "sort_order": item.SortOrder, "enabled": item.Enabled, "edited": item.Edited,
+		"version": item.Version, "updated_by": item.UpdatedBy, "updated_at": item.UpdatedAt,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrInteriorVersionConflict
+	}
+	return nil
+}
+
+// DeleteInteriorKnowledgeEntry 只删管理员新增的条目，版本号对不上时不删。内置条目只能停用，删了下次启动会补回来。
+func (r *Repository) DeleteInteriorKnowledgeEntry(id string, expectedVersion int) error {
+	result := r.db.Where("id = ? AND version = ? AND builtin = ?", id, expectedVersion, false).Delete(&model.InteriorKnowledgeEntry{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrInteriorVersionConflict
+	}
+	return nil
+}
+
+// EnsureInteriorKnowledge 补齐缺失的内置条目，并把管理员没改过内容的内置条目更新成程序自带的版本
+// （启用状态不动）；管理员改过的（edited）保持原样。返回新插入和更新的条数。
+func (r *Repository) EnsureInteriorKnowledge(entries []model.InteriorKnowledgeEntry) (inserted int, refreshed int, err error) {
+	err = r.db.Transaction(func(tx *gorm.DB) error {
+		var existing []model.InteriorKnowledgeEntry
+		if err := tx.Where("builtin = ?", true).Find(&existing).Error; err != nil {
+			return err
+		}
+		byKey := make(map[string]model.InteriorKnowledgeEntry, len(existing))
+		for _, item := range existing {
+			byKey[item.Key] = item
+		}
+		for index := range entries {
+			entry := entries[index]
+			current, ok := byKey[entry.Key]
+			if !ok {
+				result := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoNothing: true}).Create(&entries[index])
+				if result.Error != nil {
+					return result.Error
+				}
+				inserted += int(result.RowsAffected)
+				continue
+			}
+			if current.Edited || (current.Kind == entry.Kind && current.Title == entry.Title && current.Guidance == entry.Guidance && current.ScopesJSON == entry.ScopesJSON &&
+				current.RoomsJSON == entry.RoomsJSON && current.StylesJSON == entry.StylesJSON && current.TagsJSON == entry.TagsJSON && current.SortOrder == entry.SortOrder) {
+				continue
+			}
+			result := tx.Model(&model.InteriorKnowledgeEntry{}).Where("id = ? AND version = ? AND edited = ?", current.ID, current.Version, false).Updates(map[string]any{
+				"kind": entry.Kind, "title": entry.Title, "guidance": entry.Guidance, "scopes_json": entry.ScopesJSON, "rooms_json": entry.RoomsJSON,
+				"styles_json": entry.StylesJSON, "tags_json": entry.TagsJSON, "sort_order": entry.SortOrder, "version": current.Version + 1, "updated_at": entry.UpdatedAt,
+			})
+			if result.Error != nil {
+				return result.Error
+			}
+			refreshed += int(result.RowsAffected)
+		}
+		return nil
+	})
+	return inserted, refreshed, err
+}

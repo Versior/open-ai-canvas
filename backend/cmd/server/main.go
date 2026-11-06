@@ -206,6 +206,12 @@ func ensureBuiltinWorkbenchCatalog(svc *service.Service) error {
 	} else if inserted > 0 {
 		slog.Info("builtin interior catalog ready", "inserted", inserted)
 	}
+	// 内置知识只补缺失项，并更新管理员没改过的条目。
+	if inserted, refreshed, err := svc.EnsureBuiltinInteriorKnowledge(); err != nil {
+		return fmt.Errorf("initialize builtin interior knowledge: %w", err)
+	} else if inserted > 0 || refreshed > 0 {
+		slog.Info("builtin interior knowledge ready", "inserted", inserted, "refreshed", refreshed)
+	}
 	return nil
 }
 
