@@ -1,6 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioPlanTone } from "./detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanTone } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import {
@@ -240,7 +240,8 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         sellingPointIds: strings(shot.sellingPointIds),
         tweaks: strings(shot.tweaks),
         ...(typeof shot.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(shot.layout as StudioDetailLayoutId) ? { layout: shot.layout as StudioDetailLayoutId } : {}),
-        ...(typeof shot.eyebrow === "string" && shot.eyebrow.trim() ? { eyebrow: shot.eyebrow.trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.eyebrow) } : {}),
+        // 以前的出图记录里小标题可能带着「01」这类序号，读回时去掉，重出时不再画上页码。
+        ...(typeof shot.eyebrow === "string" && studioEyebrowText(shot.eyebrow.slice(0, STUDIO_DETAIL_PLAN_LIMITS.eyebrow)) ? { eyebrow: studioEyebrowText(shot.eyebrow.slice(0, STUDIO_DETAIL_PLAN_LIMITS.eyebrow)) } : {}),
         ...(typeof shot.adjust === "string" && shot.adjust.trim() ? { adjust: shot.adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX) } : {}),
         ...(typeof shot.duty === "string" && shot.duty.trim() ? { duty: shot.duty.slice(0, STUDIO_SUITE_LIMITS.duty) } : {}),
         ...(typeof shot.visual === "string" && shot.visual.trim() ? { visual: shot.visual.slice(0, STUDIO_SHOT_VISUAL_MAX) } : {}),

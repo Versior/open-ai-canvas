@@ -301,7 +301,9 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
         const levels = [shot.eyebrow?.trim(), shot.headline.trim(), shot.subline.trim(), items.length ? "lines" : ""].filter(Boolean).length;
         if (levels > 1) lines.push("这几层文字字号拉开层级，主标题明显最大，其余逐级变小，对齐整齐。");
         if (brief && brief.language !== "zh" && brief.language !== "none") lines.push(`图内文字使用${studioLanguage(brief.language).name}：上面的文案不是这种语言时，先准确翻译，再逐字呈现译文。`);
-        lines.push("除了上面这些文字，画面里可以有图标、细线、引线、编号圆点、色块和圆角信息卡这类设计元素，但不出现其他文字、数字、价格、角标或水印。");
+        // 详情页是一张连续的长图：每屏不画页码、屏号和 01、02 这类序号；使用步骤屏的步骤编号是内容，照常画。
+        lines.push(shot.role === "detail-steps" ? "步骤用 1、2、3 这样的小编号标出先后，此外不加页码和屏号。" : "画面里不出现页码、屏号和 01、02 这类序号。");
+        lines.push("除了上面这些文字，画面里可以有图标、细线、引线、圆点、色块和圆角信息卡这类设计元素，但不出现其他文字、数字、价格、角标或水印。");
         return { id: "copy", title: "图内文字（逐字呈现，不增不减）", source: "出图策划的文案", text: lines.join("\n") };
     }
     if (!hasCopy) {

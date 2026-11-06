@@ -315,7 +315,8 @@ describe("ecommerce studio detail plan", () => {
     test("each screen gets a layout, info elements and a design system", () => {
         const { product, roles, result } = planned();
         const [hero, , , closeup, model, desk] = result.plan.screens;
-        expect(hero).toMatchObject({ layout: "poster", eyebrow: "01 ALL DAY CUP" });
+        // 小标题前面的序号去掉：详情页是一张长图，每屏带「01」就像页码。
+        expect(hero).toMatchObject({ layout: "poster", eyebrow: "ALL DAY CUP" });
         expect(closeup).toMatchObject({ layout: "callout", elements: "3 条引线指向杯盖、提环和杯口", lines: ["一键弹盖", "银色提环", "宽口杯身"] });
         // 不认识的版式按屏型补；带了数字的英文小标题不收。
         expect(model.layout).toBe("scene");
@@ -342,7 +343,18 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled).toContain("有一个一眼抓住人的视觉焦点");
         // 模型写字的图都带上防土味的禁止项。
         expect(compiled).toContain("不用描边字、渐变字、发光字");
-        expect(compileStudioPrompt({ product, textMode: run.textMode, shot: run.shots[0], model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt).toContain("栏目小标题「01 ALL DAY CUP」");
+        const heroPrompt = compileStudioPrompt({ product, textMode: run.textMode, shot: run.shots[0], model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt;
+        expect(heroPrompt).toContain("栏目小标题「ALL DAY CUP」");
+        expect(heroPrompt).toContain("画面里不出现页码、屏号和 01、02 这类序号。");
+        expect(heroPrompt).not.toContain("编号圆点");
+        // 使用步骤屏的步骤编号照常画。
+        expect(compileStudioPrompt({ product, textMode: run.textMode, shot: { ...run.shots[0], role: "detail-steps" }, model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt).toContain("步骤用 1、2、3 这样的小编号标出先后");
+        // 以前带序号的出图记录读回时去掉序号；策划提示词要求不加页码。
+        const numbered = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...product, runs: [{ ...run, shots: [{ ...run.shots[0], eyebrow: "01 ALL DAY CUP" }] }] })))!;
+        expect(numbered.runs[0].shots[0].eyebrow).toBe("ALL DAY CUP");
+        expect(prompt).toContain("每屏都不加页码、屏号和 01、02 这类序号");
+        expect(prompt).toContain("（如 CLEAR FRAME，只用英文字母，不带序号）");
+        expect(prompt).not.toContain("序号加英文小标题");
 
         // 调整这一张写的修改要求只进这一张，读回时保留。
         const adjusted = compileStudioPrompt({ product, textMode: run.textMode, shot: { ...shot, adjust: "背景换成浅木纹桌面" }, model: "gpt-image-2", brief: product.brief, suite: run.suite }).prompt;

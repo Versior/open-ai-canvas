@@ -189,8 +189,16 @@ export const STUDIO_DESIGN_TONE_IDS = Object.keys(STUDIO_DESIGN_TONES) as Studio
 /** 让画面显得廉价的做法，写进出图提示词的禁止项。 */
 export const STUDIO_TACKY_DESIGN = "不用描边字、渐变字、发光字、立体浮雕字和投影字，不用贴纸、爆炸形、星星、波点、三个小圆点、手绘箭头和促销角标，整张最多两种字体";
 
-/** 英文或编号小标题：只收字母、空格和少量符号，可以带两位序号（如「01 CLEAR FRAME」），不收别的数字。 */
-const EYEBROW_PATTERN = /^(?:\d{2}\s*[/·.|-]?\s*)?[A-Za-z][A-Za-z &'.-]*$/;
+/** 英文栏目小标题：只收字母、空格和少量符号，不收数字。 */
+const EYEBROW_PATTERN = /^[A-Za-z][A-Za-z &'.-]*$/;
+/** 小标题前面的序号（如「01 CLEAR FRAME」的「01 」）：详情页是一张连续的长图，每屏带上序号就像页码。 */
+const EYEBROW_NUMBER = /^\d{1,2}\s*[/·.|-]?\s*/;
+
+/** 读策划和出图记录里的小标题：去掉前面的序号，剩下的不是纯英文时不收。 */
+export function studioEyebrowText(value: string) {
+    const text = value.trim().replace(EYEBROW_NUMBER, "").trim();
+    return EYEBROW_PATTERN.test(text) ? text : "";
+}
 
 /** 各屏型给策划看的用途；材质、多角度、参数、尺寸、包装要有依据才能排。 */
 export const STUDIO_DETAIL_SCREEN_GUIDE: Record<StudioShotRole, { label: string; use: string }> = {
@@ -288,7 +296,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         visual,
         layout,
         elements: text(record.elements, limits.elements),
-        eyebrow: EYEBROW_PATTERN.test(eyebrow) ? eyebrow : "",
+        eyebrow: studioEyebrowText(eyebrow),
         headline: text(record.headline, limits.headline),
         subline: text(record.subline, limits.subline),
         lines: textList(record.lines, limits.lines, limits.line),
