@@ -1,17 +1,17 @@
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 
-/** 视频复刻的两种做法：爆款复刻（拆解 → 方案 → 画布逐镜重做）和元素替换（把商品、模特、背景直接换进原视频）。 */
-export type ReplicationMode = "remake" | "replace";
+/** 视频复刻首页的两个页签：新建复刻（放爆款、拆解记录）和我的作品（复刻工作台的作品）。 */
+export type ReplicationTab = "new" | "works";
 
-export function ReplicationModeSwitch({ value, onChange }: { value: ReplicationMode; onChange: (mode: ReplicationMode) => void }) {
+export function ReplicationTabs({ value, onChange, works }: { value: ReplicationTab; onChange: (tab: ReplicationTab) => void; works?: number }) {
     return (
-        <SegmentedControl<ReplicationMode>
-            ariaLabel="复刻方式"
+        <SegmentedControl<ReplicationTab>
+            ariaLabel="视频复刻"
             value={value}
             onChange={onChange}
             options={[
-                { value: "remake", label: "爆款复刻", title: "拆出分镜、口播和节奏，按你的商品写方案，再去画布逐镜生成" },
-                { value: "replace", label: "元素替换", title: "沿用原视频的动作和镜头，直接换上你的商品、模特和背景" },
+                { value: "new", label: "新建复刻", title: "放一条爆款视频，拆解后逐镜换成你的商品" },
+                { value: "works", label: works ? `我的作品 ${works}` : "我的作品", title: "复刻好的和正在生成的作品" },
             ]}
         />
     );

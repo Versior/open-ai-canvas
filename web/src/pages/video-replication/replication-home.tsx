@@ -8,9 +8,9 @@ import { REPLICATION_STAGE_LABELS, type ReplicationRun } from "./use-replication
 
 // 和记录工作区顶部的三步一致。
 const FLOW = [
-    { icon: ScanEye, title: "拆解分析", text: "切镜头，逐镜看画面、口播和商品" },
-    { icon: ListChecks, title: "复刻方案", text: "换成你的商品，改写口播" },
-    { icon: Clapperboard, title: "画布生成", text: "出首帧和视频，合并成片" },
+    { icon: ScanEye, title: "放爆款", text: "切镜头，AI 看懂每镜的画面、口播和商品" },
+    { icon: ListChecks, title: "换成我的", text: "选商品和模特，逐镜决定换元素还是重新拍" },
+    { icon: Clapperboard, title: "出片对比", text: "和原片并排对照，哪镜不行重做哪镜" },
 ];
 
 type Props = {
@@ -21,12 +21,15 @@ type Props = {
     /** 已经建好拆解任务、正在后台跑的那一次。 */
     activeRun: ReplicationRun | null;
     onOpen: (id: string) => void;
-    /** 顶部的「爆款复刻 / 元素替换」切换。 */
-    modeSwitch: ReactNode;
+    /** 顶部的「新建复刻 / 我的作品」页签。 */
+    tabs: ReactNode;
+    tab: "new" | "works";
+    /** 「我的作品」页签的内容。 */
+    works: ReactNode;
 };
 
 /** 视频复刻首页：一行标题和流程、拆解入口（含支持的平台）、最近拆解。宽屏下一屏放得下，不用滚动。 */
-export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen, modeSwitch }: Props) {
+export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen, tabs, tab, works }: Props) {
     const activeId = activeRun?.id || "";
     return (
         <div className="vr-home">
@@ -34,9 +37,9 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                 <div className="vr-home-heading">
                     <div className="vr-home-titlebar">
                         <h1 className="vr-home-title">视频复刻</h1>
-                        {modeSwitch}
+                        {tabs}
                     </div>
-                    <p className="vr-home-sub">把爆款视频拆成分镜，按你的商品做复刻方案，再去画布生成。复刻请用你有权使用的素材和形象。</p>
+                    <p className="vr-home-sub">放一条爆款视频，拆成分镜后逐镜换成你的商品、模特和口播，在这里直接出成片。复刻请用你有权使用的素材和形象。</p>
                 </div>
                 <ol className="vr-flow" aria-label="复刻流程">
                     {FLOW.map(({ icon: Icon, title, text }, index) => (
@@ -52,7 +55,8 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                     ))}
                 </ol>
             </header>
-            <ReplicationComposer {...composer} />
+            {tab === "works" ? works : null}
+            {tab === "new" ? <ReplicationComposer {...composer} /> : null}
             {activeRun && activeId ? (
                 <button type="button" className="vr-run-banner" onClick={() => onOpen(activeId)}>
                     <LoaderCircle className="vr-spin" aria-hidden />
@@ -66,7 +70,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                     </span>
                 </button>
             ) : null}
-            <ReplicationRecent records={records} loading={loading} error={error} runningId={activeId} onOpen={onOpen} />
+            {tab === "new" ? <ReplicationRecent records={records} loading={loading} error={error} runningId={activeId} onOpen={onOpen} /> : null}
         </div>
     );
 }

@@ -5,6 +5,7 @@ import { lazy, Suspense, useRef, useState } from "react";
 import { PRODUCT_VIDEO_LIMITS, PRODUCT_VIDEO_SLOT_LABEL, type ProductVideoImage, type ProductVideoSlot } from "@/lib/product-video/job";
 import { resourceFileUrl, uploadResourceFile } from "@/services/api/resources";
 import type { PickedWorkbenchAsset } from "@/pages/workbench/workbench-asset-picker";
+import "./product-video.css";
 
 const WorkbenchAssetPicker = lazy(() => import("@/pages/workbench/workbench-asset-picker").then((module) => ({ default: module.WorkbenchAssetPicker })));
 const StudioCastPicker = lazy(() => import("./product-video-cast-picker").then((module) => ({ default: module.StudioCastPicker })));

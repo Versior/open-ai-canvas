@@ -43,6 +43,8 @@ const ROW_TEXT_FIELDS = [
     "imageGenerationPrompt",
     "videoMotionPrompt",
     "continuityOut",
+    "people",
+    "brandText",
 ] as const;
 
 export type VideoTeardownDialogueSource = "asr" | "subtitle" | "none";
@@ -147,7 +149,9 @@ const ROW_SCHEMA = `    {
       "productionConfidence": "高 | 中 | 低",
       "imageGenerationPrompt": "还原这一镜首帧的画面提示词，写进主体、商品和关键颜色",
       "videoMotionPrompt": "主体动作的过程和运镜，便于用视频模型重做同样结构的镜头",
-      "continuityOut": "这一镜结尾时的画面状态"
+      "continuityOut": "这一镜结尾时的画面状态",
+      "people": "none | speaker | presenter | hands",
+      "brandText": "画面上能看清的品牌名、Logo、店铺名或水印，没有就写空字符串"
     }`;
 
 const SUMMARY_SCHEMA = `  "title": "给这条视频起一个简短标题",
@@ -233,7 +237,9 @@ export function buildVideoTeardownPrompt(bundle: VideoTeardownBundle, grids: Vid
         "6. 纯白、全黑、纯色或糊得看不清的画面就照实写，不要套用前后镜头的内容。",
         "7. 动作写过程，不要只写结果：写“一只手把海参掰开”，不要只写“海参剖面”。imageGenerationPrompt 和 videoMotionPrompt 要把这一镜的主体、动作和 keyColors 原样写进去，不要概括掉。",
         "8. productRole 只能是四个值之一：none 画面里没有商品；dynamic 商品出镜，质感不必极真（拿在手里、摆在桌上）；hero_real 商品质感特写（剖面、质地、弹性等细节，AI 很难画对）；package_text 包装上的字要看清。",
-        "9. 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释。",
+        "9. people 只能是四个值之一：none 画面里没有人；speaker 有人露脸并在说话（对着镜头口播或对话）；presenter 有人露脸但不说话；hands 只露出手或身体局部。",
+        "10. brandText 只写画面上真实可见的品牌、Logo、店铺名或平台水印，看不清就写空字符串，不要猜。",
+        "11. 只输出一个 JSON 对象，不要 Markdown 代码块，不要解释。",
         "",
         "输出格式：",
         "{",

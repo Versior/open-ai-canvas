@@ -1,28 +1,37 @@
 import { createClientId } from "@/lib/client-id";
 import { normalizeProductVideoJob, normalizeProductVideoSegment, type ProductVideoJob, type ProductVideoSegment } from "@/lib/product-video/job";
+import { normalizeRemakeJob, REMAKE_VERSION, type RemakeJob } from "@/lib/remake/job";
 import { http } from "./request";
 import type { GenerationTask } from "./task-center";
 
 /** 作品已在其他窗口修改；details.revision 是服务端当前的作品修订号。 */
 export const PRODUCT_VIDEO_CONFLICT = "product_video_conflict";
 
-export async function listProductVideos(signal?: AbortSignal): Promise<ProductVideoJob[]> {
-    const data = await http.get<{ revision: number; items: unknown[] }>("/ecommerce/product-videos", { signal, timeout: 15000 });
-    return (Array.isArray(data.items) ? data.items : []).map(normalizeProductVideoJob).filter((item): item is ProductVideoJob => Boolean(item));
+/** 作品列表里有两种记录：复刻工作台的作品（version 2）和元素替换的旧作品（没有 version）。 */
+export type StoredWork = ProductVideoJob | RemakeJob;
+
+export function normalizeStoredWork(value: unknown): StoredWork | undefined {
+    const version = value && typeof value === "object" ? (value as { version?: unknown }).version : undefined;
+    return version === REMAKE_VERSION ? normalizeRemakeJob(value) : normalizeProductVideoJob(value);
 }
 
-export async function getProductVideo(id: string, signal?: AbortSignal): Promise<ProductVideoJob> {
+export async function listProductVideos(signal?: AbortSignal): Promise<StoredWork[]> {
+    const data = await http.get<{ revision: number; items: unknown[] }>("/ecommerce/product-videos", { signal, timeout: 15000 });
+    return (Array.isArray(data.items) ? data.items : []).map(normalizeStoredWork).filter((item): item is StoredWork => Boolean(item));
+}
+
+export async function getProductVideo(id: string, signal?: AbortSignal): Promise<StoredWork> {
     const data = await http.get<{ revision: number; item: unknown }>(`/ecommerce/product-videos/${encodeURIComponent(id)}`, { signal });
-    const item = normalizeProductVideoJob(data.item);
+    const item = normalizeStoredWork(data.item);
     if (!item) throw new Error("服务端返回的作品数据无法识别");
     return item;
 }
 
 /** 按 expectedRevision 比较交换保存整条作品；返回服务端写入后的版本（带新的 revision）。 */
-export async function saveProductVideo(job: ProductVideoJob, expectedRevision: number): Promise<ProductVideoJob> {
+export async function saveProductVideo(job: StoredWork, expectedRevision: number): Promise<StoredWork> {
     const { revision: _revision, ...item } = job;
     const data = await http.put<{ revision: number; item: unknown }>(`/ecommerce/product-videos/${encodeURIComponent(job.id)}`, { item, expectedRevision });
-    const saved = normalizeProductVideoJob(data.item);
+    const saved = normalizeStoredWork(data.item);
     if (!saved) throw new Error("服务端返回的作品数据无法识别");
     return saved;
 }
@@ -31,7 +40,8 @@ export async function deleteProductVideo(id: string) {
     await http.delete<{ revision: number }>(`/ecommerce/product-videos/${encodeURIComponent(id)}`);
 }
 
-export type ProductVideoSplitRequest = { resourceId: string; startMs: number; endMs: number; maxSegmentSeconds: number };
+/** ranges 不为空时按给定的几段原样切（复刻工作台的换元素单元），不检测切点。 */
+export type ProductVideoSplitRequest = { resourceId: string; startMs: number; endMs: number; maxSegmentSeconds: number; ranges?: { startMs: number; endMs: number }[] };
 
 /** 创建参考视频切段任务。idempotencyKey 由调用方先记进作品再提交，刷新后重放拿回同一个任务。 */
 export async function createProductVideoSplit(payload: ProductVideoSplitRequest, idempotencyKey = createClientId(), signal?: AbortSignal): Promise<GenerationTask> {

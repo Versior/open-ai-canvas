@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { getActiveUserScope } from "@/lib/user-scope";
 import type { ProductVideoJob } from "@/lib/product-video/job";
-import { deleteProductVideo, getProductVideo, listProductVideos, PRODUCT_VIDEO_CONFLICT, saveProductVideo } from "@/services/api/product-video";
+import { isRemakeJob, type RemakeJob } from "@/lib/remake/job";
+import { deleteProductVideo, getProductVideo, listProductVideos, PRODUCT_VIDEO_CONFLICT, saveProductVideo, type StoredWork } from "@/services/api/product-video";
 
 /**
  * 商品视频作品列表。每次修改记成一个操作（updater），本地立刻显示，再按作品逐个排队保存：
@@ -9,20 +10,20 @@ import { deleteProductVideo, getProductVideo, listProductVideos, PRODUCT_VIDEO_C
  * 这时取回最新版本把操作重新套上去再保存，双方的修改都保留。
  */
 
-type Updater = (job: ProductVideoJob) => ProductVideoJob;
+type Updater = (job: StoredWork) => StoredWork;
 
 type State = {
     scope: string;
     status: "idle" | "loading" | "ready" | "error";
     error?: string;
-    jobs: ProductVideoJob[];
+    jobs: StoredWork[];
 };
 
 export const useProductVideoStore = create<State>(() => ({ scope: "", status: "idle", jobs: [] }));
 
 const MAX_CONFLICT_RETRIES = 3;
 /** 服务端最后确认的版本；新建还没保存过的作品没有。 */
-const confirmed = new Map<string, ProductVideoJob>();
+const confirmed = new Map<string, StoredWork>();
 const pending = new Map<string, Updater[]>();
 const saving = new Map<string, Promise<void>>();
 let loading: Promise<void> | undefined;
@@ -32,9 +33,9 @@ function reason(error: unknown) {
 }
 
 /** 新作品还没保存过时的初始版本。 */
-const drafts = new Map<string, ProductVideoJob>();
+const drafts = new Map<string, StoredWork>();
 
-function fold(id: string, updaters = pending.get(id) || []): ProductVideoJob | undefined {
+function fold(id: string, updaters = pending.get(id) || []): StoredWork | undefined {
     const base = confirmed.get(id) || drafts.get(id);
     return base ? updaters.reduce((job, updater) => updater(job), base) : undefined;
 }
@@ -83,8 +84,19 @@ export function loadProductVideos(force = false) {
     return loading;
 }
 
-export function readProductVideo(id: string) {
+export function readStoredWork(id: string) {
     return useProductVideoStore.getState().jobs.find((job) => job.id === id);
+}
+
+/** 元素替换旧作品；是复刻工作台的作品时返回 undefined。 */
+export function readProductVideo(id: string): ProductVideoJob | undefined {
+    const job = readStoredWork(id);
+    return job && !isRemakeJob(job) ? job : undefined;
+}
+
+export function readRemake(id: string): RemakeJob | undefined {
+    const job = readStoredWork(id);
+    return isRemakeJob(job) ? job : undefined;
 }
 
 async function persist(id: string, scope: string) {
@@ -115,7 +127,7 @@ async function persist(id: string, scope: string) {
  * 修改一条作品并保存到服务端；返回的 Promise 在这次修改落到服务端后完成，保存失败时抛错
  * （本地仍显示修改，下一次修改会连同它一起再保存）。
  */
-export function updateProductVideo(id: string, updater: Updater): Promise<void> {
+export function updateStoredWork(id: string, updater: Updater): Promise<void> {
     const scope = resetIfScopeChanged();
     const stamped: Updater = (job) => ({ ...updater(job), updatedAt: new Date().toISOString() });
     pending.set(id, [...(pending.get(id) || []), stamped]);
@@ -126,11 +138,21 @@ export function updateProductVideo(id: string, updater: Updater): Promise<void> 
     return next;
 }
 
+/** 改一条元素替换旧作品（复刻工作台的作品原样不动）。 */
+export function updateProductVideo(id: string, updater: (job: ProductVideoJob) => ProductVideoJob) {
+    return updateStoredWork(id, (job) => (isRemakeJob(job) ? job : updater(job)));
+}
+
+/** 改一条复刻工作台的作品。 */
+export function updateRemake(id: string, updater: (job: RemakeJob) => RemakeJob) {
+    return updateStoredWork(id, (job) => (isRemakeJob(job) ? updater(job) : job));
+}
+
 /** 新建作品：先记成草稿版本，保存时 expectedRevision 为 0。 */
-export function createProductVideo(job: ProductVideoJob) {
+export function createProductVideo(job: StoredWork) {
     resetIfScopeChanged();
     drafts.set(job.id, job);
-    return updateProductVideo(job.id, (value) => value);
+    return updateStoredWork(job.id, (value) => value);
 }
 
 export async function removeProductVideo(id: string) {

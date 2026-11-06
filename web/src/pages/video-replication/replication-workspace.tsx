@@ -1,6 +1,6 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Replace, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Sparkles } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -44,8 +44,8 @@ type Props = {
     /** 拆解结果还是复刻方案；没有分析时只有拆解结果。 */
     view: ReplicationView;
     onViewChange: (view: ReplicationView) => void;
-    /** 用这条视频做元素替换：带着原视频去「元素替换」。 */
-    onReplace: () => void;
+    /** 用这条拆解建一条复刻作品，进复刻工作台。 */
+    onRemake: (detail: VideoReplicationDetail, fallbackTitle: string) => void;
 };
 
 function parseBundle(detail: VideoReplicationDetail | undefined): { bundle?: VideoTeardownBundle; error?: string } {
@@ -126,7 +126,7 @@ function RecordWorkspace({
     onBack,
     view: requestedView,
     onViewChange,
-    onReplace,
+    onRemake,
 }: Props & { bundle: VideoTeardownBundle; analysis: Analysis | null; ownRun: ReplicationRun | null }) {
     const { message } = App.useApp();
     const [tab, setTab] = useState<"shots" | "structure">("shots");
@@ -197,18 +197,18 @@ function RecordWorkspace({
                 </Popover>
             ) : null}
             {view === "teardown" ? (
-                <Button icon={<Replace className="size-4" />} onClick={onReplace} title="沿用这条视频的动作和镜头，直接换上你的商品、模特和背景">
-                    用它做元素替换
-                </Button>
-            ) : null}
-            {view === "teardown" ? (
                 <Button icon={<Download className="size-4" />} disabled={!analysis || analyzing} onClick={downloadReport}>
                     下载报告
                 </Button>
             ) : null}
             {view === "teardown" && analysis ? (
-                <Button type="primary" disabled={analyzing} onClick={() => onViewChange("plan")}>
-                    下一步：复刻方案
+                <Button disabled={analyzing} onClick={() => onViewChange("plan")} title="写复刻方案，再去画布逐镜生成（适合要精修的场景）">
+                    去画布逐镜做
+                </Button>
+            ) : null}
+            {view === "teardown" && detail ? (
+                <Button type="primary" disabled={analyzing} onClick={() => onRemake(detail, analysis?.title || "")} title="逐镜换成你的商品、模特和口播，在复刻工作台直接出成片">
+                    开始复刻
                     <ArrowRight className="size-4" aria-hidden />
                 </Button>
             ) : null}
