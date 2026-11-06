@@ -150,13 +150,13 @@ description: 影策后端核心持久化表与状态边界
 
 后台设置存在 `system_settings` 的 `video_replication_settings`：`maxDurationSeconds`（10–180，默认 180）、`maxShots`（1–60，默认 60）、`transcribeEnabled`（默认 `true`）、`transcriptionChannelModelId`（后台选的转写模型，即 `channel_models.id`，默认空字符串表示用自建 whisper.cpp 服务；不加外键，模型删除或停用后在读取状态和执行时判为不可用）。没有这一行时用默认值，缺字段的旧配置以默认值为底；按读到的原文比较交换写入。功能开关 `videoReplicationEnabled`（视频复刻）和 `socialVideoImportEnabled`（视频链接导入，画布粘贴和视频复刻共用）在 `feature_availability` JSON 里，默认开放。后台统计和记录列表直接按 `tasks.type`、`tasks.status`、`tasks.provider` 和 `results.kind` 查，不另建统计表。
 
-## 元素替换作品（不改结构）
+## 复刻作品与元素替换作品（不改结构）
 
-视频复刻的元素替换不新增表或列。作品记录存在 `ecommerce_libraries.payload_json` 的 `productVideos` 键，结构是 `{ "version": 1, "items": [...] }`；生图台的 `studio` 键和其余键原样保留。
+视频复刻的复刻工作台和元素替换都不新增表或列。作品记录存在 `ecommerce_libraries.payload_json` 的 `productVideos` 键，结构是 `{ "version": 1, "items": [...] }`；生图台的 `studio` 键和其余键原样保留。`items` 里 `version: 2` 的是复刻工作台作品（拆解来源、配方、逐镜做法、生成单元与候选、成片），没有 `version` 的是元素替换旧作品，两种共用单条 128 KiB、最多 100 条的限制。
 
 - 每条作品的 `revision` 由服务端写在 JSON 里。
 - 整行 `revision` 仍做乐观并发，和生图台的写入共用 `storageMu` 与重试。
-- 作品里的商品图、模特图、背景图、参考视频、参考片段、每段生成结果和成片都以 `resourceId` / `keyframeResourceId` 引用，资源引用扫描读整行，所以这些资源受删除保护和孤儿清理保护。
+- 作品里的商品图、模特图、背景图、参考视频、关键帧、参考片段、每段生成结果（复刻作品的每条候选）和成片都以 `resourceId` / `keyframeResourceId` 引用，资源引用扫描读整行，所以这些资源受删除保护和孤儿清理保护。
 - 切段任务是 `tasks.type = product_video_split`，结果写在 `tasks.result_json`，片段和封面是普通视频、图片资源。
 
 ## 视频解析接口池（不改结构）

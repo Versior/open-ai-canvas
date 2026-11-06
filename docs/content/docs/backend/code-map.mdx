@@ -24,21 +24,21 @@ description: 从产品功能快速定位主要代码入口
 - 接口 `web/src/services/api/ecommerce-studio.ts` → `backend/internal/handler/ecommerce_studio.go`（`RegisterEcommerceStudioRoutes`，在 `api.go` 单独注册）→ `app/ecommerce_studio.go`，复用 `repository/ecommerce_library.go` 的修订号保存，资源引用扫描在 `repository/resource_reference.go`。「商品档案」与「出图策划」能力的默认指令与准入在 `app/ecommerce_defaults.go`、`app/ecommerce_settings.go`（`ecommerceStudioCapability` 让这两项不受旧画布总开关约束）；与电商 Agent 共用知识库的检索与注入在 `app/ecommerce_studio_knowledge.go`：商品档案复用 `retrieveEcommerceKnowledge` 后按类型过滤，出图策划用 `rankEcommerceKnowledge`（创作类型按 `studioPlanKind`），`app/ecommerce_studio_references.go` 再从内置套图库（`ecommerce_catalog.go` 的 `loadEcommerceCatalog`）挑同类爆款套图附在后面（`app/ecommerce_creative_context.go`，限量前的全部候选）按 `ecommerceStudioPlanKnowledgeTypes` 分类型取。功能开关 `ecommerceStudioEnabled` 定义在 `internal/platform/feature_availability.go`，任务准入在 `app/task_creation.go` 的 `requireTaskGenerationFeatures`。
 - 助手：工具名与可见性在 `backend/internal/agent/tool/policy_studio.go`；`app/cloud_agent_studio.go` 负责 studio 范围校验、建 run 时的商品归属与 `studio_context` 数据消息；`app/cloud_agent_studio_tools.go` 是工具 schema、处理器与审批预演；`app/ecommerce_studio_doc.go`、`app/ecommerce_studio_agent_ops.go` 是商品文档的读取、改写与批量校验。前端 `stores/use-global-agent-store.ts` 的 `studio` 上下文、`components/canvas/canvas-cloud-agent-panel.tsx` 发送时的 `studioProductId` 与 `services/agent-studio-sync.ts` 的写入广播。方法知识在内置技能 `backend/builtin/电商出图方法库/`。
 
-## 视频复刻 · 元素替换
+## 视频复刻 · 复刻工作台与元素替换
 
 - 后端切段：`backend/internal/app/ecommerce_product_video_split.go` 负责 `POST /api/ecommerce/product-videos/splits`。任务类型是 `product_video_split`（`model.TaskTypeProductVideoSplit`），由 `task_worker.go` 分发，超时 10 分钟。
-  - 镜头切点复用 `video_replication_media.go` 的 `detectVideoTeardownCuts`，可以只检测选段内的一段。
-  - `planProductVideoSegments` 尽量在切点处断开，每段不超过上限、不短于 4 秒。
+  - 不带 `ranges` 时，镜头切点复用 `video_replication_media.go` 的 `detectVideoTeardownCuts`，可以只检测选段内的一段；`planProductVideoSegments` 尽量在切点处断开，每段不超过上限、不短于 4 秒。
+  - 带 `ranges`（复刻工作台）时，`normalizeProductVideoSplitRanges` 校验每段 1 秒到上限、最多 60 段，`productVideoRangeSegments` 原样切，不检测镜头；范围写进幂等指纹。
   - 每段重新编码成短边不超过 720、30fps 的 H.264/AAC 片段，并截一帧封面，都存成用户资源。
-  - 请求类型别名是 `service.ProductVideoSplitRequest`。
-- 后端作品记录：`app/ecommerce_product_video.go`，存在 `ecommerce_libraries.payload_json` 的 `productVideos` 键，每条作品按 revision 比较交换。HTTP 在 `handler/ecommerce_product_video.go`（`RegisterProductVideoRoutes`，在 `api.go` 注册），受 `videoReplicationEnabled` 控制。
-- 前端：
-  - 页面在 `web/src/pages/video-replication/replace/`，由视频复刻的 `index.tsx` 按 `?mode=replace` 渲染，顶部切换在 `replication-mode-switch.tsx`，拆解工作区的「用它做元素替换」带 `?source=<拆解 ID>` 过去。文件有 `replace-workspace.tsx`（参数与操作，载入拆解的原视频）、`product-video-composer.tsx`（左栏）、`product-video-assets.tsx`（素材格，模特库复用生图台 `StudioCastPicker`，经 `product-video-cast-picker.tsx` 懒加载生图台样式）、`product-video-reference.tsx`（参考视频上传、链接导入、裁剪）、`product-video-works.tsx`（作品卡片、分段与单段重做）。
-  - 流程编排在 `product-video-runner.ts`：切段 → 每段 `submitBackendGenerationTask` → `createTimelineRenderTask` 拼接，任务 ID 先写进作品，打开页面时 `resumeProductVideos` 接着跑。
-  - 作品保存队列在 `use-product-video-store.ts`：未确认的操作在冲突后重新套用。
-  - 模型配置与报价在 `product-video-config.ts`、`use-product-video-estimate.ts`。
-  - 纯函数在 `web/src/lib/product-video/`：`job.ts`（作品结构与解析）、`prompt.ts`（角色绑定提示词、难度评估）、`media.ts`（模型能力换算、分段时长、时间线快照）。
-  - 接口在 `web/src/services/api/product-video.ts`，测试在 `web/test/product-video-lib.test.ts`。
+  - 请求类型别名是 `service.ProductVideoSplitRequest`，HTTP 正文上限 8 KiB。
+- 后端作品记录：`app/ecommerce_product_video.go`，存在 `ecommerce_libraries.payload_json` 的 `productVideos` 键，每条作品按 revision 比较交换。HTTP 在 `handler/ecommerce_product_video.go`（`RegisterProductVideoRoutes`，在 `api.go` 注册），受 `videoReplicationEnabled` 控制。复刻作品（`version: 2`）和元素替换旧作品共用这些接口。
+- 拆解分析的逐镜字段 `people`（none / speaker / presenter / hands）和 `brandText` 在 `web/src/lib/canvas/video-teardown.ts`，复刻工作台据此打风险标签和推荐做法。
+- 前端复刻工作台：
+  - 纯函数在 `web/src/lib/remake/`：`job.ts`（作品结构、从拆解建作品 `createRemakeJob` / `remakeShotsFromTeardown`、输入检查 `remakeJobError`、读回 `normalizeRemakeJob` / `isRemakeJob`），`recommend.ts`（风险到推荐做法），`units.ts`（`planRemakeUnits` 合并生成单元并沿用候选、`remakeClipRange` 补齐参考片段），`prompts.ts`（参考图角色、单元提示词、口播改写提示词与解析、字数预算），`timeline.ts`（成片分段、原片与成片时间互换、时间线快照、SRT）。测试在 `web/test/remake-lib.test.ts`。
+  - 页面在 `web/src/pages/video-replication/remake/`：`remake-workbench.tsx`（左栏步骤、摘要、报价和主按钮，配方去抖保存），`remake-recipe.tsx`（配方卡和逐镜做法），`remake-produce.tsx`（并排对比、单元详情、双轨时间线），`remake-works.tsx`（作品页卡片，含旧作品卡），`remake-product-picker.tsx`（从生图台选商品），`remake-dialogue.ts`（AI 改写口播），`use-remake-estimate.ts`（按单元报价），`remake.css`（`rw-` 前缀）。
+  - 流程编排在 `remake-runner.ts`：缺参考片段的换元素单元先按 `ranges` 切段 → 每个单元 `submitBackendGenerationTask`（`metadata.source=video-remake`）→ 全部有候选后 `createTimelineRenderTask` 拼接。任务 ID 先写进作品，`resumeRemakes` 在打开页面时接着跑；还有停止、接着生成、单段重做、选候选、只重新拼。
+  - 路由在视频复刻的 `index.tsx`：`?remake=`、`&step=produce`、`?tab=works`；首页页签是 `replication-mode-switch.tsx` 的 `ReplicationTabs`；拆解工作区 `replication-workspace.tsx` 的「开始复刻」调 `onRemake`。
+- 前端元素替换（旧作品）：`web/src/pages/video-replication/replace/` 只剩复刻工作台复用的部分和旧作品的续跑：`product-video-assets.tsx`（素材格，模特库经 `product-video-cast-picker.tsx` 懒加载生图台 `StudioCastPicker`）、`product-video-config.ts`（模型能力与生成参数）、`use-product-video-estimate.ts`（积分格式化）、`product-video-runner.ts`（旧作品续跑）、`use-product-video-store.ts`（两种作品共用的保存队列，冲突后重新套用未确认的操作；`readRemake` / `updateRemake` 只碰复刻作品）。纯函数在 `web/src/lib/product-video/`，接口在 `web/src/services/api/product-video.ts`（`StoredWork`、`normalizeStoredWork` 按 `version` 区分两种作品），测试在 `web/test/product-video-lib.test.ts`。
 
 ## 室内设计
 
