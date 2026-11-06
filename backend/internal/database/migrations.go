@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 93
+const CurrentSchemaVersion int64 = 97
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -370,6 +370,110 @@ var schemaMigrations = []migration{
 	}},
 	// Fork 自有：室内设计知识库改为入库，管理员可在后台编辑（只建一张新表，内置条目启动时补齐）。排在上游 83–87（Fork 88–92）之后，不再挪动。
 	{version: 93, name: interiorKnowledgeMigrationName, checksum: interiorKnowledgeMigrationChecksum, apply: migrateInteriorKnowledge},
+	// 上游 88–91 接在已发布的 Fork 93 后面；旧迁移编号和校验和保持不变。
+	{version: 94, name: "reference_video_billing", checksum: "sha256:reference-video-billing-v88-20261106", apply: migrateReferenceVideoBilling},
+	{version: 95, name: "reference_video_cost_price", checksum: "sha256:reference-video-cost-price-v89-20261106", apply: migrateReferenceVideoCostPrice},
+	{version: 96, name: "drama_draft_form", checksum: "sha256:drama-draft-form-v90-20261106", apply: func(tx *gorm.DB) error {
+		// 草稿的创建页表单；旧作品为空串，草稿只能在制作台开工，不能回到创建页。
+		if !tx.Migrator().HasTable(&model.DramaProduction{}) || tx.Migrator().HasColumn(&model.DramaProduction{}, "DraftJSON") {
+			return nil
+		}
+		return tx.Migrator().AddColumn(&model.DramaProduction{}, "DraftJSON")
+	}},
+	{version: 97, name: "email_logs_and_notifications", checksum: "sha256:email-logs-and-notifications-v91-20261106", apply: func(tx *gorm.DB) error {
+		// 邮件发送记录与用户邮件订阅（消费日报，默认关闭）；只建新表。
+		return tx.AutoMigrate(&model.EmailLog{}, &model.UserNotificationSetting{})
+	}},
+}
+
+// migrateReferenceVideoCostPrice 为价格档成本和账单成本快照增加带参考视频的成本价。
+// 新列 NOT NULL DEFAULT 0，旧订单的成本口径不变。版本 88 自动开启参考视频计费的全 Token 视频模型，
+// 挂参考视频的订单从此按带参考视频成本价记成本：这些 Token 档把带参考视频成本价回填为现有成本价，
+// 否则升级后这类订单的成本会记成 0，直到管理员重新保存模型。
+func migrateReferenceVideoCostPrice(tx *gorm.DB) error {
+	columns := []string{"cost_reference_video_unit_price_microcredits", "cost_reference_video_output_token_price_microcredits"}
+	for _, entity := range []any{&model.ChannelModelPriceTier{}, &model.BillingOrder{}} {
+		if !tx.Migrator().HasTable(entity) {
+			continue
+		}
+		for _, column := range columns {
+			if tx.Migrator().HasColumn(entity, column) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(entity, column); err != nil {
+				return err
+			}
+		}
+	}
+	if !tx.Migrator().HasTable(&model.ChannelModel{}) || !tx.Migrator().HasTable(&model.ChannelModelPriceTier{}) {
+		return nil
+	}
+	enabled := tx.Model(&model.ChannelModel{}).Select("id").Where("capability = ? AND reference_video_billing = ?", "video", true)
+	return tx.Model(&model.ChannelModelPriceTier{}).
+		Where("billing_mode = ? AND channel_model_id IN (?) AND cost_reference_video_output_token_price_microcredits = ?", "token", enabled, 0).
+		Update("cost_reference_video_output_token_price_microcredits", gorm.Expr("cost_output_token_price_microcredits")).Error
+}
+
+// migrateReferenceVideoBilling 增加视频模型的“参考视频计费”开关、价格档的带参考视频价格和账单的参考视频快照。
+// 开关默认关闭；只有已经全部按 Token 计费的视频模型开启开关，并把带参考视频的 Token 价格填成现价，
+// 这些模型原本就把参考视频计入公式用量，迁移后扣费结果不变。含按秒价格档的模型保持关闭，
+// 避免按秒订单因计入参考视频秒数而悄悄涨价。
+func migrateReferenceVideoBilling(tx *gorm.DB) error {
+	for _, target := range []struct {
+		entity  any
+		columns []string
+	}{
+		{&model.ChannelModel{}, []string{"reference_video_billing"}},
+		{&model.ChannelModelPriceTier{}, []string{"reference_video_unit_price_microcredits", "reference_video_output_token_price_microcredits"}},
+		{&model.BillingOrder{}, []string{"reference_video_count", "reference_video_millis", "reference_video_billed"}},
+	} {
+		if !tx.Migrator().HasTable(target.entity) {
+			continue
+		}
+		for _, column := range target.columns {
+			if tx.Migrator().HasColumn(target.entity, column) {
+				continue
+			}
+			if err := tx.Migrator().AddColumn(target.entity, column); err != nil {
+				return err
+			}
+		}
+	}
+	if !tx.Migrator().HasTable(&model.ChannelModel{}) || !tx.Migrator().HasTable(&model.ChannelModelPriceTier{}) {
+		return nil
+	}
+	var tokenModelIDs, perSecondModelIDs []string
+	if err := tx.Model(&model.ChannelModelPriceTier{}).Where("billing_mode = ?", "token").Distinct().Pluck("channel_model_id", &tokenModelIDs).Error; err != nil {
+		return err
+	}
+	if err := tx.Model(&model.ChannelModelPriceTier{}).Where("billing_mode = ?", "per_second").Distinct().Pluck("channel_model_id", &perSecondModelIDs).Error; err != nil {
+		return err
+	}
+	excluded := make(map[string]bool, len(perSecondModelIDs))
+	for _, id := range perSecondModelIDs {
+		excluded[id] = true
+	}
+	candidates := make([]string, 0, len(tokenModelIDs))
+	for _, id := range tokenModelIDs {
+		if !excluded[id] {
+			candidates = append(candidates, id)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	var videoModelIDs []string
+	if err := tx.Model(&model.ChannelModel{}).Where("capability = ? AND id IN ?", "video", candidates).Pluck("id", &videoModelIDs).Error; err != nil {
+		return err
+	}
+	if len(videoModelIDs) == 0 {
+		return nil
+	}
+	if err := tx.Model(&model.ChannelModel{}).Where("id IN ?", videoModelIDs).Update("reference_video_billing", true).Error; err != nil {
+		return err
+	}
+	return tx.Model(&model.ChannelModelPriceTier{}).Where("billing_mode = ? AND channel_model_id IN ?", "token", videoModelIDs).
+		Update("reference_video_output_token_price_microcredits", gorm.Expr("output_token_price_microcredits")).Error
 }
 
 // migrateArkAssetGroups 把方舟真人素材库扩展为真人 / 虚拟 / 版权 IP 三类素材组：
@@ -1373,6 +1477,43 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 				return fmt.Errorf("室内设计知识库迁移账本与物理结构不一致：interior_knowledge_entries 缺少 %s 列", field)
 			}
 		}
+	case 94:
+		for _, target := range []struct {
+			entity  any
+			columns []string
+		}{
+			{&model.ChannelModel{}, []string{"reference_video_billing"}},
+			{&model.ChannelModelPriceTier{}, []string{"reference_video_unit_price_microcredits", "reference_video_output_token_price_microcredits"}},
+			{&model.BillingOrder{}, []string{"reference_video_count", "reference_video_millis", "reference_video_billed"}},
+		} {
+			if !tx.Migrator().HasTable(target.entity) {
+				continue
+			}
+			for _, column := range target.columns {
+				if !tx.Migrator().HasColumn(target.entity, column) {
+					return fmt.Errorf("参考视频计费迁移账本与物理结构不一致：缺少 %s", column)
+				}
+			}
+		}
+	case 95:
+		for _, entity := range []any{&model.ChannelModelPriceTier{}, &model.BillingOrder{}} {
+			if !tx.Migrator().HasTable(entity) {
+				continue
+			}
+			for _, column := range []string{"cost_reference_video_unit_price_microcredits", "cost_reference_video_output_token_price_microcredits"} {
+				if !tx.Migrator().HasColumn(entity, column) {
+					return fmt.Errorf("参考视频成本迁移账本与物理结构不一致：缺少 %s", column)
+				}
+			}
+		}
+	case 96:
+		if tx.Migrator().HasTable(&model.DramaProduction{}) && !tx.Migrator().HasColumn(&model.DramaProduction{}, "DraftJSON") {
+			return fmt.Errorf("短剧草稿迁移账本与物理结构不一致：缺少 drama_productions.draft_json")
+		}
+	case 97:
+		if !tx.Migrator().HasTable(&model.EmailLog{}) || !tx.Migrator().HasTable(&model.UserNotificationSetting{}) {
+			return fmt.Errorf("邮件记录与订阅迁移账本与物理结构不一致：缺少邮件记录或订阅表")
+		}
 	}
 	return nil
 }
@@ -1399,8 +1540,9 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 
 	// 上游 main 72–82 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
 	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83；
-	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87，上游 83–87 顺延五位为 88–92。Fork 自有的形象（84）、
-	// 模特库（85）、室内设计（86）和室内设计知识库（93）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
+	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87，上游 83–87 顺延五位为 88–92；
+	// 上游 88–91 接在 Fork 室内设计知识库之后为 94–97。Fork 自有的形象（84）、模特库（85）、
+	// 室内设计（86）和室内设计知识库（93）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
 		forkVersion  int64
@@ -1422,9 +1564,13 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 85, name: poseLibraryMigrationName, checksum: poseLibraryMigrationChecksum}, 90, poseLibraryMigrationChecksum},
 		{migration{version: 86, name: arkAssetGroupsMigrationName, checksum: arkAssetGroupsMigrationChecksum}, 91, arkAssetGroupsMigrationChecksum},
 		{migration{version: 87, name: inspirationFeedMigrationName, checksum: inspirationFeedMigrationChecksum}, 92, inspirationFeedMigrationChecksum},
+		{migration{version: 88, name: "reference_video_billing", checksum: "sha256:reference-video-billing-v88-20261106"}, 94, "sha256:reference-video-billing-v88-20261106"},
+		{migration{version: 89, name: "reference_video_cost_price", checksum: "sha256:reference-video-cost-price-v89-20261106"}, 95, "sha256:reference-video-cost-price-v89-20261106"},
+		{migration{version: 90, name: "drama_draft_form", checksum: "sha256:drama-draft-form-v90-20261106"}, 96, "sha256:drama-draft-form-v90-20261106"},
+		{migration{version: 91, name: "email_logs_and_notifications", checksum: "sha256:email-logs-and-notifications-v91-20261106"}, 97, "sha256:email-logs-and-notifications-v91-20261106"},
 	}
 	if len(records) > len(upstream) {
-		return false, fmt.Errorf("上游迁移账本在版本 87 后仍有记录，拒绝自动重排")
+		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)
 	}
 	for index, applied := range records {
 		expected := upstream[index]
@@ -1441,7 +1587,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		}
 	}
 
-	// 逆序搬迁避免主键槽位碰撞：上游 87→92 … 83→88 的目标都高于上游最大版本，之后 82→87、81→83、80→82 等每条的目标槽位都已腾空。
+	// 逆序搬迁避免主键槽位碰撞：先搬上游 91→97 … 88→94，再搬 87→92 … 83→88；后续目标槽位都已腾空。
 	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]

@@ -2544,7 +2544,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                                 modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
                                             />
                                         }
-                                        left={<ComposerControls config={config} selectedModel={selectedModel} permissionMode={permissionMode} theme={theme} onModelChange={setModel} onPermissionChange={setPermissionMode} />}
+                                        left={
+                                            <ComposerControls
+                                                config={config}
+                                                selectedModel={selectedModel}
+                                                permissionMode={permissionMode}
+                                                theme={theme}
+                                                onModelChange={setModel}
+                                                onPermissionChange={setPermissionMode}
+                                                reasoningMode={reasoningMode}
+                                                onReasoningModeChange={setReasoningMode}
+                                            />
+                                        }
                                     />
                                 </motion.div>
                             )}

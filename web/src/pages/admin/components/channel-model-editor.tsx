@@ -7,6 +7,7 @@ import { Copy, FlaskConical, Plus } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
+import { MediaTransportFields } from "./media-transport-fields";
 import { ModelCapabilityEditor } from "@/components/model-capability-editor";
 import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
@@ -77,6 +78,7 @@ export function ChannelModelEditor({
     const providerModelKey = Form.useWatch("providerModelKey", form) || "";
     const capabilityConfig = Form.useWatch("capabilityConfig", form);
     const modelEnabled = Form.useWatch("enabled", form) !== false;
+    const referenceVideoBilling = Form.useWatch("referenceVideoBilling", form) === true;
     const priceTiers = Form.useWatch("priceTiers", form) || [];
     const hasDefaultPriceTier = priceTiers.some((tier) => tier.matchMode === "default");
     const tiersWithOwnUpstream = priceTiers.filter((tier) => tier.providerModelKey?.trim());
@@ -101,21 +103,39 @@ export function ChannelModelEditor({
         let active = true;
         setPriceSources([]);
         setPriceSourcesLoading(true);
-        void listAdminChannelModels(priceSourceChannel).then((result) => { if (active) setPriceSources(result.models); }).catch((error) => { if (active) setPriceSourcesError(error instanceof Error ? error.message : "读取价格来源失败"); }).finally(() => { if (active) setPriceSourcesLoading(false); });
-        return () => { active = false; };
+        void listAdminChannelModels(priceSourceChannel)
+            .then((result) => {
+                if (active) setPriceSources(result.models);
+            })
+            .catch((error) => {
+                if (active) setPriceSourcesError(error instanceof Error ? error.message : "读取价格来源失败");
+            })
+            .finally(() => {
+                if (active) setPriceSourcesLoading(false);
+            });
+        return () => {
+            active = false;
+        };
     }, [priceSourceChannel, channel.id, existingModels]);
     useEffect(() => {
         if (editing || draftValues || !modelUpstream || busy || protocolLoading || protocolError) return;
         let active = true;
         const timer = setTimeout(() => {
-            void loadModelMetadataPresets().then((presets) => {
-                if (!active) return;
-                const result = autoConfigureChannelModel(form.getFieldsValue(true), existingModels, protocols, presets, protectedFields.current);
-                replaceChannelModelFormValues(form, result.values);
-                setAutoSource(result.source || "未找到可靠匹配，请手动配置参数与价格。");
-            }).catch(() => { if (active) setAutoSource("模型参数读取失败，请在下方重试或手动配置。"); });
+            void loadModelMetadataPresets()
+                .then((presets) => {
+                    if (!active) return;
+                    const result = autoConfigureChannelModel(form.getFieldsValue(true), existingModels, protocols, presets, protectedFields.current);
+                    replaceChannelModelFormValues(form, result.values);
+                    setAutoSource(result.source || "未找到可靠匹配，请手动配置参数与价格。");
+                })
+                .catch(() => {
+                    if (active) setAutoSource("模型参数读取失败，请在下方重试或手动配置。");
+                });
         }, 350);
-        return () => { active = false; clearTimeout(timer); };
+        return () => {
+            active = false;
+            clearTimeout(timer);
+        };
     }, [modelUpstream, editing, draftValues, busy, protocolLoading, protocolError, protocols, existingModels, form]);
 
     const requestClose = () => {
@@ -201,6 +221,7 @@ export function ChannelModelEditor({
                 protocol: values.protocol,
                 priceTiers: values.priceTiers.map((tier) => priceTierPayloadFromForm(values.capability, tier, upstreamModel, capabilityConfig)),
                 priceCurrency: values.priceCurrency || "credits",
+                referenceVideoBilling: values.capability === "video" && values.referenceVideoBilling === true,
                 enabled: values.enabled !== false,
                 capabilityConfig,
             };
@@ -321,16 +342,25 @@ export function ChannelModelEditor({
                             forceRender: true,
                             children: (
                                 <div className="admin-model-editor-tab-content">
-                                    {!editing && !draftValues && <p className="text-xs text-foreground/60" role="status">{autoSource || "填写模型 ID 后自动补齐参数，并参考当前渠道同类模型的接口与价格。"}</p>}
-                                    <ChannelModelPresetPicker modelId={providerModelKey || modelKey} capability={modelCapability || initialValues.capability} disabled={busy} onApply={(preset) => {
-                                        const next = applyModelMetadataPreset(form.getFieldsValue(true), preset);
-                                        form.setFieldValue("icon", next.icon);
-                                        form.setFieldValue("capabilityConfig", next.capabilityConfig);
-                                        protectedFields.current.add("capabilityConfig");
-                                        protectedFields.current.add("icon");
-                                        dirtyRef.current = true;
-                                        message.success("模型预设已填入，保存后生效");
-                                    }} />
+                                    {!editing && !draftValues && (
+                                        <p className="text-xs text-foreground/60" role="status">
+                                            {autoSource || "填写模型 ID 后自动补齐参数，并参考当前渠道同类模型的接口与价格。"}
+                                        </p>
+                                    )}
+                                    <ChannelModelPresetPicker
+                                        modelId={providerModelKey || modelKey}
+                                        capability={modelCapability || initialValues.capability}
+                                        disabled={busy}
+                                        onApply={(preset) => {
+                                            const next = applyModelMetadataPreset(form.getFieldsValue(true), preset);
+                                            form.setFieldValue("icon", next.icon);
+                                            form.setFieldValue("capabilityConfig", next.capabilityConfig);
+                                            protectedFields.current.add("capabilityConfig");
+                                            protectedFields.current.add("icon");
+                                            dirtyRef.current = true;
+                                            message.success("模型预设已填入，保存后生效");
+                                        }}
+                                    />
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="模型身份" description="区分产品侧展示标识与上游实际调用 ID。" />
                                         <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
@@ -437,10 +467,24 @@ export function ChannelModelEditor({
                             forceRender: true,
                             children: (
                                 <div className="admin-model-editor-tab-content">
-                                    {configurationChange && <Alert type="warning" showIcon title={configurationChange === "capability" ? "模型能力已变更" : configurationChange === "protocol" ? "调用协议已变更" : "图片参数已更新"} description={configurationChange === "parameters" ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。" : "引用与参数已恢复为新协议默认值，不兼容的规格条件已清除。金额与计费方式保持不变，请在保存前核对。"} />}{" "}
+                                    {configurationChange && (
+                                        <Alert
+                                            type="warning"
+                                            showIcon
+                                            title={configurationChange === "capability" ? "模型能力已变更" : configurationChange === "protocol" ? "调用协议已变更" : "图片参数已更新"}
+                                            description={
+                                                configurationChange === "parameters"
+                                                    ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。"
+                                                    : "引用与参数已恢复为新协议默认值，不兼容的规格条件已清除。金额与计费方式保持不变，请在保存前核对。"
+                                            }
+                                        />
+                                    )}{" "}
                                     {modelCapability === "text" || modelCapability === "image" || modelCapability === "video" ? (
                                         <section className="admin-model-editor-section admin-model-editor-section-stacked admin-model-editor-references">
                                             <SectionHeading title="引用与限制" description="按媒体类型纵向配置数量、大小、时长及通用约束。" />
+                                            <Form.Item name={["capabilityConfig", "mediaTransport"]} label="参考素材发送方式" extra="优先使用模型设置，其次渠道默认值，最后使用协议默认行为。">
+                                                <MediaTransportFields channel={channel.mediaTransport || {}} />
+                                            </Form.Item>
                                             <div className="admin-model-editor-section-content">
                                                 <ModelCapabilityEditor
                                                     capability={modelCapability}
@@ -453,7 +497,7 @@ export function ChannelModelEditor({
                                                     onChange={(next) => {
                                                         dirtyRef.current = true;
                                                         protectedFields.current.add("capabilityConfig");
-                                                        form.setFieldValue("capabilityConfig", next);
+                                                        form.setFieldValue("capabilityConfig", { ...next, mediaTransport: form.getFieldValue(["capabilityConfig", "mediaTransport"]) });
                                                     }}
                                                 />
                                             </div>
@@ -474,7 +518,7 @@ export function ChannelModelEditor({
                                                     onChange={(next) => {
                                                         dirtyRef.current = true;
                                                         protectedFields.current.add("capabilityConfig");
-                                                        form.setFieldValue("capabilityConfig", next);
+                                                        form.setFieldValue("capabilityConfig", { ...next, mediaTransport: form.getFieldValue(["capabilityConfig", "mediaTransport"]) });
                                                     }}
                                                 />
                                             </div>
@@ -490,28 +534,77 @@ export function ChannelModelEditor({
                             forceRender: true,
                             children: (
                                 <div className="admin-model-editor-tab-content">
-                                    {configurationChange && <Alert type="warning" showIcon title="请核对定价" description={configurationChange === "parameters" ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。" : "能力或协议已变更。请重新检查规格条件、计费方式和金额；不会自动转换价格单位。"} action={<Button size="small" onClick={() => setConfigurationChange(null)}>已核对</Button>} />}{" "}
+                                    {configurationChange && (
+                                        <Alert
+                                            type="warning"
+                                            showIcon
+                                            title="请核对定价"
+                                            description={configurationChange === "parameters" ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。" : "能力或协议已变更。请重新检查规格条件、计费方式和金额；不会自动转换价格单位。"}
+                                            action={
+                                                <Button size="small" onClick={() => setConfigurationChange(null)}>
+                                                    已核对
+                                                </Button>
+                                            }
+                                        />
+                                    )}{" "}
                                     <section className="admin-model-assist-card" aria-label="从现有模型复制价格">
-                                        <header className="admin-model-assist-heading"><Copy size={16} aria-hidden /><div><h2>从现有模型复制价格</h2><p>选择来源渠道与模型，复制整套售价、成本和规格条件。</p></div></header>
+                                        <header className="admin-model-assist-heading">
+                                            <Copy size={16} aria-hidden />
+                                            <div>
+                                                <h2>从现有模型复制价格</h2>
+                                                <p>选择来源渠道与模型，复制整套售价、成本和规格条件。</p>
+                                            </div>
+                                        </header>
                                         <div className="admin-model-assist-content">
                                             <div className="admin-model-price-source-fields">
-                                                <div><span className="admin-model-assist-label">来源渠道</span><Select className="admin-model-assist-select" aria-label="价格来源渠道" value={priceSourceChannel} options={priceSourceChannels} disabled={busy} onChange={setPriceSourceChannel} /></div>
-                                                <div><span className="admin-model-assist-label">来源模型</span><Select className="admin-model-assist-select" aria-label="价格来源模型" showSearch={{ optionFilterProp: "label" }} allowClear placeholder="选择相同能力的现有模型" notFoundContent="此渠道暂无相同能力的模型" value={priceSourceId} loading={priceSourcesLoading} disabled={busy || priceSourcesLoading} options={priceSources.filter((item) => item.capability === modelCapability && item.id !== editing?.id).map((item) => ({ value: item.id, label: `${item.channelLabel || item.providerModelKey || item.modelKey} · ${item.protocol || "未配置协议"} · ${item.priceTiers?.length || 1} 个价格档` }))} onChange={setPriceSourceId} /></div>
+                                                <div>
+                                                    <span className="admin-model-assist-label">来源渠道</span>
+                                                    <Select className="admin-model-assist-select" aria-label="价格来源渠道" value={priceSourceChannel} options={priceSourceChannels} disabled={busy} onChange={setPriceSourceChannel} />
+                                                </div>
+                                                <div>
+                                                    <span className="admin-model-assist-label">来源模型</span>
+                                                    <Select
+                                                        className="admin-model-assist-select"
+                                                        aria-label="价格来源模型"
+                                                        showSearch={{ optionFilterProp: "label" }}
+                                                        allowClear
+                                                        placeholder="选择相同能力的现有模型"
+                                                        notFoundContent="此渠道暂无相同能力的模型"
+                                                        value={priceSourceId}
+                                                        loading={priceSourcesLoading}
+                                                        disabled={busy || priceSourcesLoading}
+                                                        options={priceSources
+                                                            .filter((item) => item.capability === modelCapability && item.id !== editing?.id)
+                                                            .map((item) => ({ value: item.id, label: `${item.channelLabel || item.providerModelKey || item.modelKey} · ${item.protocol || "未配置协议"} · ${item.priceTiers?.length || 1} 个价格档` }))}
+                                                        onChange={setPriceSourceId}
+                                                    />
+                                                </div>
                                             </div>
                                             {priceSourcesError && <Alert type="error" title="读取价格来源失败" description={priceSourcesError} />}
-                                            <footer className="admin-model-assist-footer"><p className="admin-model-assist-note">替换当前价格表，保存后生效。</p><Button icon={<Copy size={14} aria-hidden />} disabled={busy || priceSourcesLoading || !priceSourceId} onClick={() => {
-                                                const source = priceSources.find((item) => item.id === priceSourceId);
-                                                if (!source) return;
-                                                try {
-                                                    const next = copyChannelModelPrices(form.getFieldsValue(true), source);
-                                                    form.setFieldValue("priceTiers", next.priceTiers);
-                                                    form.setFieldValue("priceCurrency", next.priceCurrency);
-                                                    protectedFields.current.add("priceTiers");
-                                                    protectedFields.current.add("priceCurrency");
-                                                    dirtyRef.current = true;
-                                                    message.success("价格已复制到表单，保存后生效");
-                                                } catch (error) { message.warning(error instanceof Error ? error.message : "复制价格失败"); }
-                                            }}>复制价格到表单</Button></footer>
+                                            <footer className="admin-model-assist-footer">
+                                                <p className="admin-model-assist-note">替换当前价格表，保存后生效。</p>
+                                                <Button
+                                                    icon={<Copy size={14} aria-hidden />}
+                                                    disabled={busy || priceSourcesLoading || !priceSourceId}
+                                                    onClick={() => {
+                                                        const source = priceSources.find((item) => item.id === priceSourceId);
+                                                        if (!source) return;
+                                                        try {
+                                                            const next = copyChannelModelPrices(form.getFieldsValue(true), source);
+                                                            form.setFieldValue("priceTiers", next.priceTiers);
+                                                            form.setFieldValue("priceCurrency", next.priceCurrency);
+                                                            protectedFields.current.add("priceTiers");
+                                                            protectedFields.current.add("priceCurrency");
+                                                            dirtyRef.current = true;
+                                                            message.success("价格已复制到表单，保存后生效");
+                                                        } catch (error) {
+                                                            message.warning(error instanceof Error ? error.message : "复制价格失败");
+                                                        }
+                                                    }}
+                                                >
+                                                    复制价格到表单
+                                                </Button>
+                                            </footer>
                                         </div>
                                     </section>
                                     <section className="admin-model-editor-section">
@@ -526,12 +619,36 @@ export function ChannelModelEditor({
                                                     }}
                                                 />
                                             </Form.Item>
+                                            {modelCapability === "video" ? (
+                                                <Form.Item
+                                                    name="referenceVideoBilling"
+                                                    label="参考视频计费"
+                                                    valuePropName="checked"
+                                                    extra={
+                                                        referenceVideoBilling
+                                                            ? "已开启：挂参考视频的请求使用各价格档的「带参考视频」价格。按秒 =（生成秒数 + 参考视频秒数）× 带参考视频每秒价，参考视频时长由后端实测，测不出时拒绝提交；视频 Token 按含参考视频的用量 × 带参考视频 Token 价。不挂参考视频的请求仍用原价。"
+                                                            : "已关闭：参考视频不计费。按秒只计生成秒数，视频 Token 只按生成时长计算用量。用户侧会显示「参考视频不计费」。"
+                                                    }
+                                                >
+                                                    <Switch
+                                                        aria-label="参考视频计费"
+                                                        onChange={() => {
+                                                            dirtyRef.current = true;
+                                                        }}
+                                                    />
+                                                </Form.Item>
+                                            ) : null}
                                             <Form.List
                                                 name="priceTiers"
                                                 rules={[
                                                     {
                                                         validator: async (_, value) => {
-                                                            validateChannelModelPrices({ capability: form.getFieldValue("capability"), protocol: form.getFieldValue("protocol"), priceTiers: value });
+                                                            validateChannelModelPrices({
+                                                                capability: form.getFieldValue("capability"),
+                                                                protocol: form.getFieldValue("protocol"),
+                                                                priceTiers: value,
+                                                                referenceVideoBilling: form.getFieldValue("referenceVideoBilling"),
+                                                            });
                                                         },
                                                     },
                                                 ]}
@@ -553,12 +670,26 @@ export function ChannelModelEditor({
                                                                         dirtyRef.current = true;
                                                                         protectedFields.current.add("priceTiers");
                                                                     }}
-                                                                    onRemove={() => { protectedFields.current.add("priceTiers"); dirtyRef.current = true; remove(field.name); }}
+                                                                    onRemove={() => {
+                                                                        protectedFields.current.add("priceTiers");
+                                                                        dirtyRef.current = true;
+                                                                        remove(field.name);
+                                                                    }}
                                                                 />
                                                             ))}
                                                         </div>
                                                         <div className="admin-price-tier-list-footer">
-                                                            <Button className="admin-model-editor-add-tier" type="dashed" block icon={<Plus className="size-4" />} onClick={() => { protectedFields.current.add("priceTiers"); dirtyRef.current = true; add(defaultPriceTier(hasDefaultPriceTier ? "advanced" : "default")); }}>
+                                                            <Button
+                                                                className="admin-model-editor-add-tier"
+                                                                type="dashed"
+                                                                block
+                                                                icon={<Plus className="size-4" />}
+                                                                onClick={() => {
+                                                                    protectedFields.current.add("priceTiers");
+                                                                    dirtyRef.current = true;
+                                                                    add(defaultPriceTier(hasDefaultPriceTier ? "advanced" : "default"));
+                                                                }}
+                                                            >
                                                                 {hasDefaultPriceTier ? "新增规格价格" : "新增统一默认价格"}
                                                             </Button>
                                                             <Form.ErrorList errors={errors} />

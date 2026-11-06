@@ -7,6 +7,7 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
 import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
 import { useMatch } from "react-router";
@@ -25,11 +26,34 @@ import { AGENT_PET_ASPECT, agentPetLauncherHeight } from "@/lib/canvas/agent-pet
 import { agentPetSpritesheetURL } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { FluidOrb } from "@/components/ui/fluid-orb";
-import { ArrowDown, ArrowLeft, Check, Clock3, Download, Ellipsis, History, LoaderCircle, Maximize2, MessageSquarePlus, Minus, PanelRight, PictureInPicture2, RefreshCw, Scaling, Settings2, ShieldCheck, Trash2, X, Sparkles } from "lucide-react";
+import {
+    ArrowDown,
+    ArrowLeft,
+    Check,
+    ChevronDown,
+    Clock3,
+    Download,
+    Ellipsis,
+    History,
+    LoaderCircle,
+    Maximize2,
+    MessageSquarePlus,
+    Minus,
+    PanelRight,
+    PictureInPicture2,
+    RefreshCw,
+    Scaling,
+    Settings2,
+    ShieldCheck,
+    Trash2,
+    X,
+    Sparkles,
+} from "lucide-react";
 import { agentModifierShortcut } from "@/lib/canvas/agent-outbox";
-import { Button, Input } from "antd";
+import { Button, Input, Popover } from "antd";
 import { CanvasAnchoredDropdown as Dropdown } from "./canvas-anchored-dropdown";
 import { formatContextTokens } from "@/lib/canvas/agent-context-usage";
+import type { AgentContextPhase, AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
 import { formatAgentClockTime, formatAgentTokenSpeed, presentAgentModelUsage } from "@/lib/canvas/agent-run-stats";
 import { configuredModelDisplayName } from "@/lib/model-selection";
 import { cloudAgentConversationServerId, type CloudAgentConversation } from "@/services/cloud-agent-conversations";
@@ -37,13 +61,16 @@ import { AgentChatMessage, AgentOperationFeed, AgentReasoningFeed, AgentWorkingM
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { AgentCanvasUndoState, AgentCanvasUndoTarget } from "@/lib/canvas/agent-canvas-undo";
-import type { AgentMediaSettings, AgentPermissionMode } from "@/services/api/agent";
+import type { AgentMediaSettings, AgentPermissionMode, AgentReasoningMode } from "@/services/api/agent";
 import { buildAgentFeedSegments } from "@/lib/canvas/agent-operation-feed";
 import { AgentWelcome } from "./canvas-agent-welcome";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { agentPermissionLabel, agentPermissionMenuItems, agentPermissionShortLabel, agentPermissionVisual } from "./canvas-cloud-agent-settings";
 import { Kbd } from "@/components/ui/base/kbd";
 import { ModelPicker } from "@/components/model-picker";
+import { ThinkingLevelSlider } from "@/components/thinking-level-slider";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { LEGACY_TEXT_THINKING_CONFIG, THINKING_LEVEL_LABELS, resolveThinkingLevel, thinkingLevelsFor } from "@/lib/text-thinking";
 import { agentImageApproval, agentVideoApproval } from "@/lib/canvas/agent-media-approval";
 import { agentApprovalPresentation } from "@/lib/canvas/agent-approval-presentation";
 import { CanvasAgentImageApprovalSettings } from "./canvas-agent-image-approval-settings";
@@ -428,6 +455,151 @@ export function AgentHeader({
                 <Button type="text" shape="circle" icon={<X className="size-4" />} onClick={onCollapse} aria-label="收起 Agent" title={`收起（${modifierJ}）`} />
             </div>
         </header>
+    );
+}
+
+export const CONTEXT_PHASE_LABEL: Record<AgentContextPhase, string> = {
+    idle: "尚未测量",
+    unknown: "窗口未知",
+    ok: "上下文充足",
+    watch: "接近压缩",
+    compress: "即将压缩",
+    compacting: "正在压缩",
+    stale: "压缩后待刷新",
+};
+
+export function formatContextCount(tokens: number | undefined) {
+    if (tokens === undefined) return "—";
+    if (tokens >= 1_000_000) return `${Math.round(tokens / 100_000) / 10}M`;
+    if (tokens >= 1_000) return `${Math.round(tokens / 100) / 10}K`;
+    return Math.round(tokens).toLocaleString("zh-CN");
+}
+
+export function formatContextBytes(bytes: number | undefined) {
+    if (bytes === undefined) return "—";
+    if (bytes >= 1_000_000) return `${Math.round(bytes / 100_000) / 10} MB`;
+    if (bytes >= 1_000) return `${Math.round(bytes / 100) / 10} KB`;
+    return `${Math.round(bytes).toLocaleString("zh-CN")} 字节`;
+}
+
+export function AgentContextRing({ view, theme }: { view: AgentContextUsageView; theme: CanvasTheme }) {
+    const [open, setOpen] = useState(false);
+    const popoverRef = usePopoverAnchorAlign(open);
+    const marker = view.compactRatio && view.compactRatio > 0 && view.compactRatio < 1 ? view.compactRatio : undefined;
+    const percent = view.ratio === undefined ? view.label : `${Math.round(view.ratio * 100)}%`;
+    const meterLabel = view.ratio === undefined ? "—" : percent;
+    const used = formatContextCount(view.inputTokens);
+    const budget = formatContextCount(view.usableTokens);
+    const remaining = formatContextCount(view.remainingTokens);
+    const protocolBytes = formatContextBytes(view.protocolBytes);
+    const usedRatio = view.ratio === undefined ? 0 : Math.max(0, Math.min(1, view.ratio));
+    const phaseLabel = CONTEXT_PHASE_LABEL[view.phase];
+    const sourceLabel = view.tokenSource === "pi" ? "Pi 会话估算" : "未测量";
+    const usageHeading = view.ratio !== undefined ? `上下文已用 ${percent}` : view.phase === "idle" ? "上下文用量" : view.phase === "unknown" ? "上下文窗口未知" : `上下文${view.label}`;
+
+    return (
+        <Popover
+            ref={popoverRef}
+            open={open}
+            onOpenChange={setOpen}
+            trigger="click"
+            placement="topRight"
+            autoAdjustOverflow
+            arrow={false}
+            classNames={{ root: "agent-context-popover" }}
+            // 助手面板会裁切内容；独立挂到 body，并显式携带画布主题。
+            getPopupContainer={() => document.body}
+            styles={{ root: { "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary } as CSSProperties }}
+            content={
+                <div className="agent-context-panel" data-phase={view.phase}>
+                    <span className="agent-context-eyebrow">下一次请求 · 上下文窗口占用</span>
+                    <div className="agent-context-panel-head">
+                        <strong>{usageHeading}</strong>
+                        {view.phase !== "ok" ? <span className={`agent-context-phase is-${view.phase}`}>{phaseLabel}</span> : null}
+                    </div>
+                    <div className="agent-context-summary">
+                        {view.remainingTokens !== undefined && view.usableTokens !== undefined ? (
+                            <>
+                                <strong>{used}</strong>
+                                <span>/ {budget} Token</span>
+                                <em>剩余 {remaining}</em>
+                            </>
+                        ) : (
+                            <>
+                                <strong>{used}</strong>
+                                <span>Token</span>
+                            </>
+                        )}
+                    </div>
+                    <div className="agent-context-progress-head">
+                        <span>上下文窗口占用</span>
+                        <strong>{percent}</strong>
+                    </div>
+                    <div className="agent-context-progress" role="progressbar" aria-label={`上下文已用 ${percent}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={view.ratio === undefined ? undefined : Math.round(view.ratio * 100)}>
+                        <span style={{ width: `${usedRatio * 100}%` }} />
+                        {marker ? <i style={{ left: `${marker * 100}%` }} aria-hidden="true" /> : null}
+                    </div>
+                    <p className="agent-context-detail">{view.detail}</p>
+                    {view.breakdown.length || view.protocolBytes !== undefined || view.remainingTokens !== undefined ? (
+                        <ul className="agent-context-breakdown">
+                            {view.breakdown.map((item) => (
+                                <li key={item.key}>
+                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
+                                    <span className="agent-context-breakdown-label">{item.label}</span>
+                                    <span className="agent-context-breakdown-value">{formatContextCount(item.tokens)}</span>
+                                </li>
+                            ))}
+                            {view.protocolBytes !== undefined ? (
+                                <li className="is-secondary">
+                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
+                                    <span className="agent-context-breakdown-label">协议外壳</span>
+                                    <span className="agent-context-breakdown-value">{protocolBytes}</span>
+                                </li>
+                            ) : null}
+                            {view.remainingTokens !== undefined ? (
+                                <li className="is-muted">
+                                    <span className="agent-context-breakdown-dot" aria-hidden="true" />
+                                    <span className="agent-context-breakdown-label">未使用</span>
+                                    <span className="agent-context-breakdown-value">{remaining}</span>
+                                </li>
+                            ) : null}
+                        </ul>
+                    ) : null}
+                    <div className="agent-context-panel-foot">
+                        <span>
+                            {sourceLabel}
+                            {view.tokenSource === "pi" ? " · 不是计费 Token" : ""}
+                        </span>
+                        {view.compactAtTokens ? <span>压缩线 {formatContextCount(view.compactAtTokens)}</span> : null}
+                    </div>
+                    {view.compactionError ? (
+                        <p className="agent-context-note" role="status">
+                            {view.compactionError}
+                        </p>
+                    ) : view.lastCompaction ? (
+                        <p className="agent-context-note">本轮已完成一次上下文压缩，下一次读数会刷新。</p>
+                    ) : null}
+                </div>
+            }
+        >
+            <button type="button" className={`agent-context-ring is-${view.phase}`} aria-label={`${usageHeading}，${phaseLabel}。点击查看明细`} aria-expanded={open} title="查看上下文用量" onPointerDown={(event) => event.stopPropagation()}>
+                <span
+                    className="agent-context-ring-visual"
+                    aria-hidden="true"
+                    style={
+                        {
+                            "--agent-context-progress": `${view.ring * 100}%`,
+                            "--agent-context-marker-angle": `${(marker || 0) * 360}deg`,
+                        } as CSSProperties
+                    }
+                >
+                    {marker ? <span className="agent-context-ring-marker" /> : null}
+                </span>
+                <span className="agent-context-meter-copy">
+                    <strong>{meterLabel}</strong>
+                </span>
+            </button>
+        </Popover>
     );
 }
 
@@ -856,6 +1028,8 @@ export function ComposerControls({
     theme,
     onModelChange,
     onPermissionChange,
+    reasoningMode,
+    onReasoningModeChange,
 }: {
     config: ReturnType<typeof useEffectiveConfig>;
     selectedModel: string;
@@ -863,7 +1037,14 @@ export function ComposerControls({
     theme: CanvasTheme;
     onModelChange: (model: string) => void;
     onPermissionChange: (mode: AgentPermissionMode) => void;
+    reasoningMode: AgentReasoningMode;
+    onReasoningModeChange: (value: AgentReasoningMode) => void;
 }) {
+    const [thinkingOpen, setThinkingOpen] = useState(false);
+    const thinkingAnchor = usePopoverAnchorAlign(thinkingOpen);
+    const thinking = modelCapabilityConfigFor(config, selectedModel).text?.thinking || LEGACY_TEXT_THINKING_CONFIG;
+    const levels = thinkingLevelsFor(thinking);
+    const thinkingLabel = reasoningMode === "auto" ? "默认" : reasoningMode === "deep" ? "深入" : THINKING_LEVEL_LABELS[reasoningMode];
     const permissionVisual = agentPermissionVisual(permissionMode);
     const PermissionIcon = permissionVisual.icon;
     return (
@@ -881,6 +1062,26 @@ export function ComposerControls({
                 showOptionPrices
                 placeholder="选择文本模型"
             />
+            {levels.length ? (
+                <Popover
+                    ref={thinkingAnchor}
+                    open={thinkingOpen}
+                    onOpenChange={setThinkingOpen}
+                    trigger="click"
+                    placement="top"
+                    arrow={false}
+                    content={
+                        <div className="agent-thinking-popover">
+                            <ThinkingLevelSlider levels={levels} value={reasoningMode} resolvedLevel={resolveThinkingLevel(thinking, reasoningMode)} onChange={onReasoningModeChange} />
+                        </div>
+                    }
+                >
+                    <button type="button" className="agent-thinking-trigger" aria-label={`选择推理强度：${thinkingLabel}`} aria-expanded={thinkingOpen} onPointerDown={(event) => event.stopPropagation()}>
+                        <span>{thinkingLabel}</span>
+                        <ChevronDown className="size-3" aria-hidden="true" />
+                    </button>
+                </Popover>
+            ) : null}
             {/* 权限常显文字：只读 / 审批 / 自动，面板窄时只留图标。图标形状和颜色同时区分三种权限。 */}
             <Dropdown trigger={["click"]} placement="topLeft" menu={{ items: agentPermissionMenuItems(permissionMode, onPermissionChange) }}>
                 <button

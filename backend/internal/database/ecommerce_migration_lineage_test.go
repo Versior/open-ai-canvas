@@ -144,6 +144,17 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		{87, inspirationFeedMigrationName, inspirationFeedMigrationChecksum, func(tx *gorm.DB) error {
 			return tx.AutoMigrate(&model.InspirationFeedEntry{})
 		}, time.Date(2026, 11, 5, 9, 5, 0, 0, time.UTC)},
+		{88, "reference_video_billing", "sha256:reference-video-billing-v88-20261106", migrateReferenceVideoBilling, time.Date(2026, 11, 6, 9, 0, 0, 0, time.UTC)},
+		{89, "reference_video_cost_price", "sha256:reference-video-cost-price-v89-20261106", migrateReferenceVideoCostPrice, time.Date(2026, 11, 6, 9, 1, 0, 0, time.UTC)},
+		{90, "drama_draft_form", "sha256:drama-draft-form-v90-20261106", func(tx *gorm.DB) error {
+			if tx.Migrator().HasColumn(&model.DramaProduction{}, "DraftJSON") {
+				return nil
+			}
+			return tx.Migrator().AddColumn(&model.DramaProduction{}, "DraftJSON")
+		}, time.Date(2026, 11, 6, 9, 2, 0, 0, time.UTC)},
+		{91, "email_logs_and_notifications", "sha256:email-logs-and-notifications-v91-20261106", func(tx *gorm.DB) error {
+			return tx.AutoMigrate(&model.EmailLog{}, &model.UserNotificationSetting{})
+		}, time.Date(2026, 11, 6, 9, 3, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -176,7 +187,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 93 {
+	if CurrentSchemaVersion != 97 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -202,6 +213,10 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 91, Name: arkAssetGroupsMigrationName, Checksum: arkAssetGroupsMigrationChecksum},
 		{Version: 92, Name: inspirationFeedMigrationName, Checksum: inspirationFeedMigrationChecksum},
 		{Version: 93, Name: interiorKnowledgeMigrationName, Checksum: interiorKnowledgeMigrationChecksum},
+		{Version: 94, Name: "reference_video_billing", Checksum: "sha256:reference-video-billing-v88-20261106"},
+		{Version: 95, Name: "reference_video_cost_price", Checksum: "sha256:reference-video-cost-price-v89-20261106"},
+		{Version: 96, Name: "drama_draft_form", Checksum: "sha256:drama-draft-form-v90-20261106"},
+		{Version: 97, Name: "email_logs_and_notifications", Checksum: "sha256:email-logs-and-notifications-v91-20261106"},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -235,8 +250,80 @@ func TestMigrateSchemaPreservesForkSchema74(t *testing.T) {
 	}
 }
 
+func TestMigrateSchemaUpgradesFork93WithMissingNewColumns(t *testing.T) {
+	db := openLineageTestDatabase(t)
+	applyCanonicalMigrationsThrough(t, db, 93)
+	var originalLedger []schemaMigration
+	if err := db.Order("version").Find(&originalLedger).Error; err != nil {
+		t.Fatal(err)
+	}
+	library := model.EcommerceLibrary{UserID: "fork-owner", Revision: 8, PayloadJSON: `{"items":[{"id":"kept"}]}`}
+	knowledge := model.InteriorKnowledgeEntry{ID: "custom-knowledge", Key: "custom", Kind: "dimensions", Title: "Custom", Guidance: "Keep this guidance", Edited: true, Version: 3}
+	if err := db.Create(&library).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&knowledge).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ChannelModel{ID: "token-video", ChannelID: "channel", ModelKey: "video", Capability: "video"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ChannelModelPriceTier{ID: "tier", ChannelModelID: "token-video", SelectorKey: "{}", BillingMode: "token", OutputTokenPriceMicrocredits: 160, CostPricing: model.CreditCostPricing{Configured: true, OutputTokenPriceMicrocredits: 60}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// 旧迁移中的 AutoMigrate 使用当前模型，必须移除新字段，才能验证真实的 93→97 升级。
+	for _, target := range []struct {
+		entity  any
+		columns []string
+	}{
+		{&model.ChannelModel{}, []string{"ReferenceVideoBilling"}},
+		{&model.ChannelModelPriceTier{}, []string{"reference_video_unit_price_microcredits", "reference_video_output_token_price_microcredits", "cost_reference_video_unit_price_microcredits", "cost_reference_video_output_token_price_microcredits"}},
+		{&model.BillingOrder{}, []string{"reference_video_count", "reference_video_millis", "reference_video_billed", "cost_reference_video_unit_price_microcredits", "cost_reference_video_output_token_price_microcredits"}},
+		{&model.DramaProduction{}, []string{"DraftJSON"}},
+	} {
+		for _, column := range target.columns {
+			if err := db.Migrator().DropColumn(target.entity, column); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if err := db.Migrator().DropTable(&model.EmailLog{}, &model.UserNotificationSetting{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := MigrateSchema(db); err != nil {
+		t.Fatalf("upgrade fork schema 93: %v", err)
+	}
+	for _, record := range originalLedger {
+		requireMigration(t, db, record)
+	}
+	var storedLibrary model.EcommerceLibrary
+	if err := db.First(&storedLibrary, "user_id = ?", library.UserID).Error; err != nil || storedLibrary.PayloadJSON != library.PayloadJSON || storedLibrary.Revision != library.Revision {
+		t.Fatalf("ecommerce data changed: %#v err=%v", storedLibrary, err)
+	}
+	var storedKnowledge model.InteriorKnowledgeEntry
+	if err := db.First(&storedKnowledge, "id = ?", knowledge.ID).Error; err != nil || storedKnowledge.Guidance != knowledge.Guidance || !storedKnowledge.Edited || storedKnowledge.Version != knowledge.Version {
+		t.Fatalf("interior knowledge changed: %#v err=%v", storedKnowledge, err)
+	}
+	var channelModel model.ChannelModel
+	if err := db.First(&channelModel, "id = ?", "token-video").Error; err != nil || !channelModel.ReferenceVideoBilling {
+		t.Fatalf("reference billing not enabled: %#v err=%v", channelModel, err)
+	}
+	var tier model.ChannelModelPriceTier
+	if err := db.First(&tier, "id = ?", "tier").Error; err != nil || tier.ReferenceVideoOutputTokenPriceMicrocredits != 160 || tier.CostPricing.ReferenceVideoOutputTokenPriceMicrocredits != 60 {
+		t.Fatalf("reference video prices not backfilled: %#v err=%v", tier, err)
+	}
+	for version := int64(94); version <= 97; version++ {
+		if err := validateCanonicalMigrationPhysicalSchema(db, version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RequireSchemaVersion(db); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -280,6 +367,10 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 91, Name: arkAssetGroupsMigrationName, Checksum: arkAssetGroupsMigrationChecksum, AppliedAt: applied[86]},
 				{Version: 92, Name: inspirationFeedMigrationName, Checksum: inspirationFeedMigrationChecksum, AppliedAt: applied[87]},
 				{Version: 93, Name: interiorKnowledgeMigrationName, Checksum: interiorKnowledgeMigrationChecksum},
+				{Version: 94, Name: "reference_video_billing", Checksum: "sha256:reference-video-billing-v88-20261106", AppliedAt: applied[88]},
+				{Version: 95, Name: "reference_video_cost_price", Checksum: "sha256:reference-video-cost-price-v89-20261106", AppliedAt: applied[89]},
+				{Version: 96, Name: "drama_draft_form", Checksum: "sha256:drama-draft-form-v90-20261106", AppliedAt: applied[90]},
+				{Version: 97, Name: "email_logs_and_notifications", Checksum: "sha256:email-logs-and-notifications-v91-20261106", AppliedAt: applied[91]},
 			} {
 				requireMigration(t, db, want)
 			}
@@ -335,6 +426,18 @@ func TestMigrateSchemaNormalizesLegacyEcommerceSchema59(t *testing.T) {
 }
 
 func TestMigrateSchemaRejectsInexactLineagesBeforeChangingLedger(t *testing.T) {
+	t.Run("upstream latest checksum", func(t *testing.T) {
+		db, applied := upstreamSchemaDatabase(t, 91)
+		if err := db.Model(&schemaMigration{}).Where("version = ?", 91).Update("checksum", "sha256:tampered").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := MigrateSchema(db); err == nil || !strings.Contains(err.Error(), "校验和不一致") {
+			t.Fatalf("expected latest upstream checksum rejection, got %v", err)
+		}
+		requireMigration(t, db, schemaMigration{Version: 88, Name: "reference_video_billing", Checksum: "sha256:reference-video-billing-v88-20261106", AppliedAt: applied[88]})
+		requireMigration(t, db, schemaMigration{Version: 91, Name: "email_logs_and_notifications", Checksum: "sha256:tampered", AppliedAt: applied[91]})
+	})
+
 	t.Run("fork checksum", func(t *testing.T) {
 		db, _ := forkSchema74Database(t)
 		if err := db.Model(&schemaMigration{}).Where("version = ?", 73).Update("checksum", "sha256:tampered").Error; err != nil {
@@ -427,6 +530,15 @@ func TestMigrateSchemaRejectsUpstreamLedgerWithoutPhysicalSchema(t *testing.T) {
 		{"drama look column", 78, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaCast{}, "LookName") }},
 		{"drama shot look column", 78, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaShot{}, "LookCastIDsJSON") }},
 		{"ecommerce agent table", 79, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EcommerceAgentRun{}) }},
+		{"reference billing column", 88, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.ChannelModel{}, "ReferenceVideoBilling")
+		}},
+		{"reference cost column", 89, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "cost_reference_video_unit_price_microcredits")
+		}},
+		{"draft form column", 90, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaProduction{}, "DraftJSON") }},
+		{"email log table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EmailLog{}) }},
+		{"notification setting table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserNotificationSetting{}) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -475,6 +587,15 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 		}},
 		{"ecommerce agent table", 80, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EcommerceAgentRun{}) }},
 		{"drama look column", 81, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaCast{}, "LookName") }},
+		{"reference billing column", 94, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.ChannelModel{}, "ReferenceVideoBilling")
+		}},
+		{"reference cost column", 95, func(db *gorm.DB) error {
+			return db.Migrator().DropColumn(&model.BillingOrder{}, "cost_reference_video_unit_price_microcredits")
+		}},
+		{"draft form column", 96, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaProduction{}, "DraftJSON") }},
+		{"email log table", 97, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EmailLog{}) }},
+		{"notification setting table", 97, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserNotificationSetting{}) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -491,23 +612,26 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 }
 
 func TestMigrateSchemaRollsBackUpstreamRelocationWithLaterFailure(t *testing.T) {
-	db, applied := upstreamSchemaDatabase(t, 74)
-	if err := db.Exec(`CREATE TRIGGER reject_ecommerce_ledger BEFORE INSERT ON schema_migrations WHEN NEW.version = 72 BEGIN SELECT RAISE(FAIL, 'reject ecommerce ledger'); END`).Error; err != nil {
-		t.Fatal(err)
+	for _, version := range []int64{74, 91} {
+		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
+			db, _ := upstreamSchemaDatabase(t, version)
+			var originalLedger []schemaMigration
+			if err := db.Order("version").Find(&originalLedger).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec(`CREATE TRIGGER reject_ecommerce_ledger BEFORE INSERT ON schema_migrations WHEN NEW.version = 72 BEGIN SELECT RAISE(FAIL, 'reject ecommerce ledger'); END`).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := MigrateSchema(db); err == nil || !strings.Contains(err.Error(), "reject ecommerce ledger") {
+				t.Fatalf("expected injected migration failure, got %v", err)
+			}
+			for _, record := range originalLedger {
+				requireMigration(t, db, record)
+			}
+			var count int64
+			if err := db.Model(&schemaMigration{}).Where("version > ?", version).Count(&count).Error; err != nil || count != 0 {
+				t.Fatalf("failed transaction left relocated records: count=%d err=%v", count, err)
+			}
+		})
 	}
-	if err := MigrateSchema(db); err == nil || !strings.Contains(err.Error(), "reject ecommerce ledger") {
-		t.Fatalf("expected injected migration failure, got %v", err)
-	}
-	for _, want := range []schemaMigration{
-		{Version: 72, Name: referralCenterMigrationName, Checksum: upstreamReferralCenterMigrationChecksum, AppliedAt: applied[72]},
-		{Version: 73, Name: dramaEpisodeSourceFormatMigrationName, Checksum: dramaEpisodeSourceFormatMigrationChecksum, AppliedAt: applied[73]},
-		{Version: 74, Name: dramaSegmentReferencesMigrationName, Checksum: dramaSegmentReferencesMigrationChecksum, AppliedAt: applied[74]},
-	} {
-		requireMigration(t, db, want)
-	}
-	var count int64
-	if err := db.Model(&schemaMigration{}).Where("version > ?", 74).Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("failed transaction left relocated records: count=%d err=%v", count, err)
-	}
-
 }

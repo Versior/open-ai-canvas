@@ -198,6 +198,25 @@
     --agent-usage-fill: color-mix(in srgb, var(--agent-ink) 38%, transparent);
 }
 
+.agent-context-ring-visual {
+    position: relative;
+    display: block;
+    width: 18px;
+    height: 18px;
+    flex: none;
+    overflow: hidden;
+    border-radius: 50%;
+    background: conic-gradient(from -90deg, var(--agent-context-ring-color) 0 var(--agent-context-progress), color-mix(in srgb, var(--agent-ink) 11%, transparent) var(--agent-context-progress) 100%);
+}
+
+.agent-context-ring-visual::after {
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--agent-surface-raised) 92%, transparent);
+    content: "";
+}
+
 .agent-usage strong {
     color: var(--agent-ink);
     font-weight: 600;
@@ -1396,6 +1415,17 @@
     }
 }
 
+/* 面板不够宽时上下文只显示环，把位置让给模型名、停止和主按钮；百分比点开明细可见。 */
+@container (max-width: 519px) {
+    .agent-context-ring {
+        min-width: 28px;
+        padding: 5px;
+        gap: 0;
+    }
+    .agent-context-meter-copy {
+        display: none;
+    }
+}
 @container (max-width: 400px) {
     .agent-panel-header {
         gap: var(--space-2);
@@ -2171,6 +2201,35 @@ summary.agent-tool-step:hover {
 
 .agent-composer-selection > button {
     flex: 0 0 auto;
+}
+
+.agent-thinking-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-full, 999px);
+    background: color-mix(in srgb, var(--agent-ink) 5%, transparent);
+    color: var(--agent-caption);
+    font-size: var(--fs-label);
+    white-space: nowrap;
+    cursor: pointer;
+}
+.agent-thinking-trigger:hover,
+.agent-thinking-trigger[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--agent-ink) 9%, transparent);
+    color: var(--agent-ink);
+}
+.agent-thinking-trigger:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+.agent-thinking-popover {
+    width: min(260px, calc(100vw - 64px));
+    padding: 4px;
 }
 
 .agent-composer-submit {

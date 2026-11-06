@@ -131,7 +131,7 @@ export function useCanvasKeyboard({
             if (isCanvasControlTarget && !(isModifierShortcut && !event.altKey && (key === "c" || key === "v"))) return;
             if (event.altKey && !isModifierShortcut && key === "l") {
                 event.preventDefault();
-                if (!event.repeat && selectedNodeIdsRef.current.size > 1) beginBatchConnection();
+                if (!event.repeat && selectedNodeIdsRef.current.size > 0) beginBatchConnection();
                 return;
             }
             if (event.key === "?" && !isModifierShortcut && !event.altKey) {

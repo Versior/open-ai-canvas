@@ -571,7 +571,7 @@ describe("LibTV creation page featured works", () => {
         const create = source("../src/pages/create/index.tsx");
         expect(create).toContain("<CreationFeaturedWorks showHeading={false} creationMode={mode} onUseInspiration=");
         // 游客也能看画布灵感；只在会话恢复前显示加载提示。
-        expect(create).toContain("userSessionHydrated ? <CreationFeaturedWorks");
+        expect(create).toMatch(/userSessionHydrated\s*\?\s*\(?\s*<CreationFeaturedWorks/);
         expect(create).not.toContain("登录后查看画布灵感");
     });
 

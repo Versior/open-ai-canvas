@@ -1765,6 +1765,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             }
             return assetId && (!selectedExportIds.size || selectedExportIds.has(image.id)) ? [{ image, assetId, index, resourceId }] : [];
         }) || [];
+    // 长图是一套连续画面：没勾选时只拼本轮作品，不混入之前几轮；勾选了就按勾选拼。
+    const roundImageIds = new Set(plan?.images.map((image) => image.id));
+    const longImageItems = selectedExportIds.size ? exportItems : exportItems.filter((item) => roundImageIds.has(item.image.id));
     const runExport = (kind: "zip" | "long") => {
         if (kind === "zip" && startEcommerceDownload(exportItems)) {
             setDownloadError("");
@@ -1772,7 +1775,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         }
         setBusy(true);
         setDownloadError("");
-        const action = kind === "zip" ? (exportItems.length === 1 ? downloadEcommerceImage(exportItems[0]) : exportEcommerceZip(draft.productName, exportItems)) : exportEcommerceLongImage(draft.productName, exportItems);
+        const action = kind === "zip" ? (exportItems.length === 1 ? downloadEcommerceImage(exportItems[0]) : exportEcommerceZip(draft.productName, exportItems)) : exportEcommerceLongImage(draft.productName, longImageItems);
         void action
             .then(downloadReady)
             .catch(downloadFailed)
@@ -2051,7 +2054,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                         <Button type="primary" icon={<ArrowDownToLine size={14} />} disabled={busy || !exportItems.length} onClick={() => runExport("zip")}>
                             {selectedExportIds.size ? `导出已选 ${exportItems.length} 张` : `导出全部 ${exportItems.length} 张`}
                         </Button>
-                        {exportItems.length > 1 ? (
+                        {longImageItems.length > 1 ? (
                             <Button disabled={busy} onClick={() => runExport("long")}>
                                 拼成长图
                             </Button>
