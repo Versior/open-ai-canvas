@@ -41,13 +41,13 @@ const (
 )
 
 const (
-	defaultAppearanceBrandName = "影策"
-	defaultAppearanceBrandSlug = "open-ai-canvas"
+	defaultAppearanceBrandName = "KINOVO"
+	defaultAppearanceBrandSlug = "kinovo"
 	defaultAppearanceSkinID    = "classic"
 	defaultAppearanceLogoURL   = "/logo.svg"
 	defaultAppearanceVideoURL  = "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4"
 	defaultAppearancePosterURL = "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg"
-	defaultAppearanceHeroTitle = "让一个故事，\n从文字走向银幕。"
+	defaultAppearanceHeroTitle = "From idea,\nto production."
 	defaultRedeemPurchaseURL   = "" // 默认不配置购买链接，前端为空时不展示入口
 )
 
@@ -297,7 +297,7 @@ func (s *Service) ResetAppearance(actor *model.User) (*AdminAppearanceSetting, e
 		return nil, err
 	}
 	after := defaultAppearanceSetting()
-	if err := s.appendAdminAudit(actor, "appearance.reset", "system_setting", appearanceSettingKey, "恢复影策默认品牌标识", map[string]any{"before": before, "after": after}); err != nil {
+	if err := s.appendAdminAudit(actor, "appearance.reset", "system_setting", appearanceSettingKey, "恢复 KINOVO 默认品牌标识", map[string]any{"before": before, "after": after}); err != nil {
 		return nil, err
 	}
 	return s.AdminAppearance(actor)
@@ -807,7 +807,7 @@ func effectiveAppearanceSEODescription(value AppearanceSetting) string {
 	if value.SEODescription != "" {
 		return value.SEODescription
 	}
-	return value.BrandName + "，面向 AI 影视与短剧创作的工作台。"
+	return value.BrandName + "，多模态 AI 创作与内容生产工作台。"
 }
 
 func effectiveAppearanceCopyright(value AppearanceSetting) string {

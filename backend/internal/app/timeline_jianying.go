@@ -43,7 +43,7 @@ func (s *Service) PrepareTimelineJianyingDraft(userID string, req TimelineJianyi
 		width, height = project.Width, project.Height
 	}
 	now := time.Now()
-	name := jianying.SafeName(fmt.Sprintf("%s-%s", jianying.SafeName(req.Name, "影策复刻", 60), now.In(dramaExportLocation).Format("0102-1504")), "影策复刻草稿", 80)
+	name := jianying.SafeName(fmt.Sprintf("%s-%s", jianying.SafeName(req.Name, "KINOVO复刻", 60), now.In(dramaExportLocation).Format("0102-1504")), "KINOVO复刻草稿", 80)
 	draft := jianying.Draft{Name: name, Root: root, Width: width, Height: height, FPS: 30, Now: now, Placed: true}
 	archive := newDramaArchive(name + ".zip")
 	files := map[string]string{}
@@ -134,7 +134,7 @@ func (s *Service) PrepareTimelineJianyingDraft(userID string, req TimelineJianyi
 
 func timelineJianyingReadme(draft jianying.Draft) string {
 	var builder strings.Builder
-	builder.WriteString("影策视频复刻 · 剪映草稿\n\n")
+	builder.WriteString("KINOVO 视频复刻 · 剪映草稿\n\n")
 	builder.WriteString(jianyingImportSteps(draft))
 	builder.WriteString("\n主轨是成片的画面（保留原片的镜头已静音），音频轨分别是配音、原声和背景音乐，字幕轨是可编辑的文字。\n")
 	return builder.String()
