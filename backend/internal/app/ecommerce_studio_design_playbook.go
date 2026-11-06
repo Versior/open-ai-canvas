@@ -28,11 +28,24 @@ func kb20Matches(spec kb20DesignSpec, text string) int {
 	return hits
 }
 
-// ecommerceStudioPlaybookIDs 按商品挑 KB20 的条目：通用方法在前，品类打法、布光在后。
-func ecommerceStudioPlaybookIDs(category, name, family, materials string) []string {
+// ecommerceStudioPlaybookIDs 按商品挑 KB20 的条目：通用方法在前，主图或单张图的打法、品类打法、布光在后。
+// kind 是策划范围（detail、main、single），targets 是单张图策划选中的类型。
+func ecommerceStudioPlaybookIDs(category, name, family, materials, kind string, targets []string) []string {
 	product := strings.ToLower(category + " " + name)
 	material := strings.ToLower(category + " " + name + " " + materials)
 	ids := []string{kb20MethodID}
+	switch kind {
+	case "main":
+		ids = append(ids, kb20MainID)
+	case "single":
+		seen := map[string]bool{}
+		for _, target := range targets {
+			if id := kb20SingleTypeIDs[strings.TrimSpace(target)]; id != "" && !seen[id] && len(seen) < 2 {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
 	type scored struct {
 		id   string
 		hits int
@@ -77,8 +90,8 @@ func ecommerceStudioPlaybookIDs(category, name, family, materials string) []stri
 }
 
 // ecommerceStudioDesignPlaybook 返回追加到出图策划系统提示词里的设计策划知识；来源被停用或一条都取不到时为空。
-func (s *Service) ecommerceStudioDesignPlaybook(category, name, family, materials string) string {
-	ids := ecommerceStudioPlaybookIDs(category, name, family, materials)
+func (s *Service) ecommerceStudioDesignPlaybook(category, name, family, materials, kind string, targets []string) string {
+	ids := ecommerceStudioPlaybookIDs(category, name, family, materials, kind, targets)
 	builtin := map[string]kb20DesignSpec{}
 	for _, spec := range kb20DesignSpecs {
 		builtin[spec.id] = spec

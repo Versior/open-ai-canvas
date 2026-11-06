@@ -5,7 +5,7 @@ import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities"
 import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { studioBrandOf, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
+import { studioBrandOf, studioCleanNotes, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
 import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, studioDetailPlanRoles } from "@/lib/ecommerce-studio/detail-plan";
 import { buildDetailPlanPrompt, parseDetailPlan, studioPlanTargetRoles, type StudioDetailPlanResult, type StudioPlanRequest } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
@@ -195,7 +195,7 @@ export function useStudioRunner() {
                 const prompt = buildFillPrompt({
                     photos,
                     platformName: ecommercePlatform(product.platform)?.name || "电商平台",
-                    sellerNotes: product.sellerNotes,
+                    sellerNotes: studioCleanNotes(product.sellerNotes),
                     brand: studioBrandOf(product),
                     productType: studioProductTypeOf(product),
                     title: studioTitleOf(product),
@@ -282,6 +282,8 @@ export function useStudioRunner() {
                         ...studioAnalysisMetadata(productId, "plan", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }, STUDIO_DETAIL_PLAN_CAPABILITY),
                         // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事；品类大类用来在同类爆款套图对不上时取同大类的参考。
                         studioPlanKind: scope,
+                        // 单张图策划选中的类型：服务端按它带对应的单张图打法（海报、种草、白底、信息图、模特）。
+                        ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
                         ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
                         // 档案里的材质和外观：服务端按它从设计策划知识库挑布光方法。
                         ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),

@@ -242,8 +242,20 @@ export function studioShooting(id: StudioShooting) {
 }
 
 /** 卖点与商品信息：一行一条，「标题：说明」拆成两级；前面的序号和圆点去掉。 */
+/**
+ * 卖点与商品信息里混进来的 HTML 换行（从网页或模型结果粘贴来的 <br/>）换成真正的换行，其余标签去掉；
+ * 不然 <br/> 会原样写进图上的文案和提示词。
+ */
+export function studioCleanNotes(text: string) {
+    return text
+        .replace(/<br\s*\/?>/gi, "\n")
+        .replace(/<\/?[a-z][^>]*>/gi, "")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n");
+}
+
 export function studioInfoPoints(info: string) {
-    return info
+    return studioCleanNotes(info)
         .split(/\n|；|;/)
         .map((line) => line.replace(/^\s*(?:[-*·•]|\d+[.、)])\s*/, "").trim())
         .filter(Boolean)
@@ -263,7 +275,7 @@ export function studioPointLine(point: Pick<StudioSellingPoint, "title" | "detai
  * 识别或助手写好的内容先作为建议，用户点「填入」后才进入表单。
  */
 export function studioInfoText(product: StudioProduct) {
-    return product.sellerNotes;
+    return studioCleanNotes(product.sellerNotes);
 }
 
 export function studioBrandOf(product: StudioProduct) {

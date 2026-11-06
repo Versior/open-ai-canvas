@@ -1,5 +1,5 @@
 import { ecommercePlatform, ecommerceRoleSpec, type EcommercePlatformId, type EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { studioLanguage, studioMarket, studioShooting } from "./brief";
+import { studioCleanNotes, studioLanguage, studioMarket, studioShooting } from "./brief";
 import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_TACKY_DESIGN } from "./detail-plan";
 import { studioActivePlan, studioStyleReferences } from "./runs";
 import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
@@ -197,7 +197,7 @@ function truthLayer(product: StudioProduct, references: StudioPhoto[], styleRefe
     if (identity) lines.push(sentence(identity));
     else if (product.name.trim()) lines.push(`商品：${product.name.trim()}，外观以参考图为准。`);
     if (brief?.brand.trim()) lines.push(`品牌：${brief.brand.trim()}（商品上的标识按商品图原样保留，不另外加品牌字样）。`);
-    if (brief && product.sellerNotes.trim()) lines.push(`卖家提供的商品信息：${oneLine(product.sellerNotes).slice(0, 600)}。`);
+    if (brief && product.sellerNotes.trim()) lines.push(`卖家提供的商品信息：${oneLine(studioCleanNotes(product.sellerNotes)).slice(0, 600)}。`);
     if (dossier) {
         const usable = dossier.facts.filter((fact) => studioFactUsable(fact) && fact.group !== "usage");
         for (const group of TRUTH_GROUP_ORDER) {
@@ -384,8 +384,11 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     if (shooting) layers.push(shooting);
     const modelSetting = cast ? modelLayer(cast, modelReferences, references.length) : undefined;
     if (modelSetting) layers.push(modelSetting);
-    if (!planned) layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
-    else {
+    if (!planned) {
+        // 没策划的图也按商品材质补布光：透明、凝胶、亮面瓶身和金属最容易拍得灰、平、脏。
+        const lighting = studioMaterialLighting(product);
+        layers.push({ id: "lighting", title: "光线", source: lighting.length ? "镜头规格 + 设计策划知识（KB20）" : "镜头规格", text: [sentence(spec.lighting), ...lighting].join("\n") });
+    } else {
         const lighting = studioMaterialLighting(product);
         if (lighting.length) layers.push({ id: "lighting", title: "按材质布光", source: "设计策划知识（KB20）", text: lighting.join("\n") });
     }

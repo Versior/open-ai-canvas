@@ -51,7 +51,14 @@ export function extractStudioJson(text: string): Record<string, unknown> {
 }
 
 function text(value: unknown, max = 400) {
-    return typeof value === "string" ? value.trim().slice(0, max) : "";
+    // 模型偶尔用 <br/> 分行：换成空格，免得标签写进卖点和文案。
+    return typeof value === "string"
+        ? value
+              .replace(/<br\s*\/?>/gi, " ")
+              .replace(/<\/?[a-z][^>]*>/gi, "")
+              .trim()
+              .slice(0, max)
+        : "";
 }
 
 function list(value: unknown, max = 12, length = 200) {

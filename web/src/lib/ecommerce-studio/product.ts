@@ -1,5 +1,5 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES } from "./brief";
+import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES, studioCleanNotes } from "./brief";
 import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanMotifs, studioPlanTone } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
@@ -331,7 +331,7 @@ export function normalizeStudioProduct(value: unknown): StudioProduct | undefine
         platform,
         style,
         step: STEPS.includes(value.step as StudioStep) ? (value.step as StudioStep) : base.step,
-        sellerNotes: str(value.sellerNotes),
+        sellerNotes: studioCleanNotes(str(value.sellerNotes)),
         photos: arrayOf(value.photos, (item) => normalizePhoto(item, time, true)),
         references: arrayOf(value.references, (item) => normalizePhoto(item, time, false)),
         brief: normalizeStudioBrief(value.brief),

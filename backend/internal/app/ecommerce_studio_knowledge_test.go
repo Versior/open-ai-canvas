@@ -206,28 +206,40 @@ func TestEcommerceStudioPlanViralReferences(t *testing.T) {
 
 func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 	// 按商品挑：医用凝胶取到医用护理打法和质地、软管布光；儿童眼镜取到儿童和眼镜两条打法与透明布光；对不上时用通用打法。
-	gel := ecommerceStudioPlaybookIDs("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "管身 白色塑料软管；质地 透明凝胶")
+	gel := ecommerceStudioPlaybookIDs("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "管身 白色塑料软管；质地 透明凝胶", "detail", nil)
 	for _, id := range []string{kb20MethodID, "kb20-category-medical", "kb20-light-texture", "kb20-light-gloss", kb20LayoutID, kb20CopyID} {
 		if !slices.Contains(gel, id) {
 			t.Fatalf("gel playbook is missing %s: %v", id, gel)
 		}
 	}
-	kids := ecommerceStudioPlaybookIDs("儿童眼镜", "透明椭圆框儿童眼镜", "generic", "镜框颜色 透明")
+	kids := ecommerceStudioPlaybookIDs("儿童眼镜", "透明椭圆框儿童眼镜", "generic", "镜框颜色 透明", "detail", nil)
 	for _, id := range []string{"kb20-category-kids", "kb20-category-eyewear", "kb20-light-transparent"} {
 		if !slices.Contains(kids, id) {
 			t.Fatalf("kids eyewear playbook is missing %s: %v", id, kids)
 		}
 	}
-	if other := ecommerceStudioPlaybookIDs("量子纠缠仪", "", "", ""); !slices.Contains(other, kb20GenericID) || len(other) != 4 {
+	if other := ecommerceStudioPlaybookIDs("量子纠缠仪", "", "", "", "detail", nil); !slices.Contains(other, kb20GenericID) || len(other) != 4 {
 		t.Fatalf("unmatched product should get method, generic, layout and copy: %v", other)
 	}
-	if byFamily := ecommerceStudioPlaybookIDs("精华水", "", "beauty", ""); !slices.Contains(byFamily, "kb20-category-skincare") {
+	if byFamily := ecommerceStudioPlaybookIDs("精华水", "", "beauty", "", "detail", nil); !slices.Contains(byFamily, "kb20-category-skincare") {
 		t.Fatalf("family should pick the skincare playbook: %v", byFamily)
+	}
+
+	// 主图套图带主图打法；单张图按选中的类型带打法（同一条只带一次，最多两条）。
+	if main := ecommerceStudioPlaybookIDs("保温杯", "", "home", "", "main", nil); !slices.Contains(main, kb20MainID) {
+		t.Fatalf("main set should include the main playbook: %v", main)
+	}
+	single := ecommerceStudioPlaybookIDs("保温杯", "", "home", "", "single", []string{"poster", "campaign", "seeding", "white"})
+	if !slices.Contains(single, "kb20-single-hero") || !slices.Contains(single, "kb20-single-lifestyle") || slices.Contains(single, "kb20-single-white") || slices.Contains(single, kb20MainID) {
+		t.Fatalf("single playbooks are wrong: %v", single)
+	}
+	if detail := ecommerceStudioPlaybookIDs("保温杯", "", "home", "", "detail", nil); slices.Contains(detail, kb20MainID) || slices.Contains(detail, "kb20-single-hero") {
+		t.Fatalf("detail plan should not carry main or single playbooks: %v", detail)
 	}
 
 	svc, db, _, _ := ecommerceCreationTestService(t)
 	// 数据库里还没有 KB20：用内置原文。
-	before := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶")
+	before := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶", "detail", nil)
 	for _, text := range []string{"电商设计策划知识库（KB20）", "【视觉策划五步：先从同质化里跳出来】", "【品类打法 · 医用护理与医疗器械】", "【布光 · 凝胶、乳霜和液体质地】", "非天籁，不入耳", "该有的，都写在身上"} {
 		if !strings.Contains(before, text) {
 			t.Fatalf("builtin playbook is missing %q: %s", text, before)
@@ -237,19 +249,19 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 	if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶"); got != before {
+	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶", "detail", nil); got != before {
 		t.Fatalf("database playbook should match the builtin text before edits:\n%s\n---\n%s", got, before)
 	}
 	if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("id = ?", "kb20-category-medical").Update("review_status", "rejected").Error; err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", ""); strings.Contains(got, "医用护理与医疗器械") || !strings.Contains(got, "视觉策划五步") {
+	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "", "detail", nil); strings.Contains(got, "医用护理与医疗器械") || !strings.Contains(got, "视觉策划五步") {
 		t.Fatalf("rejected entry should be skipped: %s", got)
 	}
 	if err := db.Model(&model.EcommerceKnowledgeSource{}).Where("id = ?", ecommerceBuiltinSourceID(ecommerceKB20Domain)).Update("status", "disabled").Error; err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "", "beauty", ""); got != "" {
+	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "", "beauty", "", "detail", nil); got != "" {
 		t.Fatalf("disabled KB20 source must not reach the planner: %s", got)
 	}
 }

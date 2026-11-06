@@ -30,7 +30,20 @@ const (
 	kb20GenericID    = "kb20-category-generic"
 	kb20CategoryKind = "detail_page_pattern"
 	kb20PhotoKind    = "photography"
+	// 主图套图和各类单张图的打法：按策划范围和选中的单张类型挑。不用 creation_type_rule，
+	// 那一类在知识库相关度排序里有额外加分，会挤进电商 Agent 的检索结果。
+	kb20ScopeKind = "detail_page_pattern"
+	kb20MainID    = "kb20-scope-main"
 )
+
+// kb20SingleTypeIDs：单张类型对应的打法条目。
+var kb20SingleTypeIDs = map[string]string{
+	"poster": "kb20-single-hero", "campaign": "kb20-single-hero", "main": "kb20-single-hero",
+	"seeding": "kb20-single-lifestyle", "ugc": "kb20-single-lifestyle", "scene": "kb20-single-lifestyle", "collocation": "kb20-single-lifestyle",
+	"white": "kb20-single-white", "flatlay": "kb20-single-white", "angles": "kb20-single-white",
+	"selling": "kb20-single-info", "compare": "kb20-single-info", "steps": "kb20-single-info", "size": "kb20-single-info", "spec": "kb20-single-info", "package": "kb20-single-info", "closeup": "kb20-single-info",
+	"model": "kb20-single-model",
+}
 
 var kb20DesignSpecs = []kb20DesignSpec{
 	{id: kb20MethodID, kind: "detail_page_pattern", title: "视觉策划五步：先从同质化里跳出来",
@@ -66,6 +79,18 @@ var kb20DesignSpecs = []kb20DesignSpec{
 	{id: "kb20-category-home", kind: kb20CategoryKind, title: "品类打法 · 家居日用与宠物",
 		keywords: []string{"家居", "收纳", "厨具", "杯", "碗", "锅", "毛巾", "床品", "香薰", "清洁", "洗衣", "纸巾", "宠物", "猫", "狗", "保温"}, families: []string{"home"},
 		guidance: "卖的是更好的一天。① 真实生活瞬间：清晨光线里的厨房台面、周末午后的沙发、出门前的玄关，道具少而真；② 使用前后或痛点对比讲清楚用处；③ 材质用微距；④ 色彩温润（原木、米白、灰绿），至少一屏用强对比色块提神；⑤ 香薰、洗护用原料（花、草、果）和光影营造情绪；宠物用品让宠物真实地用。"},
+	{id: kb20MainID, kind: kb20ScopeKind, title: "主图套图打法",
+		guidance: "主图是在搜索列表里抢点击。① 首图：商品占画面 60%–80%，轮廓完整清楚，背景干净（平台要求白底时就纯白，否则用一块从商品里取出的饱和色或深色整色底，站酷高赞的家电、数码主图都是商品放大加一整块颜色）；最多一行不超过 8 个字的利益点，字大、对比强，缩到手机列表大小还看得清；不加促销贴纸和价格。② 第 2–5 张各给一个点击理由：一张人在用（情绪和场景），一张质地或细节微距，一张对比或尺寸，一张卖点图标或礼盒感；五张用同一套主色和字体，像一个品牌出的。③ 不要五张都是同一个角度的商品摆拍。"},
+	{id: "kb20-single-hero", kind: kb20ScopeKind, title: "单张图打法 · 海报与主视觉",
+		guidance: "海报一张图只讲一句话。① 主视觉是搭出来的舞台：几何展台、拱形或圆形背景框、台阶，或者苔藓、石头、水面、花这类自然物托住商品；背景是一整块饱和色或深色（站酷高赞作品里橙红、深海军蓝、纯黑、薰衣草紫最常见）。② 光要有戏：一道斜射的光束、商品身后的光晕或轮廓光，明暗对比强。③ 字当图形：超大的中文标题或英文大字压在画面上，和商品前后穿插。④ 活动海报加节日或季节的具体元素（灯笼、雪、花、礼盒丝带），不写价格和折扣数字。⑤ 商品是绝对主角，画面里只有一个视觉焦点。"},
+	{id: "kb20-single-lifestyle", kind: kb20ScopeKind, title: "单张图打法 · 种草、随手拍与场景",
+		guidance: "像真实的人在真实的一天里用它。① 种草图：小红书封面的感觉，第一人称或朋友视角，桌面、窗边、包里、手里，自然光，构图略随意但讲究（留白、对角线），道具讲生活方式（书、咖啡、花、耳机），可以有一句像笔记标题的大字。② 随手拍：手机直出质感，带一点不完美（轻微偏移、自然光斑），不像广告，不加文字。③ 场景图：一个具体的时刻（清晨通勤、睡前、周末野餐、孩子放学），人或手和商品有互动，环境和目标人群匹配。④ 情绪比摆放重要，但商品要清楚可辨。"},
+	{id: "kb20-single-white", kind: kb20ScopeKind, title: "单张图打法 · 白底、平铺与多角度",
+		guidance: "① 白底图：纯白背景，商品占画面 80%–85%，边缘干净锐利，保留一道极轻的接触阴影，颜色和商品图一致；透明或白色的商品用深色细轮廓或背光把边缘勾清楚，不要和白底融在一起。② 平铺图：正俯拍，物件按网格或对角线排，间距一致，底面用有质感的布、木或纸。③ 多角度：同一光线和比例下并排正面、侧面、背面，只用商品图里有的角度。"},
+	{id: "kb20-single-info", kind: kb20ScopeKind, title: "单张图打法 · 卖点、对比、步骤与参数",
+		guidance: "信息图要像设计过的画面，不是 PPT。① 卖点图：一张大图加不超过三个图标标签，或者用细引线指向具体部位，图标线宽和风格统一。② 对比图：同一机位、同一光线，左右或上下两栏，差别一眼看出，不贬低其他品牌。③ 步骤图：三四格，每格一个动作的手部特写，编号清楚。④ 尺寸和参数图：商品正视图配细尺寸线和少量大号数字，只写已确认的参数。⑤ 细节特写：微距加侧光，质感和工艺看得清。整张保留一个主色和足够留白，不堆满文字。"},
+	{id: "kb20-single-model", kind: kb20ScopeKind, title: "单张图打法 · 模特图",
+		guidance: "① 模特和目标人群一致，表情和姿态自然、有动作（走、转身、抬手、笑），不要僵直站桩。② 场景讲生活方式（街头、海边、咖啡馆、居家），自然光或大柔光，皮肤保留真实纹理。③ 商品在画面里清楚，穿戴方式正确。④ 构图像时尚杂志：大胆裁切，留出标题位。"},
 	{id: kb20GenericID, kind: kb20CategoryKind, title: "品类打法 · 通用",
 		guidance: "① 找到这件商品最打动人的一个瞬间，做成首屏的大场景；② 每两三屏换一种讲法：场景、微距、人在用、机理示意、对比；③ 从包装或商品本身取一个主色撑整屏，深浅交替；④ 至少一屏有人或手，情绪真实；⑤ 商品完整摆拍不超过一半的屏。"},
 	{id: "kb20-light-transparent", kind: kb20PhotoKind, title: "布光 · 透明材质",

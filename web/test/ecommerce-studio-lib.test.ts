@@ -5,7 +5,7 @@ import { buildFillPrompt, buildRecognitionPrompt, extractStudioJson, parseFill, 
 import { compileStudioPrompt, studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { createStudioProduct, normalizeStudioProduct, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { createStudioRun, studioActivePlan, studioRunTitle, studioSetEntries, studioSingleTargets, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
-import { studioRatioValid } from "@/lib/ecommerce-studio/brief";
+import { studioInfoPoints, studioRatioValid } from "@/lib/ecommerce-studio/brief";
 import { studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions } from "@/lib/ecommerce-studio/image-options";
 import { defaultImageCapabilityConfig } from "@/lib/model-capabilities";
 import { studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
@@ -592,6 +592,22 @@ describe("ecommerce studio plans for every output type", () => {
         expect(restored.brief.detailPlan).toMatchObject({ positioning: "通勤人的第一口热水", concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
         expect(restored.brief.detailPlan?.motifs).toEqual(["热气", "晨光", "地铁站台", "笔记本", "围巾"]);
         expect(restored.runs[0].suite).toMatchObject({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", motifs: ["热气", "晨光", "地铁站台", "笔记本", "围巾"] });
+    });
+
+    test("pasted html line breaks are cleaned and unplanned shots get material lighting", () => {
+        // 卖点里混进来的 <br/> 换成换行：不进图上的文案，也不进提示词。
+        expect(studioInfoPoints("OEM/ODM定制加工<br/>卡波姆甘油三乙醇胺<br>二类医疗器械认证").map((point) => point.title)).toEqual(["OEM/ODM定制加工", "卡波姆甘油三乙醇胺", "二类医疗器械认证"]);
+        const pasted = normalizeStudioProduct({ ...base({ outputType: "poster" }), sellerNotes: "保温 12 小时<br/>一键弹盖" })!;
+        expect(pasted.sellerNotes).toBe("保温 12 小时\n一键弹盖");
+        // 没策划的单张图按商品材质补布光。
+        const clear = {
+            ...base({ outputType: "poster", count: 1 }),
+            dossier: { ...cupProduct().dossier!, facts: [...cupProduct().dossier!.facts, { id: "f_lid", group: "material" as const, label: "杯盖", value: "透明亚克力", evidence: "visible" as const }] },
+        };
+        const run = createStudioRun(clear, ids(), "2026-11-01T00:00:00Z");
+        const prompt = compileStudioPrompt({ product: clear, textMode: run.textMode, shot: run.shots[0], model: "gpt-image-2", brief: clear.brief }).prompt;
+        expect(prompt).toContain("透明部分用背光或侧逆光打亮");
+        expect(prompt).not.toContain("<br");
     });
 
     test("new single types each map to their own shot", () => {

@@ -257,6 +257,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         }
     };
 
+    /** 策划一次，返回是否成功；失败时已经提示过原因。 */
     const runPlan = async (revise: boolean) => {
         try {
             const result = await runner.plan(ensure(), text.value, { revise });
@@ -273,8 +274,10 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             // 不足预定张数时如实说明，让用户决定直接出还是重新策划。
             if (count < planScreens) message.warning(`${summary}，比 ${planScreens} ${planUnit}少 ${planScreens - count} ${planUnit}，可以重新策划`);
             else message.success(`${summary}，可以展开修改`);
+            return true;
         } catch (error) {
             message.error(error instanceof Error ? error.message : "策划失败，请重试");
+            return false;
         }
     };
 
@@ -282,14 +285,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
      * AI 分析并策划：还没识别过商品（或要求重新识别）时先识别，再按当前出图类型策划；模板套图只识别。
      * revise 时带上这一版策划和补充调整，让模型按意见改。
      */
-    const analyzeAndPlan = async ({ revise = false, reanalyze = false } = {}) => {
-        if (!truthCount) return void message.warning("先上传商品图并点亮星标，再分析");
-        if (!text.value) return void message.warning("没有可用的文本模型，先到模型设置里添加");
-        if (!scope) return void fill();
+    const analyzeAndPlan = async ({ revise = false, reanalyze = false } = {}): Promise<boolean> => {
+        if (!truthCount) return (void message.warning("先上传商品图并点亮星标，再分析"), false);
+        if (!text.value) return (void message.warning("没有可用的文本模型，先到模型设置里添加"), false);
+        if (!scope) return fill();
         if (!textSeesPhotos) {
             if (reanalyze) message.info("这个文本模型看不了图，跳过识别商品，按表单里的信息策划");
-        } else if ((reanalyze || !product.dossier) && !(await fill(true))) return;
-        await runPlan(revise);
+        } else if ((reanalyze || !product.dossier) && !(await fill(true))) return false;
+        return runPlan(revise);
     };
     const planDetail = () => {
         const note = brief.planNote?.trim();
@@ -299,8 +302,15 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         modal.confirm({ title: "重新策划会替换现在的清单", content: "改过的屏名、画面和文案都会换成新的策划。只想改几处的话，先在「补充调整」里写下要改的地方。", okText: "重新策划", cancelText: "取消", onOk: () => void analyzeAndPlan() });
     };
 
-    const generate = () => {
+    // 单张图没策划时，有文本模型就先策划再出图：不策划的图只能套固定构图，文案直接用卖点原文，是最普通的出法。
+    // 「不策划，直接生成」跳过这一步。
+    const planBeforeGenerate = scope === "single" && !activePlan && Boolean(text.value);
+    const generate = async ({ direct = false } = {}) => {
         if (blocked) return void message.warning(blocked);
+        if (planBeforeGenerate && !direct) {
+            message.info(`先按这件商品策划这 ${planScreens} 张，策划好就开始出图`);
+            if (!(await analyzeAndPlan())) return;
+        }
         try {
             runner.generate(ensure(), image.value);
             onGenerated();
@@ -590,7 +600,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                         {activePlan
                                             ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
                                             : text.value
-                                              ? `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。不策划也可以直接生成" : ""}。`
+                                              ? `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。点生成时会先策划再出图，也可以不策划直接生成" : ""}。`
                                               : "添加文本模型后可以按商品策划。"}
                                     </span>
                                     {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
@@ -614,6 +624,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                                       : "AI 分析并策划"}
                                         </Button>
                                         <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
+                                        {planBeforeGenerate ? (
+                                            <Button type="link" size="small" disabled={Boolean(blocked) || planning || filling} onClick={() => void generate({ direct: true })}>
+                                                不策划，直接生成
+                                            </Button>
+                                        ) : null}
                                     </span>
                                 ) : null}
                                 {text.value ? (
@@ -659,16 +674,18 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     重置参数
                 </Button>
                 <Tooltip title={blocked || undefined}>
-                    <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked)} onClick={generate}>
+                    <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked) || planning || filling} loading={planBeforeGenerate && (planning || filling)} onClick={() => void generate()}>
                         {setKind
                             ? `生成${setLabel}${images ? `（${images} ${unit}）` : ""}`
                             : activePlan
                               ? `按策划生成 ${images} 张`
-                              : singles.length > 1
-                                ? `生成 ${singles.length} 种共 ${images} 张`
-                                : brief.count > 1
-                                  ? `生成 ${brief.count} 张商品图`
-                                  : "生成商品图"}
+                              : planBeforeGenerate
+                                ? `AI 策划并生成 ${images} 张`
+                                : singles.length > 1
+                                  ? `生成 ${singles.length} 种共 ${images} 张`
+                                  : brief.count > 1
+                                    ? `生成 ${brief.count} 张商品图`
+                                    : "生成商品图"}
                     </Button>
                 </Tooltip>
             </footer>
