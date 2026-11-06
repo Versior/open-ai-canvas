@@ -19,6 +19,7 @@ import {
     studioTemplateShotRoles,
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
+import { studioPickedDirection, studioPrepFactsText, studioPrepPromptLines } from "./plan-prep";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioDetailPlan, type StudioPlannedScreen, type StudioPlanScope, type StudioPlanTarget, type StudioProduct, type StudioShotRole } from "./types";
 
@@ -39,7 +40,7 @@ function oneLine(value: string) {
 /** 策划能用的原文：标题、卖点、卖家写的商品信息和已确认的事实。色值不算原文里的数字。 */
 function sourceNumbers(product: StudioProduct) {
     const facts = studioDetailPlanFacts(product).map((fact) => `${fact.label} ${fact.value}`);
-    const source = [studioTitleOf(product), studioBrandOf(product), studioProductTypeOf(product), studioInfoText(product), product.dossier?.name || "", product.dossier?.summary || "", ...facts].join("\n");
+    const source = [studioTitleOf(product), studioBrandOf(product), studioProductTypeOf(product), studioInfoText(product), product.dossier?.name || "", product.dossier?.summary || "", studioPrepFactsText(product.brief.prep), ...facts].join("\n");
     return new Set(source.replace(/#[0-9a-f]{3,8}\b/gi, " ").match(/\d+(?:\.\d+)?/g) || []);
 }
 
@@ -190,6 +191,27 @@ function rhythmLines(request: StudioPlanRequest): string[] {
     return [head, `- 每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual；同一类型的几张换不同的手法和机位。`, "- 同时出几张时用同一个色彩世界和同一种标题样式，像一个品牌出的。", "- 商品标识、印字和型号不当卖点。"];
 }
 
+const KIDS = /儿童|宝宝|婴|幼儿|童装|童鞋|孩子|学生|小学|玩具/;
+
+/**
+ * 这件商品自身的限制：测试环境里儿童眼镜只有一张正面商品图，图片模型把 7 张都画成了同一个角度的整件摆拍；
+ * 策划还给它选了纯灰白的极简调性，整套发冷。这两条按商品图和人群写进节奏要求。
+ */
+function productRealityLines(product: StudioProduct): string[] {
+    const truth = product.photos.filter((photo) => photo.truth);
+    const views = new Set(truth.map((photo) => photo.view));
+    const lines: string[] = [];
+    if (views.size <= 1) {
+        const view = truth[0] ? STUDIO_VIEW_LABEL[truth[0].view] : "正面";
+        lines.push(
+            `- 只有一张${view}商品图：图片模型很难把商品转到别的角度，整件商品同一个角度的摆拍整套最多两张。变化靠景别和场景：戴在身上或拿在手里、局部微距、放进包里或桌面的远景、和道具一起的创意静物；不要写侧面、背面、仰视、俯视整件这类要把商品转过去的画面。`,
+        );
+    }
+    const kids = product.dossier?.family === "baby-toys" || KIDS.test(`${studioProductTypeOf(product)} ${product.dossier?.category || ""} ${product.dossier?.name || ""} ${product.name}`);
+    if (kids) lines.push("- 这是给孩子用的商品：色彩世界要明亮、有温度（奶黄、草绿、天蓝、暖橙这类），多拍孩子真实的笑和动作，不要整套灰白或冷灰调，也不选国际大牌极简调性。");
+    return lines;
+}
+
 /** 上一版策划：按卖家的补充调整修改时带上，模型只改卖家不满意的地方。 */
 function previousLines(previous: StudioDetailPlan | undefined): string[] {
     if (!previous) return [];
@@ -256,6 +278,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         brief.extra.trim() ? `卖家补充要求：${oneLine(brief.extra)}` : undefined,
         ...styleLines(product),
         cast.length ? `已在模特库选了${cast.join("、")}：有人物的图用 detail-model，人物会按模特库出图。` : undefined,
+        ...studioPrepPromptLines(brief.prep),
         ...(request.scope === "template" ? templateLines(product) : []),
         note ? "" : undefined,
         note ? `【卖家对这次策划的补充调整】（优先照做；和商品事实、平台规则冲突时以事实和规则为准）\n${note}` : undefined,
@@ -277,6 +300,8 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "",
         "【文案要求】（大牌和头部爆款的文案像品牌在说话，不像地摊吆喝）",
         "- 主标题讲买家得到的感受或结果，不讲「这是什么」；把卖点翻译成画面和感受，比如把「重量轻」写成「轻到忘了它在」，把「防滑」写成「低头也不跑」。",
+        "- 讲出来的好处要有出处：轻、防滑、不易掉、耐摔、防蓝光、保温多久这类性能，卖点、已确认的事实和卖家补充里没有就不写，换成感受的说法也不行（没有重量信息就不能写「轻到像没戴」，没说防滑就不能写「低头也不滑」）。外观看得见的（透明、颜色、形状、结构）可以讲成感受。",
+        "- 品牌字样、印字、logo 和型号是商品的身份，不是买它的理由：不当卖点，不做成图标标签，也不写进标题（「镜片上的名字」这类不要）。素材不够时少讲几个点、讲深一点，不拿外观凑成三个理由。",
         "- 不写说明书口吻（该有的、就这么简单、记清楚、一次看清、都写在）和空洞大词（品质之选、匠心、臻品、甄选、高端大气）。写完逐条自查：这句话换到同类任何一件商品上都成立，或者只是在描述商品长什么样，就重写。",
         "- 主标题不能只是罗列外观或参数（比如「透明框，绿镜腿」「四个地方，记清楚」），要说出买家在意的结果、情绪或一个画面；买的人和用的人不同时（比如家长给孩子买），对买的人说话。",
         "- 短、准、有节奏：可以用短句、对仗、留白和数字，口语但不油腻；同一组里的标题句式要有变化。国内头部详情页常用两个短语对仗、中间空一格（前讲作用、后讲结果，如「深润修护 强韧喉黏膜」），痛点共鸣屏用一个问句开场；关键词或数字要用强调色时写进 elements。",
@@ -285,6 +310,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "- 详情页是一张连续的长图：每屏都不加页码、屏号和 01、02 这类序号（使用步骤屏的步骤编号、机理示意里作用过程的先后编号除外），eyebrow、elements 和 style 里也不要写屏的序号。",
         "",
         ...rhythmLines(request),
+        ...productRealityLines(product),
         "",
         "【要求】",
         "1. 先做视觉策划，再排每一张（详见系统提示里的设计策划知识）：① 想清楚买这件商品的人下单前最关心什么、最担心什么，买的人和用的人是不是同一个人；② 同类商品的详情页通常长什么样，这组图要避开哪些套路；③ 用一句话写差异化定位，写进 positioning（不超过 40 个字）；④ 由定位推出一个具体的视觉主题，写成创意主线放进 concept（不超过 60 个字）：一个具体的世界或场景，不是一种颜色，换成别的商品就不成立；⑤ 从主题里取 3–5 个能反复使用的视觉元素写进 motifs（每个不超过 8 个字，比如道具、自然物、光影、图形、动作）。不用放在任何商品上都成立的通用画面（纯色背景加商品居中、泛泛的居家场景、空洞的大理石台面、整套同一条波浪曲线）。",
@@ -392,7 +418,11 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
     // 只有质感选了「按商品推荐」时才收策划挑的质感。
     const styleId = product.style === "auto" ? studioPlanStyleId(data.styleId) : undefined;
-    const tone = studioPlanTone(data.tone);
+    // 卖家挑了方向：模型漏写的调性、定位和创意主线按这个方向补上。
+    const direction = studioPickedDirection(product.brief.prep);
+    const tone = studioPlanTone(data.tone) || direction?.tone;
+    const positioning = text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) || direction?.positioning.slice(0, STUDIO_DETAIL_PLAN_LIMITS.positioning) || "";
+    const concept = text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) || direction?.concept.slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) || "";
     return {
         plan: {
             id: meta.id,
@@ -400,8 +430,8 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             model: meta.model,
             summary: text(data.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
             style: text(data.style, STUDIO_DETAIL_PLAN_LIMITS.style),
-            ...(text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) ? { positioning: text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) } : {}),
-            ...(text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
+            ...(positioning ? { positioning } : {}),
+            ...(concept ? { concept } : {}),
             ...(studioPlanMotifs(data.motifs).length ? { motifs: studioPlanMotifs(data.motifs) } : {}),
             ...(text(data.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(data.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
             ...(styleId ? { styleId } : {}),

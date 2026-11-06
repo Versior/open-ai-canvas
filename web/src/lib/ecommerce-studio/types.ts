@@ -223,6 +223,31 @@ export type StudioDetailPlan = {
     screens: StudioPlannedScreen[];
 };
 
+/**
+ * 策划前补充：AI 按这件商品问卖家几个只有卖家知道的问题（真正的卖点、给谁用、在哪用、想要的感觉），
+ * 选项是同类商品常见的候选，卖家勾选或写下的答案当作已确认的信息交给策划。
+ */
+export type StudioAsk = { id: string; question: string; options: string[]; multi: boolean; picked: string[]; note: string };
+/** 视角方案：策划前给的几个不同方向（不同的买家视角或故事角度），卖家挑一个，策划按它排每一张。 */
+export type StudioDirection = {
+    id: string;
+    /** 视角的名字，如「家长的安心」。 */
+    angle: string;
+    positioning: string;
+    concept: string;
+    tone?: StudioDesignToneId;
+    /** 这个方向的色彩世界。 */
+    palette: { name: string; hex: string }[];
+    /** 首屏主标题示例。 */
+    headline: string;
+    /** 首屏画面一句话。 */
+    visual: string;
+    /** 适合谁、凭什么打动人。 */
+    why: string;
+};
+/** 策划前的准备：卖家补充和视角方案，跟着商品走，详情页、主图和单张图的策划共用。 */
+export type StudioPlanPrep = { asks: StudioAsk[]; askedAt?: string; directions: StudioDirection[]; directionsAt?: string; picked?: string };
+
 /** 选中的套图模板快照：选中那一刻存进表单，之后后台改模板不影响已选的这一套。 */
 export type StudioSuite = {
     id: string;
@@ -282,6 +307,8 @@ export type StudioBrief = {
     templatePlan?: StudioDetailPlan;
     /** 写给策划的补充调整，每次策划和重新策划都带上。 */
     planNote?: string;
+    /** 策划前的卖家补充和视角方案。 */
+    prep?: StudioPlanPrep;
     /** 套图的镜头清单：调整后的顺序与这次不出的镜头。元素是镜头 key，内置套图为镜头角色，模板套图为 s 加序号。 */
     shotOrder: string[];
     shotSkip: string[];

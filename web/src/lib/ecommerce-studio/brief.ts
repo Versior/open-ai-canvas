@@ -2,6 +2,7 @@ import { ecommerceRoleSpec } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { IMAGE_RATIOS } from "@/lib/image-size-presets";
 import { studioShotSpec } from "./shot-specs";
 import { normalizeStudioDetailPlan } from "./detail-plan";
+import { normalizeStudioPlanPrep } from "./plan-prep";
 import { studioPromptText } from "./prompt-overrides";
 import { normalizeStudioSuite } from "./suites";
 import type { StudioModelCast, StudioModelPick, StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioPlanKind, StudioProduct, StudioSellingPoint, StudioShotRole, StudioShooting } from "./types";
@@ -99,7 +100,8 @@ export function createStudioBrief(): StudioBrief {
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
 export function resetStudioBriefParameters(brief: StudioBrief): StudioBrief {
     // 策划是按这件商品排出来的结果，和品牌、类型一样跟着商品走，不随参数重置。
-    const { detailPlan, mainPlan, singlePlan, templatePlan } = brief;
+    // 卖家补充和视角方案也是按这件商品来的，一样保留。
+    const { detailPlan, mainPlan, singlePlan, templatePlan, prep } = brief;
     return {
         ...createStudioBrief(),
         brand: brief.brand,
@@ -108,6 +110,7 @@ export function resetStudioBriefParameters(brief: StudioBrief): StudioBrief {
         ...(mainPlan ? { mainPlan } : {}),
         ...(singlePlan ? { singlePlan } : {}),
         ...(templatePlan ? { templatePlan } : {}),
+        ...(prep ? { prep } : {}),
     };
 }
 
@@ -176,6 +179,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const mainPlan = normalizeStudioDetailPlan(record.mainPlan);
     const singlePlan = normalizeStudioDetailPlan(record.singlePlan);
     const templatePlan = normalizeStudioDetailPlan(record.templatePlan);
+    const prep = normalizeStudioPlanPrep(record.prep);
     const planNote = text(record.planNote, STUDIO_PLAN_NOTE_MAX).trim();
     const model = normalizeStudioModelCast(record.model);
     return {
@@ -199,6 +203,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         ...(singlePlan?.targets?.length ? { singlePlan } : {}),
         ...(templatePlan?.suiteId ? { templatePlan } : {}),
         ...(planNote ? { planNote } : {}),
+        ...(prep ? { prep } : {}),
         ...(model ? { model } : {}),
         shotOrder: shotKeys(record.shotOrder),
         shotSkip: shotKeys(record.shotSkip),

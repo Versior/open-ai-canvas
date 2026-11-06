@@ -19,7 +19,7 @@ export type StudioKnowledgeContext = { platform?: string; category?: string; pro
  * 生图台分析任务的标记。服务端按平台、商品类型和名称检索电商知识库（与电商 Agent 共用）：
  * 商品档案拿写卖点和文案的方法，详情页策划（capability 传 detail-plan）再拿详情页、版式、摄影和场景方法。
  */
-export function studioAnalysisMetadata(productId: string, step: "recognize" | "copy" | "plan", context: StudioKnowledgeContext = {}, capability: string = STUDIO_DOSSIER_CAPABILITY) {
+export function studioAnalysisMetadata(productId: string, step: "recognize" | "copy" | "ask" | "directions" | "plan", context: StudioKnowledgeContext = {}, capability: string = STUDIO_DOSSIER_CAPABILITY) {
     const category = context.category?.trim().slice(0, 60);
     const productName = context.productName?.trim().slice(0, 120);
     return {
@@ -138,6 +138,7 @@ export function buildFillPrompt(input: { photos: StudioPhoto[]; platformName: st
         "",
         "在档案之外再给出表单要用的内容：brand 是商品上能读出的品牌（读不出就留空，不要猜）；category 用 2–6 个字说清商品类型；title 是一句不超过 12 个字的主标题；points 是 3–5 条卖点，每条 title 不超过 12 个字、detail 不超过 30 个字，facts 写出依据的事实名称（facts 列表里的 label）。",
         "卖点只能建立在图片可见或卖家已提供的信息上；不用「最」「第一」「顶级」「100%」这类极限词，不写功效承诺、价格和促销。",
+        "品牌字样、印字、logo、商标和型号是商品的身份，不是买它的理由，不写成卖点；看得见的卖点不够 3 条时少写几条，不拿外观凑数。",
         "",
         "只输出下面这个 JSON，不要任何解释：",
         `{"name":"简短的商品称呼","brand":"","category":"保温杯","family":"${FAMILIES.join("|")}","summary":"一句话说清这是什么","title":"","points":[{"title":"","detail":"","facts":["事实名称"]}],"facts":[{"group":"${GROUPS.join("|")}","label":"颜色","value":"哑光雾蓝 #6F8CA6","evidence":"visible","source":"图1"}],"invariants":["出图时绝不能改动的外观要点"],"questions":["需要卖家确认的问题"]}`,
@@ -145,6 +146,9 @@ export function buildFillPrompt(input: { photos: StudioPhoto[]; platformName: st
 }
 
 export type StudioFillResult = { dossier: StudioDossier; sellingPoints: StudioSellingPoint[]; brand: string; title: string; issues: EcommerceComplianceIssue[] };
+
+/** 讲品牌字样、印字、logo 和型号的卖点：测试环境的儿童眼镜识别出「品牌字样在镜片」，策划把它做成了一个卖点。 */
+const IDENTITY_POINT = /字样|印字|印有|logo|标识|商标|型号|刻字/i;
 
 export function parseFill(raw: string, createId: StudioIdFactory, recognizedWith?: string): StudioFillResult {
     const dossier = parseRecognition(raw, createId, recognizedWith);
@@ -159,6 +163,8 @@ export function parseFill(raw: string, createId: StudioIdFactory, recognizedWith
             const facts = list(record.facts, 6, 40)
                 .map((label) => byLabel.get(label))
                 .filter((fact): fact is StudioFact => Boolean(fact));
+            // 只依据「文字与标识」类事实，或者标题就在讲字样和型号的，不收成卖点。
+            if (IDENTITY_POINT.test(title) || (facts.length && facts.every((fact) => fact.group === "text"))) return undefined;
             // 卖点的证据等级取决于它依据的事实：全部可用才算可用，否则需要卖家确认后再启用。
             const evidence: StudioEvidence = !facts.length ? "pending" : facts.every(studioFactUsable) ? (facts.some((fact) => fact.evidence === "confirmed") ? "confirmed" : "visible") : "inferred";
             return { id: createId(), title, detail: text(record.detail, 60), evidence, factIds: facts.map((fact) => fact.id), enabled: evidence === "visible" || evidence === "confirmed" };

@@ -10,11 +10,25 @@ import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, studioDetailPlanRoles
 import { buildDetailPlanPrompt, parseDetailPlan, studioPlanTargetRoles, type StudioDetailPlanResult, type StudioPlanRequest } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
+import { buildAskPrompt, buildDirectionsPrompt, parseAsks, parseDirections } from "@/lib/ecommerce-studio/plan-prep-tasks";
 import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { compileStudioPrompt, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioShot, studioAttemptActive, studioPlanOf, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioActivePlan, studioPlanScopeOf, studioRunOf, studioSingleTargets } from "@/lib/ecommerce-studio/runs";
-import { studioFactUsable, type StudioAttempt, type StudioAttemptStatus, type StudioOutput, type StudioPhoto, type StudioPlanKind, type StudioProduct, type StudioRun, type StudioShot, type StudioTextMode } from "@/lib/ecommerce-studio/types";
+import {
+    studioFactUsable,
+    type StudioAsk,
+    type StudioAttempt,
+    type StudioAttemptStatus,
+    type StudioDirection,
+    type StudioOutput,
+    type StudioPhoto,
+    type StudioPlanKind,
+    type StudioProduct,
+    type StudioRun,
+    type StudioShot,
+    type StudioTextMode,
+} from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
@@ -67,15 +81,22 @@ function pump() {
     }
 }
 
-/** fill：识别商品自动填写；plan：详情页按商品策划。 */
-export type StudioAnalysisKind = "fill" | "plan";
+/** fill：识别商品自动填写；ask：策划前问卖家几个问题；directions：给几个视角方案；plan：按商品策划。 */
+export type StudioAnalysisKind = "fill" | "ask" | "directions" | "plan";
+
+const ANALYSIS_BUSY: Record<StudioAnalysisKind, string> = {
+    fill: "这个商品正在识别，请等它完成",
+    ask: "这个商品正在生成问题，请等它完成",
+    directions: "这个商品正在生成视角方案，请等它完成",
+    plan: "这个商品正在策划，请等它完成",
+};
 
 /** 正在进行的识别或策划，按商品记录；切换商品再回来也能看到进度。 */
 export const useStudioAnalysis = create<{ running: Record<string, StudioAnalysisKind | undefined> }>(() => ({ running: {} }));
 
 async function trackAnalysis<T>(productId: string, kind: StudioAnalysisKind, run: () => Promise<T>) {
     const running = useStudioAnalysis.getState().running[productId];
-    if (running) throw new Error(running === "plan" ? "这个商品正在策划详情页，请等它完成" : "这个商品正在识别，请等它完成");
+    if (running) throw new Error(ANALYSIS_BUSY[running]);
     useStudioAnalysis.setState((state) => ({ running: { ...state.running, [productId]: kind } }));
     try {
         return await run();
@@ -99,6 +120,39 @@ function studioPlanMaterials(product: StudioProduct) {
 
 function inputSummary(imageCount: number) {
     return { textCount: 0, imageCount, videoCount: 0, audioCount: 0, characterCount: 0 };
+}
+
+type ModelConfigInput = Parameters<typeof buildEcommerceAnalysisGeneration>[0];
+
+/**
+ * 策划类任务随附的图：商品图让模型看清外观，最多两张；卖家上传的参考图（大牌或爆款截图）再带最多两张，让策划学它的设计语言。
+ * 参考图至少给商品图留一个名额；模型不收图时只按表单和档案的文字。
+ */
+function planImages(product: StudioProduct, current: ModelConfigInput, textModel: string, withReferences = true) {
+    const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
+    const budget = Math.min(4, modelCapabilityConfigFor(current, draft.model).text?.references.maxImages ?? 2);
+    const uploaded = withReferences ? product.references.filter((photo) => photo.resourceId) : [];
+    const referenceCount = Math.min(2, uploaded.length, Math.max(0, budget - 1));
+    const photos = budget > 0 ? studioReferencePhotos(product.photos, Math.min(2, budget - referenceCount)) : [];
+    const references = uploaded.slice(0, referenceCount);
+    return { photos, references, images: [...photos, ...references] };
+}
+
+/** 策划类任务给服务端的知识检索提示：策划范围（模板套图按模板用途）、单张类型、品类大类和材质。 */
+function planKnowledgeMetadata(product: StudioProduct) {
+    const scope = studioPlanScopeOf(product);
+    const suite = scope === "template" ? product.brief.suite : undefined;
+    const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
+    return {
+        studioPlanKind: suite ? suite.kind : scope || "detail",
+        ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
+        ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
+        ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),
+    };
+}
+
+function knowledgeContext(product: StudioProduct) {
+    return { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name };
 }
 
 function taskOutputs(task: GenerationTask): StudioOutput[] {
@@ -255,15 +309,7 @@ export function useStudioRunner() {
                 const suite = scope === "template" ? product.brief.suite : undefined;
                 const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
                 const current = configRef.current;
-                const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
-                // 商品图让模型看清外观，最多两张；卖家上传的参考图（大牌或爆款截图）再带最多两张，让策划学它的设计语言。
-                // 参考图至少给商品图留一个名额；模型不收图时只按表单和档案的文字策划。
-                const budget = Math.min(4, modelCapabilityConfigFor(current, draft.model).text?.references.maxImages ?? 2);
-                const uploaded = product.references.filter((photo) => photo.resourceId);
-                const referenceCount = Math.min(2, uploaded.length, Math.max(0, budget - 1));
-                const photos = budget > 0 ? studioReferencePhotos(product.photos, Math.min(2, budget - referenceCount)) : [];
-                const references = uploaded.slice(0, referenceCount);
-                const images = [...photos, ...references];
+                const { photos, references, images } = planImages(product, current, textModel);
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
                 const request: StudioPlanRequest = {
@@ -279,21 +325,81 @@ export function useStudioRunner() {
                     config: generation,
                     referenceImages: images.map(photoReference),
                     streamText: false,
-                    metadata: {
-                        ...studioAnalysisMetadata(productId, "plan", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }, STUDIO_DETAIL_PLAN_CAPABILITY),
-                        // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事，模板套图按模板用途取；品类大类用来在同类爆款套图对不上时取同大类的参考。
-                        studioPlanKind: suite ? suite.kind : scope,
-                        // 单张图策划选中的类型：服务端按它带对应的单张图打法（海报、种草、白底、信息图、模特）。
-                        ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
-                        ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
-                        // 档案里的材质和外观：服务端按它从设计策划知识库挑布光方法。
-                        ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),
-                    },
+                    // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事，模板套图按模板用途取，单张图按选中的类型带打法；
+                    // 品类大类用来在同类爆款套图对不上时取同大类的参考，档案里的材质用来挑布光方法。
+                    metadata: { ...studioAnalysisMetadata(productId, "plan", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
                 });
                 const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);
                 const field = STUDIO_PLAN_FIELD[scope];
                 update(productId, (value) => ({ ...value, brief: { ...value.brief, [field]: parsed.plan, shotOrder: [], shotSkip: [] } }), { immediate: true });
                 return parsed;
+            }),
+        [read, update],
+    );
+
+    /**
+     * 策划前问卖家几个问题：按商品档案和表单里已有的信息，问只有卖家知道的卖点、人群、场景和想要的感觉。
+     * 结果替换原来的问题（卖家已经答过的同一个问题保留答案），视角方案按新的答案重新给。
+     */
+    const ask = useCallback(
+        (productId: string, textModel: string) =>
+            trackAnalysis(productId, "ask", async (): Promise<StudioAsk[]> => {
+                const product = read(productId);
+                const current = configRef.current;
+                const { images } = planImages(product, current, textModel, false);
+                const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
+                const result = await runBackendGenerationTask({
+                    mode: "text",
+                    prompt: buildAskPrompt(product),
+                    config: generation,
+                    referenceImages: images.map(photoReference),
+                    streamText: false,
+                    metadata: studioAnalysisMetadata(productId, "ask", knowledgeContext(product)),
+                });
+                const asks = parseAsks(result.text || "", () => nanoid(10));
+                update(
+                    productId,
+                    (value) => {
+                        const previous = new Map((value.brief.prep?.asks || []).map((item) => [item.question, item]));
+                        const merged = asks.map((item) => {
+                            const old = previous.get(item.question);
+                            return old ? { ...item, picked: old.picked.filter((option) => item.options.includes(option)), note: old.note } : item;
+                        });
+                        return { ...value, brief: { ...value.brief, prep: { directions: [], ...value.brief.prep, asks: merged, askedAt: new Date().toISOString() } } };
+                    },
+                    { immediate: true },
+                );
+                return asks;
+            }),
+        [read, update],
+    );
+
+    /** 给 3 个视角方案：带上卖家补充、电商知识库和同类爆款套图；新的一批替换原来的，原来挑的方向清掉。 */
+    const directions = useCallback(
+        (productId: string, textModel: string) =>
+            trackAnalysis(productId, "directions", async (): Promise<StudioDirection[]> => {
+                const product = read(productId);
+                const current = configRef.current;
+                const { photos, references, images } = planImages(product, current, textModel);
+                const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
+                const result = await runBackendGenerationTask({
+                    mode: "text",
+                    prompt: buildDirectionsPrompt(product, studioPlanScopeOf(product), images.length ? { photos: photos.length, references: references.length } : undefined),
+                    config: generation,
+                    referenceImages: images.map(photoReference),
+                    streamText: false,
+                    metadata: { ...studioAnalysisMetadata(productId, "directions", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
+                });
+                const items = parseDirections(result.text || "", () => nanoid(10));
+                update(
+                    productId,
+                    (value) => {
+                        const { picked: _picked, ...prep } = value.brief.prep || { asks: [], directions: [] };
+                        return { ...value, brief: { ...value.brief, prep: { ...prep, asks: prep.asks || [], directions: items, directionsAt: new Date().toISOString() } } };
+                    },
+                    { immediate: true },
+                );
+                return items;
             }),
         [read, update],
     );
@@ -456,7 +562,7 @@ export function useStudioRunner() {
         [update, watch],
     );
 
-    return { fill, plan, generate, rerun, resume };
+    return { fill, ask, directions, plan, generate, rerun, resume };
 }
 
 export type StudioRunner = ReturnType<typeof useStudioRunner>;

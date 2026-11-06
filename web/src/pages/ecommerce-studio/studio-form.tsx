@@ -30,6 +30,7 @@ import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
+import { studioAnsweredAsks, studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
 import { moveStudioSetEntry, studioActivePlan, studioEntryRatio, studioPlanScopeOf, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
@@ -38,6 +39,7 @@ import { configuredModelDisplayName } from "@/lib/model-selection";
 import { StudioDossierCard } from "./studio-dossier";
 import { StudioModelCastSection } from "./studio-model-cast";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
+import { StudioPlanPrepPanel, studioPrepStep } from "./studio-plan-prep";
 import { StudioShotList, type StudioPlannedScreenPatch } from "./studio-shot-list";
 import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
@@ -152,8 +154,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const image = useStudioModel("image");
     const text = useStudioModel("text");
     const uploads = useStudioUploads(ensure);
-    const filling = useStudioAnalysis((state) => state.running[product.id] === "fill");
-    const planning = useStudioAnalysis((state) => state.running[product.id] === "plan");
+    const running = useStudioAnalysis((state) => state.running[product.id]);
+    const filling = running === "fill";
+    const planning = running === "plan";
+    const asking = running === "ask";
+    const directing = running === "directions";
     const brief = product.brief;
     // 当前出图类型的策划：详情页、主图套图、单张图和模板套图各有一份；模板套图要先选模板。
     const scope = studioPlanScopeOf(product);
@@ -281,18 +286,56 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         }
     };
 
-    /**
-     * AI 分析并策划：还没识别过商品（或要求重新识别）时先识别，再按当前出图类型策划；模板套图只识别。
-     * revise 时带上这一版策划和补充调整，让模型按意见改。
-     */
-    const analyzeAndPlan = async ({ revise = false, reanalyze = false } = {}): Promise<boolean> => {
+    /** 策划类操作的前置检查：要有星标商品图和文本模型；还没识别过商品时先识别（文本模型看不了图时跳过）。 */
+    const prepare = async (reanalyze = false): Promise<boolean> => {
         if (!truthCount) return (void message.warning("先上传商品图并点亮星标，再分析"), false);
         if (!text.value) return (void message.warning("没有可用的文本模型，先到模型设置里添加"), false);
-        if (!scope) return fill();
         if (!textSeesPhotos) {
             if (reanalyze) message.info("这个文本模型看不了图，跳过识别商品，按表单里的信息策划");
-        } else if ((reanalyze || !product.dossier) && !(await fill(true))) return false;
+            return true;
+        }
+        return reanalyze || !product.dossier ? fill(true) : true;
+    };
+
+    /** 还没识别过就先识别，再按当前出图类型策划。revise 时带上这一版策划和补充调整，让模型按意见改。 */
+    const analyzeAndPlan = async ({ revise = false } = {}): Promise<boolean> => {
+        if (!scope) return fill();
+        if (!(await prepare())) return false;
         return runPlan(revise);
+    };
+
+    /** AI 问几个只有卖家知道的问题。quiet 时是识别商品之后自动接着问的。 */
+    const runAsk = async (quiet = false) => {
+        if (!(await prepare())) return false;
+        try {
+            const asks = await runner.ask(ensure(), text.value);
+            message.success(`${quiet ? "识别好了，" : ""}问了 ${asks.length} 个问题，点选答案就行，答得越多策划越准`);
+            return true;
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "生成问题失败，请重试");
+            return false;
+        }
+    };
+
+    const runDirections = async () => {
+        if (!(await prepare())) return;
+        try {
+            const items = await runner.directions(ensure(), text.value);
+            message.success(`给了 ${items.length} 个视角，挑一个再策划`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "生成视角方案失败，请重试");
+        }
+    };
+
+    /**
+     * 顶部的「AI 分析商品」：重新识别商品；当前出图类型可以策划、还没问过问题时，接着问几个问题，
+     * 由卖家补充后再选视角和策划，不再一步跳到策划。
+     */
+    const analyzeProduct = async () => {
+        if (!scope || !text.value) return void fill();
+        if (!(await prepare(true))) return;
+        if (!brief.prep?.asks.length) await runAsk(true);
+        else message.success("已重新识别商品");
     };
     const planDetail = () => {
         const note = brief.planNote?.trim();
@@ -329,6 +372,23 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     };
 
     const ratioLabel = brief.sameLayout && product.references.length ? "自动（跟参考图）" : "自动（推荐）";
+
+    // 策划前的补充信息和视角方案：答过的和挑中的方向会带进每一次策划。
+    const prepStep = studioPrepStep(brief.prep);
+    const pickedDirection = studioPickedDirection(brief.prep);
+    const answeredCount = studioAnsweredAsks(brief.prep).length;
+    const prepSummary = ["补充信息与视角", answeredCount ? `已答 ${answeredCount} 个问题` : "", pickedDirection ? `按「${pickedDirection.angle}」` : ""].filter(Boolean).join(" · ");
+    const prepPanel = (
+        <StudioPlanPrepPanel
+            product={product}
+            edit={edit}
+            asking={asking}
+            directing={directing}
+            disabled={!product.photos.length || Boolean(running && running !== "ask" && running !== "directions")}
+            onAsk={() => void runAsk()}
+            onDirections={() => void runDirections()}
+        />
+    );
 
     return (
         <section className="es-form" aria-label="生图表单" onPasteCapture={onPaste}>
@@ -371,11 +431,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 <div className="es-section-head">
                     <h2>商品信息</h2>
                     <span className="es-field-actions">
-                        <Tooltip
-                            title={!product.photos.length ? "先上传商品图" : scope ? `看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再按当前出图类型策划这 ${planScreens} ${planUnit}` : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}
-                        >
-                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || planning} disabled={!product.photos.length} onClick={() => void analyzeAndPlan({ reanalyze: true })}>
-                                {filling ? "分析商品中…" : planning ? "策划中…" : scope ? "AI 分析并策划" : "AI 分析商品"}
+                        <Tooltip title={!product.photos.length ? "先上传商品图" : scope && text.value ? "看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再问你几个商品图看不出来的问题" : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}>
+                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={!product.photos.length || Boolean(running && !filling && !asking)} onClick={() => void analyzeProduct()}>
+                                {filling ? "分析商品中…" : asking ? "生成问题中…" : "AI 分析商品"}
                             </Button>
                         </Tooltip>
                         <FillModelPopover imageCount={product.photos.length} />
@@ -606,8 +664,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                             ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
                                             : text.value
                                               ? scope === "template"
-                                                  ? `模板定每${planUnit}讲什么；AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再按模板的顺序重写每一${planUnit}的画面、版式和文案，排好后可以逐${planUnit}修改。点生成时会先策划再出图，也可以按模板直接生成。`
-                                                  : `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。点生成时会先策划再出图，也可以不策划直接生成" : ""}。`
+                                                  ? `模板定每${planUnit}讲什么，AI 按这件商品重写画面和文案。`
+                                                  : `先补充信息、选一个视角，AI 再排每一${planUnit}的画面和文案${scope === "single" ? "；直接点生成会先策划再出图" : ""}。`
                                               : "添加文本模型后可以按商品策划。"}
                                     </span>
                                     {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
@@ -616,8 +674,19 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                     {activePlan?.inspiration ? <span>借鉴：{activePlan.inspiration}</span> : null}
                                 </span>
                                 {text.value ? (
+                                    activePlan ? (
+                                        // 策划过之后补充和视角收起来：要换个方向重新策划时再展开。
+                                        <details className="es-prep-fold">
+                                            <summary>{prepSummary}</summary>
+                                            {prepPanel}
+                                        </details>
+                                    ) : (
+                                        prepPanel
+                                    )
+                                ) : null}
+                                {text.value ? (
                                     <span className="es-plan-card-actions">
-                                        <Button type={activePlan ? "default" : "primary"} icon={<ListChecks size={14} />} loading={planning || filling} disabled={!product.photos.length} onClick={planDetail}>
+                                        <Button type={!activePlan && prepStep === "plan" ? "primary" : "default"} icon={<ListChecks size={14} />} loading={planning || filling} disabled={!product.photos.length || asking || directing} onClick={planDetail}>
                                             {filling
                                                 ? "分析商品中…"
                                                 : planning
@@ -625,10 +694,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                                   : activePlan
                                                     ? brief.planNote?.trim()
                                                         ? "按补充调整重新策划"
-                                                        : "重新策划"
-                                                    : product.dossier || !textSeesPhotos
-                                                      ? `AI 策划 ${planScreens} ${planUnit}`
-                                                      : "AI 分析并策划"}
+                                                        : pickedDirection
+                                                          ? `按「${pickedDirection.angle}」重新策划`
+                                                          : "重新策划"
+                                                    : pickedDirection
+                                                      ? `按「${pickedDirection.angle}」策划 ${planScreens} ${planUnit}`
+                                                      : product.dossier || !textSeesPhotos
+                                                        ? `AI 策划 ${planScreens} ${planUnit}`
+                                                        : "AI 分析并策划"}
                                         </Button>
                                         <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
                                         {planBeforeGenerate ? (
