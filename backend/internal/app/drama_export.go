@@ -209,7 +209,7 @@ func (s *Service) PrepareDramaJianyingDraft(userID, projectID, episodeID string,
 	settings := parseDramaSettings(productionRow.SettingsJSON)
 	width, height := dramaRenderSize(settings.AspectRatio)
 	now := time.Now()
-	name := jianying.SafeName(fmt.Sprintf("%s-第%02d集-%s", project.Name, episode.Number, now.In(dramaExportLocation).Format("0102-1504")), "影策短剧草稿", 80)
+	name := jianying.SafeName(fmt.Sprintf("%s-第%02d集-%s", project.Name, episode.Number, now.In(dramaExportLocation).Format("0102-1504")), "KINOVO短剧草稿", 80)
 	draft := jianying.Draft{Name: name, Root: root, Width: width, Height: height, FPS: 30, Now: now}
 	archive := newDramaArchive(name + ".zip")
 	shotsBySegment := dramaShotsBySegment(shots)
@@ -327,7 +327,7 @@ func (s *Service) dramaDraftCover(userID string, resourceID string) []byte {
 
 func dramaJianyingReadme(draft jianying.Draft, skipped []string) string {
 	var builder strings.Builder
-	builder.WriteString("影策短剧 · 剪映草稿\n\n")
+	builder.WriteString("KINOVO 短剧 · 剪映草稿\n\n")
 	builder.WriteString(jianyingImportSteps(draft))
 	if len(draft.Captions) > 0 {
 		builder.WriteString("台词字幕按分镜时长估算，与配音可能有偏差；需要精确对齐时可删除字幕轨，用剪映「识别字幕」重新生成。台词字幕.srt 可单独导入。\n")
@@ -446,7 +446,7 @@ func (s *Service) PrepareDramaAssetPackage(userID, projectID string, req DramaAs
 	}
 	settings := parseDramaSettings(productionRow.SettingsJSON)
 	now := time.Now()
-	root := jianying.SafeName(project.Name, "影策短剧", 60) + "-资产包"
+	root := jianying.SafeName(project.Name, "KINOVO短剧", 60) + "-资产包"
 	archive := newDramaArchive(root + "-" + now.In(dramaExportLocation).Format("0102-1504") + ".zip")
 	manifest := dramaAssetManifest{
 		Format: DramaAssetPackageFormat, Version: dramaAssetPackageVersion, ExportedAt: now.In(dramaExportLocation).Format(time.RFC3339),

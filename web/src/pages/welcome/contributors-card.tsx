@@ -5,7 +5,7 @@ import { CometCard } from "@/components/ui/aceternity/comet-card";
 
 import { welcomeContributors } from "./contributors";
 
-const githubContributors = "https://github.com/ddcat-ai/open-ai-canvas#贡献者与团队";
+const githubContributors = "https://github.com/Versior/open-ai-canvas#upstream--license";
 
 export function WelcomeContributorsCard() {
     const { t } = useTranslation();
