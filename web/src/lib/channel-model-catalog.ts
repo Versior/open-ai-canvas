@@ -43,13 +43,17 @@ export function autoConfigureUserChannelModels(channel: ModelChannel, presets: M
         const capability = template?.capability || channelCapability || "text";
         const protocol = template?.protocol || (capability === "text" && channel.apiFormat === "gemini" ? "gemini-generate-content" : protocolTemplateForNewCatalogModel(capability, channel.interfaceType));
         let cost: ChannelModelCost = {
-            model: id, capability, protocol, billingMode: template?.billingMode || "fixed_request",
+            model: id,
+            capability,
+            protocol,
+            billingMode: template?.billingMode || "fixed_request",
             unitPriceMicrocredits: template?.unitPriceMicrocredits || 0,
             inputTokenPriceMicrocredits: template?.inputTokenPriceMicrocredits,
             outputTokenPriceMicrocredits: template?.outputTokenPriceMicrocredits,
             cachedTokenPriceMicrocredits: template?.cachedTokenPriceMicrocredits,
             displayName: template?.displayName?.trim() && template.displayName !== "未分类" ? template.displayName : identity?.category,
-            icon: template?.icon || identity?.icon, capabilityConfig: template?.capabilityConfig && best >= 2 ? structuredClone(template.capabilityConfig) : undefined,
+            icon: template?.icon || identity?.icon,
+            capabilityConfig: template?.capabilityConfig && best >= 2 ? structuredClone(template.capabilityConfig) : undefined,
         };
         if (preset && !presetApplicationError(preset, capability)) {
             const applied = applyModelMetadataPreset({ ...cost, modelKey: id }, preset);

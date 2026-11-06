@@ -8,11 +8,7 @@ import { canvasPersistentNodes } from "../src/lib/canvas/canvas-persistent-nodes
 describe("LibTV canvas import helpers", () => {
     test("summarizes a hundred matching issues once without dropping other warnings", () => {
         const message = "连接标识无效、重复或端点未导入";
-        const warnings = [
-            { id: "node-1", message: "节点包含 2 个结果，已导入第 1 个" },
-            ...Array.from({ length: 100 }, (_, index) => ({ id: `edge-${index}`, message })),
-            { id: "node-2", message: "部分提示词引用缺少公开参考节点，已保留原始标记" },
-        ];
+        const warnings = [{ id: "node-1", message: "节点包含 2 个结果，已导入第 1 个" }, ...Array.from({ length: 100 }, (_, index) => ({ id: `edge-${index}`, message })), { id: "node-2", message: "部分提示词引用缺少公开参考节点，已保留原始标记" }];
         const original = structuredClone(warnings);
         expect(summarizeLibTVImportWarnings(warnings)).toEqual([
             { message: "节点包含 2 个结果，将保留第 1 个", count: 1 },
@@ -82,7 +78,17 @@ function importNode(id: string, type: LibTVImportNode["type"], x: number, y: num
 function templateResult(): LibTVImportResult {
     const nodes = [
         importNode("frame", "frame", 1000, 2000, { width: 600, height: 400 }),
-        importNode("image", "image", 1040, 2060, { parentId: "frame", content: "https://libtv-res.liblib.art/fixture/a.png", prompt: "主图", model: "libtv-img", aspectRatio: "16:9", naturalWidth: 1920, naturalHeight: 1080, mimeType: "image/png", status: "success" }),
+        importNode("image", "image", 1040, 2060, {
+            parentId: "frame",
+            content: "https://libtv-res.liblib.art/fixture/a.png",
+            prompt: "主图",
+            model: "libtv-img",
+            aspectRatio: "16:9",
+            naturalWidth: 1920,
+            naturalHeight: 1080,
+            mimeType: "image/png",
+            status: "success",
+        }),
         importNode("video", "video", 1300, 2060, { parentId: "frame", content: "https://libtv-res.liblib.art/fixture/v.mp4?x-oss-process=video%2Fsnapshot%2Ct_0", durationMs: 5000, mimeType: "video/mp4" }),
         importNode("audio", "audio", 1700, 2000, { content: "https://libtv-res.liblib.art/fixture/a.mp3", durationMs: 3000, mimeType: "audio/mpeg" }),
         importNode("text", "text", 1700, 2300, { content: "" }),
@@ -173,7 +179,13 @@ describe("LibTV template node mapping", () => {
             model: "source-model",
             aspectRatio: "16:9",
             status: "success",
-            results: Array.from({ length: 4 }, (_, index) => ({ sourceIndex: index + 1, content: `https://libtv-res.liblib.art/result-${index + 1}.${suffix}`, naturalWidth: 100 * (index + 1), naturalHeight: 50 * (index + 1), durationMs: 1000 * (index + 1) })),
+            results: Array.from({ length: 4 }, (_, index) => ({
+                sourceIndex: index + 1,
+                content: `https://libtv-res.liblib.art/result-${index + 1}.${suffix}`,
+                naturalWidth: 100 * (index + 1),
+                naturalHeight: 50 * (index + 1),
+                durationMs: 1000 * (index + 1),
+            })),
         });
         const original = structuredClone(source);
         const nodes = buildLibTVCanvasNodes([source], viewport, viewportSize);

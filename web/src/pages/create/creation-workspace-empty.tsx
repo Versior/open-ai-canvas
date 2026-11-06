@@ -169,23 +169,30 @@ export function CreationFeaturedWorks({ showHeading = true, creationMode, onUseI
         const target = loadMoreRef.current;
         if (!target || useImageFallback || !hasNextPage || isFetching || isError || activeTemplateUuid || typeof IntersectionObserver === "undefined") return;
         let requested = false;
-        const observer = new IntersectionObserver((entries) => {
-            if (requested || !entries.some((entry) => entry.isIntersecting)) return;
-            requested = true;
-            void fetchNextPage({ cancelRefetch: false });
-        }, { root: target.closest(".creation-home-scroll, .creation-empty-workspace"), rootMargin: "0px 0px 240px 0px" });
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (requested || !entries.some((entry) => entry.isIntersecting)) return;
+                requested = true;
+                void fetchNextPage({ cancelRefetch: false });
+            },
+            { root: target.closest(".creation-home-scroll, .creation-empty-workspace"), rootMargin: "0px 0px 240px 0px" },
+        );
         observer.observe(target);
         return () => observer.disconnect();
     }, [activeTemplateUuid, fetchNextPage, hasNextPage, isError, isFetching, allItems.length, creationMode, items.length, useImageFallback]);
     return (
         <section className="creation-featured-works" aria-label="精选灵感">
-            {showHeading ? <div className="creation-featured-heading">
-                <div>
-                    <h2 id="creation-featured-title">{t("create.empty.featuredTitle")}</h2>
+            {showHeading ? (
+                <div className="creation-featured-heading">
+                    <div>
+                        <h2 id="creation-featured-title">{t("create.empty.featuredTitle")}</h2>
+                    </div>
                 </div>
-            </div> : null}
+            ) : null}
 
-            {useImageFallback ? <InspirationHall embedded creationMode="image" onUse={onUseInspiration ?? ((item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } }))} /> : isError && !isFetchNextPageError ? (
+            {useImageFallback ? (
+                <InspirationHall embedded creationMode="image" onUse={onUseInspiration ?? ((item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } }))} />
+            ) : isError && !isFetchNextPageError ? (
                 <Alert
                     type="error"
                     showIcon
@@ -231,17 +238,21 @@ export function CreationFeaturedWorks({ showHeading = true, creationMode, onUseI
                             </Button>
                         </>
                     ) : isFetchingNextPage ? (
-                        <><Spin size="small" /><span>正在加载更多灵感…</span></>
+                        <>
+                            <Spin size="small" />
+                            <span>正在加载更多灵感…</span>
+                        </>
                     ) : !hasNextPage ? (
                         <span>已展示全部 {items.length} 个作品</span>
-                    ) : <Button size="small" disabled={isFetching} onClick={() => void fetchNextPage({ cancelRefetch: false })}>加载更多</Button>}
+                    ) : (
+                        <Button size="small" disabled={isFetching} onClick={() => void fetchNextPage({ cancelRefetch: false })}>
+                            加载更多
+                        </Button>
+                    )}
                 </div>
             )}
 
-            <LibTVWorkDetailDialog
-                templateUuid={activeTemplateUuid}
-                onClose={() => setActiveTemplateUuid(undefined)}
-            />
+            <LibTVWorkDetailDialog templateUuid={activeTemplateUuid} onClose={() => setActiveTemplateUuid(undefined)} />
         </section>
     );
 }

@@ -61,8 +61,7 @@ export type EcommerceModelPreset = {
 };
 
 /** 参考图统一按这个规格出：全身、正面、影棚白底——它定身高与身材比例。 */
-export const ECOMMERCE_MODEL_REFERENCE_SUFFIX =
-    "正面全身站姿，自然放松，双臂自然垂放不遮挡身体轮廓，影棚均匀柔光，纯白无缝背景，全身入画（头顶与脚底留出余量），高清写实摄影，不要任何文字、水印、logo、道具与背景装饰。";
+export const ECOMMERCE_MODEL_REFERENCE_SUFFIX = "正面全身站姿，自然放松，双臂自然垂放不遮挡身体轮廓，影棚均匀柔光，纯白无缝背景，全身入画（头顶与脚底留出余量），高清写实摄影，不要任何文字、水印、logo、道具与背景装饰。";
 
 export const ECOMMERCE_MODEL_PRESETS: EcommerceModelPreset[] = [];
 

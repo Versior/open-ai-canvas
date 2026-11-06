@@ -173,21 +173,13 @@ export function ImageParameterFields({
                                         onClick={() => onChange("count", String(val))}
                                         className={cn(
                                             "flex h-8 items-center justify-center rounded-full text-xs font-medium transition-colors duration-150 select-none",
-                                            countVal === val
-                                                ? "bg-primary/20 text-primary border border-primary/40 font-semibold"
-                                                : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground border border-border/40",
+                                            countVal === val ? "bg-primary/20 text-primary border border-primary/40 font-semibold" : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground border border-border/40",
                                         )}
                                     >
                                         {val}
                                     </button>
                                 ))}
-                                {max >= 4 ? (
-                                    <ImageCountStepper
-                                        value={countVal}
-                                        max={max}
-                                        onChange={(next) => onChange("count", String(next))}
-                                    />
-                                ) : null}
+                                {max >= 4 ? <ImageCountStepper value={countVal} max={max} onChange={(next) => onChange("count", String(next))} /> : null}
                             </div>
                             {field.description ? <p className="text-xs leading-relaxed text-foreground/55">{field.description}</p> : null}
                         </div>
@@ -304,32 +296,25 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                     <div className="grid grid-cols-2 gap-2">
                                         <label className="space-y-2 text-xs">
                                             <span>最小值</span>
-                                            <InputNumber
-                                                className="w-full"
-                                                aria-label={`${field.label}最小值`}
-                                                disabled={disabled}
-                                                max={field.max}
-                                                value={field.min}
-                                                onChange={(min) => update(field.name, { min: min ?? definition.min })}
-                                            />
+                                            <InputNumber className="w-full" aria-label={`${field.label}最小值`} disabled={disabled} max={field.max} value={field.min} onChange={(min) => update(field.name, { min: min ?? definition.min })} />
                                         </label>
                                         <label className="space-y-2 text-xs">
                                             <span>最大值</span>
-                                            <InputNumber
-                                                className="w-full"
-                                                aria-label={`${field.label}最大值`}
-                                                disabled={disabled}
-                                                min={field.min}
-                                                value={field.max}
-                                                onChange={(max) => update(field.name, { max: max ?? definition.max })}
-                                            />
+                                            <InputNumber className="w-full" aria-label={`${field.label}最大值`} disabled={disabled} min={field.min} value={field.max} onChange={(max) => update(field.name, { max: max ?? definition.max })} />
                                         </label>
                                     </div>
                                 ) : null}
                                 {(field.type === "number" || field.type === "integer") && !definition.values?.length ? (
                                     <label className="space-y-1.5 text-xs">
                                         <span>步长</span>
-                                        <InputNumber className="w-full" aria-label={`${field.label}步长`} disabled={disabled} min={field.type === "integer" ? 1 : undefined} value={field.step} onChange={(step) => update(field.name, { step: step ?? undefined })} />
+                                        <InputNumber
+                                            className="w-full"
+                                            aria-label={`${field.label}步长`}
+                                            disabled={disabled}
+                                            min={field.type === "integer" ? 1 : undefined}
+                                            value={field.step}
+                                            onChange={(step) => update(field.name, { step: step ?? undefined })}
+                                        />
                                     </label>
                                 ) : null}
                                 <div className="space-y-1.5 text-xs">
@@ -406,15 +391,7 @@ export function ImageParameterSizeEditor({ profile, definition, disabled, onChan
                         请先在上方分辨率中选择支持的档位，再配置各档位的比例和尺寸。
                     </p>
                 ) : grouped || pixelSize ? (
-                    <ImageSizePresetsEditor
-                        profile={editorProfile}
-                        tiers={tiers}
-                        grouped={grouped}
-                        ratios={definition.values?.filter((v) => String(v).includes(":")).map(String)}
-                        allowCustomRatio
-                        disabled={disabled}
-                        onChange={updateSize}
-                    />
+                    <ImageSizePresetsEditor profile={editorProfile} tiers={tiers} grouped={grouped} ratios={definition.values?.filter((v) => String(v).includes(":")).map(String)} allowCustomRatio disabled={disabled} onChange={updateSize} />
                 ) : (
                     <>
                         <div className="image-size-picker">
@@ -489,15 +466,7 @@ export function ImagePixelMappingEditor({ profile, disabled, onChange }: { profi
     );
 }
 
-function ImageCountStepper({
-    value,
-    max,
-    onChange,
-}: {
-    value: number;
-    max: number;
-    onChange: (value: number) => void;
-}) {
+function ImageCountStepper({ value, max, onChange }: { value: number; max: number; onChange: (value: number) => void }) {
     const isSelected = value >= 4;
     const [draftValue, setDraftValue] = useState(() => (value >= 4 ? String(value) : "4"));
 
@@ -514,7 +483,7 @@ function ImageCountStepper({
 
     const handleStepUp = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const base = value >= 4 ? value : (parseInt(draftValue, 10) || 4);
+        const base = value >= 4 ? value : parseInt(draftValue, 10) || 4;
         const next = Math.min(max, base + 1);
         setDraftValue(String(next));
         onChange(next);
@@ -522,7 +491,7 @@ function ImageCountStepper({
 
     const handleStepDown = (e: React.MouseEvent) => {
         e.stopPropagation();
-        const base = value >= 4 ? value : (parseInt(draftValue, 10) || 4);
+        const base = value >= 4 ? value : parseInt(draftValue, 10) || 4;
         const next = Math.max(1, base - 1);
         setDraftValue(String(next));
         onChange(next);
@@ -543,13 +512,13 @@ function ImageCountStepper({
             e.currentTarget.blur();
         } else if (e.key === "ArrowUp") {
             e.preventDefault();
-            const base = value >= 4 ? value : (parseInt(draftValue, 10) || 4);
+            const base = value >= 4 ? value : parseInt(draftValue, 10) || 4;
             const next = Math.min(max, base + 1);
             setDraftValue(String(next));
             onChange(next);
         } else if (e.key === "ArrowDown") {
             e.preventDefault();
-            const base = value >= 4 ? value : (parseInt(draftValue, 10) || 4);
+            const base = value >= 4 ? value : parseInt(draftValue, 10) || 4;
             const next = Math.max(1, base - 1);
             setDraftValue(String(next));
             onChange(next);
@@ -560,9 +529,7 @@ function ImageCountStepper({
         <div
             className={cn(
                 "group relative flex h-8 items-center overflow-hidden rounded-full border text-xs transition-colors cursor-pointer select-none",
-                isSelected
-                    ? "bg-primary/20 text-primary border-primary/40 font-semibold"
-                    : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground border-border/40",
+                isSelected ? "bg-primary/20 text-primary border-primary/40 font-semibold" : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground border-border/40",
             )}
             onClick={handleSelectThis}
         >
@@ -582,9 +549,7 @@ function ImageCountStepper({
                 }}
                 className="w-full min-w-0 flex-1 bg-transparent pl-2 pr-0.5 text-center font-medium text-xs outline-none text-foreground"
             />
-            <div
-                className="flex flex-col h-full w-4.5 shrink-0 border-l justify-center items-center divide-y border-border/60"
-            >
+            <div className="flex flex-col h-full w-4.5 shrink-0 border-l justify-center items-center divide-y border-border/60">
                 <button
                     type="button"
                     tabIndex={-1}

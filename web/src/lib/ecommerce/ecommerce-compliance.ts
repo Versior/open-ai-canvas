@@ -96,10 +96,7 @@ export function checkEcommerceSellingPoints(points: EcommerceSellingPoint[] | un
 /** 检查商品档案。禁止项字段是写给模型的约束，不检查。 */
 export function checkEcommerceProfile(profile: EcommerceProductProfile | undefined): EcommerceComplianceIssue[] {
     if (!profile) return [];
-    return [
-        ...checkEcommerceText(profile.category, "品类"),
-        ...checkEcommerceText(profile.marks, "标识"),
-    ];
+    return [...checkEcommerceText(profile.category, "品类"), ...checkEcommerceText(profile.marks, "标识")];
 }
 
 export type EcommerceComplianceInput = {
@@ -110,11 +107,7 @@ export type EcommerceComplianceInput = {
 
 /** 汇总检查。生成前跑一次，把问题摊在用户面前。 */
 export function checkEcommerceCompliance(input: EcommerceComplianceInput): EcommerceComplianceIssue[] {
-    return [
-        ...checkEcommerceCopy(input.copy),
-        ...checkEcommerceSellingPoints(input.sellingPoints),
-        ...checkEcommerceProfile(input.profile),
-    ];
+    return [...checkEcommerceCopy(input.copy), ...checkEcommerceSellingPoints(input.sellingPoints), ...checkEcommerceProfile(input.profile)];
 }
 
 /** 有没有硬拦项——有就不该直接生成。 */

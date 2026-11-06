@@ -11,19 +11,7 @@ import { describeLibTVStepMedia, StepMediaPreview } from "./step-media-preview";
 
 const STEP_TYPE_LABEL: Record<LibTVWorkStep["type"], string> = { image: "图像生成", video: "视频生成", audio: "音频生成", text: "文本" };
 
-export function LibTVStepMediaDialog({
-    step,
-    steps,
-    index,
-    onClose,
-    onMakeSame,
-}: {
-    step: LibTVWorkStep;
-    steps: LibTVWorkStep[];
-    index: number;
-    onClose: () => void;
-    onMakeSame: () => void;
-}) {
+export function LibTVStepMediaDialog({ step, steps, index, onClose, onMakeSame }: { step: LibTVWorkStep; steps: LibTVWorkStep[]; index: number; onClose: () => void; onMakeSame: () => void }) {
     const hasMedia = describeLibTVStepMedia(step).kind !== "none";
     const [detailsExpanded, setDetailsExpanded] = useState(true);
     const title = `步骤 ${index + 1} · ${step.title?.trim() || "步骤详情"}`;
@@ -32,7 +20,11 @@ export function LibTVStepMediaDialog({
         <AppModal
             flush
             open
-            title={<span className="block truncate px-4 py-3 pr-12" title={title}>{title}</span>}
+            title={
+                <span className="block truncate px-4 py-3 pr-12" title={title}>
+                    {title}
+                </span>
+            }
             footer={null}
             centered
             width="min(1040px, calc(100vw - 32px))"
@@ -44,12 +36,7 @@ export function LibTVStepMediaDialog({
                 <div className="flex min-w-0 flex-col gap-4 md:flex-row">
                     {hasMedia && (
                         <div className="min-w-0 flex-1">
-                            <StepMediaPreview
-                                step={step}
-                                alt={title}
-                                full
-                                className={detailsExpanded ? "h-[min(32dvh,260px)] md:h-[min(68dvh,640px)]" : undefined}
-                            />
+                            <StepMediaPreview step={step} alt={title} full className={detailsExpanded ? "h-[min(32dvh,260px)] md:h-[min(68dvh,640px)]" : undefined} />
                         </div>
                     )}
                     {detailsExpanded && (
@@ -102,9 +89,7 @@ export function LibTVStepDetails({ step, steps, onMakeSame }: { step: LibTVWorkS
             </dl>
             <div>
                 <h3 className="mb-2 text-xs font-medium">提示词</h3>
-                {step.prompt.trim() ? (
-                    <p className="m-0 whitespace-pre-wrap break-words leading-6 text-foreground/70">{step.prompt}</p>
-                ) : <p className="m-0 text-xs text-foreground/45">此步骤未公开提示词。</p>}
+                {step.prompt.trim() ? <p className="m-0 whitespace-pre-wrap break-words leading-6 text-foreground/70">{step.prompt}</p> : <p className="m-0 text-xs text-foreground/45">此步骤未公开提示词。</p>}
             </div>
             {step.text.trim() && step.text.trim() !== step.prompt.trim() && (
                 <div>
@@ -116,13 +101,23 @@ export function LibTVStepDetails({ step, steps, onMakeSame }: { step: LibTVWorkS
                 <h3 className="mb-2 text-xs font-medium">{referenceIds.length > 0 ? `引用 · ${referenceIds.length}` : "引用"}</h3>
                 {referenceIds.length > 0 ? (
                     <ul className="m-0 list-disc space-y-1 pl-4 text-xs text-foreground/60">
-                        {references.map((reference) => <li key={reference.id} className="break-words">{reference.title?.trim() || STEP_TYPE_LABEL[reference.type]}</li>)}
+                        {references.map((reference) => (
+                            <li key={reference.id} className="break-words">
+                                {reference.title?.trim() || STEP_TYPE_LABEL[reference.type]}
+                            </li>
+                        ))}
                         {unavailableCount > 0 && <li>{unavailableCount} 个引用未公开详情</li>}
                     </ul>
-                ) : <p className="m-0 text-xs text-foreground/45">未公开关联引用。</p>}
+                ) : (
+                    <p className="m-0 text-xs text-foreground/45">未公开关联引用。</p>
+                )}
             </div>
             {!makeSame.ok && makeSame.reason === "has-references" && <p className="m-0 text-xs leading-5 text-foreground/50">含引用，请用「复制到画布」保留完整关系。</p>}
-            {makeSame.ok && <Button type="primary" size="small" onClick={onMakeSame}>做同款</Button>}
+            {makeSame.ok && (
+                <Button type="primary" size="small" onClick={onMakeSame}>
+                    做同款
+                </Button>
+            )}
         </div>
     );
 }

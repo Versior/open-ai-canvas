@@ -29,10 +29,12 @@ afterEach(async () => {
 
 function browser() {
     const storage = new Map<string, string>();
-    const target = Object.assign(new EventTarget(), { localStorage: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => storage.set(key, value),
-    } });
+    const target = Object.assign(new EventTarget(), {
+        localStorage: {
+            getItem: (key: string) => storage.get(key) ?? null,
+            setItem: (key: string, value: string) => storage.set(key, value),
+        },
+    });
     Object.defineProperty(globalThis, "window", { configurable: true, value: target });
     return target;
 }
@@ -42,28 +44,64 @@ function user(id: string): LocalUser {
 }
 
 function envelope(ids: string[]) {
-    return { data: { code: 0, data: { skills: ids.map((skillId) => ({
-        skillId, skillName: skillId, description: "Runtime skill", versionId: "v1", version: "1",
-        tag: "canvas", isLike: false, isAdded: true, isOwner: true,
-    })) }, msg: "ok" }, status: 200, headers: {} };
+    return {
+        data: {
+            code: 0,
+            data: {
+                skills: ids.map((skillId) => ({
+                    skillId,
+                    skillName: skillId,
+                    description: "Runtime skill",
+                    versionId: "v1",
+                    version: "1",
+                    tag: "canvas",
+                    isLike: false,
+                    isAdded: true,
+                    isOwner: true,
+                })),
+            },
+            msg: "ok",
+        },
+        status: 200,
+        headers: {},
+    };
 }
 
 function deferred<T>() {
     let resolve!: (value: T) => void;
     let reject!: (error: Error) => void;
-    const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+    const promise = new Promise<T>((yes, no) => {
+        resolve = yes;
+        reject = no;
+    });
     return { promise, resolve, reject };
 }
 
 async function mountCatalog(count = 1) {
     Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: true, value: true });
     let catalog!: ReturnType<typeof useSkillRuntimeCatalog>;
-    function Probe() { catalog = useSkillRuntimeCatalog(); return null; }
+    function Probe() {
+        catalog = useSkillRuntimeCatalog();
+        return null;
+    }
     // The installed renderer runs real React effects; this probe creates no 3D hosts.
-    const fail = (error: unknown) => { throw error; };
+    const fail = (error: unknown) => {
+        throw error;
+    };
     const root = reconciler.createContainer({} as never, 1, null, false, null, "", fail, fail, fail, null);
-    await act(async () => { reconciler.updateContainer(Array.from({ length: count }, (_, index) => <Probe key={index} />), root, null, null); });
-    unmount = async () => { await act(async () => { reconciler.updateContainer(null, root, null, null); }); };
+    await act(async () => {
+        reconciler.updateContainer(
+            Array.from({ length: count }, (_, index) => <Probe key={index} />),
+            root,
+            null,
+            null,
+        );
+    });
+    unmount = async () => {
+        await act(async () => {
+            reconciler.updateContainer(null, root, null, null);
+        });
+    };
     return () => catalog;
 }
 
@@ -83,10 +121,14 @@ test("manual and focus refresh bypass cached skills and coalesce pending fresh r
     const catalog = await mountCatalog();
     expect(catalog().skills.map((item) => item.skillId)).toEqual(["old"]);
     ids = ["manual"];
-    await act(async () => { catalog().refresh(); });
+    await act(async () => {
+        catalog().refresh();
+    });
     expect(catalog().skills.map((item) => item.skillId)).toEqual(["manual"]);
     ids = ["focus"];
-    await act(async () => { target.dispatchEvent(new Event("focus")); });
+    await act(async () => {
+        target.dispatchEvent(new Event("focus"));
+    });
     expect(catalog().skills.map((item) => item.skillId)).toEqual(["focus"]);
     next = deferred();
     await act(async () => {
@@ -96,7 +138,9 @@ test("manual and focus refresh bypass cached skills and coalesce pending fresh r
     });
     expect(catalog().loading).toBe(true);
     expect(reads).toBe(4);
-    await act(async () => { next!.resolve(envelope(["fresh"])); });
+    await act(async () => {
+        next!.resolve(envelope(["fresh"]));
+    });
     expect(catalog().skills.map((item) => item.skillId)).toEqual(["fresh"]);
     expect(reads).toBe(4);
 });
@@ -126,12 +170,19 @@ for (const trigger of ["manual", "focus"] as const) {
                 });
                 expect(reads).toBe(2);
                 if (!fails) {
-                    await act(async () => { stale.resolve(envelope([])); });
+                    await act(async () => {
+                        stale.resolve(envelope([]));
+                    });
                     expect(catalog().skills).toEqual([]);
                     expect(catalog().loading).toBe(true);
                 }
-                await act(async () => { fresh.resolve(envelope(["newly-added"])); });
-                if (fails) await act(async () => { stale.reject(new Error("Old catalog failed")); });
+                await act(async () => {
+                    fresh.resolve(envelope(["newly-added"]));
+                });
+                if (fails)
+                    await act(async () => {
+                        stale.reject(new Error("Old catalog failed"));
+                    });
                 expect(catalog().skills.map((item) => item.skillId)).toEqual(["newly-added"]);
                 expect(catalog().loading).toBe(false);
                 expect(catalog().error).toBe("");
@@ -163,7 +214,9 @@ test("simultaneous catalogs share initial and focus refresh reads without an eve
     const catalog = await mountCatalog(2);
     try {
         expect(reads).toBe(1);
-        await act(async () => { target.dispatchEvent(new Event("focus")); });
+        await act(async () => {
+            target.dispatchEvent(new Event("focus"));
+        });
         expect(reads).toBe(2);
         await act(async () => {
             fresh.resolve(envelope(["fresh"]));
@@ -193,7 +246,11 @@ test("a forced read supersedes an older pending read without stale cache publica
     await addSkill("invalidate");
     const pending = listAddedSkills();
     const refreshed = listAddedSkills({ force: true });
-    try { expect(reads).toBe(2); } finally { old.resolve(envelope(["old"])); }
+    try {
+        expect(reads).toBe(2);
+    } finally {
+        old.resolve(envelope(["old"]));
+    }
     const fresh = await refreshed;
     await pending;
     expect(fresh.skills.map((item) => item.skillId)).toEqual(["new"]);
@@ -260,7 +317,9 @@ for (const fails of [false, true]) {
         await addSkill("invalidate");
         const catalog = await mountCatalog();
         expect(catalog().skills.map((item) => item.skillId)).toEqual(["A"]);
-        await act(async () => { catalog().refresh(); });
+        await act(async () => {
+            catalog().refresh();
+        });
         await act(async () => {
             setActiveUserScope(`catalog-B-${fails}`);
             useUserStore.getState().setUser(user(`catalog-B-${fails}`));
@@ -274,7 +333,9 @@ for (const fails of [false, true]) {
         expect(catalog().error).toBe("");
         expect(catalog().skills).toEqual([]);
         expect(catalog().loading).toBe(true);
-        await act(async () => { current.resolve(envelope(["B"])); });
+        await act(async () => {
+            current.resolve(envelope(["B"]));
+        });
         expect(catalog().skills.map((item) => item.skillId)).toEqual(["B"]);
         expect(catalog().loading).toBe(false);
         expect((await listAddedSkills()).skills.map((item) => item.skillId)).toEqual(["B"]);
@@ -285,7 +346,7 @@ test("a catalog response from a changed account rejects before it can be consume
     browser();
     setActiveUserScope("catalog-read-A");
     const response = deferred<ReturnType<typeof envelope>>();
-    apiClient.request = (async (config) => config.method === "post" ? envelope([]) : response.promise) as typeof apiClient.request;
+    apiClient.request = (async (config) => (config.method === "post" ? envelope([]) : response.promise)) as typeof apiClient.request;
     await addSkill("invalidate");
     const result = listAddedSkills({ force: true });
     setActiveUserScope("catalog-read-B");
@@ -306,12 +367,16 @@ test("a failed refresh clears stale skills and a later focus refresh recovers", 
     await addSkill("invalidate");
     const catalog = await mountCatalog();
     failure = true;
-    await act(async () => { catalog().refresh(); });
+    await act(async () => {
+        catalog().refresh();
+    });
     expect(catalog().skills).toEqual([]);
     expect(catalog().error).toBe("Catalog unavailable");
     expect(catalog().loading).toBe(false);
     failure = false;
-    await act(async () => { target.dispatchEvent(new Event("focus")); });
+    await act(async () => {
+        target.dispatchEvent(new Event("focus"));
+    });
     expect(catalog().skills.map((item) => item.skillId)).toEqual(["owned"]);
     expect(catalog().error).toBe("");
 });

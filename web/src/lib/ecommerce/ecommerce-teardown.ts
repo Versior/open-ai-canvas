@@ -17,13 +17,7 @@ import { canvasBatchInputToken } from "@/lib/canvas/canvas-batch-input-signature
 import type { EcommerceSuiteRow } from "./ecommerce-suite";
 
 /** 拆解维度。取自行业里的「五个维度」方法论，加上证据与信任两块。 */
-export type EcommerceTeardownDimension =
-    | "structure"
-    | "sellingOrder"
-    | "evidence"
-    | "trust"
-    | "layout"
-    | "palette";
+export type EcommerceTeardownDimension = "structure" | "sellingOrder" | "evidence" | "trust" | "layout" | "palette";
 
 export const ECOMMERCE_TEARDOWN_DIMENSIONS: { id: EcommerceTeardownDimension; label: string; hint: string; ask: string }[] = [
     { id: "structure", label: "页面结构", hint: "分几屏、每屏解决什么", ask: "这个详情页分了几屏？每一屏分别在解决什么问题？按顺序列出来。" },
@@ -118,9 +112,7 @@ export function parseEcommerceTeardownPlan(value: string | undefined, selectedDi
             const finding = item as Record<string, unknown>;
             const dimension = finding.dimension;
             const text = ecommerceTeardownPlanText(finding.finding, ECOMMERCE_TEARDOWN_PLAN_MAX_TEXT_LENGTH);
-            return typeof dimension === "string" && ecommerceTeardownDimensionIds.has(dimension as EcommerceTeardownDimension) && text
-                ? { dimension: dimension as EcommerceTeardownDimension, finding: text }
-                : undefined;
+            return typeof dimension === "string" && ecommerceTeardownDimensionIds.has(dimension as EcommerceTeardownDimension) && text ? { dimension: dimension as EcommerceTeardownDimension, finding: text } : undefined;
         });
         const outline = raw.outline.map((item) => {
             if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
@@ -199,9 +191,7 @@ export function ecommerceTeardownDimensionLabel(dimension: EcommerceTeardownDime
  * 只有用户明确采用时才覆盖当前可编辑内容。
  */
 export function buildEcommerceTeardownPlanPrompt(teardown: EcommerceTeardown) {
-    const asks = ECOMMERCE_TEARDOWN_DIMENSIONS
-        .filter((dimension) => teardown.dimensions.includes(dimension.id))
-        .map((dimension) => `- ${dimension.label}：${dimension.ask}`);
+    const asks = ECOMMERCE_TEARDOWN_DIMENSIONS.filter((dimension) => teardown.dimensions.includes(dimension.id)).map((dimension) => `- ${dimension.label}：${dimension.ask}`);
     return [
         "请分析这张电商详情页/主图，只拆解它的**结构**，不要复述它的文案。",
         "按以下维度提炼 findings：",

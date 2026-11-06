@@ -255,9 +255,7 @@ export function ecommerceShotSetBlock(set: EcommerceShotSet | undefined, shotId?
     if (!set) return "";
     const lines: string[] = [];
     if (set.global.trim()) lines.push(`整组统一：${set.global.trim()}`);
-    const shot = shotId
-        ? set.shots.find((item) => item.id === shotId)
-        : set.shots.length === 1 ? set.shots[0] : undefined;
+    const shot = shotId ? set.shots.find((item) => item.id === shotId) : set.shots.length === 1 ? set.shots[0] : undefined;
     if (shot) {
         const detail = ecommerceShotLines(shot);
         if (detail.length) lines.push(`本张（${shot.title.trim() || "未命名"}）：${detail.join("；")}`);
@@ -404,9 +402,7 @@ export function ecommerceCopyBlock(copy: EcommerceCopy | undefined, renderText =
     if (copy.price.trim()) lines.push(`价格：${copy.price.trim()}`);
     if (!lines.length) return "";
     return [
-        renderText
-            ? "【文案】以下文字要出现在画面上，逐字准确，不得改写、翻译或省略；字号要够大，手机端列表里也能读清："
-            : "【文案】以下文字由排版环节添加，画面只需留出对应位置，不要自行生成额外文案；商品自身已有文字仍按商品锁定保留：",
+        renderText ? "【文案】以下文字要出现在画面上，逐字准确，不得改写、翻译或省略；字号要够大，手机端列表里也能读清：" : "【文案】以下文字由排版环节添加，画面只需留出对应位置，不要自行生成额外文案；商品自身已有文字仍按商品锁定保留：",
         ...lines,
     ].join("\n");
 }
@@ -419,10 +415,7 @@ export function ecommerceStyleBlock(style: EcommerceStyle | undefined) {
     if (style.mood.trim()) lines.push(`气质：${style.mood.trim()}`);
     if (style.typography.trim()) lines.push(`字体气质：${style.typography.trim()}`);
     if (!lines.length) return "";
-    return [
-        `【品牌风格】${style.name.trim() || "未命名风格"}。整组图共用，保持统一：`,
-        ...lines,
-    ].join("\n");
+    return [`【品牌风格】${style.name.trim() || "未命名风格"}。整组图共用，保持统一：`, ...lines].join("\n");
 }
 
 export function ecommerceUniformBlock(prompt?: string, referenceNames: string[] = [], imageDriven = false) {
@@ -551,7 +544,10 @@ export function ecommerceSevenItemBlock(sources: EcommercePromptSources) {
     const copy = sources.copy;
     const headline = copy?.headline.trim() || "";
     // 副文案多行时，第一行是副标题，其余行是卖点模块——这是「卖点用 subhead 多行」的落点。
-    const subheadLines = (copy?.subhead || "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const subheadLines = (copy?.subhead || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
     const subhead = subheadLines[0] || "";
     const sellingLines = subheadLines.slice(1);
     const price = copy?.price.trim() || "";
@@ -608,5 +604,7 @@ export function compileEcommercePrompt(sources: EcommercePromptSources) {
         sevenItems || ecommerceCopyBlock(sources.copy, sources.renderCopyText),
         !sevenItems && !backgroundOnly ? ecommerceLayoutPromptBlock(sources.layout, sources.copy) : "",
         ecommerceShotSetBlock(sources.shotSet, sources.shotId),
-    ].filter(Boolean).join("\n\n");
+    ]
+        .filter(Boolean)
+        .join("\n\n");
 }

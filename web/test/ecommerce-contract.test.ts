@@ -241,12 +241,7 @@ describe("ecommerce creation contract", () => {
     test("七项逐段精确：每项内容与画面段原文逐字相等，绝不串到下一个标签", () => {
         // 上一版用带负向断言的正则取段，会回溯把下一行标签的前半截吞进来
         // （实测 画面构成 = "COMPOSE_MARK；产品摆"）。这条用例把四段钉死在原文上。
-        const visualPrompt = [
-            "画面构成：COMPOSE_MARK",
-            "产品摆放：PLACE_MARK",
-            "视觉风格：STYLE_MARK",
-            "负面提示词：NEGATIVE_MARK",
-        ].join("；\n");
+        const visualPrompt = ["画面构成：COMPOSE_MARK", "产品摆放：PLACE_MARK", "视觉风格：STYLE_MARK", "负面提示词：NEGATIVE_MARK"].join("；\n");
         const prompt = compileEcommercePrompt({
             visualPrompt,
             copy: { headline: "TITLE_MARK", subhead: "SUB_MARK\nSELL_MARK", price: "", cta: "" },

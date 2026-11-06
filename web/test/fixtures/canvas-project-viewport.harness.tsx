@@ -22,10 +22,30 @@ const { canvasAppearanceForTheme } = await import("../../src/lib/canvas/canvas-a
 const appearance = canvasAppearanceForTheme("dark");
 // 旧电商画布 kind 仍可能出现在存量数据里，按普通画布打开；节点用居中在原点的普通图片。
 const product: CanvasNodeData = { id: "centered-image", type: CanvasNodeType.Image, title: "商品图", position: { x: -210, y: -118 }, width: 420, height: 236, metadata: {} };
-const project: CanvasProject = { id: "product-project", title: "商品", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", nodes: [product], connections: [], chatSessions: [], activeChatId: null, kind: "ecommerce", appearance, backgroundMode: "dots", showImageInfo: false, viewport: { x: 0, y: 0, k: 1 }, previsScenes: [] };
+const project: CanvasProject = {
+    id: "product-project",
+    title: "商品",
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    nodes: [product],
+    connections: [],
+    chatSessions: [],
+    activeChatId: null,
+    kind: "ecommerce",
+    appearance,
+    backgroundMode: "dots",
+    showImageInfo: false,
+    viewport: { x: 0, y: 0, k: 1 },
+    previsScenes: [],
+};
 const store = { hydrated: true, projects: [project], openProject: () => project, updateProject: noop, renameProject: noop };
 const canvasStore = Object.assign((selector: (state: typeof store) => unknown) => selector(store), { getState: () => store });
-mock.module("@/stores/canvas/use-canvas-store", () => ({ useCanvasStore: canvasStore, flushCanvasStorePersistence: async () => { if (localFailure) throw new Error("local disk unavailable"); } }));
+mock.module("@/stores/canvas/use-canvas-store", () => ({
+    useCanvasStore: canvasStore,
+    flushCanvasStorePersistence: async () => {
+        if (localFailure) throw new Error("local disk unavailable");
+    },
+}));
 mock.module("@/stores/use-user-store", () => ({ useUserStore: (selector: (state: unknown) => unknown) => selector({ hydrated: true }) }));
 mock.module("@/stores/canvas/use-canvas-theme-store", () => ({ useCanvasThemeStore: { getState: () => ({ theme: "dark", setTheme: noop }) } }));
 mock.module("@/services/api/skills", () => ({ listAddedSkills: async () => ({ skills: [] }) }));
@@ -38,10 +58,24 @@ mock.module("@/services/api/user-data", () => ({ getCanvasSyncStatus: noop }));
 let restore: (value: CanvasProject) => void;
 let finish: (value: CanvasProject) => void;
 mock.module("@/services/user-data-sync", () => ({
-    createCanvasProjectWithRemoteSync: noop, deleteCanvasProjectsWithRemoteSync: noop, saveRemoteUserDataNow: async () => { remoteSaves++; if (remoteFailure) throw new Error("请求过于频繁"); }, scheduleRemoteUserDataSync: noop, prepareCanvasForCloudAction: async () => { remoteSaves++; if (remoteFailure) throw new Error("请求过于频繁"); }, refreshCanvasAfterAgent: noop, subscribeAgentCanvasRefresh: () => noop,
+    createCanvasProjectWithRemoteSync: noop,
+    deleteCanvasProjectsWithRemoteSync: noop,
+    saveRemoteUserDataNow: async () => {
+        remoteSaves++;
+        if (remoteFailure) throw new Error("请求过于频繁");
+    },
+    scheduleRemoteUserDataSync: noop,
+    prepareCanvasForCloudAction: async () => {
+        remoteSaves++;
+        if (remoteFailure) throw new Error("请求过于频繁");
+    },
+    refreshCanvasAfterAgent: noop,
+    subscribeAgentCanvasRefresh: () => noop,
     loadCanvasProjectForEditing: (_: string, options: { onLoad: typeof restore }) => {
         restore = options.onLoad;
-        return new Promise<CanvasProject>((resolve) => { finish = resolve; });
+        return new Promise<CanvasProject>((resolve) => {
+            finish = resolve;
+        });
     },
 }));
 const { act, useRef, useState } = await import("react");
@@ -72,13 +106,60 @@ async function mount(cached: CanvasProject) {
         const activeChatIdRef = useRef(cached.activeChatId);
         const viewportRef = useRef(viewport);
         const historyPausedRef = useRef(true);
-        move = (next) => { viewportRef.current = next; setViewport(next); };
+        move = (next) => {
+            viewportRef.current = next;
+            setViewport(next);
+        };
         current = viewport;
-        save = useCanvasProjectLifecycle({ projectId: cached.id, projectLoaded, nodes: cached.nodes, connections: cached.connections, chatSessions: cached.chatSessions, activeChatId: cached.activeChatId, canvasAppearance: appearance, backgroundMode: cached.backgroundMode, showImageInfo: false, viewport, nodesRef, connectionsRef, chatSessionsRef, activeChatIdRef, viewportRef, historyPausedRef, setNodes: noop, setConnections: noop, setChatSessions: noop, setActiveChatId: noop, setCanvasAppearance: noop, setBackgroundMode: noop, setShowImageInfo: noop, setViewport, setProjectLoaded, resetHistory: noop, cleanupAssetImages: noop, cleanupCanvasFiles: noop }).saveCanvasProject;
+        save = useCanvasProjectLifecycle({
+            projectId: cached.id,
+            projectLoaded,
+            nodes: cached.nodes,
+            connections: cached.connections,
+            chatSessions: cached.chatSessions,
+            activeChatId: cached.activeChatId,
+            canvasAppearance: appearance,
+            backgroundMode: cached.backgroundMode,
+            showImageInfo: false,
+            viewport,
+            nodesRef,
+            connectionsRef,
+            chatSessionsRef,
+            activeChatIdRef,
+            viewportRef,
+            historyPausedRef,
+            setNodes: noop,
+            setConnections: noop,
+            setChatSessions: noop,
+            setActiveChatId: noop,
+            setCanvasAppearance: noop,
+            setBackgroundMode: noop,
+            setShowImageInfo: noop,
+            setViewport,
+            setProjectLoaded,
+            resetHistory: noop,
+            cleanupAssetImages: noop,
+            cleanupCanvasFiles: noop,
+        }).saveCanvasProject;
         return null;
     }
     await act(async () => root.render(<Editor />));
-    return { viewport: () => current!, move: async (next: ViewportTransform) => { await act(async () => move!(next)); }, cloud: async (next: CanvasProject) => { await act(async () => { restore(next); finish(next); }); }, dispose: async () => { await act(async () => root.unmount()); host.remove(); } };
+    return {
+        viewport: () => current!,
+        move: async (next: ViewportTransform) => {
+            await act(async () => move!(next));
+        },
+        cloud: async (next: CanvasProject) => {
+            await act(async () => {
+                restore(next);
+                finish(next);
+            });
+        },
+        dispose: async () => {
+            await act(async () => root.unmount());
+            host.remove();
+        },
+    };
 }
 
 test("cloud content does not move the centered node back into the corner", async () => {
@@ -89,7 +170,9 @@ test("cloud content does not move the centered node back into the corner", async
         const viewport = editor.viewport();
         expect((product.position.x + product.width / 2) * viewport.k + viewport.x).toBe(600);
         expect((product.position.y + product.height / 2) * viewport.k + viewport.y).toBe(360);
-    } finally { await editor.dispose(); }
+    } finally {
+        await editor.dispose();
+    }
 });
 
 test("cloud restoration preserves a user pan and zoom made while loading", async () => {
@@ -99,7 +182,9 @@ test("cloud restoration preserves a user pan and zoom made while loading", async
         await editor.move(changed);
         await editor.cloud(project);
         expect(editor.viewport()).toEqual(changed);
-    } finally { await editor.dispose(); }
+    } finally {
+        await editor.dispose();
+    }
 });
 
 test("opening a saved canvas restores its existing viewport", async () => {
@@ -109,7 +194,9 @@ test("opening a saved canvas restores its existing viewport", async () => {
         expect(editor.viewport()).toEqual(saved.viewport);
         await editor.cloud(saved);
         expect(editor.viewport()).toEqual(saved.viewport);
-    } finally { await editor.dispose(); }
+    } finally {
+        await editor.dispose();
+    }
 });
 
 test("import accepts durable local save when cloud is rate limited without claiming cloud success", async () => {
@@ -121,7 +208,10 @@ test("import accepts durable local save when cloud is rate limited without claim
         expect(notices.some((text) => text.includes("本地已保存") && text.includes("请求过于频繁"))).toBe(true);
         expect(notices).not.toContain("画布已保存到云端");
         expect(await save()).toBe(false);
-    } finally { remoteFailure = false; await editor.dispose(); }
+    } finally {
+        remoteFailure = false;
+        await editor.dispose();
+    }
 });
 
 test("failed local persistence rejects import before sending anything to cloud", async () => {
@@ -131,5 +221,8 @@ test("failed local persistence rejects import before sending anything to cloud",
     try {
         expect(await save({ requireRemote: false })).toBe(false);
         expect(remoteSaves).toBe(before);
-    } finally { localFailure = false; await editor.dispose(); }
+    } finally {
+        localFailure = false;
+        await editor.dispose();
+    }
 });

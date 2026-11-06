@@ -104,11 +104,7 @@ export const ECOMMERCE_FULL_LISTING_SET: EcommerceDeliverableSet = {
 };
 
 /** 常用组合：只出主图、只出详情页、整套物料。 */
-export const ECOMMERCE_DELIVERABLE_SETS: EcommerceDeliverableSet[] = [
-    ECOMMERCE_MAIN_IMAGE_SET,
-    ECOMMERCE_DETAIL_PAGE_SET,
-    ECOMMERCE_FULL_LISTING_SET,
-];
+export const ECOMMERCE_DELIVERABLE_SETS: EcommerceDeliverableSet[] = [ECOMMERCE_MAIN_IMAGE_SET, ECOMMERCE_DETAIL_PAGE_SET, ECOMMERCE_FULL_LISTING_SET];
 
 /**
  * 种草图套图——发在小红书、抖音的内容图。

@@ -24,7 +24,10 @@ export const ECOMMERCE_SHOT_GROUPS = ["基础", "场景", "细节", "展示", "�
 export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
     // ── 基础 ──────────────────────────────────────────────
     {
-        id: "studio-white", group: "基础", name: "白底棚拍", hint: "列表首图，背景干净、商品完整",
+        id: "studio-white",
+        group: "基础",
+        name: "白底棚拍",
+        hint: "列表首图，背景干净、商品完整",
         shot: {
             purpose: "电商主图，用于商品列表首图",
             composition: "商品完整入画，居中或按三分构图，正面或微侧角度，四周留出约 15% 余量",
@@ -37,7 +40,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "studio-grey", group: "基础", name: "灰底棚拍", hint: "比纯白更立体，适合浅色商品",
+        id: "studio-grey",
+        group: "基础",
+        name: "灰底棚拍",
+        hint: "比纯白更立体，适合浅色商品",
         shot: {
             purpose: "商品主图或详情页首屏",
             composition: "商品完整入画，居中，略低于平视角度以显体积",
@@ -50,7 +56,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "flat-lay", group: "基础", name: "俯拍平铺", hint: "从上往下，适合小件与套装",
+        id: "flat-lay",
+        group: "基础",
+        name: "俯拍平铺",
+        hint: "从上往下，适合小件与套装",
         shot: {
             purpose: "商品主图或详情页，用于小件、套装、多件组合",
             composition: "正俯拍，商品平铺于画面中央，可含配件但主次分明",
@@ -65,7 +74,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
 
     // ── 场景 ──────────────────────────────────────────────
     {
-        id: "lifestyle-home", group: "场景", name: "家居场景", hint: "客厅、卧室、桌面等居家环境",
+        id: "lifestyle-home",
+        group: "场景",
+        name: "家居场景",
+        hint: "客厅、卧室、桌面等居家环境",
         shot: {
             purpose: "商品场景图，用于详情页与种草",
             composition: "中景，商品位于视觉重心，家居元素围绕但不遮挡主体",
@@ -78,7 +90,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "lifestyle-kitchen", group: "场景", name: "厨房场景", hint: "台面、食材、烟火气",
+        id: "lifestyle-kitchen",
+        group: "场景",
+        name: "厨房场景",
+        hint: "台面、食材、烟火气",
         shot: {
             purpose: "食品、厨具、餐具类商品场景图",
             composition: "中近景，商品置于台面，可含食材或器具作为陪衬",
@@ -91,7 +106,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "lifestyle-cafe", group: "场景", name: "咖啡厅场景", hint: "木桌、暖光、都市感",
+        id: "lifestyle-cafe",
+        group: "场景",
+        name: "咖啡厅场景",
+        hint: "木桌、暖光、都市感",
         shot: {
             purpose: "饮品、文具、配饰类商品场景图",
             composition: "中景，商品置于桌面，背景含咖啡厅环境",
@@ -104,7 +122,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "lifestyle-outdoor", group: "场景", name: "户外场景", hint: "自然光、开阔、透气",
+        id: "lifestyle-outdoor",
+        group: "场景",
+        name: "户外场景",
+        hint: "自然光、开阔、透气",
         shot: {
             purpose: "户外、运动、旅行类商品场景图",
             composition: "中景或远景，商品与环境尺度关系清楚",
@@ -117,7 +138,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "lifestyle-office", group: "场景", name: "办公场景", hint: "桌面、屏幕、通勤感",
+        id: "lifestyle-office",
+        group: "场景",
+        name: "办公场景",
+        hint: "桌面、屏幕、通勤感",
         shot: {
             purpose: "数码、文具、办公用品类商品场景图",
             composition: "中景，商品位于桌面视觉重心",
@@ -130,7 +154,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "lifestyle-holiday", group: "场景", name: "节日场景", hint: "节庆氛围与装饰",
+        id: "lifestyle-holiday",
+        group: "场景",
+        name: "节日场景",
+        hint: "节庆氛围与装饰",
         shot: {
             purpose: "节日促销期的场景图",
             composition: "中景，商品为主体，节庆装饰围绕",
@@ -145,7 +172,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
 
     // ── 细节 ──────────────────────────────────────────────
     {
-        id: "macro-material", group: "细节", name: "材质特写", hint: "放大纹理与质感",
+        id: "macro-material",
+        group: "细节",
+        name: "材质特写",
+        hint: "放大纹理与质感",
         shot: {
             purpose: "商品细节图，用于证明材质",
             composition: "近景或微距，聚焦材质表面，商品其余部分自然出画",
@@ -158,7 +188,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "macro-craft", group: "细节", name: "工艺特写", hint: "缝线、接口、做工",
+        id: "macro-craft",
+        group: "细节",
+        name: "工艺特写",
+        hint: "缝线、接口、做工",
         shot: {
             purpose: "商品细节图，用于证明工艺水平",
             composition: "近景，聚焦接缝、接口、边角等工艺部位",
@@ -171,7 +204,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "macro-structure", group: "细节", name: "结构展示", hint: "拆解、剖面、可动部件",
+        id: "macro-structure",
+        group: "细节",
+        name: "结构展示",
+        hint: "拆解、剖面、可动部件",
         shot: {
             purpose: "商品细节图，用于说明结构与功能",
             composition: "中近景，展示可动部件、拆解状态或关键结构",
@@ -186,7 +222,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
 
     // ── 展示 ──────────────────────────────────────────────
     {
-        id: "model-wearing", group: "展示", name: "模特上身", hint: "人物穿着或佩戴",
+        id: "model-wearing",
+        group: "展示",
+        name: "模特上身",
+        hint: "人物穿着或佩戴",
         shot: {
             purpose: "模特展示图，用于服饰与配件",
             composition: "半身或全身，模特自然穿着或使用商品，商品是画面焦点",
@@ -199,7 +238,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "model-holding", group: "展示", name: "手持展示", hint: "手部交互，真实尺度感",
+        id: "model-holding",
+        group: "展示",
+        name: "手持展示",
+        hint: "手部交互，真实尺度感",
         shot: {
             purpose: "商品展示图，用于建立真实尺度感",
             composition: "中近景，手自然持握或操作商品，商品完整可辨",
@@ -212,7 +254,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "hanging", group: "展示", name: "悬挂展示", hint: "衣架、挂绳、垂坠感",
+        id: "hanging",
+        group: "展示",
+        name: "悬挂展示",
+        hint: "衣架、挂绳、垂坠感",
         shot: {
             purpose: "服饰、布艺类商品展示图",
             composition: "正面平视，商品自然垂挂，完整展现轮廓与垂坠",
@@ -227,7 +272,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
 
     // ── 信息 ──────────────────────────────────────────────
     {
-        id: "selling-point", group: "信息", name: "卖点信息图", hint: "突出单一卖点，预留文案与图标位",
+        id: "selling-point",
+        group: "信息",
+        name: "卖点信息图",
+        hint: "突出单一卖点，预留文案与图标位",
         shot: {
             purpose: "商品卖点图，用于详情页信息模块",
             composition: "商品占据主体，一侧或底部预留信息区，信息层级清晰",
@@ -240,7 +288,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "spec-compare", group: "信息", name: "参数对比", hint: "多规格并排，差异清楚",
+        id: "spec-compare",
+        group: "信息",
+        name: "参数对比",
+        hint: "多规格并排，差异清楚",
         shot: {
             purpose: "多规格商品的对比图",
             composition: "多个规格并排，间距均匀，尺寸与位置可比",
@@ -253,7 +304,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "size-guide", group: "信息", name: "尺寸示意", hint: "标出真实尺寸关系",
+        id: "size-guide",
+        group: "信息",
+        name: "尺寸示意",
+        hint: "标出真实尺寸关系",
         shot: {
             purpose: "尺寸说明图",
             composition: "正视角，商品与常见参照物并排，尺度关系一目了然",
@@ -268,7 +322,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
 
     // ── 营销 ──────────────────────────────────────────────
     {
-        id: "promo-keyvisual", group: "营销", name: "促销主视觉", hint: "氛围强，预留价格与标题位",
+        id: "promo-keyvisual",
+        group: "营销",
+        name: "促销主视觉",
+        hint: "氛围强，预留价格与标题位",
         shot: {
             purpose: "促销海报主视觉",
             composition: "商品居中或偏侧占据主要画面，四周预留标题、价格与行动引导位置",
@@ -281,7 +338,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "new-arrival", group: "营销", name: "新品预告", hint: "克制、悬念、高级感",
+        id: "new-arrival",
+        group: "营销",
+        name: "新品预告",
+        hint: "克制、悬念、高级感",
         shot: {
             purpose: "新品发布的预告图",
             composition: "商品部分入画或置于暗部，留出悬念但主体可辨",
@@ -294,7 +354,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "live-room", group: "营销", name: "直播间场景", hint: "货架、灯光、带货氛围",
+        id: "live-room",
+        group: "营销",
+        name: "直播间场景",
+        hint: "货架、灯光、带货氛围",
         shot: {
             purpose: "直播或短视频封面用的场景图",
             composition: "中景，商品居中清晰，背景有货架或展示墙",
@@ -309,7 +372,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
 
     // ── 内容 ──────────────────────────────────────────────
     {
-        id: "ugc-lifestyle", group: "内容", name: "生活种草", hint: "第一人称，真实感优先",
+        id: "ugc-lifestyle",
+        group: "内容",
+        name: "生活种草",
+        hint: "第一人称，真实感优先",
         shot: {
             purpose: "种草图，用于社媒与内容平台",
             composition: "第一人称或朋友视角，构图随意不刻意，可有手部交互",
@@ -322,7 +388,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "unboxing", group: "内容", name: "开箱", hint: "包装、开盒、第一眼",
+        id: "unboxing",
+        group: "内容",
+        name: "开箱",
+        hint: "包装、开盒、第一眼",
         shot: {
             purpose: "开箱内容图",
             composition: "中近景，包装与商品同时入画，展示开盒状态",
@@ -335,7 +404,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "in-use", group: "内容", name: "使用过程", hint: "正在用，动作中",
+        id: "in-use",
+        group: "内容",
+        name: "使用过程",
+        hint: "正在用，动作中",
         shot: {
             purpose: "使用场景图，用于说明商品怎么用",
             composition: "中景，捕捉正在使用商品的动作瞬间，商品与动作关系清楚",
@@ -348,7 +420,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "plog-desk", group: "内容", name: "好物 Plog", hint: "桌面随手拍，像自己发的日常",
+        id: "plog-desk",
+        group: "内容",
+        name: "好物 Plog",
+        hint: "桌面随手拍，像自己发的日常",
         shot: {
             purpose: "种草图，小红书/抖音图文用",
             composition: "略俯视的桌面视角，商品不在正中，旁边有生活物件（杯子、书、耳机），构图随意不刻意",
@@ -361,7 +436,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "ootd", group: "内容", name: "穿搭 OOTD", hint: "全身镜前，日常穿搭记录",
+        id: "ootd",
+        group: "内容",
+        name: "穿搭 OOTD",
+        hint: "全身镜前，日常穿搭记录",
         shot: {
             purpose: "服饰种草图，用于小红书/抖音",
             composition: "全身或七分身，对镜自拍视角，手机遮住部分面部，商品是画面主体",
@@ -374,7 +452,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "checkin", group: "内容", name: "外出打卡", hint: "在外随手拍，地点可辨识",
+        id: "checkin",
+        group: "内容",
+        name: "外出打卡",
+        hint: "在外随手拍，地点可辨识",
         shot: {
             purpose: "种草图，带场景地点感",
             composition: "手持或放在台面上，背景有可辨识的环境（咖啡馆、街景、户外），商品占画面三分之一左右",
@@ -387,7 +468,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "buyer-show", group: "内容", name: "买家秀", hint: "素人视角晒单，最不像广告",
+        id: "buyer-show",
+        group: "内容",
+        name: "买家秀",
+        hint: "素人视角晒单，最不像广告",
         shot: {
             purpose: "买家秀/评价配图，用于详情页与评价区",
             composition: "手持或平放在生活台面上，商品完整可辨，画面朴素不做设计",
@@ -400,7 +484,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "info-feature", group: "信息图", name: "卖点标注图", hint: "商品居中，引线指向各部位",
+        id: "info-feature",
+        group: "信息图",
+        name: "卖点标注图",
+        hint: "商品居中，引线指向各部位",
         shot: {
             purpose: "信息图，卖点标注。标注文字由模型按提示词逐字渲染",
             composition: "商品完整居中，四周留出约 25% 的空白用于放标注框，商品不要压边",
@@ -413,7 +500,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "info-dimension", group: "信息图", name: "尺寸标注图", hint: "正视角，比例不变形",
+        id: "info-dimension",
+        group: "信息图",
+        name: "尺寸标注图",
+        hint: "正视角，比例不变形",
         shot: {
             purpose: "信息图，尺寸标注。尺寸数字必须与给定值完全一致",
             composition: "正视角完整入画，尽量长焦压缩透视——透视会让尺寸判断出错；商品居中，四周留出标注空间",
@@ -426,7 +516,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "info-material", group: "信息图", name: "材质分解图", hint: "侧光突出材质层次",
+        id: "info-material",
+        group: "信息图",
+        name: "材质分解图",
+        hint: "侧光突出材质层次",
         shot: {
             purpose: "信息图，材质分解。每层的材质名由模型按提示词渲染",
             composition: "中近景，商品以能看出层次结构的角度呈现，可含可动部件或分层结构",
@@ -439,7 +532,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "info-specs", group: "信息图", name: "参数表图", hint: "商品在上，规格表在下",
+        id: "info-specs",
+        group: "信息图",
+        name: "参数表图",
+        hint: "商品在上，规格表在下",
         shot: {
             purpose: "信息图，参数表。表格里的数字必须与给定值完全一致，不得改写或四舍五入",
             composition: "商品位于画面上半部，下方约 40% 的区域放表格",
@@ -452,7 +548,10 @@ export const ECOMMERCE_SHOT_PRESETS: EcommerceShotPreset[] = [
         },
     },
     {
-        id: "overseas-lifestyle", group: "海外", name: "海外生活场景", hint: "西式家居与使用习惯",
+        id: "overseas-lifestyle",
+        group: "海外",
+        name: "海外生活场景",
+        hint: "西式家居与使用习惯",
         shot: {
             purpose: "海外 listing 场景图，用于 Amazon/Walmart 第 2–7 图位",
             composition: "中景，商品在使用环境中，人物可选且不露正脸，符合目标市场的居住与使用习惯",
@@ -500,9 +599,7 @@ export function createEcommerceShotSetFromSlots(name: string, slots: { id: strin
 
 /** 按分组归拢，供节点分区展示。 */
 export function ecommerceShotPresetsByGroup() {
-    return ECOMMERCE_SHOT_GROUPS
-        .map((group) => ({ group, presets: ECOMMERCE_SHOT_PRESETS.filter((preset) => preset.group === group) }))
-        .filter((entry) => entry.presets.length);
+    return ECOMMERCE_SHOT_GROUPS.map((group) => ({ group, presets: ECOMMERCE_SHOT_PRESETS.filter((preset) => preset.group === group) })).filter((entry) => entry.presets.length);
 }
 
 // ── 品牌风格 ────────────────────────────────────────────────
@@ -515,27 +612,33 @@ export type EcommerceStylePreset = {
 
 export const ECOMMERCE_STYLE_PRESETS: EcommerceStylePreset[] = [
     {
-        id: "minimal-white", hint: "干净、克制、大留白",
+        id: "minimal-white",
+        hint: "干净、克制、大留白",
         style: { name: "极简白", palette: ["#FFFFFF", "#F5F5F3", "#1A1A1A"], tone: "中性白，低饱和，色温 5500K", mood: "干净、克制、留白充足", typography: "无衬线，字重对比强，行距宽松" },
     },
     {
-        id: "premium-dark", hint: "深色、金属、高对比",
+        id: "premium-dark",
+        hint: "深色、金属、高对比",
         style: { name: "轻奢深色", palette: ["#0E0E10", "#1C1C1F", "#C9A227", "#E8E6E1"], tone: "低调深色，高对比，金色点缀", mood: "克制的高级感，暗部保留层次", typography: "细衬线标题配无衬线正文" },
     },
     {
-        id: "natural-organic", hint: "大地色、柔和、自然",
+        id: "natural-organic",
+        hint: "大地色、柔和、自然",
         style: { name: "自然有机", palette: ["#E8E2D5", "#A8B5A0", "#6B5B4A", "#F7F4EE"], tone: "暖调大地色，低饱和，柔和过渡", mood: "温和、真实、无攻击性", typography: "圆润无衬线，字重轻" },
     },
     {
-        id: "vivid-retail", hint: "高饱和、明快、促转化",
+        id: "vivid-retail",
+        hint: "高饱和、明快、促转化",
         style: { name: "活力快消", palette: ["#FF4D2E", "#FFC93C", "#FFFFFF", "#1A1A1A"], tone: "高饱和暖色，明度高", mood: "热烈、直接、有推动力", typography: "粗黑无衬线，字重极强" },
     },
     {
-        id: "vintage-film", hint: "暖调、颗粒、复古",
+        id: "vintage-film",
+        hint: "暖调、颗粒、复古",
         style: { name: "复古胶片", palette: ["#D9C7A7", "#8C5A3C", "#3B3228", "#F0E9DC"], tone: "暖黄调，低对比，轻微颗粒", mood: "怀旧、手工感、有时间痕迹", typography: "复古衬线，字距略松" },
     },
     {
-        id: "tech-cool", hint: "冷蓝、锐利、精密",
+        id: "tech-cool",
+        hint: "冷蓝、锐利、精密",
         style: { name: "科技冷感", palette: ["#0A1628", "#1E3A5F", "#4FA3D1", "#E6EDF3"], tone: "冷蓝调，高对比，锐利边缘", mood: "精密、冷静、有未来感", typography: "等宽或几何无衬线" },
     },
 ];

@@ -5,11 +5,7 @@ import { buildLibTVImagePreviewUrl, buildLibTVVideoPreviewUrl, buildLibTVVideoSo
 import { cn } from "@/lib/utils";
 import type { LibTVWorkStep } from "@/types/libtv-gallery";
 
-export type LibTVStepMedia =
-    | { kind: "image"; src: string; originalUrl: string }
-    | { kind: "video"; src: string; poster?: string }
-    | { kind: "audio"; src: string }
-    | { kind: "none" };
+export type LibTVStepMedia = { kind: "image"; src: string; originalUrl: string } | { kind: "video"; src: string; poster?: string } | { kind: "audio"; src: string } | { kind: "none" };
 
 /** 按步骤类型选择预览方式；地址保持 LibTV 外链，只复用已有缩略图/首帧参数，不转存。 */
 export function describeLibTVStepMedia(step: LibTVWorkStep): LibTVStepMedia {

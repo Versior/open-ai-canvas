@@ -8,13 +8,7 @@ import { WorkDetailPane } from "./work-detail";
  * 灵感广场点开作品用弹窗，不离开列表：Modal 挂在 body 上，背后的列表仍在下面。
  * 切换作品时用 key 重建内容体；关闭时销毁媒体，避免外链视频继续占用。
  */
-export function LibTVWorkDetailDialog({
-    templateUuid,
-    onClose,
-}: {
-    templateUuid?: string;
-    onClose: () => void;
-}) {
+export function LibTVWorkDetailDialog({ templateUuid, onClose }: { templateUuid?: string; onClose: () => void }) {
     return (
         <AppModal
             flush

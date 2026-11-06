@@ -74,9 +74,7 @@ export type LibTVStepPrompt = { id: string; index: number; title: string; type: 
  * 上游没有整片提示词字段，只有逐步骤提示词。这里按步骤返回，绝不拼接成一条「完整视频提示词」冒充模板。
  */
 export function collectLibTVStepPrompts(steps: LibTVWorkStep[]): LibTVStepPrompt[] {
-    return steps
-        .map((step, index) => ({ id: step.id, index, title: step.title?.trim() || `步骤 ${index + 1}`, type: step.type, prompt: step.prompt?.trim() || "" }))
-        .filter((item) => Boolean(item.prompt));
+    return steps.map((step, index) => ({ id: step.id, index, title: step.title?.trim() || `步骤 ${index + 1}`, type: step.type, prompt: step.prompt?.trim() || "" })).filter((item) => Boolean(item.prompt));
 }
 
 export type LibTVReplicationOption = { index: number; step: LibTVWorkStep; state: LibTVMakeSameState };

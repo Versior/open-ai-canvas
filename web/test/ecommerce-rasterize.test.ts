@@ -140,7 +140,12 @@ test("composition returns the source URL untouched when the layout renders no vi
         value: {
             createElement: () => {
                 canvases += 1;
-                return { width: 0, height: 0, getContext: () => ({ drawImage() {}, fillRect() {}, fillText() {}, measureText: (text: string) => ({ width: text.length * 10 }), fillStyle: "", font: "", textBaseline: "" }), toDataURL: () => "data:image/png,transcoded" };
+                return {
+                    width: 0,
+                    height: 0,
+                    getContext: () => ({ drawImage() {}, fillRect() {}, fillText() {}, measureText: (text: string) => ({ width: text.length * 10 }), fillStyle: "", font: "", textBaseline: "" }),
+                    toDataURL: () => "data:image/png,transcoded",
+                };
             },
         },
     });

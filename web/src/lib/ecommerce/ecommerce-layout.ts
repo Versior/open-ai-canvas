@@ -12,15 +12,18 @@
  */
 import type { EcommerceCopy } from "./ecommerce-contract";
 
-export type EcommerceLayoutAnchor =
-    | "top-left" | "top-center" | "top-right"
-    | "middle-left" | "middle-center" | "middle-right"
-    | "bottom-left" | "bottom-center" | "bottom-right";
+export type EcommerceLayoutAnchor = "top-left" | "top-center" | "top-right" | "middle-left" | "middle-center" | "middle-right" | "bottom-left" | "bottom-center" | "bottom-right";
 
 export const ECOMMERCE_LAYOUT_ANCHORS: { id: EcommerceLayoutAnchor; label: string }[] = [
-    { id: "top-left", label: "左上" }, { id: "top-center", label: "上中" }, { id: "top-right", label: "右上" },
-    { id: "middle-left", label: "左中" }, { id: "middle-center", label: "正中" }, { id: "middle-right", label: "右中" },
-    { id: "bottom-left", label: "左下" }, { id: "bottom-center", label: "下中" }, { id: "bottom-right", label: "右下" },
+    { id: "top-left", label: "左上" },
+    { id: "top-center", label: "上中" },
+    { id: "top-right", label: "右上" },
+    { id: "middle-left", label: "左中" },
+    { id: "middle-center", label: "正中" },
+    { id: "middle-right", label: "右中" },
+    { id: "bottom-left", label: "左下" },
+    { id: "bottom-center", label: "下中" },
+    { id: "bottom-right", label: "右下" },
 ];
 
 /** 版式里的一个文字块。 */
@@ -46,7 +49,10 @@ export type EcommerceLayout = {
 };
 
 const FIELD_LABELS: Record<keyof EcommerceCopy, string> = {
-    headline: "标题", subhead: "副文案", cta: "行动引导", price: "价格",
+    headline: "标题",
+    subhead: "副文案",
+    cta: "行动引导",
+    price: "价格",
 };
 
 export function ecommerceLayoutFieldLabel(field: keyof EcommerceCopy) {
@@ -122,10 +128,10 @@ export function ecommerceLayoutBlockStyle(block: EcommerceLayoutBlock, container
     };
     if (vertical === "top") style.top = inset;
     else if (vertical === "bottom") style.bottom = inset;
-    else style.top = "50%", style.transform = "translateY(-50%)";
+    else ((style.top = "50%"), (style.transform = "translateY(-50%)"));
     if (horizontal === "left") style.left = inset;
     else if (horizontal === "right") style.right = inset;
-    else style.left = "50%", style.transform = style.transform ? "translate(-50%, -50%)" : "translateX(-50%)";
+    else ((style.left = "50%"), (style.transform = style.transform ? "translate(-50%, -50%)" : "translateX(-50%)"));
     // 居中锚点上再叠一次对齐，避免文字块自身贴左
     if (horizontal === "center" && block.align === "left") style.textAlign = "left";
     return style as React.CSSProperties;
@@ -148,7 +154,8 @@ function blocks(specs: Array<Partial<EcommerceLayoutBlock> & { field: keyof Ecom
 
 export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
     {
-        id: "bottom-bar", hint: "标题与价格压在底部，最通用的主图版式",
+        id: "bottom-bar",
+        hint: "标题与价格压在底部，最通用的主图版式",
         layout: {
             name: "底部信息条",
             blocks: blocks([
@@ -159,7 +166,8 @@ export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
         },
     },
     {
-        id: "top-banner", hint: "标题横压顶部，适合有明确卖点的主图",
+        id: "top-banner",
+        hint: "标题横压顶部，适合有明确卖点的主图",
         layout: {
             name: "顶部横幅",
             blocks: blocks([
@@ -169,7 +177,8 @@ export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
         },
     },
     {
-        id: "price-corner", hint: "价格做大放角上，促销期用",
+        id: "price-corner",
+        hint: "价格做大放角上，促销期用",
         layout: {
             name: "价格角标",
             blocks: blocks([
@@ -180,7 +189,8 @@ export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
         },
     },
     {
-        id: "side-notes", hint: "文字让在右侧，商品主体不被压住",
+        id: "side-notes",
+        hint: "文字让在右侧，商品主体不被压住",
         layout: {
             name: "侧边留白",
             blocks: blocks([
@@ -190,7 +200,8 @@ export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
         },
     },
     {
-        id: "detail-screen", hint: "详情页单屏：标题在上，正文在下",
+        id: "detail-screen",
+        hint: "详情页单屏：标题在上，正文在下",
         layout: {
             name: "详情页单屏",
             blocks: blocks([
@@ -200,7 +211,8 @@ export const ECOMMERCE_LAYOUT_PRESETS: EcommerceLayoutPreset[] = [
         },
     },
     {
-        id: "poster", hint: "海报：标题居中，价格与引导分居两侧",
+        id: "poster",
+        hint: "海报：标题居中，价格与引导分居两侧",
         layout: {
             name: "海报居中",
             blocks: blocks([

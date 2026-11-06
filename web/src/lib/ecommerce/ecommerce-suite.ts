@@ -122,7 +122,6 @@ export function ecommerceSuiteFromPresets(flow: EcommerceOneClickFlow): Ecommerc
     });
 }
 
-
 /**
  * 默认的分析指令——**面板里可改的那一段**。
  *
@@ -308,9 +307,7 @@ export function ecommerceSuiteDraftPrompt(flow: EcommerceOneClickFlow, profile: 
             : "【底图与文案分层】图片模型只生成无文字、Logo 和水印的底图；文案独立输出，禁止写进底图提示词。没有卖家确认的价格时，价格字段必须留空。",
         `版式 preset 只能从以下现有值选择：${ECOMMERCE_LAYOUT_PRESETS.map((preset) => preset.id).join("、")}`,
         "【输出格式】每行一条，九段竖线分隔，不要输出任何其他内容（不要序号、不要解释、不要代码块）：",
-        detail
-            ? "槽位id | 这一屏的标题 | 这一屏要解决什么 | 主标题 | 副标题 | 价格 | 行动引导 | 版式 preset | 完整生图提示词"
-            : "槽位id | 这一屏的标题 | 这一屏要解决什么 | 主标题 | 副文案 | 价格 | 行动引导 | 版式 preset | 无字底图提示词",
+        detail ? "槽位id | 这一屏的标题 | 这一屏要解决什么 | 主标题 | 副标题 | 价格 | 行动引导 | 版式 preset | 完整生图提示词" : "槽位id | 这一屏的标题 | 这一屏要解决什么 | 主标题 | 副文案 | 价格 | 行动引导 | 版式 preset | 无字底图提示词",
         "",
         "每行槽位 id 必须原样抄上面的，并保持相同顺序与数量。",
     ].join("\n");

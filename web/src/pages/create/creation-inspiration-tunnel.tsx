@@ -122,12 +122,20 @@ export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUse
     useEffect(() => {
         if (!enabled || !useImageFallback) return;
         let alive = true;
-        void loadGalleryPool().then((entries) => { if (alive) setPromptPool(entries); });
-        return () => { alive = false; };
+        void loadGalleryPool().then((entries) => {
+            if (alive) setPromptPool(entries);
+        });
+        return () => {
+            alive = false;
+        };
     }, [enabled, useImageFallback]);
-    const modePool = useMemo<TunnelItem[]>(() => useImageFallback
-        ? promptPool.filter((item) => item.mode === "image" && !unavailable.has(`prompt:${catalogIdOf(item)}`)).map((inspiration) => ({ id: `prompt:${catalogIdOf(inspiration)}`, title: inspiration.title, inspiration }))
-        : canvasPool.map((work) => ({ id: work.templateUuid, title: work.title, work })), [useImageFallback, promptPool, unavailable, canvasPool]);
+    const modePool = useMemo<TunnelItem[]>(
+        () =>
+            useImageFallback
+                ? promptPool.filter((item) => item.mode === "image" && !unavailable.has(`prompt:${catalogIdOf(item)}`)).map((inspiration) => ({ id: `prompt:${catalogIdOf(inspiration)}`, title: inspiration.title, inspiration }))
+                : canvasPool.map((work) => ({ id: work.templateUuid, title: work.title, work })),
+        [useImageFallback, promptPool, unavailable, canvasPool],
+    );
     /** 轮换时读最新的池子，但不把池子写进轮播的依赖——否则池子一到就重置计时。 */
     const modePoolRef = useRef(modePool);
     modePoolRef.current = modePool;
@@ -196,12 +204,21 @@ export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUse
     if (!enabled || !shots.length) return null;
 
     return (
-        <div className="creation-inspiration-tunnel" data-hidden={hidden} aria-hidden={hidden || undefined} inert={hidden} onPointerEnter={() => setPaused(true)} onPointerLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)}>
+        <div
+            className="creation-inspiration-tunnel"
+            data-hidden={hidden}
+            aria-hidden={hidden || undefined}
+            inert={hidden}
+            onPointerEnter={() => setPaused(true)}
+            onPointerLeave={() => setPaused(false)}
+            onFocusCapture={() => setPaused(true)}
+            onBlurCapture={() => setPaused(false)}
+        >
             <div ref={stageRef} className="creation-gallery-stage">
                 {shots.map((inspiration, index) => {
                     const id = inspiration.id;
-                    const openDetail = () => inspiration.work ? setActiveTemplateUuid(inspiration.work.templateUuid) : setPromptDetail(inspiration.inspiration);
-                    const remove = () => setUnavailable((current) => current.has(id) ? current : new Set(current).add(id));
+                    const openDetail = () => (inspiration.work ? setActiveTemplateUuid(inspiration.work.templateUuid) : setPromptDetail(inspiration.inspiration));
+                    const remove = () => setUnavailable((current) => (current.has(id) ? current : new Set(current).add(id)));
                     // 相对当前卡片的距离，绕成最短路径，形成首尾相接的队列。
                     const half = Math.floor(shots.length / 2);
                     const relative = ((index - active + half + shots.length) % shots.length) - half;
@@ -228,10 +245,20 @@ export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUse
                             style={style}
                             onClick={() => (relative === 0 ? openDetail() : step(relative))}
                             onKeyDown={(event) => {
-                                if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); openDetail(); }
+                                if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                                    event.preventDefault();
+                                    openDetail();
+                                }
                             }}
                         >
-                            <LibTVGalleryCover key={inspiration.work ? `${inspiration.work.coverUrl}:${inspiration.work.mediaUrl}` : inspiration.inspiration.image} item={inspiration.work ?? { coverUrl: inspiration.inspiration.image, mediaUrl: inspiration.inspiration.image, mediaType: "image" }} priority className="creation-tunnel-cover" onReady={() => markReady(id)} onUnavailable={remove} />
+                            <LibTVGalleryCover
+                                key={inspiration.work ? `${inspiration.work.coverUrl}:${inspiration.work.mediaUrl}` : inspiration.inspiration.image}
+                                item={inspiration.work ?? { coverUrl: inspiration.inspiration.image, mediaUrl: inspiration.inspiration.image, mediaType: "image" }}
+                                priority
+                                className="creation-tunnel-cover"
+                                onReady={() => markReady(id)}
+                                onUnavailable={remove}
+                            />
                             <span className="creation-tunnel-card-info">
                                 <span className="creation-tunnel-card-title">{inspiration.title}</span>
                             </span>
@@ -260,7 +287,17 @@ export function CreationInspirationTunnel({ mode, enabled, hidden = false, onUse
                 {current?.title ?? ""}
             </p>
             <LibTVWorkDetailDialog templateUuid={activeTemplateUuid} onClose={() => setActiveTemplateUuid(undefined)} />
-            <InspirationDetailModal item={promptDetail} onClose={() => setPromptDetail(null)} onUse={onUseInspiration ?? ((item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } }))} onCopy={(text, label) => { void navigator.clipboard.writeText(text).then(() => message.success(`${label}已复制`), () => message.error("复制失败，请手动选中文本")); }} />
+            <InspirationDetailModal
+                item={promptDetail}
+                onClose={() => setPromptDetail(null)}
+                onUse={onUseInspiration ?? ((item) => navigate("/create", { state: { inspirationMode: item.mode, inspirationPrompt: fillablePrompt(item) } }))}
+                onCopy={(text, label) => {
+                    void navigator.clipboard.writeText(text).then(
+                        () => message.success(`${label}已复制`),
+                        () => message.error("复制失败，请手动选中文本"),
+                    );
+                }}
+            />
         </div>
     );
 }

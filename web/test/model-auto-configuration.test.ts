@@ -9,7 +9,27 @@ import type { ModelChannel } from "../src/stores/use-config-store";
 
 const protocols: ModelProtocolDefinition[] = [{ value: "chat-completion", label: "Chat", capability: "text", create: "POST /v1/chat/completions", contentType: "application/json", media: "url" }];
 const preset: ModelMetadataPreset = { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", context: 1048576, output: 65536, vision: true, reasoning: true };
-const template: ChannelModel = { id: "source", channelId: "test", modelKey: preset.id, providerModelKey: preset.id, displayName: "我的分组", icon: "Gemini", capability: "text", protocol: "chat-completion", billingMode: "token", unitPriceMicrocredits: 0, inputTokenPriceMicrocredits: 2000000, outputTokenPriceMicrocredits: 4000000, cachedTokenPriceMicrocredits: 500000, priceConfigured: true, enabled: true, priceVersion: 1, priceTiers: [], createdAt: "", updatedAt: "" };
+const template: ChannelModel = {
+    id: "source",
+    channelId: "test",
+    modelKey: preset.id,
+    providerModelKey: preset.id,
+    displayName: "我的分组",
+    icon: "Gemini",
+    capability: "text",
+    protocol: "chat-completion",
+    billingMode: "token",
+    unitPriceMicrocredits: 0,
+    inputTokenPriceMicrocredits: 2000000,
+    outputTokenPriceMicrocredits: 4000000,
+    cachedTokenPriceMicrocredits: 500000,
+    priceConfigured: true,
+    enabled: true,
+    priceVersion: 1,
+    priceTiers: [],
+    createdAt: "",
+    updatedAt: "",
+};
 
 test("explicit price copying preserves units and prices without copying source identity", () => {
     const values = { ...initialChannelModelValues(null, protocols), modelKey: "target", providerModelKey: "target-upstream" };
@@ -68,7 +88,14 @@ test("admin price copy updates and protects both the price table and its currenc
 test("new admin model fills fuzzy metadata and reuses same-channel prices without retaining the old upstream", () => {
     const values = { ...initialChannelModelValues(null, protocols), modelKey: "new-product", providerModelKey: "models/Gemini_2.5_Flash-high" };
     const result = autoConfigureChannelModel(values, [template], protocols, [preset]);
-    expect(result.values).toMatchObject({ modelKey: "new-product", providerModelKey: values.providerModelKey, displayName: "我的分组", icon: "Gemini", protocol: "chat-completion", capabilityConfig: { text: { contextWindowTokens: 1048576, maxOutputTokens: 65536 } } });
+    expect(result.values).toMatchObject({
+        modelKey: "new-product",
+        providerModelKey: values.providerModelKey,
+        displayName: "我的分组",
+        icon: "Gemini",
+        protocol: "chat-completion",
+        capabilityConfig: { text: { contextWindowTokens: 1048576, maxOutputTokens: 65536 } },
+    });
     expect(result.values.priceTiers[0]).toMatchObject({ providerModelKey: "", billingMode: "token", inputTokenPrice: 2, outputTokenPrice: 4, cachedTokenPrice: 0.5 });
     expect(result.source).toContain("接口和价格参考");
     expect(values.priceTiers[0].unitPrice).toBe(0);
@@ -76,7 +103,9 @@ test("new admin model fills fuzzy metadata and reuses same-channel prices withou
 
 test("manual capability, protocol, metadata, icon and pricing edits win over automatic values", () => {
     const values = initialChannelModelValues(null, protocols);
-    values.modelKey = preset.id; values.icon = "Qwen"; values.priceTiers[0].unitPrice = 19;
+    values.modelKey = preset.id;
+    values.icon = "Qwen";
+    values.priceTiers[0].unitPrice = 19;
     values.capabilityConfig!.text!.contextWindowTokens = 64000;
     const protectedFields = new Set(["displayName", "capability", "protocol", "capabilityConfig", "icon", "priceTiers"]);
     expect(autoConfigureChannelModel(values, [template], protocols, [preset], protectedFields).values).toEqual(values);
@@ -98,7 +127,12 @@ test("category and logo matching is independent of text catalog limits and prese
     expect(image).toMatchObject({ displayName: "Gemini", icon: "Gemini", capability: "image" });
     const custom = { ...values, displayName: "商品图", icon: "Qwen" };
     expect(autoConfigureChannelModel(custom, [], protocols, [], new Set(["displayName", "icon"])).values).toMatchObject({ displayName: "商品图", icon: "Qwen" });
-    for (const [modelKey, displayName, icon] of [["flux.1-dev", "FLUX", "Flux"], ["sora-2-pro", "Sora", "Sora"], ["veo-3.1", "Veo", "Gemini"], ["gpt-image-1", "GPT", "OpenAI"]]) {
+    for (const [modelKey, displayName, icon] of [
+        ["flux.1-dev", "FLUX", "Flux"],
+        ["sora-2-pro", "Sora", "Sora"],
+        ["veo-3.1", "Veo", "Gemini"],
+        ["gpt-image-1", "GPT", "OpenAI"],
+    ]) {
         expect(autoConfigureChannelModel({ ...values, modelKey }, [], protocols, []).values).toMatchObject({ displayName, icon });
     }
 });

@@ -11,7 +11,7 @@
  */
 
 /** 命中这些标签（或显式的 `data-canvas-no-drag`）时，按下不算拖拽。 */
-const INTERACTIVE_SELECTOR = "button, a, input, textarea, select, label, summary, [contenteditable=\"true\"], [data-canvas-no-drag], [role=\"button\"], [role=\"option\"], [role=\"combobox\"], [role=\"textbox\"]";
+const INTERACTIVE_SELECTOR = 'button, a, input, textarea, select, label, summary, [contenteditable="true"], [data-canvas-no-drag], [role="button"], [role="option"], [role="combobox"], [role="textbox"]';
 
 export function isCanvasNodeInteractiveTarget(target: EventTarget | null) {
     return target instanceof Element && Boolean(target.closest(INTERACTIVE_SELECTOR));

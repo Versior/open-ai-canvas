@@ -104,27 +104,27 @@ export function InspirationDetailModal({
                         {managed ? (
                             <div className="flex flex-col gap-2">
                                 {showSources ? (
-                                <MetaRow label="来源">
-                                    {source?.name ?? (item.sourceId && item.sourceId !== "original" ? (source?.label ?? "未标注来源") : "原创")}
-                                    {item.credit ? ` · ${item.credit}` : ""}
-                                </MetaRow>
-                            ) : null}
+                                    <MetaRow label="来源">
+                                        {source?.name ?? (item.sourceId && item.sourceId !== "original" ? (source?.label ?? "未标注来源") : "原创")}
+                                        {item.credit ? ` · ${item.credit}` : ""}
+                                    </MetaRow>
+                                ) : null}
                                 <MetaRow label="分类">{categoryLabel?.(item) || item.category?.trim() || "未分类"}</MetaRow>
-                            <MetaRow label="类型">
-                                {modeLabels[item.mode]}
-                                {item.ratio ? ` · ${item.ratio}` : ""}
-                            </MetaRow>
-                            {item.tags?.length ? (
-                                <MetaRow label="标签">
-                                    <span className="flex flex-wrap gap-2">
-                                        {item.tags.map((tag) => (
-                                            <span key={tag} className="inspiration-chip">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                    </span>
+                                <MetaRow label="类型">
+                                    {modeLabels[item.mode]}
+                                    {item.ratio ? ` · ${item.ratio}` : ""}
                                 </MetaRow>
-                            ) : null}
+                                {item.tags?.length ? (
+                                    <MetaRow label="标签">
+                                        <span className="flex flex-wrap gap-2">
+                                            {item.tags.map((tag) => (
+                                                <span key={tag} className="inspiration-chip">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </span>
+                                    </MetaRow>
+                                ) : null}
                                 {showSources && item.sourceUrl ? (
                                     <MetaRow label="原页">
                                         <a className="inline-flex items-center gap-1 text-primary hover:underline" href={item.sourceUrl} target="_blank" rel="noreferrer">
@@ -140,7 +140,9 @@ export function InspirationDetailModal({
                     </div>
 
                     <div className="inspiration-detail-actions flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 px-5 py-3">
-                        <Button className="inspiration-detail-dismiss" onClick={onClose}>关闭</Button>
+                        <Button className="inspiration-detail-dismiss" onClick={onClose}>
+                            关闭
+                        </Button>
                         <Button
                             type="primary"
                             className="inspiration-detail-use"
@@ -175,7 +177,9 @@ function InspirationDetailMedia({ item }: { item: CreationInspiration }) {
             video.muted = true;
             video.src = item.videoUrl;
             video.load();
-            void video.play().catch(() => { if (active) setBlocked(true); });
+            void video.play().catch(() => {
+                if (active) setBlocked(true);
+            });
         }
         return () => {
             active = false;
@@ -203,25 +207,46 @@ function InspirationDetailMedia({ item }: { item: CreationInspiration }) {
                     preload="auto"
                     tabIndex={0}
                     aria-label={item.title}
-                    onPointerEnter={(event) => { if (event.pointerType === "mouse") setHovered(true); }}
+                    onPointerEnter={(event) => {
+                        if (event.pointerType === "mouse") setHovered(true);
+                    }}
                     onPointerLeave={() => setHovered(false)}
-                    onPointerDown={(event) => { if (event.pointerType !== "mouse") setTouchControls(true); }}
+                    onPointerDown={(event) => {
+                        if (event.pointerType !== "mouse") setTouchControls(true);
+                    }}
                     onFocus={(event) => setFocused(event.currentTarget.matches(":focus-visible"))}
                     onKeyDown={() => setFocused(true)}
-                    onBlur={() => { setFocused(false); setTouchControls(false); }}
+                    onBlur={() => {
+                        setFocused(false);
+                        setTouchControls(false);
+                    }}
                     onPlay={() => setBlocked(false)}
                     onError={() => setFailed(true)}
                 />
-            ) : <InspirationCover key={item.image} image={item.image} />}
-            {failed ? <p className="p-2 text-center text-xs text-foreground/58" role="status">视频暂时无法加载</p> : null}
-            {blocked && !failed ? <p className="inspiration-detail-playback-status" role="status">自动播放受限，请点击播放</p> : null}
+            ) : (
+                <InspirationCover key={item.image} image={item.image} />
+            )}
+            {failed ? (
+                <p className="p-2 text-center text-xs text-foreground/58" role="status">
+                    视频暂时无法加载
+                </p>
+            ) : null}
+            {blocked && !failed ? (
+                <p className="inspiration-detail-playback-status" role="status">
+                    自动播放受限，请点击播放
+                </p>
+            ) : null}
         </div>
     );
 }
 
 export function InspirationCover({ image, onDimensions }: { image: string; onDimensions?: (width: number, height: number) => void }) {
     const [failed, setFailed] = useState(false);
-    return failed ? <MediaPlaceholder failed /> : <img src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onLoad={(event) => onDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => setFailed(true)} />;
+    return failed ? (
+        <MediaPlaceholder failed />
+    ) : (
+        <img src={image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onLoad={(event) => onDimensions?.(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => setFailed(true)} />
+    );
 }
 
 function PromptSection({ label, text, onCopy }: { label: string; text: string; onCopy: (text: string, label: string) => void }) {

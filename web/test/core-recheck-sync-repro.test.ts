@@ -103,8 +103,7 @@ beforeEach(async () => {
                 remoteAssets.set(id, asset);
                 data = { asset };
             } else throw new Error("Unexpected asset method");
-        }
-        else if (url === "/canvas-projects/canvas" && config.method === "get") data = { project: structuredClone(remote) };
+        } else if (url === "/canvas-projects/canvas" && config.method === "get") data = { project: structuredClone(remote) };
         else if (url === "/canvas-projects/canvas/operations" && config.method === "patch") {
             const body = JSON.parse(config.data) as CanvasOperationsRequest;
             mutations.push(body);
@@ -227,11 +226,23 @@ test("reopening a dirty local draft preserves a node added remotely", async () =
 });
 
 test("large LibTV import stops on rate limit and resumes only remaining assets after cooldown", async () => {
-    const imported = buildLibTVCanvasNodes(Array.from({ length: 125 }, (_, i) => ({
-        id: `import-${i}`, type: "image" as const, title: `image-${i}`, x: i * 320, y: 0, width: 320, height: 240,
-        content: `https://libtv-res.liblib.art/test-${i}.png`, prompt: "", model: "",
-        metadata: { provider: "libtv" as const, projectUuid: "d".repeat(32), nodeKey: `key-${i}`, batchId: "batch", sourceType: "image" },
-    })), { x: 0, y: 0, k: 1 }, { width: 1200, height: 800 });
+    const imported = buildLibTVCanvasNodes(
+        Array.from({ length: 125 }, (_, i) => ({
+            id: `import-${i}`,
+            type: "image" as const,
+            title: `image-${i}`,
+            x: i * 320,
+            y: 0,
+            width: 320,
+            height: 240,
+            content: `https://libtv-res.liblib.art/test-${i}.png`,
+            prompt: "",
+            model: "",
+            metadata: { provider: "libtv" as const, projectUuid: "d".repeat(32), nodeKey: `key-${i}`, batchId: "batch", sourceType: "image" },
+        })),
+        { x: 0, y: 0, k: 1 },
+        { width: 1200, height: 800 },
+    );
     useCanvasStore.getState().updateProject("canvas", { nodes: [...remote.nodes, ...imported] });
     await flushCanvasStorePersistence();
     assetLimit = 120;
@@ -252,7 +263,9 @@ test("large LibTV import stops on rate limit and resumes only remaining assets a
         expect(remoteAssets.size).toBe(125);
         expect(remote.nodes).toHaveLength(126);
         expect(new Set(remote.nodes.map((node) => node.id)).size).toBe(126);
-    } finally { Date.now = now; }
+    } finally {
+        Date.now = now;
+    }
 });
 
 test("another local edit during save rebases over remote additions", async () => {

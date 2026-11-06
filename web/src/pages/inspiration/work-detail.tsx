@@ -20,13 +20,7 @@ import { describeLibTVStepMedia } from "./step-media-preview";
 const STEP_TYPE_LABEL: Record<LibTVWorkStep["type"], string> = { image: "图像生成", video: "视频生成", audio: "音频生成", text: "文本" };
 
 /** 直接链接与弹窗共用同一内容体：媒体仍是 LibTV 外链，展开状态在切换作品时随 key 重置。 */
-export function WorkDetailPane({
-    templateUuid,
-    onClose,
-}: {
-    templateUuid: string;
-    onClose: () => void;
-}) {
+export function WorkDetailPane({ templateUuid, onClose }: { templateUuid: string; onClose: () => void }) {
     const navigate = useNavigate();
     const [messageApi, contextHolder] = message.useMessage();
     const [copyingCanvas, setCopyingCanvas] = useState(false);
@@ -55,7 +49,9 @@ export function WorkDetailPane({
         video.muted = true;
         video.src = videoUrl;
         video.load();
-        void video.play().catch(() => { if (active) setPlaybackBlocked(true); });
+        void video.play().catch(() => {
+            if (active) setPlaybackBlocked(true);
+        });
         return () => {
             active = false;
             video.pause();
@@ -118,11 +114,7 @@ export function WorkDetailPane({
         if (!data) return;
         const plan = resolveLibTVReplicationPlan(data.steps);
         if (plan.kind === "canvas-only") {
-            messageApi.info(
-                plan.reason === "no-video-step"
-                    ? "这条作品没有可独立复刻的视频步骤，请用「复制到画布」把完整流程带进画布后再生成。"
-                    : "视频步骤依赖前序引用，无法单步复刻；请用「复制到画布」保留完整结构后在画布中生成。",
-            );
+            messageApi.info(plan.reason === "no-video-step" ? "这条作品没有可独立复刻的视频步骤，请用「复制到画布」把完整流程带进画布后再生成。" : "视频步骤依赖前序引用，无法单步复刻；请用「复制到画布」保留完整结构后在画布中生成。");
             return;
         }
         openStep(plan.options[0].step.id);
@@ -168,9 +160,7 @@ export function WorkDetailPane({
                 <div className="mb-1 text-xs text-foreground/45">
                     #{item.index + 1} {item.title} · {STEP_TYPE_LABEL[item.type]}
                 </div>
-                <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">
-                    {item.prompt}
-                </div>
+                <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">{item.prompt}</div>
             </div>
         );
 
@@ -187,7 +177,11 @@ export function WorkDetailPane({
                             <div className="flex aspect-video w-full items-center justify-center text-sm text-foreground/40">此作品没有可播放的媒体</div>
                         )}
                     </div>
-                    {playbackBlocked && <p className="mt-2 text-xs text-foreground/50" role="status">自动播放受限，请点击播放</p>}
+                    {playbackBlocked && (
+                        <p className="mt-2 text-xs text-foreground/50" role="status">
+                            自动播放受限，请点击播放
+                        </p>
+                    )}
 
                     <div className="mt-4">
                         <h1 className="min-w-0 text-xl font-semibold leading-7">{data.work.title}</h1>
@@ -198,10 +192,7 @@ export function WorkDetailPane({
                     </div>
 
                     <div className="libtv-detail-actions mt-4 flex flex-wrap items-center gap-2">
-                        <Button
-                            disabled={data.steps.length === 0}
-                            onClick={() => processRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}
-                        >
+                        <Button disabled={data.steps.length === 0} onClick={() => processRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" })}>
                             查看制作过程
                         </Button>
                         <Button type="primary" onClick={handleCopyToCanvas} disabled={!data.canImport} loading={copyingCanvas}>
@@ -212,9 +203,11 @@ export function WorkDetailPane({
                         </Button>
                     </div>
 
-                    {data.work.description?.trim() ? <section className="libtv-detail-section mt-6">
-                        <p className="m-0 whitespace-pre-wrap text-sm leading-6 text-foreground/70">{data.work.description}</p>
-                    </section> : null}
+                    {data.work.description?.trim() ? (
+                        <section className="libtv-detail-section mt-6">
+                            <p className="m-0 whitespace-pre-wrap text-sm leading-6 text-foreground/70">{data.work.description}</p>
+                        </section>
+                    ) : null}
 
                     <section className="libtv-detail-section mt-4">
                         <h2 className="mb-2 text-sm font-semibold">提示词</h2>
@@ -227,9 +220,7 @@ export function WorkDetailPane({
                                 {stepPrompts.slice(0, 1).map(renderStepPrompt)}
                                 {stepPrompts.length > 1 && (
                                     <details className="mt-3">
-                                        <summary className="cursor-pointer text-xs text-foreground/60">
-                                            查看其余 {stepPrompts.length - 1} 段提示词
-                                        </summary>
+                                        <summary className="cursor-pointer text-xs text-foreground/60">查看其余 {stepPrompts.length - 1} 段提示词</summary>
                                         <div className="mt-3 space-y-3">{stepPrompts.slice(1).map(renderStepPrompt)}</div>
                                     </details>
                                 )}
@@ -272,25 +263,26 @@ export function WorkDetailPane({
                                     );
                                 })}
                             </div>
-
                         </section>
                     )}
 
                     {/* 详情中折叠提示，实际导入确认仍保留完整警告。 */}
                     {warningGroups.length > 0 && (
                         <details className="libtv-import-notice mt-4">
-                            <summary>导入提示 · {warningGroups.length} 项<span>展开查看</span></summary>
+                            <summary>
+                                导入提示 · {warningGroups.length} 项<span>展开查看</span>
+                            </summary>
                             <ul className="mb-0 mt-2 list-disc space-y-1 pl-4">
                                 {warningGroups.map((warning) => (
                                     <li key={warning.message}>
-                                        {warning.message}{warning.count > 1 ? `（${warning.count} 处）` : ""}
+                                        {warning.message}
+                                        {warning.count > 1 ? `（${warning.count} 处）` : ""}
                                     </li>
                                 ))}
                             </ul>
                         </details>
                     )}
                 </div>
-
             </div>
         );
     };
@@ -300,16 +292,7 @@ export function WorkDetailPane({
             {contextHolder}
             {/* flush 弹窗：内边距由内容自己给，关闭按钮留在右上角，不随内容滚走。 */}
             <div className="libtv-detail-content px-5 py-4 lg:h-full lg:px-6">{body()}</div>
-            {previewStep && data && (
-                <LibTVStepMediaDialog
-                    key={previewStep.id}
-                    step={previewStep}
-                    steps={data.steps}
-                    index={data.steps.indexOf(previewStep)}
-                    onClose={() => setPreviewStepId(undefined)}
-                    onMakeSame={() => handleMakeSame(previewStep)}
-                />
-            )}
+            {previewStep && data && <LibTVStepMediaDialog key={previewStep.id} step={previewStep} steps={data.steps} index={data.steps.indexOf(previewStep)} onClose={() => setPreviewStepId(undefined)} onMakeSame={() => handleMakeSame(previewStep)} />}
         </>
     );
 }

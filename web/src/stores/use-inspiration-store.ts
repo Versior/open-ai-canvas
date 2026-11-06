@@ -229,7 +229,10 @@ export const useInspirationStore = create<InspirationStore>()(
             partialize: (state) => ({ custom: state.custom, overrides: state.overrides, hidden: state.hidden, favorites: state.favorites }),
             merge: (persisted, current) => ({
                 ...current,
-                custom: [], overrides: {}, hidden: [], favorites: [],
+                custom: [],
+                overrides: {},
+                hidden: [],
+                favorites: [],
                 ...(persisted as Partial<InspirationStore> | undefined),
             }),
             onRehydrateStorage: () => {

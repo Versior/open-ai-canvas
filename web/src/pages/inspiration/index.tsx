@@ -22,9 +22,7 @@ export function LibTVGalleryContent() {
     const [unavailable, setUnavailable] = useState<ReadonlySet<string>>(() => new Set());
     const loadMoreRef = useRef<HTMLDivElement>(null);
 
-    const { data, isLoading, isError, isFetching, isFetchingNextPage, isFetchNextPageError, error, refetch, fetchNextPage, hasNextPage } = useInfiniteQuery(
-        libTVGalleryInfiniteQuery({ keyword, tagId: selectedTagId }, getLibTVGallery),
-    );
+    const { data, isLoading, isError, isFetching, isFetchingNextPage, isFetchNextPageError, error, refetch, fetchNextPage, hasNextPage } = useInfiniteQuery(libTVGalleryInfiniteQuery({ keyword, tagId: selectedTagId }, getLibTVGallery));
 
     const items = useMemo(() => {
         const seen = new Set<string>();
@@ -39,11 +37,14 @@ export function LibTVGalleryContent() {
         const target = loadMoreRef.current;
         if (!target || !hasNextPage || isFetching || isError || activeTemplateUuid || typeof IntersectionObserver === "undefined") return;
         let requested = false;
-        const observer = new IntersectionObserver((entries) => {
-            if (requested || !entries.some((entry) => entry.isIntersecting)) return;
-            requested = true;
-            void fetchNextPage({ cancelRefetch: false });
-        }, { root: target.closest(".app-workspace-scroll"), rootMargin: "0px 0px 240px 0px" });
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (requested || !entries.some((entry) => entry.isIntersecting)) return;
+                requested = true;
+                void fetchNextPage({ cancelRefetch: false });
+            },
+            { root: target.closest(".app-workspace-scroll"), rootMargin: "0px 0px 240px 0px" },
+        );
         observer.observe(target);
         return () => observer.disconnect();
     }, [activeTemplateUuid, fetchNextPage, hasNextPage, isError, isFetching, items.length, keyword, selectedTagId]);
@@ -106,15 +107,7 @@ export function LibTVGalleryContent() {
             <div className="space-y-6 pb-12">
                 {/* Search */}
                 <div className="flex gap-3">
-                    <Input
-                        value={searchValue}
-                        onChange={(e) => setSearchValue(e.target.value)}
-                        onPressEnter={handleSearch}
-                        placeholder="搜索作品关键词"
-                        prefix={<Search className="size-4 text-foreground/35" />}
-                        size="large"
-                        allowClear
-                    />
+                    <Input value={searchValue} onChange={(e) => setSearchValue(e.target.value)} onPressEnter={handleSearch} placeholder="搜索作品关键词" prefix={<Search className="size-4 text-foreground/35" />} size="large" allowClear />
                     <Button type="primary" className="libtv-gallery-search" size="large" onClick={handleSearch} loading={isLoading}>
                         搜索
                     </Button>
@@ -159,9 +152,7 @@ export function LibTVGalleryContent() {
                         <Spin size="large" />
                     </div>
                 ) : items.length === 0 && !hasNextPage && !error ? (
-                    <div className="py-20 text-center text-sm text-foreground/45">
-                        {keyword ? `没有找到包含「${keyword}」的作品` : "暂无作品"}
-                    </div>
+                    <div className="py-20 text-center text-sm text-foreground/45">{keyword ? `没有找到包含「${keyword}」的作品` : "暂无作品"}</div>
                 ) : items.length > 0 || hasNextPage ? (
                     <>
                         <div className="libtv-gallery-grid">
@@ -179,7 +170,10 @@ export function LibTVGalleryContent() {
                                     </Button>
                                 </>
                             ) : isFetchingNextPage ? (
-                                <><Spin size="small" /><span>正在加载更多作品…</span></>
+                                <>
+                                    <Spin size="small" />
+                                    <span>正在加载更多作品…</span>
+                                </>
                             ) : !hasNextPage ? (
                                 <span>已展示全部 {items.length} 个作品</span>
                             ) : null}

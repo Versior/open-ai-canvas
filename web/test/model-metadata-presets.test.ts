@@ -9,7 +9,7 @@ const preset: ModelMetadataPreset = { provider: "google", id: "gemini-2.5-flash"
 test("exact model IDs consolidate duplicates without mixing version suffixes", () => {
     const variants = [preset, { ...preset, provider: "google-vertex", output: 32768 }];
     const models = consolidateModelPresets(variants);
-    expect(matchingModelPresets(models, " gemini-2.5-flash " )).toEqual([{ ...preset, provider: undefined, output: 32768 }].map(({ provider, ...model }) => model));
+    expect(matchingModelPresets(models, " gemini-2.5-flash ")).toEqual([{ ...preset, provider: undefined, output: 32768 }].map(({ provider, ...model }) => model));
     for (const id of ["gemini-2.5-flash-high", "models/gemini-2.5-flash", "Gemini 2.5 Flash", "Gemini-2.5-Flash"]) expect(matchingModelPresets(models, id)[0]?.id).toBe(preset.id);
     for (const id of ["gemini-2.5", "gemini-3.5-flash", "gemini-2.5-pro", ""]) expect(matchingModelPresets(variants, id)).toEqual([]);
     expect(consolidateModelPresets([...variants].reverse())).toEqual(models);
@@ -23,7 +23,17 @@ test("conflicting model capabilities use their intersection and smallest declare
 
 test("applying a preset preserves custom identity, pricing, protocol and unrelated limits", () => {
     const values = initialChannelModelValues(null, []);
-    Object.assign(values, { modelKey: "product-alias", providerModelKey: "custom-upstream", channelLabel: "自定义渠道名", displayName: "我的分组", icon: "Qwen", description: "自己的说明", enabled: false, protocol: "text", tags: [{ text: "特价", color: "gold" }] });
+    Object.assign(values, {
+        modelKey: "product-alias",
+        providerModelKey: "custom-upstream",
+        channelLabel: "自定义渠道名",
+        displayName: "我的分组",
+        icon: "Qwen",
+        description: "自己的说明",
+        enabled: false,
+        protocol: "text",
+        tags: [{ text: "特价", color: "gold" }],
+    });
     values.priceTiers[0].unitPrice = 19;
     values.capabilityConfig!.text!.streaming = false;
     values.capabilityConfig!.text!.references.maxImageBytes = 123456;
@@ -55,7 +65,14 @@ test("unsupported contracts are rejected without clamping or treating image inpu
 });
 
 test("brand icons describe model families across resellers and exist in the installed registry", () => {
-    for (const [id, icon] of [["qwen/qwen3.7-flash", "Qwen"], ["deepseek/deepseek-v4.1-flash", "DeepSeek"], ["anthropic/claude-opus-5", "Claude"], ["meta/llama-3.3", "Meta"], ["step-3.5", "Stepfun"]]) expect(presetModelIcon({ id, provider: "openrouter" })).toBe(icon);
+    for (const [id, icon] of [
+        ["qwen/qwen3.7-flash", "Qwen"],
+        ["deepseek/deepseek-v4.1-flash", "DeepSeek"],
+        ["anthropic/claude-opus-5", "Claude"],
+        ["meta/llama-3.3", "Meta"],
+        ["step-3.5", "Stepfun"],
+    ])
+        expect(presetModelIcon({ id, provider: "openrouter" })).toBe(icon);
     expect(presetModelIcon({ id: "unknown-brand", provider: "openrouter" })).toBe("");
     for (const model of catalog.models) {
         const icon = presetModelIcon(model);

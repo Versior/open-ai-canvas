@@ -14,7 +14,21 @@ import type { ImageCapabilityConfig } from "../src/lib/model-capabilities";
 const input = { textCount: 0, imageCount: 0, videoCount: 0, audioCount: 0, characterCount: 0 };
 function fixture(image: ImageCapabilityConfig, logical = false) {
     const spec = capabilitySpecFromChannelModel({ capability: "image", capabilityConfig: { version: 1, image } } as ChannelModel)!;
-    const channel = createModelChannel({ id: "studio-test", models: ["test-image"], modelCosts: [{ model: "test-image", capability: "image", protocol: "openai-image", capabilityConfig: { version: 1, image }, billingMode: "fixed_request", unitPriceMicrocredits: 1, ...(logical ? { logicalModelId: "studio-logical", logicalCapabilitySpec: spec } : {}) }] });
+    const channel = createModelChannel({
+        id: "studio-test",
+        models: ["test-image"],
+        modelCosts: [
+            {
+                model: "test-image",
+                capability: "image",
+                protocol: "openai-image",
+                capabilityConfig: { version: 1, image },
+                billingMode: "fixed_request",
+                unitPriceMicrocredits: 1,
+                ...(logical ? { logicalModelId: "studio-logical", logicalCapabilitySpec: spec } : {}),
+            },
+        ],
+    });
     const model = encodeChannelModel(channel.id, "test-image");
     const config = { ...defaultConfig, channels: [channel], model, imageModel: model, imageModels: [model], quality: "low", size: "1024x1024" };
     const target: CanvasNodeData = { id: "result", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, metadata: { model, count: 9 } };
@@ -24,7 +38,11 @@ function fixture(image: ImageCapabilityConfig, logical = false) {
 test("studio 3:4 resolves a configured pixel preset before compatibility validation", () => {
     const image = defaultImageCapabilityConfig("openai-image", "test-image");
     image.size = { parameter: "size", values: ["1024x1024", "1080x1440"], default: "1024x1024", allowCustom: false, presets: [{ tier: "1k", ratio: "3:4", width: 1080, height: 1440, size: "1080x1440" }] };
-    const channel = createModelChannel({ id: "studio-test", models: ["test-image"], modelCosts: [{ model: "test-image", capability: "image", protocol: "openai-image", capabilityConfig: { version: 1, image }, billingMode: "fixed_request", unitPriceMicrocredits: 1 }] });
+    const channel = createModelChannel({
+        id: "studio-test",
+        models: ["test-image"],
+        modelCosts: [{ model: "test-image", capability: "image", protocol: "openai-image", capabilityConfig: { version: 1, image }, billingMode: "fixed_request", unitPriceMicrocredits: 1 }],
+    });
     const model = encodeChannelModel(channel.id, "test-image");
     const config = { ...defaultConfig, channels: [channel], model, imageModel: model, imageModels: [model] };
     const target: CanvasNodeData = { id: "result", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, metadata: { model, size: "3:4", count: 1 } };

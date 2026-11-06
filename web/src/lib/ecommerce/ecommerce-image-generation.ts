@@ -30,7 +30,10 @@ export function ecommerceImageSettings(config: AiConfig, model: string, brief: E
         if (profile.size.parameter === "none" || (!profile.size.allowCustom && !profile.size.values.includes(size))) throw new Error(`当前图片模型不支持 ${requested}，请在整组生图设置中重新选择尺寸`);
         settings.size = size;
     }
-    for (const [key, option] of [["quality", profile.quality], ["imageResolution", profile.resolution]] as const) {
+    for (const [key, option] of [
+        ["quality", profile.quality],
+        ["imageResolution", profile.resolution],
+    ] as const) {
         const value = brief.imageSettings?.[key];
         if (value && value !== "auto" && (!option.supported || (option.values.length > 0 && !option.values.includes(value)))) throw new Error(`当前图片模型不支持${key === "quality" ? "质量" : "分辨率"} ${value}，请重新选择`);
     }

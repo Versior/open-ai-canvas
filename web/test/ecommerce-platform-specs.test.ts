@@ -16,19 +16,19 @@ import {
 
 describe("platform specs", () => {
     test("resolves platform ids from ids, display names and common aliases", () => {
-        expect([
-            "淘宝",
-            "天猫",
-            "淘宝 / 天猫",
-            "京东",
-            "拼多多",
-            "抖店",
-            "小红书",
-            "Amazon",
-            "Shopify",
-            "独立站",
-            "TikTok Shop",
-        ].map(resolveEcommercePlatformId)).toEqual(["taobao", "taobao", "taobao", "jd", "pdd", "douyin", "xiaohongshu", "amazon", "shopify", "shopify", "tiktokshop"]);
+        expect(["淘宝", "天猫", "淘宝 / 天猫", "京东", "拼多多", "抖店", "小红书", "Amazon", "Shopify", "独立站", "TikTok Shop"].map(resolveEcommercePlatformId)).toEqual([
+            "taobao",
+            "taobao",
+            "taobao",
+            "jd",
+            "pdd",
+            "douyin",
+            "xiaohongshu",
+            "amazon",
+            "shopify",
+            "shopify",
+            "tiktokshop",
+        ]);
         expect(resolveEcommercePlatformId("custom marketplace")).toBeUndefined();
         expect(resolveEcommercePlatformId()).toBeUndefined();
     });
@@ -202,7 +202,11 @@ describe("platform specs", () => {
     });
 
     test("unusable dimensions are never treated as a pass", () => {
-        for (const [width, height] of [[Number.NaN, 628], [Number.POSITIVE_INFINITY, 628], [1200, 0]]) {
+        for (const [width, height] of [
+            [Number.NaN, 628],
+            [Number.POSITIVE_INFINITY, 628],
+            [1200, 0],
+        ]) {
             const issues = checkImageAgainstSpec({ platformId: "amazon", role: "ad", facts: { width, height } });
             expect(issues.length).toBeGreaterThan(0);
             expect(issues.every((issue) => issue.level === "warn")).toBe(true);
