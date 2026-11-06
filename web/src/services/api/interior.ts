@@ -94,6 +94,12 @@ export type InteriorGenerateInput = {
 export type InteriorGenerateItem = { styleKey?: string; styleName?: string; task?: { id: string; status: string }; error?: string };
 export type InteriorGenerateResult = { model: InteriorModelRef; count: number; params: Record<string, string>; items: InteriorGenerateItem[] };
 
+export type InteriorEstimate = { model: InteriorModelRef; images: number; amountMicrocredits: number; estimated: boolean };
+
+export function estimateInterior(input: InteriorGenerateInput, signal?: AbortSignal) {
+    return http.post<InteriorEstimate>("/interior/estimate", input, { signal });
+}
+
 /** 项目文档里的图片一律写成 resourceId，资源清理才能识别为仍被引用。 */
 export type InteriorImageRef = { resourceId: string; width?: number; height?: number };
 export type InteriorRoundItemStatus = "pending" | "succeeded" | "failed";

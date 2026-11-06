@@ -254,6 +254,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
     if (typeof run.id !== "string" || !OUTPUT_IDS.has(run.type as StudioOutputType)) return undefined;
     const shots = arrayOf(run.shots, (shot) => normalizeShot(shot, fallbackTime));
     if (!shots.length) return undefined;
+    const style = STUDIO_STYLES.find((style) => style.id === run.styleId);
     return {
         id: run.id,
         createdAt: str(run.createdAt, fallbackTime),
@@ -261,6 +262,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
         ...(run.kind === "main" || run.kind === "detail" ? { kind: run.kind } : {}),
         textMode: run.textMode === "overlay" ? "overlay" : "model",
         quality: str(run.quality),
+        ...(style ? { styleId: style.id } : {}),
         ...(typeof run.resolution === "string" && /^(1k|1\.5k|2k|4k)$/.test(run.resolution) ? { resolution: run.resolution } : {}),
         ...(isRecord(run.suite) && typeof run.suite.id === "string" && typeof run.suite.name === "string"
             ? {

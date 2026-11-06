@@ -13,7 +13,7 @@ import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { modelCompatibilityError } from "@/lib/model-selection";
 import { parseBackendGenerationResult, runBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
-import { waitForGenerationTask } from "@/services/api/task-center";
+import { isGenerationTaskTerminalError, waitForGenerationTask } from "@/services/api/task-center";
 import type { VideoTeardownBundle, VideoTeardownGrid } from "@/services/api/video-replication";
 import type { AiConfig } from "@/stores/use-config-store";
 
@@ -55,8 +55,8 @@ export async function analyzeVideoTeardown(bundle: VideoTeardownBundle, options:
             try {
                 return parseBackendGenerationResult(await waitForGenerationTask(existing, { signal, timeoutMs: TEXT_TASK_TIMEOUT_MS })).text || "";
             } catch (error) {
-                // 之前提交的那次失败了（或已过期查不到）：这一步重新提交，新任务 ID 会覆盖旧的。
-                if (isAbort(error) || signal.aborted) throw error;
+                if (!isGenerationTaskTerminalError(error) || error.task.status !== "failed" || signal.aborted) throw error;
+                // 用户重试时，仅服务端明确失败的任务可重新提交；取消或暂时查不到都保留原任务。
             }
         }
         const requirements = videoTeardownTextRequirements(config, grids.length);
@@ -87,12 +87,15 @@ export async function analyzeVideoTeardown(bundle: VideoTeardownBundle, options:
         });
         return result.text || "";
     };
-    const withRetry = async <T>(attempt: (attemptNumber: number) => Promise<T>) => {
-        try {
-            return await attempt(1);
-        } catch (error) {
-            if (isAbort(error) || signal.aborted) throw error;
-            return attempt(2);
+    // 只有已拿到回复后的结构校验失败才允许再生成。查询中断或提交响应丢失都不能重开计费任务。
+    const withRetry = async <T>(request: (attemptNumber: number) => Promise<string>, parse: (text: string) => T) => {
+        for (let attempt = 1; ; attempt += 1) {
+            const text = await request(attempt);
+            try {
+                return parse(text);
+            } catch (error) {
+                if (attempt >= 2 || isAbort(error) || signal.aborted) throw error;
+            }
         }
     };
     const rows: VideoTeardownAnalysisRow[] = [];
@@ -102,13 +105,16 @@ export async function analyzeVideoTeardown(bundle: VideoTeardownBundle, options:
         options.onProgress(batches.length > 1 ? `分析镜头（${index + 1}/${batches.length}）` : "分析镜头");
         const withSummary = batches.length === 1;
         const expected = grids.flatMap((grid) => grid.shotIndexes);
-        const analysis = await withRetry(async (attempt) => parseVideoTeardownAnalysis(await run(`batch-${index + 1}-try-${attempt}`, buildVideoTeardownPrompt(bundle, grids, withSummary), grids), expected, withSummary));
+        const analysis = await withRetry(
+            (attempt) => run(`batch-${index + 1}-try-${attempt}`, buildVideoTeardownPrompt(bundle, grids, withSummary), grids),
+            (text) => parseVideoTeardownAnalysis(text, expected, withSummary),
+        );
         rows.push(...analysis.rows);
         if (withSummary) ({ title, summary } = analysis);
     }
     if (batches.length > 1) {
         options.onProgress("总结全片结构");
-        ({ title, summary } = await withRetry(async (attempt) => parseVideoTeardownSummary(await run(`summary-try-${attempt}`, buildVideoTeardownSummaryPrompt(bundle, rows), []))));
+        ({ title, summary } = await withRetry((attempt) => run(`summary-try-${attempt}`, buildVideoTeardownSummaryPrompt(bundle, rows), []), parseVideoTeardownSummary));
     }
     return { title: title || options.fallbackTitle || "视频拆解", summary, rows };
 }

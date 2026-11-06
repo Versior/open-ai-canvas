@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { ApiError } from "@/services/api/request";
 import {
     createInteriorProject,
@@ -60,6 +61,23 @@ export function useInteriorProjects(userId: string) {
     const deletedRoundsRef = useRef(new Set<string>());
     const chainRef = useRef<Promise<void>>(Promise.resolve());
     const timerRef = useRef<number | undefined>(undefined);
+    const baseRef = useRef<InteriorProjectDocument>(emptyInteriorDocument());
+    const sessionRef = useRef({ userId });
+    const navigationRef = useRef(0);
+    if (sessionRef.current.userId !== userId) {
+        window.clearTimeout(timerRef.current);
+        sessionRef.current = { userId };
+        currentRef.current = null;
+        revisionRef.current = 0;
+        dirtyRef.current = false;
+        saveFailedRef.current = false;
+        deletedRoundsRef.current = new Set();
+        baseRef.current = emptyInteriorDocument();
+        chainRef.current = Promise.resolve();
+        navigationRef.current += 1;
+    }
+    const session = sessionRef.current;
+    const isCurrent = useCallback(() => sessionRef.current === session && getActiveUserScope() === (userId || "guest"), [session, userId]);
     const lastProjectKey = LAST_PROJECT_KEY + userId;
 
     const setLocal = useCallback((project: InteriorProject | null) => {
@@ -68,6 +86,7 @@ export function useInteriorProjects(userId: string) {
     }, []);
 
     const saveOnce = useCallback(async () => {
+        if (!isCurrent()) return;
         const project = currentRef.current;
         if (!project || !dirtyRef.current) return;
         dirtyRef.current = false;
@@ -78,31 +97,38 @@ export function useInteriorProjects(userId: string) {
                 if (!snapshot || snapshot.id !== project.id) return;
                 try {
                     const saved = await saveInteriorProject(snapshot.id, { name: snapshot.name, kind: snapshot.kind, document: snapshot.document, expectedRevision: revisionRef.current });
+                    if (!isCurrent()) return;
                     revisionRef.current = saved.revision;
+                    baseRef.current = normalizeInteriorDocument(saved.document);
                     // 保存期间页面可能又有新改动，本地文档保持最新，只同步修订号和时间。
                     const latest = currentRef.current;
                     if (latest && latest.id === saved.id) setLocal({ ...latest, revision: saved.revision, updatedAt: saved.updatedAt });
                     setProjects((list) => list?.map((item) => (item.id === saved.id ? summaryOf(saved) : item)) ?? list);
                     break;
                 } catch (error) {
+                    if (!isCurrent()) return;
                     if (!(error instanceof ApiError && error.reason === INTERIOR_PROJECT_CONFLICT) || attempt >= 2) throw error;
                     const server = await getInteriorProject(snapshot.id);
+                    if (!isCurrent()) return;
                     revisionRef.current = server.revision;
                     const local = currentRef.current;
                     if (!local || local.id !== snapshot.id) return;
-                    setLocal({ ...local, revision: server.revision, document: mergeInteriorDocuments(normalizeInteriorDocument(server.document), local.document, deletedRoundsRef.current) });
+                    const document = normalizeInteriorDocument(server.document);
+                    setLocal({ ...local, revision: server.revision, document: mergeInteriorDocuments(document, local.document, deletedRoundsRef.current, baseRef.current) });
+                    baseRef.current = document;
                 }
             }
             saveFailedRef.current = false;
             setSaveError("");
             setSaveState(dirtyRef.current ? "saving" : "saved");
         } catch (error) {
+            if (!isCurrent()) return;
             dirtyRef.current = true;
             saveFailedRef.current = true;
             setSaveError(errorText(error, "项目保存失败"));
             setSaveState("error");
         }
-    }, [setLocal]);
+    }, [isCurrent, setLocal]);
 
     const flush = useCallback(() => {
         window.clearTimeout(timerRef.current);
@@ -139,6 +165,7 @@ export function useInteriorProjects(userId: string) {
     /** 修改当前项目文档；projectId 不是当前项目时忽略，避免切换项目后旧任务写错地方。 */
     const update = useCallback(
         (projectId: string, mutate: (document: InteriorProjectDocument) => InteriorProjectDocument) => {
+            if (!isCurrent()) return;
             const project = currentRef.current;
             if (!project || project.id !== projectId) return;
             setLocal({ ...project, document: mutate(project.document) });
@@ -146,7 +173,7 @@ export function useInteriorProjects(userId: string) {
             setSaveState("saving");
             schedule();
         },
-        [schedule, setLocal],
+        [isCurrent, schedule, setLocal],
     );
 
     const removeRound = useCallback(
@@ -171,12 +198,17 @@ export function useInteriorProjects(userId: string) {
 
     const open = useCallback(
         async (projectId: string, discardUnsaved = false) => {
+            if (!isCurrent()) return;
+            const navigation = ++navigationRef.current;
             await ensureSaved(discardUnsaved);
+            if (!isCurrent() || navigation !== navigationRef.current) return;
             setProjectLoading(true);
             setProjectError("");
             try {
                 const project = withDocument(await getInteriorProject(projectId));
+                if (!isCurrent() || navigation !== navigationRef.current) return;
                 revisionRef.current = project.revision;
+                baseRef.current = project.document;
                 deletedRoundsRef.current = new Set();
                 dirtyRef.current = false;
                 saveFailedRef.current = false;
@@ -185,19 +217,24 @@ export function useInteriorProjects(userId: string) {
                 setSaveError("");
                 window.localStorage.setItem(lastProjectKey, project.id);
             } catch (error) {
-                setProjectError(errorText(error, "项目读取失败"));
+                if (isCurrent() && navigation === navigationRef.current) setProjectError(errorText(error, "项目读取失败"));
             } finally {
-                setProjectLoading(false);
+                if (isCurrent() && navigation === navigationRef.current) setProjectLoading(false);
             }
         },
-        [ensureSaved, lastProjectKey, setLocal],
+        [ensureSaved, isCurrent, lastProjectKey, setLocal],
     );
 
     const create = useCallback(
         async (name: string, kind: InteriorProjectKind, discardUnsaved = false) => {
+            if (!isCurrent()) throw new DOMException("账号已切换", "AbortError");
+            const navigation = ++navigationRef.current;
             await ensureSaved(discardUnsaved);
+            if (!isCurrent()) throw new DOMException("账号已切换", "AbortError");
             const project = withDocument(await createInteriorProject({ name, kind, document: emptyInteriorDocument() }));
+            if (!isCurrent() || navigation !== navigationRef.current) throw new DOMException("项目已切换", "AbortError");
             revisionRef.current = project.revision;
+            baseRef.current = project.document;
             deletedRoundsRef.current = new Set();
             dirtyRef.current = false;
             saveFailedRef.current = false;
@@ -207,45 +244,54 @@ export function useInteriorProjects(userId: string) {
             window.localStorage.setItem(lastProjectKey, project.id);
             return project;
         },
-        [ensureSaved, lastProjectKey, setLocal],
+        [ensureSaved, isCurrent, lastProjectKey, setLocal],
     );
 
     const rename = useCallback(
         async (name: string) => {
             const project = currentRef.current;
             if (!project) return;
-            await flush();
+            await ensureSaved();
+            if (!isCurrent()) return;
             const latest = currentRef.current;
             if (!latest || latest.id !== project.id) return;
             const saved = await saveInteriorProject(latest.id, { name, kind: latest.kind, document: latest.document, expectedRevision: revisionRef.current });
+            if (!isCurrent() || currentRef.current?.id !== latest.id) return;
             revisionRef.current = saved.revision;
-            setLocal({ ...latest, name: saved.name, revision: saved.revision, updatedAt: saved.updatedAt });
+            baseRef.current = normalizeInteriorDocument(saved.document);
+            setLocal({ ...currentRef.current, name: saved.name, revision: saved.revision, updatedAt: saved.updatedAt });
             setProjects((list) => list?.map((item) => (item.id === saved.id ? summaryOf(saved) : item)) ?? list);
         },
-        [flush, setLocal],
+        [ensureSaved, isCurrent, setLocal],
     );
 
     const remove = useCallback(
         async (projectId: string) => {
-            window.clearTimeout(timerRef.current);
-            await chainRef.current;
+            if (!isCurrent()) return;
+            const removingCurrent = currentRef.current?.id === projectId;
+            if (removingCurrent) {
+                window.clearTimeout(timerRef.current);
+                await chainRef.current;
+            }
+            if (!isCurrent()) return;
             try {
                 await deleteInteriorProject(projectId);
             } catch (error) {
                 // 项目已在别的窗口删掉时照常从本地移除。
                 if (!(error instanceof ApiError && error.status === 404)) throw error;
             }
-            dirtyRef.current = false;
-            saveFailedRef.current = false;
+            if (!isCurrent()) return;
             const rest = (projects || []).filter((item) => item.id !== projectId);
             setProjects(rest);
             if (currentRef.current?.id === projectId) {
+                dirtyRef.current = false;
+                saveFailedRef.current = false;
                 setLocal(null);
                 window.localStorage.removeItem(lastProjectKey);
                 if (rest[0]) await open(rest[0].id);
             }
         },
-        [lastProjectKey, open, projects, setLocal],
+        [isCurrent, lastProjectKey, open, projects, setLocal],
     );
 
     const retrySave = useCallback(() => {
@@ -254,19 +300,27 @@ export function useInteriorProjects(userId: string) {
     }, [flush]);
 
     const reloadList = useCallback(async () => {
+        if (!isCurrent()) return;
         setListError("");
         try {
             const list = await listInteriorProjects();
+            if (!isCurrent()) return;
             setProjects(list);
             const preferred = window.localStorage.getItem(lastProjectKey);
             const target = list.find((item) => item.id === preferred) || list[0];
             if (target && currentRef.current?.id !== target.id) await open(target.id);
         } catch (error) {
-            setListError(errorText(error, "项目列表读取失败"));
+            if (isCurrent()) setListError(errorText(error, "项目列表读取失败"));
         }
-    }, [lastProjectKey, open]);
+    }, [isCurrent, lastProjectKey, open]);
 
     useEffect(() => {
+        setProjects(null);
+        setLocal(null);
+        setSaveState("saved");
+        setSaveError("");
+        setProjectError("");
+        setProjectLoading(false);
         void reloadList();
         // 只在进入页面和切换账号时读取一次列表。
         // eslint-disable-next-line react-hooks/exhaustive-deps

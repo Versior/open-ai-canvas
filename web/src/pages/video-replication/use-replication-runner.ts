@@ -58,7 +58,25 @@ function readPending(): PendingReplication[] {
     try {
         const value: unknown = JSON.parse(scopedLocalStorage.getItem(PENDING_KEY) || "[]");
         if (!Array.isArray(value)) return [];
-        return value.filter((item): item is PendingReplication => Boolean(item) && typeof item.id === "string" && typeof item.model === "string" && typeof item.startedAt === "number" && Date.now() - item.startedAt < PENDING_MAX_AGE_MS);
+        return value.flatMap((item): PendingReplication[] => {
+            if (
+                !item ||
+                typeof item !== "object" ||
+                !item.id ||
+                typeof item.id !== "string" ||
+                !item.model ||
+                typeof item.model !== "string" ||
+                !Number.isFinite(item.startedAt) ||
+                item.startedAt > Date.now() ||
+                Date.now() - item.startedAt >= PENDING_MAX_AGE_MS
+            )
+                return [];
+            const textTasks =
+                item.textTasks && typeof item.textTasks === "object" && !Array.isArray(item.textTasks)
+                    ? Object.fromEntries(Object.entries(item.textTasks).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1])))
+                    : {};
+            return [{ id: item.id, model: item.model, startedAt: item.startedAt, fallbackTitle: typeof item.fallbackTitle === "string" ? item.fallbackTitle : "视频拆解", transcribe: item.transcribe === true, textTasks, failed: item.failed === true }];
+        });
     } catch {
         return [];
     }
@@ -105,7 +123,13 @@ function readVideoFileInfo(file: File): Promise<{ width: number; height: number;
             reject(new Error("无法读取视频，请确认格式受浏览器支持"));
         };
         video.src = url;
-    }).finally(() => URL.revokeObjectURL(url));
+    }).finally(() => {
+        video.onloadedmetadata = null;
+        video.onerror = null;
+        video.removeAttribute("src");
+        video.load();
+        URL.revokeObjectURL(url);
+    });
 }
 
 type RunContext = { signal: AbortSignal; scope: string; assertCurrent: () => void; update: (patch: Partial<ReplicationRun>) => void };
@@ -155,8 +179,14 @@ async function finishReplication(pending: PendingReplication, config: AiConfig, 
             signal: context.signal,
             expectedScope: context.scope,
             onProgress: (detail) => context.update({ detail }),
-            existingTask: (key) => readPending().find((item) => item.id === id)?.textTasks[key],
-            onTaskCreated: (key, taskId) => updatePending(id, (item) => (item ? { ...item, textTasks: { ...item.textTasks, [key]: taskId } } : item)),
+            existingTask: (key) => {
+                context.assertCurrent();
+                return readPending().find((item) => item.id === id)?.textTasks[key];
+            },
+            onTaskCreated: (key, taskId) => {
+                context.assertCurrent();
+                updatePending(id, (item) => (item ? { ...item, textTasks: { ...item.textTasks, [key]: taskId } } : item));
+            },
         });
         context.assertCurrent();
         context.update({ stage: "save", detail: "" });
@@ -165,7 +195,7 @@ async function finishReplication(pending: PendingReplication, config: AiConfig, 
     } catch (error) {
         // 中止（切换账号）时留着记录，下次回到这个账号还能接上；分析本身失败就不再自动重跑，等用户点「重试分析」，
         // 已经成功的文本任务留着，重试时不再重复提交。
-        if (!isAbort(error)) updatePending(id, (item) => (item ? { ...item, failed: true } : item));
+        if (!isAbort(error) && getActiveUserScope() === context.scope) updatePending(id, (item) => (item ? { ...item, failed: true } : item));
         throw error;
     }
     updatePending(id, () => undefined);

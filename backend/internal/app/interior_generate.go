@@ -59,9 +59,47 @@ type interiorVariant struct {
 	key, name, prompt string
 }
 
+type interiorPrepared struct {
+	model      interior.ModelRef
+	count      int
+	params     map[string]string
+	parameters map[string]any
+	refs       []map[string]any
+	variants   []interiorVariant
+	prompts    []string
+	metadata   []map[string]any
+}
+
 // GenerateInterior 编译提示词并为每个所选风格创建一个生图任务。
 // 计费、并发、取消和任务记录都沿用通用任务；第一个任务失败时直接报错，后续失败按项返回。
 func (s *Service) GenerateInterior(actor *model.User, req InteriorGenerateInput, traceID, requestID string) (*InteriorGenerateResult, error) {
+	prepared, err := s.prepareInteriorGeneration(actor, req)
+	if err != nil {
+		return nil, err
+	}
+	result := &InteriorGenerateResult{Model: prepared.model, Count: prepared.count, Params: prepared.params, Items: make([]InteriorGenerateItem, 0, len(prepared.variants))}
+	for index, variant := range prepared.variants {
+		task, createErr := s.createInteriorTask(actor.ID, prepared.model, prepared.parameters, prepared.prompts[index], prepared.refs, prepared.metadata[index], traceID, requestID)
+		item := InteriorGenerateItem{StyleKey: variant.key, StyleName: variant.name}
+		if createErr != nil {
+			if index == 0 {
+				return nil, createErr
+			}
+			item.Error = interiorErrorMessage(createErr)
+			result.Items = append(result.Items, item)
+			for _, rest := range prepared.variants[index+1:] {
+				result.Items = append(result.Items, InteriorGenerateItem{StyleKey: rest.key, StyleName: rest.name, Error: "前一个风格提交失败，未提交"})
+			}
+			break
+		}
+		item.Task = &InteriorTaskReceipt{ID: task.ID, Status: task.Status}
+		result.Items = append(result.Items, item)
+	}
+	return result, nil
+}
+
+// 报价和生成共用入参、资源归属、模型选择与提示词编译，避免预算与实际请求分叉。
+func (s *Service) prepareInteriorGeneration(actor *model.User, req InteriorGenerateInput) (*interiorPrepared, error) {
 	if actor == nil {
 		return nil, Unauthorized("请先登录")
 	}
@@ -142,8 +180,8 @@ func (s *Service) GenerateInterior(actor *model.User, req InteriorGenerateInput,
 		return nil, err
 	}
 
-	result := &InteriorGenerateResult{Model: modelRef, Count: count, Params: params, Items: make([]InteriorGenerateItem, 0, len(variants))}
-	for index, variant := range variants {
+	prepared := &interiorPrepared{model: modelRef, count: count, params: params, parameters: parameters, refs: refs, variants: variants}
+	for _, variant := range variants {
 		prompt := interior.Compile(interior.PromptInput{
 			Template: mode.PromptTemplate, RoomName: roomName, RoomPrompt: roomPrompt,
 			StyleName: variant.name, StylePrompt: variant.prompt, ParamPrompts: paramPrompts, Notes: notes,
@@ -158,27 +196,22 @@ func (s *Service) GenerateInterior(actor *model.User, req InteriorGenerateInput,
 		if variant.key != "" {
 			meta["styleKey"] = variant.key
 		}
-		task, createErr := s.createInteriorTask(actor.ID, modelRef, parameters, prompt, refs, meta, traceID, requestID)
-		item := InteriorGenerateItem{StyleKey: variant.key, StyleName: variant.name}
-		if createErr != nil {
-			if index == 0 {
-				return nil, createErr
-			}
-			item.Error = interiorErrorMessage(createErr)
-			result.Items = append(result.Items, item)
-			// 后面的风格大概率因同一原因失败（积分、并发上限），不再继续提交。
-			for _, rest := range variants[index+1:] {
-				result.Items = append(result.Items, InteriorGenerateItem{StyleKey: rest.key, StyleName: rest.name, Error: "前一个风格提交失败，未提交"})
-			}
-			break
-		}
-		item.Task = &InteriorTaskReceipt{ID: task.ID, Status: task.Status}
-		result.Items = append(result.Items, item)
+		prepared.prompts = append(prepared.prompts, prompt)
+		prepared.metadata = append(prepared.metadata, meta)
 	}
-	return result, nil
+	return prepared, nil
 }
 
 func (s *Service) createInteriorTask(userID string, ref interior.ModelRef, parameters map[string]any, prompt string, refs []map[string]any, meta map[string]any, traceID, requestID string) (*model.Task, error) {
+	input, err := s.interiorGenerationInput(userID, ref, parameters, prompt, refs, meta)
+	if err != nil {
+		return nil, err
+	}
+	config := input["config"].(map[string]any)
+	return s.CreateTask(userID, CreateTaskRequest{Type: "canvas_image", Operation: "image", Prompt: prompt, Model: stringValue(config["model"]), LogicalModelID: ref.LogicalModelID, Input: input, TraceID: traceID, RequestID: requestID})
+}
+
+func (s *Service) interiorGenerationInput(userID string, ref interior.ModelRef, parameters map[string]any, prompt string, refs []map[string]any, meta map[string]any) (map[string]any, error) {
 	input := map[string]any{
 		"mode":     WorkbenchKindImage,
 		"prompt":   prompt,
@@ -196,7 +229,48 @@ func (s *Service) createInteriorTask(userID string, ref interior.ModelRef, param
 		return nil, BadAuthRequest("所选系统模型不可用")
 	}
 	input["config"] = providerConfig
-	return s.CreateTask(userID, CreateTaskRequest{Type: "canvas_image", Operation: "image", Prompt: prompt, Model: modelName, LogicalModelID: ref.LogicalModelID, Input: input, TraceID: traceID, RequestID: requestID})
+	return input, nil
+}
+
+type InteriorEstimate struct {
+	Model              interior.ModelRef `json:"model"`
+	Images             int               `json:"images"`
+	AmountMicrocredits int64             `json:"amountMicrocredits"`
+	Estimated          bool              `json:"estimated"`
+}
+
+// EstimateInterior 不创建任务、不预留余额；按实际每个风格的输入走既有报价系统。
+func (s *Service) EstimateInterior(actor *model.User, req InteriorGenerateInput) (*InteriorEstimate, error) {
+	prepared, err := s.prepareInteriorGeneration(actor, req)
+	if err != nil {
+		return nil, err
+	}
+	result := &InteriorEstimate{Model: prepared.model, Images: prepared.count * len(prepared.variants)}
+	for index := range prepared.variants {
+		input, err := s.interiorGenerationInput(actor.ID, prepared.model, prepared.parameters, prepared.prompts[index], prepared.refs, prepared.metadata[index])
+		if err != nil {
+			return nil, err
+		}
+		// 路由意图解析只接受 JSON 数组；与 CreateTask 的 JSON 边界保持一致。
+		input, err = normalizeTaskInput(input)
+		if err != nil {
+			return nil, err
+		}
+		intent := ModelRequestIntentFromTaskInput(input, "canvas_image", "image")
+		var quote *LogicalModelQuote
+		if prepared.model.LogicalModelID != "" {
+			quote, err = s.QuoteLogicalModel(actor.ID, prepared.model.LogicalModelID, intent)
+		} else {
+			config := input["config"].(map[string]any)
+			quote, err = s.QuoteChannelModel(actor.ID, ChannelModelQuoteRequest{ChannelID: stringValue(config["channelId"]), ModelKey: prepared.model.Model, Intent: intent})
+		}
+		if err != nil {
+			return nil, err
+		}
+		result.AmountMicrocredits += quote.AmountMicrocredits
+		result.Estimated = result.Estimated || quote.Estimated
+	}
+	return result, nil
 }
 
 // interiorReferenceImages 校验原图和参考图属于当前用户且已就绪；原图固定排在第一张，提示词按这个顺序描述。

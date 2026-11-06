@@ -474,34 +474,25 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [surface, modeId, sourceResourceId, count]
-              properties:
-                surface: {type: string, enum: [quick, pro]}
-                modeId: {type: string}
-                roomKey: {type: string}
-                styleKeys: {type: array, maxItems: 4, items: {type: string}}
-                params: {type: object, additionalProperties: {type: string}}
-                notes: {type: string, maxLength: 500}
-                sourceResourceId: {type: string}
-                referenceResourceIds: {type: array, maxItems: 3, items: {type: string}}
-                count: {type: integer, minimum: 1, maximum: 4}
-                size: {type: string, enum: [auto, "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]}
-                quality: {type: string, enum: [auto, low, medium, high], description: 仅专业模式}
-                model:
-                  type: object
-                  additionalProperties: false
-                  required: [model]
-                  properties:
-                    model: {type: string}
-                    channelId: {type: string}
-                    logicalModelId: {type: string}
-                    label: {type: string}
-                projectId: {type: string, description: 关联本人的室内设计项目}
-                roundId: {type: string, description: 页面用来回填结果的轮次标识}
+              $ref: "#/components/schemas/InteriorGenerateInput"
       responses:
         "200": {description: data 包含实际使用的 model、count、params 与 items（每个风格的任务回执或错误）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /interior/estimate:
+    post:
+      tags: [canvas]
+      summary: 室内设计积分报价
+      description: 与出图复用模型选择、资源归属、模式参数和风格校验；按每个风格的实际参考图数与生成数量汇总现有模型报价。不创建任务、不预留余额。报价是当前配置下的预估，实际结算以任务为准。需要登录、开启室内设计并遵守限流，响应 no-store。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InteriorGenerateInput"}
+      responses:
+        "200": {description: data 包含 model、images（总图片数）、amountMicrocredits（微积分合计）、estimated（是否包含预估报价）}
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
@@ -5533,6 +5524,33 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    InteriorGenerateInput:
+      type: object
+      additionalProperties: false
+      required: [surface, modeId, sourceResourceId, count]
+      properties:
+        surface: {type: string, enum: [quick, pro]}
+        modeId: {type: string}
+        roomKey: {type: string}
+        styleKeys: {type: array, maxItems: 4, items: {type: string}}
+        params: {type: object, additionalProperties: {type: string}}
+        notes: {type: string, maxLength: 500}
+        sourceResourceId: {type: string}
+        referenceResourceIds: {type: array, maxItems: 3, items: {type: string}}
+        count: {type: integer, minimum: 1, maximum: 4}
+        size: {type: string, enum: [auto, "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]}
+        quality: {type: string, enum: [auto, low, medium, high], description: 仅专业模式}
+        model:
+          type: object
+          additionalProperties: false
+          required: [model]
+          properties:
+            model: {type: string}
+            channelId: {type: string}
+            logicalModelId: {type: string}
+            label: {type: string}
+        projectId: {type: string, description: 关联本人的室内设计项目}
+        roundId: {type: string, description: 页面用来回填结果的轮次标识}
     AgentPetPromotion:
       type: object
       required: [label, endsAt]

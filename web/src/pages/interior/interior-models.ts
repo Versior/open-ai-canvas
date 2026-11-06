@@ -96,23 +96,43 @@ export function patchInteriorItem(document: InteriorProjectDocument, roundId: st
 }
 
 /**
- * 保存冲突时合并两边：以服务端为底，本地有而服务端没有的轮次补上，同一轮次以本地为准。
- * 只有本页会写室内项目，冲突多半来自另一个窗口新增或删除了轮次。
+ * 根据上次服务端确认的文档做三方合并；同一轮次里的独立任务结果按 item id 合并。
+ * 本地没改过的字段沿用服务端，双方修改同一字段时保留本地；服务端删除的既有记录不复活。
  */
-export function mergeInteriorDocuments(server: InteriorProjectDocument, local: InteriorProjectDocument, deletedIds: ReadonlySet<string>): InteriorProjectDocument {
-    const rounds = mergeById(server.rounds, local.rounds, deletedIds);
-    const scenes = mergeById(server.scenes || [], local.scenes || [], deletedIds);
+export function mergeInteriorDocuments(server: InteriorProjectDocument, local: InteriorProjectDocument, deletedIds: ReadonlySet<string>, base?: InteriorProjectDocument): InteriorProjectDocument {
+    const rounds = mergeById(server.rounds, local.rounds, deletedIds, base?.rounds);
+    const scenes = mergeById(server.scenes || [], local.scenes || [], deletedIds, base?.scenes);
     return scenes.length ? { version: 1, rounds, scenes } : { version: 1, rounds };
 }
 
 /** 以服务端为底按 id 合并：本地删掉的去掉，同一条以本地为准，本地新增的补上，按时间倒序。 */
-function mergeById<T extends { id: string; createdAt: string }>(server: T[], local: T[], deletedIds: ReadonlySet<string>) {
+function mergeById<T extends { id: string; createdAt: string }>(server: T[], local: T[], deletedIds: ReadonlySet<string>, base?: T[]) {
     const localById = new Map(local.map((item) => [item.id, item]));
-    const merged = server.filter((item) => !deletedIds.has(item.id)).map((item) => localById.get(item.id) || item);
+    const baseById = new Map((base || []).map((item) => [item.id, item]));
+    const merged = server.filter((item) => !deletedIds.has(item.id) && !(baseById.has(item.id) && !localById.has(item.id))).map((item) => (localById.has(item.id) ? (mergeChangedFields(item, localById.get(item.id), baseById.get(item.id)) as T) : item));
     const known = new Set(merged.map((item) => item.id));
-    for (const item of local) if (!known.has(item.id)) merged.push(item);
+    for (const item of local) if (!known.has(item.id) && !deletedIds.has(item.id) && !baseById.has(item.id)) merged.push(item);
     merged.sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
     return merged;
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function mergeChangedFields(server: unknown, local: unknown, base: unknown): unknown {
+    if (JSON.stringify(local) === JSON.stringify(base)) return server;
+    if (JSON.stringify(server) === JSON.stringify(base)) return local;
+    if (Array.isArray(server) && Array.isArray(local) && Array.isArray(base) && [...server, ...local, ...base].every((item) => record(item) && typeof item.id === "string")) {
+        const remote = new Map(server.map((item) => [item.id, item]));
+        const own = new Map(local.map((item) => [item.id, item]));
+        const original = new Map(base.map((item) => [item.id, item]));
+        return [...new Set([...remote.keys(), ...own.keys()])]
+            .filter((id) => !original.has(id) || (remote.has(id) && own.has(id)))
+            .map((id) => (remote.has(id) && own.has(id) ? mergeChangedFields(remote.get(id), own.get(id), original.get(id)) : remote.get(id) || own.get(id)));
+    }
+    if (record(server) && record(local) && record(base)) return Object.fromEntries([...new Set([...Object.keys(server), ...Object.keys(local), ...Object.keys(base)])].map((key) => [key, mergeChangedFields(server[key], local[key], base[key])]));
+    return local;
 }
 
 export function patchInteriorScene(document: InteriorProjectDocument, sceneId: string, patch: Partial<InteriorSceneItem>): InteriorProjectDocument {

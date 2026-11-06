@@ -39,6 +39,7 @@ const pending = new Map<string, PendingOperation[]>();
 const confirmed = new Map<string, number>();
 const conflicts = new Map<string, number>();
 let sequence = 0;
+let session = 0;
 
 function sortProducts(products: StudioProduct[]) {
     return [...products].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -57,11 +58,13 @@ function replay(id: string, base: StudioProduct) {
 }
 
 function resetTracking() {
+    session += 1;
     for (const timer of timers.values()) clearTimeout(timer);
     timers.clear();
     pending.clear();
     confirmed.clear();
     conflicts.clear();
+    inflight.clear();
 }
 
 export const useStudioStore = create<StudioStore>((set, get) => {
@@ -111,12 +114,14 @@ export const useStudioStore = create<StudioStore>((set, get) => {
     }
 
     async function persist(id: string) {
+        const scope = get().scope;
+        const generation = session;
         timers.delete(id);
         // 同一商品的保存严格排队：先登记本次，再等上一次结束，避免两次保存拿着同一个 revision 并发写入。
         const previous = inflight.get(id);
         const task = (async () => {
             if (previous) await previous.catch(() => undefined);
-            const scope = get().scope;
+            if (generation !== session || getActiveUserScope() !== scope) return;
             const product = get().products.find((item) => item.id === id);
             if (!product) return;
             const operations = pending.get(id) || [];
@@ -127,7 +132,7 @@ export const useStudioStore = create<StudioStore>((set, get) => {
             set((state) => ({ saveStates: { ...state.saveStates, [id]: "saving" } }));
             try {
                 const result = await saveStudioProduct(product, expected);
-                if (getActiveUserScope() !== scope) return;
+                if (generation !== session || getActiveUserScope() !== scope) return;
                 conflicts.delete(id);
                 confirmed.set(id, result.product.revision);
                 const remaining = (pending.get(id) || []).filter((operation) => operation.seq > savedThrough);
@@ -140,7 +145,7 @@ export const useStudioStore = create<StudioStore>((set, get) => {
                     saveErrors: { ...state.saveErrors, [id]: "" },
                 }));
             } catch (error) {
-                if (getActiveUserScope() !== scope) return;
+                if (generation !== session || getActiveUserScope() !== scope) return;
                 const attempts = conflicts.get(id) || 0;
                 if (errorReason(error) === STUDIO_PRODUCT_CONFLICT && attempts < MAX_CONFLICT_RETRIES) {
                     conflicts.set(id, attempts + 1);
@@ -213,12 +218,14 @@ export const useStudioStore = create<StudioStore>((set, get) => {
             }
         },
         upsert(product, options) {
+            if (get().scope !== getActiveUserScope()) throw new DOMException("账号已切换，请重新加载生图台", "AbortError");
             const next = { ...product, updatedAt: new Date().toISOString() };
             if (!confirmed.has(product.id)) confirmed.set(product.id, product.revision);
             set((state) => ({ products: sortProducts([next, ...state.products.filter((item) => item.id !== product.id)]), saveStates: { ...state.saveStates, [product.id]: "dirty" } }));
             schedule(product.id, options?.immediate);
         },
         update(id, updater, options) {
+            if (get().scope !== getActiveUserScope()) return undefined;
             const current = get().products.find((item) => item.id === id);
             if (!current) return undefined;
             const stamp = new Date().toISOString();
@@ -231,11 +238,16 @@ export const useStudioStore = create<StudioStore>((set, get) => {
             return next;
         },
         async remove(id) {
+            const scope = get().scope;
+            const generation = session;
+            if (scope !== getActiveUserScope()) throw new DOMException("账号已切换", "AbortError");
             const timer = timers.get(id);
             if (timer) clearTimeout(timer);
             timers.delete(id);
             await inflight.get(id)?.catch(() => undefined);
+            if (session !== generation || scope !== getActiveUserScope()) throw new DOMException("账号已切换", "AbortError");
             await deleteStudioProduct(id);
+            if (session !== generation || scope !== getActiveUserScope()) return;
             forget(id);
             set((state) => ({ products: state.products.filter((item) => item.id !== id) }));
         },

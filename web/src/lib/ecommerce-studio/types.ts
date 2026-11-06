@@ -268,6 +268,8 @@ export type StudioPlan = {
     createdAt: string;
     textMode: StudioTextMode;
     shots: StudioShot[];
+    /** 表单历史记录的排字质感；导出时不随当前商品设置改变。 */
+    styleId?: StudioStylePresetId;
 };
 
 /**
@@ -325,6 +327,7 @@ export type StudioRun = {
     kind?: StudioPlanKind;
     textMode: StudioTextMode;
     quality: string;
+    styleId?: StudioStylePresetId;
     /** 点生成那一刻的清晰度，重出这一组的图也按它。 */
     resolution?: string;
     /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性和创意主线。 */

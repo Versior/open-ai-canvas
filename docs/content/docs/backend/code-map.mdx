@@ -5,6 +5,13 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 三大创作工作台交付与恢复
+
+- 视频剪辑包：`web/src/lib/canvas/video-replication-delivery.ts` → `pages/video-replication/replication-delivery.ts`；复刻恢复：`remake/remake-runner.ts`。
+- 室内报价：`app/interior_generate.go` 的 `prepareInteriorGeneration`、`EstimateInterior` → `handler/interior.go` → `pages/interior/use-interior-estimate.ts`；空间交付：`lib/interior/scene-delivery.ts`、`interior-scene-delivery.tsx`。
+- 生图实测：`lib/ecommerce-studio/delivery-review.ts` → `pages/ecommerce-studio/studio-delivery-review.ts` → `studio-results.tsx`、`studio-delivery.ts`；保存/调度在 `use-studio-store.ts`、`use-studio-runner.ts`。
+- 交付文本共用 `lib/delivery-text.ts`；回归：`creative-reliability.test.ts` 的真实 hook harness、`creative-delivery.test.ts`、`interior-project-merge.test.ts`、`app/interior_estimate_test.go`。功能合同见 [创作工作台交付与恢复](./creative-workbenches)。
+
 ## 电商 Agent 与后台知识库
 
 - 页面：`web/src/pages/ecommerce/`；后台：`web/src/pages/admin/ecommerce-agent-config-page.tsx`（上线检查、阶段模型 `ecommerce-stage-models.tsx` 与目录换算 `ecommerce-model-catalog.ts`）；`ecommerce-management-page.tsx`（知识与技能标签页：`ecommerce-knowledge-page.tsx`、`ecommerce-skills-page.tsx`、`ecommerce-categories-page.tsx`，内容头 `ecommerce-library-panel.tsx`）；`knowledge-domain-coverage.ts`。

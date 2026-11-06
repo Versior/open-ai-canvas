@@ -12,13 +12,13 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { parseBackendGenerationResult, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { createProductVideoSplit, parseProductVideoSplitResult } from "@/services/api/product-video";
 import { resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
-import { cancelGenerationTask, queryGenerationTask, waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
+import { cancelGenerationTask, isGenerationTaskTerminalError, queryGenerationTask, waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { createTimelineRenderTask, type TimelineRenderResult } from "@/services/api/timeline-tasks";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceVideo } from "@/types/media";
 import { productVideoGenerationConfig, productVideoLimitsFor } from "../replace/product-video-config";
-import { readRemake, updateRemake } from "../replace/use-product-video-store";
+import { readRemake, updateRemake as updateStoredRemake } from "../replace/use-product-video-store";
 import { drawRemakeSubtitle } from "./remake-subtitles";
 
 /**
@@ -28,7 +28,7 @@ import { drawRemakeSubtitle } from "./remake-subtitles";
  */
 
 const SPLIT_TIMEOUT_MS = 11 * 60_000;
-const VIDEO_TIMEOUT_MS = 65 * 60_000;
+const VIDEO_TIMEOUT_MS = 125 * 60_000;
 const RENDER_TIMEOUT_MS = 62 * 60_000;
 const UNIT_CONCURRENCY = 3;
 const VOICE_TIMEOUT_MS = 10 * 60_000;
@@ -37,6 +37,17 @@ type Progress = { stage?: string; percent?: number; units?: Record<string, numbe
 export const useRemakeRuntime = create<{ active: Record<string, true>; progress: Record<string, Progress> }>(() => ({ active: {}, progress: {} }));
 
 const controllers = new Map<string, AbortController>();
+const activeScopes = new Map<string, string>();
+
+function assertScope(id: string) {
+    const expected = activeScopes.get(id);
+    if (expected !== undefined && getActiveUserScope() !== expected) throw new DOMException("账号已切换", "AbortError");
+}
+
+function updateRemake(id: string, updater: (job: RemakeJob) => RemakeJob) {
+    assertScope(id);
+    return updateStoredRemake(id, updater);
+}
 
 function setProgress(id: string, patch: Progress | undefined) {
     useRemakeRuntime.setState((state) => {
@@ -57,6 +68,7 @@ function setActive(id: string, active: boolean) {
 }
 
 function read(id: string) {
+    assertScope(id);
     const job = readRemake(id);
     if (!job) throw new Error("作品已被删除");
     return job;
@@ -96,6 +108,7 @@ async function clipStep(id: string, signal: AbortSignal) {
     setProgress(id, { stage: "切参考片段" });
     if (job.clips !== clips) await updateRemake(id, (value) => ({ ...value, status: "clipping", clips }));
     const longest = Math.max(...missing.map((unit) => unit.clipEndMs - unit.clipStartMs));
+    assertScope(id);
     const created = await createProductVideoSplit(
         { resourceId: job.source.resourceId, startMs: 0, endMs: 0, maxSegmentSeconds: Math.min(30, Math.max(8, Math.ceil(longest / 1000))), ranges: missing.map((unit) => ({ startMs: unit.clipStartMs, endMs: unit.clipEndMs })) },
         clips.key,
@@ -148,6 +161,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
         const { referenceImages, referenceVideos } = unitReferences(job, unit);
         await updateRemake(id, patchUnit(key, { status: "running", error: undefined }));
         task = await submitBackendGenerationTask({
+            expectedUserScope: activeScopes.get(id),
             mode: "video",
             prompt: buildRemakeUnitPrompt(job, unit, shots, seconds),
             config: productVideoGenerationConfig(config, { model: job.model, ratio: job.ratio, resolution: job.resolution, seconds, audio: speaks ? "model" : "mute" }),
@@ -188,7 +202,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
         );
     } catch (error) {
         if (signal.aborted) throw error;
-        await updateRemake(id, patchUnit(key, { status: "failed", error: errorMessage(error, "生成失败"), taskId: undefined }));
+        await updateRemake(id, patchUnit(key, { status: "failed", error: errorMessage(error, "生成失败"), ...(isGenerationTaskTerminalError(error) ? { taskId: undefined } : {}) }));
     }
 }
 
@@ -240,11 +254,15 @@ async function voiceLineStep(id: string, shotIndex: number, config: AiConfig, si
     const line = job.voiceLines.find((item) => item.shotIndex === shotIndex);
     if (!line || line.status === "succeeded") return;
     let task: GenerationTask | undefined = line.taskId ? await queryGenerationTask(line.taskId, { signal }) : undefined;
-    if (task && terminal(task)) task = undefined;
+    if (task && terminal(task)) {
+        await updateRemake(id, patchVoice(shotIndex, { status: "failed", taskId: undefined, error: task.error || "配音任务已停止，请重试" }));
+        return;
+    }
     if (!task) {
         await updateRemake(id, patchVoice(shotIndex, { status: "running", error: undefined }));
         task = await submitBackendGenerationTask({
             mode: "audio",
+            expectedUserScope: activeScopes.get(id),
             prompt: line.text,
             config: remakeVoiceConfig(config, job),
             signal,
@@ -261,7 +279,7 @@ async function voiceLineStep(id: string, shotIndex: number, config: AiConfig, si
         await updateRemake(id, patchVoice(shotIndex, { status: "succeeded", taskId: undefined, error: undefined, resourceId, ...(result.audio?.durationMs ? { durationMs: result.audio.durationMs } : {}) }));
     } catch (error) {
         if (signal.aborted) throw error;
-        await updateRemake(id, patchVoice(shotIndex, { status: "failed", taskId: undefined, error: errorMessage(error, "配音失败") }));
+        await updateRemake(id, patchVoice(shotIndex, { status: "failed", ...(isGenerationTaskTerminalError(error) ? { taskId: undefined } : {}), error: errorMessage(error, "配音失败") }));
     }
 }
 
@@ -306,9 +324,11 @@ async function subtitleStep(id: string, size: { width: number; height: number },
     setProgress(id, { stage: "画字幕" });
     const items: { shotIndex: number; resourceId: string }[] = [];
     for (const line of lines) {
+        assertScope(id);
         if (signal.aborted) throw new DOMException("已停止", "AbortError");
         const blob = await drawRemakeSubtitle(line.text, size);
         const file = new File([blob], `字幕-镜头${line.shotIndex}.png`, { type: "image/png" });
+        assertScope(id);
         const resource = await uploadResourceFile(file, "image", { fileName: file.name, width: size.width, height: size.height });
         items.push({ shotIndex: line.shotIndex, resourceId: resource.id });
     }
@@ -325,6 +345,7 @@ async function assembleStep(id: string, config: AiConfig, signal: AbortSignal) {
     setProgress(id, { stage: "拼接成片" });
     let task = job.render?.taskId ? await queryGenerationTask(job.render.taskId, { signal }) : undefined;
     if (!task || terminal(task)) {
+        assertScope(id);
         task = await createTimelineRenderTask({ projectId: "", timeline: remakeTimeline(job, size) }, signal);
         await updateRemake(id, (value) => ({ ...value, render: { taskId: task!.id } }));
     }
@@ -344,6 +365,7 @@ export function runRemake(id: string, config: AiConfig) {
     if (controllers.has(id)) return;
     const controller = new AbortController();
     const scope = getActiveUserScope();
+    activeScopes.set(id, scope);
     controllers.set(id, controller);
     setActive(id, true);
     void (async () => {
@@ -365,6 +387,7 @@ export function runRemake(id: string, config: AiConfig) {
             await updateRemake(id, (value) => ({ ...value, status: "failed", error: errorMessage(error, "生成失败") })).catch(() => undefined);
         } finally {
             controllers.delete(id);
+            activeScopes.delete(id);
             setActive(id, false);
             setProgress(id, undefined);
         }
@@ -388,6 +411,7 @@ export async function startRemake(id: string, config: AiConfig, credits?: number
 
 export async function stopRemake(id: string) {
     controllers.get(id)?.abort();
+    const scope = getActiveUserScope();
     const job = readRemake(id);
     if (!job) return;
     const running = [
@@ -396,19 +420,35 @@ export async function stopRemake(id: string) {
         ...job.voiceLines.filter((line) => line.status === "running").map((line) => line.taskId),
         job.render?.resourceId ? undefined : job.render?.taskId,
     ].filter((taskId): taskId is string => Boolean(taskId));
-    await Promise.all(running.map((taskId) => cancelGenerationTask(taskId).catch(() => undefined)));
+    const confirmed = new Set<string>();
+    await Promise.all(
+        running.map(async (taskId) => {
+            try {
+                const task = await cancelGenerationTask(taskId);
+                if (terminal(task)) confirmed.add(taskId);
+            } catch {
+                /* 取消状态未确认，保留编号供再次查询。 */
+            }
+        }),
+    );
+    if (getActiveUserScope() !== scope) return;
+    const stopped = (taskId?: string) => !taskId || confirmed.has(taskId);
+    const stopError = (taskId?: string) => (stopped(taskId) ? "已停止" : "取消未确认，接着生成会先查询原任务");
     await updateRemake(id, (value) => ({
         ...value,
         status: "failed",
-        error: "已停止",
-        units: value.units.map((unit) => (unit.status === "running" ? { ...unit, status: "failed", error: "已停止", taskId: undefined } : unit)),
-        voiceLines: value.voiceLines.map((line) => (line.status === "running" ? { ...line, status: "failed", error: "已停止", taskId: undefined } : line)),
-        render: value.render?.resourceId ? value.render : undefined,
+        error: running.some((taskId) => !confirmed.has(taskId)) ? "已暂停等待；部分任务取消未确认，接着生成会先查询原任务" : "已停止",
+        units: value.units.map((unit) => (unit.status === "running" ? { ...unit, status: "failed", error: stopError(unit.taskId), taskId: stopped(unit.taskId) ? undefined : unit.taskId } : unit)),
+        voiceLines: value.voiceLines.map((line) => (line.status === "running" ? { ...line, status: "failed", error: stopError(line.taskId), taskId: stopped(line.taskId) ? undefined : line.taskId } : line)),
+        render: value.render?.resourceId || !stopped(value.render?.taskId) ? value.render : undefined,
     }));
 }
 
 /** 定向重做一段：带上这次要修正的问题，保留已有候选，新候选生成好后自动选中。 */
 export async function redoRemakeUnit(id: string, key: string, fix: string, config: AiConfig) {
+    const unit = read(id).units.find((item) => item.key === key);
+    if (!unit) throw new Error("生成单元不存在");
+    if (unit.taskId) throw new Error("原任务状态尚未确认，请先接着生成查询结果，再重做");
     await updateRemake(id, (value) => ({
         ...patchUnit(key, (unit) => ({ status: "pending", attempt: unit.attempt + 1, error: undefined, taskId: undefined, ...(fix.trim() ? { fix: fix.trim() } : { fix: undefined }) }))(value),
         status: "generating",
@@ -424,9 +464,9 @@ export async function retryRemake(id: string, config: AiConfig) {
         ...value,
         status: "generating",
         error: undefined,
-        units: value.units.map((unit) => (unit.status === "failed" ? { ...unit, status: "pending", attempt: unit.attempt + 1, error: undefined, taskId: undefined } : unit)),
-        voiceLines: value.voiceLines.map((line) => (line.status === "failed" ? { ...line, status: "pending", attempt: line.attempt + 1, error: undefined, taskId: undefined } : line)),
-        render: value.render?.resourceId ? value.render : undefined,
+        units: value.units.map((unit) => (unit.status === "failed" ? { ...unit, status: "pending", attempt: unit.attempt + (unit.taskId ? 0 : 1), error: undefined } : unit)),
+        voiceLines: value.voiceLines.map((line) => (line.status === "failed" ? { ...line, status: "pending", attempt: line.attempt + (line.taskId ? 0 : 1), error: undefined } : line)),
+        render: value.render,
     }));
     runRemake(id, config);
 }

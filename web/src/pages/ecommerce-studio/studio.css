@@ -21,6 +21,24 @@
     --es-on-media: #ffffff;
 }
 
+.es-delivery-review {
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+    border-radius: var(--r-md);
+    background: var(--es-muted);
+    font-size: var(--fs-caption);
+}
+.es-delivery-review summary {
+    cursor: pointer;
+}
+.es-delivery-review ul {
+    padding-left: var(--space-4);
+}
+.es-delivery-review p {
+    color: var(--es-ink-2);
+    margin-bottom: 0;
+}
+
 /* ---------- 页面骨架 ---------- */
 .es-page {
     display: flex;

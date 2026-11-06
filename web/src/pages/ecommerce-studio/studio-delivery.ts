@@ -4,11 +4,12 @@ import type { EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
 import { studioEffectiveTextMode, studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioActivePlan } from "@/lib/ecommerce-studio/runs";
-import { studioProductStyle, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
+import { studioProductStyle, studioShotSpec, studioStyle } from "@/lib/ecommerce-studio/shot-specs";
 import { typesetStudioImage } from "@/lib/ecommerce-studio/typeset";
 import type { StudioOutput, StudioPlan, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { createZip } from "@/lib/zip";
 import { getResourceBlob, resourceStorageKey } from "@/services/api/resources";
+import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 
 /**
  * 交付：把每张成品按需排字，装订详情长图、按平台切片，并打包文案与清单。
@@ -35,27 +36,33 @@ async function objectUrl(output: StudioOutput) {
 /** 需要程序排字的镜头在这里排上文字；其余原样使用。返回的 URL 由调用方负责释放。 */
 export async function composeStudioShots(product: StudioProduct, plan: StudioPlan, signal?: AbortSignal): Promise<StudioComposedShot[]> {
     const family = product.dossier?.family || "generic";
-    const style = studioProductStyle(product, studioActivePlan(product)?.styleId);
+    const style = plan.styleId ? studioStyle(plan.styleId) : studioProductStyle(product, studioActivePlan(product)?.styleId);
     const results: StudioComposedShot[] = [];
-    for (const shot of plan.shots) {
-        if (signal?.aborted) break;
-        const output = studioShotPreview(shot);
-        if (!output) continue;
-        const spec = studioShotSpec(shot.role, family);
-        const source = await objectUrl(output);
-        const overlay = studioShotHasCopy(shot, spec) && spec.overlayZone && studioEffectiveTextMode(plan, studioModelAdapter(attemptModel(shot, output))).mode === "overlay";
-        if (!overlay || !spec.overlayZone) {
-            results.push({ shot, output, url: source, composed: false });
-            continue;
+    try {
+        for (const shot of plan.shots) {
+            if (signal?.aborted) throw new DOMException("导出已停止", "AbortError");
+            const output = studioShotPreview(shot);
+            if (!output) continue;
+            const spec = studioShotSpec(shot.role, family);
+            const source = await objectUrl(output);
+            const overlay = studioShotHasCopy(shot, spec) && spec.overlayZone && studioEffectiveTextMode(plan, studioModelAdapter(attemptModel(shot, output))).mode === "overlay";
+            if (!overlay || !spec.overlayZone) {
+                results.push({ shot, output, url: source, composed: false });
+                continue;
+            }
+            try {
+                const url = await typesetStudioImage({ imageUrl: source, zone: spec.overlayZone, content: { headline: shot.headline, subline: shot.subline, lines: shot.lines }, ink: style.ink, inkSoft: style.inkSoft });
+                results.push({ shot, output, url, composed: true });
+            } finally {
+                URL.revokeObjectURL(source);
+            }
         }
-        try {
-            const url = await typesetStudioImage({ imageUrl: source, zone: spec.overlayZone, content: { headline: shot.headline, subline: shot.subline, lines: shot.lines }, ink: style.ink, inkSoft: style.inkSoft });
-            results.push({ shot, output, url, composed: true });
-        } finally {
-            URL.revokeObjectURL(source);
-        }
+        if (signal?.aborted) throw new DOMException("导出已停止", "AbortError");
+        return results;
+    } catch (error) {
+        releaseComposed(results);
+        throw error;
     }
-    return results;
 }
 
 export function releaseComposed(shots: StudioComposedShot[]) {
@@ -90,7 +97,7 @@ function extension(type: string) {
     return "png";
 }
 
-export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, shots: StudioComposedShot[], detail?: EcommerceDetailPageResult) {
+export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, shots: StudioComposedShot[], detail?: EcommerceDetailPageResult, review?: StudioDeliveryReview) {
     const code = product.name.trim() || "商品";
     const files: { name: string; data: BlobPart }[] = [];
     const manifest: { index: number; role: string; title: string; resourceId: string; file: string; typeset: boolean }[] = [];
@@ -106,9 +113,28 @@ export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, 
         for (const [index, piece] of detail.pieces.entries()) files.push({ name: `切片/${detail.fileNames[index]}`, data: await bytes(piece.dataUrl) });
     }
     files.push({ name: "文案.txt", data: studioCopyText(product) });
+    if (review) {
+        files.push({ name: "交付检查.json", data: JSON.stringify(review, null, 2) });
+        files.push({ name: "交付检查.txt", data: [`已交付 ${review.delivered}/${review.total} 张`, ...review.issues.map((issue) => `- ${issue.title}：${issue.message}`), "人工复核：", ...review.manualChecks.map((item) => `- ${item}`)].join("\n") });
+    }
     files.push({
         name: "manifest.json",
-        data: JSON.stringify({ product: { id: product.id, name: product.name, platform: product.platform }, plan: plan.kind, textMode: plan.textMode, exportedAt: new Date().toISOString(), shots: manifest, slices: detail?.fileNames || [] }, null, 2),
+        data: JSON.stringify(
+            {
+                product: { id: product.id, name: product.name, platform: product.platform },
+                plan: plan.kind,
+                textMode: plan.textMode,
+                exportedAt: new Date().toISOString(),
+                expectedShots: plan.shots.length,
+                complete: shots.length === plan.shots.length,
+                missingShots: plan.shots.filter((shot) => !shots.some((item) => item.shot.id === shot.id)).map((shot) => ({ id: shot.id, title: shot.title })),
+                shots: manifest,
+                slices: detail?.fileNames || [],
+                ...(review ? { reviewIssues: review.issues.length } : {}),
+            },
+            null,
+            2,
+        ),
     });
     return createZip(files);
 }

@@ -74,6 +74,7 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 | --- | --- |
 | `GET /api/interior/catalog` | 开放的出图方式、风格、空间和前台设置；不含任何提示词 |
 | `POST /api/interior/generate` | 出图，返回实际使用的模型、张数、参数和每个风格的任务回执或错误 |
+| `POST /api/interior/estimate` | 同出图入参，复用全部校验和实际模型报价；返回 `{model, images, amountMicrocredits, estimated}`，不创建任务、不预留余额，no-store，按 CanvasWritePerMinute 限流 |
 | `GET /api/interior/projects` | 项目列表（不含文档） |
 | `POST /api/interior/projects` | 新建项目 `{ name, kind, document? }`，`kind` 为 `home` 或 `client` |
 | `GET /api/interior/projects/:projectId` | 读取项目和文档 |

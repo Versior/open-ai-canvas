@@ -8,6 +8,7 @@ import { uploadResourceFile } from "@/services/api/resources";
 import type { InteriorCatalog, InteriorImageRef, InteriorMode, InteriorModelRef, InteriorPreset, InteriorSurface } from "@/services/api/interior";
 import type { AiConfig } from "@/stores/use-config-store";
 import { interiorImageUrl, interiorModelPermitted, interiorModelRef } from "./interior-models";
+import { useInteriorEstimate } from "./use-interior-estimate";
 
 export type InteriorUpload = InteriorImageRef & { name: string; uploading?: boolean; error?: string; previewUrl?: string };
 
@@ -172,6 +173,22 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
     const recommended = mode?.defaultModel || siteDefault;
     const problem = interiorDraftProblem(draft, mode, surface, config, siteDefault);
     const total = (mode?.requiresStyle ? Math.max(1, draft.styleKeys.length) : 1) * draft.count;
+    const estimate = useInteriorEstimate(
+        !problem && mode && draft.source
+            ? {
+                  surface,
+                  modeId: mode.id,
+                  sourceResourceId: draft.source.resourceId,
+                  count: draft.count,
+                  ...(draft.roomKey ? { roomKey: draft.roomKey } : {}),
+                  ...(mode.requiresStyle ? { styleKeys: draft.styleKeys } : {}),
+                  params: draft.params,
+                  notes: draft.notes.trim(),
+                  referenceResourceIds: draft.references.map((item) => item.resourceId),
+                  ...(surface === "pro" ? { size: draft.size === "auto" ? "" : draft.size, quality: draft.quality === "auto" ? "" : draft.quality, model: interiorModelRef(config, draft.modelValue) || undefined } : {}),
+              }
+            : null,
+    );
     const modelFilter = (value: string) => Boolean(mode) && interiorModelPermitted(mode!, siteDefault, interiorModelRef(config, value));
 
     const toggleStyle = (key: string) => {
@@ -348,6 +365,11 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
                 ) : null}
             </div>
             <footer className="itd-composer-foot">
+                {estimate ? (
+                    <p className="itd-muted-note" role="status">
+                        {estimate}
+                    </p>
+                ) : null}
                 {error ? (
                     <p className="itd-inline-error" role="alert">
                         {error}

@@ -14,6 +14,7 @@ import { interiorImageUrl, newInteriorId, patchInteriorScene } from "./interior-
 import { InteriorSceneBuildStage } from "./interior-scene-build";
 import { catalogKeys, fetchSceneKnowledge, loadSceneFile, sceneModelProblem, sceneModelRequirements, submitSceneTask } from "./interior-scene-tasks";
 import { InteriorSceneViewer } from "./interior-scene-viewer";
+import { InteriorSceneDelivery } from "./interior-scene-delivery";
 import { useInteriorSceneTasks } from "./use-interior-scene-tasks";
 
 /** 一个项目最多保存的 3D 模型数。 */
@@ -431,6 +432,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             </div>
                         </div>
                     ) : null}
+                    {selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
                     {scenes.length ? (
                         <ul className="itd-scene-list thin-scrollbar" aria-label="这个项目的 3D 模型">
                             {scenes.map((item) => (

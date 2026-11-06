@@ -30,6 +30,8 @@ import {
     type StudioTextMode,
 } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
+import { getActiveUserScope } from "@/lib/user-scope";
+import { ApiError } from "@/services/api/request";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
 import { isGenerationTaskTerminalError, waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
@@ -55,8 +57,9 @@ export type StudioShotRef = { runId: string } | { planKind: StudioPlanKind };
 // 跨组件实例共享：同一次尝试不会被挂上两个监听，也不会被误判为中断。
 const watching = new Set<string>();
 const submitting = new Set<string>();
+const uncertain = new Set<string>();
 const waiting = new Map<string, { productId: string; ref: StudioShotRef; shotId: string }>();
-const jobs: { attemptId: string; run: () => Promise<void> }[] = [];
+const jobs: { attemptId: string; owner: symbol; run: () => Promise<void> }[] = [];
 
 function concurrency() {
     const limit = useUserStore.getState().runtimeLimits.activeTaskLimit;
@@ -72,7 +75,7 @@ function serializeSubmit<T>(run: () => Promise<T>): Promise<T> {
 }
 
 function pump() {
-    while (jobs.length && watching.size + submitting.size < concurrency()) {
+    while (jobs.length && watching.size + submitting.size + uncertain.size < concurrency()) {
         const job = jobs.shift()!;
         void job
             .run()
@@ -205,10 +208,20 @@ function patchAttempt(product: StudioProduct, ref: StudioShotRef, shotId: string
 }
 
 export function useStudioRunner() {
+    const scope = getActiveUserScope();
+    const owner = useRef(Symbol("studio-runner"));
+    const ownedAttempts = useRef(new Set<string>());
     const config = useEffectiveConfig();
     const configRef = useRef(config);
     configRef.current = config;
-    const update = useStudioStore((state) => state.update);
+    const storeUpdate = useStudioStore((state) => state.update);
+    const update = useCallback<typeof storeUpdate>(
+        (...args) => {
+            if (getActiveUserScope() !== scope) return undefined;
+            return storeUpdate(...args);
+        },
+        [scope, storeUpdate],
+    );
     const controllers = useRef(new Map<string, AbortController>());
 
     useEffect(() => {
@@ -217,23 +230,27 @@ export function useStudioRunner() {
             for (const controller of active.values()) controller.abort();
             active.clear();
             // 离开页面时还没提交的镜头不再提交，标成失败，回来后可以一键重试。
-            const dropped = jobs.splice(0, jobs.length);
+            const dropped = jobs.filter((job) => job.owner === owner.current);
+            for (let index = jobs.length - 1; index >= 0; index--) if (jobs[index].owner === owner.current) jobs.splice(index, 1);
             for (const job of dropped) {
                 const entry = waiting.get(job.attemptId);
                 waiting.delete(job.attemptId);
-                if (entry)
-                    useStudioStore
-                        .getState()
-                        .update(entry.productId, (product) => patchAttempt(product, entry.ref, entry.shotId, job.attemptId, { status: "failed", error: "离开页面时还没提交，点重试再生成", completedAt: new Date().toISOString() }), { immediate: true });
+                if (entry) update(entry.productId, (product) => patchAttempt(product, entry.ref, entry.shotId, job.attemptId, { status: "failed", error: "离开页面时还没提交，点重试再生成", completedAt: new Date().toISOString() }), { immediate: true });
             }
+            for (const id of ownedAttempts.current) uncertain.delete(id);
+            ownedAttempts.current.clear();
         };
-    }, []);
+    }, [scope, update]);
 
-    const read = useCallback((productId: string) => {
-        const product = useStudioStore.getState().products.find((item) => item.id === productId);
-        if (!product) throw new Error("商品不存在或已被删除");
-        return product;
-    }, []);
+    const read = useCallback(
+        (productId: string) => {
+            if (getActiveUserScope() !== scope || useStudioStore.getState().scope !== scope) throw new DOMException("账号已切换", "AbortError");
+            const product = useStudioStore.getState().products.find((item) => item.id === productId);
+            if (!product) throw new Error("商品不存在或已被删除");
+            return product;
+        },
+        [scope],
+    );
 
     /** 看图识别并填表：建档、品牌、类型、主标题和卖点一次写好。已经填过的字段不覆盖，档案里卖家确认过的信息保留。 */
     const fill = useCallback(
@@ -256,6 +273,7 @@ export function useStudioRunner() {
                 });
                 const result = await runBackendGenerationTask({
                     mode: "text",
+                    expectedUserScope: scope,
                     prompt,
                     config: generation,
                     referenceImages: photos.map(photoReference),
@@ -321,6 +339,7 @@ export function useStudioRunner() {
                 const roles = scope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, scope === "main" ? "main" : "detail");
                 const result = await runBackendGenerationTask({
                     mode: "text",
+                    expectedUserScope: scope,
                     prompt: buildDetailPlanPrompt(product, roles, request),
                     config: generation,
                     referenceImages: images.map(photoReference),
@@ -350,6 +369,7 @@ export function useStudioRunner() {
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 const result = await runBackendGenerationTask({
                     mode: "text",
+                    expectedUserScope: scope,
                     prompt: buildAskPrompt(product),
                     config: generation,
                     referenceImages: images.map(photoReference),
@@ -384,6 +404,7 @@ export function useStudioRunner() {
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 const result = await runBackendGenerationTask({
                     mode: "text",
+                    expectedUserScope: scope,
                     prompt: buildDirectionsPrompt(product, studioPlanScopeOf(product), images.length ? { photos: photos.length, references: references.length } : undefined),
                     config: generation,
                     referenceImages: images.map(photoReference),
@@ -406,10 +427,14 @@ export function useStudioRunner() {
 
     const watch = useCallback(
         async (productId: string, ref: StudioShotRef, shotId: string, attemptId: string, taskId: string, initialTask?: GenerationTask) => {
+            if (getActiveUserScope() !== scope) return;
             if (watching.has(attemptId)) return;
+            ownedAttempts.current.add(attemptId);
+            uncertain.delete(attemptId);
             watching.add(attemptId);
             const controller = new AbortController();
             controllers.current.set(attemptId, controller);
+            update(productId, (product) => patchAttempt(product, ref, shotId, attemptId, { error: undefined }));
             try {
                 const done = await waitForGenerationTask(taskId, {
                     signal: controller.signal,
@@ -422,6 +447,11 @@ export function useStudioRunner() {
                     },
                 });
                 const outputs = taskOutputs(done);
+                if (!outputs.length) {
+                    uncertain.add(attemptId);
+                    update(productId, (product) => patchAttempt(product, ref, shotId, attemptId, { error: "任务已完成，图片暂时未同步，请重新查询或到任务中心核对" }), { immediate: true });
+                    return;
+                }
                 update(
                     productId,
                     (product) =>
@@ -435,8 +465,13 @@ export function useStudioRunner() {
                     { immediate: true },
                 );
             } catch (error) {
-                if (controller.signal.aborted) return;
+                if (controller.signal.aborted || getActiveUserScope() !== scope) return;
                 const message = error instanceof Error ? error.message : "生成失败";
+                if (!isGenerationTaskTerminalError(error)) {
+                    uncertain.add(attemptId);
+                    update(productId, (product) => patchAttempt(product, ref, shotId, attemptId, { error: `结果同步中断：${message}。重新查询会接回原任务` }), { immediate: true });
+                    return;
+                }
                 const status: StudioAttemptStatus = isGenerationTaskTerminalError(error) && error.task.status === "cancelled" ? "cancelled" : "failed";
                 update(productId, (product) => patchAttempt(product, ref, shotId, attemptId, { status, error: message, completedAt: new Date().toISOString() }), { immediate: true });
             } finally {
@@ -445,13 +480,17 @@ export function useStudioRunner() {
                 pump();
             }
         },
-        [update],
+        [scope, update],
     );
 
     const submit = useCallback(
         async (productId: string, ref: StudioShotRef, shotId: string, attemptId: string, imageModel: string) => {
             waiting.delete(attemptId);
+            uncertain.delete(attemptId);
             submitting.add(attemptId);
+            let requested = false;
+            const submission = new AbortController();
+            controllers.current.set(attemptId, submission);
             try {
                 const product = read(productId);
                 const located = locateStudioShot(product, ref, shotId);
@@ -464,26 +503,37 @@ export function useStudioRunner() {
                 const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences];
                 const node = { id: `studio-${shotId}`, type: CanvasNodeType.Image, title: "", width: 0, height: 0, position: { x: 0, y: 0 }, metadata: { model: imageModel } } as CanvasNodeData;
                 const generation = buildEcommerceImageGeneration(current, node, { ...DEFAULT_ECOMMERCE_BRIEF, ...(request.aspectRatio ? { aspectRatio: request.aspectRatio } : {}), imageSettings: request.imageSettings }, inputSummary(references.length));
-                const task = await serializeSubmit(() =>
-                    submitBackendGenerationTask({
+                const task = await serializeSubmit(() => {
+                    if (submission.signal.aborted || getActiveUserScope() !== scope) throw new DOMException("提交已中止", "AbortError");
+                    requested = true;
+                    return submitBackendGenerationTask({
+                        expectedUserScope: scope,
+                        signal: submission.signal,
                         mode: "image",
                         prompt: compiled.prompt,
                         config: generation.config,
                         referenceImages: references.map(photoReference),
                         clientOperationId: attemptId,
                         metadata: { source: "ecommerce-studio", studioProductId: productId, studioShotId: shotId, studioAttemptId: attemptId, studioRole: located.shot.role, ...("runId" in ref ? { studioRunId: ref.runId } : {}) },
-                    }),
-                );
+                    });
+                });
                 update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { taskId: task.id, status: task.status }), { immediate: true });
                 submitting.delete(attemptId);
                 await watch(productId, ref, shotId, attemptId, task.id, task);
             } catch (error) {
+                if (submission.signal.aborted || getActiveUserScope() !== scope) return;
+                if (requested && !(error instanceof ApiError && typeof error.status === "number" && error.status >= 400 && error.status < 500)) {
+                    uncertain.add(attemptId);
+                    update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { error: "提交状态待核对，重新查询会使用同一个请求编号恢复" }), { immediate: true });
+                    return;
+                }
                 update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { status: "failed", error: error instanceof Error ? error.message : "提交失败", completedAt: new Date().toISOString() }), { immediate: true });
             } finally {
                 submitting.delete(attemptId);
+                if (controllers.current.get(attemptId) === submission) controllers.current.delete(attemptId);
             }
         },
-        [read, update, watch],
+        [read, scope, update, watch],
     );
 
     /** 把镜头排进提交队列：先在记录里占一个「提交中」的位置，轮到它时再真正提交。 */
@@ -500,8 +550,9 @@ export function useStudioRunner() {
                 ),
             );
             for (const { shotId, attempt } of attempts) {
+                ownedAttempts.current.add(attempt.id);
                 waiting.set(attempt.id, { productId, ref, shotId });
-                jobs.push({ attemptId: attempt.id, run: () => submit(productId, ref, shotId, attempt.id, imageModel) });
+                jobs.push({ attemptId: attempt.id, owner: owner.current, run: () => submit(productId, ref, shotId, attempt.id, imageModel) });
             }
             pump();
         },
@@ -553,13 +604,12 @@ export function useStudioRunner() {
                     for (const attempt of shot.attempts) {
                         if (!studioAttemptActive(attempt)) continue;
                         if (attempt.taskId) void watch(product.id, ref, shot.id, attempt.id, attempt.taskId);
-                        else if (!watching.has(attempt.id) && !submitting.has(attempt.id) && !waiting.has(attempt.id))
-                            update(product.id, (current) => patchAttempt(current, ref, shot.id, attempt.id, { status: "failed", error: "提交被中断，请重新生成", completedAt: new Date().toISOString() }));
+                        else if (!watching.has(attempt.id) && !submitting.has(attempt.id) && !waiting.has(attempt.id)) void submit(product.id, ref, shot.id, attempt.id, attempt.model);
                     }
                 }
             }
         },
-        [update, watch],
+        [submit, watch],
     );
 
     return { fill, ask, directions, plan, generate, rerun, resume };

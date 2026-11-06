@@ -1,5 +1,7 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
+import { saveAs } from "file-saver";
+import { deliveryFileStem } from "@/lib/delivery-text";
 import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Sparkles } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
@@ -19,6 +21,7 @@ import type { VideoReplicaOptions } from "./replication-canvas";
 import { ReplicationCanvasStep, ReplicationPlan } from "./replication-plan";
 import { useReplicaPlan } from "./use-replica-plan";
 import type { VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
+import { exportReplicationDelivery } from "./replication-delivery";
 
 /** 工作区的三步：拆解分析、复刻方案、画布生成；没有分析时只有拆解分析。 */
 export type ReplicationView = "teardown" | "plan" | "canvas";
@@ -131,6 +134,7 @@ function RecordWorkspace({
     const { message } = App.useApp();
     const [tab, setTab] = useState<"shots" | "structure">("shots");
     const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const view: ReplicationView = analysis ? requestedView : "teardown";
     // 方案状态放在这一层：切到拆解分析再回来时，没存上的改动还在；步骤条也要读方案的进度。
     // 没有分析时用空分析占位，不显示也不保存（没有改动就不会触发保存）。
@@ -149,6 +153,17 @@ function RecordWorkspace({
     const downloadReport = () => {
         if (analysis) downloadText(`${title}-拆解报告.md`, videoTeardownReportMarkdown(bundle, analysis, videoTeardownStoryboardRows(bundle, analysis.rows)));
     };
+    const downloadDelivery = async () => {
+        if (!analysis) return;
+        setExporting(true);
+        try {
+            saveAs(await exportReplicationDelivery(bundle, analysis, planState.plan), `${deliveryFileStem(title)}-剪辑交付包.zip`);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "剪辑交付包导出失败");
+        } finally {
+            setExporting(false);
+        }
+    };
     const switchTab = (event: KeyboardEvent) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
@@ -166,6 +181,11 @@ function RecordWorkspace({
     );
     const actions = (
         <>
+            {analysis ? (
+                <Button loading={exporting} disabled={analyzing} onClick={() => void downloadDelivery()}>
+                    剪辑交付包
+                </Button>
+            ) : null}
             {analysis && view === "teardown" ? (
                 <Popover
                     trigger="click"

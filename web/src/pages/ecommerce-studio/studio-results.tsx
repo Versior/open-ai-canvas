@@ -1,7 +1,8 @@
 import { App, Button, Dropdown, Spin, Tooltip } from "antd";
 import { saveAs } from "file-saver";
 import { Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
@@ -14,13 +15,15 @@ import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { bindStudioDetailPage, composeStudioShots, exportStudioZip, releaseComposed } from "./studio-delivery";
+import { inspectStudioDelivery } from "./studio-delivery-review";
+import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 import { ratioStyle, studioImageUrl } from "./studio-parts";
 import { studioShotPending, type StudioRunner, type StudioShotRef } from "./use-studio-runner";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
 /** 结果区里的一组图：表单生成的记录或助手排的方案，界面上按同一种卡片展示。 */
-export type StudioShotGroup = { key: string; ref: StudioShotRef; title: string; createdAt: string; kind?: StudioPlanKind; textMode: StudioTextMode; shots: StudioShot[]; fromAgent: boolean };
+export type StudioShotGroup = { key: string; ref: StudioShotRef; title: string; createdAt: string; kind?: StudioPlanKind; textMode: StudioTextMode; shots: StudioShot[]; fromAgent: boolean; styleId?: StudioPlan["styleId"] };
 
 export type StudioViewerTarget = { groupKey: string; shotId: string; resourceId?: string };
 
@@ -44,6 +47,7 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
         createdAt: run.createdAt,
         kind: run.kind,
         textMode: run.textMode,
+        styleId: run.styleId,
         shots: run.shots,
         fromAgent: false,
     }));
@@ -62,7 +66,25 @@ async function downloadOutputs(items: { output: StudioOutput; fileName: string }
     }
 }
 
-function ResultTile({ shot, caption, blocked, onView, onDownload, onReference, onRerun }: { shot: StudioShot; caption?: string; blocked: string; onView: () => void; onDownload: () => void; onReference: () => void; onRerun: () => void }) {
+function ResultTile({
+    shot,
+    caption,
+    blocked,
+    onView,
+    onDownload,
+    onReference,
+    onRerun,
+    onSync,
+}: {
+    shot: StudioShot;
+    caption?: string;
+    blocked: string;
+    onView: () => void;
+    onDownload: () => void;
+    onReference: () => void;
+    onRerun: () => void;
+    onSync: () => void;
+}) {
     const latest = studioShotLatestAttempt(shot);
     const preview = studioShotPreview(shot);
     const active = Boolean(latest && studioAttemptActive(latest));
@@ -81,6 +103,16 @@ function ResultTile({ shot, caption, blocked, onView, onDownload, onReference, o
                     <div className="es-tile-state">
                         <Spin size="small" />
                         <span>{STATUS_LABEL[status]}</span>
+                        {latest?.error ? (
+                            <>
+                                <span className="es-tile-error" role="status">
+                                    {latest.error}
+                                </span>
+                                <Button size="small" onClick={onSync}>
+                                    重新查询
+                                </Button>
+                            </>
+                        ) : null}
                     </div>
                 ) : null}
                 {!preview && !active && failed ? (
@@ -109,6 +141,11 @@ function ResultTile({ shot, caption, blocked, onView, onDownload, onReference, o
                 {preview && active ? (
                     <span className="es-tile-badge">
                         <Spin size="small" /> {STATUS_LABEL[status]}
+                        {latest?.error ? (
+                            <Button size="small" onClick={onSync}>
+                                重新查询
+                            </Button>
+                        ) : null}
                     </span>
                 ) : null}
                 {preview ? (
@@ -162,7 +199,18 @@ function GroupCard({
 }) {
     const { message, modal } = App.useApp();
     const config = useEffectiveConfig();
-    const [exporting, setExporting] = useState<"zip" | "long">();
+    const [exporting, setExporting] = useState<"zip" | "long" | "review">();
+    const [reviewResult, setReviewResult] = useState<{ signature: string; report: StudioDeliveryReview }>();
+    const exportController = useRef<AbortController | undefined>(undefined);
+    const scope = getActiveUserScope();
+    const signature = JSON.stringify([scope, product.platform, product.sellingPoints, product.dossier, product.style, group]);
+    const review = reviewResult?.signature === signature ? reviewResult.report : undefined;
+    useEffect(
+        () => () => {
+            exportController.current?.abort();
+        },
+        [scope, product.id, group.key],
+    );
     const shots = group.shots;
     const done = shots.filter((shot) => studioShotPreview(shot)).length;
     const active = shots.filter((shot) => shot.attempts.some(studioAttemptActive)).length;
@@ -186,27 +234,39 @@ function GroupCard({
         }
     };
 
-    const exportSet = async (mode: "zip" | "long") => {
-        if (!group.kind) return;
-        const plan: StudioPlan = { id: group.key, kind: group.kind, createdAt: group.createdAt, textMode: group.textMode, shots };
+    const exportSet = async (mode: "zip" | "long" | "review") => {
+        const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, shots, styleId: group.styleId };
         setExporting(mode);
+        const controller = new AbortController();
+        exportController.current = controller;
+        const assertCurrent = () => {
+            if (controller.signal.aborted || getActiveUserScope() !== scope) throw new DOMException("导出已停止", "AbortError");
+        };
         let composed: Awaited<ReturnType<typeof composeStudioShots>> = [];
         try {
-            composed = await composeStudioShots(product, plan);
+            composed = await composeStudioShots(product, plan, controller.signal);
             if (!composed.length) throw new Error("这一组还没有出好的图");
+            const checked = await inspectStudioDelivery(product, plan, composed, controller.signal);
+            assertCurrent();
+            setReviewResult({ signature, report: checked });
+            if (mode === "review") return;
             const stem = studioDisplayName(product).replace(/[\\/:*?"<>|]+/g, "_");
             if (mode === "long") {
                 const detail = await bindStudioDetailPage(product, composed);
+                assertCurrent();
                 saveAs(detail.longImage.dataUrl, `${stem}-详情长图.png`);
             } else {
                 const detail = group.kind === "detail" ? await bindStudioDetailPage(product, composed) : undefined;
-                saveAs(await exportStudioZip(product, plan, composed, detail), `${stem}-${group.kind === "detail" ? "详情页" : "主图"}.zip`);
+                const zip = await exportStudioZip(product, plan, composed, detail, checked);
+                assertCurrent();
+                saveAs(zip, `${stem}-${group.kind === "detail" ? "详情页" : "商品图"}.zip`);
             }
             if (composed.length < shots.length) message.info(`还有 ${shots.length - composed.length} 张没出好，导出时跳过了`);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : "导出失败，请重试");
+            if (!controller.signal.aborted && getActiveUserScope() === scope) message.error(error instanceof Error ? error.message : "导出失败，请重试");
         } finally {
             releaseComposed(composed);
+            if (exportController.current === controller) exportController.current = undefined;
             setExporting(undefined);
         }
     };
@@ -269,6 +329,9 @@ function GroupCard({
                             下载整套
                         </Button>
                     ) : null}
+                    <Button size="small" loading={exporting === "review"} disabled={!done || Boolean(exporting)} onClick={() => void exportSet("review")}>
+                        交付检查
+                    </Button>
                     <Dropdown
                         trigger={["click"]}
                         menu={{
@@ -290,6 +353,21 @@ function GroupCard({
                     </Dropdown>
                 </div>
             </header>
+            {review ? (
+                <details className="es-delivery-review" open>
+                    <summary>
+                        交付检查 · {review.delivered}/{review.total} 张 · {review.issues.length} 项提醒
+                    </summary>
+                    <ul>
+                        {review.issues.map((issue, index) => (
+                            <li key={index}>
+                                {issue.title}：{issue.message}
+                            </li>
+                        ))}
+                    </ul>
+                    <p>{review.manualChecks.join("；")}</p>
+                </details>
+            ) : null}
             <div className="es-tiles" data-set={isSet || undefined}>
                 {shots.map((shot, index) => (
                     <ResultTile
@@ -307,6 +385,7 @@ function GroupCard({
                             if (preview) onReference(preview);
                         }}
                         onRerun={() => rerun([shot.id])}
+                        onSync={() => runner.resume(product)}
                     />
                 ))}
             </div>

@@ -63,6 +63,27 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 		c.Header("Cache-Control", "no-store")
 		ok(c, value)
 	})
+	r.POST("/interior/estimate", func(c *gin.Context) {
+		actor, allowed := user(c)
+		if !allowed {
+			return
+		}
+		var req service.InteriorGenerateInput
+		if err := decodeInteriorJSON(c, &req); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		if !writeLimited(c, actor) {
+			return
+		}
+		value, err := svc.EstimateInterior(actor, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		ok(c, value)
+	})
 	r.POST("/interior/generate", func(c *gin.Context) {
 		actor, allowed := user(c)
 		if !allowed {
