@@ -42,6 +42,9 @@ type VideoReplicationRecord struct {
 	Title              string     `json:"title,omitempty"`
 	Model              string     `json:"model,omitempty"`
 	AnalyzedAt         *time.Time `json:"analyzedAt,omitempty"`
+	// PlanUpdatedAt 是复刻方案最后保存的时间，CanvasCount 是按方案建过几块画布；没有方案时都为空。
+	PlanUpdatedAt *time.Time `json:"planUpdatedAt,omitempty"`
+	CanvasCount   int        `json:"canvasCount,omitempty"`
 }
 
 // VideoReplicationDetail 是一条记录的全部内容：拆解任务（resultJson 里是镜头事实）、保存过的分析和复刻方案。
@@ -75,10 +78,23 @@ func (s *Service) VideoReplications(userID string) ([]VideoReplicationRecord, er
 		return nil, err
 	}
 	analyses := latestResultsByTask(results)
+	planResults, err := s.repo.TaskResultsByKind(userID, idsOfTasks(tasks), videoReplicationPlanKind)
+	if err != nil {
+		return nil, err
+	}
+	plans := latestResultsByTask(planResults)
 	records := make([]VideoReplicationRecord, 0, len(tasks))
 	for _, task := range tasks {
 		record, _ := videoReplicationRecordFrom(task, analyses[task.ID])
 		record.Error = taskForOutput(task).Error
+		if plan := plans[task.ID]; plan != nil {
+			var head struct {
+				Canvases []json.RawMessage `json:"canvases"`
+			}
+			_ = json.Unmarshal([]byte(plan.Payload), &head)
+			planUpdatedAt := plan.CreatedAt
+			record.PlanUpdatedAt, record.CanvasCount = &planUpdatedAt, len(head.Canvases)
+		}
 		records = append(records, record)
 	}
 	return records, nil

@@ -49,6 +49,25 @@ func TestVideoReplicationPlanSaveAndDetail(t *testing.T) {
 	if err != nil || !strings.Contains(string(detail.Plan), `"original"`) || len(detail.Analysis) != 0 {
 		t.Fatalf("detail = %+v, %v", detail, err)
 	}
+
+	// 记下按方案建的画布：列表里带方案时间和画布数。
+	var withCanvas map[string]any
+	_ = json.Unmarshal(replicationPlanPayload(true, nil, "original", "remake", "product"), &withCanvas)
+	withCanvas["canvases"] = []map[string]any{{"id": "canvas-1", "title": "复刻 · 测试", "createdAt": "2026-11-06T00:00:00Z"}}
+	payload, _ := json.Marshal(withCanvas)
+	if _, err := svc.SaveVideoReplicationPlan("usr-a", task.ID, payload); err != nil {
+		t.Fatalf("save with canvas: %v", err)
+	}
+	records, err := svc.VideoReplications("usr-a")
+	if err != nil || len(records) != 1 || records[0].PlanUpdatedAt == nil || records[0].CanvasCount != 1 {
+		t.Fatalf("records = %+v, %v", records, err)
+	}
+	withCanvas["canvases"] = []map[string]any{{"id": ""}}
+	payload, _ = json.Marshal(withCanvas)
+	var authErr *AuthError
+	if _, err := svc.SaveVideoReplicationPlan("usr-a", task.ID, payload); !errors.As(err, &authErr) {
+		t.Fatalf("empty canvas id err = %v", err)
+	}
 }
 
 func TestVideoReplicationPlanRejectsInvalidPlans(t *testing.T) {

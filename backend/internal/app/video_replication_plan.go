@@ -18,6 +18,8 @@ const (
 	videoReplicationPlanKind      = "replication_plan"
 	videoReplicationPlanMaxBytes  = 256 << 10
 	videoReplicationPlanMaxImages = 4
+	// videoReplicationPlanMaxCanvases：方案里最多记几块按它建的画布，只用来在页面上列出和打开。
+	videoReplicationPlanMaxCanvases = 20
 )
 
 var videoReplicationPlanTreatments = map[string]bool{"remake": true, "product": true, "original": true, "skip": true}
@@ -36,6 +38,9 @@ type videoReplicationPlanHead struct {
 		ShotNumber int    `json:"shotNumber"`
 		Treatment  string `json:"treatment"`
 	} `json:"shots"`
+	Canvases []struct {
+		ID string `json:"id"`
+	} `json:"canvases"`
 }
 
 // SaveVideoReplicationPlan 保存复刻方案。只接受本人已完成的拆解任务；逐镜处理要和拆解结果的镜头一一对应，
@@ -90,6 +95,14 @@ func (s *Service) SaveVideoReplicationPlan(userID, taskID string, payload []byte
 	}
 	if err := s.validateVideoReplicationPlanImages(userID, head); err != nil {
 		return nil, err
+	}
+	if len(head.Canvases) > videoReplicationPlanMaxCanvases {
+		return nil, BadAuthRequest(fmt.Sprintf("一个复刻方案最多记 %d 块画布", videoReplicationPlanMaxCanvases))
+	}
+	for _, canvas := range head.Canvases {
+		if id := strings.TrimSpace(canvas.ID); id == "" || len(id) > 64 {
+			return nil, BadAuthRequest("画布 ID 无效")
+		}
 	}
 	var compacted bytes.Buffer
 	if err := json.Compact(&compacted, payload); err != nil {
