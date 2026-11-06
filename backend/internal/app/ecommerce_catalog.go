@@ -28,8 +28,22 @@ type ecommerceCatalogDocument struct {
 	} `json:"category"`
 	Style struct {
 		Text string `json:"lockText"`
+		// 下面几项是整套风格锁拆开的字段，生图台出图策划取同类爆款参考时用。
+		Direction string `json:"direction"`
+		Palette   []struct {
+			Name string `json:"name"`
+			Hex  string `json:"hex"`
+		} `json:"palette"`
+		Background string `json:"backgroundSystem"`
+		Typography string `json:"typography"`
+		Icons      string `json:"iconSystem"`
+		Rules      string `json:"presentationRules"`
 	} `json:"styleLock"`
+	Provenance struct {
+		Images int `json:"sourceImageCount"`
+	} `json:"provenance"`
 	Shots []struct {
+		Role       string `json:"shotRole"`
 		Title      string `json:"displayName"`
 		Intent     string `json:"intent"`
 		Prompt     string `json:"promptTemplate"`

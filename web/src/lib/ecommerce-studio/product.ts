@@ -268,6 +268,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
                       name: run.suite.name.slice(0, STUDIO_SUITE_LIMITS.name),
                       style: str(run.suite.style).slice(0, Math.max(STUDIO_SUITE_LIMITS.style, STUDIO_DETAIL_PLAN_LIMITS.style)),
                       ...(studioPlanTone(run.suite.tone) ? { tone: studioPlanTone(run.suite.tone) } : {}),
+                      ...(str(run.suite.concept).trim() ? { concept: str(run.suite.concept).trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
                   },
               }
             : {}),

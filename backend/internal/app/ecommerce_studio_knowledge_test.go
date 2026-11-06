@@ -98,9 +98,20 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 	if strings.Contains(prompt, "耳机行业趋势") {
 		t.Fatal("knowledge types outside the plan list reached the prompt")
 	}
+	// 知识段是一行 JSON；同类爆款套图参考排在它后面。
 	var knowledge []map[string]string
-	if err := json.Unmarshal([]byte(prompt[strings.LastIndex(prompt, "\n")+1:]), &knowledge); err != nil {
+	line := ""
+	for _, item := range strings.Split(prompt, "\n") {
+		if strings.HasPrefix(item, "[{") {
+			line = item
+			break
+		}
+	}
+	if err := json.Unmarshal([]byte(line), &knowledge); err != nil {
 		t.Fatalf("knowledge block is not JSON: %v", err)
+	}
+	if !strings.Contains(prompt, "内置爆款套图库") || strings.Index(prompt, "内置爆款套图库") < strings.Index(prompt, line) {
+		t.Fatalf("viral references should follow the knowledge block: %s", prompt)
 	}
 	layouts := 0
 	for _, entry := range knowledge {
@@ -131,5 +142,51 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 	}
 	if !strings.Contains(dossier.Config.SystemPrompt, "耳机卖点写法") || strings.Contains(dossier.Config.SystemPrompt, "耳机棚拍布光") || strings.Contains(dossier.Config.SystemPrompt, "耳机详情页版式") {
 		t.Fatalf("dossier knowledge types changed: %s", dossier.Config.SystemPrompt)
+	}
+}
+
+func TestEcommerceStudioPlanViralReferences(t *testing.T) {
+	// 同类：保温杯取到套图库里的保温杯套图，带视觉语法和逐屏结构，文案槽位换成「文案」。
+	docs, related := ecommerceStudioViralReferences("保温杯", "一杯装下一整天", "home")
+	if !related || len(docs) != ecommerceStudioReferenceLimit {
+		t.Fatalf("expected %d related suites, got %d related=%v", ecommerceStudioReferenceLimit, len(docs), related)
+	}
+	for _, doc := range docs {
+		if !strings.Contains(doc.Name+doc.Category.Leaf+strings.Join(doc.Category.Keywords, " "), "保温杯") {
+			t.Fatalf("unrelated suite picked for 保温杯: %s", doc.Name)
+		}
+	}
+	prompt := ecommerceStudioViralReferencePrompt("保温杯", "一杯装下一整天", "home")
+	for _, text := range []string{"内置爆款套图库", docs[0].Name, "视觉语法：", "色板 ", "逐屏：", "inspiration"} {
+		if !strings.Contains(prompt, text) {
+			t.Fatalf("reference prompt is missing %q: %s", text, prompt)
+		}
+	}
+	if strings.Contains(prompt, "{callout") || strings.Contains(prompt, "{product}") {
+		t.Fatalf("suite placeholders leaked into the planner prompt: %s", prompt)
+	}
+
+	// 同类对不上：从同大类里取两套并写明只学版式和视觉体系；同一件商品每次取到的一样。
+	docs, related = ecommerceStudioViralReferences("儿童眼镜", "防蓝光眼镜", "apparel")
+	if related || len(docs) != 2 {
+		t.Fatalf("expected two family suites, got %d related=%v", len(docs), related)
+	}
+	apparel := map[string]bool{}
+	for _, l1 := range ecommerceStudioFamilyCatalogL1["apparel"] {
+		apparel[l1] = true
+	}
+	again, _ := ecommerceStudioViralReferences("儿童眼镜", "防蓝光眼镜", "apparel")
+	for index, doc := range docs {
+		if !apparel[doc.Category.L1] || again[index].ID != doc.ID {
+			t.Fatalf("family fallback is wrong or unstable: %s / %s", doc.Category.L1, again[index].ID)
+		}
+	}
+	if !strings.Contains(ecommerceStudioViralReferencePrompt("儿童眼镜", "防蓝光眼镜", "apparel"), "只学它们的版式、色彩和视觉体系") {
+		t.Fatal("family fallback must say it only borrows layout and visual system")
+	}
+
+	// 没有商品类型和名称、也对不上大类时不附参考。
+	if ecommerceStudioViralReferencePrompt("", "", "") != "" || ecommerceStudioViralReferencePrompt("量子纠缠仪", "", "") != "" {
+		t.Fatal("no reference expected without a category match")
 	}
 }

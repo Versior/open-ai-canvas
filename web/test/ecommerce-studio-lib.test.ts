@@ -510,6 +510,37 @@ describe("ecommerce studio plans for every output type", () => {
         expect(restored.brief.planNote).toBe("多放生活场景，少放参数");
     });
 
+    test("each product gets its own concept, reference images reach the planner and layout variety is checked", () => {
+        const product = base({ outputType: "detail-set" });
+        const roles = studioDetailPlanRoles(product);
+        const prompt = buildDetailPlanPrompt(product, roles, { scope: "detail", images: { photos: 2, references: 1 } });
+        expect(prompt).toContain("附图：图1–图2 是商品图（外观唯一依据）；图3 是卖家给的参考图（大牌或爆款的图，不是这件商品）。");
+        expect(prompt).toContain("参考图怎么用：先看懂它好在哪里");
+        expect(prompt).toContain("再定一条创意主线写进 concept");
+        expect(prompt).toContain("换成别的商品就不成立");
+        expect(prompt).toContain("11. inspiration 用一句话");
+        expect(prompt).toContain('"concept":"创意主线","inspiration":"借鉴了什么"');
+        // 没有附图时不写附图说明。
+        expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
+
+        const flat = Array.from({ length: 10 }, (_, index) => screen(index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene", `屏${"一二三四五六七八九十"[index]}`, { layout: "scene" }));
+        const reply = JSON.stringify({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章", style: "雾蓝", screens: flat });
+        const result = parseDetailPlan(reply, product, roles, meta);
+        expect(result.plan).toMatchObject({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
+        expect(result.layoutKinds).toBe(1);
+        expect(result.layoutRepeats).toBe(9);
+
+        // 创意主线跟着出图记录进每张图的整套视觉规范，读回时保留。
+        const plannedProduct = { ...product, brief: { ...product.brief, detailPlan: result.plan } };
+        const run = createStudioRun(plannedProduct, ids(), "2026-11-01T00:00:00Z");
+        expect(run.suite?.concept).toBe("清晨第一口热水的雾气，每屏都有一缕热气");
+        const compiled = compileStudioPrompt({ product: plannedProduct, textMode: run.textMode, shot: run.shots[1], model: "gpt-image-2", brief: plannedProduct.brief, suite: run.suite }).prompt;
+        expect(compiled).toContain("创意主线：清晨第一口热水的雾气，每屏都有一缕热气。这张图也要体现它。");
+        const restored = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...plannedProduct, runs: [run] })))!;
+        expect(restored.brief.detailPlan).toMatchObject({ concept: "清晨第一口热水的雾气，每屏都有一缕热气", inspiration: "同类爆款的色块分区和编号徽章" });
+        expect(restored.runs[0].suite?.concept).toBe("清晨第一口热水的雾气，每屏都有一缕热气");
+    });
+
     test("new single types each map to their own shot", () => {
         const expected: [StudioProduct["brief"]["outputType"], string, string][] = [
             ["seeding", "detail-seeding", "种草图"],

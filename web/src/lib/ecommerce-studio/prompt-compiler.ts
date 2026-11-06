@@ -74,7 +74,7 @@ export type StudioCompileInput = {
     /** 表单参数：传入时追加市场与语言、拍法、人群定位、参考图和补充要求。 */
     brief?: StudioBrief;
     /** 模板套图的模板名与整套视觉规范：有规范时代替风格锁。 */
-    suite?: { name: string; style: string; tone?: StudioDesignToneId };
+    suite?: { name: string; style: string; tone?: StudioDesignToneId; concept?: string };
 };
 
 const DEFAULT_MAX_CHARS = 4000;
@@ -365,7 +365,12 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     if (!planned) layers.push({ id: "lighting", title: "光线", source: "镜头规格", text: sentence(spec.lighting) });
     const suite = input.suite?.style.trim() ? input.suite : undefined;
     if (!spec.neutralBackground && suite) {
-        layers.push({ id: "style", title: `整套视觉规范「${suite.name}」`, source: planned ? "出图策划" : "套图模板", text: `${sentence(suite.style)}整套图共用这一规范。` });
+        layers.push({
+            id: "style",
+            title: `整套视觉规范「${suite.name}」`,
+            source: planned ? "出图策划" : "套图模板",
+            text: `${sentence(suite.style)}${suite.concept?.trim() ? `创意主线：${sentence(suite.concept)}这张图也要体现它。` : ""}整套图共用这一规范。`,
+        });
     } else if (!spec.neutralBackground) {
         layers.push({
             id: "style",

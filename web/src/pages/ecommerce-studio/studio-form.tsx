@@ -266,6 +266,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "",
                 result.issues.length ? `${result.issues.length} 处用词需要留意` : "",
                 result.tacky.length ? `文案里有「${result.tacky.join("」「")}」这类说法，可以在补充调整里要求换掉` : "",
+                // 详情页版式变化不够时如实提示，由用户决定要不要按补充调整重排。
+                scope === "detail" && (result.layoutKinds < 6 || result.layoutRepeats) ? `版式变化不够（${result.layoutKinds} 种版式${result.layoutRepeats ? `，${result.layoutRepeats} 处相邻两屏版式相同` : ""}），可以在补充调整里要求多换几种` : "",
             ].filter(Boolean);
             const summary = `已按这件商品排好 ${count} ${planUnit}${notes.length ? `，${notes.join("，")}` : ""}`;
             // 不足预定张数时如实说明，让用户决定直接出还是重新策划。
@@ -588,9 +590,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                         {activePlan
                                             ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
                                             : text.value
-                                              ? `AI 先分析商品图和卖点，再参考电商知识库挑设计调性，定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。不策划也可以直接生成" : ""}。`
+                                              ? `AI 先分析商品图和卖点，参考同类爆款套图、电商知识库和你上传的参考图，定这件商品的创意主线和设计调性，再定每一${planUnit}讲什么、怎么排版、怎么拍、文案怎么写；排好后可以逐${planUnit}修改再生成${scope === "single" ? "。不策划也可以直接生成" : ""}。`
                                               : "添加文本模型后可以按商品策划。"}
                                     </span>
+                                    {activePlan?.concept ? <span>创意主线：{activePlan.concept}</span> : null}
+                                    {activePlan?.inspiration ? <span>借鉴：{activePlan.inspiration}</span> : null}
                                 </span>
                                 {text.value ? (
                                     <span className="es-plan-card-actions">

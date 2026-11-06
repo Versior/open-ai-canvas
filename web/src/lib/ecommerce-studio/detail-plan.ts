@@ -41,6 +41,10 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     line: 30,
     facts: 6,
     summary: 200,
+    /** 创意主线：从这件商品最独特的地方出发、贯穿整组的视觉母题。 */
+    concept: 100,
+    /** 从同类爆款和参考图里借鉴了什么。 */
+    inspiration: 100,
     style: 800,
 } as const;
 
@@ -313,6 +317,8 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         model: text(record.model, 120),
         summary: text(record.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
         style: text(record.style, STUDIO_DETAIL_PLAN_LIMITS.style),
+        ...(text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
+        ...(text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
         ...(styleId ? { styleId } : {}),
         ...(tone ? { tone } : {}),
         ...(targets.length ? { targets } : {}),

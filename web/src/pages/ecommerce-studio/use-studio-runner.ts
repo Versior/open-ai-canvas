@@ -244,26 +244,36 @@ export function useStudioRunner() {
                 const scope = studioPlanScopeOf(product);
                 if (!scope) throw new Error("模板套图按模板出图，不需要策划");
                 const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
-                // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
-                const request: StudioPlanRequest = { scope, ...(targets ? { targets } : {}), ...(options.revise ? { previous: studioActivePlan(product) } : {}) };
                 const current = configRef.current;
                 const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
-                // 商品图只用来让模型看清外观，最多带两张；模型不收图时只按表单和档案的文字策划。
-                const maxImages = modelCapabilityConfigFor(current, draft.model).text?.references.maxImages;
-                const limit = Math.min(2, maxImages ?? 2);
-                const photos = limit > 0 ? studioReferencePhotos(product.photos, limit) : [];
-                const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(photos.length));
+                // 商品图让模型看清外观，最多两张；卖家上传的参考图（大牌或爆款截图）再带最多两张，让策划学它的设计语言。
+                // 参考图至少给商品图留一个名额；模型不收图时只按表单和档案的文字策划。
+                const budget = Math.min(4, modelCapabilityConfigFor(current, draft.model).text?.references.maxImages ?? 2);
+                const uploaded = product.references.filter((photo) => photo.resourceId);
+                const referenceCount = Math.min(2, uploaded.length, Math.max(0, budget - 1));
+                const photos = budget > 0 ? studioReferencePhotos(product.photos, Math.min(2, budget - referenceCount)) : [];
+                const references = uploaded.slice(0, referenceCount);
+                const images = [...photos, ...references];
+                const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
+                // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
+                const request: StudioPlanRequest = {
+                    scope,
+                    ...(targets ? { targets } : {}),
+                    ...(options.revise ? { previous: studioActivePlan(product) } : {}),
+                    ...(images.length ? { images: { photos: photos.length, references: references.length } } : {}),
+                };
                 const roles = scope === "single" ? studioPlanTargetRoles(targets || []) : studioDetailPlanRoles(product, scope);
                 const result = await runBackendGenerationTask({
                     mode: "text",
                     prompt: buildDetailPlanPrompt(product, roles, request),
                     config: generation,
-                    referenceImages: photos.map(photoReference),
+                    referenceImages: images.map(photoReference),
                     streamText: false,
                     metadata: {
                         ...studioAnalysisMetadata(productId, "plan", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }, STUDIO_DETAIL_PLAN_CAPABILITY),
-                        // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事。
+                        // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事；品类大类用来在同类爆款套图对不上时取同大类的参考。
                         studioPlanKind: scope,
+                        ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
                     },
                 });
                 const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);

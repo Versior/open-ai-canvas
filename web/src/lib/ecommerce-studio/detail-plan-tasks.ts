@@ -55,8 +55,25 @@ function styleLines(product: StudioProduct): string[] {
     ];
 }
 
-/** 这次策划的范围：详情页 10 屏、主图 5 张，或者按选中的单张类型逐张出；previous 是要按补充调整修改的上一版。 */
-export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan };
+/**
+ * 这次策划的范围：详情页 10 屏、主图 5 张，或者按选中的单张类型逐张出；previous 是要按补充调整修改的上一版。
+ * images 是随任务附带的图：先是商品图，后面是卖家上传的参考图（大牌或爆款截图）。
+ */
+export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; images?: { photos: number; references: number } };
+
+function imageRange(from: number, count: number) {
+    return count > 1 ? `图${from}–图${from + count - 1}` : `图${from}`;
+}
+
+/** 附图说明：哪几张是商品图、哪几张是参考图，以及参考图怎么用。 */
+function imageLines(images: StudioPlanRequest["images"]): string[] {
+    if (!images || images.photos + images.references === 0) return [];
+    const parts = [images.photos ? `${imageRange(1, images.photos)} 是商品图（外观唯一依据）` : "", images.references ? `${imageRange(images.photos + 1, images.references)} 是卖家给的参考图（大牌或爆款的图，不是这件商品）` : ""].filter(Boolean);
+    return [
+        `附图：${parts.join("；")}。`,
+        images.references ? "参考图怎么用：先看懂它好在哪里（版式和分区、字体和字号层级、配色、图标和装饰元素、文案的语气和节奏），把这些设计语言用到这组图里；参考图里的商品、品牌、文字、价格和参数不照搬，也不要把这组图做成参考图的翻版。" : "",
+    ].filter(Boolean);
+}
 
 /** 单张图策划时每一张的屏型，按选中的类型和数量依次展开。 */
 export function studioPlanTargetRoles(targets: StudioPlanTarget[]): StudioShotRole[] {
@@ -132,6 +149,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         productType ? `商品类型：${productType}` : undefined,
         product.dossier?.summary ? `概括：${product.dossier.summary}` : undefined,
         `商品图：${views.length ? views.join("、") : "正面"}（外观以商品图为准）`,
+        ...imageLines(request.images),
         product.dossier?.invariants.length ? `外观要点（每张都不能变）：${product.dossier.invariants.join("、")}` : undefined,
         "",
         "【可以用的文案素材】",
@@ -172,7 +190,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "- 每张最多三层文字：栏目小标题（英文或序号）、主标题、一句注解；要点只用在图标、引线、拼格、对照、参数和收尾版式里做标签。",
         "",
         "【要求】",
-        "1. 先想清楚：买这件商品的人下单前最关心什么、最担心什么，这件商品凭什么值得买，同类商品里它的气质是什么。整组图围绕这些回答来排，不要套一份各品类通用的模板。",
+        "1. 先想清楚：买这件商品的人下单前最关心什么、最担心什么，这件商品凭什么值得买，同类商品里它的气质是什么。整组图围绕这些回答来排，不要套一份各品类通用的模板。再定一条创意主线写进 concept（不超过 60 个字）：从这件商品最独特的地方（外观、材质、颜色、使用时刻、人群）出发，想一个贯穿整组的视觉母题（一种光、一个道具、一个动作、一种图形或一种色块），每张都出现它的变化，让这组图一眼就是这件商品的，换成别的商品就不成立。不用放在任何商品上都成立的通用画面（纯色背景加商品居中、泛泛的居家场景、空洞的大理石台面）。",
         scopeRequirement(product, request),
         `3. 每张只承担一个目的，并选一个最适合讲这件事的 layout。${request.scope === "detail" ? "相邻两屏的版式不能相同，整套至少用到 6 种版式；同一种屏型不能连续超过两屏；" : "相邻两张的版式尽量不同；"}相邻两张的景别、机位和场景也不能相同。`,
         "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字），像摄影师和美术指导的分镜说明：背景或场景、商品怎么摆、什么角度和焦段、人物和动作（如有）、道具（不超过 3 件）、主色调、光线的方向和质感，以及按版式怎么分区、文字放在哪里。visual 和 style 里不写任何品牌名（上面提到的大牌只用来定调性），也不写「参考某某官网」。",
@@ -182,9 +200,10 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "8. 同一条卖点最多用在一张（详情页的头图和收尾可以回顾）。素材不够写文案的图，headline 写一个短栏目名或设 noText: true。",
         "9. style 是整组共用的设计规范（不超过 300 个字），像设计师交给出图的规范：色板（底色、主色、强调色，各写色名和 #色值）、背景体系、光线、字体（中文标题的字重和气质、英文小标题的样式、数字的样式）、栏目标题的样式（比如序号加英文小标题加中文标题加一条细线）、图标样式（线框还是面性、线条粗细、有没有底板）、反复出现的装饰元素。所有图一致，每张的背景和场景写在各自的 visual 里。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
+        "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、编号徽章、横幅标题）；没有参考时留空。",
         "",
         "只输出下面这个 JSON，不要任何解释：",
-        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${request.scope === "single" ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene" : request.scope === "main" ? "main-white" : "detail-hero"}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
+        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","concept":"创意主线","inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${request.scope === "single" ? studioPlanTargetRoles(request.targets || [])[0] || "detail-scene" : request.scope === "main" ? "main-white" : "detail-hero"}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
     ];
     return lines.filter((line): line is string => line !== undefined).join("\n");
 }
@@ -201,6 +220,9 @@ export type StudioDetailPlanResult = {
     issues: EcommerceComplianceIssue[];
     /** 文案里出现的土味写法。 */
     tacky: string[];
+    /** 详情页用到几种版式、相邻两屏版式相同的有几处；版式变化不够时提示用户。 */
+    layoutKinds: number;
+    layoutRepeats: number;
 };
 
 /** 读回策划结果：屏型必须在这件商品能排的范围里，文案的数字必须有出处；去掉依据不够的屏后剩得太少时要求重试。 */
@@ -258,6 +280,8 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             model: meta.model,
             summary: text(data.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
             style: text(data.style, STUDIO_DETAIL_PLAN_LIMITS.style),
+            ...(text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
+            ...(text(data.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(data.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
             ...(styleId ? { styleId } : {}),
             ...(tone ? { tone } : {}),
             ...(request.scope === "single" ? { targets: request.targets } : {}),
@@ -267,5 +291,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         ungrounded,
         issues,
         tacky,
+        layoutKinds: new Set(screens.map((screen) => screen.layout)).size,
+        layoutRepeats: screens.filter((screen, index) => index > 0 && screen.layout === screens[index - 1].layout).length,
     };
 }
