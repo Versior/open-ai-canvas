@@ -1,12 +1,14 @@
 import { App } from "antd";
 import { nanoid } from "nanoid";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { createClientId } from "@/lib/client-id";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { createProductVideoJob, emptyProductVideoInputs, pendingProductVideoShots, productVideoInputs, productVideoInputsError, reusableProductVideoSplit, type ProductVideoInputs, type ProductVideoJob } from "@/lib/product-video/job";
 import { productVideoDefaultRatio } from "@/lib/product-video/media";
+import { getVideoReplication, parseVideoTeardownBundle } from "@/services/api/video-replication";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
+import { defaultProductVideoRange } from "./product-video-reference";
 import { ProductVideoComposer } from "./product-video-composer";
 import { productVideoLimitsFor } from "./product-video-config";
 import { approveProductVideoPreview, isProductVideoRunning, redoProductVideoShot, resumeProductVideos, retryProductVideo, runProductVideo, stopProductVideo } from "./product-video-runner";
@@ -20,11 +22,18 @@ function errorText(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
 }
 
+/** 拆解记录的标题：保存过分析时用分析标题，否则空着，由参考视频名兜底。 */
+function analysisTitle(analysis: unknown) {
+    const title = analysis && typeof analysis === "object" ? (analysis as { title?: unknown }).title : undefined;
+    return typeof title === "string" ? title.trim() : "";
+}
+
 /**
- * 商品视频 · 元素替换：用一条参考视频的动作、镜头和节奏，换上自己的商品、模特和背景。
+ * 视频复刻 · 元素替换：用一条参考视频的动作、镜头和节奏，换上自己的商品、模特和背景。
  * 左边放素材和参考视频，右边是视频作品；作品存在服务端，生成流程见 product-video-runner。
+ * sourceTeardownId 是从拆解记录点「用它做元素替换」带过来的拆解，载入后把它的原视频放进参考视频。
  */
-export default function ProductVideoPage() {
+export function ReplaceWorkspace({ modeSwitch, sourceTeardownId, onSourceConsumed }: { modeSwitch: ReactNode; sourceTeardownId?: string; onSourceConsumed: () => void }) {
     const { message, modal } = App.useApp();
     const config = useEffectiveConfig();
     const configRef = useRef(config);
@@ -47,6 +56,28 @@ export default function ProductVideoPage() {
         resumed.current = true;
         resumeProductVideos(useProductVideoStore.getState().jobs, configRef.current);
     }, [status]);
+
+    // 从拆解记录带过来的视频：读出原视频资源和时长放进参考视频，读完就从地址里去掉。
+    useEffect(() => {
+        if (!sourceTeardownId) return;
+        const controller = new AbortController();
+        getVideoReplication(sourceTeardownId, controller.signal)
+            .then((detail) => {
+                const { source } = parseVideoTeardownBundle(detail.task);
+                const name = analysisTitle(detail.analysis) || "拆解过的视频";
+                setInputs((current) => ({ ...current, reference: { resourceId: source.resourceId, name, durationMs: source.durationMs, width: source.width, height: source.height }, ...defaultProductVideoRange(source.durationMs), ratio: "" }));
+                message.success("已放入参考视频，再放上要换进去的商品、模特或背景");
+            })
+            .catch((error) => {
+                if (!controller.signal.aborted) message.error(`没能载入这条拆解的视频：${errorText(error, "请重试")}`);
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) onSourceConsumed();
+            });
+        return () => controller.abort();
+        // onSourceConsumed 只在读完时调用一次，不作为依赖。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [message, sourceTeardownId]);
 
     const change = useCallback((patch: Patch) => setInputs((current) => ({ ...current, ...(typeof patch === "function" ? patch(current) : patch) })), []);
 
@@ -134,10 +165,11 @@ export default function ProductVideoPage() {
         <WorkspacePage fluid scroll={false} className="pv-page">
             <div className="pv-shell">
                 <header className="pv-head">
-                    <div>
-                        <h1>商品视频</h1>
-                        <p>元素替换：沿用参考视频的动作、镜头和节奏，换上你的商品、模特和背景。</p>
+                    <div className="pv-head-title">
+                        <h1>视频复刻</h1>
+                        {modeSwitch}
                     </div>
+                    <p>元素替换：沿用参考视频的动作、镜头和节奏，换上你的商品、模特和背景。复刻请用你有权使用的素材和形象。</p>
                 </header>
                 <div className="pv-body">
                     <div ref={composerRef} className="pv-left">

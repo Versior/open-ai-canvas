@@ -10,7 +10,6 @@ export const workspaceRoutePages = {
     ecommerce: preloadableLazy(() => import("@/pages/ecommerce")),
     // Fork 页面：电商生图台、视频复刻、室内设计和灵感广场。
     ecommerceStudio: preloadableLazy(() => import("@/pages/ecommerce-studio")),
-    productVideo: preloadableLazy(() => import("@/pages/product-video")),
     videoReplication: preloadableLazy(() => import("@/pages/video-replication")),
     interior: preloadableLazy(() => import("@/pages/interior")),
     inspiration: preloadableLazy(() => import("@/pages/inspirations")),
@@ -65,7 +64,6 @@ const workspaceRouteSlugs: Record<string, keyof typeof workspaceRoutePages> = {
     referral: "referral",
     ecommerce: "ecommerce",
     studio: "ecommerceStudio",
-    "product-video": "productVideo",
     "video-replication": "videoReplication",
     interior: "interior",
     inspiration: "inspiration",

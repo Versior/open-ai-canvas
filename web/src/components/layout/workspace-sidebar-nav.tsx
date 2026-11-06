@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, Clapperboard, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -50,7 +50,6 @@ const COLLAPSED_TITLE_KEYS: Record<string, string> = {
     plugins: "nav.collapsed.plugins",
     tasks: "nav.collapsed.tasks",
     "video-replication": "nav.collapsed.videoReplication",
-    "product-video": "nav.collapsed.productVideo",
     interior: "nav.collapsed.interior",
 };
 
@@ -64,12 +63,7 @@ function buildNav(features: FeatureAvailability, t: TFunction): { groups: Worksp
         {
             items: [
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
-                ...(features.ecommerceStudioEnabled
-                    ? [
-                          { id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Package, to: "/studio" },
-                          { id: "product-video", title: t("nav.sidebar.productVideo"), icon: Clapperboard, to: "/product-video" },
-                      ]
-                    : []),
+                ...(features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Package, to: "/studio" }] : []),
                 ...(features.interiorEnabled ? [{ id: "interior", title: t("nav.sidebar.interior"), icon: Sofa, to: "/interior" }] : []),
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
                 ...(features.videoReplicationEnabled ? [{ id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" }] : []),

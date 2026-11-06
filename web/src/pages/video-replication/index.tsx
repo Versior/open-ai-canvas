@@ -11,8 +11,10 @@ import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-c
 import { useUserStore } from "@/stores/use-user-store";
 import { openVideoTeardownInCanvas, type VideoReplicaOptions } from "./replication-canvas";
 import { ReplicationHome } from "./replication-home";
+import { ReplicationModeSwitch, type ReplicationMode } from "./replication-mode-switch";
 import { ReplicationWorkspace, type ReplicationView } from "./replication-workspace";
 import { dismissReplicationError, reanalyzeReplication, resumePendingReplication, startReplication, useReplicationRun, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
+import { ReplaceWorkspace } from "./replace/replace-workspace";
 import "./video-replication.css";
 
 function errorText(error: unknown) {
@@ -20,7 +22,8 @@ function errorText(error: unknown) {
 }
 
 /**
- * 视频复刻：没有 ?id= 时是首页（拆解入口 + 最近拆解），有 ?id= 时是这条记录的工作区（时间线、原视频、分镜）。
+ * 视频复刻有两种做法，顶部切换（?mode=replace 是元素替换，见 replace/replace-workspace.tsx）。
+ * 爆款复刻：没有 ?id= 时是首页（拆解入口 + 最近拆解），有 ?id= 时是这条记录的工作区（时间线、原视频、分镜）。
  * 新建的拆解任务一建好就跳到它的工作区看进度；拆解结果（镜头事实和模型分析）都存在服务端，
  * 「去画布复刻」再把它们铺到一张新画布上（复刻分镜、关键帧、商品图和报告），在画布里生成首帧、视频和成片。
  */
@@ -60,6 +63,9 @@ export default function VideoReplicationPage() {
         refetchInterval: (query) => (query.state.data?.task.status === "queued" || query.state.data?.task.status === "running" ? 2000 : false),
     });
 
+    const mode: ReplicationMode = params.get("mode") === "replace" && !selectedId ? "replace" : "remake";
+    const changeMode = useCallback((next: ReplicationMode) => setParams(next === "replace" ? { mode: "replace" } : {}), [setParams]);
+    const modeSwitch = <ReplicationModeSwitch value={mode} onChange={changeMode} />;
     const select = useCallback((id: string) => setParams(id ? { id } : {}), [setParams]);
     const changeView = useCallback((next: ReplicationView) => setParams(next === "teardown" ? { id: selectedId } : { id: selectedId, view: next }), [selectedId, setParams]);
     const { run, running } = useReplicationRun(select);
@@ -106,6 +112,8 @@ export default function VideoReplicationPage() {
         }
     };
 
+    if (mode === "replace") return <ReplaceWorkspace modeSwitch={modeSwitch} sourceTeardownId={params.get("source") || undefined} onSourceConsumed={() => setParams({ mode: "replace" }, { replace: true })} />;
+
     return (
         <WorkspacePage fluid>
             {/* 复刻方案整页滚动；拆解结果在宽屏下是一屏布局。 */}
@@ -126,6 +134,7 @@ export default function VideoReplicationPage() {
                         onBack={() => select("")}
                         view={view}
                         onViewChange={changeView}
+                        onReplace={() => setParams({ mode: "replace", source: selectedId })}
                     />
                 ) : (
                     <ReplicationHome
@@ -147,6 +156,7 @@ export default function VideoReplicationPage() {
                         error={errorText(history.error)}
                         activeRun={running && run?.id ? run : null}
                         onOpen={select}
+                        modeSwitch={modeSwitch}
                     />
                 )}
             </div>

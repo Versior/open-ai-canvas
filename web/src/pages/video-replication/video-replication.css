@@ -32,6 +32,12 @@
     flex: 1 1 360px;
 }
 
+.vr-home-titlebar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+}
 .vr-home-title {
     color: var(--user-ink);
     font-size: 24px;

@@ -38,7 +38,6 @@ export const enUS: Messages = {
             ecommerceStudio: "E-commerce Studio",
             interior: "Interior design",
             videoReplication: "Video replication",
-            productVideo: "Product video",
             home: "Create",
             projects: "Short dramas",
             ecommerce: "E-commerce Agent",
@@ -54,7 +53,6 @@ export const enUS: Messages = {
         },
         collapsed: {
             videoReplication: "Replicate",
-            productVideo: "Video",
             interior: "Interior",
             inspiration: "Ideas",
             home: "Create",
@@ -69,7 +67,6 @@ export const enUS: Messages = {
             ecommerce: "E-commerce",
             studio: "E-commerce Studio",
             videoReplication: "Video replication",
-            productVideo: "Product video",
             interior: "Interior design",
             inspiration: "Inspiration",
             home: "Create",

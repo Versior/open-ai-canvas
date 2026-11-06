@@ -1,6 +1,6 @@
 import { App, Button, Popover } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Replace, Sparkles } from "lucide-react";
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
@@ -44,6 +44,8 @@ type Props = {
     /** 拆解结果还是复刻方案；没有分析时只有拆解结果。 */
     view: ReplicationView;
     onViewChange: (view: ReplicationView) => void;
+    /** 用这条视频做元素替换：带着原视频去「元素替换」。 */
+    onReplace: () => void;
 };
 
 function parseBundle(detail: VideoReplicationDetail | undefined): { bundle?: VideoTeardownBundle; error?: string } {
@@ -124,6 +126,7 @@ function RecordWorkspace({
     onBack,
     view: requestedView,
     onViewChange,
+    onReplace,
 }: Props & { bundle: VideoTeardownBundle; analysis: Analysis | null; ownRun: ReplicationRun | null }) {
     const { message } = App.useApp();
     const [tab, setTab] = useState<"shots" | "structure">("shots");
@@ -192,6 +195,11 @@ function RecordWorkspace({
                         重新分析
                     </Button>
                 </Popover>
+            ) : null}
+            {view === "teardown" ? (
+                <Button icon={<Replace className="size-4" />} onClick={onReplace} title="沿用这条视频的动作和镜头，直接换上你的商品、模特和背景">
+                    用它做元素替换
+                </Button>
             ) : null}
             {view === "teardown" ? (
                 <Button icon={<Download className="size-4" />} disabled={!analysis || analyzing} onClick={downloadReport}>

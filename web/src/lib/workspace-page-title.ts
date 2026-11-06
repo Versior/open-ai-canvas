@@ -9,7 +9,6 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
     settings: "nav.pageTitles.settings",
     ecommerce: "nav.pageTitles.ecommerce",
     studio: "nav.pageTitles.studio",
-    "product-video": "nav.pageTitles.productVideo",
     "video-replication": "nav.pageTitles.videoReplication",
     interior: "nav.pageTitles.interior",
     inspiration: "nav.pageTitles.inspiration",

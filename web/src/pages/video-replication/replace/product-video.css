@@ -1,4 +1,4 @@
-/* 商品视频 · 元素替换（/product-video）。和电商生图台同一套用户端 token：表面与文字来自 --user-*，
+/* 视频复刻 · 元素替换（/video-replication?mode=replace）。和电商生图台同一套用户端 token：表面与文字来自 --user-*，
    卡片无边、hover 只换表面、按钮不加渐变与发光。弹窗里的模特库沿用生图台的 .es-portal 样式。 */
 .pv-shell {
     --pv-page: var(--user-page-bg);
@@ -43,6 +43,12 @@
 .pv-head {
     flex: 0 0 auto;
     padding: 0 var(--space-1);
+}
+.pv-head-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
 }
 .pv-head h1 {
     margin: 0;

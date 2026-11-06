@@ -1,5 +1,5 @@
 import { ArrowRight, Clapperboard, ListChecks, LoaderCircle, ScanEye } from "lucide-react";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import type { VideoReplicationRecord } from "@/services/api/video-replication";
 import { ReplicationComposer } from "./replication-composer";
@@ -21,16 +21,21 @@ type Props = {
     /** 已经建好拆解任务、正在后台跑的那一次。 */
     activeRun: ReplicationRun | null;
     onOpen: (id: string) => void;
+    /** 顶部的「爆款复刻 / 元素替换」切换。 */
+    modeSwitch: ReactNode;
 };
 
 /** 视频复刻首页：一行标题和流程、拆解入口（含支持的平台）、最近拆解。宽屏下一屏放得下，不用滚动。 */
-export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen }: Props) {
+export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen, modeSwitch }: Props) {
     const activeId = activeRun?.id || "";
     return (
         <div className="vr-home">
             <header className="vr-home-head">
                 <div className="vr-home-heading">
-                    <h1 className="vr-home-title">视频复刻</h1>
+                    <div className="vr-home-titlebar">
+                        <h1 className="vr-home-title">视频复刻</h1>
+                        {modeSwitch}
+                    </div>
                     <p className="vr-home-sub">把爆款视频拆成分镜，按你的商品做复刻方案，再去画布生成。复刻请用你有权使用的素材和形象。</p>
                 </div>
                 <ol className="vr-flow" aria-label="复刻流程">
