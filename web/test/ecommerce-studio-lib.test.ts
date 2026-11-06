@@ -626,20 +626,21 @@ describe("ecommerce studio image size options", () => {
     test("quality and resolution are chosen separately and the size follows the tier", () => {
         expect(studioQualityOptions(profile).map((option) => option.value)).toEqual(["auto", "low", "medium", "high"]);
         expect(studioResolutionOptions(profile).map((option) => option.label)).toEqual(["1K", "2K", "4K"]);
-        // 没选过清晰度时用 2K；选了就按选的档位给具体尺寸，质量照常写进 quality。
-        expect(studioEffectiveResolution(profile, "")).toBe("2k");
-        expect(studioImageRequest(profile, "high", "3:4", "")).toEqual({ aspectRatio: "3:4", imageSettings: { quality: "high", size: "1728x2304" } });
+        // 没选过清晰度时用 1K；选了就按选的档位给具体尺寸，质量照常写进 quality。
+        expect(studioEffectiveResolution(profile, "")).toBe("1k");
+        expect(studioImageRequest(profile, "high", "3:4", "")).toEqual({ aspectRatio: "3:4", imageSettings: { quality: "high", size: "1024x1360" } });
+        expect(studioImageRequest(profile, "high", "3:4", "2k").imageSettings.size).toBe("1728x2304");
         expect(studioImageRequest(profile, "auto", "1:1", "4k").imageSettings.size).toBe("2880x2880");
         expect(studioRatioOptions(profile, "auto", "1k")).toEqual(["1:1", "3:4"]);
         // 按参数声明的模型（后台模型配置的写法）：画布只给默认档位，生图台按模型声明的尺寸取值放开 2K、4K。
         const declared = { ...profile, parameters: [], size: { ...profile.size, allowCustom: false } };
         expect(studioResolutionOptions(declared).map((option) => option.value)).toEqual(["1k", "2k", "4k"]);
-        expect(studioImageRequest(declared, "high", "3:4", "").imageSettings).toEqual({ quality: "high", size: "1728x2304" });
-        // 质量只有 auto 的渠道：「质量」选的是尺寸档位，没选过时也是 2K（模型默认尺寸是 1K）。
-        const tierOnly = { ...profile, size: { ...profile.size, default: "1024x1024" }, quality: { supported: true, values: ["auto"], default: "auto" } };
+        expect(studioImageRequest(declared, "high", "3:4", "2k").imageSettings).toEqual({ quality: "high", size: "1728x2304" });
+        // 质量只有 auto 的渠道：「质量」选的是尺寸档位，没选过时用 1K（即使模型默认尺寸在别的档位），选了 2K 就按 2K。
+        const tierOnly = { ...profile, size: { ...profile.size, default: "2048x2048" }, quality: { supported: true, values: ["auto"], default: "auto" } };
         expect(studioQualityOptions(tierOnly).map((option) => option.value)).toEqual(["1k", "2k", "4k"]);
-        expect(studioImageRequest(tierOnly, "", "3:4").imageSettings).toEqual({ size: "1728x2304" });
-        expect(studioImageRequest(tierOnly, "1k", "3:4").imageSettings).toEqual({ size: "1024x1360" });
+        expect(studioImageRequest(tierOnly, "", "3:4").imageSettings).toEqual({ size: "1024x1360" });
+        expect(studioImageRequest(tierOnly, "2k", "3:4").imageSettings).toEqual({ size: "1728x2304" });
         // 没有尺寸档位的模型不出现清晰度。
         expect(studioResolutionOptions({ ...profile, size: { ...profile.size, presets: presets.filter((preset) => preset.tier === "1k") } })).toEqual([]);
     });

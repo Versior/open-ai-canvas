@@ -57,7 +57,7 @@ export function studioDefaultQuality(profile: ImageCapabilityConfig | undefined)
     const mode = qualityMode(profile);
     if (mode === "resolution") return profile.resolution.default;
     if (mode === "tier") {
-        // 质量只有 auto、靠尺寸档位分清晰度的模型（如部分渠道的 GPT Image 2）：和「清晰度」一样默认 2K，模型默认的 1K 放大看会糊。
+        // 质量只有 auto、靠尺寸档位分清晰度的模型（如部分渠道的 GPT Image 2）：和「清晰度」一样用生图台默认档位，不跟模型默认尺寸走。
         const tiers = sizeTiers(profile);
         if (tiers.includes(STUDIO_PREFERRED_TIER)) return STUDIO_PREFERRED_TIER;
         const preset = studioSizePresets(profile).find((item) => item.size === profile.size.default);
@@ -72,8 +72,8 @@ export function studioEffectiveQuality(profile: ImageCapabilityConfig | undefine
     return options.some((option) => option.value === quality) ? quality : studioDefaultQuality(profile);
 }
 
-/** 生图台默认的清晰度：模型有 2K 档时用 2K，1K 放大看会糊。 */
-export const STUDIO_PREFERRED_TIER = "2k";
+/** 生图台默认的清晰度：模型有 1K 档时用 1K，要更清楚时由用户在下拉框里选 2K、4K。 */
+export const STUDIO_PREFERRED_TIER = "1k";
 
 /**
  * 「清晰度」下拉框：模型同时有多档质量和多档尺寸（如 GPT Image 的 low/medium/high 加 1K/2K/4K）时，
@@ -85,7 +85,7 @@ export function studioResolutionOptions(profile: ImageCapabilityConfig | undefin
     return tiers.length >= 2 ? tiers.map((tier) => ({ value: tier, label: tier.toUpperCase() })) : [];
 }
 
-/** 选中的清晰度在当前模型下无效时，优先 2K，没有 2K 时用模型默认尺寸所在的档位。 */
+/** 选中的清晰度在当前模型下无效时，优先 1K，没有 1K 时用模型默认尺寸所在的档位。 */
 export function studioEffectiveResolution(profile: ImageCapabilityConfig | undefined, resolution: string) {
     const options = studioResolutionOptions(profile);
     if (!profile || !options.length) return "";
