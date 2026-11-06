@@ -1,3 +1,8 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M6 8H36V16H14V36H28V44H6V8ZM58 20H36V28H50V48H28V56H58V20ZM24 27H40V37H24V27Z" fill="currentColor"/>
+  <title>KINOVO</title>
+  <style>
+    :root { color: #111827; }
+    @media (prefers-color-scheme: dark) { :root { color: #F8FAFC; } }
+  </style>
+  <path d="M8 6H20V24.5L39 6H56L31.5 30.5L58 58H41.5L20 35.5V58H8V6Z" fill="currentColor"/>
 </svg>

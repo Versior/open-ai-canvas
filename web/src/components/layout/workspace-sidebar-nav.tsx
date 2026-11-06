@@ -155,7 +155,7 @@ function WorkspaceSidebarProfile({ collapsed, user, onExpand, onCollapse }: { co
 function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNavigate: () => void; onExpand: () => void; onCollapse: () => void }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const { t } = useTranslation();
-    // 未上传自定义 Logo 时用内置取景框字形（与欢迎页、登录框、加载页同一个 /logo.svg），放在墨色实底方块里；
+    // 未上传自定义 Logo 时用内置 KINOVO K 字标（与欢迎页、登录框、加载页同一个 /logo.svg），放在墨色实底方块里；
     // 自定义 Logo 的配色不可预知，改用中性浅底方块承托。
     const mark = (
         <BrandLogoFrame
