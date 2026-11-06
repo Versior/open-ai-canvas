@@ -82,8 +82,8 @@ export const STUDIO_DETAIL_LAYOUTS: Record<StudioDetailLayoutId, { label: string
     },
     callout: {
         label: "引线标注",
-        use: "讲结构和细节：商品大图，几条细引线指向具体部位并配标签",
-        render: "商品大图居中，2–4 条细引线从商品对应部位引出，末端是一个小圆点加短标签，引线互不交叉",
+        use: "讲结构和细节：商品大图，几条细引线指向具体部位并配标签，或者用圆形放大镜头把小部件放大在旁边",
+        render: "商品大图居中，2–4 条细引线从商品对应部位引出，末端是一个小圆点加短标签，引线互不交叉；要看清的小部件可以用一两个带细描边和轻投影的圆形放大镜头放大在旁边",
         lines: "引线标签（每条引线末端一条，指向标签说的那个部位）",
     },
     compare: {
@@ -107,8 +107,32 @@ export const STUDIO_DETAIL_LAYOUTS: Record<StudioDetailLayoutId, { label: string
     data: {
         label: "大字数据",
         use: "有已确认的关键数值时：一个大号数字或关键词做视觉中心",
-        render: "一个大号数字或关键词居中做视觉中心，下方一行说明，商品放在一侧或底部陪衬",
-        lines: "要点（大号数字下方的说明行）",
+        render: "一个大号数字或关键词居中做视觉中心，数字可以做成半透明玻璃或立体的造型、和商品前后穿插，下方一行说明，商品放在一侧或底部陪衬",
+        lines: "要点（大号数字下方的说明行，或环绕数字的几个短标签）",
+    },
+    pain: {
+        label: "痛点共鸣",
+        use: "说出买家的困扰：人物不适的神情配几个气泡标签，或 2×3 困扰场景宫格，标题用一个问句",
+        render: "一个人物半身特写带出困扰的神情（不夸张、不吓人），周围 3–5 个圆角气泡标签说出具体的困扰；或者画面是 2×3 的宫格，每格一个困扰的生活场景照片配一条短标签；照片统一调色到整套色板里",
+        lines: "困扰标签（每个气泡或宫格一条）",
+    },
+    mechanism: {
+        label: "机理示意",
+        use: "把看不见的作用画出来：皮肤或黏膜分层剖面、透明人体或器官、分层爆炸图，箭头和光点表示作用方向",
+        render: "3D 渲染质感的示意图做画面主体：分层剖面、半透明的人体或器官、按层展开的结构，用发光的箭头、光点或波纹表示作用的方向和过程，2–4 个短标签贴在对应位置；示意图干净、精致、有光感，不是平面卡通",
+        lines: "作用过程的标签（按先后，每层或每个箭头一条）",
+    },
+    ingredients: {
+        label: "成分特写",
+        use: "讲成分或原料：原料实物悬浮在透明气泡、圆形镜头或玻璃器皿里，每个配一条标签",
+        render: "2–4 个核心成分的原料实物微距，分别放在透明气泡、圆形镜头或玻璃器皿里悬浮排开，光从侧后方打亮，周围点缀细小的气泡和光斑，商品放在一侧或中央",
+        lines: "成分标签（每个成分一条：名称或一句作用）",
+    },
+    proof: {
+        label: "资质背书",
+        use: "只在已确认的事实里有认证、备案、检测或专利时用：证书或报告摆在展台上，配认证名称",
+        render: "一份证书或检测报告的实物立在展台上（文件上的小字不可辨认，不画任何编号和印章细节），旁边可以有奖杯或商品陪衬，柔和的聚光和光晕，背景是整套的主色",
+        lines: "认证名称（只写已确认的，每条一个）",
     },
     spec: {
         label: "参数尺寸",
@@ -124,6 +148,18 @@ export const STUDIO_DETAIL_LAYOUTS: Record<StudioDetailLayoutId, { label: string
     },
 };
 export const STUDIO_DETAIL_LAYOUT_IDS = Object.keys(STUDIO_DETAIL_LAYOUTS) as StudioDetailLayoutId[];
+
+/** 认证、备案、检测、专利这类事实：有它们才能排「资质背书」，否则等于让图片模型编证书。 */
+const PROOF_FACT = /认证|备案|检测|报告|专利|注册证|械字|批准|资质|GMP|ISO/i;
+
+export function studioHasProofFacts(product: StudioProduct) {
+    return studioDetailPlanFacts(product, (fact) => PROOF_FACT.test(`${fact.label}${fact.value}`)).length > 0;
+}
+
+/** 这件商品能用的版式：没有认证类事实时不给「资质背书」。 */
+export function studioDetailLayoutIds(product: StudioProduct): StudioDetailLayoutId[] {
+    return studioHasProofFacts(product) ? STUDIO_DETAIL_LAYOUT_IDS : STUDIO_DETAIL_LAYOUT_IDS.filter((id) => id !== "proof");
+}
 
 /** 模型没给版式时按屏型补一个。 */
 const ROLE_LAYOUT: Partial<Record<StudioShotRole, StudioDetailLayoutId>> = {
@@ -151,6 +187,11 @@ const ROLE_LAYOUT: Partial<Record<StudioShotRole, StudioDetailLayoutId>> = {
     "main-angle": "poster",
     "main-flatlay": "poster",
 };
+
+/** 屏型默认的版式：模型给的版式不认识或这件商品不能用时补上。 */
+export function studioRoleLayout(role: StudioShotRole): StudioDetailLayoutId {
+    return ROLE_LAYOUT[role] || "split";
+}
 
 /**
  * 设计调性：平台上大牌和头部爆款的详情页好看，是因为整套有一个清楚的调性——版面节奏、字体、文案语气和摄影都按它来。
@@ -181,6 +222,11 @@ export const STUDIO_DESIGN_TONES: Record<StudioDesignToneId, { label: string; us
         label: "科技发布",
         use: "像小米、大疆、索尼的发布页：参数和结构讲得清楚有力，文案利落",
         render: "科技发布会式版面：深色背景配冷色轮廓光，关键数字用超大号细体，结构用线稿、爆炸图或透视图表现，细线和网格做辅助，标题利落有力",
+    },
+    care: {
+        label: "专业护理",
+        use: "像头部医用、保健和功效个护品牌的详情页：整套一个色彩世界，痛点、机理、成分和证据一路讲清，可信但不冰冷",
+        render: "专业护理品牌的版面：整套一个色彩世界（午夜蓝、天空蓝或水蓝，加一个暖色强调），柔和的光效、光点和光晕，机理和成分用半透明 3D 示意图表现；每屏同一个栏目头（英文小标题、细宋体或中黑体主标题、一句副标题），关键词换成强调色；胶囊标签、圆角卡片和图标底板全套统一；人物和场景照片统一调色，信息清楚、可信、不吓人",
     },
     "hot-seller": {
         label: "爆款转化",
@@ -311,7 +357,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
     const role = typeof record.role === "string" && SCREEN_ROLES.includes(record.role as StudioShotRole) ? (record.role as StudioShotRole) : undefined;
     const visual = text(record.visual, limits.visual);
     if (!role || (requireVisual && !visual)) return undefined;
-    const layout = typeof record.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(record.layout as StudioDetailLayoutId) ? (record.layout as StudioDetailLayoutId) : ROLE_LAYOUT[role] || "split";
+    const layout = typeof record.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(record.layout as StudioDetailLayoutId) ? (record.layout as StudioDetailLayoutId) : studioRoleLayout(role);
     const eyebrow = text(record.eyebrow, limits.eyebrow);
     return {
         role,

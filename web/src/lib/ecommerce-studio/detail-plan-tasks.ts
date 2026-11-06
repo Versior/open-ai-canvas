@@ -9,11 +9,13 @@ import {
     STUDIO_DETAIL_PLAN_LIMITS,
     STUDIO_DETAIL_SCREEN_GUIDE,
     STUDIO_PLAN_SCOPES,
+    studioDetailLayoutIds,
     studioDetailPlanFacts,
     studioPlannedScreenOf,
     studioPlanMotifs,
     studioPlanStyleId,
     studioPlanTone,
+    studioRoleLayout,
     studioTemplateShotRoles,
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
@@ -148,26 +150,44 @@ function scopeRequirement(product: StudioProduct, request: StudioPlanRequest): s
  */
 const STUDIO_CREATIVE_DEVICES = "超大比例或微缩场景、悬浮与失重、文字和商品前后穿插、几何色块切割画面、光影投射、用一个道具把卖点变成画面、镜面倒影、俯拍平铺构成";
 
+/**
+ * 整套一个色彩世界：拆过的高质量详情页和主图（午夜蓝加暖金光的磁疗贴、天空蓝加蜂蜜黄的蜂胶喷雾、纯黑加橙的灶具）
+ * 都是全套一个色彩世界、照片统一调色，节奏靠内容和明暗交替；每屏换一种互不相干的背景反而像拼凑。
+ */
+const STUDIO_COLOR_WORLD = "整套一个色彩世界：由创意主线定一个主色世界（比如午夜蓝加暖金光、天空蓝加蜂蜜黄、纯黑加橙），所有屏的背景、场景和人物照片都统一调色到这个世界里；节奏靠同一色系里的明暗交替，或者从色板里取两三个颜色做整屏色块交替";
+/** 看不见的作用画出来：拆过的医用、保健和个护详情页最有说服力的几屏都是机理、成分和痛点的可视化。 */
+const STUDIO_VISUALIZE =
+    "- 看不见的要画出来：商品有作用原理、成分或结构可讲时，至少一屏用机理示意（剖面、透明人体或器官、分层爆炸图，光点和箭头表示作用方向）或成分特写，不要只用文字讲；买家有明确的困扰时，用一屏痛点共鸣开场（问句标题，人物神情配气泡标签，或困扰场景宫格）。";
+
 function rhythmLines(request: StudioPlanRequest): string[] {
     const head = "【视觉节奏与创意】（爆款和大牌的图不普通，靠的是节奏和创意，不是每张都一样干净）";
     if (request.scope === "detail")
         return [
             head,
-            "- 背景要有节奏：整套至少用到三种明显不同的处理（浅色棚拍底、深色或高饱和的大色块底、真实场景或环境光），至少两屏用强对比（深底浅字，或一整块饱和主色），不能整套都是同一种浅色渐变。",
+            `- ${STUDIO_COLOR_WORLD}。至少两屏用强对比（深底浅字，或一整块饱和主色），不能整套都是同一档浅色渐变，也不能每屏换一种互不相干的背景。`,
+            "- 每屏同一个栏目头：英文小标题、主标题、副标题的位置、字号和颜色全套一致，一眼就是一套。",
             "- 机位要有变化：同一个商品角度和景别整套最多用两次；至少一屏超近微距，一屏有人或手和商品互动，一屏是创意静物。",
+            STUDIO_VISUALIZE,
             `- 关键几屏要有一个创意手法（首屏必须有）：${STUDIO_CREATIVE_DEVICES}。把用到的手法写进 visual，写清楚画面怎么做。`,
             "- 信息少时不要凑数：商品标识、印字和型号不单独成屏，也不当卖点；用使用场景、情绪时刻、创意静物和质感细节来撑，不把同几条外观换个说法反复讲。",
         ];
     if (request.scope === "main")
-        return [head, "- 5 张里至少用到两种明显不同的背景处理（比如浅色棚拍和深色或饱和色块），首图之外每张换一个机位和景别。", `- 首图之外每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`, "- 商品标识、印字和型号不当卖点。"];
+        return [
+            head,
+            "- 5 张是一个系列：同一个版头样式（同色标题条或角标、同一种字体和图标底板），同一组展台、道具和色块搭成的小世界，同一套主色，背景在这套颜色里做深浅变化；首图之外每张换一个机位和景别。",
+            "- 讲功能用手在用的特写，可以配一两个圆形放大镜头把按键、接口或质地放大；已确认的关键数字做成画面里最大的元素。",
+            `- 首图之外每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`,
+            "- 商品标识、印字和型号不当卖点。",
+        ];
     if (request.scope === "template")
         return [
             head,
-            "- 模板只定了每张讲什么，不要照着模板的镜头说明平铺直叙：整套至少用到两种明显不同的背景处理（浅色棚拍底、深色或饱和色块底、真实场景），相邻两张换机位和景别。",
+            `- 模板只定了每张讲什么，不要照着模板的镜头说明平铺直叙。${STUDIO_COLOR_WORLD}，相邻两张换机位和景别；每张同一个栏目头或版头。`,
+            STUDIO_VISUALIZE,
             `- 白底图之外的首张和关键几张要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`,
             "- 商品标识、印字和型号不当卖点。",
         ];
-    return [head, `- 每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual；同一类型的几张换不同的手法和机位。`, "- 商品标识、印字和型号不当卖点。"];
+    return [head, `- 每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual；同一类型的几张换不同的手法和机位。`, "- 同时出几张时用同一个色彩世界和同一种标题样式，像一个品牌出的。", "- 商品标识、印字和型号不当卖点。"];
 }
 
 /** 上一版策划：按卖家的补充调整修改时带上，模型只改卖家不满意的地方。 */
@@ -250,7 +270,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
               })),
         request.scope === "single" ? undefined : "",
         "【可以用的版式】（layout 只能从这里选；平台上做得好的图每张都是排过版的画面，不是一张商品照片加一行字）",
-        ...STUDIO_DETAIL_LAYOUT_IDS.map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
+        ...studioDetailLayoutIds(product).map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
         "",
         "【设计调性】（挑一个最适合这件商品和目标人群的写进 tone，整组的版面、字体、文案语气和摄影都按它来）",
         ...STUDIO_DESIGN_TONE_IDS.map((id) => `- ${id}（${STUDIO_DESIGN_TONES[id].label}）：${STUDIO_DESIGN_TONES[id].use}`),
@@ -259,10 +279,10 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "- 主标题讲买家得到的感受或结果，不讲「这是什么」；把卖点翻译成画面和感受，比如把「重量轻」写成「轻到忘了它在」，把「防滑」写成「低头也不跑」。",
         "- 不写说明书口吻（该有的、就这么简单、记清楚、一次看清、都写在）和空洞大词（品质之选、匠心、臻品、甄选、高端大气）。写完逐条自查：这句话换到同类任何一件商品上都成立，或者只是在描述商品长什么样，就重写。",
         "- 主标题不能只是罗列外观或参数（比如「透明框，绿镜腿」「四个地方，记清楚」），要说出买家在意的结果、情绪或一个画面；买的人和用的人不同时（比如家长给孩子买），对买的人说话。",
-        "- 短、准、有节奏：可以用短句、对仗、留白和数字，口语但不油腻；同一组里的标题句式要有变化。",
+        "- 短、准、有节奏：可以用短句、对仗、留白和数字，口语但不油腻；同一组里的标题句式要有变化。国内头部详情页常用两个短语对仗、中间空一格（前讲作用、后讲结果，如「深润修护 强韧喉黏膜」），痛点共鸣屏用一个问句开场；关键词或数字要用强调色时写进 elements。",
         `- 不写土味和口号腔的词：${STUDIO_TACKY_COPY.join("、")}，不用感叹号，不堆四字成语。`,
-        "- 每张最多三层文字：英文栏目小标题、主标题、一句注解；要点只用在图标、引线、拼格、对照、参数和收尾版式里做标签。",
-        "- 详情页是一张连续的长图：每屏都不加页码、屏号和 01、02 这类序号（使用步骤屏的步骤编号除外），eyebrow、elements 和 style 里也不要写序号。",
+        "- 每张最多三层文字：英文栏目小标题、主标题、一句注解；要点只用在图标、引线、拼格、对照、参数、痛点、机理、成分、资质和收尾版式里做标签。",
+        "- 详情页是一张连续的长图：每屏都不加页码、屏号和 01、02 这类序号（使用步骤屏的步骤编号、机理示意里作用过程的先后编号除外），eyebrow、elements 和 style 里也不要写屏的序号。",
         "",
         ...rhythmLines(request),
         "",
@@ -271,11 +291,11 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         scopeRequirement(product, request),
         `3. 每张只承担一个目的，并选一个最适合讲这件事的 layout。${request.scope === "detail" ? "相邻两屏的版式不能相同，整套至少用到 6 种版式；同一种屏型不能连续超过两屏；" : "相邻两张的版式尽量不同；"}相邻两张的景别、机位和场景也不能相同。`,
         "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字），像摄影师和美术指导的分镜说明：背景或场景、商品怎么摆、什么角度和焦段、人物和动作（如有）、道具（不超过 3 件）、主色调、光线的方向和质感，以及按版式怎么分区、文字放在哪里。visual 和 style 里不写任何品牌名（上面提到的大牌只用来定调性），也不写「参考某某官网」。",
-        "5. elements 写这一张的信息元素（不超过 80 个字）：图标卖点写几个图标、各画什么；引线标注写引线指向哪几个部位；拼格写每格放哪个部位；对照写两栏各放什么；其他版式写装饰元素（色块、细线、圆角卡片）。只写画面元素，不加新的事实，不写序号、页码和屏号。",
+        "5. elements 写这一张的信息元素（不超过 80 个字）：图标卖点写几个图标、各画什么；引线标注写引线指向哪几个部位，要不要圆形放大镜头；拼格写每格放哪个部位；对照写两栏各放什么；痛点共鸣写人物神情和几个气泡标签，或宫格每格的场景；机理示意写剖面分几层、光点和箭头从哪到哪；成分特写写每个成分放在什么容器里；其他版式写装饰元素（色块、细线、圆角卡片、底部一排小图）。只写画面元素，不加新的事实，不写屏的序号、页码和屏号。",
         "6. 商品图里看不到的角度、内部结构、配件和包装不要安排成画面主体。",
-        "7. 文案字数：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 6 条，每条不超过 12 个字，图标卖点、引线标注、拼格和收尾版式的 lines 就是每个图标、引线或格子的标签，数量和 elements 里写的一致。eyebrow 是主标题上方的英文栏目小标题（如 CLEAR FRAME，只用英文字母，不带序号），不需要就留空。只用上面的核心标题、卖点和已确认的事实，可以改写，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
+        "7. 文案字数：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 6 条，每条不超过 12 个字，图标卖点、引线标注、拼格、痛点、机理、成分、资质和收尾版式的 lines 就是每个图标、引线、格子、气泡或成分的标签，数量和 elements 里写的一致。eyebrow 是主标题上方的英文栏目小标题（如 CLEAR FRAME，只用英文字母，不带序号），不需要就留空。只用上面的核心标题、卖点和已确认的事实，可以改写，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
         "8. 同一条卖点最多用在一张（详情页的头图和收尾可以回顾）。素材不够写文案的图，headline 写一个短栏目名或设 noText: true。",
-        "9. style 是整组共用的设计规范（不超过 300 个字），像设计师交给出图的规范：色板（底色、主色、强调色，各写色名和 #色值；主色要撑得起整屏，是深色或饱和色，按上面的节奏用在几屏的大色块背景上，不要整套都是同一档浅色）、背景体系、光线、字体（中文标题的字重和气质、英文小标题的样式、数字的样式）、栏目标题的样式（比如英文小标题加中文标题加一条细线，不用序号）、图标样式（线框还是面性、线条粗细、有没有底板）、反复出现的装饰元素。所有图一致，每张的背景和场景写在各自的 visual 里。",
+        "9. style 是整组共用的设计规范（不超过 300 个字），像设计师交给出图的规范：色板（底色、主色、强调色，各写色名和 #色值；主色要撑得起整屏，是深色或饱和色，按上面的节奏用在几屏的大色块背景上，不要整套都是同一档浅色）、背景体系（整套的色彩世界，照片怎么统一调色）、光线、字体（中文标题的字重和气质、英文小标题的样式、数字的样式、关键词的强调色）、栏目头（每屏同一位置、同一结构：英文小标题、主标题、副标题，比如再加一条细线，不用序号）、组件（标签用什么样式、卡片圆角、图标线框还是面性和线条粗细、有没有底板、放大镜头圆圈的描边）、反复出现的装饰元素。所有图一致，每张的背景和场景写在各自的 visual 里。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
         request.scope === "single"
@@ -321,7 +341,10 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         return "";
     };
     const textless = product.brief.language === "none";
-    const finish = (screen: StudioPlannedScreen): StudioPlannedScreen => {
+    // 没有已确认的认证类事实时不收「资质背书」：图片模型会照着画出编造的证书，改用屏型默认的版式。
+    const layouts = new Set(studioDetailLayoutIds(product));
+    const finish = (planned: StudioPlannedScreen): StudioPlannedScreen => {
+        const screen = layouts.has(planned.layout) ? planned : { ...planned, layout: studioRoleLayout(planned.role) };
         if (textless || screen.noText) return { ...screen, headline: "", subline: "", lines: [], noText: true };
         return { ...screen, headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
     };

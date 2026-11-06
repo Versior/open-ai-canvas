@@ -16,7 +16,7 @@ export type StudioPlanKind = "main" | "detail";
 /** model：模型直接把文字画进图里；overlay：模型只出留白底图，文字由程序排版。 */
 export type StudioTextMode = "model" | "overlay";
 /** 详情页一屏的版式：决定画面怎么分区、要点文字排成图标标签、引线标签还是参数行。 */
-export type StudioDetailLayoutId = "poster" | "split" | "icons" | "callout" | "compare" | "grid" | "scene" | "data" | "spec" | "closing";
+export type StudioDetailLayoutId = "poster" | "split" | "icons" | "callout" | "compare" | "grid" | "scene" | "data" | "spec" | "closing" | "pain" | "mechanism" | "ingredients" | "proof";
 /** 「调整这一张」里修改要求的字数上限。 */
 export const STUDIO_SHOT_ADJUST_MAX = 200;
 /** 质感预设；auto 表示按商品推荐：策划详情页时由策划挑，不策划时按品类挑。 */
@@ -193,7 +193,7 @@ export type StudioPlanScope = "detail" | "main" | "single" | "template";
 /** 单张图策划时选中的类型和每种几张；选择变了策划就不再适用。 */
 export type StudioPlanTarget = { type: StudioOutputType; count: number };
 /** 设计调性：决定版面节奏、字体、文案语气和摄影，由策划按商品挑。 */
-export type StudioDesignToneId = "global-minimal" | "editorial" | "oriental" | "lifestyle" | "tech" | "hot-seller" | "playful";
+export type StudioDesignToneId = "global-minimal" | "editorial" | "oriental" | "lifestyle" | "tech" | "care" | "hot-seller" | "playful";
 /** 出图策划：按这件商品排的一组图（详情页 10 屏、主图 5 张或选中的单张图），由它决定每一张怎么出。 */
 export type StudioDetailPlan = {
     id: string;

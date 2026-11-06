@@ -542,15 +542,15 @@ describe("ecommerce studio plans for every output type", () => {
         expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("至少两张不出现");
         expect(prompt).toContain("11. inspiration 用一句话");
         expect(prompt).toContain('"concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么"');
-        // 视觉节奏与创意：背景、机位和创意手法都有要求，信息少时不拿标识凑数；主色要撑得起整屏。
+        // 视觉节奏与创意：整套一个色彩世界、机位和创意手法都有要求，信息少时不拿标识凑数；主色要撑得起整屏。
         expect(prompt).toContain("【视觉节奏与创意】");
-        expect(prompt).toContain("整套至少用到三种明显不同的处理");
+        expect(prompt).toContain("整套一个色彩世界");
         expect(prompt).toContain("同一个商品角度和景别整套最多用两次");
         expect(prompt).toContain("首屏必须有");
         expect(prompt).toContain("商品标识、印字和型号不单独成屏");
         expect(prompt).toContain("主色要撑得起整屏");
         expect(prompt).toContain("主标题不能只是罗列外观或参数");
-        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张里至少用到两种明显不同的背景处理");
+        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张是一个系列");
         // 没有附图时不写附图说明。
         expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
 
