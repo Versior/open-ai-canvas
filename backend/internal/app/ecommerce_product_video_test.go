@@ -165,6 +165,24 @@ func TestPlanProductVideoSegments(t *testing.T) {
 	}
 }
 
+func TestProductVideoRangeSegments(t *testing.T) {
+	// 按给定顺序原样返回，可以重叠；结尾比视频略长时截到结尾。
+	got, err := productVideoRangeSegments([]ProductVideoSplitRange{{StartMs: 4000, EndMs: 8000}, {StartMs: 0, EndMs: 4500}, {StartMs: 8000, EndMs: 12_300}}, 12_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []videoTeardownSegment{{StartMs: 4000, EndMs: 8000, Boundary: videoTeardownBoundaryCut}, {StartMs: 0, EndMs: 4500, Boundary: videoTeardownBoundaryCut}, {StartMs: 8000, EndMs: 12_000, Boundary: videoTeardownBoundaryCut}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("segments = %+v, want %+v", got, want)
+	}
+	if _, err := productVideoRangeSegments([]ProductVideoSplitRange{{StartMs: 8000, EndMs: 13_000}}, 12_000); err == nil || !strings.Contains(err.Error(), "超出") {
+		t.Fatalf("too far past the end err = %v", err)
+	}
+	if _, err := productVideoRangeSegments([]ProductVideoSplitRange{{StartMs: 11_800, EndMs: 12_400}}, 12_000); err == nil || !strings.Contains(err.Error(), "太短") {
+		t.Fatalf("too short after trimming err = %v", err)
+	}
+}
+
 func TestProductVideoClipSize(t *testing.T) {
 	for _, test := range []struct{ width, height, wantWidth, wantHeight int }{
 		{1080, 1920, 720, 1280},
@@ -209,6 +227,9 @@ func TestCreateProductVideoSplitTaskValidatesAndReplays(t *testing.T) {
 		{"usr-a", ProductVideoSplitRequest{ResourceID: "res-ref", StartMs: 140_000, EndMs: 160_000}, "超出"},
 		{"usr-a", ProductVideoSplitRequest{ResourceID: "res-ref", EndMs: 10_000, MaxSegmentSeconds: 5}, "每段时长上限"},
 		{"usr-a", ProductVideoSplitRequest{ResourceID: " ", EndMs: 10_000}, "必须指定"},
+		{"usr-a", ProductVideoSplitRequest{ResourceID: "res-ref", Ranges: []ProductVideoSplitRange{{StartMs: 0, EndMs: 500}}}, "第 1 段"},
+		{"usr-a", ProductVideoSplitRequest{ResourceID: "res-ref", Ranges: []ProductVideoSplitRange{{StartMs: 0, EndMs: 20_000}}}, "第 1 段"},
+		{"usr-a", ProductVideoSplitRequest{ResourceID: "res-ref", Ranges: []ProductVideoSplitRange{{StartMs: 140_000, EndMs: 152_000}}}, "超出"},
 	} {
 		if _, err := svc.CreateProductVideoSplitTask(test.userID, "split-key-0001", test.req); err == nil || !strings.Contains(err.Error(), test.want) {
 			t.Fatalf("%+v error = %v, want %q", test.req, err, test.want)
@@ -287,6 +308,24 @@ func TestProductVideoSplitCutsAtShotBoundaries(t *testing.T) {
 	var count int64
 	if err := db.Model(&model.Resource{}).Where("user_id = ? AND id <> ?", "usr-split", source.ID).Count(&count).Error; err != nil || count != 4 {
 		t.Fatalf("resources = %d, %v; want 2 clips + 2 keyframes", count, err)
+	}
+
+	// 按给定的几段原样切，不检测切点：长度跟着给的范围走。
+	rangesJSON, _ := json.Marshal(productVideoSplitInput{Version: 1, ResourceID: source.ID, StartMs: 2000, EndMs: 12_000, MaxSegmentMs: 15_000, Ranges: []ProductVideoSplitRange{{StartMs: 2000, EndMs: 6000}, {StartMs: 8000, EndMs: 12_000}}, Fingerprint: "fp-ranges"})
+	rangeTask := &model.Task{ID: task.ID + "-ranges", UserID: "usr-split", Type: model.TaskTypeProductVideoSplit, Status: model.TaskStatusRunning, InputJSON: string(rangesJSON)}
+	if err := db.Create(rangeTask).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := newTaskWorkerCoordinator(svc).processProductVideoSplit(rangeTask, context.Background()); err != nil {
+		t.Fatalf("process ranges: %v", err)
+	}
+	var rangeStored model.Task
+	if err := db.First(&rangeStored, "id = ?", rangeTask.ID).Error; err != nil || rangeStored.Status != model.TaskStatusSucceeded {
+		t.Fatalf("ranges task = %+v, %v", rangeStored, err)
+	}
+	var rangeResult productVideoSplitResult
+	if err := json.Unmarshal([]byte(rangeStored.ResultJSON), &rangeResult); err != nil || len(rangeResult.Segments) != 2 || rangeResult.Segments[0].StartMs != 2000 || rangeResult.Segments[1].EndMs != 12_000 || rangeResult.Segments[1].DurationMs != 4000 {
+		t.Fatalf("ranges result = %+v, %v", rangeResult.Segments, err)
 	}
 }
 

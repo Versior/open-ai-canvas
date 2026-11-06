@@ -415,6 +415,16 @@ paths:
                 startMs: {type: integer, minimum: 0, description: 选段开头，默认 0}
                 endMs: {type: integer, minimum: 0, description: 选段结尾，0 表示到视频结尾}
                 maxSegmentSeconds: {type: integer, minimum: 8, maximum: 30, description: 每段时长上限，按所选模型的参考视频时长传入；0 表示 15 秒}
+                ranges:
+                  type: array
+                  maxItems: 60
+                  description: 复刻工作台用。给了就按这些范围原样切，不检测镜头、忽略 startMs/endMs；每段 1 秒到 maxSegmentSeconds，范围可以重叠，segments 按给定顺序返回；结尾比视频略长时截到结尾，超出太多时任务失败
+                  items:
+                    type: object
+                    required: [startMs, endMs]
+                    properties:
+                      startMs: {type: integer, minimum: 0}
+                      endMs: {type: integer, minimum: 0}
       responses:
         "200": {description: 已创建或复用异步切段任务，data 为任务}
         "400": {$ref: "#/components/responses/Error"}

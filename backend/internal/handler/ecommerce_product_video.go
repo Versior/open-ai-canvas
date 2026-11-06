@@ -115,12 +115,12 @@ func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {
 		if !available || !enforceRateLimit(c, "product-video-splits:"+actor.ID, policy.Request.TaskCreatePerMinute, time.Minute) {
 			return
 		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4<<10)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<10)
 		var req service.ProductVideoSplitRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			var maxBytesErr *http.MaxBytesError
 			if errors.As(err, &maxBytesErr) {
-				fail(c, http.StatusRequestEntityTooLarge, errors.New("请求正文不能超过 4 KiB"))
+				fail(c, http.StatusRequestEntityTooLarge, errors.New("请求正文不能超过 8 KiB"))
 				return
 			}
 			fail(c, http.StatusBadRequest, err)

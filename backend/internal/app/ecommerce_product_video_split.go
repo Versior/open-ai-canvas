@@ -51,15 +51,25 @@ type ProductVideoSplitRequest struct {
 	StartMs           int64  `json:"startMs"`
 	EndMs             int64  `json:"endMs"`
 	MaxSegmentSeconds int    `json:"maxSegmentSeconds"`
+	// Ranges 不为空时按给定的几段原样切出（复刻工作台按镜头分好了生成单元），不再检测切点；
+	// 每段 1 秒到 maxSegmentSeconds 之间，StartMs/EndMs 不再使用。
+	Ranges []ProductVideoSplitRange `json:"ranges"`
+}
+
+// ProductVideoSplitRange 是要切出的一段在原视频里的位置（毫秒）。
+type ProductVideoSplitRange struct {
+	StartMs int64 `json:"startMs"`
+	EndMs   int64 `json:"endMs"`
 }
 
 type productVideoSplitInput struct {
-	Version      int    `json:"version"`
-	ResourceID   string `json:"resourceId"`
-	StartMs      int64  `json:"startMs"`
-	EndMs        int64  `json:"endMs"`
-	MaxSegmentMs int64  `json:"maxSegmentMs"`
-	Fingerprint  string `json:"fingerprint"`
+	Version      int                      `json:"version"`
+	ResourceID   string                   `json:"resourceId"`
+	StartMs      int64                    `json:"startMs"`
+	EndMs        int64                    `json:"endMs"`
+	MaxSegmentMs int64                    `json:"maxSegmentMs"`
+	Ranges       []ProductVideoSplitRange `json:"ranges,omitempty"`
+	Fingerprint  string                   `json:"fingerprint"`
 }
 
 type productVideoSplitResult struct {
@@ -96,6 +106,9 @@ func normalizeProductVideoSplitRequest(req ProductVideoSplitRequest) (productVid
 	if input.MaxSegmentMs < productVideoMinSegmentLimitMs || input.MaxSegmentMs > productVideoMaxSegmentLimitMs {
 		return productVideoSplitInput{}, BadAuthRequest(fmt.Sprintf("每段时长上限必须在 %d 到 %d 秒之间", productVideoMinSegmentLimitMs/1000, productVideoMaxSegmentLimitMs/1000))
 	}
+	if len(req.Ranges) > 0 {
+		return normalizeProductVideoSplitRanges(input, req.Ranges)
+	}
 	if input.StartMs < 0 || input.EndMs < 0 || (input.EndMs > 0 && input.EndMs <= input.StartMs) {
 		return productVideoSplitInput{}, BadAuthRequest("参考视频的选段无效")
 	}
@@ -103,6 +116,28 @@ func normalizeProductVideoSplitRequest(req ProductVideoSplitRequest) (productVid
 		if err := validateProductVideoRange(input.EndMs - input.StartMs); err != nil {
 			return productVideoSplitInput{}, err
 		}
+	}
+	return input, nil
+}
+
+// productVideoMaxRanges 限制一次切出的段数：拆解最多 60 个镜头，按镜头分的生成单元不会更多。
+const productVideoMaxRanges = 60
+
+func normalizeProductVideoSplitRanges(input productVideoSplitInput, ranges []ProductVideoSplitRange) (productVideoSplitInput, error) {
+	if len(ranges) > productVideoMaxRanges {
+		return productVideoSplitInput{}, BadAuthRequest(fmt.Sprintf("一次最多切 %d 段", productVideoMaxRanges))
+	}
+	input.Ranges = make([]ProductVideoSplitRange, 0, len(ranges))
+	for index, item := range ranges {
+		length := item.EndMs - item.StartMs
+		if item.StartMs < 0 || length < 1000 || length > input.MaxSegmentMs {
+			return productVideoSplitInput{}, BadAuthRequest(fmt.Sprintf("第 %d 段须在 1 到 %d 秒之间", index+1, input.MaxSegmentMs/1000))
+		}
+		input.Ranges = append(input.Ranges, item)
+		if index == 0 || item.StartMs < input.StartMs {
+			input.StartMs = item.StartMs
+		}
+		input.EndMs = max(input.EndMs, item.EndMs)
 	}
 	return input, nil
 }
@@ -120,7 +155,11 @@ func productVideoSplitTaskID(userID, idempotencyKey string) string {
 }
 
 func productVideoSplitFingerprint(input productVideoSplitInput) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{input.ResourceID, strconv.FormatInt(input.StartMs, 10), strconv.FormatInt(input.EndMs, 10), strconv.FormatInt(input.MaxSegmentMs, 10)}, "\x00")))
+	parts := []string{input.ResourceID, strconv.FormatInt(input.StartMs, 10), strconv.FormatInt(input.EndMs, 10), strconv.FormatInt(input.MaxSegmentMs, 10)}
+	for _, item := range input.Ranges {
+		parts = append(parts, strconv.FormatInt(item.StartMs, 10)+"-"+strconv.FormatInt(item.EndMs, 10))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -167,8 +206,10 @@ func (s *Service) CreateProductVideoSplitTask(userID, idempotencyKey string, req
 		if input.StartMs >= resource.DurationMs || end > resource.DurationMs+productVideoDurationSlackMs {
 			return nil, BadAuthRequest("选段超出了参考视频的时长")
 		}
-		if err := validateProductVideoRange(min(end, resource.DurationMs) - input.StartMs); err != nil {
-			return nil, err
+		if len(input.Ranges) == 0 {
+			if err := validateProductVideoRange(min(end, resource.DurationMs) - input.StartMs); err != nil {
+				return nil, err
+			}
 		}
 	}
 	policy, err := s.RuntimePolicy()
@@ -278,22 +319,32 @@ func (w *taskWorkerCoordinator) runProductVideoSplit(ctx context.Context, task *
 	if startMs >= endMs {
 		return productVideoSplitResult{}, errors.New("选段超出了参考视频的时长")
 	}
-	if err := validateProductVideoRange(endMs - startMs); err != nil {
-		return productVideoSplitResult{}, err
+	if len(input.Ranges) == 0 {
+		if err := validateProductVideoRange(endMs - startMs); err != nil {
+			return productVideoSplitResult{}, err
+		}
 	}
 	hasAudio, _ := probeHasAudioStream(ctx, sourcePath)
 
-	if err := w.progress(task, "检测镜头切点", 20); err != nil {
-		return productVideoSplitResult{}, err
+	var segments []videoTeardownSegment
+	if len(input.Ranges) > 0 {
+		segments, err = productVideoRangeSegments(input.Ranges, probe.DurationMs)
+		if err != nil {
+			return productVideoSplitResult{}, err
+		}
+	} else {
+		if err := w.progress(task, "检测镜头切点", 20); err != nil {
+			return productVideoSplitResult{}, err
+		}
+		cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, sourcePath, startMs, endMs-startMs)
+		if err != nil {
+			return productVideoSplitResult{}, err
+		}
+		for index := range cuts {
+			cuts[index] += startMs
+		}
+		segments = planProductVideoSegments(startMs, endMs, cuts, input.MaxSegmentMs, productVideoMinSegmentMs)
 	}
-	cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, sourcePath, startMs, endMs-startMs)
-	if err != nil {
-		return productVideoSplitResult{}, err
-	}
-	for index := range cuts {
-		cuts[index] += startMs
-	}
-	segments := planProductVideoSegments(startMs, endMs, cuts, input.MaxSegmentMs, productVideoMinSegmentMs)
 	width, height := productVideoClipSize(probe.Width, probe.Height)
 	result := productVideoSplitResult{
 		Version: 1, StartMs: startMs, EndMs: endMs,
@@ -335,6 +386,25 @@ func (w *taskWorkerCoordinator) runProductVideoSplit(ctx context.Context, task *
 		})
 	}
 	return result, nil
+}
+
+// productVideoRangeSegments 把给定的几段换成切段，结尾超出视频时长一点（浏览器和 ffprobe 的误差）时截到结尾。
+func productVideoRangeSegments(ranges []ProductVideoSplitRange, durationMs int64) ([]videoTeardownSegment, error) {
+	segments := make([]videoTeardownSegment, 0, len(ranges))
+	for index, item := range ranges {
+		end := item.EndMs
+		if end > durationMs {
+			if end > durationMs+productVideoDurationSlackMs {
+				return nil, fmt.Errorf("第 %d 段超出了参考视频的时长", index+1)
+			}
+			end = durationMs
+		}
+		if end-item.StartMs < 500 {
+			return nil, fmt.Errorf("第 %d 段太短", index+1)
+		}
+		segments = append(segments, videoTeardownSegment{StartMs: item.StartMs, EndMs: end, Boundary: videoTeardownBoundaryCut})
+	}
+	return segments, nil
 }
 
 // planProductVideoSegments 把 [startMs, endMs) 划成若干段：尽量在镜头切点处断开，每段不超过 maxMs；
