@@ -41,8 +41,8 @@ export type RemakeStep = "recipe" | "produce";
 
 /** 配方里用户能改的字段：保存时只把这些套到服务端最新版本上，不覆盖生成流程写入的单元和状态。 */
 function recipeFields(job: RemakeJob) {
-    const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots } = job;
-    return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots };
+    const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign } = job;
+    return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign };
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -139,7 +139,14 @@ export function RemakeWorkbench({
 
     const limits = useMemo(() => (draft ? productVideoLimitsFor(config, draft.model) : "不是视频生成模型"), [config, draft]);
     const usable = typeof limits === "string" ? undefined : limits;
-    const plannedUnits = useMemo(() => (draft ? remakeUnitsFor(draft, config) : []), [config, draft]);
+    const planning = useMemo(() => {
+        try {
+            return { units: draft ? remakeUnitsFor(draft, config) : [], error: "" };
+        } catch (error) {
+            return { units: [], error: errorText(error, "无法规划生成单元") };
+        }
+    }, [config, draft]);
+    const plannedUnits = planning.units;
     const estimate = useRemakeEstimate(draft || ({ shots: [], product: { images: [] }, models: [], backgrounds: [] } as unknown as RemakeJob), plannedUnits, usable);
 
     if (!job || !draft) {
@@ -150,11 +157,11 @@ export function RemakeWorkbench({
         );
     }
 
-    const inputError = remakeJobError(draft, usable);
+    const inputError = planning.error || remakeJobError(draft, usable);
     const startedBefore = job.units.length > 0 || job.status !== "draft";
     const currentStep: RemakeStep = step === "produce" && startedBefore ? "produce" : "recipe";
     const allSucceeded = job.units.length > 0 && job.units.every((unit) => unit.status === "succeeded");
-    const pendingChanges = startedBefore && plannedUnits.some((unit) => !unit.takes.length);
+    const pendingChanges = startedBefore && plannedUnits.some((unit) => unit.status !== "succeeded");
     const keptMs = remakeKeptDurationMs(draft);
     const productCover = draft.product.images[0];
 

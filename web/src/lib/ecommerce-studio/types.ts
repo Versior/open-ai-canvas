@@ -277,6 +277,8 @@ export type StudioPlan = {
  * 核心标题存在 copy.headline，卖点与商品信息存在 sellerNotes，助手读写的是同一份。
  */
 export type StudioBrief = {
+    /** 模型排字或在底图上程序排字，生成记录保存此选择。 */
+    textMode?: StudioTextMode;
     brand: string;
     productType: string;
     outputType: StudioOutputType;

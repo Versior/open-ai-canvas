@@ -28,6 +28,7 @@ import { productVideoLimitsFor } from "../replace/product-video-config";
 import { RemakePersonaModal } from "./remake-persona";
 import { RemakeProductPicker } from "./remake-product-picker";
 import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields } from "./remake-sound";
+import { ReplicaCampaignControls, ReplicaShotDirector } from "../replication-director";
 
 export type RemakeEdit = (updater: (job: RemakeJob) => RemakeJob) => void;
 
@@ -71,6 +72,10 @@ export function RemakeRecipeCards({ job, config, edit, disabled }: { job: Remake
     const needsAuth = job.audio === "original" || job.people === "original" || job.shots.some((shot) => shot.treatment === "keep");
     return (
         <div className="rw-recipe">
+            <Card title="导演与平台策略">
+                <ReplicaCampaignControls value={job.campaign} disabled={disabled} onChange={(campaign) => edit((value) => ({ ...value, campaign }))} />
+                <p className="rw-shot-reason">重拍镜头按导演动作生成；换元素保留原片动作与机位。</p>
+            </Card>
             <Card
                 title="我的商品"
                 extra={
@@ -239,6 +244,7 @@ function ShotRow({ shot, audio, language, disabled, edit }: { shot: RemakeShot; 
                     ))}
                 </div>
                 <p className="rw-shot-plot">{shot.plot || "（没有 AI 解读，按原画面处理）"}</p>
+                {shot.treatment === "remake" ? <ReplicaShotDirector shot={{ shotNumber: shot.index, director: shot.director }} disabled={disabled} onChange={(director) => patch({ director })} /> : null}
                 <SegmentedControl<RemakeTreatment>
                     ariaLabel={`镜头 ${shot.index} 的做法`}
                     size="sm"

@@ -184,6 +184,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
     const model = normalizeStudioModelCast(record.model);
     return {
         brand: text(record.brand, 40),
+        ...(record.textMode === "overlay" || record.textMode === "model" ? { textMode: record.textMode } : {}),
         productType: text(record.productType, 40),
         ...outputTypeOf(record, base.outputType),
         market: MARKET_IDS.has(record.market as StudioMarket) ? (record.market as StudioMarket) : base.market,

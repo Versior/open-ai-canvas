@@ -2,6 +2,7 @@ import { App, Button, Input } from "antd";
 import { Copy, RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { studioPlatformForbidsText } from "@/lib/ecommerce-studio/brief";
+import { reviewStudioCopy, studioFactCopyOptions } from "@/lib/ecommerce-studio/art-direction";
 import { STUDIO_TWEAKS, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { STUDIO_SHOT_ADJUST_MAX, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
 import { useEffectiveConfig } from "@/stores/use-config-store";
@@ -27,6 +28,7 @@ export function StudioShotTuner({
     blocked,
     active,
     onRun,
+    onApplyCopy,
 }: {
     product: StudioProduct;
     shotRef: StudioShotRef;
@@ -35,6 +37,7 @@ export function StudioShotTuner({
     blocked: string;
     active: boolean;
     onRun: (patch: StudioShotPatch) => void;
+    onApplyCopy?: (patch: StudioShotPatch) => void;
 }) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
@@ -106,17 +109,37 @@ export function StudioShotTuner({
             </label>
             {copyAllowed ? (
                 <div className="es-tuner-copy">
+                    {reviewStudioCopy(patch).map((issue) => (
+                        <p key={issue.code} className="es-prompt-note" data-tone="warning">
+                            {issue.message}
+                        </p>
+                    ))}
+                    <div className="es-chips" aria-label="用已确认卖点替换文案">
+                        {studioFactCopyOptions(product).map((copy) => (
+                            <button
+                                key={copy.headline}
+                                type="button"
+                                className="es-chip"
+                                onClick={() => {
+                                    setHeadline(copy.headline);
+                                    setSubline(copy.subline);
+                                }}
+                            >
+                                {copy.headline}
+                            </button>
+                        ))}
+                    </div>
                     <label className="es-tuner-field">
                         <span>图上主标题</span>
                         <Input placeholder="留空则不写" value={headline} maxLength={30} onChange={(event) => setHeadline(event.target.value)} />
                     </label>
-                    {spec.copySlot === "headline-subline" || planned ? (
+                    {spec.copySlot === "headline-subline" || planned || onApplyCopy ? (
                         <label className="es-tuner-field">
                             <span>副标题</span>
                             <Input placeholder="留空则不写" value={subline} maxLength={40} onChange={(event) => setSubline(event.target.value)} />
                         </label>
                     ) : null}
-                    {spec.copySlot === "points" || planned ? (
+                    {spec.copySlot === "points" || planned || onApplyCopy ? (
                         <label className="es-tuner-field">
                             <span>要点（每行一条，最多 6 条）</span>
                             <Input.TextArea value={lines} autoSize={{ minRows: 2, maxRows: 6 }} maxLength={300} onChange={(event) => setLines(event.target.value)} />
@@ -127,6 +150,11 @@ export function StudioShotTuner({
             <Button type="primary" icon={<RefreshCw size={14} />} disabled={Boolean(blocked) || active} title={blocked || undefined} onClick={() => onRun(patch)}>
                 {active ? "正在出新的一张…" : changed ? "按调整再出一张" : "再出一张"}
             </Button>
+            {onApplyCopy && copyAllowed ? (
+                <Button disabled={active} onClick={() => onApplyCopy(patch)}>
+                    仅更新排字 · 不重新生图
+                </Button>
+            ) : null}
             <details className="es-prompt" onToggle={(event) => setPromptOpen(event.currentTarget.open)}>
                 <summary>查看这张的提示词</summary>
                 {preview?.error ? (

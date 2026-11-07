@@ -14,6 +14,7 @@ import { uploadImage } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { replicaScriptModelError, rewriteReplicaScripts } from "./replication-script";
 import type { ReplicaPlanSaveState } from "./use-replica-plan";
+import { ReplicaCampaignEditor, ReplicaShotDirector } from "./replication-director";
 
 const MAX_PRODUCT_BYTES = 20 * 1024 * 1024;
 const CHARS_PER_SECOND = 5;
@@ -64,6 +65,7 @@ export function ReplicationPlan(props: Props & { onNext: () => void }) {
             </nav>
             <div className="vr-plan-main">
                 <ProductSection {...props} />
+                <ReplicaCampaignEditor plan={plan} bundle={props.bundle} onChange={(campaign) => props.update((current) => ({ ...current, campaign }))} />
                 <ScriptSection {...props} />
                 <ShotsSection {...props} />
                 <div className="vr-plan-next">
@@ -251,7 +253,16 @@ function ScriptSection({ bundle, analysis, plan, update, config, model, onModelC
     };
 
     return (
-        <Section id="vr-plan-script" index={2} title="改写脚本" description="保留原片的镜头数、节拍和每镜时长，把口播和画面字改成卖你的商品。一次出几个不同角度的版本，挑一个用；用了以后还能在逐镜计划里逐句改。">
+        <Section
+            id="vr-plan-script"
+            index={2}
+            title="改写脚本"
+            description={
+                plan.campaign
+                    ? "保持逐镜时长，为新商品重新策划首帧、动作和口播。一次比较几个切入角度，选用后一起更新逐镜方案。"
+                    : "保留原片的镜头数、节拍和每镜时长，把口播和画面字改成卖你的商品。一次出几个不同角度的版本，挑一个用；用了以后还能在逐镜计划里逐句改。"
+            }
+        >
             <div className="vr-plan-script-bar">
                 <div className="vr-plan-script-model">
                     <ModelPicker config={config} capability="text" value={model} onChange={onModelChange} requirements={videoTeardownTextRequirements(config, 0)} fullWidth placeholder="选择文本模型" />
@@ -380,6 +391,7 @@ function ShotsSection({ bundle, analysis, plan, update }: Props) {
                                 </div>
                             </div>
                             <div className="vr-plan-shot-edit">
+                                {!skipped ? <ReplicaShotDirector shot={shot} onChange={(director) => setShot(shot.shotNumber, { director })} /> : null}
                                 <div className="vr-plan-shot-tools">
                                     <Select
                                         size="small"

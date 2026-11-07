@@ -1,4 +1,5 @@
 import { jsonCandidates } from "@/lib/canvas/video-teardown";
+import { REPLICA_DIRECTOR_OPTIONS, replicaCampaignPrompt } from "@/lib/canvas/replica-director";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import type { ProductVideoImage } from "@/lib/product-video/job";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
@@ -14,7 +15,7 @@ import { remakeLanguage, type RemakeJob, type RemakeLanguage, type RemakeShot, t
  */
 export function remakeDialogueBudget(shot: Pick<RemakeShot, "startMs" | "endMs">, language: RemakeLanguage = "zh") {
     const { cps } = remakeLanguage(language);
-    return Math.max(cps, Math.floor(((shot.endMs - shot.startMs) / 1000) * cps));
+    return Math.max(0, Math.floor(((shot.endMs - shot.startMs) / 1000) * cps));
 }
 
 export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; background: string };
@@ -70,6 +71,10 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
             : [`生成一段约 ${seconds} 秒的带货短视频，共 ${shots.length} 个镜头，按下面的分镜依次硬切：`, ...shots.map((shot) => `- 镜头 ${shot.index}（约 ${shotSeconds(shot)} 秒）：${remakeShotDescription(shot)}`), "素材要求："];
     lines.push(...[productLine(job, refs), peopleLine(job, refs, video), background].filter(Boolean).map((line) => `- ${line}`));
     if (unit.treatment === "replace") lines.push("保留原视频的动作、运镜、构图和剪辑节奏，以及人物与商品之间的遮挡、接触和空间关系；人物参考不改变背景，背景参考不改变人物，商品参考不改变手部动作。");
+    if (job.campaign) {
+        if (unit.treatment === "remake") lines.push(replicaCampaignPrompt(job.campaign));
+        else lines.push(`全片连续性：${job.campaign.continuity}。换元素保持原镜头动作与机位，不新增剧情。`);
+    }
     lines.push("不要出现原片的品牌名、Logo、店铺名、水印和贴纸；不添加字幕或文字。");
     lines.push(...speechLines(job, shots));
     if (job.note.trim()) lines.push(`补充要求：${job.note.trim()}`);
@@ -78,14 +83,16 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
 }
 
 /** 重新拍时一镜的画面描述：景别、机位、画面和运镜，原片商品换成「我的商品」。 */
-export function remakeShotDescription(shot: Pick<RemakeShot, "plot" | "motion" | "camera" | "shotSize">) {
+export function remakeShotDescription(shot: Pick<RemakeShot, "plot" | "motion" | "camera" | "shotSize" | "director">) {
+    const d = shot.director;
+    if (d?.action) return `${REPLICA_DIRECTOR_OPTIONS.framing[d.framing]}；${REPLICA_DIRECTOR_OPTIONS.camera[d.camera]}；${d.action}；${d.sound ? `声音意图：${d.sound}；` : ""}结束状态便于${REPLICA_DIRECTOR_OPTIONS.transition[d.transition]}`;
     const parts = [shot.shotSize, shot.camera, shot.plot, shot.motion].map((item) => item.trim()).filter(Boolean);
     return parts.length ? parts.join("；") : "展示商品的近景镜头";
 }
 
 // ---------- 改写口播 ----------
 
-export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shots" | "sourceSummary" | "note" | "language">) {
+export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shots" | "sourceSummary" | "note" | "language" | "campaign">) {
     const shots = job.shots.filter((shot) => shot.treatment !== "skip");
     const language = remakeLanguage(job.language);
     const lines = [
@@ -93,6 +100,7 @@ export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shot
         "",
         `我的商品：${job.product.name.trim() || "（没有填名称，按商品图理解）"}`,
         `卖点：${job.product.sellingPoints.trim() || "（没有填写，只写看得出的、不夸大的卖点）"}`,
+        ...(job.campaign ? [replicaCampaignPrompt(job.campaign)] : []),
         job.sourceSummary.product ? `原片卖的是：${job.sourceSummary.product}` : "",
         job.sourceSummary.hook ? `原片的开头钩子：${job.sourceSummary.hook}` : "",
         job.note.trim() ? `补充要求：${job.note.trim()}` : "",
@@ -113,12 +121,13 @@ export function buildRemakeDialoguePrompt(job: Pick<RemakeJob, "product" | "shot
     return lines.filter((line, index, all) => line || all[index - 1]).join("\n");
 }
 
-/** 解析改写结果：只认清单里的镜头，超出字数的截到上限。缺镜头时报错让调用方重试。 */
+/** 不截断口播；缺镜头或超时长均报错，避免把句子和卖点切坏。 */
 export function parseRemakeDialogue(text: string, shots: readonly Pick<RemakeShot, "index" | "startMs" | "endMs">[], language: RemakeLanguage = "zh") {
     const expected = new Map(shots.map((shot) => [shot.index, shot]));
     for (const candidate of jsonCandidates(text)) {
         if (!Array.isArray(candidate.lines)) continue;
         const result = new Map<number, string>();
+        let overBudget = false;
         for (const item of candidate.lines) {
             if (!item || typeof item !== "object") continue;
             const recordItem = item as Record<string, unknown>;
@@ -126,14 +135,13 @@ export function parseRemakeDialogue(text: string, shots: readonly Pick<RemakeSho
             const shot = expected.get(index);
             if (!shot || result.has(index)) continue;
             const dialogue = typeof recordItem.dialogue === "string" ? recordItem.dialogue.trim() : "";
-            result.set(
-                index,
-                Array.from(dialogue)
-                    .slice(0, remakeDialogueBudget(shot, language) + remakeLanguage(language).cps)
-                    .join(""),
-            );
+            if (Array.from(dialogue.replace(/\s/g, "")).length > remakeDialogueBudget(shot, language)) {
+                overBudget = true;
+                break;
+            }
+            result.set(index, dialogue);
         }
-        if (result.size === expected.size) return result;
+        if (!overBudget && result.size === expected.size) return result;
     }
-    throw new Error("模型没有返回完整的改写口播，请重试");
+    throw new Error("模型没有返回完整且符合镜头时长的改写口播，请缩短口播要求后重试");
 }

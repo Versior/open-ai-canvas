@@ -8,6 +8,7 @@ import { cinematicStoryboardColumns, createCanvasNode } from "@/lib/canvas/canva
 import { storyboardComposerContent } from "@/lib/canvas/canvas-storyboard-materializer";
 import { buildVideoFrameNodes } from "@/lib/canvas/canvas-video-frame-nodes";
 import { replicaProductNote, type VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
+import { compileReplicaDirection } from "@/lib/canvas/replica-director";
 import { videoReplicaProductFramePrompt, videoReplicaProductVideoPrompt, videoTeardownReportMarkdown, videoTeardownStoryboardRows, type VideoReplicaMode, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { getResource, resourceFileUrl, resourceStorageKey } from "@/services/api/resources";
 import type { UploadedImage } from "@/services/image-storage";
@@ -54,6 +55,15 @@ function boxed(width: number, height: number, box: number) {
  */
 export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis, model: string, existing: CanvasNodeData[], options: VideoReplicaOptions) {
     const { plan } = options;
+    const facts = plan.product.sellingPoints
+        .split(/\n+/)
+        .map((fact) => fact.replace(/^[\s\-*·•\d.、]+/, "").trim())
+        .filter(Boolean);
+    for (const shot of plan.shots) {
+        if (shot.treatment === "skip" || shot.treatment === "original" || !shot.director) continue;
+        if (!shot.director.action.trim()) throw new Error(`镜头 ${shot.shotNumber} 还没有具体导演动作`);
+        if (shot.director.beat === "proof" && !facts.includes(shot.director.evidence.trim())) throw new Error(`镜头 ${shot.shotNumber} 的证明依据须逐字引用一条商品卖点`);
+    }
     const uploads = productUploads(plan);
     const note = replicaProductNote(plan.product);
     const swapMode: VideoReplicaMode = plan.authorized ? "reuse" : "remake";
@@ -97,13 +107,14 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
     const frameOf = new Map<string, CanvasNodeData>();
     const rows: StoryboardRow[] = baseRows.flatMap((base, index) => {
         const shot = shotPlans.get(base.shotNumber);
+        const directed = shot ? compileReplicaDirection(shot, plan.campaign) : undefined;
         if (shot?.treatment === "skip") return [];
         const row: StoryboardRow = shot
             ? {
                   ...base,
                   dialogue: shot.dialogue,
-                  imageGenerationPrompt: shot.imagePrompt || base.imageGenerationPrompt,
-                  videoMotionPrompt: shot.videoPrompt || base.videoMotionPrompt,
+                  imageGenerationPrompt: directed?.imagePrompt || base.imageGenerationPrompt,
+                  videoMotionPrompt: directed?.videoPrompt || base.videoMotionPrompt,
                   sourceAnalysis: base.sourceAnalysis ? { ...base.sourceAnalysis, onScreenText: shot.onScreenText } : base.sourceAnalysis,
               }
             : base;

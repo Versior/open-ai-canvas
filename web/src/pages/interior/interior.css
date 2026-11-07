@@ -1,5 +1,53 @@
 /* 室内设计页：左侧出图设置，右侧出图记录。颜色、圆角、间距只引用全局 token。 */
 
+.itd-renovation {
+    padding: var(--space-6);
+    color: var(--itd-ink);
+}
+.itd-renovation-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
+    gap: var(--space-6);
+    margin-top: var(--space-4);
+}
+.itd-renovation-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+.itd-renovation-fields .itd-wide {
+    grid-column: 1 / -1;
+}
+.itd-renovation-fields .ant-input-number {
+    width: 100%;
+}
+.itd-renovation-preview {
+    position: sticky;
+    top: var(--space-3);
+    align-self: start;
+}
+.itd-stone-preview {
+    width: 100%;
+    max-height: min(380px, 40vh);
+    background: var(--itd-panel);
+    border: 1px solid var(--itd-line);
+}
+.itd-material-summary {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+}
+.itd-renovation-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+}
+@media (max-width: 900px) {
+    .itd-renovation-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 .itd-page {
     --itd-page: var(--user-page-bg);
     --itd-panel: var(--user-surface);

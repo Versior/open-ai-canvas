@@ -12,7 +12,7 @@ type Estimate = { credits: number | null; state: "idle" | "loading" | "ready" | 
 
 /**
  * 「积分起」：每个生成单元按它的生成时长、有没有参考视频、要不要出声分别报价再相加。
- * 已经有候选的单元不再计入（只算还要生成的）。报价是预估，按用量结算的模型以实际用量为准。
+ * 已成功的单元不再计入；导演修改后待重新生成的单元，即使保留旧候选，也要计入。报价是预估，按用量结算的模型以实际用量为准。
  */
 export function useRemakeEstimate(job: RemakeJob, units: readonly RemakeUnit[], limits: ProductVideoModelLimits | undefined) {
     const config = useEffectiveConfig();
@@ -23,7 +23,7 @@ export function useRemakeEstimate(job: RemakeJob, units: readonly RemakeUnit[], 
     const items = useMemo(() => {
         if (!limits) return [];
         return units
-            .filter((unit) => !unit.takes.length)
+            .filter((unit) => unit.status !== "succeeded")
             .map((unit) => {
                 const length = unit.treatment === "replace" ? unit.clipEndMs - unit.clipStartMs : unit.endMs - unit.startMs;
                 const speaks = job.audio === "rewrite" && job.shots.some((shot) => unit.shotIndexes.includes(shot.index) && shot.dialogue.trim());

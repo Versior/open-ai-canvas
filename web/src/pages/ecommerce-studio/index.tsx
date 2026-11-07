@@ -218,6 +218,7 @@ export default function EcommerceStudioPage() {
                 onDownload={download}
                 onReference={addReference}
                 onTune={tune}
+                onApplyCopy={(group, shot, patch) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, headline: patch.headline, subline: patch.subline, lines: patch.lines })), { immediate: true })}
                 onAdopt={(group, shot, output) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, adopted: output })), { immediate: true })}
             />
         </WorkspacePage>

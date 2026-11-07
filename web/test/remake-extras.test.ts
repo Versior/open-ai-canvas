@@ -132,8 +132,9 @@ describe("remake languages, copies and personas", () => {
         const english = { ...value, language: "en" as const };
         expect(buildRemakeDialoguePrompt(english)).toContain("新口播一律用英语写（面向当地观众的自然口语，不是逐字翻译）");
         expect(buildRemakeDialoguePrompt(english)).toContain("最多 21 个字符");
-        const parsed = parseRemakeDialogue('{"lines":[' + value.shots.map((shot) => `{"shotNumber":${shot.index},"dialogue":"${"a".repeat(80)}"}`).join(",") + "]}", value.shots, "en");
-        expect(parsed.get(1)).toHaveLength(21 + 14);
+        const parsed = parseRemakeDialogue('{"lines":[' + value.shots.map((shot) => `{"shotNumber":${shot.index},"dialogue":"Try this cup."}`).join(",") + "]}", value.shots, "en");
+        expect(parsed.get(1)).toBe("Try this cup.");
+        expect(() => parseRemakeDialogue('{"lines":[' + value.shots.map((shot) => `{"shotNumber":${shot.index},"dialogue":"${"a".repeat(80)}"}`).join(",") + "]}", value.shots, "en")).toThrow("镜头时长");
     });
 
     it("copies a job as another version keeping takes, or for another product clearing lines and takes", () => {

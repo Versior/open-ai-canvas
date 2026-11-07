@@ -133,6 +133,8 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 ## 视频复刻 · 复刻工作台与元素替换
 
+画布方案与 version 2 直接出片作品新增可选 `campaign` 和逐镜 `director`，保存时校验枚举及长度；专业室内方案新增 `professional`，报价、生成与项目保存共用参数及实板归属检查。完整字段见 [创作工作台交付与恢复](./creative-workbenches)，均使用现有 JSON 存储，无新增数据表。
+
 以下接口都需要登录，且受「视频复刻」开关控制，关闭时返回 403（与电商生图台开关无关）。
 
 - `GET /api/ecommerce/product-videos`：返回 `{ revision, items }`。`items` 是本人的作品对象，结构由前端定义，每条带服务端维护的 `revision`。响应带 `Cache-Control: no-store`。

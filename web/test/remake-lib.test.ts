@@ -3,7 +3,8 @@ import type { VideoTeardownAnalysisRow } from "../src/lib/canvas/video-teardown"
 import { createRemakeJob, normalizeRemakeJob, remakeJobError, remakeKeptDurationMs, type RemakeJob, type RemakeShot, type RemakeTreatment } from "../src/lib/remake/job";
 import { buildRemakeDialoguePrompt, buildRemakeUnitPrompt, parseRemakeDialogue, remakeDialogueBudget, remakeReferenceImages } from "../src/lib/remake/prompts";
 import { remakeOutputTime, remakePieces, remakeSourceTime, remakeSubtitleSRT, remakeTimeline } from "../src/lib/remake/timeline";
-import { planRemakeUnits, remakeClipRange } from "../src/lib/remake/units";
+import { applyRemakeCreativeSignature, planRemakeUnits, remakeClipRange } from "../src/lib/remake/units";
+import { DEFAULT_REPLICA_CAMPAIGN, DEFAULT_REPLICA_DIRECTION } from "@/lib/canvas/replica-director";
 import type { VideoTeardownBundle } from "../src/services/api/video-replication";
 
 const bundle: VideoTeardownBundle = {
@@ -195,14 +196,53 @@ describe("remake prompts", () => {
         const prompt = buildRemakeDialoguePrompt(value);
         expect(prompt).toContain("我的商品：绿色纸巾");
         expect(prompt).toContain("镜头 1｜1.5 秒｜最多 6 个字｜有人对着镜头说话｜原口播：家人们看这包纸");
-        const lines = parseRemakeDialogue(
-            '{"lines":[{"shotNumber":1,"dialogue":"看看这包纸巾厚不厚呀真的厚"},{"shotNumber":2,"dialogue":""},{"shotNumber":3,"dialogue":""},{"shotNumber":4,"dialogue":""},{"shotNumber":5,"dialogue":"一箱二十四包"}]}',
-            value.shots,
-        );
-        expect(lines.get(1)).toBe("看看这包纸巾厚不厚呀");
+        const lines = parseRemakeDialogue('{"lines":[{"shotNumber":1,"dialogue":"看看纸巾"},{"shotNumber":2,"dialogue":""},{"shotNumber":3,"dialogue":""},{"shotNumber":4,"dialogue":""},{"shotNumber":5,"dialogue":"一箱二十四包"}]}', value.shots);
+        expect(lines.get(1)).toBe("看看纸巾");
+        expect(() =>
+            parseRemakeDialogue('{"lines":[{"shotNumber":1,"dialogue":"看看这包纸巾厚不厚呀真的厚"},{"shotNumber":2,"dialogue":""},{"shotNumber":3,"dialogue":""},{"shotNumber":4,"dialogue":""},{"shotNumber":5,"dialogue":"一箱二十四包"}]}', value.shots),
+        ).toThrow("镜头时长");
         expect(lines.get(5)).toBe("一箱二十四包");
         expect(() => parseRemakeDialogue('{"lines":[{"shotNumber":1,"dialogue":"x"}]}', value.shots)).toThrow("完整");
     });
 });
 
 export type { RemakeShot };
+
+describe("直接出片的导演输入", () => {
+    it("保存导演方案，导演修改重生成且保留旧候选", () => {
+        const value = job();
+        value.campaign = { ...DEFAULT_REPLICA_CAMPAIGN };
+        value.shots[0] = { ...value.shots[0], treatment: "remake", director: { ...DEFAULT_REPLICA_DIRECTION, beat: "hook", action: "手从杯盖上方下压到开盖" } };
+        const initial = applyRemakeCreativeSignature(value, planRemakeUnits(value.shots, { maxMs: 15000, sourceDurationMs: 12000 }));
+        const old = { ...initial[0], status: "succeeded" as const, takes: [{ taskId: "old-task", resourceId: "old-clip", createdAt: "now" }] };
+        const changed = { ...value, campaign: { ...value.campaign, style: "studio" as const } };
+        const updated = applyRemakeCreativeSignature(changed, [old])[0];
+        expect(updated.status).toBe("pending");
+        expect(updated.takes[0].resourceId).toBe("old-clip");
+        expect(applyRemakeCreativeSignature(changed, [updated])[0]).toEqual(updated);
+        expect(() => applyRemakeCreativeSignature(changed, [{ ...old, status: "running", taskId: "pending-task" }])).toThrow("确认结束");
+        expect(() => applyRemakeCreativeSignature(changed, [{ ...old, status: "failed", taskId: "unconfirmed-cancel" }])).toThrow("确认结束");
+        const saved = normalizeRemakeJob({ ...value, units: initial });
+        expect(saved?.campaign).toEqual(value.campaign);
+        expect(saved?.shots[0].director).toEqual(value.shots[0].director);
+        expect(saved?.units[0].creativeSignature).toBe(initial[0].creativeSignature);
+        expect(initial[0].creativeSignature!.length).toBeLessThan(32);
+        expect(applyRemakeCreativeSignature(value, [{ ...old, fix: "修正上一版手部形变" }])[0].status).toBe("succeeded");
+        expect(buildRemakeUnitPrompt(value, initial[0], [value.shots[0]], 1.5)).toContain("手从杯盖上方下压到开盖");
+    });
+    it("换元素只受连续性约束影响，重拍证明须有明确商品依据", () => {
+        const value = job(["replace", "skip", "skip", "skip", "skip"]);
+        value.campaign = { ...DEFAULT_REPLICA_CAMPAIGN };
+        const initial = applyRemakeCreativeSignature(value, planRemakeUnits(value.shots, { maxMs: 15000, sourceDurationMs: 12000 }));
+        const old = { ...initial[0], status: "succeeded" as const, takes: [{ taskId: "old", resourceId: "clip", createdAt: "now" }] };
+        expect(applyRemakeCreativeSignature({ ...value, campaign: { ...value.campaign, style: "studio" } }, [old])[0].status).toBe("succeeded");
+        value.shots[0] = { ...value.shots[0], treatment: "remake", director: { ...DEFAULT_REPLICA_DIRECTION, beat: "proof", action: "演示纸巾擦桌子", evidence: "吸水量提高两倍" } };
+        expect(remakeJobError(value)).toContain("逐字引用");
+        value.shots[0].director!.evidence = "厚实不掉屑";
+        expect(remakeJobError(value)).toBe("");
+    });
+    it("不足一秒的镜头不获得额外的一秒口播容量", () => {
+        expect(remakeDialogueBudget({ startMs: 0, endMs: 500 }, "zh")).toBe(2);
+        expect(() => parseRemakeDialogue('{"lines":[{"shotNumber":1,"dialogue":"这句太长了"}]}', [{ index: 1, startMs: 0, endMs: 500 }])).toThrow("镜头时长");
+    });
+});

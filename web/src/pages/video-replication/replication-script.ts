@@ -35,5 +35,10 @@ export async function rewriteReplicaScripts(bundle: VideoTeardownBundle, analysi
         expectedUserScope: options.expectedScope,
     });
     const createdAt = new Date().toISOString();
-    return parseReplicaScripts(result.text || "", shotNumbers, { model, createdAt, idPrefix: `s${Date.now().toString(36)}` });
+    const seconds = new Map(bundle.shots.map((shot) => [shot.index, (shot.endMs - shot.startMs) / 1000]));
+    const facts = plan.product.sellingPoints
+        .split(/\n+/)
+        .map((line) => line.replace(/^[\s\-*·•\d.、]+/, "").trim())
+        .filter(Boolean);
+    return parseReplicaScripts(result.text || "", shotNumbers, { model, createdAt, idPrefix: `s${Date.now().toString(36)}`, directed: Boolean(plan.campaign), seconds, ...(plan.campaign ? { facts } : {}) });
 }

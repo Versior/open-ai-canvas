@@ -2,6 +2,7 @@ import { ecommercePlatform, ecommerceRoleSpec, type EcommercePlatformId, type Ec
 import { studioCleanNotes, studioLanguage, studioMarket, studioShooting } from "./brief";
 import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_TACKY_DESIGN } from "./detail-plan";
 import { studioActivePlan, studioStyleReferences } from "./runs";
+import { studioDesignZone } from "./art-direction";
 import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
 import {
     STUDIO_FACT_GROUP_LABEL,
@@ -315,11 +316,13 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
         return { id: "copy", title: "文字区", source: "镜头规格", text: `${spec.textZone || "文字区"}保持干净留白；画面中不生成任何文字（商品本身的标识除外）。` };
     }
     if (mode === "overlay") {
+        const zone = spec.overlayZone ? studioDesignZone(shot, spec.overlayZone) : undefined;
+        const reserve = zone ? `从左 ${Math.round(zone.x * 100)}%、上 ${Math.round(zone.y * 100)}% 开始，宽 ${Math.round(zone.width * 100)}%、高 ${Math.round(zone.height * 100)}% 的矩形文字区` : spec.textZone || "文字区";
         return {
             id: "copy",
             title: "文字区",
             source: "文案由程序排字，模型只留白",
-            text: `${spec.textZone || "文字区"}保持干净、连续、无纹理的背景，留给后期排字；画面中不生成任何文字、字母、数字或符号（商品本身的标识除外）。`,
+            text: `${reserve}保持干净、连续、无纹理的背景，留给后期排字，商品与道具放在区域之外。此坐标优先于画面描述里的文字位置；只生成摄影底图，不画信息表格、图标、引线、卡片或装饰字。画面中不生成任何文字、字母、数字或符号（商品本身的标识除外）。`,
         };
     }
     const lines: string[] = [`位置：${spec.textZone || "画面留白处"}。`];

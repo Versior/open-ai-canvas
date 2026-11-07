@@ -5,6 +5,13 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 商业成品与专业方案
+
+- 生图设计与事实文案：`lib/ecommerce-studio/art-direction.ts` → `detail-plan-tasks.ts`、`prompt-compiler.ts`；统一排字：`typeset.ts` → `pages/ecommerce-studio/studio-delivery.ts`、`studio-viewer.tsx`，文案保存入口 `studio-shot-tuner.tsx`。
+- 石材计算：`lib/interior/renovation.ts` → `pages/interior/interior-renovation.tsx`；项目与轮次字段 `professional` 在 `services/api/interior.ts`。后端 `internal/interior/renovation.go`、`document.go` 校验，`app/interior_material_ref.go` 检查当前及历史实板归属；`interior_generate.go` 为报价和出图编译同一输入。
+- 视频导演：`lib/canvas/replica-director.ts` → `video-replica-plan.ts`、`pages/video-replication/replication-director.tsx`；画布生成 `replication-canvas.ts`；直接出片 `lib/remake/prompts.ts`、`units.ts` 与 `remake-runner.ts`，报价 `use-remake-estimate.ts`。后端两入口共用 `app/video_replication_director.go`。
+- 专项回归：`web/test/creative-production.test.ts`、`remake-lib.test.ts`、`backend/internal/interior/renovation_test.go`、`app/video_replication_director_test.go`、`interior_estimate_test.go`。调研及后续方案：`docs/plans/creative-production-quality.md`。
+
 ## 三大创作工作台交付与恢复
 
 - 视频剪辑包：`web/src/lib/canvas/video-replication-delivery.ts` → `pages/video-replication/replication-delivery.ts`；复刻恢复：`remake/remake-runner.ts`。

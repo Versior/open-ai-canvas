@@ -51,6 +51,7 @@ func NormalizeProjectDocument(raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
 		return "", fmt.Errorf("项目数据必须是 JSON 对象")
 	}
+	specs := []json.RawMessage{fields["professional"]}
 	if roundsRaw, exists := fields["rounds"]; exists {
 		var rounds []json.RawMessage
 		if err := json.Unmarshal(roundsRaw, &rounds); err != nil {
@@ -58,6 +59,27 @@ func NormalizeProjectDocument(raw json.RawMessage) (string, error) {
 		}
 		if len(rounds) > MaxProjectRounds {
 			return "", fmt.Errorf("一个项目最多保存 %d 轮出图，请删除旧的记录", MaxProjectRounds)
+		}
+		for _, round := range rounds {
+			var head struct {
+				Professional json.RawMessage `json:"professional"`
+			}
+			if err := json.Unmarshal(round, &head); err != nil {
+				return "", fmt.Errorf("项目的出图记录格式无效")
+			}
+			specs = append(specs, head.Professional)
+		}
+	}
+	for _, specRaw := range specs {
+		if len(specRaw) == 0 || bytes.Equal(bytes.TrimSpace(specRaw), []byte("null")) {
+			continue
+		}
+		var spec RenovationSpec
+		if err := json.Unmarshal(specRaw, &spec); err != nil {
+			return "", fmt.Errorf("装修方案格式无效")
+		}
+		if err := spec.Validate(); err != nil {
+			return "", err
 		}
 	}
 	var compact bytes.Buffer

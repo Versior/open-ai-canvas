@@ -6,9 +6,11 @@ import { studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioActivePlan } from "@/lib/ecommerce-studio/runs";
 import { studioProductStyle, studioShotSpec, studioStyle } from "@/lib/ecommerce-studio/shot-specs";
 import { typesetStudioImage } from "@/lib/ecommerce-studio/typeset";
+import { studioDesignZone } from "@/lib/ecommerce-studio/art-direction";
 import type { StudioOutput, StudioPlan, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { createZip } from "@/lib/zip";
 import { getResourceBlob, resourceStorageKey } from "@/services/api/resources";
+import { downloadBrowserMedia } from "@/services/browser-download";
 import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 
 /**
@@ -51,7 +53,14 @@ export async function composeStudioShots(product: StudioProduct, plan: StudioPla
                 continue;
             }
             try {
-                const url = await typesetStudioImage({ imageUrl: source, zone: spec.overlayZone, content: { headline: shot.headline, subline: shot.subline, lines: shot.lines }, ink: style.ink, inkSoft: style.inkSoft });
+                const url = await typesetStudioImage({
+                    imageUrl: source,
+                    zone: studioDesignZone(shot, spec.overlayZone),
+                    content: { headline: shot.headline, subline: shot.subline, lines: shot.lines, eyebrow: shot.eyebrow },
+                    ink: style.ink,
+                    inkSoft: style.inkSoft,
+                    layout: shot.layout,
+                });
                 results.push({ shot, output, url, composed: true });
             } finally {
                 URL.revokeObjectURL(source);
@@ -67,6 +76,19 @@ export async function composeStudioShots(product: StudioProduct, plan: StudioPla
 
 export function releaseComposed(shots: StudioComposedShot[]) {
     for (const item of shots) if (item.url.startsWith("blob:")) URL.revokeObjectURL(item.url);
+}
+
+export async function downloadStudioComposed(product: StudioProduct, plan: StudioPlan) {
+    const shots = await composeStudioShots(product, plan);
+    try {
+        for (const [index, item] of shots.entries()) {
+            if (index) await new Promise((resolve) => window.setTimeout(resolve, 400));
+            const fileName = `${product.name || "商品"}-${item.shot.title || "商品图"}-${index + 1}.png`.replace(/[\\/:*?"<>|]+/g, "_");
+            await downloadBrowserMedia({ fileName, url: item.url });
+        }
+    } finally {
+        releaseComposed(shots);
+    }
 }
 
 export function bindStudioDetailPage(product: StudioProduct, shots: StudioComposedShot[]) {

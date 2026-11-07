@@ -9,6 +9,7 @@ import type { InteriorCatalog, InteriorImageRef, InteriorMode, InteriorModelRef,
 import type { AiConfig } from "@/stores/use-config-store";
 import { interiorImageUrl, interiorModelPermitted, interiorModelRef } from "./interior-models";
 import { useInteriorEstimate } from "./use-interior-estimate";
+import { renovationProblem, type RenovationSpec } from "@/lib/interior/renovation";
 
 export type InteriorUpload = InteriorImageRef & { name: string; uploading?: boolean; error?: string; previewUrl?: string };
 
@@ -147,6 +148,7 @@ export function UploadSlot({ label, value, onPick, onClear, disabled }: { label:
 }
 
 type ComposerProps = {
+    professional?: RenovationSpec;
     catalog: InteriorCatalog;
     config: AiConfig;
     surface: InteriorSurface;
@@ -160,7 +162,7 @@ type ComposerProps = {
     onSubmit: () => void;
 };
 
-export function InteriorComposer({ catalog, config, surface, draft, busy, error, onChange, onModeChange, onPickSource, onPickReference, onSubmit }: ComposerProps) {
+export function InteriorComposer({ catalog, config, surface, draft, busy, error, professional, onChange, onModeChange, onPickSource, onPickReference, onSubmit }: ComposerProps) {
     const modes = useMemo(() => visibleInteriorModes(catalog, surface), [catalog, surface]);
     const mode = modes.find((item) => item.id === draft.modeId);
     const sourceSlot = mode?.slots.find((slot) => slot.key === "source");
@@ -171,12 +173,13 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
     const countLimit = interiorCountLimit(catalog, mode);
     const siteDefault = catalog.settings.defaultModel;
     const recommended = mode?.defaultModel || siteDefault;
-    const problem = interiorDraftProblem(draft, mode, surface, config, siteDefault);
+    const problem = (professional && renovationProblem(professional)) || interiorDraftProblem(draft, mode, surface, config, siteDefault);
     const total = (mode?.requiresStyle ? Math.max(1, draft.styleKeys.length) : 1) * draft.count;
     const estimate = useInteriorEstimate(
         !problem && mode && draft.source
             ? {
                   surface,
+                  ...(professional ? { professional } : {}),
                   modeId: mode.id,
                   sourceResourceId: draft.source.resourceId,
                   count: draft.count,
@@ -201,6 +204,7 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
         <aside className="itd-composer" aria-label="出图设置">
             <div className="itd-composer-scroll thin-scrollbar">
                 <section className="itd-section">
+                    {professional ? <p role="status">本次使用装修 / 石材方案，尺寸、材料和实板照片会一起提交。可在「装修 / 石材」修改。</p> : null}
                     <h2 className="itd-section-title">出图方式</h2>
                     {modes.length ? (
                         <div className="itd-mode-grid" role="radiogroup" aria-label="出图方式">

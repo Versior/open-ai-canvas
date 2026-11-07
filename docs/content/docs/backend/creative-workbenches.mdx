@@ -5,11 +5,19 @@ description: 视频复刻、室内设计、电商生图台的交付包、费用�
 
 ## 视频复刻
 
+方案可启用导演策略 `campaign`：`platform` 为 `douyin/xiaohongshu/amazon`，`goal` 为 `conversion/education/brand`，`style` 为 `demo/story/studio`，`continuity` 最多 300 字。逐镜 `director` 包含 `beat`（hook/problem/demo/proof/action）、`framing`（wide/medium/close/macro）、`camera`（locked/push/pan/handheld）、`action`（300 字）、`evidence`（200 字）、`sound`（120 字）、`transition`（cut/match/dissolve）。两种保存入口校验相同枚举与长度。
+
+画布流程的改写同时返回新商品 `imagePrompt/videoPrompt/director`，选用时写入逐镜方案；生成首帧和视频读取导演动作。证明镜头依据须来自商品卖点。直接出片的 version 2 作品可手动编辑导演设置，重拍使用动作，换元素保持原动作机位。输入变化保留旧候选、重新计入生成报价；taskId 尚未确认结束时阻止重提。声音与衔接字段是执行建议，不代表已合成真实音效或转场。
+
 打开已有拆解，点击「剪辑交付包」可下载 ZIP：拆解 Markdown、逐镜 CSV、方案口播 SRT、分镜 JSON、关键帧及说明。方案删镜后时间连续，CSV 保留原片时间码，便于剪辑师定位。缺少关键帧时导出明确失败；口播超过镜头时长会提示复核。
 
 分析任务查询中断时不会自动重新付费分析。复刻的片段、配音和合成任务会保留编号，再次继续先查询原结果；取消状态没有确认也保留编号，避免生成第二份。状态未确认时定向重做会被拦下。服务端确认失败/取消后才允许新一次生成。
 
 ## 室内设计
+
+项目文档、历史轮次与 `POST /interior/estimate`、`POST /interior/generate` 接受可选 `professional`。字段为 `scope`（room/wall/floor/countertop）、`stage`（refresh/renovation/new）、`material`（marble/sintered/quartz/tile/wood）、`finish`（honed/polished/textured）、`pattern`（straight/bookmatch/fourway/staggered）、`lighting`（daylight/warm/neutral）；`widthMm/heightMm/slabWidthMm/slabHeightMm` 为 100–30000 mm，`seamMm` 0–20，`wastePercent` 0–50，`materialPrice/laborPrice/budget` 0–10000000，`preserve` 300 字内。实板为 `texture: { resourceId }`，须为本人就绪图片。当前与历史方案均在保存时检查。
+
+“装修 / 石材”计算净铺面积、含用户预留损耗面积、材料/人工和区域预算，并导出 SVG/CSV/JSON/照片。材料和铺装单价 0 表示待报价，合计缺项返回 null。该面积不是整板采购量，排板未考虑锯缝、开孔与最优开料；天然对纹需同批连号实板与加工方确认。报价与生成读取同一专业方案、实板图片和保留要求。本次只扩展现有 JSON，不新增数据表或迁移。
 
 效果图设置完整后显示服务端积分预估。`POST /interior/estimate` 与出图共用模型选择、模式参数、风格和资源归属校验，每风格汇总实际模型报价，不创建任务、不预留余额。报价不保证配置变化后的最终结算；失败显示原因，不显示虚假零费用。
 
@@ -18,6 +26,8 @@ description: 视频复刻、室内设计、电商生图台的交付包、费用�
 尺寸与家具规格来自方案数据，需现场测量。SVG 尚未绘制门窗与家具轮廓，属于空间草图，不是 CAD 或施工图。项目保存使用已确认基线合并冲突，保留双方独立结果；未保存时改名先保存，切账号不会回填旧账号文档。
 
 ## 电商生图台
+
+表单 `brief.textMode` 可选 model/overlay，生成记录保存 `textMode` 快照。overlay 只生成留白底图，预览与单张/整套下载使用同一程序排字：栏目字阶、标题/说明、参数双列与编号行。文案超过区域时阻止导出；仅更新排字保存文案，不提交图片任务。程序排字逐字使用已有文案，不自动翻译。已生成的模型整图不应当作新的留白底图使用。
 
 生成记录的「交付检查」会读取实际成品文件，检查宽高、字节、画幅与边缘白色比例，并提示缺图、未确认卖点和部分待复核文案。程序没有做 OCR、完整抠图或商品一致性识别，边缘白色不能证明全背景纯白。平台内置规格当前是建议，应以商家后台最新要求复核。
 

@@ -1,4 +1,5 @@
-import type { RemakeShot, RemakeUnit } from "./job";
+import type { RemakeJob, RemakeShot, RemakeUnit } from "./job";
+import { buildRemakeUnitPrompt, remakeReferenceImages } from "./prompts";
 
 /** 换元素单元的参考片段至少 4 秒：多数视频模型的参考视频要 2 秒以上、生成至少 4 秒，片段和成片一一对应。 */
 export const REMAKE_MIN_CLIP_MS = 4000;
@@ -74,4 +75,29 @@ export function remakeClipSignature(units: readonly RemakeUnit[]) {
 
 export function remakeUnitTake(unit: Pick<RemakeUnit, "takes" | "chosen">) {
     return unit.takes[unit.chosen] || unit.takes[unit.takes.length - 1];
+}
+
+/** 导演输入变化后重新生成，保留旧候选；不能重提尚未确认结束的付费任务。 */
+export function applyRemakeCreativeSignature(job: RemakeJob, units: RemakeUnit[]) {
+    return units.map((unit) => {
+        const shots = job.shots.filter((shot) => unit.shotIndexes.includes(shot.index));
+        if (!job.campaign && !shots.some((shot) => shot.director) && !unit.creativeSignature) return unit;
+        const input = JSON.stringify([
+            buildRemakeUnitPrompt(job, { ...unit, fix: undefined }, shots, (unit.endMs - unit.startMs) / 1000),
+            remakeReferenceImages(job).images.map((image) => image.resourceId),
+            job.model,
+            job.ratio,
+            job.resolution,
+            job.audio,
+            job.language,
+        ]);
+        // 固定长度的内容指纹，避免每个单元重复保存整份配方而超过作品大小限制；不用于鉴权。
+        let hash = BigInt("0xcbf29ce484222325");
+        const prime = BigInt("0x100000001b3");
+        for (let index = 0; index < input.length; index++) hash = BigInt.asUintN(64, (hash ^ BigInt(input.charCodeAt(index))) * prime);
+        const signature = `director-v1:${hash.toString(16)}`;
+        if (unit.creativeSignature === signature) return unit;
+        if (unit.taskId) throw new Error("旧镜头任务尚未确认结束，请完成取消或等待后再应用导演修改");
+        return { ...unit, creativeSignature: signature, status: "pending" as const, taskId: undefined, error: undefined, attempt: unit.attempt + (unit.takes.length || unit.taskId ? 1 : 0) };
+    });
 }

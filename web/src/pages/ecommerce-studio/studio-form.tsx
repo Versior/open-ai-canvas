@@ -27,6 +27,7 @@ import {
     toggleStudioSingleType,
 } from "@/lib/ecommerce-studio/brief";
 import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
+import { studioChannelDesign } from "@/lib/ecommerce-studio/art-direction";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
@@ -393,6 +394,24 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     return (
         <section className="es-form" aria-label="生图表单" onPasteCapture={onPaste}>
             <div className="es-form-scroll">
+                <section className="es-tuner-copy" aria-label="平台设计策略">
+                    <span className="es-tuner-title">平台设计策略</span>
+                    <p className="es-prompt-note">{studioChannelDesign(product.platform)}</p>
+                    <label className="es-tuner-field">
+                        <span>文字与版式</span>
+                        <Select
+                            appearance="field"
+                            ariaLabel="文字与版式"
+                            value={brief.textMode || "model"}
+                            options={[
+                                { value: "model", label: "模型整体设计 · 灵活版式" },
+                                { value: "overlay", label: "程序排版 · 准确文字与参数表" },
+                            ]}
+                            onChange={(value: "model" | "overlay") => editBrief({ textMode: value })}
+                        />
+                    </label>
+                    {brief.textMode === "overlay" ? <p className="es-prompt-note">生成留白摄影底图，预览与导出使用相同排版。文案逐字使用，请填写目标语言；放不下会提示缩短或拆屏。</p> : null}
+                </section>
                 <div className="es-uploads">
                     <StudioUploadBox
                         kind="photos"

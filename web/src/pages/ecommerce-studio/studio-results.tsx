@@ -14,7 +14,7 @@ import { configuredModelDisplayName } from "@/lib/model-selection";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { bindStudioDetailPage, composeStudioShots, exportStudioZip, releaseComposed } from "./studio-delivery";
+import { bindStudioDetailPage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed } from "./studio-delivery";
 import { inspectStudioDelivery } from "./studio-delivery-review";
 import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 import { ratioStyle, studioImageUrl } from "./studio-parts";
@@ -293,6 +293,9 @@ function GroupCard({
         });
 
     const downloadAll = () => {
+        const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, shots };
+        const needsTypeset = group.textMode === "overlay" || shots.some((shot) => /flux/i.test(studioShotLatestAttempt(shot)?.model || ""));
+        if (needsTypeset) return void downloadStudioComposed(product, plan).catch((error: unknown) => message.error(error instanceof Error ? error.message : "下载失败"));
         const items = shots.flatMap((shot, index) => {
             const preview = studioShotPreview(shot);
             return preview ? [{ output: preview, fileName: downloadName(product, shot, shots.length > 1 ? index + 1 : 0) }] : [];
@@ -378,6 +381,10 @@ function GroupCard({
                         onView={() => onView({ groupKey: group.key, shotId: shot.id })}
                         onDownload={() => {
                             const preview = studioShotPreview(shot);
+                            if (preview && (group.textMode === "overlay" || /flux/i.test(studioShotLatestAttempt(shot)?.model || "")))
+                                return void downloadStudioComposed(product, { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, shots: [shot] }).catch((error: unknown) =>
+                                    message.error(error instanceof Error ? error.message : "下载失败"),
+                                );
                             if (preview) void downloadOutputs([{ output: preview, fileName: downloadName(product, shot, 0) }]).catch((error) => message.error(error instanceof Error ? error.message : "下载失败"));
                         }}
                         onReference={() => {

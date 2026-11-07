@@ -1,4 +1,5 @@
 import type { InteriorSceneScope, SceneBrief } from "@/lib/interior/scene-3d";
+import type { RenovationSpec } from "@/lib/interior/renovation";
 import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
@@ -75,6 +76,7 @@ export type InteriorSettings = {
 };
 
 export type InteriorGenerateInput = {
+    professional?: RenovationSpec;
     surface: InteriorSurface;
     modeId: string;
     roomKey?: string;
@@ -105,6 +107,7 @@ export type InteriorImageRef = { resourceId: string; width?: number; height?: nu
 export type InteriorRoundItemStatus = "pending" | "succeeded" | "failed";
 export type InteriorRoundItem = { id: string; styleKey?: string; styleName?: string; taskId?: string; status: InteriorRoundItemStatus; error?: string; outputs: InteriorImageRef[] };
 export type InteriorRound = {
+    professional?: RenovationSpec;
     id: string;
     createdAt: string;
     surface: InteriorSurface;
@@ -169,7 +172,7 @@ export type InteriorSceneItem = {
     dropped?: number;
 };
 
-export type InteriorProjectDocument = { version: 1; rounds: InteriorRound[]; scenes?: InteriorSceneItem[] };
+export type InteriorProjectDocument = { version: 1; rounds: InteriorRound[]; scenes?: InteriorSceneItem[]; professional?: RenovationSpec };
 
 export type InteriorProjectSummary = { id: string; name: string; kind: InteriorProjectKind; revision: number; createdAt: string; updatedAt: string };
 export type InteriorProject = InteriorProjectSummary & { document: InteriorProjectDocument };

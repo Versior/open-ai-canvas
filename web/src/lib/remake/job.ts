@@ -2,6 +2,7 @@ import type { VideoTeardownAnalysis, VideoTeardownAnalysisRow } from "@/lib/canv
 import type { ProductVideoImage } from "@/lib/product-video/job";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { recommendRemakeShot } from "./recommend";
+import { readReplicaCampaign, readReplicaDirection, type ReplicaCampaign, type ReplicaDirection } from "@/lib/canvas/replica-director";
 
 // 复刻工作台的作品（version 2）：一条拆解过的爆款视频 + 我的商品、模特、场景和口播配方，
 // 逐镜头决定怎么复刻（换元素、重新拍、保留原片、删掉），再按生成单元出片、拼成成片。
@@ -79,6 +80,7 @@ export type RemakeSubtitleImages = { signature: string; items: { shotIndex: numb
 export type RemakePeople = "model" | "original" | "none";
 
 export type RemakeShot = {
+    director?: ReplicaDirection;
     index: number;
     startMs: number;
     endMs: number;
@@ -108,6 +110,7 @@ export type RemakeUnitStatus = "pending" | "running" | "succeeded" | "failed";
  * 换元素单元的参考片段是 [clipStartMs, clipEndMs)：太短时向两边补到 4 秒，成片只用 [startMs, endMs) 那部分。
  */
 export type RemakeUnit = {
+    creativeSignature?: string;
     key: string;
     treatment: "replace" | "remake";
     shotIndexes: number[];
@@ -135,6 +138,7 @@ export type RemakeSource = { teardownId: string; resourceId: string; name: strin
 export type RemakeProduct = { studioProductId?: string; name: string; sellingPoints: string; images: ProductVideoImage[] };
 
 export type RemakeJob = {
+    campaign?: ReplicaCampaign;
     version: 2;
     id: string;
     revision: number;
@@ -264,6 +268,11 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
     if (limits && job.product.images.length + job.models.length + job.backgrounds.length > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
     if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「AI 配音」";
     if (job.audio === "voice" && active.some((shot) => shot.dialogue.trim()) && !job.voice.model) return "请选择配音模型";
+    for (const shot of generated) {
+        if (shot.treatment !== "remake" || !shot.director) continue;
+        if (!shot.director.action.trim()) return `镜头 ${shot.index} 还没有具体导演动作`;
+        if (shot.director.beat === "proof" && (!shot.director.evidence.trim() || !job.product.sellingPoints.split(/\n/).some((fact) => fact.trim() === shot.director!.evidence.trim()))) return `镜头 ${shot.index} 的证明依据须逐字引用一条商品卖点`;
+    }
     return "";
 }
 
@@ -353,6 +362,7 @@ function shot(value: unknown): RemakeShot | undefined {
     if (!raw) return undefined;
     const recommended = oneOf(REMAKE_TREATMENTS, raw.recommended, "replace");
     return {
+        ...(readReplicaDirection(raw.director) ? { director: readReplicaDirection(raw.director) } : {}),
         index: count(raw.index),
         startMs: count(raw.startMs),
         endMs: count(raw.endMs),
@@ -383,6 +393,7 @@ function unit(value: unknown): RemakeUnit | undefined {
     if (!raw || !text(raw.key)) return undefined;
     const takes = (Array.isArray(raw.takes) ? raw.takes : []).map(take).filter((item): item is RemakeTake => Boolean(item));
     return {
+        ...(text(raw.creativeSignature) ? { creativeSignature: text(raw.creativeSignature) } : {}),
         key: text(raw.key),
         treatment: raw.treatment === "remake" ? "remake" : "replace",
         shotIndexes: (Array.isArray(raw.shotIndexes) ? raw.shotIndexes : []).filter((item): item is number => typeof item === "number" && Number.isSafeInteger(item) && item > 0),
@@ -434,6 +445,7 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
             hasAudio: source.hasAudio !== false,
         },
         sourceSummary: { product: text(summary.product), hook: text(summary.hook), genre: text(summary.genre) },
+        ...(readReplicaCampaign(raw.campaign) ? { campaign: readReplicaCampaign(raw.campaign) } : {}),
         product: { ...(text(product.studioProductId) ? { studioProductId: text(product.studioProductId) } : {}), name: text(product.name), sellingPoints: text(product.sellingPoints), images: images(product.images, 4) },
         people: oneOf(["model", "original", "none"] as const, raw.people, "model"),
         models: images(raw.models, 3),

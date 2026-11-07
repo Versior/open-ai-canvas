@@ -26,8 +26,9 @@ var videoReplicationPlanTreatments = map[string]bool{"remake": true, "product": 
 
 // videoReplicationPlanHead 只取服务端要校验的字段；改写的台词、提示词等文字由前端负责。
 type videoReplicationPlanHead struct {
-	Version    int  `json:"version"`
-	Authorized bool `json:"authorized"`
+	Campaign   *videoReplicaCampaign `json:"campaign,omitempty"`
+	Version    int                   `json:"version"`
+	Authorized bool                  `json:"authorized"`
 	Product    struct {
 		Name   string `json:"name"`
 		Images []struct {
@@ -35,8 +36,9 @@ type videoReplicationPlanHead struct {
 		} `json:"images"`
 	} `json:"product"`
 	Shots []struct {
-		ShotNumber int    `json:"shotNumber"`
-		Treatment  string `json:"treatment"`
+		ShotNumber int                    `json:"shotNumber"`
+		Treatment  string                 `json:"treatment"`
+		Director   *videoReplicaDirection `json:"director,omitempty"`
 	} `json:"shots"`
 	Canvases []struct {
 		ID string `json:"id"`
@@ -70,12 +72,22 @@ func (s *Service) SaveVideoReplicationPlan(userID, taskID string, payload []byte
 	if len([]rune(strings.TrimSpace(head.Product.Name))) > 60 {
 		return nil, BadAuthRequest("商品名称不能超过 60 个字")
 	}
+	if head.Campaign != nil {
+		if err := head.Campaign.validate(); err != nil {
+			return nil, BadAuthRequest(err.Error())
+		}
+	}
 	if len(head.Shots) != len(bundle.Shots) {
 		return nil, BadAuthRequest(fmt.Sprintf("复刻方案有 %d 个镜头，拆解结果有 %d 个镜头", len(head.Shots), len(bundle.Shots)))
 	}
 	seen := make(map[int]bool, len(head.Shots))
 	kept := 0
 	for _, shot := range head.Shots {
+		if shot.Director != nil {
+			if err := shot.Director.validate(); err != nil {
+				return nil, BadAuthRequest(err.Error())
+			}
+		}
 		if shot.ShotNumber < 1 || shot.ShotNumber > len(bundle.Shots) || seen[shot.ShotNumber] {
 			return nil, BadAuthRequest("复刻方案的镜头编号和拆解结果对不上")
 		}

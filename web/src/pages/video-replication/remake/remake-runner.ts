@@ -7,7 +7,7 @@ import { REMAKE_ACTIVE, remakeLanguage, type RemakeJob, type RemakeUnit, type Re
 import { buildRemakeUnitPrompt, remakeReferenceImages } from "@/lib/remake/prompts";
 import { remakeLines, remakeRenderSize, remakeSubtitleSignature, remakeTimeline, remakeVoicePlan } from "@/lib/remake/timeline";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { planRemakeUnits, remakeClipSignature } from "@/lib/remake/units";
+import { applyRemakeCreativeSignature, planRemakeUnits, remakeClipSignature } from "@/lib/remake/units";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { parseBackendGenerationResult, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { createProductVideoSplit, parseProductVideoSplitResult } from "@/services/api/product-video";
@@ -96,7 +96,7 @@ function limitsOf(config: AiConfig, job: RemakeJob) {
 export function remakeUnitsFor(job: RemakeJob, config: AiConfig) {
     const limits = productVideoLimitsFor(config, job.model);
     const maxMs = (typeof limits === "string" ? 15 : limits.maxSegmentSeconds) * 1000;
-    return planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source.durationMs }, job.units);
+    return applyRemakeCreativeSignature(job, planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source.durationMs }, job.units));
 }
 
 async function clipStep(id: string, signal: AbortSignal) {

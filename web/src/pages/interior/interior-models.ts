@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { readRenovation } from "@/lib/interior/renovation";
 import { modelDisplayName, modelOptionName, resolveModelChannel, selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 import { resourceFileUrl } from "@/services/api/resources";
 import type { InteriorMode, InteriorModelRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem, InteriorSceneItem } from "@/services/api/interior";
@@ -71,8 +72,10 @@ export function normalizeInteriorDocument(value: unknown): InteriorProjectDocume
     if (!value || typeof value !== "object") return emptyInteriorDocument();
     const rounds = (value as { rounds?: unknown }).rounds;
     const scenes = (value as { scenes?: unknown }).scenes;
+    const professional = readRenovation((value as { professional?: unknown }).professional);
     const document: InteriorProjectDocument = {
         version: 1,
+        ...(professional ? { professional } : {}),
         rounds: Array.isArray(rounds)
             ? rounds.filter((round): round is InteriorRound => Boolean(round && typeof round === "object" && typeof (round as InteriorRound).id === "string" && (round as InteriorRound).source?.resourceId && Array.isArray((round as InteriorRound).items)))
             : [],
@@ -102,7 +105,8 @@ export function patchInteriorItem(document: InteriorProjectDocument, roundId: st
 export function mergeInteriorDocuments(server: InteriorProjectDocument, local: InteriorProjectDocument, deletedIds: ReadonlySet<string>, base?: InteriorProjectDocument): InteriorProjectDocument {
     const rounds = mergeById(server.rounds, local.rounds, deletedIds, base?.rounds);
     const scenes = mergeById(server.scenes || [], local.scenes || [], deletedIds, base?.scenes);
-    return scenes.length ? { version: 1, rounds, scenes } : { version: 1, rounds };
+    const professional = mergeChangedFields(server.professional, local.professional, base?.professional) as InteriorProjectDocument["professional"];
+    return { version: 1, rounds, ...(scenes.length ? { scenes } : {}), ...(professional ? { professional } : {}) };
 }
 
 /** 以服务端为底按 id 合并：本地删掉的去掉，同一条以本地为准，本地新增的补上，按时间倒序。 */

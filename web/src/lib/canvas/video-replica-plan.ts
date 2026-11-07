@@ -1,5 +1,6 @@
 import { jsonCandidates, teardownTimeRange, videoTeardownProductLabel, videoTeardownRowHasProduct, type VideoTeardownAnalysis, type VideoTeardownAnalysisRow } from "@/lib/canvas/video-teardown";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
+import { readReplicaCampaign, readReplicaDirection, replicaCampaignPrompt, type ReplicaCampaign, type ReplicaDirection } from "./replica-director";
 
 /**
  * 视频复刻 · 复刻方案：商品档案、按商品改写的脚本、逐镜怎么处理。存在服务端（PUT /video-replication/teardowns/:id/plan），
@@ -31,16 +32,16 @@ export type ReplicaProduct = {
     images: ReplicaProductImage[];
 };
 
-export type ReplicaScriptLine = { shotNumber: number; dialogue: string; onScreenText: string };
+export type ReplicaScriptLine = { shotNumber: number; dialogue: string; onScreenText: string; director?: ReplicaDirection; imagePrompt?: string; videoPrompt?: string };
 
 export type ReplicaScript = { id: string; angle: string; hook: string; lines: ReplicaScriptLine[]; model: string; createdAt: string };
 
-export type ReplicaShotPlan = { shotNumber: number; treatment: ReplicaShotTreatment; dialogue: string; onScreenText: string; imagePrompt: string; videoPrompt: string };
+export type ReplicaShotPlan = { shotNumber: number; treatment: ReplicaShotTreatment; dialogue: string; onScreenText: string; imagePrompt: string; videoPrompt: string; director?: ReplicaDirection };
 
 /** 按方案建过的一块画布：只用来在页面上列出和打开，画布本身在画布列表里。 */
 export type ReplicaCanvasRef = { id: string; title: string; createdAt: string; shots: number };
 
-export type VideoReplicaPlan = { version: 1; authorized: boolean; product: ReplicaProduct; scripts: ReplicaScript[]; activeScriptId: string; shots: ReplicaShotPlan[]; canvases: ReplicaCanvasRef[] };
+export type VideoReplicaPlan = { version: 1; authorized: boolean; product: ReplicaProduct; scripts: ReplicaScript[]; activeScriptId: string; shots: ReplicaShotPlan[]; canvases: ReplicaCanvasRef[]; campaign?: ReplicaCampaign };
 
 export const REPLICA_LIMITS = { productName: 60, sellingPoints: 400, audience: 80, look: 120, images: 4, scripts: 6, dialogue: 300, onScreenText: 120, prompt: 2000, canvases: 20 };
 
@@ -102,7 +103,15 @@ function readLines(value: unknown, shotCount: number): ReplicaScriptLine[] {
         const record = item as Record<string, unknown>;
         const shotNumber = Number(record.shotNumber);
         if (!Number.isSafeInteger(shotNumber) || shotNumber < 1 || shotNumber > shotCount || byShot.has(shotNumber)) continue;
-        byShot.set(shotNumber, { shotNumber, dialogue: str(record.dialogue, REPLICA_LIMITS.dialogue), onScreenText: str(record.onScreenText, REPLICA_LIMITS.onScreenText) });
+        const director = readReplicaDirection(record.director);
+        byShot.set(shotNumber, {
+            shotNumber,
+            dialogue: str(record.dialogue, REPLICA_LIMITS.dialogue),
+            onScreenText: str(record.onScreenText, REPLICA_LIMITS.onScreenText),
+            ...(director ? { director } : {}),
+            ...(str(record.imagePrompt, REPLICA_LIMITS.prompt) ? { imagePrompt: str(record.imagePrompt, REPLICA_LIMITS.prompt) } : {}),
+            ...(str(record.videoPrompt, REPLICA_LIMITS.prompt) ? { videoPrompt: str(record.videoPrompt, REPLICA_LIMITS.prompt) } : {}),
+        });
     }
     return [...byShot.values()].sort((left, right) => left.shotNumber - right.shotNumber);
 }
@@ -130,8 +139,10 @@ export function readReplicaPlan(value: unknown, bundle: VideoTeardownBundle, ana
         const item = saved.get(base.shotNumber);
         if (!item) return base;
         const treatment = TREATMENTS.includes(item.treatment as ReplicaShotTreatment) ? (item.treatment as ReplicaShotTreatment) : base.treatment;
+        const director = readReplicaDirection(item.director);
         return {
             shotNumber: base.shotNumber,
+            ...(director ? { director } : {}),
             treatment: treatment === "original" && !authorized ? "remake" : treatment,
             dialogue: typeof item.dialogue === "string" ? str(item.dialogue, REPLICA_LIMITS.dialogue) : base.dialogue,
             onScreenText: typeof item.onScreenText === "string" ? str(item.onScreenText, REPLICA_LIMITS.onScreenText) : base.onScreenText,
@@ -164,6 +175,7 @@ export function readReplicaPlan(value: unknown, bundle: VideoTeardownBundle, ana
     return {
         version: 1,
         authorized,
+        ...(readReplicaCampaign(record.campaign) ? { campaign: readReplicaCampaign(record.campaign) } : {}),
         product: {
             name: str(product.name, REPLICA_LIMITS.productName),
             sellingPoints: str(product.sellingPoints, REPLICA_LIMITS.sellingPoints),
@@ -232,8 +244,8 @@ export function buildReplicaScriptPrompt(bundle: VideoTeardownBundle, analysis: 
         ...kept.map((shot) => {
             const row = rows.get(shot.shotNumber);
             const source = bundle.shots[shot.shotNumber - 1];
-            const seconds = source ? Math.max(1, Math.round((source.endMs - source.startMs) / 1000)) : 3;
-            const parts = [`镜头 ${shot.shotNumber}｜${source ? teardownTimeRange(source) : ""}｜约 ${seconds} 秒，口播最多 ${seconds * CHARS_PER_SECOND} 字`, `画面：${row?.plotDescription || "（无）"}`];
+            const seconds = source ? (source.endMs - source.startMs) / 1000 : 3;
+            const parts = [`镜头 ${shot.shotNumber}｜${source ? teardownTimeRange(source) : ""}｜约 ${seconds} 秒，口播最多 ${Math.floor(seconds * CHARS_PER_SECOND)} 字`, `画面：${row?.plotDescription || "（无）"}`];
             if (row?.dialogue) parts.push(`原口播：${row.dialogue}`);
             if (row?.onScreenText) parts.push(`原画面字：${row.onScreenText}`);
             const productLabel = videoTeardownProductLabel(row);
@@ -243,6 +255,12 @@ export function buildReplicaScriptPrompt(bundle: VideoTeardownBundle, analysis: 
         }),
         "",
         "要求：",
+        ...(plan.campaign
+            ? [
+                  replicaCampaignPrompt(plan.campaign),
+                  '每条 lines 还要输出 imagePrompt（新商品的具体首帧摄影画面）与 videoPrompt（动作始末），以及 director 对象：{"beat":"hook|problem|demo|proof|action","framing":"wide|medium|close|macro","camera":"locked|push|pan|handheld","action":"单个具体动作","evidence":"逐字引用一条商品卖点或空字符串","sound":"声音意图","transition":"cut|match|dissolve"}。枚举只选一个值。proof 镜头必须填写原文依据，没有依据改成 demo。导演方案与台词一起适配新商品，不保留原商品的场景或功能。',
+              ]
+            : []),
         "1. 每个版本都要写上面列出的全部镜头，镜头编号不能改、不能合并或拆分；原片这一镜没有口播的，可以继续没有（写空字符串）。",
         "2. 每镜口播不要超过给出的字数，读起来像真人说话，不要书面语。",
         "3. 原片商品的名称、品牌和卖点全部换掉，不要提原片的品牌。",
@@ -262,15 +280,37 @@ export function buildReplicaScriptPrompt(bundle: VideoTeardownBundle, analysis: 
 }
 
 /** 解析改写脚本：每个版本必须写到所有要求的镜头，缺镜头的版本丢掉；一个可用的都没有时报错。 */
-export function parseReplicaScripts(text: string, shotNumbers: number[], meta: { model: string; createdAt: string; idPrefix: string }): ReplicaScript[] {
+export function parseReplicaScripts(text: string, shotNumbers: number[], meta: { model: string; createdAt: string; idPrefix: string; directed?: boolean; seconds?: Map<number, number>; facts?: string[] }): ReplicaScript[] {
     const required = new Set(shotNumbers);
     for (const candidate of jsonCandidates(text)) {
         if (!Array.isArray(candidate.scripts)) continue;
         const scripts = candidate.scripts.flatMap((item, index): ReplicaScript[] => {
             if (!item || typeof item !== "object") return [];
             const record = item as Record<string, unknown>;
+            if (
+                meta.directed &&
+                Array.isArray(record.lines) &&
+                record.lines.some((item) => {
+                    if (!item || typeof item !== "object") return true;
+                    const line = item as Record<string, unknown>;
+                    const director = line.director && typeof line.director === "object" ? (line.director as Record<string, unknown>) : {};
+                    return [
+                        [line.dialogue, REPLICA_LIMITS.dialogue],
+                        [line.onScreenText, REPLICA_LIMITS.onScreenText],
+                        [line.imagePrompt, REPLICA_LIMITS.prompt],
+                        [line.videoPrompt, REPLICA_LIMITS.prompt],
+                        [director.action, 300],
+                        [director.evidence, 200],
+                        [director.sound, 120],
+                    ].some(([value, max]) => typeof value === "string" && [...value].length > Number(max));
+                })
+            )
+                return [];
             const lines = readLines(record.lines, Math.max(...shotNumbers, 0)).filter((line) => required.has(line.shotNumber));
             if (lines.length !== required.size) return [];
+            if (meta.directed && lines.some((line) => !line.director?.action || !line.imagePrompt || !line.videoPrompt)) return [];
+            if (meta.facts && lines.some((line) => (line.director?.beat === "proof" && !line.director.evidence) || (line.director?.evidence && !meta.facts?.includes(line.director.evidence)))) return [];
+            if (meta.seconds && lines.some((line) => [...line.dialogue.replace(/\s/g, "")].length > Math.floor((meta.seconds?.get(line.shotNumber) || 0) * CHARS_PER_SECOND))) return [];
             return [{ id: `${meta.idPrefix}-${index + 1}`, angle: str(record.angle, 40) || `版本 ${index + 1}`, hook: str(record.hook, 120), lines, model: meta.model, createdAt: meta.createdAt }];
         });
         if (scripts.length) return scripts;
@@ -286,7 +326,16 @@ export function applyReplicaScript(plan: VideoReplicaPlan, script: ReplicaScript
         activeScriptId: script.id,
         shots: plan.shots.map((shot) => {
             const line = lines.get(shot.shotNumber);
-            return line ? { ...shot, dialogue: line.dialogue, onScreenText: line.onScreenText } : shot;
+            return line
+                ? {
+                      ...shot,
+                      dialogue: line.dialogue,
+                      onScreenText: line.onScreenText,
+                      ...(line.director ? { director: line.director } : {}),
+                      ...(line.imagePrompt ? { imagePrompt: line.imagePrompt } : {}),
+                      ...(line.videoPrompt ? { videoPrompt: line.videoPrompt } : {}),
+                  }
+                : shot;
         }),
     };
 }

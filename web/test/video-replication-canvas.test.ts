@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { storyboardRowReferenceNodeIds } from "@/lib/canvas/canvas-storyboard-materializer";
 import { defaultReplicaPlan, type ReplicaShotTreatment, type VideoReplicaPlan } from "@/lib/canvas/video-replica-plan";
+import { DEFAULT_REPLICA_DIRECTION } from "@/lib/canvas/replica-director";
 import type { VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { buildVideoTeardownCanvas } from "@/pages/video-replication/replication-canvas";
@@ -64,6 +65,16 @@ function build(plan: VideoReplicaPlan) {
 }
 
 describe("去画布复刻", () => {
+    test("手改导演方案也必须有具体动作与商品证明，未完成草稿不进入生成画布", () => {
+        const plan = planWith(["remake", "remake", "remake"]);
+        plan.shots[0].director = { ...DEFAULT_REPLICA_DIRECTION, beat: "proof", action: "手拿纸巾擦桌子", evidence: "吸水量提高两倍" };
+        expect(() => build(plan)).toThrow("逐字引用");
+        plan.product.sellingPoints = "厚实不掉屑";
+        plan.shots[0].director.evidence = "厚实不掉屑";
+        expect(build(plan).rows[0].videoMotionPrompt).toContain("手拿纸巾擦桌子");
+        plan.shots[0].director.action = "";
+        expect(() => build(plan)).toThrow("具体导演动作");
+    });
     test("creates a keyframe-mode storyboard instead of an image-only batch table", () => {
         const { nodes, script, rows } = build(planWith(["remake", "remake", "remake"]));
         expect(nodes.some((node) => node.type === CanvasNodeType.BatchTable)).toBe(false);

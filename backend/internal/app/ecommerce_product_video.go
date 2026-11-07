@@ -245,6 +245,9 @@ func normalizeProductVideoItem(id string, raw json.RawMessage) (map[string]json.
 	if bytes.Contains(raw, []byte(`"data:`)) {
 		return nil, BadAuthRequest("作品数据不能内嵌图片或视频，请先上传为素材")
 	}
+	if err := validateProductVideoDirector(raw); err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
 	delete(fields, "revision")
 	return fields, nil
 }

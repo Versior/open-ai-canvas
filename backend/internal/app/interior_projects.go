@@ -74,6 +74,9 @@ func (s *Service) CreateInteriorProject(actor *model.User, input InteriorProject
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateInteriorMaterialRef(actor.ID, document); err != nil {
+		return nil, err
+	}
 	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
 	count, err := s.repo.InteriorProjectCount(actor.ID)
@@ -103,6 +106,9 @@ func (s *Service) SaveInteriorProject(actor *model.User, id string, input Interi
 	}
 	name, kind, document, err := normalizeInteriorProjectInput(input)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.validateInteriorMaterialRef(actor.ID, document); err != nil {
 		return nil, err
 	}
 	s.storageMu.Lock()

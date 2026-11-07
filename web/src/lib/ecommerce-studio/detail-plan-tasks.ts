@@ -19,6 +19,7 @@ import {
     studioTemplateShotRoles,
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
+import { studioChannelDesign } from "./art-direction";
 import { studioPickedDirection, studioPrepFactsText, studioPrepPromptLines } from "./plan-prep";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioDetailPlan, type StudioPlannedScreen, type StudioPlanScope, type StudioPlanTarget, type StudioProduct, type StudioShotRole } from "./types";
@@ -272,6 +273,8 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         unsure.length ? `没有确认的信息（不能写进文案，也不能画成参数或数字）：${unsure.join("、")}` : undefined,
         "",
         "【出图条件】",
+        `平台视觉策略：${studioChannelDesign(product.platform)}`,
+        "设计交付要求：每屏只承担一个购买问题，headline 给结论，subline 给已确认的理由，lines 展开证据。画面同时指定商品焦点、文字留白、光线方向与一个主题元素；避免整套都用同一张商品棚拍加口号。摄影、信息与细节屏交替，但共享边距、字阶和栏目规范。",
         `市场：${studioMarket(brief.market).label}。${language}`,
         brief.audience.trim() ? `目标人群：${brief.audience.trim()}` : undefined,
         brief.positioning.trim() ? `价格定位：${brief.positioning.trim()}` : undefined,

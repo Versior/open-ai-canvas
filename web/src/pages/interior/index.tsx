@@ -16,6 +16,8 @@ import { interiorDownloadName, interiorImageModelOptions, interiorInitialModel, 
 import { InteriorSceneStudio, type InteriorRenderHandoff, type InteriorSceneHandoff } from "./interior-scene-studio";
 import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
+import { InteriorRenovation } from "./interior-renovation";
+import { DEFAULT_RENOVATION, renovationRenderNote, type RenovationSpec } from "@/lib/interior/renovation";
 import "./interior.css";
 
 const SURFACE_KEY = "interior:surface";
@@ -61,10 +63,11 @@ function delay(ms: number) {
 type ProjectDialog = { mode: "create" | "rename"; name: string; kind: InteriorProjectKind } | null;
 
 /** 效果图（生图）和 3D 模型（文本模型搭三维场景）共用项目，页面上切换。 */
-type InteriorWorkspace = "images" | "scene";
+type InteriorWorkspace = "images" | "scene" | "materials";
 
 function initialWorkspace(): InteriorWorkspace {
-    return window.localStorage.getItem(WORKSPACE_KEY) === "scene" ? "scene" : "images";
+    const value = window.localStorage.getItem(WORKSPACE_KEY);
+    return value === "scene" || value === "materials" ? value : "images";
 }
 
 /** 室内设计：房间照片、毛坯、线稿出装修效果图；快速出图给业主，专业模式给设计师和装企。 */
@@ -257,6 +260,7 @@ export default function InteriorPage() {
             // 比例和画质只在专业模式里显示，快速出图不提交，避免带上切换前的旧选择。
             const size = surface === "pro" && draft.size !== "auto" ? draft.size : "";
             const result = await generateInterior({
+                ...(current?.document.professional ? { professional: current.document.professional } : {}),
                 surface,
                 modeId: mode.id,
                 ...(draft.roomKey ? { roomKey: draft.roomKey } : {}),
@@ -273,6 +277,7 @@ export default function InteriorPage() {
                 roundId,
             });
             const round: InteriorRound = {
+                ...(current?.document.professional ? { professional: current.document.professional } : {}),
                 id: roundId,
                 createdAt: new Date().toISOString(),
                 surface,
@@ -385,6 +390,7 @@ export default function InteriorPage() {
             message.warning("这一轮用的出图方式已经下架");
             return;
         }
+        if (current) projects.update(current.id, (document) => ({ ...document, professional: round.professional }));
         // 优先回到这一轮当时用的交互模式，比例、画质和模型才和当时一致。
         const roundSurface = catalog.settings.allowSurfaceSwitch && (target.audience === "both" || target.audience === round.surface) ? round.surface : surface;
         const nextSurface = surfaceFor(target, roundSurface);
@@ -536,6 +542,7 @@ export default function InteriorPage() {
             options={[
                 { value: "images", label: "效果图" },
                 { value: "scene", label: "3D 模型" },
+                { value: "materials", label: "装修 / 石材" },
             ]}
         />
     );
@@ -592,6 +599,43 @@ export default function InteriorPage() {
         </AppModal>
     );
 
+    if (workspace === "materials") {
+        const createMaterialPlan = async () => {
+            try {
+                const project = await ensureProject();
+                projects.update(project.id, (document) => ({ ...document, professional: { ...DEFAULT_RENOVATION } }));
+            } catch (error) {
+                message.error(errorText(error, "材料方案保存失败"));
+            }
+        };
+        const renderMaterials = (professional: RenovationSpec) => {
+            if (current) projects.update(current.id, (document) => ({ ...document, professional }));
+            setDraft((value) => ({ ...value, notes: renovationRenderNote(professional).slice(0, 500) }));
+            changeWorkspace("images");
+            message.info("材料参数与实板照片会随生成提交；请上传空间原图并确认出图设置");
+        };
+        return (
+            <WorkspacePage scroll={false} fluid className="itd-page">
+                <section className="itd-board">
+                    {boardHeader}
+                    <div className="itd-board-scroll thin-scrollbar">
+                        <InteriorRenovation
+                            key={current?.id || "new"}
+                            value={current?.document.professional}
+                            disabled={busy || projects.projectLoading}
+                            onCreate={() => void createMaterialPlan()}
+                            onChange={(professional) => {
+                                if (current) projects.update(current.id, (document) => ({ ...document, professional }));
+                            }}
+                            onRender={renderMaterials}
+                        />
+                    </div>
+                </section>
+                {projectDialog}
+            </WorkspacePage>
+        );
+    }
+
     if (workspace === "scene") {
         return (
             <WorkspacePage scroll={false} fluid className="itd-page">
@@ -616,6 +660,7 @@ export default function InteriorPage() {
         <WorkspacePage scroll={false} fluid className="itd-page">
             <div className="itd-shell">
                 <InteriorComposer
+                    professional={current?.document.professional}
                     catalog={catalog}
                     config={config}
                     surface={surface}

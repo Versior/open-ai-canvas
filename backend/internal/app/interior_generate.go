@@ -20,20 +20,21 @@ var (
 )
 
 type InteriorGenerateInput struct {
-	Surface              string             `json:"surface"`
-	ModeID               string             `json:"modeId"`
-	RoomKey              string             `json:"roomKey,omitempty"`
-	StyleKeys            []string           `json:"styleKeys,omitempty"`
-	Params               map[string]string  `json:"params,omitempty"`
-	Notes                string             `json:"notes,omitempty"`
-	SourceResourceID     string             `json:"sourceResourceId"`
-	ReferenceResourceIDs []string           `json:"referenceResourceIds,omitempty"`
-	Count                int                `json:"count"`
-	Size                 string             `json:"size,omitempty"`
-	Quality              string             `json:"quality,omitempty"`
-	Model                *interior.ModelRef `json:"model,omitempty"`
-	ProjectID            string             `json:"projectId,omitempty"`
-	RoundID              string             `json:"roundId,omitempty"`
+	Professional         *interior.RenovationSpec `json:"professional,omitempty"`
+	Surface              string                   `json:"surface"`
+	ModeID               string                   `json:"modeId"`
+	RoomKey              string                   `json:"roomKey,omitempty"`
+	StyleKeys            []string                 `json:"styleKeys,omitempty"`
+	Params               map[string]string        `json:"params,omitempty"`
+	Notes                string                   `json:"notes,omitempty"`
+	SourceResourceID     string                   `json:"sourceResourceId"`
+	ReferenceResourceIDs []string                 `json:"referenceResourceIds,omitempty"`
+	Count                int                      `json:"count"`
+	Size                 string                   `json:"size,omitempty"`
+	Quality              string                   `json:"quality,omitempty"`
+	Model                *interior.ModelRef       `json:"model,omitempty"`
+	ProjectID            string                   `json:"projectId,omitempty"`
+	RoundID              string                   `json:"roundId,omitempty"`
 }
 
 type InteriorTaskReceipt struct {
@@ -181,12 +182,41 @@ func (s *Service) prepareInteriorGeneration(actor *model.User, req InteriorGener
 	}
 
 	prepared := &interiorPrepared{model: modelRef, count: count, params: params, parameters: parameters, refs: refs, variants: variants}
+	if req.Professional != nil {
+		if err := req.Professional.Validate(); err != nil {
+			return nil, BadAuthRequest(err.Error())
+		}
+		if req.Professional.Texture != nil {
+			id := req.Professional.Texture.ResourceID
+			textureRefs, err := s.interiorReferenceImages(actor.ID, nil, id, nil)
+			if err != nil {
+				return nil, BadAuthRequest("石材照片不存在、尚未就绪或不属于当前用户")
+			}
+			textureRefs[0]["slotKey"] = "material"
+			found := false
+			for _, ref := range prepared.refs {
+				if ref["resourceId"] == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				prepared.refs = append(prepared.refs, textureRefs[0])
+			}
+		}
+	}
 	for _, variant := range variants {
 		prompt := interior.Compile(interior.PromptInput{
 			Template: mode.PromptTemplate, RoomName: roomName, RoomPrompt: roomPrompt,
 			StyleName: variant.name, StylePrompt: variant.prompt, ParamPrompts: paramPrompts, Notes: notes,
 		})
+		if req.Professional != nil {
+			prompt += req.Professional.RenderPrompt()
+		}
 		meta := map[string]any{"modeKey": mode.Key, "modeVersion": mode.Version, "surface": surface, "params": params}
+		if req.Professional != nil {
+			meta["professional"] = req.Professional
+		}
 		for key, value := range scope {
 			meta[key] = value
 		}
