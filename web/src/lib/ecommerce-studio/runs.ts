@@ -1,5 +1,5 @@
 import { STUDIO_SINGLE_TYPES, studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioSingleTypes, studioTitleOf } from "./brief";
-import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
+import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioDetailScreenCount, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
 import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
@@ -104,6 +104,7 @@ export function studioActivePlan(product: Pick<StudioProduct, "brief">): StudioD
         const suite = product.brief.suite;
         return suite && plan.suiteId === suite.id && plan.screens.length === suite.shots.length ? plan : undefined;
     }
+    if (scope === "detail") return (plan.requestedScreens ?? plan.screens.length) === studioDetailScreenCount(product.brief) && plan.screens.length === studioDetailScreenCount(product.brief) ? plan : undefined;
     return plan;
 }
 
@@ -132,6 +133,7 @@ function baseEntries(product: StudioProduct, kind: StudioPlanKind): Omit<StudioS
     const family = product.dossier?.family || "generic";
     const plan = studioActivePlan(product);
     if (plan) return planEntries(product, plan);
+    if (product.brief.outputType === "detail-set") return [];
     if (product.brief.outputType === "template-set") {
         const shots = product.brief.suite?.shots || [];
         return shots.map((shot, index) => {
@@ -214,6 +216,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const planName = brief.outputType === "template-set" && brief.suite ? `${brief.suite.name} · ${STUDIO_DETAIL_PLAN_NAME}` : STUDIO_DETAIL_PLAN_NAME;
     const planSuite = plan ? { id: plan.id, name: planName, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}), ...(plan.concept ? { concept: plan.concept } : {}), ...(plan.motifs?.length ? { motifs: plan.motifs } : {}) } : undefined;
     if (kind) {
+        if (brief.outputType === "detail-set" && !plan) throw new Error(`先按所选 ${studioDetailScreenCount(brief)} 屏完成策划`);
         if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");
         const entries = studioSetEntries(product).filter((entry) => entry.included);
         if (!entries.length) throw new Error("镜头清单里至少留一张");

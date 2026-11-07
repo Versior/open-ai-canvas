@@ -84,10 +84,16 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 	}
 
 	plan := task("detail-plan")
+	plan.Metadata["studioPlanKind"] = "detail"
+	plan.Metadata["studioDetailScreens"] = float64(4)
+	plan.Metadata["studioTextMode"] = "model"
 	if err := svc.applyEcommerceAnalysisInstruction(&plan); err != nil {
 		t.Fatal(err)
 	}
 	prompt := plan.Config.SystemPrompt
+	if !strings.Contains(prompt, "用户选择 4 屏") || !strings.Contains(prompt, "JSON screens 正好 4 项") || !strings.Contains(prompt, "本次模型整体设计图文") {
+		t.Fatal("requested screen count and rendering contract must reach the actual worker system prompt")
+	}
 	if !strings.HasPrefix(prompt, defaultEcommerceCapabilityPrompt("detail-plan")) || plan.Prompt != "排详情页" {
 		t.Fatal("detail plan instruction must stay first and leave the user prompt alone")
 	}

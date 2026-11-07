@@ -19,16 +19,21 @@ import {
 } from "./types";
 
 /**
- * 详情页策划：详情页固定 10 屏，每一屏讲什么、画面和文案由文本模型按这件商品排，不再每件商品都用按品类固定的同一套。
- * 没有可用的文本模型时才退回按品类的默认 10 屏。
+ * 详情页策划：屏数由用户选择，每一屏讲什么、画面和文案由文本模型按商品排。
  * 这里是策划的数据规则（能排哪些屏型、读回与修改）；提示词和解析在 detail-plan-tasks.ts。
  */
 export const STUDIO_DETAIL_PLAN_CAPABILITY = "detail-plan";
 /** 出图记录和结果区里这一组的名字。 */
 export const STUDIO_DETAIL_PLAN_NAME = "按商品策划";
+export const STUDIO_DETAIL_SCREEN_OPTIONS = Array.from({ length: 19 }, (_, index) => index + 2);
+/** 程序只负责独立文字区，不假装能识别商品部位、画引线或拼镜头。 */
+export const STUDIO_OVERLAY_LAYOUTS: StudioDetailLayoutId[] = ["poster", "split", "scene", "data", "spec", "icons", "closing"];
+export function studioDetailScreenCount(brief: Pick<StudioBrief, "detailScreens">) {
+    return STUDIO_DETAIL_SCREEN_OPTIONS.includes(brief.detailScreens) ? brief.detailScreens : 10;
+}
 
 export const STUDIO_DETAIL_PLAN_LIMITS = {
-    /** 详情页固定的屏数，策划按这个数排。 */
+    /** 未选择屏数时的初始值。 */
     screens: 10,
     /** 屏型依据不够被去掉后，少于这个数就要求重新策划。 */
     minScreens: 6,
@@ -406,6 +411,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         ...(tone ? { tone } : {}),
         ...(targets.length ? { targets } : {}),
         ...(suiteId ? { suiteId } : {}),
+        ...(typeof record.requestedScreens === "number" && STUDIO_DETAIL_SCREEN_OPTIONS.includes(record.requestedScreens) ? { requestedScreens: record.requestedScreens } : {}),
         screens,
     };
 }

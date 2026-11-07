@@ -148,6 +148,8 @@ function planKnowledgeMetadata(product: StudioProduct) {
     const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
     return {
         studioPlanKind: suite ? suite.kind : scope || "detail",
+        ...(scope === "detail" ? { studioDetailScreens: product.brief.detailScreens } : {}),
+        studioTextMode: product.brief.textMode || "model",
         ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
         ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
         ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),
@@ -164,13 +166,13 @@ function taskOutputs(task: GenerationTask): StudioOutput[] {
         .map((output) => ({ resourceId: output.resourceId!, url: `/api/resources/${output.resourceId}/file`, ...(output.width ? { width: output.width } : {}), ...(output.height ? { height: output.height } : {}) }));
 }
 
-export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; suite?: StudioRun["suite"] };
+export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; suite?: StudioRun["suite"]; runId?: string };
 
 export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): StudioLocatedShot | undefined {
     if ("runId" in ref) {
         const run = studioRunOf(product, ref.runId);
         const shot = run?.shots.find((item) => item.id === shotId);
-        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite } : undefined;
+        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite, runId: run.id } : undefined;
     }
     const plan = studioPlanOf(product, ref.planKind);
     const shot = plan?.shots.find((item) => item.id === shotId);
@@ -186,8 +188,12 @@ type ModelConfig = Parameters<typeof modelCapabilityConfigFor>[0];
 export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, imageModel: string, config: ModelConfig) {
     const profile = modelCapabilityConfigFor(config, imageModel).image;
     const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
+    const run = located.runId ? studioRunOf(product, located.runId) : undefined;
+    const first = run?.kind === "detail" ? run.shots[0] : undefined;
+    const anchor = first && first.id !== located.shot.id && !product.references.length && !brief.sameLayout ? studioShotPreview(first) : undefined;
+    const source = anchor ? { ...product, references: [{ ...anchor, id: `direction-${anchor.resourceId}`, truth: false, view: "other" as const, name: "本套首屏视觉参考", addedAt: "" }] } : product;
     const compiled = compileStudioPrompt({
-        product,
+        product: source,
         textMode: located.textMode,
         shot: located.shot,
         model: imageModel,
@@ -566,16 +572,18 @@ export function useStudioRunner() {
 
     /** 按当前表单生成一组：先记下这一组，再逐张排队提交。返回新记录的 ID。 */
     const generate = useCallback(
-        (productId: string, imageModel: string) => {
+        (productId: string, imageModel: string, options: { firstOnly?: boolean } = {}) => {
             if (!imageModel) throw new Error("请先选择图片模型");
             const product = read(productId);
             if (!product.photos.length) throw new Error("请先上传商品图");
             const run = createStudioRun(product, () => nanoid(10));
+            // 全组先编译校验，避免出到一半才发现后续屏的版式或提示词无法执行。
+            for (const shot of run.shots) compileStudioShot(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite }, imageModel, configRef.current);
             update(productId, (value) => appendStudioRun(value, run), { immediate: true });
             enqueue(
                 productId,
                 { runId: run.id },
-                run.shots.map((shot) => shot.id),
+                (options.firstOnly ? run.shots.slice(0, 1) : run.shots).map((shot) => shot.id),
                 imageModel,
             );
             return run.id;
@@ -591,6 +599,10 @@ export function useStudioRunner() {
                 const shot = locateStudioShot(product, ref, shotId)?.shot;
                 return shot && !shot.attempts.some(studioAttemptActive);
             });
+            for (const shotId of runnable) {
+                const located = locateStudioShot(product, ref, shotId);
+                if (located) compileStudioShot(product, located, imageModel, configRef.current);
+            }
             if (runnable.length) enqueue(productId, ref, runnable, imageModel);
             return runnable.length;
         },

@@ -33,7 +33,7 @@ export const STUDIO_OUTPUT_TYPES: StudioOutputSpec[] = [
     { id: "spec", label: "参数图", hint: "参数表，只列已确认的参数", role: "detail-spec" },
     { id: "package", label: "包装配件", hint: "到手有什么，只放已确认的包装和配件", role: "detail-package" },
     { id: "main-set", label: "主图套图（5 张）", hint: "先按这件商品策划 5 张：首图让人认出商品，其余每张一个点击理由", set: "main" },
-    { id: "detail-set", label: "详情页（10 屏）", hint: "固定 10 屏，先按这件商品策划每一屏讲什么、怎么拍，再出图，可导出长图", set: "detail" },
+    { id: "detail-set", label: "详情页", hint: "先选择屏数，按商品信息策划阅读顺序与逐屏设计，再生成，可导出长图", set: "detail" },
     // 实际按主图还是详情页出，看选中模板的用途；没选模板前按详情页处理。
     { id: "template-set", label: "模板套图", hint: "从后台精选或内置模板库选一套，按模板逐张出图", set: "detail" },
     // 同时选了几种单张类型：每种按数量各出几张，记在同一组里。不出现在类型按钮里。
@@ -94,7 +94,25 @@ export function studioRatioValid(ratio: string) {
 }
 
 export function createStudioBrief(): StudioBrief {
-    return { brand: "", productType: "", outputType: "main", market: "cn", language: "zh", shooting: "auto", audience: "", positioning: "", extra: "", sameLayout: false, count: 1, quality: "", resolution: "", ratio: "auto", shotOrder: [], shotSkip: [] };
+    return {
+        brand: "",
+        productType: "",
+        outputType: "main",
+        market: "cn",
+        language: "zh",
+        shooting: "auto",
+        audience: "",
+        positioning: "",
+        extra: "",
+        sameLayout: false,
+        count: 1,
+        detailScreens: 10,
+        quality: "",
+        resolution: "",
+        ratio: "auto",
+        shotOrder: [],
+        shotSkip: [],
+    };
 }
 
 /** 「重置参数」：品牌和商品类型属于商品本身，保留；其余回到默认。 */
@@ -106,6 +124,7 @@ export function resetStudioBriefParameters(brief: StudioBrief): StudioBrief {
         ...createStudioBrief(),
         brand: brief.brand,
         productType: brief.productType,
+        detailScreens: brief.detailScreens,
         ...(detailPlan ? { detailPlan } : {}),
         ...(mainPlan ? { mainPlan } : {}),
         ...(singlePlan ? { singlePlan } : {}),
@@ -195,6 +214,12 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         extra: text(record.extra, 300),
         sameLayout: record.sameLayout === true,
         count: Number.isInteger(count) && STUDIO_COUNT_OPTIONS.includes(count) ? count : base.count,
+        detailScreens:
+            Number.isInteger(record.detailScreens) && Number(record.detailScreens) >= 2 && Number(record.detailScreens) <= 20
+                ? Number(record.detailScreens)
+                : detailPlan?.screens.length && detailPlan.screens.length >= 2 && detailPlan.screens.length <= 20
+                  ? detailPlan.screens.length
+                  : base.detailScreens,
         quality: text(record.quality, 20),
         resolution: typeof record.resolution === "string" && RESOLUTION_PATTERN.test(record.resolution) ? record.resolution : base.resolution,
         ratio: typeof record.ratio === "string" && (record.ratio === "auto" || studioRatioValid(record.ratio)) ? record.ratio : base.ratio,

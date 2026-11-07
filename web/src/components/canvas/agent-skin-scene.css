@@ -41,24 +41,28 @@
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
-    height: 32px;
+    height: 48px;
     margin: 0 16px;
     overflow: hidden;
     color: var(--agent-ink);
+    transition: height 180ms ease;
+}
+.agent-window-perch[data-expanded="true"] {
+    height: 120px;
 }
 .agent-perch-character {
     flex: none;
     position: relative;
-    width: 64px;
-    height: 32px;
+    width: 104px;
+    height: 100%;
     overflow: hidden;
     cursor: pointer;
 }
 .agent-perch-media {
     position: absolute;
     left: 0;
-    width: 64px;
-    height: 69px;
+    width: 104px;
+    height: 112px;
     pointer-events: none;
 }
 .agent-window-perch button:focus-visible {
@@ -67,13 +71,27 @@
 }
 .agent-perch-bubble {
     min-width: 0;
-    max-width: 240px;
+    max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.5;
-    color: var(--agent-accent);
+    color: var(--agent-ink);
+    padding: 5px 8px;
+    border-radius: var(--r-md);
+    background: var(--agent-surface-base);
+}
+.agent-window-perch[data-expanded="true"] .agent-perch-bubble {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+@media (prefers-reduced-motion: reduce) {
+    .agent-window-perch {
+        transition: none;
+    }
 }
 .agent-skin-choice {
     position: relative;

@@ -192,13 +192,13 @@ export type StudioPlannedScreen = {
     noText?: boolean;
 };
 
-/** 策划的范围：详情页（10 屏）、主图套图（5 张）、选中的几种单张图，或按选中的套图模板逐张策划。 */
+/** 策划的范围：用户选定屏数的详情页、主图套图（5 张）、选中的几种单张图，或按选中的套图模板逐张策划。 */
 export type StudioPlanScope = "detail" | "main" | "single" | "template";
 /** 单张图策划时选中的类型和每种几张；选择变了策划就不再适用。 */
 export type StudioPlanTarget = { type: StudioOutputType; count: number };
 /** 设计调性：决定版面节奏、字体、文案语气和摄影，由策划按商品挑。 */
 export type StudioDesignToneId = "global-minimal" | "editorial" | "oriental" | "lifestyle" | "tech" | "care" | "hot-seller" | "playful";
-/** 出图策划：按这件商品排的一组图（详情页 10 屏、主图 5 张或选中的单张图），由它决定每一张怎么出。 */
+/** 出图策划：按商品与用户选定数量排的一组图。 */
 export type StudioDetailPlan = {
     id: string;
     createdAt: string;
@@ -224,6 +224,8 @@ export type StudioDetailPlan = {
     targets?: StudioPlanTarget[];
     /** 模板套图策划：按哪套模板排的；换了模板策划就不再适用。 */
     suiteId?: string;
+    /** 详情页策划时用户选择的屏数；修改屏数后须重新策划。 */
+    requestedScreens?: number;
     screens: StudioPlannedScreen[];
 };
 
@@ -299,6 +301,8 @@ export type StudioBrief = {
     /** 按参考图的版式出图（同款）；没有参考图时不生效。 */
     sameLayout: boolean;
     count: number;
+    /** 详情页的总屏数，与单张类型的每种数量分别保存。 */
+    detailScreens: number;
     /** 质量或分辨率档位，取值随模型变化；空字符串表示用模型默认值。 */
     quality: string;
     /** 清晰度档位（1k、2k、4k）：模型的质量和尺寸档位分开时才用；空字符串表示生图台默认（有 1K 用 1K）。 */
@@ -307,9 +311,9 @@ export type StudioBrief = {
     ratio: string;
     /** 出图类型为「模板套图」时选中的模板。 */
     suite?: StudioSuite;
-    /** 「一键详情页」按这件商品排好的策划；有文本模型时要先策划才能出图，没有文本模型时按品类默认的清单出。 */
+    /** 详情页按这件商品与所选屏数排好的策划；必须先有有效策划才能出图。 */
     detailPlan?: StudioDetailPlan;
-    /** 主图套图的策划（5 张），规则同详情页。 */
+    /** 主图套图的策划（5 张）；没有可用文本模型时允许按品类清单出。 */
     mainPlan?: StudioDetailPlan;
     /** 单张图的策划：只在选中的类型和数量与策划时一致时使用。 */
     singlePlan?: StudioDetailPlan;

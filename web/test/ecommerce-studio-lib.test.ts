@@ -5,7 +5,7 @@ import { buildFillPrompt, buildRecognitionPrompt, extractStudioJson, parseFill, 
 import { compileStudioPrompt, studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { createStudioProduct, normalizeStudioProduct, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { createStudioRun, studioActivePlan, studioRunTitle, studioSetEntries, studioSingleTargets, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
-import { studioInfoPoints, studioRatioValid } from "@/lib/ecommerce-studio/brief";
+import { resetStudioBriefParameters, studioInfoPoints, studioRatioValid } from "@/lib/ecommerce-studio/brief";
 import { studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions } from "@/lib/ecommerce-studio/image-options";
 import { defaultImageCapabilityConfig } from "@/lib/model-capabilities";
 import { studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
@@ -52,8 +52,74 @@ function cupProduct(): StudioProduct {
 /** 套图镜头：表单的卖点写在 sellerNotes（「标题｜说明」一行一条），主标题写在 copy.headline。 */
 function setRun(product: StudioProduct, outputType: "main-set" | "detail-set") {
     const prepared = { ...product, sellerNotes: "500ml 大容量｜一天的饮水一次装够", brief: { ...product.brief, outputType } };
+    if (outputType === "detail-set") {
+        prepared.brief.detailPlan = parseDetailPlan(
+            JSON.stringify({
+                screens: Array.from({ length: prepared.brief.detailScreens }, (_, index) => ({
+                    role: index === 0 ? "detail-hero" : index === prepared.brief.detailScreens - 1 ? "detail-closing" : index === 1 ? "detail-model" : "detail-closeup",
+                    visual: "商品实拍，雾蓝背景",
+                    headline: "500ml 大容量",
+                })),
+            }),
+            prepared,
+            studioDetailPlanRoles(prepared),
+            { id: "fixture-plan", model: "m", createdAt: "" },
+        ).plan;
+    }
     return { product: prepared, plan: createStudioRun(prepared, ids(), "2026-11-01T00:00:00Z") };
 }
+
+describe("detail page requested screen count", () => {
+    test("2–20 screens keep the chosen length; invalid values and unsupported overlay designs are rejected", () => {
+        for (const count of [2, 4, 6, 10, 20]) {
+            const product = cupProduct();
+            product.brief = { ...product.brief, outputType: "detail-set", detailScreens: count };
+            const screens = Array.from({ length: count }, (_, index) => ({ role: index === 0 ? "detail-hero" : index === count - 1 ? "detail-closing" : "detail-closeup", visual: `可见细节 ${index}`, headline: "雾蓝杯身" }));
+            const plan = parseDetailPlan(JSON.stringify({ screens }), product, studioDetailPlanRoles(product), { id: "p", model: "m", createdAt: "" }).plan;
+            product.brief.detailPlan = plan;
+            expect(createStudioRun(product, ids()).shots).toHaveLength(count);
+            expect(normalizeStudioProduct(product).brief.detailScreens).toBe(count);
+        }
+        for (const count of [0, 1, 21, 4.5, "4"]) expect(normalizeStudioProduct({ ...cupProduct(), brief: { ...cupProduct().brief, detailScreens: count } }).brief.detailScreens).toBe(10);
+        const product = cupProduct();
+        product.brief = { ...product.brief, outputType: "detail-set", detailScreens: 2 };
+        const plan = parseDetailPlan(
+            JSON.stringify({
+                screens: [
+                    { role: "detail-hero", layout: "callout", visual: "引线指向商品", headline: "雾蓝杯身" },
+                    { role: "detail-closing", visual: "商品", headline: "雾蓝杯身" },
+                ],
+            }),
+            product,
+            studioDetailPlanRoles(product),
+            { id: "p", model: "m", createdAt: "" },
+        ).plan;
+        product.brief.detailPlan = plan;
+        const run = createStudioRun(product, ids());
+        expect(() => compileStudioPrompt({ product, plan: { ...run, textMode: "overlay" }, shot: run.shots[0], model: "gpt-image-2" })).toThrow("程序排版无法完成");
+    });
+    test("four selected screens drive planning and survive product persistence", () => {
+        const product = cupProduct();
+        product.brief = { ...product.brief, outputType: "detail-set", ...{ detailScreens: 4 } };
+        expect(buildDetailPlanPrompt(product, studioDetailPlanRoles(product), { scope: "detail" })).toContain("共 4 屏");
+        const saved = normalizeStudioProduct(product);
+        expect(saved?.brief).toHaveProperty("detailScreens", 4);
+        const screens = ["detail-hero", "detail-closeup", "detail-scene", "detail-closing"].map((role) => ({ role, visual: "实拍商品细节", headline: "雾蓝杯身" }));
+        product.brief.detailPlan = parseDetailPlan(JSON.stringify({ screens }), product, studioDetailPlanRoles(product), { id: "p4", model: "m", createdAt: "" }).plan;
+        expect(studioSetEntries(product)).toHaveLength(4);
+        const run = createStudioRun(product, ids());
+        expect(run.shots).toHaveLength(4);
+        expect(normalizeStudioProduct(product).brief.detailPlan?.requestedScreens).toBe(4);
+        const reset = resetStudioBriefParameters(product.brief);
+        expect(reset.detailScreens).toBe(4);
+        expect(studioActivePlan({ brief: { ...reset, outputType: "detail-set" } })?.screens).toHaveLength(4);
+        product.brief.detailScreens = 6;
+        expect(studioActivePlan(product)).toBeUndefined();
+        expect(() => createStudioRun(product, ids())).toThrow("先按所选 6 屏完成策划");
+        expect(run.shots).toHaveLength(4);
+        expect(() => parseDetailPlan(JSON.stringify({ screens }), product, studioDetailPlanRoles(product), { id: "p", model: "m", createdAt: "" })).toThrow("选择 6 屏，有效 4 屏");
+    });
+});
 
 describe("ecommerce studio prompt compiler", () => {
     test("white main image keeps truth, platform rules and no text", () => {
@@ -188,11 +254,12 @@ describe("ecommerce studio dossier tasks", () => {
     });
 });
 describe("ecommerce studio runs", () => {
-    test("a detail set follows the category sequence; a single output repeats one role", () => {
+    test("a detail set requires a complete plan; a single output repeats one role", () => {
         const product = cupProduct();
         product.dossier = { ...product.dossier!, family: "apparel" };
         product.brief = { ...product.brief, outputType: "detail-set" };
-        const detail = createStudioRun(product, ids(), "2026-11-01T00:00:00Z");
+        expect(() => createStudioRun(product, ids())).toThrow("先按所选");
+        const detail = setRun(product, "detail-set").plan;
         expect(detail.kind).toBe("detail");
         expect(detail.shots).toHaveLength(10);
         expect(detail.shots.map((shot) => shot.role)).toContain("detail-model");
@@ -253,7 +320,7 @@ describe("ecommerce studio detail plan", () => {
         ],
     });
     const planned = () => {
-        const product = { ...cupProduct(), sellerNotes: "500ml 大容量｜一天的饮水一次装够", brief: { ...cupProduct().brief, outputType: "detail-set" as const } };
+        const product = { ...cupProduct(), sellerNotes: "500ml 大容量｜一天的饮水一次装够", brief: { ...cupProduct().brief, outputType: "detail-set" as const, detailScreens: 7 } };
         const roles = studioDetailPlanRoles(product);
         const result = parseDetailPlan(reply, product, roles, { id: "plan_1", model: "deepseek", createdAt: "2026-11-01T00:00:00Z" });
         return { product: { ...product, brief: { ...product.brief, detailPlan: result.plan } }, roles, result };
@@ -278,6 +345,9 @@ describe("ecommerce studio detail plan", () => {
         expect(model.prompt).toContain("标题位置、字号与主体裁切以本屏图文构图为准");
         expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("严格按「左图右文」排");
         expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("若画面说明中的文字与主体位置相反");
+        expect(model.prompt).toContain("不能把左右分栏改成顶部标题");
+        const top = compileStudioPrompt({ product, shot: { ...run.shots[0], composition: "top" }, textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
+        expect(top.prompt).not.toContain("不能把左右分栏改成顶部标题");
         const overlay = compileStudioPrompt({ product, shot: run.shots[0], textMode: "overlay", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(overlay.prompt).toContain("从左 58%、上 12%");
         expect(studioDesignZone(run.shots[0], STUDIO_COMPOSITIONS.top.zone)).toEqual(STUDIO_COMPOSITIONS.right.zone);
@@ -349,9 +419,8 @@ describe("ecommerce studio detail plan", () => {
         expect(prompt).not.toContain("detail-spec（");
         expect(prompt).toContain("没有确认的信息（不能写进文案，也不能画成参数或数字）：内胆");
         expect(prompt).toContain("容量 500ml");
-        // 详情页固定 10 屏：要求模型正好排 10 屏，屏型可以重复，先分析买家关心什么。
-        expect(prompt).toContain("共 10 屏");
-        expect(prompt).toContain("正好排 10 屏");
+        expect(prompt).toContain("共 7 屏");
+        expect(prompt).toContain("正好排 7 屏");
         expect(prompt).toContain("屏型可以重复使用");
         expect(prompt).toContain("买这件商品的人下单前最关心什么");
         expect(prompt).not.toContain("信息少就少排");
@@ -365,9 +434,9 @@ describe("ecommerce studio detail plan", () => {
         // 去掉依据不够的屏后不到 6 屏，也要求重新策划。
         const short = JSON.stringify({ screens: (JSON.parse(reply) as { screens: unknown[] }).screens.slice(0, 5) });
         expect(() => parseDetailPlan(short, product, roles, { id: "p", model: "m", createdAt: "" })).toThrow("策划结果不完整");
-        // 多给的屏只收前 10 屏。
+        // 多给的屏也拒绝，不静默裁成用户没有确认过的新页序。
         const long = JSON.stringify({ screens: Array.from({ length: 12 }, (_, index) => ({ role: "detail-scene", title: `场景 ${index + 1}`, visual: `场景 ${index + 1} 的画面` })) });
-        expect(parseDetailPlan(long, product, roles, { id: "p", model: "m", createdAt: "" }).plan.screens).toHaveLength(10);
+        expect(() => parseDetailPlan(long, product, roles, { id: "p", model: "m", createdAt: "" })).toThrow("选择 7 屏，有效 12 屏");
     });
 
     test("a planned detail page drives the run, the shot list and the prompt", () => {
@@ -382,7 +451,8 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled.prompt).toContain("清晨地铁站");
         expect(compiled.prompt).toContain("整套视觉规范「按商品策划」");
         expect(compiled.prompt).toContain("按本屏画面说明排，不压在商品上");
-        for (const title of ["【构图与机位】", "【光线】", "【背景与道具】"]) expect(compiled.prompt).not.toContain(title);
+        for (const title of ["【构图与机位】", "【光线】", "【背景与道具】", "【品类要求】"]) expect(compiled.prompt).not.toContain(title);
+        expect(compiled.prompt).toContain("不照搬原图的背景");
         const skipped = { ...product, brief: toggleStudioSetEntry(product, "p1") };
         expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "杯盖", "握持", "办公桌", "收尾"]);
         // 不加文字时策划的文案也不进图。
@@ -402,7 +472,7 @@ describe("ecommerce studio detail plan", () => {
         const prompt = buildDetailPlanPrompt(product, roles);
         expect(prompt).toContain("【可以用的版式】");
         expect(prompt).toContain("icons（图标卖点）");
-        expect(prompt).toContain("整套至少用到 6 种版式");
+        expect(prompt).toContain("不强制凑版式种类");
         expect(prompt).toContain("整组共用的字体家族、色板、边距和图形语言");
         expect(prompt).toContain("以「雾感极简」为基础");
         expect(prompt).not.toContain('"styleId"');
@@ -613,20 +683,20 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("放进 concept");
         expect(prompt).toContain("写进 motifs");
         expect(prompt).toContain("换成别的商品就不成立");
-        expect(prompt).toContain("至少三张不出现");
-        expect(prompt).toContain("整件商品连同包装完整摆拍的张数不超过一半");
+        expect(prompt).toContain("不强制数量比例");
+        expect(prompt).toContain("短页优先讲清商品");
         expect(prompt).toContain("不写空洞大词和泛情绪口号");
         expect(prompt).toContain('"positioning":"差异化定位"');
-        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("至少两张不出现");
+        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("主图只保留有助于识别的元素");
         expect(prompt).toContain("11. inspiration 用一句话");
         expect(prompt).toContain('"concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么"');
         // 视觉节奏与创意：整套一个色彩世界、机位和创意手法都有要求，信息少时不拿标识凑数；主色要撑得起整屏。
         expect(prompt).toContain("【视觉节奏与创意】");
         expect(prompt).toContain("整套一个色彩世界");
-        expect(prompt).toContain("同一个商品角度和景别整套最多用两次");
-        expect(prompt).toContain("首屏必须有");
+        expect(prompt).toContain("景别变化服务于内容");
+        expect(prompt).toContain("不强制悬浮");
         expect(prompt).toContain("商品标识、印字和型号不单独成屏");
-        expect(prompt).toContain("至少两屏用强对比");
+        expect(prompt).toContain("不强制深色或饱和色");
         expect(prompt).toContain("可见外观可以作为设计主题，不能冒充舒适度或性能");
         expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张共用字体家族与色板");
         // 没有附图时不写附图说明。

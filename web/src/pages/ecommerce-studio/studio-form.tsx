@@ -30,7 +30,7 @@ import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioChannelDesign } from "@/lib/ecommerce-studio/art-direction";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
-import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
+import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
 import { studioAnsweredAsks, studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
 import { moveStudioSetEntry, studioActivePlan, studioEntryRatio, studioPlanScopeOf, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
@@ -200,11 +200,12 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const typeHint = singles.length > 1 ? [`${singles.map((item) => item.label).join("、")}，每种 ${brief.count} 张，共 ${images} 张`, noTextNote].filter(Boolean).join("；") : noTextNote || spec.hint;
     const uploading = uploads.pending.photos + uploads.pending.references > 0;
     const suiteMissing = brief.outputType === "template-set" && !brief.suite;
-    // 详情页 10 屏、主图 5 张都由策划按这件商品排，策划前不能生成；只有没有可用的文本模型时才按品类默认的清单出。
+    // 详情页必须先按用户选定屏数策划；主图套图没有可用文本模型时仍可按品类清单出。
     // 单张图和模板套图可以直接出，也可以先策划；模板套图按模板的张数策划。
-    const planScreens = scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scope === "template" ? brief.suite?.shots.length || 0 : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
+    const planScreens =
+        scope === "detail" ? studioDetailScreenCount(brief) : scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scope === "template" ? brief.suite?.shots.length || 0 : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
     const planUnit = scope === "template" ? unit : scopeMeta?.unit || "张";
-    const planMissing = (scope === "detail" || scope === "main") && !activePlan && Boolean(text.value);
+    const planMissing = !activePlan && (scope === "detail" || (scope === "main" && Boolean(text.value)));
     const planField = scope ? STUDIO_PLAN_FIELD[scope] : "detailPlan";
     const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
     // 明确不收图的文本模型识别不了商品：「AI 分析并策划」跳过识别，直接按表单和档案的文字策划。
@@ -274,8 +275,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 result.issues.length ? `${result.issues.length} 处用词需要留意` : "",
                 result.tacky.length ? `文案里有「${result.tacky.join("」「")}」这类说法，可以在补充调整里要求换掉` : "",
                 // 详情页版式变化不够时如实提示，由用户决定要不要按补充调整重排。
-                scope === "detail" && (result.layoutKinds < 6 || result.layoutRepeats) ? `版式变化不够（${result.layoutKinds} 种版式${result.layoutRepeats ? `，${result.layoutRepeats} 处相邻两屏版式相同` : ""}），可以在补充调整里要求多换几种` : "",
-                scope === "detail" && !product.brief.sameLayout && (result.compositionKinds < 4 || result.compositionRepeats) ? "图文构图变化不足，可换方向重新策划，或逐屏调整图文构图" : "",
+                scope === "detail" && count >= 4 && !product.brief.sameLayout && result.compositionKinds < Math.min(4, Math.ceil(count / 2)) ? "图文重心较相似，可逐屏调整构图" : "",
             ].filter(Boolean);
             const summary = `已按这件商品排好 ${count} ${planUnit}${notes.length ? `，${notes.join("，")}` : ""}`;
             // 不足预定张数时如实说明，让用户决定直接出还是重新策划。
@@ -351,14 +351,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     // 文案直接用卖点原文，是最普通的出法。「不策划，直接生成」跳过这一步。
     const lazyPlan = scope === "single" || scope === "template";
     const planBeforeGenerate = lazyPlan && !activePlan && Boolean(text.value);
-    const generate = async ({ direct = false } = {}) => {
+    const generate = async ({ direct = false, firstOnly = false } = {}) => {
         if (blocked) return void message.warning(blocked);
         if (planBeforeGenerate && !direct) {
             message.info(`先按这件商品策划这 ${planScreens} ${planUnit}，策划好就开始出图`);
             if (!(await analyzeAndPlan())) return;
         }
         try {
-            runner.generate(ensure(), image.value);
+            runner.generate(ensure(), image.value, { firstOnly });
             onGenerated();
         } catch (error) {
             message.error(error instanceof Error ? error.message : "生成失败");
@@ -584,15 +584,21 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <Field label="生图模型" span={6}>
                         <StudioModelPicker kind="image" imageCount={Math.max(1, referenceCount)} placeholder="选择图片模型" />
                     </Field>
-                    <Field label={singles.length > 1 ? "每种数量" : "数量"} span={2}>
+                    <Field label={scope === "detail" ? "详情屏数" : singles.length > 1 ? "每种数量" : "数量"} span={2} hint={scope === "detail" ? "先选屏数，再策划" : undefined}>
                         <Select
                             appearance="field"
                             size="large"
-                            value={setKind ? images : brief.count}
-                            disabled={Boolean(setKind)}
-                            options={setKind ? [{ value: images, label: `${images} ${unit}` }] : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))}
-                            ariaLabel="数量"
-                            onChange={(value: number) => editBrief({ count: value })}
+                            value={scope === "detail" ? studioDetailScreenCount(brief) : setKind ? images : brief.count}
+                            disabled={Boolean(setKind && scope !== "detail") || Boolean(planning)}
+                            options={
+                                scope === "detail"
+                                    ? STUDIO_DETAIL_SCREEN_OPTIONS.map((count) => ({ value: count, label: `${count} 屏` }))
+                                    : setKind
+                                      ? [{ value: images, label: `${images} ${unit}` }]
+                                      : STUDIO_COUNT_OPTIONS.map((count) => ({ value: count, label: `${count} 张` }))
+                            }
+                            ariaLabel={scope === "detail" ? "详情屏数" : "数量"}
+                            onChange={(value: number) => editBrief(scope === "detail" ? { detailScreens: value, shotOrder: [], shotSkip: [] } : { count: value })}
                         />
                     </Field>
                     <Field label={resolutionOptions.length ? "清晰度 · 质量" : "质量"} span={2}>
@@ -672,7 +678,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                                   ? "没有可用的文本模型，按出图类型直接出"
                                                   : scope === "template"
                                                     ? "没有可用的文本模型，按模板直接出"
-                                                    : `按品类默认的 ${entries.length} ${planUnit}`
+                                                    : scope === "detail"
+                                                      ? `先选择文本模型，策划这 ${planScreens} 屏`
+                                                      : `按品类默认的 ${entries.length} ${planUnit}`
                                               : scope === "single"
                                                 ? `可以先让 AI 策划这 ${planScreens} 张`
                                                 : scope === "template"
@@ -773,6 +781,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
                     重置参数
                 </Button>
+                {scope === "detail" && activePlan && images > 1 ? (
+                    <Button size="large" disabled={Boolean(blocked) || Boolean(running)} onClick={() => void generate({ firstOnly: true })}>
+                        先试首屏
+                    </Button>
+                ) : null}
                 <Tooltip title={blocked || undefined}>
                     <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked) || planning || filling} loading={planBeforeGenerate && (planning || filling)} onClick={() => void generate()}>
                         {planBeforeGenerate

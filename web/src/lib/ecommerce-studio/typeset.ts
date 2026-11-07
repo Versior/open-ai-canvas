@@ -14,28 +14,29 @@ export type StudioMeasure = (text: string, size: number, weight: number, family?
 
 type Block = { text: string; size: number; weight: number; tone: "ink" | "soft"; gapBefore: number; family?: string; tracking?: number };
 
-/** 英文按单词换行，中文和超长词逐字换行。 */
+/** 空格与手工分行保留短语边界；没有断句的长中文再逐字换行。 */
 export function wrapStudioText(text: string, maxWidth: number, measure: (value: string) => number) {
     const lines: string[] = [];
     let current = "";
-    for (const token of text.match(/\n|[A-Za-z0-9.%+\-/#]+|[^\S\n]+|./gu) || []) {
+    for (const token of text.match(/\n|[^\s]+|[^\S\n]+/gu) || []) {
         if (token === "\n") {
             lines.push(current.trimEnd());
             current = "";
             continue;
         }
         const next = current + token;
-        if (!current || measure(next) <= maxWidth) {
+        if (measure(next) <= maxWidth) {
             current = next;
             continue;
         }
-        lines.push(current.trimEnd());
-        current = token.trimStart();
-        while (current && measure(current) > maxWidth && current.length > 1) {
-            let cut = current.length - 1;
-            while (cut > 1 && measure(current.slice(0, cut)) > maxWidth) cut -= 1;
-            lines.push(current.slice(0, cut));
-            current = current.slice(cut);
+        if (current.trim()) lines.push(current.trimEnd());
+        current = "";
+        for (const character of Array.from(token.trimStart())) {
+            if (current && measure(current + character) > maxWidth) {
+                lines.push(current);
+                current = "";
+            }
+            current += character;
         }
     }
     if (current.trim()) lines.push(current.trimEnd());
@@ -98,6 +99,23 @@ export function planStudioTypeset(input: { canvas: { width: number; height: numb
 }
 
 export type StudioArtwork = { text: StudioTypesetOp[]; rules: { x1: number; y1: number; x2: number; y2: number }[] };
+
+/** 按实际底图检验文字对比，不用浅色预设的灰字硬盖在深色摄影上。 */
+export function studioReadableInk(ink: string, background: [number, number, number]) {
+    const luminance = (rgb: number[]) =>
+        rgb
+            .map((value) => value / 255)
+            .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
+            .reduce((total, value, index) => total + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const parse = (color: string) => [1, 3, 5].map((index) => parseInt(color.slice(index, index + 2), 16));
+    const base = luminance(background);
+    const contrast = (color: string) => {
+        const foreground = luminance(parse(color));
+        return (Math.max(base, foreground) + 0.05) / (Math.min(base, foreground) + 0.05);
+    };
+    if (/^#[0-9a-f]{6}$/i.test(ink) && contrast(ink) >= 4.5) return ink;
+    return contrast("#182028") >= contrast("#FFFFFF") ? "#182028" : "#FFFFFF";
+}
 
 /** 表格、卖点网格与数字海报各自排版，所有坐标仍限制在生成时约定的留白内。 */
 export function planStudioArtwork(input: { canvas: { width: number; height: number }; zone: StudioTextZone; content: StudioTypesetText; measure: StudioMeasure; layout?: string; tone?: StudioDesignToneId }): StudioArtwork {
@@ -172,6 +190,22 @@ export async function typesetStudioImage(input: { imageUrl: string; zone: Studio
     };
     context.textBaseline = "top";
     const artwork = planStudioArtwork({ canvas, zone: input.zone, content: input.content, layout: input.layout, measure, tone: input.tone });
+    // 绘制任何文字之前采样，避免把刚画上的字当作背景；每行独立检验。
+    const colors = artwork.text.map((op) => {
+        const width = Math.min(canvas.width, measure(op.text, op.size, op.weight, op.family) + Math.max(0, Array.from(op.text).length - 1) * (op.tracking || 0));
+        const x = Math.max(0, Math.floor(op.x - (op.align === "center" ? width / 2 : 0)));
+        const y = Math.max(0, Math.floor(op.y));
+        const pixels = context.getImageData(x, y, Math.max(1, Math.min(canvas.width - x, Math.ceil(width))), Math.max(1, Math.min(canvas.height - y, Math.ceil(op.size)))).data;
+        const sum: [number, number, number] = [0, 0, 0];
+        let count = 0;
+        for (let index = 0; index < pixels.length; index += 32) {
+            sum[0] += pixels[index];
+            sum[1] += pixels[index + 1];
+            sum[2] += pixels[index + 2];
+            count += 1;
+        }
+        return studioReadableInk(op.tone === "ink" ? input.ink : input.inkSoft, [sum[0] / count, sum[1] / count, sum[2] / count]);
+    });
     context.strokeStyle = input.inkSoft;
     context.globalAlpha = 0.25;
     context.lineWidth = Math.max(1, canvas.width * 0.001);
@@ -182,10 +216,10 @@ export async function typesetStudioImage(input: { imageUrl: string; zone: Studio
         context.stroke();
     }
     context.globalAlpha = 1;
-    for (const op of artwork.text) {
+    for (const [index, op] of artwork.text.entries()) {
         context.font = `${op.weight} ${op.size}px ${op.family || STUDIO_SANS}`;
         context.letterSpacing = `${op.tracking || 0}px`;
-        context.fillStyle = op.tone === "ink" ? input.ink : input.inkSoft;
+        context.fillStyle = colors[index];
         context.textAlign = op.align;
         context.fillText(op.text, op.x, op.y);
     }

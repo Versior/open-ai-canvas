@@ -9,8 +9,10 @@ import {
     STUDIO_DETAIL_PLAN_LIMITS,
     STUDIO_DETAIL_SCREEN_GUIDE,
     STUDIO_PLAN_SCOPES,
+    STUDIO_OVERLAY_LAYOUTS,
     studioDetailLayoutIds,
     studioDetailPlanFacts,
+    studioDetailScreenCount,
     studioPlannedScreenOf,
     studioPlanMotifs,
     studioPlanStyleId,
@@ -63,7 +65,7 @@ function styleLines(product: StudioProduct): string[] {
 }
 
 /**
- * 这次策划的范围：详情页 10 屏、主图 5 张、按选中的单张类型逐张出，或按表单里选中的模板一张对一张排；
+ * 这次策划的范围：用户选定屏数的详情页、主图 5 张、按选中的单张类型逐张出，或按表单里选中的模板一张对一张排；
  * previous 是要按补充调整修改的上一版。images 是随任务附带的图：先是商品图，后面是卖家上传的参考图（大牌或爆款截图）。
  */
 export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; alternative?: StudioDetailPlan; images?: { photos: number; references: number } };
@@ -93,6 +95,7 @@ export function studioPlanTargetRoles(targets: StudioPlanTarget[]): StudioShotRo
 function screenCount(product: StudioProduct, request: StudioPlanRequest) {
     if (request.scope === "single") return studioPlanTargetRoles(request.targets || []).length;
     if (request.scope === "template") return product.brief.suite?.shots.length || 0;
+    if (request.scope === "detail") return studioDetailScreenCount(product.brief);
     return STUDIO_PLAN_SCOPES[request.scope].screens;
 }
 
@@ -137,7 +140,7 @@ function scopeRequirement(product: StudioProduct, request: StudioPlanRequest): s
     if (request.scope === "template")
         return `2. 按模板的顺序正好给出 ${count} 张，第 N 张对应模板第 N 张：保留模板这一张的目的和大致的画面类型（白底、场景、细节、模特、参数……），画面、构图、版式和文案按这件商品重新写。role 优先用模板这一张的建议 role，必须从可以排的屏型里选；模板这一张要讲的东西（参数、材质、尺寸、包装、几种颜色款式、某项功能、某个痛点）这件商品没有依据时，换成有依据的内容讲同一个目的，不编参数、款式和功能。模板标了「这张不放文字」的写 noText: true。${product.brief.suite?.kind === "main" ? "这是主图模板，文字比详情页更少：主标题不超过 8 个字，最多一行副标题，不排参数表。" : ""}`;
     if (request.scope === "detail")
-        return `2. 正好排 ${count} 屏：第一屏用 detail-hero，最后一屏用 detail-closing，中间各屏的主题和顺序按第 1 条的分析来定。屏型可以重复使用（比如两屏卖点、两屏不同的使用场景、两屏不同部位的细节），但每屏讲的内容和画面都不能重复。信息不够时多排使用场景、种草、使用效果和商品图里看得到的细节，不编参数，也不把同一个卖点换个说法再讲一遍。整套像一个品牌故事：开头抓人，中段证明，结尾收束，节奏有起伏（大图屏和信息屏交替）。`;
+        return `2. 用户选择了 ${count} 屏，正好排 ${count} 屏：第一屏用 detail-hero，最后一屏用 detail-closing，中间各屏的主题和顺序按第 1 条的分析来定。屏型可以重复使用，但每屏回答不同的购买问题。短页把相近证据合并，长页展开有依据的细节、操作和选购条件；不按十屏模板裁剪或补齐。信息不足以支持这么多独立主题时，在 summary 说明缺少什么，并安排无字的真实商品细节摄影，不编卖点，不把同一个卖点换个说法再讲一遍。结尾回顾选购依据，不虚构售后承诺。`;
     if (request.scope === "main") {
         const main = ecommerceRoleSpec(product.platform, "main");
         const first = [main?.whiteBackground ? "纯白背景" : "", main?.noText ? "不放任何文字" : "最多一行很短的标题"].filter(Boolean).join("、");
@@ -167,11 +170,11 @@ function rhythmLines(request: StudioPlanRequest): string[] {
     if (request.scope === "detail")
         return [
             head,
-            `- ${STUDIO_COLOR_WORLD}。至少两屏用强对比（深底浅字，或一整块饱和主色），不能整套都是同一档浅色渐变，也不能每屏换一种互不相干的背景。`,
+            `- ${STUDIO_COLOR_WORLD}。按商品气质控制明暗节奏，不强制深色或饱和色；避免每屏换一种互不相干的背景。`,
             "- 系列感来自字体家族、色板和边距，不固定栏目头位置或字号。大标题、微距、满版场景、侧栏与信息页交替，不能每屏都是顶端标题加居中商品。",
-            "- 机位要有变化：同一个商品角度和景别整套最多用两次；至少一屏超近微距，一屏有人或手和商品互动，一屏是创意静物。",
+            "- 景别变化服务于内容：整体、可见部位微距、实际使用各有职责。只有正面实拍时不强制转角；人物、手部和道具仅在帮助说明商品时出现，不为追求多样性硬加。",
             STUDIO_VISUALIZE,
-            `- 关键几屏要有一个创意手法（首屏必须有）：${STUDIO_CREATIVE_DEVICES}。把用到的手法写进 visual，写清楚画面怎么做。`,
+            "- 首屏先保证商品识别、清楚的标题和一个视觉焦点。创意可以来自光影、尺度和留白，不强制悬浮、微缩或文字穿插；不叠加多个互相争夺注意力的手法。",
             "- 信息少时不要凑数：商品标识、印字和型号不单独成屏，也不当卖点；用使用场景、情绪时刻、创意静物和质感细节来撑，不把同几条外观换个说法反复讲。",
         ];
     if (request.scope === "main")
@@ -210,7 +213,7 @@ function productRealityLines(product: StudioProduct): string[] {
         );
     }
     const kids = product.dossier?.family === "baby-toys" || KIDS.test(`${studioProductTypeOf(product)} ${product.dossier?.category || ""} ${product.dossier?.name || ""} ${product.name}`);
-    if (kids) lines.push("- 这是给孩子用的商品：色彩世界要明亮、有温度（奶黄、草绿、天蓝、暖橙这类），多拍孩子真实的笑和动作，不要整套灰白或冷灰调，也不选国际大牌极简调性。");
+    if (kids) lines.push("- 这是给孩子用的商品：区分家长选购与孩子使用。人物适龄、动作自然；色彩和调性服从用户选定方向，不默认卡通、撞色或强制人物出镜。");
     return lines;
 }
 
@@ -275,6 +278,9 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "",
         "【出图条件】",
         `平台视觉策略：${studioChannelDesign(product.platform)}`,
+        brief.textMode === "overlay"
+            ? "交付方式：程序排版。只选择 poster、split、scene、data、spec、icons、closing；这些版式可在独立留白区准确排字。不要选需要标签贴在商品部位的引线、拼格、机理或成分图；程序不会自动识别部位。visual 只描述无字摄影及 composition 对应的留白，不把文字、表格、图标和引线画进底图。"
+            : "交付方式：模型完成整屏图文设计。标题、标签、引线与商品位置一起设计，逐字使用给定文案。",
         "设计交付要求：每屏只承担一个购买问题，headline 给结论，subline 给已确认的理由，lines 展开证据。画面同时指定商品焦点、文字留白、光线方向与一个主题元素；避免整套都用同一张商品棚拍加口号。摄影、信息与细节屏交替，但共享边距、字阶和栏目规范。",
         `市场：${studioMarket(brief.market).label}。${language}`,
         brief.audience.trim() ? `目标人群：${brief.audience.trim()}` : undefined,
@@ -303,7 +309,9 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
               })),
         request.scope === "single" ? undefined : "",
         "【可以用的版式】（layout 只能从这里选；平台上做得好的图每张都是排过版的画面，不是一张商品照片加一行字）",
-        ...studioDetailLayoutIds(product).map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
+        ...studioDetailLayoutIds(product)
+            .filter((id) => brief.textMode !== "overlay" || STUDIO_OVERLAY_LAYOUTS.includes(id))
+            .map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
         "",
         "【设计调性】（挑一个最适合这件商品和目标人群的写进 tone，整组的版面、字体、文案语气和摄影都按它来）",
         ...STUDIO_DESIGN_TONE_IDS.map((id) => `- ${id}（${STUDIO_DESIGN_TONES[id].label}）：${STUDIO_DESIGN_TONES[id].use}；${studioTypeInstruction(id)}`),
@@ -326,8 +334,8 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "【要求】",
         "1. 先做视觉策划，再排每一张（详见系统提示里的设计策划知识）：① 想清楚买这件商品的人下单前最关心什么、最担心什么，买的人和用的人是不是同一个人；② 同类商品的详情页通常长什么样，这组图要避开哪些套路；③ 用一句话写差异化定位，写进 positioning（不超过 40 个字）；④ 由定位推出一个具体的视觉主题，写成创意主线放进 concept（不超过 60 个字）：一个具体的世界或场景，不是一种颜色，换成别的商品就不成立；⑤ 从主题里取 3–5 个能反复使用的视觉元素写进 motifs（每个不超过 8 个字，比如道具、自然物、光影、图形、动作）。不用放在任何商品上都成立的通用画面（纯色背景加商品居中、泛泛的居家场景、空洞的大理石台面、整套同一条波浪曲线）。",
         scopeRequirement(product, request),
-        `每屏选一个 composition 图文骨架：${STUDIO_COMPOSITION_IDS.map((id) => `${id}（${STUDIO_COMPOSITIONS[id].label}：${STUDIO_COMPOSITIONS[id].render}）`).join("；")}。visual 的文字与商品位置须与 composition 一致；内容版式 layout 定信息怎么表达，composition 定主体与留白在哪里。白底纯商品图不选 composition。${request.scope === "detail" ? "10 屏至少使用 4 种构图骨架，相邻两屏不重复同一骨架。" : "有文字的多张图交替构图骨架，单张图选最适合本商品的一种。"}`,
-        `3. 每张只承担一个目的，并选一个最适合讲这件事的 layout。${request.scope === "detail" ? "相邻两屏的版式不能相同，整套至少用到 6 种版式；同一种屏型不能连续超过两屏；" : "相邻两张的版式尽量不同；"}相邻两张的景别、机位和场景也不能相同。`,
+        `每屏选一个 composition 图文骨架：${STUDIO_COMPOSITION_IDS.map((id) => `${id}（${STUDIO_COMPOSITIONS[id].label}：${STUDIO_COMPOSITIONS[id].render}）`).join("；")}。visual 的文字与商品位置须与 composition 一致；内容版式 layout 定信息怎么表达，composition 定主体与留白在哪里。白底纯商品图不选 composition。${request.scope === "detail" ? `这 ${count} 屏建议使用 ${Math.min(4, Math.ceil(count / 2))} 种构图骨架；按主题变化，不为凑种类拆散系列感。` : "有文字的多张图交替构图骨架，单张图选最适合本商品的一种。"}`,
+        "3. 每张只承担一个目的，按内容选最合适的 layout，不强制凑版式种类。首屏建立识别，证据屏把细节讲清，摄影屏留呼吸；同一组件可复用，但不要连续重复同一照片和信息。",
         "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字），像摄影师和美术指导的分镜说明：背景或场景、商品怎么摆、什么角度和焦段、人物和动作（如有）、道具（不超过 3 件）、主色调、光线的方向和质感，以及按版式怎么分区、文字放在哪里。visual 和 style 里不写任何品牌名（上面提到的大牌只用来定调性），也不写「参考某某官网」。",
         "5. elements 写这一张的信息元素（不超过 80 个字）：图标卖点写几个图标、各画什么；引线标注写引线指向哪几个部位，要不要圆形放大镜头；拼格写每格放哪个部位；对照写两栏各放什么；痛点共鸣写人物神情和几个气泡标签，或宫格每格的场景；机理示意写剖面分几层、光点和箭头从哪到哪；成分特写写每个成分放在什么容器里；其他版式写装饰元素（色块、细线、圆角卡片、底部一排小图）。只写画面元素，不加新的事实，不写屏的序号、页码和屏号。",
         "6. 商品图里看不到的角度、内部结构、配件和包装不要安排成画面主体。",
@@ -338,7 +346,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
         request.scope === "single"
             ? "12. 视觉元素选用一两个融进画面，不要把所有元素堆在一张里。visual 里没写包装盒时，画面里就只有 visual 写到的商品部分。"
-            : `12. 视觉元素每张选用一两个，换着形式出现（实物、光影、局部、图形），至少${mainLike ? "两" : "三"}张不出现；不要把同一个图形贴在每一张上。整件商品连同包装完整摆拍的张数不超过一半，包装盒最多出现在两三张，其余张用质地、局部、使用中的手和人、场景、机理示意来讲；visual 里没写包装盒的张，画面里就只有 visual 写到的商品部分。`,
+            : `12. 视觉元素可选，不要把同一个图形贴在每一张上。整件商品与局部景别按内容交替，不强制数量比例；包装仅在商品资料确认且该屏需要时出现。${mainLike ? "主图只保留有助于识别的元素。" : "短页优先讲清商品，长页展开证据，不为装饰堆道具。"}`,
         "",
         "只输出下面这个 JSON，不要任何解释：",
         `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${exampleRole}","layout":"poster","composition":"left","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
@@ -386,6 +394,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const finish = (planned: StudioPlannedScreen): StudioPlannedScreen => {
         const screen = layouts.has(planned.layout) ? planned : { ...planned, layout: studioRoleLayout(planned.role) };
         if (textless || screen.noText || screen.role === "main-white") return { ...screen, composition: undefined, headline: "", subline: "", lines: [], noText: true };
+        if (product.brief.textMode === "overlay" && !STUDIO_OVERLAY_LAYOUTS.includes(screen.layout)) throw new Error(`程序排版无法完成「${STUDIO_DETAIL_LAYOUTS[screen.layout].label}」，请改用模型整体设计或重新策划独立文字区`);
         return { ...screen, headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
     };
     let screens: StudioPlannedScreen[];
@@ -419,9 +428,14 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         screens = offered
             .map((screen) => studioPlannedScreenOf(screen))
             .filter((screen): screen is StudioPlannedScreen => Boolean(screen && allowed.has(screen.role)))
-            .slice(0, scope.screens)
             .map(finish);
-        if (screens.length < scope.minScreens) throw new Error("策划结果不完整，请重试或换一个文本模型");
+        if (request.scope === "detail") {
+            const expected = screenCount(product, request);
+            if (screens.length !== expected) throw new Error(`策划结果不完整（选择 ${expected} 屏，有效 ${screens.length} 屏），请重新策划；不会补入默认屏或直接扣费出图`);
+        } else {
+            screens = screens.slice(0, scope.screens);
+            if (screens.length < scope.minScreens) throw new Error("策划结果不完整，请重试或换一个文本模型");
+        }
         // 主图第一张要在搜索列表里一眼认出商品：模型没把白底图或卖点主图放第一张时，把排在最前的那张挪上来。
         const first = request.scope === "main" ? screens.findIndex((screen) => screen.role === "main-white" || screen.role === "main-selling") : -1;
         if (first > 0) screens = [screens[first], ...screens.filter((_, index) => index !== first)];
@@ -453,6 +467,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             ...(tone ? { tone } : {}),
             ...(request.scope === "single" ? { targets: request.targets } : {}),
             ...(suite ? { suiteId: suite.id } : {}),
+            ...(request.scope === "detail" ? { requestedScreens: screenCount(product, request) } : {}),
             screens,
         },
         dropped: request.scope === "single" || request.scope === "template" ? 0 : offered.length - screens.length,
