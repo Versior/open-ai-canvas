@@ -17,7 +17,7 @@ import { InteriorSceneStudio, type InteriorRenderHandoff, type InteriorSceneHand
 import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
 import { InteriorRenovation } from "./interior-renovation";
-import { InteriorNavigator, type InteriorWorkspace } from "./interior-navigator";
+import { availableInteriorTasks, InteriorNavigator, type InteriorWorkspace } from "./interior-navigator";
 import { DEFAULT_RENOVATION, renovationProblem, type RenovationSpec } from "@/lib/interior/renovation";
 import "./interior.css";
 
@@ -178,6 +178,18 @@ export default function InteriorPage() {
         const kept = available.find((item) => item.id === draft.modeId);
         // 出图方式不变也要按新模式重新预选模型（快速出图跟推荐走，专业模式保留用户的选择）。
         if (kept || available[0]) selectMode(kept || available[0], next);
+    };
+
+    const openDesignTask = (next: InteriorMode) => {
+        if (!catalog || !availableInteriorTasks(catalog, surface).some((mode) => mode.id === next.id)) {
+            message.error("当前交互模式不支持该出图方式，请联系管理员调整模式设置");
+            return false;
+        }
+        const nextSurface = surfaceFor(next, surface);
+        setSurface(nextSurface);
+        window.localStorage.setItem(SURFACE_KEY, nextSurface);
+        selectMode(next, nextSurface);
+        return true;
     };
 
     const upload = useCallback(async (file: File, apply: (value: InteriorUpload | null) => void) => {
@@ -577,6 +589,7 @@ export default function InteriorPage() {
     const navigator = (
         <InteriorNavigator
             catalog={catalog}
+            surface={surface}
             workspace={workspace}
             modeId={draft.modeId}
             disabled={busy || projects.projectLoading}
@@ -586,12 +599,7 @@ export default function InteriorPage() {
             outputs={current?.document.rounds.flatMap((round) => round.items.flatMap((item) => item.outputs)).length || 0}
             sceneReady={Boolean(current?.document.scenes?.some((scene) => scene.sceneFile?.resourceId))}
             onWorkspace={changeWorkspace}
-            onMode={(next) => {
-                const nextSurface = surfaceFor(next, surface);
-                setSurface(nextSurface);
-                window.localStorage.setItem(SURFACE_KEY, nextSurface);
-                selectMode(next, nextSurface);
-            }}
+            onMode={openDesignTask}
         />
     );
 
@@ -638,10 +646,7 @@ export default function InteriorPage() {
                 message.error("对应的材料出图方式尚未启用，请联系管理员启用局部微调或风格改造");
                 return;
             }
-            const nextSurface = surfaceFor(next, surface);
-            setSurface(nextSurface);
-            window.localStorage.setItem(SURFACE_KEY, nextSurface);
-            selectMode(next, nextSurface);
+            if (!openDesignTask(next)) return;
             setUseMaterials(true);
             if (current) projects.update(current.id, (document) => ({ ...document, professional }));
             changeWorkspace("images");

@@ -114,6 +114,9 @@ func validateFashionWork(raw json.RawMessage) error {
 			return errors.New("模特图片任务结构无效")
 		}
 		ids[unit.ID] = true
+		if unit.ResourceID != "" && assets.ValidID(unit.ResourceID) != unit.ResourceID {
+			return errors.New("模特图片成品资源标识无效")
+		}
 		if unit.Status == "succeeded" && unit.ResourceID == "" {
 			return errors.New("成功的模特图片须有成品资源")
 		}
@@ -127,6 +130,9 @@ func validateFashionWork(raw json.RawMessage) error {
 		}
 		if unit.Video != nil && (unit.Video.Model == "" || utf8.RuneCountInString(unit.Video.Model) > 200 || unit.Video.Seconds < 1 || unit.Video.Seconds > 120 || unit.Video.Prompt == "" || utf8.RuneCountInString(unit.Video.Prompt) > 2000) {
 			return errors.New("模特视频任务结构无效")
+		}
+		if unit.Video != nil && unit.Video.ResourceID != "" && assets.ValidID(unit.Video.ResourceID) != unit.Video.ResourceID {
+			return errors.New("模特视频成品资源标识无效")
 		}
 		if unit.Video != nil && (unit.ResourceID == "" || (unit.Video.Status != "" && !slices.Contains([]string{"pending", "running", "succeeded", "failed"}, unit.Video.Status)) || (unit.Video.Status == "succeeded" && unit.Video.ResourceID == "")) {
 			return errors.New("模特视频须有选定图片与有效任务状态")

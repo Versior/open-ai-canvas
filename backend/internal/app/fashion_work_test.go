@@ -62,3 +62,30 @@ func TestFashionSaveRequiresOwnedReadyImageResources(t *testing.T) {
 		t.Fatal("video accepted as face reference")
 	}
 }
+
+func TestFashionWorkRejectsMalformedOutputResourceIDs(t *testing.T) {
+	for _, output := range []string{"image", "video"} {
+		for _, status := range []string{"pending", "running", "succeeded", "failed"} {
+			t.Run(output+"/"+status, func(t *testing.T) {
+				var work map[string]any
+				if err := json.Unmarshal(fashionTestWork("tryon"), &work); err != nil {
+					t.Fatal(err)
+				}
+				unit := work["units"].([]any)[0].(map[string]any)
+				if output == "image" {
+					unit["status"], unit["resourceId"] = status, "bad/id"
+				} else {
+					unit["status"], unit["resourceId"] = "succeeded", "model_aaa"
+					unit["video"] = map[string]any{"model": "video-model", "seconds": 5, "prompt": "展示", "status": status, "resourceId": "bad/id"}
+				}
+				raw, err := json.Marshal(work)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if validateFashionWork(raw) == nil {
+					t.Fatal("malformed output ID bypassed resource validation")
+				}
+			})
+		}
+	}
+}

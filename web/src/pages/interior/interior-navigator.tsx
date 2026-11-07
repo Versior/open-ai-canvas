@@ -1,11 +1,16 @@
 import { ArrowUpRight, Box, Image, Layers, PaintRoller, Ruler } from "lucide-react";
-import type { InteriorCatalog, InteriorMode } from "@/services/api/interior";
+import type { InteriorCatalog, InteriorMode, InteriorSurface } from "@/services/api/interior";
 import { resourceFileUrl } from "@/services/api/resources";
 
 export type InteriorWorkspace = "images" | "scene" | "materials";
 
+export function availableInteriorTasks(catalog: InteriorCatalog, surface: InteriorSurface) {
+    return catalog.modes.filter((mode) => mode.enabled && (catalog.settings.allowSurfaceSwitch || mode.audience === "both" || mode.audience === surface));
+}
+
 export function InteriorNavigator({
     catalog,
+    surface,
     workspace,
     modeId,
     disabled,
@@ -18,6 +23,7 @@ export function InteriorNavigator({
     onMode,
 }: {
     catalog: InteriorCatalog;
+    surface: InteriorSurface;
     workspace: InteriorWorkspace;
     modeId: string;
     disabled: boolean;
@@ -78,21 +84,19 @@ export function InteriorNavigator({
             </div>
             {workspace === "images" ? (
                 <div className="itd-mode-cards" role="group" aria-label="选择设计任务">
-                    {catalog.modes
-                        .filter((mode) => mode.enabled)
-                        .map((mode) => (
-                            <button key={mode.id} type="button" aria-pressed={modeId === mode.id} disabled={disabled} onClick={() => onMode(mode)}>
-                                {mode.coverResourceId || mode.coverUrl ? (
-                                    <img src={mode.coverResourceId ? resourceFileUrl(mode.coverResourceId) : mode.coverUrl} alt="" loading="lazy" />
-                                ) : mode.key === "sketch-render" ? (
-                                    <Ruler aria-hidden />
-                                ) : (
-                                    <PaintRoller aria-hidden />
-                                )}
-                                <strong>{mode.name}</strong>
-                                <span>{mode.subtitle}</span>
-                            </button>
-                        ))}
+                    {availableInteriorTasks(catalog, surface).map((mode) => (
+                        <button key={mode.id} type="button" aria-pressed={modeId === mode.id} disabled={disabled} onClick={() => onMode(mode)}>
+                            {mode.coverResourceId || mode.coverUrl ? (
+                                <img src={mode.coverResourceId ? resourceFileUrl(mode.coverResourceId) : mode.coverUrl} alt="" loading="lazy" />
+                            ) : mode.key === "sketch-render" ? (
+                                <Ruler aria-hidden />
+                            ) : (
+                                <PaintRoller aria-hidden />
+                            )}
+                            <strong>{mode.name}</strong>
+                            <span>{mode.subtitle}</span>
+                        </button>
+                    ))}
                 </div>
             ) : null}
         </div>

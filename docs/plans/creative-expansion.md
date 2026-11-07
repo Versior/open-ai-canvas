@@ -16,17 +16,24 @@
 - 智能体提供随形象、云朵、手账、终端、星光、默认六种皮肤。在设置和右键菜单均可选择。自动皮肤复用图集采样提取代表色，忽略透明区、黑色轮廓和白色高光；审批和危险状态保留其颜色语义。大小控制改为五档文字和像素数。
 - 形象导入支持文件夹和最多 300 个、合计 512 MiB 的队列，限流时保留待导入项，超限明确提示。准备脚本只校验并提取外层合集中的原始形象 ZIP，不上传、不上架，也不覆盖原包。
 
+## 审查与交互回归
+
+- 室内任务卡与材料出图共用可用任务判断，遵守后台的交互模式切换限制；禁用模式不进入生成表单。
+- 模特图片与视频成品的所有非空资源标识先做格式校验，再做归属、类型与就绪检查，防止非法标识绕过资源引用收集。
+- 对话跨设备回归使用真实查询容器，形象读取以隔离 API 返回空选择，避免真实网络请求影响会话、审批和账号隔离验证。
+- 手机室内页修复整页滚动容器，确保下方工作台、材料和历史操作能到达。
+
 ## 解析来源、请求合同与覆盖
 
 共收录 28 个停用预设。平台目录从七类扩到二十类；可用性仍由服务端实际接口池决定。预设导入使用 `skipExisting=true`，不会替换已有接口的密钥、启用状态或优先级。添加预设不等于服务已经接通。
 
-| 来源 | 实际核对内容 | 收录与限制 |
-| --- | --- | --- |
-| [BTCH](https://github.com/hostinger-bot/btch-downloader) | README、默认地址、客户端源码、响应类型及 btch-http 请求实现 | 11 个 URL 型 GET 接口；版本请求头 6.4.0。公开服务的限流与稳定性由服务方决定 |
-| [TikHub Python SDK](https://github.com/TikHub/TikHub-API-Python-SDK) | 抖音、TikTok、快手、小红书、Instagram、YouTube 资源源码 | 8 个 URL 型接口；密钥通过既有后端加密配置，调用可能计费 |
-| [BugPk 公开目录](https://api.bugpk.com/) | 首页目录 API 与八份接口文档的参数、地址和返回示例 | 8 个预设；明确映射 `code=200`、`data.url`、`data.title`，图集或无视频地址的响应不作为成功视频 |
-| [Cobalt API](https://github.com/imputnet/cobalt/blob/main/docs/api.md) | JSON POST 合同、tunnel/redirect/picker 区别、公共实例限制 | 1 个自部署预设，须填自己的 HTTPS 实例；不默认调用官方公共实例 |
-| LINUX DO 搜索结果 | 公益解析、BugPk、开源自部署的讨论线索 | 只读取搜索摘要，未读到论坛全文；接口合同从上述公开文档进一步核对 |
+| 来源                                                                   | 实际核对内容                                                | 收录与限制                                                                                    |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [BTCH](https://github.com/hostinger-bot/btch-downloader)               | README、默认地址、客户端源码、响应类型及 btch-http 请求实现 | 11 个 URL 型 GET 接口；版本请求头 6.4.0。公开服务的限流与稳定性由服务方决定                   |
+| [TikHub Python SDK](https://github.com/TikHub/TikHub-API-Python-SDK)   | 抖音、TikTok、快手、小红书、Instagram、YouTube 资源源码     | 8 个 URL 型接口；密钥通过既有后端加密配置，调用可能计费                                       |
+| [BugPk 公开目录](https://api.bugpk.com/)                               | 首页目录 API 与八份接口文档的参数、地址和返回示例           | 8 个预设；明确映射 `code=200`、`data.url`、`data.title`，图集或无视频地址的响应不作为成功视频 |
+| [Cobalt API](https://github.com/imputnet/cobalt/blob/main/docs/api.md) | JSON POST 合同、tunnel/redirect/picker 区别、公共实例限制   | 1 个自部署预设，须填自己的 HTTPS 实例；不默认调用官方公共实例                                 |
+| LINUX DO 搜索结果                                                      | 公益解析、BugPk、开源自部署的讨论线索                       | 只读取搜索摘要，未读到论坛全文；接口合同从上述公开文档进一步核对                              |
 
 BugPk 的 [聚合解析文档](https://api.bugpk.com/doc-short_videos.html) 声明覆盖抖音、快手、小红书、B站、YouTube、TikTok、西瓜、好看、微视、知乎、X、Instagram、视频号等；[聚合 2](https://api.bugpk.com/doc-svparse.html) 仅按目录声明收录抖音、小红书、Instagram。独立文档：[B站](https://api.bugpk.com/doc-bilibili.html)、[抖音](https://api.bugpk.com/doc-douyin.html)、[快手](https://api.bugpk.com/doc-kuaishou.html)、[微博](https://api.bugpk.com/doc-weibo.html)、[微博备用](https://api.bugpk.com/doc-weibo_v.html)、[视频号](https://api.bugpk.com/doc-wxsph.html)。本站还通过 BTCH/Cobalt 覆盖 Facebook、Threads、Vimeo、Pinterest、SnackVideo、Cocofun。
 

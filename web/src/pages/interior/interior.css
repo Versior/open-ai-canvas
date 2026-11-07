@@ -883,6 +883,10 @@
 }
 
 @media (max-width: 900px) {
+    .itd-page {
+        overflow-y: auto;
+    }
+
     .itd-shell {
         grid-template-columns: minmax(0, 1fr);
         height: auto;

@@ -25,6 +25,8 @@ for (const [key, value] of Object.entries({
 const React = await import("react");
 const { act } = React;
 const { createRoot } = await import("react-dom/client");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const agentPetsApi = await import("@/services/api/agent-pets");
 const agent = await import("@/services/api/agent");
 const history = await import("@/services/cloud-agent-conversations");
 const awaitImportHistory = await import("@/services/cloud-agent-history");
@@ -54,6 +56,7 @@ let conversationUI: Record<string, any>;
 let historyUI: Record<string, any>;
 let controls: Record<string, any>;
 const silent = () => {};
+mock.module("@/services/api/agent-pets", () => ({ ...agentPetsApi, getAgentPetSelection: async () => null }));
 mock.module("file-saver", () => ({ saveAs: silent }));
 const MotionBox = ({ children, className, style }: any) => (
     <div className={className} style={style}>
@@ -248,8 +251,13 @@ async function mount(initial: CloudAgentConversation, cloud: CloudAgentConversat
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => {
-        root.render(<CanvasCloudAgentPanel />);
+        root.render(
+            <QueryClientProvider client={queryClient}>
+                <CanvasCloudAgentPanel />
+            </QueryClientProvider>,
+        );
         await settle();
     });
     return {
@@ -257,6 +265,7 @@ async function mount(initial: CloudAgentConversation, cloud: CloudAgentConversat
         root,
         close: async () => {
             await act(async () => root.unmount());
+            queryClient.clear();
             host.remove();
         },
     };
