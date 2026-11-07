@@ -84,7 +84,6 @@ export function AgentSkinScene({ skin, pet }: { skin: ResolvedAgentSkin; pet: Ag
                 </svg>
             ) : null}
             <div className="agent-skin-scene-copy">
-                <small>{pet?.name || "STAGE"} 的对话空间</small>
                 <strong>{title}</strong>
             </div>
             {pet ? <img className="agent-skin-character" src={agentPetPreviewURL(pet)} alt="" /> : null}

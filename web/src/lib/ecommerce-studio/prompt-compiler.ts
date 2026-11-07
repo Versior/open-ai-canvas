@@ -2,7 +2,7 @@ import { ecommercePlatform, ecommerceRoleSpec, type EcommercePlatformId, type Ec
 import { studioCleanNotes, studioLanguage, studioMarket, studioShooting } from "./brief";
 import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_TACKY_DESIGN } from "./detail-plan";
 import { studioActivePlan, studioStyleReferences } from "./runs";
-import { studioDesignZone } from "./art-direction";
+import { STUDIO_COMPOSITIONS, studioDesignZone } from "./art-direction";
 import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
 import {
     STUDIO_FACT_GROUP_LABEL,
@@ -284,7 +284,7 @@ function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boole
     const tweaks = shot.tweaks.map(studioTweakInstruction).filter((item): item is string => Boolean(item));
     const adjust = tweaks.length ? `本次调整：${tweaks.join("；")}。` : "";
     if (planned) return adjust ? { id: "composition", title: "本次调整", source: "微调标签", text: adjust } : undefined;
-    const text = [sentence(spec.composition), sentence(spec.camera), adjust].filter(Boolean).join("\n");
+    const text = [sentence(shot.composition ? STUDIO_COMPOSITIONS[shot.composition].render : spec.composition), sentence(spec.camera), adjust].filter(Boolean).join("\n");
     return { id: "composition", title: "构图与机位", source: "镜头规格", text };
 }
 
@@ -292,10 +292,10 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
     if (planned && !hasCopy) return { id: "copy", title: "文字", source: "出图策划", text: "这一屏不放文字，画面中不生成任何文字（商品本身的标识除外）。" };
     if (planned && mode === "model") {
         const layout = shot.layout ? STUDIO_DETAIL_LAYOUTS[shot.layout] : undefined;
-        const lines: string[] = ["位置：按「这一屏的画面」里的版式和文字位置排；没写到时放在画面留白处，不压在商品上。字体、字重和颜色按整套视觉规范，全套一致。"];
+        const lines: string[] = ["位置：按本屏图文构图与画面说明排，不压在商品上。整套共用字体家族与色板，标题位置、字号和留白随本屏内容变化。"];
         if (shot.eyebrow?.trim()) lines.push(`栏目小标题${quote(shot.eyebrow)}：放在主标题上方，小号字、字距加宽，用整套规范里的强调色。`);
         // 字重跟设计调性走：极简调性要细到中等字重，爆款调性才用粗字重，不一律加粗。
-        if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，字高约为画面高度的 6%–9%，字重按设计调性和整套视觉规范（没写时用中粗）。`);
+        if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，按构图分行，海报屏可大胆放大，细节屏克制；字重按设计调性。`);
         if (shot.subline.trim()) lines.push(`副标题${quote(shot.subline)}：常规字重，字号约为主标题的一半，紧贴主标题下方。`);
         const items = shot.lines.map((line) => line.trim()).filter(Boolean);
         if (items.length) lines.push(`${layout?.lines || "要点（每行一条，行距宽松）"}：${items.map(quote).join(" ")}`);
@@ -325,7 +325,7 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
             text: `${reserve}保持干净、连续、无纹理的背景，留给后期排字，商品与道具放在区域之外。此坐标优先于画面描述里的文字位置；只生成摄影底图，不画信息表格、图标、引线、卡片或装饰字。画面中不生成任何文字、字母、数字或符号（商品本身的标识除外）。`,
         };
     }
-    const lines: string[] = [`位置：${spec.textZone || "画面留白处"}。`];
+    const lines: string[] = [`位置：${shot.composition ? STUDIO_COMPOSITIONS[shot.composition].render : spec.textZone || "画面留白处"}。`];
     if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：粗体无衬线字体，深色，字高约为画面高度的 8%。`);
     if (shot.subline.trim()) lines.push(`副标题${quote(shot.subline)}：常规字重，字号约为主标题的一半，紧贴主标题下方。`);
     const items = shot.lines.map((line) => line.trim()).filter(Boolean);
@@ -404,8 +404,8 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
             title: `整套视觉规范「${suite.name}」`,
             source: planned ? "出图策划" : "套图模板",
             // 创意主线和视觉元素是整套的方向，不是每张都要贴上的图形：每张只选用一两个，换着形式出现。
-            // 策划过的组：照片统一调色、标题区全套一致，是拆过的高质量详情页和主图成套的关键。
-            text: `${sentence(suite.style)}${suite.concept?.trim() ? `创意主线：${sentence(suite.concept)}` : ""}${suite.motifs?.length ? `视觉元素库：${suite.motifs.join("、")}，这张图按画面需要选用其中一两个，换着形式出现，不是每张都要全用。` : ""}整套图共用这一规范${planned ? "：画面里的人物和场景照片统一调色到这套色板里，标题区（栏目小标题、主标题、副标题）的位置、字体和颜色全套一致，标签、卡片和图标用同一种样式" : ""}。`,
+            // 系列规范保持品牌识别；逐屏构图优先，避免旧策划的固定栏目头再次覆盖新位置。
+            text: `${sentence(suite.style)}${suite.concept?.trim() ? `创意主线：${sentence(suite.concept)}` : ""}${suite.motifs?.length ? `视觉元素库：${suite.motifs.join("、")}，这张图按画面需要选用其中一两个，换着形式出现，不是每张都要全用。` : ""}整套共用字体家族、色板、边距与图形语言${planned ? "；标题位置、字号与主体裁切以本屏图文构图为准，优先于整套规范中固定栏目头的位置要求，不能把每张套成同一模板" : ""}。`,
         });
     } else if (!spec.neutralBackground) {
         layers.push({

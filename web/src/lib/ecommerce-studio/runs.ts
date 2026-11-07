@@ -3,7 +3,8 @@ import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studio
 import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
-import type { StudioBrief, StudioDetailLayoutId, StudioDetailPlan, StudioPhoto, StudioPlanKind, StudioPlanScope, StudioPlanTarget, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
+import { nextStudioComposition } from "./art-direction";
+import type { StudioBrief, StudioCompositionId, StudioDetailLayoutId, StudioDetailPlan, StudioPhoto, StudioPlanKind, StudioPlanScope, StudioPlanTarget, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
 
 /**
  * 表单生成的记录：点一次「生成商品图」就是一组镜头。
@@ -63,6 +64,7 @@ export type StudioSetEntry = {
     planIndex?: number;
     visual?: string;
     layout?: StudioDetailLayoutId;
+    composition?: StudioCompositionId;
     elements?: string;
     eyebrow?: string;
     copy?: Pick<StudioShot, "headline" | "subline" | "lines">;
@@ -118,6 +120,7 @@ function planEntries(product: StudioProduct, plan: StudioDetailPlan): Omit<Studi
         planIndex: index,
         visual: screen.visual,
         layout: screen.layout,
+        composition: screen.composition,
         elements: screen.elements,
         ...(screen.eyebrow ? { eyebrow: screen.eyebrow } : {}),
         copy: { headline: screen.headline, subline: screen.subline, lines: screen.lines },
@@ -194,7 +197,7 @@ function entryShot(entry: StudioSetEntry, product: StudioProduct, plan: StudioDe
         ratio: studioEntryRatio(entry, product),
         ...copy,
         ...(entry.duty ? { duty: entry.duty } : {}),
-        ...(visual ? { visual, ...(entry.layout ? { layout: entry.layout } : {}), ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}) } : {}),
+        ...(visual ? { visual, ...(entry.layout ? { layout: entry.layout } : {}), ...(entry.composition ? { composition: entry.composition } : {}), ...(entry.eyebrow && !entry.noText && !textless ? { eyebrow: entry.eyebrow } : {}) } : {}),
         tweaks: [],
         attempts: [],
     };
@@ -232,12 +235,15 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
         shots: types.flatMap((type) =>
             Array.from({ length: count }, (_, index) => {
                 const role = type.role!;
+                const copy = studioRunShotCopy(role, product, true);
+                const hasCopy = Boolean(copy.headline.trim() || copy.subline.trim() || copy.lines.length);
                 return {
                     id: createId(),
                     role,
                     title: count > 1 ? `${type.label} ${index + 1}` : type.label,
                     ratio: studioRunRatio(role, product),
-                    ...studioRunShotCopy(role, product, true),
+                    ...copy,
+                    ...(hasCopy && !brief.sameLayout ? { composition: nextStudioComposition(role, product.runs.flatMap((run) => run.shots).find((shot) => shot.role === role)?.composition, index) } : {}),
                     tweaks: [],
                     attempts: [],
                 };

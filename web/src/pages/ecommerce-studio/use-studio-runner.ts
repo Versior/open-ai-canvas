@@ -336,6 +336,7 @@ export function useStudioRunner() {
                     scope: planScope,
                     ...(targets ? { targets } : {}),
                     ...(options.revise ? { previous: studioActivePlan(product) } : {}),
+                    ...(!options.revise ? { alternative: studioActivePlan(product) } : {}),
                     ...(images.length ? { images: { photos: photos.length, references: references.length } } : {}),
                 };
                 const roles = planScope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, planScope === "main" ? "main" : "detail");

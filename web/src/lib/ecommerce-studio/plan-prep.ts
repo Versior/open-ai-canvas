@@ -150,7 +150,7 @@ export function studioPrepFactsText(prep: StudioPlanPrep | undefined) {
 }
 
 /** 交给策划的卖家补充和选定方向；都没有时为空。 */
-export function studioPrepPromptLines(prep: StudioPlanPrep | undefined): string[] {
+export function studioPrepPromptLines(prep: StudioPlanPrep | undefined, varyConcept = false): string[] {
     const answered = studioAnsweredAsks(prep);
     const direction = studioPickedDirection(prep);
     const lines: string[] = [];
@@ -167,7 +167,13 @@ export function studioPrepPromptLines(prep: StudioPlanPrep | undefined): string[
             direction.palette.length ? `- 色彩世界：${direction.palette.map((color) => `${color.name} ${color.hex}`).join("、")}` : "",
             example ? `- 首屏示例：${example}` : "",
         ].filter(Boolean);
-        lines.push("", "【卖家选定的方向】（照这个方向策划：positioning、concept 照用，tone 用它给的编号，色彩世界以这几个颜色为准；首屏可以参考示例，但要写得更好）", ...details);
+        lines.push(
+            "",
+            varyConcept
+                ? "【卖家选定的方向】（保留视角、定位、调性和色板；创意主线与首屏是旧方案的示例。本次换方向策划须换一个具体场景、动作或摄影手法，不能再复用旧主线，只改标题不算新设计）"
+                : "【卖家选定的方向】（照这个方向策划：positioning、concept 照用，tone 用它给的编号，色彩世界以这几个颜色为准；首屏可以参考示例，但要写得更好）",
+            ...details,
+        );
     }
     return lines;
 }

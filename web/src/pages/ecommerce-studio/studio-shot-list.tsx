@@ -4,10 +4,11 @@ import { useState } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
 import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_LAYOUTS, STUDIO_DETAIL_PLAN_LIMITS } from "@/lib/ecommerce-studio/detail-plan";
+import { STUDIO_COMPOSITION_IDS, STUDIO_COMPOSITIONS } from "@/lib/ecommerce-studio/art-direction";
 import type { StudioSetEntry } from "@/lib/ecommerce-studio/runs";
-import type { StudioDetailLayoutId, StudioPlannedScreen } from "@/lib/ecommerce-studio/types";
+import type { StudioCompositionId, StudioDetailLayoutId, StudioPlannedScreen } from "@/lib/ecommerce-studio/types";
 
-export type StudioPlannedScreenPatch = Partial<Pick<StudioPlannedScreen, "title" | "layout" | "visual" | "elements" | "headline" | "subline" | "lines">>;
+export type StudioPlannedScreenPatch = Partial<Pick<StudioPlannedScreen, "title" | "layout" | "composition" | "visual" | "elements" | "headline" | "subline" | "lines">>;
 
 const LAYOUT_OPTIONS = STUDIO_DETAIL_LAYOUT_IDS.map((id) => ({ value: id, label: STUDIO_DETAIL_LAYOUTS[id].label, title: STUDIO_DETAIL_LAYOUTS[id].use }));
 
@@ -26,6 +27,17 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
             <div className="es-shot-edit-field">
                 <span>版式</span>
                 <Select appearance="field" value={entry.layout} options={LAYOUT_OPTIONS} ariaLabel="这一屏的版式" onChange={(value: StudioDetailLayoutId) => onChange({ layout: value })} />
+            </div>
+            <div className="es-shot-edit-field" data-span="2">
+                <span>图文构图</span>
+                <Select
+                    appearance="field"
+                    value={entry.composition}
+                    placeholder="按画面说明"
+                    options={STUDIO_COMPOSITION_IDS.map((id) => ({ value: id, label: STUDIO_COMPOSITIONS[id].label }))}
+                    ariaLabel="这一屏的图文构图"
+                    onChange={(value: StudioCompositionId) => onChange({ composition: value })}
+                />
             </div>
             <label className="es-shot-edit-field" data-span="2" htmlFor={`${id}-visual`}>
                 <span>画面</span>
@@ -102,7 +114,7 @@ export function StudioShotList({
                 const expanded = Boolean(editable && open === entry.key);
                 const headline = entry.copy && !entry.noText ? entry.copy.headline.trim() : "";
                 const layout = entry.layout ? STUDIO_DETAIL_LAYOUTS[entry.layout].label : "";
-                const summary = [headline ? `「${headline}」` : "", layout ? `${layout} ·` : "", entry.purpose].filter(Boolean).join(" ");
+                const summary = [headline ? `「${headline}」` : "", layout, entry.composition ? STUDIO_COMPOSITIONS[entry.composition].label : "", entry.purpose].filter(Boolean).join(" · ");
                 return (
                     <li key={entry.key} className="es-shot" data-off={entry.included ? undefined : true} data-open={expanded || undefined}>
                         <Checkbox checked={entry.included} onChange={() => onToggle(entry.key)} aria-label={`出这${unit}：${entry.title}`} />

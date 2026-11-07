@@ -432,7 +432,7 @@ export function AgentHeader({
                         {statusLabel}
                     </span>
                 </div>
-                <div className="agent-panel-context">
+                <div className="agent-panel-context" title={nodeCount === null ? (studioProductName ? `当前生图台商品「${studioProductName}」` : "未在画布中，可对话；进入画布后自动关联") : `当前画布 ${nodeCount} 个节点`}>
                     {appearance.agentName} · {nodeCount === null ? (studioProductName ? `当前生图台商品「${studioProductName}」` : "未在画布中，可对话；进入画布后自动关联") : `当前画布 ${nodeCount} 个节点`}
                 </div>
             </div>

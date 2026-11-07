@@ -252,6 +252,12 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶", "detail", nil); got != before {
 		t.Fatalf("database playbook should match the builtin text before edits:\n%s\n---\n%s", got, before)
 	}
+	for _, scope := range []string{"main", "detail"} {
+		got := svc.ecommerceStudioDesignPlaybook("量子纠缠仪", "", "", "", scope, nil)
+		if !strings.Contains(got, "图文重心") || strings.Contains(got, "位置、字号和颜色每屏一致") || strings.Contains(got, "同一个版头（") || strings.Contains(got, "每屏同一个栏目头。") {
+			t.Fatalf("stored %s playbook must vary composition within a shared visual identity", scope)
+		}
+	}
 	if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("id = ?", "kb20-category-medical").Update("review_status", "rejected").Error; err != nil {
 		t.Fatal(err)
 	}

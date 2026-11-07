@@ -275,6 +275,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 result.tacky.length ? `文案里有「${result.tacky.join("」「")}」这类说法，可以在补充调整里要求换掉` : "",
                 // 详情页版式变化不够时如实提示，由用户决定要不要按补充调整重排。
                 scope === "detail" && (result.layoutKinds < 6 || result.layoutRepeats) ? `版式变化不够（${result.layoutKinds} 种版式${result.layoutRepeats ? `，${result.layoutRepeats} 处相邻两屏版式相同` : ""}），可以在补充调整里要求多换几种` : "",
+                scope === "detail" && !product.brief.sameLayout && (result.compositionKinds < 4 || result.compositionRepeats) ? "图文构图变化不足，可换方向重新策划，或逐屏调整图文构图" : "",
             ].filter(Boolean);
             const summary = `已按这件商品排好 ${count} ${planUnit}${notes.length ? `，${notes.join("，")}` : ""}`;
             // 不足预定张数时如实说明，让用户决定直接出还是重新策划。

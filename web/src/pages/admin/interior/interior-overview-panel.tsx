@@ -1,5 +1,5 @@
 import { Alert, Button } from "antd";
-import { BarChart3, ChevronRight } from "lucide-react";
+import { BarChart3, BookOpen, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
 import { AdminStatTile, AdminStatusBadge } from "@/pages/admin/components/admin-ui";
@@ -64,6 +64,17 @@ export function InteriorOverviewPanel({ active, onOpenTab, onOpenRecord }: { act
 
     return (
         <div className="itd-admin-overview">
+            <section className="itd-admin-card">
+                <header className="itd-admin-card-head">
+                    <div>
+                        <h2>室内知识库</h2>
+                        <p>建模、方案分析与对话调整按空间、风格和要求检索知识；可维护尺寸、动线、装修与石材资料。</p>
+                    </div>
+                    <Button icon={<BookOpen className="size-4" aria-hidden />} onClick={() => onOpenTab("knowledge")}>
+                        管理知识库
+                    </Button>
+                </header>
+            </section>
             {error ? (
                 <div className="itd-admin-load-error" role="alert">
                     <span>{`读取统计失败：${error}`}</span>

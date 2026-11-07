@@ -1,8 +1,8 @@
 import { App, Button, Input, Select, Tooltip } from "antd";
-import { BookOpen, Box, LoaderCircle, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { BookOpen, Box, History, Info, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
-import { buildSceneEditPrompt, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
+import { buildSceneEditPrompt, knowledgeLines, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
 import { buildSceneSpecEditPrompt, buildSceneSpecPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
 import { modelCompatibilityError } from "@/lib/model-selection";
@@ -74,6 +74,8 @@ type Props = {
 export function InteriorSceneStudio({ catalog, config, project, header, ensureProject, update, saveProject, onBusyChange, removeScene, handoff, onHandoffUsed, onRender }: Props) {
     const { message, modal } = App.useApp();
     const [scope, setScope] = useState<ScopeChoice>("auto");
+    const [composerOpen, setComposerOpen] = useState(false);
+    const [panel, setPanel] = useState<"edit" | "history" | "info" | null>(null);
     const [rendering, setRendering] = useState(false);
     const [description, setDescription] = useState("");
     const [roomKey, setRoomKey] = useState("");
@@ -82,10 +84,13 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const [instruction, setInstruction] = useState("");
     const [targetKey, setTargetKey] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [readingKnowledge, setReadingKnowledge] = useState(false);
+    const knowledgeRequest = useRef(false);
+    const busy = submitting || readingKnowledge;
     useEffect(() => {
-        onBusyChange(submitting);
+        onBusyChange(busy);
         return () => onBusyChange(false);
-    }, [submitting, onBusyChange]);
+    }, [busy, onBusyChange]);
     const [error, setError] = useState("");
     const [selectedId, setSelectedId] = useState("");
     const previewUrls = useRef(new Set<string>());
@@ -102,6 +107,8 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
         setScope(handoff.roomKey ? "room" : "auto");
         setDescription(handoff.description || "");
         setError("");
+        setComposerOpen(true);
+        setPanel(null);
         onHandoffUsed();
         message.info("已带上这张效果图和它的空间、风格，点「生成 3D 模型」就行");
     }, [handoff, message, onHandoffUsed]);
@@ -135,6 +142,9 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     }, [selectedFile]);
     const selectedLoad = loaded?.resourceId === selectedFile ? loaded : null;
     const selectedScene = selectedLoad?.scene;
+    useEffect(() => {
+        if (selectedScene) setComposerOpen(false);
+    }, [selectedScene]);
     const editOptions = useMemo(() => (selectedScene ? sceneEditOptions(selectedScene) : []), [selectedScene]);
     const editOption = targetKey === "whole" ? undefined : editOptions.find((item) => item.value === targetKey) || editOptions[0];
     useEffect(() => {
@@ -193,17 +203,25 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
      * 页面边收边搭（以前要先等一轮方案分析，再等一轮方案，两次看图）。
      */
     const generate = async () => {
+        if (busy || knowledgeRequest.current) return;
         if (problem) {
             setError(problem);
             return;
         }
         const image = reference?.resourceId ? { resourceId: reference.resourceId, ...(reference.width ? { width: reference.width } : {}), ...(reference.height ? { height: reference.height } : {}) } : undefined;
         let found: Awaited<ReturnType<typeof fetchSceneKnowledge>>;
+        const account = getActiveUserScope();
+        knowledgeRequest.current = true;
+        setReadingKnowledge(true);
         try {
             found = await fetchSceneKnowledge({ scope: scope === "auto" ? undefined : scope, roomKey: room?.key, styleKey: style?.key, text: description });
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未提交建模");
         } catch (cause) {
             setError(`读取室内设计知识库失败：${errorText(cause, "请稍后重试")}`);
             return;
+        } finally {
+            knowledgeRequest.current = false;
+            setReadingKnowledge(false);
         }
         const item: Omit<InteriorSceneItem, "id" | "createdAt" | "status" | "model"> = {
             scope: scope === "auto" ? "room" : scope,
@@ -233,11 +251,25 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     };
 
     const edit = async () => {
-        if (!selected?.sceneFile || !selectedScene || !instruction.trim()) return;
+        if (busy || knowledgeRequest.current || !selected?.sceneFile || !selectedScene || !instruction.trim()) return;
         const editProblem = sceneModelProblem(config, model, 0);
         if (editProblem) {
             setError(editProblem);
             return;
+        }
+        let found: Awaited<ReturnType<typeof fetchSceneKnowledge>>;
+        const account = getActiveUserScope();
+        knowledgeRequest.current = true;
+        setReadingKnowledge(true);
+        try {
+            found = await fetchSceneKnowledge({ scope: selected.scope, roomKey: selected.roomKey, styleKey: selected.styleKey, text: instruction });
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未提交调整");
+        } catch (cause) {
+            setError(`读取室内设计知识库失败：${errorText(cause, "请稍后重试")}`);
+            return;
+        } finally {
+            knowledgeRequest.current = false;
+            setReadingKnowledge(false);
         }
         const ok = await start(
             {
@@ -248,15 +280,18 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 ...(selected.styleKey ? { styleKey: selected.styleKey, styleName: selected.styleName, styleHint: selected.styleHint } : {}),
                 parentId: selected.id,
                 instruction: instruction.trim(),
+                knowledge: found.refs,
                 ...(editOption ? { editTarget: editOption.target } : {}),
             },
-            editOption ? buildSceneLocalEditPrompt(selectedScene, editOption.target, instruction) : selectedScene.version === 2 ? buildSceneSpecEditPrompt(selectedScene.spec, instruction) : buildSceneEditPrompt(selectedScene, instruction),
+            editOption
+                ? buildSceneLocalEditPrompt(selectedScene, editOption.target, instruction, found.knowledge)
+                : [selectedScene.version === 2 ? buildSceneSpecEditPrompt(selectedScene.spec, instruction) : buildSceneEditPrompt(selectedScene, instruction), ...knowledgeLines(found.knowledge)].filter(Boolean).join("\n\n"),
         );
         if (ok) setInstruction("");
     };
 
     const applyManual = async (patch: Record<string, unknown>) => {
-        if (submitting || !selected || !selectedScene || !editOption || !project) throw new Error("请先选择已完成的模型和调整目标");
+        if (busy || !selected || !selectedScene || !editOption || !project) throw new Error("请先选择已完成的模型和调整目标");
         if (scenes.length >= MAX_SCENES) throw new Error(`一个项目最多保存 ${MAX_SCENES} 个模型，请先整理历史版本`);
         const scene = applySceneLocalEdit(selectedScene, editOption.target, patch);
         const account = getActiveUserScope();
@@ -295,7 +330,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     };
 
     const remove = (item: InteriorSceneItem) => {
-        if (!project) return;
+        if (!project || busy || knowledgeRequest.current) return;
         modal.confirm({
             title: `删除「${sceneTitle(item)}」？`,
             content: item.status === "pending" ? "还在生成的任务会继续跑完并照常计费，只是结果不再保存。" : "删除后不能恢复。",
@@ -309,61 +344,91 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const parent = selected?.parentId ? scenes.find((item) => item.id === selected.parentId) : undefined;
     const stalledText = selected ? tasks.stalled[selected.id] : "";
     const referenceUrl = selected?.reference?.resourceId ? interiorImageUrl(selected.reference.resourceId) : undefined;
+    const sceneWarning = Boolean(selected?.failedParts?.length || selected?.dropped || selected?.notice);
+    const showComposer = !scenes.length || composerOpen;
+    const togglePanel = (next: NonNullable<typeof panel>) => {
+        setComposerOpen(false);
+        setPanel((current) => (current === next ? null : next));
+    };
 
     return (
-        <div className="itd-shell">
-            <aside className="itd-composer" aria-label="3D 模型设置">
-                <div className="itd-composer-scroll thin-scrollbar">
-                    <section className="itd-section">
-                        <h2 className="itd-section-title">做什么</h2>
-                        <div className="itd-mode-grid" role="radiogroup" aria-label="模型范围">
-                            {SCOPE_CHOICES.map((item) => (
-                                <button key={item.value} type="button" role="radio" aria-checked={scope === item.value} className={cn("itd-mode", scope === item.value && "is-active")} onClick={() => setScope(item.value)} disabled={submitting}>
-                                    <strong>{item.label}</strong>
-                                    <span>{item.hint}</span>
-                                </button>
-                            ))}
-                        </div>
-                    </section>
-                    <section className="itd-section">
-                        <label className="itd-field is-block">
-                            <span className="itd-field-label">描述</span>
-                            <Input.TextArea
-                                value={description}
-                                maxLength={500}
-                                showCount
-                                autoSize={{ minRows: 3, maxRows: 6 }}
-                                placeholder={
-                                    scope === "building"
-                                        ? "例如：三层新中式别墅，带前院和围墙，一层大落地窗，二层露台，坡屋顶"
-                                        : scope === "home"
-                                          ? "例如：三室两厅，客厅朝南带阳台，开放式厨房，主卧带衣帽间"
-                                          : "例如：20 平米的客厅，L 型沙发、电视墙、落地窗和一张大地毯"
-                                }
-                                onChange={(event) => setDescription(event.target.value)}
-                                disabled={submitting}
-                            />
-                        </label>
-                    </section>
-                    <section className="itd-section">
-                        <h2 className="itd-section-title">
-                            户型图或照片<small>可选，模型要能看图</small>
-                        </h2>
-                        <div className="itd-upload-row">
-                            <UploadSlot label="户型图 / 现场照片" value={reference} onPick={pickReference} onClear={() => setReference(null)} disabled={submitting} />
-                        </div>
-                    </section>
-                    {scope !== "building" ? (
+        <div className={cn("itd-shell itd-model-shell", !showComposer && "is-model-focused")}>
+            {showComposer ? (
+                <aside className="itd-composer" aria-label="3D 模型设置">
+                    {scenes.length ? (
+                        <Button type="text" icon={<X className="size-4" aria-hidden />} onClick={() => setComposerOpen(false)}>
+                            收起新建设置
+                        </Button>
+                    ) : null}
+                    <div className="itd-composer-scroll thin-scrollbar">
+                        <section className="itd-section">
+                            <h2 className="itd-section-title">做什么</h2>
+                            <div className="itd-mode-grid" role="radiogroup" aria-label="模型范围">
+                                {SCOPE_CHOICES.map((item) => (
+                                    <button key={item.value} type="button" role="radio" aria-checked={scope === item.value} className={cn("itd-mode", scope === item.value && "is-active")} onClick={() => setScope(item.value)} disabled={busy}>
+                                        <strong>{item.label}</strong>
+                                        <span>{item.hint}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+                        <section className="itd-section">
+                            <label className="itd-field is-block">
+                                <span className="itd-field-label">描述</span>
+                                <Input.TextArea
+                                    value={description}
+                                    maxLength={500}
+                                    showCount
+                                    autoSize={{ minRows: 3, maxRows: 6 }}
+                                    placeholder={
+                                        scope === "building"
+                                            ? "例如：三层新中式别墅，带前院和围墙，一层大落地窗，二层露台，坡屋顶"
+                                            : scope === "home"
+                                              ? "例如：三室两厅，客厅朝南带阳台，开放式厨房，主卧带衣帽间"
+                                              : "例如：20 平米的客厅，L 型沙发、电视墙、落地窗和一张大地毯"
+                                    }
+                                    onChange={(event) => setDescription(event.target.value)}
+                                    disabled={busy}
+                                />
+                            </label>
+                        </section>
                         <section className="itd-section">
                             <h2 className="itd-section-title">
-                                空间<small>可选</small>
+                                户型图或照片<small>可选，模型要能看图</small>
                             </h2>
-                            {groupPresets(catalog.rooms).map(([group, rooms]) => (
+                            <div className="itd-upload-row">
+                                <UploadSlot label="户型图 / 现场照片" value={reference} onPick={pickReference} onClear={() => setReference(null)} disabled={busy} />
+                            </div>
+                        </section>
+                        {scope !== "building" ? (
+                            <section className="itd-section">
+                                <h2 className="itd-section-title">
+                                    空间<small>可选</small>
+                                </h2>
+                                {groupPresets(catalog.rooms).map(([group, rooms]) => (
+                                    <div key={group} className="itd-chip-group">
+                                        <span className="itd-chip-group-label">{group}</span>
+                                        <div className="itd-chips">
+                                            {rooms.map((item) => (
+                                                <button key={item.key} type="button" className="itd-chip" aria-pressed={roomKey === item.key} onClick={() => setRoomKey(roomKey === item.key ? "" : item.key)} disabled={busy}>
+                                                    {item.name}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </section>
+                        ) : null}
+                        <section className="itd-section">
+                            <h2 className="itd-section-title">
+                                风格<small>可选</small>
+                            </h2>
+                            {groupPresets(catalog.styles).map(([group, styles]) => (
                                 <div key={group} className="itd-chip-group">
                                     <span className="itd-chip-group-label">{group}</span>
                                     <div className="itd-chips">
-                                        {rooms.map((item) => (
-                                            <button key={item.key} type="button" className="itd-chip" aria-pressed={roomKey === item.key} onClick={() => setRoomKey(roomKey === item.key ? "" : item.key)} disabled={submitting}>
+                                        {styles.map((item) => (
+                                            <button key={item.key} type="button" className="itd-chip" aria-pressed={styleKey === item.key} title={item.summary} onClick={() => setStyleKey(styleKey === item.key ? "" : item.key)} disabled={busy}>
                                                 {item.name}
                                             </button>
                                         ))}
@@ -371,56 +436,78 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 </div>
                             ))}
                         </section>
-                    ) : null}
-                    <section className="itd-section">
-                        <h2 className="itd-section-title">
-                            风格<small>可选</small>
-                        </h2>
-                        {groupPresets(catalog.styles).map(([group, styles]) => (
-                            <div key={group} className="itd-chip-group">
-                                <span className="itd-chip-group-label">{group}</span>
-                                <div className="itd-chips">
-                                    {styles.map((item) => (
-                                        <button key={item.key} type="button" className="itd-chip" aria-pressed={styleKey === item.key} title={item.summary} onClick={() => setStyleKey(styleKey === item.key ? "" : item.key)} disabled={submitting}>
-                                            {item.name}
-                                        </button>
-                                    ))}
-                                </div>
+                        <section className="itd-section">
+                            <div className="itd-field is-block">
+                                <span className="itd-field-label">
+                                    搭模型用的文本模型<small>越强的模型搭得越细</small>
+                                </span>
+                                <ModelPicker
+                                    config={config}
+                                    capability="text"
+                                    value={model}
+                                    onChange={(next) => {
+                                        if (!busy) setModel(next);
+                                    }}
+                                    modelDisabledReason={() => (busy ? "正在读取知识或提交模型" : "")}
+                                    requirements={requirements}
+                                    variant="creation"
+                                    fullWidth
+                                    className="creation-model-picker itd-model-picker"
+                                    placeholder="选择文本模型"
+                                />
                             </div>
-                        ))}
-                    </section>
-                    <section className="itd-section">
-                        <div className="itd-field is-block">
-                            <span className="itd-field-label">
-                                搭模型用的文本模型<small>越强的模型搭得越细</small>
-                            </span>
-                            <ModelPicker config={config} capability="text" value={model} onChange={setModel} requirements={requirements} variant="creation" fullWidth className="creation-model-picker itd-model-picker" placeholder="选择文本模型" />
-                        </div>
-                    </section>
-                </div>
-                <footer className="itd-composer-foot">
-                    <GenerationCostNotice config={config} model={model} capability="text" requirements={requirements} label="生成三维模型" />
-                    {error ? (
-                        <p className="itd-inline-error" role="alert">
-                            {error}
-                        </p>
-                    ) : null}
-                    <Button
-                        type="primary"
-                        size="large"
-                        block
-                        icon={submitting ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
-                        disabled={Boolean(problem) || submitting}
-                        onClick={() => void generate()}
-                    >
-                        {submitting ? "正在提交" : reference?.resourceId && !description.trim() ? "AI 分析并生成 3D 模型" : "生成 3D 模型"}
-                    </Button>
-                    <p className="itd-muted-note">{problem && !submitting ? problem : "AI 看图读尺寸、查知识库出方案，边写边搭出墙体、门窗和家具，过程实时可见；按所选文本模型计费。"}</p>
-                </footer>
-            </aside>
+                        </section>
+                    </div>
+                    <footer className="itd-composer-foot">
+                        <GenerationCostNotice config={config} model={model} capability="text" requirements={requirements} label="生成三维模型" />
+                        {error ? (
+                            <p className="itd-inline-error" role="alert">
+                                {error}
+                            </p>
+                        ) : null}
+                        <Button
+                            type="primary"
+                            size="large"
+                            block
+                            icon={busy ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
+                            disabled={Boolean(problem) || busy}
+                            onClick={() => void generate()}
+                        >
+                            {readingKnowledge ? "正在读取知识" : submitting ? "正在提交" : reference?.resourceId && !description.trim() ? "AI 分析并生成 3D 模型" : "生成 3D 模型"}
+                        </Button>
+                        <p className="itd-muted-note">{problem && !busy ? problem : "AI 看图读尺寸、查知识库出方案，边写边搭出墙体、门窗和家具，过程实时可见；按所选文本模型计费。"}</p>
+                    </footer>
+                </aside>
+            ) : null}
             <section className="itd-board" aria-label="3D 模型">
                 {header}
-                <div className="itd-scene-body">
+                <div className="itd-model-actions" aria-label="模型工作区工具">
+                    <strong title={selected ? sceneTitle(selected) : "3D 模型"}>{selected ? sceneTitle(selected) : "3D 模型"}</strong>
+                    <Button
+                        size="small"
+                        icon={<Plus className="size-3.5" aria-hidden />}
+                        aria-pressed={showComposer}
+                        onClick={() => {
+                            setPanel(null);
+                            setComposerOpen(!showComposer);
+                        }}
+                    >
+                        新建
+                    </Button>
+                    <Button size="small" icon={<SlidersHorizontal className="size-3.5" aria-hidden />} aria-pressed={panel === "edit"} disabled={!selectedScene} onClick={() => togglePanel("edit")}>
+                        局部调整
+                    </Button>
+                    <Button size="small" icon={<History className="size-3.5" aria-hidden />} aria-pressed={panel === "history"} disabled={!scenes.length} onClick={() => togglePanel("history")}>{`版本 ${scenes.length}`}</Button>
+                    <Button size="small" icon={<BookOpen className="size-3.5" aria-hidden />} aria-pressed={panel === "info"} disabled={!selectedScene} onClick={() => togglePanel("info")}>
+                        {sceneWarning ? "方案需核对" : selected?.knowledge?.length ? `知识 ${selected.knowledge.length}` : "方案信息"}
+                    </Button>
+                </div>
+                {error && !showComposer ? (
+                    <p className="itd-error" role="alert">
+                        {error}
+                    </p>
+                ) : null}
+                <div className={cn("itd-scene-body", panel && "has-panel")}>
                     <div className="itd-scene-stage">
                         {!selected ? (
                             <div className="itd-scene-empty">
@@ -434,13 +521,17 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                     scene={selectedScene}
                                     editTarget={editOption?.target}
                                     onRoomSelect={(name, elevation) => {
-                                        if (!submitting && selectedScene.version === 2) {
+                                        if (!busy && selectedScene.version === 2) {
                                             const option = editOptions.find((item) => {
                                                 if (item.target.kind !== "room" || item.target.room !== name) return false;
                                                 const bottom = selectedScene.spec.floors.slice(0, item.target.floor).reduce((sum, floor) => sum + floor.height, 0);
                                                 return elevation >= bottom && elevation < bottom + selectedScene.spec.floors[item.target.floor].height;
                                             });
-                                            if (option) setTargetKey(option.value);
+                                            if (option) {
+                                                setTargetKey(option.value);
+                                                setComposerOpen(false);
+                                                setPanel("edit");
+                                            }
                                         }
                                     }}
                                     onError={(text) => message.error(text)}
@@ -477,80 +568,107 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             </div>
                         )}
                     </div>
-                    {selected?.status === "succeeded" && selectedScene ? (
-                        <div className="itd-scene-meta">
-                            <div className="itd-scene-meta-copy">
-                                <strong>{selectedScene.title}</strong>
-                                <span>{[selectedScene.summary, sceneStats(selectedScene), selected.instruction ? `在「${parent ? sceneTitle(parent) : "上一版"}」上改：${selected.instruction}` : ""].filter(Boolean).join(" · ")}</span>
-                                {selected.knowledge?.length ? (
-                                    <Tooltip title={selected.knowledge.map((item) => `【${item.kindName}】${item.title}`).join("\n")} styles={{ root: { maxWidth: 360, whiteSpace: "pre-line" } }}>
-                                        <span className="itd-scene-knowledge" tabIndex={0}>
-                                            <BookOpen className="size-3.5" aria-hidden />
-                                            {`参考了知识库 ${selected.knowledge.length} 条`}
-                                        </span>
-                                    </Tooltip>
-                                ) : null}
-                                {selected.failedParts?.length || selected.dropped || selected.notice ? (
-                                    <span className="itd-scene-warning">
-                                        {[selected.notice || "", selected.failedParts?.length ? `「${selected.failedParts.join("、")}」没搭出来，已跳过` : "", selected.dropped ? `${selected.dropped} 个物体读不懂，已去掉` : ""].filter(Boolean).join("；")}
-                                    </span>
-                                ) : null}
-                            </div>
-                            <div className="itd-scene-edit">
-                                <label className="itd-field is-block">
-                                    <span className="itd-field-label">调整范围</span>
-                                    <Select
-                                        aria-label="局部调整目标"
-                                        value={editOption?.value || "whole"}
-                                        disabled={submitting}
-                                        showSearch
-                                        optionFilterProp="label"
-                                        options={[...editOptions.map(({ value, label }) => ({ value, label })), { value: "whole", label: "整套方案（可调整结构）" }]}
-                                        onChange={setTargetKey}
-                                    />
-                                </label>
-                                <Input
-                                    value={instruction}
-                                    maxLength={300}
-                                    placeholder={editOption ? "例如：只把这里的沙发换成 L 型，其他家具保留" : "例如：二层加一个露台"}
-                                    onChange={(event) => setInstruction(event.target.value)}
-                                    onPressEnter={() => void edit()}
-                                    disabled={submitting}
-                                    aria-label="修改要求"
-                                />
-                                <GenerationCostNotice config={config} model={model} capability="text" label={editOption ? "局部对话" : "整套方案调整"} />
-                                <Button icon={<Wand2 className="size-4" aria-hidden />} disabled={!instruction.trim() || submitting || Boolean(sceneModelProblem(config, model, 0))} loading={submitting} onClick={() => void edit()}>
-                                    {editOption ? "对话调整局部" : "调整整套方案"}
-                                </Button>
-                                <span className="itd-muted-note">{editOption ? "仅调整选定目标；按所选文本模型计费。点击三维房间标注也可选择目标。" : "整体调整允许改变结构，请核对新版本。"}</span>
-                                {parent ? (
-                                    <Button size="small" onClick={() => setSelectedId(parent.id)} disabled={submitting}>
-                                        查看上一版
-                                    </Button>
-                                ) : null}
-                            </div>
-                        </div>
-                    ) : null}
-                    {selected?.status === "succeeded" && selectedScene && editOption ? (
-                        <InteriorLocalControls key={`${selected.id}:${editOption.value}`} scene={selectedScene} target={editOption.target} disabled={submitting} onApply={applyManual} />
-                    ) : null}
-                    {selected?.taskId ? <TaskSettlement ids={[selected.taskId]} /> : null}
-                    {selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
-                    {scenes.length ? (
-                        <ul className="itd-scene-list thin-scrollbar" aria-label="这个项目的 3D 模型">
-                            {scenes.map((item) => (
-                                <li key={item.id}>
-                                    <button type="button" disabled={submitting} className={cn("itd-scene-card", item.id === selected?.id && "is-active")} aria-pressed={item.id === selected?.id} onClick={() => setSelectedId(item.id)}>
-                                        <strong>{sceneTitle(item)}</strong>
-                                        <span>{item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : item.stats || `${item.objectCount || 0} 个物体`}</span>
-                                        <small>{[item.instruction ? "改过一版" : SCENE_SCOPES.find((scope) => scope.value === item.scope)?.label, formatTime(item.createdAt)].filter(Boolean).join(" · ")}</small>
-                                    </button>
-                                    <button type="button" className="itd-scene-card-remove" aria-label={`删除「${sceneTitle(item)}」`} onClick={() => remove(item)}>
-                                        <Trash2 className="size-3.5" aria-hidden />
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
+                    {panel ? (
+                        <aside className="itd-model-panel thin-scrollbar" aria-label={panel === "edit" ? "局部调整面板" : panel === "history" ? "模型版本" : "方案与知识"}>
+                            <header>
+                                <strong>{panel === "edit" ? "局部调整" : panel === "history" ? "模型版本" : "方案与知识"}</strong>
+                                <Button type="text" size="small" aria-label="收起模型工具" icon={<X className="size-4" aria-hidden />} onClick={() => setPanel(null)} />
+                            </header>
+                            {panel === "info" && selected?.status === "succeeded" && selectedScene ? (
+                                <div className="itd-scene-meta">
+                                    <div className="itd-scene-meta-copy">
+                                        <strong>{selectedScene.title}</strong>
+                                        <span>{[selectedScene.summary, sceneStats(selectedScene), selected.instruction ? `在「${parent ? sceneTitle(parent) : "上一版"}」上改：${selected.instruction}` : ""].filter(Boolean).join(" · ")}</span>
+                                        {selected.knowledge?.length ? (
+                                            <details>
+                                                <summary className="itd-scene-knowledge">
+                                                    <BookOpen className="size-3.5" aria-hidden />
+                                                    {`参考知识 ${selected.knowledge.length} 条`}
+                                                </summary>
+                                                <ul>
+                                                    {selected.knowledge.map((item) => (
+                                                        <li key={item.id}>
+                                                            {item.title}
+                                                            <small> · {item.kindName}</small>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </details>
+                                        ) : null}
+                                        {selected.failedParts?.length || selected.dropped || selected.notice ? (
+                                            <span className="itd-scene-warning">
+                                                {[selected.notice || "", selected.failedParts?.length ? `「${selected.failedParts.join("、")}」没搭出来，已跳过` : "", selected.dropped ? `${selected.dropped} 个物体读不懂，已去掉` : ""]
+                                                    .filter(Boolean)
+                                                    .join("；")}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            ) : null}
+                            {panel === "edit" && selectedScene ? (
+                                <>
+                                    <div className="itd-scene-edit">
+                                        <label className="itd-field is-block">
+                                            <span className="itd-field-label">调整范围</span>
+                                            <Select
+                                                aria-label="局部调整目标"
+                                                value={editOption?.value || "whole"}
+                                                disabled={busy}
+                                                showSearch
+                                                optionFilterProp="label"
+                                                options={[...editOptions.map(({ value, label }) => ({ value, label })), { value: "whole", label: "整套方案（可调整结构）" }]}
+                                                onChange={setTargetKey}
+                                            />
+                                        </label>
+                                        <Input.TextArea
+                                            value={instruction}
+                                            maxLength={300}
+                                            placeholder={editOption ? "例如：只把这里的沙发换成 L 型，其他家具保留" : "例如：二层加一个露台"}
+                                            onChange={(event) => setInstruction(event.target.value)}
+                                            autoSize={{ minRows: 2, maxRows: 5 }}
+                                            disabled={busy}
+                                            aria-label="修改要求"
+                                        />
+                                        <GenerationCostNotice config={config} model={model} capability="text" label={editOption ? "局部对话" : "整套方案调整"} />
+                                        <Button icon={<Wand2 className="size-4" aria-hidden />} disabled={!instruction.trim() || busy || Boolean(sceneModelProblem(config, model, 0))} loading={busy} onClick={() => void edit()}>
+                                            {editOption ? "对话调整局部" : "调整整套方案"}
+                                        </Button>
+                                        <Tooltip title={editOption ? "只改选定目标，其余房间与结构保留；可点击模型房间标注选取目标。" : "整体调整允许改变结构，请核对新版本。"}>
+                                            <span className="itd-muted-note">
+                                                <Info className="size-3" aria-hidden />
+                                                {editOption ? "仅修改选定目标" : "允许修改整体结构"}
+                                            </span>
+                                        </Tooltip>
+                                        {parent ? (
+                                            <Button size="small" onClick={() => setSelectedId(parent.id)} disabled={busy}>
+                                                查看上一版
+                                            </Button>
+                                        ) : null}
+                                    </div>
+                                </>
+                            ) : null}
+                            {panel === "edit" && selected?.status === "succeeded" && selectedScene && editOption ? (
+                                <InteriorLocalControls key={`${selected.id}:${editOption.value}`} scene={selectedScene} target={editOption.target} disabled={busy} onApply={applyManual} />
+                            ) : null}
+                            {panel === "info" && selected?.taskId ? <TaskSettlement ids={[selected.taskId]} /> : null}
+                            {panel === "info" && selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
+                            {panel === "history" && scenes.length ? (
+                                <ul className="itd-scene-list thin-scrollbar" aria-label="这个项目的 3D 模型">
+                                    {scenes.map((item) => (
+                                        <li key={item.id}>
+                                            <button type="button" disabled={busy} className={cn("itd-scene-card", item.id === selected?.id && "is-active")} aria-pressed={item.id === selected?.id} onClick={() => setSelectedId(item.id)}>
+                                                <strong>{sceneTitle(item)}</strong>
+                                                <span>{item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : item.stats || `${item.objectCount || 0} 个物体`}</span>
+                                                <small>{[item.instruction ? "改过一版" : SCENE_SCOPES.find((scope) => scope.value === item.scope)?.label, formatTime(item.createdAt)].filter(Boolean).join(" · ")}</small>
+                                            </button>
+                                            <button type="button" className="itd-scene-card-remove" aria-label={`删除「${sceneTitle(item)}」`} disabled={busy} onClick={() => remove(item)}>
+                                                <Trash2 className="size-3.5" aria-hidden />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : null}
+                        </aside>
                     ) : null}
                 </div>
             </section>

@@ -10,6 +10,7 @@ import { studioEffectiveResolution, studioImageRequest, studioQualityOptions, st
 import { defaultImageCapabilityConfig } from "@/lib/model-capabilities";
 import { studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import { planStudioTypeset, wrapStudioText } from "@/lib/ecommerce-studio/typeset";
+import { STUDIO_COMPOSITIONS, studioDesignZone } from "@/lib/ecommerce-studio/art-direction";
 import type { StudioPhoto, StudioProduct } from "@/lib/ecommerce-studio/types";
 
 function ids() {
@@ -258,6 +259,61 @@ describe("ecommerce studio detail plan", () => {
         return { product: { ...product, brief: { ...product.brief, detailPlan: result.plan } }, roles, result };
     };
 
+    test("composition survives planning, run snapshots and reload, and controls export whitespace", () => {
+        const { product, roles } = planned();
+        const data = JSON.parse(reply);
+        data.screens[0].composition = "right";
+        data.screens[2].composition = "corner";
+        data.screens[4].composition = "invented";
+        const result = parseDetailPlan(JSON.stringify(data), product, roles, { id: "design", model: "m", createdAt: "2026-11-01T00:00:00Z" });
+        product.brief.detailPlan = result.plan;
+        const run = createStudioRun(product, ids(), "2026-11-01T00:00:00Z");
+        expect(run.shots[0].composition).toBe("right");
+        expect(run.shots[1].composition).toBe("corner");
+        expect(run.shots[3].composition).toBeUndefined();
+        product.runs = [run];
+        expect(normalizeStudioProduct(JSON.parse(JSON.stringify(product))).runs[0].shots[0].composition).toBe("right");
+        const model = compileStudioPrompt({ product, shot: run.shots[0], textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
+        expect(model.prompt).toContain("左图右文");
+        expect(model.prompt).toContain("标题位置、字号与主体裁切以本屏图文构图为准");
+        const overlay = compileStudioPrompt({ product, shot: run.shots[0], textMode: "overlay", model: "gpt-image-2", brief: product.brief, suite: run.suite });
+        expect(overlay.prompt).toContain("从左 58%、上 12%");
+        expect(studioDesignZone(run.shots[0], STUDIO_COMPOSITIONS.top.zone)).toEqual(STUDIO_COMPOSITIONS.right.zone);
+        expect(result.compositionKinds).toBe(2);
+    });
+
+    test("new unplanned poster batches change composition, while retries and white or reference layouts preserve their contract", () => {
+        const product = cupProduct();
+        product.brief.outputType = "poster";
+        product.brief.count = 3;
+        const first = createStudioRun(product, ids(), "2026-11-01T00:00:00Z");
+        expect(new Set(first.shots.map((shot) => shot.composition)).size).toBe(3);
+        product.runs = [first];
+        const next = createStudioRun(product, ids(), "2026-11-02T00:00:00Z");
+        expect(next.shots[0].composition).not.toBe(first.shots[0].composition);
+        expect(normalizeStudioProduct(JSON.parse(JSON.stringify(product))).runs[0].shots[0].composition).toBe(first.shots[0].composition);
+        product.brief.sameLayout = true;
+        expect(createStudioRun(product, ids(), "").shots.every((shot) => !shot.composition)).toBe(true);
+        product.brief.sameLayout = false;
+        product.brief.outputType = "white";
+        expect(createStudioRun(product, ids(), "").shots.every((shot) => !shot.composition && !shot.headline)).toBe(true);
+    });
+
+    test("replanning asks for a new geometry while targeted revision preserves accepted content", () => {
+        const { product, roles, result } = planned();
+        product.brief.prep = { asks: [], picked: "chosen", directions: [{ id: "chosen", angle: "户外", positioning: "日常随身", concept: "旧户外场景", palette: [], visual: "旧示例", headline: "旧示例", why: "" }] };
+        const alternative = buildDetailPlanPrompt(product, roles, { scope: "detail", alternative: result.plan });
+        expect(alternative).toContain("至少一半屏的构图或机位与旧版不同");
+        expect(alternative).toContain("清晨地铁站");
+        expect(alternative).not.toContain("卖家没提意见的部分尽量保留");
+        expect(alternative).not.toContain("positioning、concept 照用");
+        expect(alternative).toContain("本次换方向策划须换一个具体场景");
+        const revision = buildDetailPlanPrompt(product, roles, { scope: "detail", previous: result.plan });
+        expect(revision).toContain("卖家没提意见的部分尽量保留");
+        expect(revision).not.toContain("【换一个设计方向】");
+        expect(revision).toContain("positioning、concept 照用");
+    });
+
     test("only screens with evidence are offered and accepted; invented numbers are dropped", () => {
         const { product, roles, result } = planned();
         // 材质只有推断、参数只有一条、没有包装：这三种不排；有侧面图和容量，多角度和尺寸可以排。
@@ -303,7 +359,7 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled.prompt).toContain("【这一屏的画面】");
         expect(compiled.prompt).toContain("清晨地铁站");
         expect(compiled.prompt).toContain("整套视觉规范「按商品策划」");
-        expect(compiled.prompt).toContain("按「这一屏的画面」里的版式和文字位置排");
+        expect(compiled.prompt).toContain("按本屏图文构图与画面说明排");
         for (const title of ["【构图与机位】", "【光线】", "【背景与道具】"]) expect(compiled.prompt).not.toContain(title);
         const skipped = { ...product, brief: toggleStudioSetEntry(product, "p1") };
         expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "杯盖", "握持", "办公桌", "收尾"]);
@@ -325,7 +381,7 @@ describe("ecommerce studio detail plan", () => {
         expect(prompt).toContain("【可以用的版式】");
         expect(prompt).toContain("icons（图标卖点）");
         expect(prompt).toContain("整套至少用到 6 种版式");
-        expect(prompt).toContain("字体（中文标题的字重和气质");
+        expect(prompt).toContain("整组共用的字体家族、色板、边距和图形语言");
         expect(prompt).toContain("以「雾感极简」为基础");
         expect(prompt).not.toContain('"styleId"');
 
@@ -492,7 +548,7 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("【卖家对这次策划的补充调整】");
         expect(prompt).toContain("多放生活场景，少放参数");
         expect(prompt).toContain("【上一版策划】");
-        expect(prompt).toContain("1. 旧首屏（detail-hero · poster）「旧标题」：旧画面");
+        expect(prompt).toContain("1. 旧首屏（detail-hero · poster · 按画面）「旧标题」：旧画面");
         expect(prompt).toContain("【设计调性】");
         expect(prompt).toContain("- global-minimal（国际大牌极简）");
         expect(prompt).toContain("【文案要求】");
@@ -516,7 +572,7 @@ describe("ecommerce studio plans for every output type", () => {
         expect(compiled.prompt).toContain("【设计调性「时尚大片」】");
         expect(compiled.prompt).toContain("时尚杂志式版面");
         // 主标题的字重跟设计调性走，不一律加粗。
-        expect(compiled.prompt).toContain("字重按设计调性和整套视觉规范");
+        expect(compiled.prompt).toContain("字重按设计调性");
         expect(compiled.prompt).not.toContain("粗字重");
         const restored = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...plannedProduct, runs: [run] })))!;
         expect(restored.runs[0].suite?.tone).toBe("editorial");
@@ -548,9 +604,9 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("同一个商品角度和景别整套最多用两次");
         expect(prompt).toContain("首屏必须有");
         expect(prompt).toContain("商品标识、印字和型号不单独成屏");
-        expect(prompt).toContain("主色要撑得起整屏");
+        expect(prompt).toContain("至少两屏用强对比");
         expect(prompt).toContain("主标题不能只是罗列外观或参数");
-        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张是一个系列");
+        expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张共用字体家族与色板");
         // 没有附图时不写附图说明。
         expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
 

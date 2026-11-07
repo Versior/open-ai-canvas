@@ -19,7 +19,7 @@ import {
     studioTemplateShotRoles,
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
-import { studioChannelDesign } from "./art-direction";
+import { STUDIO_COMPOSITIONS, STUDIO_COMPOSITION_IDS, studioChannelDesign } from "./art-direction";
 import { studioPickedDirection, studioPrepFactsText, studioPrepPromptLines } from "./plan-prep";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioDetailPlan, type StudioPlannedScreen, type StudioPlanScope, type StudioPlanTarget, type StudioProduct, type StudioShotRole } from "./types";
@@ -65,7 +65,7 @@ function styleLines(product: StudioProduct): string[] {
  * 这次策划的范围：详情页 10 屏、主图 5 张、按选中的单张类型逐张出，或按表单里选中的模板一张对一张排；
  * previous 是要按补充调整修改的上一版。images 是随任务附带的图：先是商品图，后面是卖家上传的参考图（大牌或爆款截图）。
  */
-export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; images?: { photos: number; references: number } };
+export type StudioPlanRequest = { scope: StudioPlanScope; targets?: StudioPlanTarget[]; previous?: StudioDetailPlan; alternative?: StudioDetailPlan; images?: { photos: number; references: number } };
 
 function imageRange(from: number, count: number) {
     return count > 1 ? `图${from}–图${from + count - 1}` : `图${from}`;
@@ -167,7 +167,7 @@ function rhythmLines(request: StudioPlanRequest): string[] {
         return [
             head,
             `- ${STUDIO_COLOR_WORLD}。至少两屏用强对比（深底浅字，或一整块饱和主色），不能整套都是同一档浅色渐变，也不能每屏换一种互不相干的背景。`,
-            "- 每屏同一个栏目头：英文小标题、主标题、副标题的位置、字号和颜色全套一致，一眼就是一套。",
+            "- 系列感来自字体家族、色板和边距，不固定栏目头位置或字号。大标题、微距、满版场景、侧栏与信息页交替，不能每屏都是顶端标题加居中商品。",
             "- 机位要有变化：同一个商品角度和景别整套最多用两次；至少一屏超近微距，一屏有人或手和商品互动，一屏是创意静物。",
             STUDIO_VISUALIZE,
             `- 关键几屏要有一个创意手法（首屏必须有）：${STUDIO_CREATIVE_DEVICES}。把用到的手法写进 visual，写清楚画面怎么做。`,
@@ -176,7 +176,7 @@ function rhythmLines(request: StudioPlanRequest): string[] {
     if (request.scope === "main")
         return [
             head,
-            "- 5 张是一个系列：同一个版头样式（同色标题条或角标、同一种字体和图标底板），同一组展台、道具和色块搭成的小世界，同一套主色，背景在这套颜色里做深浅变化；首图之外每张换一个机位和景别。",
+            "- 5 张共用字体家族与色板，布局随内容变化，避免每张都加同色标题条、展台或图标底板；首图之外换机位、裁切和图文重心。",
             "- 讲功能用手在用的特写，可以配一两个圆形放大镜头把按键、接口或质地放大；已确认的关键数字做成画面里最大的元素。",
             `- 首图之外每张都要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`,
             "- 商品标识、印字和型号不当卖点。",
@@ -184,7 +184,7 @@ function rhythmLines(request: StudioPlanRequest): string[] {
     if (request.scope === "template")
         return [
             head,
-            `- 模板只定了每张讲什么，不要照着模板的镜头说明平铺直叙。${STUDIO_COLOR_WORLD}，相邻两张换机位和景别；每张同一个栏目头或版头。`,
+            `- 模板定每张讲什么和系列字体、色板，不锁栏目头的位置。${STUDIO_COLOR_WORLD}，相邻两张换机位、裁切和图文重心。用户明确要求参考图同款时沿用其布局。`,
             STUDIO_VISUALIZE,
             `- 白底图之外的首张和关键几张要有一个让人停下来的创意手法：${STUDIO_CREATIVE_DEVICES}，写进 visual。`,
             "- 商品标识、印字和型号不当卖点。",
@@ -220,7 +220,7 @@ function previousLines(previous: StudioDetailPlan | undefined): string[] {
         "",
         "【上一版策划】（按卖家的补充调整修改这一版：卖家没提意见的部分尽量保留，卖家不满意的地方要改到位）",
         previous.summary ? `思路：${previous.summary}` : "",
-        ...previous.screens.map((screen, index) => `${index + 1}. ${screen.title}（${screen.role} · ${screen.layout}）${screen.headline ? `「${screen.headline}」` : ""}：${screen.visual.slice(0, 60)}`),
+        ...previous.screens.map((screen, index) => `${index + 1}. ${screen.title}（${screen.role} · ${screen.layout} · ${screen.composition || "按画面"}）${screen.headline ? `「${screen.headline}」` : ""}：${screen.visual.slice(0, 120)}`),
     ].filter(Boolean);
 }
 
@@ -281,11 +281,17 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         brief.extra.trim() ? `卖家补充要求：${oneLine(brief.extra)}` : undefined,
         ...styleLines(product),
         cast.length ? `已在模特库选了${cast.join("、")}：有人物的图用 detail-model，人物会按模特库出图。` : undefined,
-        ...studioPrepPromptLines(brief.prep),
+        ...studioPrepPromptLines(brief.prep, Boolean(request.alternative)),
         ...(request.scope === "template" ? templateLines(product) : []),
         note ? "" : undefined,
         note ? `【卖家对这次策划的补充调整】（优先照做；和商品事实、平台规则冲突时以事实和规则为准）\n${note}` : undefined,
         ...previousLines(request.previous),
+        ...(request.alternative
+            ? [
+                  "【换一个设计方向】保留商品事实、用户选定的类型与数量、模特和参考约束；重新选择视觉主题、图文重心和裁切。至少一半屏的构图或机位与旧版不同，不能只换配色或改写标题。用户明确锁定参考图同款时保留该布局，只变化未锁定的摄影与细节。",
+                  ...request.alternative.screens.map((screen, index) => `旧版 ${index + 1}：${screen.layout} / ${screen.composition || "按画面"} / ${screen.visual.slice(0, 120)}`),
+              ]
+            : []),
         "",
         request.scope === "single" ? undefined : "【可以排的屏型】（role 只能从这里选；没有列出的屏型说明依据不够，不要排）",
         ...(request.scope === "single"
@@ -318,13 +324,14 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "【要求】",
         "1. 先做视觉策划，再排每一张（详见系统提示里的设计策划知识）：① 想清楚买这件商品的人下单前最关心什么、最担心什么，买的人和用的人是不是同一个人；② 同类商品的详情页通常长什么样，这组图要避开哪些套路；③ 用一句话写差异化定位，写进 positioning（不超过 40 个字）；④ 由定位推出一个具体的视觉主题，写成创意主线放进 concept（不超过 60 个字）：一个具体的世界或场景，不是一种颜色，换成别的商品就不成立；⑤ 从主题里取 3–5 个能反复使用的视觉元素写进 motifs（每个不超过 8 个字，比如道具、自然物、光影、图形、动作）。不用放在任何商品上都成立的通用画面（纯色背景加商品居中、泛泛的居家场景、空洞的大理石台面、整套同一条波浪曲线）。",
         scopeRequirement(product, request),
+        `每屏选一个 composition 图文骨架：${STUDIO_COMPOSITION_IDS.map((id) => `${id}（${STUDIO_COMPOSITIONS[id].label}：${STUDIO_COMPOSITIONS[id].render}）`).join("；")}。visual 的文字与商品位置须与 composition 一致；内容版式 layout 定信息怎么表达，composition 定主体与留白在哪里。白底纯商品图不选 composition。${request.scope === "detail" ? "10 屏至少使用 4 种构图骨架，相邻两屏不重复同一骨架。" : "有文字的多张图交替构图骨架，单张图选最适合本商品的一种。"}`,
         `3. 每张只承担一个目的，并选一个最适合讲这件事的 layout。${request.scope === "detail" ? "相邻两屏的版式不能相同，整套至少用到 6 种版式；同一种屏型不能连续超过两屏；" : "相邻两张的版式尽量不同；"}相邻两张的景别、机位和场景也不能相同。`,
         "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字），像摄影师和美术指导的分镜说明：背景或场景、商品怎么摆、什么角度和焦段、人物和动作（如有）、道具（不超过 3 件）、主色调、光线的方向和质感，以及按版式怎么分区、文字放在哪里。visual 和 style 里不写任何品牌名（上面提到的大牌只用来定调性），也不写「参考某某官网」。",
         "5. elements 写这一张的信息元素（不超过 80 个字）：图标卖点写几个图标、各画什么；引线标注写引线指向哪几个部位，要不要圆形放大镜头；拼格写每格放哪个部位；对照写两栏各放什么；痛点共鸣写人物神情和几个气泡标签，或宫格每格的场景；机理示意写剖面分几层、光点和箭头从哪到哪；成分特写写每个成分放在什么容器里；其他版式写装饰元素（色块、细线、圆角卡片、底部一排小图）。只写画面元素，不加新的事实，不写屏的序号、页码和屏号。",
         "6. 商品图里看不到的角度、内部结构、配件和包装不要安排成画面主体。",
         "7. 文案字数：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 6 条，每条不超过 12 个字，图标卖点、引线标注、拼格、痛点、机理、成分、资质和收尾版式的 lines 就是每个图标、引线、格子、气泡或成分的标签，数量和 elements 里写的一致。eyebrow 是主标题上方的英文栏目小标题（如 CLEAR FRAME，只用英文字母，不带序号），不需要就留空。只用上面的核心标题、卖点和已确认的事实，可以改写，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
         "8. 同一条卖点最多用在一张（详情页的头图和收尾可以回顾）。素材不够写文案的图，headline 写一个短栏目名或设 noText: true。",
-        "9. style 是整组共用的设计规范（不超过 300 个字），像设计师交给出图的规范：色板（底色、主色、强调色，各写色名和 #色值；主色要撑得起整屏，是深色或饱和色，按上面的节奏用在几屏的大色块背景上，不要整套都是同一档浅色）、背景体系（整套的色彩世界，照片怎么统一调色）、光线、字体（中文标题的字重和气质、英文小标题的样式、数字的样式、关键词的强调色）、栏目头（每屏同一位置、同一结构：英文小标题、主标题、副标题，比如再加一条细线，不用序号）、组件（标签用什么样式、卡片圆角、图标线框还是面性和线条粗细、有没有底板、放大镜头圆圈的描边）、反复出现的装饰元素。所有图一致，每张的背景和场景写在各自的 visual 里。",
+        "9. style 是整组共用的字体家族、色板、边距和图形语言（不超过 300 个字）。给出色名、色值、标题气质和标签风格。统一品牌识别，不规定每屏同一标题位置、同一字号或同一种卡片；首屏大胆、细节屏克制，字号和裁切按购买问题变化。每张的摄影、图文位置和道具写在各自 visual 里。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
         request.scope === "single"
@@ -332,7 +339,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
             : `12. 视觉元素每张选用一两个，换着形式出现（实物、光影、局部、图形），至少${mainLike ? "两" : "三"}张不出现；不要把同一个图形贴在每一张上。整件商品连同包装完整摆拍的张数不超过一半，包装盒最多出现在两三张，其余张用质地、局部、使用中的手和人、场景、机理示意来讲；visual 里没写包装盒的张，画面里就只有 visual 写到的商品部分。`,
         "",
         "只输出下面这个 JSON，不要任何解释：",
-        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${exampleRole}","layout":"poster","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
+        `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${exampleRole}","layout":"poster","composition":"left","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
     ];
     return lines.filter((line): line is string => line !== undefined).join("\n");
 }
@@ -354,6 +361,8 @@ export type StudioDetailPlanResult = {
     /** 详情页用到几种版式、相邻两屏版式相同的有几处；版式变化不够时提示用户。 */
     layoutKinds: number;
     layoutRepeats: number;
+    compositionKinds: number;
+    compositionRepeats: number;
 };
 
 /** 读回策划结果：屏型必须在这件商品能排的范围里，文案的数字必须有出处；去掉依据不够的屏后剩得太少时要求重试。 */
@@ -374,7 +383,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const layouts = new Set(studioDetailLayoutIds(product));
     const finish = (planned: StudioPlannedScreen): StudioPlannedScreen => {
         const screen = layouts.has(planned.layout) ? planned : { ...planned, layout: studioRoleLayout(planned.role) };
-        if (textless || screen.noText) return { ...screen, headline: "", subline: "", lines: [], noText: true };
+        if (textless || screen.noText || screen.role === "main-white") return { ...screen, composition: undefined, headline: "", subline: "", lines: [], noText: true };
         return { ...screen, headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
     };
     let screens: StudioPlannedScreen[];
@@ -449,5 +458,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         tacky,
         layoutKinds: new Set(screens.map((screen) => screen.layout)).size,
         layoutRepeats: screens.filter((screen, index) => index > 0 && screen.layout === screens[index - 1].layout).length,
+        compositionKinds: new Set(screens.map((screen) => screen.composition).filter(Boolean)).size,
+        compositionRepeats: screens.filter((screen, index) => index > 0 && screen.composition && screen.composition === screens[index - 1].composition).length,
     };
 }

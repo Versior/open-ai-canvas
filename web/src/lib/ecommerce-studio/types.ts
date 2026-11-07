@@ -17,6 +17,8 @@ export type StudioPlanKind = "main" | "detail";
 export type StudioTextMode = "model" | "overlay";
 /** 详情页一屏的版式：决定画面怎么分区、要点文字排成图标标签、引线标签还是参数行。 */
 export type StudioDetailLayoutId = "poster" | "split" | "icons" | "callout" | "compare" | "grid" | "scene" | "data" | "spec" | "closing" | "pain" | "mechanism" | "ingredients" | "proof";
+/** 构图骨架与内容版式分开：决定文字留白、主体位置和裁切。 */
+export type StudioCompositionId = "left" | "right" | "top" | "bottom" | "center" | "corner";
 /** 「调整这一张」里修改要求的字数上限。 */
 export const STUDIO_SHOT_ADJUST_MAX = 200;
 /** 质感预设；auto 表示按商品推荐：策划详情页时由策划挑，不策划时按品类挑。 */
@@ -146,6 +148,7 @@ export type StudioShot = {
     visual?: string;
     /** 详情页策划给这一屏选的版式，决定要点文字怎么排（图标标签、引线标签等）。 */
     layout?: StudioDetailLayoutId;
+    composition?: StudioCompositionId;
     /** 主标题上方的英文或编号小标题。 */
     eyebrow?: string;
     /** 用户在「调整这一张」里写的修改要求，只影响这一张。 */
@@ -176,6 +179,7 @@ export type StudioPlannedScreen = {
     visual: string;
     /** 版式：海报大字、图标卖点、引线标注、细节拼格等。 */
     layout: StudioDetailLayoutId;
+    composition?: StudioCompositionId;
     /** 信息元素：几个图标各画什么、引线指向哪些部位、拼格每格放什么。 */
     elements: string;
     /** 主标题上方的英文或编号小标题，可以为空。 */

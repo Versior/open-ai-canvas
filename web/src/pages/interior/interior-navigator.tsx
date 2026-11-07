@@ -35,8 +35,10 @@ export function InteriorNavigator({
     onWorkspace: (workspace: InteriorWorkspace) => void;
     onMode: (mode: InteriorMode) => void;
 }) {
+    // 模型视口已有工作区切换，不再重复占一行导航卡。
+    if (workspace === "scene") return null;
     return (
-        <div className="itd-navigator" data-compact={workspace === "scene" || undefined}>
+        <div className="itd-navigator">
             <div className="itd-navigator-title">
                 <div>
                     <span>SPACE DESIGN STUDIO</span>

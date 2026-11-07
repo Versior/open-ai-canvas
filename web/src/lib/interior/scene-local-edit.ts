@@ -1,4 +1,4 @@
-import { normalizeInteriorScene, SCENE_MATERIALS, type SceneObject } from "./scene-3d";
+import { knowledgeLines, normalizeInteriorScene, SCENE_MATERIALS, type SceneKnowledge, type SceneObject } from "./scene-3d";
 import { FACING_ROTATION, FLOOR_FINISHES, FURNITURE_TYPES, furnitureInfo, snap, SPEC_LIMITS, type InteriorSceneData, type SpecFurniture, type SpecSide } from "./scene-spec";
 
 export type SceneEditTarget = { kind: "room"; floor: number; room: string } | { kind: "furniture"; floor: number; index: number } | { kind: "object"; index: number };
@@ -118,7 +118,7 @@ export function applySceneLocalEdit(scene: InteriorSceneData, target: SceneEditT
     return next;
 }
 
-export function buildSceneLocalEditPrompt(scene: InteriorSceneData, target: SceneEditTarget, instruction: string) {
+export function buildSceneLocalEditPrompt(scene: InteriorSceneData, target: SceneEditTarget, instruction: string, knowledge?: SceneKnowledge[]) {
     const current = targetData(scene, target);
     const label = sceneEditOptions(scene).find((option) => sameTarget(option.target, target))!.label;
     const floor = scene.version === 2 && target.kind !== "object" ? scene.spec.floors[target.floor] : undefined;
@@ -136,6 +136,7 @@ export function buildSceneLocalEditPrompt(scene: InteriorSceneData, target: Scen
         `当前目标：${JSON.stringify(current)}`,
         ...(context ? [`只读空间参考（不能修改）：${JSON.stringify(context)}`] : []),
         `用户要求：${instruction.trim()}`,
+        ...(knowledge?.length ? ["室内知识参考（只用于选定目标，不扩大修改范围）：", ...knowledgeLines(knowledge)] : []),
         schema,
         "尺寸和位置单位为米，位置按 0.05 米网格保存；家具宽深为 0.3 至 6 米，家具旋转为 90 度倍数。颜色须是六位十六进制。禁止改变其他房间、墙体、轴网、楼层或模型整体。",
         target.kind === "object" ? `可用物体材质：${SCENE_MATERIALS.join(", ")}` : `可用家具类型：${Object.keys(FURNITURE_TYPES).join(", ")}`,

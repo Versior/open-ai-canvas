@@ -1,4 +1,5 @@
 import { STUDIO_STYLES } from "./shot-specs";
+import { STUDIO_COMPOSITIONS, studioCompositionOf } from "./art-direction";
 import { STUDIO_SUITE_LIMITS, studioSuiteShotRole } from "./suites";
 import {
     studioFactUsable,
@@ -65,7 +66,7 @@ export const STUDIO_DETAIL_LAYOUTS: Record<StudioDetailLayoutId, { label: string
     poster: {
         label: "海报大字",
         use: "首屏或情绪屏：商品大图配超大标题，一眼抓住注意力",
-        render: "海报式构图：商品是画面里最大的主体，主标题用超大字号占据上部约三分之一，强对比、留白干净，像品牌主视觉",
+        render: "商品与标题形成强烈的大小对比和视觉重心，主标题可分行；位置由本屏构图决定，留白干净，像品牌主视觉",
         lines: "要点（主标题下方一行小字，用细竖线隔开）",
     },
     split: {
@@ -226,7 +227,7 @@ export const STUDIO_DESIGN_TONES: Record<StudioDesignToneId, { label: string; us
     care: {
         label: "专业护理",
         use: "像头部医用、保健和功效个护品牌的详情页：整套一个色彩世界，痛点、机理、成分和证据一路讲清，可信但不冰冷",
-        render: "专业护理品牌的版面：整套一个色彩世界（午夜蓝、天空蓝或水蓝，加一个暖色强调），柔和的光效、光点和光晕，机理和成分用半透明 3D 示意图表现；每屏同一个栏目头（英文小标题、细宋体或中黑体主标题、一句副标题），关键词换成强调色；胶囊标签、圆角卡片和图标底板全套统一；人物和场景照片统一调色，信息清楚、可信、不吓人",
+        render: "专业护理品牌的版面：整套一个色彩世界（午夜蓝、天空蓝或水蓝，加一个暖色强调），柔和的光效、光点和光晕，机理和成分用半透明 3D 示意图表现；共用细宋体或中黑体字体家族，标题位置、字号和图文重心随本屏内容变化，关键词换成强调色；图标和标签保持图形语言一致，不能每屏都放同一个栏目头或卡片；人物和场景照片统一调色，信息清楚、可信、不吓人",
     },
     "hot-seller": {
         label: "爆款转化",
@@ -365,6 +366,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         purpose: text(record.purpose, limits.purpose),
         visual,
         layout,
+        ...(studioCompositionOf(record.composition) ? { composition: studioCompositionOf(record.composition) } : {}),
         elements: text(record.elements, limits.elements),
         eyebrow: studioEyebrowText(eyebrow),
         headline: text(record.headline, limits.headline),
@@ -443,7 +445,12 @@ export type StudioPlanField = "detailPlan" | "mainPlan" | "singlePlan" | "templa
 export const STUDIO_PLAN_FIELD: Record<StudioPlanScope, StudioPlanField> = { detail: "detailPlan", main: "mainPlan", single: "singlePlan", template: "templatePlan" };
 
 /** 改策划里的一屏（标题、版式、画面、信息元素和文案），返回新的表单参数；超出上限的部分截掉。 */
-export function patchStudioDetailPlanScreen(brief: StudioBrief, index: number, patch: Partial<Pick<StudioPlannedScreen, "title" | "layout" | "visual" | "elements" | "headline" | "subline" | "lines">>, field: StudioPlanField = "detailPlan"): StudioBrief {
+export function patchStudioDetailPlanScreen(
+    brief: StudioBrief,
+    index: number,
+    patch: Partial<Pick<StudioPlannedScreen, "title" | "layout" | "composition" | "visual" | "elements" | "headline" | "subline" | "lines">>,
+    field: StudioPlanField = "detailPlan",
+): StudioBrief {
     const plan = brief[field];
     const current = plan?.screens[index];
     if (!plan || !current) return brief;
@@ -453,6 +460,7 @@ export function patchStudioDetailPlanScreen(brief: StudioBrief, index: number, p
         ...(patch.title !== undefined ? { title: patch.title.slice(0, limits.title) } : {}),
         ...(patch.visual !== undefined ? { visual: patch.visual.slice(0, limits.visual) } : {}),
         ...(patch.layout && STUDIO_DETAIL_LAYOUT_IDS.includes(patch.layout) ? { layout: patch.layout } : {}),
+        ...(studioCompositionOf(patch.composition) ? { composition: patch.composition } : {}),
         ...(patch.elements !== undefined ? { elements: patch.elements.slice(0, limits.elements) } : {}),
         ...(patch.headline !== undefined ? { headline: patch.headline.slice(0, limits.headline) } : {}),
         ...(patch.subline !== undefined ? { subline: patch.subline.slice(0, limits.subline) } : {}),
@@ -470,11 +478,21 @@ export function studioDetailPlanKey(index: number) {
 export const STUDIO_SHOT_VISUAL_MAX = 1000;
 
 /** 出图时写进提示词的这一屏：版式、目的、画面、信息元素依次写。画面被清空时返回空，这一屏改按镜头规格出。 */
-export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "layout" | "elements">>) {
+export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "layout" | "composition" | "elements">>) {
     const visual = screen.visual.trim();
     if (!visual) return "";
     const layout = screen.layout ? STUDIO_DETAIL_LAYOUTS[screen.layout] : undefined;
     const purpose = screen.purpose.trim();
     const elements = screen.elements?.trim() || "";
-    return [layout ? `版式「${layout.label}」：${layout.render}。` : "", purpose ? `这一屏要让买家明白：${purpose}` : "", `画面：${visual}`, elements ? `信息元素：${elements}` : ""].filter(Boolean).join("\n").slice(0, STUDIO_SHOT_VISUAL_MAX);
+    const composition = screen.composition ? STUDIO_COMPOSITIONS[screen.composition] : undefined;
+    return [
+        layout ? `内容版式「${layout.label}」：${layout.render}。` : "",
+        composition ? `本屏构图「${composition.label}」（主体和文字的位置以此为准）：${composition.render}。` : "",
+        purpose ? `这一屏要让买家明白：${purpose}` : "",
+        `画面：${visual}`,
+        elements ? `信息元素：${elements}` : "",
+    ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, STUDIO_SHOT_VISUAL_MAX);
 }

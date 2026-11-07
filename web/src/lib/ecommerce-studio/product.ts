@@ -3,6 +3,7 @@ import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES, studioCle
 import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanMotifs, studioPlanTone } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
+import { studioCompositionOf } from "./art-direction";
 import {
     STUDIO_PRODUCT_SCHEMA,
     STUDIO_SHOT_ADJUST_MAX,
@@ -240,6 +241,7 @@ function normalizeShot(shot: Record<string, unknown>, fallbackTime: string): Stu
         sellingPointIds: strings(shot.sellingPointIds),
         tweaks: strings(shot.tweaks),
         ...(typeof shot.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(shot.layout as StudioDetailLayoutId) ? { layout: shot.layout as StudioDetailLayoutId } : {}),
+        ...(studioCompositionOf(shot.composition) ? { composition: studioCompositionOf(shot.composition) } : {}),
         // 以前的出图记录里小标题可能带着「01」这类序号，读回时去掉，重出时不再画上页码。
         ...(typeof shot.eyebrow === "string" && studioEyebrowText(shot.eyebrow.slice(0, STUDIO_DETAIL_PLAN_LIMITS.eyebrow)) ? { eyebrow: studioEyebrowText(shot.eyebrow.slice(0, STUDIO_DETAIL_PLAN_LIMITS.eyebrow)) } : {}),
         ...(typeof shot.adjust === "string" && shot.adjust.trim() ? { adjust: shot.adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX) } : {}),

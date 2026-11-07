@@ -63,6 +63,14 @@ test("persisted target field ordering does not change its identity", () => {
     expect(buildSceneLocalEditPrompt(scene(), target, "换颜色")).toContain("沙发");
 });
 
+test("local edit knowledge informs the selected target without widening writable fields", () => {
+    const prompt = buildSceneLocalEditPrompt(scene(), { kind: "furniture", floor: 0, index: 0 }, "沙发换颜色", [{ kindName: "动线", title: "沙发间距", guidance: "沙发与茶几间距建议 0.4 米" }]);
+    expect(prompt).toContain("沙发与茶几间距建议 0.4 米");
+    expect(prompt).toContain("只用于选定目标，不扩大修改范围");
+    expect(prompt).toContain("禁止改变其他房间");
+    expect(() => applySceneLocalEdit(scene(), { kind: "furniture", floor: 0, index: 0 }, { room: "卧室" })).toThrow();
+});
+
 test("rotation, facing and anchor edits survive resource normalization without stale values", () => {
     const base = scene(),
         target: SceneEditTarget = { kind: "furniture", floor: 0, index: 0 };

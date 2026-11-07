@@ -4,11 +4,14 @@
 .agent-skin-scene {
     position: relative;
     flex: none;
-    min-height: 86px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
     overflow: hidden;
-    margin: 0 12px 10px;
+    margin: 0 12px 4px;
     border: 1px solid color-mix(in srgb, var(--agent-accent) 35%, var(--agent-usage-line));
-    border-radius: 18px;
+    border-radius: var(--r-md);
     color: var(--agent-accent);
     background: var(--agent-surface-base);
 }
@@ -21,32 +24,25 @@
 }
 .agent-skin-scene-copy {
     position: relative;
-    display: grid;
-    gap: 3px;
-    padding: 16px;
-    width: 52%;
-}
-.agent-skin-scene-copy small {
-    font-size: 11px;
-    color: var(--agent-caption);
+    padding: 0 10px;
+    flex: 1;
+    min-width: 0;
 }
 .agent-skin-scene-copy strong {
     color: var(--agent-ink);
-    font-size: 17px;
+    font-size: 12px;
+    font-weight: 500;
 }
 .agent-skin-character {
-    position: absolute;
-    right: 75px;
-    bottom: 0;
-    width: 62px;
-    height: 68px;
+    position: relative;
+    width: 28px;
+    height: 30px;
     object-fit: contain;
     pointer-events: none;
 }
 .agent-skin-choice {
-    position: absolute;
-    right: 10px;
-    top: 10px;
+    position: relative;
+    margin-right: 6px;
 }
 .agent-skin-choice select {
     max-width: 90px;
@@ -65,7 +61,7 @@
     border: 2px solid color-mix(in srgb, var(--agent-accent) 38%, var(--agent-surface-base));
 }
 .canvas-agent-panel[data-skin="cloud"] .agent-skin-scene {
-    border-radius: 24px 24px 32px 8px;
+    border-radius: var(--r-lg);
 }
 .canvas-agent-panel[data-skin="cloud"] .agent-message-body {
     border-radius: 20px 20px 20px 5px;
@@ -139,22 +135,10 @@
     border-radius: 18px 4px 18px 4px;
 }
 .canvas-agent-panel[data-skin="site"] .agent-skin-scene {
-    min-height: 60px;
     border-radius: var(--r-lg);
 }
 @media (max-width: 480px) {
     .agent-skin-scene {
-        min-height: 72px;
-    }
-    .agent-skin-scene-copy {
-        padding: 12px;
-    }
-    .agent-skin-scene-copy strong {
-        font-size: 15px;
-    }
-    .agent-skin-character {
-        right: 68px;
-        width: 48px;
-        height: 54px;
+        height: 32px;
     }
 }

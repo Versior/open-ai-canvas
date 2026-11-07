@@ -148,7 +148,10 @@ const adminNavigation: AdminNavigationGroup[] = [
     {
         key: "interior",
         label: "室内设计",
-        items: [{ path: "/admin/interior", label: "室内设计管理", shortLabel: "室内", icon: <Sofa className="size-4" /> }],
+        items: [
+            { path: "/admin/interior", label: "室内设计管理", shortLabel: "室内", icon: <Sofa className="size-4" /> },
+            { path: "/admin/interior/knowledge", label: "室内知识库", shortLabel: "知识", icon: <Database className="size-4" /> },
+        ],
     },
     {
         key: "settings",
@@ -177,11 +180,10 @@ function isAdminNavigationPath(pathname: string, navigationPath: string) {
 }
 
 function findAdminNavigation(pathname: string) {
-    for (const group of adminNavigation) {
-        const item = group.items.find((candidate) => isAdminNavigationPath(pathname, candidate.path));
-        if (item) return { group, item };
-    }
-    return undefined;
+    return adminNavigation
+        .flatMap((group) => group.items.map((item) => ({ group, item })))
+        .filter(({ item }) => isAdminNavigationPath(pathname, item.path))
+        .sort((a, b) => b.item.path.length - a.item.path.length)[0];
 }
 
 function visibleNavigationGroups(features: Partial<Record<"frontendModelsEnabled", boolean>>) {
@@ -446,10 +448,10 @@ function AdminNavigation({ collapsed }: { collapsed: boolean }) {
         });
 
     const renderItem = (item: AdminNavigationItem) => {
-        const active = isAdminNavigationPath(location.pathname, item.path);
+        const active = findAdminNavigation(location.pathname)?.item.path === item.path;
         return (
             <AdminTooltip key={item.path} delay={100} title={collapsed ? item.label : undefined} placement="right">
-                <NavLink to={item.path} end={item.path === "/admin"} aria-label={collapsed ? item.label : undefined} aria-current={active ? "page" : undefined} className={cn("admin-nav-link", collapsed && "is-collapsed", active && "is-active")}>
+                <NavLink to={item.path} end={item.path === "/admin"} aria-label={collapsed ? item.label : undefined} aria-current={active ? "page" : false} className={cn("admin-nav-link", collapsed && "is-collapsed", active && "is-active")}>
                     {item.icon}
                     {collapsed ? <span className="admin-nav-short-label">{item.shortLabel}</span> : <span className="truncate">{item.label}</span>}
                 </NavLink>

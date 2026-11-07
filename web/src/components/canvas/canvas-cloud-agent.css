@@ -80,12 +80,12 @@
 }
 
 .agent-panel-header {
-    min-height: 68px;
-    padding: var(--space-3) var(--space-4) var(--space-2) var(--space-5);
+    min-height: 52px;
+    padding: var(--space-2) var(--space-3);
 }
 
 .agent-panel-title {
-    font-size: var(--fs-heading);
+    font-size: var(--fs-ui);
     font-weight: 600;
     letter-spacing: -0.02em;
 }
@@ -94,6 +94,9 @@
     margin-top: var(--space-1);
     color: var(--agent-caption);
     font-size: var(--fs-label);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .agent-panel-status {
