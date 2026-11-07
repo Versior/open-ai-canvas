@@ -197,6 +197,18 @@ export default function VideoReplicationPage() {
                     />
                 ) : (
                     <ReplicationHome
+                        onTool={(tool) => {
+                            if (tool === "works") return changeTab("works");
+                            if (tool === "teardown") {
+                                const composer = rootRef.current?.querySelector<HTMLElement>(".vr-composer");
+                                composer?.scrollIntoView({ behavior: "smooth", block: "center" });
+                                composer?.querySelector<HTMLElement>("textarea, .vr-drop, .vr-file-actions button")?.focus({ preventScroll: true });
+                                return;
+                            }
+                            const analyzed = records?.find((item) => item.status === "succeeded");
+                            if (analyzed) setParams({ id: analyzed.id, view: "plan" });
+                            else message.info("请先上传或导入一条视频完成拆解，再编写逐镜脚本与导演方案");
+                        }}
                         composer={{
                             config,
                             model,

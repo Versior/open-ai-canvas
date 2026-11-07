@@ -284,6 +284,8 @@ export const AgentLauncher = memo(function AgentLauncher({
                 <AgentPetBubble
                     key={petMessage.id}
                     text={petMessage.text}
+                    tone={selectedPet?.tone}
+                    accent={petMetrics.accent}
                     anchor={{ left: viewport.width - position.right - width, top: viewport.height - position.bottom - height, width, height, headTop: petMetrics.headTop }}
                     viewport={viewport}
                     onDismiss={dismissPetMessage}

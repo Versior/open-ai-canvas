@@ -182,7 +182,7 @@ export function exportSocialVideoParseAPIs(ids?: string[]) {
     return http.post<SocialVideoParseExport>("/admin/social-video/parse-apis/export", { ids: ids || [] });
 }
 
-export function importSocialVideoParseAPIs(payload: { format?: string; version?: number; apis: SocialVideoParseAPIInput[]; autoEnable: boolean }) {
+export function importSocialVideoParseAPIs(payload: { format?: string; version?: number; apis: SocialVideoParseAPIInput[]; autoEnable: boolean; skipExisting?: boolean }) {
     return http.post<SocialVideoParseImportResult>("/admin/social-video/parse-apis/import", payload);
 }
 

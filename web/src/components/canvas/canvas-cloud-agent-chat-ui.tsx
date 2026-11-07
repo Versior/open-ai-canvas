@@ -7,7 +7,7 @@ import { Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, CircleDot, Co
 import { agentCopyText } from "@/lib/canvas/agent-composer-attachments";
 import type { CloudAgentInterjectionState } from "@/services/cloud-agent-conversations";
 
-import { canvasThemes } from "@/lib/canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AIMessageMarkdown } from "@/components/ai/ai-message-markdown";
 import { AgentMemoryUpdateCard, AgentSkillSuggestionCard } from "./canvas-cloud-agent-memory-cards";
 import { AgentReplyOptionCards } from "./canvas-agent-reply-options";
@@ -208,7 +208,7 @@ function agentFormValueLabel(value: string) {
     return AGENT_FORM_VALUE_LABELS[value] || value.replace(/_/g, " ");
 }
 
-function AgentFormAnswerCard({ answer, theme }: { answer: CloudAgentFormAnswer; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+function AgentFormAnswerCard({ answer, theme }: { answer: CloudAgentFormAnswer; theme: CanvasTheme }) {
     const values = answer.displayAnswers && Object.keys(answer.displayAnswers).length ? answer.displayAnswers : answer.answers;
     const entries = Object.entries(values).filter(([, value]) => (Array.isArray(value) ? value.length > 0 : value.trim()));
     return (
@@ -440,7 +440,7 @@ export const AgentChatMessage = memo(function AgentChatMessage({
     replyPinned = false,
 }: {
     item: CloudAgentChatMessage;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     references?: CanvasResourceReference[];
     isStreaming?: boolean;
     /** 失败卡片或助手回复页脚上的「重试本轮」正在提交。 */
@@ -810,7 +810,7 @@ function agentReasoningPreview(items: readonly CloudAgentChatMessage[]) {
  * 推理是辅助信息，不应与正文和工具输出争夺主视觉。一个事件流里的连续摘要
  * 合并成一个入口，默认收起；需要排查时再展开查看完整内容。
  */
-export const AgentReasoningFeed = memo(function AgentReasoningFeed({ items, theme }: { items: CloudAgentChatMessage[]; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+export const AgentReasoningFeed = memo(function AgentReasoningFeed({ items, theme }: { items: CloudAgentChatMessage[]; theme: CanvasTheme }) {
     const streaming = items.some((item) => item.streaming);
     const text = items
         .map((item) => item.text.trim())
@@ -956,7 +956,7 @@ function canvasResourceMentionTokenForAgentMessage(reference: CanvasResourceRefe
     return `@[node:${reference.nodeId}]`;
 }
 
-export function AgentPendingToolCard({ summary, detail, theme, onReject, onApprove }: { summary: string; detail?: unknown; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onReject?: () => void; onApprove?: () => void }) {
+export function AgentPendingToolCard({ summary, detail, theme, onReject, onApprove }: { summary: string; detail?: unknown; theme: CanvasTheme; onReject?: () => void; onApprove?: () => void }) {
     const impact = agentImpactFromDetail(detail);
     const friendlySummary = friendlyAgentToolSummary(agentToolName("", detail), summary, detail, true);
     return (
@@ -1012,7 +1012,7 @@ export function AgentPendingToolCard({ summary, detail, theme, onReject, onAppro
     );
 }
 
-function ImpactMetric({ label, value, attention = false, theme }: { label: string; value: number; attention?: boolean; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+function ImpactMetric({ label, value, attention = false, theme }: { label: string; value: number; attention?: boolean; theme: CanvasTheme }) {
     return (
         <div className="px-1 py-1">
             <div className="text-[var(--fs-tiny)]" style={{ color: theme.node.muted }}>
@@ -1052,7 +1052,7 @@ export function AgentToolCard({
     title: string;
     text: string;
     detail?: unknown;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     references?: CanvasResourceReference[];
     onFocusNode?: (nodeId: string) => void;
     onUndo?: (target: AgentCanvasUndoTarget) => void;
@@ -1190,7 +1190,7 @@ export const AgentOperationFeed = memo(function AgentOperationFeed({
     live = false,
 }: {
     items: CloudAgentChatMessage[];
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     references?: CanvasResourceReference[];
     onFocusNode?: (nodeId: string) => void;
     onUndo?: (target: AgentCanvasUndoTarget) => void;
@@ -1272,7 +1272,7 @@ export const AgentOperationFeed = memo(function AgentOperationFeed({
     );
 }, sameFeedProps);
 
-export function AgentWorkingMessage({ theme, label = WORKING_TEXT }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; label?: string }) {
+export function AgentWorkingMessage({ theme, label = WORKING_TEXT }: { theme: CanvasTheme; label?: string }) {
     return (
         <div role="status" aria-live="polite" className="agent-working-indicator" style={{ color: theme.node.muted }}>
             <span className="agent-working-signal" aria-hidden="true">
@@ -1293,7 +1293,7 @@ export function AgentPlanBar({
     waitingUser = false,
 }: {
     items: CloudAgentPlanItem[];
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     minimized: boolean;
     onToggle: () => void;
     terminal?: boolean;
@@ -1367,7 +1367,7 @@ export function AgentQuestionBar({
     disabled = false,
 }: {
     question: CloudAgentUserQuestion;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     onAnswer: (answer: string) => void;
     /** 问卷要求留档时，把决策确认单写进画布；返回新节点 ID（写入失败返回空）。 */
     onRecordDecision?: (record: CloudAgentDecisionRecord) => string | null | undefined;
@@ -1641,19 +1641,7 @@ export function AgentQuestionBar({
     );
 }
 
-export function AgentPanelTabs<T extends string>({
-    value,
-    items,
-    theme,
-    right,
-    onChange,
-}: {
-    value: T;
-    items: { value: T; label: string; icon?: ReactNode; count?: number }[];
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
-    right?: ReactNode;
-    onChange: (value: T) => void;
-}) {
+export function AgentPanelTabs<T extends string>({ value, items, theme, right, onChange }: { value: T; items: { value: T; label: string; icon?: ReactNode; count?: number }[]; theme: CanvasTheme; right?: ReactNode; onChange: (value: T) => void }) {
     return (
         <div className="shrink-0 px-3 pb-1">
             <div className="flex min-h-8 items-center justify-between gap-2 rounded-lg px-0.5 py-0.5" style={{ background: "transparent" }}>
@@ -1685,7 +1673,7 @@ export function AgentPanelTabs<T extends string>({
  * 的模型品牌 glyph —— 那个圆环标志会被读成"这条是模型/OpenAI 出品"，与它实际表达的
  * "这是谁的一行"无关。
  */
-function AgentTimelineMarker({ theme, tone, icon }: { theme: (typeof canvasThemes)[keyof typeof canvasThemes]; tone: "agent" | "muted" | "approval" | "warning" | "error"; icon: ReactNode }) {
+function AgentTimelineMarker({ theme, tone, icon }: { theme: CanvasTheme; tone: "agent" | "muted" | "approval" | "warning" | "error"; icon: ReactNode }) {
     const color = tone === "error" ? "#ef4444" : tone === "warning" ? "#b45309" : tone === "approval" ? "#f97316" : tone === "agent" ? theme.accent.primary : theme.node.muted;
     return (
         <span className="agent-timeline-marker relative" aria-hidden="true">

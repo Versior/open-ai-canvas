@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -541,6 +542,25 @@ func TestImportAndSyncSocialVideoParseAPIsDedupeAndAutoEnable(t *testing.T) {
 	}
 	if apis, _ := svc.socialVideoParseAPIs(); len(apis) != 3 {
 		t.Fatalf("APIs after removing source = %d, want 3", len(apis))
+	}
+}
+
+func TestSocialVideoParsePresetImportPreservesExistingConfiguration(t *testing.T) {
+	svc, _ := newSocialVideoImportTestService(t)
+	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
+	url := "https://parser.example.com/?url={url}"
+	_, err := svc.CreateSocialVideoParseAPI(admin, SocialVideoParseAPIRequest{Name: "已验证接口", Platforms: []string{"douyin"}, URL: url, Enabled: true, Priority: 9, Secret: "YOUR_API_KEY_HERE"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := svc.socialVideoParseAPIs()
+	result, err := svc.ImportSocialVideoParseAPIs(context.Background(), admin, SocialVideoParseImportRequest{SkipExisting: true, APIs: []SocialVideoParseAPIRequest{{Name: "预设草稿", Platforms: []string{"tiktok"}, URL: url, Priority: 1, Secret: "REPLACEMENT_PLACEHOLDER"}}})
+	if err != nil || result.Created != 0 || result.Updated != 0 {
+		t.Fatalf("duplicate preset mutated existing entry: %v", err)
+	}
+	after, _ := svc.socialVideoParseAPIs()
+	if len(after) != 1 || after[0].Name != before[0].Name || after[0].Secret != before[0].Secret || !after[0].Enabled || after[0].Priority != before[0].Priority || !slices.Equal(after[0].Platforms, before[0].Platforms) {
+		t.Fatal("preset import replaced configured service")
 	}
 }
 

@@ -28,7 +28,7 @@ import {
     X,
     Blocks,
 } from "lucide-react";
-import { canvasThemes } from "@/lib/canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { agentModifierShortcut, agentTextLength, type AgentComposerSubmitMode } from "@/lib/canvas/agent-outbox";
@@ -83,7 +83,7 @@ export function AgentSceneCapsules({
 }: {
     buckets: AgentSceneBucket[];
     installedIds: Set<string>;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     disabled?: boolean;
     onPick: (preset: SkillPreset) => void;
     onPickSkill: (skill: Skill) => void;
@@ -251,7 +251,7 @@ export function AgentChatComposer({
     submitMode?: AgentComposerSubmitMode;
     running?: boolean;
     placeholder: string;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     onPromptChange: (value: string) => void;
     /** alternate：按了 ⌘/Ctrl+Enter（运行中表示直接插话）。 */
     onSubmit: (options: { alternate: boolean }) => void;

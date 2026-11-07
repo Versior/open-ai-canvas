@@ -26,6 +26,19 @@ var socialVideoPlatforms = []socialVideoPlatformInfo{
 	{ID: "bilibili", Name: "哔哩哔哩", Hosts: []string{"bilibili.com", "www.bilibili.com", "m.bilibili.com"}, ShortHosts: []string{"b23.tv"}},
 	{ID: "weibo", Name: "微博", Hosts: []string{"weibo.com", "www.weibo.com", "m.weibo.cn", "video.weibo.com"}},
 	{ID: "youtube", Name: "YouTube", Hosts: []string{"youtube.com", "www.youtube.com", "m.youtube.com"}, ShortHosts: []string{"youtu.be"}},
+	{ID: "instagram", Name: "Instagram", Hosts: []string{"instagram.com", "www.instagram.com"}},
+	{ID: "facebook", Name: "Facebook", Hosts: []string{"facebook.com", "www.facebook.com", "m.facebook.com", "web.facebook.com"}, ShortHosts: []string{"fb.watch"}},
+	{ID: "twitter", Name: "X / Twitter", Hosts: []string{"x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"}, ShortHosts: []string{"t.co"}},
+	{ID: "vimeo", Name: "Vimeo", Hosts: []string{"vimeo.com", "www.vimeo.com", "player.vimeo.com"}},
+	{ID: "pinterest", Name: "Pinterest", Hosts: []string{"pinterest.com", "www.pinterest.com"}, ShortHosts: []string{"pin.it"}},
+	{ID: "threads", Name: "Threads", Hosts: []string{"threads.net", "www.threads.net", "threads.com", "www.threads.com"}},
+	{ID: "xigua", Name: "西瓜视频", Hosts: []string{"ixigua.com", "www.ixigua.com", "m.ixigua.com"}},
+	{ID: "weishi", Name: "微视", Hosts: []string{"weishi.qq.com", "h5.weishi.qq.com"}},
+	{ID: "haokan", Name: "好看视频", Hosts: []string{"haokan.baidu.com"}},
+	{ID: "wechat", Name: "微信视频号", Hosts: []string{"channels.weixin.qq.com", "weixin.qq.com"}},
+	{ID: "zhihu", Name: "知乎", Hosts: []string{"zhihu.com", "www.zhihu.com"}},
+	{ID: "snackvideo", Name: "SnackVideo", Hosts: []string{"snackvideo.com", "www.snackvideo.com"}, ShortHosts: []string{"s.snackvideo.com"}},
+	{ID: "cocofun", Name: "Cocofun", Hosts: []string{"cocofun.com", "www.cocofun.com"}, ShortHosts: []string{"i.cocofun.com"}},
 }
 
 // SocialVideoPlatformView 给前端识别链接和后台分类用；Available 表示后台有开着的解析接口。

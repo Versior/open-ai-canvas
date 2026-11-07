@@ -17,7 +17,8 @@ import { InteriorSceneStudio, type InteriorRenderHandoff, type InteriorSceneHand
 import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
 import { InteriorRenovation } from "./interior-renovation";
-import { DEFAULT_RENOVATION, renovationRenderNote, type RenovationSpec } from "@/lib/interior/renovation";
+import { InteriorNavigator, type InteriorWorkspace } from "./interior-navigator";
+import { DEFAULT_RENOVATION, renovationProblem, type RenovationSpec } from "@/lib/interior/renovation";
 import "./interior.css";
 
 const SURFACE_KEY = "interior:surface";
@@ -63,8 +64,6 @@ function delay(ms: number) {
 type ProjectDialog = { mode: "create" | "rename"; name: string; kind: InteriorProjectKind } | null;
 
 /** 效果图（生图）和 3D 模型（文本模型搭三维场景）共用项目，页面上切换。 */
-type InteriorWorkspace = "images" | "scene" | "materials";
-
 function initialWorkspace(): InteriorWorkspace {
     const value = window.localStorage.getItem(WORKSPACE_KEY);
     return value === "scene" || value === "materials" ? value : "images";
@@ -86,6 +85,7 @@ export default function InteriorPage() {
     const [dialogBusy, setDialogBusy] = useState(false);
     const [downloadingRound, setDownloadingRound] = useState("");
     const [workspace, setWorkspace] = useState<InteriorWorkspace>(initialWorkspace);
+    const [useMaterials, setUseMaterials] = useState(false);
     // 效果图带去 3D 模型时的预填内容；3D 模型页用完就清掉。
     const [sceneHandoff, setSceneHandoff] = useState<InteriorSceneHandoff | null>(null);
     // 本地预览用的 blob 地址，离开页面时统一释放。
@@ -153,6 +153,7 @@ export default function InteriorPage() {
             if (!catalog) return;
             const limit = interiorCountLimit(catalog, next);
             const hasReference = next.slots.some((slot) => slot.key === "reference");
+            setUseMaterials(false);
             const usesRoom = next.requiresRoom || next.requiresStyle;
             setSubmitError("");
             setDraft((value) => ({
@@ -242,7 +243,8 @@ export default function InteriorPage() {
 
     const submit = async () => {
         if (!catalog || !mode || !draft.source || busy) return;
-        const problem = interiorDraftProblem(draft, mode, surface, config, siteDefault);
+        const professional = useMaterials ? current?.document.professional : undefined;
+        const problem = (professional && renovationProblem(professional)) || interiorDraftProblem(draft, mode, surface, config, siteDefault);
         if (problem) {
             setSubmitError(problem);
             return;
@@ -260,7 +262,7 @@ export default function InteriorPage() {
             // 比例和画质只在专业模式里显示，快速出图不提交，避免带上切换前的旧选择。
             const size = surface === "pro" && draft.size !== "auto" ? draft.size : "";
             const result = await generateInterior({
-                ...(current?.document.professional ? { professional: current.document.professional } : {}),
+                ...(professional ? { professional } : {}),
                 surface,
                 modeId: mode.id,
                 ...(draft.roomKey ? { roomKey: draft.roomKey } : {}),
@@ -277,7 +279,7 @@ export default function InteriorPage() {
                 roundId,
             });
             const round: InteriorRound = {
-                ...(current?.document.professional ? { professional: current.document.professional } : {}),
+                ...(professional ? { professional } : {}),
                 id: roundId,
                 createdAt: new Date().toISOString(),
                 surface,
@@ -390,7 +392,8 @@ export default function InteriorPage() {
             message.warning("这一轮用的出图方式已经下架");
             return;
         }
-        if (current) projects.update(current.id, (document) => ({ ...document, professional: round.professional }));
+        if (current && round.professional) projects.update(current.id, (document) => ({ ...document, professional: round.professional }));
+        setUseMaterials(Boolean(round.professional));
         // 优先回到这一轮当时用的交互模式，比例、画质和模型才和当时一致。
         const roundSurface = catalog.settings.allowSurfaceSwitch && (target.audience === "both" || target.audience === round.surface) ? round.surface : surface;
         const nextSurface = surfaceFor(target, roundSurface);
@@ -571,6 +574,27 @@ export default function InteriorPage() {
         </header>
     );
 
+    const navigator = (
+        <InteriorNavigator
+            catalog={catalog}
+            workspace={workspace}
+            modeId={draft.modeId}
+            disabled={busy || projects.projectLoading}
+            rounds={current?.document.rounds.length || 0}
+            hasMaterial={Boolean(current?.document.professional)}
+            sourceReady={Boolean(draft.source?.resourceId && !draft.source.uploading && !draft.source.error)}
+            outputs={current?.document.rounds.flatMap((round) => round.items.flatMap((item) => item.outputs)).length || 0}
+            sceneReady={Boolean(current?.document.scenes?.some((scene) => scene.sceneFile?.resourceId))}
+            onWorkspace={changeWorkspace}
+            onMode={(next) => {
+                const nextSurface = surfaceFor(next, surface);
+                setSurface(nextSurface);
+                window.localStorage.setItem(SURFACE_KEY, nextSurface);
+                selectMode(next, nextSurface);
+            }}
+        />
+    );
+
     const projectDialog = (
         <AppModal
             open={Boolean(dialog)}
@@ -609,8 +633,17 @@ export default function InteriorPage() {
             }
         };
         const renderMaterials = (professional: RenovationSpec) => {
+            const next = catalog.modes.find((item) => item.enabled && item.key === (professional.scope === "room" ? (professional.stage === "new" ? "rough-to-finished" : "style-redesign") : "text-edit"));
+            if (!next) {
+                message.error("对应的材料出图方式尚未启用，请联系管理员启用局部微调或风格改造");
+                return;
+            }
+            const nextSurface = surfaceFor(next, surface);
+            setSurface(nextSurface);
+            window.localStorage.setItem(SURFACE_KEY, nextSurface);
+            selectMode(next, nextSurface);
+            setUseMaterials(true);
             if (current) projects.update(current.id, (document) => ({ ...document, professional }));
-            setDraft((value) => ({ ...value, notes: renovationRenderNote(professional).slice(0, 500) }));
             changeWorkspace("images");
             message.info("材料参数与实板照片会随生成提交；请上传空间原图并确认出图设置");
         };
@@ -619,6 +652,7 @@ export default function InteriorPage() {
                 <section className="itd-board">
                     {boardHeader}
                     <div className="itd-board-scroll thin-scrollbar">
+                        {navigator}
                         <InteriorRenovation
                             key={current?.id || "new"}
                             value={current?.document.professional}
@@ -643,7 +677,12 @@ export default function InteriorPage() {
                     catalog={catalog}
                     config={config}
                     project={current}
-                    header={boardHeader}
+                    header={
+                        <>
+                            {boardHeader}
+                            {navigator}
+                        </>
+                    }
                     ensureProject={ensureProject}
                     update={projects.update}
                     removeScene={projects.removeScene}
@@ -661,6 +700,8 @@ export default function InteriorPage() {
             <div className="itd-shell">
                 <InteriorComposer
                     professional={current?.document.professional}
+                    useProfessional={useMaterials}
+                    onUseProfessional={setUseMaterials}
                     catalog={catalog}
                     config={config}
                     surface={surface}
@@ -676,6 +717,7 @@ export default function InteriorPage() {
                 <section className="itd-board" aria-label="出图记录">
                     {boardHeader}
                     <div className="itd-board-scroll thin-scrollbar">
+                        {navigator}
                         {projects.listError ? <WorkspaceErrorState compact title="项目列表读取失败" description={projects.listError} onRetry={() => void projects.reloadList()} /> : null}
                         {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError} onRetry={() => (current ? openProject(current.id) : void projects.reloadList())} /> : null}
                         {projects.projectLoading && !current ? (

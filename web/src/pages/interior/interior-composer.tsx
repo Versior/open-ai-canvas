@@ -9,7 +9,7 @@ import type { InteriorCatalog, InteriorImageRef, InteriorMode, InteriorModelRef,
 import type { AiConfig } from "@/stores/use-config-store";
 import { interiorImageUrl, interiorModelPermitted, interiorModelRef } from "./interior-models";
 import { useInteriorEstimate } from "./use-interior-estimate";
-import { renovationProblem, type RenovationSpec } from "@/lib/interior/renovation";
+import { renovationProblem, renovationRenderNote, type RenovationSpec } from "@/lib/interior/renovation";
 
 export type InteriorUpload = InteriorImageRef & { name: string; uploading?: boolean; error?: string; previewUrl?: string };
 
@@ -149,6 +149,8 @@ export function UploadSlot({ label, value, onPick, onClear, disabled }: { label:
 
 type ComposerProps = {
     professional?: RenovationSpec;
+    useProfessional: boolean;
+    onUseProfessional: (value: boolean) => void;
     catalog: InteriorCatalog;
     config: AiConfig;
     surface: InteriorSurface;
@@ -162,7 +164,8 @@ type ComposerProps = {
     onSubmit: () => void;
 };
 
-export function InteriorComposer({ catalog, config, surface, draft, busy, error, professional, onChange, onModeChange, onPickSource, onPickReference, onSubmit }: ComposerProps) {
+export function InteriorComposer({ catalog, config, surface, draft, busy, error, professional: availableProfessional, useProfessional, onUseProfessional, onChange, onModeChange, onPickSource, onPickReference, onSubmit }: ComposerProps) {
+    const professional = useProfessional ? availableProfessional : undefined;
     const modes = useMemo(() => visibleInteriorModes(catalog, surface), [catalog, surface]);
     const mode = modes.find((item) => item.id === draft.modeId);
     const sourceSlot = mode?.slots.find((slot) => slot.key === "source");
@@ -204,7 +207,20 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
         <aside className="itd-composer" aria-label="出图设置">
             <div className="itd-composer-scroll thin-scrollbar">
                 <section className="itd-section">
-                    {professional ? <p role="status">本次使用装修 / 石材方案，尺寸、材料和实板照片会一起提交。可在「装修 / 石材」修改。</p> : null}
+                    {availableProfessional ? (
+                        <label className="itd-material-toggle">
+                            <input type="checkbox" checked={useProfessional} disabled={busy} onChange={(event) => onUseProfessional(event.target.checked)} />
+                            <span>
+                                本轮使用装修 / 石材方案<small>{useProfessional ? "尺寸、材料、实板会随生成提交" : "本轮仅使用空间与风格设置"}</small>
+                            </span>
+                        </label>
+                    ) : null}
+                    {professional ? (
+                        <details className="itd-muted-note">
+                            <summary>查看本轮材料与保留要求</summary>
+                            <p>{renovationRenderNote(professional)}</p>
+                        </details>
+                    ) : null}
                     <h2 className="itd-section-title">出图方式</h2>
                     {modes.length ? (
                         <div className="itd-mode-grid" role="radiogroup" aria-label="出图方式">

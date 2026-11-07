@@ -95,6 +95,9 @@ func (s *Service) SaveProductVideo(actor *model.User, id string, raw json.RawMes
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateFashionResources(actor.ID, raw); err != nil {
+		return nil, err
+	}
 	var saved json.RawMessage
 	revision, err := s.mutateProductVideos(actor.ID, func(items []json.RawMessage) ([]json.RawMessage, error) {
 		index, stored := ecommerceStudioFindProduct(items, id)
@@ -246,6 +249,9 @@ func normalizeProductVideoItem(id string, raw json.RawMessage) (map[string]json.
 		return nil, BadAuthRequest("作品数据不能内嵌图片或视频，请先上传为素材")
 	}
 	if err := validateProductVideoDirector(raw); err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
+	if err := validateFashionWork(raw); err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
 	delete(fields, "revision")

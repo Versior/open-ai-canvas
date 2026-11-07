@@ -74,10 +74,11 @@ type SocialVideoParseExport struct {
 }
 
 type SocialVideoParseImportRequest struct {
-	Format     string                       `json:"format"`
-	Version    int                          `json:"version"`
-	APIs       []SocialVideoParseAPIRequest `json:"apis"`
-	AutoEnable bool                         `json:"autoEnable"`
+	Format       string                       `json:"format"`
+	Version      int                          `json:"version"`
+	APIs         []SocialVideoParseAPIRequest `json:"apis"`
+	AutoEnable   bool                         `json:"autoEnable"`
+	SkipExisting bool                         `json:"skipExisting"`
 }
 
 // SocialVideoParseImportResult 是导入或同步订阅的结果；新接口先停用，开了自动启用时测试通过才打开。
@@ -606,7 +607,7 @@ func parseSocialVideoParseDocument(raw []byte) ([]SocialVideoParseAPIRequest, er
 
 // mergeSocialVideoParseAPIs 把一批接口并进接口池：请求方式、地址模板和请求体都相同的算同一条，只更新定义，
 // 启用状态、密钥（清单里没给时）和运行状态保留；新接口一律先停用，返回新建的那些。
-func (s *Service) mergeSocialVideoParseAPIs(actorID, sourceID string, incoming []SocialVideoParseAPIRequest) ([]socialVideoParseAPI, SocialVideoParseImportResult, error) {
+func (s *Service) mergeSocialVideoParseAPIs(actorID, sourceID string, incoming []SocialVideoParseAPIRequest, skipExisting bool) ([]socialVideoParseAPI, SocialVideoParseImportResult, error) {
 	type prepared struct {
 		req    SocialVideoParseAPIRequest
 		secret string
@@ -644,6 +645,9 @@ func (s *Service) mergeSocialVideoParseAPIs(actorID, sourceID string, incoming [
 		}
 		for _, item := range items {
 			if position, ok := index[item.key]; ok {
+				if skipExisting {
+					continue
+				}
 				existing := &(*apis)[position]
 				applySocialVideoParseDefinition(existing, item.req)
 				if item.secret != "" {
@@ -742,7 +746,7 @@ func (s *Service) ImportSocialVideoParseAPIs(ctx context.Context, actor *model.U
 	if len(req.APIs) > socialVideoParseMaxAPIs {
 		return nil, BadAuthRequest(fmt.Sprintf("一次最多导入 %d 条接口", socialVideoParseMaxAPIs))
 	}
-	created, result, err := s.mergeSocialVideoParseAPIs(actor.ID, "", req.APIs)
+	created, result, err := s.mergeSocialVideoParseAPIs(actor.ID, "", req.APIs, req.SkipExisting)
 	if err != nil {
 		return nil, err
 	}
@@ -903,7 +907,7 @@ func (s *Service) syncSocialVideoParseSource(ctx context.Context, actorID string
 	items, err := s.fetchSocialVideoParseSource(ctx, source.URL)
 	if err == nil {
 		var created []socialVideoParseAPI
-		created, result, err = s.mergeSocialVideoParseAPIs(actorID, source.ID, items)
+		created, result, err = s.mergeSocialVideoParseAPIs(actorID, source.ID, items, false)
 		if err == nil && source.AutoEnable && len(created) > 0 {
 			enabled, notes := s.autoEnableSocialVideoParseAPIs(ctx, actorID, created)
 			result.Enabled = enabled

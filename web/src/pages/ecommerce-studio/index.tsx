@@ -1,5 +1,5 @@
 import { App, Button, Skeleton } from "antd";
-import { RotateCw } from "lucide-react";
+import { RotateCw, Shirt } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
@@ -24,6 +24,7 @@ import { useStudioAgentBridge } from "./use-studio-agent";
 import { patchStudioShotAt, useStudioRunner } from "./use-studio-runner";
 import { useStudioStore } from "./use-studio-store";
 import "./studio.css";
+import { FashionWorkbench } from "@/components/fashion/fashion-workbench";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
@@ -47,6 +48,7 @@ export default function EcommerceStudioPage() {
     const [draft, setDraft] = useState(() => createStudioProduct(newProductId()));
     const [tab, setTab] = useState<"form" | "results">("form");
     const [viewer, setViewer] = useState<StudioViewerTarget>();
+    const [fashionOpen, setFashionOpen] = useState(false);
     const runner = useStudioRunner();
     const { resume } = runner;
     const image = useStudioModel("image");
@@ -189,6 +191,9 @@ export default function EcommerceStudioPage() {
                             onDeleted={() => setParams({}, { replace: true })}
                         />
                         <div className="es-tabs">
+                            <Button icon={<Shirt size={15} />} onClick={() => setFashionOpen(true)}>
+                                换装 · 换脸 · 印花
+                            </Button>
                             <SegmentedControl<"form" | "results">
                                 block
                                 ariaLabel="切换生图表单与生成记录"
@@ -221,6 +226,22 @@ export default function EcommerceStudioPage() {
                 onApplyCopy={(group, shot, patch) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, headline: patch.headline, subline: patch.subline, lines: patch.lines })), { immediate: true })}
                 onAdopt={(group, shot, output) => edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, adopted: output })), { immediate: true })}
             />
+            {fashionOpen ? (
+                <FashionWorkbench
+                    onClose={() => setFashionOpen(false)}
+                    onUse={(image) => {
+                        edit(
+                            (value) => ({
+                                ...value,
+                                references: [...value.references.slice(0, MAX_REFERENCES - 1), { ...image, url: `/api/resources/${image.resourceId}/file`, id: nanoid(10), view: "other", truth: false, addedAt: new Date().toISOString() }],
+                            }),
+                            { immediate: true },
+                        );
+                        message.success("已加入生图参考素材，请确认用途后生成");
+                        setFashionOpen(false);
+                    }}
+                />
+            ) : null}
         </WorkspacePage>
     );
 }

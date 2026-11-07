@@ -11,6 +11,7 @@ export const PRODUCT_VIDEO_CONFLICT = "product_video_conflict";
 export type StoredWork = ProductVideoJob | RemakeJob;
 
 export function normalizeStoredWork(value: unknown): StoredWork | undefined {
+    if (value && typeof value === "object" && (value as { kind?: unknown }).kind === "fashion") return undefined;
     const version = value && typeof value === "object" ? (value as { version?: unknown }).version : undefined;
     return version === REMAKE_VERSION ? normalizeRemakeJob(value) : normalizeProductVideoJob(value);
 }

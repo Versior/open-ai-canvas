@@ -1,0 +1,282 @@
+.fashion-workbench {
+    color: var(--user-ink);
+    background: var(--user-surface);
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 24px;
+}
+.fashion-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.fashion-head > div {
+    flex: 1;
+}
+.fashion-head small {
+    color: var(--user-ink-soft);
+    letter-spacing: 0.16em;
+    font-size: 10px;
+}
+.fashion-head h2 {
+    font-size: 24px;
+    font-weight: 650;
+    margin: 4px 0;
+}
+.fashion-head p,
+.fashion-hint {
+    color: var(--user-ink-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.fashion-error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--palette-status-error) 8%, transparent);
+    color: var(--palette-status-error);
+    border-radius: var(--r-md);
+    margin-bottom: 12px;
+    font-size: 12px;
+}
+.fashion-tool-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 20px;
+}
+.fashion-tool-grid button {
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-lg);
+    text-align: left;
+    padding: 14px;
+}
+.fashion-tool-grid button[aria-pressed="true"] {
+    background: var(--user-surface-muted);
+    border-color: var(--user-ink);
+}
+.fashion-tool-grid svg {
+    width: 17px;
+    height: 17px;
+    color: var(--user-ink-soft);
+}
+.fashion-tool-grid strong {
+    display: block;
+    margin: 6px 0 3px;
+    font-size: 13px;
+}
+.fashion-tool-grid span {
+    color: var(--user-ink-muted);
+    font-size: 11px;
+}
+.fashion-tool-grid button:focus-visible {
+    outline: 2px solid var(--user-ink);
+    outline-offset: 2px;
+}
+.fashion-columns {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.8fr) minmax(0, 1.2fr);
+    gap: 24px;
+}
+.fashion-inputs {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.fashion-slot label > span {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.fashion-slot input {
+    width: 100%;
+    font-size: 12px;
+}
+.fashion-slot .fashion-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+.fashion-slot label .fashion-upload-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    border: 1px dashed var(--user-border);
+    border-radius: var(--r-md);
+    color: var(--user-ink-muted);
+    cursor: pointer;
+}
+.fashion-slot label:focus-within .fashion-upload-action {
+    outline: 2px solid var(--user-ink);
+    outline-offset: 2px;
+}
+.fashion-refs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 8px;
+}
+.fashion-refs > div {
+    position: relative;
+    min-width: 0;
+}
+.fashion-refs img {
+    width: 100%;
+    height: 86px;
+    object-fit: contain;
+    background: var(--user-surface-muted);
+    border-radius: var(--r-md);
+}
+.fashion-refs span {
+    display: block;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.fashion-refs button {
+    position: absolute;
+    right: 3px;
+    top: 3px;
+    padding: 4px;
+    background: var(--user-surface);
+    border-radius: var(--r-md);
+}
+.fashion-empty,
+.fashion-result-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 240px;
+    gap: 12px;
+    color: var(--user-ink-muted);
+    background: var(--user-surface-muted);
+    border-radius: var(--r-lg);
+    padding: 24px;
+}
+.fashion-empty h3 {
+    font-size: 16px;
+    color: var(--user-ink);
+}
+.fashion-empty p {
+    font-size: 12px;
+    line-height: 1.7;
+    max-width: 320px;
+}
+.fashion-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+.fashion-result-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.fashion-result-grid article {
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-lg);
+}
+.fashion-result-grid img,
+.fashion-result-grid video {
+    width: 100%;
+    max-height: 320px;
+    object-fit: contain;
+    border-radius: var(--r-md);
+    background: var(--user-surface-muted);
+}
+.fashion-result-grid strong {
+    display: block;
+    font-size: 12px;
+    padding: 8px 0;
+}
+.fashion-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.fashion-result-grid details {
+    font-size: 11px;
+    color: var(--user-ink-muted);
+    margin-top: 10px;
+    overflow-wrap: anywhere;
+}
+.fashion-result-grid p {
+    white-space: pre-wrap;
+}
+.fashion-video-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px;
+    margin-top: 20px;
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-lg);
+}
+.fashion-video-controls h3 {
+    font-size: 13px;
+    font-weight: 600;
+}
+.fashion-video-controls p {
+    color: var(--user-ink-muted);
+    font-size: 11px;
+}
+.fashion-history {
+    display: grid;
+    gap: 8px;
+}
+.fashion-history-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.fashion-history-row > button:first-child {
+    flex: 1;
+    min-width: 0;
+}
+.fashion-history-row > button:first-child {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-lg);
+    font-size: 13px;
+}
+.fashion-history span {
+    color: var(--user-ink-muted);
+    margin-left: auto;
+    font-size: 11px;
+}
+@media (max-width: 760px) {
+    .fashion-workbench {
+        padding: 16px;
+    }
+    .fashion-tool-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .fashion-columns {
+        grid-template-columns: 1fr;
+    }
+    .fashion-head {
+        flex-wrap: wrap;
+    }
+    .fashion-head h2 {
+        font-size: 20px;
+    }
+}

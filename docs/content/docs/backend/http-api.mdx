@@ -39,7 +39,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 
 `resourceId` 指向已入库的标准视频资源。该任务不调用模型渠道、不计模型费用；前端取得资源后创建普通 Video 节点，后续拆解复刻复用既有电商视频节点。
 
-支持的平台以 `GET /api/social-video/platforms` 为准，目前是抖音、TikTok、快手、小红书、哔哩哔哩、微博和 YouTube。分享文本必须且只能包含一个 URL，禁止 URL 认证信息、片段和非 443 端口。抖音和 TikTok 只接受 HTTPS 单视频地址或受控短链；其他平台只认域名，分享里常见的 http 链接会升级成 https，链接是否有效交给解析接口判断。
+支持的平台以 `GET /api/social-video/platforms` 为准，目录包含抖音、TikTok、快手、小红书、哔哩哔哩、微博、YouTube、Instagram、Facebook、X/Twitter、Vimeo、Pinterest、Threads、西瓜、微视、好看、微信视频号、知乎、SnackVideo、Cocofun 共 20 类。目录识别与预设收录不代表解析已通过，须检查 `available` 与测试结果。分享文本必须且只能包含一个 URL，禁止 URL 认证信息、片段和非 443 端口。抖音和 TikTok 只接受 HTTPS 单视频地址或受控短链；其他平台只认域名，分享里常见的 http 链接会升级成 https，链接是否有效交给解析接口判断。
 
 服务端不在本机运行下载器，而是交给管理员在后台「视频复刻 → 解析接口」里配置的第三方解析接口池（见下一节）。「功能开放」里的 `socialVideoImportEnabled`（视频链接导入，默认 `true`）关闭时，建导入任务返回 403「视频链接导入暂未开放」。建任务时这个平台一条启用的接口都没有，直接返回 400、`reason=failed_precondition`，不排队。任务按设置的轮询方式依次尝试，最多 `maxAttempts` 条：调用接口、按字段映射取出视频地址、下载、用 ffprobe 校验，一条成功就停。抖音 / TikTok 会先展开短链拿视频 ID，每次跳转都重新校验平台域名、单视频路径与出站安全规则；展开后交给接口的是去掉查询参数的标准单视频地址（抖音统一为 `https://www.douyin.com/video/<id>`），不把分享人的 `u_code`、`did` 等跟踪参数发给第三方，展开失败时才把原链接交给接口。解析接口地址和接口给出的视频地址都走出站安全校验，默认拒绝本机和私网。最终视频不超过 3 分钟（或请求里的 `maxDurationSeconds`），文件不超过 `min(ResourceUploadMB, 50 MiB)`；视频超时长或超大小属于内容问题，直接失败，不再换接口，也不计入接口失败。任务最长 10 分钟，入库前复查项目活动状态；同一平台同一视频 ID 复用已存的资源。Task 的 `provider` 是平台标识，`model` 固定为 `parse-api`。
 
@@ -62,7 +62,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 | `POST /admin/social-video/parse-apis/test` | 测试一条：传 `id` 测已保存的，传 `api` 测编辑中的草稿（不保存）；`url` 可换成别的分享链接，`platform` 指定用哪个平台的测试链接。每用户每分钟 30 次 |
 | `POST /admin/social-video/parse-apis/test-all` | 按 `platform` 或 `ids` 批量测试启用的接口，同时最多 4 条；没有测试链接的放进 `skipped`。每用户每分钟 4 次 |
 | `POST /admin/social-video/parse-apis/export` | 导出接口定义（不含密钥），`format=yingce.social-video-parse-apis`，可直接当订阅内容用 |
-| `POST /admin/social-video/parse-apis/import` | 导入导出格式或接口数组，最多 200 条，正文上限 2 MiB；`autoEnable=true` 时用测试链接测新接口，通过的直接启用。每用户每分钟 6 次 |
+| `POST /admin/social-video/parse-apis/import` | 导入导出格式或接口数组，最多 200 条，正文上限 2 MiB；`autoEnable=true` 时用测试链接测新接口，通过的直接启用；`skipExisting=true` 跳过已存在的同请求定义，保留配置，默认仍按原导入方式更新。每用户每分钟 6 次 |
 | `POST /admin/social-video/parse-sources`、`PATCH /admin/social-video/parse-sources/:id`、`DELETE /admin/social-video/parse-sources/:id` | 订阅源增改删；删除带 `?removeApis=1` 时连同它采集的接口一起删除 |
 | `POST /admin/social-video/parse-sources/:id/sync` | 立即拉取一次订阅源（20 秒超时，内容最多 1 MiB）。每用户每分钟 6 次 |
 
@@ -138,6 +138,7 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 以下接口都需要登录，且受「视频复刻」开关控制，关闭时返回 403（与电商生图台开关无关）。
 
 - `GET /api/ecommerce/product-videos`：返回 `{ revision, items }`。`items` 是本人的作品对象，结构由前端定义，每条带服务端维护的 `revision`。响应带 `Cache-Control: no-store`。
+  - `kind="fashion"` 是模特作品，包含 `model`、`draft`、`units`。八种工具所需素材、最多六个独立单元、处理要求和状态须有效；成功单元必须引用成品。每个图片参考/成品、视频成品均校验当前用户归属、ready 状态和资源类型。普通视频列表跳过此类，模特列表遇损坏记录明确报错。仍使用相同保存与删除路由，无数据库迁移。
 - `GET /api/ecommerce/product-videos/:videoId`：读一条作品，用于保存冲突后载入最新版本。不存在或不属于本人时返回 404。
 - `PUT /api/ecommerce/product-videos/:videoId`：新建或整体替换一条作品。
   - 正文只能是 `{ item, expectedRevision }`。`expectedRevision` 必填，新作品传 0。

@@ -120,7 +120,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
 
     // 能识别哪些平台、哪些平台后台配了解析接口，以服务端为准；没取到时先按抖音 / TikTok 的内置规则识别。
     const platformsQuery = useQuery({ queryKey: ["social-video-platforms", getActiveUserScope()], queryFn: ({ signal }) => listSocialVideoPlatforms(signal), staleTime: 60_000 });
-    const platforms = platformsQuery.data?.length ? platformsQuery.data : BUILTIN_SOCIAL_VIDEO_PLATFORMS;
+    const platforms = platformsQuery.data?.length ? platformsQuery.data : BUILTIN_SOCIAL_VIDEO_PLATFORMS.map((platform) => ({ ...platform, available: false }));
     const platformNames = socialVideoPlatformNames(platforms);
 
     const modelError = videoTeardownModelError(config, model);

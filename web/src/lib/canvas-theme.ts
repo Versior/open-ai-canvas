@@ -147,4 +147,5 @@ export const canvasThemes = {
     },
 } as const;
 
-export type CanvasTheme = (typeof canvasThemes)[CanvasColorTheme];
+type ThemeTokens<T> = { [K in keyof T]: T[K] extends string ? string : ThemeTokens<T[K]> };
+export type CanvasTheme = ThemeTokens<(typeof canvasThemes)[CanvasColorTheme]>;

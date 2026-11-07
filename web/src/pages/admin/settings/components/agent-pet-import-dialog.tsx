@@ -7,8 +7,9 @@ import { AGENT_PET_IMPORT_MAX_BYTES, importAdminAgentPet, type AdminAgentPet } f
 import { ApiError } from "@/services/api/request";
 import { AdminModal } from "@/pages/admin/ui/overlays";
 
-/** 一次最多排队的文件数；服务端导入有频率限制（默认每分钟 30 次）。 */
-const MAX_FILES = 30;
+/** 排队与上传限流分开：大型形象库可完整排队，429 时保留队列。 */
+const MAX_FILES = 300;
+const MAX_QUEUE_BYTES = 512 * 1024 * 1024;
 const ACCEPTED = /\.(zip|webp|png)$/i;
 
 type ImportItem = { key: string; file: File; status: "waiting" | "running" | "done" | "failed"; message?: string; pet?: AdminAgentPet };
@@ -18,28 +19,36 @@ export function AgentPetImportDialog({ open, onClose, onImported }: { open: bool
     const [items, setItems] = useState<ImportItem[]>([]);
     const [running, setRunning] = useState(false);
     const [dragging, setDragging] = useState(false);
+    const [queueError, setQueueError] = useState("");
     const input = useRef<HTMLInputElement>(null);
+    const folderInput = useRef<HTMLInputElement>(null);
     const imported = items.filter((item) => item.pet).map((item) => item.pet as AdminAgentPet);
     const waiting = items.filter((item) => item.status === "waiting").length;
 
     const add = (files: FileList | File[] | null) => {
-        if (!files) return;
-        setItems((current) => {
-            const next = [...current];
-            for (const file of Array.from(files)) {
-                if (next.length >= MAX_FILES) break;
-                const key = `${file.name}:${file.size}:${file.lastModified}`;
-                if (next.some((item) => item.key === key)) continue;
-                const problem = !ACCEPTED.test(file.name) ? "只支持 ZIP、WebP、PNG" : file.size > AGENT_PET_IMPORT_MAX_BYTES ? "超过 32 MiB" : "";
-                next.push({ key, file, status: problem ? "failed" : "waiting", message: problem || undefined });
+        if (!files || running) return;
+        const next = [...items];
+        let rejected = 0;
+        let bytes = next.reduce((sum, item) => sum + item.file.size, 0);
+        for (const file of Array.from(files)) {
+            const key = `${file.name}:${file.size}:${file.lastModified}`;
+            if (next.some((item) => item.key === key)) continue;
+            if (next.length >= MAX_FILES || bytes + file.size > MAX_QUEUE_BYTES) {
+                rejected++;
+                continue;
             }
-            return next;
-        });
+            const problem = !ACCEPTED.test(file.name) ? "只支持 ZIP、WebP、PNG" : file.size > AGENT_PET_IMPORT_MAX_BYTES ? "超过 32 MiB" : "";
+            next.push({ key, file, status: problem ? "failed" : "waiting", message: problem || undefined });
+            bytes += file.size;
+        }
+        setItems(next);
+        setQueueError(rejected ? `${rejected} 个文件未加入：队列最多 300 个、合计 512 MiB。完成当前队列后可继续导入。` : "");
     };
 
     const update = (key: string, patch: Partial<ImportItem>) => setItems((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)));
 
     const start = async () => {
+        if (running) return;
         setRunning(true);
         const queue = items.filter((item) => item.status === "waiting");
         for (let index = 0; index < queue.length; index += 1) {
@@ -64,6 +73,7 @@ export function AgentPetImportDialog({ open, onClose, onImported }: { open: bool
         if (running) return;
         if (imported.length) onImported(imported);
         setItems([]);
+        setQueueError("");
         onClose();
     };
 
@@ -93,12 +103,38 @@ export function AgentPetImportDialog({ open, onClose, onImported }: { open: bool
                 </div>
             }
         >
+            <p className="mb-3 text-xs text-foreground/50">完整形象合集请先解压外层 ZIP，再选择「上传形象」文件夹。内层每个 pet.json 图集包单独导入；遇到限流会保留未完成队列。</p>
+            <Button disabled={running} onClick={() => folderInput.current?.click()}>
+                选择形象文件夹
+            </Button>
+            <input
+                ref={(element) => {
+                    folderInput.current = element;
+                    element?.setAttribute("webkitdirectory", "");
+                }}
+                type="file"
+                multiple
+                className="hidden"
+                aria-label="选择形象文件夹"
+                onChange={(event) => {
+                    add(Array.from(event.target.files || []).filter((file) => ACCEPTED.test(file.name)));
+                    event.currentTarget.value = "";
+                }}
+            />
+            {queueError ? (
+                <p role="alert" className="my-2 text-xs text-[var(--admin-status-error)]">
+                    {queueError}
+                </p>
+            ) : null}
             <div
                 className={cn("agent-pet-import-drop", dragging && "is-dragging")}
                 role="button"
                 tabIndex={0}
                 aria-label="选择或拖入形象文件"
-                onClick={() => input.current?.click()}
+                aria-disabled={running}
+                onClick={() => {
+                    if (!running) input.current?.click();
+                }}
                 onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();

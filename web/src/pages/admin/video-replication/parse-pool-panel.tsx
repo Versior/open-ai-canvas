@@ -29,6 +29,7 @@ import { ParseSettingsPanel } from "./parse-settings-panel";
 import { importResultSummary, ParseSourcesPanel } from "./parse-sources-panel";
 import { PARSE_STATUS_META, ParseHealthTrack, ParseTestResultView, formatLatency, formatParseClock, formatParseTime, platformName } from "./parse-shared";
 import "./video-parse.css";
+import { ParsePresetPicker } from "./parse-preset-picker";
 
 type View = "apis" | "sources" | "logs" | "settings";
 
@@ -99,6 +100,7 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
     const [batchResult, setBatchResult] = useState<SocialVideoParseBatchTestResult | null>(null);
     const [batchTesting, setBatchTesting] = useState(false);
     const [importOpen, setImportOpen] = useState(false);
+    const [presetsOpen, setPresetsOpen] = useState(false);
     const [importText, setImportText] = useState("");
     const [importAutoEnable, setImportAutoEnable] = useState(true);
     const [importing, setImporting] = useState(false);
@@ -411,12 +413,14 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
                             <Button icon={<Upload className="size-4" />} onClick={() => setImportOpen(true)}>
                                 导入
                             </Button>
+                            <Button onClick={() => setPresetsOpen(true)}>服务预设 · 多平台</Button>
                             <Button icon={<Download className="size-4" />} disabled={!apis.length} onClick={() => void exportAll()}>
                                 导出
                             </Button>
                             <Button type="primary" icon={<Plus className="size-4" />} onClick={() => openEditor(null)}>
                                 新增接口
                             </Button>
+                            {presetsOpen ? <ParsePresetPicker onClose={() => setPresetsOpen(false)} onAdded={() => void reload()} /> : null}
                         </div>
                     ) : null}
                 </div>
