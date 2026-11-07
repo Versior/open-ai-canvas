@@ -385,6 +385,8 @@ export type SceneBrief = {
     styleKey?: string;
     /** 总体尺寸：宽（x）、深（z）、层数、层高，单位米。 */
     size?: { width: number; depth: number; floors: number; storeyHeight: number };
+    /** 图纸逐段读出的尺寸链（米），用于核对总开间和进深，不能把横向墙厚加到纵向尺寸。 */
+    dimensionChains?: { x: number[]; z: number[] };
     spaces: { name: string; area?: number; note?: string }[];
     features: string[];
     materials: string[];
@@ -433,9 +435,14 @@ export type SceneAnalysisInput = {
 /** AI 方案分析：看图（可选）读需求，补全成一份完整的设计方案。回复短，单独一次请求。 */
 export function buildSceneAnalysisPrompt(input: SceneAnalysisInput) {
     return [
-        "你是资深室内和建筑设计师。用户想做一个能在网页里旋转查看的三维模型，并据此出装修效果图。用户往往只给一张图或一句话，请你把它补全成一份完整、比例真实的设计方案，不要反问。",
+        "你是资深室内和建筑设计师。先读取事实，建立供三维建模使用的空间清单。附图已有布局时严格复原，不能凭空重新设计，不要把知识库的常见尺度替换图纸标注。",
         "",
-        ...(input.hasReference ? ["附图可能是户型图、现场照片、毛坯房或效果图：户型图按图读房间和尺寸；照片和效果图读出空间类型、大致尺寸、门窗位置、风格、主要材质和家具。"] : []),
+        ...(input.hasReference
+            ? [
+                  "附图可能是户型图、现场照片、毛坯房或效果图：先辨别来源。CAD 户型图逐一读取房间文字、尺寸链、门扇和窗符号。电梯、消防电梯和公共楼梯核不等于独栋别墅；单层大平层即使有露台或泳池也选 home。不要虚构院子、围墙或屋顶。照片不可见的尺寸只能注明估算。",
+                  "spaces 必须逐个列出可辨认的空间，包括卫生间、衣帽间、家政、厨房、楼梯、电梯厅、露台等；不能把交通核、整间套房用一个大矩形概括。note 写位置和开间进深。description 逐段记录尺寸链、各空间的位置和共用墙连接关系。看不清就明确写不确定，禁止假装读到数字。",
+              ]
+            : []),
         `用户的需求：${input.description.trim() || "（没写，按附图和下面的选择来）"}`,
         ...(input.roomName ? [`用户选的空间：${input.roomName}。`] : []),
         ...(input.styleName ? [`用户选的风格：${input.styleName}。`] : []),
@@ -445,7 +452,8 @@ export function buildSceneAnalysisPrompt(input: SceneAnalysisInput) {
         ...knowledgeLines(input.knowledge),
         "",
         "尺寸要符合常识和上面的参考数据：单个房间 size 写房间的长宽，floors 写 1；整套户型写整套的外轮廓；建筑写主体平面和层数。",
-        "description 写给建模师看：150–400 字，具体写出各空间的位置关系（用东南西北或前后左右）、尺寸、门窗、楼梯、主要家具和配色，建模师只看这段就能搭出来。renderNotes 写一句出效果图的补充要求（30–80 字，写材质、灯光和氛围）。",
+        'CAD 图纸还必须写 source="drawing" 和 dimensionChains={"x":[横向逐段尺寸，米],"z":[纵向逐段尺寸，米]}。分别读取横向、纵向的尺寸链，再各自求和写入 size.width/depth。不要把横向的 600 墙厚加到纵向总进深，也不要混用不同链条或把平面图面积当外包框面积。必须以图上可读的总尺寸和链条校核，不凭常识猜数字。',
+        "description 写给建模师看：具体写出各空间的位置关系（用东南西北）、尺寸链、门窗和共用墙、楼梯、主要家具和配色，复杂户型可写到 1200 字。renderNotes 写一句出效果图的补充要求（30–80 字，写材质、灯光和氛围）。",
         '只输出一个 JSON 对象，不要解释，不要代码块标记：{"scope":"room","title":"方案名","summary":"一句话说明","roomKey":"living-room","styleKey":"cream","size":{"width":6,"depth":4.5,"floors":1,"storeyHeight":2.8},"spaces":[{"name":"客厅","area":27,"note":"朝南落地窗"}],"features":["……"],"materials":["……"],"furniture":["……"],"description":"……","renderNotes":"……"}',
     ].join("\n");
 }
@@ -481,7 +489,7 @@ export function normalizeSceneBrief(value: unknown, options: { scope: InteriorSc
                 return { name: shortText(space.name, 20), ...(area && area > 0 && area < 5000 ? { area: round2(area) } : {}), ...(shortText(space.note, 60) ? { note: shortText(space.note, 60) } : {}) };
             })
             .filter((item) => item.name)
-            .slice(0, 24),
+            .slice(0, 60),
         features: textList(raw.features, 12, 80),
         materials: textList(raw.materials, 10, 60),
         furniture: textList(raw.furniture, 20, 40),
@@ -491,6 +499,16 @@ export function normalizeSceneBrief(value: unknown, options: { scope: InteriorSc
     if (typeof raw.roomKey === "string" && options.roomKeys.includes(raw.roomKey)) brief.roomKey = raw.roomKey;
     if (typeof raw.styleKey === "string" && options.styleKeys.includes(raw.styleKey)) brief.styleKey = raw.styleKey;
     if (width && depth) brief.size = { width, depth, floors: Math.min(10, Math.max(1, Math.round(floors || 1))), storeyHeight: storeyHeight && storeyHeight >= 2 && storeyHeight <= 8 ? storeyHeight : 3 };
+    if (raw.source === "drawing") {
+        const chains = raw.dimensionChains as { x?: unknown; z?: unknown } | undefined;
+        const read = (value: unknown) => Array.isArray(value) && value.length >= 1 && value.length <= 40 && value.every((part) => typeof part === "number" && Number.isFinite(part) && part > 0 && part < 120);
+        if (!read(chains?.x) || !read(chains?.z) || !brief.size) throw new Error("图纸读图未提供可核对的尺寸链，未继续建模");
+        const x = chains!.x as number[];
+        const z = chains!.z as number[];
+        const sum = (values: number[]) => values.reduce((total, part) => total + part, 0);
+        if (Math.abs(sum(x) - brief.size.width) > 0.1 || Math.abs(sum(z) - brief.size.depth) > 0.1) throw new Error("图纸总尺寸与逐段尺寸链不一致，未继续建模");
+        brief.dimensionChains = { x, z };
+    }
     return brief;
 }
 

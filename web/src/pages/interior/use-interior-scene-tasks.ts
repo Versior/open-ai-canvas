@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { applyScenePatch, normalizeSceneBrief, parseSceneJson, type SceneBrief } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
 import { applySceneLocalEdit } from "@/lib/interior/scene-local-edit";
-import { buildSceneSpecPrompt, normalizeSceneMeta, normalizeSceneSpec, specDimensionCheck, type InteriorSceneV2, type SceneSpec } from "@/lib/interior/scene-spec";
+import { buildSceneSpecPrompt, normalizeSceneMeta, specDimensionCheck, type InteriorSceneV2, type SceneSpec } from "@/lib/interior/scene-spec";
+import { checkSceneCompletion } from "@/lib/interior/scene-validation";
 import { parseBackendGenerationResult } from "@/services/api/generation-task";
 import { isGenerationTaskTerminalError, waitForGenerationTask } from "@/services/api/task-center";
 import type { InteriorCatalog, InteriorProject, InteriorProjectDocument, InteriorSceneItem } from "@/services/api/interior";
@@ -70,7 +71,7 @@ function briefFromSpec(spec: SceneSpec, meta: ReturnType<typeof normalizeSceneMe
 }
 
 /**
- * 推进当前项目里还在生成的 3D 模型：读图出方案（一次完成）后存成场景文件；旧记录的方案分析完成后再提交方案；
+ * 推进当前项目里还在生成的 3D 模型：先读图，再检索知识建模；校验失败最多修正一次，通过后存成场景文件；
  * 修改任务完成后存成新的一版。生成过程中把模型写出来的文字交给页面（live），页面边读边搭预览。
  * 离开页面或切换项目时只停止监听，不取消任务；回来时按记录里的进度接着走。
  */
@@ -125,7 +126,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
         const scenes = project.document.scenes || [];
         for (const item of scenes) {
             if (item.status !== "pending" || stalled[item.id]) continue;
-            const key = `${item.id}:${item.stage}`;
+            const key = `${item.id}:${item.stage}:${item.taskId}`;
             if (running.current.has(key)) continue;
             const waiting = item.stage === "parts" ? false : !item.taskId;
             if (waiting) {
@@ -161,7 +162,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
             .catch((error: unknown) => {
                 if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
                 if (error instanceof SceneStalledError) setStalled((current) => ({ ...current, [item.id]: error.message }));
-                else patch({ status: "failed", error: errorText(error, "生成失败") });
+                else patch({ status: "failed", error: errorText(error, "生成失败"), notice: undefined });
             })
             .finally(() => {
                 if (running.current.get(key) === controller) running.current.delete(key);
@@ -169,10 +170,12 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
             });
     }
 
-    /** 旧记录：方案分析完成后补齐范围、空间和风格（用户自己选了的不改），再查一次知识库，提交整份 3D 方案。 */
+    /** 读图后补齐范围、空间和风格（用户自己选了的不改），按实际空间再查知识库，提交整份 3D 方案。 */
     async function runAnalyze(item: InteriorSceneItem, signal: AbortSignal, onText: (text: string) => void): Promise<Partial<InteriorSceneItem>> {
         const catalog = catalogRef.current;
-        const brief = normalizeSceneBrief(parseSceneJson(await taskText(item.taskId!, signal, onText)).value, {
+        const parsed = parseSceneJson(await taskText(item.taskId!, signal, onText));
+        if (parsed.truncated) throw new Error("读图回复被截断，未继续建模");
+        const brief = normalizeSceneBrief(parsed.value, {
             scope: item.autoScope ? "auto" : item.scope,
             roomKeys: catalog.rooms.map((room) => room.key),
             styleKeys: catalog.styles.map((style) => style.key),
@@ -199,18 +202,39 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
 
     /**
      * 方案完成：读出读图记录、范围、空间和风格，以及整份 3D 方案（房间、门窗、家具、屋顶、庭院），存成第二版场景文件。
-     * 方案写了图纸总尺寸、房间拼出来又对不上时，在记录上留一句提醒。几何细节在页面上现算。
+     * 完整性和几何检查通过才保存；不通过最多提交一次修正。几何细节在页面上现算。
      */
     async function runSpec(item: InteriorSceneItem, signal: AbortSignal, onText: (text: string) => void): Promise<Partial<InteriorSceneItem>> {
         const catalog = catalogRef.current;
         const { value, truncated } = parseSceneJson(await taskText(item.taskId!, signal, onText));
         const meta = normalizeSceneMeta(value, { scope: item.autoScope ? "auto" : item.scope, roomKeys: catalog.rooms.map((room) => room.key), styleKeys: catalog.styles.map((style) => style.key) });
-        const spec = normalizeSceneSpec(value, meta.scope);
+        let spec: SceneSpec | undefined;
+        let issues: string[];
+        try {
+            ({ spec, issues } = checkSceneCompletion(value, meta.scope, { truncated, spaces: item.brief?.spaces, size: item.brief?.dimensionChains ? item.brief.size : undefined }));
+        } catch (cause) {
+            issues = [errorText(cause, "方案格式无效")];
+        }
+        if (issues.length) {
+            if ((item.repairCount || 0) >= 1) throw new Error(`建模未通过检查，未保存为成品：${issues.slice(0, 5).join("；")}`);
+            const { knowledge, refs } = await fetchSceneKnowledge(sceneKnowledgeQuery(item));
+            if (signal.aborted) throw new DOMException("已离开", "AbortError");
+            const prompt = [
+                buildSceneSpecPrompt({ ...scenePromptInput(item, knowledge), ...catalogKeys(catalog) }),
+                "",
+                "上一份方案未通过程序校验。结合原图和读图清单修正以下错误，输出完整 JSON：",
+                ...issues.map((issue) => `- ${issue}`),
+                `上一份方案：${JSON.stringify(value)}`,
+            ].join("\n");
+            const task = await submitSceneTask(configRef.current, item.model, prompt, "repair", item.reference);
+            window.dispatchEvent(new CustomEvent("wallet:updated"));
+            return { taskId: task.id, repairCount: 1, knowledge: refs, notice: "正在修正空间、尺寸和门洞检查发现的问题" };
+        }
+        if (!spec) throw new Error("没有可保存的建模方案");
         const scene: InteriorSceneV2 = { version: 2, title: spec.title, summary: spec.summary, spec };
         const sceneFile = await saveSceneFile(scene);
         const room = item.roomKey ? undefined : catalog.rooms.find((entry) => entry.key === meta.roomKey);
         const style = item.styleKey ? undefined : catalog.styles.find((entry) => entry.key === meta.styleKey);
-        const notice = [truncated ? "模型的回复太长被截断，只保留了前面的部分" : "", specDimensionCheck(spec)].filter(Boolean).join("；");
         return {
             status: "succeeded",
             scope: meta.scope,
@@ -223,7 +247,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
             brief: item.brief ? { ...item.brief, ...(meta.renderNotes ? { renderNotes: meta.renderNotes } : {}) } : briefFromSpec(spec, meta),
             ...(room ? { roomKey: room.key, roomName: room.name } : {}),
             ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
-            ...(notice ? { notice } : {}),
+            notice: undefined,
         };
     }
 
@@ -238,7 +262,9 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
             return { status: "succeeded", sceneFile, title: scene.title, summary: scene.summary, stats: sceneStats(scene), error: undefined };
         }
         if (base.version === 2) {
-            const spec = normalizeSceneSpec(parseSceneJson(text).value, base.spec.scope);
+            const parsed = parseSceneJson(text);
+            const { spec, issues } = checkSceneCompletion(parsed.value, base.spec.scope, { truncated: parsed.truncated });
+            if (issues.length) throw new Error(`修改未通过检查，原模型保留：${issues.slice(0, 5).join("；")}`);
             const scene: InteriorSceneV2 = { version: 2, title: spec.title, summary: spec.summary, spec };
             const sceneFile = await saveSceneFile(scene);
             const notice = specDimensionCheck(spec);

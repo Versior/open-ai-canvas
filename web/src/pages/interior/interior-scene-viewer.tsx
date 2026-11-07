@@ -281,7 +281,7 @@ export function InteriorSceneViewer({
     editTarget?: SceneEditTarget;
     onRoomSelect?: (name: string, elevation: number) => void;
 }) {
-    const [cutFloor, setCutFloor] = useState<number | undefined>(undefined);
+    const [cutFloor, setCutFloor] = useState<number | undefined>(() => (scene.version === 2 && scene.spec.scope === "home" ? 0 : undefined));
     const model = useMemo(() => renderModel(scene, { cutFloor }), [scene, cutFloor]);
     const built = useMemo(() => buildSceneRoot(model), [model]);
     useEffect(() => () => built.dispose(), [built]);
@@ -316,7 +316,7 @@ export function InteriorSceneViewer({
     useEffect(() => {
         setHidden(new Set());
         setView("orbit");
-        setCutFloor(undefined);
+        setCutFloor(scene.version === 2 && scene.spec.scope === "home" ? 0 : undefined);
         setDrawing("off");
     }, [scene]);
     useEffect(() => {

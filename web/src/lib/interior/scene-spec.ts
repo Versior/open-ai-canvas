@@ -101,7 +101,7 @@ export type SpecDoorKind = "door" | "double" | "slide" | "entry" | "opening";
 /** at：门洞中心坐标；into：门扇开向的房间；hinge：门轴在门洞哪一头（横墙 w/e，竖墙 n/s）。 */
 export type SpecDoor = { between?: [string, string]; room?: string; side?: SpecSide; width?: number; kind: SpecDoorKind; at?: number; into?: string; hinge?: SpecSide };
 export type SpecStair = { rect: SpecRect; up: SpecSide };
-export type SpecBalcony = { rect: SpecRect; rail: "glass" | "metal" | "solid" };
+export type SpecBalcony = { name?: string; rect: SpecRect; rail: "glass" | "metal" | "solid" | "none"; surface?: "stone" | "wood" | "water" };
 /** pos：家具中心点；facing：正面朝向（写了 facing 就不看 rotate）。没有 pos 时按 at 靠墙或放中间、角上。 */
 export type SpecFurniture = { type: SpecFurnitureType; room: string; at: SpecAnchor; rotate?: number; size?: [number, number]; color?: string; pos?: [number, number]; facing?: SpecSide };
 export type SpecWallMaterial = "wall" | "stone" | "brick" | "wood" | "concrete";
@@ -162,7 +162,7 @@ export type InteriorSceneV2 = { version: 2; title: string; summary: string; spec
 /** 场景文件：第一版是模型直接写的几何体，第二版是方案。 */
 export type InteriorSceneData = InteriorScene3D | InteriorSceneV2;
 
-export const SPEC_LIMITS = { extent: 60, floors: 5, rooms: 30, doors: 40, windows: 60, furniture: 80, stairs: 3, balconies: 8, pillars: 40, siteItems: 60, axes: 40 };
+export const SPEC_LIMITS = { extent: 60, floors: 5, rooms: 60, doors: 80, windows: 60, furniture: 160, stairs: 3, balconies: 16, pillars: 40, siteItems: 60, axes: 40 };
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const SIDES: SpecSide[] = ["n", "s", "e", "w"];
 const ANCHORS: SpecAnchor[] = ["n", "s", "e", "w", "c", "ne", "nw", "se", "sw"];
@@ -379,7 +379,7 @@ function specRooms(value: unknown, snapX: AxisSnap, snapZ: AxisSnap) {
         if (!raw || typeof raw !== "object") continue;
         const item = raw as Record<string, unknown>;
         const typeKey = oneOf(item.type, ROOM_KEYS);
-        const base = text(item.name, 12).replace(/#/g, "") || ROOM_TYPES[typeKey || "other"];
+        const base = text(item.name, 20).replace(/#/g, "") || ROOM_TYPES[typeKey || "other"];
         const type = typeKey || guessRoomType(base);
         const floor = oneOf(item.floor, FLOOR_FINISHES);
         const rects = [item.rect, ...(Array.isArray(item.rects) ? item.rects : [])].map((rect) => specRect(rect, 0.8, snapX, snapZ)).filter((rect): rect is SpecRect => rect !== null);
@@ -420,7 +420,7 @@ function specFloor(raw: unknown, index: number, snapX: AxisSnap, snapZ: AxisSnap
     if (!rooms.length) return null;
     const names = new Set(rooms.map((room) => room.name));
     const roomName = (value: unknown) => {
-        const name = text(value, 12);
+        const name = text(value, 20);
         return names.has(name) ? name : "";
     };
     const list = (value: unknown, limit: number) => (Array.isArray(value) ? value.slice(0, limit) : []).filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"));
@@ -479,7 +479,8 @@ function specFloor(raw: unknown, index: number, snapX: AxisSnap, snapZ: AxisSnap
     const balconies: SpecBalcony[] = [];
     for (const entry of list(item.balconies, SPEC_LIMITS.balconies)) {
         const rect = specRect(entry.rect, 0.6, snapX, snapZ);
-        if (rect) balconies.push({ rect, rail: oneOf(entry.rail, ["glass", "metal", "solid"] as const) || "glass" });
+        const surface = oneOf(entry.surface, ["stone", "wood", "water"] as const);
+        if (rect) balconies.push({ ...(text(entry.name, 20) ? { name: text(entry.name, 20) } : {}), rect, rail: oneOf(entry.rail, ["glass", "metal", "solid", "none"] as const) || "glass", ...(surface ? { surface } : {}) });
     }
     const pillars: SpecRect[] = [];
     for (const entry of Array.isArray(item.pillars) ? item.pillars.slice(0, SPEC_LIMITS.pillars) : []) {
@@ -771,6 +772,7 @@ function requestLines(input: SpecPromptInput) {
             ? [
                   `AI 方案分析${input.hasReference ? "（读图记录，和附图对不上的地方以附图为准）" : ""}：${brief.title}。${brief.summary}${size}`,
                   `分析描述：${brief.description}`,
+                  ...(brief.dimensionChains ? [`图纸已校核的尺寸链（米）：x=${JSON.stringify(brief.dimensionChains.x)}，z=${JSON.stringify(brief.dimensionChains.z)}。grid 的总尺寸必须使用该链条之和，不得自行改变。`] : []),
                   ...(brief.spaces.length ? [`空间：${brief.spaces.map((space) => [space.name, space.area ? `约 ${space.area} 平方米` : "", space.note || ""].filter(Boolean).join(" ")).join("；")}。`] : []),
                   ...(brief.features.length ? [`要点：${brief.features.join("；")}。`] : []),
                   ...(brief.materials.length ? [`材质配色：${brief.materials.join("；")}。`] : []),
@@ -803,13 +805,15 @@ export type SpecPromptInput = {
  */
 export function buildSceneSpecPrompt(input: SpecPromptInput) {
     return [
-        "你是建筑和室内设计师。要做一个能在网页里旋转查看的三维模型：你只写设计方案（轴网、每层的房间、门窗、柱子、楼梯、阳台、家具、屋顶和庭院），程序会按方案自动生成墙体、楼板、门窗、踢脚线、窗帘、屋顶和精细的家具模型。",
+        "你是建筑和室内设计师。要做一个能在网页里旋转查看的三维模型：你只写设计方案（轴网、每层的房间、门窗、柱子、楼梯、阳台、家具、屋顶和庭院），程序会按方案生成几何体。必须让房间布局、尺寸、家具和门窗真实可用。",
         "",
         ...requestLines(input),
         "",
         ...(input.hasReference ? [...drawingGuide(), ""] : []),
         ...metaLines(input),
         ...specRules(),
+        "保存前程序会检查：每个读图空间必须保留原名且独立表达；矩形不能重叠，包含关系的楼梯核/卫生间/衣帽间应先从大空间拆出；只有共用墙的空间能写 between 或 open。at 是门中心沿墙坐标，门宽必须容纳在共用墙段内。最终尺寸必须与图纸对应，不得删空间凑整或复制格式示例的布局。",
+        "CAD 单层户型默认 home，不用独栋别墅的屋顶和室外院子。图纸上的露台、空中庭院和泳池用 balconies 按原位置表达，name 使用读图清单中的名称，surface 取 stone/wood/water（泳池取 water），rail 取 glass/metal/solid/none。这些户外空间不再重复写为 rooms，和室内之间的门写 room+side 外墙门。知识库用于校核图中未标注的尺度、家具与通道，不改变已标注的尺寸或套用同一套布置。家具必须按实际房间尺寸与门窗设计，不能挡门、穿墙或相互重叠。",
         "",
         `只输出一个 JSON 对象，字段顺序：reading、scope、roomKey、styleKey、title、summary、renderNotes、grid、palette、floors、roof、site。不要解释，不要代码块标记，不要换行缩进。格式示例：${SPEC_EXAMPLE}`,
     ].join("\n");

@@ -43,7 +43,7 @@ export type CompiledScene = {
 };
 
 /** cutFloor：剖切看某一层（更高的楼层和屋顶不显示，这层的墙只砌到 1.2 米）。 */
-export type CompileOptions = { cutFloor?: number };
+export type CompileOptions = { cutFloor?: number; onLayoutIssue?: (message: string) => void };
 
 export const ROOF_GROUP = "屋顶";
 export const SITE_GROUP = "庭院";
@@ -717,7 +717,7 @@ type Placement = { type: SpecFurnitureType; x: number; z: number; w: number; d: 
 type RoomFurniture = { type: SpecFurnitureType; at: SpecAnchor; rotate?: number; size?: [number, number]; color?: string; pos?: [number, number] };
 /** 一面墙的情况：free 是去掉门洞、落地窗、飘窗和柱子后能靠墙摆的区间；open 再去掉普通窗（高柜、床头不挡窗）。 */
 type SideInfo = { walled: boolean; length: number; depth: number; free: [number, number][]; open: [number, number][]; window: boolean; door: boolean };
-type RoomContext = { room: SpecRoom; clear: SpecRect; width: number; depth: number; area: number; sides: Record<SpecSide, SideInfo> };
+type RoomContext = { room: SpecRoom; clear: SpecRect; width: number; depth: number; area: number; sides: Record<SpecSide, SideInfo>; obstacles: SpecRect[] };
 
 function clearRect(room: SpecRoom, segs: Seg[]): SpecRect {
     const inset = (side: SpecSide) => {
@@ -730,6 +730,7 @@ function clearRect(room: SpecRoom, segs: Seg[]): SpecRect {
 }
 
 function roomContext(room: SpecRoom, segs: Seg[], pillars: SpecRect[]): RoomContext {
+    const obstacles: SpecRect[] = [...pillars];
     const clear = clearRect(room, segs);
     const width = clear[2] - clear[0];
     const depth = clear[3] - clear[1];
@@ -750,7 +751,19 @@ function roomContext(room: SpecRoom, segs: Seg[], pillars: SpecRect[]): RoomCont
                 if (hole.center < edge.from - EPS || hole.center > edge.to + EPS) continue;
                 const pad = DOOR_KINDS.has(hole.kind) ? 0.15 : 0.05;
                 const span: [number, number] = [hole.center - hole.width / 2 - pad, hole.center + hole.width / 2 + pad];
-                if (DOOR_KINDS.has(hole.kind)) door = true;
+                if (DOOR_KINDS.has(hole.kind)) {
+                    door = true;
+                    const reach = Math.min(hole.width, 1.2);
+                    obstacles.push(
+                        side === "n"
+                            ? [span[0], clear[1], span[1], clear[1] + reach]
+                            : side === "s"
+                              ? [span[0], clear[3] - reach, span[1], clear[3]]
+                              : side === "w"
+                                ? [clear[0], span[0], clear[0] + reach, span[1]]
+                                : [clear[2] - reach, span[0], clear[2], span[1]],
+                    );
+                }
                 if (DOOR_KINDS.has(hole.kind) || hole.kind === "floor" || hole.kind === "bay") blocked.push(span);
                 else windows.push(span);
             }
@@ -762,7 +775,7 @@ function roomContext(room: SpecRoom, segs: Seg[], pillars: SpecRect[]): RoomCont
         const free = subtractIntervals(runs, blocked);
         sides[side] = { walled, length: along[1] - along[0], depth: horizontal ? depth : width, free, open: subtractIntervals(free, windows), window: windows.length > 0, door };
     }
-    return { room, clear, width, depth, area: width * depth, sides };
+    return { room, clear, width, depth, area: width * depth, sides, obstacles };
 }
 
 /** 在有墙的几面里挑分数最高的一面；分数都不大于 0 时返回 undefined。 */
@@ -972,9 +985,9 @@ function localPoint(anchor: Placement, lx: number, lz: number): [number, number]
  * 茶几、地毯、单椅、落地灯、边几跟着沙发摆，床尾凳跟着床；其余放在剩下空间的中央或角上，互相不重叠。
  * 家具大于可用空间时按比例缩小，缩到原来六成以下就不摆。
  */
-function layoutRoom(ctx: RoomContext, requested: RoomFurniture[], within: SpecRect[]): Placement[] {
+function layoutRoom(ctx: RoomContext, requested: RoomFurniture[], within: SpecRect[], onIssue?: (message: string) => void): Placement[] {
     const placements: Placement[] = [];
-    const taken: SpecRect[] = [];
+    const taken: SpecRect[] = [...ctx.obstacles];
     const [cx1, cz1, cx2, cz2] = ctx.clear;
     const covered = (x: number, z: number) => within.some((rect) => x >= rect[0] - 0.03 && x <= rect[2] + 0.03 && z >= rect[1] - 0.03 && z <= rect[3] + 0.03);
     const inside = (rect: SpecRect) => covered(rect[0], rect[1]) && covered(rect[2], rect[1]) && covered(rect[0], rect[3]) && covered(rect[2], rect[3]) && covered((rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2);
@@ -1018,7 +1031,12 @@ function layoutRoom(ctx: RoomContext, requested: RoomFurniture[], within: SpecRe
                 else x = area[2] - hw - 0.02;
             }
         }
-        commit({ type: item.type, x, z, w, d, rotation, color: item.color });
+        const placement = { type: item.type, x, z, w, d, rotation, color: item.color };
+        if (!flat(item.type) && !free(footprint(placement))) {
+            onIssue?.(`${ctx.room.name}的${info.name}与家具、柱子或门前通道冲突，请修正 pos 和尺寸`);
+            continue;
+        }
+        commit(placement);
     }
     const isWallItem = (item: RoomFurniture) => SIDES.includes(item.at as SpecSide) && furnitureInfo(item.type).wall;
     const redirect: Record<SpecSide, SpecSide[]> = { n: ["s", "w", "e"], s: ["n", "w", "e"], w: ["e", "n", "s"], e: ["w", "n", "s"] };
@@ -1561,16 +1579,18 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
                   floor.rooms.map((room) => room.rect),
               )
             : [];
-        for (const rect of [...terraces, ...floor.balconies.map((item) => item.rect)])
+        for (const balcony of [...terraces.map((rect) => ({ rect, surface: undefined })), ...floor.balconies]) {
+            const { rect } = balcony;
             objects.push({
                 shape: "box",
                 position: [r3((rect[0] + rect[2]) / 2), r3(level.top + FINISH / 2), r3((rect[1] + rect[3]) / 2)],
                 size: [r3(rect[2] - rect[0]), FINISH, r3(rect[3] - rect[1])],
-                material: "stone",
-                color: "#c4bfb6",
-                texture: "paving",
+                material: balcony.surface === "water" ? "water" : balcony.surface === "wood" ? "wood" : "stone",
+                color: balcony.surface === "water" ? "#5aa5b8" : balcony.surface === "wood" ? spec.palette.wood : "#c4bfb6",
+                ...(balcony.surface === "water" ? {} : { texture: balcony.surface === "wood" ? ("planks" as const) : ("paving" as const) }),
                 group,
             });
+        }
         // 墙：户型和单个房间的外墙另出一截矮墙，剖开时换上。
         const extMaterial: SceneMaterial = floor.wallMaterial || "wall";
         const extColor = floor.wallColor || (extMaterial === "wall" ? spec.palette.wall : undefined);
@@ -1622,6 +1642,8 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
             }
         }
         for (const balcony of floor.balconies) {
+            if (balcony.name) labels.push({ text: balcony.name, position: [(balcony.rect[0] + balcony.rect[2]) / 2, level.top + 0.3, (balcony.rect[1] + balcony.rect[3]) / 2] });
+            if (balcony.rail === "none") continue;
             const breaks = floor.rooms.flatMap((room) => [room.rect[0], room.rect[1], room.rect[2], room.rect[3]]);
             const covered = (x: number, z: number) => roomAt(floor.rooms, x, z) >= 0;
             for (const side of SIDES) {
@@ -1640,7 +1662,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
             const ctx = roomContext(main, segs, floor.pillars);
             const within = members.map((room) => clearRect(room, segs));
             const listed = floor.furniture.filter((item) => item.room === main.name);
-            const placements = layoutRoom(ctx, listed.length ? listed : defaultFurniture(ctx), within);
+            const placements = layoutRoom(ctx, listed.length ? listed : defaultFurniture(ctx), within, options.onLayoutIssue);
             const lampCeiling = capped ? Math.min(ceiling, CUT_HEIGHT + 1.4) : ceiling;
             placements.forEach((placement, order) => objects.push(...furnitureObjects(placement, spec, level.top + FINISH, lampCeiling, group, roomIndex * 7 + order, backFacade(level, segs, placement))));
             for (const room of members) baseboards(level, room, segs, spec, objects);

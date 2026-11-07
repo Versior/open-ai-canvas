@@ -155,6 +155,8 @@ export type InteriorSceneItem = {
     knowledge?: { id: string; kindName: string; title: string }[];
     /** 规划或修改那一步的任务。 */
     taskId?: string;
+    /** 校验不通过最多自动修正一次；持久化防止刷新后重复付费修正。 */
+    repairCount?: number;
     /** 旧版分部分搭留下的规划，只读不用。 */
     plan?: unknown;
     /** 各部分的任务；没提交成功的部分是 null。 */

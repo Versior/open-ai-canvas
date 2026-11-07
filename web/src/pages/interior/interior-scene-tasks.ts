@@ -43,7 +43,7 @@ function promptKnowledge(entry: InteriorKnowledgeEntry): SceneKnowledge {
 
 /** 一个模型后面几步查知识用的条件：方案分析之后以分析结果为准。 */
 export function sceneKnowledgeQuery(item: InteriorSceneItem) {
-    return { scope: item.scope, roomKey: item.roomKey, styleKey: item.styleKey, text: [item.description, item.brief?.description].filter(Boolean).join("\n") };
+    return { scope: item.scope, roomKey: item.roomKey, styleKey: item.styleKey, text: [item.brief?.spaces.map((space) => space.name).join("、"), item.description, item.brief?.description].filter(Boolean).join("\n") };
 }
 
 export function scenePromptInput(item: InteriorSceneItem, knowledge?: SceneKnowledge[]): SpecPromptInput {

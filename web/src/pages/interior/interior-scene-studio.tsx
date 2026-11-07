@@ -2,9 +2,9 @@ import { App, Button, Input, Select, Tooltip } from "antd";
 import { BookOpen, Box, History, Info, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
-import { buildSceneEditPrompt, knowledgeLines, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
+import { buildSceneAnalysisPrompt, buildSceneEditPrompt, knowledgeLines, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
-import { buildSceneSpecEditPrompt, buildSceneSpecPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
+import { buildSceneSpecEditPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
 import { modelCompatibilityError } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
 import type { InteriorCatalog, InteriorImageRef, InteriorProject, InteriorProjectDocument, InteriorSceneItem } from "@/services/api/interior";
@@ -199,8 +199,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     };
 
     /**
-     * 先查知识库，再一次提交「读图 + 出方案」：模型先写读图记录，再写轴网、房间、门窗和家具，
-     * 页面边收边搭（以前要先等一轮方案分析，再等一轮方案，两次看图）。
+     * 先读图确认空间，再按读图结果检索知识和建模；空需求不能只凭默认知识给户型套一座别墅。
      */
     const generate = async () => {
         if (busy || knowledgeRequest.current) return;
@@ -227,13 +226,13 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
             scope: scope === "auto" ? "room" : scope,
             ...(scope === "auto" ? { autoScope: true } : {}),
             description: description.trim(),
-            stage: "spec",
+            stage: "analyze",
             knowledge: found.refs,
             ...(room ? { roomKey: room.key, roomName: room.name } : {}),
             ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
             ...(image ? { reference: image } : {}),
         };
-        void start(item, buildSceneSpecPrompt({ scope, description, roomName: room?.name, styleName: style?.name, stylePrompt: style?.summary, hasReference: Boolean(image), knowledge: found.knowledge, ...catalogKeys(catalog) }));
+        void start(item, buildSceneAnalysisPrompt({ scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), knowledge: found.knowledge, ...catalogKeys(catalog) }));
     };
 
     /** 按当前视角截一张图存成素材，带去「效果图」用白模渲染出图。 */
@@ -439,7 +438,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                         <section className="itd-section">
                             <div className="itd-field is-block">
                                 <span className="itd-field-label">
-                                    搭模型用的文本模型<small>越强的模型搭得越细</small>
+                                    建模模型<small>读图、建模；不通过时最多修正一次</small>
                                 </span>
                                 <ModelPicker
                                     config={config}
@@ -459,7 +458,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                         </section>
                     </div>
                     <footer className="itd-composer-foot">
-                        <GenerationCostNotice config={config} model={model} capability="text" requirements={requirements} label="生成三维模型" />
+                        <GenerationCostNotice config={config} model={model} capability="text" requirements={requirements} count={2} label="读图与建模" />
                         {error ? (
                             <p className="itd-inline-error" role="alert">
                                 {error}
@@ -475,7 +474,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                         >
                             {readingKnowledge ? "正在读取知识" : submitting ? "正在提交" : reference?.resourceId && !description.trim() ? "AI 分析并生成 3D 模型" : "生成 3D 模型"}
                         </Button>
-                        <p className="itd-muted-note">{problem && !busy ? problem : "AI 看图读尺寸、查知识库出方案，边写边搭出墙体、门窗和家具，过程实时可见；按所选文本模型计费。"}</p>
+                        <p className="itd-muted-note">{problem && !busy ? problem : "先读图，再按实际空间查知识建模；检查不通过最多额外修正一次，按所选模型计费。"}</p>
                     </footer>
                 </aside>
             ) : null}
