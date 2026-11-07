@@ -17,10 +17,11 @@ import {
     studioPlanStyleId,
     studioPlanTone,
     studioRoleLayout,
+    studioForbidsEnglishHeading,
     studioTemplateShotRoles,
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
-import { STUDIO_COMPOSITIONS, STUDIO_COMPOSITION_IDS, studioChannelDesign } from "./art-direction";
+import { STUDIO_COMPOSITIONS, STUDIO_COMPOSITION_IDS, studioChannelDesign, studioCompositionConflict } from "./art-direction";
 import { studioTypeInstruction } from "./typography";
 import { studioPickedDirection, studioPrepFactsText, studioPrepPromptLines } from "./plan-prep";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
@@ -223,7 +224,10 @@ function previousLines(previous: StudioDetailPlan | undefined): string[] {
         "",
         "【上一版策划】（按卖家的补充调整修改这一版：卖家没提意见的部分尽量保留，卖家不满意的地方要改到位）",
         previous.summary ? `思路：${previous.summary}` : "",
-        ...previous.screens.map((screen, index) => `${index + 1}. ${screen.title}（${screen.role} · ${screen.layout} · ${screen.composition || "按画面"}）${screen.headline ? `「${screen.headline}」` : ""}：${screen.visual.slice(0, 120)}`),
+        ...previous.screens.map(
+            (screen, index) =>
+                `${index + 1}. ${screen.title}（${screen.role} · ${screen.layout} · ${screen.composition || "按画面"}）${screen.headline ? `「${screen.headline}」` : ""}：${studioCompositionConflict(screen) && screen.composition ? `旧描述的标题位置相反，已舍弃；请重新写画面，严格执行 ${STUDIO_COMPOSITIONS[screen.composition].render}` : screen.visual.slice(0, 120)}`,
+        ),
     ].filter(Boolean);
 }
 
@@ -319,8 +323,8 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "- 可见外观可以作为设计主题，不能冒充舒适度或性能。比如用「清透前框，柔灰收边」讲配色，用微距证明；不写「轻到忘了戴」或「跑跳不掉」等没有依据的体验。参数屏直接给规格，无须改写成口号。",
         "- 短、准、有节奏：可以用短句、对仗、留白和数字，口语但不油腻；同一组里的标题句式要有变化。国内头部详情页常用两个短语对仗、中间空一格（前讲作用、后讲结果，如「深润修护 强韧喉黏膜」），痛点共鸣屏用一个问句开场；关键词或数字要用强调色时写进 elements。",
         `- 不写土味和口号腔的词：${STUDIO_TACKY_COPY.join("、")}，不用感叹号，不堆四字成语。`,
-        "- 每张最多三层文字：英文栏目小标题、主标题、一句注解；要点只用在图标、引线、拼格、对照、参数、痛点、机理、成分、资质和收尾版式里做标签。",
-        "- 不强制每屏放英文栏目头。摄影屏可以只有一句标题或完全无字；表格用 lines 写「项目｜数值与条件」，数据屏主标题放已确认的关键数字与单位，对照屏只写商品自身的真实角度或选项。",
+        "- 每张最多三层文字：可选栏目小标题、主标题、一句注解；栏目默认留空，语言服从用户选择。要点只用在图标、引线、拼格、对照、参数、痛点、机理、成分、资质和收尾版式里做标签。",
+        "- 摄影屏可以只有一句标题或完全无字；表格用 lines 写「项目｜数值与条件」，数据屏主标题放已确认的关键数字与单位，对照屏只写商品自身的真实角度或选项。",
         "- 详情页是一张连续的长图：每屏都不加页码、屏号和 01、02 这类序号（使用步骤屏的步骤编号、机理示意里作用过程的先后编号除外），eyebrow、elements 和 style 里也不要写屏的序号。",
         "",
         ...rhythmLines(request),
@@ -334,12 +338,13 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "4. visual 写成能直接交给图片模型的一段话（不超过 150 个字），像摄影师和美术指导的分镜说明：背景或场景、商品怎么摆、什么角度和焦段、人物和动作（如有）、道具（不超过 3 件）、主色调、光线的方向和质感，以及按版式怎么分区、文字放在哪里。visual 和 style 里不写任何品牌名（上面提到的大牌只用来定调性），也不写「参考某某官网」。",
         "5. elements 写这一张的信息元素（不超过 80 个字）：图标卖点写几个图标、各画什么；引线标注写引线指向哪几个部位，要不要圆形放大镜头；拼格写每格放哪个部位；对照写两栏各放什么；痛点共鸣写人物神情和几个气泡标签，或宫格每格的场景；机理示意写剖面分几层、光点和箭头从哪到哪；成分特写写每个成分放在什么容器里；其他版式写装饰元素（色块、细线、圆角卡片、底部一排小图）。只写画面元素，不加新的事实，不写屏的序号、页码和屏号。",
         "6. 商品图里看不到的角度、内部结构、配件和包装不要安排成画面主体。",
-        "7. 文案字数：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 6 条，每条不超过 12 个字，图标卖点、引线标注、拼格、痛点、机理、成分、资质和收尾版式的 lines 就是每个图标、引线、格子、气泡或成分的标签，数量和 elements 里写的一致。eyebrow 是主标题上方的英文栏目小标题（如 CLEAR FRAME，只用英文字母，不带序号），不需要就留空。只用上面的核心标题、卖点和已确认的事实，可以改写，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
+        "7. 文案字数：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 6 条，每条不超过 12 个字，图标卖点、引线标注、拼格、痛点、机理、成分、资质和收尾版式的 lines 就是每个图标、引线、格子、气泡或成分的标签，数量和 elements 里写的一致。eyebrow 是可选栏目小标题，默认留空；需要时用选定的图文语言，不强加英文栏目或屏序号。卖家要求不要英文时所有栏目都必须遵守。只用上面的核心标题、卖点和已确认的事实，可以改写，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
         "8. 同一条卖点最多用在一张（详情页的头图和收尾可以回顾）。素材不够写文案的图，headline 写一个短栏目名或设 noText: true。",
         "9. style 是整组共用的字体家族、色板、边距和图形语言（不超过 300 个字）。给出色名、色值、标题气质和标签风格。统一品牌识别，不规定每屏同一标题位置、同一字号或同一种卡片；首屏大胆、细节屏克制，字号和裁切按购买问题变化。每张的摄影、图文位置和道具写在各自 visual 里。",
         "设计依据 designAnalysis（150–300 字）：从实拍识别实际颜色、轮廓、透明度或表面反光，结合平台和目标买家，解释背景明度、对比色与强调色的选择；说明哪种主光/轮廓光能展示这件商品，哪些实际可见视角与局部裁切能证明各屏信息；给出标题与注解的字号比例、字重与留白策略。颜色、机位、字体必须服务于商品识别和阅读，不能套固定暖光、台面、居中棚拍。只有正面素材时用真实正面及可见局部，不臆造背面和内部。卖家选定质感或参考同款时尊重约束，仍按商品实际配色调整对比。style 和各屏 visual 必须执行这些依据。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
+        "输出前逐屏检查 composition 和 visual：left 必须左侧主标题、右侧商品；right 必须左侧商品、右侧主标题；top/center 为上文下图；bottom 为上图下文。不能用左右分栏的编号配相反位置的描述。发现旧版的位置错误也必须修正，不能因为本次只改颜色而保留错误。",
         request.scope === "single"
             ? "12. 视觉元素选用一两个融进画面，不要把所有元素堆在一张里。visual 里没写包装盒时，画面里就只有 visual 写到的商品部分。"
             : `12. 视觉元素可选，不要把同一个图形贴在每一张上。整件商品与局部景别按内容交替，不强制数量比例；包装仅在商品资料确认且该屏需要时出现。${mainLike ? "主图只保留有助于识别的元素。" : "短页优先讲清商品，长页展开证据，不为装饰堆道具。"}`,
@@ -385,12 +390,15 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         return "";
     };
     const textless = product.brief.language === "none";
+    const noEnglishHeading = studioForbidsEnglishHeading(`${product.brief.planNote}\n${product.brief.extra}`);
     // 没有已确认的认证类事实时不收「资质背书」：图片模型会照着画出编造的证书，改用屏型默认的版式。
     const layouts = new Set(studioDetailLayoutIds(product));
     const finish = (planned: StudioPlannedScreen): StudioPlannedScreen => {
         const screen = layouts.has(planned.layout) ? planned : { ...planned, layout: studioRoleLayout(planned.role) };
-        if (textless || screen.noText || screen.role === "main-white") return { ...screen, composition: undefined, headline: "", subline: "", lines: [], noText: true };
-        return { ...screen, headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
+        if (textless || screen.noText || screen.role === "main-white") return { ...screen, composition: undefined, eyebrow: "", headline: "", subline: "", lines: [], noText: true };
+        if (studioCompositionConflict(screen)) throw new Error(`「${screen.title}」的标题位置与选定构图相反，请重新策划`);
+        if (noEnglishHeading && /[A-Za-z]/.test(screen.eyebrow)) throw new Error("策划加入了明确禁止的英文栏目，请重新策划或把栏目改为中文");
+        return { ...screen, eyebrow: grounded(screen.eyebrow), headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
     };
     let screens: StudioPlannedScreen[];
     const suite = request.scope === "template" ? product.brief.suite : undefined;

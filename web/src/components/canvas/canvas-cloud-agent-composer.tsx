@@ -232,6 +232,7 @@ export function AgentChatComposer({
     blockReason,
     onLongTextPaste,
     left,
+    character,
     tray,
     footer,
     onStop,
@@ -277,6 +278,7 @@ export function AgentChatComposer({
     /** 粘贴了很长的文字：文字照常粘贴，由调用方决定是否建议转成画布文本节点。 */
     onLongTextPaste?: (text: string) => void;
     left?: ReactNode;
+    character?: ReactNode;
     /** 输入区底部的附加内容（例如连接器条）。 */
     footer?: ReactNode;
     /** 供「@」插入的画布节点/素材/技能引用候选（可选，默认空，缺省时退化为普通输入框） */
@@ -571,6 +573,7 @@ export function AgentChatComposer({
                         </div>
                     ) : null}
                     <div className="relative min-w-0" onKeyDownCapture={handleSlashKeyCapture} onPasteCapture={handlePasteCapture}>
+                        {character}
                         <div className="agent-composer-prompt-scroll" style={{ height: promptHeight }}>
                             <CanvasResourceMentionTextarea
                                 value={prompt}

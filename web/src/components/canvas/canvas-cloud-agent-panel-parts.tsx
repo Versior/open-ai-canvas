@@ -6,7 +6,7 @@
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
@@ -777,7 +777,6 @@ function agentReplyOptionsTarget(messages: readonly CloudAgentChatMessage[]): { 
 }
 
 export function AgentConversation({
-    character,
     theme,
     messages,
     references,
@@ -807,7 +806,6 @@ export function AgentConversation({
     retryingRun = false,
     config,
 }: {
-    character?: ReactNode;
     theme: CanvasTheme;
     messages: CloudAgentChatMessage[];
     references: CanvasResourceReference[];
@@ -1021,7 +1019,6 @@ export function AgentConversation({
                             />
                         );
                     })}
-                    {character}
                     {approval ? (
                         <ApprovalCard
                             key={approval.approvalId}

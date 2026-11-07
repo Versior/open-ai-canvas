@@ -11,6 +11,7 @@ import { StudioViewerStage } from "./studio-viewer-stage";
 import { composeStudioShots, downloadStudioComposed, releaseComposed, studioOutputNeedsLegacyTypeset } from "./studio-delivery";
 import { studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
+import { StudioArtworkCheck } from "./studio-design-check";
 
 /** 大图查看：←/→ 在这一组出过图的镜头之间切换，图片可以点击、滚轮放大；套图里有多张候选时可以挑一张作为导出用图；右侧可以调整这一张再出。 */
 export function StudioViewer({
@@ -36,12 +37,13 @@ export function StudioViewer({
     onClose: () => void;
     onDownload: (shot: StudioShot, output: StudioOutput) => void;
     onReference: (output: StudioOutput) => void;
-    onTune: (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch) => void;
+    onTune: (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch, revisionResourceId?: string) => void;
     onApplyCopy: (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch) => void;
     onAdopt: (group: StudioShotGroup, shot: StudioShot, output: StudioOutput) => void;
 }) {
     const { message } = App.useApp();
     const [composedPreview, setComposedPreview] = useState<{ key: string; url?: string; error?: string }>();
+    const [reviewRevision, setReviewRevision] = useState<{ key: string; value: string }>();
     const group = groups.find((item) => item.key === target?.groupKey);
     const viewable = group ? group.shots.filter((shot) => Boolean(studioShotPreview(shot))) : [];
     const position = viewable.findIndex((shot) => shot.id === target?.shotId);
@@ -164,16 +166,26 @@ export function StudioViewer({
                                 用作参考图
                             </Button>
                         </div>
+                        {product && !overlay ? <StudioArtworkCheck product={product} shot={shot} output={current} onRevision={(value) => setReviewRevision({ key: previewKey, value })} /> : null}
                         {product ? (
                             <StudioShotTuner
-                                key={`${shot.id}:${shot.headline}:${shot.subline}`}
+                                key={`${shot.id}:${current.resourceId}:${shot.headline}:${shot.subline}`}
                                 product={product}
                                 shotRef={group.ref}
                                 shot={shot}
                                 imageModel={imageModel}
                                 blocked={blocked}
                                 active={active}
-                                onRun={(patch) => onTune(group, shot, patch)}
+                                reviewRevision={reviewRevision?.key === previewKey ? reviewRevision.value : undefined}
+                                revisionResourceId={overlay ? undefined : current.resourceId}
+                                onRun={(patch) =>
+                                    onTune(
+                                        group,
+                                        shot,
+                                        patch,
+                                        !overlay && (patch.adjust || patch.tweaks.length || patch.headline !== shot.headline || patch.subline !== shot.subline || JSON.stringify(patch.lines) !== JSON.stringify(shot.lines)) ? current.resourceId : undefined,
+                                    )
+                                }
                                 onApplyCopy={overlay ? (patch) => onApplyCopy(group, shot, patch) : undefined}
                             />
                         ) : null}

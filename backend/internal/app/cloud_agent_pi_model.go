@@ -331,6 +331,13 @@ func (s *Service) runCloudAgentModelStep(ctx context.Context, userID, runID stri
 			cloudAgentApplyReadLoopNudge(&canonical, &state)
 		}
 		if !compactionSummary {
+			// Pi projection and compaction can drop the initial product data message.
+			// Read the owned product again before every paid model step, including edits made during tool reads.
+			studioContext, contextErr := s.cloudAgentStudioRunContext(userID, state.Request)
+			if contextErr != nil {
+				return nil, false, contextErr
+			}
+			insertCloudAgentContextMessage(&canonical, "studio_context", studioContext)
 			cloudAgentAttachRunContext(&canonical, &state)
 			budget := s.cloudAgentContextBudgetForRequest(state.Request)
 			if err := fitCloudAgentModelContext(&canonical, budget.InputBudgetTokens); err != nil {

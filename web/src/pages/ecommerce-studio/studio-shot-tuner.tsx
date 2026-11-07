@@ -1,6 +1,6 @@
 import { App, Button, Input } from "antd";
 import { Copy, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { studioPlatformForbidsText } from "@/lib/ecommerce-studio/brief";
 import { reviewStudioCopy, studioFactCopyOptions } from "@/lib/ecommerce-studio/art-direction";
 import { STUDIO_TWEAKS, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
@@ -29,6 +29,8 @@ export function StudioShotTuner({
     active,
     onRun,
     onApplyCopy,
+    reviewRevision,
+    revisionResourceId,
 }: {
     product: StudioProduct;
     shotRef: StudioShotRef;
@@ -38,6 +40,8 @@ export function StudioShotTuner({
     active: boolean;
     onRun: (patch: StudioShotPatch) => void;
     onApplyCopy?: (patch: StudioShotPatch) => void;
+    reviewRevision?: string;
+    revisionResourceId?: string;
 }) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
@@ -46,6 +50,14 @@ export function StudioShotTuner({
     const [subline, setSubline] = useState(shot.subline);
     const [lines, setLines] = useState(shot.lines.join("\n"));
     const [adjust, setAdjust] = useState(shot.adjust || "");
+    useEffect(() => {
+        if (!reviewRevision) return;
+        if (reviewRevision.length > STUDIO_SHOT_ADJUST_MAX) {
+            message.error(`修正要求超过 ${STUDIO_SHOT_ADJUST_MAX} 字，请根据检查结果精简后填写`);
+            return;
+        }
+        setAdjust(reviewRevision);
+    }, [reviewRevision]);
     const [promptOpen, setPromptOpen] = useState(false);
     const spec = studioShotSpec(shot.role, product.dossier?.family || "generic");
     const copyAllowed = spec.copySlot !== "none" && product.brief.language !== "none" && !studioPlatformForbidsText(product, shot.role);
@@ -74,11 +86,11 @@ export function StudioShotTuner({
         const located = locateStudioShot(product, shotRef, shot.id);
         if (!located) return { error: "这张图已不在记录里" };
         try {
-            return { compiled: compileStudioShot(product, { ...located, shot: { ...located.shot, ...patch } }, imageModel, config).compiled };
+            return { compiled: compileStudioShot(product, { ...located, shot: { ...located.shot, ...patch } }, imageModel, config, revisionResourceId && (changed || patch.adjust || patch.tweaks.length) ? revisionResourceId : undefined).compiled };
         } catch (error) {
             return { error: error instanceof Error ? error.message : "提示词编译失败" };
         }
-    }, [config, imageModel, patch, product, promptOpen, shot.id, shotRef]);
+    }, [config, imageModel, patch, product, promptOpen, shot.id, shotRef, revisionResourceId, changed]);
 
     const toggle = (id: string) => setTweaks((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
 

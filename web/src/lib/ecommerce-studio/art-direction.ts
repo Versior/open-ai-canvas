@@ -15,6 +15,16 @@ export function studioCompositionOf(value: unknown): StudioCompositionId | undef
     return typeof value === "string" && Object.hasOwn(STUDIO_COMPOSITIONS, value) ? (value as StudioCompositionId) : undefined;
 }
 
+/** 只识别明确写出的反向分区，不把道具位置或局部标签误判为主标题位置。 */
+export function studioCompositionConflict(shot: Pick<StudioShot, "composition" | "visual">) {
+    if (shot.composition !== "left" && shot.composition !== "right") return false;
+    const opposite = shot.composition === "left" ? "右" : "左";
+    return (
+        new RegExp(`${opposite}(?:侧|边|半边|半部)?(?:约?[一二三四五六七八九十两\\d]+(?:成|%|％))?(?:留白|文字区|文案区|为|放|排|放置|纵向|\\s|约|短|主|题签){0,8}(?:标题|文案|文字)`).test(shot.visual || "") ||
+        (shot.composition === "left" ? /左图右文/.test(shot.visual || "") : /左文右图/.test(shot.visual || ""))
+    );
+}
+
 /** 新生成的一组换构图，失败重试沿用记录里的构图；白底商品图不参与。 */
 export function nextStudioComposition(role: StudioShotRole, previous?: StudioCompositionId, index = 0): StudioCompositionId | undefined {
     if (role === "main-white") return undefined;

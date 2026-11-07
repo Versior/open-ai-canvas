@@ -352,8 +352,54 @@ func studioStringList(value any) []string {
 	return result
 }
 
-// studioStateView 是 studio_get_state 返回给模型的商品视图：只含事实、文案、镜头与状态，
-// 不含资源地址、出图记录正文或任务输出。
+type studioFormPlanView struct {
+	Summary          string `json:"summary"`
+	RequestedScreens *int   `json:"requestedScreens,omitempty"`
+	Screens          []struct {
+		Title       string   `json:"title"`
+		Role        string   `json:"role"`
+		Visual      string   `json:"visual"`
+		Composition string   `json:"composition,omitempty"`
+		Headline    string   `json:"headline"`
+		Subline     string   `json:"subline"`
+		Lines       []string `json:"lines"`
+	} `json:"screens"`
+}
+
+// 显式投影表单字段，不能把模特资源、参考图地址或历史任务正文带进模型上下文。
+func studioFormView(doc *studioProductDoc) (map[string]any, error) {
+	var brief struct {
+		OutputType    string              `json:"outputType"`
+		DetailScreens *int                `json:"detailScreens"`
+		Count         *int                `json:"count"`
+		Mix           []string            `json:"mix"`
+		Language      string              `json:"language"`
+		Market        string              `json:"market"`
+		Extra         string              `json:"extra"`
+		PlanNote      string              `json:"planNote"`
+		DetailPlan    *studioFormPlanView `json:"detailPlan"`
+		MainPlan      *studioFormPlanView `json:"mainPlan"`
+		SinglePlan    *studioFormPlanView `json:"singlePlan"`
+		TemplatePlan  *studioFormPlanView `json:"templatePlan"`
+	}
+	if err := doc.get("brief", &brief); err != nil {
+		return nil, err
+	}
+	plan := brief.SinglePlan
+	switch brief.OutputType {
+	case "detail-set":
+		plan = brief.DetailPlan
+	case "main-set":
+		plan = brief.MainPlan
+	case "template-set":
+		plan = brief.TemplatePlan
+	}
+	return map[string]any{"outputType": brief.OutputType, "detailScreens": brief.DetailScreens, "count": brief.Count, "mix": brief.Mix,
+		"language": brief.Language, "market": brief.Market, "extra": truncateRunes(brief.Extra, 600), "planNote": truncateRunes(brief.PlanNote, 1000), "savedFormPlan": plan,
+		"note": "当前出图类型与详情屏数以表单为准；activePlan 和 plans 是助手方案，不能替代当前表单选择。savedFormPlan 是已保存的表单策划，屏数或类型变化后须重新策划。"}, nil
+}
+
+// studioStateView 只返回商品事实、表单策划与助手镜头状态，不含资源地址或历史任务正文。
 func studioStateView(productID string, doc *studioProductDoc) (map[string]any, error) {
 	photos, err := doc.photos()
 	if err != nil {
@@ -420,6 +466,11 @@ func studioStateView(productID string, doc *studioProductDoc) (map[string]any, e
 		planViews = append(planViews, map[string]any{"kind": stringValue(plan["kind"]), "textMode": stringValue(plan["textMode"]), "shots": shotViews})
 	}
 	view["plans"] = planViews
+	form, err := studioFormView(doc)
+	if err != nil {
+		return nil, err
+	}
+	view["form"] = form
 	return view, nil
 }
 
@@ -488,5 +539,13 @@ func studioContextSummary(productID string, doc *studioProductDoc) (map[string]a
 		plans = append(plans, map[string]any{"kind": stringValue(plan["kind"]), "shots": len(shots), "imageReady": ready})
 	}
 	summary["plans"] = plans
+	form, err := studioFormView(doc)
+	if err != nil {
+		return nil, err
+	}
+	if plan, ok := form["savedFormPlan"].(*studioFormPlanView); ok && plan != nil {
+		form["savedFormPlan"] = map[string]any{"summary": plan.Summary, "screens": len(plan.Screens), "requestedScreens": plan.RequestedScreens}
+	}
+	summary["form"] = form
 	return summary, nil
 }

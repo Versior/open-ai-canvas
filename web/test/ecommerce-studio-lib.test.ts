@@ -384,9 +384,9 @@ describe("ecommerce studio detail plan", () => {
         const model = compileStudioPrompt({ product, shot: run.shots[0], textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(model.prompt).toContain("左图右文");
         expect(model.prompt).toContain("标题位置、字号与主体裁切以本屏图文构图为准");
-        expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("严格按「左图右文」排");
-        expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("若画面说明中的文字与主体位置相反");
-        expect(model.prompt).toContain("不能把左右分栏改成顶部标题");
+        expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("遵守前面的「左图右文」构图契约");
+        expect(model.layers.find((layer) => layer.id === "composition")?.text).toContain("本屏构图优先于画面描述");
+        expect(model.prompt).toContain("主标题不放到横跨画面的顶部");
         const top = compileStudioPrompt({ product, shot: { ...run.shots[0], composition: "top" }, textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(top.prompt).not.toContain("不能把左右分栏改成顶部标题");
         const overlay = compileStudioPrompt({ product, shot: run.shots[0], textMode: "overlay", model: "gpt-image-2", brief: product.brief, suite: run.suite });
@@ -542,7 +542,7 @@ describe("ecommerce studio detail plan", () => {
         const numbered = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...product, runs: [{ ...run, shots: [{ ...run.shots[0], eyebrow: "01 ALL DAY CUP" }] }] })))!;
         expect(numbered.runs[0].shots[0].eyebrow).toBe("ALL DAY CUP");
         expect(prompt).toContain("每屏都不加页码、屏号和 01、02 这类序号");
-        expect(prompt).toContain("（如 CLEAR FRAME，只用英文字母，不带序号）");
+        expect(prompt).toContain("默认留空；需要时用选定的图文语言");
         expect(prompt).not.toContain("序号加英文小标题");
 
         // 调整这一张写的修改要求只进这一张，读回时保留。

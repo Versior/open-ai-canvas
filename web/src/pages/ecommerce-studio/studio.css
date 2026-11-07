@@ -1658,6 +1658,18 @@
     padding-top: var(--space-3);
     border-top: 1px solid var(--es-line);
 }
+.es-artwork-check {
+    display: grid;
+    gap: 8px;
+    padding-block: 12px;
+    border-top: 1px solid var(--es-line);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.es-artwork-check p {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
 .es-tuner-title {
     font-size: var(--fs-ui);
     font-weight: 600;

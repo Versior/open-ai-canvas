@@ -41,6 +41,7 @@ import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
 import { workbenchTaskOutputs } from "@/pages/workbench/workbench-batches";
 import { useStudioStore } from "./use-studio-store";
+import { studioLayoutGuideReference } from "./studio-layout-guide";
 
 /**
  * 生图台的任务运行时：识别填表、按镜头出图。全部走后端统一任务（计费、取消、记录一致），
@@ -185,7 +186,7 @@ type ModelConfig = Parameters<typeof modelCapabilityConfigFor>[0];
  * 按出图时的规则编译这张图的提示词，提交任务和「查看提示词」共用。
  * 助手方案的镜头由助手定好构图：只带市场、语言、人群和补充要求，不套表单里的拍法和同款版式。
  */
-export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, imageModel: string, config: ModelConfig) {
+export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, imageModel: string, config: ModelConfig, revisionResourceId?: string) {
     const profile = modelCapabilityConfigFor(config, imageModel).image;
     const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
     const compiled = compileStudioPrompt({
@@ -195,6 +196,7 @@ export function compileStudioShot(product: StudioProduct, located: StudioLocated
         model: imageModel,
         maxChars: profile?.references.promptMaxChars,
         maxReferences: profile?.references.maxImages || undefined,
+        revisionResourceId,
         brief,
         ...(located.suite ? { suite: located.suite } : {}),
     });
@@ -503,11 +505,14 @@ export function useStudioRunner() {
                 const located = locateStudioShot(product, ref, shotId);
                 if (!located) throw new Error("这张图已不在记录里");
                 const current = configRef.current;
-                const { profile, compiled } = compileStudioShot(product, located, imageModel, current);
+                const attempt = located.shot.attempts.find((item) => item.id === attemptId);
+                const { profile, compiled } = compileStudioShot(product, located, imageModel, current, attempt?.revisionResourceId);
                 if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
                 const request = studioImageRequest(profile, located.quality, located.shot.ratio, located.resolution);
-                // 顺序就是提示词里的图号：商品图、模特（人脸或全身模特）与姿势、风格参考。
-                const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences];
+                // 布局草图排最后，不挤掉商品、模特或卖家参考的名额。
+                const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences].map(photoReference);
+                if (compiled.revisionReference) references.push(photoReference(compiled.revisionReference));
+                if (compiled.layoutGuide) references.push(studioLayoutGuideReference(compiled.layoutGuide));
                 const node = { id: `studio-${shotId}`, type: CanvasNodeType.Image, title: "", width: 0, height: 0, position: { x: 0, y: 0 }, metadata: { model: imageModel } } as CanvasNodeData;
                 const generation = buildEcommerceImageGeneration(current, node, { ...DEFAULT_ECOMMERCE_BRIEF, ...(request.aspectRatio ? { aspectRatio: request.aspectRatio } : {}), imageSettings: request.imageSettings }, inputSummary(references.length));
                 const task = await serializeSubmit(() => {
@@ -519,7 +524,7 @@ export function useStudioRunner() {
                         mode: "image",
                         prompt: compiled.prompt,
                         config: generation.config,
-                        referenceImages: references.map(photoReference),
+                        referenceImages: references,
                         clientOperationId: attemptId,
                         metadata: { source: "ecommerce-studio", studioProductId: productId, studioShotId: shotId, studioAttemptId: attemptId, studioRole: located.shot.role, ...("runId" in ref ? { studioRunId: ref.runId } : {}) },
                     });
@@ -545,17 +550,33 @@ export function useStudioRunner() {
 
     /** 把镜头排进提交队列：先在记录里占一个「提交中」的位置，轮到它时再真正提交。 */
     const enqueue = useCallback(
-        (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string) => {
+        (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string, revisionResourceId?: string) => {
             if (!imageModel) throw new Error("请先选择图片模型");
             const attempts = shotIds.map((shotId) => ({
                 shotId,
-                attempt: { id: nanoid(12), status: "submitting" as const, model: imageModel, textMode: "model" as const, tweaks: [], createdAt: new Date().toISOString(), outputs: [] } satisfies StudioAttempt,
+                attempt: {
+                    id: nanoid(12),
+                    status: "submitting" as const,
+                    model: imageModel,
+                    textMode: "model" as const,
+                    tweaks: [],
+                    ...(revisionResourceId ? { revisionResourceId } : {}),
+                    createdAt: new Date().toISOString(),
+                    outputs: [],
+                } satisfies StudioAttempt,
             }));
             // 尝试记下提交时这张图的微调标签，之后改了标签也能看出每张结果是怎么出的。
             update(productId, (product) =>
                 attempts.reduce(
                     (value, { shotId, attempt }) =>
-                        patchStudioShotAt(value, ref, shotId, (shot) => (shot.attempts.some((item) => item.id === attempt.id) ? shot : { ...shot, attempts: [...shot.attempts, { ...attempt, tweaks: [...shot.tweaks] }].slice(-MAX_ATTEMPTS) })),
+                        patchStudioShotAt(value, ref, shotId, (shot) => {
+                            if (shot.attempts.some((item) => item.id === attempt.id)) return shot;
+                            const source = revisionResourceId ? shot.attempts.find((item) => item.status === "succeeded" && item.outputs.some((output) => output.resourceId === revisionResourceId)) : undefined;
+                            const next = [...shot.attempts, { ...attempt, tweaks: [...shot.tweaks] }].slice(-MAX_ATTEMPTS);
+                            // 修正旧候选时保留源图，刷新恢复不能因历史上限丢掉编辑起点。
+                            if (source && !next.some((item) => item.id === source.id)) next.splice(0, 1, source);
+                            return { ...shot, attempts: next };
+                        }),
                     product,
                 ),
             );
@@ -592,7 +613,7 @@ export function useStudioRunner() {
 
     /** 重新出某几张（失败重试、再来一张、确认助手的出图请求）。正在出的镜头不重复提交。 */
     const rerun = useCallback(
-        (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string) => {
+        (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string, revisionResourceId?: string) => {
             const product = read(productId);
             const runnable = shotIds.filter((shotId) => {
                 const shot = locateStudioShot(product, ref, shotId)?.shot;
@@ -600,9 +621,9 @@ export function useStudioRunner() {
             });
             for (const shotId of runnable) {
                 const located = locateStudioShot(product, ref, shotId);
-                if (located) compileStudioShot(product, located, imageModel, configRef.current);
+                if (located) compileStudioShot(product, located, imageModel, configRef.current, revisionResourceId);
             }
-            if (runnable.length) enqueue(productId, ref, runnable, imageModel);
+            if (runnable.length) enqueue(productId, ref, runnable, imageModel, revisionResourceId);
             return runnable.length;
         },
         [enqueue, read],

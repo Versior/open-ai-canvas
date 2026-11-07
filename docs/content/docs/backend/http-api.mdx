@@ -253,6 +253,8 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 - 出图策划同样提交普通文本任务，`ecommerceCapability=detail-plan`、`ecommerceAnalysisFlow=cap:detail-plan`、`studioStep=plan`，另带 `studioPlanKind`（`detail`、`main` 或 `single`，缺省按 `detail`；模板套图按模板用途传 `detail` 或 `main`）和可选的 `studioFamily`（商品档案的品类大类），商品图（模型收图时最多两张）和卖家上传的参考图（最多两张，至少给商品图留一个名额）作为参考图。worker 注入「出图策划」指令，并按 `studioPlanKind` 对应的创作类型（详情页、主图、单图）检索知识：在全部候选里按类型取，详情页、版式、摄影、场景各最多 3 条，创作规则、模特、视觉风格、提示词写法、质检、文案写法和平台规则各最多 2 条，文案规则、营销策略和行业方法各 1 条，合计不超过 20 条，每条正文截到 320 字。worker 在知识段之后再附上内置爆款套图库里同类的 3 套（按商品类型和名称打分；对不上时按 `studioFamily` 从同大类取 2 套），只写视觉语法和逐屏意图，套图里的文案槽位换成「文案」。策划结果由页面解析后按范围存进商品的 `brief.detailPlan`、`brief.mainPlan`、`brief.singlePlan` 或 `brief.templatePlan`（模板套图，带 `suiteId`），服务端不解析。
 - 出图提交普通图片任务（`metadata.source=ecommerce-studio`）。带这个来源的任务都要求「电商生图台」已开放。
 - 全局助手：`POST /api/agent/runs` 传 `contextScope: ["studio"]` 与 `studioProductId` 时，这一轮绑定本人的一个生图台商品，`canvasId` 与焦点必须为空；生图台未开放时拒绝建 run。本轮只开放通用工具和 `studio_get_state`、`studio_inspect_photos`、`studio_update_dossier`、`studio_plan_shots`、`studio_request_generation`；写工具要传最近读到的 `revision`，出图请求只交给页面确认，不由 Agent 提交任务。
+- 每次实际模型调用前重新校验商品归属与功能开放，替换 `studio_context` 数据消息；工具投影或压缩后不沿用初始商品快照。内部压缩摘要请求不注入商品业务数据。商品概况和 `studio_get_state` 增加 `form`：当前 `outputType/detailScreens/count/mix/language/market/extra/planNote` 与 `savedFormPlan`。概况仅附策划摘要和屏数；完整状态附屏名、角色、画面、构图、标题、注解与要点。`activePlan/plans` 仍表示助手方案，不能替代表单选择；模特资源、参考图地址与历史任务正文不随表单投影返回。
+- 成品设计检查提交统一文本任务，`metadata.source=ecommerce-studio`、`stage=design-check`，图1为实际生成资源，图2为商品实拍（有外观依据时）。按所选文本模型的看图能力、资源归属与额度准入；结果由前端严格解析四项证据，不新增接口或绕过计费。检查结果不是平台上架审核；明确失败的修正要求可带入单张重新生成。查询不确定时继续查询原任务，不创建重复收费任务。
 
 
 ### 电商模特库

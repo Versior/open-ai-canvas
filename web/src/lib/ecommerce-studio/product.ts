@@ -218,6 +218,7 @@ function normalizeAttempt(attempt: Record<string, unknown>, fallbackTime: string
     return {
         id: attempt.id,
         taskId: typeof attempt.taskId === "string" ? attempt.taskId : undefined,
+        revisionResourceId: typeof attempt.revisionResourceId === "string" ? attempt.revisionResourceId : undefined,
         status: (STATUSES.has(str(attempt.status)) ? attempt.status : "failed") as StudioAttemptStatus,
         model: str(attempt.model),
         ...(attempt.textMode === "model" || attempt.textMode === "overlay" ? { textMode: attempt.textMode } : {}),

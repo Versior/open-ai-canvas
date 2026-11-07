@@ -151,12 +151,12 @@ export default function EcommerceStudioPage() {
     };
 
     /** 大图里调整这一张：先把微调和文案写回这张镜头，再按它出一张新的；之前的结果都保留。 */
-    const tune = (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch) => {
+    const tune = (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch, revisionResourceId?: string) => {
         if (!product) return;
         if (blocked) return void message.warning(blocked);
         try {
             edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, ...patch })), { immediate: true });
-            if (!runner.rerun(product.id, group.ref, [shot.id], image.value)) message.info("这张图正在生成，等它完成");
+            if (!runner.rerun(product.id, group.ref, [shot.id], image.value, revisionResourceId)) message.info("这张图正在生成，等它完成");
         } catch (failure) {
             message.error(failure instanceof Error ? failure.message : "提交失败");
         }

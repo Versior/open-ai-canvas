@@ -62,63 +62,83 @@
     border-radius: var(--r-md);
     background: var(--agent-surface-base);
 }
-.agent-conversation-messages:has(> .agent-window-perch[data-expanded="true"]) {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 8px 12px;
+.agent-perch-anchor {
+    height: 0;
+    pointer-events: none;
 }
-.agent-conversation-messages:has(> .agent-window-perch[data-expanded="true"]) > * {
-    flex: 0 0 100%;
-    min-width: 0;
-    margin-top: 0;
+.agent-window-dock {
+    position: absolute;
+    right: -104px;
+    width: 104px;
+    z-index: 12;
+    pointer-events: none;
+    transition:
+        right 280ms ease,
+        left 280ms ease;
 }
-.agent-conversation-messages > :has(+ .agent-window-perch[data-expanded="true"]) {
-    flex: 1 1 0%;
+.agent-window-dock[data-side="right"]:has(.agent-window-perch[data-expanded="false"]) {
+    right: -52px;
 }
-.agent-conversation-messages > .agent-window-perch {
+.agent-window-dock[data-side="left"]:has(.agent-window-perch[data-expanded="false"]) {
+    left: -52px;
+}
+.agent-window-dock[data-side="left"] {
+    right: auto;
+    left: -104px;
+}
+.agent-window-dock[data-side="inside"] {
+    right: 12px;
+}
+.agent-window-dock .agent-window-perch {
     display: flex;
     flex-direction: column;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 6px;
     height: auto;
     max-width: 100%;
-    margin: 8px 0 0 auto;
+    margin: 0;
     overflow: visible;
-    content-visibility: visible;
-    contain-intrinsic-size: none;
+    pointer-events: auto;
 }
-.agent-conversation-messages > .agent-window-perch[data-expanded="true"] {
-    flex: 0 0 clamp(104px, 40%, 220px);
-    align-self: flex-end;
-    max-width: 220px;
-    margin-top: 0;
-}
-.agent-conversation-messages > .agent-window-perch[data-expanded="false"] {
+.agent-window-dock .agent-window-perch[data-expanded="false"],
+.agent-window-dock[data-side="inside"] .agent-window-perch {
     flex-direction: row;
     align-items: center;
     height: 24px;
     overflow: hidden;
 }
-.agent-conversation-messages > .agent-window-perch .agent-perch-bubble {
+.agent-window-dock .agent-window-perch[data-expanded="false"] .agent-perch-media,
+.agent-window-dock[data-side="inside"] .agent-perch-media {
+    transform: translateY(calc(44px - var(--agent-perch-head-top))) scale(1.25);
+    transform-origin: center var(--agent-perch-head-top);
+}
+.agent-window-dock[data-side="inside"] .agent-window-perch:has(.agent-perch-bubble) {
+    overflow: visible;
+}
+.agent-window-dock[data-side="inside"] .agent-perch-character {
+    clip-path: inset(44px 0 44px 0);
+}
+.agent-window-dock .agent-perch-bubble {
     position: relative;
-    min-width: 104px;
-    max-width: 100%;
+    width: 180px;
+    max-width: min(180px, calc(100vw - 36px));
+    max-height: 200px;
+    overflow-y: auto;
     text-align: left;
 }
-.agent-conversation-messages > .agent-window-perch .agent-perch-bubble::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    right: 46px;
-    width: 8px;
-    height: 8px;
-    background: var(--agent-surface-base);
-    transform: translateY(-4px) rotate(45deg);
+.agent-window-dock[data-side="left"] .agent-window-perch {
+    align-items: flex-end;
 }
-@container (max-width: 400px) {
-    .agent-conversation-messages > .agent-window-perch[data-expanded="true"] {
-        flex-basis: 104px;
+.agent-window-dock[data-side="inside"] .agent-perch-bubble {
+    position: absolute;
+    bottom: 32px;
+    right: 0;
+    width: 180px;
+    max-width: min(180px, calc(100vw - 36px));
+}
+@media (prefers-reduced-motion: reduce) {
+    .agent-window-dock {
+        transition: none;
     }
 }
 .canvas-agent-panel[data-skin] .agent-message-body:not(.agent-message-user) {

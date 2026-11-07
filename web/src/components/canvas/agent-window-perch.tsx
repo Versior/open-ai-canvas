@@ -99,7 +99,10 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                 onPointerLeave={() => setHovered(false)}
                 onFocus={() => setFocused(true)}
                 onBlur={() => setFocused(false)}
-                onClick={speak}
+                onClick={(event) => {
+                    speak();
+                    if (event.detail > 0) event.currentTarget.blur();
+                }}
                 onKeyDown={(event) => {
                     if (event.key === "Escape") {
                         setSpeaking(false);

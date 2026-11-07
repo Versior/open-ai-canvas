@@ -33,6 +33,7 @@ import { canvasThemes } from "@/lib/canvas-theme";
 import { agentSkinTheme, resolveAgentSkin } from "@/lib/canvas/agent-skin";
 import "./agent-skin-scene.css";
 import { AgentWindowPerch } from "./agent-window-perch";
+import { AgentWindowDock } from "./agent-window-dock";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { useAgentPetPalette } from "@/hooks/use-agent-pet-palette";
@@ -2407,7 +2408,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         ) : null}
                                         <AgentConversation
                                             key={activeConversationId}
-                                            character={<AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />}
                                             theme={theme}
                                             messages={messages}
                                             onFocusNode={onFocusNode}
@@ -2498,13 +2498,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             </div>
                                         ) : null}
                                         <AgentChatComposer
+                                            character={
+                                                <AgentWindowDock>
+                                                    <AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />
+                                                </AgentWindowDock>
+                                            }
                                             prompt={prompt}
                                             submitDisabled={composerSubmitDisabled}
                                             submitMode={composerSubmitMode}
                                             primaryDisabled={composerSubmitMode === "queue" && outboxIsFull}
                                             sending={busy}
                                             running={running}
-                                            placeholder={canvasId ? "说说要做什么，@ 引用节点，可粘贴图片；Agent 会自动匹配所需技能" : "说说要做什么，Agent 会自动匹配所需技能；进入画布后可引用节点和图片"}
+                                            placeholder={canvasId ? "说说要做什么，@ 引用节点…" : "说说要做什么…"}
                                             theme={theme}
                                             onPromptChange={setPrompt}
                                             onSubmit={handleComposerSubmit}

@@ -63,3 +63,60 @@ func TestImageSubmissionEOFIsNotAutomaticallyReplayed(t *testing.T) {
 		t.Fatalf("calls=%d error=%v", calls, err)
 	}
 }
+
+func TestOpenAIImageMultipleReferencesReachUpstreamInOrder(t *testing.T) {
+	t.Setenv("CANVAS_ALLOW_PRIVATE_UPSTREAMS", "true")
+	for _, plugin := range []bool{true, false} {
+		t.Run(map[bool]string{true: "installed-plugin", false: "legacy"}[plugin], func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if err := r.ParseMultipartForm(2 << 20); err != nil {
+					t.Error(err)
+					return
+				}
+				defer r.MultipartForm.RemoveAll()
+				files := r.MultipartForm.File["image[]"]
+				if len(files) != 2 || len(r.MultipartForm.File["image"]) != 0 {
+					t.Errorf("multi-reference files: image[]=%d image=%d", len(files), len(r.MultipartForm.File["image"]))
+				} else {
+					for i, want := range []string{"hello", "world"} {
+						file, err := files[i].Open()
+						if err != nil {
+							t.Error(err)
+							continue
+						}
+						data, err := io.ReadAll(file)
+						file.Close()
+						if err != nil || string(data) != want {
+							t.Errorf("reference %d: bytes=%q err=%v", i+1, data, err)
+						}
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":[{"b64_json":"aGVsbG8="}]}`))
+			}))
+			defer server.Close()
+			ctx := withProtocolRegistry(context.Background(), emptyProtocolRegistry)
+			if plugin {
+				center, err := newPluginRuntime(t.TempDir())
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx = withProtocolRegistry(context.Background(), center.registrySnapshot())
+			}
+			_, err := runImageTask(ctx, canvasGenerationInput{
+				Mode: "image", Prompt: "Place product from image 1 to the right as in image 2",
+				Config:          providerConfig{BaseURL: server.URL, APIKey: "test-key", Model: "gpt-image-2", InterfaceType: "openai-image"},
+				ImageCapability: DefaultImageCapabilityConfig("openai-image", "gpt-image-2"),
+				ReferenceImages: []providerMedia{
+					{Name: "product.png", Type: "image/png", DataURL: "data:image/png;base64,aGVsbG8="},
+					{Name: "layout.png", Type: "image/png", DataURL: "data:image/png;base64,d29ybGQ="},
+				},
+			})
+			if err != nil || calls != 1 {
+				t.Fatalf("calls=%d err=%v", calls, err)
+			}
+		})
+	}
+}

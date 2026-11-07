@@ -1,6 +1,6 @@
 import { ecommercePlatform, ecommerceRoleSpec, type EcommercePlatformId, type EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioCleanNotes, studioLanguage, studioMarket, studioShooting } from "./brief";
-import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_OVERLAY_LAYOUTS, STUDIO_TACKY_DESIGN } from "./detail-plan";
+import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_TACKY_DESIGN, studioForbidsEnglishHeading } from "./detail-plan";
 import { studioActivePlan, studioStyleReferences } from "./runs";
 import { STUDIO_COMPOSITIONS } from "./art-direction";
 import { studioTypeInstruction } from "./typography";
@@ -10,6 +10,7 @@ import {
     STUDIO_VIEW_LABEL,
     studioFactUsable,
     type StudioBrief,
+    type StudioCompositionId,
     type StudioDesignToneId,
     type StudioFact,
     type StudioFactGroup,
@@ -36,7 +37,7 @@ export type StudioModelAdapter = {
 };
 
 export type StudioPromptLayerId =
-    "truth" | "goal" | "duty" | "visual" | "model" | "composition" | "shooting" | "lighting" | "style" | "product-design" | "set" | "category" | "market" | "audience" | "layout" | "design" | "copy" | "extra" | "adjust" | "quality";
+    "truth" | "revision" | "goal" | "duty" | "visual" | "model" | "composition" | "shooting" | "lighting" | "style" | "product-design" | "set" | "category" | "market" | "audience" | "layout" | "design" | "copy" | "extra" | "adjust" | "quality";
 
 export type StudioPromptLayer = {
     id: StudioPromptLayerId;
@@ -57,8 +58,11 @@ export type StudioCompiledPrompt = {
     modelReferences: StudioPhoto[];
     /** 风格或版式参考，排在模特参考之后。 */
     styleReferences: StudioPhoto[];
+    revisionReference?: StudioPhoto;
     /** 模型能接收的参考图不够时，没带上的参考图说明。 */
     referenceNotice?: string;
+    /** 生成前的区域参考；不替代商品真值，也不用于生成后的文字合成。 */
+    layoutGuide?: { composition: StudioCompositionId; ratio: string };
     /** 因长度上限被裁掉的层。 */
     trimmed: StudioPromptLayerId[];
 };
@@ -74,6 +78,8 @@ export type StudioCompileInput = {
     maxChars?: number;
     /** 模型单次可接收的参考图数量；缺省 4 张。 */
     maxReferences?: number;
+    /** 必须是本镜头已有的成功成品，不把其他资源当商品真值。 */
+    revisionResourceId?: string;
     /** 表单参数：传入时追加市场与语言、拍法、人群定位、参考图和补充要求。 */
     brief?: StudioBrief;
     /** 模板套图的模板名与整套视觉规范：有规范时代替风格锁。 */
@@ -281,11 +287,31 @@ function dutyLayer(shot: StudioShot): StudioPromptLayer | undefined {
     };
 }
 
-/** 构图与机位。策划过的屏构图已写在画面层里，这里只剩微调标签，没有微调时不出现。 */
-function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boolean): StudioPromptLayer | undefined {
+/** 图文骨架先于摄影描述，避免系列规范或画面描述把左右分栏改成上文下图。 */
+function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boolean, guideIndex?: number): StudioPromptLayer | undefined {
     const tweaks = shot.tweaks.map(studioTweakInstruction).filter((item): item is string => Boolean(item));
     const adjust = tweaks.length ? `本次调整：${tweaks.join("；")}。` : "";
-    if (planned) return adjust ? { id: "composition", title: "本次调整", source: "微调标签", text: adjust } : undefined;
+    if (planned && !shot.composition) return adjust ? { id: "composition", title: "本次调整", source: "微调标签", text: adjust } : undefined;
+    if (planned && shot.composition) {
+        const composition = STUDIO_COMPOSITIONS[shot.composition];
+        const zone = composition.zone;
+        return {
+            id: "composition",
+            title: `本屏构图契约｜${composition.label}`,
+            source: "选定的图文骨架",
+            text: [
+                `${composition.render}。主标题与注解限定在：左 ${Math.round(zone.x * 100)}%、上 ${Math.round(zone.y * 100)}%、宽 ${Math.round(zone.width * 100)}%、高 ${Math.round(zone.height * 100)}%。`,
+                shot.composition === "left" || shot.composition === "right" ? "保持左右分栏，主标题不放到横跨画面的顶部；不能改成上文下图或商品居中、标题置顶。" : "按上述区域建立图文重心。",
+                "本屏构图优先于画面描述、整套风格中相反的位置描述；这些描述只提供场景、商品焦点、色彩与光线。信息标签依附本屏信息元素，不替换主标题区。",
+                guideIndex
+                    ? `图${guideIndex}为本屏布局草图：深色粗条代表主标题、浅细条代表注解，浅灰大块代表商品摄影区。严格按草图分区安排真实文字与商品；草图不提供颜色、字体或商品形状，不照搬矩形、线条或空白。保持前面的真实商品外观，按本屏画面重新摄影，在文字区一次生成给定中文文案。`
+                    : "",
+                adjust,
+            ]
+                .filter(Boolean)
+                .join("\n"),
+        };
+    }
     const text = [sentence(shot.composition ? STUDIO_COMPOSITIONS[shot.composition].render : spec.composition), sentence(spec.camera), adjust].filter(Boolean).join("\n");
     return { id: "composition", title: "构图与机位", source: "镜头规格", text };
 }
@@ -295,17 +321,7 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
     if (planned && mode === "model") {
         const layout = shot.layout ? STUDIO_DETAIL_LAYOUTS[shot.layout] : undefined;
         const composition = shot.composition ? STUDIO_COMPOSITIONS[shot.composition] : undefined;
-        const lines: string[] = [
-            composition ? `位置：严格按「${composition.label}」排：${composition.render}。若画面说明中的文字与主体位置相反，按这里调整位置，保留场景、动作与光线。` : "位置：按本屏画面说明排，不压在商品上。",
-            "整套共用字体家族与色板，标题位置、字号和留白随本屏内容变化。",
-            studioTypeInstruction(tone),
-        ];
-        if (composition && (!shot.layout || STUDIO_OVERLAY_LAYOUTS.includes(shot.layout))) {
-            const zone = composition.zone;
-            lines.push(
-                `文字排版边界：左 ${Math.round(zone.x * 100)}%、上 ${Math.round(zone.y * 100)}%、宽 ${Math.round(zone.width * 100)}%、高 ${Math.round(zone.height * 100)}%。标题与注解都在此范围内，商品位置遵守本屏构图${shot.composition === "left" || shot.composition === "right" ? "；不能把左右分栏改成顶部标题加中间整件摆拍" : ""}。`,
-            );
-        }
+        const lines: string[] = [composition ? `位置：遵守前面的「${composition.label}」构图契约。` : "位置：按本屏画面说明排，不压在商品上。", "整套共用字体家族与色板，标题位置、字号和留白随本屏内容变化。", studioTypeInstruction(tone)];
         if (shot.eyebrow?.trim()) lines.push(`栏目小标题${quote(shot.eyebrow)}：放在主标题上方，小号字、字距加宽，用整套规范里的强调色。`);
         // 字重跟设计调性走：极简调性要细到中等字重，爆款调性才用粗字重，不一律加粗。
         if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，按构图分行，海报屏可大胆放大，细节屏克制；字重按设计调性。`);
@@ -360,11 +376,24 @@ export function studioMaterialLighting(product: Pick<StudioProduct, "dossier" | 
 
 export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPrompt {
     const { product, shot, brief } = input;
+    if (studioForbidsEnglishHeading([product.brief.planNote, brief?.extra ?? product.brief.extra, shot.adjust].join("\n")) && /[A-Za-z]/.test(shot.eyebrow || "")) {
+        throw new Error("这张图含有明确禁止的英文栏目，请重新策划或把栏目改为中文后再生成");
+    }
     const textMode: StudioTextMode = "model";
     const family = product.dossier?.family || "generic";
     const spec = studioShotSpec(shot.role, family);
     const adapter = studioModelAdapter(input.model);
-    const maxReferences = Math.max(1, input.maxReferences || DEFAULT_MAX_REFERENCES);
+    const capacity = Math.max(1, input.maxReferences || DEFAULT_MAX_REFERENCES);
+    const revisionOutput = input.revisionResourceId
+        ? shot.attempts
+              .filter((attempt) => attempt.status === "succeeded")
+              .flatMap((attempt) => attempt.outputs)
+              .find((output) => output.resourceId === input.revisionResourceId)
+        : undefined;
+    if (input.revisionResourceId && !revisionOutput) throw new Error("用于修正的成品已不在这张图的成功记录里，请重新选择");
+    if (revisionOutput && capacity < 2) throw new Error("当前模型只能带一张图，无法同时核对商品和修正成品，请选择支持多参考图的模型");
+    const revisionReference: StudioPhoto | undefined = revisionOutput ? { id: revisionOutput.resourceId, resourceId: revisionOutput.resourceId, url: "", view: "other", truth: false, name: "待修正成品.png", addedAt: "" } : undefined;
+    const maxReferences = capacity - (revisionReference ? 1 : 0);
     // 商品图优先占参考图名额，至少一张；剩下的依次给模特（全身模特或人脸）、姿势和风格参考，模型只收一张图时只带商品图。
     const cast = brief && studioShotUsesModel(shot, brief) ? brief.model : undefined;
     const person = cast?.figure ? castReference("figure", cast.figure) : cast?.face ? castReference("face", cast.face) : undefined;
@@ -381,12 +410,24 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const style = studioProductStyle(product, studioActivePlan({ brief: brief ?? product.brief })?.styleId);
     // 策划过的屏：画面层代替镜头规格的构图、光线、背景和避坑项，免得每件商品都套同一套写法。
     const planned = Boolean(shot.visual?.trim());
+    const referenceCount = references.length + modelReferences.length + styleReferences.length;
+    const layoutGuide =
+        planned && hasCopy && (brief ?? product.brief).language !== "none" && shot.composition && shot.composition !== "corner" && !brief?.sameLayout && !revisionReference && referenceCount < maxReferences
+            ? { composition: shot.composition, ratio: shot.ratio }
+            : undefined;
     const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief, modelReferences), goalLayer(product, shot, spec, hasCopy, planned)];
+    if (revisionReference)
+        layers.splice(1, 0, {
+            id: "revision",
+            title: "修正当前成品",
+            source: "大图中选定的候选",
+            text: `图${referenceCount + 1}是待修正的当前成品，不是商品真值。以这张图为编辑起点，按本次修改要求调整图文位置、文字或画面，保留无需修改的设计。成品里已有的错误位置、错字、多余装饰和商品变形不能继承；商品外观仍以最前面的商品实拍为准，文案以本次给定文字为准。图片模型在同一次编辑中完成文字和画面，不输出待叠字底图。`,
+        });
     const duty = dutyLayer(shot);
     if (duty) layers.push(duty);
-    if (planned) layers.push(visualLayer(shot));
-    const composition = compositionLayer(shot, spec, planned);
+    const composition = compositionLayer(shot, spec, planned, layoutGuide ? referenceCount + 1 : undefined);
     if (composition) layers.push(composition);
+    if (planned) layers.push(visualLayer(shot));
     const extra = brief ? briefLayers(brief, hasCopy) : [];
     const shooting = extra.find((layer) => layer.id === "shooting");
     if (shooting) layers.push(shooting);
@@ -451,7 +492,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
         prompt = renderStudioPrompt(kept);
     }
     if (prompt.length > budget) throw new Error(`这张图的提示词超过模型上限 ${budget} 字，请精简商品信息或补充要求后再生成`);
-    return { prompt, layers: kept, textMode: effective.mode, textModeNotice: effective.notice, adapter, references, modelReferences, styleReferences, referenceNotice, trimmed };
+    return { prompt, layers: kept, textMode: effective.mode, textModeNotice: effective.notice, adapter, references, modelReferences, styleReferences, revisionReference, referenceNotice, layoutGuide, trimmed };
 }
 
 export function renderStudioPrompt(layers: StudioPromptLayer[]) {

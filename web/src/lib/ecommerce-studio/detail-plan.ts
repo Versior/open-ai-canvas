@@ -208,7 +208,7 @@ export const STUDIO_DESIGN_TONES: Record<StudioDesignToneId, { label: string; us
     "global-minimal": {
         label: "国际大牌极简",
         use: "像苹果、戴森、无印良品的产品页：一屏只讲一件事，文案极短、克制、有分量，用感受和结果说话",
-        render: "国际大牌官网式的极简版面：大面积留白（画面一半以上），商品像雕塑一样被光塑形，用强烈的明暗对比、极近或极低的机位和超大字号制造张力，极简但不平淡；中文标题用细到中等字重的现代黑体，字距略宽，不加粗黑描边；英文小标题全大写、字距加宽；数字用细体大字号做视觉；除了标题和一行注解几乎不放小字，元素严格对齐",
+        render: "国际大牌官网式的极简版面：大面积留白，商品像雕塑一样被光塑形，用强烈的明暗对比、真实可见的近景和超大字号制造张力，极简但不平淡；标题用细到中等字重的现代黑体，字距略宽，不加粗黑描边；栏目小标题仅在文案提供且允许时出现，用选定语言；数字用细体大字号做视觉；除了标题和一行注解几乎不放小字，元素严格对齐；留白和标题位置服从本屏构图",
     },
     editorial: {
         label: "时尚大片",
@@ -251,15 +251,19 @@ export const STUDIO_DESIGN_TONE_IDS = Object.keys(STUDIO_DESIGN_TONES) as Studio
 /** 让画面显得廉价的做法，写进出图提示词的禁止项。 */
 export const STUDIO_TACKY_DESIGN = "不用描边字、渐变字、发光字、立体浮雕字和投影字，不用贴纸、爆炸形、星星、波点、三个小圆点、手绘箭头和促销角标，整张最多两种字体";
 
-/** 英文栏目小标题：只收字母、空格和少量符号，不收数字。 */
-const EYEBROW_PATTERN = /^[A-Za-z][A-Za-z &'.-]*$/;
+/** 栏目名可以使用商品图文的语言；数字仍须在策划解析时核对依据。 */
+const EYEBROW_PATTERN = /^[\p{L}][\p{L}\p{M}\p{N}\s&'’.·-]*$/u;
 /** 小标题前面的序号（如「01 CLEAR FRAME」的「01 」）：详情页是一张连续的长图，每屏带上序号就像页码。 */
-const EYEBROW_NUMBER = /^\d{1,2}\s*[/·.|-]?\s*/;
+const EYEBROW_NUMBER = /^\d{1,2}(?:\s*[/·.|-]\s*|\s+)/;
 
-/** 读策划和出图记录里的小标题：去掉前面的序号，剩下的不是纯英文时不收。 */
+/** 读策划和出图记录里的栏目名，去掉屏序号。 */
 export function studioEyebrowText(value: string) {
     const text = value.trim().replace(EYEBROW_NUMBER, "").trim();
     return EYEBROW_PATTERN.test(text) ? text : "";
+}
+
+export function studioForbidsEnglishHeading(notes: string) {
+    return /(?:不要|不加|不用|不放|不出现|不安排|不需要|去掉|移除)(?:\s*英文|[^。；;\n]{0,80}[、，,]\s*英文(?:栏目|小标题|标题))/.test(notes);
 }
 
 /** 各屏型给策划看的用途；材质、多角度、参数、尺寸、包装要有依据才能排。 */

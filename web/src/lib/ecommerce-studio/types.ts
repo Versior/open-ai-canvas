@@ -121,6 +121,8 @@ export type StudioAttemptStatus = "submitting" | "queued" | "running" | "succeed
 export type StudioAttempt = {
     id: string;
     taskId?: string;
+    /** 单张修正所基于的成品；恢复提交时仍使用同一张图。 */
+    revisionResourceId?: string;
     status: StudioAttemptStatus;
     model: string;
     tweaks: string[];
@@ -151,7 +153,7 @@ export type StudioShot = {
     /** 详情页策划给这一屏选的版式，决定要点文字怎么排（图标标签、引线标签等）。 */
     layout?: StudioDetailLayoutId;
     composition?: StudioCompositionId;
-    /** 主标题上方的英文或编号小标题。 */
+    /** 可选栏目小标题，使用选定图文语言，不带屏序号。 */
     eyebrow?: string;
     /** 用户在「调整这一张」里写的修改要求，只影响这一张。 */
     adjust?: string;
@@ -184,7 +186,7 @@ export type StudioPlannedScreen = {
     composition?: StudioCompositionId;
     /** 信息元素：几个图标各画什么、引线指向哪些部位、拼格每格放什么。 */
     elements: string;
-    /** 主标题上方的英文或编号小标题，可以为空。 */
+    /** 可选栏目小标题，使用选定图文语言，可以为空。 */
     eyebrow: string;
     headline: string;
     subline: string;

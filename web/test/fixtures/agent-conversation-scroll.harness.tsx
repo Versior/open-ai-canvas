@@ -106,6 +106,10 @@ async function conversation() {
             messages = [...messages, { id: `message-${messages.length}`, role, content: "新消息" }];
             await render();
         },
+        stream: async (content: string) => {
+            messages = messages.map((message, index) => (index === messages.length - 1 ? { ...message, content } : message));
+            await render();
+        },
         cleanup: async () => {
             await act(async () => root.unmount());
             host.remove();
@@ -184,4 +188,23 @@ test("unmount cancels a scheduled resize follow", async () => {
     await act(async () => resizeCallbacks.forEach((callback) => callback()));
     await view.cleanup();
     expect(resizeCallbacks.size).toBe(0);
+});
+
+test("long streaming content and delayed media growth retain follow and history intent", async () => {
+    const view = await conversation();
+    try {
+        for (let chunk = 1; chunk <= 40; chunk++) {
+            await view.stream("这是一段不断增加的流式回复。\n".repeat(chunk * 5));
+            await view.resize(300 + chunk * 100);
+            expect(view.scroller.scrollTop).toBe(100 + chunk * 100);
+        }
+        await view.scroll(900, true);
+        await view.resize(12000);
+        expect(view.scroller.scrollTop).toBe(900);
+        await act(async () => view.host.querySelector<HTMLButtonElement>(".agent-scroll-latest")!.click());
+        await view.resize(18000);
+        expect(view.scroller.scrollTop).toBe(17800);
+    } finally {
+        await view.cleanup();
+    }
 });
