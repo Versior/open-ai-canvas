@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { taskBillingDisplay, taskBillingLabel, taskBillingTotals } from "@/lib/generation-task-billing";
+import { taskBillingDisplay, taskBillingLabel, taskBillingSummary } from "@/lib/generation-task-billing";
 import type { GenerationTask } from "@/services/api/task-center";
 
 type Billing = NonNullable<GenerationTask["billing"]>;
@@ -8,15 +8,30 @@ type Billing = NonNullable<GenerationTask["billing"]>;
 const hold = { amountMicrocredits: 1_000_000, reservedMicrocredits: 1_000_000, refundedMicrocredits: 0 };
 
 describe("task billing display", () => {
-    test("a mixed batch totals real charges and keeps held/refunded money separate", () => {
+    test("a compact mixed batch shows real charges without counting held money", () => {
         expect(
-            taskBillingTotals([
+            taskBillingSummary([
                 { ...hold, status: "settled", chargedMicrocredits: 600000, refundedMicrocredits: 400000 },
                 { ...hold, status: "settled", chargedMicrocredits: 800000, refundedMicrocredits: 200000 },
                 { ...hold, status: "uncertain" },
                 { ...hold, status: "refunded", refundedMicrocredits: 1000000 },
             ]),
-        ).toEqual(["已结算 1.4 积分 · 退回 0.6（2 个任务）", "待核对 1 积分", "已退回 1 积分"]);
+        ).toBe("已消耗 1.4 积分");
+    });
+    test("missing or unsettled billing has no noisy summary or invented zero", () => {
+        expect(taskBillingSummary([])).toBeNull();
+        expect(
+            taskBillingSummary([
+                { ...hold, status: "uncertain" },
+                { ...hold, status: "reserved" },
+                { ...hold, status: "settled" },
+            ]),
+        ).toBeNull();
+    });
+    test("compact labels distinguish tiny charges, actual zero and returned credits", () => {
+        expect(taskBillingSummary([{ ...hold, status: "settled", chargedMicrocredits: 7017 }])).toBe("已消耗 <0.01 积分");
+        expect(taskBillingSummary([{ ...hold, status: "settled", chargedMicrocredits: 0 }])).toBe("已消耗 0 积分");
+        expect(taskBillingSummary([{ ...hold, status: "refunded", refundedMicrocredits: 1000000 }])).toBe("已退回 1 积分");
     });
     test("settled shows the charged amount, not the hold, with the difference refund", () => {
         const billing: Billing = { ...hold, status: "settled", chargedMicrocredits: 600_000, refundedMicrocredits: 400_000 };

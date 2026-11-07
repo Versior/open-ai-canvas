@@ -1,4 +1,4 @@
-import { formatCredits } from "@/constant/credits";
+import { formatCompactCredits, formatCredits } from "@/constant/credits";
 import type { GenerationTask } from "@/services/api/task-center";
 
 type TaskBilling = NonNullable<GenerationTask["billing"]>;
@@ -39,17 +39,10 @@ export function taskBillingLabel(billing: TaskBilling) {
     return display.refundNote ? `${label} · ${display.refundNote}` : label;
 }
 
-/** 批次按账务状态分别合计，待核对和冻结不会计入实收。 */
-export function taskBillingTotals(items: readonly TaskBilling[]) {
-    const groups = new Map<TaskBilling["status"], { billing: TaskBilling; count: number }>();
-    for (const item of items) {
-        const group = groups.get(item.status) || { count: 0, billing: { status: item.status, amountMicrocredits: 0, reservedMicrocredits: 0, refundedMicrocredits: 0 } };
-        group.count += 1;
-        group.billing.amountMicrocredits += item.amountMicrocredits;
-        group.billing.reservedMicrocredits += item.reservedMicrocredits;
-        group.billing.refundedMicrocredits += item.refundedMicrocredits;
-        if (item.status === "settled") group.billing.chargedMicrocredits = (group.billing.chargedMicrocredits || 0) + (item.chargedMicrocredits || 0);
-        groups.set(item.status, group);
-    }
-    return [...groups.values()].map(({ billing, count }) => `${taskBillingLabel(billing)}${count > 1 ? `（${count} 个任务）` : ""}`);
+/** 创作页面只展示一行实收或退回；冻结及缺失账务不冒充已扣费。 */
+export function taskBillingSummary(items: readonly TaskBilling[]) {
+    const settled = items.filter((item) => item.status === "settled" && typeof item.chargedMicrocredits === "number" && Number.isFinite(item.chargedMicrocredits));
+    if (settled.length) return `已消耗 ${formatCompactCredits(settled.reduce((sum, item) => sum + item.chargedMicrocredits!, 0))} 积分`;
+    const refunded = items.filter((item) => item.status === "refunded").reduce((sum, item) => sum + item.refundedMicrocredits, 0);
+    return refunded > 0 ? `已退回 ${formatCompactCredits(refunded)} 积分` : null;
 }

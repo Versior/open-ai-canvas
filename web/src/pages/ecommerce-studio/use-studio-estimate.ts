@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatCompactCredits } from "@/constant/credits";
 import { DEFAULT_ECOMMERCE_BRIEF } from "@/lib/ecommerce/ecommerce-capabilities";
 import { buildEcommerceImageGeneration } from "@/lib/ecommerce/ecommerce-image-generation";
 import { studioImageRequest } from "@/lib/ecommerce-studio/image-options";
@@ -61,7 +62,7 @@ export function useStudioEstimate({ model, images, references, quality, resoluti
     }, [config, creditsEnabled, images, model, quality, ratio, references, resolution]);
 
     if (!creditsEnabled) return "";
-    if (estimate.credits !== null) return `本次预计消耗 ${estimate.credits.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} 积分`;
+    if (estimate.credits !== null) return `预计约 ${formatCompactCredits(estimate.credits * 1_000_000)} 积分`;
     if (estimate.tone === "loading") return "正在计算积分…";
     if (estimate.tone === "usage") return "按实际用量计费";
     return model ? "暂时算不出积分" : "";
