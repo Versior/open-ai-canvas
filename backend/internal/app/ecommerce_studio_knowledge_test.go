@@ -240,10 +240,13 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 	svc, db, _, _ := ecommerceCreationTestService(t)
 	// 数据库里还没有 KB20：用内置原文。
 	before := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶", "detail", nil)
-	for _, text := range []string{"电商设计策划知识库（KB20）", "【视觉策划五步：先从同质化里跳出来】", "【品类打法 · 医用护理与医疗器械】", "【布光 · 凝胶、乳霜和液体质地】", "非天籁，不入耳", "该有的，都写在身上"} {
+	for _, text := range []string{"电商设计策划知识库（KB20）", "【视觉策划五步：先从同质化里跳出来】", "【品类打法 · 医用护理与医疗器械】", "【布光 · 凝胶、乳霜和液体质地】", "不能从透明框推导视力改善", "参数屏可以罗列已确认规格", "项目｜数值与条件"} {
 		if !strings.Contains(before, text) {
 			t.Fatalf("builtin playbook is missing %q: %s", text, before)
 		}
+	}
+	if strings.Contains(before, "戴上它，世界清清楚楚") || strings.Contains(before, "不罗列外观和规格") {
+		t.Fatal("copy guidance must not replace visible facts with invented benefits")
 	}
 	// 写入知识库后按数据库：驳回一条就不带那一条，停用来源整段不带。
 	if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {

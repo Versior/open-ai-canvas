@@ -3,6 +3,7 @@ import { studioCleanNotes, studioLanguage, studioMarket, studioShooting } from "
 import { STUDIO_DESIGN_TONES, STUDIO_DETAIL_LAYOUTS, STUDIO_TACKY_DESIGN } from "./detail-plan";
 import { studioActivePlan, studioStyleReferences } from "./runs";
 import { STUDIO_COMPOSITIONS, studioDesignZone } from "./art-direction";
+import { studioTypeInstruction } from "./typography";
 import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
 import {
     STUDIO_FACT_GROUP_LABEL,
@@ -288,7 +289,7 @@ function compositionLayer(shot: StudioShot, spec: StudioShotSpec, planned: boole
     return { id: "composition", title: "构图与机位", source: "镜头规格", text };
 }
 
-function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode, hasCopy: boolean, brief?: StudioBrief, planned = false): StudioPromptLayer | undefined {
+function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode, hasCopy: boolean, brief?: StudioBrief, planned = false, tone?: StudioDesignToneId): StudioPromptLayer | undefined {
     if (planned && !hasCopy) return { id: "copy", title: "文字", source: "出图策划", text: "这一屏不放文字，画面中不生成任何文字（商品本身的标识除外）。" };
     if (planned && mode === "model") {
         const layout = shot.layout ? STUDIO_DETAIL_LAYOUTS[shot.layout] : undefined;
@@ -296,11 +297,12 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
         const lines: string[] = [
             composition ? `位置：严格按「${composition.label}」排：${composition.render}。若画面说明中的文字与主体位置相反，按这里调整位置，保留场景、动作与光线。` : "位置：按本屏画面说明排，不压在商品上。",
             "整套共用字体家族与色板，标题位置、字号和留白随本屏内容变化。",
+            studioTypeInstruction(tone),
         ];
         if (shot.eyebrow?.trim()) lines.push(`栏目小标题${quote(shot.eyebrow)}：放在主标题上方，小号字、字距加宽，用整套规范里的强调色。`);
         // 字重跟设计调性走：极简调性要细到中等字重，爆款调性才用粗字重，不一律加粗。
         if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，按构图分行，海报屏可大胆放大，细节屏克制；字重按设计调性。`);
-        if (shot.subline.trim()) lines.push(`副标题${quote(shot.subline)}：常规字重，字号约为主标题的一半，紧贴主标题下方。`);
+        if (shot.subline.trim()) lines.push(`注解${quote(shot.subline)}：常规黑体，字号约主标题的三分之一；与标题拉开呼吸间距，补充依据，不重复标题。`);
         const items = shot.lines.map((line) => line.trim()).filter(Boolean);
         if (items.length) lines.push(`${layout?.lines || "要点（每行一条，行距宽松）"}：${items.map(quote).join(" ")}`);
         const levels = [shot.eyebrow?.trim(), shot.headline.trim(), shot.subline.trim(), items.length ? "lines" : ""].filter(Boolean).length;
@@ -427,7 +429,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     for (const layer of extra) if (layer.id !== "shooting") layers.push(layer);
     const layout = brief ? layoutLayer(brief, references, styleReferences, modelReferences.length) : undefined;
     if (layout) layers.push(layout);
-    const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief, planned);
+    const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief, planned, input.suite?.tone);
     if (copy) layers.push(copy);
     if (brief?.extra.trim()) layers.push({ id: "extra", title: "补充要求", source: "生图表单", text: `${sentence(brief.extra)}（以上要求不改变商品外观。）` });
     if (shot.adjust?.trim()) layers.push({ id: "adjust", title: "这一张的修改要求", source: "调整这一张", text: `${sentence(shot.adjust)}与上面的画面、构图要求冲突时以这一条为准；商品外观仍以商品图为准。` });

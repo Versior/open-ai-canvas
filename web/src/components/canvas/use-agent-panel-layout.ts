@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent, type KeyboardEvent } from "react";
-import { AGENT_PANEL_LAYOUT_KEY, changeAgentPanelLayout, clampAgentPanelLayout, defaultAgentPanelLayout, restoreAgentPanelLayout, type AgentPanelGesture, type AgentPanelLayout } from "@/lib/canvas/agent-panel-layout";
+import { AGENT_PANEL_HEADROOM, AGENT_PANEL_LAYOUT_KEY, changeAgentPanelLayout, clampAgentPanelLayout, defaultAgentPanelLayout, restoreAgentPanelLayout, type AgentPanelGesture, type AgentPanelLayout } from "@/lib/canvas/agent-panel-layout";
 import { AGENT_DOCK_DEFAULT_WIDTH, clampAgentDockWidth } from "@/lib/canvas/agent-panel-dock";
 import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 
@@ -87,12 +87,24 @@ export function useAgentPanelLayout(dock: { active: boolean; width: number } = {
         setLayout((current) => changeAgentPanelLayout(current, kind, event.key === "ArrowLeft" ? -delta : event.key === "ArrowRight" ? delta : 0, event.key === "ArrowUp" ? -delta : event.key === "ArrowDown" ? delta : 0, viewport()));
     };
 
-    const style: CSSProperties = compact ? { left: 0, top: 8, width: "100%", height: "calc(100dvh - 8px)" } : dock.active ? { top: 0, right: 0, width: dock.width, height: "100dvh" } : layout;
+    const style: CSSProperties = compact
+        ? { left: 0, top: AGENT_PANEL_HEADROOM, width: "100%", height: `calc(100dvh - ${AGENT_PANEL_HEADROOM}px)` }
+        : dock.active
+          ? { top: AGENT_PANEL_HEADROOM, right: 0, width: dock.width, height: `calc(100dvh - ${AGENT_PANEL_HEADROOM}px)` }
+          : layout;
 
     return {
         style,
         reset: () => (dock.active ? setDockWidth(AGENT_DOCK_DEFAULT_WIDTH) : setLayout(defaultAgentPanelLayout(viewport()))),
         onResizeKeyDown,
-        pointerHandlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp, onLostPointerCapture: () => { gestureRef.current = null; } },
+        pointerHandlers: {
+            onPointerDown,
+            onPointerMove,
+            onPointerUp,
+            onPointerCancel: onPointerUp,
+            onLostPointerCapture: () => {
+                gestureRef.current = null;
+            },
+        },
     };
 }

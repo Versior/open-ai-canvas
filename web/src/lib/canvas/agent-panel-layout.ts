@@ -5,20 +5,23 @@ export type AgentPanelGesture = "move" | "north" | "west" | "northwest";
 // v2：默认窗口改为拉满顶栏下方的可用高度；v1 里每位用户都存过旧的 640px 窗口，换键让新默认生效。
 export const AGENT_PANEL_LAYOUT_KEY = "canvas:agent-panel-layout:v2";
 const MARGIN = 12;
+/** 留给贴在窗沿的角色；移动和调整高度时也不允许把它推出视口。 */
+export const AGENT_PANEL_HEADROOM = 64;
 /** 默认窗口从顶栏下方开始，不压住画布顶栏。 */
 const DEFAULT_TOP = 72;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 export function clampAgentPanelLayout(layout: AgentPanelLayout, viewport: AgentPanelViewport): AgentPanelLayout {
     const maxWidth = Math.max(1, viewport.width - MARGIN * 2);
-    const maxHeight = Math.max(1, viewport.height - MARGIN * 2);
+    const headroom = Math.min(AGENT_PANEL_HEADROOM, Math.max(MARGIN, viewport.height - 1 - MARGIN));
+    const maxHeight = Math.max(1, viewport.height - headroom - MARGIN);
     const width = clamp(layout.width, Math.min(360, maxWidth), maxWidth);
     const height = clamp(layout.height, Math.min(420, maxHeight), maxHeight);
     return {
         width,
         height,
         left: clamp(layout.left, MARGIN, Math.max(MARGIN, viewport.width - width - MARGIN)),
-        top: clamp(layout.top, MARGIN, Math.max(MARGIN, viewport.height - height - MARGIN)),
+        top: clamp(layout.top, headroom, Math.max(headroom, viewport.height - height - MARGIN)),
     };
 }
 
@@ -48,5 +51,5 @@ export function changeAgentPanelLayout(start: AgentPanelLayout, gesture: AgentPa
     const bottom = start.top + start.height;
     const left = gesture === "north" ? start.left : clamp(start.left + dx, MARGIN, right - Math.min(360, start.width));
     const top = gesture === "west" ? start.top : clamp(start.top + dy, MARGIN, bottom - Math.min(420, start.height));
-    return { left, top, width: right - left, height: bottom - top };
+    return clampAgentPanelLayout({ left, top, width: right - left, height: bottom - top }, viewport);
 }

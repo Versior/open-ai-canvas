@@ -22,6 +22,14 @@ test("historical studio run keeps its typesetting style after the product style 
     expect(restored?.style).toBe("pure");
 });
 
+test("agent plans retain their font tone and ink palette after save and reload", () => {
+    const product = createStudioProduct("product");
+    product.plans = [{ id: "agent-plan", kind: "main", createdAt: "", textMode: "overlay", tone: "oriental", styleId: "noir", shots: [] }];
+    const restored = normalizeStudioProduct(JSON.parse(JSON.stringify(product)))!;
+    expect(restored.plans[0].tone).toBe("oriental");
+    expect(restored.plans[0].styleId).toBe("noir");
+});
+
 test("CSV protects formula cells and preserves quoted multilingual content", () => {
     expect(deliveryCsv([["=1+1", " @SUM(A1)", '中文,"标题"', 123]])).toBe('\uFEFF"\'=1+1","\' @SUM(A1)","中文,""标题""","123"');
     expect(deliveryFileStem("../a/b\n")).not.toContain("/");
@@ -118,4 +126,17 @@ test("studio review includes missing shots, wrong dimensions and unsupported cla
     expect(report.issues.some((issue) => issue.message.includes("偏差"))).toBe(true);
     expect(report.issues.some((issue) => issue.message.includes("全网第一"))).toBe(true);
     expect(report.issues.filter((issue) => issue.message.includes("没有可交付")).length).toBe(run.shots.length - 1);
+});
+
+test("delivery review flags generic and repeated headlines in the same suite", () => {
+    const product = createStudioProduct("product");
+    product.brief.outputType = "main-set";
+    let nextId = 0;
+    const shots = createStudioRun(product, () => `shot${nextId++}`).shots.slice(1, 3);
+    shots.forEach((shot) => {
+        shot.headline = "陪你每一天";
+    });
+    const report = reviewStudioDelivery(product, shots, new Map(shots.map((shot) => [shot.id, { width: 1600, height: 1600, bytes: 100000 }])), new Set(shots.map((shot) => shot.id)));
+    expect(report.issues.some((issue) => issue.message.includes("口号缺少商品信息"))).toBe(true);
+    expect(report.issues.some((issue) => issue.message.includes("主标题") && issue.message.includes("重复"))).toBe(true);
 });

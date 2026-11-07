@@ -20,6 +20,7 @@ import {
 } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
 import { STUDIO_COMPOSITIONS, STUDIO_COMPOSITION_IDS, studioChannelDesign } from "./art-direction";
+import { studioTypeInstruction } from "./typography";
 import { studioPickedDirection, studioPrepFactsText, studioPrepPromptLines } from "./plan-prep";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioDetailPlan, type StudioPlannedScreen, type StudioPlanScope, type StudioPlanTarget, type StudioProduct, type StudioShotRole } from "./types";
@@ -281,7 +282,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         brief.extra.trim() ? `卖家补充要求：${oneLine(brief.extra)}` : undefined,
         ...styleLines(product),
         cast.length ? `已在模特库选了${cast.join("、")}：有人物的图用 detail-model，人物会按模特库出图。` : undefined,
-        ...studioPrepPromptLines(brief.prep, Boolean(request.alternative)),
+        ...studioPrepPromptLines(brief.prep, Boolean(request.alternative), Boolean(note)),
         ...(request.scope === "template" ? templateLines(product) : []),
         note ? "" : undefined,
         note ? `【卖家对这次策划的补充调整】（优先照做；和商品事实、平台规则冲突时以事实和规则为准）\n${note}` : undefined,
@@ -305,17 +306,18 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         ...studioDetailLayoutIds(product).map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
         "",
         "【设计调性】（挑一个最适合这件商品和目标人群的写进 tone，整组的版面、字体、文案语气和摄影都按它来）",
-        ...STUDIO_DESIGN_TONE_IDS.map((id) => `- ${id}（${STUDIO_DESIGN_TONES[id].label}）：${STUDIO_DESIGN_TONES[id].use}`),
+        ...STUDIO_DESIGN_TONE_IDS.map((id) => `- ${id}（${STUDIO_DESIGN_TONES[id].label}）：${STUDIO_DESIGN_TONES[id].use}；${studioTypeInstruction(id)}`),
         "",
         "【文案要求】（大牌和头部爆款的文案像品牌在说话，不像地摊吆喝）",
-        "- 主标题讲买家得到的感受或结果，不讲「这是什么」；把卖点翻译成画面和感受，比如把「重量轻」写成「轻到忘了它在」，把「防滑」写成「低头也不跑」。",
+        "- 主标题优先回答一个购买问题：这件有什么不同、怎么用、哪个细节值得看。使用已确认的具体名词、动作或数值，不为追求情绪删掉商品信息；标题建议 6–12 字，注解补充一个依据或适用条件。",
         "- 讲出来的好处要有出处：轻、防滑、不易掉、耐摔、防蓝光、保温多久这类性能，卖点、已确认的事实和卖家补充里没有就不写，换成感受的说法也不行（没有重量信息就不能写「轻到像没戴」，没说防滑就不能写「低头也不滑」）。外观看得见的（透明、颜色、形状、结构）可以讲成感受。",
         "- 品牌字样、印字、logo 和型号是商品的身份，不是买它的理由：不当卖点，不做成图标标签，也不写进标题（「镜片上的名字」这类不要）。素材不够时少讲几个点、讲深一点，不拿外观凑成三个理由。",
-        "- 不写说明书口吻（该有的、就这么简单、记清楚、一次看清、都写在）和空洞大词（品质之选、匠心、臻品、甄选、高端大气）。写完逐条自查：这句话换到同类任何一件商品上都成立，或者只是在描述商品长什么样，就重写。",
-        "- 主标题不能只是罗列外观或参数（比如「透明框，绿镜腿」「四个地方，记清楚」），要说出买家在意的结果、情绪或一个画面；买的人和用的人不同时（比如家长给孩子买），对买的人说话。",
+        "- 不写空洞大词和泛情绪口号（品质之选、匠心、臻品、甄选、更亮眼、更出众、陪你每一天）。写完逐条自查：删掉商品图，这句话是否仍能用于任意衣服、杯子和眼镜；如果是，换成具体细节。",
+        "- 可见外观可以作为设计主题，不能冒充舒适度或性能。比如用「清透前框，柔灰收边」讲配色，用微距证明；不写「轻到忘了戴」或「跑跳不掉」等没有依据的体验。参数屏直接给规格，无须改写成口号。",
         "- 短、准、有节奏：可以用短句、对仗、留白和数字，口语但不油腻；同一组里的标题句式要有变化。国内头部详情页常用两个短语对仗、中间空一格（前讲作用、后讲结果，如「深润修护 强韧喉黏膜」），痛点共鸣屏用一个问句开场；关键词或数字要用强调色时写进 elements。",
         `- 不写土味和口号腔的词：${STUDIO_TACKY_COPY.join("、")}，不用感叹号，不堆四字成语。`,
         "- 每张最多三层文字：英文栏目小标题、主标题、一句注解；要点只用在图标、引线、拼格、对照、参数、痛点、机理、成分、资质和收尾版式里做标签。",
+        "- 不强制每屏放英文栏目头。摄影屏可以只有一句标题或完全无字；表格用 lines 写「项目｜数值与条件」，数据屏主标题放已确认的关键数字与单位，对照屏只写商品自身的真实角度或选项。",
         "- 详情页是一张连续的长图：每屏都不加页码、屏号和 01、02 这类序号（使用步骤屏的步骤编号、机理示意里作用过程的先后编号除外），eyebrow、elements 和 style 里也不要写屏的序号。",
         "",
         ...rhythmLines(request),
@@ -430,11 +432,12 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
     // 只有质感选了「按商品推荐」时才收策划挑的质感。
     const styleId = product.style === "auto" ? studioPlanStyleId(data.styleId) : undefined;
-    // 卖家挑了方向：模型漏写的调性、定位和创意主线按这个方向补上。
+    // 明确调整后不能用旧方向补回被移除的场景、调性；换方向也不补旧主线。
     const direction = studioPickedDirection(product.brief.prep);
-    const tone = studioPlanTone(data.tone) || direction?.tone;
-    const positioning = text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) || direction?.positioning.slice(0, STUDIO_DETAIL_PLAN_LIMITS.positioning) || "";
-    const concept = text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) || direction?.concept.slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) || "";
+    const adjusted = Boolean(product.brief.planNote?.trim());
+    const tone = studioPlanTone(data.tone) || (adjusted ? undefined : direction?.tone);
+    const positioning = text(data.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) || (!adjusted ? direction?.positioning.slice(0, STUDIO_DETAIL_PLAN_LIMITS.positioning) : "") || "";
+    const concept = text(data.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) || (!adjusted && !request.alternative ? direction?.concept.slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) : "") || "";
     return {
         plan: {
             id: meta.id,

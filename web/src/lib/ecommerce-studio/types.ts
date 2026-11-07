@@ -274,6 +274,8 @@ export type StudioPlan = {
     shots: StudioShot[];
     /** 表单历史记录的排字质感；导出时不随当前商品设置改变。 */
     styleId?: StudioStylePresetId;
+    /** 程序排字沿用出图时的设计调性。 */
+    tone?: StudioDesignToneId;
 };
 
 /**

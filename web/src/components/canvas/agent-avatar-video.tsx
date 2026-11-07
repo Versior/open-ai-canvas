@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
  * 绿幕形象视频：每帧把视频画到画布上做抠像。抠像在主线程逐像素处理，开销不小，
  * 所以 paused（入口被面板挡住时）和页面隐藏时都不处理帧，也暂停视频解码。
  */
-export function AgentAvatarVideo({ src, loop = true, paused = false, onError, className }: { src: string; loop?: boolean; paused?: boolean; onError?: () => void; className?: string }) {
+export function AgentAvatarVideo({ src, loop = true, paused = false, reducedMotion = false, onError, className }: { src: string; loop?: boolean; paused?: boolean; reducedMotion?: boolean; onError?: () => void; className?: string }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const errorRef = useRef(onError);
@@ -46,7 +46,7 @@ export function AgentAvatarVideo({ src, loop = true, paused = false, onError, cl
             context.putImageData(image, 0, 0);
         };
         const scheduleFrame = () => {
-            if (disposed || document.visibilityState === "hidden") return;
+            if (disposed || document.visibilityState === "hidden" || reducedMotion) return;
             if (typeof video.requestVideoFrameCallback === "function") {
                 videoFrame = video.requestVideoFrameCallback(() => {
                     drawFrame();
@@ -72,26 +72,32 @@ export function AgentAvatarVideo({ src, loop = true, paused = false, onError, cl
             scheduleFrame();
         };
         document.addEventListener("visibilitychange", resumeWhenVisible);
+        const loaded = () => {
+            drawFrame();
+            if (reducedMotion) video.pause();
+        };
+        video.addEventListener("loadeddata", loaded);
         drawFrame();
         scheduleFrame();
         return () => {
             disposed = true;
             cancelFrame();
             document.removeEventListener("visibilitychange", resumeWhenVisible);
+            video.removeEventListener("loadeddata", loaded);
         };
-    }, [src, paused]);
+    }, [src, paused, reducedMotion]);
 
     useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
         video.loop = loop;
-        if (paused) {
+        if (paused || (reducedMotion && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)) {
             video.pause();
             return;
         }
         // pause() 会清掉 autoplay 标记，恢复时必须显式播放；已在播放时 play() 不会重来。
         void video.play().catch(() => undefined);
-    }, [src, loop, paused]);
+    }, [src, loop, paused, reducedMotion]);
 
     return (
         <>

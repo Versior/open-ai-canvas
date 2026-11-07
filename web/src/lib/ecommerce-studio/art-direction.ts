@@ -33,7 +33,7 @@ export function studioDesignZone(shot: Pick<StudioShot, "layout" | "composition"
 export function reviewStudioCopy(shot: Pick<StudioShot, "headline" | "subline" | "lines">) {
     const issues: { code: string; message: string }[] = [];
     const text = [shot.headline, shot.subline, ...shot.lines].join(" ");
-    if (/品质之选|匠心打造|焕新生活|重新定义|尊享|臻选|好物推荐|开启.*生活/.test(text)) issues.push({ code: "generic", message: "口号缺少商品信息。把已确认卖点放进标题，用细节证明它。" });
+    if (/品质之选|匠心打造|焕新生活|重新定义|尊享|臻选|好物推荐|开启.*生活|更亮眼|更出众|陪你每一天/.test(text)) issues.push({ code: "generic", message: "口号缺少商品信息。把已确认卖点放进标题，用细节证明它。" });
     if (/最[好强佳]|第一|100%|绝对|根治|永久|全网最低/.test(text)) issues.push({ code: "claim", message: "检查绝对承诺或功效用语，删去没有证明的数据与结论。" });
     if (shot.headline.length > 18) issues.push({ code: "headline", message: "标题超过 18 字，手机缩略图难读。拆成主标题与说明。" });
     if (shot.subline.trim() && shot.subline.trim() === shot.headline.trim()) issues.push({ code: "repeat", message: "副标题重复主标题。改成材料、规格或使用条件。" });

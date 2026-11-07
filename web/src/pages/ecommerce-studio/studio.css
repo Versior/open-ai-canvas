@@ -1437,6 +1437,14 @@
     height: 100%;
     object-fit: cover;
 }
+.es-result-artwork {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    color: var(--es-ink-3);
+    font-size: var(--fs-caption);
+}
 .es-tile-state {
     position: absolute;
     inset: 0;

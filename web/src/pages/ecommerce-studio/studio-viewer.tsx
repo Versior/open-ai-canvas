@@ -53,12 +53,12 @@ export function StudioViewer({
     const adopted = Boolean(shot?.adopted && current && shot.adopted.resourceId === current.resourceId);
     const sourceModel = shot?.attempts.find((attempt) => attempt.outputs.some((output) => output.resourceId === current?.resourceId))?.model || "";
     const overlay = Boolean(group && shot && product && studioShotHasCopy(shot, studioShotSpec(shot.role, product.dossier?.family || "generic")) && studioEffectiveTextMode(group, studioModelAdapter(sourceModel)).mode === "overlay");
-    const previewKey = JSON.stringify([product?.id, product?.style, group?.key, group?.styleId, shot?.role, shot?.layout, shot?.headline, shot?.subline, shot?.lines, shot?.eyebrow, current?.resourceId, overlay]);
+    const previewKey = JSON.stringify([product?.id, product?.style, group?.key, group?.styleId, group?.tone, shot?.role, shot?.layout, shot?.composition, shot?.headline, shot?.subline, shot?.lines, shot?.eyebrow, current?.resourceId, overlay]);
     useEffect(() => {
         if (!overlay || !group || !shot || !current || !product) return;
         const controller = new AbortController();
         let images: Awaited<ReturnType<typeof composeStudioShots>> = [];
-        const plan = { id: group.key, kind: group.kind || ("main" as const), createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, shots: [{ ...shot, adopted: current }] };
+        const plan = { id: group.key, kind: group.kind || ("main" as const), createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, tone: group.tone, shots: [{ ...shot, adopted: current }] };
         void composeStudioShots(product, plan, controller.signal)
             .then((result) => {
                 if (controller.signal.aborted) {
@@ -148,9 +148,15 @@ export function StudioViewer({
                                 icon={<Download size={14} />}
                                 onClick={() => {
                                     if (!overlay || !product) return onDownload(shot, current);
-                                    void downloadStudioComposed(product, { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, shots: [{ ...shot, adopted: current }] }).catch(
-                                        (error: unknown) => message.error(error instanceof Error ? error.message : "下载失败"),
-                                    );
+                                    void downloadStudioComposed(product, {
+                                        id: group.key,
+                                        kind: group.kind || "main",
+                                        createdAt: group.createdAt,
+                                        textMode: group.textMode,
+                                        styleId: group.styleId,
+                                        tone: group.tone,
+                                        shots: [{ ...shot, adopted: current }],
+                                    }).catch((error: unknown) => message.error(error instanceof Error ? error.message : "下载失败"));
                                 }}
                             >
                                 {overlay ? "下载排版成品" : "下载原图"}

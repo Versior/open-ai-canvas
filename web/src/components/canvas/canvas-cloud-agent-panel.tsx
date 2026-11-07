@@ -34,6 +34,7 @@ import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-refer
 import { canvasThemes } from "@/lib/canvas-theme";
 import { agentSkinTheme, resolveAgentSkin } from "@/lib/canvas/agent-skin";
 import { AgentSkinScene } from "./agent-skin-scene";
+import { AgentWindowPerch } from "./agent-window-perch";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { useAgentPetPalette } from "@/hooks/use-agent-pet-palette";
@@ -2252,7 +2253,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                         exit={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 12, scale: 0.985 }}
                         transition={{ duration: reducedMotion ? 0 : 0.26, ease: [0.16, 1, 0.3, 1] }}
-                        className={`canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col overflow-hidden${dock.active ? " is-docked" : ""}`}
+                        className={`canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col${dock.active ? " is-docked" : ""}`}
                         style={
                             { ...panelLayout.style, "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary, "--agent-shadow-color": theme.spatial.shadow } as CSSProperties &
                                 Record<`--${string}`, string>
@@ -2266,312 +2267,315 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         {...panelDropHandlers}
                         onWheel={(event) => event.stopPropagation()}
                     >
-                        {dropActive ? (
-                            <div className="agent-drop-overlay" aria-hidden="true">
-                                <ImagePlus className="size-5" />
-                                <span>{insertAgentFiles ? "松开以添加到对话：图片会放到画布上，再引用给 Agent" : "进入画布后才能添加图片"}</span>
-                            </div>
-                        ) : null}
-                        {dock.active ? (
-                            // 停靠时只保留左边缘：拖动或用左右方向键调宽，画布同步让出空间。
-                            <div
-                                role="separator"
-                                tabIndex={0}
-                                aria-orientation="vertical"
-                                aria-label="调整 Agent 面板宽度"
-                                aria-valuenow={dock.width}
-                                aria-valuemin={dock.bounds.min}
-                                aria-valuemax={dock.bounds.max}
-                                title="拖动调整宽度，也可用左右方向键调整"
-                                data-agent-resize="dock"
-                                className="agent-panel-dock-resizer"
-                                onKeyDown={panelLayout.onResizeKeyDown}
-                            />
-                        ) : (
-                            <>
-                                <div data-agent-resize="north" className="absolute inset-x-5 top-0 z-10 hidden h-2 cursor-n-resize touch-none sm:block" />
-                                <div data-agent-resize="west" className="absolute bottom-5 left-0 top-5 z-10 hidden w-2 cursor-w-resize touch-none sm:block" />
-                                <button
-                                    type="button"
-                                    aria-label="调整 Agent 面板大小"
-                                    title="拖动调整宽高，也可用方向键调整"
-                                    data-agent-resize="northwest"
-                                    className="agent-panel-resize-corner absolute left-2 top-2 z-10 hidden size-5 cursor-nw-resize touch-none place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 sm:grid"
+                        <AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />
+                        <div className="agent-panel-content flex min-h-0 flex-1 flex-col overflow-hidden">
+                            {dropActive ? (
+                                <div className="agent-drop-overlay" aria-hidden="true">
+                                    <ImagePlus className="size-5" />
+                                    <span>{insertAgentFiles ? "松开以添加到对话：图片会放到画布上，再引用给 Agent" : "进入画布后才能添加图片"}</span>
+                                </div>
+                            ) : null}
+                            {dock.active ? (
+                                // 停靠时只保留左边缘：拖动或用左右方向键调宽，画布同步让出空间。
+                                <div
+                                    role="separator"
+                                    tabIndex={0}
+                                    aria-orientation="vertical"
+                                    aria-label="调整 Agent 面板宽度"
+                                    aria-valuenow={dock.width}
+                                    aria-valuemin={dock.bounds.min}
+                                    aria-valuemax={dock.bounds.max}
+                                    title="拖动调整宽度，也可用左右方向键调整"
+                                    data-agent-resize="dock"
+                                    className="agent-panel-dock-resizer"
                                     onKeyDown={panelLayout.onResizeKeyDown}
-                                    style={{ color: theme.node.muted }}
-                                >
-                                    <MoveDiagonal2 className="size-3" aria-hidden="true" />
-                                </button>
-                            </>
-                        )}
-                        <AnimatePresence mode="wait" initial={false}>
-                            {view === "settings" ? (
-                                <motion.div key="settings" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
-                                    <CanvasCloudAgentSettings
-                                        theme={theme}
-                                        config={config}
-                                        selectedModel={selectedModel}
-                                        permissionMode={permissionMode}
-                                        contextScope={contextScope}
-                                        nodeCount={canvasId ? nodeCount : null}
-                                        installedSkills={installedSkills}
-                                        marketSkills={marketSkills}
-                                        skillSearch={skillSearch}
-                                        skillsLoading={skillsLoading}
-                                        skillHasMore={skillHasMore}
-                                        maxCredits={maxCredits}
-                                        maxGenerationTasks={maxGenerationTasks}
-                                        maxVideoSeconds={maxVideoSeconds}
-                                        onBack={() => setView("chat")}
-                                        onCollapse={onCollapse}
-                                        onModelChange={setModel}
-                                        onPermissionChange={setPermissionMode}
-                                        reasoningMode={reasoningMode}
-                                        onReasoningModeChange={setReasoningMode}
-                                        profileView={profileView}
-                                        profileLoading={profileLoading}
-                                        profileSaving={profileSaving}
-                                        profileError={profileError}
-                                        projectId={domainProjectId}
-                                        canvasId={canvasId}
-                                        onReloadProfile={reloadProfile}
-                                        onSaveProfile={saveProfile}
-                                        onContextToggle={(value) => setContextScope((current) => (current.includes(value) ? current.filter((item) => item !== value) : [...current, value]))}
-                                        onSkillSearch={setSkillSearch}
-                                        onSkillInstall={installSkill}
-                                        onSkillAgentModeChange={changeSkillAgentMode}
-                                        onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
-                                        onLoadMoreSkills={loadMoreSkills}
-                                        onMaxCreditsChange={setMaxCredits}
-                                        onMaxGenerationTasksChange={setMaxGenerationTasks}
-                                        onMaxVideoSecondsChange={setMaxVideoSeconds}
-                                    />
-                                </motion.div>
-                            ) : view === "history" ? (
-                                <motion.div key="history" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
-                                    <AgentHistory
-                                        conversations={conversations}
-                                        activeConversationId={activeConversationId}
-                                        theme={theme}
-                                        onBack={() => setView("chat")}
-                                        onNew={newConversation}
-                                        onOpen={(conversation) => void openConversation(conversation)}
-                                        onDelete={deleteConversation}
-                                        loading={cloudHistoryLoading}
-                                        error={cloudHistoryError}
-                                        openingId={cloudOpeningId}
-                                        onRefresh={() => setCloudRefreshEpoch((value) => value + 1)}
-                                        onCollapse={onCollapse}
-                                    />
-                                </motion.div>
+                                />
                             ) : (
-                                <motion.div key="chat" className="flex min-h-0 flex-1 flex-col" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
-                                    <AgentHeader
-                                        theme={theme}
-                                        hasMessages={messages.length > 0}
-                                        statusLabel={statusLabel}
-                                        statusColor={statusColor}
-                                        live={running}
-                                        nodeCount={canvasId ? nodeCount : null}
-                                        studioProductName={studioProductName}
-                                        onNew={newConversation}
-                                        onHistory={() => setView("history")}
-                                        exporting={exporting}
-                                        onExport={() => {
-                                            if (exporting) return;
-                                            setExporting(true);
-                                            void (async () => {
-                                                let snapshot = run;
-                                                let snapshotError: string | undefined;
-                                                if (run?.id) {
-                                                    try {
-                                                        snapshot = (await getAgentRun(run.id, AbortSignal.timeout(15_000))).run;
-                                                    } catch (cause) {
-                                                        snapshotError = cause instanceof Error ? cause.message : String(cause);
-                                                    }
-                                                }
-                                                const text = buildAgentDebugExport({ canvasId, conversationId: activeConversationId, messages, run: snapshot, approval, model: selectedModel, permissionMode, snapshotError });
-                                                saveAs(new Blob([text], { type: "application/json;charset=utf-8" }), `agent-debug-${activeConversationId}-${Date.now()}.json`);
-                                            })()
-                                                .catch((cause) => setMessages((current) => appendAgentError(current, `export-${Date.now()}`, cause, "导出失败")))
-                                                .finally(() => setExporting(false));
-                                        }}
-                                        onSettings={() => setView("settings")}
-                                        onResetLayout={panelLayout.reset}
-                                        docked={dock.active}
-                                        onToggleDock={dock.available ? () => setDocked(!dock.active) : undefined}
-                                        onCollapse={onCollapse}
-                                    />
-                                    <AgentSkinScene skin={skin} pet={selectedSkinPet} />
-                                    {cloudHistoryError || (canvasId && !cloudHistoryReady) ? (
-                                        <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
-                                            <span>{cloudHistoryError ? "云端对话暂时未同步，本机草稿已保留。" : "正在同步此画布的云端对话…"}</span>
-                                            {cloudHistoryError ? (
-                                                <Button size="small" loading={cloudHistoryLoading} onClick={() => setCloudRefreshEpoch((value) => value + 1)}>
-                                                    重新同步
-                                                </Button>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
-                                    {run && connectionStatus !== "connected" ? (
-                                        <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
-                                            <span>{connectionStatus === "disconnected" ? "连接已断开，服务端任务可能仍在执行；运行记录已保留" : "正在连接并校准运行状态…"}</span>
-                                            {connectionStatus === "disconnected" ? (
-                                                <Button size="small" onClick={() => setConnectionEpoch((value) => value + 1)}>
-                                                    重新连接
-                                                </Button>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
-                                    <AgentConversation
-                                        key={activeConversationId}
-                                        theme={theme}
-                                        messages={messages}
-                                        onFocusNode={onFocusNode}
-                                        onUndo={busy || running || otherAgentRunning ? undefined : (target) => void undoCanvasStep(target)}
-                                        undoStates={undoStates}
-                                        references={references}
-                                        busy={busy || running}
-                                        approval={approval}
-                                        approvalTargetGenerating={approvalTargetGenerating}
-                                        nodeCount={canvasId ? nodeCount : null}
-                                        installedSkillCount={skillCatalogReady ? installedSkills.length : null}
-                                        approvalSubmitting={approvalSubmitting}
-                                        approvalBlockedReason={approvalBlockedReason}
-                                        onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
-                                        onDraftPrompt={(draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft))}
-                                        onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
-                                        onApprove={(settings) => void submitApproval("approve", settings)}
-                                        onReject={() => void submitApproval("reject")}
-                                        onWithdrawInterjection={running && !otherAgentRunning && connectionStatus === "connected" ? (messageId) => void withdrawInterjection(messageId) : undefined}
-                                        withdrawingInterjectionId={withdrawingInterjectionId}
-                                        onRequeueInterjection={outboxReady && !otherAgentRunning ? requeueInterjection : undefined}
-                                        retryableErrorId={retryableErrorId}
-                                        retryableReplyRunId={retryableReplyRunId}
-                                        onRetryRun={retryableErrorId || retryableReplyRunId ? () => void retryLatestRun() : undefined}
-                                        retryingRun={retryingRun}
-                                        config={config}
-                                        // ask_user 提问条在输入区上方时不再重复出选项卡片。
-                                        onReplyOption={pendingQuestion ? undefined : (text) => void submit(text)}
-                                        replyOptionsDisabled={
-                                            otherAgentRunning ||
-                                            Boolean(pendingSubmission.current?.request) ||
-                                            Boolean(run && connectionStatus !== "connected") ||
-                                            !historyHydrated ||
-                                            !pendingHydrated ||
-                                            Boolean(canvasId && !cloudHistoryReady) ||
-                                            Boolean(cloudOpeningId) ||
-                                            Boolean(modelRestoreError)
-                                        }
-                                    />
-                                    {canvasCloudConversation && !canvasCloudConversationIsCurrent ? (
-                                        <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
-                                            <span>此画布有可接续的云端对话。{prompt.trim() ? "未发送内容会保留在原对话。" : "手机、电脑可查看同一进度。"}</span>
-                                            <Button
-                                                size="small"
-                                                loading={cloudOpeningId === canvasCloudConversation.id}
-                                                disabled={busy || running || !pendingHydrated || Boolean(pendingSubmission.current) || Boolean(cloudOpeningId)}
-                                                onClick={() => void openConversation(canvasCloudConversation)}
-                                            >
-                                                接续此画布对话
-                                            </Button>
-                                        </div>
-                                    ) : otherAgentRunning ? (
-                                        <div role="status" className="px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
-                                            {canvasAgent?.cleanupPending ? "当前画布的 Agent 正在收尾，完成后即可使用" : "当前画布有正在执行的 Agent 任务，正在同步对话；同步前暂不重复发送"}
-                                        </div>
-                                    ) : null}
-                                    {planVisible ? (
-                                        <AgentPlanBar
-                                            items={planItems}
-                                            theme={theme}
-                                            minimized={planMinimized}
-                                            terminal={planTerminal || Boolean(run && ["completed", "failed", "cancelled", "rejected"].includes(run.status))}
-                                            waitingUser={Boolean(pendingQuestion)}
-                                            onToggle={() => setPlanMinimized((value) => !value)}
-                                        />
-                                    ) : null}
-                                    {mediaBatch && mediaBatch.phase !== "approval" ? <AgentMediaBatchBar batch={mediaBatch} theme={theme} onFocusNode={onFocusNode} /> : null}
-                                    {pendingQuestion ? (
-                                        <AgentQuestionBar
-                                            question={pendingQuestion}
-                                            theme={theme}
-                                            disabled={otherAgentRunning || approvalSubmitting || connectionStatus !== "connected"}
-                                            onAnswer={(label) => void submit(label)}
-                                            onRecordDecision={insertAgentMarkdown ? (record) => insertAgentMarkdown(record.markdown, record.title) : undefined}
-                                        />
-                                    ) : null}
-                                    {historyHydrated && !pendingHydrated ? (
-                                        <div className="flex items-center gap-2 px-5 py-2 text-xs" role="status">
-                                            <span>提交记录尚未确认，输入保留；画布可继续编辑。</span>
-                                            <Button size="small" onClick={() => setHistoryRestoreAttempt((attempt) => attempt + 1)}>
-                                                重新读取记录
-                                            </Button>
-                                        </div>
-                                    ) : null}
-                                    {modelRestoreError ? (
-                                        <div className="px-5 py-2 text-xs" role="status" style={{ color: theme.node.muted }}>
-                                            {modelRestoreError}
-                                        </div>
-                                    ) : null}
-                                    <AgentChatComposer
-                                        prompt={prompt}
-                                        submitDisabled={composerSubmitDisabled}
-                                        submitMode={composerSubmitMode}
-                                        primaryDisabled={composerSubmitMode === "queue" && outboxIsFull}
-                                        sending={busy}
-                                        running={running}
-                                        placeholder={canvasId ? "说说要做什么，@ 引用节点，可粘贴图片；Agent 会自动匹配所需技能" : "说说要做什么，Agent 会自动匹配所需技能；进入画布后可引用节点和图片"}
-                                        theme={theme}
-                                        onPromptChange={setPrompt}
-                                        onSubmit={handleComposerSubmit}
-                                        onEscape={handleComposerEscape}
-                                        tray={outboxTray}
-                                        attachments={composerAttachments}
-                                        onAddFiles={addComposerFiles}
-                                        onRemoveAttachment={removeDraftAttachment}
-                                        onRetryAttachment={retryDraftAttachment}
-                                        addMenu={{
-                                            disabledReason: insertAgentFiles ? null : notOnCanvasReason,
-                                            onPickAssets: insertAgentAssets ? () => setAssetPickerOpen(true) : undefined,
-                                            selectionCount,
-                                            onReferenceSelection: referenceSelection,
-                                        }}
-                                        contextBar={contextBar}
-                                        charLimit={AGENT_PROMPT_MAX_CHARS}
-                                        blockReason={attachmentBlockReason}
-                                        onLongTextPaste={insertAgentText ? (text) => setLongTextOffer({ text }) : undefined}
-                                        onStop={!otherAgentRunning && run?.id && running ? stop : undefined}
-                                        stopping={stopping}
-                                        references={references}
-                                        includeAssetLibrary={false}
-                                        statusBar={
-                                            <AgentUsageBar
-                                                view={contextView}
-                                                stats={runStatsView}
-                                                running={running}
-                                                hasRun={Boolean(run?.id)}
-                                                carried={Boolean(carriedContext)}
-                                                contextWindow={contextWindow}
-                                                modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
-                                            />
-                                        }
-                                        left={
-                                            <ComposerControls
-                                                config={config}
-                                                selectedModel={selectedModel}
-                                                permissionMode={permissionMode}
-                                                theme={theme}
-                                                onModelChange={setModel}
-                                                onPermissionChange={setPermissionMode}
-                                                reasoningMode={reasoningMode}
-                                                onReasoningModeChange={setReasoningMode}
-                                            />
-                                        }
-                                    />
-                                </motion.div>
+                                <>
+                                    <div data-agent-resize="north" className="absolute inset-x-5 top-0 z-10 hidden h-2 cursor-n-resize touch-none sm:block" />
+                                    <div data-agent-resize="west" className="absolute bottom-5 left-0 top-5 z-10 hidden w-2 cursor-w-resize touch-none sm:block" />
+                                    <button
+                                        type="button"
+                                        aria-label="调整 Agent 面板大小"
+                                        title="拖动调整宽高，也可用方向键调整"
+                                        data-agent-resize="northwest"
+                                        className="agent-panel-resize-corner absolute left-2 top-2 z-10 hidden size-5 cursor-nw-resize touch-none place-items-center rounded-md opacity-60 transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-2 sm:grid"
+                                        onKeyDown={panelLayout.onResizeKeyDown}
+                                        style={{ color: theme.node.muted }}
+                                    >
+                                        <MoveDiagonal2 className="size-3" aria-hidden="true" />
+                                    </button>
+                                </>
                             )}
-                        </AnimatePresence>
+                            <AnimatePresence mode="wait" initial={false}>
+                                {view === "settings" ? (
+                                    <motion.div key="settings" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
+                                        <CanvasCloudAgentSettings
+                                            theme={theme}
+                                            config={config}
+                                            selectedModel={selectedModel}
+                                            permissionMode={permissionMode}
+                                            contextScope={contextScope}
+                                            nodeCount={canvasId ? nodeCount : null}
+                                            installedSkills={installedSkills}
+                                            marketSkills={marketSkills}
+                                            skillSearch={skillSearch}
+                                            skillsLoading={skillsLoading}
+                                            skillHasMore={skillHasMore}
+                                            maxCredits={maxCredits}
+                                            maxGenerationTasks={maxGenerationTasks}
+                                            maxVideoSeconds={maxVideoSeconds}
+                                            onBack={() => setView("chat")}
+                                            onCollapse={onCollapse}
+                                            onModelChange={setModel}
+                                            onPermissionChange={setPermissionMode}
+                                            reasoningMode={reasoningMode}
+                                            onReasoningModeChange={setReasoningMode}
+                                            profileView={profileView}
+                                            profileLoading={profileLoading}
+                                            profileSaving={profileSaving}
+                                            profileError={profileError}
+                                            projectId={domainProjectId}
+                                            canvasId={canvasId}
+                                            onReloadProfile={reloadProfile}
+                                            onSaveProfile={saveProfile}
+                                            onContextToggle={(value) => setContextScope((current) => (current.includes(value) ? current.filter((item) => item !== value) : [...current, value]))}
+                                            onSkillSearch={setSkillSearch}
+                                            onSkillInstall={installSkill}
+                                            onSkillAgentModeChange={changeSkillAgentMode}
+                                            onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
+                                            onLoadMoreSkills={loadMoreSkills}
+                                            onMaxCreditsChange={setMaxCredits}
+                                            onMaxGenerationTasksChange={setMaxGenerationTasks}
+                                            onMaxVideoSecondsChange={setMaxVideoSeconds}
+                                        />
+                                    </motion.div>
+                                ) : view === "history" ? (
+                                    <motion.div key="history" className="flex min-h-0 flex-1" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
+                                        <AgentHistory
+                                            conversations={conversations}
+                                            activeConversationId={activeConversationId}
+                                            theme={theme}
+                                            onBack={() => setView("chat")}
+                                            onNew={newConversation}
+                                            onOpen={(conversation) => void openConversation(conversation)}
+                                            onDelete={deleteConversation}
+                                            loading={cloudHistoryLoading}
+                                            error={cloudHistoryError}
+                                            openingId={cloudOpeningId}
+                                            onRefresh={() => setCloudRefreshEpoch((value) => value + 1)}
+                                            onCollapse={onCollapse}
+                                        />
+                                    </motion.div>
+                                ) : (
+                                    <motion.div key="chat" className="flex min-h-0 flex-1 flex-col" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
+                                        <AgentHeader
+                                            theme={theme}
+                                            hasMessages={messages.length > 0}
+                                            statusLabel={statusLabel}
+                                            statusColor={statusColor}
+                                            live={running}
+                                            nodeCount={canvasId ? nodeCount : null}
+                                            studioProductName={studioProductName}
+                                            onNew={newConversation}
+                                            onHistory={() => setView("history")}
+                                            exporting={exporting}
+                                            onExport={() => {
+                                                if (exporting) return;
+                                                setExporting(true);
+                                                void (async () => {
+                                                    let snapshot = run;
+                                                    let snapshotError: string | undefined;
+                                                    if (run?.id) {
+                                                        try {
+                                                            snapshot = (await getAgentRun(run.id, AbortSignal.timeout(15_000))).run;
+                                                        } catch (cause) {
+                                                            snapshotError = cause instanceof Error ? cause.message : String(cause);
+                                                        }
+                                                    }
+                                                    const text = buildAgentDebugExport({ canvasId, conversationId: activeConversationId, messages, run: snapshot, approval, model: selectedModel, permissionMode, snapshotError });
+                                                    saveAs(new Blob([text], { type: "application/json;charset=utf-8" }), `agent-debug-${activeConversationId}-${Date.now()}.json`);
+                                                })()
+                                                    .catch((cause) => setMessages((current) => appendAgentError(current, `export-${Date.now()}`, cause, "导出失败")))
+                                                    .finally(() => setExporting(false));
+                                            }}
+                                            onSettings={() => setView("settings")}
+                                            onResetLayout={panelLayout.reset}
+                                            docked={dock.active}
+                                            onToggleDock={dock.available ? () => setDocked(!dock.active) : undefined}
+                                            onCollapse={onCollapse}
+                                        />
+                                        <AgentSkinScene skin={skin} />
+                                        {cloudHistoryError || (canvasId && !cloudHistoryReady) ? (
+                                            <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
+                                                <span>{cloudHistoryError ? "云端对话暂时未同步，本机草稿已保留。" : "正在同步此画布的云端对话…"}</span>
+                                                {cloudHistoryError ? (
+                                                    <Button size="small" loading={cloudHistoryLoading} onClick={() => setCloudRefreshEpoch((value) => value + 1)}>
+                                                        重新同步
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                        {run && connectionStatus !== "connected" ? (
+                                            <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
+                                                <span>{connectionStatus === "disconnected" ? "连接已断开，服务端任务可能仍在执行；运行记录已保留" : "正在连接并校准运行状态…"}</span>
+                                                {connectionStatus === "disconnected" ? (
+                                                    <Button size="small" onClick={() => setConnectionEpoch((value) => value + 1)}>
+                                                        重新连接
+                                                    </Button>
+                                                ) : null}
+                                            </div>
+                                        ) : null}
+                                        <AgentConversation
+                                            key={activeConversationId}
+                                            theme={theme}
+                                            messages={messages}
+                                            onFocusNode={onFocusNode}
+                                            onUndo={busy || running || otherAgentRunning ? undefined : (target) => void undoCanvasStep(target)}
+                                            undoStates={undoStates}
+                                            references={references}
+                                            busy={busy || running}
+                                            approval={approval}
+                                            approvalTargetGenerating={approvalTargetGenerating}
+                                            nodeCount={canvasId ? nodeCount : null}
+                                            installedSkillCount={skillCatalogReady ? installedSkills.length : null}
+                                            approvalSubmitting={approvalSubmitting}
+                                            approvalBlockedReason={approvalBlockedReason}
+                                            onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
+                                            onDraftPrompt={(draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft))}
+                                            onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
+                                            onApprove={(settings) => void submitApproval("approve", settings)}
+                                            onReject={() => void submitApproval("reject")}
+                                            onWithdrawInterjection={running && !otherAgentRunning && connectionStatus === "connected" ? (messageId) => void withdrawInterjection(messageId) : undefined}
+                                            withdrawingInterjectionId={withdrawingInterjectionId}
+                                            onRequeueInterjection={outboxReady && !otherAgentRunning ? requeueInterjection : undefined}
+                                            retryableErrorId={retryableErrorId}
+                                            retryableReplyRunId={retryableReplyRunId}
+                                            onRetryRun={retryableErrorId || retryableReplyRunId ? () => void retryLatestRun() : undefined}
+                                            retryingRun={retryingRun}
+                                            config={config}
+                                            // ask_user 提问条在输入区上方时不再重复出选项卡片。
+                                            onReplyOption={pendingQuestion ? undefined : (text) => void submit(text)}
+                                            replyOptionsDisabled={
+                                                otherAgentRunning ||
+                                                Boolean(pendingSubmission.current?.request) ||
+                                                Boolean(run && connectionStatus !== "connected") ||
+                                                !historyHydrated ||
+                                                !pendingHydrated ||
+                                                Boolean(canvasId && !cloudHistoryReady) ||
+                                                Boolean(cloudOpeningId) ||
+                                                Boolean(modelRestoreError)
+                                            }
+                                        />
+                                        {canvasCloudConversation && !canvasCloudConversationIsCurrent ? (
+                                            <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
+                                                <span>此画布有可接续的云端对话。{prompt.trim() ? "未发送内容会保留在原对话。" : "手机、电脑可查看同一进度。"}</span>
+                                                <Button
+                                                    size="small"
+                                                    loading={cloudOpeningId === canvasCloudConversation.id}
+                                                    disabled={busy || running || !pendingHydrated || Boolean(pendingSubmission.current) || Boolean(cloudOpeningId)}
+                                                    onClick={() => void openConversation(canvasCloudConversation)}
+                                                >
+                                                    接续此画布对话
+                                                </Button>
+                                            </div>
+                                        ) : otherAgentRunning ? (
+                                            <div role="status" className="px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
+                                                {canvasAgent?.cleanupPending ? "当前画布的 Agent 正在收尾，完成后即可使用" : "当前画布有正在执行的 Agent 任务，正在同步对话；同步前暂不重复发送"}
+                                            </div>
+                                        ) : null}
+                                        {planVisible ? (
+                                            <AgentPlanBar
+                                                items={planItems}
+                                                theme={theme}
+                                                minimized={planMinimized}
+                                                terminal={planTerminal || Boolean(run && ["completed", "failed", "cancelled", "rejected"].includes(run.status))}
+                                                waitingUser={Boolean(pendingQuestion)}
+                                                onToggle={() => setPlanMinimized((value) => !value)}
+                                            />
+                                        ) : null}
+                                        {mediaBatch && mediaBatch.phase !== "approval" ? <AgentMediaBatchBar batch={mediaBatch} theme={theme} onFocusNode={onFocusNode} /> : null}
+                                        {pendingQuestion ? (
+                                            <AgentQuestionBar
+                                                question={pendingQuestion}
+                                                theme={theme}
+                                                disabled={otherAgentRunning || approvalSubmitting || connectionStatus !== "connected"}
+                                                onAnswer={(label) => void submit(label)}
+                                                onRecordDecision={insertAgentMarkdown ? (record) => insertAgentMarkdown(record.markdown, record.title) : undefined}
+                                            />
+                                        ) : null}
+                                        {historyHydrated && !pendingHydrated ? (
+                                            <div className="flex items-center gap-2 px-5 py-2 text-xs" role="status">
+                                                <span>提交记录尚未确认，输入保留；画布可继续编辑。</span>
+                                                <Button size="small" onClick={() => setHistoryRestoreAttempt((attempt) => attempt + 1)}>
+                                                    重新读取记录
+                                                </Button>
+                                            </div>
+                                        ) : null}
+                                        {modelRestoreError ? (
+                                            <div className="px-5 py-2 text-xs" role="status" style={{ color: theme.node.muted }}>
+                                                {modelRestoreError}
+                                            </div>
+                                        ) : null}
+                                        <AgentChatComposer
+                                            prompt={prompt}
+                                            submitDisabled={composerSubmitDisabled}
+                                            submitMode={composerSubmitMode}
+                                            primaryDisabled={composerSubmitMode === "queue" && outboxIsFull}
+                                            sending={busy}
+                                            running={running}
+                                            placeholder={canvasId ? "说说要做什么，@ 引用节点，可粘贴图片；Agent 会自动匹配所需技能" : "说说要做什么，Agent 会自动匹配所需技能；进入画布后可引用节点和图片"}
+                                            theme={theme}
+                                            onPromptChange={setPrompt}
+                                            onSubmit={handleComposerSubmit}
+                                            onEscape={handleComposerEscape}
+                                            tray={outboxTray}
+                                            attachments={composerAttachments}
+                                            onAddFiles={addComposerFiles}
+                                            onRemoveAttachment={removeDraftAttachment}
+                                            onRetryAttachment={retryDraftAttachment}
+                                            addMenu={{
+                                                disabledReason: insertAgentFiles ? null : notOnCanvasReason,
+                                                onPickAssets: insertAgentAssets ? () => setAssetPickerOpen(true) : undefined,
+                                                selectionCount,
+                                                onReferenceSelection: referenceSelection,
+                                            }}
+                                            contextBar={contextBar}
+                                            charLimit={AGENT_PROMPT_MAX_CHARS}
+                                            blockReason={attachmentBlockReason}
+                                            onLongTextPaste={insertAgentText ? (text) => setLongTextOffer({ text }) : undefined}
+                                            onStop={!otherAgentRunning && run?.id && running ? stop : undefined}
+                                            stopping={stopping}
+                                            references={references}
+                                            includeAssetLibrary={false}
+                                            statusBar={
+                                                <AgentUsageBar
+                                                    view={contextView}
+                                                    stats={runStatsView}
+                                                    running={running}
+                                                    hasRun={Boolean(run?.id)}
+                                                    carried={Boolean(carriedContext)}
+                                                    contextWindow={contextWindow}
+                                                    modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
+                                                />
+                                            }
+                                            left={
+                                                <ComposerControls
+                                                    config={config}
+                                                    selectedModel={selectedModel}
+                                                    permissionMode={permissionMode}
+                                                    theme={theme}
+                                                    onModelChange={setModel}
+                                                    onPermissionChange={setPermissionMode}
+                                                    reasoningMode={reasoningMode}
+                                                    onReasoningModeChange={setReasoningMode}
+                                                />
+                                            }
+                                        />
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </motion.aside>
                 ) : null}
             </AnimatePresence>

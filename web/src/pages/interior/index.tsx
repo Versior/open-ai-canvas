@@ -17,7 +17,7 @@ import { InteriorSceneStudio, type InteriorRenderHandoff, type InteriorSceneHand
 import { InteriorUnsavedError, useInteriorProjects, type InteriorSaveState } from "./use-interior-project";
 import { useInteriorTasks } from "./use-interior-tasks";
 import { InteriorRenovation } from "./interior-renovation";
-import { availableInteriorTasks, InteriorNavigator, type InteriorWorkspace } from "./interior-navigator";
+import { availableInteriorTasks, InteriorWorkspaceRail, type InteriorWorkspace } from "./interior-navigator";
 import { DEFAULT_RENOVATION, renovationProblem, type RenovationSpec } from "@/lib/interior/renovation";
 import "./interior.css";
 
@@ -547,20 +547,7 @@ export default function InteriorPage() {
             ) : null}
         </div>
     );
-    const workspaceSwitch = (
-        <SegmentedControl<InteriorWorkspace>
-            size="sm"
-            ariaLabel="出图还是 3D 模型"
-            value={workspace}
-            onChange={changeWorkspace}
-            disabled={busy}
-            options={[
-                { value: "images", label: "效果图" },
-                { value: "scene", label: "3D 模型" },
-                { value: "materials", label: "装修 / 石材" },
-            ]}
-        />
-    );
+    const workspaceRail = <InteriorWorkspaceRail workspace={workspace} onChange={changeWorkspace} disabled={busy || projects.projectLoading} />;
     // 快速出图 / 专业模式只管效果图；3D 模型不分交互模式。
     const surfaceSwitch =
         catalog.settings.allowSurfaceSwitch && workspace === "images" ? (
@@ -579,28 +566,8 @@ export default function InteriorPage() {
     const boardHeader = (
         <header className="itd-board-head">
             {projectBar}
-            <div className="itd-board-switches">
-                {workspaceSwitch}
-                {surfaceSwitch}
-            </div>
+            <div className="itd-board-switches">{surfaceSwitch}</div>
         </header>
-    );
-
-    const navigator = (
-        <InteriorNavigator
-            catalog={catalog}
-            surface={surface}
-            workspace={workspace}
-            modeId={draft.modeId}
-            disabled={busy || projects.projectLoading}
-            rounds={current?.document.rounds.length || 0}
-            hasMaterial={Boolean(current?.document.professional)}
-            sourceReady={Boolean(draft.source?.resourceId && !draft.source.uploading && !draft.source.error)}
-            outputs={current?.document.rounds.flatMap((round) => round.items.flatMap((item) => item.outputs)).length || 0}
-            sceneReady={Boolean(current?.document.scenes?.some((scene) => scene.sceneFile?.resourceId))}
-            onWorkspace={changeWorkspace}
-            onMode={openDesignTask}
-        />
     );
 
     const projectDialog = (
@@ -653,11 +620,11 @@ export default function InteriorPage() {
             message.info("材料参数与实板照片会随生成提交；请上传空间原图并确认出图设置");
         };
         return (
-            <WorkspacePage scroll={false} fluid className="itd-page">
+            <WorkspacePage scroll={false} fluid className="itd-page itd-with-tools">
+                {workspaceRail}
                 <section className="itd-board">
                     {boardHeader}
                     <div className="itd-board-scroll thin-scrollbar">
-                        {navigator}
                         <InteriorRenovation
                             key={current?.id || "new"}
                             value={current?.document.professional}
@@ -677,17 +644,13 @@ export default function InteriorPage() {
 
     if (workspace === "scene") {
         return (
-            <WorkspacePage scroll={false} fluid className="itd-page">
+            <WorkspacePage scroll={false} fluid className="itd-page itd-with-tools">
+                {workspaceRail}
                 <InteriorSceneStudio
                     catalog={catalog}
                     config={config}
                     project={current}
-                    header={
-                        <>
-                            {boardHeader}
-                            {navigator}
-                        </>
-                    }
+                    header={<>{boardHeader}</>}
                     ensureProject={ensureProject}
                     update={projects.update}
                     saveProject={projects.ensureSaved}
@@ -703,7 +666,8 @@ export default function InteriorPage() {
     }
 
     return (
-        <WorkspacePage scroll={false} fluid className="itd-page">
+        <WorkspacePage scroll={false} fluid className="itd-page itd-with-tools">
+            {workspaceRail}
             <div className="itd-shell">
                 <InteriorComposer
                     professional={current?.document.professional}
@@ -716,7 +680,7 @@ export default function InteriorPage() {
                     busy={busy}
                     error={submitError}
                     onChange={patchDraft}
-                    onModeChange={selectMode}
+                    onModeChange={openDesignTask}
                     onPickSource={pickSource}
                     onPickReference={pickReference}
                     onSubmit={() => void submit()}
@@ -724,7 +688,6 @@ export default function InteriorPage() {
                 <section className="itd-board" aria-label="出图记录">
                     {boardHeader}
                     <div className="itd-board-scroll thin-scrollbar">
-                        {navigator}
                         {projects.listError ? <WorkspaceErrorState compact title="项目列表读取失败" description={projects.listError} onRetry={() => void projects.reloadList()} /> : null}
                         {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError} onRetry={() => (current ? openProject(current.id) : void projects.reloadList())} /> : null}
                         {projects.projectLoading && !current ? (

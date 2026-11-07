@@ -17,9 +17,10 @@ describe("Agent window layout", () => {
         expect(layout.height).toBe(566);
         expect(layout.top).toBe(72);
     });
-    it("keeps the minimum readable height on very short viewports", () => {
+    it("keeps the character and composer visible on very short viewports", () => {
         const layout = restoreAgentPanelLayout(null, { width: 1024, height: 480 });
-        expect(layout.height).toBe(420);
+        expect(layout.height).toBe(404);
+        expect(layout.top).toBe(64);
         expect(layout.top + layout.height).toBe(468);
     });
     it("offers a compact reset without altering a saved window until requested", () => {
@@ -37,18 +38,18 @@ describe("Agent window layout", () => {
         expect(changeAgentPanelLayout(start, "north", -60, 150, viewport)).toEqual({ ...start, top: 218, height: 570 });
     });
     it("limits resize to viewport and minimum readable size", () => {
-        expect(changeAgentPanelLayout(start, "northwest", -10000, -10000, viewport)).toEqual({ left: 12, top: 12, width: 1252, height: 776 });
+        expect(changeAgentPanelLayout(start, "northwest", -10000, -10000, viewport)).toEqual({ left: 12, top: 64, width: 1252, height: 724 });
         const small = changeAgentPanelLayout(start, "northwest", 10000, 10000, viewport);
         expect(small.width).toBe(360);
         expect(small.height).toBe(420);
     });
     it("keeps the title bar reachable when dragging beyond the screen", () => {
-        expect(changeAgentPanelLayout(start, "move", -10000, -10000, viewport)).toEqual({ ...start, left: 12, top: 12 });
+        expect(changeAgentPanelLayout(start, "move", -10000, -10000, viewport)).toEqual({ ...start, left: 12, top: 64 });
         expect(changeAgentPanelLayout(start, "move", 10000, 10000, viewport)).toEqual({ ...start, left: 820, top: 68 });
     });
     it("clamps stale preferences after changing display size", () => {
         const layout = clampAgentPanelLayout(start, { width: 320, height: 300 });
-        expect(layout).toEqual({ width: 296, height: 276, left: 12, top: 12 });
+        expect(layout).toEqual({ width: 296, height: 224, left: 12, top: 64 });
     });
     it("discards malformed, partial and nonnumeric stored preferences", () => {
         for (const raw of ["invalid json", "null", "{}", '{"width":"448"}', '{"left":12,"top":12,"width":1e999,"height":720}']) {

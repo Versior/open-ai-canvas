@@ -60,6 +60,7 @@ export async function composeStudioShots(product: StudioProduct, plan: StudioPla
                     ink: style.ink,
                     inkSoft: style.inkSoft,
                     layout: shot.layout,
+                    tone: plan.tone,
                 });
                 results.push({ shot, output, url, composed: true });
             } finally {

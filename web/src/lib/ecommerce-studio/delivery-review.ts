@@ -1,5 +1,6 @@
 import { checkImageAgainstSpec, type EcommerceImageAudit } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioShotSpec } from "./shot-specs";
+import { reviewStudioCopy } from "./art-direction";
 import { studioFactUsable, type StudioProduct, type StudioShot } from "./types";
 
 export type StudioDeliveryMeasure = { width: number; height: number; bytes: number; audit?: EcommerceImageAudit };
@@ -55,6 +56,14 @@ export function reviewStudioDelivery(product: StudioProduct, shots: StudioShot[]
         const copy = [shot.headline, shot.subline, ...shot.lines].join(" ");
         const claims = [...new Set(copy.match(/国家级|全网第一|最便宜|百分百有效|100%有效|治疗|治愈|零风险/g) || [])];
         if (claims.length) issues.push({ shotId: shot.id, title: shot.title, message: `文案包含待人工审核表述：${claims.join("、")}` });
+        for (const issue of reviewStudioCopy(shot)) issues.push({ shotId: shot.id, title: shot.title, message: issue.message });
+    }
+    const headlines = new Map<string, string>();
+    for (const shot of shots) {
+        const headline = shot.headline.replace(/[\s，。！？,.!?]/g, "");
+        if (!headline) continue;
+        if (headlines.has(headline)) issues.push({ shotId: shot.id, title: shot.title, message: `主标题与「${headlines.get(headline)}」重复，请让这一屏回答不同的购买问题` });
+        else headlines.set(headline, shot.title);
     }
     for (const point of product.sellingPoints.filter((point) => point.enabled && !["visible", "confirmed"].includes(point.evidence))) issues.push({ title: point.title, message: "启用的卖点尚未确认，请核对依据后再上架" });
     if (product.dossier?.facts.some((fact) => !studioFactUsable(fact))) issues.push({ title: "商品档案", message: "档案仍有推断或待确认信息，须由卖家核实" });

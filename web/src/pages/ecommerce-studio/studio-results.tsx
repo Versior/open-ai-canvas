@@ -12,6 +12,8 @@ import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioAttemptStatus, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { configuredModelDisplayName } from "@/lib/model-selection";
+import { studioEffectiveTextMode, studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { useEffectiveConfig } from "@/stores/use-config-store";
@@ -24,7 +26,7 @@ import { studioShotPending, type StudioRunner, type StudioShotRef } from "./use-
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
 /** 结果区里的一组图：表单生成的记录或助手排的方案，界面上按同一种卡片展示。 */
-export type StudioShotGroup = { key: string; ref: StudioShotRef; title: string; createdAt: string; kind?: StudioPlanKind; textMode: StudioTextMode; shots: StudioShot[]; fromAgent: boolean; styleId?: StudioPlan["styleId"] };
+export type StudioShotGroup = { key: string; ref: StudioShotRef; title: string; createdAt: string; kind?: StudioPlanKind; textMode: StudioTextMode; shots: StudioShot[]; fromAgent: boolean; styleId?: StudioPlan["styleId"]; tone?: StudioPlan["tone"] };
 
 export type StudioViewerTarget = { groupKey: string; shotId: string; resourceId?: string };
 
@@ -39,6 +41,8 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
         kind: plan.kind,
         textMode: plan.textMode,
         shots: plan.shots,
+        styleId: plan.styleId,
+        tone: plan.tone,
         fromAgent: true,
     }));
     const runs = product.runs.map((run) => ({
@@ -49,6 +53,7 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
         kind: run.kind,
         textMode: run.textMode,
         styleId: run.styleId,
+        tone: run.suite?.tone,
         shots: run.shots,
         fromAgent: false,
     }));
@@ -67,7 +72,64 @@ async function downloadOutputs(items: { output: StudioOutput; fileName: string }
     }
 }
 
+/** 列表也展示同一份排版成品；仅在进入视口后读取原图、加载字库。 */
+function StudioResultArtwork({ product, group, shot, output }: { product: StudioProduct; group: StudioShotGroup; shot: StudioShot; output: StudioOutput }) {
+    const ref = useRef<HTMLSpanElement>(null);
+    const [visible, setVisible] = useState(false);
+    const [preview, setPreview] = useState<{ key: string; url?: string; error?: string }>();
+    const model = shot.attempts.find((attempt) => attempt.outputs.some((item) => item.resourceId === output.resourceId))?.model || "";
+    const overlay = studioShotHasCopy(shot, studioShotSpec(shot.role, product.dossier?.family || "generic")) && studioEffectiveTextMode(group, studioModelAdapter(model)).mode === "overlay";
+    const key = JSON.stringify([product.id, product.style, group.styleId, group.tone, group.textMode, shot.role, shot.layout, shot.composition, shot.headline, shot.subline, shot.lines, shot.eyebrow, output.resourceId]);
+    useEffect(() => {
+        if (!overlay || !ref.current) return;
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries.some((entry) => entry.isIntersecting)) {
+                    setVisible(true);
+                    observer.disconnect();
+                }
+            },
+            { rootMargin: "100px" },
+        );
+        observer.observe(ref.current);
+        return () => observer.disconnect();
+    }, [overlay]);
+    useEffect(() => {
+        if (!overlay || !visible) return;
+        const controller = new AbortController();
+        let images: Awaited<ReturnType<typeof composeStudioShots>> = [];
+        void composeStudioShots(product, { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, tone: group.tone, shots: [{ ...shot, adopted: output }] }, controller.signal)
+            .then((result) => {
+                if (controller.signal.aborted) return releaseComposed(result);
+                images = result;
+                setPreview({ key, url: result[0]?.url });
+            })
+            .catch((error: unknown) => {
+                if (!controller.signal.aborted) setPreview({ key, error: error instanceof Error ? error.message : "排版预览失败" });
+            });
+        return () => {
+            controller.abort();
+            releaseComposed(images);
+        };
+    }, [key, overlay, visible]);
+    return (
+        <span ref={ref} className="es-result-artwork">
+            {!overlay ? (
+                <img src={studioImageUrl(output.resourceId, true)} alt={shot.title} loading="lazy" />
+            ) : preview?.key === key && preview.url ? (
+                <img src={preview.url} alt={`${shot.title} · 程序排版成品`} />
+            ) : preview?.key === key && preview.error ? (
+                <span role="alert">{preview.error}</span>
+            ) : (
+                <Spin size="small" />
+            )}
+        </span>
+    );
+}
+
 function ResultTile({
+    product,
+    group,
     shot,
     caption,
     blocked,
@@ -77,6 +139,8 @@ function ResultTile({
     onRerun,
     onSync,
 }: {
+    product: StudioProduct;
+    group: StudioShotGroup;
     shot: StudioShot;
     caption?: string;
     blocked: string;
@@ -97,7 +161,7 @@ function ResultTile({
             <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
                 {preview ? (
                     <button type="button" className="es-tile-image" onClick={onView} aria-label={`查看${shot.title}`}>
-                        <img src={studioImageUrl(preview.resourceId, true)} alt={shot.title} loading="lazy" />
+                        <StudioResultArtwork product={product} group={group} shot={shot} output={preview} />
                     </button>
                 ) : null}
                 {!preview && active ? (
@@ -236,7 +300,7 @@ function GroupCard({
     };
 
     const exportSet = async (mode: "zip" | "long" | "review") => {
-        const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, shots, styleId: group.styleId };
+        const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, shots, styleId: group.styleId, tone: group.tone };
         setExporting(mode);
         const controller = new AbortController();
         exportController.current = controller;
@@ -377,6 +441,8 @@ function GroupCard({
                 {shots.map((shot, index) => (
                     <ResultTile
                         key={shot.id}
+                        product={product}
+                        group={group}
                         shot={shot}
                         caption={isSet ? `${String(index + 1).padStart(2, "0")} ${shot.title}` : undefined}
                         blocked={blocked}
@@ -384,8 +450,8 @@ function GroupCard({
                         onDownload={() => {
                             const preview = studioShotPreview(shot);
                             if (preview && (group.textMode === "overlay" || /flux/i.test(studioShotLatestAttempt(shot)?.model || "")))
-                                return void downloadStudioComposed(product, { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, shots: [shot] }).catch((error: unknown) =>
-                                    message.error(error instanceof Error ? error.message : "下载失败"),
+                                return void downloadStudioComposed(product, { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, tone: group.tone, shots: [shot] }).catch(
+                                    (error: unknown) => message.error(error instanceof Error ? error.message : "下载失败"),
                                 );
                             if (preview) void downloadOutputs([{ output: preview, fileName: downloadName(product, shot, 0) }]).catch((error) => message.error(error instanceof Error ? error.message : "下载失败"));
                         }}

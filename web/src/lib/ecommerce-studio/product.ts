@@ -1,6 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES, studioCleanNotes } from "./brief";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanMotifs, studioPlanTone } from "./detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanMotifs, studioPlanTone, studioPlanStyleId } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import { studioCompositionOf } from "./art-direction";
@@ -357,6 +357,8 @@ export function normalizeStudioProduct(value: unknown): StudioProduct | undefine
                       kind: plan.kind,
                       createdAt: str(plan.createdAt, time),
                       textMode: plan.textMode === "overlay" ? "overlay" : "model",
+                      ...(studioPlanTone(plan.tone) ? { tone: studioPlanTone(plan.tone) } : {}),
+                      ...(studioPlanStyleId(plan.styleId) ? { styleId: studioPlanStyleId(plan.styleId) } : {}),
                       shots: arrayOf(plan.shots, (shot) => normalizeShot(shot, time)),
                   }
                 : undefined,

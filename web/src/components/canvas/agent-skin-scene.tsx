@@ -1,10 +1,9 @@
 import { AGENT_SKINS, type ResolvedAgentSkin } from "@/lib/canvas/agent-skin";
-import { agentPetPreviewURL, type AgentPet } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import "./agent-skin-scene.css";
 
 /** 原创矢量装饰；角色图沿用当前用户已选择的形象资源。 */
-export function AgentSkinScene({ skin, pet }: { skin: ResolvedAgentSkin; pet: AgentPet | null }) {
+export function AgentSkinScene({ skin }: { skin: ResolvedAgentSkin }) {
     const preference = useAgentPetPrefsStore((state) => state.skin);
     const setSkin = useAgentPetPrefsStore((state) => state.setSkin);
     const title = { cloud: "云上小屋", paper: "灵感手账", terminal: "机械工坊", aurora: "星际信箱", site: "工作台" }[skin];
@@ -86,7 +85,6 @@ export function AgentSkinScene({ skin, pet }: { skin: ResolvedAgentSkin; pet: Ag
             <div className="agent-skin-scene-copy">
                 <strong>{title}</strong>
             </div>
-            {pet ? <img className="agent-skin-character" src={agentPetPreviewURL(pet)} alt="" /> : null}
             <label className="agent-skin-choice">
                 <span className="sr-only">对话皮肤</span>
                 <select aria-label="对话皮肤" value={preference} onChange={(event) => setSkin(event.target.value as typeof preference)}>

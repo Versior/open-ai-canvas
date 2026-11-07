@@ -10,6 +10,7 @@ import type { AiConfig } from "@/stores/use-config-store";
 import { interiorImageUrl, interiorModelPermitted, interiorModelRef } from "./interior-models";
 import { useInteriorEstimate } from "./use-interior-estimate";
 import { renovationProblem, renovationRenderNote, type RenovationSpec } from "@/lib/interior/renovation";
+import { availableInteriorTasks } from "./interior-navigator";
 
 export type InteriorUpload = InteriorImageRef & { name: string; uploading?: boolean; error?: string; previewUrl?: string };
 
@@ -166,7 +167,7 @@ type ComposerProps = {
 
 export function InteriorComposer({ catalog, config, surface, draft, busy, error, professional: availableProfessional, useProfessional, onUseProfessional, onChange, onModeChange, onPickSource, onPickReference, onSubmit }: ComposerProps) {
     const professional = useProfessional ? availableProfessional : undefined;
-    const modes = useMemo(() => visibleInteriorModes(catalog, surface), [catalog, surface]);
+    const modes = useMemo(() => availableInteriorTasks(catalog, surface), [catalog, surface]);
     const mode = modes.find((item) => item.id === draft.modeId);
     const sourceSlot = mode?.slots.find((slot) => slot.key === "source");
     const referenceSlot = mode?.slots.find((slot) => slot.key === "reference");
@@ -224,26 +225,21 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
                     ) : null}
                     <h2 className="itd-section-title">出图方式</h2>
                     {modes.length ? (
-                        <div className="itd-mode-grid" role="radiogroup" aria-label="出图方式">
-                            {modes.map((item) => (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={item.id === draft.modeId}
-                                    className={cn("itd-mode", item.id === draft.modeId && "is-active", item.coverUrl && "has-cover")}
-                                    onClick={() => onModeChange(item)}
-                                    disabled={busy}
-                                >
-                                    {item.coverUrl ? <img src={item.coverUrl} alt="" aria-hidden loading="lazy" /> : null}
-                                    <strong>{item.name}</strong>
-                                    <span>{item.subtitle}</span>
-                                </button>
-                            ))}
-                        </div>
+                        <Select
+                            aria-label="出图方式"
+                            value={mode?.id}
+                            disabled={busy}
+                            style={{ width: "100%" }}
+                            options={modes.map((item) => ({ value: item.id, label: item.name }))}
+                            onChange={(id) => {
+                                const next = modes.find((item) => item.id === id);
+                                if (next) onModeChange(next);
+                            }}
+                        />
                     ) : (
                         <p className="itd-muted-note is-left">{surface === "pro" ? "专业模式下暂时没有开放的出图方式。" : "暂时没有开放的出图方式。"}</p>
                     )}
+                    {mode?.subtitle ? <p className="itd-muted-note is-left">{mode.subtitle}</p> : null}
                 </section>
 
                 {mode ? (

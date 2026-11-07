@@ -316,6 +316,26 @@ describe("ecommerce studio detail plan", () => {
         expect(revision).toContain("positioning、concept 照用");
     });
 
+    test("explicit adjustments take precedence over a picked old direction, without restoring omitted old concepts", () => {
+        const { product, roles } = planned();
+        product.brief.prep = { asks: [], picked: "chosen", directions: [{ id: "chosen", angle: "户外", positioning: "日常随身", tone: "lifestyle", concept: "旧草地风车", palette: [], visual: "旧示例", headline: "旧示例", why: "" }] };
+        const meta = { id: "adjusted", model: "m", createdAt: "" };
+        expect(parseDetailPlan(reply, product, roles, meta).plan.concept).toBe("旧草地风车");
+        product.brief.planNote = "改成时尚杂志静物，去掉风车和旧场景";
+        const prompt = buildDetailPlanPrompt(product, roles);
+        expect(prompt).toContain("以本次补充调整为准");
+        expect(prompt).not.toContain("positioning、concept 照用");
+        const omitted = parseDetailPlan(reply, product, roles, meta).plan;
+        expect(omitted.concept).toBeUndefined();
+        expect(omitted.positioning).toBeUndefined();
+        expect(omitted.tone).toBeUndefined();
+        const revised = parseDetailPlan(JSON.stringify({ ...JSON.parse(reply), concept: "暖白静物", tone: "editorial" }), product, roles, meta).plan;
+        expect(revised.concept).toBe("暖白静物");
+        expect(revised.tone).toBe("editorial");
+        product.brief.planNote = "";
+        expect(parseDetailPlan(reply, product, roles, meta, { scope: "detail", alternative: revised }).plan.concept).toBeUndefined();
+    });
+
     test("only screens with evidence are offered and accepted; invented numbers are dropped", () => {
         const { product, roles, result } = planned();
         // 材质只有推断、参数只有一条、没有包装：这三种不排；有侧面图和容量，多角度和尺寸可以排。
@@ -595,7 +615,7 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("换成别的商品就不成立");
         expect(prompt).toContain("至少三张不出现");
         expect(prompt).toContain("整件商品连同包装完整摆拍的张数不超过一半");
-        expect(prompt).toContain("不写说明书口吻（该有的、就这么简单");
+        expect(prompt).toContain("不写空洞大词和泛情绪口号");
         expect(prompt).toContain('"positioning":"差异化定位"');
         expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("至少两张不出现");
         expect(prompt).toContain("11. inspiration 用一句话");
@@ -607,7 +627,7 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("首屏必须有");
         expect(prompt).toContain("商品标识、印字和型号不单独成屏");
         expect(prompt).toContain("至少两屏用强对比");
-        expect(prompt).toContain("主标题不能只是罗列外观或参数");
+        expect(prompt).toContain("可见外观可以作为设计主题，不能冒充舒适度或性能");
         expect(buildDetailPlanPrompt(base({ outputType: "main-set" }), studioDetailPlanRoles(product, "main"), { scope: "main" })).toContain("5 张共用字体家族与色板");
         // 没有附图时不写附图说明。
         expect(buildDetailPlanPrompt(product, roles)).not.toContain("附图：");
