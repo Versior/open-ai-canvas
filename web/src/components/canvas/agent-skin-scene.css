@@ -37,81 +37,43 @@
     border-radius: inherit;
 }
 .agent-window-perch {
-    position: absolute;
-    bottom: calc(100% - 10px);
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100px;
-    z-index: 12;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    height: 32px;
+    margin: 0 16px;
+    overflow: hidden;
     color: var(--agent-ink);
 }
 .agent-perch-character {
-    display: grid;
-    place-items: center;
+    flex: none;
     position: relative;
-    width: 100px;
-    height: 68px;
+    width: 64px;
+    height: 32px;
     overflow: hidden;
     cursor: pointer;
-    border-radius: var(--r-md);
 }
-.agent-perch-character .agent-pet-sprite {
-    align-self: start;
-}
-.agent-perch-actions {
+.agent-perch-media {
     position: absolute;
-    display: flex;
-    justify-content: center;
-    gap: 2px;
-    bottom: 0;
-    left: 8px;
-    opacity: 0;
+    left: 0;
+    width: 64px;
+    height: 69px;
     pointer-events: none;
-    padding: 2px;
-    border-radius: var(--r-full);
-    border: 1px solid var(--agent-usage-line);
-    background: var(--agent-surface-base);
-}
-.agent-window-perch:hover .agent-perch-actions,
-.agent-window-perch:focus-within .agent-perch-actions {
-    opacity: 1;
-    pointer-events: auto;
-}
-.agent-perch-actions button {
-    display: grid;
-    place-items: center;
-    width: 24px;
-    height: 24px;
-    border-radius: var(--r-full);
-}
-.agent-perch-actions button:hover {
-    color: var(--agent-accent);
-    background: color-mix(in srgb, var(--agent-accent) 12%, transparent);
 }
 .agent-window-perch button:focus-visible {
     outline: 2px solid var(--agent-focus-ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
 }
 .agent-perch-bubble {
-    position: absolute;
-    width: 150px;
-    right: calc(100% - 10px);
-    bottom: 8px;
-    max-height: 58px;
+    min-width: 0;
+    max-width: 240px;
     overflow: hidden;
-    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11px;
     line-height: 1.5;
-    padding: 8px 10px;
-    background: var(--agent-surface-base);
-    border: 1px solid var(--agent-usage-line);
-    border-radius: 12px 12px 3px 12px;
-}
-@media (hover: none) {
-    .agent-perch-actions {
-        opacity: 1;
-        pointer-events: auto;
-    }
+    color: var(--agent-accent);
 }
 .agent-skin-choice {
     position: relative;
@@ -213,10 +175,5 @@
 @media (max-width: 480px) {
     .agent-skin-scene {
         height: 28px;
-    }
-    .agent-perch-bubble {
-        width: 100px;
-        right: auto;
-        left: calc(100% - 12px);
     }
 }

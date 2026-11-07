@@ -959,7 +959,7 @@
     }
 }
 
-/* 模型占满工作区；调整与历史按需打开，并有独立滚动边界。 */
+/* 模型与设计工具并排；调整、方案和版本始终有可见入口。 */
 .itd-model-shell.is-model-focused {
     grid-template-columns: minmax(0, 1fr);
 }
@@ -995,6 +995,29 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: var(--space-3);
+}
+.itd-model-panel-tabs {
+    display: flex;
+    gap: var(--space-1);
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--itd-line);
+}
+.itd-model-panel-tabs button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    gap: var(--space-1);
+    min-height: 32px;
+    border-radius: var(--r-md);
+    color: var(--itd-ink-2);
+    font-size: var(--fs-caption);
+    cursor: pointer;
+}
+.itd-model-panel-tabs button[aria-pressed="true"] {
+    color: var(--control-selected-fg);
+    background: var(--control-selected-bg);
 }
 .itd-model-panel .itd-scene-list {
     flex-direction: column;
@@ -1050,6 +1073,8 @@
     top: var(--space-3);
     right: var(--space-3);
     display: flex;
+    flex-wrap: wrap;
+    max-width: calc(100% - var(--space-3) * 2);
     align-items: center;
     gap: 2px;
     padding: 3px;

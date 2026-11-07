@@ -2267,7 +2267,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         {...panelDropHandlers}
                         onWheel={(event) => event.stopPropagation()}
                     >
-                        <AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />
                         <div className="agent-panel-content flex min-h-0 flex-1 flex-col overflow-hidden">
                             {dropActive ? (
                                 <div className="agent-drop-overlay" aria-hidden="true">
@@ -2518,6 +2517,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             </div>
                                         ) : null}
                                         <AgentChatComposer
+                                            character={<AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />}
                                             prompt={prompt}
                                             submitDisabled={composerSubmitDisabled}
                                             submitMode={composerSubmitMode}

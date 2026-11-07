@@ -75,7 +75,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const { message, modal } = App.useApp();
     const [scope, setScope] = useState<ScopeChoice>("auto");
     const [composerOpen, setComposerOpen] = useState(false);
-    const [panel, setPanel] = useState<"edit" | "history" | "info" | null>(null);
+    const [panel, setPanel] = useState<"edit" | "history" | "info">("edit");
     const [rendering, setRendering] = useState(false);
     const [description, setDescription] = useState("");
     const [roomKey, setRoomKey] = useState("");
@@ -108,7 +108,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
         setDescription(handoff.description || "");
         setError("");
         setComposerOpen(true);
-        setPanel(null);
+        setPanel("edit");
         onHandoffUsed();
         message.info("已带上这张效果图和它的空间、风格，点「生成 3D 模型」就行");
     }, [handoff, message, onHandoffUsed]);
@@ -346,9 +346,9 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const referenceUrl = selected?.reference?.resourceId ? interiorImageUrl(selected.reference.resourceId) : undefined;
     const sceneWarning = Boolean(selected?.failedParts?.length || selected?.dropped || selected?.notice);
     const showComposer = !scenes.length || composerOpen;
-    const togglePanel = (next: NonNullable<typeof panel>) => {
+    const openPanel = (next: typeof panel) => {
         setComposerOpen(false);
-        setPanel((current) => (current === next ? null : next));
+        setPanel(next);
     };
 
     return (
@@ -488,26 +488,23 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                         icon={<Plus className="size-3.5" aria-hidden />}
                         aria-pressed={showComposer}
                         onClick={() => {
-                            setPanel(null);
                             setComposerOpen(!showComposer);
                         }}
                     >
                         新建
                     </Button>
-                    <Button size="small" icon={<SlidersHorizontal className="size-3.5" aria-hidden />} aria-pressed={panel === "edit"} disabled={!selectedScene} onClick={() => togglePanel("edit")}>
-                        局部调整
-                    </Button>
-                    <Button size="small" icon={<History className="size-3.5" aria-hidden />} aria-pressed={panel === "history"} disabled={!scenes.length} onClick={() => togglePanel("history")}>{`版本 ${scenes.length}`}</Button>
-                    <Button size="small" icon={<BookOpen className="size-3.5" aria-hidden />} aria-pressed={panel === "info"} disabled={!selectedScene} onClick={() => togglePanel("info")}>
-                        {sceneWarning ? "方案需核对" : selected?.knowledge?.length ? `知识 ${selected.knowledge.length}` : "方案信息"}
-                    </Button>
+                    {showComposer && scenes.length ? (
+                        <Button size="small" onClick={() => setComposerOpen(false)}>
+                            返回设计工具
+                        </Button>
+                    ) : null}
                 </div>
                 {error && !showComposer ? (
                     <p className="itd-error" role="alert">
                         {error}
                     </p>
                 ) : null}
-                <div className={cn("itd-scene-body", panel && "has-panel")}>
+                <div className={cn("itd-scene-body", !showComposer && "has-panel")}>
                     <div className="itd-scene-stage">
                         {!selected ? (
                             <div className="itd-scene-empty">
@@ -568,12 +565,32 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             </div>
                         )}
                     </div>
-                    {panel ? (
+                    {!showComposer ? (
                         <aside className="itd-model-panel thin-scrollbar" aria-label={panel === "edit" ? "局部调整面板" : panel === "history" ? "模型版本" : "方案与知识"}>
                             <header>
-                                <strong>{panel === "edit" ? "局部调整" : panel === "history" ? "模型版本" : "方案与知识"}</strong>
-                                <Button type="text" size="small" aria-label="收起模型工具" icon={<X className="size-4" aria-hidden />} onClick={() => setPanel(null)} />
+                                <strong>设计工具</strong>
                             </header>
+                            <nav className="itd-model-panel-tabs" aria-label="设计工具">
+                                <button type="button" aria-pressed={panel === "edit"} onClick={() => openPanel("edit")}>
+                                    <SlidersHorizontal size={14} aria-hidden />
+                                    调整
+                                </button>
+                                <button type="button" aria-pressed={panel === "info"} onClick={() => openPanel("info")}>
+                                    <BookOpen size={14} aria-hidden />
+                                    方案
+                                </button>
+                                <button type="button" aria-pressed={panel === "history"} onClick={() => openPanel("history")}>
+                                    <History size={14} aria-hidden />
+                                    版本 {scenes.length}
+                                </button>
+                            </nav>
+                            {panel !== "history" && !selectedScene ? (
+                                <p className="itd-muted-note">
+                                    {selectedLoad?.error ||
+                                        (selected?.status === "pending" ? "模型生成后，可在这里调整家具、材质和布局。" : selected?.status === "failed" ? "本次模型生成失败，可在版本中查看其他方案，或新建模型。" : "正在读取模型与设计工具…")}
+                                </p>
+                            ) : null}
+                            {panel === "info" && sceneWarning ? <p className="itd-scene-warning">方案需核对</p> : null}
                             {panel === "info" && selected?.status === "succeeded" && selectedScene ? (
                                 <div className="itd-scene-meta">
                                     <div className="itd-scene-meta-copy">

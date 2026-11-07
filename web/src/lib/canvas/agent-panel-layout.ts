@@ -5,7 +5,7 @@ export type AgentPanelGesture = "move" | "north" | "west" | "northwest";
 // v2：默认窗口改为拉满顶栏下方的可用高度；v1 里每位用户都存过旧的 640px 窗口，换键让新默认生效。
 export const AGENT_PANEL_LAYOUT_KEY = "canvas:agent-panel-layout:v2";
 const MARGIN = 12;
-/** 留给贴在窗沿的角色；移动和调整高度时也不允许把它推出视口。 */
+/** 避开页面顶栏，停靠和窄屏面板从顶栏下方开始。 */
 export const AGENT_PANEL_HEADROOM = 64;
 /** 默认窗口从顶栏下方开始，不压住画布顶栏。 */
 const DEFAULT_TOP = 72;

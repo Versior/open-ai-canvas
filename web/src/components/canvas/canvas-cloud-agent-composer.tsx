@@ -233,6 +233,7 @@ export function AgentChatComposer({
     onLongTextPaste,
     left,
     statusBar,
+    character,
     tray,
     footer,
     onStop,
@@ -280,6 +281,8 @@ export function AgentChatComposer({
     left?: ReactNode;
     /** 输入卡片正上方的状态栏，例如上下文与本轮用量。 */
     statusBar?: ReactNode;
+    /** 输入框上方的角色，独立占位，不覆盖状态栏或聊天正文。 */
+    character?: ReactNode;
     /** 输入区底部的附加内容（例如连接器条）。 */
     footer?: ReactNode;
     /** 供「@」插入的画布节点/素材/技能引用候选（可选，默认空，缺省时退化为普通输入框） */
@@ -460,6 +463,7 @@ export function AgentChatComposer({
     return (
         <div className="agent-composer-wrap min-w-0 shrink-0" onWheelCapture={(event) => event.stopPropagation()}>
             {statusBar}
+            {character}
             {/* 有队列条或底部附加内容时，外壳托住它们与输入卡片，形成一张整卡。 */}
             <div className="agent-composer-shell relative" data-has-footer={wrapped ? "" : undefined}>
                 <AnimatePresence initial={false}>
