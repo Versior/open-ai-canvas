@@ -33,7 +33,7 @@ import { nanoid } from "nanoid";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { agentSkinTheme, resolveAgentSkin } from "@/lib/canvas/agent-skin";
-import { AgentSkinScene } from "./agent-skin-scene";
+import "./agent-skin-scene.css";
 import { AgentWindowPerch } from "./agent-window-perch";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
@@ -2404,7 +2404,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             onToggleDock={dock.available ? () => setDocked(!dock.active) : undefined}
                                             onCollapse={onCollapse}
                                         />
-                                        <AgentSkinScene skin={skin} />
                                         {cloudHistoryError || (canvasId && !cloudHistoryReady) ? (
                                             <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
                                                 <span>{cloudHistoryError ? "云端对话暂时未同步，本机草稿已保留。" : "正在同步此画布的云端对话…"}</span>

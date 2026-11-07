@@ -106,12 +106,7 @@ func ecommerceStudioPlanContract(metadata map[string]any) string {
 			lines = append(lines, fmt.Sprintf("用户选择 %d 屏，必须按这个数量重新策划，JSON screens 正好 %d 项。不要照搬示例的固定十屏结构，不裁剪或补默认屏。", count, count))
 		}
 	}
-	switch stringValue(metadata["studioTextMode"]) {
-	case "overlay":
-		lines = append(lines, "本次程序排版，底图无字；只用独立留白区可以完成的 poster/split/scene/data/spec/icons/closing。图标与标签须在留白区，不把引线、拼格或机理标签安排在商品部位。")
-	case "model":
-		lines = append(lines, "本次模型整体设计图文，文案、摄影、引线与信息分区一起设计；不统一拆成留白底图加文字栏。")
-	}
+	lines = append(lines, "本次先策划商品文案与画面，再由图片模型整体设计图文，文案、摄影、引线与信息分区一起设计；不拆成无字底图加程序文字栏。designAnalysis 给出实拍颜色、可见形体与买家需求如何决定色调、光线、可用机位和字阶，并让 style 与每屏 visual 执行这些依据。")
 	if len(lines) == 0 {
 		return ""
 	}

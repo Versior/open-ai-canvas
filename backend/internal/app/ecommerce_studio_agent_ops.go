@@ -544,7 +544,7 @@ func decodeStudioPlanArgs(raw string) (studioPlanArgs, error) {
 	for field, check := range map[string]struct {
 		value   string
 		allowed []string
-	}{"platform": {args.Platform, studioPlatforms}, "style": {args.Style, studioStyles}, "textMode": {args.TextMode, []string{"model", "overlay"}}} {
+	}{"platform": {args.Platform, studioPlatforms}, "style": {args.Style, studioStyles}, "textMode": {args.TextMode, []string{"model"}}} {
 		if check.value != "" {
 			if err := studioEnum(field, check.value, check.allowed); err != nil {
 				return args, err
@@ -635,8 +635,8 @@ func applyStudioPlanArgs(doc *studioProductDoc, args studioPlanArgs) (*studioCha
 			return nil, err
 		}
 		if args.TextMode != "" {
-			plan["textMode"] = args.TextMode
-			change.detail("图上文字：%s", map[string]string{"model": "模型写字", "overlay": "程序排字"}[args.TextMode])
+			plan["textMode"] = "model"
+			change.detail("图上文字：模型整体设计图文")
 		}
 		plan["shots"] = shots
 	}
@@ -676,7 +676,7 @@ func buildStudioPlan(doc *studioProductDoc, args studioPlanArgs, knownPoint func
 	if dossier, err := doc.dossier(); err == nil && dossier != nil {
 		family = dossier.Family
 	}
-	textMode := firstNonEmpty(args.TextMode, map[string]string{"main": "model", "detail": "overlay"}[args.Kind])
+	textMode := "model"
 	shots := make([]any, 0, len(args.Shots))
 	for index, input := range args.Shots {
 		path := fmt.Sprintf("shots[%d]", index)

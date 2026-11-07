@@ -51,6 +51,7 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     line: 30,
     facts: 6,
     summary: 200,
+    designAnalysis: 600,
     /** 差异化定位：这件商品和同类比凭什么不一样。 */
     positioning: 80,
     /** 创意主线：由定位推出的视觉主题，一个具体的世界或场景。 */
@@ -402,6 +403,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         createdAt: text(record.createdAt, 40),
         model: text(record.model, 120),
         summary: text(record.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
+        ...(text(record.designAnalysis, STUDIO_DETAIL_PLAN_LIMITS.designAnalysis) ? { designAnalysis: text(record.designAnalysis, STUDIO_DETAIL_PLAN_LIMITS.designAnalysis) } : {}),
         style: text(record.style, STUDIO_DETAIL_PLAN_LIMITS.style),
         ...(text(record.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) ? { positioning: text(record.positioning, STUDIO_DETAIL_PLAN_LIMITS.positioning) } : {}),
         ...(text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),

@@ -237,7 +237,7 @@ describe("Usage bar above the composer", () => {
         expect(fresh).toContain("agent-usage is-idle is-collapsed");
         expect(fresh).toContain('aria-expanded="false"');
         expect(fresh).toContain("<strong>—</strong> / 1M");
-        expect(fresh).toContain("发出消息后开始统计");
+        expect(fresh).toContain("准备就绪");
         expect(fresh).not.toContain("agent-usage-stats");
         expect(fresh).not.toContain("测试模型");
         // 收起时的一行：上下文读数、占比和本轮摘要。
@@ -247,9 +247,11 @@ describe("Usage bar above the composer", () => {
         const line = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />);
         expect(line).toContain("<strong>47.7K</strong> / 1M");
         expect(line).toContain("5%");
-        expect(line).toContain("47.7K tokens · 69/s · 8m 36s · 工具 3 次");
-        expect(renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />)).toContain("剩余 952.3K（95%）");
-        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />)).toContain("读数稍后出现");
+        expect(line).toContain("8m 36s · 3 次工具");
+        expect(line).not.toContain("is-mini");
+        expect(line).not.toContain("agent-usage-percent");
+        expect(renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />)).toContain("<strong>47.7K</strong> / 1M");
+        expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />)).toContain("正在处理");
         // 展开过之后是整张卡片，带收起按钮。
         const card = withCard(true, () => renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />));
         expect(card).not.toContain("is-collapsed");

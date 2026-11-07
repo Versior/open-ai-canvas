@@ -9,7 +9,6 @@ import {
     STUDIO_DETAIL_PLAN_LIMITS,
     STUDIO_DETAIL_SCREEN_GUIDE,
     STUDIO_PLAN_SCOPES,
-    STUDIO_OVERLAY_LAYOUTS,
     studioDetailLayoutIds,
     studioDetailPlanFacts,
     studioDetailScreenCount,
@@ -278,9 +277,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "",
         "【出图条件】",
         `平台视觉策略：${studioChannelDesign(product.platform)}`,
-        brief.textMode === "overlay"
-            ? "交付方式：程序排版。只选择 poster、split、scene、data、spec、icons、closing；这些版式可在独立留白区准确排字。不要选需要标签贴在商品部位的引线、拼格、机理或成分图；程序不会自动识别部位。visual 只描述无字摄影及 composition 对应的留白，不把文字、表格、图标和引线画进底图。"
-            : "交付方式：模型完成整屏图文设计。标题、标签、引线与商品位置一起设计，逐字使用给定文案。",
+        "交付方式：先完成商品分析与图文策划，再由图片模型一次完成整屏图文设计。标题、标签、引线与商品位置一起设计，逐字使用给定文案；不生成无字底图供程序叠字。",
         "设计交付要求：每屏只承担一个购买问题，headline 给结论，subline 给已确认的理由，lines 展开证据。画面同时指定商品焦点、文字留白、光线方向与一个主题元素；避免整套都用同一张商品棚拍加口号。摄影、信息与细节屏交替，但共享边距、字阶和栏目规范。",
         `市场：${studioMarket(brief.market).label}。${language}`,
         brief.audience.trim() ? `目标人群：${brief.audience.trim()}` : undefined,
@@ -309,9 +306,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
               })),
         request.scope === "single" ? undefined : "",
         "【可以用的版式】（layout 只能从这里选；平台上做得好的图每张都是排过版的画面，不是一张商品照片加一行字）",
-        ...studioDetailLayoutIds(product)
-            .filter((id) => brief.textMode !== "overlay" || STUDIO_OVERLAY_LAYOUTS.includes(id))
-            .map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
+        ...studioDetailLayoutIds(product).map((id) => `- ${id}（${STUDIO_DETAIL_LAYOUTS[id].label}）：${STUDIO_DETAIL_LAYOUTS[id].use}`),
         "",
         "【设计调性】（挑一个最适合这件商品和目标人群的写进 tone，整组的版面、字体、文案语气和摄影都按它来）",
         ...STUDIO_DESIGN_TONE_IDS.map((id) => `- ${id}（${STUDIO_DESIGN_TONES[id].label}）：${STUDIO_DESIGN_TONES[id].use}；${studioTypeInstruction(id)}`),
@@ -342,13 +337,14 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "7. 文案字数：headline 不超过 12 个字；subline 不超过 24 个字；lines 最多 6 条，每条不超过 12 个字，图标卖点、引线标注、拼格、痛点、机理、成分、资质和收尾版式的 lines 就是每个图标、引线、格子、气泡或成分的标签，数量和 elements 里写的一致。eyebrow 是主标题上方的英文栏目小标题（如 CLEAR FRAME，只用英文字母，不带序号），不需要就留空。只用上面的核心标题、卖点和已确认的事实，可以改写，但不加新的事实。文案里不出现上面没有的数字、参数、成分、认证、功效、价格和承诺，不用「最」「第一」「顶级」「100%」这类极限词。",
         "8. 同一条卖点最多用在一张（详情页的头图和收尾可以回顾）。素材不够写文案的图，headline 写一个短栏目名或设 noText: true。",
         "9. style 是整组共用的字体家族、色板、边距和图形语言（不超过 300 个字）。给出色名、色值、标题气质和标签风格。统一品牌识别，不规定每屏同一标题位置、同一字号或同一种卡片；首屏大胆、细节屏克制，字号和裁切按购买问题变化。每张的摄影、图文位置和道具写在各自 visual 里。",
+        "设计依据 designAnalysis（150–300 字）：从实拍识别实际颜色、轮廓、透明度或表面反光，结合平台和目标买家，解释背景明度、对比色与强调色的选择；说明哪种主光/轮廓光能展示这件商品，哪些实际可见视角与局部裁切能证明各屏信息；给出标题与注解的字号比例、字重与留白策略。颜色、机位、字体必须服务于商品识别和阅读，不能套固定暖光、台面、居中棚拍。只有正面素材时用真实正面及可见局部，不臆造背面和内部。卖家选定质感或参考同款时尊重约束，仍按商品实际配色调整对比。style 和各屏 visual 必须执行这些依据。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
         request.scope === "single"
             ? "12. 视觉元素选用一两个融进画面，不要把所有元素堆在一张里。visual 里没写包装盒时，画面里就只有 visual 写到的商品部分。"
             : `12. 视觉元素可选，不要把同一个图形贴在每一张上。整件商品与局部景别按内容交替，不强制数量比例；包装仅在商品资料确认且该屏需要时出现。${mainLike ? "主图只保留有助于识别的元素。" : "短页优先讲清商品，长页展开证据，不为装饰堆道具。"}`,
         "",
-        "只输出下面这个 JSON，不要任何解释：",
+        '只输出下面这个 JSON，并在顶层加入 "designAnalysis":"商品与设计选择的具体依据"，不要任何 JSON 外的解释：',
         `{"summary":"一两句话说明买家最关心什么，这 ${count} 张按什么顺序回答","positioning":"差异化定位","concept":"创意主线（视觉主题）","motifs":["视觉元素"],"inspiration":"借鉴了什么","tone":"设计调性编号",${product.style === "auto" ? '"styleId":"从可选质感里挑的编号",' : ""}"style":"整组设计规范","screens":[{"role":"${exampleRole}","layout":"poster","composition":"left","title":"不超过 8 个字的屏名","purpose":"这一张要让买家明白什么","visual":"具体画面","elements":"信息元素","eyebrow":"","headline":"","subline":"","lines":[],"facts":[],"noText":false}]}`,
     ];
     return lines.filter((line): line is string => line !== undefined).join("\n");
@@ -394,7 +390,6 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
     const finish = (planned: StudioPlannedScreen): StudioPlannedScreen => {
         const screen = layouts.has(planned.layout) ? planned : { ...planned, layout: studioRoleLayout(planned.role) };
         if (textless || screen.noText || screen.role === "main-white") return { ...screen, composition: undefined, headline: "", subline: "", lines: [], noText: true };
-        if (product.brief.textMode === "overlay" && !STUDIO_OVERLAY_LAYOUTS.includes(screen.layout)) throw new Error(`程序排版无法完成「${STUDIO_DETAIL_LAYOUTS[screen.layout].label}」，请改用模型整体设计或重新策划独立文字区`);
         return { ...screen, headline: grounded(screen.headline), subline: grounded(screen.subline), lines: screen.lines.map(grounded).filter(Boolean) };
     };
     let screens: StudioPlannedScreen[];
@@ -458,6 +453,7 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
             createdAt: meta.createdAt,
             model: meta.model,
             summary: text(data.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
+            ...(text(data.designAnalysis, STUDIO_DETAIL_PLAN_LIMITS.designAnalysis) ? { designAnalysis: text(data.designAnalysis, STUDIO_DETAIL_PLAN_LIMITS.designAnalysis) } : {}),
             style: text(data.style, STUDIO_DETAIL_PLAN_LIMITS.style),
             ...(positioning ? { positioning } : {}),
             ...(concept ? { concept } : {}),

@@ -1,7 +1,7 @@
 import { ecommerceFileName, ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { rasterizeEcommerceDetailPage, type EcommerceDetailPageResult } from "@/lib/ecommerce/ecommerce-rasterize";
 import type { EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
-import { studioEffectiveTextMode, studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioActivePlan } from "@/lib/ecommerce-studio/runs";
 import { studioProductStyle, studioShotSpec, studioStyle } from "@/lib/ecommerce-studio/shot-specs";
@@ -25,8 +25,11 @@ export function studioSlicePlatform(product: StudioProduct): EcommerceSlicePlatf
     return SLICE_PLATFORMS[product.platform] || "generic";
 }
 
-function attemptModel(shot: StudioShot, output: StudioOutput) {
-    return shot.attempts.find((attempt) => attempt.outputs.some((item) => item.resourceId === output.resourceId))?.model || "";
+/** 只为历史无字底图保留旧排字；新候选的实际模式优先于所在旧方案。 */
+export function studioOutputNeedsLegacyTypeset(plan: Pick<StudioPlan, "textMode">, shot: StudioShot, output: StudioOutput) {
+    const attempt = shot.attempts.find((item) => item.outputs.some((value) => value.resourceId === output.resourceId));
+    if (attempt?.textMode) return attempt.textMode === "overlay";
+    return plan.textMode === "overlay" || studioModelAdapter(attempt?.model || "").textRendering === "weak";
 }
 
 async function objectUrl(output: StudioOutput) {
@@ -47,7 +50,7 @@ export async function composeStudioShots(product: StudioProduct, plan: StudioPla
             if (!output) continue;
             const spec = studioShotSpec(shot.role, family);
             const source = await objectUrl(output);
-            const overlay = studioShotHasCopy(shot, spec) && spec.overlayZone && studioEffectiveTextMode(plan, studioModelAdapter(attemptModel(shot, output))).mode === "overlay";
+            const overlay = studioShotHasCopy(shot, spec) && spec.overlayZone && studioOutputNeedsLegacyTypeset(plan, shot, output);
             if (!overlay || !spec.overlayZone) {
                 results.push({ shot, output, url: source, composed: false });
                 continue;

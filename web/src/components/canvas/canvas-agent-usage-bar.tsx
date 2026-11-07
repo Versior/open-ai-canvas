@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronUp, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleGauge, TriangleAlert } from "lucide-react";
 import { useId, useState } from "react";
 import { AGENT_CONTEXT_COMPACT_RATIO, formatContextTokens, type AgentContextPhase, type AgentContextUsageView } from "@/lib/canvas/agent-context-usage";
-import { AGENT_USAGE_NO_READING, agentUsageDetails, agentUsageStats, agentUsageSummary, formatAgentShare, type AgentRunStatsView, type AgentUsageItem } from "@/lib/canvas/agent-run-stats";
+import { AGENT_USAGE_NO_READING, agentUsageDetails, agentUsageStats, formatAgentDuration, formatAgentShare, type AgentRunStatsView, type AgentUsageItem } from "@/lib/canvas/agent-run-stats";
 
 const AGENT_USAGE_EXPANDED_KEY = "canvas:agent-usage-expanded:v1";
 /** 整张卡片展开与否；默认收起成一行。 */
@@ -60,7 +60,7 @@ function UsageTiles({ items }: { items: AgentUsageItem[] }) {
 }
 
 /**
- * 输入框正上方的上下文与本轮用量。默认收起成一行：迷你进度条、已用 / 窗口、占比、阶段和本轮摘要，点一下展开整张卡片：
+ * 输入框正上方的上下文与本轮用量。默认一行显示已用 / 窗口、阶段与短耗时/工具摘要，点一下展开整张卡片：
  * - 第一行：上下文已用 / 窗口、占比、阶段，右侧是当前模型、「明细」和收起；
  * - 进度条带自动压缩线，下方写剩余和压缩线位置（还没有读数时写下一步会发生什么）；
  * - 本轮五项：token、缓存命中、速度、耗时、工具调用，没有的项显示「—」。
@@ -130,9 +130,16 @@ export function AgentUsageBar({
         </p>
     ) : null;
     if (!cardOpen) {
-        // 收起：一行写完上下文和本轮摘要，整行就是展开按钮。
-        // 没有本轮读数时写剩余或下一步；轮次进行中已有「进行中」标签，提示只写读数稍后出现。
-        const brief = agentUsageSummary(stats) || (!measured && running ? "读数稍后出现" : scaleStart);
+        // 收起时只保留可扫读的上下文与短摘要；完整用量在展开卡里。
+        const brief = stats
+            ? [stats.elapsedMs !== undefined ? formatAgentDuration(stats.elapsedMs) : "", stats.toolCalls ? `${stats.toolCalls} 次工具` : ""].filter(Boolean).join(" · ")
+            : running
+              ? "正在处理"
+              : measured
+                ? ""
+                : hasRun
+                  ? "等待读数"
+                  : "准备就绪";
         return (
             <section className={`agent-usage is-${view.phase} is-collapsed`} aria-label="上下文与本轮用量">
                 <button
@@ -143,15 +150,12 @@ export function AgentUsageBar({
                     aria-label={`上下文 ${used}${windowTokens ? ` / ${formatContextTokens(windowTokens)}` : ""}${percent ? `，已用 ${percent}` : ""}${brief ? `；${brief}` : ""}。展开用量卡片`}
                     onClick={() => setCard(true)}
                 >
-                    <span className="agent-usage-meter is-mini" aria-hidden="true">
-                        {meterFill}
-                        {marker ? <i style={{ left: `${marker * 100}%` }} /> : null}
-                    </span>
+                    <CircleGauge className="agent-usage-icon size-3.5" aria-hidden="true" />
                     <span className="agent-usage-figure">
+                        <span className="agent-usage-strip-label">上下文 </span>
                         <strong>{used}</strong>
                         {windowTokens ? ` / ${formatContextTokens(windowTokens)}` : null}
                     </span>
-                    {percent ? <span className="agent-usage-percent">{percent}</span> : null}
                     {badge ? <span className="agent-usage-badge">{badge}</span> : null}
                     {carried ? <span className="agent-usage-tag">上一轮</span> : null}
                     {running ? <span className="agent-usage-live">进行中</span> : null}

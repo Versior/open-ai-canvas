@@ -65,9 +65,9 @@ func cloudAgentStudioToolSchemas() []map[string]any {
 				"bullets": list("整表替换：详情页要点", 6, str("", 80)),
 			}),
 		}, "revision")),
-		tool(agenttool.StudioPlanShots, "排或改一套方案，按权限模式审批后写入。kind=main 用 main-* 角色（通常白底、卖点、场景、细节、多角度共 5 张）；kind=detail 用 detail-* 角色（通常 8–12 屏，按品类安排顺序）。action=replace 新建整套镜头（已出过图的方案不能替换）；action=update 按 shotId 改标题、画幅、图上文案与微调。图上文案只用已确认的事实和卖点，不写价格与极限词；不提交生成任务。", object(map[string]any{
+		tool(agenttool.StudioPlanShots, "排或改一套方案，按权限模式审批后写入。kind=main 用 main-* 角色；kind=detail 用 detail-* 角色，按用户选择的数量与商品资料安排顺序。action=replace 新建整套镜头（已出过图的方案不能替换）；action=update 按 shotId 改标题、画幅、图上文案与微调。先分析商品的配色、形体和买家需求，策划文案、摄影与字体层级，再由图片模型整体生成图文。图上文案只用已确认的事实和卖点，不写价格与极限词；不提交生成任务。", object(map[string]any{
 			"revision": revision, "kind": kind, "action": enum([]string{"replace", "update"}),
-			"platform": enum(studioPlatforms), "style": enum(studioStyles), "textMode": map[string]any{"type": "string", "enum": []string{"model", "overlay"}, "description": "model=模型直接写字；overlay=模型留白、程序排字（详情页默认）"},
+			"platform": enum(studioPlatforms), "style": enum(studioStyles), "textMode": map[string]any{"type": "string", "enum": []string{"model"}, "description": "model=先策划文案与画面，再由图片模型整体生成图文"},
 			"shots": list("replace 用：按顺序排列的镜头", 16, object(map[string]any{
 				"role": studioRoleSchema(roles), "title": str("可省略，默认按角色命名", 24), "ratio": str("画幅「宽:高」，主图默认 1:1，详情页默认 3:4", 8),
 				"headline": str("图上主标题", 30), "subline": str("图上副标题", 48), "lines": list("要点；「标题｜说明」排成两级", 8, str("", 80)),

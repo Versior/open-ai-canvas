@@ -210,11 +210,21 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const spec = studioOutputSpec(brief.outputType);
     const kind = studioSetKind(product);
     const plan = studioActivePlan(product);
-    const base = { id: createId(), createdAt: now, type: spec.id, textMode: brief.textMode || "model", quality: brief.quality, styleId: studioProductStyle(product, plan?.styleId).id, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
+    const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality, styleId: studioProductStyle(product, plan?.styleId).id, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
     // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性和创意主线），结果区的组名带上「按商品策划」；
     // 按模板策划的组名前面再带上模板名。
     const planName = brief.outputType === "template-set" && brief.suite ? `${brief.suite.name} · ${STUDIO_DETAIL_PLAN_NAME}` : STUDIO_DETAIL_PLAN_NAME;
-    const planSuite = plan ? { id: plan.id, name: planName, style: plan.style, ...(plan.tone ? { tone: plan.tone } : {}), ...(plan.concept ? { concept: plan.concept } : {}), ...(plan.motifs?.length ? { motifs: plan.motifs } : {}) } : undefined;
+    const planSuite = plan
+        ? {
+              id: plan.id,
+              name: planName,
+              style: plan.style,
+              ...(plan.designAnalysis ? { designAnalysis: plan.designAnalysis } : {}),
+              ...(plan.tone ? { tone: plan.tone } : {}),
+              ...(plan.concept ? { concept: plan.concept } : {}),
+              ...(plan.motifs?.length ? { motifs: plan.motifs } : {}),
+          }
+        : undefined;
     if (kind) {
         if (brief.outputType === "detail-set" && !plan) throw new Error(`先按所选 ${studioDetailScreenCount(brief)} 屏完成策划`);
         if (brief.outputType === "template-set" && !brief.suite) throw new Error("先选择一套模板");

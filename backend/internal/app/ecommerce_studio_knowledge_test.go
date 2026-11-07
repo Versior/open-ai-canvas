@@ -91,7 +91,7 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	prompt := plan.Config.SystemPrompt
-	if !strings.Contains(prompt, "用户选择 4 屏") || !strings.Contains(prompt, "JSON screens 正好 4 项") || !strings.Contains(prompt, "本次模型整体设计图文") {
+	if !strings.Contains(prompt, "用户选择 4 屏") || !strings.Contains(prompt, "JSON screens 正好 4 项") || !strings.Contains(prompt, "图片模型整体设计图文") || !strings.Contains(prompt, "designAnalysis") {
 		t.Fatal("requested screen count and rendering contract must reach the actual worker system prompt")
 	}
 	if !strings.HasPrefix(prompt, defaultEcommerceCapabilityPrompt("detail-plan")) || plan.Prompt != "排详情页" {

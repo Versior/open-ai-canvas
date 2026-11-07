@@ -12,12 +12,12 @@ import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioAttemptStatus, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { configuredModelDisplayName } from "@/lib/model-selection";
-import { studioEffectiveTextMode, studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { bindStudioDetailPage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed } from "./studio-delivery";
+import { bindStudioDetailPage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed, studioOutputNeedsLegacyTypeset } from "./studio-delivery";
 import { inspectStudioDelivery } from "./studio-delivery-review";
 import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 import { ratioStyle, studioImageUrl } from "./studio-parts";
@@ -77,8 +77,7 @@ function StudioResultArtwork({ product, group, shot, output }: { product: Studio
     const ref = useRef<HTMLSpanElement>(null);
     const [visible, setVisible] = useState(false);
     const [preview, setPreview] = useState<{ key: string; url?: string; error?: string }>();
-    const model = shot.attempts.find((attempt) => attempt.outputs.some((item) => item.resourceId === output.resourceId))?.model || "";
-    const overlay = studioShotHasCopy(shot, studioShotSpec(shot.role, product.dossier?.family || "generic")) && studioEffectiveTextMode(group, studioModelAdapter(model)).mode === "overlay";
+    const overlay = studioShotHasCopy(shot, studioShotSpec(shot.role, product.dossier?.family || "generic")) && studioOutputNeedsLegacyTypeset(group, shot, output);
     const key = JSON.stringify([product.id, product.style, group.styleId, group.tone, group.textMode, shot.role, shot.layout, shot.composition, shot.headline, shot.subline, shot.lines, shot.eyebrow, output.resourceId]);
     useEffect(() => {
         if (!overlay || !ref.current) return;
@@ -358,8 +357,11 @@ function GroupCard({
         });
 
     const downloadAll = () => {
-        const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, shots };
-        const needsTypeset = group.textMode === "overlay" || shots.some((shot) => /flux/i.test(studioShotLatestAttempt(shot)?.model || ""));
+        const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, tone: group.tone, shots };
+        const needsTypeset = shots.some((shot) => {
+            const output = studioShotPreview(shot);
+            return output && studioOutputNeedsLegacyTypeset(group, shot, output);
+        });
         if (needsTypeset) return void downloadStudioComposed(product, plan).catch((error: unknown) => message.error(error instanceof Error ? error.message : "下载失败"));
         const items = shots.flatMap((shot, index) => {
             const preview = studioShotPreview(shot);
@@ -449,7 +451,7 @@ function GroupCard({
                         onView={() => onView({ groupKey: group.key, shotId: shot.id })}
                         onDownload={() => {
                             const preview = studioShotPreview(shot);
-                            if (preview && (group.textMode === "overlay" || /flux/i.test(studioShotLatestAttempt(shot)?.model || "")))
+                            if (preview && studioOutputNeedsLegacyTypeset(group, shot, preview))
                                 return void downloadStudioComposed(product, { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, styleId: group.styleId, tone: group.tone, shots: [shot] }).catch(
                                     (error: unknown) => message.error(error instanceof Error ? error.message : "下载失败"),
                                 );

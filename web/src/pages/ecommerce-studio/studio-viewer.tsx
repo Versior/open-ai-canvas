@@ -8,8 +8,8 @@ import { studioImageUrl } from "./studio-parts";
 import type { StudioShotGroup, StudioViewerTarget } from "./studio-results";
 import { StudioShotTuner, type StudioShotPatch } from "./studio-shot-tuner";
 import { StudioViewerStage } from "./studio-viewer-stage";
-import { composeStudioShots, downloadStudioComposed, releaseComposed } from "./studio-delivery";
-import { studioEffectiveTextMode, studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
+import { composeStudioShots, downloadStudioComposed, releaseComposed, studioOutputNeedsLegacyTypeset } from "./studio-delivery";
+import { studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 
 /** 大图查看：←/→ 在这一组出过图的镜头之间切换，图片可以点击、滚轮放大；套图里有多张候选时可以挑一张作为导出用图；右侧可以调整这一张再出。 */
@@ -51,8 +51,7 @@ export function StudioViewer({
     const latest = shot ? studioShotLatestAttempt(shot) : undefined;
     const active = Boolean(latest && studioAttemptActive(latest));
     const adopted = Boolean(shot?.adopted && current && shot.adopted.resourceId === current.resourceId);
-    const sourceModel = shot?.attempts.find((attempt) => attempt.outputs.some((output) => output.resourceId === current?.resourceId))?.model || "";
-    const overlay = Boolean(group && shot && product && studioShotHasCopy(shot, studioShotSpec(shot.role, product.dossier?.family || "generic")) && studioEffectiveTextMode(group, studioModelAdapter(sourceModel)).mode === "overlay");
+    const overlay = Boolean(group && shot && product && current && studioShotHasCopy(shot, studioShotSpec(shot.role, product.dossier?.family || "generic")) && studioOutputNeedsLegacyTypeset(group, shot, current));
     const previewKey = JSON.stringify([product?.id, product?.style, group?.key, group?.styleId, group?.tone, shot?.role, shot?.layout, shot?.composition, shot?.headline, shot?.subline, shot?.lines, shot?.eyebrow, current?.resourceId, overlay]);
     useEffect(() => {
         if (!overlay || !group || !shot || !current || !product) return;

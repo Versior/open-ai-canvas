@@ -149,7 +149,7 @@ function planKnowledgeMetadata(product: StudioProduct) {
     return {
         studioPlanKind: suite ? suite.kind : scope || "detail",
         ...(scope === "detail" ? { studioDetailScreens: product.brief.detailScreens } : {}),
-        studioTextMode: product.brief.textMode || "model",
+        studioTextMode: "model",
         ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
         ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
         ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),
@@ -166,13 +166,13 @@ function taskOutputs(task: GenerationTask): StudioOutput[] {
         .map((output) => ({ resourceId: output.resourceId!, url: `/api/resources/${output.resourceId}/file`, ...(output.width ? { width: output.width } : {}), ...(output.height ? { height: output.height } : {}) }));
 }
 
-export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; suite?: StudioRun["suite"]; runId?: string };
+export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; suite?: StudioRun["suite"] };
 
 export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): StudioLocatedShot | undefined {
     if ("runId" in ref) {
         const run = studioRunOf(product, ref.runId);
         const shot = run?.shots.find((item) => item.id === shotId);
-        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite, runId: run.id } : undefined;
+        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite } : undefined;
     }
     const plan = studioPlanOf(product, ref.planKind);
     const shot = plan?.shots.find((item) => item.id === shotId);
@@ -188,12 +188,8 @@ type ModelConfig = Parameters<typeof modelCapabilityConfigFor>[0];
 export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, imageModel: string, config: ModelConfig) {
     const profile = modelCapabilityConfigFor(config, imageModel).image;
     const brief = located.fromForm ? product.brief : { ...product.brief, shooting: "auto" as const, sameLayout: false };
-    const run = located.runId ? studioRunOf(product, located.runId) : undefined;
-    const first = run?.kind === "detail" ? run.shots[0] : undefined;
-    const anchor = first && first.id !== located.shot.id && !product.references.length && !brief.sameLayout ? studioShotPreview(first) : undefined;
-    const source = anchor ? { ...product, references: [{ ...anchor, id: `direction-${anchor.resourceId}`, truth: false, view: "other" as const, name: "本套首屏视觉参考", addedAt: "" }] } : product;
     const compiled = compileStudioPrompt({
-        product: source,
+        product,
         textMode: located.textMode,
         shot: located.shot,
         model: imageModel,
@@ -528,7 +524,7 @@ export function useStudioRunner() {
                         metadata: { source: "ecommerce-studio", studioProductId: productId, studioShotId: shotId, studioAttemptId: attemptId, studioRole: located.shot.role, ...("runId" in ref ? { studioRunId: ref.runId } : {}) },
                     });
                 });
-                update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { taskId: task.id, status: task.status }), { immediate: true });
+                update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { taskId: task.id, status: task.status, textMode: compiled.textMode }), { immediate: true });
                 submitting.delete(attemptId);
                 await watch(productId, ref, shotId, attemptId, task.id, task);
             } catch (error) {
@@ -551,7 +547,10 @@ export function useStudioRunner() {
     const enqueue = useCallback(
         (productId: string, ref: StudioShotRef, shotIds: string[], imageModel: string) => {
             if (!imageModel) throw new Error("请先选择图片模型");
-            const attempts = shotIds.map((shotId) => ({ shotId, attempt: { id: nanoid(12), status: "submitting" as const, model: imageModel, tweaks: [], createdAt: new Date().toISOString(), outputs: [] } satisfies StudioAttempt }));
+            const attempts = shotIds.map((shotId) => ({
+                shotId,
+                attempt: { id: nanoid(12), status: "submitting" as const, model: imageModel, textMode: "model" as const, tweaks: [], createdAt: new Date().toISOString(), outputs: [] } satisfies StudioAttempt,
+            }));
             // 尝试记下提交时这张图的微调标签，之后改了标签也能看出每张结果是怎么出的。
             update(productId, (product) =>
                 attempts.reduce(

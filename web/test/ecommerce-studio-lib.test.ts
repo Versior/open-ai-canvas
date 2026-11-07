@@ -70,7 +70,7 @@ function setRun(product: StudioProduct, outputType: "main-set" | "detail-set") {
 }
 
 describe("detail page requested screen count", () => {
-    test("2–20 screens keep the chosen length; invalid values and unsupported overlay designs are rejected", () => {
+    test("2–20 screens keep the chosen length; old overlay preferences still generate integrated layouts", () => {
         for (const count of [2, 4, 6, 10, 20]) {
             const product = cupProduct();
             product.brief = { ...product.brief, outputType: "detail-set", detailScreens: count };
@@ -96,8 +96,36 @@ describe("detail page requested screen count", () => {
         ).plan;
         product.brief.detailPlan = plan;
         const run = createStudioRun(product, ids());
-        expect(() => compileStudioPrompt({ product, plan: { ...run, textMode: "overlay" }, shot: run.shots[0], model: "gpt-image-2" })).toThrow("程序排版无法完成");
+        expect(compileStudioPrompt({ product, plan: { ...run, textMode: "overlay" }, shot: run.shots[0], model: "gpt-image-2" }).textMode).toBe("model");
     });
+    test("product design analysis survives planning, persistence and reaches the image model", () => {
+        const product = cupProduct();
+        product.brief = { ...product.brief, outputType: "detail-set", detailScreens: 2 };
+        const analysis = "雾蓝哑光杯身用冷白背景拉开明度，侧光展示哑光轮廓；正面整杯和可见边缘裁切交替，标题与注解按 3:1 拉开字号。";
+        const parsed = parseDetailPlan(
+            JSON.stringify({
+                designAnalysis: analysis,
+                style: "冷白与雾蓝",
+                screens: [
+                    { role: "detail-hero", visual: "侧光下正面杯身", headline: "雾蓝杯身" },
+                    { role: "detail-closing", visual: "可见边缘裁切", headline: "雾蓝杯身" },
+                ],
+            }),
+            product,
+            studioDetailPlanRoles(product),
+            { id: "p", model: "m", createdAt: "" },
+        );
+        product.brief.detailPlan = parsed.plan;
+        const run = createStudioRun(product, ids());
+        product.runs = [run];
+        const restored = normalizeStudioProduct(JSON.parse(JSON.stringify(product)));
+        expect(restored.brief.detailPlan?.designAnalysis).toBe(analysis);
+        expect(restored.runs[0].suite?.designAnalysis).toBe(analysis);
+        const compiled = compileStudioPrompt({ product: restored, shot: run.shots[0], model: "gpt-image-2", suite: restored.runs[0].suite, brief: restored.brief });
+        expect(compiled.layers.find((layer) => layer.id === "product-design")?.text).toContain(analysis);
+        expect(buildDetailPlanPrompt(product, studioDetailPlanRoles(product))).toContain("不能套固定暖光");
+    });
+
     test("four selected screens drive planning and survive product persistence", () => {
         const product = cupProduct();
         product.brief = { ...product.brief, outputType: "detail-set", ...{ detailScreens: 4 } };
@@ -137,7 +165,7 @@ describe("ecommerce studio prompt compiler", () => {
         expect(compiled.references.map((item) => item.view)).toEqual(["front", "side"]);
     });
 
-    test("selling image writes exact copy in model mode and leaves a clean zone in overlay mode", () => {
+    test("selling image writes exact copy even with a legacy overlay preference", () => {
         const { product, plan } = setRun(cupProduct(), "main-set");
         const shot = plan.shots.find((item) => item.role === "main-selling")!;
         expect(shot.headline).toBe("500ml 大容量");
@@ -146,17 +174,30 @@ describe("ecommerce studio prompt compiler", () => {
         expect(model.prompt).toContain("「500ml 大容量」");
         expect(model.layers.find((layer) => layer.id === "style")?.text).toContain("雾蓝灰 #DDE5EC");
         const overlay = compileStudioPrompt({ product, plan: { ...plan, textMode: "overlay" }, shot, model: "gpt-image-2" });
-        expect(overlay.prompt).not.toContain("「500ml 大容量」");
-        expect(overlay.prompt).toContain("留给后期排字");
+        expect(overlay.prompt).toContain("「500ml 大容量」");
+        expect(overlay.prompt).not.toContain("留给后期排字");
     });
 
-    test("weak text models fall back to overlay typesetting", () => {
+    test("weak text models keep integrated artwork instead of falling back to composited text", () => {
         const { product, plan } = setRun(cupProduct(), "main-set");
         const shot = plan.shots.find((item) => item.role === "main-selling")!;
         const compiled = compileStudioPrompt({ product, plan, shot, model: "flux-1.1-pro" });
         expect(studioModelAdapter("flux-1.1-pro").textRendering).toBe("weak");
-        expect(compiled.textMode).toBe("overlay");
-        expect(compiled.textModeNotice).toContain("程序排字");
+        expect(compiled.textMode).toBe("model");
+        expect(compiled.textModeNotice).toContain("文字");
+        expect(compiled.prompt).toContain("「500ml 大容量」");
+        expect(compiled.prompt).not.toContain("留给后期排字");
+    });
+
+    test("old overlay preference cannot select compositing for new generations", () => {
+        const { product, plan } = setRun(cupProduct(), "main-set");
+        product.brief.textMode = "overlay";
+        expect(createStudioRun(product, ids()).textMode).toBe("model");
+        expect(normalizeStudioProduct(product).brief.textMode).toBe("model");
+        const compiled = compileStudioPrompt({ product, plan: { ...plan, textMode: "overlay" }, shot: plan.shots[1], model: "gpt-image-2" });
+        expect(compiled.textMode).toBe("model");
+        expect(compiled.prompt).toContain("「500ml 大容量」");
+        expect(compiled.prompt).not.toContain("留给后期排字");
     });
 
     test("long prompts drop decorative layers first and refuse impossible budgets", () => {
@@ -349,7 +390,7 @@ describe("ecommerce studio detail plan", () => {
         const top = compileStudioPrompt({ product, shot: { ...run.shots[0], composition: "top" }, textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(top.prompt).not.toContain("不能把左右分栏改成顶部标题");
         const overlay = compileStudioPrompt({ product, shot: run.shots[0], textMode: "overlay", model: "gpt-image-2", brief: product.brief, suite: run.suite });
-        expect(overlay.prompt).toContain("从左 58%、上 12%");
+        expect(overlay.prompt).toContain("左 58%、上 12%");
         expect(studioDesignZone(run.shots[0], STUDIO_COMPOSITIONS.top.zone)).toEqual(STUDIO_COMPOSITIONS.right.zone);
         expect(result.compositionKinds).toBe(2);
     });

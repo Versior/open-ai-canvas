@@ -134,11 +134,11 @@
     gap: 8px;
     width: 100%;
     min-width: 0;
-    min-height: 28px;
-    padding: 3px 8px;
+    min-height: 32px;
+    padding: 5px 10px;
     border: 0;
-    border-radius: 999px;
-    background: transparent;
+    border-radius: var(--radius-lg);
+    background: var(--agent-surface-soft);
     color: inherit;
     font: inherit;
     text-align: left;
@@ -162,6 +162,17 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-align: right;
+}
+
+.agent-usage-icon {
+    flex: none;
+    color: var(--agent-usage-fill);
+}
+
+.agent-usage-strip-label {
+    color: var(--agent-caption);
+    font-size: 11px;
 }
 
 .agent-usage-chevron {
@@ -323,23 +334,6 @@
     margin-top: 2px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--agent-ink) 10%, transparent);
-}
-
-.agent-usage-meter.is-mini {
-    flex: none;
-    width: 44px;
-    height: 4px;
-    margin-top: 0;
-}
-
-.agent-usage-meter.is-mini > span {
-    min-width: 4px;
-}
-
-.agent-usage-meter.is-mini > i {
-    top: -3px;
-    bottom: -3px;
-    width: 1.5px;
 }
 
 .agent-usage-meter > span {

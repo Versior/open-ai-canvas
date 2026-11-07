@@ -124,6 +124,8 @@ export type StudioAttempt = {
     status: StudioAttemptStatus;
     model: string;
     tweaks: string[];
+    /** 此候选实际使用的图文生成方式；新候选均由模型整体生成。 */
+    textMode?: StudioTextMode;
     createdAt: string;
     completedAt?: string;
     error?: string;
@@ -206,6 +208,8 @@ export type StudioDetailPlan = {
     model: string;
     /** 策划思路。 */
     summary: string;
+    /** 基于商品可见颜色、形体与买家需求的色调、摄影和字阶选择依据。 */
+    designAnalysis?: string;
     /** 整套视觉规范，出图时代替风格锁。 */
     style: string;
     /** 质感选「按商品推荐」时策划挑的质感预设。 */
@@ -343,7 +347,7 @@ export type StudioRun = {
     /** 点生成那一刻的清晰度，重出这一组的图也按它。 */
     resolution?: string;
     /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性和创意主线。 */
-    suite?: { id: string; name: string; style: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[] };
+    suite?: { id: string; name: string; style: string; designAnalysis?: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[] };
     shots: StudioShot[];
 };
 

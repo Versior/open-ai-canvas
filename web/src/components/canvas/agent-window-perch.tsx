@@ -5,9 +5,9 @@ import { agentAvatarBundleFileURL } from "@/services/api/appearance";
 import { agentPetSpritesheetURL, type AgentPet } from "@/services/api/agent-pets";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { AgentAvatarVideo } from "./agent-avatar-video";
-import { AgentPetSprite, useAgentPetSheetMetrics } from "./agent-pet-sprite";
+import { AgentPetSprite } from "./agent-pet-sprite";
 
-/** 输入框上方露头；悬停或主动点击时在独立区域展开全身，不覆盖正文与输入。 */
+/** 全身常驻输入框上方的独立区域；工作状态驱动动作，鼠标互动不改变布局高度。 */
 export function AgentWindowPerch({ pet, status, reducedMotion }: { pet: AgentPet | null; status: string; reducedMotion: boolean }) {
     const appearance = useAppearanceStore((store) => store.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
     const revision = useAppearanceStore((store) => store.appearance.revision);
@@ -15,13 +15,10 @@ export function AgentWindowPerch({ pet, status, reducedMotion }: { pet: AgentPet
     const [failed, setFailed] = useState(false);
     const [hovered, setHovered] = useState(false);
     const [speaking, setSpeaking] = useState(false);
-    const [focused, setFocused] = useState(false);
-    const expanded = hovered || focused || speaking;
     const actionTimer = useRef(0);
     const state = agentAvatarStateForRunStatus(status);
     const chatter = useAgentPetChatter({ pet, state, approvalPending: state === "waiting_approval", active: Boolean(pet), hovered });
     const spriteUrl = pet ? agentPetSpritesheetURL(pet) : "";
-    const { headTop } = useAgentPetSheetMetrics(spriteUrl, pet?.spriteVersion || 1);
     const bundle = !pet && appearance.avatarType === "bundle";
     const manifestUrl = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, revision) : "/doll/avatar.json";
     useEffect(() => {
@@ -52,13 +49,14 @@ export function AgentWindowPerch({ pet, status, reducedMotion }: { pet: AgentPet
         window.clearTimeout(actionTimer.current);
         actionTimer.current = window.setTimeout(() => setSpeaking(false), 3500);
     };
-    const clip = manifest ? (speaking && manifest.clips.talk ? "talk" : expanded && state === "idle" && manifest.clips.wave ? "wave" : agentAvatarClipForState(appearance, state, manifest)) : "";
+    const resting = state === "idle" || state === "completed" || state === "cancelled";
+    const clip = manifest ? (speaking && manifest.clips.talk ? "talk" : hovered && resting && manifest.clips.wave ? "wave" : agentAvatarClipForState(appearance, state, manifest)) : "";
     const file = manifest?.clips[clip];
     const media = file ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, file, false, revision) : `/doll/${encodeURIComponent(file)}`) : "";
     if ((!pet && !media) || failed) return null;
-    const message = chatter.message?.text || (expanded ? "我在这里。点我，聊一句。" : "");
+    const message = chatter.message?.text || (speaking ? "我在这里。下一步一起完成。" : "");
     return (
-        <div className="agent-window-perch" data-expanded={expanded} data-action={speaking ? "talk" : expanded ? "wave" : "rest"} data-canvas-no-zoom onPointerDown={(event) => event.stopPropagation()}>
+        <div className="agent-window-perch" data-action={speaking ? "talk" : state} data-canvas-no-zoom onPointerDown={(event) => event.stopPropagation()}>
             {message ? (
                 <button
                     type="button"
@@ -77,24 +75,20 @@ export function AgentWindowPerch({ pet, status, reducedMotion }: { pet: AgentPet
                 className="agent-perch-character"
                 type="button"
                 aria-label={`${pet?.name || appearance.agentName} · 说句话`}
-                aria-expanded={expanded}
-                title="悬停看全身，点击听一句"
+                title="工作时忙碌，空闲时休息；点击聊一句"
                 onPointerEnter={() => setHovered(true)}
                 onPointerLeave={() => setHovered(false)}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
                 onClick={speak}
                 onKeyDown={(event) => {
                     if (event.key === "Escape") {
                         setSpeaking(false);
-                        setFocused(false);
                         setHovered(false);
                         chatter.dismiss();
                         event.currentTarget.blur();
                     }
                 }}
             >
-                <span className="agent-perch-media" style={{ top: expanded ? 0 : pet ? -headTop * 112 : -12 }}>
+                <span className="agent-perch-media">
                     {pet ? (
                         <AgentPetSprite
                             src={spriteUrl}
@@ -103,7 +97,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion }: { pet: AgentPet
                             stateRows={pet.stateRows}
                             width={104}
                             height={112}
-                            row={expanded && state === "idle" ? "waving" : undefined}
+                            row={speaking && resting ? "jumping" : undefined}
                             reducedMotion={reducedMotion}
                             pixelated={pet.pixelated}
                             hovered={hovered}

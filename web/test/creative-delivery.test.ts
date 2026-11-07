@@ -10,6 +10,18 @@ import { reviewStudioDelivery, studioEdgeAudit } from "@/lib/ecommerce-studio/de
 import { createStudioProduct, normalizeStudioProduct } from "@/lib/ecommerce-studio/product";
 import { createStudioRun } from "@/lib/ecommerce-studio/runs";
 import { createZip, readZip } from "@/lib/zip";
+import { studioOutputNeedsLegacyTypeset } from "@/pages/ecommerce-studio/studio-delivery";
+
+test("new integrated candidates in an old overlay group are never typeset again", () => {
+    const product = createStudioProduct("product");
+    const run = createStudioRun(product, () => "id");
+    const shot = run.shots[0];
+    const output = { resourceId: "generated-artwork", url: "" };
+    shot.attempts = [{ id: "new", model: "flux", textMode: "model", status: "succeeded", tweaks: [], createdAt: "", outputs: [output] }];
+    expect(studioOutputNeedsLegacyTypeset({ textMode: "overlay" }, shot, output)).toBe(false);
+    delete shot.attempts[0].textMode;
+    expect(studioOutputNeedsLegacyTypeset({ textMode: "overlay" }, shot, output)).toBe(true);
+});
 
 test("historical studio run keeps its typesetting style after the product style changes", () => {
     const product = createStudioProduct("product");

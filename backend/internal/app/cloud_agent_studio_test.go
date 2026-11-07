@@ -273,7 +273,10 @@ func TestCloudAgentStudioPlanAndGenerationRequest(t *testing.T) {
 	if len(plans) != 2 || string(plans[0]) != attempted || doc.str("platform") != "jd" || doc.str("activePlan") != "detail" {
 		t.Fatalf("untouched plans must stay byte-for-byte and the new plan becomes active: %s", plans)
 	}
-	_, shots, _ := decodeStudioPlan(plans[1])
+	plan, shots, _ := decodeStudioPlan(plans[1])
+	if stringValue(plan["textMode"]) != "model" {
+		t.Fatal("detail plans must generate copy and artwork together")
+	}
 	if stringValue(shots[0]["title"]) != "头图海报" || stringValue(shots[0]["ratio"]) != "3:4" {
 		t.Fatalf("shots must get role titles and plan ratios: %v", shots[0])
 	}
