@@ -12,6 +12,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import type { SceneLabel } from "@/lib/interior/scene-3d";
 import { renderModel, type SceneDimension } from "@/lib/interior/scene-compile";
 import type { InteriorSceneData } from "@/lib/interior/scene-spec";
+import { sceneTargetBounds, type SceneEditTarget } from "@/lib/interior/scene-local-edit";
 import { cn } from "@/lib/utils";
 import { applyCutaway, buildSceneRoot, DIMENSION_GROUP, type FacadeNode } from "./interior-scene-three";
 
@@ -58,7 +59,7 @@ function shownInScene(object: Object3D | null) {
  * 文字标注：被墙、楼板、屋顶挡住时隐藏，避免室内的标注透过外墙叠在一起；玻璃和隐藏的分组不算遮挡。
  * 视角变化时最多每 120ms 用射线检查一次。打开「尺寸」时第二行写开间 × 进深和面积。
  */
-function SceneLabels({ labels, root, hidden, details }: { labels: SceneLabel[]; root: Object3D; hidden: ReadonlySet<string>; details: boolean }) {
+function SceneLabels({ labels, root, hidden, details, onSelect }: { labels: SceneLabel[]; root: Object3D; hidden: ReadonlySet<string>; details: boolean; onSelect?: (name: string, elevation: number) => void }) {
     const camera = useThree((state) => state.camera);
     const [occluded, setOccluded] = useState("");
     const check = useRef({ matrix: new Matrix4(), at: 0, stale: true });
@@ -92,10 +93,17 @@ function SceneLabels({ labels, root, hidden, details }: { labels: SceneLabel[]; 
     const hiddenIndexes = useMemo(() => new Set(occluded ? occluded.split(",").map(Number) : []), [occluded]);
     return labels.map((label, index) => (
         <Html key={`${label.text}-${index}`} position={label.position} center zIndexRange={[20, 0]}>
-            <span className={cn("itd-scene-label", hiddenIndexes.has(index) && "is-occluded")}>
+            <button
+                type="button"
+                className={cn("itd-scene-label", hiddenIndexes.has(index) && "is-occluded")}
+                disabled={!onSelect}
+                aria-label={`选择房间 ${label.text}`}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => onSelect?.(label.text, label.position[1])}
+            >
                 {label.text}
                 {details && label.detail ? <small>{label.detail}</small> : null}
-            </span>
+            </button>
         </Html>
     ));
 }
@@ -259,6 +267,8 @@ export function InteriorSceneViewer({
     onSnapshot,
     snapshotBusy,
     referenceUrl,
+    editTarget,
+    onRoomSelect,
 }: {
     scene: InteriorSceneData;
     className?: string;
@@ -268,6 +278,8 @@ export function InteriorSceneViewer({
     snapshotBusy?: boolean;
     /** 用户上传的户型图或照片，用来对照。 */
     referenceUrl?: string;
+    editTarget?: SceneEditTarget;
+    onRoomSelect?: (name: string, elevation: number) => void;
 }) {
     const [cutFloor, setCutFloor] = useState<number | undefined>(undefined);
     const model = useMemo(() => renderModel(scene, { cutFloor }), [scene, cutFloor]);
@@ -285,6 +297,8 @@ export function InteriorSceneViewer({
     const [exporting, setExporting] = useState(false);
     const frameRef = useRef<HTMLDivElement>(null);
     const glRef = useRef<RootState["gl"] | null>(null);
+    const outlineRef = useRef<Mesh>(null);
+    const selectionBounds = useMemo(() => (editTarget ? sceneTargetBounds(scene, editTarget) : undefined), [scene, editTarget]);
     const floors = scene.version === 2 ? scene.spec.floors.map((floor) => floor.name) : [];
     // 户型只有一层时也能剖切：墙只砌到 1.2 米，转到哪个角度都能看清每个房间。
     const canCut = scene.version === 2 && (scene.spec.scope !== "room" || floors.length > 1);
@@ -357,7 +371,17 @@ export function InteriorSceneViewer({
     const snapshot = () => {
         const canvas = glRef.current?.domElement;
         if (!canvas || !onSnapshot) return;
-        canvas.toBlob((blob) => (blob ? onSnapshot(blob) : onError?.("截图失败，请再试一次")), "image/png");
+        const outline = outlineRef.current;
+        if (outline) outline.visible = false;
+        requestAnimationFrame(() =>
+            requestAnimationFrame(() =>
+                canvas.toBlob((blob) => {
+                    if (outline) outline.visible = true;
+                    if (blob) onSnapshot(blob);
+                    else onError?.("截图失败，请再试一次");
+                }, "image/png"),
+            ),
+        );
     };
     const fullscreen = () => {
         const frame = frameRef.current;
@@ -380,7 +404,13 @@ export function InteriorSceneViewer({
                 <SceneEnvironment />
                 <SceneLights target={camera.target} span={camera.span} />
                 <primitive object={built.root} dispose={null} />
-                <SceneLabels labels={visibleLabels} root={built.root} hidden={hidden} details={dimensions} />
+                <SceneLabels labels={visibleLabels} root={built.root} hidden={hidden} details={dimensions} onSelect={scene.version === 2 ? onRoomSelect : undefined} />
+                {selectionBounds ? (
+                    <mesh ref={outlineRef} position={selectionBounds.position} rotation={selectionBounds.rotation} renderOrder={30}>
+                        <boxGeometry args={selectionBounds.size} />
+                        <meshBasicMaterial color="#e8b245" wireframe depthTest={false} transparent opacity={0.85} />
+                    </mesh>
+                ) : null}
                 {dimensions && model.dimensions.length ? <DimensionLabels dimensions={model.dimensions} /> : null}
                 {drawing === "overlay" && referenceUrl && overlayBox && overlayPlan && view === "top" ? <DrawingOverlay url={referenceUrl} plan={overlayPlan} box={overlayBox} y={model.ground.y + 0.05} opacity={0.5} /> : null}
                 <CutawayController facades={built.facades} enabled={cutaway} />

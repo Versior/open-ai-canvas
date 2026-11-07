@@ -1038,6 +1038,10 @@
 .itd-scene-label.is-occluded {
     visibility: hidden;
 }
+.itd-scene-label:not(:disabled) {
+    pointer-events: auto;
+    cursor: pointer;
+}
 
 .itd-scene-empty {
     display: flex;
@@ -1099,8 +1103,8 @@
 
 .itd-scene-meta {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 1.2fr);
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: var(--space-3);
 }
 
@@ -1136,8 +1140,47 @@
 }
 
 .itd-scene-edit {
+    flex-wrap: wrap;
     display: flex;
     gap: var(--space-2);
+}
+
+.itd-scene-edit > .itd-field,
+.itd-scene-edit > .itd-muted-note {
+    flex-basis: 100%;
+}
+.itd-scene-edit .ant-select {
+    width: 100%;
+}
+.itd-local-controls {
+    padding: var(--space-4);
+    border-top: 1px solid var(--itd-line);
+}
+.itd-local-controls h3 {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+}
+.itd-local-controls h3 small {
+    color: var(--itd-ink-3);
+}
+.itd-local-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+.itd-local-fields :is(.ant-input-number, .ant-select) {
+    width: 100%;
+}
+.itd-local-fields .itd-field {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-1);
+    min-width: 0;
+    margin-top: 0;
 }
 
 .itd-scene-list {

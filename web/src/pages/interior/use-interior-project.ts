@@ -334,5 +334,5 @@ export function useInteriorProjects(userId: string) {
         [flush],
     );
 
-    return { projects, listError, current, projectLoading, projectError, saveState, saveError, update, removeRound, removeScene, open, create, rename, remove, retrySave, reloadList };
+    return { projects, listError, current, projectLoading, projectError, saveState, saveError, update, removeRound, removeScene, open, create, rename, remove, retrySave, reloadList, ensureSaved };
 }

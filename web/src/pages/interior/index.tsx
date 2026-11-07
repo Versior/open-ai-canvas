@@ -690,6 +690,8 @@ export default function InteriorPage() {
                     }
                     ensureProject={ensureProject}
                     update={projects.update}
+                    saveProject={projects.ensureSaved}
+                    onBusyChange={setBusy}
                     removeScene={projects.removeScene}
                     handoff={sceneHandoff}
                     onHandoffUsed={clearSceneHandoff}

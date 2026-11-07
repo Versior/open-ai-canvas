@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyScenePatch, normalizeSceneBrief, parseSceneJson, type SceneBrief } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
+import { applySceneLocalEdit } from "@/lib/interior/scene-local-edit";
 import { buildSceneSpecPrompt, normalizeSceneMeta, normalizeSceneSpec, specDimensionCheck, type InteriorSceneV2, type SceneSpec } from "@/lib/interior/scene-spec";
 import { parseBackendGenerationResult } from "@/services/api/generation-task";
 import { isGenerationTaskTerminalError, waitForGenerationTask } from "@/services/api/task-center";
@@ -231,6 +232,11 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
         const parent = scenes.find((scene) => scene.id === item.parentId);
         if (!parent?.sceneFile) throw new Error("要修改的那一版已经删掉了");
         const [text, base] = await Promise.all([taskText(item.taskId!, signal, onText), loadSceneFile(parent.sceneFile.resourceId)]);
+        if (item.editTarget) {
+            const scene = applySceneLocalEdit(base, item.editTarget, parseSceneJson(text).value);
+            const sceneFile = await saveSceneFile(scene);
+            return { status: "succeeded", sceneFile, title: scene.title, summary: scene.summary, stats: sceneStats(scene), error: undefined };
+        }
         if (base.version === 2) {
             const spec = normalizeSceneSpec(parseSceneJson(text).value, base.spec.scope);
             const scene: InteriorSceneV2 = { version: 2, title: spec.title, summary: spec.summary, spec };

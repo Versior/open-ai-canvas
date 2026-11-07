@@ -1,4 +1,4 @@
-import { App, Button, Input, Tooltip } from "antd";
+import { App, Button, Input, Select, Tooltip } from "antd";
 import { BookOpen, Box, LoaderCircle, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
@@ -16,6 +16,10 @@ import { catalogKeys, fetchSceneKnowledge, loadSceneFile, sceneModelProblem, sce
 import { InteriorSceneViewer } from "./interior-scene-viewer";
 import { InteriorSceneDelivery } from "./interior-scene-delivery";
 import { useInteriorSceneTasks } from "./use-interior-scene-tasks";
+import { applySceneLocalEdit, buildSceneLocalEditPrompt, sceneEditOptions } from "@/lib/interior/scene-local-edit";
+import { getActiveUserScope } from "@/lib/user-scope";
+import { saveSceneFile } from "./interior-scene-tasks";
+import { InteriorLocalControls } from "./interior-local-controls";
 
 /** 一个项目最多保存的 3D 模型数。 */
 const MAX_SCENES = 30;
@@ -53,6 +57,8 @@ type Props = {
     header: ReactNode;
     ensureProject: () => Promise<InteriorProject>;
     update: (projectId: string, mutate: (document: InteriorProjectDocument) => InteriorProjectDocument) => void;
+    saveProject: () => Promise<void>;
+    onBusyChange: (busy: boolean) => void;
     removeScene: (projectId: string, sceneId: string) => void;
     handoff: InteriorSceneHandoff | null;
     onHandoffUsed: () => void;
@@ -64,7 +70,7 @@ type Props = {
  * 在页面里旋转、缩放查看，还能一句话改一版、按当前视角出效果图。场景和效果图共用项目，存在项目文档的 scenes 里。
  * 生成按所选文本模型计费。
  */
-export function InteriorSceneStudio({ catalog, config, project, header, ensureProject, update, removeScene, handoff, onHandoffUsed, onRender }: Props) {
+export function InteriorSceneStudio({ catalog, config, project, header, ensureProject, update, saveProject, onBusyChange, removeScene, handoff, onHandoffUsed, onRender }: Props) {
     const { message, modal } = App.useApp();
     const [scope, setScope] = useState<ScopeChoice>("auto");
     const [rendering, setRendering] = useState(false);
@@ -73,7 +79,12 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const [styleKey, setStyleKey] = useState("");
     const [reference, setReference] = useState<InteriorUpload | null>(null);
     const [instruction, setInstruction] = useState("");
+    const [targetKey, setTargetKey] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    useEffect(() => {
+        onBusyChange(submitting);
+        return () => onBusyChange(false);
+    }, [submitting, onBusyChange]);
     const [error, setError] = useState("");
     const [selectedId, setSelectedId] = useState("");
     const previewUrls = useRef(new Set<string>());
@@ -123,6 +134,12 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     }, [selectedFile]);
     const selectedLoad = loaded?.resourceId === selectedFile ? loaded : null;
     const selectedScene = selectedLoad?.scene;
+    const editOptions = useMemo(() => (selectedScene ? sceneEditOptions(selectedScene) : []), [selectedScene]);
+    const editOption = targetKey === "whole" ? undefined : editOptions.find((item) => item.value === targetKey) || editOptions[0];
+    useEffect(() => {
+        setTargetKey("");
+        setInstruction("");
+    }, [selectedFile]);
     const room = catalog.rooms.find((item) => item.key === roomKey);
     const style = catalog.styles.find((item) => item.key === styleKey);
     const modelProblem = sceneModelProblem(config, model, reference?.resourceId ? 1 : 0);
@@ -148,11 +165,14 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
         setError("");
         let target: InteriorProject | null = null;
         const id = newInteriorId();
+        const account = getActiveUserScope();
         try {
             target = await ensureProject();
             const entry: InteriorSceneItem = { ...item, id, createdAt: new Date().toISOString(), status: "pending", model };
             update(target.id, (document) => ({ ...document, scenes: [entry, ...(document.scenes || [])] }));
             setSelectedId(id);
+            await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未提交生成");
             const task = await submitSceneTask(config, model, prompt, item.stage || "plan", item.reference);
             update(target.id, (document) => patchInteriorScene(document, id, { taskId: task.id }));
             window.dispatchEvent(new CustomEvent("wallet:updated"));
@@ -213,8 +233,9 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
 
     const edit = async () => {
         if (!selected?.sceneFile || !selectedScene || !instruction.trim()) return;
-        if (modelProblem) {
-            setError(modelProblem);
+        const editProblem = sceneModelProblem(config, model, 0);
+        if (editProblem) {
+            setError(editProblem);
             return;
         }
         const ok = await start(
@@ -226,10 +247,49 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 ...(selected.styleKey ? { styleKey: selected.styleKey, styleName: selected.styleName, styleHint: selected.styleHint } : {}),
                 parentId: selected.id,
                 instruction: instruction.trim(),
+                ...(editOption ? { editTarget: editOption.target } : {}),
             },
-            selectedScene.version === 2 ? buildSceneSpecEditPrompt(selectedScene.spec, instruction) : buildSceneEditPrompt(selectedScene, instruction),
+            editOption ? buildSceneLocalEditPrompt(selectedScene, editOption.target, instruction) : selectedScene.version === 2 ? buildSceneSpecEditPrompt(selectedScene.spec, instruction) : buildSceneEditPrompt(selectedScene, instruction),
         );
         if (ok) setInstruction("");
+    };
+
+    const applyManual = async (patch: Record<string, unknown>) => {
+        if (submitting || !selected || !selectedScene || !editOption || !project) throw new Error("请先选择已完成的模型和调整目标");
+        if (scenes.length >= MAX_SCENES) throw new Error(`一个项目最多保存 ${MAX_SCENES} 个模型，请先整理历史版本`);
+        const scene = applySceneLocalEdit(selectedScene, editOption.target, patch);
+        const account = getActiveUserScope();
+        setSubmitting(true);
+        try {
+            await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未应用修改");
+            const sceneFile = await saveSceneFile(scene);
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未更新项目");
+            const id = newInteriorId();
+            const entry: InteriorSceneItem = {
+                ...selected,
+                id,
+                createdAt: new Date().toISOString(),
+                parentId: selected.id,
+                instruction: `手动调整：${editOption.label}`,
+                editTarget: editOption.target,
+                taskId: undefined,
+                status: "succeeded",
+                stage: "edit",
+                sceneFile,
+                title: scene.title,
+                summary: scene.summary,
+                stats: sceneStats(scene),
+                error: undefined,
+                notice: undefined,
+            };
+            update(project.id, (document) => ({ ...document, scenes: [entry, ...(document.scenes || [])] }));
+            await saveProject();
+            setSelectedId(id);
+            message.success("局部调整已保存为新版本，可在历史中查看上一版");
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const remove = (item: InteriorSceneItem) => {
@@ -367,7 +427,24 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             </div>
                         ) : selected.status === "succeeded" ? (
                             selectedScene ? (
-                                <InteriorSceneViewer scene={selectedScene} onError={(text) => message.error(text)} onSnapshot={(blob) => void render(blob)} snapshotBusy={rendering} referenceUrl={referenceUrl} />
+                                <InteriorSceneViewer
+                                    scene={selectedScene}
+                                    editTarget={editOption?.target}
+                                    onRoomSelect={(name, elevation) => {
+                                        if (!submitting && selectedScene.version === 2) {
+                                            const option = editOptions.find((item) => {
+                                                if (item.target.kind !== "room" || item.target.room !== name) return false;
+                                                const bottom = selectedScene.spec.floors.slice(0, item.target.floor).reduce((sum, floor) => sum + floor.height, 0);
+                                                return elevation >= bottom && elevation < bottom + selectedScene.spec.floors[item.target.floor].height;
+                                            });
+                                            if (option) setTargetKey(option.value);
+                                        }
+                                    }}
+                                    onError={(text) => message.error(text)}
+                                    onSnapshot={(blob) => void render(blob)}
+                                    snapshotBusy={rendering}
+                                    referenceUrl={referenceUrl}
+                                />
                             ) : selectedLoad?.error ? (
                                 <div className="itd-scene-empty is-error" role="alert">
                                     <strong>打不开这个模型</strong>
@@ -417,27 +494,48 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 ) : null}
                             </div>
                             <div className="itd-scene-edit">
+                                <label className="itd-field is-block">
+                                    <span className="itd-field-label">调整范围</span>
+                                    <Select
+                                        aria-label="局部调整目标"
+                                        value={editOption?.value || "whole"}
+                                        disabled={submitting}
+                                        showSearch
+                                        optionFilterProp="label"
+                                        options={[...editOptions.map(({ value, label }) => ({ value, label })), { value: "whole", label: "整套方案（可调整结构）" }]}
+                                        onChange={setTargetKey}
+                                    />
+                                </label>
                                 <Input
                                     value={instruction}
                                     maxLength={300}
-                                    placeholder="一句话改：把沙发换成 L 型、二层加一个露台、墙面换成浅灰色"
+                                    placeholder={editOption ? "例如：只把这里的沙发换成 L 型，其他家具保留" : "例如：二层加一个露台"}
                                     onChange={(event) => setInstruction(event.target.value)}
                                     onPressEnter={() => void edit()}
                                     disabled={submitting}
                                     aria-label="修改要求"
                                 />
-                                <Button icon={<Wand2 className="size-4" aria-hidden />} disabled={!instruction.trim() || submitting || Boolean(modelProblem)} loading={submitting} onClick={() => void edit()}>
-                                    改一版
+                                <Button icon={<Wand2 className="size-4" aria-hidden />} disabled={!instruction.trim() || submitting || Boolean(sceneModelProblem(config, model, 0))} loading={submitting} onClick={() => void edit()}>
+                                    {editOption ? "对话调整局部" : "调整整套方案"}
                                 </Button>
+                                <span className="itd-muted-note">{editOption ? "仅调整选定目标；按所选文本模型计费。点击三维房间标注也可选择目标。" : "整体调整允许改变结构，请核对新版本。"}</span>
+                                {parent ? (
+                                    <Button size="small" onClick={() => setSelectedId(parent.id)} disabled={submitting}>
+                                        查看上一版
+                                    </Button>
+                                ) : null}
                             </div>
                         </div>
+                    ) : null}
+                    {selected?.status === "succeeded" && selectedScene && editOption ? (
+                        <InteriorLocalControls key={`${selected.id}:${editOption.value}`} scene={selectedScene} target={editOption.target} disabled={submitting} onApply={applyManual} />
                     ) : null}
                     {selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
                     {scenes.length ? (
                         <ul className="itd-scene-list thin-scrollbar" aria-label="这个项目的 3D 模型">
                             {scenes.map((item) => (
                                 <li key={item.id}>
-                                    <button type="button" className={cn("itd-scene-card", item.id === selected?.id && "is-active")} aria-pressed={item.id === selected?.id} onClick={() => setSelectedId(item.id)}>
+                                    <button type="button" disabled={submitting} className={cn("itd-scene-card", item.id === selected?.id && "is-active")} aria-pressed={item.id === selected?.id} onClick={() => setSelectedId(item.id)}>
                                         <strong>{sceneTitle(item)}</strong>
                                         <span>{item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : item.stats || `${item.objectCount || 0} 个物体`}</span>
                                         <small>{[item.instruction ? "改过一版" : SCENE_SCOPES.find((scope) => scope.value === item.scope)?.label, formatTime(item.createdAt)].filter(Boolean).join(" · ")}</small>

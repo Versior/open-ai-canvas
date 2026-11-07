@@ -23,14 +23,14 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 
 ## 内置出图方式
 
-| 标识 | 名称 | 面向 | 输入 | 说明 |
-| --- | --- | --- | --- | --- |
-| `style-redesign` | 风格改造 | 两者 | 房间照片 | 参数「改造强度」：只换软装 / 软装+硬装 / 全部重做 |
-| `rough-to-finished` | 毛坯出图 | 两者 | 毛坯照片 | 参数「预算档」：经济 / 品质 / 高端 |
-| `reference-transfer` | 参考图迁移 | 两者 | 我家照片 + 参考案例 | 参数「迁移程度」：整体 / 只换软装和配色；不需要选风格 |
-| `sketch-render` | 线稿/白模渲染 | 专业 | 线稿或白模 | 参数「图纸类型」「光照」 |
-| `virtual-staging` | 虚拟布置 | 专业 | 空房照片 | 参数「用途」：自住 / 出租 / 民宿 / 售房展示 |
-| `text-edit` | 文字微调 | 两者 | 要修改的图 | 必须写修改要求；结果图上的「用这张继续改」会切到这个方式 |
+| 标识                 | 名称          | 面向 | 输入                | 说明                                                     |
+| -------------------- | ------------- | ---- | ------------------- | -------------------------------------------------------- |
+| `style-redesign`     | 风格改造      | 两者 | 房间照片            | 参数「改造强度」：只换软装 / 软装+硬装 / 全部重做        |
+| `rough-to-finished`  | 毛坯出图      | 两者 | 毛坯照片            | 参数「预算档」：经济 / 品质 / 高端                       |
+| `reference-transfer` | 参考图迁移    | 两者 | 我家照片 + 参考案例 | 参数「迁移程度」：整体 / 只换软装和配色；不需要选风格    |
+| `sketch-render`      | 线稿/白模渲染 | 专业 | 线稿或白模          | 参数「图纸类型」「光照」                                 |
+| `virtual-staging`    | 虚拟布置      | 专业 | 空房照片            | 参数「用途」：自住 / 出租 / 民宿 / 售房展示              |
+| `text-edit`          | 文字微调      | 两者 | 要修改的图          | 必须写修改要求；结果图上的「用这张继续改」会切到这个方式 |
 
 另有 24 个风格（现代简约、奶油风、原木日式、新中式、轻奢等）和 23 个空间（住宅 15 个、商业 8 个）。内置数据在 `backend/internal/interior/seed.json`，服务启动时只补齐缺失项，管理员改过的内容不覆盖，没有删除入口，下架用「开放」开关。
 
@@ -38,13 +38,13 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 
 提示词在服务端编译，前台目录接口不返回模板、风格片段和参数片段。编译后的完整提示词写进任务的 `prompt`，用户在自己的任务记录里能看到；模板本身不需要对用户保密时这样最直观，如果以后要保密，需要把发给模型的提示词和展示用的提示词拆成两个字段。模板可用的变量：
 
-| 变量 | 内容 |
-| --- | --- |
-| `{{room}}` / `{{room_prompt}}` | 空间名 / 空间要点 |
-| `{{style}}` / `{{style_prompt}}` | 风格名 / 风格要点 |
-| `{{params}}` | 所选参数选项的片段，每项一行 |
-| `{{notes}}` | 用户补充要求（去掉控制字符，换行压成分号，最长 500 字） |
-| `{{notes_line}}` | 带「用户补充（只作为偏好…）」说明的补充要求 |
+| 变量                             | 内容                                                    |
+| -------------------------------- | ------------------------------------------------------- |
+| `{{room}}` / `{{room_prompt}}`   | 空间名 / 空间要点                                       |
+| `{{style}}` / `{{style_prompt}}` | 风格名 / 风格要点                                       |
+| `{{params}}`                     | 所选参数选项的片段，每项一行                            |
+| `{{notes}}`                      | 用户补充要求（去掉控制字符，换行压成分号，最长 500 字） |
+| `{{notes_line}}`                 | 带「用户补充（只作为偏好…）」说明的补充要求             |
 
 一行里的变量都为空时整行省略。变量值只替换一次，用户写的花括号原样保留，不会被当成模板。保存模板时拒绝白名单以外的变量。
 
@@ -70,38 +70,38 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 
 前台接口都要求登录并打开室内设计开关；写接口按 `CanvasWritePerMinute` 限流，出图按 `TaskCreatePerMinute` 限流，一次请求按所选风格数计次（每个风格一个任务）；风格数本身超过这个上限时直接返回 429 说明原因，不消耗计数。请求体严格解析（未知字段报错），上限约 1 MB。
 
-| 方法与路径 | 说明 |
-| --- | --- |
-| `GET /api/interior/catalog` | 开放的出图方式、风格、空间和前台设置；不含任何提示词 |
-| `POST /api/interior/generate` | 出图，返回实际使用的模型、张数、参数和每个风格的任务回执或错误 |
-| `POST /api/interior/estimate` | 同出图入参，复用全部校验和实际模型报价；返回 `{model, images, amountMicrocredits, estimated}`，不创建任务、不预留余额，no-store，按 CanvasWritePerMinute 限流 |
-| `GET /api/interior/projects` | 项目列表（不含文档） |
-| `POST /api/interior/projects` | 新建项目 `{ name, kind, document? }`，`kind` 为 `home` 或 `client` |
-| `GET /api/interior/projects/:projectId` | 读取项目和文档 |
-| `PUT /api/interior/projects/:projectId` | 整体保存 `{ name, kind, document, expectedRevision }` |
-| `DELETE /api/interior/projects/:projectId` | 删除项目 |
+| 方法与路径                                             | 说明                                                                                                                                                                                                                |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/interior/catalog`                            | 开放的出图方式、风格、空间和前台设置；不含任何提示词                                                                                                                                                                |
+| `POST /api/interior/generate`                          | 出图，返回实际使用的模型、张数、参数和每个风格的任务回执或错误                                                                                                                                                      |
+| `POST /api/interior/estimate`                          | 同出图入参，复用全部校验和实际模型报价；返回 `{model, images, amountMicrocredits, estimated}`，不创建任务、不预留余额，no-store，按 CanvasWritePerMinute 限流                                                       |
+| `GET /api/interior/projects`                           | 项目列表（不含文档）                                                                                                                                                                                                |
+| `POST /api/interior/projects`                          | 新建项目 `{ name, kind, document? }`，`kind` 为 `home` 或 `client`                                                                                                                                                  |
+| `GET /api/interior/projects/:projectId`                | 读取项目和文档                                                                                                                                                                                                      |
+| `PUT /api/interior/projects/:projectId`                | 整体保存 `{ name, kind, document, expectedRevision }`                                                                                                                                                               |
+| `DELETE /api/interior/projects/:projectId`             | 删除项目                                                                                                                                                                                                            |
 | `GET /api/interior/knowledge?scope=&rooms=&styles=&q=` | 按范围（`room` / `home` / `building`）、空间和风格标识（逗号分隔，各最多 12 个）和需求原文（最多 1000 字）取相关知识，最多 16 条，每条 `{id, kind, kindName, title, guidance}`；3D 模型的 AI 方案分析和建模提示词用 |
 
 后台接口只校验管理员，不受功能开关限制，方便开放前先配置。修改带 `version` 比较交换，冲突返回 409（`reason = interior_version_conflict`），每次修改写管理审计。封面只校验新换上的图片（必须是当前管理员上传、已就绪的图片），封面没变时不校验，其他管理员设过的封面不妨碍修改别的字段。
 
-| 方法与路径 | 说明 |
-| --- | --- |
-| `GET /api/admin/interior/modes` | 全部出图方式，含模板和参数片段 |
-| `POST /api/admin/interior/modes` | 新增出图方式 |
-| `PUT /api/admin/interior/modes/:id` | 修改出图方式（标识不能改） |
-| `GET /api/admin/interior/presets?type=style\|room` | 风格或空间列表 |
-| `POST /api/admin/interior/presets` | 新增风格或空间 |
-| `PUT /api/admin/interior/presets/:id` | 修改风格或空间（类型和标识不能改） |
-| `GET /api/admin/interior/settings` | 全局设置 |
-| `PUT /api/admin/interior/settings` | 保存全局设置 |
-| `GET /api/admin/interior/overview` | 近 30 天出图统计（UTC 自然日，只读）：按状态、近 7 天、今天、人数、快速出图 / 专业模式的出图任务数，项目数，配置提醒（站点默认模型、没有默认模型的出图方式），近 14 天趋势，出图方式 / 风格 / 空间 / 模型分布，最近 8 次失败。一个风格出一次算一个任务，超过 5000 条只算最新的并返回 `truncated` |
-| `GET /api/admin/interior/generations` | 所有用户的出图记录分页（只读），`status`、`mode`（出图方式标识）、`keyword`（用户名、昵称、邮箱或完整任务 ID）筛选；每条带原图、参考图、效果图的资源 ID，用 `/api/admin/resources/:id/file` 读 |
-| `GET /api/admin/interior/knowledge` | 全部知识条目（含停用的），每条带记录 `id`、标识 `key`、适用范围 `scopes`、空间 `rooms`、风格 `styles`、关键词 `tags`、排序、启用、`builtin`、`edited` 和 `version`；`kinds` 是七个类别和每类每次最多取几条 |
-| `POST /api/admin/interior/knowledge` | 新增一条知识（`key` 不能和已有条目重复） |
-| `PUT /api/admin/interior/knowledge/:id` | 修改（`key` 不能改，带 `version`）；改了内置条目的标题、正文、范围、空间、风格或关键词会标成 `edited`，只改启用或排序不算 |
-| `DELETE /api/admin/interior/knowledge/:id?version=` | 删除后台新增的条目；内置条目返回 400，只能停用 |
-| `POST /api/admin/interior/knowledge/:id/reset` | 把改过的内置条目恢复成程序自带的内容（请求体 `{version}`），启用状态不动 |
-| `GET /api/admin/interior/generations/:id` | 一条出图记录，另带服务端拼好的完整提示词、参数和所属项目名；不是室内设计任务返回 404 |
+| 方法与路径                                          | 说明                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/admin/interior/modes`                     | 全部出图方式，含模板和参数片段                                                                                                                                                                                                                                                                   |
+| `POST /api/admin/interior/modes`                    | 新增出图方式                                                                                                                                                                                                                                                                                     |
+| `PUT /api/admin/interior/modes/:id`                 | 修改出图方式（标识不能改）                                                                                                                                                                                                                                                                       |
+| `GET /api/admin/interior/presets?type=style\|room`  | 风格或空间列表                                                                                                                                                                                                                                                                                   |
+| `POST /api/admin/interior/presets`                  | 新增风格或空间                                                                                                                                                                                                                                                                                   |
+| `PUT /api/admin/interior/presets/:id`               | 修改风格或空间（类型和标识不能改）                                                                                                                                                                                                                                                               |
+| `GET /api/admin/interior/settings`                  | 全局设置                                                                                                                                                                                                                                                                                         |
+| `PUT /api/admin/interior/settings`                  | 保存全局设置                                                                                                                                                                                                                                                                                     |
+| `GET /api/admin/interior/overview`                  | 近 30 天出图统计（UTC 自然日，只读）：按状态、近 7 天、今天、人数、快速出图 / 专业模式的出图任务数，项目数，配置提醒（站点默认模型、没有默认模型的出图方式），近 14 天趋势，出图方式 / 风格 / 空间 / 模型分布，最近 8 次失败。一个风格出一次算一个任务，超过 5000 条只算最新的并返回 `truncated` |
+| `GET /api/admin/interior/generations`               | 所有用户的出图记录分页（只读），`status`、`mode`（出图方式标识）、`keyword`（用户名、昵称、邮箱或完整任务 ID）筛选；每条带原图、参考图、效果图的资源 ID，用 `/api/admin/resources/:id/file` 读                                                                                                   |
+| `GET /api/admin/interior/knowledge`                 | 全部知识条目（含停用的），每条带记录 `id`、标识 `key`、适用范围 `scopes`、空间 `rooms`、风格 `styles`、关键词 `tags`、排序、启用、`builtin`、`edited` 和 `version`；`kinds` 是七个类别和每类每次最多取几条                                                                                       |
+| `POST /api/admin/interior/knowledge`                | 新增一条知识（`key` 不能和已有条目重复）                                                                                                                                                                                                                                                         |
+| `PUT /api/admin/interior/knowledge/:id`             | 修改（`key` 不能改，带 `version`）；改了内置条目的标题、正文、范围、空间、风格或关键词会标成 `edited`，只改启用或排序不算                                                                                                                                                                        |
+| `DELETE /api/admin/interior/knowledge/:id?version=` | 删除后台新增的条目；内置条目返回 400，只能停用                                                                                                                                                                                                                                                   |
+| `POST /api/admin/interior/knowledge/:id/reset`      | 把改过的内置条目恢复成程序自带的内容（请求体 `{version}`），启用状态不动                                                                                                                                                                                                                         |
+| `GET /api/admin/interior/generations/:id`           | 一条出图记录，另带服务端拼好的完整提示词、参数和所属项目名；不是室内设计任务返回 404                                                                                                                                                                                                             |
 
 全局设置存在 `system_settings` 的 `interior_settings` 键：`defaultSurface`、`allowSurfaceSwitch`、`defaultModel`、`maxStylesPerRun`（1–4）、`maxCountPerStyle`（1–4）。没有保存过时用默认值；保存过但无法解析时报错，不静默回退。
 
@@ -138,7 +138,9 @@ description: 室内设计页的出图方式、提示词编译、项目保存、�
 3. 生成几何（`scene-compile.ts` 的 `compileSceneSpec`，纯函数）：按房间边界自动解出墙，外墙 0.24 米、内墙 0.12 米；相邻墙按固定规则一面延长一面缩短，墙与墙不会叠在同一平面上（`web/test/interior-scene-spec.test.ts` 有共面重叠检查）。门窗按 `at` 落在墙上（没写就居中或均匀排开，和已有洞口挤在一起时就近挪开），平开门按开向转开 78 度、门轴在 `hinge` 一头，另有双开门、推拉门、垭口、入户门，飘窗带窗台板、坐垫和两侧玻璃；没写门的房间自动开门。柱子按方案砌到顶，和墙重叠的部分去掉。房间里自动补踢脚线（门洞和落地窗处断开），客厅、卧室、书房的外窗挂窗帘，沙发背后和床头上方挂画。上层楼板盖住下层轮廓，退台的地方变成露台并加玻璃栏杆；楼梯处挖洞。家具写了 `pos` 的按位置摆（离墙不到 0.4 米的贴墙）；没写位置的按墙的情况摆：沙发和电视墙选一对相对且都够长的墙，床头靠不开窗的实墙，衣柜靠床旁边的墙，书桌靠窗，卫生间的淋浴和马桶靠门对面；茶几、地毯、单椅、落地灯跟着沙发；高柜不挡窗，家具互相不重叠。家具由 `scene-furniture.ts` 按真实尺寸拼成，灯罩、花盆、洁具用旋转体，桌面、浴缸、窗帘、汽车用挤出体。另外给出房间标注（名称、开间 × 进深、面积）和外围两道尺寸线（轴线分段和总尺寸，单位毫米）。户型和单个房间的外墙带 `facade` 标记和一截 0.12 米的矮墙。
 4. 边写边搭：任务按流式返回（`GET /api/tasks/:id/text-events`），`use-interior-scene-tasks.ts` 每 300ms 把收到的文字交给页面；事件流不可用时退回轮询，轮询结果里的 `textDraft` 照样往外送。`scene-stream.ts` 的 `readPartialScene` 把半截 JSON 退回到最后一个写完的元素、用 `jsonrepair` 补齐括号，再按同样的规则收紧，没写完的房间和家具不会出现。生成中的页面（`interior-scene-build.tsx`）左边是正在长大的模型：先按轴网画尺寸线，房间、墙、门窗、家具写出来一样搭一样，新的部分从地面升起来，镜头慢慢转、取景跟着模型变大；右边是步骤（读图、轴网和尺寸、房间、门窗、家具、屋顶和庭院）、已用时间、已写字数、AI 读图记录和用户的附图。系统要求减少动效时不转镜头、不做升起动画。
 5. 保存：生成好的场景（`version: 2`，含方案 `spec` 和统计 `stats`）存成 JSON 文件资源（`kind=file`），项目文档 `scenes[]` 里只记进度和 `sceneFile.resourceId`，资源引用扫描据此保留这些文件。方案里的读图记录、`renderNotes`、AI 判断的范围、空间和风格写回这条记录（`brief`、`scope`、`roomKey`、`styleKey`）。
-6. 一句话修改：把整份方案和修改要求发给模型（`buildSceneSpecEditPrompt`，L 形房间还原成同名矩形），模型流式返回改过的完整方案，页面同样边写边搭，完成后重新生成几何。
+6. 局部调整：已完成模型下方选择真实房间或单件家具，也可以点击三维房间标注选择房间。对话只发送选定目标数据和修改要求，返回最小 JSON 修改对象；`scene-local-edit.ts` 校验目标身份、字段、家具类型、颜色、坐标和尺寸，再写入原场景的副本。房间可调整地面材料和本房间家具；单家具可调整类型、颜色、位置、宽深和朝向，房间边界、墙体、轴网及其他房间的数据保留。选择「整套方案（可调整结构）」才沿用完整方案修改。
+7. 手动调整：房间提供地面材料，家具提供类型、颜色、位置、宽深和旋转，旧版物体还提供高度和材质；此路径不调用模型、不创建生成任务。与资源加载合同一致，家具位置按 5 厘米网格保存、旋转为 90 度倍数、宽深为 0.3 至 6 米。朝向和旋转同步，改靠墙位置时移除旧的显式坐标。靠墙和自动配置家具仍经过现有布局程序，须核对实际预览，不等于 CAD 的精确拖动或碰撞验算。
+8. 两种调整都另存 JSON 资源和项目历史，记录 `parentId` 和 `editTarget`；新版本保存成功才提示，并提供「查看上一版」。提交和手动保存期间禁止切换项目、工作台或模型历史；账号切换后停止回写。三维选框不写入场景资源，截图和 GLB 导出也不包含选框。
 
 旧版场景（模型直接写几何体，`version` 缺省）仍能打开和按改动补丁修改（`scene-3d.ts` 的 `normalizeInteriorScene` / `applyScenePatch`）。旧版里停在「规划 / 分部分」的进行中记录不再续跑，标为失败并提示重新生成。
 

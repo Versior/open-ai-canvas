@@ -1,5 +1,6 @@
 import type { InteriorSceneScope, SceneBrief } from "@/lib/interior/scene-3d";
 import type { RenovationSpec } from "@/lib/interior/renovation";
+import type { SceneEditTarget } from "@/lib/interior/scene-local-edit";
 import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
@@ -146,6 +147,7 @@ export type InteriorSceneItem = {
     reference?: InteriorImageRef;
     parentId?: string;
     instruction?: string;
+    editTarget?: SceneEditTarget;
     /** spec：按方案出整份 3D 方案（第二版）；plan、parts 是旧版分部分搭的进度，已不再产生。 */
     stage?: "analyze" | "spec" | "plan" | "parts" | "edit";
     brief?: SceneBrief;
