@@ -133,6 +133,87 @@ func TestAppearanceBackfillsVersionSevenFieldsForExistingSetting(t *testing.T) {
 	}
 }
 
+func TestAppearanceMigratesBuiltInKINOVOBrandToStage(t *testing.T) {
+	svc, db, _, _ := newAppearanceTestService(t)
+	legacy := model.SystemSetting{Key: appearanceSettingKey, ValueJSON: `{"schemaVersion":11,"brandName":"KINOVO","brandSlug":"kinovo","authHeroTitle":"From idea,\nto production.","seoTitle":"KINOVO","seoDescription":"KINOVO，多模态 AI 创作与内容生产工作台。","footerCopyright":"© 2026 KINOVO. All rights reserved.","canvas":{"agentName":"KINOVO","launcherLabel":"Agent","panelTitle":"画布助手","welcomeTitle":"在这里，和{agentName}让灵感，慢慢成形","welcomeDescription":"从一个想法开始，和{agentName}一起创作。","inputPlaceholder":"输入操作指导；用 @ 引用画布节点，用 / 或 、 引用 Skills","avatarType":"bundle","avatarHeight":220}}`}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	appearance, err := svc.Appearance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appearance.SchemaVersion != appearanceSchemaVersion || appearance.BrandName != "STAGE" || appearance.BrandSlug != "stage" || appearance.AuthHeroTitle != "From idea,\nto final." || appearance.SEOTitle != "STAGE" || !strings.Contains(appearance.SEODescription, "STAGE") || strings.Contains(appearance.FooterCopyright, "KINOVO") || appearance.Canvas.AgentName != "STAGE" {
+		t.Fatalf("migrated appearance = %#v", appearance)
+	}
+}
+
+func TestAppearanceKeepsCustomizedLegacyBrand(t *testing.T) {
+	svc, db, _, _ := newAppearanceTestService(t)
+	legacy := model.SystemSetting{Key: appearanceSettingKey, ValueJSON: `{"schemaVersion":11,"brandName":"KINOVO","brandSlug":"kinovo","authHeroTitle":"A custom production suite","seoTitle":"KINOVO Studio Pro","seoDescription":"Custom brand copy","footerCopyright":"Custom copyright"}`}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	appearance, err := svc.Appearance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appearance.BrandName != "KINOVO" || appearance.BrandSlug != "kinovo" || appearance.AuthHeroTitle != "A custom production suite" || appearance.SEOTitle != "KINOVO Studio Pro" || appearance.SEODescription != "Custom brand copy" || appearance.FooterCopyright != "Custom copyright" {
+		t.Fatalf("customized legacy appearance = %#v", appearance)
+	}
+}
+
+func TestAppearanceMigratesLegacyBuiltInBrandWithoutStoredSlug(t *testing.T) {
+	svc, db, _, _ := newAppearanceTestService(t)
+	legacy := model.SystemSetting{Key: appearanceSettingKey, ValueJSON: `{"schemaVersion":10,"brandName":"KINOVO","authHeroTitle":"From idea,\nto production.","canvas":{"agentName":"KINOVO"}}`}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	appearance, err := svc.Appearance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if appearance.BrandName != "STAGE" || appearance.BrandSlug != "stage" || appearance.Canvas.AgentName != "STAGE" {
+		t.Fatalf("legacy appearance without slug = %#v", appearance)
+	}
+}
+
+func TestAppearanceKeepsCustomizedLegacyCopyright(t *testing.T) {
+	for _, copyright := range []string{
+		"© 2026 My KINOVO. All rights reserved.",
+		"© +026 KINOVO. All rights reserved.",
+	} {
+		t.Run(copyright, func(t *testing.T) {
+			svc, db, _, _ := newAppearanceTestService(t)
+			encoded, err := json.Marshal(map[string]any{
+				"schemaVersion":   11,
+				"brandName":       "KINOVO",
+				"brandSlug":       "kinovo",
+				"authHeroTitle":   "From idea,\nto production.",
+				"footerCopyright": copyright,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy := model.SystemSetting{Key: appearanceSettingKey, ValueJSON: string(encoded)}
+			if err := db.Create(&legacy).Error; err != nil {
+				t.Fatal(err)
+			}
+
+			appearance, err := svc.Appearance()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if appearance.BrandName != "KINOVO" || appearance.BrandSlug != "kinovo" || appearance.FooterCopyright != copyright {
+				t.Fatalf("customized legacy copyright = %#v", appearance)
+			}
+		})
+	}
+}
+
 func TestUpdateAppearancePersistsAuditsAndUsesVersionedPublicAssets(t *testing.T) {
 	svc, db, dataDir, admin := newAppearanceTestService(t)
 	resources := []model.Resource{

@@ -34,21 +34,24 @@ const (
 )
 
 const (
-	appearanceSchemaVersion        = 11
+	appearanceSchemaVersion        = 12
 	appearanceLogoMaxBytes   int64 = 5 << 20
 	appearancePosterMaxBytes int64 = 10 << 20
 	appearanceVideoMaxBytes  int64 = 256 << 20
 )
 
 const (
-	defaultAppearanceBrandName = "KINOVO"
-	defaultAppearanceBrandSlug = "kinovo"
+	defaultAppearanceBrandName = "STAGE"
+	defaultAppearanceBrandSlug = "stage"
 	defaultAppearanceSkinID    = "classic"
 	defaultAppearanceLogoURL   = "/logo.svg"
 	defaultAppearanceVideoURL  = "https://boss-shjd.biliapi.net/updream/aniforge/video/video_bbcb00bd-650d-4249-9346-5cd21fd2484c_m1hc-u0-1pu13x-3v1s.mp4"
 	defaultAppearancePosterURL = "https://i0.hdslb.com/bfs/aitool/aniforge/image/02933f26-5f1b-49ff-a811-b7f95ee5e5b8_m1hc-u0-sau.jpg"
-	defaultAppearanceHeroTitle = "From idea,\nto production."
+	defaultAppearanceHeroTitle = "From idea,\nto final."
 	defaultRedeemPurchaseURL   = "" // 默认不配置购买链接，前端为空时不展示入口
+	legacyAppearanceBrandName  = "KINOVO"
+	legacyAppearanceBrandSlug  = "kinovo"
+	legacyAppearanceHeroTitle  = "From idea,\nto production."
 )
 
 type AppearanceSetting struct {
@@ -74,6 +77,16 @@ type AppearanceSetting struct {
 	ICPFilingEnabled          bool                  `json:"icpFilingEnabled"`
 	ICPFilingNumber           string                `json:"icpFilingNumber"`
 	RedeemPurchaseURL         string                `json:"redeemPurchaseUrl"`
+}
+
+type storedAppearanceBrandFields struct {
+	SchemaVersion   int     `json:"schemaVersion"`
+	BrandName       *string `json:"brandName"`
+	BrandSlug       *string `json:"brandSlug"`
+	AuthHeroTitle   *string `json:"authHeroTitle"`
+	SEOTitle        *string `json:"seoTitle"`
+	SEODescription  *string `json:"seoDescription"`
+	FooterCopyright *string `json:"footerCopyright"`
 }
 
 type PublicAppearanceSetting struct {
@@ -297,7 +310,7 @@ func (s *Service) ResetAppearance(actor *model.User) (*AdminAppearanceSetting, e
 		return nil, err
 	}
 	after := defaultAppearanceSetting()
-	if err := s.appendAdminAudit(actor, "appearance.reset", "system_setting", appearanceSettingKey, "恢复 KINOVO 默认品牌标识", map[string]any{"before": before, "after": after}); err != nil {
+	if err := s.appendAdminAudit(actor, "appearance.reset", "system_setting", appearanceSettingKey, "恢复 STAGE 默认品牌标识", map[string]any{"before": before, "after": after}); err != nil {
 		return nil, err
 	}
 	return s.AdminAppearance(actor)
@@ -440,9 +453,12 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 	// Decode stored themes without reusing built-in slice entries: omitted
 	// fields must be migrated according to each stored theme's identity.
 	value.SkinThemes = nil
-	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal([]byte(setting.ValueJSON), &value) != nil {
+	storedBrand := storedAppearanceBrandFields{}
+	encoded := []byte(setting.ValueJSON)
+	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal(encoded, &storedBrand) != nil || json.Unmarshal(encoded, &value) != nil {
 		return nil, AppearanceSetting{}, errors.New("外观配置格式无效")
 	}
+	migrateLegacyBuiltInAppearance(&value, storedBrand)
 	value.SchemaVersion = appearanceSchemaVersion
 	value.BrandName = strings.TrimSpace(value.BrandName)
 	if value.BrandName == "" {
@@ -472,6 +488,71 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 	value.ICPFilingNumber = normalizeAppearanceSingleLine(value.ICPFilingNumber)
 	value.RedeemPurchaseURL = strings.TrimSpace(value.RedeemPurchaseURL)
 	return setting, value, nil
+}
+
+func migrateLegacyBuiltInAppearance(value *AppearanceSetting, stored storedAppearanceBrandFields) {
+	if stored.SchemaVersion >= appearanceSchemaVersion || stored.BrandName == nil || strings.TrimSpace(*stored.BrandName) != legacyAppearanceBrandName {
+		return
+	}
+	if stored.BrandSlug != nil {
+		slug := strings.ToLower(strings.TrimSpace(*stored.BrandSlug))
+		if slug != "" && slug != legacyAppearanceBrandSlug {
+			return
+		}
+	}
+	if !storedAppearanceCopyMatches(stored.AuthHeroTitle, legacyAppearanceHeroTitle) {
+		return
+	}
+	if !storedAppearanceCopyMatches(stored.SEOTitle, legacyAppearanceBrandName) {
+		return
+	}
+	legacyDescription := legacyAppearanceBrandName + "，多模态 AI 创作与内容生产工作台。"
+	if !storedAppearanceCopyMatches(stored.SEODescription, legacyDescription) {
+		return
+	}
+	if stored.FooterCopyright != nil && !legacyAppearanceCopyright(*stored.FooterCopyright) {
+		return
+	}
+
+	value.BrandName = defaultAppearanceBrandName
+	value.BrandSlug = defaultAppearanceBrandSlug
+	value.AuthHeroTitle = defaultAppearanceHeroTitle
+	if value.SEOTitle == legacyAppearanceBrandName {
+		value.SEOTitle = defaultAppearanceBrandName
+	}
+	if value.SEODescription == legacyDescription {
+		value.SEODescription = defaultAppearanceBrandName + "，多模态 AI 创作与内容生产工作台。"
+	}
+	value.FooterCopyright = strings.Replace(value.FooterCopyright, legacyAppearanceBrandName, defaultAppearanceBrandName, 1)
+	if value.Canvas.AgentName == legacyAppearanceBrandName {
+		value.Canvas.AgentName = defaultAppearanceBrandName
+	}
+}
+
+func storedAppearanceCopyMatches(value *string, legacyDefault string) bool {
+	return value == nil || normalizeAppearanceCopy(*value) == "" || normalizeAppearanceCopy(*value) == legacyDefault
+}
+
+func legacyAppearanceCopyright(value string) bool {
+	const prefix = "© "
+	suffix := " " + legacyAppearanceBrandName + ". All rights reserved."
+	value = normalizeAppearanceSingleLine(value)
+	if value == "" {
+		return true
+	}
+	if !strings.HasPrefix(value, prefix) || !strings.HasSuffix(value, suffix) {
+		return false
+	}
+	year := strings.TrimSuffix(strings.TrimPrefix(value, prefix), suffix)
+	if len(year) != 4 {
+		return false
+	}
+	for _, char := range year {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // resolveAvailableAppearanceAssets prevents stale resource references from

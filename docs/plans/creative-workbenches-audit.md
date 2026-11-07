@@ -1,6 +1,6 @@
 # Fuck My Shit Mountain Audit Report
 
-**Project:** KINOVO · 视频复刻、室内设计、电商生图台
+**Project:** STAGE · 视频复刻、室内设计、电商生图台
 **Audit mode:** full（限定三个板块及其任务、资源、保存、交付边界）
 **Date:** 2026-11-07
 **Reviewer:** Boom / Codex

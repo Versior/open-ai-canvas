@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="web/public/logo.svg" width="92" alt="KINOVO logo">
+<img src="web/public/logo.svg" width="92" alt="STAGE logo">
 
-# KINOVO
+# STAGE
 
-### From idea to production.
+### From idea to final.
 
 **A self-hosted creative operating system for image, video, commerce, storytelling and spatial design.**
 
 把创意、模型、素材、Agent 与生产流程，放进同一个工作台。
 
-[Product Tour](#product-tour) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Documentation](#documentation) · [中文介绍](#kinovo-是什么)
+[Product Tour](#product-tour) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Documentation](#documentation) · [中文介绍](#stage-是什么)
 
 [![GitHub stars](https://img.shields.io/github/stars/Versior/open-ai-canvas?style=flat-square&logo=github&color=111827)](https://github.com/Versior/open-ai-canvas/stargazers)
 [![License](https://img.shields.io/github/license/Versior/open-ai-canvas?style=flat-square&color=10b981)](LICENSE)
@@ -20,22 +20,22 @@
 
 <br>
 
-<img src="assets/screenshots/create.jpg" width="100%" alt="KINOVO creative workspace">
+<img src="assets/screenshots/create.jpg" width="100%" alt="STAGE creative workspace">
 
 </div>
 
 > [!IMPORTANT]
-> KINOVO 正在快速迭代，数据结构和外部接口可能调整。默认适合个人、本地或可信环境部署；公网多人使用前，请先完成安全配置。
+> STAGE 正在快速迭代，数据结构和外部接口可能调整。默认适合个人、本地或可信环境部署；公网多人使用前，请先完成安全配置。
 
-## KINOVO 是什么
+## STAGE 是什么
 
-KINOVO 是一套可自部署的多模态 AI 创作与内容生产系统。它不是单一的生图页，也不是只会聊天的 Agent，而是一条从构想到交付的完整生产链。
+STAGE 是一套可自部署的多模态 AI 创作与内容生产系统。它不是单一的生图页，也不是只会聊天的 Agent，而是一条从构想到交付的完整生产链。
 
 图片、视频、短剧、电商视觉、视频复刻、室内设计和 3D 预演共享同一套模型渠道、素材库、任务系统与管理后台。创作者可以从一句话开始，也可以在无限画布里精细控制每一步。
 
 ### From fragmented tools to one production system
 
-| Layer           | What KINOVO connects                                 |
+| Layer           | What STAGE connects                                  |
 | --------------- | ---------------------------------------------------- |
 | **Create**      | 文本、图片、视频、音频、字幕、配音和 3D 内容         |
 | **Orchestrate** | 无限画布、Agent、Skills、插件和可审批的生成操作      |
@@ -83,8 +83,8 @@ KINOVO 是一套可自部署的多模态 AI 创作与内容生产系统。它不
 
 <table>
 <tr>
-<td width="50%"><img src="assets/screenshots/create.jpg" alt="KINOVO creation home"></td>
-<td width="50%"><img src="assets/screenshots/agent.jpg" alt="KINOVO canvas agent"></td>
+<td width="50%"><img src="assets/screenshots/create.jpg" alt="STAGE creation home"></td>
+<td width="50%"><img src="assets/screenshots/agent.jpg" alt="STAGE canvas agent"></td>
 </tr>
 <tr>
 <td><b>Create</b> — 从图片、视频、文本或 Agent 模式开始，选择模型、比例、清晰度与参考素材。</td>
@@ -96,8 +96,8 @@ KINOVO 是一套可自部署的多模态 AI 创作与内容生产系统。它不
 
 <table>
 <tr>
-<td width="50%"><img src="assets/screenshots/canvas.jpg" alt="KINOVO infinite canvas"></td>
-<td width="50%"><img src="assets/screenshots/image-studio.jpg" alt="KINOVO image studio"></td>
+<td width="50%"><img src="assets/screenshots/canvas.jpg" alt="STAGE infinite canvas"></td>
+<td width="50%"><img src="assets/screenshots/image-studio.jpg" alt="STAGE image studio"></td>
 </tr>
 <tr>
 <td><b>Canvas</b> — 节点、连线、分组、小地图、撤销重做、第三方画布导入与只读分享。</td>
@@ -108,13 +108,13 @@ KINOVO 是一套可自部署的多模态 AI 创作与内容生产系统。它不
 ### Move from story to screen
 
 <p align="center">
-  <img src="assets/screenshots/storyboard.jpg" width="100%" alt="KINOVO storyboard production">
+  <img src="assets/screenshots/storyboard.jpg" width="100%" alt="STAGE storyboard production">
 </p>
 
 <table>
 <tr>
-<td width="50%"><img src="assets/screenshots/script.jpg" alt="KINOVO script workspace"></td>
-<td width="50%"><img src="assets/screenshots/cast.jpg" alt="KINOVO cast and world bible"></td>
+<td width="50%"><img src="assets/screenshots/script.jpg" alt="STAGE script workspace"></td>
+<td width="50%"><img src="assets/screenshots/cast.jpg" alt="STAGE cast and world bible"></td>
 </tr>
 <tr>
 <td><b>Script</b> — 管理分集、梗概、钩子、悬念、镜头、台词和对应原文。</td>
@@ -125,25 +125,25 @@ KINOVO 是一套可自部署的多模态 AI 创作与内容生产系统。它不
 ### Design the space before generation
 
 <p align="center">
-  <img src="assets/screenshots/3d.png" width="100%" alt="KINOVO spatial design and 3D previs">
+  <img src="assets/screenshots/3d.png" width="100%" alt="STAGE spatial design and 3D previs">
 </p>
 
-KINOVO 的 3D 预演台用于摆场、姿态、动画、摄影机和时间轴设计。构图截图、白模视频与深度图可以继续作为图片或视频模型的控制参考。
+STAGE 的 3D 预演台用于摆场、姿态、动画、摄影机和时间轴设计。构图截图、白模视频与深度图可以继续作为图片或视频模型的控制参考。
 
 ### Keep models, assets and operations together
 
 <table>
 <tr>
-<td width="50%"><img src="assets/screenshots/skills.jpg" alt="KINOVO skills library"></td>
-<td width="50%"><img src="assets/screenshots/plugins.jpg" alt="KINOVO plugin center"></td>
+<td width="50%"><img src="assets/screenshots/skills.jpg" alt="STAGE skills library"></td>
+<td width="50%"><img src="assets/screenshots/plugins.jpg" alt="STAGE plugin center"></td>
 </tr>
 <tr>
 <td><b>Skills</b> — 把分镜方法、角色设计、电商策划和创意经验沉淀为可调用能力。</td>
 <td><b>Plugins</b> — 扩展模型协议、编辑器、媒体转换、支付与应用能力。</td>
 </tr>
 <tr>
-<td><img src="assets/screenshots/assets.jpg" alt="KINOVO asset library"></td>
-<td><img src="assets/screenshots/admin-overview.jpg" alt="KINOVO operations dashboard"></td>
+<td><img src="assets/screenshots/assets.jpg" alt="STAGE asset library"></td>
+<td><img src="assets/screenshots/admin-overview.jpg" alt="STAGE operations dashboard"></td>
 </tr>
 <tr>
 <td><b>Assets</b> — 统一归档上传素材和生成结果，按业务类型组织，并在删除前检查引用。</td>
@@ -222,12 +222,12 @@ flowchart TB
 
 ### Responsibility map
 
-| Area                | Responsibility                                          |
-| ------------------- | ------------------------------------------------------- |
-| `web/`              | React 工作区、画布、各类 Studio、管理后台和浏览器端状态 |
-| `backend/`          | 鉴权、业务服务、任务编排、模型中转、存储、计费和审计    |
-| `docs/`             | 产品、开发、数据库、画布和插件系统文档                  |
-| Docker & Compose    | Nginx、前后端容器和生产部署边界                         |
+| Area             | Responsibility                                          |
+| ---------------- | ------------------------------------------------------- |
+| `web/`           | React 工作区、画布、各类 Studio、管理后台和浏览器端状态 |
+| `backend/`       | 鉴权、业务服务、任务编排、模型中转、存储、计费和审计    |
+| `docs/`          | 产品、开发、数据库、画布和插件系统文档                  |
+| Docker & Compose | Nginx、前后端容器和生产部署边界                         |
 
 ## Technology Stack
 
@@ -242,7 +242,7 @@ flowchart TB
 
 ## What is different in this fork
 
-KINOVO 基于 Open AI Canvas 持续二次开发，将原本偏影视的工作台扩展为多场景内容生产系统。
+STAGE 基于 Open AI Canvas 持续二次开发，将原本偏影视的工作台扩展为多场景内容生产系统。
 
 - **Commerce**：商品事实、视觉策划、视角方案、主图、详情页、营销 KV 和平台套图。
 - **Replication**：镜头分析、字幕、配音、音乐、时间线、成片与剪映草稿。
@@ -263,8 +263,8 @@ KINOVO 基于 Open AI Canvas 持续二次开发，将原本偏影视的工作台
 ### Docker Compose
 
 ```bash
-git clone -b feat/ecommerce-canvas https://github.com/Versior/open-ai-canvas.git kinovo
-cd kinovo
+git clone -b feat/ecommerce-canvas https://github.com/Versior/open-ai-canvas.git stage
+cd stage
 docker compose -f docker-compose.local.yml up -d --build
 ```
 
@@ -279,8 +279,8 @@ docker compose -f docker-compose.local.yml up -d --build
 <summary><strong>展开宿主机开发步骤</strong></summary>
 
 ```bash
-git clone -b feat/ecommerce-canvas https://github.com/Versior/open-ai-canvas.git kinovo
-cd kinovo
+git clone -b feat/ecommerce-canvas https://github.com/Versior/open-ai-canvas.git stage
+cd stage
 
 mkdir -p .local/project-workbench-debug .local/cache/go-build .local/cache/go-mod
 
@@ -340,7 +340,7 @@ cd docs && bun run types:check
 
 ## Upstream & License
 
-KINOVO 基于 [Open AI Canvas](https://github.com/ddcat-ai/open-ai-canvas) / 影策二次开发。感谢原项目作者和所有贡献者提供的产品基础与开源工作。
+STAGE 基于 [Open AI Canvas](https://github.com/ddcat-ai/open-ai-canvas) / 影策二次开发。感谢原项目作者和所有贡献者提供的产品基础与开源工作。
 
 原项目贡献者名单见 [项目贡献者](CONTRIBUTORS.md)，欢迎页从该名单展示团队信息。
 
@@ -352,8 +352,8 @@ KINOVO 基于 [Open AI Canvas](https://github.com/ddcat-ai/open-ai-canvas) / 影
 
 <div align="center">
 
-**KINOVO — From idea to production.**
+**STAGE — From idea to final.**
 
-[Back to top](#kinovo)
+[Back to top](#stage)
 
 </div>

@@ -1,12 +1,9 @@
 <svg width="64" height="64" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <title>KINOVO</title>
+  <title>STAGE</title>
+  <desc>An architectural S formed by interlocking stage planes.</desc>
   <style>
     :root { color: #111827; }
     @media (prefers-color-scheme: dark) { :root { color: #F8FAFC; } }
   </style>
-  <g transform="translate(0 18)" stroke="currentColor" stroke-width="17" stroke-linecap="square" stroke-linejoin="miter">
-    <path d="M92 42C57 42 34 67 34 102C34 137 57 162 92 162"/>
-    <path d="M148 42C183 42 206 67 206 102C206 137 183 162 148 162"/>
-    <path d="M83 55L120 153L157 55"/>
-  </g>
+  <path fill="currentColor" d="M44 44H198L174 84H94L83 102H168L194 140H96L85 158H198L174 198H42L67 156H148L159 140H72L46 102H144L155 84H44V44Z"/>
 </svg>

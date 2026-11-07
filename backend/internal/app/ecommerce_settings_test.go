@@ -26,7 +26,7 @@ func TestEcommercePlannerDefaultsAndOverrides(t *testing.T) {
 	if err := s.applyEcommerceAnalysisInstruction(&input); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(input.Config.SystemPrompt, ecommercePlannerDefault) || !strings.Contains(input.Config.SystemPrompt, "KINOVO runtime adapter") || input.Prompt != "verified product facts" {
+	if !strings.HasPrefix(input.Config.SystemPrompt, ecommercePlannerDefault) || !strings.Contains(input.Config.SystemPrompt, "STAGE runtime adapter") || input.Prompt != "verified product facts" {
 		t.Fatal("planner default or runtime adaptation missing")
 	}
 	for _, flow := range []string{"main", "detail", "wear", "seed"} {

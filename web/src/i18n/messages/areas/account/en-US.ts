@@ -560,7 +560,7 @@ export const enUS: DeepStringRecord<typeof zhCN> = {
         lookPicker: "Home page footage version",
         look: "Footage version",
         demoCredit: "Demo footage · CC BY",
-        storyLabel: "The KINOVO creative journey",
+        storyLabel: "The STAGE creative journey",
         watchClip: "Watch clip",
         enterStudio: "Enter the studio",
         nextChapter: "Next scene",

@@ -10,10 +10,10 @@ import { useDocumentTitleStore } from "@/stores/use-document-title-store";
 export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     updates: DEFAULT_UPDATE_ANNOUNCEMENT,
     canvas: DEFAULT_CANVAS_APPEARANCE,
-    schemaVersion: 10,
-    brandName: "KINOVO",
-    brandSlug: "kinovo",
-    authHeroTitle: "From idea,\nto production.",
+    schemaVersion: 12,
+    brandName: "STAGE",
+    brandSlug: "stage",
+    authHeroTitle: "From idea,\nto final.",
     authHeroDescription: "",
     logoUrl: "/logo.svg",
     darkLogoUrl: "/logo.svg",
@@ -23,10 +23,10 @@ export const DEFAULT_PUBLIC_APPEARANCE: PublicAppearance = {
     authVideoAutoplay: true,
     skinId: "classic",
     activeSkin: DEFAULT_CLASSIC_SKIN,
-    seoTitle: "KINOVO",
-    seoDescription: "KINOVO，多模态 AI 创作与内容生产工作台。",
+    seoTitle: "STAGE",
+    seoDescription: "STAGE，多模态 AI 创作与内容生产工作台。",
     seoKeywords: "",
-    footerCopyright: `© ${new Date().getFullYear()} KINOVO. All rights reserved.`,
+    footerCopyright: `© ${new Date().getFullYear()} STAGE. All rights reserved.`,
     icpFilingEnabled: false,
     icpFilingNumber: "",
     redeemPurchaseUrl: "",
@@ -80,7 +80,7 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
     return {
         ...DEFAULT_PUBLIC_APPEARANCE,
         ...value,
-        schemaVersion: 10,
+        schemaVersion: 12,
         updates: normalizeUpdateAnnouncement(value?.updates),
         canvas: { ...DEFAULT_CANVAS_APPEARANCE, ...value?.canvas },
         brandName: resolvedBrandName,
@@ -178,7 +178,7 @@ export function appearanceLogoURL(appearance: PublicAppearance, theme: "light" |
 }
 
 export function brandStudioLabel(appearance: PublicAppearance) {
-    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "KINOVO STUDIO";
+    if (appearance.brandName === DEFAULT_PUBLIC_APPEARANCE.brandName && appearance.brandSlug === DEFAULT_PUBLIC_APPEARANCE.brandSlug) return "STAGE";
     return appearance.brandSlug.replace(/-+/g, " ").toLocaleUpperCase();
 }
 
