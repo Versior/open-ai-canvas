@@ -148,6 +148,7 @@ func (s *Service) UpdateSocialVideoParseSettings(actor *model.User, req SocialVi
 }
 
 func applySocialVideoParseDefinition(api *socialVideoParseAPI, req SocialVideoParseAPIRequest) {
+	api.Category = req.Category
 	api.Name, api.Platforms, api.Priority, api.Weight = req.Name, req.Platforms, req.Priority, req.Weight
 	api.Method, api.URL, api.BodyType, api.Body, api.Headers = req.Method, req.URL, req.BodyType, req.Body, req.Headers
 	api.TimeoutSeconds, api.Mapping, api.DownloadHeaders, api.Remark = req.TimeoutSeconds, req.Mapping, req.DownloadHeaders, req.Remark
@@ -556,7 +557,7 @@ func socialVideoParseExportItem(api socialVideoParseAPI) SocialVideoParseAPIRequ
 	return SocialVideoParseAPIRequest{
 		Name: api.Name, Platforms: api.Platforms, Enabled: api.Enabled, Priority: api.Priority, Weight: api.Weight,
 		Method: api.Method, URL: api.URL, BodyType: api.BodyType, Body: api.Body, Headers: api.Headers,
-		TimeoutSeconds: api.TimeoutSeconds, Mapping: api.Mapping, DownloadHeaders: api.DownloadHeaders, Remark: api.Remark,
+		TimeoutSeconds: api.TimeoutSeconds, Mapping: api.Mapping, DownloadHeaders: api.DownloadHeaders, Remark: api.Remark, Category: api.Category,
 	}
 }
 

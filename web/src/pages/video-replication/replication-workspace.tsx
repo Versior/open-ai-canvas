@@ -6,6 +6,7 @@ import { ArrowLeft, ArrowRight, Check, Download, RefreshCw, Sparkles } from "luc
 import { useMemo, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
+import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { readVideoReplicationAnalysis, videoTeardownModelError, videoTeardownReportMarkdown, videoTeardownStoryboardRows, videoTeardownTextRequirements, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { parseVideoTeardownBundle, type VideoReplicationDetail, type VideoTeardownBundle } from "@/services/api/video-replication";
@@ -28,7 +29,7 @@ export type ReplicationView = "teardown" | "plan" | "canvas";
 
 const EMPTY_ANALYSIS = { rows: [] };
 
-type Analysis = VideoTeardownAnalysis & { model: string };
+type Analysis = VideoTeardownAnalysis & { model: string; taskIds?: string[] };
 
 type Props = {
     detail: VideoReplicationDetail | undefined;
@@ -239,6 +240,7 @@ function RecordWorkspace({
 
     return (
         <WorkspaceShell title={title} meta={meta} actions={actions} steps={steps} onBack={onBack}>
+            {analysis?.taskIds?.length ? <TaskSettlement ids={analysis.taskIds} /> : null}
             {ownRun ? <ReplicationProgress run={ownRun} /> : null}
             {analysis && view === "plan" ? (
                 <ReplicationPlan bundle={bundle} analysis={analysis} {...planState} config={config} model={model} onModelChange={onModelChange} opening={opening} onOpenCanvas={openCanvas} onNext={() => onViewChange("canvas")} />
@@ -354,6 +356,7 @@ function AnalyzeControls({ config, model, onModelChange, busy, label, onStart }:
     const modelError = videoTeardownModelError(config, model);
     return (
         <div className="vr-analyze-controls">
+            <GenerationCostNotice config={config} model={model} capability="text" requirements={videoTeardownTextRequirements(config, 1)} label="视频分析（多批镜头逐批计费）" />
             <div className="vr-analyze-model">
                 <ModelPicker config={config} capability="text" value={model} onChange={onModelChange} requirements={videoTeardownTextRequirements(config, 1)} fullWidth placeholder="选择能看图的文本模型" />
             </div>

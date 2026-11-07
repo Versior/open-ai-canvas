@@ -36,16 +36,17 @@ func TestRenderSocialVideoParseTemplateEscapesByContext(t *testing.T) {
 
 func TestNormalizeSocialVideoParseAPIRequestValidatesDefinition(t *testing.T) {
 	t.Parallel()
-	valid := SocialVideoParseAPIRequest{Name: " 接口 ", Platforms: []string{"douyin", "douyin", "kuaishou"}, URL: "https://api.example.com/parse?url={url}", Headers: []SocialVideoParseHeader{{Name: "X-Token", Value: "{key}"}}}
+	valid := SocialVideoParseAPIRequest{Name: " 接口 ", Category: " 公共备用 ", Platforms: []string{"douyin", "douyin", "kuaishou"}, URL: "https://api.example.com/parse?url={url}", Headers: []SocialVideoParseHeader{{Name: "X-Token", Value: "{key}"}}}
 	got, err := normalizeSocialVideoParseAPIRequest(valid)
 	if err != nil {
 		t.Fatalf("normalize valid request: %v", err)
 	}
-	if got.Name != "接口" || len(got.Platforms) != 2 || got.Method != "GET" || got.BodyType != "none" || got.TimeoutSeconds != 15 || got.Weight != 10 || got.Mapping.DurationUnit != "s" {
+	if got.Name != "接口" || got.Category != "公共备用" || len(got.Platforms) != 2 || got.Method != "GET" || got.BodyType != "none" || got.TimeoutSeconds != 15 || got.Weight != 10 || got.Mapping.DurationUnit != "s" {
 		t.Fatalf("normalized = %#v", got)
 	}
 	for name, mutate := range map[string]func(*SocialVideoParseAPIRequest){
 		"missing name":       func(r *SocialVideoParseAPIRequest) { r.Name = "" },
+		"category too long":  func(r *SocialVideoParseAPIRequest) { r.Category = strings.Repeat("类", 61) },
 		"unknown platform":   func(r *SocialVideoParseAPIRequest) { r.Platforms = []string{"myspace"} },
 		"no url placeholder": func(r *SocialVideoParseAPIRequest) { r.URL = "https://api.example.com/parse" },
 		"relative url":       func(r *SocialVideoParseAPIRequest) { r.URL = "/parse?url={url}" },
@@ -561,6 +562,51 @@ func TestSocialVideoParsePresetImportPreservesExistingConfiguration(t *testing.T
 	after, _ := svc.socialVideoParseAPIs()
 	if len(after) != 1 || after[0].Name != before[0].Name || after[0].Secret != before[0].Secret || !after[0].Enabled || after[0].Priority != before[0].Priority || !slices.Equal(after[0].Platforms, before[0].Platforms) {
 		t.Fatal("preset import replaced configured service")
+	}
+}
+
+func TestSocialVideoParseCategorySurvivesExportImportAndDuplicate(t *testing.T) {
+	svc, _ := newSocialVideoImportTestService(t)
+	admin := &model.User{ID: "admin-1", Role: model.UserRoleAdmin}
+	created, err := svc.CreateSocialVideoParseAPI(admin, SocialVideoParseAPIRequest{Name: "分类接口", Category: "公共备用", Platforms: []string{"zuiyou"}, URL: "https://parse.example.com/?url={url}"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exported, err := svc.ExportSocialVideoParseAPIs(admin, []string{created.ID})
+	if err != nil || len(exported.APIs) != 1 || exported.APIs[0].Category != "公共备用" {
+		t.Fatalf("export=%+v err=%v", exported, err)
+	}
+	exported.APIs[0].Category = "开源自建"
+	if _, err := svc.ImportSocialVideoParseAPIs(context.Background(), admin, SocialVideoParseImportRequest{APIs: exported.APIs}); err != nil {
+		t.Fatal(err)
+	}
+	apis, err := svc.socialVideoParseAPIs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := findSocialVideoParseAPI(apis, created.ID)
+	if err != nil || apis[index].Category != "开源自建" {
+		t.Fatal("import lost independent category")
+	}
+	copy, err := svc.DuplicateSocialVideoParseAPI(admin, created.ID)
+	if err != nil || copy.Category != "开源自建" {
+		t.Fatalf("duplicate category=%+v err=%v", copy, err)
+	}
+}
+
+func TestSocialVideoPlatformHostListsAreNeverNull(t *testing.T) {
+	svc, _ := newSocialVideoImportTestService(t)
+	views, err := svc.socialVideoPlatformViews()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, view := range views {
+		if view.Hosts == nil || view.ShortHosts == nil {
+			t.Fatalf("null host list for %s breaks link recognition", view.ID)
+		}
+	}
+	if platform, short := socialVideoPlatformForHost("share.xiaochuankeji.cn"); platform == nil || platform.ID != "zuiyou" || short {
+		t.Fatal("new public platform was not recognized")
 	}
 }
 

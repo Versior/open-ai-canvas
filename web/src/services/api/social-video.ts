@@ -61,9 +61,9 @@ export function socialVideoLinkFromText(text: string, platforms: readonly Social
     try {
         const parsed = new URL(raw);
         const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
-        const platform = platforms.find((item) => item.shortHosts.includes(hostname) || item.hosts.includes(hostname));
+        const platform = platforms.find((item) => item.shortHosts?.includes(hostname) || item.hosts?.includes(hostname));
         if (!platform) return null;
-        const short = platform.shortHosts.includes(hostname);
+        const short = Boolean(platform.shortHosts?.includes(hostname));
         if (parsed.protocol !== "https:" && (platform.strict || parsed.protocol !== "http:")) return null;
         if (parsed.username || parsed.password || parsed.hash || (parsed.port && parsed.port !== "443")) return null;
         const path = parsed.pathname || "/";

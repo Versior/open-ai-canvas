@@ -9,7 +9,9 @@ for (const [key, value] of Object.entries({ window: dom, document: dom.document,
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { ApiError } = await import("@/services/api/request");
-const { setActiveUserScope } = await import("@/lib/user-scope");
+const { setActiveUserScope, getActiveUserScope } = await import("@/lib/user-scope");
+let analysisInput: { expectedUserScope?: string } | undefined;
+let analysisText = "invalid";
 const { defaultConfig } = await import("@/stores/use-config-store");
 const tasks = await import("@/services/api/task-center");
 let waits: string[] = [];
@@ -25,9 +27,11 @@ mock.module("@/lib/canvas/canvas-project-generation", () => ({ ...canvasGenerati
 mock.module("@/services/api/generation-task", () => ({
     ...taskGeneration,
     parseBackendGenerationResult: () => ({ text: "invalid" }),
-    runBackendGenerationTask: async () => {
+    runBackendGenerationTask: async (input: { expectedUserScope?: string }) => {
         submissions++;
-        return { text: "invalid" };
+        analysisInput = input;
+        if (input.expectedUserScope && input.expectedUserScope !== getActiveUserScope()) throw new DOMException("账号已切换，已取消生成", "AbortError");
+        return { text: analysisText };
     },
     submitBackendGenerationTask: (input: { clientOperationId?: string }) => studioSubmit(input),
 }));
@@ -161,6 +165,8 @@ mock.module("@/services/api/ecommerce-studio", () => ({
     deleteStudioProduct: async () => {},
 }));
 const imageGeneration = await import("@/lib/ecommerce/ecommerce-image-generation");
+const analysisGeneration = await import("@/lib/ecommerce/ecommerce-analysis-generation");
+mock.module("@/lib/ecommerce/ecommerce-analysis-generation", () => ({ ...analysisGeneration, buildEcommerceAnalysisGeneration: () => ({ ...defaultConfig, model: "test" }) }));
 mock.module("@/lib/ecommerce/ecommerce-image-generation", () => ({ ...imageGeneration, buildEcommerceImageGeneration: () => ({ config: { ...defaultConfig, model: "test" } }) }));
 const compiler = await import("@/lib/ecommerce-studio/prompt-compiler");
 mock.module("@/lib/ecommerce-studio/prompt-compiler", () => ({
@@ -216,6 +222,33 @@ async function mountStudio(product: ReturnType<typeof studioProduct>) {
     await act(async () => studioRoot.render(<RunnerProbe />));
 }
 const attempt = () => useStudioStore.getState().products[0].runs[0].shots[0].attempts[0];
+test("same-account planning uses account identity instead of the detail/main business scope", async () => {
+    const product = studioProduct();
+    product.brief.outputType = "detail-set";
+    analysisText = JSON.stringify({
+        screens: Array.from({ length: 10 }, (_, index) => ({
+            role: index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene",
+            title: "商品展示",
+            headline: "清晰外观",
+            subline: "",
+            lines: [],
+            visual: "展示商品真实外观",
+            layout: "editorial",
+        })),
+    });
+    for (let login = 0; login < 2; login++) {
+        await mountStudio(product);
+        let result: Awaited<ReturnType<typeof runner.plan>> | undefined;
+        await act(async () => {
+            result = await runner.plan(product.id, "test");
+        });
+        expect(analysisInput?.expectedUserScope).toBe("studio-user");
+        expect(result?.plan.screens).toHaveLength(10);
+    }
+    setActiveUserScope("another-user");
+    await expect(runner.plan(product.id, "test")).rejects.toMatchObject({ name: "AbortError" });
+    analysisText = "invalid";
+});
 test("studio query interruption keeps the original task active and resynchronizes its result", async () => {
     await mountStudio(studioProduct("original-task"));
     studioWait = async () => {

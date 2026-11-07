@@ -38,3 +38,18 @@ export function taskBillingLabel(billing: TaskBilling) {
     const label = `${display.note} ${display.amount} 积分`;
     return display.refundNote ? `${label} · ${display.refundNote}` : label;
 }
+
+/** 批次按账务状态分别合计，待核对和冻结不会计入实收。 */
+export function taskBillingTotals(items: readonly TaskBilling[]) {
+    const groups = new Map<TaskBilling["status"], { billing: TaskBilling; count: number }>();
+    for (const item of items) {
+        const group = groups.get(item.status) || { count: 0, billing: { status: item.status, amountMicrocredits: 0, reservedMicrocredits: 0, refundedMicrocredits: 0 } };
+        group.count += 1;
+        group.billing.amountMicrocredits += item.amountMicrocredits;
+        group.billing.reservedMicrocredits += item.reservedMicrocredits;
+        group.billing.refundedMicrocredits += item.refundedMicrocredits;
+        if (item.status === "settled") group.billing.chargedMicrocredits = (group.billing.chargedMicrocredits || 0) + (item.chargedMicrocredits || 0);
+        groups.set(item.status, group);
+    }
+    return [...groups.values()].map(({ billing, count }) => `${taskBillingLabel(billing)}${count > 1 ? `（${count} 个任务）` : ""}`);
+}

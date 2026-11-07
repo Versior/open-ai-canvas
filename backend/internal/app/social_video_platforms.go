@@ -39,6 +39,8 @@ var socialVideoPlatforms = []socialVideoPlatformInfo{
 	{ID: "zhihu", Name: "知乎", Hosts: []string{"zhihu.com", "www.zhihu.com"}},
 	{ID: "snackvideo", Name: "SnackVideo", Hosts: []string{"snackvideo.com", "www.snackvideo.com"}, ShortHosts: []string{"s.snackvideo.com"}},
 	{ID: "cocofun", Name: "Cocofun", Hosts: []string{"cocofun.com", "www.cocofun.com"}, ShortHosts: []string{"i.cocofun.com"}},
+	{ID: "pipigx", Name: "皮皮搞笑", Hosts: []string{"h5.pipigx.com", "pipigx.com"}},
+	{ID: "zuiyou", Name: "最右", Hosts: []string{"share.xiaochuankeji.cn", "izuiyou.com", "www.izuiyou.com"}},
 }
 
 // SocialVideoPlatformView 给前端识别链接和后台分类用；Available 表示后台有开着的解析接口。
@@ -162,7 +164,7 @@ func (s *Service) socialVideoPlatformViews() ([]SocialVideoPlatformView, error) 
 	}
 	views := make([]SocialVideoPlatformView, 0, len(socialVideoPlatforms))
 	for _, platform := range socialVideoPlatforms {
-		views = append(views, SocialVideoPlatformView{ID: platform.ID, Name: platform.Name, Hosts: platform.Hosts, ShortHosts: platform.ShortHosts, Strict: platform.Strict, Available: available[platform.ID]})
+		views = append(views, SocialVideoPlatformView{ID: platform.ID, Name: platform.Name, Hosts: append([]string{}, platform.Hosts...), ShortHosts: append([]string{}, platform.ShortHosts...), Strict: platform.Strict, Available: available[platform.ID]})
 	}
 	return views, nil
 }

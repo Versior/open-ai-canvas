@@ -93,6 +93,9 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
     const [platform, setPlatform] = useState("all");
     const [status, setStatus] = useState("all");
     const [keyword, setKeyword] = useState("");
+    const [category, setCategory] = useState("all");
+    const [selectedIDs, setSelectedIDs] = useState<string[]>([]);
+    const [batchChanging, setBatchChanging] = useState(false);
     const [editing, setEditing] = useState<SocialVideoParseAPI | null>(null);
     const [editorOpen, setEditorOpen] = useState(false);
     const [testing, setTesting] = useState("");
@@ -114,6 +117,7 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
             const data = await getSocialVideoParseOverview();
             if (request !== requestRef.current) return;
             setOverview(data);
+            setSelectedIDs((ids) => ids.filter((id) => data.apis.some((api) => api.id === id)));
             setLoadError("");
             onLoaded(data);
         } catch (error) {
@@ -136,11 +140,12 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
             .filter(
                 (api) =>
                     (platform === "all" || api.platforms.includes(platform)) &&
+                    (category === "all" || (api.category || "未分类") === category) &&
                     (status === "all" || api.status === status) &&
                     (!query || api.name.toLowerCase().includes(query) || api.url.toLowerCase().includes(query) || api.remark.toLowerCase().includes(query)),
             )
             .sort(compareAPIs(strategy));
-    }, [apis, keyword, platform, status, strategy]);
+    }, [apis, keyword, platform, status, strategy, category]);
     const platformFilters = useMemo(
         () => [{ id: "all", name: "全部", count: apis.length, available: true }, ...platforms.map((item) => ({ id: item.id, name: item.name, count: apis.filter((api) => api.platforms.includes(item.id)).length, available: item.available }))],
         [apis, platforms],
@@ -182,9 +187,11 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
         }
     };
     const testAll = async () => {
+        const ids = selectedIDs.length ? selectedIDs : visibleAPIs.map((api) => api.id);
+        if (!ids.length || batchTesting) return;
         setBatchTesting(true);
         try {
-            setBatchResult(await testSocialVideoParseAPIs({ platform: platform === "all" ? undefined : platform }));
+            setBatchResult(await testSocialVideoParseAPIs({ ids, platform: platform === "all" ? undefined : platform }));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "批量测试失败");
         } finally {
@@ -199,6 +206,30 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
             message.success(`已导出 ${document.apis.length} 条接口，不含密钥`);
         } catch (error) {
             message.error(error instanceof Error ? error.message : "导出失败");
+        }
+    };
+    const setBatchEnabled = async (enabled: boolean) => {
+        if (!selectedIDs.length || batchChanging) return;
+        setBatchChanging(true);
+        const failed: string[] = [];
+        let changed = 0;
+        try {
+            for (const id of selectedIDs) {
+                try {
+                    await setSocialVideoParseAPIEnabled(id, enabled);
+                    changed += 1;
+                } catch (error) {
+                    failed.push(`${apis.find((api) => api.id === id)?.name || id}：${error instanceof Error ? error.message : "修改失败"}`);
+                }
+            }
+            if (failed.length) modal.error({ title: `已${enabled ? "开启" : "关闭"} ${changed} 条，${failed.length} 条失败`, content: failed.join("；") });
+            else {
+                message.success(`已${enabled ? "开启" : "关闭"} ${changed} 条接口`);
+                setSelectedIDs([]);
+            }
+        } finally {
+            setBatchChanging(false);
+            void reload();
         }
     };
     const runImport = async () => {
@@ -407,8 +438,21 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
                     />
                     {view === "apis" ? (
                         <div className="admin-video-parse-actions">
-                            <Button icon={<FlaskConical className="size-4" />} loading={batchTesting} disabled={!apis.length} onClick={() => void testAll()}>
-                                {platform === "all" ? "全部测试" : `测试${platformName(platforms, platform)}接口`}
+                            <span>已选 {selectedIDs.length} 条</span>
+                            <Button disabled={!selectedIDs.length || batchChanging} onClick={() => void setBatchEnabled(true)}>
+                                批量开启
+                            </Button>
+                            <Button disabled={!selectedIDs.length || batchChanging} onClick={() => void setBatchEnabled(false)}>
+                                批量关闭
+                            </Button>
+                            <Select
+                                aria-label="按接口分类筛选"
+                                value={category}
+                                onChange={setCategory}
+                                options={[{ value: "all", label: "全部分类" }, ...[...new Set(apis.map((api) => api.category || "未分类"))].map((value) => ({ value, label: value }))]}
+                            />
+                            <Button icon={<FlaskConical className="size-4" />} loading={batchTesting} disabled={batchChanging || !(selectedIDs.length || visibleAPIs.length)} onClick={() => void testAll()}>
+                                {selectedIDs.length ? "测试勾选接口" : "测试当前筛选接口"}
                             </Button>
                             <Button icon={<Upload className="size-4" />} onClick={() => setImportOpen(true)}>
                                 导入
@@ -470,7 +514,15 @@ export function ParsePoolPanel({ linkImportEnabled, onLoaded, onOpenSettings }: 
                             </p>
                         ) : null}
                         <AdminDataTable
-                            table={{ rowKey: "id", loading, pagination: false, columns, dataSource: visibleAPIs, scroll: { x: orderField ? 1122 : 1046 } }}
+                            table={{
+                                rowKey: "id",
+                                loading,
+                                pagination: false,
+                                columns: [{ title: "分类", key: "category", width: 110, render: (_, api) => api.category || "未分类" }, ...columns],
+                                dataSource: visibleAPIs,
+                                rowSelection: { selectedRowKeys: selectedIDs, onChange: (keys) => setSelectedIDs(keys.map(String)), preserveSelectedRowKeys: false, getCheckboxProps: () => ({ disabled: batchChanging || batchTesting }) },
+                                scroll: { x: orderField ? 1232 : 1156 },
+                            }}
                             empty={
                                 apis.length ? (
                                     <AdminTableEmpty filtered />

@@ -5,6 +5,12 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+任务列表与 `GET /api/tasks/:id` 详情均返回可选 `billing` 摘要：`status`、`amountMicrocredits`、`reservedMicrocredits`、`refundedMicrocredits`；仅 `settled` 返回实收 `chargedMicrocredits`。读详情先校验任务归属，再取同账号订单。冻结、待核对和退回不能算作实收，报价失败不能展示为免费。
+
+解析接口定义新增可选 `category`（最多 60 字），独立于 `platforms`，编辑、复制、导入和导出均保留。后台批量测试传 `ids` 时只测试这些接口，包括停用草稿；前端空筛选不发送空 `ids`，防止扩大到全部已启用接口。平台列表的 `hosts`、`shortHosts` 始终返回数组，无短链的平台返回 `[]`。
+
+视频分析文档可保存 `taskIds`（最多 200 个），用于刷新后读取各批文本任务的真实结算。服务端验证每个 ID 属于当前账号且是文本任务；旧分析没有记录 ID 时不反推收费。该字段保存在已有分析 JSON 中，无数据表迁移。
+
 ## 社交视频异步导入
 
 OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环境实际调用时必须带该前缀。例如规范中的 `/social-video/imports` 对外是 `POST /api/social-video/imports`，任务查询是 `GET /api/tasks/:id`。

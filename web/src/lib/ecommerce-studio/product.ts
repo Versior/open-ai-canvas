@@ -328,6 +328,7 @@ export function normalizeStudioProduct(value: unknown): StudioProduct | undefine
     const style = STYLE_IDS.has(value.style as StudioStyleId) ? (value.style as StudioStyleId) : base.style;
     return {
         ...base,
+        ...(str(value.lastAnalysisTaskId) ? { lastAnalysisTaskId: str(value.lastAnalysisTaskId) } : {}),
         name: str(value.name),
         updatedAt: str(value.updatedAt, time),
         platform,

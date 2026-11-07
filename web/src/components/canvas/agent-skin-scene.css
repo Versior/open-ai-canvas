@@ -1,0 +1,161 @@
+.canvas-agent-panel[data-skin] {
+    --agent-usage-line: color-mix(in srgb, var(--agent-ink) 14%, transparent);
+}
+.agent-skin-scene {
+    position: relative;
+    flex: none;
+    min-height: 86px;
+    overflow: hidden;
+    margin: 0 12px 10px;
+    border: 1px solid color-mix(in srgb, var(--agent-accent) 35%, var(--agent-usage-line));
+    border-radius: 18px;
+    color: var(--agent-accent);
+    background: var(--agent-surface-base);
+}
+.agent-skin-art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+.agent-skin-scene-copy {
+    position: relative;
+    display: grid;
+    gap: 3px;
+    padding: 16px;
+    width: 52%;
+}
+.agent-skin-scene-copy small {
+    font-size: 11px;
+    color: var(--agent-caption);
+}
+.agent-skin-scene-copy strong {
+    color: var(--agent-ink);
+    font-size: 17px;
+}
+.agent-skin-character {
+    position: absolute;
+    right: 75px;
+    bottom: 0;
+    width: 62px;
+    height: 68px;
+    object-fit: contain;
+    pointer-events: none;
+}
+.agent-skin-choice {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+}
+.agent-skin-choice select {
+    max-width: 90px;
+    border: 1px solid var(--agent-usage-line);
+    padding: 4px 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--agent-ink);
+    background: var(--agent-surface-base);
+}
+.agent-skin-choice select:focus-visible {
+    outline: 2px solid var(--agent-focus-ring);
+    outline-offset: 2px;
+}
+.canvas-agent-panel[data-skin="cloud"] {
+    border: 2px solid color-mix(in srgb, var(--agent-accent) 38%, var(--agent-surface-base));
+}
+.canvas-agent-panel[data-skin="cloud"] .agent-skin-scene {
+    border-radius: 24px 24px 32px 8px;
+}
+.canvas-agent-panel[data-skin="cloud"] .agent-message-body {
+    border-radius: 20px 20px 20px 5px;
+    padding: 10px 12px;
+    border: 1px solid var(--agent-usage-line);
+    background: var(--agent-surface-base);
+}
+.canvas-agent-panel[data-skin="cloud"] .agent-message-user {
+    border-radius: 20px 20px 5px 20px;
+}
+.canvas-agent-panel[data-skin="cloud"] .agent-composer-shell {
+    border-radius: 26px 26px 12px 26px;
+    border: 2px solid color-mix(in srgb, var(--agent-accent) 35%, var(--agent-usage-line));
+}
+.canvas-agent-panel[data-skin="paper"] .agent-skin-scene {
+    border-radius: 4px 16px 4px 16px;
+    border-style: dashed;
+}
+.canvas-agent-panel[data-skin="paper"] .agent-message-body {
+    padding: 10px 14px;
+    border: 1px solid var(--agent-usage-line);
+    border-left: 4px solid var(--agent-accent);
+    border-radius: 3px 12px 12px 3px;
+    background: var(--agent-surface-base);
+    box-shadow: 3px 3px 0 color-mix(in srgb, var(--agent-accent) 15%, transparent);
+}
+.canvas-agent-panel[data-skin="paper"] .agent-composer-shell {
+    border: 1px dashed var(--agent-accent);
+    border-radius: 5px 18px 5px 18px;
+    box-shadow: 4px 4px 0 color-mix(in srgb, var(--agent-accent) 18%, transparent);
+}
+.canvas-agent-panel[data-skin="paper"] .agent-usage:not(.is-collapsed) {
+    border-radius: 4px 15px 4px 15px;
+    border-style: dashed;
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-skin-scene {
+    border-radius: 3px;
+    border-width: 2px;
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-panel-header {
+    border-bottom: 2px solid color-mix(in srgb, var(--agent-accent) 40%, var(--agent-usage-line));
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-message-body {
+    padding: 10px 12px;
+    border: 1px solid var(--agent-usage-line);
+    border-radius: 2px 12px 2px 2px;
+    background: var(--agent-surface-base);
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-composer-shell {
+    border: 2px solid color-mix(in srgb, var(--agent-accent) 45%, var(--agent-usage-line));
+    border-radius: 3px 16px 3px 3px;
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-usage:not(.is-collapsed) {
+    border-radius: 3px;
+    border-left: 3px solid var(--agent-accent);
+}
+.canvas-agent-panel[data-skin="aurora"] .agent-skin-scene {
+    border-radius: 24px 5px 24px 5px;
+}
+.canvas-agent-panel[data-skin="aurora"] .agent-message-body {
+    padding: 10px 12px;
+    border: 1px solid var(--agent-usage-line);
+    border-radius: 18px 4px 18px 4px;
+    background: var(--agent-surface-base);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--agent-accent) 10%, transparent);
+}
+.canvas-agent-panel[data-skin="aurora"] .agent-composer-shell {
+    border: 2px solid color-mix(in srgb, var(--agent-accent) 45%, var(--agent-usage-line));
+    border-radius: 20px 5px 20px 5px;
+}
+.canvas-agent-panel[data-skin="aurora"] .agent-usage:not(.is-collapsed) {
+    border-radius: 18px 4px 18px 4px;
+}
+.canvas-agent-panel[data-skin="site"] .agent-skin-scene {
+    min-height: 60px;
+    border-radius: var(--r-lg);
+}
+@media (max-width: 480px) {
+    .agent-skin-scene {
+        min-height: 72px;
+    }
+    .agent-skin-scene-copy {
+        padding: 12px;
+    }
+    .agent-skin-scene-copy strong {
+        font-size: 15px;
+    }
+    .agent-skin-character {
+        right: 68px;
+        width: 48px;
+        height: 54px;
+    }
+}

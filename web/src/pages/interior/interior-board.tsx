@@ -6,6 +6,7 @@ import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { cn } from "@/lib/utils";
 import type { InteriorImageRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem } from "@/services/api/interior";
+import { TaskSettlement } from "@/components/generation-cost-notice";
 import { interiorImageUrl } from "./interior-models";
 
 export type InteriorOutputTarget = { round: InteriorRound; item: InteriorRoundItem; output: InteriorImageRef; index: number };
@@ -144,6 +145,7 @@ export function InteriorBoard({ document, stalled, busy, downloadingRound, onRet
                             </div>
                         ) : null}
                         {round.notes ? <p className="itd-round-notes">「{round.notes}」</p> : null}
+                        <TaskSettlement ids={round.items.flatMap((item) => (item.taskId ? [item.taskId] : []))} />
                         <div className="itd-gallery">
                             <figure className="itd-card is-source">
                                 <img src={interiorImageUrl(round.source.resourceId, true)} alt="原图" loading="lazy" />

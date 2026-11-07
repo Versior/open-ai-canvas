@@ -72,6 +72,28 @@ type TaskBillingSummary struct {
 	Status               model.BillingStatus `json:"status"`
 }
 
+// TaskDetail 保留详情原有安全字段，并与列表共用账务口径。
+type TaskDetail struct {
+	*model.Task
+	Billing *TaskBillingSummary `json:"billing,omitempty"`
+}
+
+func (s *Service) TaskWithBilling(userID, id string) (*TaskDetail, error) {
+	task, err := s.Task(userID, id)
+	if err != nil {
+		return nil, err
+	}
+	orders, err := s.repo.BillingOrdersByTaskIDs(userID, []string{task.ID})
+	if err != nil {
+		return nil, err
+	}
+	detail := &TaskDetail{Task: task}
+	if order, exists := orders[task.ID]; exists {
+		detail.Billing = taskBillingSummary(order)
+	}
+	return detail, nil
+}
+
 func taskBillingSummary(order model.BillingOrder) *TaskBillingSummary {
 	summary := &TaskBillingSummary{
 		AmountMicrocredits: order.AmountMicrocredits, ReservedMicrocredits: order.AmountMicrocredits,

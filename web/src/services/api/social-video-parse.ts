@@ -31,6 +31,7 @@ export type SocialVideoParseMapping = {
 
 /** 新建、修改、导入一条接口时提交的定义；secret 只写不读，留空表示不改。 */
 export type SocialVideoParseAPIInput = {
+    category?: string;
     name: string;
     platforms: string[];
     enabled: boolean;
@@ -213,6 +214,7 @@ export function emptySocialVideoParseAPIInput(platforms: string[] = []): SocialV
 export function socialVideoParseAPIInput(api: SocialVideoParseAPI): SocialVideoParseAPIInput {
     return {
         name: api.name,
+        category: api.category || "",
         platforms: [...api.platforms],
         enabled: api.enabled,
         priority: api.priority,

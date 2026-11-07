@@ -228,6 +228,16 @@ describe("抖音/TikTok 分享链接粘贴导入", () => {
         expect(imported.platform).toBe("kuaishou");
         expect(() => parseSocialVideoImportResult(task("succeeded", JSON.stringify({ ...resultObject, platform: "Not Valid" })) as never)).toThrow();
     });
+    test("an empty short-host list from an earlier platform does not block later platforms", async () => {
+        const { socialVideoLinkFromText } = await import("../src/services/api/social-video");
+        const platforms = JSON.parse(
+            '[{"id":"weibo","name":"微博","hosts":["weibo.com"],"shortHosts":null,"strict":false,"available":true},{"id":"zuiyou","name":"最右","hosts":["share.xiaochuankeji.cn"],"shortHosts":[],"strict":false,"available":true}]',
+        );
+        const link = socialVideoLinkFromText("https://share.xiaochuankeji.cn/hybrid/share/post?pid=407260908&vid=2492069614", platforms);
+        expect(link?.platform.id).toBe("zuiyou");
+        expect(link?.short).toBe(false);
+        expect(socialVideoLinkFromText("https://weibo.com/video/123", platforms)?.platform.id).toBe("weibo");
+    });
     test("单个平台链接创建导入任务并直接生成持久化 Video 节点", async () => {
         const fixture = await mountCanvasUpload();
         const requests: InternalAxiosRequestConfig[] = [];

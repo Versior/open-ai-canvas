@@ -39,13 +39,11 @@ export function interiorModelValue(config: AiConfig, ref?: InteriorModelRef | nu
 
 /**
  * 切换出图方式时预选模型，和服务端顺序一致。
- * 专业模式：当前模型（在可选范围内时）> 推荐的默认模型 > 可选范围里第一个可用的。
- * 快速出图：推荐的默认模型 > 当前模型（在可选范围内时）> 可选范围里第一个可用的。
+ * 两种模式都尊重当前选择：当前模型 > 推荐的默认模型 > 可选范围里第一个可用的。
  */
 export function interiorInitialModel(config: AiConfig, mode: InteriorMode, siteDefault: InteriorModelRef | undefined, current: string, surface: "quick" | "pro") {
     const currentPermitted = Boolean(current) && interiorModelPermitted(mode, siteDefault, interiorModelRef(config, current));
-    // 专业模式尊重用户已经选的模型；快速出图没有选择器，跟着推荐走。
-    if (surface === "pro" && currentPermitted) return current;
+    if (currentPermitted) return current;
     const recommended = interiorModelValue(config, mode.defaultModel || siteDefault);
     if (recommended) return recommended;
     if (currentPermitted) return current;

@@ -208,7 +208,8 @@ function patchAttempt(product: StudioProduct, ref: StudioShotRef, shotId: string
 }
 
 export function useStudioRunner() {
-    const scope = getActiveUserScope();
+    const userId = useUserStore((state) => state.user?.id);
+    const scope = userId || getActiveUserScope();
     const owner = useRef(Symbol("studio-runner"));
     const ownedAttempts = useRef(new Set<string>());
     const config = useEffectiveConfig();
@@ -279,6 +280,7 @@ export function useStudioRunner() {
                     referenceImages: photos.map(photoReference),
                     streamText: false,
                     metadata: studioAnalysisMetadata(productId, "recognize", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }),
+                    onTaskUpdate: (task) => update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true }),
                 });
                 const parsed = parseFill(result.text || "", () => nanoid(10), generation.model);
                 const info = parsed.sellingPoints
@@ -322,21 +324,21 @@ export function useStudioRunner() {
         (productId: string, textModel: string, options: { revise?: boolean } = {}) =>
             trackAnalysis(productId, "plan", async (): Promise<StudioDetailPlanResult> => {
                 const product = read(productId);
-                const scope = studioPlanScopeOf(product);
-                if (!scope) throw new Error("先选择一套模板，再按模板策划");
-                const suite = scope === "template" ? product.brief.suite : undefined;
-                const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
+                const planScope = studioPlanScopeOf(product);
+                if (!planScope) throw new Error("先选择一套模板，再按模板策划");
+                const suite = planScope === "template" ? product.brief.suite : undefined;
+                const targets = planScope === "single" ? studioSingleTargets(product.brief) : undefined;
                 const current = configRef.current;
                 const { photos, references, images } = planImages(product, current, textModel);
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
                 const request: StudioPlanRequest = {
-                    scope,
+                    scope: planScope,
                     ...(targets ? { targets } : {}),
                     ...(options.revise ? { previous: studioActivePlan(product) } : {}),
                     ...(images.length ? { images: { photos: photos.length, references: references.length } } : {}),
                 };
-                const roles = scope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, scope === "main" ? "main" : "detail");
+                const roles = planScope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, planScope === "main" ? "main" : "detail");
                 const result = await runBackendGenerationTask({
                     mode: "text",
                     expectedUserScope: scope,
@@ -347,9 +349,10 @@ export function useStudioRunner() {
                     // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事，模板套图按模板用途取，单张图按选中的类型带打法；
                     // 品类大类用来在同类爆款套图对不上时取同大类的参考，档案里的材质用来挑布光方法。
                     metadata: { ...studioAnalysisMetadata(productId, "plan", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
+                    onTaskUpdate: (task) => update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true }),
                 });
                 const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);
-                const field = STUDIO_PLAN_FIELD[scope];
+                const field = STUDIO_PLAN_FIELD[planScope];
                 update(productId, (value) => ({ ...value, brief: { ...value.brief, [field]: parsed.plan, shotOrder: [], shotSkip: [] } }), { immediate: true });
                 return parsed;
             }),
@@ -375,6 +378,7 @@ export function useStudioRunner() {
                     referenceImages: images.map(photoReference),
                     streamText: false,
                     metadata: studioAnalysisMetadata(productId, "ask", knowledgeContext(product)),
+                    onTaskUpdate: (task) => update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true }),
                 });
                 const asks = parseAsks(result.text || "", () => nanoid(10));
                 update(

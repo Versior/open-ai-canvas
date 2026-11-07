@@ -11,6 +11,22 @@ function getPreset(id: string, name: string, platforms: string[], url: string, s
 /** 依据公开 SDK 的请求合同收录，添加为停用草稿，测试成功后才启用。 */
 export const SOCIAL_PARSE_PRESETS: SocialParsePreset[] = [
     ...[
+        { id: "pipigx", name: "皮皮搞笑", field: "data.video" },
+        { id: "zuiyou", name: "最右", field: "data.url" },
+    ].map(({ id, name, field }) => {
+        const preset = getPreset(
+            `suyan-${id}`,
+            `素颜 · ${name}`,
+            [id],
+            `https://api.suyanw.cn/api/${id}.php?url={url}`,
+            `https://api.suyanw.cn/doc/${id}.php`,
+            id === "zuiyou" ? "公开备用；规范请求与视频读取通过，本站须复测后启用" : "文档样例可返回视频；规范编码请求被拒绝，保持停用待服务方修复",
+        );
+        preset.definition.category = "公共备用";
+        preset.definition.mapping = { ...preset.definition.mapping, successPath: "code", successValues: "200", videoUrlPath: field, titlePath: "data.title", coverPath: "data.cover", messagePath: "msg" };
+        return preset;
+    }),
+    ...[
         { endpoint: "short_videos", name: "多平台聚合", platforms: ["douyin", "tiktok", "kuaishou", "xiaohongshu", "bilibili", "youtube", "xigua", "haokan", "weishi", "zhihu", "twitter", "instagram", "wechat"] },
         { endpoint: "svparse", name: "聚合解析 2", platforms: ["douyin", "xiaohongshu", "instagram"] },
         { endpoint: "bilibili", name: "B站单视频", platforms: ["bilibili"] },
@@ -76,6 +92,12 @@ export const SOCIAL_PARSE_PRESETS: SocialParsePreset[] = [
         },
     },
 ];
+
+/** 来源为服务方文档里的公开作品；去掉分享追踪参数，不能用于推断接口成功率。 */
+export const SOCIAL_PARSE_SAMPLE_LINKS: Record<string, string> = {
+    zuiyou: "https://share.xiaochuankeji.cn/hybrid/share/post?pid=407260908&vid=2492069614",
+    tiktok: "https://www.tiktok.com/@omagadsus/video/7025456384175017243",
+};
 
 export function socialParsePresetInput(preset: SocialParsePreset, instanceUrl = ""): SocialVideoParseAPIInput {
     const definition = structuredClone(preset.definition);

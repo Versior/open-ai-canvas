@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { SOCIAL_PARSE_PRESETS, socialParsePresetInput } from "@/lib/social-video-parse-presets";
 
 test("collected services start disabled with source links and no embedded credential", () => {
-    expect(SOCIAL_PARSE_PRESETS).toHaveLength(28);
-    expect(new Set(SOCIAL_PARSE_PRESETS.map((item) => item.id)).size).toBe(28);
+    expect(SOCIAL_PARSE_PRESETS).toHaveLength(30);
+    expect(new Set(SOCIAL_PARSE_PRESETS.map((item) => item.id)).size).toBe(30);
     for (const item of SOCIAL_PARSE_PRESETS) {
         expect(item.definition.enabled).toBe(false);
         expect(item.definition.secret).toBeUndefined();

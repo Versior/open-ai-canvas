@@ -124,6 +124,9 @@ export function ParseAPIEditor({ open, api, platforms, sampleLinks, onClose, onS
             <Form form={form} layout="vertical" requiredMark={false} className="admin-video-parse-form">
                 <section>
                     <h3>基本信息</h3>
+                    <Form.Item name="category" label="接口分类" tooltip="用于独立分类和筛选，例如官方服务、开源自建、公共备用；与支持的平台独立">
+                        <Input maxLength={60} placeholder="例如：公共备用" />
+                    </Form.Item>
                     <div className="admin-video-parse-grid">
                         <Form.Item name="name" label="名称" rules={[{ required: true, whitespace: true, message: "请填写接口名称" }]}>
                             <Input maxLength={60} placeholder="如：某某去水印接口" />

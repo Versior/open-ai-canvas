@@ -74,7 +74,7 @@ export function interiorDraftProblem(draft: InteriorDraft, mode: InteriorMode | 
     if (mode.requiresRoom && !draft.roomKey) return "请选择空间";
     if (mode.requiresStyle && !draft.styleKeys.length) return "请至少选择一个风格";
     if (mode.notesRequired && !draft.notes.trim()) return "请写下要修改的内容";
-    if (surface === "pro") {
+    {
         const ref = interiorModelRef(config, draft.modelValue);
         if (!ref && !(mode.defaultModel || siteDefault)) return "请选择出图模型";
         if (ref && !interiorModelPermitted(mode, siteDefault, ref)) return "所选模型不在这个出图方式的可选范围内";
@@ -191,7 +191,8 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
                   params: draft.params,
                   notes: draft.notes.trim(),
                   referenceResourceIds: draft.references.map((item) => item.resourceId),
-                  ...(surface === "pro" ? { size: draft.size === "auto" ? "" : draft.size, quality: draft.quality === "auto" ? "" : draft.quality, model: interiorModelRef(config, draft.modelValue) || undefined } : {}),
+                  model: interiorModelRef(config, draft.modelValue) || undefined,
+                  ...(surface === "pro" ? { size: draft.size === "auto" ? "" : draft.size, quality: draft.quality === "auto" ? "" : draft.quality } : {}),
               }
             : null,
     );
@@ -363,24 +364,24 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
                                     <span className="itd-field-label">画质</span>
                                     <Select size="small" className="itd-select" value={draft.quality} options={QUALITY_OPTIONS} onChange={(quality) => onChange({ quality })} disabled={busy} />
                                 </div>
-                                <div className="itd-field is-block">
-                                    <span className="itd-field-label">出图模型{recommended ? <small>推荐 {recommended.label || recommended.model}</small> : null}</span>
-                                    <ModelPicker
-                                        config={config}
-                                        value={draft.modelValue}
-                                        onChange={(modelValue) => onChange({ modelValue })}
-                                        capability="image"
-                                        variant="creation"
-                                        fullWidth
-                                        className="creation-model-picker itd-model-picker"
-                                        showSelectedPrice={false}
-                                        showOptionPrices
-                                        placeholder="选择图片模型"
-                                        modelFilter={modelFilter}
-                                    />
-                                </div>
                             </>
                         ) : null}
+                        <div className="itd-field is-block">
+                            <span className="itd-field-label">出图模型{recommended ? <small>推荐 {recommended.label || recommended.model}</small> : null}</span>
+                            <ModelPicker
+                                config={config}
+                                value={draft.modelValue}
+                                onChange={(modelValue) => onChange({ modelValue })}
+                                capability="image"
+                                variant="creation"
+                                fullWidth
+                                className="creation-model-picker itd-model-picker"
+                                showSelectedPrice={false}
+                                showOptionPrices
+                                placeholder="选择图片模型"
+                                modelFilter={modelFilter}
+                            />
+                        </div>
                     </section>
                 ) : null}
             </div>

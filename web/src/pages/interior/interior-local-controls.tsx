@@ -63,7 +63,7 @@ export function InteriorLocalControls({ scene, target, disabled, onApply }: { sc
     return (
         <section className="itd-local-controls" aria-label="手动局部调整">
             <h3>
-                <SlidersHorizontal aria-hidden className="size-4" /> 手动调整 <small>不调用模型，保存为新版本</small>
+                <SlidersHorizontal aria-hidden className="size-4" /> 手动调整 <small>0 积分 · 不调用模型，保存为新版本</small>
             </h3>
             <div className="itd-local-fields">
                 {target.kind === "room" ? (

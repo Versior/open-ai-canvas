@@ -62,6 +62,7 @@ type videoReplicationAnalysisHead struct {
 	Title   string            `json:"title"`
 	Model   string            `json:"model"`
 	Rows    []json.RawMessage `json:"rows"`
+	TaskIDs []string          `json:"taskIds,omitempty"`
 }
 
 // VideoReplications 列出本人最近的拆解记录；视频复刻关闭时和创建拆解一样返回 403。
@@ -204,6 +205,18 @@ func (s *Service) SaveVideoReplicationAnalysis(userID, taskID string, payload []
 	}
 	if strings.TrimSpace(head.Model) == "" || len([]rune(head.Model)) > 200 || len([]rune(head.Title)) > 200 {
 		return nil, BadAuthRequest("分析结果缺少模型，或标题、模型名称过长")
+	}
+	if len(head.TaskIDs) > 200 {
+		return nil, BadAuthRequest("分析结算任务数量过多")
+	}
+	for _, id := range head.TaskIDs {
+		if id == "" || len(id) > 80 {
+			return nil, BadAuthRequest("分析结算任务 ID 无效")
+		}
+		paid, err := s.repo.TaskForUser(userID, id)
+		if err != nil || paid.Type != "canvas_text" {
+			return nil, BadAuthRequest("分析结算任务不存在或不属于当前用户的文本任务")
+		}
 	}
 	if len(head.Rows) != len(bundle.Shots) {
 		return nil, BadAuthRequest(fmt.Sprintf("分析结果有 %d 个镜头，拆解结果有 %d 个镜头", len(head.Rows), len(bundle.Shots)))

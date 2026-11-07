@@ -83,6 +83,7 @@ type SocialVideoParseMapping struct {
 
 // SocialVideoParseAPIRequest 是新建、修改、导入一条接口的请求；Secret 只写不读，留空表示不改。
 type SocialVideoParseAPIRequest struct {
+	Category        string                   `json:"category"`
 	Name            string                   `json:"name"`
 	Platforms       []string                 `json:"platforms"`
 	Enabled         bool                     `json:"enabled"`
@@ -103,6 +104,7 @@ type SocialVideoParseAPIRequest struct {
 
 // socialVideoParseAPI 是存下来的一条接口；Secret 是加密后的密钥，只在发请求时解开。
 type socialVideoParseAPI struct {
+	Category        string                   `json:"category"`
 	ID              string                   `json:"id"`
 	Name            string                   `json:"name"`
 	Platforms       []string                 `json:"platforms"`
@@ -186,6 +188,7 @@ type SocialVideoParseSourceRequest struct {
 
 // SocialVideoParseAPIView 是后台看到的一条接口：不含密钥，带运行状态和综合状态。
 type SocialVideoParseAPIView struct {
+	Category        string                   `json:"category"`
 	ID              string                   `json:"id"`
 	Name            string                   `json:"name"`
 	Platforms       []string                 `json:"platforms"`
@@ -292,6 +295,10 @@ func normalizeSocialVideoParseHeaders(headers []SocialVideoParseHeader, label st
 
 // normalizeSocialVideoParseAPIRequest 校验并补齐一条接口定义，不处理密钥。
 func normalizeSocialVideoParseAPIRequest(req SocialVideoParseAPIRequest) (SocialVideoParseAPIRequest, error) {
+	req.Category = strings.TrimSpace(req.Category)
+	if len([]rune(req.Category)) > 60 {
+		return req, errors.New("接口分类不能超过 60 个字")
+	}
 	req.Name = trimmedRunes(req.Name, 60)
 	if req.Name == "" {
 		return req, BadAuthRequest("请填写接口名称")
@@ -419,7 +426,7 @@ func socialVideoParseAPIView(api socialVideoParseAPI, state *SocialVideoParseAPI
 	view := SocialVideoParseAPIView{
 		ID: api.ID, Name: api.Name, Platforms: api.Platforms, Enabled: api.Enabled, Priority: api.Priority, Weight: api.Weight,
 		Method: api.Method, URL: api.URL, BodyType: api.BodyType, Body: api.Body, Headers: api.Headers, HasSecret: api.Secret != "",
-		TimeoutSeconds: api.TimeoutSeconds, Mapping: api.Mapping, DownloadHeaders: api.DownloadHeaders, Remark: api.Remark,
+		TimeoutSeconds: api.TimeoutSeconds, Mapping: api.Mapping, DownloadHeaders: api.DownloadHeaders, Remark: api.Remark, Category: api.Category,
 		SourceID: api.SourceID, CreatedAt: api.CreatedAt, UpdatedAt: api.UpdatedAt, Status: socialVideoParseStatus(api, state),
 	}
 	if state != nil {

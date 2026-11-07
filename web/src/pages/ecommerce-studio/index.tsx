@@ -25,6 +25,7 @@ import { patchStudioShotAt, useStudioRunner } from "./use-studio-runner";
 import { useStudioStore } from "./use-studio-store";
 import "./studio.css";
 import { FashionWorkbench } from "@/components/fashion/fashion-workbench";
+import { useUserStore } from "@/stores/use-user-store";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
@@ -36,6 +37,7 @@ const MAX_REFERENCES = 3;
  * 新建的商品先只在本页，第一次加图或填写时才写到服务器，不留下空商品。
  */
 export default function EcommerceStudioPage() {
+    const userId = useUserStore((state) => state.user?.id);
     const { message } = App.useApp();
     const [params, setParams] = useSearchParams();
     const requested = params.get("product") || "";
@@ -56,7 +58,9 @@ export default function EcommerceStudioPage() {
 
     useEffect(() => {
         void load();
-    }, [load]);
+        resumed.current = "";
+        setViewer(undefined);
+    }, [load, userId]);
 
     // 后台改过的出图提示词：读不到时按内置写法出图，并告诉用户这一次没用上后台的写法。
     useEffect(() => {

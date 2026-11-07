@@ -326,7 +326,7 @@ export function InteriorModesPanel() {
                         <Form.Item label="默认模型" tooltip="快速出图固定用这个模型；不设置时用「设置」里的全局默认模型">
                             <InteriorModelSelect value={editing?.defaultModel} onChange={(defaultModel) => setEditing((current) => (current ? { ...current, defaultModel } : current))} placeholder="用全局默认模型" />
                         </Form.Item>
-                        <Form.Item label="专业模式可选模型">
+                        <Form.Item label="快速 / 专业可选模型">
                             <InteriorModelMultiSelect value={editing?.allowedModels || []} onChange={(allowedModels) => setEditing((current) => (current ? { ...current, allowedModels } : current))} />
                         </Form.Item>
                     </div>

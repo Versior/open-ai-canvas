@@ -348,6 +348,7 @@ export type StudioGenerationRequest = {
 };
 
 export type StudioProduct = {
+    lastAnalysisTaskId?: string;
     schema: number;
     id: string;
     /** 服务端维护的商品修订号，保存时按它比较交换；本地新建、尚未保存时为 0。 */

@@ -494,24 +494,24 @@ export function videoTeardownReportMarkdown(bundle: VideoTeardownBundle, analysi
 }
 
 /** 视频复刻页面保存到服务端的分析：所用模型、标题、全片总结和逐镜结果，镜头编号与拆解结果一一对应。 */
-export type VideoReplicationAnalysisDocument = { version: 1; model: string; title: string; summary: VideoTeardownSummary | null; rows: VideoTeardownAnalysisRow[] };
+export type VideoReplicationAnalysisDocument = { version: 1; model: string; title: string; summary: VideoTeardownSummary | null; rows: VideoTeardownAnalysisRow[]; taskIds?: string[] };
 
-export function videoReplicationAnalysisDocument(analysis: VideoTeardownAnalysis, model: string): VideoReplicationAnalysisDocument {
-    return { version: 1, model, title: analysis.title, summary: analysis.summary, rows: analysis.rows };
+export function videoReplicationAnalysisDocument(analysis: VideoTeardownAnalysis, model: string, taskIds: string[] = []): VideoReplicationAnalysisDocument {
+    return { version: 1, model, title: analysis.title, summary: analysis.summary, rows: analysis.rows, ...(taskIds.length ? { taskIds: [...new Set(taskIds)] } : {}) };
 }
 
 /**
  * 读回保存过的分析（展示路径）：复用模型回复的解析规则，字段缺失按空字符串显示。
  * 版本不对或镜头对不上时返回 null，页面按“还没有分析”处理并提供重新分析。
  */
-export function readVideoReplicationAnalysis(value: unknown, shotCount: number): (VideoTeardownAnalysis & { model: string }) | null {
+export function readVideoReplicationAnalysis(value: unknown, shotCount: number): (VideoTeardownAnalysis & { model: string; taskIds?: string[] }) | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const record = value as Record<string, unknown>;
     if (record.version !== 1 || !Array.isArray(record.rows) || shotCount < 1) return null;
     const expected = Array.from({ length: shotCount }, (_, index) => index + 1);
     try {
         const parsed = parseVideoTeardownAnalysis(JSON.stringify({ title: record.title, summary: record.summary, rows: record.rows }), expected, true);
-        return { ...parsed, model: textValue(record.model) };
+        return { ...parsed, model: textValue(record.model), ...(Array.isArray(record.taskIds) ? { taskIds: record.taskIds.filter((id): id is string => typeof id === "string" && id.length > 0 && id.length <= 80) } : {}) };
     } catch {
         return null;
     }

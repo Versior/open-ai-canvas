@@ -89,7 +89,7 @@ export function AgentUsageBar({
     modelLabel?: string;
 }) {
     const [cardOpen, setCardOpen] = useState(() => readFlag(AGENT_USAGE_CARD_KEY));
-    const [expanded, setExpanded] = useState(() => readFlag(AGENT_USAGE_EXPANDED_KEY));
+    const [expanded, setExpanded] = useState(() => readFlag(AGENT_USAGE_CARD_KEY) && readFlag(AGENT_USAGE_EXPANDED_KEY));
     const detailsId = useId();
     const measured = view.phase !== "idle";
     const compacting = view.phase === "compacting";
@@ -116,6 +116,10 @@ export function AgentUsageBar({
     const setCard = (open: boolean) => {
         setCardOpen(open);
         writeFlag(AGENT_USAGE_CARD_KEY, open);
+        if (!open) {
+            setExpanded(false);
+            writeFlag(AGENT_USAGE_EXPANDED_KEY, false);
+        }
     };
     const used = measured && view.inputTokens !== undefined ? formatContextTokens(view.inputTokens) : AGENT_USAGE_NO_READING;
     const meterFill = measured && (ratio !== undefined || compacting) ? <span style={{ width: `${fill * 100}%` }} /> : null;
@@ -184,8 +188,8 @@ export function AgentUsageBar({
                     ) : null}
                     {hasDetails ? (
                         <button type="button" className="agent-usage-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={toggle}>
-                            明细
-                            <ChevronDown className="size-3.5" aria-hidden="true" />
+                            {expanded ? "收起明细" : "展开明细"}
+                            {expanded ? <ChevronUp className="size-3.5" aria-hidden="true" /> : <ChevronDown className="size-3.5" aria-hidden="true" />}
                         </button>
                     ) : null}
                     <button type="button" className="agent-usage-collapse" aria-expanded={true} aria-label="收起用量卡片" title="收起用量卡片" onClick={() => setCard(false)}>
@@ -218,8 +222,8 @@ export function AgentUsageBar({
                 ))}
             </dl>
             {alert}
-            {hasDetails ? (
-                <div id={detailsId} className="agent-usage-details" hidden={!expanded}>
+            {hasDetails && expanded ? (
+                <div id={detailsId} className="agent-usage-details">
                     {details.context.length ? (
                         <div className="agent-usage-group">
                             <span className="agent-usage-eyebrow">上下文构成</span>

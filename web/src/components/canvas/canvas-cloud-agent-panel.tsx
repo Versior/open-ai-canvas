@@ -33,6 +33,7 @@ import { nanoid } from "nanoid";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { canvasThemes } from "@/lib/canvas-theme";
 import { agentSkinTheme, resolveAgentSkin } from "@/lib/canvas/agent-skin";
+import { AgentSkinScene } from "./agent-skin-scene";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { useAgentPetPalette } from "@/hooks/use-agent-pet-palette";
@@ -133,6 +134,7 @@ import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
 import { AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
 import { AgentUsageBar } from "./canvas-agent-usage-bar";
+import { GenerationCostNotice } from "@/components/generation-cost-notice";
 import { useGlobalAgentStore, type AgentInsertedNode, type AgentPrefillRequest } from "@/stores/use-global-agent-store";
 
 type AgentPanelView = "chat" | "history" | "settings";
@@ -2401,6 +2403,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         onToggleDock={dock.available ? () => setDocked(!dock.active) : undefined}
                                         onCollapse={onCollapse}
                                     />
+                                    <AgentSkinScene skin={skin} pet={selectedSkinPet} />
                                     {cloudHistoryError || (canvasId && !cloudHistoryReady) ? (
                                         <div role="status" className="flex items-center justify-between gap-2 px-5 py-2 text-xs" style={{ color: theme.node.muted }}>
                                             <span>{cloudHistoryError ? "云端对话暂时未同步，本机草稿已保留。" : "正在同步此画布的云端对话…"}</span>
@@ -2544,15 +2547,23 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         references={references}
                                         includeAssetLibrary={false}
                                         statusBar={
-                                            <AgentUsageBar
-                                                view={contextView}
-                                                stats={runStatsView}
-                                                running={running}
-                                                hasRun={Boolean(run?.id)}
-                                                carried={Boolean(carriedContext)}
-                                                contextWindow={contextWindow}
-                                                modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
-                                            />
+                                            <>
+                                                <GenerationCostNotice config={config} model={selectedModel || ""} capability="text" label="助手对话（工具调用另计）" />
+                                                {run && typeof run.spentCredits === "number" ? (
+                                                    <div className="agent-settlement" role="status">
+                                                        本轮已结算 {run.spentCredits.toLocaleString("zh-CN", { maximumFractionDigits: 6 })} 积分{running ? " · 其余调用结算中" : ""} · 退款明细见任务中心
+                                                    </div>
+                                                ) : null}
+                                                <AgentUsageBar
+                                                    view={contextView}
+                                                    stats={runStatsView}
+                                                    running={running}
+                                                    hasRun={Boolean(run?.id)}
+                                                    carried={Boolean(carriedContext)}
+                                                    contextWindow={contextWindow}
+                                                    modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
+                                                />
+                                            </>
                                         }
                                         left={
                                             <ComposerControls

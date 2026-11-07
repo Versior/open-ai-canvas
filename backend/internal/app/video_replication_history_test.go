@@ -73,6 +73,28 @@ func TestVideoReplicationAnalysisSaveListAndDetail(t *testing.T) {
 	}
 }
 
+func TestVideoReplicationAnalysisBillingIDsRequireOwnedTextTasks(t *testing.T) {
+	svc, db := newTimelineTaskTestService(t)
+	teardown := seedSucceededTeardownTask(t, db, "usr-a", 1)
+	for _, task := range []model.Task{{ID: "analysis-owned", UserID: "usr-a", Type: "canvas_text", Status: model.TaskStatusSucceeded}, {ID: "analysis-other", UserID: "usr-b", Type: "canvas_text", Status: model.TaskStatusSucceeded}, {ID: "analysis-image", UserID: "usr-a", Type: "canvas_image", Status: model.TaskStatusSucceeded}} {
+		if err := db.Create(&task).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"analysis-owned", "analysis-other", "analysis-image", "missing"} {
+		var payload map[string]any
+		if err := json.Unmarshal(teardownAnalysisPayload("计费验证", 1), &payload); err != nil {
+			t.Fatal(err)
+		}
+		payload["taskIds"] = []string{id}
+		raw, _ := json.Marshal(payload)
+		_, err := svc.SaveVideoReplicationAnalysis("usr-a", teardown.ID, raw)
+		if (err == nil) != (id == "analysis-owned") {
+			t.Fatalf("billing task ownership validation for %s: %v", id, err)
+		}
+	}
+}
+
 func TestVideoReplicationAnalysisRejectsMismatchedRowsAndForeignTasks(t *testing.T) {
 	svc, db := newTimelineTaskTestService(t)
 	task := seedSucceededTeardownTask(t, db, "usr-a", 3)

@@ -46,6 +46,7 @@ import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
 import { studioImageFiles } from "./studio-upload";
 import { useStudioEstimate } from "./use-studio-estimate";
+import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
 import { useStudioAnalysis, type StudioRunner } from "./use-studio-runner";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
@@ -768,6 +769,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 }}
             />
             <footer className="es-form-foot">
+                <GenerationCostNotice config={text.config} model={text.value} capability="text" label="商品识别 / 策划" />
+                {product.lastAnalysisTaskId ? <TaskSettlement ids={[product.lastAnalysisTaskId]} /> : null}
                 <span className="es-estimate">{estimate}</span>
                 <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
                     重置参数

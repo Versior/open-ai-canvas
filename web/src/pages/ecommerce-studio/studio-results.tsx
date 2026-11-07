@@ -4,6 +4,7 @@ import { Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, T
 import { useEffect, useRef, useState } from "react";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { RelativeTime } from "@/components/ui/product/relative-time";
+import { TaskSettlement } from "@/components/generation-cost-notice";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioAttemptActive, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
@@ -307,6 +308,7 @@ function GroupCard({
     const status = active ? `进行中 ${active}` : failed ? `${failed} 张失败` : done === shots.length ? "已完成" : `已出 ${done}/${shots.length}`;
     return (
         <article className="es-group">
+            <TaskSettlement ids={shots.flatMap((shot) => shot.attempts.flatMap((attempt) => (attempt.taskId ? [attempt.taskId] : [])))} />
             <header className="es-group-head">
                 <div className="es-group-title">
                     <strong>{group.title}</strong>

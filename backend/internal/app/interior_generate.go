@@ -433,8 +433,7 @@ func interiorCount(requested, modeMax, settingsMax int) (int, error) {
 }
 
 // interiorModelChoice 决定本次使用的模型。
-// 快速出图没有模型选择器：管理员默认模型 > 用户当前模型（在可选范围内时）> 可选范围里的第一个。
-// 专业模式：用户选择（必须在可选范围内）> 默认模型 > 可选范围里的第一个。
+// 两种模式：用户选择（必须在可选范围内）> 推荐默认模型 > 可选范围里的第一个。
 // 可选范围为空时不限制，是否能用由系统渠道准入决定。
 func interiorModelChoice(surface string, requested, modeDefault, siteDefault *interior.ModelRef, allowed []interior.ModelRef) (interior.ModelRef, error) {
 	chosen, err := interior.NormalizeModelRef(requested)
@@ -456,16 +455,11 @@ func interiorModelChoice(surface string, requested, modeDefault, siteDefault *in
 		}
 		return false
 	}
-	if surface == interior.SurfaceQuick && configured != nil {
-		return *configured, nil
-	}
 	if chosen != nil {
 		if permitted(*chosen) {
 			return *chosen, nil
 		}
-		if surface == interior.SurfacePro {
-			return interior.ModelRef{}, BadAuthRequest("所选模型不在当前出图方式的可选范围内")
-		}
+		return interior.ModelRef{}, BadAuthRequest("所选模型不在当前出图方式的可选范围内")
 	}
 	if configured != nil {
 		return *configured, nil

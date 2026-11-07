@@ -3,6 +3,7 @@ import { Download, History, ImagePlus, Shirt, Video, X, Users, Layers, Move, Sca
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { ModelPicker } from "@/components/model-picker";
+import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
 import {
     FASHION_TOOLS,
     FASHION_SLOT_LABEL,
@@ -81,6 +82,22 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
         };
     }, [scope]);
     const problem = useMemo(() => fashionDraftProblem(draft), [draft]);
+    const imageQuote = useMemo(() => {
+        if (problem || !model) return undefined;
+        try {
+            const units = planFashion(draft, newFashionId);
+            return { config: fashionImageConfig(config, model, units[0].references.length), count: units.length, refs: units[0].references.length };
+        } catch {
+            return undefined;
+        }
+    }, [config, draft, model, problem]);
+    const videoQuote = useMemo(() => {
+        try {
+            return fashionVideoConfig(config, videoModel, seconds);
+        } catch {
+            return undefined;
+        }
+    }, [config, videoModel, seconds]);
     const checkScope = () => {
         if (getActiveUserScope() !== scope || !alive.current) throw new Error("会话已切换，任务保留在任务中心");
     };
@@ -381,7 +398,19 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
                                     requirements={{ capability: "image", input: { textCount: 1, imageCount: tools.needs.length, referenceImageCount: tools.needs.length, videoCount: 0, audioCount: 0, characterCount: 0 } }}
                                 />
                                 <p className="fashion-hint">{problem || `本次生成 ${draft.tool === "multi-model" ? draft.models.length : draft.tool === "multi-garment" ? draft.garments.length : 1} 张图片，每张按所选模型计费。`}</p>
-                                <Button type="primary" icon={<ImagePlus size={16} />} loading={busy && !work?.units.some((unit) => unit.video)} disabled={busy || uploading || Boolean(problem) || !model} onClick={() => void run()}>
+                                {imageQuote ? (
+                                    <GenerationCostNotice
+                                        config={imageQuote.config}
+                                        model={model}
+                                        capability="image"
+                                        count={imageQuote.count}
+                                        requirements={{ capability: "image", input: { textCount: 1, imageCount: imageQuote.refs, referenceImageCount: imageQuote.refs, videoCount: 0, audioCount: 0, characterCount: 0 } }}
+                                        label="模特图片处理"
+                                    />
+                                ) : !problem ? (
+                                    <p role="status">所选模型不满足当前素材要求，无法估算。</p>
+                                ) : null}
+                                <Button type="primary" icon={<ImagePlus size={16} />} loading={busy && !work?.units.some((unit) => unit.video)} disabled={busy || uploading || Boolean(problem) || !imageQuote} onClick={() => void run()}>
                                     保存方案并生成图片
                                 </Button>
                                 <p className="fashion-hint">图片编辑由所选模型执行。请复核身份、衣物和印花细节；印花输出为白底图，不能作为原始矢量文件或未核验的生产稿。</p>
@@ -389,6 +418,16 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
                             <section className="fashion-results" aria-label="模特处理结果">
                                 {work ? (
                                     <>
+                                        <TaskSettlement ids={work.units.flatMap((unit) => [unit.taskId, unit.video?.taskId].filter((id): id is string => Boolean(id)))} />
+                                        {videoQuote ? (
+                                            <GenerationCostNotice
+                                                config={videoQuote}
+                                                model={videoModel}
+                                                capability="video"
+                                                requirements={{ capability: "video", videoSeconds: String(seconds), input: { textCount: 1, imageCount: 1, referenceImageCount: 1, videoCount: 0, audioCount: 0, characterCount: 0 } }}
+                                                label={`单张展示视频 · ${seconds} 秒`}
+                                            />
+                                        ) : null}
                                         <div className="fashion-result-head">
                                             <strong>
                                                 {work.title} · {work.units.filter((unit) => unit.resourceId).length}/{work.units.length}

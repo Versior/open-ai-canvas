@@ -310,10 +310,10 @@ describe("Usage bar above the composer", () => {
         expect(html).toContain("<dd>69</dd>");
         expect(html).toContain("<dd>8m 36s</dd>");
         expect(html).not.toContain('data-empty=""');
-        expect(html).toContain("本轮用量与速度来自上游调用记录");
-        // 明细默认收起，但仍在页面里，切换按钮有可指向的目标。
+        expect(html).not.toContain("本轮用量与速度来自上游调用记录");
+        // 明细默认不挂载，避免皮肤样式将 hidden 内容意外展开；交互回归另测往返恢复。
         expect(html).toContain('aria-expanded="false"');
-        expect(html).toContain('hidden=""');
+        expect(html).not.toContain('class="agent-usage-details"');
 
         const timedTools = presentAgentRunStats(reduce([event(1, "tool_completed", { toolName: "generate_media", callId: "a", durationMs: 211_000 }, 0), event(2, "run_completed", {}, 516_000)]).runs["run-1"]);
         expect(agentUsageDetails(contextView, timedTools).run.find((item) => item.key === "tool-time")).toMatchObject({ label: "工具耗时", value: "3m 31s", detail: "41%" });

@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { App, Button, Input } from "antd";
 import { CircleAlert, CircleCheck, ClipboardPaste, FileVideo, Link2, ScanSearch, Upload, UploadCloud, X } from "lucide-react";
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { Link } from "react-router";
 
 import { ModelPicker } from "@/components/model-picker";
+import { GenerationCostNotice } from "@/components/generation-cost-notice";
 import { HoverBorderGradient } from "@/components/ui/aceternity/hover-border-gradient";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { Switch } from "@/components/ui/base/switch";
@@ -43,10 +43,8 @@ const MONOCHROME_LOGOS = new Set(["douyin", "tiktok"]);
 
 /**
  * 支持的平台：能导入的排前面；后台还没给某个平台配解析接口时显示成灰色，说明可以先下载再上传。
- * 管理员多一个去配置解析接口的入口。
  */
 function PlatformStrip({ platforms, loading }: { platforms: readonly SocialVideoPlatform[]; loading: boolean }) {
-    const admin = useUserStore((state) => state.user?.role === "admin");
     const sorted = [...platforms].sort((left, right) => Number(right.available) - Number(left.available));
     const missing = sorted.filter((platform) => !platform.available);
     return (
@@ -77,11 +75,6 @@ function PlatformStrip({ platforms, loading }: { platforms: readonly SocialVideo
                       ))}
             </ul>
             {!loading && missing.length ? <span className="vr-platforms-hint">灰色的还没接入，可以下载后上传</span> : null}
-            {admin ? (
-                <Link to="/admin/video-replication?tab=parse" className="vr-platforms-admin">
-                    配置解析接口
-                </Link>
-            ) : null}
         </div>
     );
 }
@@ -304,6 +297,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                             {footerError}
                         </p>
                     ) : null}
+                    <GenerationCostNotice config={config} model={model} capability="text" requirements={videoTeardownTextRequirements(config, 1)} label="视频拆解分析（切镜 0 积分）" />
                     <div className="vr-toolbar">
                         {/* 分析模型是次要设置：不显示单价，选择器里仍能看到各模型价格。 */}
                         <div className="vr-toolbar-model">

@@ -1,8 +1,8 @@
 import { App, Button, Input } from "antd";
 import { useState } from "react";
 import { AdminModal } from "@/pages/admin/ui/overlays";
-import { SOCIAL_PARSE_PRESETS, socialParsePresetInput } from "@/lib/social-video-parse-presets";
-import { importSocialVideoParseAPIs } from "@/services/api/social-video-parse";
+import { SOCIAL_PARSE_PRESETS, SOCIAL_PARSE_SAMPLE_LINKS, socialParsePresetInput } from "@/lib/social-video-parse-presets";
+import { getSocialVideoParseOverview, importSocialVideoParseAPIs, updateSocialVideoParseSettings } from "@/services/api/social-video-parse";
 
 export function ParsePresetPicker({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
     const { message } = App.useApp();
@@ -15,6 +15,10 @@ export function ParsePresetPicker({ onClose, onAdded }: { onClose: () => void; o
             const apis = SOCIAL_PARSE_PRESETS.filter((item) => selected.includes(item.id)).map((item) => socialParsePresetInput(item, instance));
             const result = await importSocialVideoParseAPIs({ apis, autoEnable: false, skipExisting: true });
             if (result.errors.length) throw new Error(`导入部分失败：${result.errors.join("；")}`);
+            const overview = await getSocialVideoParseOverview();
+            const sampleLinks = { ...overview.settings.sampleLinks };
+            for (const platform of new Set(apis.flatMap((api) => api.platforms))) if (!sampleLinks[platform] && SOCIAL_PARSE_SAMPLE_LINKS[platform]) sampleLinks[platform] = SOCIAL_PARSE_SAMPLE_LINKS[platform];
+            if (JSON.stringify(sampleLinks) !== JSON.stringify(overview.settings.sampleLinks)) await updateSocialVideoParseSettings({ ...overview.settings, sampleLinks });
             message.success(`已添加 ${result.created} 条接口草稿。请配置密钥或实例，测试通过后启用`);
             onAdded();
             onClose();

@@ -290,7 +290,7 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		task, err := svc.Task(user.ID, c.Param("id"))
+		task, err := svc.TaskWithBilling(user.ID, c.Param("id"))
 		if err != nil {
 			fail(c, http.StatusNotFound, err)
 			return

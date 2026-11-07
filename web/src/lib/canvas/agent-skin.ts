@@ -2,11 +2,11 @@ import type { CanvasTheme } from "@/lib/canvas-theme";
 import type { AgentPetTone } from "@/services/api/agent-pets";
 
 export const AGENT_SKINS = [
-    { id: "auto", label: "随形象", detail: "跟随形象的性格配色" },
-    { id: "cloud", label: "云朵", detail: "轻柔的漫画气泡" },
-    { id: "paper", label: "手账", detail: "暖色便签与圆角对话" },
-    { id: "terminal", label: "终端", detail: "清晰利落的机械风格" },
-    { id: "aurora", label: "星光", detail: "紫色微光与柔和边框" },
+    { id: "auto", label: "随形象", detail: "跟随形象切换完整插画皮肤" },
+    { id: "cloud", label: "云朵", detail: "云上小屋、蘑菇与云朵造型气泡" },
+    { id: "paper", label: "手账", detail: "胶带便签、花朵与手账格纹" },
+    { id: "terminal", label: "终端", detail: "机器人、电路与机械框体" },
+    { id: "aurora", label: "星光", detail: "行星、星座与星际信箱" },
     { id: "site", label: "默认", detail: "沿用工作台主题" },
 ] as const;
 export type AgentSkin = (typeof AGENT_SKINS)[number]["id"];

@@ -20,6 +20,7 @@ import { applySceneLocalEdit, buildSceneLocalEditPrompt, sceneEditOptions } from
 import { getActiveUserScope } from "@/lib/user-scope";
 import { saveSceneFile } from "./interior-scene-tasks";
 import { InteriorLocalControls } from "./interior-local-controls";
+import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
 
 /** 一个项目最多保存的 3D 模型数。 */
 const MAX_SCENES = 30;
@@ -398,6 +399,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                     </section>
                 </div>
                 <footer className="itd-composer-foot">
+                    <GenerationCostNotice config={config} model={model} capability="text" requirements={requirements} label="生成三维模型" />
                     {error ? (
                         <p className="itd-inline-error" role="alert">
                             {error}
@@ -516,6 +518,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                     disabled={submitting}
                                     aria-label="修改要求"
                                 />
+                                <GenerationCostNotice config={config} model={model} capability="text" label={editOption ? "局部对话" : "整套方案调整"} />
                                 <Button icon={<Wand2 className="size-4" aria-hidden />} disabled={!instruction.trim() || submitting || Boolean(sceneModelProblem(config, model, 0))} loading={submitting} onClick={() => void edit()}>
                                     {editOption ? "对话调整局部" : "调整整套方案"}
                                 </Button>
@@ -531,6 +534,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                     {selected?.status === "succeeded" && selectedScene && editOption ? (
                         <InteriorLocalControls key={`${selected.id}:${editOption.value}`} scene={selectedScene} target={editOption.target} disabled={submitting} onApply={applyManual} />
                     ) : null}
+                    {selected?.taskId ? <TaskSettlement ids={[selected.taskId]} /> : null}
                     {selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
                     {scenes.length ? (
                         <ul className="itd-scene-list thin-scrollbar" aria-label="这个项目的 3D 模型">

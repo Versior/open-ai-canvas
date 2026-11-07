@@ -190,7 +190,8 @@ async function finishReplication(pending: PendingReplication, config: AiConfig, 
         });
         context.assertCurrent();
         context.update({ stage: "save", detail: "" });
-        await saveVideoReplicationAnalysis(id, videoReplicationAnalysisDocument(analysis, pending.model), context.signal);
+        const textTasks = readPending().find((item) => item.id === id)?.textTasks || {};
+        await saveVideoReplicationAnalysis(id, videoReplicationAnalysisDocument(analysis, pending.model, Object.values(textTasks)), context.signal);
         context.assertCurrent();
     } catch (error) {
         // 中止（切换账号）时留着记录，下次回到这个账号还能接上；分析本身失败就不再自动重跑，等用户点「重试分析」，
