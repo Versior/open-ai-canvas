@@ -81,6 +81,11 @@
     -webkit-mask: url(/logo.svg) center / contain no-repeat;
 }
 
+.auth-dialog-brand-wordmark {
+    width: 85px;
+    height: 24px;
+}
+
 .auth-dialog-stage-copy {
     display: flex;
     flex-direction: column;

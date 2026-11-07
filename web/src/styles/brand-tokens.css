@@ -1,0 +1,15 @@
+:root {
+    /* Primitive: STAGE identity palette. */
+    --palette-brand-ink: #161310;
+    --palette-brand-paper: #f4efe6;
+    --palette-brand-cue: #ef4b2f;
+
+    /* Semantic: stable brand roles shared by the app and standalone welcome bundle. */
+    --brand-ink: var(--palette-brand-ink);
+    --brand-paper: var(--palette-brand-paper);
+    --brand-cue: var(--palette-brand-cue);
+
+    /* Component: cue point geometry. */
+    --brand-cue-radius: 9999px;
+    --brand-cue-min-size: 4px;
+}

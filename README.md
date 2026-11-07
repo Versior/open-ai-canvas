@@ -1,8 +1,6 @@
 <div align="center">
 
-<img src="web/public/logo.svg" width="92" alt="STAGE logo">
-
-# STAGE
+<img src="web/public/wordmark.svg" width="246" alt="STAGE">
 
 ### From idea to final.
 

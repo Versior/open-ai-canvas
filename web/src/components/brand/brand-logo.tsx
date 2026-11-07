@@ -12,12 +12,17 @@ type BrandLogoProps = {
     theme?: ThemeName | "auto";
 };
 
-export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: BrandLogoProps) {
+type BrandWordmarkProps = {
+    className?: string;
+    builtinClassName?: string;
+};
+
+export function BrandLogo({ className, alt = "", theme = "auto" }: BrandLogoProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const currentTheme = useActiveTheme();
     const source = appearanceLogoURL(appearance, theme === "auto" ? currentTheme : theme);
     const [failedSource, setFailedSource] = useState<string | null>(null);
-    if (!appearance.logoConfigured) return <>{fallback}</>;
+    if (!appearance.logoConfigured) return <BuiltinBrandMark className={className} alt={alt} />;
     // A configured custom logo must never fall through to the built-in brand
     // when its file becomes unavailable. Keep its footprint neutral instead.
     if (failedSource === source) return <span className={cn("block", className)} aria-hidden="true" />;
@@ -35,6 +40,15 @@ export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: Bra
     );
 }
 
+function BuiltinBrandMark({ className, alt }: { className?: string; alt: string }) {
+    return (
+        <span className={className} style={{ position: "relative", display: "inline-block", overflow: "visible" }} role={alt ? "img" : undefined} aria-label={alt || undefined} aria-hidden={alt ? undefined : true}>
+            <span style={{ position: "absolute", inset: 0, backgroundColor: "currentColor", mask: "url(/logo.svg) center / contain no-repeat", WebkitMask: "url(/logo.svg) center / contain no-repeat" }} />
+            <span style={{ position: "absolute", width: "7%", aspectRatio: 1, right: "7.5%", bottom: "9.25%", borderRadius: "var(--brand-cue-radius)", backgroundColor: "var(--brand-cue)" }} />
+        </span>
+    );
+}
+
 export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", theme = "auto" }: BrandLogoProps & { logoClassName?: string }) {
     const frameEnabled = useAppearanceStore((state) => state.appearance.logoFrameEnabled);
     const unframedStyle: CSSProperties | undefined = frameEnabled
@@ -49,6 +63,29 @@ export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", t
     return (
         <span className={cn("brand-logo-frame", className)} data-logo-frame-enabled={frameEnabled} style={unframedStyle}>
             <BrandLogo className={logoClassName} fallback={fallback} alt={alt} theme={theme} />
+        </span>
+    );
+}
+
+export function BrandWordmark({ className, builtinClassName }: BrandWordmarkProps) {
+    const appearance = useAppearanceStore((state) => state.appearance);
+    if (appearance.logoConfigured || appearance.brandName !== "STAGE") return <span className={className}>{appearance.brandName}</span>;
+    return (
+        <span className={builtinClassName} style={{ position: "relative", display: "inline-block", flexShrink: 0, overflow: "visible" }} role="img" aria-label="STAGE">
+            <span style={{ position: "absolute", inset: 0, backgroundColor: "currentColor", mask: "url(/wordmark.svg) left center / contain no-repeat", WebkitMask: "url(/wordmark.svg) left center / contain no-repeat" }} />
+            <span
+                style={{
+                    position: "absolute",
+                    width: "1.8%",
+                    minWidth: "var(--brand-cue-min-size)",
+                    minHeight: "var(--brand-cue-min-size)",
+                    aspectRatio: 1,
+                    right: "1.7%",
+                    top: "8.5%",
+                    borderRadius: "var(--brand-cue-radius)",
+                    backgroundColor: "var(--brand-cue)",
+                }}
+            />
         </span>
     );
 }

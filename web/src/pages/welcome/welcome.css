@@ -1,3 +1,5 @@
+@import "../../styles/brand-tokens.css";
+
 .welcome-page {
     --welcome-black: #080808;
     --welcome-paper: #f3f2ef;
@@ -101,6 +103,10 @@ body:has(.welcome-page) {
     background: currentColor;
     mask: url("/logo.svg") center / contain no-repeat;
     -webkit-mask: url("/logo.svg") center / contain no-repeat;
+}
+.welcome-brand-wordmark {
+    width: 90px;
+    height: 24px;
 }
 .welcome-nav {
     margin-left: auto;

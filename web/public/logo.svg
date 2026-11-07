@@ -1,9 +1,10 @@
-<svg width="64" height="64" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="64" height="64" viewBox="0 0 700 700" fill="none" xmlns="http://www.w3.org/2000/svg">
   <title>STAGE</title>
-  <desc>An architectural S formed by interlocking stage planes.</desc>
+  <desc>The STAGE italic S with its vermilion cue point.</desc>
   <style>
-    :root { color: #111827; }
-    @media (prefers-color-scheme: dark) { :root { color: #F8FAFC; } }
+    :root { color: #161310; }
+    @media (prefers-color-scheme: dark) { :root { color: #F4EFE6; } }
   </style>
-  <path fill="currentColor" d="M44 44H198L174 84H94L83 102H168L194 140H96L85 158H198L174 198H42L67 156H148L159 140H72L46 102H144L155 84H44V44Z"/>
+  <path fill="currentColor" transform="translate(80 680) scale(.92 -.92)" d="M47 262Q46 248 45 236Q44 224 44 212Q44 166 56 130Q68 94 89.5 68.5Q111 43 140.5 29.5Q170 16 205 16Q233 16 258 24.5Q283 33 302.5 49.5Q322 66 333.5 89Q345 112 345 142Q345 179 328.5 207Q312 235 287 257.5Q262 280 232.5 301Q203 322 178 345.5Q153 369 136.5 398.5Q120 428 120 468Q120 513 143.5 550Q167 587 203 613.5Q239 640 283 655Q327 670 367 670Q418 670 466.5 655.5Q515 641 560 618Q540 571 528.5 523.5Q517 476 508 427L490 432Q487 480 480.5 518Q474 556 460 581.5Q446 607 420.5 620.5Q395 634 354 634Q332 634 312 625.5Q292 617 276.5 603Q261 589 251.5 569.5Q242 550 242 528Q242 491 258.5 464Q275 437 300 414Q325 391 354.5 370.5Q384 350 409 325.5Q434 301 450.5 270.5Q467 240 467 198Q467 145 443 104.5Q419 64 381 36Q343 8 295-6Q247-20 200-20Q170-20 141-13Q112-6 84 4Q56 14 28 23.5Q0 33-29 39Q-12 96 .5 153.5Q13 211 26 269Z"/>
+  <circle cx="624" cy="611" r="24" fill="#EF4B2F"/>
 </svg>

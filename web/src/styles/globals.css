@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "./primary-buttons.css";
 @import "./button-tokens.css";
+@import "./brand-tokens.css";
 @source "../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
@@ -23748,7 +23749,7 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     display: none;
 }
 
-/* 自定义 Logo：中性浅底 + 细线承托任意配色。内置字形：墨色实底反白，明暗主题自动反相。
+/* 自定义 Logo：中性浅底 + 细线承托任意配色。内置字形保持透明无框，明暗主题自动反相。
    后台关闭「Logo 外框」时，BrandLogoFrame 的行内样式清掉底色与圆角，这里不能用 !important 压过它。 */
 .app-user-workspace .app-workspace-brand-mark {
     width: 28px;
@@ -23763,8 +23764,9 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
 
 .app-user-workspace .app-workspace-brand-mark.is-builtin {
     border-color: transparent;
-    background: var(--user-ink);
-    color: var(--user-surface);
+    border-radius: 0;
+    background: transparent;
+    color: var(--user-ink);
 }
 
 .app-user-workspace .app-workspace-brand-glyph {
@@ -23774,6 +23776,16 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     background: currentColor;
     mask: url("/logo.svg") center / contain no-repeat;
     -webkit-mask: url("/logo.svg") center / contain no-repeat;
+}
+
+.app-user-workspace .app-workspace-brand-wordmark-image {
+    width: 88px;
+    height: 24px;
+    color: var(--brand-ink);
+}
+
+.dark .app-user-workspace .app-workspace-brand-wordmark-image {
+    color: var(--user-ink);
 }
 
 .app-user-workspace .app-workspace-nav-link {
