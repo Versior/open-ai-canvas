@@ -939,8 +939,12 @@
 
 .agent-composer-surface {
     padding: var(--space-3) var(--space-3) var(--space-2);
-    border-radius: var(--agent-radius-surface, var(--radius-xl));
-    background: var(--agent-surface-raised, var(--background));
+    border-radius: var(--radius-lg);
+    background: transparent;
+}
+
+.agent-composer-surface:focus-within {
+    background: var(--agent-surface-soft);
 }
 
 /* 底部托盘：外壳与输入卡片同为一张卡，输入卡片嵌在上方，底部条直接落在托盘里；无分隔线、无间距。 */
@@ -2150,9 +2154,11 @@ summary.agent-tool-step:hover {
     height: 3px;
     border-radius: 999px;
     background: color-mix(in srgb, currentColor 20%, transparent);
+    opacity: 0;
     transition:
         background-color 150ms ease,
-        width 150ms ease;
+        width 150ms ease,
+        opacity 150ms ease;
 }
 
 .agent-composer-resize-handle:hover > span,
@@ -2160,6 +2166,7 @@ summary.agent-tool-step:hover {
 .agent-composer-resize-handle:focus-visible > span {
     width: 46px;
     background: color-mix(in srgb, currentColor 52%, transparent);
+    opacity: 1;
 }
 
 .agent-composer-resize-handle:focus-visible {

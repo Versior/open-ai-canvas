@@ -491,6 +491,7 @@ export function AgentChatComposer({
                         role="separator"
                         aria-orientation="horizontal"
                         aria-label="调整提示词面板高度"
+                        title="拖动调整输入区高度，也可用方向键调整"
                         aria-valuemin={MIN_AGENT_PROMPT_HEIGHT}
                         aria-valuemax={MAX_AGENT_PROMPT_HEIGHT}
                         aria-valuenow={promptHeight}
