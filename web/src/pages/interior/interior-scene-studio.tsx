@@ -285,6 +285,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
             };
             update(project.id, (document) => ({ ...document, scenes: [entry, ...(document.scenes || [])] }));
             await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未确认新版本保存");
             setSelectedId(id);
             message.success("局部调整已保存为新版本，可在历史中查看上一版");
         } finally {
