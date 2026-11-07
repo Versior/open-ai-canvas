@@ -276,6 +276,8 @@ describe("ecommerce studio detail plan", () => {
         const model = compileStudioPrompt({ product, shot: run.shots[0], textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(model.prompt).toContain("左图右文");
         expect(model.prompt).toContain("标题位置、字号与主体裁切以本屏图文构图为准");
+        expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("严格按「左图右文」排");
+        expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("若画面说明中的文字与主体位置相反");
         const overlay = compileStudioPrompt({ product, shot: run.shots[0], textMode: "overlay", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(overlay.prompt).toContain("从左 58%、上 12%");
         expect(studioDesignZone(run.shots[0], STUDIO_COMPOSITIONS.top.zone)).toEqual(STUDIO_COMPOSITIONS.right.zone);
@@ -359,7 +361,7 @@ describe("ecommerce studio detail plan", () => {
         expect(compiled.prompt).toContain("【这一屏的画面】");
         expect(compiled.prompt).toContain("清晨地铁站");
         expect(compiled.prompt).toContain("整套视觉规范「按商品策划」");
-        expect(compiled.prompt).toContain("按本屏图文构图与画面说明排");
+        expect(compiled.prompt).toContain("按本屏画面说明排，不压在商品上");
         for (const title of ["【构图与机位】", "【光线】", "【背景与道具】"]) expect(compiled.prompt).not.toContain(title);
         const skipped = { ...product, brief: toggleStudioSetEntry(product, "p1") };
         expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "杯盖", "握持", "办公桌", "收尾"]);

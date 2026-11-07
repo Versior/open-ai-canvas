@@ -292,7 +292,11 @@ function copyLayer(shot: StudioShot, spec: StudioShotSpec, mode: StudioTextMode,
     if (planned && !hasCopy) return { id: "copy", title: "文字", source: "出图策划", text: "这一屏不放文字，画面中不生成任何文字（商品本身的标识除外）。" };
     if (planned && mode === "model") {
         const layout = shot.layout ? STUDIO_DETAIL_LAYOUTS[shot.layout] : undefined;
-        const lines: string[] = ["位置：按本屏图文构图与画面说明排，不压在商品上。整套共用字体家族与色板，标题位置、字号和留白随本屏内容变化。"];
+        const composition = shot.composition ? STUDIO_COMPOSITIONS[shot.composition] : undefined;
+        const lines: string[] = [
+            composition ? `位置：严格按「${composition.label}」排：${composition.render}。若画面说明中的文字与主体位置相反，按这里调整位置，保留场景、动作与光线。` : "位置：按本屏画面说明排，不压在商品上。",
+            "整套共用字体家族与色板，标题位置、字号和留白随本屏内容变化。",
+        ];
         if (shot.eyebrow?.trim()) lines.push(`栏目小标题${quote(shot.eyebrow)}：放在主标题上方，小号字、字距加宽，用整套规范里的强调色。`);
         // 字重跟设计调性走：极简调性要细到中等字重，爆款调性才用粗字重，不一律加粗。
         if (shot.headline.trim()) lines.push(`主标题${quote(shot.headline)}：这一屏最大的文字，按构图分行，海报屏可大胆放大，细节屏克制；字重按设计调性。`);
