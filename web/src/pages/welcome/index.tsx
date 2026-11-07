@@ -3,7 +3,7 @@ import { Button, ConfigProvider, Tabs } from "antd";
 import { ArrowDown, ArrowRight, ArrowUpRight, Code2, Menu, Pause, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
@@ -110,7 +110,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
             <header className="welcome-header">
                 <a className="welcome-brand" href="/welcome" aria-label={t("shell.brandHome", { brand: brandName })}>
                     <BrandLogo theme="dark" className="welcome-brand-logo" alt="" fallback={<span className="welcome-brand-logo is-fallback" />} />
-                    <BrandWordmark builtinClassName="welcome-brand-wordmark" />
+                    {brandName}
                 </a>
                 <nav className={menu ? "welcome-nav is-open" : "welcome-nav"} aria-label={t("account.welcome.nav")}>
                     <a href="#workbench" onClick={() => setMenu(false)}>

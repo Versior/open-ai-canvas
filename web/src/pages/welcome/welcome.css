@@ -102,10 +102,6 @@ body:has(.welcome-page) {
     mask: url("/logo.svg") center / contain no-repeat;
     -webkit-mask: url("/logo.svg") center / contain no-repeat;
 }
-.welcome-brand-wordmark {
-    width: 80px;
-    height: 24px;
-}
 .welcome-nav {
     margin-left: auto;
     display: flex;

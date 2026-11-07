@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import { AuthLoginLink } from "@/components/auth/auth-login-link";
-import { BrandLogoFrame, BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { UserAvatar } from "@/components/layout/user-avatar";
 import { UserGroupAvatarRing, UserGroupBadge } from "@/components/layout/user-group-badge";
 import { Kbd } from "@/components/ui/base/kbd";
@@ -155,7 +155,7 @@ function WorkspaceSidebarProfile({ collapsed, user, onExpand, onCollapse }: { co
 function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNavigate: () => void; onExpand: () => void; onCollapse: () => void }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const { t } = useTranslation();
-    // 未上传自定义 Logo 时使用内置 STAGE signature S（与欢迎页、登录框、加载页同一个 /logo.svg），放在墨色实底方块里；
+    // 未上传自定义 Logo 时用内置 STAGE 门廊式 S 标（与欢迎页、登录框、加载页同一个 /logo.svg），放在墨色实底方块里；
     // 自定义 Logo 的配色不可预知，改用中性浅底方块承托。
     const mark = (
         <BrandLogoFrame
@@ -169,7 +169,7 @@ function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNa
         <div className={cn("app-workspace-sidebar-brand-row relative shrink-0", collapsed && "is-collapsed")}>
             <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
                 {mark}
-                {!collapsed ? <BrandWordmark className="app-workspace-brand-wordmark truncate" builtinClassName="app-workspace-brand-wordmark-image" /> : null}
+                {!collapsed ? <span className="app-workspace-brand-wordmark truncate">{appearance.brandName}</span> : null}
             </Link>
         </div>
     );

@@ -23776,17 +23776,6 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     -webkit-mask: url("/logo.svg") center / contain no-repeat;
 }
 
-.app-user-workspace .app-workspace-brand-wordmark-image {
-    display: block;
-    width: 82px;
-    height: 24px;
-    color: #751f2a;
-}
-
-.dark .app-user-workspace .app-workspace-brand-wordmark-image {
-    color: var(--user-ink);
-}
-
 .app-user-workspace .app-workspace-nav-link {
     min-height: var(--workspace-reference-row);
     padding: 0 12px;

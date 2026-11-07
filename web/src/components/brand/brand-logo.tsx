@@ -12,11 +12,6 @@ type BrandLogoProps = {
     theme?: ThemeName | "auto";
 };
 
-type BrandWordmarkProps = {
-    className?: string;
-    builtinClassName?: string;
-};
-
 export function BrandLogo({ className, fallback, alt = "", theme = "auto" }: BrandLogoProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const currentTheme = useActiveTheme();
@@ -55,18 +50,5 @@ export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", t
         <span className={cn("brand-logo-frame", className)} data-logo-frame-enabled={frameEnabled} style={unframedStyle}>
             <BrandLogo className={logoClassName} fallback={fallback} alt={alt} theme={theme} />
         </span>
-    );
-}
-
-export function BrandWordmark({ className, builtinClassName }: BrandWordmarkProps) {
-    const appearance = useAppearanceStore((state) => state.appearance);
-    if (appearance.logoConfigured || appearance.brandName !== "STAGE") return <span className={className}>{appearance.brandName}</span>;
-    return (
-        <span
-            className={cn(className, builtinClassName)}
-            role="img"
-            aria-label="STAGE"
-            style={{ display: "inline-block", flex: "0 0 auto", background: "currentColor", mask: "url(/wordmark.svg) left center / contain no-repeat", WebkitMask: "url(/wordmark.svg) left center / contain no-repeat" }}
-        />
     );
 }
