@@ -96,6 +96,17 @@ test("single-image corrections retain the actual selected candidate and product 
     expect(compiled.revisionReference?.resourceId).toBe("artwork");
     expect(compiled.layoutGuide).toBeUndefined();
     expect(compiled.prompt).toContain("图2是待修正的当前成品");
+    const limited = compileStudioPrompt({
+        product,
+        shot: source,
+        model: "gpt-image",
+        maxReferences: 2,
+        revisionResourceId: "artwork",
+        brief: { ...product.brief, shooting: "model", model: { figure: { itemId: "person", resourceId: "person", name: "模特", prompt: "" } } },
+    });
+    expect(limited.modelReferences).toHaveLength(0);
+    expect(limited.referenceNotice).toContain("最多带 2 张图");
+    expect(limited.referenceNotice).toContain("已为待修正成品预留一张");
     expect(() => compileStudioPrompt({ product, shot: source, model: "gpt-image", maxReferences: 1, revisionResourceId: "artwork" })).toThrow(/多参考图/);
     expect(() => compileStudioPrompt({ product, shot: source, model: "gpt-image", revisionResourceId: "unrelated" })).toThrow(/成功记录/);
     product.plans = [{ id: "plan", kind: "detail", textMode: "model", createdAt: "", shots: [{ ...source, attempts: [...source.attempts, { ...source.attempts[0], id: "new", status: "submitting", outputs: [], revisionResourceId: "artwork" }] }] }];

@@ -404,7 +404,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const modelReferences = wantedModel.slice(0, Math.max(0, maxReferences - references.length));
     const styleReferences = wantedStyle.slice(0, Math.max(0, maxReferences - references.length - modelReferences.length));
     const dropped = [wantedModel.length > modelReferences.length ? "模特参考图" : "", wantedStyle.length > styleReferences.length ? (styleReferences.length ? "多出的参考图" : "参考图") : ""].filter(Boolean);
-    const referenceNotice = dropped.length ? `这个模型一次最多带 ${maxReferences} 张图，${dropped.join("和")}没有带上${wantedModel.length > modelReferences.length ? "，模特改用文字描述" : ""}` : undefined;
+    const referenceNotice = dropped.length ? `这个模型一次最多带 ${capacity} 张图${revisionReference ? "，已为待修正成品预留一张" : ""}，${dropped.join("和")}没有带上${wantedModel.length > modelReferences.length ? "，模特改用文字描述" : ""}` : undefined;
     const hasCopy = studioShotHasCopy(shot, spec);
     const effective = hasCopy ? studioEffectiveTextMode({ textMode }, adapter) : { mode: textMode };
     const style = studioProductStyle(product, studioActivePlan({ brief: brief ?? product.brief })?.styleId);

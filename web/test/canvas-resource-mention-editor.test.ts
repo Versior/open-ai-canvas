@@ -132,8 +132,10 @@ describe("canvas resource mention editor", () => {
         expect(component).toContain("[/、]([^\\s/、]*)$");
         // 面板已取消「每轮固定 Skills」，输入框不再承诺「/」技能菜单，改为说明 Agent 自动匹配。
         expect(source("../src/lib/canvas/agent-appearance.ts")).toContain("用 / 或 、 引用 Skills");
-        // 二开：画布 Agent 不再手动引用技能，输入框提示自动匹配。
-        expect(moduleGroupSource("components/canvas/canvas-cloud-agent-panel.tsx") + source("../src/components/canvas/canvas-cloud-agent-panel-parts.tsx")).toContain("Agent 会自动匹配所需技能");
+        // 输入框占位文案精简；自动匹配说明保留在实际渲染的 Skills 入口与帮助中。
+        const panel = source("../src/components/canvas/canvas-cloud-agent-panel-parts.tsx");
+        expect(panel).toContain('title="Agent 会根据任务自动搜索技能广场并按需读取"');
+        expect(panel).toContain("Skills 自动匹配");
     });
 
     test("skill chips use one colored icon instead of exposing the serialized token", () => {
