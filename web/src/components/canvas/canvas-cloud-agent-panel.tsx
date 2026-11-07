@@ -2407,6 +2407,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         ) : null}
                                         <AgentConversation
                                             key={activeConversationId}
+                                            character={<AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />}
                                             theme={theme}
                                             messages={messages}
                                             onFocusNode={onFocusNode}
@@ -2497,7 +2498,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             </div>
                                         ) : null}
                                         <AgentChatComposer
-                                            character={<AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />}
                                             prompt={prompt}
                                             submitDisabled={composerSubmitDisabled}
                                             submitMode={composerSubmitMode}

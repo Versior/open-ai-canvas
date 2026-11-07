@@ -937,18 +937,6 @@
     background: var(--agent-surface-soft);
 }
 
-.agent-composer-input {
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    align-items: center;
-    gap: 8px;
-}
-
-.agent-composer-input:has(> .agent-window-perch[data-expanded="true"]) {
-    grid-template-columns: minmax(0, 1fr) 104px;
-}
-
 /* 底部托盘：外壳与输入卡片同为一张卡，输入卡片嵌在上方，底部条直接落在托盘里；无分隔线、无间距。 */
 .agent-composer-shell[data-has-footer] {
     border-radius: var(--agent-radius-surface, var(--radius-xl));

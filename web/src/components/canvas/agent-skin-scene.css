@@ -52,12 +52,9 @@
 .agent-perch-bubble {
     min-width: 0;
     max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
+    display: block;
     font-size: 12px;
     line-height: 1.5;
     color: var(--agent-ink);
@@ -65,27 +62,64 @@
     border-radius: var(--r-md);
     background: var(--agent-surface-base);
 }
-.agent-composer-input > .agent-window-perch {
-    width: 104px;
+.agent-conversation-messages:has(> .agent-window-perch[data-expanded="true"]) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 12px;
+}
+.agent-conversation-messages:has(> .agent-window-perch[data-expanded="true"]) > * {
+    flex: 0 0 100%;
+    min-width: 0;
+    margin-top: 0;
+}
+.agent-conversation-messages > :has(+ .agent-window-perch[data-expanded="true"]) {
+    flex: 1 1 0%;
+}
+.agent-conversation-messages > .agent-window-perch {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
     height: auto;
-    margin: 0;
-    flex-direction: column-reverse;
-    justify-content: center;
-    gap: 4px;
+    max-width: 100%;
+    margin: 8px 0 0 auto;
+    overflow: visible;
+    content-visibility: visible;
+    contain-intrinsic-size: none;
 }
-.agent-composer-input > .agent-window-perch[data-expanded="false"] {
-    position: absolute;
-    top: -24px;
-    right: 0;
-    height: 24px;
+.agent-conversation-messages > .agent-window-perch[data-expanded="true"] {
+    flex: 0 0 clamp(104px, 40%, 220px);
+    align-self: flex-end;
+    max-width: 220px;
+    margin-top: 0;
+}
+.agent-conversation-messages > .agent-window-perch[data-expanded="false"] {
     flex-direction: row;
+    align-items: center;
+    height: 24px;
+    overflow: hidden;
 }
-.agent-composer-input > .agent-window-perch .agent-perch-bubble {
-    max-width: 104px;
-    -webkit-line-clamp: 2;
-    font-size: 11px;
-    line-height: 1.4;
-    padding: 4px 6px;
+.agent-conversation-messages > .agent-window-perch .agent-perch-bubble {
+    position: relative;
+    min-width: 104px;
+    max-width: 100%;
+    text-align: left;
+}
+.agent-conversation-messages > .agent-window-perch .agent-perch-bubble::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    right: 46px;
+    width: 8px;
+    height: 8px;
+    background: var(--agent-surface-base);
+    transform: translateY(-4px) rotate(45deg);
+}
+@container (max-width: 400px) {
+    .agent-conversation-messages > .agent-window-perch[data-expanded="true"] {
+        flex-basis: 104px;
+    }
 }
 .canvas-agent-panel[data-skin] .agent-message-body:not(.agent-message-user) {
     padding: 0;

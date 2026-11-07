@@ -62,7 +62,7 @@ test("idle timeout, active work, focus, completion and full-body entry", async (
         await act(async () => callbacks.forEach((callback) => callback()));
     };
     await render("idle");
-    expect(expanded()).toBe("true");
+    expect(expanded()).toBe("false");
     await settle();
     expect(expanded()).toBe("false");
     const button = host.querySelector<HTMLButtonElement>(".agent-perch-character")!;

@@ -15,7 +15,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const [failed, setFailed] = useState(false);
     const [hovered, setHovered] = useState(false);
     const [focused, setFocused] = useState(false);
-    const [settled, setSettled] = useState(false);
+    const [settled, setSettled] = useState(true);
     const [speaking, setSpeaking] = useState(false);
     const actionTimer = useRef(0);
     const state = agentAvatarStateForRunStatus(status);
@@ -26,8 +26,10 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const awake = !resting || hovered || focused || speaking || Boolean(chatter.message);
     const expanded = display === "full" || awake || !settled;
     useEffect(() => {
-        setSettled(false);
-        if (awake || display === "full") return;
+        if (awake || display === "full") {
+            setSettled(false);
+            return;
+        }
         const timer = window.setTimeout(() => setSettled(true), 4000);
         return () => window.clearTimeout(timer);
     }, [awake, state, pet?.id, display]);
@@ -93,7 +95,6 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                 className="agent-perch-character"
                 type="button"
                 aria-label={`${pet?.name || appearance.agentName} · ${display === "full" ? "形象预览" : "说句话"}`}
-                title={display === "full" ? "当前智能体形象 · 点击播放动作" : "空闲时缩回，工作时展开；点击聊一句"}
                 onPointerEnter={() => setHovered(true)}
                 onPointerLeave={() => setHovered(false)}
                 onFocus={() => setFocused(true)}

@@ -6,7 +6,7 @@
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, agentCopy, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
-import { type CSSProperties, type MouseEvent as ReactMouseEvent, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePopoverAnchorAlign } from "@/hooks/use-popover-anchor-align";
 import { useAgentLauncherPosition } from "./use-agent-launcher-position";
 import { resolveAgentLauncherAvatarHeight } from "@/lib/canvas/agent-launcher-position";
@@ -777,6 +777,7 @@ function agentReplyOptionsTarget(messages: readonly CloudAgentChatMessage[]): { 
 }
 
 export function AgentConversation({
+    character,
     theme,
     messages,
     references,
@@ -806,6 +807,7 @@ export function AgentConversation({
     retryingRun = false,
     config,
 }: {
+    character?: ReactNode;
     theme: CanvasTheme;
     messages: CloudAgentChatMessage[];
     references: CanvasResourceReference[];
@@ -847,6 +849,7 @@ export function AgentConversation({
     const scrollRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const followRef = useRef(true);
+    const touchYRef = useRef<number | null>(null);
     // 离底部超过 48px 时显示「回到底部」，期间新到的消息计数。
     const [awayFromBottom, setAwayFromBottom] = useState(false);
     const [unseenCount, setUnseenCount] = useState(0);
@@ -891,6 +894,7 @@ export function AgentConversation({
         const element = scrollRef.current;
         if (!element) return;
         followRef.current = true;
+        setAwayFromBottom(false);
         setUnseenCount(0);
         element.scrollTo({ top: element.scrollHeight, behavior: reducedMotion ? "auto" : "smooth" });
     };
@@ -903,6 +907,8 @@ export function AgentConversation({
     // 自己发送时恢复跟随；阅读旧消息时不让流式输出抢走滚动位置。
     useLayoutEffect(() => {
         followRef.current = true;
+        setAwayFromBottom(false);
+        setUnseenCount(0);
     }, [lastUserId]);
     useLayoutEffect(() => {
         const element = scrollRef.current;
@@ -912,12 +918,20 @@ export function AgentConversation({
         const element = scrollRef.current;
         const content = contentRef.current;
         if (!element || !content) return;
+        let frame = 0;
         const observer = new ResizeObserver(() => {
-            if (followRef.current) element.scrollTop = element.scrollHeight;
+            if (!followRef.current) return;
+            window.cancelAnimationFrame(frame);
+            frame = window.requestAnimationFrame(() => {
+                if (followRef.current) element.scrollTop = element.scrollHeight;
+            });
         });
         observer.observe(element);
         observer.observe(content);
-        return () => observer.disconnect();
+        return () => {
+            observer.disconnect();
+            window.cancelAnimationFrame(frame);
+        };
     }, []);
 
     return (
@@ -925,8 +939,32 @@ export function AgentConversation({
             <div
                 ref={scrollRef}
                 data-agent-conversation
+                tabIndex={0}
+                aria-label="智能体对话记录"
                 className="agent-conversation thin-scrollbar min-h-0 flex-1 overflow-y-auto"
+                onWheel={(event) => {
+                    if (!event.ctrlKey && event.deltaY < 0) followRef.current = false;
+                }}
+                onTouchStart={(event) => {
+                    touchYRef.current = event.touches[0]?.clientY ?? null;
+                }}
+                onTouchMove={(event) => {
+                    const y = event.touches[0]?.clientY;
+                    if (y === undefined) return;
+                    if (touchYRef.current !== null && y > touchYRef.current) followRef.current = false;
+                    touchYRef.current = y;
+                }}
+                onKeyDown={(event) => {
+                    if (event.target instanceof HTMLElement && !event.target.closest("input, textarea, select, [contenteditable=true], [role=slider], [role=combobox]") && ["ArrowUp", "PageUp", "Home"].includes(event.key)) followRef.current = false;
+                }}
+                onPointerDown={(event) => {
+                    const element = event.currentTarget;
+                    const scrollbarWidth = element.offsetWidth - element.clientWidth;
+                    if (event.target === element && event.clientX >= element.getBoundingClientRect().right - Math.max(12, scrollbarWidth)) followRef.current = false;
+                }}
                 onScroll={(event) => {
+                    // 内容伸展、滚动锚定和平滑滚动也会发 scroll；只有用户上翻才暂停跟随。
+                    if (followRef.current) return;
                     const element = event.currentTarget;
                     const following = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
                     followRef.current = following;
@@ -983,6 +1021,7 @@ export function AgentConversation({
                             />
                         );
                     })}
+                    {character}
                     {approval ? (
                         <ApprovalCard
                             key={approval.approvalId}
