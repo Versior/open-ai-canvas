@@ -1,8 +1,12 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="64" height="64" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
   <title>KINOVO</title>
   <style>
     :root { color: #111827; }
     @media (prefers-color-scheme: dark) { :root { color: #F8FAFC; } }
   </style>
-  <path d="M8 6H20V24.5L39 6H56L31.5 30.5L58 58H41.5L20 35.5V58H8V6Z" fill="currentColor"/>
+  <g transform="translate(0 18)" stroke="currentColor" stroke-width="17" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M92 42C57 42 34 67 34 102C34 137 57 162 92 162"/>
+    <path d="M148 42C183 42 206 67 206 102C206 137 183 162 148 162"/>
+    <path d="M83 55L120 153L157 55"/>
+  </g>
 </svg>
