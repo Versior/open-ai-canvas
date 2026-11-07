@@ -279,7 +279,7 @@ export function AgentChatComposer({
     /** 粘贴了很长的文字：文字照常粘贴，由调用方决定是否建议转成画布文本节点。 */
     onLongTextPaste?: (text: string) => void;
     left?: ReactNode;
-    /** 输入卡片正上方的状态栏，例如上下文与本轮用量。 */
+    /** 输入卡片下方的状态入口，例如上下文与本轮用量。 */
     statusBar?: ReactNode;
     /** 输入框上方的角色，独立占位，不覆盖状态栏或聊天正文。 */
     character?: ReactNode;
@@ -462,7 +462,6 @@ export function AgentChatComposer({
 
     return (
         <div className="agent-composer-wrap min-w-0 shrink-0" onWheelCapture={(event) => event.stopPropagation()}>
-            {statusBar}
             {character}
             {/* 有队列条或底部附加内容时，外壳托住它们与输入卡片，形成一张整卡。 */}
             <div className="agent-composer-shell relative" data-has-footer={wrapped ? "" : undefined}>
@@ -712,6 +711,7 @@ export function AgentChatComposer({
                 </div>
                 {footer}
             </div>
+            {statusBar ? <div className="agent-composer-usage-footer">{statusBar}</div> : null}
             {previewAttachment ? <AgentImagePreview attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} /> : null}
         </div>
     );

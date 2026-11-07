@@ -103,14 +103,14 @@
     font-size: var(--fs-label);
 }
 
-/* 输入框正上方的上下文与本轮用量卡片：标题行、带压缩线的进度条和刻度说明、本轮五项读数，任何状态下三段都在，明细在下方展开。
+/* 输入框下方的用量入口；真实读数在主动展开后显示。
    配色只跟上下文阶段走：充足用主色，接近压缩用警告色，到压缩线用错误色。 */
 .agent-usage {
     --agent-usage-fill: var(--agent-accent);
     --agent-usage-line: color-mix(in srgb, var(--agent-ink) 8%, transparent);
     display: grid;
     gap: 6px;
-    margin: 0 0 var(--space-2);
+    margin: 0;
     padding: 10px 12px;
     border: 1px solid var(--agent-usage-line);
     border-radius: var(--agent-radius-surface, var(--radius-xl));
@@ -127,18 +127,28 @@
     border: 0;
     background: transparent;
 }
+.agent-composer-usage-footer {
+    margin-top: 4px;
+}
+.agent-composer-usage-footer .agent-usage.is-collapsed {
+    justify-items: end;
+}
+.agent-composer-usage-footer .agent-usage:not(.is-collapsed) {
+    max-height: min(240px, 30vh);
+    overflow-y: auto;
+}
 
 .agent-usage-strip {
     display: flex;
     align-items: center;
     gap: 8px;
-    width: 100%;
+    width: auto;
     min-width: 0;
-    min-height: 32px;
-    padding: 5px 10px;
+    min-height: 28px;
+    padding: 4px 8px;
     border: 0;
     border-radius: var(--radius-lg);
-    background: var(--agent-surface-soft);
+    background: transparent;
     color: inherit;
     font: inherit;
     text-align: left;
@@ -155,14 +165,6 @@
 .agent-usage-collapse:focus-visible {
     outline: 2px solid var(--agent-focus-ring);
     outline-offset: 1px;
-}
-
-.agent-usage-brief {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: right;
 }
 
 .agent-usage-icon {

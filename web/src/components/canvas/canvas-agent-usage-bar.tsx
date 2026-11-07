@@ -60,7 +60,7 @@ function UsageTiles({ items }: { items: AgentUsageItem[] }) {
 }
 
 /**
- * 输入框正上方的上下文与本轮用量。默认一行显示已用 / 窗口、阶段与短耗时/工具摘要，点一下展开整张卡片：
+ * 输入框下方的用量入口。默认只显示「用量」和上下文占比，点一下展开真实读数：
  * - 第一行：上下文已用 / 窗口、占比、阶段，右侧是当前模型、「明细」和收起；
  * - 进度条带自动压缩线，下方写剩余和压缩线位置（还没有读数时写下一步会发生什么）；
  * - 本轮五项：token、缓存命中、速度、耗时、工具调用，没有的项显示「—」。
@@ -151,15 +151,10 @@ export function AgentUsageBar({
                     onClick={() => setCard(true)}
                 >
                     <CircleGauge className="agent-usage-icon size-3.5" aria-hidden="true" />
-                    <span className="agent-usage-figure">
-                        <span className="agent-usage-strip-label">上下文 </span>
-                        <strong>{used}</strong>
-                        {windowTokens ? ` / ${formatContextTokens(windowTokens)}` : null}
-                    </span>
+                    <span className="agent-usage-strip-label">用量</span>
+                    {percent ? <strong>{percent}</strong> : null}
                     {badge ? <span className="agent-usage-badge">{badge}</span> : null}
-                    {carried ? <span className="agent-usage-tag">上一轮</span> : null}
                     {running ? <span className="agent-usage-live">进行中</span> : null}
-                    <span className="agent-usage-brief">{brief}</span>
                     <ChevronDown className="agent-usage-chevron size-3.5" aria-hidden="true" />
                 </button>
                 {alert}

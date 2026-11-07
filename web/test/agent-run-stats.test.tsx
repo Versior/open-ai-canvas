@@ -209,7 +209,7 @@ describe("Assistant reply metadata", () => {
     });
 });
 
-describe("Usage bar above the composer", () => {
+describe("Usage entry below the composer", () => {
     const reading = (estimatedInputTokens: number) =>
         presentAgentContextUsage(
             reduceAgentContextUsage(
@@ -236,21 +236,22 @@ describe("Usage bar above the composer", () => {
         const fresh = renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} contextWindow={1_000_000} modelLabel="测试模型" />);
         expect(fresh).toContain("agent-usage is-idle is-collapsed");
         expect(fresh).toContain('aria-expanded="false"');
-        expect(fresh).toContain("<strong>—</strong> / 1M");
-        expect(fresh).toContain("准备就绪");
+        expect(fresh).toContain('class="agent-usage-strip-label">用量</span>');
+        expect(fresh).not.toContain("<strong>—</strong> / 1M");
         expect(fresh).not.toContain("agent-usage-stats");
         expect(fresh).not.toContain("测试模型");
-        // 收起时的一行：上下文读数、占比和本轮摘要。
+        // 收起入口只显示用量和占比；完整读数保留在可访问名称和展开卡片。
         const stats = presentAgentRunStats(reduce(fullRun).runs["run-1"]);
         expect(agentUsageSummary(stats)).toBe("47.7K tokens · 69/s · 8m 36s · 工具 3 次");
         expect(agentUsageSummary(null)).toBe("");
         const line = renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />);
-        expect(line).toContain("<strong>47.7K</strong> / 1M");
+        expect(line).toContain("上下文 47.7K / 1M");
+        expect(line).not.toContain("<strong>47.7K</strong> / 1M");
         expect(line).toContain("5%");
         expect(line).toContain("8m 36s · 3 次工具");
         expect(line).not.toContain("is-mini");
         expect(line).not.toContain("agent-usage-percent");
-        expect(renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />)).toContain("<strong>47.7K</strong> / 1M");
+        expect(renderToStaticMarkup(<AgentUsageBar view={contextView} stats={null} />)).toContain("<strong>5%</strong>");
         expect(renderToStaticMarkup(<AgentUsageBar view={idle} stats={null} running />)).toContain("正在处理");
         // 展开过之后是整张卡片，带收起按钮。
         const card = withCard(true, () => renderToStaticMarkup(<AgentUsageBar view={contextView} stats={stats} />));
