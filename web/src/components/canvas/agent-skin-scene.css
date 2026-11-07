@@ -86,8 +86,7 @@
 }
 .canvas-agent-panel[data-skin="paper"] .agent-message-body {
     padding: 10px 14px;
-    border: 1px solid var(--agent-usage-line);
-    border-left: 4px solid var(--agent-accent);
+    border: 1px solid color-mix(in srgb, var(--agent-accent) 40%, var(--agent-usage-line));
     border-radius: 3px 12px 12px 3px;
     background: var(--agent-surface-base);
     box-shadow: 3px 3px 0 color-mix(in srgb, var(--agent-accent) 15%, transparent);
@@ -120,7 +119,7 @@
 }
 .canvas-agent-panel[data-skin="terminal"] .agent-usage:not(.is-collapsed) {
     border-radius: 3px;
-    border-left: 3px solid var(--agent-accent);
+    border-color: color-mix(in srgb, var(--agent-accent) 45%, var(--agent-usage-line));
 }
 .canvas-agent-panel[data-skin="aurora"] .agent-skin-scene {
     border-radius: 24px 5px 24px 5px;
