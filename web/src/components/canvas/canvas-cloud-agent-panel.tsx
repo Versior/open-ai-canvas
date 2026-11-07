@@ -25,9 +25,7 @@ import { buildAgentDebugExport } from "@/lib/canvas/agent-debug-export";
 import { agentPlanVisible, latestAgentPlanItems, latestAgentPlanTerminal, pendingAgentQuestion } from "@/lib/canvas/cloud-agent-plan";
 import { latestAgentMediaBatch } from "@/lib/canvas/cloud-agent-media-batch";
 import { AgentMediaBatchBar } from "./canvas-cloud-agent-media-batch-bar";
-import { emptyAgentContextUsage, presentAgentContextUsage, reduceAgentContextUsage, type AgentContextUsage } from "@/lib/canvas/agent-context-usage";
-import { agentRunStatsCovers, emptyAgentRunStats, presentAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
-import { configuredTextContextWindow } from "@/lib/model-capabilities";
+import { agentRunStatsCovers, emptyAgentRunStats, reduceAgentRunStats, scopeAgentRunStats } from "@/lib/canvas/agent-run-stats";
 import { nanoid } from "nanoid";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -134,7 +132,6 @@ import { useAgentPanelDock } from "./use-agent-panel-dock";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
 import { AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
-import { AgentUsageBar } from "./canvas-agent-usage-bar";
 import { useGlobalAgentStore, type AgentInsertedNode, type AgentPrefillRequest } from "@/stores/use-global-agent-store";
 
 type AgentPanelView = "chat" | "history" | "settings";
@@ -222,9 +219,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const reducedMotion = useReducedMotion();
     const [view, setView] = useState<AgentPanelView>("chat");
     const [run, setRun] = useState<AgentRun | null>(null);
-    const [contextUsage, setContextUsage] = useState<AgentContextUsage>(() => emptyAgentContextUsage(""));
-    // 同一对话最近一份上下文读数：新一轮的读数到达前给用量栏兜底。
-    const lastContextRef = useRef<{ conversationId: string; usage: AgentContextUsage } | null>(null);
     // 本轮统计按对话隔离；事件流续接时用 ref 判断本机是否已经有从第 1 条起的事件。
     const [runStats, setRunStats] = useState(() => emptyAgentRunStats(""));
     const runStatsRef = useRef(runStats);
@@ -768,7 +762,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 const nextApproval = approvalStateFromRun(candidate.run);
                 setApproval((previous) => (previous?.approvalId && previous.approvalId === nextApproval?.approvalId ? { ...nextApproval, reason: previous.reason } : nextApproval));
                 if (!sameRun) {
-                    setContextUsage(emptyAgentContextUsage(candidate.run.id));
                     setConnectionStatus("connecting");
                 }
                 if (!sameConversation) {
@@ -923,19 +916,16 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const after = replayCursorRef.current.runId === run.id ? replayCursorRef.current.seq : 0;
         replayCursorRef.current = { runId: run.id, seq: after };
         lastSeqRef.current = after;
-        // 续接已有轮次（刷新、切回对话）时事件流只推游标之后的事件，本轮统计和上下文读数却在这段前缀里：
-        // 本机还没有这段前缀就补读一次。补读只喂给统计和上下文读数，不重放消息，也不触发画布写回。
+        // 续接已有轮次（刷新、切回对话）时补齐游标前的统计事件，不重放消息，也不触发画布写回。
         const statsPrefix = new AbortController();
         if (after > 0 && !agentRunStatsCovers(runStatsRef.current, conversationScope, run.id, after)) {
             void loadAgentRunEventPrefix(run.id, after, statsPrefix.signal)
                 .then((events) => {
                     if (statsPrefix.signal.aborted || !accountIsCurrent() || currentScope.current !== conversationScope || cloudRunTransitionRef.current !== run.id) return;
                     setRunStats((current) => events.reduce(reduceAgentRunStats, scopeAgentRunStats(current, conversationScope)));
-                    // 事件流已经推来本轮读数或压缩时，它们比前缀新，补读不能把环拨回去。
-                    setContextUsage((current) => (current.runId === run.id && (current.readingSeq > 0 || current.compactionSeq > 0) ? current : events.reduce(reduceAgentContextUsage, emptyAgentContextUsage(run.id))));
                 })
                 .catch((cause) => {
-                    // 统计只是展示读数：补读失败时本轮合计保持隐藏，对话照常进行。
+                    // 补读失败不阻断对话，仍保留当前事件覆盖范围。
                     if (!statsPrefix.signal.aborted) console.warn("Agent 本轮统计补读失败", cause);
                 });
         }
@@ -952,7 +942,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     replayCursorRef.current = { runId: run.id, seq: event.seq };
                 }
                 setMessages((current) => (current.some((item) => item.id === `stream-error-${run.id}`) ? current.filter((item) => item.id !== `stream-error-${run.id}`) : current));
-                setContextUsage((current) => reduceAgentContextUsage(current, event));
                 setRunStats((current) => reduceAgentRunStats(scopeAgentRunStats(current, conversationScope), event));
                 applyAgentEvent(event, setMessages, setRun, setApproval);
                 canvasSyncRef.current?.receive(event);
@@ -1983,14 +1972,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     };
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
-    // 输入框上方的用量栏。读数只认当前轮次的：新建对话或切走后不能残留别的对话的读数。
-    // 新一轮发出后到它的第一份读数之间（或首个读数前就失败的轮次），沿用同一对话上一轮最后的读数，栏不会闪没。
-    const liveContext = run?.id && contextUsage.runId === run.id ? contextUsage : null;
-    if (liveContext?.reading && activeConversationId) lastContextRef.current = { conversationId: activeConversationId, usage: liveContext };
-    const carriedContext = !liveContext?.reading && !liveContext?.compactionPending && lastContextRef.current?.conversationId === activeConversationId ? lastContextRef.current.usage : null;
-    const contextView = presentAgentContextUsage(carriedContext ?? liveContext ?? emptyAgentContextUsage(""));
-    const contextWindow = selectedModel ? configuredTextContextWindow(config, selectedModel) : undefined;
-    const runStatsView = run?.id && runStats.conversationId === activeConversationId ? presentAgentRunStats(runStats.runs[run.id]) : null;
     const contextBar =
         (canvasId && selectionCount > 0) || visionMissing || longTextVisible ? (
             <>
@@ -2224,7 +2205,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         return parts.join(" · ");
     };
 
-    const showPendingRetry = Boolean(pendingRetryText) && !retryingPending;
+    const showPendingRetry = Boolean(pendingRetryText) && !retryingPending && !busy;
     const outboxTray =
         outbox.items.length || showPendingRetry ? (
             <AgentOutboxTray
@@ -2547,17 +2528,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             stopping={stopping}
                                             references={references}
                                             includeAssetLibrary={false}
-                                            statusBar={
-                                                <AgentUsageBar
-                                                    view={contextView}
-                                                    stats={runStatsView}
-                                                    running={running}
-                                                    hasRun={Boolean(run?.id)}
-                                                    carried={Boolean(carriedContext)}
-                                                    contextWindow={contextWindow}
-                                                    modelLabel={selectedModel ? modelDisplayName(config, selectedModel) : undefined}
-                                                />
-                                            }
                                             left={
                                                 <ComposerControls
                                                     config={config}

@@ -81,7 +81,6 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                     type="button"
                     className="agent-perch-bubble"
                     aria-label="收起角色台词"
-                    title={message}
                     onClick={() => {
                         chatter.dismiss();
                         setSpeaking(false);

@@ -127,16 +127,6 @@
     border: 0;
     background: transparent;
 }
-.agent-composer-usage-footer {
-    margin-top: 4px;
-}
-.agent-composer-usage-footer .agent-usage.is-collapsed {
-    justify-items: end;
-}
-.agent-composer-usage-footer .agent-usage:not(.is-collapsed) {
-    max-height: min(240px, 30vh);
-    overflow-y: auto;
-}
 
 .agent-usage-strip {
     display: flex;
@@ -945,6 +935,18 @@
 
 .agent-composer-surface:focus-within {
     background: var(--agent-surface-soft);
+}
+
+.agent-composer-input {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+}
+
+.agent-composer-input:has(> .agent-window-perch[data-expanded="true"]) {
+    grid-template-columns: minmax(0, 1fr) 104px;
 }
 
 /* 底部托盘：外壳与输入卡片同为一张卡，输入卡片嵌在上方，底部条直接落在托盘里；无分隔线、无间距。 */

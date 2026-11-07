@@ -65,6 +65,28 @@
     border-radius: var(--r-md);
     background: var(--agent-surface-base);
 }
+.agent-composer-input > .agent-window-perch {
+    width: 104px;
+    height: auto;
+    margin: 0;
+    flex-direction: column-reverse;
+    justify-content: center;
+    gap: 4px;
+}
+.agent-composer-input > .agent-window-perch[data-expanded="false"] {
+    position: absolute;
+    top: -24px;
+    right: 0;
+    height: 24px;
+    flex-direction: row;
+}
+.agent-composer-input > .agent-window-perch .agent-perch-bubble {
+    max-width: 104px;
+    -webkit-line-clamp: 2;
+    font-size: 11px;
+    line-height: 1.4;
+    padding: 4px 6px;
+}
 .canvas-agent-panel[data-skin] .agent-message-body:not(.agent-message-user) {
     padding: 0;
     border: 0;

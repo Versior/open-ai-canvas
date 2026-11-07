@@ -25,6 +25,7 @@ for (const [key, value] of Object.entries({
 const React = await import("react");
 const { act } = React;
 const { createRoot } = await import("react-dom/client");
+const { renderToStaticMarkup } = await import("react-dom/server");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const agentPetsApi = await import("@/services/api/agent-pets");
 const agent = await import("@/services/api/agent");
@@ -420,6 +421,10 @@ test("未知提交的原请求与幂等身份保留，不能因发现云端同�
         expect(pending).toEqual(original);
         expect(composer.prompt).toBe("生成森林");
         expect(conversationUI.messages).toHaveLength(0);
+        await act(async () => composer.onPromptChange(""));
+        expect(renderToStaticMarkup(composer.tray)).toContain("agent-outbox-row is-failed");
+        expect(pending).toEqual(original);
+        await act(async () => composer.onPromptChange("生成森林"));
         await persist();
         expect(activeId).toBe("uncertain");
         expect(generated).toBe(0);
@@ -635,6 +640,37 @@ test("旧账号 POST 的迟到响应不覆盖新账号面板，清理也只使�
         expect(generated).toBe(0);
     } finally {
         release?.({ run: makeRun("original-late-child") });
+        await mounted.close();
+    }
+});
+
+test("正常提交等待服务端响应时不显示红色结果待确认条", async () => {
+    const initial = chat("submit-progress", makeRun("first"));
+    const mounted = await mount(initial, [initial]);
+    let release: ((value: { run: AgentRun }) => void) | undefined;
+    try {
+        sendOverride = () =>
+            new Promise((resolve) => {
+                release = resolve;
+            });
+        await act(async () => composer.onPromptChange("正常提交验收"));
+        await act(async () => {
+            composer.onSubmit();
+            await settle();
+        });
+        expect(sent).toEqual(["first"]);
+        expect(pending?.request?.prompt).toBe("正常提交验收");
+        expect(composer.sending).toBe(true);
+        const markup = composer.tray ? renderToStaticMarkup(composer.tray) : "";
+        expect(markup).not.toContain("agent-outbox-row is-failed");
+        await act(async () => {
+            release!({ run: { ...makeRun("submit-child"), parentId: "first" } });
+            await settle();
+        });
+        expect(pending).toBeNull();
+        expect(composer.tray).toBeNull();
+    } finally {
+        release?.({ run: makeRun("submit-child") });
         await mounted.close();
     }
 });
