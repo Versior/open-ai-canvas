@@ -25,6 +25,17 @@
     line-height: var(--lh-heading);
 }
 
+.auth-panel-title-brand,
+.auth-panel-title-brand-text {
+    margin-inline: 0.16em;
+    vertical-align: -0.16em;
+}
+
+.auth-panel-title-brand {
+    width: 100px;
+    height: 27px;
+}
+
 .auth-panel-description {
     margin: var(--space-2) 0 0;
     color: var(--auth-muted);

@@ -61,12 +61,21 @@ test("built-in STAGE branding uses shared cue tokens in every application bundle
 });
 
 test("built-in mark stays unframed while custom appearance branding is preserved", async () => {
-    const [brand, sidebar, globals] = await Promise.all([source("components/brand/brand-logo.tsx"), source("components/layout/workspace-sidebar-nav.tsx"), source("styles/globals.css")]);
+    const [brand, sidebar, dialog, panel, globals] = await Promise.all([
+        source("components/brand/brand-logo.tsx"),
+        source("components/layout/workspace-sidebar-nav.tsx"),
+        source("components/auth/auth-dialog.tsx"),
+        source("components/auth/auth-panel.tsx"),
+        source("styles/globals.css"),
+    ]);
 
     expect(brand).toContain("if (!appearance.logoConfigured) return <BuiltinBrandMark");
     expect(brand).toContain('if (appearance.logoConfigured || appearance.brandName !== "STAGE")');
     expect(brand).toContain("<span className={className}>{appearance.brandName}</span>");
     expect(sidebar).toContain("内置 STAGE cue mark 保持独立、无框");
+    expect(dialog).toMatch(/appearance\.logoConfigured \? <BrandLogo/);
+    expect(panel).toContain('brand: "__BRAND__"');
+    expect(panel).toContain('<BrandWordmark className="auth-panel-title-brand-text" builtinClassName="auth-panel-title-brand"');
     expect(globals).toMatch(/\.app-workspace-brand-mark\.is-builtin\s*{[^}]*border-radius: 0;[^}]*background: transparent;/s);
 });
 

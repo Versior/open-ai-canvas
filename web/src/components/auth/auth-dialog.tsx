@@ -70,7 +70,7 @@ function AuthDialogStage() {
     return (
         <aside className="auth-dialog-stage">
             <div className="auth-dialog-brand">
-                <BrandLogo className="auth-dialog-brand-logo" alt="" fallback={<span className="auth-dialog-brand-logo auth-dialog-brand-mark" aria-hidden />} />
+                {appearance.logoConfigured ? <BrandLogo className="auth-dialog-brand-logo" alt="" fallback={<span className="auth-dialog-brand-logo auth-dialog-brand-mark" aria-hidden />} /> : null}
                 <BrandWordmark builtinClassName="auth-dialog-brand-wordmark" />
             </div>
             <div className="auth-dialog-stage-copy">
