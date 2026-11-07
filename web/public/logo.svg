@@ -1,9 +1,18 @@
 <svg width="64" height="64" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
   <title>STAGE</title>
-  <desc>An architectural S formed by interlocking stage planes.</desc>
+  <desc>The STAGE signature S, shifted at the edit point.</desc>
   <style>
-    :root { color: #111827; }
-    @media (prefers-color-scheme: dark) { :root { color: #F8FAFC; } }
+    :root { color: #171313; }
+    @media (prefers-color-scheme: dark) { :root { color: #F6F0E8; } }
   </style>
-  <path fill="currentColor" d="M44 44H198L174 84H94L83 102H168L194 140H96L85 158H198L174 198H42L67 156H148L159 140H72L46 102H144L155 84H44V44Z"/>
+  <defs>
+    <clipPath id="stage-mark-upper"><path d="M24 22H216V117H24Z"/></clipPath>
+    <clipPath id="stage-mark-lower"><path d="M24 127H216V218H24Z"/></clipPath>
+  </defs>
+  <g fill="currentColor">
+    <path clip-path="url(#stage-mark-upper)" d="M122 18C84 18 56 28 38 47C25 61 18 79 18 99C18 130 37 151 73 160L115 170C133 174 142 181 142 191C142 203 131 210 112 210C90 210 77 201 74 184H19C21 219 54 238 111 238C168 238 201 217 201 181C201 150 181 130 143 121L103 112C85 108 77 102 77 92C77 81 88 74 106 74C126 74 138 82 141 98H196C193 47 166 18 122 18Z"/>
+    <g transform="translate(10 0)">
+      <path clip-path="url(#stage-mark-lower)" d="M122 18C84 18 56 28 38 47C25 61 18 79 18 99C18 130 37 151 73 160L115 170C133 174 142 181 142 191C142 203 131 210 112 210C90 210 77 201 74 184H19C21 219 54 238 111 238C168 238 201 217 201 181C201 150 181 130 143 121L103 112C85 108 77 102 77 92C77 81 88 74 106 74C126 74 138 82 141 98H196C193 47 166 18 122 18Z"/>
+    </g>
+  </g>
 </svg>

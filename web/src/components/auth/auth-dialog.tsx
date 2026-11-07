@@ -1,7 +1,7 @@
 import { Clapperboard, LayoutGrid, ShoppingBag, Sparkles, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { BrandLogo } from "@/components/brand/brand-logo";
+import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
@@ -71,7 +71,7 @@ function AuthDialogStage() {
         <aside className="auth-dialog-stage">
             <div className="auth-dialog-brand">
                 <BrandLogo className="auth-dialog-brand-logo" alt="" fallback={<span className="auth-dialog-brand-logo auth-dialog-brand-mark" aria-hidden />} />
-                <span>{appearance.brandName}</span>
+                <BrandWordmark builtinClassName="auth-dialog-brand-wordmark" />
             </div>
             <div className="auth-dialog-stage-copy">
                 <p className="auth-dialog-stage-title">{appearance.authHeroTitle}</p>
