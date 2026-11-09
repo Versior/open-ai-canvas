@@ -54,7 +54,16 @@
 .pv-thumb img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+}
+.pv-thumb-role {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    padding: 0 var(--space-1);
+    font-size: var(--fs-tiny);
+    background: var(--user-surface);
+    color: var(--pv-ink);
 }
 .pv-thumb-remove {
     position: absolute;

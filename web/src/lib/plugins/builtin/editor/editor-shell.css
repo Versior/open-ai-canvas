@@ -31,7 +31,15 @@
     .editor-filmstrip-tile img {
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        object-fit: contain;
+    }
+    @media (max-width: 640px) {
+        .editor-timeline-tools {
+            flex-wrap: wrap;
+            height: auto;
+            min-height: 40px;
+            padding-block: var(--space-1);
+        }
     }
     /* Editor workbench scrolling and range controls belong to the editor plugin, not the app shell. */
     .director-scroll {

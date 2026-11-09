@@ -1,7 +1,8 @@
 import { App, Spin } from "antd";
 import { Images, Plus, Sparkles, UserRound, X } from "lucide-react";
 import { nanoid } from "nanoid";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { getActiveUserScope } from "@/lib/user-scope";
 import { PRODUCT_VIDEO_LIMITS, PRODUCT_VIDEO_SLOT_LABEL, type ProductVideoImage, type ProductVideoSlot } from "@/lib/product-video/job";
 import { resourceFileUrl, uploadResourceFile } from "@/services/api/resources";
 import type { PickedWorkbenchAsset } from "@/pages/workbench/workbench-asset-picker";
@@ -36,8 +37,15 @@ async function imageSize(file: File): Promise<{ width?: number; height?: number 
 function probeSize(url: string) {
     return new Promise<{ width?: number; height?: number }>((resolve) => {
         const image = new Image();
-        image.onload = () => resolve({ width: image.naturalWidth || undefined, height: image.naturalHeight || undefined });
-        image.onerror = () => resolve({});
+        const finish = (size: { width?: number; height?: number }) => {
+            window.clearTimeout(timer);
+            image.onload = null;
+            image.onerror = null;
+            resolve(size);
+        };
+        const timer = window.setTimeout(() => finish({}), 8000);
+        image.onload = () => finish({ width: image.naturalWidth || undefined, height: image.naturalHeight || undefined });
+        image.onerror = () => finish({});
         image.src = url;
     });
 }
@@ -53,6 +61,7 @@ export function ProductVideoImageSlot({
     onAdd,
     onRemove,
     generate,
+    onPendingChange,
 }: {
     slot: ProductVideoSlot;
     items: ProductVideoImage[];
@@ -60,12 +69,18 @@ export function ProductVideoImageSlot({
     onAdd: (images: ProductVideoImage[]) => void;
     onRemove: (id: string) => void;
     generate?: { label: string; onClick: () => void };
+    onPendingChange?: (pending: boolean) => void;
 }) {
     const { message } = App.useApp();
     const input = useRef<HTMLInputElement>(null);
     const [pending, setPending] = useState(0);
+    const pendingCallback = useRef(onPendingChange);
+    pendingCallback.current = onPendingChange;
+    useEffect(() => {
+        pendingCallback.current?.(pending > 0);
+    }, [pending]);
     const [dragging, setDragging] = useState(false);
-    const [picker, setPicker] = useState<"assets" | "cast" | null>(null);
+    const [picker, setPicker] = useState<"assets" | "figure" | "face" | "pose" | null>(null);
     const limit = PRODUCT_VIDEO_LIMITS[slot];
     const label = PRODUCT_VIDEO_SLOT_LABEL[slot];
     const left = Math.max(0, limit - items.length - pending);
@@ -77,6 +92,7 @@ export function ProductVideoImageSlot({
     };
 
     const addFiles = async (list: File[]) => {
+        const scope = getActiveUserScope();
         const files = list.filter((file) => file.type.startsWith("image/"));
         if (!files.length) {
             message.warning("请选择图片（JPG、PNG 或 WebP）");
@@ -89,6 +105,7 @@ export function ProductVideoImageSlot({
             try {
                 const size = await imageSize(file);
                 const resource = await uploadResourceFile(file, "image", { fileName: file.name, ...size });
+                if (getActiveUserScope() !== scope) return;
                 onAdd([{ id: nanoid(10), resourceId: resource.id, name: file.name, width: resource.width || size.width, height: resource.height || size.height }]);
             } catch (error) {
                 message.error(`${file.name} 上传失败：${error instanceof Error ? error.message : "请重试"}`);
@@ -99,9 +116,15 @@ export function ProductVideoImageSlot({
     };
 
     const addAssets = async (assets: PickedWorkbenchAsset[]) => {
+        const scope = getActiveUserScope();
         const accepted = assets.filter((asset) => asset.kind === "image").slice(0, accept(assets.length));
-        const images = await Promise.all(accepted.map(async (asset) => ({ id: nanoid(10), resourceId: asset.resourceId, name: asset.name, ...(await probeSize(resourceFileUrl(asset.resourceId))) })));
-        if (images.length) onAdd(images);
+        setPending((value) => value + accepted.length);
+        try {
+            const images = await Promise.all(accepted.map(async (asset) => ({ id: nanoid(10), resourceId: asset.resourceId, name: asset.name, ...(await probeSize(resourceFileUrl(asset.resourceId))) })));
+            if (images.length && getActiveUserScope() === scope) onAdd(images);
+        } finally {
+            setPending((value) => Math.max(0, value - accepted.length));
+        }
     };
 
     return (
@@ -134,6 +157,7 @@ export function ProductVideoImageSlot({
                 {items.map((image) => (
                     <div key={image.id} className="pv-thumb" title={image.name || label}>
                         <img src={productVideoThumbUrl(image.resourceId)} alt={image.name || label} loading="lazy" />
+                        {slot === "models" ? <span className="pv-thumb-role">{image.role === "pose" ? "姿势" : image.role === "face" ? "人脸" : "模特"}</span> : null}
                         {disabled ? null : (
                             <button type="button" className="pv-thumb-remove" aria-label={`移除这张${label}`} onClick={() => onRemove(image.id)}>
                                 <X size={12} strokeWidth={2.25} />
@@ -156,11 +180,19 @@ export function ProductVideoImageSlot({
                             <span>素材库</span>
                         </button>
                         {slot === "models" ? (
-                            <button type="button" className="pv-add" aria-label="从模特库选择模特" onClick={() => setPicker("cast")}>
+                            <button type="button" className="pv-add" aria-label="从模特库选择模特" onClick={() => setPicker("figure")}>
                                 <UserRound size={16} strokeWidth={1.75} />
                                 <span>模特库</span>
                             </button>
                         ) : null}
+                        {slot === "models"
+                            ? ["face", "pose"].map((kind) => (
+                                  <button key={kind} type="button" className="pv-add" aria-label={kind === "face" ? "选择人脸" : "选择姿势"} onClick={() => setPicker(kind as "face" | "pose")}>
+                                      <UserRound size={16} aria-hidden />
+                                      <span>{kind === "face" ? "人脸" : "姿势"}</span>
+                                  </button>
+                              ))
+                            : null}
                         {generate ? (
                             <button type="button" className="pv-add" aria-label={generate.label} onClick={generate.onClick}>
                                 <Sparkles size={16} strokeWidth={1.75} />
@@ -186,18 +218,20 @@ export function ProductVideoImageSlot({
                     <WorkbenchAssetPicker open accept={["image"]} maxCount={Math.max(1, left)} slotName={label} onClose={() => setPicker(null)} onPick={(assets) => void addAssets(assets)} />
                 </Suspense>
             ) : null}
-            {picker === "cast" ? (
+            {picker && picker !== "assets" ? (
                 <Suspense fallback={null}>
                     <StudioCastPicker
-                        kind="figure"
+                        kind={picker}
+                        kinds={["figure", "face", "pose"]}
                         onClose={() => setPicker(null)}
-                        onPick={(_kind, pick) => {
+                        onPick={(kind, pick) => {
                             if (!pick.resourceId) {
                                 message.info("造型只有文字描述，换人需要带图的人脸或全身模特");
                                 return;
                             }
                             setPicker(null);
-                            if (accept(1)) onAdd([{ id: nanoid(10), resourceId: pick.resourceId, name: pick.name, width: pick.width, height: pick.height }]);
+                            if (accept(1))
+                                onAdd([{ id: nanoid(10), resourceId: pick.resourceId, name: pick.name, width: pick.width, height: pick.height, ...(kind === "face" || kind === "pose" || kind === "figure" ? { role: kind } : {}), prompt: pick.prompt }]);
                         }}
                     />
                 </Suspense>

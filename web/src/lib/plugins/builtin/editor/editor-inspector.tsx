@@ -28,19 +28,21 @@ export function EditorInspector() {
                 <SectionTitle>片段</SectionTitle>
                 <ClipSummary clip={clip} />
                 <SectionTitle>基本</SectionTitle>
-                <PropertyField
-                    label="名称"
-                    value={clip.title ?? clip.nodeId ?? clip.id}
-                    onChange={(value) => dispatch({ op: "setClipProperty", payload: { id: clip.id, patch: { title: value } } })}
-                />
-                {clip.kind === "subtitle" && (
+                <PropertyField label="时间线开始（秒）" type="number" min={0} step={0.1} value={clip.startMs / 1000} onChange={(value) => dispatch({ op: "moveClip", payload: { id: clip.id, startMs: Math.round(Number(value) * 1000) } })} />
+                <PropertyField label="片段时长（秒）" type="number" min={0.1} step={0.1} value={clip.durationMs / 1000} onChange={(value) => dispatch({ op: "trimClip", payload: { id: clip.id, durationMs: Math.round(Number(value) * 1000) } })} />
+                {clip.kind === "video" || clip.kind === "audio" ? (
                     <PropertyField
-                        label="字幕文本"
-                        value={clip.text ?? ""}
-                        onChange={(value) => dispatch({ op: "setClipProperty", payload: { id: clip.id, patch: { text: value } } })}
+                        label="素材起点（秒）"
+                        type="number"
+                        min={0}
+                        step={0.1}
+                        value={(clip.sourceStartMs || 0) / 1000}
+                        onChange={(value) => dispatch({ op: "trimClip", payload: { id: clip.id, sourceStartMs: Math.round(Number(value) * 1000) } })}
                     />
-                )}
-                {clip.kind === "audio" && (
+                ) : null}
+                <PropertyField label="名称" value={clip.title ?? clip.nodeId ?? clip.id} onChange={(value) => dispatch({ op: "setClipProperty", payload: { id: clip.id, patch: { title: value } } })} />
+                {clip.kind === "subtitle" && <PropertyField label="字幕文本" value={clip.text ?? ""} onChange={(value) => dispatch({ op: "setClipProperty", payload: { id: clip.id, patch: { text: value } } })} />}
+                {(clip.kind === "audio" || clip.kind === "video") && (
                     <PropertyField
                         label="音量"
                         type="range"
@@ -79,11 +81,7 @@ export function EditorInspector() {
                 )}
             </div>
             <div className="shrink-0 border-t border-[var(--previs-sequencer-border)] p-2">
-                <button
-                    type="button"
-                    onClick={() => selectClip(null)}
-                    className="w-full rounded-md border border-[var(--previs-sequencer-border)] py-2 text-xs text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
-                >
+                <button type="button" onClick={() => selectClip(null)} className="w-full rounded-md border border-[var(--previs-sequencer-border)] py-2 text-xs text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]">
                     清除选中
                 </button>
             </div>
@@ -92,11 +90,7 @@ export function EditorInspector() {
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-    return (
-        <h3 className="mb-2 mt-4 text-[var(--fs-label)] font-medium uppercase tracking-wider text-[var(--previs-dock-fg)]/45 first:mt-0">
-            {children}
-        </h3>
-    );
+    return <h3 className="mb-2 mt-4 text-[var(--fs-label)] font-medium uppercase tracking-wider text-[var(--previs-dock-fg)]/45 first:mt-0">{children}</h3>;
 }
 
 function ClipSummary({ clip }: { clip: TimelineClip }) {
@@ -148,7 +142,7 @@ function PropertyField({
     label: string;
     value: string | number;
     onChange: (value: string) => void;
-    type?: "text" | "range";
+    type?: "text" | "range" | "number";
     min?: number;
     max?: number;
     step?: number;
@@ -163,9 +157,7 @@ function PropertyField({
         <div className="mb-3">
             <div className="mb-2 flex items-center justify-between">
                 <span className="text-[var(--fs-label)] text-[var(--previs-dock-fg)]/70">{label}</span>
-                {type === "range" && (
-                    <span className="tabular-nums text-[var(--fs-label)] text-[var(--previs-dock-fg)]/50">{displayValue}</span>
-                )}
+                {type === "range" && <span className="tabular-nums text-[var(--fs-label)] text-[var(--previs-dock-fg)]/50">{displayValue}</span>}
             </div>
             {type === "range" ? (
                 <input
@@ -182,10 +174,18 @@ function PropertyField({
                 />
             ) : (
                 <input
-                    type="text"
+                    type={type}
+                    aria-label={label}
+                    min={min}
+                    max={max}
+                    step={step}
                     value={localValue}
                     onChange={(e) => setLocalValue(e.target.value)}
                     onBlur={() => {
+                        if (type === "number" && (!localValue.trim() || !Number.isFinite(Number(localValue)))) {
+                            setLocalValue(String(value));
+                            return;
+                        }
                         if (localValue !== String(value)) onChange(localValue);
                     }}
                     className="h-7 w-full rounded-md border border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-2 text-xs text-[var(--previs-dock-fg-strong)] outline-none transition-colors focus:border-[var(--previs-dock-fg-strong)]/40"

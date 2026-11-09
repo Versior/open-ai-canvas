@@ -1,12 +1,13 @@
 import { Button, Checkbox, Input, Select, Tooltip } from "antd";
 import { Package, Sparkles, Wand2 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import type { ProductVideoImage } from "@/lib/product-video/job";
 import {
+    addRemakeModels,
     REMAKE_AUDIO_LABEL,
     REMAKE_AUDIOS,
     REMAKE_RISK_LABEL,
@@ -24,7 +25,7 @@ import { remakeDialogueBudget } from "@/lib/remake/prompts";
 import { remakeRecommendReason } from "@/lib/remake/recommend";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ProductVideoImageSlot, productVideoThumbUrl } from "../replace/product-video-assets";
-import { productVideoLimitsFor } from "../replace/product-video-config";
+import { remakeLimitsFor } from "./remake-config";
 import { RemakePersonaModal } from "./remake-persona";
 import { RemakeProductPicker } from "./remake-product-picker";
 import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields } from "./remake-sound";
@@ -63,21 +64,43 @@ function Card({ title, extra, children }: { title: string; extra?: ReactNode; ch
 }
 
 /** 复刻配方：我的商品、人物、场景、口播、授权与生成设置。 */
-export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChange }: { job: RemakeJob; config: AiConfig; edit: RemakeEdit; disabled?: boolean; onPlanningChange: (busy: boolean) => void }) {
+export function RemakeRecipeCards({
+    job,
+    config,
+    edit,
+    disabled,
+    onPlanningChange,
+    onUploadingChange,
+}: {
+    job: RemakeJob;
+    config: AiConfig;
+    edit: RemakeEdit;
+    disabled?: boolean;
+    onPlanningChange: (busy: boolean) => void;
+    onUploadingChange?: (busy: boolean) => void;
+}) {
     const [picking, setPicking] = useState(false);
     const [persona, setPersona] = useState(false);
+    const [uploads, setUploads] = useState({ products: false, models: false, backgrounds: false });
+    const uploading = Object.values(uploads).some(Boolean);
+    useEffect(() => {
+        onUploadingChange?.(uploading);
+    }, [uploading, onUploadingChange]);
     const profile = useMemo(() => (job.model ? modelCapabilityConfigFor(config, job.model).video : undefined), [config, job.model]);
-    const limits = useMemo(() => productVideoLimitsFor(config, job.model), [config, job.model]);
+    const limits = useMemo(() => remakeLimitsFor(config, job.model, job.shots), [config, job.model, job.shots]);
     const imageCount = job.product.images.length + (job.people === "model" ? job.models.length : 0) + job.backgrounds.length;
     const patchImages = (key: "models" | "backgrounds", next: (images: ProductVideoImage[]) => ProductVideoImage[]) => edit((value) => ({ ...value, [key]: next(value[key]) }));
     const needsAuth = job.audio === "original" || job.people === "original" || job.shots.some((shot) => shot.treatment === "keep");
     return (
         <div className="rw-recipe">
-            <Card title="导演与平台策略">
-                <ReplicaCampaignControls value={job.campaign} disabled={disabled} onChange={(campaign) => edit((value) => ({ ...value, campaign }))} />
-                {job.campaign ? <RemakeDirectorPlanner job={job} config={config} edit={edit} disabled={disabled} onBusyChange={onPlanningChange} /> : null}
-                <p className="rw-shot-reason">重拍镜头按导演动作生成；换元素保留原片动作与机位。</p>
-            </Card>
+            <details className="rw-strategy">
+                <summary>导演与平台策略</summary>
+                <Card title="策划设置">
+                    <ReplicaCampaignControls value={job.campaign} disabled={disabled} onChange={(campaign) => edit((value) => ({ ...value, campaign }))} />
+                    {job.campaign ? <RemakeDirectorPlanner job={job} config={config} edit={edit} disabled={disabled} onBusyChange={onPlanningChange} /> : null}
+                    <p className="rw-shot-reason">重拍镜头按导演动作生成；换元素保留原片动作与机位。</p>
+                </Card>
+            </details>
             <Card
                 title="我的商品"
                 extra={
@@ -107,6 +130,7 @@ export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChang
                 </div>
                 <ProductVideoImageSlot
                     slot="products"
+                    onPendingChange={(pending) => setUploads((value) => ({ ...value, products: pending }))}
                     items={job.product.images}
                     disabled={disabled}
                     onAdd={(images) => edit((value) => ({ ...value, product: { ...value.product, images: [...value.product.images, ...images].slice(0, 4) } }))}
@@ -118,9 +142,10 @@ export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChang
                 {job.people === "model" ? (
                     <ProductVideoImageSlot
                         slot="models"
+                        onPendingChange={(pending) => setUploads((value) => ({ ...value, models: pending }))}
                         items={job.models}
                         disabled={disabled}
-                        onAdd={(images) => patchImages("models", (current) => [...current, ...images].slice(0, 3))}
+                        onAdd={(images) => patchImages("models", (current) => addRemakeModels(current, images))}
                         onRemove={(id) => patchImages("models", (current) => current.filter((image) => image.id !== id))}
                         generate={{ label: "AI 生成", onClick: () => setPersona(true) }}
                     />
@@ -128,10 +153,12 @@ export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChang
                     <p className="rw-hint">{job.people === "original" ? "保留原片里的人，需要你有肖像使用授权。" : "画面里不出现人脸，需要时只出现手。"}</p>
                 )}
                 {job.people === "model" && !job.models.length ? <p className="rw-hint">不放模特图时，出镜的人会换成一位外观不同的普通人，不还原原片人物的长相。</p> : null}
+                {job.people === "model" ? <p className="rw-hint">人脸定长相，模特定整个人，二选一；姿势只参考动作。换元素的动作与节奏仍跟随原片。</p> : null}
             </Card>
             <Card title="场景">
                 <ProductVideoImageSlot
                     slot="backgrounds"
+                    onPendingChange={(pending) => setUploads((value) => ({ ...value, backgrounds: pending }))}
                     items={job.backgrounds}
                     disabled={disabled}
                     onAdd={(images) => patchImages("backgrounds", (current) => [...current, ...images].slice(0, 3))}
@@ -157,20 +184,22 @@ export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChang
             <RemakeFinishCard job={job} edit={edit} disabled={disabled} />
             <Card title="生成设置">
                 <div className="rw-fields">
-                    <ModelPicker
-                        config={config}
-                        capability="video"
-                        value={job.model}
-                        onChange={(model) => edit((value) => ({ ...value, model, ratio: "", resolution: "" }))}
-                        fullWidth
-                        showSelectedPrice={false}
-                        placeholder="选择能参考视频的模型"
-                        modelFilter={(model) => typeof productVideoLimitsFor(config, model) !== "string"}
-                        modelDisabledReason={(model) => {
-                            const value = productVideoLimitsFor(config, model);
-                            return typeof value !== "string" && imageCount > value.maxImages ? `一次最多参考 ${value.maxImages} 张图` : "";
-                        }}
-                    />
+                    <fieldset disabled={disabled} className="rw-model-field">
+                        <ModelPicker
+                            config={config}
+                            capability="video"
+                            value={job.model}
+                            onChange={(model) => edit((value) => ({ ...value, model, ratio: "", resolution: "" }))}
+                            fullWidth
+                            showSelectedPrice={false}
+                            placeholder="选择复刻视频模型"
+                            modelFilter={(model) => typeof remakeLimitsFor(config, model, job.shots) !== "string"}
+                            modelDisabledReason={(model) => {
+                                const value = remakeLimitsFor(config, model, job.shots);
+                                return typeof value !== "string" && imageCount > value.maxImages ? `一次最多参考 ${value.maxImages} 张图` : "";
+                            }}
+                        />
+                    </fieldset>
                     <div className="rw-field-pair">
                         <Select
                             value={job.ratio || undefined}
@@ -207,7 +236,7 @@ export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChang
                     <small>保留原片画面、原人物或原声时需要。只借结构不用原片内容时不用勾。</small>
                 </span>
             </label>
-            {persona ? <RemakePersonaModal config={config} left={3 - job.models.length} onClose={() => setPersona(false)} onAdd={(image) => patchImages("models", (current) => [...current, image].slice(0, 3))} /> : null}
+            {persona ? <RemakePersonaModal config={config} left={3 - job.models.length} onClose={() => setPersona(false)} onAdd={(image) => patchImages("models", (current) => addRemakeModels(current, [image]))} /> : null}
             {picking ? (
                 <RemakeProductPicker
                     onClose={() => setPicking(false)}

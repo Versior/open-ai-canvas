@@ -4,6 +4,9 @@ import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { recommendRemakeShot } from "./recommend";
 import { readReplicaCampaign, readReplicaDirection, type ReplicaCampaign, type ReplicaDirection } from "@/lib/canvas/replica-director";
 import { readRemakeDirectorPlans, remakeDirectorInput, replicaProductFacts, type RemakeDirectorPlan } from "./director-plan";
+import { remakeReferenceImages } from "./prompts";
+import { normalizeTimelineProject } from "@/lib/timeline/timeline-tracks";
+import type { TimelineProject } from "@/types/timeline";
 
 // 复刻工作台的作品（version 2）：一条拆解过的爆款视频 + 我的商品、模特、场景和口播配方，
 // 逐镜头决定怎么复刻（换元素、重新拍、保留原片、删掉），再按生成单元出片、拼成成片。
@@ -138,6 +141,13 @@ export type RemakeSource = { teardownId: string; resourceId: string; name: strin
 
 export type RemakeProduct = { studioProductId?: string; name: string; sellingPoints: string; images: ProductVideoImage[] };
 
+export function addRemakeModels(current: ProductVideoImage[], added: ProductVideoImage[]) {
+    return added.reduce((images, image) => {
+        const kept = images.filter((previous) => (image.role === "face" ? previous.role === "pose" : image.role === "pose" ? previous.role !== "pose" : previous.role !== "face"));
+        return [...kept, image].slice(0, 3);
+    }, current);
+}
+
 export type RemakeJob = {
     campaign?: ReplicaCampaign;
     directorPlans?: RemakeDirectorPlan[];
@@ -179,6 +189,11 @@ export type RemakeJob = {
     clips?: { key: string; taskId?: string; signature: string };
     render?: { taskId?: string; resourceId?: string; durationMs?: number; width?: number; height?: number };
     credits?: number;
+    /** 剪辑草稿独立保存；返回生成台或切换候选不会覆盖已剪辑的内容。 */
+    editTimeline?: TimelineProject;
+    editRender?: RemakeJob["render"];
+    editBurnSubtitles?: boolean;
+    editSubtitleImages?: { resourceId: string }[];
 };
 
 export function isRemakeJob(value: unknown): value is RemakeJob {
@@ -265,10 +280,11 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
     const active = job.shots.filter((shot) => shot.treatment !== "skip");
     if (!active.length) return "至少保留一个镜头";
     const generated = active.filter((shot) => shot.treatment === "replace" || shot.treatment === "remake");
-    if (generated.length && !job.product.images.length && !job.models.length && !job.backgrounds.length) return "请先放上你的商品图（或模特图、背景图），告诉模型要换成什么";
+    const referenceCount = remakeReferenceImages(job).images.length;
+    if (generated.length && !referenceCount) return "请先放上你的商品图（或模特图、背景图），告诉模型要换成什么";
     if (!job.authorized && (active.some((shot) => shot.treatment === "keep") || job.audio === "original" || job.people === "original")) return "保留原片画面、原人物或原声，需要先确认你有使用授权";
     if (generated.length && !job.model) return "请选择视频模型";
-    if (limits && job.product.images.length + job.models.length + job.backgrounds.length > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
+    if (limits && referenceCount > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
     if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「AI 配音」";
     if (job.audio === "voice" && active.some((shot) => shot.dialogue.trim()) && !job.voice.model) return "请选择配音模型";
     const strategy = job.directorPlans?.find((plan) => plan.id === job.activeDirectorPlanId);
@@ -307,6 +323,9 @@ export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title:
         error: undefined,
         render: undefined,
         credits: undefined,
+        editTimeline: undefined,
+        editRender: undefined,
+        editSubtitleImages: undefined,
         clips: undefined,
         variantOf: { id: job.id, title: job.title },
         ...(swap
@@ -357,7 +376,19 @@ function images(value: unknown, limit: number): ProductVideoImage[] {
         .flatMap((item): ProductVideoImage[] => {
             const raw = record(item);
             const resourceId = text(raw?.resourceId);
-            return raw && resourceId ? [{ id: text(raw.id, resourceId), resourceId, name: text(raw.name), width: positive(raw.width), height: positive(raw.height) }] : [];
+            return raw && resourceId
+                ? [
+                      {
+                          id: text(raw.id, resourceId),
+                          resourceId,
+                          name: text(raw.name),
+                          width: positive(raw.width),
+                          height: positive(raw.height),
+                          ...(raw.role === "face" || raw.role === "pose" || raw.role === "figure" ? { role: raw.role } : {}),
+                          ...(text(raw.prompt) ? { prompt: text(raw.prompt) } : {}),
+                      },
+                  ]
+                : [];
         })
         .slice(0, limit);
 }
@@ -426,6 +457,7 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
     const summary = record(raw.sourceSummary) || {};
     const clips = record(raw.clips);
     const render = record(raw.render);
+    const editRender = record(raw.editRender);
     const voice = record(raw.voice) || {};
     const subtitleImages = record(raw.subtitleImages);
     const music = record(raw.music);
@@ -502,6 +534,12 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
               }
             : {}),
         ...(typeof raw.credits === "number" && Number.isFinite(raw.credits) ? { credits: raw.credits } : {}),
+        ...(record(raw.editTimeline) ? { editTimeline: normalizeTimelineProject(raw.editTimeline as TimelineProject) } : {}),
+        ...(editRender
+            ? { editRender: { taskId: text(editRender.taskId) || undefined, resourceId: text(editRender.resourceId) || undefined, durationMs: positive(editRender.durationMs), width: positive(editRender.width), height: positive(editRender.height) } }
+            : {}),
+        ...(typeof raw.editBurnSubtitles === "boolean" ? { editBurnSubtitles: raw.editBurnSubtitles } : {}),
+        ...(Array.isArray(raw.editSubtitleImages) ? { editSubtitleImages: raw.editSubtitleImages.flatMap((image) => (text(record(image)?.resourceId) ? [{ resourceId: text(record(image)?.resourceId) }] : [])) } : {}),
     };
     const directorPlans = readRemakeDirectorPlans(raw.directorPlans, normalized);
     if (directorPlans.length) {

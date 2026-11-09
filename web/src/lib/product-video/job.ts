@@ -12,7 +12,7 @@ export const PRODUCT_VIDEO_SLOT_LABEL: Record<ProductVideoSlot, string> = { prod
 export type ProductVideoAudio = "original" | "model" | "mute";
 export const PRODUCT_VIDEO_AUDIO_LABEL: Record<ProductVideoAudio, string> = { original: "保留原声", model: "模型配音", mute: "不要声音" };
 
-export type ProductVideoImage = { id: string; resourceId: string; name: string; width?: number; height?: number };
+export type ProductVideoImage = { id: string; resourceId: string; name: string; width?: number; height?: number; role?: "figure" | "face" | "pose"; prompt?: string };
 
 export type ProductVideoReference = {
     resourceId: string;

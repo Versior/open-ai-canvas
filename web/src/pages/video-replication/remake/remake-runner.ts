@@ -17,7 +17,8 @@ import { createTimelineRenderTask, type TimelineRenderResult } from "@/services/
 import type { AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceVideo } from "@/types/media";
-import { productVideoGenerationConfig, productVideoLimitsFor } from "../replace/product-video-config";
+import { productVideoGenerationConfig } from "../replace/product-video-config";
+import { remakeLimitsFor } from "./remake-config";
 import { readRemake, updateRemake as updateStoredRemake } from "../replace/use-product-video-store";
 import { drawRemakeSubtitle } from "./remake-subtitles";
 
@@ -87,14 +88,14 @@ function terminal(task: GenerationTask) {
 }
 
 function limitsOf(config: AiConfig, job: RemakeJob) {
-    const limits = productVideoLimitsFor(config, job.model);
-    if (typeof limits === "string") throw new Error(`所选模型${limits}，请换一个能参考视频的模型`);
+    const limits = remakeLimitsFor(config, job.model, job.shots);
+    if (typeof limits === "string") throw new Error(`所选模型：${limits}`);
     return limits;
 }
 
 /** 按当前的逐镜做法排生成单元；做法和范围没变的单元沿用之前的候选。 */
 export function remakeUnitsFor(job: RemakeJob, config: AiConfig) {
-    const limits = productVideoLimitsFor(config, job.model);
+    const limits = remakeLimitsFor(config, job.model, job.shots);
     const maxMs = (typeof limits === "string" ? 15 : limits.maxSegmentSeconds) * 1000;
     return applyRemakeCreativeSignature(job, planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source.durationMs }, job.units));
 }

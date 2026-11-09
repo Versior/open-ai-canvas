@@ -10,30 +10,13 @@
 // - 静音跟随所在音频/视频轨道（muted），不再硬编码 muted（否则"有声音"永远不成立）。
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-    AlertTriangle,
-    Captions,
-    Check,
-    ChevronDown,
-    Download,
-    Film,
-    Gauge,
-    Image as ImageIcon,
-    LoaderCircle,
-    Pause,
-    Play,
-    SkipBack,
-    SkipForward,
-    StepBack,
-    StepForward,
-    Type,
-    Video,
-    Volume2,
-} from "lucide-react";
+import { AlertTriangle, Captions, Check, ChevronDown, Download, Film, Gauge, Image as ImageIcon, LoaderCircle, Pause, Play, SkipBack, SkipForward, StepBack, StepForward, Type, Video, Volume2 } from "lucide-react";
 
 import { useEditorStoreContext } from "@/components/editor/editor-context";
 import { formatTimelineTime } from "@/lib/timeline/timeline-view";
-import { getPreviewClipAtTime } from "@/lib/timeline/timeline-clip-view";
+import { getPreviewAudioClips, getPreviewClipAtTime, timelinePreviewVolume } from "@/lib/timeline/timeline-clip-view";
+import { CanvasSubtitleOverlay } from "@/components/canvas/canvas-subtitle-overlay";
+import { createDefaultSubtitleStyle } from "@/types/timeline";
 import { resolveMediaUrl } from "@/services/file-storage";
 import { playbackVariantUrl, refreshResource, resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import type { TimelineClip } from "@/types/timeline";
@@ -89,13 +72,34 @@ function clipKindLabel(kind: TimelineClip["kind"]): string {
 }
 
 function clipDisplayTitle(clip: TimelineClip): string {
-    return clip.directMedia?.title || clip.title || clip.text || clip.nodeId || clip.id;
+    return clip.title || clip.directMedia?.title || clip.text || clip.nodeId || clip.id;
 }
 
 function ClipKindIcon({ kind, className }: { kind: TimelineClip["kind"]; className?: string }) {
-    const Icon =
-        kind === "video" ? Video : kind === "image" ? ImageIcon : kind === "audio" ? Volume2 : kind === "subtitle" ? Captions : Type;
+    const Icon = kind === "video" ? Video : kind === "image" ? ImageIcon : kind === "audio" ? Volume2 : kind === "subtitle" ? Captions : Type;
     return <Icon className={className} />;
+}
+
+function AudioPreview({ clip, timeMs, playing, speed }: { clip: TimelineClip; timeMs: number; playing: boolean; speed: number }) {
+    const url = useClipMediaUrl(clip);
+    const ref = useRef<HTMLAudioElement>(null);
+    const sync = () => {
+        const audio = ref.current;
+        if (!audio || audio.readyState < 1) return;
+        const source = (clip.sourceStartMs || 0) + Math.max(0, timeMs - clip.startMs);
+        const target = clip.loop && Number.isFinite(audio.duration) && audio.duration > 0 ? (source / 1000) % audio.duration : source / 1000;
+        if (Math.abs(audio.currentTime - target) > (playing ? VIDEO_SEEK_TOLERANCE_S : 0.001)) audio.currentTime = target;
+        audio.volume = timelinePreviewVolume(clip, timeMs);
+        audio.playbackRate = speed;
+        if (playing) void audio.play().catch(() => undefined);
+        else audio.pause();
+    };
+    useEffect(sync, [url, timeMs, playing, speed, clip]);
+    useEffect(() => {
+        const audio = ref.current;
+        return () => audio?.pause();
+    }, [url]);
+    return url ? <audio ref={ref} src={url} preload="metadata" loop={clip.loop} onLoadedMetadata={sync} aria-label={clip.title || "音轨预览"} /> : null;
 }
 
 export function EditorPreviewMonitor() {
@@ -118,6 +122,8 @@ export function EditorPreviewMonitor() {
     const activeClip = project ? getPreviewClipAtTime(project, playbackMs, selectedClipId) : null;
     const activeMediaUrl = useClipMediaUrl(activeClip);
     const activeTrack = project?.tracks.find((t) => t.id === activeClip?.trackId) ?? null;
+    const audioClips = project ? getPreviewAudioClips(project, playbackMs) : [];
+    const subtitle = project?.clips.find((clip) => clip.kind === "subtitle" && clip.startMs <= playbackMs && playbackMs < clip.startMs + clip.durationMs && project.tracks.find((track) => track.id === clip.trackId)?.visible !== false);
 
     // 播放回退：H.264 原件直接播放；H.265/HEVC 原件多数浏览器无法解码（黑屏），
     // <video> onError 后切换后端 playback 转码副本（variant=playback），副本就绪前轮询。
@@ -313,6 +319,7 @@ export function EditorPreviewMonitor() {
         if (!v || !isVideoClip) return;
         if (v.readyState < HTMLMediaElement.HAVE_METADATA) return;
         applyVideoPosition(v);
+        v.volume = activeClip ? timelinePreviewVolume(activeClip, playbackMs) : 1;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [playbackMs, mediaTier, variantReadyTick, activeClip?.id]);
 
@@ -322,9 +329,10 @@ export function EditorPreviewMonitor() {
         if (!v || !isVideoClip) return;
         if (playing) {
             const p = v.play();
-            if (p) p.catch(() => {
-                // 浏览器 autoplay/格式限制：onError 已接管提示与回退。
-            });
+            if (p)
+                p.catch(() => {
+                    // 浏览器 autoplay/格式限制：onError 已接管提示与回退。
+                });
         } else if (!v.paused) {
             v.pause();
         }
@@ -342,6 +350,8 @@ export function EditorPreviewMonitor() {
         const v = videoRef.current;
         if (!v) return;
         applyVideoPosition(v);
+        v.volume = activeClip ? timelinePreviewVolume(activeClip, playbackRef.current) : 1;
+        v.playbackRate = speedRef.current;
         if (playingRef.current) {
             const p = v.play();
             if (p) p.catch(() => {});
@@ -382,6 +392,9 @@ export function EditorPreviewMonitor() {
 
     return (
         <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--previs-sequencer-surface)]">
+            {audioClips.map((clip) => (
+                <AudioPreview key={clip.id} clip={clip} timeMs={playbackMs} playing={playing} speed={speed} />
+            ))}
             {/* 顶部信息条：媒体标题/元数据常驻在画面外的标题栏，不再悬浮遮挡画面内容 */}
             <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--previs-sequencer-border)] bg-[var(--previs-sequencer-surface-raised)] px-3">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -391,13 +404,9 @@ export function EditorPreviewMonitor() {
                             <span className="truncate text-xs font-medium text-[var(--previs-dock-fg-strong)]" title={clipDisplayTitle(activeClip)}>
                                 {clipDisplayTitle(activeClip)}
                             </span>
-                            <span className="hidden shrink-0 rounded-full bg-[var(--previs-dock-active-surface)] px-2 py-0.5 text-[var(--fs-label)] leading-none text-[var(--previs-dock-fg)]/85 sm:inline-flex">
-                                {clipKindLabel(activeClip.kind)}
-                            </span>
+                            <span className="hidden shrink-0 rounded-full bg-[var(--previs-dock-active-surface)] px-2 py-0.5 text-[var(--fs-label)] leading-none text-[var(--previs-dock-fg)]/85 sm:inline-flex">{clipKindLabel(activeClip.kind)}</span>
                             {activeTrack && (
-                                <span className="hidden shrink-0 rounded-full border border-[var(--previs-sequencer-border)] px-2 py-0.5 text-[var(--fs-label)] leading-none text-[var(--previs-dock-fg)]/55 md:inline-flex">
-                                    {activeTrack.label}
-                                </span>
+                                <span className="hidden shrink-0 rounded-full border border-[var(--previs-sequencer-border)] px-2 py-0.5 text-[var(--fs-label)] leading-none text-[var(--previs-dock-fg)]/55 md:inline-flex">{activeTrack.label}</span>
                             )}
                         </>
                     ) : (
@@ -405,23 +414,11 @@ export function EditorPreviewMonitor() {
                     )}
                 </div>
                 {mediaErrorHint && (
-                    <span
-                        title={mediaErrorHint}
-                        className="flex min-w-0 max-w-[42%] items-center gap-2 rounded-md bg-[var(--previs-danger)]/10 px-2 py-1 text-[var(--fs-label)] text-[var(--previs-danger)]"
-                    >
-                        {mediaErrorHint.includes("正在生成") ? (
-                            <LoaderCircle className="size-3 shrink-0 animate-spin" />
-                        ) : (
-                            <AlertTriangle className="size-3 shrink-0" />
-                        )}
+                    <span title={mediaErrorHint} className="flex min-w-0 max-w-[42%] items-center gap-2 rounded-md bg-[var(--previs-danger)]/10 px-2 py-1 text-[var(--fs-label)] text-[var(--previs-danger)]">
+                        {mediaErrorHint.includes("正在生成") ? <LoaderCircle className="size-3 shrink-0 animate-spin" /> : <AlertTriangle className="size-3 shrink-0" />}
                         <span className="truncate">{mediaErrorHint}</span>
                         {mediaResourceId && (
-                            <a
-                                href={resourceFileUrl(mediaResourceId)}
-                                download
-                                title="下载原片，用本地播放器观看"
-                                className="grid size-4 shrink-0 place-items-center rounded hover:bg-[var(--previs-danger)]/15"
-                            >
+                            <a href={resourceFileUrl(mediaResourceId)} download title="下载原片，用本地播放器观看" className="grid size-4 shrink-0 place-items-center rounded hover:bg-[var(--previs-danger)]/15">
                                 <Download className="size-3" />
                             </a>
                         )}
@@ -435,13 +432,7 @@ export function EditorPreviewMonitor() {
                         <div className="grid size-14 place-items-center rounded-xl bg-white/10">
                             <Film className="size-6 text-white/60" />
                         </div>
-                        <div className="max-w-xs text-xs leading-relaxed text-white/70">
-                            {project && project.clips.length > 0
-                                ? activeClip
-                                    ? "当前时间点没有可显示画面（字幕或音频片段）"
-                                    : "播放头位于空白处"
-                                : "时间线暂无片段，导入素材后在此预览"}
-                        </div>
+                        <div className="max-w-xs text-xs leading-relaxed text-white/70">{project && project.clips.length > 0 ? (activeClip ? "当前时间点没有可显示画面（字幕或音频片段）" : "播放头位于空白处") : "时间线暂无片段，导入素材后在此预览"}</div>
                     </div>
                 ) : isVideoClip && videoSrc ? (
                     <video
@@ -457,14 +448,9 @@ export function EditorPreviewMonitor() {
                         onEnded={handleVideoEnded}
                     />
                 ) : imageSrc ? (
-                    <img
-                        key={`i:${activeClip!.id}`}
-                        src={imageSrc}
-                        alt=""
-                        className="max-h-full max-w-full rounded-md object-contain shadow-lg"
-                        onError={handleMediaError}
-                    />
+                    <img key={`i:${activeClip!.id}`} src={imageSrc} alt="" className="max-h-full max-w-full rounded-md object-contain shadow-lg" onError={handleMediaError} />
                 ) : null}
+                {subtitle?.text ? <CanvasSubtitleOverlay text={subtitle.text} style={createDefaultSubtitleStyle()} /> : null}
             </div>
 
             {/* 播放控制条：画面下方的独立一行（Concat 布局），不悬浮叠加、无进度条；
@@ -478,9 +464,7 @@ export function EditorPreviewMonitor() {
             >
                 <span className="truncate text-xs tabular-nums text-[var(--previs-dock-fg)]">
                     {!compact && formatTimelineTime(playbackMs)}
-                    {!compact && !hideTotal && (
-                        <span className="opacity-60"> / {formatTimelineTime(durationMs)}</span>
-                    )}
+                    {!compact && !hideTotal && <span className="opacity-60"> / {formatTimelineTime(durationMs)}</span>}
                 </span>
                 <div className="flex shrink-0 items-center gap-0.5">
                     <button
@@ -509,9 +493,7 @@ export function EditorPreviewMonitor() {
                         onClick={toggle}
                         disabled={durationMs <= 0}
                         className={`grid size-7 place-items-center rounded-md transition-colors disabled:pointer-events-none disabled:opacity-40 ${
-                            playing
-                                ? "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]"
-                                : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
+                            playing ? "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]" : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                         }`}
                     >
                         {playing ? <Pause className="size-4" /> : <Play className="size-4 translate-x-px" />}
@@ -547,9 +529,7 @@ export function EditorPreviewMonitor() {
                     >
                         <Gauge className="size-3.5" />
                         {!compact && <span className="tabular-nums">{speed}x</span>}
-                        {!compact && (
-                            <ChevronDown className={`size-3 transition-transform ${speedMenuOpen ? "rotate-180" : ""}`} />
-                        )}
+                        {!compact && <ChevronDown className={`size-3 transition-transform ${speedMenuOpen ? "rotate-180" : ""}`} />}
                     </button>
                     {speedMenuOpen && (
                         <>

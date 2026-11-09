@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { App } from "antd";
+import { App, Button } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 import { readReplicaPlan } from "@/lib/canvas/video-replica-plan";
 import { readVideoReplicationAnalysis, videoTeardownModelError, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { createRemakeJob, isRemakeJob } from "@/lib/remake/job";
+import { remakeDefaultStep } from "@/lib/remake/editor";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getVideoReplication, getVideoReplicationConfig, listVideoReplications, parseVideoTeardownBundle, type VideoReplicationDetail, type VideoTeardownBundle } from "@/services/api/video-replication";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
@@ -73,9 +74,11 @@ export default function VideoReplicationPage() {
     });
 
     const remakeId = params.get("remake") || "";
-    const remakeStep: RemakeStep = params.get("step") === "produce" ? "produce" : "recipe";
     const tab: ReplicationTab = !selectedId && (params.get("tab") === "works" || params.get("mode") === "replace") ? "works" : "new";
     const works = useProductVideoStore((state) => state.jobs);
+    const selectedWork = works.find((job) => job.id === remakeId);
+    const remakeStep: RemakeStep = params.get("step") === "edit" ? "edit" : params.get("step") === "produce" ? "produce" : params.get("step") === "recipe" ? "recipe" : remakeDefaultStep(isRemakeJob(selectedWork) ? selectedWork : undefined);
+    const relatedWorks = works.filter((job) => isRemakeJob(job) && job.source.teardownId === selectedId);
     const worksStatus = useProductVideoStore((state) => state.status);
     const worksError = useProductVideoStore((state) => state.error);
     const changeTab = useCallback((next: ReplicationTab) => setParams(next === "works" ? { tab: "works" } : {}), [setParams]);
@@ -179,10 +182,10 @@ export default function VideoReplicationPage() {
                 key={remakeId}
                 id={remakeId}
                 step={remakeStep}
-                onStep={(next) => setParams(next === "produce" ? { remake: remakeId, step: "produce" } : { remake: remakeId })}
+                onStep={(next) => setParams({ remake: remakeId, step: next })}
                 onBack={() => setParams({ tab: "works" })}
                 onOpen={(next) => setParams({ remake: next })}
-                onOpenTeardown={(teardownId) => setParams({ id: teardownId })}
+                onOpenTeardown={(teardownId) => setParams({ id: teardownId, returnRemake: remakeId })}
             />
         );
 
@@ -191,23 +194,35 @@ export default function VideoReplicationPage() {
             {/* 复刻方案整页滚动；拆解结果在宽屏下是一屏布局。 */}
             <div ref={rootRef} className="vr-page" data-view={selectedId ? (view !== "teardown" && detail.data?.analysis ? "plan" : "record") : "home"}>
                 {selectedId ? (
-                    <ReplicationWorkspace
-                        detail={detail.data}
-                        loading={detail.isPending}
-                        error={errorText(detail.error)}
-                        run={run}
-                        busy={running}
-                        opening={opening}
-                        config={config}
-                        model={model}
-                        onModelChange={setPickedModel}
-                        onReanalyze={reanalyzeSelected}
-                        onOpenCanvas={openInCanvas}
-                        onBack={() => select("")}
-                        view={view}
-                        onViewChange={changeView}
-                        onRemake={(record, fallbackTitle) => void startRemakeFrom(record, fallbackTitle)}
-                    />
+                    <>
+                        {relatedWorks.length ? (
+                            <div className="rw-record-return" aria-label="继续已有复刻">
+                                <span>这条视频已有 {relatedWorks.length} 个复刻作品</span>
+                                {relatedWorks.map((job) => (
+                                    <Button key={job.id} size="small" onClick={() => setParams({ remake: job.id, step: "produce" })}>
+                                        {params.get("returnRemake") === job.id ? "返回生成台与剪辑" : `继续 ${job.title}`}
+                                    </Button>
+                                ))}
+                            </div>
+                        ) : null}
+                        <ReplicationWorkspace
+                            detail={detail.data}
+                            loading={detail.isPending}
+                            error={errorText(detail.error)}
+                            run={run}
+                            busy={running}
+                            opening={opening}
+                            config={config}
+                            model={model}
+                            onModelChange={setPickedModel}
+                            onReanalyze={reanalyzeSelected}
+                            onOpenCanvas={openInCanvas}
+                            onBack={() => select("")}
+                            view={view}
+                            onViewChange={changeView}
+                            onRemake={(record, fallbackTitle) => void startRemakeFrom(record, fallbackTitle)}
+                        />
+                    </>
                 ) : (
                     <ReplicationHome
                         onTool={(tool) => {

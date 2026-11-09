@@ -1,8 +1,20 @@
 import { expect, test } from "bun:test";
-import { getClipSeekTime, getTimelineClipTitle, getFilmstripTiles, getPreviewClipAtTime } from "../src/lib/timeline/timeline-clip-view";
+import { getClipSeekTime, getTimelineClipTitle, getFilmstripTiles, getPreviewClipAtTime, getPreviewAudioClips, timelinePreviewVolume } from "../src/lib/timeline/timeline-clip-view";
 import type { TimelineClip } from "../src/types/timeline";
 
 const clip: TimelineClip = { id: "clip-1", nodeId: "asset:internal-id", kind: "video", trackId: "video-1", startMs: 5000, durationMs: 2000, sourceStartMs: 1000, title: "第二个镜头" };
+
+test("预览混音只播放当前可见未静音音轨，音量遵循淡入淡出", () => {
+    const audio = { ...clip, kind: "audio" as const, trackId: "audio", volume: 0.5, fadeInMs: 500, fadeOutMs: 500 };
+    const project = { version: 2 as const, tracks: [{ id: "audio", kind: "audio" as const, label: "音乐", order: 0 }], clips: [audio], durationMs: 7000 };
+    expect(getPreviewAudioClips(project, 5100)).toHaveLength(1);
+    expect(getPreviewAudioClips(project, 7000)).toHaveLength(0);
+    expect(getPreviewAudioClips({ ...project, tracks: [{ ...project.tracks[0], muted: true }] }, 5100)).toHaveLength(0);
+    expect(getPreviewAudioClips({ ...project, tracks: [{ ...project.tracks[0], visible: false }] }, 5100)).toHaveLength(0);
+    expect(timelinePreviewVolume(audio, 5100)).toBeCloseTo(0.1);
+    expect(timelinePreviewVolume(audio, 6000)).toBeCloseTo(0.5);
+    expect(timelinePreviewVolume(audio, 6900)).toBeCloseTo(0.1);
+});
 
 test("多轨重叠时优先预览被点击的可见片段，离开片段后继续下一镜", () => {
     const first = { ...clip, id: "first", startMs: 0, durationMs: 10000 };

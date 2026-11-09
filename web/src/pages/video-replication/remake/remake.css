@@ -79,7 +79,7 @@
 }
 .rw-shell {
     display: grid;
-    grid-template-columns: 264px minmax(0, 1fr);
+    grid-template-columns: 224px minmax(0, 1fr);
     gap: var(--space-3);
     width: 100%;
     height: 100%;
@@ -103,7 +103,7 @@
 .rw-rail {
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-3);
     min-height: 0;
     padding: var(--space-4);
     overflow-y: auto;
@@ -282,7 +282,7 @@
 /* ---------- 换成我的：配方卡 + 逐镜做法 ---------- */
 .rw-recipe-layout {
     display: grid;
-    grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
     align-items: start;
     gap: var(--space-3);
 }
@@ -539,7 +539,7 @@
     position: relative;
     display: grid;
     place-items: center;
-    height: min(56vh, 520px);
+    height: clamp(180px, 38vh, 380px);
     margin: 0;
     overflow: hidden;
     border-radius: var(--rw-radius-control);
@@ -604,7 +604,7 @@
     aspect-ratio: 9 / 16;
     border-radius: var(--rw-radius-media);
     background: var(--rw-media-bg);
-    object-fit: cover;
+    object-fit: contain;
 }
 .rw-take[aria-checked="true"] video {
     outline: 2px solid var(--control-selected-border);
@@ -689,7 +689,8 @@
 .rw-block-source {
     background-color: var(--rw-media-bg);
     background-position: center;
-    background-size: cover;
+    background-size: contain;
+    background-repeat: no-repeat;
 }
 .rw-block-source[data-treatment="skip"] {
     opacity: 0.4;
@@ -770,7 +771,7 @@
 .rw-work-media :is(img, video) {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
 }
 .rw-work-overlay {
     position: absolute;
@@ -1020,6 +1021,124 @@
     outline-offset: 1px;
 }
 
+.rw-summary-references {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+}
+.rw-summary-references figure {
+    width: 48px;
+    margin: 0;
+    text-align: center;
+}
+.rw-summary-references img {
+    width: 48px;
+    height: 64px;
+    object-fit: contain;
+    background: var(--rw-muted);
+    border-radius: var(--rw-radius-media);
+}
+.rw-summary-references figcaption {
+    font-size: var(--fs-tiny);
+}
+.rw-summary dd small {
+    display: block;
+    color: var(--rw-ink-3);
+}
+.rw-model-field {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+.rw-strategy {
+    border-radius: var(--rw-radius);
+    background: var(--rw-panel);
+}
+.rw-strategy summary {
+    padding: var(--space-3) var(--space-4);
+    color: var(--rw-ink-2);
+    cursor: pointer;
+    font-size: var(--fs-caption);
+}
+.rw-record-return {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    font-size: var(--fs-caption);
+}
+.rw-shell[data-step="edit"] .rw-main {
+    overflow: hidden;
+}
+.rw-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    grid-template-rows: auto minmax(200px, 1fr) minmax(200px, 36%);
+    gap: var(--space-2);
+    height: 100%;
+    min-height: 540px;
+    color: var(--rw-ink);
+}
+.rw-editor-toolbar {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    background: var(--rw-panel);
+}
+.rw-editor-toolbar > span {
+    font-size: var(--fs-caption);
+}
+.rw-editor-monitor,
+.rw-editor-inspector,
+.rw-editor-timeline {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: var(--rw-radius-control);
+}
+.rw-editor-inspector {
+    display: flex;
+    flex-direction: column;
+    background: var(--rw-panel);
+}
+.rw-editor-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2);
+}
+.rw-editor-panel {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+.rw-editor-timeline {
+    grid-column: 1 / -1;
+}
+@media (max-width: 1100px) {
+    .rw-editor {
+        grid-template-columns: minmax(0, 1fr) 220px;
+    }
+}
+@media (max-width: 760px) {
+    .rw-shell[data-step="edit"] .rw-main {
+        overflow: auto;
+    }
+    .rw-editor {
+        height: auto;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto 300px 220px 280px;
+    }
+    .rw-editor-timeline {
+        grid-column: 1;
+    }
+}
+
 @media (max-width: 1279px) {
     .rw-recipe-layout {
         grid-template-columns: minmax(0, 1fr);
@@ -1044,6 +1163,22 @@
     }
     .rw-main {
         overflow: visible;
+    }
+    .rw-shell[data-step="edit"] .rw-main {
+        overflow: visible;
+    }
+    .rw-shell[data-step="edit"] .rw-rail {
+        gap: var(--space-2);
+    }
+    .rw-shell[data-step="edit"] .rw-steps {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-1);
+    }
+    .rw-shell[data-step="edit"] .rw-steps small,
+    .rw-shell[data-step="edit"] .rw-summary,
+    .rw-shell[data-step="edit"] .rw-rail-foot {
+        display: none;
     }
     .rw-compare-panes {
         grid-template-columns: 1fr 1fr;

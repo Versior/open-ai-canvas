@@ -1,4 +1,4 @@
-import { Button, Input, Progress, Spin } from "antd";
+import { App, Button, Input, Progress, Spin } from "antd";
 import { Film, RotateCcw, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
@@ -28,6 +28,7 @@ const STATUS_TEXT: Record<RemakeUnit["status"], string> = { pending: "等待生�
  * 右边是选中这一段的候选、定向重做。
  */
 export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; config: AiConfig; onEditRecipe: () => void }) {
+    const { message } = App.useApp();
     const progress = useRemakeRuntime((state) => state.progress[job.id]);
     const active = useRemakeRuntime((state) => Boolean(state.active[job.id]));
     const finalId = job.render?.resourceId;
@@ -46,6 +47,16 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
         if (selection.kind === "final" && !finalId && job.units[0]) setSelection({ kind: "unit", key: job.units[0].key });
     }, [finalId, job.units, selection.kind]);
     useEffect(() => setFix(unit?.fix || ""), [unit?.key, unit?.fix]);
+    useEffect(() => {
+        leftRef.current?.pause();
+    }, [selection.kind, unit?.key, take?.resourceId]);
+    const perform = async (operation: () => Promise<void>) => {
+        try {
+            await operation();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "操作失败，请重试");
+        }
+    };
 
     // 新片在播到哪，就把原片拨到对应的位置；偏差超过 0.25 秒才拨，避免卡顿。
     const toSource = (ms: number) => {
@@ -134,7 +145,15 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
                         {unit.takes.length ? (
                             <div className="rw-takes" role="radiogroup" aria-label="候选">
                                 {unit.takes.map((item, index) => (
-                                    <button key={item.taskId || item.resourceId} type="button" role="radio" aria-checked={unit.chosen === index} className="rw-take" onClick={() => void chooseRemakeTake(job.id, unit.key, index)}>
+                                    <button
+                                        key={item.taskId || item.resourceId}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={unit.chosen === index}
+                                        className="rw-take"
+                                        disabled={active}
+                                        onClick={() => void perform(() => chooseRemakeTake(job.id, unit.key, index))}
+                                    >
                                         <video src={`${resourceFileUrl(item.resourceId)}#t=0.5`} muted playsInline preload="metadata" aria-hidden />
                                         <span>{unit.chosen === index ? "✓ 用这条" : `候选 ${index + 1}`}</span>
                                     </button>
@@ -146,7 +165,7 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
                             <Input.TextArea value={fix} maxLength={200} autoSize={{ minRows: 2, maxRows: 4 }} placeholder="例如：包装上的字糊了，保持正面文字清晰；模特转头时脸变了" onChange={(event) => setFix(event.target.value)} />
                         </label>
                         <div className="rw-inspector-actions">
-                            <Button icon={<RotateCcw size={14} />} disabled={unit.status === "running" || unit.status === "pending"} onClick={() => void redoRemakeUnit(job.id, unit.key, fix, config)}>
+                            <Button icon={<RotateCcw size={14} />} disabled={active || unit.status === "running" || unit.status === "pending"} onClick={() => void perform(() => redoRemakeUnit(job.id, unit.key, fix, config))}>
                                 {unit.takes.length ? "再出一条" : "重做"}
                             </Button>
                             <Button type="text" onClick={onEditRecipe}>

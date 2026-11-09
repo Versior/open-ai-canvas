@@ -25,7 +25,7 @@ const PAGE_SIZE = 24;
 const GENDERS: StudioModelGender[] = ["", "female", "male"];
 
 /** 从模特库挑人脸、全身模特、姿势或造型。带图的素材选中时把原图复制到自己的资源库，出图引用自己的那份。 */
-export function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind: StudioModelKind; onClose: () => void; onPick: (kind: StudioModelKind, pick: StudioModelPick) => void }) {
+export function StudioCastPicker({ kind: initialKind, kinds = KINDS, onClose, onPick }: { kind: StudioModelKind; kinds?: StudioModelKind[]; onClose: () => void; onPick: (kind: StudioModelKind, pick: StudioModelPick) => void }) {
     const { message } = App.useApp();
     const [kind, setKind] = useState(initialKind);
     const [query, setQuery] = useState("");
@@ -85,7 +85,7 @@ export function StudioCastPicker({ kind: initialKind, onClose, onPick }: { kind:
                         <h3>模特库</h3>
                         <span>人脸定长相，全身模特定整个人（和人脸二选一），姿势定动作，造型定妆发与穿搭；商品外观仍以你的商品图为准。</span>
                     </div>
-                    <SegmentedControl<StudioModelKind> ariaLabel="素材类型" value={kind} onChange={switchKind} options={KINDS.map((value) => ({ value, label: STUDIO_MODEL_KIND_LABEL[value] }))} />
+                    <SegmentedControl<StudioModelKind> ariaLabel="素材类型" value={kind} onChange={switchKind} options={kinds.map((value) => ({ value, label: STUDIO_MODEL_KIND_LABEL[value] }))} />
                 </header>
                 <div className="es-suite-picker-body">
                     <div className="es-cast-filters">

@@ -102,6 +102,9 @@ export type TimelineClip = {
     volume?: number;
     fadeInMs?: number;
     fadeOutMs?: number;
+    /** 背景音乐循环；字幕透明图叠在主画面上。与后端渲染字段一致。 */
+    loop?: boolean;
+    overlay?: boolean;
     /** 字幕片段：对应源视频节点 subtitleEntries 的下标（-1 表示未关联） */
     subtitleEntryIndex?: number;
     /** 字幕片段文本快照，时间线内直接展示，不与节点双向同步 */

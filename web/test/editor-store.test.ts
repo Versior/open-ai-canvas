@@ -39,6 +39,32 @@ function makeProject(): TimelineProject {
     };
 }
 
+test("旧快照保存完成不能把保存期间的新剪辑标记为已保存", async () => {
+    const saves: TimelineProject[] = [];
+    let release: (() => void) | undefined;
+    const store = createEditorStore({
+        debounceMs: 60000,
+        saveTimeline: async (project) => {
+            saves.push(project);
+            if (saves.length === 1)
+                await new Promise<void>((resolve) => {
+                    release = resolve;
+                });
+        },
+    });
+    store.getState().load(makeProject());
+    store.getState().dispatch({ op: "setClipProperty", payload: { id: "clip-a", patch: { title: "第一次" } } });
+    const firstSave = store.getState().flushSave();
+    await Promise.resolve();
+    store.getState().dispatch({ op: "setClipProperty", payload: { id: "clip-a", patch: { title: "第二次" } } });
+    release!();
+    await firstSave;
+    expect(store.getState().isDirty).toBe(true);
+    await store.getState().flushSave();
+    expect(saves.at(-1)?.clips[0].title).toBe("第二次");
+    expect(store.getState().isDirty).toBe(false);
+});
+
 describe("editor store (command dispatch)", () => {
     test("load initializes project and history without saving", async () => {
         const saves: TimelineProject[] = [];

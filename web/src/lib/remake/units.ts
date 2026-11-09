@@ -81,7 +81,7 @@ export function remakeUnitTake(unit: Pick<RemakeUnit, "takes" | "chosen">) {
 export function applyRemakeCreativeSignature(job: RemakeJob, units: RemakeUnit[]) {
     return units.map((unit) => {
         const shots = job.shots.filter((shot) => unit.shotIndexes.includes(shot.index));
-        if (!job.campaign && !shots.some((shot) => shot.director) && !unit.creativeSignature) return unit;
+        if (!unit.creativeSignature && unit.taskId) return unit;
         const input = JSON.stringify([
             buildRemakeUnitPrompt(job, { ...unit, fix: undefined }, shots, (unit.endMs - unit.startMs) / 1000),
             remakeReferenceImages(job).images.map((image) => image.resourceId),

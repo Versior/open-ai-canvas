@@ -18,7 +18,7 @@ export function remakeDialogueBudget(shot: Pick<RemakeShot, "startMs" | "endMs">
     return Math.max(0, Math.floor(((shot.endMs - shot.startMs) / 1000) * cps));
 }
 
-export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; background: string };
+export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; face: string; pose: string; background: string };
 
 /** 参考图的顺序就是提示词里的图号：商品图、模特图（选了换模特时）、背景图。 */
 export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" | "models" | "backgrounds">): RemakeReferenceImages {
@@ -28,7 +28,9 @@ export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" 
     return {
         images,
         product: label(0, job.product.images.length),
-        model: label(job.product.images.length, models.length),
+        model: models.flatMap((image, index) => (!image.role || image.role === "figure" ? [label(job.product.images.length + index, 1)] : [])).join("、"),
+        face: models.flatMap((image, index) => (image.role === "face" ? [label(job.product.images.length + index, 1)] : [])).join("、"),
+        pose: models.flatMap((image, index) => (image.role === "pose" ? [label(job.product.images.length + index, 1)] : [])).join("、"),
         background: label(job.product.images.length + models.length, job.backgrounds.length),
     };
 }
@@ -41,6 +43,7 @@ function productLine(job: Pick<RemakeJob, "product">, refs: RemakeReferenceImage
 
 function peopleLine(job: Pick<RemakeJob, "people">, refs: RemakeReferenceImages, video: string) {
     if (job.people === "none") return "人物：画面里不出现人物的脸，需要时只出现手。";
+    if (job.people === "model" && refs.face) return `人物：以${refs.face}里的人脸作为唯一长相参考，保持五官与身份一致；服装和体型自然适配商品，不照搬人脸图的背景${video ? `，动作与节奏跟随${video}` : ""}。`;
     if (job.people === "model" && refs.model) return `人物：出镜的人换成${refs.model}里的模特，保留模特的脸、发型、服装和体型${video ? `，动作、姿态和表情节奏跟随${video}` : ""}。`;
     if (job.people === "original") return video ? `人物：保留${video}里的人物。` : "";
     return video ? `人物：${video}里的人物换成一位外观不同的普通人，不要还原原片人物的长相。` : "人物：如果需要出镜，用一位外观普通的人，不要模仿任何真人。";
@@ -70,6 +73,12 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
             ? [`以${video}为动作、镜头和时间结构的基础，替换画面里的元素，生成一段约 ${seconds} 秒的视频，镜头顺序、切换点和节奏与${video}一致。`, "替换方式（自然适配：新主体按自己的结构自然套进原动作）："]
             : [`生成一段约 ${seconds} 秒的带货短视频，共 ${shots.length} 个镜头，按下面的分镜依次硬切：`, ...shots.map((shot) => `- 镜头 ${shot.index}（约 ${shotSeconds(shot)} 秒）：${remakeShotDescription(shot)}`), "素材要求："];
     lines.push(...[productLine(job, refs), peopleLine(job, refs, video), background].filter(Boolean).map((line) => `- ${line}`));
+    if (refs.pose)
+        lines.push(
+            unit.treatment === "remake"
+                ? `姿势：${refs.pose}仅参考动作、肢体关系与姿态，不使用姿势图里的人脸、服装、商品和背景；在此姿态基础上执行导演动作。`
+                : `姿势：换元素仍以${video}为动作依据，${refs.pose}仅参考动作的自然程度，不改变原片时序与机位，不作为人物身份。`,
+        );
     if (unit.treatment === "replace") lines.push("保留原视频的动作、运镜、构图和剪辑节奏，以及人物与商品之间的遮挡、接触和空间关系；人物参考不改变背景，背景参考不改变人物，商品参考不改变手部动作。");
     if (job.campaign) {
         if (unit.treatment === "remake") {
