@@ -30,6 +30,13 @@ import { nanoid } from "nanoid";
 
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { canvasThemes } from "@/lib/canvas-theme";
+import { agentSkinTheme, resolveAgentSkin } from "@/lib/canvas/agent-skin";
+import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import { useAgentPetPalette } from "@/hooks/use-agent-pet-palette";
+import { AgentWindowPerch } from "./agent-window-perch";
+import { AgentWindowDock } from "./agent-window-dock";
+import "./agent-skin-scene.css";
 import { agentSubmissionErrorTitle } from "@/lib/canvas/agent-error-presentation";
 import { CanvasSyncPendingError, waitForCanvasSync } from "@/lib/canvas/sync-recovery";
 import {
@@ -187,7 +194,12 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const userId = useUserStore((state) => state.user?.id);
     const accountScope = getActiveUserScope();
     const accountIsCurrent = () => getActiveUserScope() === accountScope && useUserStore.getState().user?.id === userId;
-    const theme = canvasThemes[useActiveTheme()];
+    const baseTheme = canvasThemes[useActiveTheme()];
+    const skinPreference = useAgentPetPrefsStore((state) => state.skin);
+    const { pet: selectedSkinPet } = useActiveAgentPet();
+    const skin = resolveAgentSkin(skinPreference, selectedSkinPet?.tone);
+    const palette = useAgentPetPalette(selectedSkinPet, skinPreference === "auto");
+    const theme = useMemo(() => agentSkinTheme(baseTheme, skin, palette), [baseTheme, skin, palette]);
     const config = useEffectiveConfig();
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const reducedMotion = useReducedMotion();
@@ -2407,6 +2419,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         exit={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 12, scale: 0.985 }}
                         transition={{ duration: reducedMotion ? 0 : 0.26, ease: [0.16, 1, 0.3, 1] }}
                         className={`canvas-agent-panel fixed z-[calc(var(--z-toast)+1)] flex min-w-0 flex-col overflow-hidden${dock.active ? " is-docked" : ""}`}
+                        data-skin={skin}
                         style={
                             { ...panelLayout.style, "--agent-surface-base": theme.node.panel, "--agent-ink": theme.node.text, "--agent-accent": theme.accent.primary, "--agent-shadow-color": theme.spatial.shadow } as CSSProperties &
                                 Record<`--${string}`, string>
@@ -2677,6 +2690,11 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         </div>
                                     ) : null}
                                     <AgentChatComposer
+                                        character={
+                                            <AgentWindowDock>
+                                                <AgentWindowPerch pet={selectedSkinPet} status={status} reducedMotion={Boolean(reducedMotion)} />
+                                            </AgentWindowDock>
+                                        }
                                         prompt={prompt}
                                         submitDisabled={composerSubmitDisabled}
                                         submitMode={composerSubmitMode}
@@ -2708,7 +2726,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         references={conversationReferences}
                                         slashSkills={installedSkills}
                                         includeAssetLibrary={false}
-                                        submitAccessory={<AgentContextRing view={presentAgentContextUsage(contextUsage)} theme={theme} />}
+                                        footer={<AgentContextRing view={presentAgentContextUsage(contextUsage)} theme={theme} />}
                                         left={
                                             <ComposerControls
                                                 config={config}

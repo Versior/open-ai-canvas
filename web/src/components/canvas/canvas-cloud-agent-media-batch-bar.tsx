@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Layers } from "lucide-react";
 
-import type { canvasThemes } from "@/lib/canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { agentMediaBatchCounts, agentMediaBatchPhaseLabel, type CloudAgentMediaBatchItemStatus, type CloudAgentMediaBatchProgress } from "@/lib/canvas/cloud-agent-media-batch";
 
 const STATUS_LABEL: Record<CloudAgentMediaBatchItemStatus, string> = { pending: "排队", submitted: "生成中", succeeded: "完成", failed: "失败", cancelled: "已取消" };
@@ -10,7 +10,7 @@ const STATUS_LABEL: Record<CloudAgentMediaBatchItemStatus, string> = { pending: 
  * 批量生成进度条：一格对应一个条目，颜色表示状态；点格子定位到画布节点。
  * 与"本轮待办"条放在同一位置，运行结束后保留最终结果，方便回看失败原因。
  */
-export function AgentMediaBatchBar({ batch, theme, onFocusNode }: { batch: CloudAgentMediaBatchProgress; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onFocusNode?: (nodeId: string) => void }) {
+export function AgentMediaBatchBar({ batch, theme, onFocusNode }: { batch: CloudAgentMediaBatchProgress; theme: CanvasTheme; onFocusNode?: (nodeId: string) => void }) {
     const [expanded, setExpanded] = useState(false);
     const counts = agentMediaBatchCounts(batch);
     const total = Math.max(batch.total, batch.items.length);

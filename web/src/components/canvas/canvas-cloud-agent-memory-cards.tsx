@@ -3,12 +3,10 @@ import { BookMarked, Check, Plus, Sparkles, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { canvasThemes } from "@/lib/canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { undoAgentMemoryRevision } from "@/services/api/agent-memory";
 import { addSkill } from "@/services/api/skills";
 import type { CloudAgentMemoryUpdate, CloudAgentSkillSuggestion } from "./canvas-cloud-agent-chat-ui";
-
-type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 
 const SECTION_LABEL_KEYS: Record<string, string> = { user: "canvasA.memoryCard.sectionUser", notes: "canvasA.memoryCard.sectionNotes" };
 const CHANGE_LABEL_KEYS: Record<string, string> = { add: "canvasA.memoryCard.changeAdd", replace: "canvasA.memoryCard.changeReplace", remove: "canvasA.memoryCard.changeRemove" };

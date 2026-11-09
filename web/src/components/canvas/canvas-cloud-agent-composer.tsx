@@ -28,7 +28,7 @@ import {
     X,
     Blocks,
 } from "lucide-react";
-import { canvasThemes } from "@/lib/canvas-theme";
+import type { CanvasTheme } from "@/lib/canvas-theme";
 import { type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
 import { agentModifierShortcut, agentTextLength, type AgentComposerSubmitMode } from "@/lib/canvas/agent-outbox";
@@ -83,7 +83,7 @@ export function AgentSceneCapsules({
 }: {
     buckets: AgentSceneBucket[];
     installedIds: Set<string>;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     disabled?: boolean;
     onPick: (preset: SkillPreset) => void;
     onPickSkill: (skill: Skill) => void;
@@ -232,7 +232,7 @@ export function AgentChatComposer({
     blockReason,
     onLongTextPaste,
     left,
-    submitAccessory,
+    character,
     tray,
     footer,
     onStop,
@@ -251,7 +251,7 @@ export function AgentChatComposer({
     submitMode?: AgentComposerSubmitMode;
     running?: boolean;
     placeholder: string;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     onPromptChange: (value: string) => void;
     /** alternate：按了 ⌘/Ctrl+Enter（运行中表示直接插话）。 */
     onSubmit: (options: { alternate: boolean }) => void;
@@ -278,8 +278,7 @@ export function AgentChatComposer({
     /** 粘贴了很长的文字：文字照常粘贴，由调用方决定是否建议转成画布文本节点。 */
     onLongTextPaste?: (text: string) => void;
     left?: ReactNode;
-    /** 发送按钮左侧的附属控件，例如上下文用量环。 */
-    submitAccessory?: ReactNode;
+    character?: ReactNode;
     /** 输入区底部的附加内容（例如连接器条）。 */
     footer?: ReactNode;
     /** 供「@」插入的画布节点/素材/技能引用候选（可选，默认空，缺省时退化为普通输入框） */
@@ -487,6 +486,7 @@ export function AgentChatComposer({
                         role="separator"
                         aria-orientation="horizontal"
                         aria-label="调整提示词面板高度"
+                        title="拖动调整输入区高度，也可用方向键调整"
                         aria-valuemin={MIN_AGENT_PROMPT_HEIGHT}
                         aria-valuemax={MAX_AGENT_PROMPT_HEIGHT}
                         aria-valuenow={promptHeight}
@@ -572,7 +572,8 @@ export function AgentChatComposer({
                             })}
                         </div>
                     ) : null}
-                    <div className="relative" onKeyDownCapture={handleSlashKeyCapture} onPasteCapture={handlePasteCapture}>
+                    <div className="relative min-w-0" onKeyDownCapture={handleSlashKeyCapture} onPasteCapture={handlePasteCapture}>
+                        {character}
                         <div className="agent-composer-prompt-scroll" style={{ height: promptHeight }}>
                             <CanvasResourceMentionTextarea
                                 value={prompt}
@@ -652,7 +653,6 @@ export function AgentChatComposer({
                                     {textLength.toLocaleString()} / {charLimit!.toLocaleString()}
                                 </span>
                             ) : null}
-                            {submitAccessory}
                             <span className="agent-composer-stop-slot">
                                 <AnimatePresence initial={false}>
                                     {canStop ? (

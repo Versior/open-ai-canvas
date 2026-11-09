@@ -3,7 +3,10 @@ import { useRef, useState } from "react";
 import { App, Button } from "antd";
 import { ArrowUpRight, FolderOpen, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router";
-import { FluidOrb } from "@/components/ui/fluid-orb";
+import { useReducedMotion } from "motion/react";
+import { AgentWindowPerch } from "@/components/canvas/agent-window-perch";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import "@/components/canvas/agent-skin-scene.css";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { createCanvasProjectWithRemoteSync, hasRemoteUserDataSyncSession, saveRemoteUserDataNow } from "@/services/user-data-sync";
@@ -14,6 +17,8 @@ export function CreationAgentEntry() {
     const navigate = useNavigate();
     const { message } = App.useApp();
     const hydrated = useCanvasStore((state) => state.hydrated);
+    const { pet, pending } = useActiveAgentPet();
+    const reducedMotion = useReducedMotion();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const lock = useRef(false);
@@ -44,12 +49,33 @@ export function CreationAgentEntry() {
                 setError(detail);
                 message.error(detail);
             }
-        } finally { lock.current = false; setBusy(false); }
+        } finally {
+            lock.current = false;
+            setBusy(false);
+        }
     };
-    return <section className="creation-agent-entry" aria-label={t("create.agentEntry.region")}>
-        <div className="creation-agent-orb" aria-hidden><FluidOrb size={88} /></div>
-        <div className="creation-agent-copy"><span className="creation-agent-eyebrow">CANVAS AGENT</span><h2>{t("create.agentEntry.title")}</h2><p>{t("create.agentEntry.description")}</p></div>
-        <div className="creation-agent-actions"><Button type="primary" icon={<ArrowRight />} loading={busy} disabled={!hydrated} onClick={() => void start()}>{created.current ? t("create.agentEntry.retryEnter") : t("create.agentEntry.newCanvas")}<ArrowUpRight /></Button><Button icon={<FolderOpen />} disabled={busy} onClick={() => navigate("/canvas?agent=1")}>{t("create.agentEntry.continueExisting")}</Button></div>
-        {error ? <p className="creation-agent-error" role="alert">{error}</p> : null}
-    </section>;
+    return (
+        <section className="creation-agent-entry" aria-label={t("create.agentEntry.region")}>
+            <div className="creation-agent-character">{!pending ? <AgentWindowPerch pet={pet} status={busy ? "running" : "idle"} reducedMotion={Boolean(reducedMotion)} display="full" /> : null}</div>
+            <div className="creation-agent-copy">
+                <span className="creation-agent-eyebrow">CANVAS AGENT</span>
+                <h2>{t("create.agentEntry.title")}</h2>
+                <p>{t("create.agentEntry.description")}</p>
+            </div>
+            <div className="creation-agent-actions">
+                <Button type="primary" icon={<ArrowRight />} loading={busy} disabled={!hydrated} onClick={() => void start()}>
+                    {created.current ? t("create.agentEntry.retryEnter") : t("create.agentEntry.newCanvas")}
+                    <ArrowUpRight />
+                </Button>
+                <Button icon={<FolderOpen />} disabled={busy} onClick={() => navigate("/canvas?agent=1")}>
+                    {t("create.agentEntry.continueExisting")}
+                </Button>
+            </div>
+            {error ? (
+                <p className="creation-agent-error" role="alert">
+                    {error}
+                </p>
+            ) : null}
+        </section>
+    );
 }

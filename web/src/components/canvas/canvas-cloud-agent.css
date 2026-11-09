@@ -4089,6 +4089,30 @@ summary.agent-tool-step:hover {
     display: block;
 }
 
+.agent-pet-bubble[data-skin]:not([data-skin="site"]) {
+    --agent-pet-bubble-fill: var(--user-surface);
+    --agent-pet-bubble-stroke: color-mix(in srgb, var(--agent-skin-accent) 45%, var(--border));
+    --agent-pet-bubble-text: var(--user-ink);
+}
+.agent-pet-bubble[data-skin="paper"] {
+    --agent-pet-bubble-fill: color-mix(in srgb, var(--agent-skin-accent) 9%, var(--user-surface));
+}
+.agent-pet-bubble[data-skin="terminal"] {
+    font-family: var(--font-mono);
+}
+.agent-pet-bubble[data-skin="aurora"] .agent-pet-bubble-shape {
+    filter: drop-shadow(0 3px 10px color-mix(in srgb, var(--agent-skin-accent) 22%, transparent));
+}
+.canvas-agent-panel[data-skin="terminal"] {
+    --agent-radius-shell: var(--r-lg);
+}
+.canvas-agent-panel[data-skin="paper"] .agent-panel-header {
+    background: color-mix(in srgb, var(--agent-accent) 8%, var(--agent-surface-base));
+}
+.canvas-agent-panel[data-skin="aurora"] {
+    border: 1px solid color-mix(in srgb, var(--agent-accent) 35%, transparent);
+}
+
 .agent-pet-bubble.is-shown {
     animation: agent-pet-bubble-pop 260ms cubic-bezier(0.2, 1.35, 0.4, 1) both;
 }

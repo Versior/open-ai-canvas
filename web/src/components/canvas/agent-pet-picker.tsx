@@ -14,6 +14,7 @@ import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { useWalletBalance } from "@/hooks/use-wallet-balance";
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AGENT_PET_ASPECT } from "@/lib/canvas/agent-pet";
+import { AGENT_SKINS, agentSkinAccent, resolveAgentSkin } from "@/lib/canvas/agent-skin";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
 import {
     AGENT_PET_SEARCH_THRESHOLD,
@@ -131,6 +132,8 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
     const selectedId = catalog.data?.selectedPetId ?? "";
     const chatter = useAgentPetPrefsStore((state) => state.chatter);
     const setChatter = useAgentPetPrefsStore((state) => state.setChatter);
+    const skin = useAgentPetPrefsStore((state) => state.skin);
+    const setSkin = useAgentPetPrefsStore((state) => state.setSkin);
     const applyPet = useApplyAgentPet();
     const pets = useMemo(() => catalog.data?.pets ?? [], [catalog.data]);
     const categories = useMemo(() => agentPetCategories(pets), [pets]);
@@ -228,6 +231,23 @@ export function AgentPetPicker({ theme, variant = "settings" }: { theme: CanvasT
                     </span>
                     <Switch checked={chatter} onChange={setChatter} aria-label="头顶气泡" />
                 </label>
+            ) : null}
+
+            {variant === "settings" ? (
+                <section aria-label="对话外观">
+                    <div className="agent-pet-skin-heading">对话皮肤 · 即时生效</div>
+                    <div className="agent-pet-skin-grid" role="group" aria-label="选择对话皮肤">
+                        {AGENT_SKINS.map((option) => (
+                            <button key={option.id} type="button" aria-pressed={skin === option.id} title={option.detail} onClick={() => setSkin(option.id)}>
+                                <i style={{ background: agentSkinAccent(resolveAgentSkin(option.id)) || theme.accent.primary }} aria-hidden />
+                                {option.label}
+                            </button>
+                        ))}
+                    </div>
+                    <p className="mt-2 text-xs" style={{ color: theme.node.muted }}>
+                        随形象会从图集提取代表色，并匹配对话框与头顶气泡。换形象后自动更新。
+                    </p>
+                </section>
             ) : null}
 
             {/* 搜索和筛选吸顶：形象有上百个，往下翻也能随时换分类。获取方式是单选，用分段按钮和分类标签区分开。 */}

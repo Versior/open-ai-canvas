@@ -1,0 +1,147 @@
+.canvas-agent-panel[data-skin] {
+    --agent-usage-line: color-mix(in srgb, var(--agent-ink) 14%, transparent);
+}
+.agent-panel-content {
+    border-radius: inherit;
+}
+.creation-agent-character {
+    display: flex;
+    justify-content: center;
+}
+.agent-window-perch {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    height: 116px;
+    margin: 0 16px;
+    overflow: hidden;
+    color: var(--agent-ink);
+    transition: height 280ms ease;
+}
+.agent-window-perch[data-expanded="false"] {
+    height: 48px;
+    align-items: flex-start;
+}
+.agent-window-perch[data-expanded="false"] .agent-perch-media {
+    transform: translateY(calc(-1 * var(--agent-perch-head-top)));
+}
+.agent-window-perch[data-display="full"] {
+    margin: 0;
+    justify-content: center;
+}
+@media (prefers-reduced-motion: reduce) {
+    .agent-window-perch,
+    .agent-window-perch .agent-perch-media {
+        transition: none;
+    }
+}
+.agent-perch-character {
+    flex: none;
+    position: relative;
+    width: 104px;
+    height: 112px;
+    cursor: pointer;
+}
+.agent-perch-media {
+    position: relative;
+    display: block;
+    width: 104px;
+    height: 112px;
+    pointer-events: none;
+    transition: transform 280ms ease;
+}
+.agent-window-perch button:focus-visible {
+    outline: 2px solid var(--agent-focus-ring, var(--user-accent));
+    outline-offset: -2px;
+}
+.agent-perch-bubble {
+    min-width: 0;
+    max-width: 220px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: block;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--agent-ink);
+    padding: 5px 8px;
+    border-radius: var(--r-md);
+    background: var(--agent-surface-base);
+}
+.agent-window-dock {
+    position: absolute;
+    right: 12px;
+    bottom: 100%;
+    width: 104px;
+    z-index: 12;
+    pointer-events: none;
+}
+.agent-window-dock .agent-window-perch {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    height: auto;
+    max-width: 100%;
+    margin: 0;
+    overflow: visible;
+    pointer-events: auto;
+}
+.agent-window-dock .agent-window-perch[data-expanded="false"] {
+    flex-direction: row;
+    align-items: flex-start;
+    height: 48px;
+    overflow: hidden;
+}
+.agent-window-dock .agent-perch-bubble {
+    position: relative;
+    width: 180px;
+    max-width: min(180px, calc(100vw - 36px));
+    max-height: 200px;
+    overflow-y: auto;
+    text-align: left;
+}
+.canvas-agent-panel[data-skin] .agent-message-body:not(.agent-message-user) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+.canvas-agent-panel[data-skin="cloud"] .agent-message-user {
+    border-radius: 20px 20px 5px 20px;
+    padding: 10px 12px;
+    border: 1px solid var(--agent-usage-line);
+    background: var(--agent-surface-base);
+}
+.canvas-agent-panel[data-skin="paper"] .agent-message-user {
+    padding: 10px 14px;
+    border: 1px solid color-mix(in srgb, var(--agent-accent) 40%, var(--agent-usage-line));
+    border-radius: 3px 12px 12px 3px;
+    background: var(--agent-surface-base);
+    box-shadow: 3px 3px 0 color-mix(in srgb, var(--agent-accent) 15%, transparent);
+}
+.canvas-agent-panel[data-skin="paper"] .agent-usage:not(.is-collapsed) {
+    border-radius: 4px 15px 4px 15px;
+    border-style: dashed;
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-message-user {
+    padding: 10px 12px;
+    border: 1px solid var(--agent-usage-line);
+    border-radius: 2px 12px 2px 2px;
+    background: var(--agent-surface-base);
+}
+.canvas-agent-panel[data-skin="terminal"] .agent-usage:not(.is-collapsed) {
+    border-radius: 3px;
+    border-color: color-mix(in srgb, var(--agent-accent) 45%, var(--agent-usage-line));
+}
+.canvas-agent-panel[data-skin="aurora"] .agent-message-user {
+    padding: 10px 12px;
+    border: 1px solid var(--agent-usage-line);
+    border-radius: 18px 4px 18px 4px;
+    background: var(--agent-surface-base);
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--agent-accent) 10%, transparent);
+}
+.canvas-agent-panel[data-skin="aurora"] .agent-usage:not(.is-collapsed) {
+    border-radius: 18px 4px 18px 4px;
+}

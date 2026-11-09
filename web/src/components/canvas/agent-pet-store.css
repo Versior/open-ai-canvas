@@ -620,10 +620,10 @@
     min-width: 0;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: center;
     gap: 3px;
-    height: 52px;
-    padding-bottom: 5px;
+    height: 42px;
+    padding: 4px 0;
     border-radius: calc(var(--r-md) - 2px);
     color: var(--pet-muted);
     font-size: var(--fs-label);
@@ -646,36 +646,54 @@
 .agent-pet-menu-segmented button:focus-visible {
     box-shadow: 0 0 0 2px var(--tw-ring-color);
 }
-.agent-pet-size-glyph {
+.agent-pet-menu-segmented small {
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+    font-weight: 400;
+}
+.agent-pet-skin-heading {
     display: flex;
-    height: 26px;
-    align-items: flex-end;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 8px;
+    color: var(--pet-muted);
+    font-size: var(--fs-label);
+}
+.agent-pet-skin-heading svg {
+    width: 14px;
+    height: 14px;
+}
+.agent-pet-skin-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 0 4px 8px;
+}
+.agent-pet-skin-grid button {
+    display: flex;
+    align-items: center;
     justify-content: center;
-    opacity: 0.5;
-    filter: grayscale(1);
-    transition:
-        opacity 0.15s ease,
-        filter 0.15s ease;
+    gap: 5px;
+    min-height: 32px;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    font-size: var(--fs-label);
 }
-.agent-pet-size-glyph img {
-    display: block;
-    max-width: none;
-    object-fit: contain;
-    pointer-events: none;
+.agent-pet-skin-grid i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
 }
-.agent-pet-size-glyph[data-auto] {
-    width: 22px;
-    padding-bottom: 2px;
-    border: 1px dashed currentColor;
-    border-radius: 6px;
+.agent-pet-skin-grid button:hover {
+    background: var(--menu-hover);
 }
-.agent-pet-menu-segmented button:hover .agent-pet-size-glyph {
-    opacity: 0.8;
-    filter: grayscale(0.4);
+.agent-pet-skin-grid button[aria-pressed="true"] {
+    border-color: var(--pet-accent);
+    background: var(--pet-raised);
 }
-.agent-pet-menu-segmented button[aria-pressed="true"] .agent-pet-size-glyph {
-    opacity: 1;
-    filter: none;
+.agent-pet-skin-grid button:focus-visible {
+    outline: 2px solid var(--pet-accent);
+    outline-offset: 1px;
 }
 
 /* 换形象：形象多时的搜索框。 */

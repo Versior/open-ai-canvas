@@ -1,6 +1,7 @@
 import type { AgentAvatarState } from "@/lib/canvas/agent-appearance";
 import { resolveAgentLauncherAvatarHeight, type AgentLauncherViewport } from "@/lib/canvas/agent-launcher-position";
 import { AGENT_PET_ROWS, type AgentPetRow } from "@/services/api/agent-pets";
+import { agentSpriteAccent } from "@/lib/canvas/agent-skin";
 
 /** Codex 宠物图集：8 列，单格 192×208；v1 共 9 行动作，v2 另有 2 行 16 个视线方向。 */
 export const AGENT_PET_CELL_WIDTH = 192;
@@ -115,7 +116,7 @@ export function countAgentPetFrames(filled: (column: number, row: number) => boo
 /** 待机第一行里最靠上的不透明像素相对单格高度的位置，用来把头顶气泡贴在头上方。 */
 export const DEFAULT_AGENT_PET_HEAD_TOP = 0.12;
 
-export type AgentPetSheetMetrics = { frames: readonly number[]; headTop: number };
+export type AgentPetSheetMetrics = { frames: readonly number[]; headTop: number; accent?: string };
 
 /** 待机行各帧最靠上的不透明像素所在行（0 起），没有像素时返回 null。 */
 export function agentPetTopRow(filled: (column: number, y: number) => boolean, frames: number, cellHeight: number) {
@@ -175,7 +176,7 @@ export function detectAgentPetMetrics(src: string, rows: number): Promise<AgentP
                         frames[0] ?? 1,
                         cellHeight,
                     );
-                    metrics = { frames, headTop: top === null ? DEFAULT_AGENT_PET_HEAD_TOP : top / cellHeight };
+                    metrics = { frames, headTop: top === null ? DEFAULT_AGENT_PET_HEAD_TOP : top / cellHeight, accent: agentSpriteAccent(pixels.subarray(0, canvas.width * cellHeight * 4)) };
                 }
             } catch (error) {
                 console.warn("形象图集检测失败，使用规范帧数", error);

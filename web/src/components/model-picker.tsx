@@ -412,7 +412,7 @@ export function ModelLabel({
     config: AiConfig;
     model: string;
     capability?: ModelCapability;
-    theme: (typeof canvasThemes)[keyof typeof canvasThemes];
+    theme: CanvasTheme;
     creationVariant: boolean;
     showConfiguredModelName: boolean;
     label?: string;

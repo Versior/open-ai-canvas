@@ -83,6 +83,8 @@ description: 从产品功能快速定位主要代码入口
 
 ## 智能体形象（宠物皮肤）
 
+- 窗沿角色：`web/src/components/canvas/agent-window-dock.tsx` 将角色锚定在输入上沿，不占消息或输入高度；`agent-window-perch.tsx` 管理空闲收回、工作和键盘互动展开，并供首页全身预览复用。`agent-avatar-video.tsx` 检测视频透明头顶与内容比例，暂停仍显示首帧；`agent-skin-scene.css` 在收起时保留48px露头，并补偿视频contain留白。`lib/canvas/agent-skin.ts` 和 `hooks/use-agent-pet-palette.ts` 将形象性格、图集颜色与对话皮肤关联，审批和错误语义配色保持原主题。对话跟随由 `canvas-cloud-agent-panel-parts.tsx` 识别用户上翻，内容伸展不会误暂停跟随。
+
 - 领域包 `backend/internal/agentpet`：`sprite.go` 只读文件头校验 WebP / PNG 图集的尺寸、透明通道与 v1 / v2 布局；`archive.go` 解析 Codex 宠物 ZIP；`catalog.go` 以 `go:embed` 打包 `builtin/` 内置形象（`catalog.json`、WebP 图集和仅随程序分发的 `NOTICE.md` 授权记录）；`policy.go` 定义开放方式（含累计消费解锁）、状态映射、使用资格和上传形象的说话风格校验；`merchandise.go` 定义分类、角标与限时促销（状态、此刻售价、按折扣定价）；`preview.go` 解码图集（WebP / PNG），裁出待机首帧作列表缩略图。
 - 组合与权限：`backend/internal/app/agent_pets.go`（形象库合并、用户列表与累计消费、选择即领取、购买、图集读取）、`agent_pets_preview.go`（列表缩略图与进程内缓存）与 `agent_pets_admin.go`（后台配置、批量修改、移到最前 / 最后与删除、导入、资源引用保护、销量统计）；持久化 `backend/internal/repository/agent_pets.go`（购买事务与扣费前复核、领取、批量保存、销量）；模型 `backend/internal/model/models_agent_pet.go`；HTTP 边界 `backend/internal/handler/agent_pets.go`。
 - 头顶云朵对话框：定位与云朵 / 尾巴路径 `web/src/lib/canvas/agent-pet-bubble-layout.ts`，台词与说话风格 `web/src/lib/canvas/agent-pet-lines.ts`，说话时机 `web/src/hooks/use-agent-pet-chatter.ts`，“未完成”数据 `web/src/services/agent-pet-reminders.ts`，闲聊开关与形象大小 `web/src/stores/use-agent-pet-prefs-store.ts`，组件 `web/src/components/canvas/agent-pet-bubble.tsx`（样式在 `canvas-cloud-agent.css`）。
