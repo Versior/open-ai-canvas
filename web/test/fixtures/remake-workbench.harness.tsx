@@ -134,6 +134,17 @@ mock.module("@/services/api/timeline-tasks", () => ({
     },
 }));
 mock.module("@/lib/plugins/builtin/editor/editor-filmstrip-media", () => ({ readTimelineFrames: async () => undefined }));
+const { timelineLutCube } = await import("@/lib/timeline/timeline-lut");
+const librarySnapshot = { name: "暖阳柔肤", cube: timelineLutCube({ name: "暖阳柔肤", preset: "warm", strength: 1 }), strength: 1, libraryId: "lut-builtin-warm", libraryVersion: 1 };
+let libraryEnabled = true;
+let lutRead: Promise<void> | undefined;
+mock.module("@/services/api/lut-library", () => ({
+    listLUTLibrary: async () => (libraryEnabled ? [{ id: "lut-builtin-warm", name: "暖阳柔肤", category: "内置预设", description: "亲子", preset: "warm", cubeSize: 17, defaultStrength: 1, enabled: true, version: 1 }] : []),
+    getLUTLibraryItem: async () => {
+        await lutRead;
+        return { lut: librarySnapshot };
+    },
+}));
 const resources = await import("@/services/api/resources");
 mock.module("@/services/api/resources", () => ({ ...resources, uploadResourceFile: async () => ({ id: "uploaded-product", width: 720, height: 1280 }) }));
 const { loadProductVideos, updateRemake, useProductVideoStore } = await import("@/pages/video-replication/replace/use-product-video-store");
@@ -232,11 +243,23 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
             .click(),
     );
     const warm = Array.from(host.querySelectorAll<HTMLButtonElement>("button[role='radio']")).find((button) => button.textContent?.includes("暖阳柔肤"))!;
+    let finishRead!: () => void;
+    lutRead = new Promise<void>((resolve) => {
+        finishRead = resolve;
+    });
     await act(async () => warm.click());
-    expect(editor!.getState().project?.colorLut).toMatchObject({ preset: "warm", strength: 1 });
+    expect(editor!.getState().project?.colorLut).toBeUndefined();
+    expect(Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("导出剪辑成片"))!.disabled).toBe(true);
+    expect(Array.from(host.querySelectorAll<HTMLButtonElement>("button[role='radio']")).find((button) => button.textContent?.includes("原色"))!.disabled).toBe(true);
+    await act(async () => {
+        finishRead();
+        await lutRead;
+    });
+    expect(editor!.getState().project?.colorLut).toEqual(librarySnapshot);
     await act(async () => editor!.getState().flushSave());
     expect(saved.editTimeline?.clips.filter((clip) => clip.kind === "video")).toHaveLength(2);
-    expect(saved.editTimeline?.colorLut?.preset).toBe("warm");
+    expect(saved.editTimeline?.colorLut).toEqual(librarySnapshot);
+    libraryEnabled = false;
     await act(async () => root.unmount());
     const reopened = createRoot(host);
     await act(async () =>
@@ -247,6 +270,12 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
         ),
     );
     expect(editor!.getState().project?.clips.filter((clip) => clip.kind === "video")).toHaveLength(2);
+    await act(async () =>
+        Array.from(host.querySelectorAll<HTMLButtonElement>("button"))
+            .find((button) => button.textContent === "LUT 滤镜")!
+            .click(),
+    );
+    expect(host.textContent).toContain("已保存的作品滤镜快照");
     const render = Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("导出剪辑成片"))!;
     await act(async () => {
         render.click();
@@ -254,7 +283,7 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
     });
     expect(renders).toHaveLength(1);
     expect(renders[0]).toMatchObject({ width: 720, height: 1280, fit: "pad" });
-    expect(renders[0].colorLut).toMatchObject({ preset: "warm", strength: 1 });
+    expect(renders[0].colorLut).toEqual(librarySnapshot);
     expect(renders[0].clips.filter((clip) => clip.kind === "video")).toHaveLength(2);
     expect(polled).toContain("edit-render-task");
     expect(saved.editRender?.resourceId).toBe("edited-video");

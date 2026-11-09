@@ -129,6 +129,7 @@ const adminNavigation: AdminNavigationGroup[] = [
             { path: "/admin/video-replication", keywords: "视频 复刻 导演 策划 平台策略", label: "视频复刻", shortLabel: "复刻", icon: <ScanSearch className="size-4" /> },
             { path: "/admin/prompt-templates", keywords: "提示词 模板 分镜 prompt", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/pose-library", keywords: "姿势 动作 pose", label: "姿势库", shortLabel: "姿势", icon: <PersonStanding className="size-4" /> },
+            { path: "/admin/lut-library", keywords: "lut 滤镜 调色 cube", label: "LUT 滤镜库", shortLabel: "LUT", icon: <Palette className="size-4" /> },
             { path: "/admin/settings/drawing-engine", keywords: "绘图 画板 引擎", label: "绘图工具", shortLabel: "绘图", icon: <Paintbrush className="size-4" /> },
             // 电商生图台（/studio）的商品档案指令与套图模板；电商 Agent（/ecommerce）的配置、知识与技能在下面的「电商 Agent」分组。
             { path: "/admin/settings/ecommerce", keywords: "电商 生图台 商品档案 套图 模板", label: "电商生图台", shortLabel: "生图台", icon: <Package className="size-4" /> },

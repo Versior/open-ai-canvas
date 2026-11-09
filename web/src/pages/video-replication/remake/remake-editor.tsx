@@ -46,11 +46,12 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
     const [stage, setStage] = useState("");
     const [burnSubtitles, setBurnSubtitles] = useState(job.editBurnSubtitles ?? job.subtitles.burn);
     const [importing, setImporting] = useState(false);
+    const [lutBusy, setLutBusy] = useState(false);
     const [picking, setPicking] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     useEffect(() => {
-        onUploadingChange?.(importing);
-    }, [importing, onUploadingChange]);
+        onUploadingChange?.(importing || lutBusy);
+    }, [importing, lutBusy, onUploadingChange]);
     const controller = useRef<AbortController | undefined>(undefined);
     const scope = useRef(getActiveUserScope()).current;
     const readyRef = useRef(onReady);
@@ -163,7 +164,7 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [job.editRender?.taskId, job.editRender?.resourceId]);
     const render = async () => {
-        if (rendering) return;
+        if (rendering || lutBusy) return;
         setRendering(true);
         setRenderError("");
         const abort = new AbortController();
@@ -249,7 +250,7 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
                     >
                         烧录字幕
                     </Checkbox>
-                    <Button size="small" loading={rendering} disabled={importing || state.inPreview || !state.project?.clips.some((clip) => clip.kind === "video" || clip.kind === "image")} onClick={() => void render()}>
+                    <Button size="small" loading={rendering} disabled={importing || lutBusy || state.inPreview || !state.project?.clips.some((clip) => clip.kind === "video" || clip.kind === "image")} onClick={() => void render()}>
                         导出剪辑成片
                     </Button>
                     {job.editRender?.resourceId ? (
@@ -281,7 +282,7 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
                             LUT 滤镜
                         </Button>
                     </div>
-                    <div className="rw-editor-panel">{panel === "inspector" ? <EditorInspector /> : panel === "subtitles" ? <EditorSubtitleTools /> : <EditorLutTools disabled={rendering || state.inPreview} />}</div>
+                    <div className="rw-editor-panel">{panel === "inspector" ? <EditorInspector /> : panel === "subtitles" ? <EditorSubtitleTools /> : <EditorLutTools disabled={rendering || state.inPreview} onBusyChange={setLutBusy} />}</div>
                 </aside>
                 <div className="rw-editor-timeline">
                     <EditorTimelinePanel />

@@ -196,7 +196,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 98 {
+	if CurrentSchemaVersion != 99 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -227,6 +227,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 96, Name: "drama_draft_form", Checksum: "sha256:drama-draft-form-v90-20261106"},
 		{Version: 97, Name: "email_logs_and_notifications", Checksum: "sha256:email-logs-and-notifications-v91-20261106"},
 		{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92"},
+		{Version: 99, Name: "lut_library", Checksum: "sha256:lut-library-v99-20261109"},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {

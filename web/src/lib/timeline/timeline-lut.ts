@@ -1,9 +1,9 @@
-import presets from "../../../../backend/internal/app/timeline_lut_presets.json";
+import presets from "../../../../backend/internal/lutlibrary/presets.json";
 
 export const TIMELINE_LUT_PRESETS = presets;
 export const MAX_LUT_FILE_BYTES = 2 * 1024 * 1024;
 export type CubeLut = { size: number; values: number[]; domainMin: number[]; domainMax: number[] };
-export type TimelineLut = { name: string; strength: number; preset?: string; cube?: CubeLut };
+export type TimelineLut = { name: string; strength: number; preset?: string; cube?: CubeLut; libraryId?: string; libraryVersion?: number };
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 
 export function validateTimelineLut(value: unknown): asserts value is TimelineLut {

@@ -1,26 +1,16 @@
 package app
 
 import (
-	_ "embed"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"yingce/backend/internal/lutlibrary"
 )
 
-//go:embed timeline_lut_presets.json
-var timelineLutPresetsJSON []byte
-
-type renderLutPreset struct {
-	ID         string     `json:"id"`
-	Contrast   float64    `json:"contrast"`
-	Saturation float64    `json:"saturation"`
-	Lift       [3]float64 `json:"lift"`
-	Gain       [3]float64 `json:"gain"`
-	Gamma      [3]float64 `json:"gamma"`
-}
+type renderLutPreset = lutlibrary.Preset
 
 type renderCubeLut struct {
 	Size      int       `json:"size"`
@@ -37,11 +27,7 @@ type renderLut struct {
 }
 
 func renderLutPresets() []renderLutPreset {
-	var presets []renderLutPreset
-	if err := json.Unmarshal(timelineLutPresetsJSON, &presets); err != nil {
-		panic(err)
-	}
-	return presets
+	return lutlibrary.Presets()
 }
 
 func validateRenderLut(lut *renderLut) error {

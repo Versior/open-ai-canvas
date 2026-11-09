@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"yingce/backend/internal/kernel"
+	"yingce/backend/internal/lutlibrary"
 	"yingce/backend/internal/model"
 
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 98
+const CurrentSchemaVersion int64 = 99
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -405,6 +406,21 @@ var schemaMigrations = []migration{
 		}
 		return nil
 	}},
+	{version: 99, name: "lut_library", checksum: "sha256:lut-library-v99-20261109", apply: migrateLUTLibrary},
+}
+
+func migrateLUTLibrary(tx *gorm.DB) error {
+	if err := tx.AutoMigrate(&model.LUTLibraryItem{}); err != nil {
+		return err
+	}
+	now := time.Now()
+	for i, preset := range lutlibrary.Presets() {
+		item := model.LUTLibraryItem{ID: "lut-builtin-" + preset.ID, Name: preset.Label, Category: "内置预设", Description: preset.Hint, Preset: preset.ID, CubeSize: 17, DefaultStrength: 1, Enabled: true, SortOrder: i * 10, Version: 1, CreatedAt: now, UpdatedAt: now}
+		if err := tx.Create(&item).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateReferenceVideoCostPrice 为价格档成本和账单成本快照增加带参考视频的成本价。
@@ -1534,6 +1550,15 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 	case 97:
 		if !tx.Migrator().HasTable(&model.EmailLog{}) || !tx.Migrator().HasTable(&model.UserNotificationSetting{}) {
 			return fmt.Errorf("邮件记录与订阅迁移账本与物理结构不一致：缺少邮件记录或订阅表")
+		}
+	case 99:
+		if !tx.Migrator().HasTable(&model.LUTLibraryItem{}) {
+			return fmt.Errorf("LUT 迁移账本与物理结构不一致：缺少 LUT 库表")
+		}
+		for _, field := range []string{"CubeJSON", "Version", "Enabled", "DefaultStrength", "SortOrder"} {
+			if !tx.Migrator().HasColumn(&model.LUTLibraryItem{}, field) {
+				return fmt.Errorf("LUT 迁移账本与物理结构不一致：缺少 %s", field)
+			}
 		}
 	case 98:
 		for _, target := range []struct {
