@@ -3,8 +3,10 @@ import { buildReplicaScriptPrompt, parseReplicaScripts, type ReplicaScript, type
 import { videoTeardownTextRequirements, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
 import { modelCompatibilityError } from "@/lib/model-selection";
 import { runBackendGenerationTask } from "@/services/api/generation-task";
+import { resourceStorageKey } from "@/services/api/resources";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import type { AiConfig } from "@/stores/use-config-store";
+import { replicaProductFacts } from "@/lib/remake/director-plan";
 
 type RewriteOptions = { config: AiConfig; model: string; count: number; signal: AbortSignal; expectedScope: string };
 
@@ -13,6 +15,10 @@ export function replicaScriptModelError(config: AiConfig, model: string) {
     if (!model) return "请选择用于改写脚本的文本模型";
     const error = modelCompatibilityError(config, model, videoTeardownTextRequirements(config, 0));
     return error ? `所选模型不能用于改写：${error}` : "";
+}
+
+export function replicaScriptImageCount(config: AiConfig, model: string, available: number) {
+    return Array.from({ length: available }, (_, index) => available - index).find((count) => !modelCompatibilityError(config, model, videoTeardownTextRequirements(config, count))) || 0;
 }
 
 /**
@@ -24,21 +30,21 @@ export async function rewriteReplicaScripts(bundle: VideoTeardownBundle, analysi
     const modelError = replicaScriptModelError(config, model);
     if (modelError) throw new Error(modelError);
     const shotNumbers = plan.shots.filter((shot) => shot.treatment !== "skip").map((shot) => shot.shotNumber);
-    const requirements = videoTeardownTextRequirements(config, 0);
+    const imageCount = plan.campaign ? replicaScriptImageCount(config, model, plan.product.images.length) : 0;
+    const requirements = videoTeardownTextRequirements(config, imageCount);
     const result = await runBackendGenerationTask({
         mode: "text",
-        prompt: buildReplicaScriptPrompt(bundle, analysis, plan, options.count),
+        prompt: buildReplicaScriptPrompt(bundle, analysis, plan, options.count, imageCount),
         config: { ...buildGenerationConfig(config, undefined, "text", requirements), model },
-        referenceImages: [],
+        referenceImages: plan.product.images
+            .slice(0, imageCount)
+            .map((image) => ({ id: image.resourceId, name: "商品实拍", type: image.mimeType || "image/png", dataUrl: "", storageKey: resourceStorageKey(image.resourceId), width: image.width, height: image.height })),
         streamText: false,
         signal,
         expectedUserScope: options.expectedScope,
     });
     const createdAt = new Date().toISOString();
     const seconds = new Map(bundle.shots.map((shot) => [shot.index, (shot.endMs - shot.startMs) / 1000]));
-    const facts = plan.product.sellingPoints
-        .split(/\n+/)
-        .map((line) => line.replace(/^[\s\-*·•\d.、]+/, "").trim())
-        .filter(Boolean);
-    return parseReplicaScripts(result.text || "", shotNumbers, { model, createdAt, idPrefix: `s${Date.now().toString(36)}`, directed: Boolean(plan.campaign), seconds, ...(plan.campaign ? { facts } : {}) });
+    const facts = replicaProductFacts(plan.product.sellingPoints);
+    return parseReplicaScripts(result.text || "", shotNumbers, { model, createdAt, idPrefix: `s${Date.now().toString(36)}`, directed: Boolean(plan.campaign), requireStrategy: Boolean(plan.campaign), seconds, ...(plan.campaign ? { facts } : {}) });
 }

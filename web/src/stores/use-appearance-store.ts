@@ -145,7 +145,8 @@ export function applyAppearanceMetadata(appearance: PublicAppearance, targetDocu
         favicon.rel = "icon";
         targetDocument.head.appendChild(favicon);
     }
-    favicon.href = appearanceLogoURL(appearance, targetDocument.documentElement.classList.contains("dark") ? "dark" : "light");
+    // Use a distinct, versioned URL so browser favicon caches cannot retain the old single-letter mark.
+    favicon.href = appearance.logoConfigured ? appearanceLogoURL(appearance, targetDocument.documentElement.classList.contains("dark") ? "dark" : "light") : "/wordmark.svg?v=stage-wordmark-20261108";
 
     const location = targetDocument.defaultView?.location;
     if (location && (location.protocol === "http:" || location.protocol === "https:")) {

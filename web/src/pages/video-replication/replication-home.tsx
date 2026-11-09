@@ -1,7 +1,7 @@
 import { ArrowRight, ArrowUpRight, Clapperboard, ListChecks, LoaderCircle, ScanEye, Shirt, WandSparkles, Speech, Layers, FolderOpen } from "lucide-react";
 import { useState, type ComponentProps, type ReactNode } from "react";
-import { FashionWorkbench } from "@/components/fashion/fashion-workbench";
-import type { FashionTool } from "@/lib/fashion/workflow";
+import { FashionVideoWorkbench } from "@/components/fashion/fashion-video-workbench";
+import type { FashionVideoTool } from "@/lib/fashion/video-workflow";
 
 import type { VideoReplicationRecord } from "@/services/api/video-replication";
 import { ReplicationComposer } from "./replication-composer";
@@ -33,7 +33,7 @@ type Props = {
 
 /** 视频复刻首页：一行标题和流程、拆解入口（含支持的平台）、最近拆解。宽屏下一屏放得下，不用滚动。 */
 export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen, tabs, tab, works, onTool }: Props) {
-    const [fashionTool, setFashionTool] = useState<FashionTool>();
+    const [fashionTool, setFashionTool] = useState<FashionVideoTool>();
     const activeId = activeRun?.id || "";
     return (
         <div className="vr-home">
@@ -69,12 +69,12 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                         {[
                             { id: "teardown" as const, icon: ScanEye, title: "镜头拆解", text: "画面 · 口播 · 商品 · 镜头时长" },
                             { id: "plan" as const, icon: Speech, title: "脚本与导演", text: "改写口播 · 景别运镜 · 叙事节奏" },
-                            { id: "tryon" as const, icon: Shirt, title: "模特换装", text: "多模同款 · 一模多衣 · 姿势迁移" },
-                            { id: "smart-face" as const, icon: WandSparkles, title: "人物与形象", text: "换脸换头 · 光线融合 · 展示视频" },
-                            { id: "print" as const, icon: Layers, title: "印花素材", text: "提取平面图案 · 复用到商品图" },
+                            { id: "tryon" as const, icon: Shirt, title: "视频换装", text: "原片换衣 · 多套出片 · 同款多模特" },
+                            { id: "face" as const, icon: WandSparkles, title: "人物视频", text: "视频换脸换头 · 动作参考 · 展示视频" },
+                            { id: "print" as const, icon: Layers, title: "印花上身视频", text: "图案替换 · 布面透视 · 褶皱与遮挡" },
                             { id: "works" as const, icon: FolderOpen, title: "成片与交付", text: "逐镜重做 · 字幕声音 · 剪映交付" },
                         ].map(({ id, icon: Icon, title, text }) => (
-                            <button type="button" key={id} onClick={() => (id === "tryon" || id === "smart-face" || id === "print" ? setFashionTool(id) : onTool(id))}>
+                            <button type="button" key={id} onClick={() => (id === "tryon" || id === "face" || id === "print" ? setFashionTool(id) : onTool(id))}>
                                 <Icon aria-hidden />
                                 <strong>{title}</strong>
                                 <span>{text}</span>
@@ -100,7 +100,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                 </button>
             ) : null}
             {tab === "new" ? <ReplicationRecent records={records} loading={loading} error={error} runningId={activeId} onOpen={onOpen} /> : null}
-            {fashionTool ? <FashionWorkbench initialTool={fashionTool} onClose={() => setFashionTool(undefined)} /> : null}
+            {fashionTool ? <FashionVideoWorkbench initialTool={fashionTool} onClose={() => setFashionTool(undefined)} /> : null}
         </div>
     );
 }

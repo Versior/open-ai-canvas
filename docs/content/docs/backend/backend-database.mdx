@@ -154,6 +154,8 @@ description: 影策后端核心持久化表与状态边界
 
 内置出图方式、风格和空间随程序嵌入，服务启动时按 `key`（预设按 `type + key`）只插入缺失项，管理员改过的内容不覆盖。全局设置复用 `system_settings` 的 `interior_settings` 键，不建表。
 
+3D 模型进度保存在 `document_json.scenes[]`，成品通过 `sceneFile.resourceId` 引用 JSON 资源。场景的 `drawingBaseline=true` 表示已核对的同图结构基准，只有成功且带本人图纸及成品资源的记录可用于匹配；复用版本记录 `structureSource{projectId,sceneId,title,notice?}`，其中 `notice` 保留基准的估算或几何简化说明。恢复另建版本并写 `parentId`，不覆盖失败记录。这些字段属于项目 JSON 合同，不新增表或 Schema 迁移，保存继续使用 `expectedRevision` 比较交换。
+
 资源引用快照读取 `interior_projects.document_json`（按 `resourceId` 字段识别）以及出图方式、风格、空间的 `cover_resource_id`，素材删除和孤儿清理会保留它们引用的图片。删除项目只删记录，不删资源。
 
 三张表登记在 `database.Models()`，SQLite → PostgreSQL 搬迁（`cmd/migrate-sqlite-postgres`）也复制这三张表。启动时版本 86 的物理结构校验检查三张表都存在。接口与提示词编译见 [室内设计效果图](/docs/backend/interior-design)。
@@ -182,7 +184,11 @@ description: 影策后端核心持久化表与状态边界
 
 ## 复刻作品与元素替换作品（不改结构）
 
+服饰与人物视频工作台也共用此存储，作品以 `kind: "fashion-video"` 隔离，包含原视频选段 `draft.source/startMs/seconds`、图片槽位、声音方式、切段 `clip` 与生成 `units`。每个单元保存模型任务、原始视频的实际尺寸/时长及 `render` 最终交付记录。后端校验素材配对与当前账号资源归属；原视频、切段和两阶段视频输出须是视频，身份/服装/人物引用须是图片。`kind: "fashion"` 图片作品与视频作品的列表分开读取，仍共用单条大小、总数量与 CAS 限制。没有数据库迁移。详细流程见[服饰与人物视频工作台](./fashion-video-workbench)。
+
 视频复刻的复刻工作台和元素替换都不新增表或列。作品记录存在 `ecommerce_libraries.payload_json` 的 `productVideos` 键，结构是 `{ "version": 1, "items": [...] }`；生图台的 `studio` 键和其余键原样保留。`items` 里 `version: 2` 的是复刻工作台作品（拆解来源、配方、逐镜做法、生成单元与候选、成片），没有 `version` 的是元素替换旧作品，两种共用单条 128 KiB、最多 100 条的限制。
+
+复刻工作台的 `campaign` 记录平台、目标、拍法、叙事、观众、重点和连续性；`directorPlans` 最多三份，每份保存完整 `strategy`、逐镜 `lines`、模型信息和 `input` 输入快照，`activeDirectorPlanId` 绑定已选版本。逐镜导演包含用途、动作前状态、动作、结束状态、布光、机位、证据和声音意图。后端验证输入快照、保留镜头覆盖与原文证据；保存继续执行作品 revision 的比较交换。旧拆解方案 `replication_plan` 的脚本也可包含 `strategy`，全部在原 JSON 中扩展，无新增表列或迁移，既有大小限制保持生效。输入改变后旧导演版本可回查，生成前拒绝使用过期绑定。详细合同见[视频复刻导演策划](./video-director-planning)。
 
 - 每条作品的 `revision` 由服务端写在 JSON 里。
 - 整行 `revision` 仍做乐观并发，和生图台的写入共用 `storageMu` 与重试。

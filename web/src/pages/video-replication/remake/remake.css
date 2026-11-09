@@ -36,6 +36,35 @@
 }
 
 /* ---------- 页面骨架 ---------- */
+.rw-director-planner {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+}
+.rw-director-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.rw-director-result {
+    min-width: 0;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--rw-line);
+    overflow-wrap: anywhere;
+}
+.rw-director-result summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+.rw-director-result .vr-plan-fields {
+    grid-template-columns: minmax(0, 1fr);
+}
+.rw-director-result p {
+    margin: 0;
+}
+.rw-director-result ol {
+    padding-left: var(--space-4);
+}
 .rw-page {
     display: flex;
     min-width: 0;

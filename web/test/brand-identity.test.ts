@@ -24,7 +24,7 @@ for (const [key, value] of Object.entries({
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { BrandLogo, BrandWordmark } = await import("@/components/brand/brand-logo");
-const { DEFAULT_PUBLIC_APPEARANCE, useAppearanceStore } = await import("@/stores/use-appearance-store");
+const { applyAppearanceMetadata, DEFAULT_PUBLIC_APPEARANCE, useAppearanceStore } = await import("@/stores/use-appearance-store");
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot> | undefined;
 
@@ -60,6 +60,15 @@ test("built-in STAGE branding uses shared cue tokens in every application bundle
     expect(brand).not.toContain("#ef4b2f");
 });
 
+test("favicon replaces the cached legacy mark with the versioned repository wordmark", () => {
+    applyAppearanceMetadata(DEFAULT_PUBLIC_APPEARANCE, document);
+    const url = new URL(document.querySelector<HTMLLinkElement>('link[rel~="icon"]')!.href);
+    expect(url.pathname).toBe("/wordmark.svg");
+    expect(url.searchParams.get("v")).toBeTruthy();
+    applyAppearanceMetadata({ ...DEFAULT_PUBLIC_APPEARANCE, logoConfigured: true, logoUrl: "/custom.svg?v=custom" }, document);
+    expect(document.querySelector<HTMLLinkElement>('link[rel~="icon"]')!.getAttribute("href")).toBe("/custom.svg?v=custom");
+});
+
 test("built-in mark stays unframed while custom appearance branding is preserved", async () => {
     const [brand, sidebar, dialog, panel, globals] = await Promise.all([
         source("components/brand/brand-logo.tsx"),
@@ -72,7 +81,7 @@ test("built-in mark stays unframed while custom appearance branding is preserved
     expect(brand).toContain("if (!appearance.logoConfigured) return <BuiltinBrandMark");
     expect(brand).toContain('if (appearance.logoConfigured || appearance.brandName !== "STAGE")');
     expect(brand).toContain("<span className={className}>{appearance.brandName}</span>");
-    expect(sidebar).toContain("内置 STAGE cue mark 保持独立、无框");
+    expect(sidebar).toContain("内置品牌只显示完整字母 Logo");
     expect(dialog).toMatch(/appearance\.logoConfigured \? <BrandLogo/);
     expect(panel).toContain('brand: "__BRAND__"');
     expect(panel).toContain('<BrandWordmark className="auth-panel-title-brand-text" builtinClassName="auth-panel-title-brand"');
@@ -82,7 +91,8 @@ test("built-in mark stays unframed while custom appearance branding is preserved
 test("brand components render the built-in identity and configured appearance branches", async () => {
     useAppearanceStore.setState({ appearance: DEFAULT_PUBLIC_APPEARANCE });
     await render(createElement("div", null, createElement(BrandLogo, { alt: "STAGE", fallback: createElement("i", null, "legacy fallback") }), createElement(BrandWordmark)));
-    expect(host.innerHTML).toContain("url(/logo.svg)");
+    expect(host.innerHTML).toContain("url(/wordmark.svg)");
+    expect(host.innerHTML).not.toContain("url(/logo.svg)");
     expect(host.innerHTML).toContain("var(--brand-cue)");
     expect(host.innerHTML).not.toContain("legacy fallback");
     expect(host.querySelector('[aria-label="STAGE"]')).not.toBeNull();

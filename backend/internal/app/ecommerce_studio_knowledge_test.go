@@ -2,12 +2,78 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
 	"yingce/backend/internal/model"
 )
+
+func TestStudioPlatformKnowledgeSurvivesVisualLimit(t *testing.T) {
+	ranked := []model.EcommerceKnowledgeEntry{}
+	for _, kind := range []string{"detail_page_pattern", "layout_pattern", "photography", "scene_pattern", "model_casting_pattern", "visual_style", "prompt_pattern", "quality_rule", "copywriting_pattern"} {
+		for i := 0; i < 3; i++ {
+			ranked = append(ranked, model.EcommerceKnowledgeEntry{ID: fmt.Sprintf("%s-%d", kind, i), KnowledgeType: kind})
+		}
+	}
+	ranked = append(ranked, model.EcommerceKnowledgeEntry{ID: "platform", KnowledgeType: "platform_rule"}, model.EcommerceKnowledgeEntry{ID: "scope", KnowledgeType: "creation_type_rule"})
+	selected := selectEcommerceStudioPlanKnowledge(ranked)
+	ids := map[string]bool{}
+	for _, entry := range selected {
+		ids[entry.ID] = true
+	}
+	if len(selected) > ecommerceStudioPlanKnowledgeLimit || !ids["platform"] || !ids["scope"] {
+		t.Fatalf("platform and scope constraints were squeezed out: %v", ids)
+	}
+	if ranked[0].ID != "detail_page_pattern-0" {
+		t.Fatal("selection mutated the caller's ranking")
+	}
+}
+
+func TestStudioExpandedDesignKnowledgeReachesWorker(t *testing.T) {
+	svc, _, _, _ := ecommerceCreationTestService(t)
+	input := canvasGenerationInput{Mode: "text", Prompt: "策划儿童眼镜", Metadata: map[string]any{
+		"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
+		"studioProductName": "儿童眼镜", "studioCategory": "眼镜", "studioPlatform": "taobao", "studioPlanKind": "detail", "studioDetailScreens": 4,
+	}}
+	if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"商品、人群与背景色分别判断", "微距压边", "生活分镜", "灰色镜腿", "用户选择 4 屏", "4.5:1"} {
+		if !strings.Contains(input.Config.SystemPrompt, text) {
+			t.Fatalf("worker system prompt lost %q", text)
+		}
+	}
+}
+
+func TestStudioCatalogBootstrapsSharedDesignMethods(t *testing.T) {
+	svc, db, _, _ := ecommerceCreationTestService(t)
+	if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
+		t.Fatal(err)
+	}
+	var entries []model.EcommerceKnowledgeEntry
+	if err := db.Where("knowledge_domain = ?", "KB20").Find(&entries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 81 {
+		t.Fatalf("expected original methods plus 24 layouts, 18 compositions and 10 platform guides, got %d", len(entries))
+	}
+	var platform model.EcommerceKnowledgeEntry
+	if err := db.First(&platform, "id = ?", "kb20-studio-platform-amazon").Error; err != nil {
+		t.Fatal(err)
+	}
+	if platform.PlatformsJSON != `["amazon"]` || !strings.Contains(platform.ContentJSON, "A+") {
+		t.Fatal("platform method lost its retrieval scope or content")
+	}
+	if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("knowledge_domain = ?", "KB20").Count(&count).Error; err != nil || count != 81 {
+		t.Fatal("repeated bootstrap duplicated shared design methods")
+	}
+}
 
 func TestEcommerceStudioDossierUsesSharedKnowledge(t *testing.T) {
 	svc, db, _, _ := ecommerceCreationTestService(t)
@@ -224,7 +290,7 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 			t.Fatalf("kids eyewear playbook is missing %s: %v", id, kids)
 		}
 	}
-	if other := ecommerceStudioPlaybookIDs("量子纠缠仪", "", "", "", "detail", nil); !slices.Contains(other, kb20GenericID) || len(other) != 4 {
+	if other := ecommerceStudioPlaybookIDs("量子纠缠仪", "", "", "", "detail", nil); !slices.Contains(other, kb20GenericID) || len(other) != 6 {
 		t.Fatalf("unmatched product should get method, generic, layout and copy: %v", other)
 	}
 	if byFamily := ecommerceStudioPlaybookIDs("精华水", "", "beauty", "", "detail", nil); !slices.Contains(byFamily, "kb20-category-skincare") {

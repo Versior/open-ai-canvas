@@ -1,5 +1,5 @@
 import { jsonCandidates } from "@/lib/canvas/video-teardown";
-import { REPLICA_DIRECTOR_OPTIONS, replicaCampaignPrompt } from "@/lib/canvas/replica-director";
+import { replicaDirectionDescription, replicaCampaignPrompt } from "@/lib/canvas/replica-director";
 import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import type { ProductVideoImage } from "@/lib/product-video/job";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
@@ -72,8 +72,11 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
     lines.push(...[productLine(job, refs), peopleLine(job, refs, video), background].filter(Boolean).map((line) => `- ${line}`));
     if (unit.treatment === "replace") lines.push("保留原视频的动作、运镜、构图和剪辑节奏，以及人物与商品之间的遮挡、接触和空间关系；人物参考不改变背景，背景参考不改变人物，商品参考不改变手部动作。");
     if (job.campaign) {
-        if (unit.treatment === "remake") lines.push(replicaCampaignPrompt(job.campaign));
-        else lines.push(`全片连续性：${job.campaign.continuity}。换元素保持原镜头动作与机位，不新增剧情。`);
+        if (unit.treatment === "remake") {
+            lines.push(replicaCampaignPrompt(job.campaign));
+            const selected = job.directorPlans?.find((plan) => plan.id === job.activeDirectorPlanId);
+            if (selected) lines.push(`已选全片策划：${JSON.stringify(selected.strategy)}。本单元只执行上述镜头，不重新生成整套剧情；声音意图服从下面的口播模式。`);
+        } else lines.push(`全片连续性：${job.campaign.continuity}。换元素保持原镜头动作与机位，不新增剧情。`);
     }
     lines.push("不要出现原片的品牌名、Logo、店铺名、水印和贴纸；不添加字幕或文字。");
     lines.push(...speechLines(job, shots));
@@ -85,7 +88,7 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
 /** 重新拍时一镜的画面描述：景别、机位、画面和运镜，原片商品换成「我的商品」。 */
 export function remakeShotDescription(shot: Pick<RemakeShot, "plot" | "motion" | "camera" | "shotSize" | "director">) {
     const d = shot.director;
-    if (d?.action) return `${REPLICA_DIRECTOR_OPTIONS.framing[d.framing]}；${REPLICA_DIRECTOR_OPTIONS.camera[d.camera]}；${d.action}；${d.sound ? `声音意图：${d.sound}；` : ""}结束状态便于${REPLICA_DIRECTOR_OPTIONS.transition[d.transition]}`;
+    if (d?.action) return replicaDirectionDescription(d);
     const parts = [shot.shotSize, shot.camera, shot.plot, shot.motion].map((item) => item.trim()).filter(Boolean);
     return parts.length ? parts.join("；") : "展示商品的近景镜头";
 }

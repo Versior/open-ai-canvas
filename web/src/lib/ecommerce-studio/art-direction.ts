@@ -1,15 +1,11 @@
+import catalog from "../../../../backend/internal/ecommerceagent/studio_design_catalog.json";
 import type { StudioCompositionId, StudioShot, StudioProduct, StudioShotRole } from "./types";
 import type { StudioTextZone } from "./shot-specs";
 
 /** 底图与排字共用坐标，防止留白与导出错位。 */
-export const STUDIO_COMPOSITIONS: Record<StudioCompositionId, { label: string; render: string; zone: StudioTextZone }> = {
-    left: { label: "左文右图", render: "文字占左侧约 40%，商品在右侧形成主视觉；用不对称留白和大幅裁切，让主体与文字互相呼应", zone: { x: 0.06, y: 0.12, width: 0.38, height: 0.72, align: "left", vAlign: "center" } },
-    right: { label: "左图右文", render: "商品或局部摄影占左侧约 55%，右侧文字纵向排布；正文与细节形成阅读路径，避免居中展台摆拍", zone: { x: 0.58, y: 0.12, width: 0.36, height: 0.72, align: "left", vAlign: "center" } },
-    top: { label: "上文下图", render: "上部为短标题和大留白，下部以商品、场景或微距做视觉重心；标题可以分行，主体避免缩成小图", zone: { x: 0.07, y: 0.06, width: 0.86, height: 0.3, align: "left", vAlign: "top" } },
-    bottom: { label: "上图下文", render: "上方大幅摄影占约 60%，下方以窄文字区收住；可以采用满版局部裁切，不重复上方标题加中央展台的构图", zone: { x: 0.07, y: 0.66, width: 0.86, height: 0.28, align: "left", vAlign: "top" } },
-    center: { label: "中轴海报", render: "标题在上方居中形成明确中轴，主体在下方放大并与光影或主题道具相呼应；信息克制，不堆叠统一圆角卡片", zone: { x: 0.12, y: 0.06, width: 0.76, height: 0.28, align: "center", vAlign: "top" } },
-    corner: { label: "满版角落题签", render: "摄影满版，商品或人物在右下侧，左上方留一块约三分之一宽的自然负空间放题签；像杂志内页，文字紧凑，不加通用标题横条", zone: { x: 0.07, y: 0.07, width: 0.38, height: 0.38, align: "left", vAlign: "top" } },
-};
+export const STUDIO_COMPOSITIONS = catalog.compositions as Record<StudioCompositionId, { label: string; render: string; zone: StudioTextZone }>;
+/** 草图、策划和知识库共用同一份分区，新增骨架不退回默认布局。 */
+export const STUDIO_IMAGE_ZONES = catalog.imageZones as Record<StudioCompositionId, [number, number, number, number][]>;
 export const STUDIO_COMPOSITION_IDS = Object.keys(STUDIO_COMPOSITIONS) as StudioCompositionId[];
 export function studioCompositionOf(value: unknown): StudioCompositionId | undefined {
     return typeof value === "string" && Object.hasOwn(STUDIO_COMPOSITIONS, value) ? (value as StudioCompositionId) : undefined;
@@ -26,9 +22,21 @@ export function studioCompositionConflict(shot: Pick<StudioShot, "composition" |
 }
 
 /** 新生成的一组换构图，失败重试沿用记录里的构图；白底商品图不参与。 */
-export function nextStudioComposition(role: StudioShotRole, previous?: StudioCompositionId, index = 0): StudioCompositionId | undefined {
+export function nextStudioComposition(role: StudioShotRole, previous?: StudioCompositionId, index = 0, candidates?: StudioCompositionId[]): StudioCompositionId | undefined {
     if (role === "main-white") return undefined;
-    const choices: StudioCompositionId[] = /scene|model|seeding|ugc/.test(role) ? ["corner", "bottom", "left", "right"] : /spec|size/.test(role) ? ["bottom", "right", "left", "top"] : ["left", "top", "right", "center"];
+    const choices: StudioCompositionId[] = /spec|size/.test(role)
+        ? ["bottom", "right", "left", "top"]
+        : /steps/.test(role)
+          ? ["timeline", "triptych", "diptych"]
+          : /compare/.test(role)
+            ? ["diptych", "ribbon"]
+            : /closeup|material|detail$/.test(role)
+              ? ["macro", "mosaic", "sidebar", "orbit"]
+              : candidates?.length
+                ? candidates
+                : /scene|model|seeding|ugc/.test(role)
+                  ? ["corner", "window", "bottom", "diagonal", "sidebar"]
+                  : ["left", "arch", "ribbon", "right", "center"];
     const start = previous ? choices.indexOf(previous) + 1 : 0;
     return choices[(start + index) % choices.length];
 }
@@ -59,13 +67,8 @@ export function studioFactCopyOptions(product: StudioProduct) {
         .map((point) => ({ headline: point.title, subline: point.detail }));
 }
 
-export const STUDIO_CHANNEL_DESIGN: Record<string, string> = {
-    taobao: "移动端商品决策：首屏一个核心利益点，之后用真实细节、规格和使用过程证明；共用字体、色板与边距，摄影屏与信息屏交替，图文重心随内容变化。",
-    amazon: "区分白底主图与 A+ 内容：主图仅商品；A+ 用场景、特征细节、使用说明与真实参数，按模块组织，避免把促销海报当主图。",
-    douyin: "购买决策图：清楚的商品轮廓，一个使用问题配一个看得见的证明；少字，重点在手机上可读，首图遵守平台规格。",
-    xiaohongshu: "内容封面与内页：封面表达具体问题，内页展开使用场景与选购依据；采用编辑式层级和生活摄影，不伪造体验、评价或前后效果。",
-};
+export const STUDIO_CHANNEL_DESIGN: Record<string, string> = catalog.platforms;
 
 export function studioChannelDesign(platform: string) {
-    return STUDIO_CHANNEL_DESIGN[platform] || STUDIO_CHANNEL_DESIGN.taobao;
+    return STUDIO_CHANNEL_DESIGN[platform] || "按当前平台的商品图规范区分首图与内容图；明确商品、买家和购买问题，依据信息密度安排摄影与说明，保持手机端可读。";
 }

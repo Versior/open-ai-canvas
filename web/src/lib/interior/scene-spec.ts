@@ -379,10 +379,12 @@ function specRooms(value: unknown, snapX: AxisSnap, snapZ: AxisSnap) {
         if (!raw || typeof raw !== "object") continue;
         const item = raw as Record<string, unknown>;
         const typeKey = oneOf(item.type, ROOM_KEYS);
-        const base = text(item.name, 20).replace(/#/g, "") || ROOM_TYPES[typeKey || "other"];
+        const base = text(item.part, 20).replace(/#/g, "") || text(item.name, 20).replace(/#/g, "") || ROOM_TYPES[typeKey || "other"];
         const type = typeKey || guessRoomType(base);
         const floor = oneOf(item.floor, FLOOR_FINISHES);
-        const rects = [item.rect, ...(Array.isArray(item.rects) ? item.rects : [])].map((rect) => specRect(rect, 0.8, snapX, snapZ)).filter((rect): rect is SpecRect => rect !== null);
+        // 管井、衣柜和走道转折可以比居住房间窄，不能按卧室的最小边长丢弃。
+        const minSide = ["closet", "storage", "other", "laundry", "corridor"].includes(type) ? 0.3 : 0.8;
+        const rects = [item.rect, ...(Array.isArray(item.rects) ? item.rects : [])].map((rect) => specRect(rect, minSide, snapX, snapZ)).filter((rect): rect is SpecRect => rect !== null);
         for (const rect of rects) {
             if (rooms.length >= SPEC_LIMITS.rooms) break;
             // 和已有房间大半重叠的，多半是模型重复写了一遍。
@@ -428,7 +430,7 @@ function specFloor(raw: unknown, index: number, snapX: AxisSnap, snapZ: AxisSnap
     for (const pair of Array.isArray(item.open) ? item.open.slice(0, 20) : []) {
         if (!Array.isArray(pair) || pair.length !== 2) continue;
         const [a, b] = pair.map(roomName);
-        if (a && b && a !== b) open.push([a, b]);
+        if (a && b && a !== b && !open.some(([x, y]) => (x === a && y === b) || (x === b && y === a))) open.push([a, b]);
     }
     const doors: SpecDoor[] = [];
     for (const entry of list(item.doors, SPEC_LIMITS.doors)) {
@@ -650,10 +652,10 @@ export function specDimensionCheck(spec: SceneSpec) {
     const [x1, z1, x2, z2] = floorBounds(spec.floors[0]);
     const width = x2 - x1;
     const depth = z2 - z1;
-    const off = (expected: number | undefined, actual: number) => expected !== undefined && Math.abs(expected - actual) > Math.max(0.3, expected * 0.03);
+    const off = (expected: number | undefined, actual: number) => expected !== undefined && Math.abs(expected - actual) > (grid.source === "drawing" ? 0.15 : Math.max(0.3, expected * 0.03));
     if (!off(grid.width, width) && !off(grid.depth, depth)) return "";
     const format = (value: number) => `${Math.round(value * 100) / 100}`;
-    return `图纸总尺寸约 ${format(grid.width ?? width)} × ${format(grid.depth ?? depth)} 米，房间拼出来是 ${format(width)} × ${format(depth)} 米，可能有房间没读准，可以对照图纸用「改一版」指出来`;
+    return `图纸总尺寸约 ${format(grid.width ?? width)} × ${format(grid.depth ?? depth)} 米，房间拼出来是 ${format(width)} × ${format(depth)} 米，需重新核对原图边界和遗漏空间`;
 }
 
 /** 方案 JSON 里除了几何以外的说明：读图记录、AI 判断的范围、空间和风格、出效果图的补充要求。 */
@@ -724,10 +726,10 @@ function specRules() {
         'open：直接连通、不砌墙的相邻房间，例如 [["客厅","餐厅"],["餐厅","厨房"]]（开放式厨房）。',
         'doors：房间之间的门 {"between":["客厅","主卧"],"at":6.3,"width":0.9,"into":"主卧","hinge":"s"}；通向室外或阳台的门 {"room":"餐厅","side":"w","kind":"entry","at":3.6,"width":1.0}。at 是门洞中心的坐标：门开在横墙上（沿 x 方向的墙，房间的 n/s 边）写 x，开在竖墙上（沿 z 方向的墙，房间的 e/w 边）写 z；不写 at 就放在这面墙中间。kind：door（单开门 0.8–0.9 米）、double（双开门 1.2–1.8 米）、slide（推拉门 1.5–3.6 米）、entry（入户门 0.9–1.2 米）、opening（没有门扇的门洞、垭口）。into 是门扇开向哪个房间，hinge 是门轴在门洞的哪一头（横墙写 w/e，竖墙写 n/s）。每个房间至少要有一扇门或和别的房间 open 连通。',
         'windows：{"room":"客厅","side":"s","at":3,"width":3.6,"kind":"floor"}。side 是房间的哪一面外墙（n/s/e/w），只能开在外墙上；at 是窗中心坐标（n/s 边写 x，e/w 边写 z），不写就在这面墙上均匀排开 count 扇；kind：window（普通窗，窗台 0.9 米）、floor（落地窗）、high（高窗，卫生间用）、bay（飘窗：凸出外墙，窗台约 0.45 米，depth 写凸出多少，默认 0.6）；可写 height（窗高）和 bottom（窗台高）。',
-        'stairs：{"rect":[x1,z1,x2,z2],"up":"n"} 写在下面那层，up 是上楼的方向；楼梯间宽 1.1–1.3 米、长 3.6–4.5 米；上一层同一位置自动开洞，上一层也要有一个房间盖住这个位置（一般是楼梯间或走廊）。',
+        'stairs：[{"rect":[x1,z1,x2,z2],"up":"n"}]，必须是数组。写在下面那层，up 是上楼的方向；楼梯间宽 1.1–1.3 米、长 3.6–4.5 米；上一层同一位置自动开洞，上一层也要有一个房间盖住这个位置（一般是楼梯间或走廊）。',
         'balconies：{"rect":[...],"rail":"glass"}，贴着这一层的外墙、在房间外面；rail：glass（玻璃栏板）、metal（金属栏杆）、solid（实心栏板）。封闭阳台直接写成 type 为 balcony 的房间。',
         "pillars：[[x1,z1,x2,z2], …] 柱子、烟道、管井这些到顶的实心块（图上涂黑或打叉的小块），可以贴着墙。",
-        `furniture：{"type":"sofa","room":"客厅","pos":[5.4,7.8],"facing":"w"} 或 {"type":"wardrobe","room":"主卧","at":"n"}。pos 是家具中心点，facing 是家具正面朝哪边（沙发、床、书桌按人坐着或躺着面对的方向；靠墙的家具背对那面墙）；不写 pos 时用 at：靠墙的写靠哪面墙（n/s/e/w），不靠墙的写 c（中间）或 ne/nw/se/sw（角上）。可选 size [宽, 深]（宽是正面方向的长度）和 color。type 从这些里选：${furnitureGuide()}。没写家具的房间程序按房间类型自动配一套；茶几、地毯会自动对着沙发摆，窗帘、挂画、踢脚线自动补上。`,
+        `furniture：{"type":"sofa","room":"客厅","pos":[5.4,7.8],"facing":"w"} 或 {"type":"wardrobe","room":"主卧","at":"n"}。pos 是家具中心点，facing 是家具正面朝哪边（沙发、床、书桌按人坐着或躺着面对的方向；靠墙的家具背对那面墙）；不写 pos 时用 at：靠墙的写靠哪面墙（n/s/e/w），不靠墙的写 c（中间）或 ne/nw/se/sw（角上）。可选 size [宽, 深]（宽是正面方向的长度）和 color。type 从这些里选：${furnitureGuide()}。图纸只布置明确写出的家具，不自动补门或补家具；文字设计和照片中没写家具的房间按类型自动配一套。茶几、地毯会对着沙发摆，窗帘、挂画、踢脚线自动补上。`,
         "floors 每层还可以写 height（层高，默认 3）、wallColor（这一层外墙颜色）、wallMaterial（wall 涂料、stone 石材、brick 砖、wood 木饰面、concrete 清水混凝土）。",
         'palette：整体配色，{"wall":外墙,"interior":内墙,"trim":窗框门框栏杆,"roof":屋顶,"accent":点缀色,"fabric":布艺,"wood":木色}，都写 "#RRGGBB"。',
         'roof（建筑才写）：{"type":"hip","pitch":28,"overhang":0.6}，type：hip（四坡）、gable（双坡，ridge 写屋脊方向 x 或 z）、flat（平屋顶带女儿墙）、none。',
@@ -760,19 +762,22 @@ function metaLines(input: SpecPromptInput) {
 
 function requestLines(input: SpecPromptInput) {
     const brief = input.brief;
+    const locked = Boolean(brief?.layout);
     const size = brief?.size ? `总体约 ${brief.size.width} × ${brief.size.depth} 米，${brief.size.floors} 层，层高 ${brief.size.storeyHeight} 米。` : "";
     const description = input.description.trim();
     return [
-        ...scopeLines(input.scope),
+        ...(locked ? [`范围使用固定结构的 scope=${brief!.scope}，楼层和空间已确定。`] : scopeLines(input.scope)),
         ...(input.roomName ? [`空间：${input.roomName}。`] : []),
         ...(input.styleName ? [`风格：${input.styleName}${input.stylePrompt ? `（${input.stylePrompt}）` : ""}。palette 和家具 color 要体现这个风格。`] : []),
-        ...(input.hasReference ? ["附图是用户给的户型图、平面图、现场照片或效果图，按后面「附图的读法」来读。优先级：附图 > 用户的需求 > AI 方案分析 > 知识库参考。"] : []),
-        `用户的需求：${description || (brief ? "（没写，按附图和 AI 方案分析来）" : "按上面的范围和风格做一个完整、比例真实的方案")}`,
+        ...(input.hasReference
+            ? [locked ? "附图只用于核对材质与原有家具，不重新读图或修改固定结构；需求和知识库均须在固定结构内落实。" : "附图是用户给的户型图、平面图、现场照片或效果图，按后面「附图的读法」来读。优先级：附图 > 用户的需求 > AI 方案分析 > 知识库参考。"]
+            : []),
+        `用户的需求：${description || (locked ? "保留结构，选择合适的室内材质与家具" : brief ? "（没写，按附图和 AI 方案分析来）" : "按上面的范围和风格做一个完整、比例真实的方案")}`,
         ...(brief
             ? [
-                  `AI 方案分析${input.hasReference ? "（读图记录，和附图对不上的地方以附图为准）" : ""}：${brief.title}。${brief.summary}${size}`,
+                  `AI 方案分析${input.hasReference && !locked ? "（读图记录，和附图对不上的地方以附图为准）" : ""}：${brief.title}。${brief.summary}${size}`,
                   `分析描述：${brief.description}`,
-                  ...(brief.dimensionChains ? [`图纸已校核的尺寸链（米）：x=${JSON.stringify(brief.dimensionChains.x)}，z=${JSON.stringify(brief.dimensionChains.z)}。grid 的总尺寸必须使用该链条之和，不得自行改变。`] : []),
+                  ...(brief.dimensionChains && !locked ? [`图纸已校核的尺寸链（米）：x=${JSON.stringify(brief.dimensionChains.x)}，z=${JSON.stringify(brief.dimensionChains.z)}。grid 的总尺寸必须使用该链条之和，不得自行改变。`] : []),
                   ...(brief.spaces.length ? [`空间：${brief.spaces.map((space) => [space.name, space.area ? `约 ${space.area} 平方米` : "", space.note || ""].filter(Boolean).join(" ")).join("；")}。`] : []),
                   ...(brief.features.length ? [`要点：${brief.features.join("；")}。`] : []),
                   ...(brief.materials.length ? [`材质配色：${brief.materials.join("；")}。`] : []),
@@ -804,6 +809,17 @@ export type SpecPromptInput = {
  * 接着是轴网、房间、门窗和家具，页面边收边搭，用户能看着模型一点点长出来。
  */
 export function buildSceneSpecPrompt(input: SpecPromptInput) {
+    if (input.brief?.layout) {
+        return [
+            "你是室内设计师。图纸结构已完成读图和程序校核，本阶段只补充材质和家具，禁止重新设计结构。",
+            ...requestLines(input),
+            `固定结构（程序保留其房间位置、门窗、楼梯、露台和泳池，不采纳重新猜测的结构）：${JSON.stringify(input.brief.layout)}`,
+            `本阶段 rooms 与 furniture.room 的唯一可用房间名单：${JSON.stringify(input.brief.layout.floors.map((floor) => ({ name: floor.name, rooms: floor.rooms.filter((room) => !room.part).map((room) => room.name) })))}。露台、泳池与庭院属于 balconies，保留原材质，本阶段不要为它们写 rooms 或家具。`,
+            `家具类型：${furnitureGuide()}。只调整材质时省略 furniture，程序保留原有家具及其位置。用户要求改家具时才输出该层完整 furniture；尺寸单位米，pos=[x,z] 为中心点，facing=n/s/e/w。保留未调整家具的原始 at、rotate、pos 与 size，不把靠墙锚点重新猜成中心坐标；检查占地、门前通道和窗户，不要穿墙或重叠。`,
+            "只输出一个 JSON 对象，不要代码块。floors 必须保留固定结构中的每层 name，rooms 只写已有房间 name 和 floor（wood/tile/marble/stone/concrete/carpet）；可选 furniture 使用 type、room、at、rotate、pos、facing、size，可选 color。不改家具时不要输出 furniture；空数组表示主动移除该层全部家具。不要输出 grid、rect、doors、open、windows、stairs、balconies、roof 或 site。房间和楼层不可改名。",
+            '材质格式：{"reading":["材质说明"],"scope":"home","title":"方案名","summary":"说明","renderNotes":"效果图补充","palette":{"wall":"#f1ede6","interior":"#f5f3ef","trim":"#2f3236","roof":"#3e4247","accent":"#b8916a","fabric":"#d9d2c5","wood":"#c49a6c"},"floors":[{"name":"固定结构中的楼层名","wallColor":"#f1ede6","rooms":[{"name":"固定结构中的房间名","floor":"wood"}]}]}',
+        ].join("\n");
+    }
     return [
         "你是建筑和室内设计师。要做一个能在网页里旋转查看的三维模型：你只写设计方案（轴网、每层的房间、门窗、柱子、楼梯、阳台、家具、屋顶和庭院），程序会按方案生成几何体。必须让房间布局、尺寸、家具和门窗真实可用。",
         "",

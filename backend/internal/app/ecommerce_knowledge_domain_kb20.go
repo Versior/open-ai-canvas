@@ -2,7 +2,10 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
+	"sort"
 
+	"yingce/backend/internal/ecommerceagent"
 	"yingce/backend/internal/model"
 )
 
@@ -14,7 +17,7 @@ import (
 // 生图台出图策划按商品类型、名称和材质挑相关的几条，整段写进策划的系统提示词；也和其他内置知识一样进知识库，管理员可以停用或改写。
 const (
 	ecommerceKB20Domain  = "KB20"
-	ecommerceKB20Version = "kb20-v5-20261107"
+	ecommerceKB20Version = "kb20-v6-20261108"
 )
 
 // kb20DesignSpec 是一条设计策划知识；keywords 用来按商品类型、名称和材质挑选，为空的是每次都带的通用方法。
@@ -26,12 +29,14 @@ type kb20DesignSpec struct {
 }
 
 const (
-	kb20MethodID     = "kb20-visual-planning-method"
-	kb20LayoutID     = "kb20-type-and-layout"
-	kb20CopyID       = "kb20-premium-copywriting"
-	kb20GenericID    = "kb20-category-generic"
-	kb20CategoryKind = "detail_page_pattern"
-	kb20PhotoKind    = "photography"
+	kb20MethodID      = "kb20-visual-planning-method"
+	kb20LayoutID      = "kb20-type-and-layout"
+	kb20CopyID        = "kb20-premium-copywriting"
+	kb20ColorID       = "kb20-product-audience-color"
+	kb20CompositionID = "kb20-composition-catalog"
+	kb20GenericID     = "kb20-category-generic"
+	kb20CategoryKind  = "detail_page_pattern"
+	kb20PhotoKind     = "photography"
 	// 主图套图和各类单张图的打法：按策划范围和选中的单张类型挑。不用 creation_type_rule，
 	// 那一类在知识库相关度排序里有额外加分，会挤进电商 Agent 的检索结果。
 	kb20ScopeKind = "detail_page_pattern"
@@ -48,6 +53,10 @@ var kb20SingleTypeIDs = map[string]string{
 }
 
 var kb20DesignSpecs = []kb20DesignSpec{
+	{id: kb20ColorID, kind: "visual_style", title: "商品、人群与背景色分别判断",
+		guidance: "先区分商品本色、背景主色、文字色和强调色。灰色镜腿、透明镜框、银色接口是商品事实，不是灰白背景的理由。儿童眼镜：家长看适用条件，孩子看真实使用情境；未锁定风格时优先天空蓝与暖黄、珊瑚与奶油、草绿与杏色等明亮有温度的候选，不默认冷灰、黑白实验舱，也不强制卡通。食品用真实食物色泽与清楚轮廓，数码用可见接口和受控反射，穿戴用实际人群与本色。先判断商品与背景的明度、色相对比，再按平台阅读情境分配标题和注解；商品本色不随全套调色改变。用户指定灰色、暗调、白底或参考同款优先。参考 WCAG 的可读性方法：小字和背景对比至少 4.5:1，大字至少 3:1；这是设计自查目标，不保证生图文字通过像素验证。来源：https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html 。"},
+	{id: kb20CompositionID, kind: "layout_pattern", title: "从购买问题选择构图，而非固定轮换",
+		guidance: "构图可用左文右图、左图右文、上文下图、上图下文、中轴、角落题签、对角动势、窄栏编辑、框景留白、双幅对照、三联摄影、一大两小拼版、中段横带、环绕留白、拱形框景、竖向题签、微距压边、纵向操作轨道。它们改变摄影窗口与文字位置，不只是换色。信息版式可用杂志编辑、微距质感、生活分镜、选购清单、操作步骤、平铺构成、色块构成、轮廓留白、佩戴画册、材料样本板和用户目录里的其他方式。儿童眼镜优先明亮色块、佩戴关系、可见镜框微距与选购条件；数码优先接口标注、操作与参数；食品优先质地和餐桌。不按屏序轮转，不凑固定十屏，不用未经确认的成分、参数、内部机制填版式。目录图保持比例与尺度统一，内容图依购买问题变化。Shopify 目录比例方法来源：https://help.shopify.com/en/manual/products/product-media/product-media-types 。其余构图组合为本站原创设计候选，不冒充平台硬规则。"},
 	{id: kb20MethodID, kind: "detail_page_pattern", title: "视觉策划五步：先从同质化里跳出来",
 		guidance: "高赞电商全案（Babycare 保温杯、官栈花胶、BAIMISS 紫草喷雾）都是先策划再出图。① 同质化诊断：先想同类目详情页大多长什么样（医用凝胶多是蓝白波浪加盒子软管摆拍，儿童眼镜多是浅色底加眼镜平放），写下要避开的套路。② 差异化定位：一句话说清这件凭什么不一样（官栈把花胶做成「官家贡品」，Babycare 把保温杯做成「让宝宝爱上喝水」的户外探索）。③ 视觉主题：由定位推出一个具体的世界（森林探索、东方宫廷、清晨实验室、周末餐桌），不是一种颜色。④ 视觉元素库：从主题里取 3–5 个能反复用的元素（绿植、树桩、阳光光斑、孩子玩耍；宫灯纹样、朱红、金色描边），每屏选用一两个，不要每屏都用全，也不要每屏贴同一个图形。⑤ 色彩世界和屏的节奏：整套只有一个色彩世界（穴位磁疗贴全套午夜蓝加暖金光，蜂胶喷雾全套天空蓝加蜂蜜黄，灶具全套纯黑加橙），人物和场景照片都统一调色到这个世界里；节奏靠内容交替（大场景屏、机理或成分屏、人物情绪屏、信息屏），加上同一色系里的明暗交替，或者从色板里取两三个颜色做整屏色块交替（湿巾、洗脸巾那样），不是每屏换一种互不相干的背景。⑥ 看不见的要画出来：作用原理、成分、结构用示意图讲（皮肤或黏膜剖面、透明人体、分层爆炸图、悬浮在气泡里的原料），这往往是整套最有说服力的几屏。买的人和用的人不同时（家长给孩子、子女给父母、送礼），文案对买的人说话，画面给用的人真实的快乐。"},
 	{id: kb20LayoutID, kind: "layout_pattern", title: "版式与字体：让字成为设计的一部分",
@@ -132,5 +141,35 @@ func kb20DesignPlanningKnowledge() []model.EcommerceKnowledgeEntry {
 			SourceURL: "builtin://meiyeai/kb20-design-planning", Version: ecommerceKB20Version, TrustLevel: "first_party", ReviewStatus: "approved", License: "MeiYeAI KB20 Original",
 		})
 	}
+	return append(entries, kb20StudioCatalogKnowledge()...)
+}
+
+// The same IDs and methods drive the knowledge library, planner and studio UI.
+// Sorting keeps bootstrap hashes and selection order stable across builds.
+func kb20StudioCatalogKnowledge() []model.EcommerceKnowledgeEntry {
+	catalog, err := ecommerceagent.ReadStudioDesignCatalog()
+	if err != nil {
+		panic(fmt.Sprintf("invalid embedded studio design catalog: %v", err))
+	}
+	entries := []model.EcommerceKnowledgeEntry{}
+	add := func(id, kind, title, guidance string, platforms []string) {
+		content, _ := json.Marshal(map[string]string{"guidance": guidance, "domain": ecommerceKB20Domain, "provenance": catalog.Provenance, "application": "生图台策划与出图，共享设计目录"})
+		platformJSON, _ := json.Marshal(platforms)
+		entries = append(entries, model.EcommerceKnowledgeEntry{
+			ID: "kb20-studio-" + id, SourceID: ecommerceBuiltinSourceID(ecommerceKB20Domain), KnowledgeDomain: ecommerceKB20Domain, KnowledgeType: kind,
+			Title: title, ContentJSON: string(content), Category: "general", PlatformsJSON: string(platformJSON), LanguagesJSON: "[]", TagsJSON: "[]",
+			SourceURL: "builtin://meiyeai/studio-design-catalog/" + id, Version: ecommerceKB20Version, TrustLevel: "first_party", ReviewStatus: "approved", License: "MeiYeAI KB20 Original",
+		})
+	}
+	for id, layout := range catalog.Layouts {
+		add("layout-"+id, "layout_pattern", "信息版式 · "+layout.Label, "适用："+layout.Use+"。执行："+layout.Render+"。文案："+layout.Lines+"。编号："+id+"；仅依据已确认信息使用。", []string{})
+	}
+	for id, composition := range catalog.Compositions {
+		add("composition-"+id, "layout_pattern", "图文构图 · "+composition.Label, composition.Render+"。主标题与注解区域："+string(composition.Zone)+"。编号："+id+"；信息元素标签贴对应部位，不覆盖商品。", []string{})
+	}
+	for id, guidance := range catalog.Platforms {
+		add("platform-"+id, "platform_rule", "平台设计方法 · "+id, guidance+" 这是平台阅读情境的设计方法，数值、白底和禁字要求仍以平台规格与商家后台为准。", []string{id})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
 	return entries
 }

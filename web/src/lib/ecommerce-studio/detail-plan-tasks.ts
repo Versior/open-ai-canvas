@@ -25,6 +25,7 @@ import { STUDIO_COMPOSITIONS, STUDIO_COMPOSITION_IDS, studioChannelDesign, studi
 import { studioTypeInstruction } from "./typography";
 import { studioPickedDirection, studioPrepFactsText, studioPrepPromptLines } from "./plan-prep";
 import { STUDIO_STYLES, studioStyle, type StudioStylePreset } from "./shot-specs";
+import { studioAutoColorIssue, studioDesignKnowledgeLines, studioDesignProfile } from "./design-knowledge";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioDetailPlan, type StudioPlannedScreen, type StudioPlanScope, type StudioPlanTarget, type StudioProduct, type StudioShotRole } from "./types";
 
 /**
@@ -58,9 +59,14 @@ function styleLines(product: StudioProduct): string[] {
         const style = studioStyle(product.style);
         return [`视觉方向以「${style.name}」为基础：${style.mood}；色板 ${paletteText(style)}；光影${style.light}。可以在这个基础上加一个强调色。`];
     }
+    const priority = studioDesignProfile(product).styles;
     return [
-        "视觉方向由你按这件商品、目标人群和平台挑：从下面的质感里选一个最合适的，把它的编号写进 styleId，再在它的基础上写整套设计规范（可以加一个强调色）。",
-        ...STUDIO_STYLES.map((style) => `- ${style.id}（${style.name}）：${style.mood}；色板 ${paletteText(style)}`),
+        "视觉方向由你按这件商品、目标人群和平台挑：下面的质感按商品适配优先级排列，优先项不是强制。把所选编号写进 styleId；色板是起点，可按商品本色与背景对比重新选择，不必照抄预设。",
+        ...[...STUDIO_STYLES]
+            .sort((a, b) => {
+                return (priority.includes(a.id) ? priority.indexOf(a.id) : 100) - (priority.includes(b.id) ? priority.indexOf(b.id) : 100);
+            })
+            .map((style) => `- ${style.id}（${style.name}）：${style.mood}；色板 ${paletteText(style)}`),
     ];
 }
 
@@ -287,6 +293,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         brief.audience.trim() ? `目标人群：${brief.audience.trim()}` : undefined,
         brief.positioning.trim() ? `价格定位：${brief.positioning.trim()}` : undefined,
         brief.extra.trim() ? `卖家补充要求：${oneLine(brief.extra)}` : undefined,
+        ...studioDesignKnowledgeLines(product),
         ...styleLines(product),
         cast.length ? `已在模特库选了${cast.join("、")}：有人物的图用 detail-model，人物会按模特库出图。` : undefined,
         ...studioPrepPromptLines(brief.prep, Boolean(request.alternative), Boolean(note)),
@@ -344,7 +351,7 @@ export function buildDetailPlanPrompt(product: StudioProduct, roles: StudioShotR
         "设计依据 designAnalysis（150–300 字）：从实拍识别实际颜色、轮廓、透明度或表面反光，结合平台和目标买家，解释背景明度、对比色与强调色的选择；说明哪种主光/轮廓光能展示这件商品，哪些实际可见视角与局部裁切能证明各屏信息；给出标题与注解的字号比例、字重与留白策略。颜色、机位、字体必须服务于商品识别和阅读，不能套固定暖光、台面、居中棚拍。只有正面素材时用真实正面及可见局部，不臆造背面和内部。卖家选定质感或参考同款时尊重约束，仍按商品实际配色调整对比。style 和各屏 visual 必须执行这些依据。",
         "10. facts 写这一张用到的事实名称或卖点标题，没有就留空数组。",
         "11. inspiration 用一句话（不超过 60 个字）写你从同类爆款套图和参考图里借鉴了什么（比如某种色块分区、圆形徽章、横幅标题）；没有参考时留空。",
-        "输出前逐屏检查 composition 和 visual：left 必须左侧主标题、右侧商品；right 必须左侧商品、右侧主标题；top/center 为上文下图；bottom 为上图下文。不能用左右分栏的编号配相反位置的描述。发现旧版的位置错误也必须修正，不能因为本次只改颜色而保留错误。",
+        "输出前逐屏检查 composition 和 visual：按所选骨架的摄影分区与标题留白执行。left 必须左侧主标题、右侧商品；right 必须左侧商品、右侧主标题；top/center 为上文下图；bottom 为上图下文；双幅、三联、拼版和操作轨道必须落实对应摄影窗口，不能全都退回顶部标题加中央商品。发现旧版的位置错误也必须修正。",
         request.scope === "single"
             ? "12. 视觉元素选用一两个融进画面，不要把所有元素堆在一张里。visual 里没写包装盒时，画面里就只有 visual 写到的商品部分。"
             : `12. 视觉元素可选，不要把同一个图形贴在每一张上。整件商品与局部景别按内容交替，不强制数量比例；包装仅在商品资料确认且该屏需要时出现。${mainLike ? "主图只保留有助于识别的元素。" : "短页优先讲清商品，长页展开证据，不为装饰堆道具。"}`,
@@ -379,6 +386,8 @@ export type StudioDetailPlanResult = {
 /** 读回策划结果：屏型必须在这件商品能排的范围里，文案的数字必须有出处；去掉依据不够的屏后剩得太少时要求重试。 */
 export function parseDetailPlan(raw: string, product: StudioProduct, roles: StudioShotRole[], meta: { id: string; model: string; createdAt: string }, request: StudioPlanRequest = { scope: "detail" }): StudioDetailPlanResult {
     const data = extractStudioJson(raw);
+    const colorIssue = studioAutoColorIssue(product, { style: typeof data.style === "string" ? data.style : "", styleId: typeof data.styleId === "string" ? data.styleId : "" });
+    if (colorIssue) throw new Error(colorIssue);
     const allowed = new Set(roles);
     const numbers = sourceNumbers(product);
     const offered = Array.isArray(data.screens) ? data.screens : [];

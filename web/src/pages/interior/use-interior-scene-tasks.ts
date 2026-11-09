@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyScenePatch, normalizeSceneBrief, parseSceneJson, type SceneBrief } from "@/lib/interior/scene-3d";
+import { applyScenePatch, buildSceneAnalysisPrompt, normalizeSceneBrief, parseSceneJson, type SceneBrief } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
 import { applySceneLocalEdit } from "@/lib/interior/scene-local-edit";
 import { buildSceneSpecPrompt, normalizeSceneMeta, specDimensionCheck, type InteriorSceneV2, type SceneSpec } from "@/lib/interior/scene-spec";
-import { checkSceneCompletion } from "@/lib/interior/scene-validation";
+import { applyDrawingFinishes, checkSceneCompletion } from "@/lib/interior/scene-validation";
 import { parseBackendGenerationResult } from "@/services/api/generation-task";
 import { isGenerationTaskTerminalError, waitForGenerationTask } from "@/services/api/task-center";
 import type { InteriorCatalog, InteriorProject, InteriorProjectDocument, InteriorSceneItem } from "@/services/api/interior";
@@ -174,12 +174,27 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
     async function runAnalyze(item: InteriorSceneItem, signal: AbortSignal, onText: (text: string) => void): Promise<Partial<InteriorSceneItem>> {
         const catalog = catalogRef.current;
         const parsed = parseSceneJson(await taskText(item.taskId!, signal, onText));
-        if (parsed.truncated) throw new Error("读图回复被截断，未继续建模");
-        const brief = normalizeSceneBrief(parsed.value, {
-            scope: item.autoScope ? "auto" : item.scope,
-            roomKeys: catalog.rooms.map((room) => room.key),
-            styleKeys: catalog.styles.map((style) => style.key),
-        });
+        let brief: SceneBrief;
+        try {
+            if (parsed.truncated) throw new Error("读图回复被截断，未继续建模");
+            brief = normalizeSceneBrief(parsed.value, {
+                scope: item.autoScope ? "auto" : item.scope,
+                roomKeys: catalog.rooms.map((room) => room.key),
+                styleKeys: catalog.styles.map((style) => style.key),
+                hasReference: Boolean(item.reference),
+            });
+        } catch (cause) {
+            if (!item.reference || (item.analysisRepairCount || 0) >= 1) throw new Error(`读图未通过校核，未进入建模：${errorText(cause, "读图格式无效")}`);
+            const prompt = [
+                buildSceneAnalysisPrompt({ scope: item.autoScope ? "auto" : item.scope, description: item.description, roomName: item.roomName, styleName: item.styleName, hasReference: true, ...catalogKeys(catalog) }),
+                `上一份读图未通过：${errorText(cause, "读图格式无效")}。请重新对照原图逐个定位房间、交通核、露台和泳池，校核尺寸与连接后输出完整读图 JSON。不要通过删空间、改总尺寸或省略 source 绕过校核。`,
+                `上一份读图：${JSON.stringify(parsed.value)}`,
+            ].join("\n");
+            if (signal.aborted) throw new DOMException("已离开", "AbortError");
+            const task = await submitSceneTask(configRef.current, item.model, prompt, "analyze", item.reference);
+            window.dispatchEvent(new CustomEvent("wallet:updated"));
+            return { taskId: task.id, analysisRepairCount: 1, notice: "正在校正读图尺寸、房间位置与门窗连接，尚未进入建模" };
+        }
         const room = catalog.rooms.find((entry) => entry.key === (item.roomKey || brief.roomKey));
         const style = catalog.styles.find((entry) => entry.key === (item.styleKey || brief.styleKey));
         const next: InteriorSceneItem = {
@@ -211,7 +226,8 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
         let spec: SceneSpec | undefined;
         let issues: string[];
         try {
-            ({ spec, issues } = checkSceneCompletion(value, meta.scope, { truncated, spaces: item.brief?.spaces, size: item.brief?.dimensionChains ? item.brief.size : undefined }));
+            const completed = item.brief?.layout ? applyDrawingFinishes(value, item.brief.layout) : value;
+            ({ spec, issues } = checkSceneCompletion(completed, meta.scope, { truncated, spaces: item.brief?.spaces, size: item.brief?.dimensionChains ? item.brief.size : undefined }));
         } catch (cause) {
             issues = [errorText(cause, "方案格式无效")];
         }
@@ -247,7 +263,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
             brief: item.brief ? { ...item.brief, ...(meta.renderNotes ? { renderNotes: meta.renderNotes } : {}) } : briefFromSpec(spec, meta),
             ...(room ? { roomKey: room.key, roomName: room.name } : {}),
             ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
-            notice: undefined,
+            notice: item.structureSource?.notice,
         };
     }
 

@@ -29,6 +29,7 @@ import { RemakePersonaModal } from "./remake-persona";
 import { RemakeProductPicker } from "./remake-product-picker";
 import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields } from "./remake-sound";
 import { ReplicaCampaignControls, ReplicaShotDirector } from "../replication-director";
+import { RemakeDirectorPlanner } from "./remake-director";
 
 export type RemakeEdit = (updater: (job: RemakeJob) => RemakeJob) => void;
 
@@ -62,7 +63,7 @@ function Card({ title, extra, children }: { title: string; extra?: ReactNode; ch
 }
 
 /** 复刻配方：我的商品、人物、场景、口播、授权与生成设置。 */
-export function RemakeRecipeCards({ job, config, edit, disabled }: { job: RemakeJob; config: AiConfig; edit: RemakeEdit; disabled?: boolean }) {
+export function RemakeRecipeCards({ job, config, edit, disabled, onPlanningChange }: { job: RemakeJob; config: AiConfig; edit: RemakeEdit; disabled?: boolean; onPlanningChange: (busy: boolean) => void }) {
     const [picking, setPicking] = useState(false);
     const [persona, setPersona] = useState(false);
     const profile = useMemo(() => (job.model ? modelCapabilityConfigFor(config, job.model).video : undefined), [config, job.model]);
@@ -74,6 +75,7 @@ export function RemakeRecipeCards({ job, config, edit, disabled }: { job: Remake
         <div className="rw-recipe">
             <Card title="导演与平台策略">
                 <ReplicaCampaignControls value={job.campaign} disabled={disabled} onChange={(campaign) => edit((value) => ({ ...value, campaign }))} />
+                {job.campaign ? <RemakeDirectorPlanner job={job} config={config} edit={edit} disabled={disabled} onBusyChange={onPlanningChange} /> : null}
                 <p className="rw-shot-reason">重拍镜头按导演动作生成；换元素保留原片动作与机位。</p>
             </Card>
             <Card

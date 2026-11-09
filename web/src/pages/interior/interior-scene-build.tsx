@@ -7,7 +7,7 @@ import { NeutralToneMapping, Vector3, type Group } from "three";
 import type { InteriorSceneScope, SceneObject } from "@/lib/interior/scene-3d";
 import { compileSceneSpec, type SceneDimension } from "@/lib/interior/scene-compile";
 import { readPartialScene, type SceneBuildPhase, type SceneBuildProgress } from "@/lib/interior/scene-stream";
-import type { SpecGrid } from "@/lib/interior/scene-spec";
+import type { SceneSpec, SpecGrid } from "@/lib/interior/scene-spec";
 import { cn } from "@/lib/utils";
 import { buildSceneRoot, type BuiltScene } from "./interior-scene-three";
 import { CutawayController, SceneEnvironment, SceneLights } from "./interior-scene-viewer";
@@ -95,6 +95,7 @@ export function InteriorSceneBuildStage({
     stage,
     stalled,
     referenceUrl,
+    layout,
     onRetry,
 }: {
     text: string;
@@ -103,6 +104,7 @@ export function InteriorSceneBuildStage({
     stage?: string;
     stalled?: string;
     referenceUrl?: string;
+    layout?: SceneSpec;
     onRetry?: () => void;
 }) {
     const [now, setNow] = useState(() => Date.now());
@@ -113,7 +115,7 @@ export function InteriorSceneBuildStage({
     // 系统要求减少动效时不转镜头，新部分直接出现。
     const reducedMotion = useMemo(() => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches), []);
     const legacyAnalyze = stage === "analyze";
-    const parsed = useMemo(() => (legacyAnalyze ? null : readPartialScene(text, scope)), [text, scope, legacyAnalyze]);
+    const parsed = useMemo(() => (legacyAnalyze ? null : readPartialScene(text, scope, layout)), [text, scope, legacyAnalyze, layout]);
     // 读不出来的那一刻沿用上一次读到的方案，预览不闪空。
     const lastGood = useRef<SceneBuildProgress | null>(null);
     if (parsed && (parsed.spec || !lastGood.current?.spec)) lastGood.current = parsed;

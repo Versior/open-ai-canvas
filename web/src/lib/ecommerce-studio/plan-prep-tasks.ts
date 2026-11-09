@@ -3,6 +3,7 @@ import { studioBrandOf, studioInfoPoints, studioInfoText, studioMarket, studioPr
 import { STUDIO_DESIGN_TONE_IDS, STUDIO_DESIGN_TONES, STUDIO_PLAN_SCOPES, studioDetailPlanFacts } from "./detail-plan";
 import { extractStudioJson } from "./dossier-tasks";
 import { STUDIO_PREP_LIMITS, studioAskOf, studioDirectionOf, studioPrepPromptLines } from "./plan-prep";
+import { studioAutoColorIssue, studioDesignKnowledgeLines } from "./design-knowledge";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioAsk, type StudioDirection, type StudioPlanScope, type StudioProduct } from "./types";
 
 /**
@@ -90,6 +91,7 @@ export function buildDirectionsPrompt(product: StudioProduct, scope: StudioPlanS
         "",
         ...productLines(product),
         ...imageNote,
+        ...studioDesignKnowledgeLines(product),
         ...studioPrepPromptLines({ asks: brief.prep?.asks || [], directions: [] }),
         "",
         `【出图条件】市场：${studioMarket(brief.market).label}`,
@@ -110,7 +112,7 @@ export function buildDirectionsPrompt(product: StudioProduct, scope: StudioPlanS
 }
 
 /** 读回视角方案：至少要两个能用的方向，否则让用户重试。 */
-export function parseDirections(raw: string, createId: StudioIdFactory): StudioDirection[] {
+export function parseDirections(raw: string, createId: StudioIdFactory, product?: StudioProduct): StudioDirection[] {
     const data = extractStudioJson(raw);
     const directions = (Array.isArray(data.directions) ? data.directions : [])
         .map((item) => (item && typeof item === "object" ? { ...(item as Record<string, unknown>), id: createId() } : item))
@@ -118,5 +120,10 @@ export function parseDirections(raw: string, createId: StudioIdFactory): StudioD
         .filter((direction): direction is StudioDirection => Boolean(direction))
         .slice(0, STUDIO_PREP_LIMITS.directions);
     if (directions.length < 2) throw new Error("没有生成足够的视角方案，请重试或换一个文本模型");
+    if (product)
+        for (const direction of directions) {
+            const issue = studioAutoColorIssue(product, { style: direction.visual, palette: direction.palette });
+            if (issue) throw new Error(issue);
+        }
     return directions;
 }

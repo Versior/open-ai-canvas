@@ -3,6 +3,8 @@
  * 页面用 three.js 渲染成可以旋转、缩放的模型。不执行模型写的代码，只读数据；解析时收紧数量、尺寸和取值，
  * 读不懂的物体直接丢掉，不拿默认值补出不存在的东西。
  */
+import { checkSceneCompletion } from "./scene-validation";
+import type { SceneSpec } from "./scene-spec";
 
 export const SCENE_MATERIALS = ["wall", "concrete", "brick", "stone", "marble", "tile", "wood", "wood-dark", "glass", "metal", "metal-dark", "roof", "fabric", "leather", "grass", "soil", "water", "plant", "light", "ceramic"] as const;
 export type SceneMaterial = (typeof SCENE_MATERIALS)[number];
@@ -383,6 +385,9 @@ export type SceneBrief = {
     summary: string;
     roomKey?: string;
     styleKey?: string;
+    source?: "drawing" | "photo" | "text";
+    /** 图纸读图阶段已校核的结构；后续建模只填材质和家具，不能重排房间。 */
+    layout?: SceneSpec;
     /** 总体尺寸：宽（x）、深（z）、层数、层高，单位米。 */
     size?: { width: number; depth: number; floors: number; storeyHeight: number };
     /** 图纸逐段读出的尺寸链（米），用于核对总开间和进深，不能把横向墙厚加到纵向尺寸。 */
@@ -441,6 +446,7 @@ export function buildSceneAnalysisPrompt(input: SceneAnalysisInput) {
             ? [
                   "附图可能是户型图、现场照片、毛坯房或效果图：先辨别来源。CAD 户型图逐一读取房间文字、尺寸链、门扇和窗符号。电梯、消防电梯和公共楼梯核不等于独栋别墅；单层大平层即使有露台或泳池也选 home。不要虚构院子、围墙或屋顶。照片不可见的尺寸只能注明估算。",
                   "spaces 必须逐个列出可辨认的空间，包括卫生间、衣帽间、家政、厨房、楼梯、电梯厅、露台等；不能把交通核、整间套房用一个大矩形概括。note 写位置和开间进深。description 逐段记录尺寸链、各空间的位置和共用墙连接关系。看不清就明确写不确定，禁止假装读到数字。",
+                  'source 必须明确写 drawing（图纸）或 photo（照片），不能省略。图纸必须额外输出 layout：先读结构，不做风格设计。layout 使用 grid、floors、roof 格式，floors 每层写 name、height、rooms、open、doors、windows、stairs、pillars、balconies。rooms 每个空间写原名、type、rect 或 rects；rect=[x1,z1,x2,z2]，单位米，原点为图纸左上外轮廓，x 向右、z 向下。复杂房间用 rects 拆成互不重叠的矩形，不可一块大矩形覆盖交通核。先把各房间定位，再只在共用边上写门；有走廊的房间必须通过走廊连接，不能跨房间开门。门 between=[房间名,房间名]，at 为沿墙坐标，width 为洞宽；open 是没有墙的相邻房间对。窗 room、side（n/s/e/w）、at、width。stairs 必须是数组 [{rect,up}]，不能写成对象。露台、空中庭院、泳池写 balconies=[{name,rect,rail,surface}]，surface=stone/wood/water；不要作为封闭 rooms，也不添加地面庭院。grid={source:"drawing",width,depth,x:[所有墙中线x坐标],z:[所有墙中线z坐标],image:[外轮廓左上右下在图片的千分比坐标]}。rooms.type 可选 living/dining/kitchen/bedroom/master/kids/study/bathroom/entry/corridor/stair/closet/storage/laundry/other，电梯和管井用独立命名的 other 空间。单层户型 roof={type:"none"}，不写 site。layout 的边界、尺寸、连接必须与原图一致，不添加图上不存在的空间。未标注的内分隔从墙线按外包尺寸比例估算，并在 note 标明估算；图上已标数字不可估算。图纸这一步 furniture 留空，下一步再摆家具。',
               ]
             : []),
         `用户的需求：${input.description.trim() || "（没写，按附图和下面的选择来）"}`,
@@ -454,7 +460,9 @@ export function buildSceneAnalysisPrompt(input: SceneAnalysisInput) {
         "尺寸要符合常识和上面的参考数据：单个房间 size 写房间的长宽，floors 写 1；整套户型写整套的外轮廓；建筑写主体平面和层数。",
         'CAD 图纸还必须写 source="drawing" 和 dimensionChains={"x":[横向逐段尺寸，米],"z":[纵向逐段尺寸，米]}。分别读取横向、纵向的尺寸链，再各自求和写入 size.width/depth。不要把横向的 600 墙厚加到纵向总进深，也不要混用不同链条或把平面图面积当外包框面积。必须以图上可读的总尺寸和链条校核，不凭常识猜数字。',
         "description 写给建模师看：具体写出各空间的位置关系（用东南西北）、尺寸链、门窗和共用墙、楼梯、主要家具和配色，复杂户型可写到 1200 字。renderNotes 写一句出效果图的补充要求（30–80 字，写材质、灯光和氛围）。",
-        '只输出一个 JSON 对象，不要解释，不要代码块标记：{"scope":"room","title":"方案名","summary":"一句话说明","roomKey":"living-room","styleKey":"cream","size":{"width":6,"depth":4.5,"floors":1,"storeyHeight":2.8},"spaces":[{"name":"客厅","area":27,"note":"朝南落地窗"}],"features":["……"],"materials":["……"],"furniture":["……"],"description":"……","renderNotes":"……"}',
+        input.hasReference
+            ? "只输出一个完整 JSON 对象，不要解释或代码块。字段顺序：source、scope、title、summary、roomKey、styleKey、dimensionChains、size、spaces、layout、features、materials、furniture、description、renderNotes。source 必填。source=drawing 时 dimensionChains、size、spaces、layout 全部必填，必须在同一次回复中写出所有房间矩形、门窗连接和户外空间，不能只列空间清单而不输出 layout；完整结构优先于装饰说明。source=photo 时不用输出 dimensionChains 和 layout。"
+            : '只输出一个 JSON 对象，不要解释，不要代码块标记：{"source":"text","scope":"room","title":"方案名","summary":"一句话说明","roomKey":"living-room","styleKey":"cream","size":{"width":6,"depth":4.5,"floors":1,"storeyHeight":2.8},"spaces":[{"name":"客厅","area":27,"note":"朝南落地窗"}],"features":["……"],"materials":["……"],"furniture":["……"],"description":"……","renderNotes":"……"}',
     ].join("\n");
 }
 
@@ -466,20 +474,24 @@ function textList(value: unknown, limit: number, length: number) {
 }
 
 /** 读 AI 方案分析；roomKey、styleKey 不在可选列表里的丢掉，没有 description 时报错。 */
-export function normalizeSceneBrief(value: unknown, options: { scope: InteriorSceneScope | "auto"; roomKeys: string[]; styleKeys: string[] }): SceneBrief {
+export function normalizeSceneBrief(value: unknown, options: { scope: InteriorSceneScope | "auto"; roomKeys: string[]; styleKeys: string[]; hasReference?: boolean }): SceneBrief {
     if (!value || typeof value !== "object") throw new Error("模型没有给出方案分析");
     const raw = value as Record<string, unknown>;
+    const source = raw.source === "drawing" || raw.source === "photo" || raw.source === "text" ? raw.source : undefined;
+    if (options.hasReference && source !== "drawing" && source !== "photo") throw new Error("读图未明确图像来源，不能跳过图纸校核");
     const description = shortText(raw.description, 1200);
     if (!description) throw new Error("模型给的方案分析里没有可以建模的描述，请换一个模型再试");
     const aiScope = typeof raw.scope === "string" && SCENE_SCOPES.some((item) => item.value === raw.scope) ? (raw.scope as InteriorSceneScope) : "room";
-    const scope = options.scope === "auto" ? aiScope : options.scope;
+    let scope = options.scope === "auto" ? aiScope : options.scope;
     const sizeRaw = raw.size && typeof raw.size === "object" ? (raw.size as Record<string, unknown>) : null;
     const width = sizeRaw ? dimension(sizeRaw.width) : null;
     const depth = sizeRaw ? dimension(sizeRaw.depth) : null;
     const floors = sizeRaw ? finiteNumber(sizeRaw.floors) : null;
     const storeyHeight = sizeRaw ? dimension(sizeRaw.storeyHeight) : null;
+    if (options.scope === "auto" && source === "drawing" && floors === 1) scope = "home";
     const brief: SceneBrief = {
         scope,
+        ...(source ? { source } : {}),
         title: shortText(raw.title) || "AI 方案",
         summary: shortText(raw.summary, 160),
         spaces: (Array.isArray(raw.spaces) ? raw.spaces : [])
@@ -508,6 +520,14 @@ export function normalizeSceneBrief(value: unknown, options: { scope: InteriorSc
         const sum = (values: number[]) => values.reduce((total, part) => total + part, 0);
         if (Math.abs(sum(x) - brief.size.width) > 0.1 || Math.abs(sum(z) - brief.size.depth) > 0.1) throw new Error("图纸总尺寸与逐段尺寸链不一致，未继续建模");
         brief.dimensionChains = { x, z };
+        if (options.hasReference || raw.layout) {
+            if (!raw.layout) throw new Error("图纸读图未提供房间坐标和门窗结构，未继续建模");
+            const { spec, issues } = checkSceneCompletion(raw.layout, scope, { spaces: brief.spaces, size: brief.size });
+            if (spec.grid?.source !== "drawing" || !spec.grid.image) issues.push("图纸结构缺少轴网来源或原图对照范围");
+            if (spec.floors.length !== brief.size.floors) issues.push("图纸结构楼层数与读图不一致");
+            if (issues.length) throw new Error(`图纸结构未通过校核：${issues.join("；")}`);
+            brief.layout = spec;
+        }
     }
     return brief;
 }

@@ -1,4 +1,4 @@
-import { STUDIO_COMPOSITIONS } from "@/lib/ecommerce-studio/art-direction";
+import { STUDIO_COMPOSITIONS, STUDIO_IMAGE_ZONES } from "@/lib/ecommerce-studio/art-direction";
 import type { StudioCompositionId } from "@/lib/ecommerce-studio/types";
 import type { ReferenceImage } from "@/types/image";
 
@@ -16,9 +16,8 @@ export function studioLayoutGuideReference(guide: { composition: StudioCompositi
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, w, h);
     const zone = STUDIO_COMPOSITIONS[guide.composition].zone;
-    const imageZone = guide.composition === "left" ? [0.5, 0.12, 0.44, 0.72] : guide.composition === "right" ? [0.06, 0.12, 0.46, 0.72] : guide.composition === "bottom" ? [0.06, 0.06, 0.88, 0.54] : [0.06, 0.42, 0.88, 0.52];
     context.fillStyle = "#d8dce1";
-    context.fillRect(imageZone[0] * w, imageZone[1] * h, imageZone[2] * w, imageZone[3] * h);
+    for (const imageZone of STUDIO_IMAGE_ZONES[guide.composition]) context.fillRect(imageZone[0] * w, imageZone[1] * h, imageZone[2] * w, imageZone[3] * h);
     // 深色粗线仅表示标题行，浅细线表示注解；模型须在这些位置一次完成真实文字与摄影。
     const left = zone.x * w,
         width = zone.width * w,

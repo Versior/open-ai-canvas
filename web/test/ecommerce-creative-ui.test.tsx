@@ -32,6 +32,7 @@ const { CommerceDirectionCards } = await import("@/pages/ecommerce/direction-car
 const { CommerceResultImage } = await import("@/pages/ecommerce/result-image");
 const { EcommerceResultGallery } = await import("@/pages/ecommerce/result-gallery");
 const { EcommerceAgentFeed } = await import("@/pages/ecommerce/agent-feed");
+const { StudioShotList } = await import("@/pages/ecommerce-studio/studio-shot-list");
 let host: HTMLDivElement;
 let root: ReturnType<typeof createRoot> | undefined;
 async function render(element: React.ReactNode) {
@@ -53,6 +54,28 @@ afterAll(() => {
         if (value) Object.defineProperty(globalThis, key, value);
         else Reflect.deleteProperty(globalThis, key);
     }
+});
+
+test("studio editor displays and selects shared catalog compositions", async () => {
+    const edit = mock(() => {});
+    await render(
+        <StudioShotList
+            entries={[{ key: "screen", planIndex: 0, title: "镜框细节", role: "detail-closeup", included: true, purpose: "观察前框", layout: "editorial", composition: "sidebar", copy: { headline: "清透前框", subline: "", lines: [] } }]}
+            unit="屏"
+            onToggle={() => {}}
+            onMove={() => {}}
+            onEditPlan={edit}
+        />,
+    );
+    expect(host.textContent).toContain("杂志编辑");
+    expect(host.textContent).toContain("窄栏编辑");
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="修改这一屏：镜框细节"]')!.click());
+    const control = host.querySelector('[aria-label="这一屏的图文构图"]')!.closest(".ant-select")!;
+    await act(async () => control.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    const option = [...document.querySelectorAll<HTMLElement>(".ant-select-item-option")].find((item) => item.textContent === "框景留白");
+    expect(option).toBeDefined();
+    await act(async () => option!.click());
+    expect(edit).toHaveBeenCalledWith(0, { composition: "window" });
 });
 
 test("style selection is reviewable and only confirmation starts generation", async () => {

@@ -1,5 +1,7 @@
+import catalog from "../../../../backend/internal/ecommerceagent/studio_design_catalog.json";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_COMPOSITIONS, studioCompositionOf } from "./art-direction";
+import { studioEvidenceLayouts } from "./design-knowledge";
 import { STUDIO_SUITE_LIMITS, studioSuiteShotRole } from "./suites";
 import {
     studioFactUsable,
@@ -68,92 +70,7 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
  * 详情页的版式：平台上设计过的详情页每一屏都是排过版的画面（图标卖点、引线标注、拼格、对照……），
  * 不是「一张商品照片加一行标题」。use 给策划看，render 写进出图提示词；lines 说明要点文字在这种版式里的用法。
  */
-export const STUDIO_DETAIL_LAYOUTS: Record<StudioDetailLayoutId, { label: string; use: string; render: string; lines: string }> = {
-    poster: {
-        label: "海报大字",
-        use: "首屏或情绪屏：商品大图配超大标题，一眼抓住注意力",
-        render: "商品与标题形成强烈的大小对比和视觉重心，主标题可分行；位置由本屏构图决定，留白干净，像品牌主视觉",
-        lines: "要点（主标题下方一行小字，用细竖线隔开）",
-    },
-    split: {
-        label: "左右分栏",
-        use: "讲一个卖点：一侧商品或场景大图，另一侧标题和两三行说明",
-        render: "画面左右分栏：一侧放商品或场景大图，另一侧是文字栏，文字栏有栏目小标题、主标题、副标题和要点，纵向对齐",
-        lines: "要点（文字栏里纵向排列，每条前面一个小圆点或短线）",
-    },
-    icons: {
-        label: "图标卖点",
-        use: "一屏讲 3–6 个卖点：每个卖点一个图标配一条短标签",
-        render: "上方是标题区，下方是 3–6 个统一风格的线框图标横排或排成宫格，每个图标下面一条短标签，商品放在标题区旁边或图标区上方",
-        lines: "图标标签（每个图标下面一条，图标按标签内容画）",
-    },
-    callout: {
-        label: "引线标注",
-        use: "讲结构和细节：商品大图，几条细引线指向具体部位并配标签，或者用圆形放大镜头把小部件放大在旁边",
-        render: "商品大图居中，2–4 条细引线从商品对应部位引出，末端是一个小圆点加短标签，引线互不交叉；要看清的小部件可以用一两个带细描边和轻投影的圆形放大镜头放大在旁边",
-        lines: "引线标签（每条引线末端一条，指向标签说的那个部位）",
-    },
-    compare: {
-        label: "对照",
-        use: "讲差别：同一件商品的两种状态、两个角度或使用前后，左右或上下两栏",
-        render: "画面分成左右或上下两栏对照，中间一条细分隔线，每栏顶部一个短标签；只对照这件商品自身，不出现其他品牌或商品",
-        lines: "两栏的标签（第一条给第一栏，第二条给第二栏）",
-    },
-    grid: {
-        label: "细节拼格",
-        use: "一屏看几个细节：2×2 或一大两小拼格，每格一个部位特写",
-        render: "画面是 2×2 或一大两小的拼格，格子之间留细缝，每格是一个部位的特写，每格角落一条短标签",
-        lines: "拼格标签（按格子顺序，每格一条）",
-    },
-    scene: {
-        label: "场景大片",
-        use: "使用场景、上身效果：满版场景照片，文字压在留白或半透明色块上",
-        render: "满版的场景或人物照片，像杂志大片，文字放在画面留白处或一块半透明色块上，不挡商品",
-        lines: "要点（压在色块上的一两行小字）",
-    },
-    data: {
-        label: "大字数据",
-        use: "有已确认的关键数值时：一个大号数字或关键词做视觉中心",
-        render: "一个大号数字或关键词居中做视觉中心，数字可以做成半透明玻璃或立体的造型、和商品前后穿插，下方一行说明，商品放在一侧或底部陪衬",
-        lines: "要点（大号数字下方的说明行，或环绕数字的几个短标签）",
-    },
-    pain: {
-        label: "痛点共鸣",
-        use: "说出买家的困扰：人物不适的神情配几个气泡标签，或 2×3 困扰场景宫格，标题用一个问句",
-        render: "一个人物半身特写带出困扰的神情（不夸张、不吓人），周围 3–5 个圆角气泡标签说出具体的困扰；或者画面是 2×3 的宫格，每格一个困扰的生活场景照片配一条短标签；照片统一调色到整套色板里",
-        lines: "困扰标签（每个气泡或宫格一条）",
-    },
-    mechanism: {
-        label: "机理示意",
-        use: "把看不见的作用画出来：皮肤或黏膜分层剖面、透明人体或器官、分层爆炸图，箭头和光点表示作用方向",
-        render: "3D 渲染质感的示意图做画面主体：分层剖面、半透明的人体或器官、按层展开的结构，用发光的箭头、光点或波纹表示作用的方向和过程，2–4 个短标签贴在对应位置；示意图干净、精致、有光感，不是平面卡通",
-        lines: "作用过程的标签（按先后，每层或每个箭头一条）",
-    },
-    ingredients: {
-        label: "成分特写",
-        use: "讲成分或原料：原料实物悬浮在透明气泡、圆形镜头或玻璃器皿里，每个配一条标签",
-        render: "2–4 个核心成分的原料实物微距，分别放在透明气泡、圆形镜头或玻璃器皿里悬浮排开，光从侧后方打亮，周围点缀细小的气泡和光斑，商品放在一侧或中央",
-        lines: "成分标签（每个成分一条：名称或一句作用）",
-    },
-    proof: {
-        label: "资质背书",
-        use: "只在已确认的事实里有认证、备案、检测或专利时用：证书或报告摆在展台上，配认证名称",
-        render: "一份证书或检测报告的实物立在展台上（文件上的小字不可辨认，不画任何编号和印章细节），旁边可以有奖杯或商品陪衬，柔和的聚光和光晕，背景是整套的主色",
-        lines: "认证名称（只写已确认的，每条一个）",
-    },
-    spec: {
-        label: "参数尺寸",
-        use: "规格、尺寸、包装清单：商品正视图或线稿配尺寸线和参数表",
-        render: "商品正视图配细尺寸线，旁边或下方是一张简洁的参数表（左列项目、右列内容，细分隔线），整体像产品说明书",
-        lines: "参数行（每条「项目：内容」，排成表格）",
-    },
-    closing: {
-        label: "收尾承诺",
-        use: "最后一屏：商品回到画面中心，回顾理由，底部一排小图标",
-        render: "商品回到画面中心，上方是回顾的标题，底部一排 3–4 个小图标配短标签，收在整套的主色上",
-        lines: "底部图标标签（每个小图标下面一条）",
-    },
-};
+export const STUDIO_DETAIL_LAYOUTS: Record<StudioDetailLayoutId, { label: string; use: string; render: string; lines: string }> = catalog.layouts;
 export const STUDIO_DETAIL_LAYOUT_IDS = Object.keys(STUDIO_DETAIL_LAYOUTS) as StudioDetailLayoutId[];
 
 /** 认证、备案、检测、专利这类事实：有它们才能排「资质背书」，否则等于让图片模型编证书。 */
@@ -165,7 +82,7 @@ export function studioHasProofFacts(product: StudioProduct) {
 
 /** 这件商品能用的版式：没有认证类事实时不给「资质背书」。 */
 export function studioDetailLayoutIds(product: StudioProduct): StudioDetailLayoutId[] {
-    return studioHasProofFacts(product) ? STUDIO_DETAIL_LAYOUT_IDS : STUDIO_DETAIL_LAYOUT_IDS.filter((id) => id !== "proof");
+    return studioEvidenceLayouts(product, studioHasProofFacts(product) ? STUDIO_DETAIL_LAYOUT_IDS : STUDIO_DETAIL_LAYOUT_IDS.filter((id) => id !== "proof"));
 }
 
 /** 模型没给版式时按屏型补一个。 */

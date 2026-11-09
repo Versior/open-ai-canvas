@@ -409,7 +409,7 @@ function hingeOf(axis: "x" | "z", hinge: SpecSide | undefined, hole: Hole, from:
  * 把方案里的门窗落到墙上。门窗写了 at 就按 at 开，没写门放在共用墙中间、窗在外墙上均匀排开；
  * 和已有洞口挤在一起时就近挪开。没有门也没有连通的房间自动开一扇门，建筑首层没写入户门时自动开一扇。
  */
-function placeOpenings(level: FloorLevel, scope: SceneSpec["scope"]) {
+function placeOpenings(level: FloorLevel, scope: SceneSpec["scope"], drawing: boolean) {
     const { floor, segs } = level;
     const clear = level.wallTop - level.top;
     const mainOf = (name: string) => floor.rooms.find((room) => room.name === name)?.part || name;
@@ -454,6 +454,7 @@ function placeOpenings(level: FloorLevel, scope: SceneSpec["scope"]) {
     // 没有门也没有连通的房间：和共用边最长的相邻房间之间开一扇门（优先通向走廊、客厅、门厅）。
     const mains = floor.rooms.filter((room) => !room.part);
     for (const room of mains) {
+        if (drawing) break;
         if (connected.has(room.name)) continue;
         const neighbors = mains
             .filter((other) => other !== room)
@@ -467,7 +468,7 @@ function placeOpenings(level: FloorLevel, scope: SceneSpec["scope"]) {
             }
         }
     }
-    if (scope === "building" && level.index === 0 && !segs.some((seg) => seg.holes.some((hole) => hole.kind === "entry"))) {
+    if (!drawing && scope === "building" && level.index === 0 && !segs.some((seg) => seg.holes.some((hole) => hole.kind === "entry"))) {
         const order: Partial<Record<SpecRoomType, number>> = { entry: 5, living: 4, corridor: 3, dining: 2, stair: 1 };
         const candidates = [...mains].sort((x, y) => (order[y.type] || 0) - (order[x.type] || 0));
         candidates.some((room) =>
@@ -680,13 +681,13 @@ function exposedIntervals(edge: Edge, outward: -1 | 1, covered: (x: number, z: n
     return result;
 }
 
-function stairs(level: FloorLevel, next: FloorLevel, spec: SceneSpec, objects: SceneObject[]) {
+function stairs(level: FloorLevel, nextTop: number, spec: SceneSpec, objects: SceneObject[]) {
     for (const stair of level.floor.stairs) {
         const [x1, z1, x2, z2] = stair.rect;
         const alongZ = stair.up === "n" || stair.up === "s";
         const run = alongZ ? z2 - z1 : x2 - x1;
         const width = alongZ ? x2 - x1 : z2 - z1;
-        const rise = next.top - level.top;
+        const rise = nextTop - level.top;
         const steps = Math.max(8, Math.min(30, Math.round(rise / 0.175)));
         const tread = run / steps;
         const stepRise = rise / steps;
@@ -1534,7 +1535,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
         const last = index === spec.floors.length - 1;
         const wallTop = last ? top + floor.height : top + floor.height - SLAB;
         const level: FloorLevel = { floor, index, top, wallBase: top, wallTop, segs: solveWalls(floor.rooms, floor.open), group: floor.name, facades: !building && cut !== index };
-        placeOpenings(level, spec.scope);
+        placeOpenings(level, spec.scope, spec.grid?.source === "drawing");
         levels.push(level);
         top += floor.height;
     });
@@ -1653,7 +1654,9 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
             }
         }
         const next = levels[index + 1];
-        if (next && index + 1 < visibleFloors.length) stairs(level, next, spec, objects);
+        if (next && index + 1 < visibleFloors.length) stairs(level, next.top, spec, objects);
+        // 单层户型图中的公共楼梯仍是本层可见的结构，不能因为没有下一层数据就丢掉。
+        else if (!next && spec.grid?.source === "drawing") stairs(level, level.top + floor.height, spec, objects);
         // 家具、踢脚线、窗帘、挂画和标注。
         const ceiling = level.wallTop - level.top;
         floor.rooms.forEach((main, roomIndex) => {
@@ -1662,7 +1665,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
             const ctx = roomContext(main, segs, floor.pillars);
             const within = members.map((room) => clearRect(room, segs));
             const listed = floor.furniture.filter((item) => item.room === main.name);
-            const placements = layoutRoom(ctx, listed.length ? listed : defaultFurniture(ctx), within, options.onLayoutIssue);
+            const placements = layoutRoom(ctx, listed.length || spec.grid?.source === "drawing" ? listed : defaultFurniture(ctx), within, options.onLayoutIssue);
             const lampCeiling = capped ? Math.min(ceiling, CUT_HEIGHT + 1.4) : ceiling;
             placements.forEach((placement, order) => objects.push(...furnitureObjects(placement, spec, level.top + FINISH, lampCeiling, group, roomIndex * 7 + order, backFacade(level, segs, placement))));
             for (const room of members) baseboards(level, room, segs, spec, objects);

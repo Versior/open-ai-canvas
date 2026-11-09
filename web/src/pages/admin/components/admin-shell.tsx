@@ -252,9 +252,16 @@ function AdminShellLayout() {
                             <AdminTooltip title={collapsed ? (appearance.updates?.enabled ? "查看更新公告" : "查看更新日志") : undefined} placement="right">
                                 <AppChangelogButton
                                     className={cn("admin-sidebar-brand-button", collapsed && "is-collapsed")}
-                                    icon={<BrandLogoFrame className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background" logoClassName="size-5 object-contain" alt="" fallback={<InfinityIcon className="size-4" />} />}
+                                    icon={
+                                        <BrandLogoFrame
+                                            className="admin-sidebar-brand-mark grid shrink-0 place-items-center bg-foreground text-background"
+                                            logoClassName={appearance.logoConfigured ? "size-5 object-contain" : collapsed ? "h-3" : "h-6"}
+                                            alt=""
+                                            fallback={<InfinityIcon className="size-4" />}
+                                        />
+                                    }
                                     label={appearance.brandName}
-                                    showLabel={!collapsed}
+                                    showLabel={!collapsed && (appearance.logoConfigured || appearance.brandName !== "STAGE")}
                                     showVersion={!collapsed}
                                     labelClassName="admin-sidebar-brand-title"
                                     versionClassName="admin-sidebar-brand-version"

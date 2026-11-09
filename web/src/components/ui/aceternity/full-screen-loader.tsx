@@ -57,6 +57,7 @@ export function FullScreenLoader({ label = translate("account.ui.loader.label"),
 
 export function WorkspaceRouteLoader({ label = translate("account.ui.loader.route") }: { label?: string }) {
     const [visible, setVisible] = useState(false);
+    const builtinLogo = useAppearanceStore((state) => !state.appearance.logoConfigured);
 
     useEffect(() => {
         const timer = window.setTimeout(() => setVisible(true), 140);
@@ -66,7 +67,7 @@ export function WorkspaceRouteLoader({ label = translate("account.ui.loader.rout
     return (
         <section data-workspace-route-loader className={cn("workspace-route-loader", visible && "is-visible")} role="status" aria-live="polite" aria-label={label}>
             <div className="workspace-route-loader-content">
-                <span className="workspace-route-loader-mark">
+                <span className={cn("workspace-route-loader-mark", builtinLogo && "is-builtin")}>
                     <BrandLogoFrame className="workspace-route-loader-logo" logoClassName="size-4" alt="" fallback={<span className="loader-brand-glyph" aria-hidden="true" />} />
                 </span>
                 <LoadingSignal />

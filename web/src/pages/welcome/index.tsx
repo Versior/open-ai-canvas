@@ -49,6 +49,7 @@ export default function WelcomePage() {
 }
 
 function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLook; brandName: string; onLookChange: (id: string) => void }) {
+    const logoConfigured = useAppearanceStore((state) => state.appearance.logoConfigured);
     const { t } = useTranslation();
     const storyRef = useRef<HTMLElement>(null);
     const progressRef = useRef(0);
@@ -109,7 +110,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
             </a>
             <header className="welcome-header">
                 <a className="welcome-brand" href="/welcome" aria-label={t("shell.brandHome", { brand: brandName })}>
-                    <BrandLogo theme="dark" className="welcome-brand-logo" alt="" fallback={<span className="welcome-brand-logo is-fallback" />} />
+                    {logoConfigured ? <BrandLogo theme="dark" className="welcome-brand-logo" alt="" fallback={null} /> : null}
                     <BrandWordmark builtinClassName="welcome-brand-wordmark" />
                 </a>
                 <nav className={menu ? "welcome-nav is-open" : "welcome-nav"} aria-label={t("account.welcome.nav")}>

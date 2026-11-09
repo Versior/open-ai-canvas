@@ -3,6 +3,7 @@ import type { ProductVideoImage } from "@/lib/product-video/job";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import { recommendRemakeShot } from "./recommend";
 import { readReplicaCampaign, readReplicaDirection, type ReplicaCampaign, type ReplicaDirection } from "@/lib/canvas/replica-director";
+import { readRemakeDirectorPlans, remakeDirectorInput, replicaProductFacts, type RemakeDirectorPlan } from "./director-plan";
 
 // 复刻工作台的作品（version 2）：一条拆解过的爆款视频 + 我的商品、模特、场景和口播配方，
 // 逐镜头决定怎么复刻（换元素、重新拍、保留原片、删掉），再按生成单元出片、拼成成片。
@@ -139,6 +140,8 @@ export type RemakeProduct = { studioProductId?: string; name: string; sellingPoi
 
 export type RemakeJob = {
     campaign?: ReplicaCampaign;
+    directorPlans?: RemakeDirectorPlan[];
+    activeDirectorPlanId?: string;
     version: 2;
     id: string;
     revision: number;
@@ -268,10 +271,12 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
     if (limits && job.product.images.length + job.models.length + job.backgrounds.length > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
     if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「AI 配音」";
     if (job.audio === "voice" && active.some((shot) => shot.dialogue.trim()) && !job.voice.model) return "请选择配音模型";
+    const strategy = job.directorPlans?.find((plan) => plan.id === job.activeDirectorPlanId);
+    if (strategy && strategy.input !== remakeDirectorInput(job)) return "已选导演策划与当前商品、策略或镜头做法不一致，请重新策划后选用";
     for (const shot of generated) {
         if (shot.treatment !== "remake" || !shot.director) continue;
         if (!shot.director.action.trim()) return `镜头 ${shot.index} 还没有具体导演动作`;
-        if (shot.director.beat === "proof" && (!shot.director.evidence.trim() || !job.product.sellingPoints.split(/\n/).some((fact) => fact.trim() === shot.director!.evidence.trim()))) return `镜头 ${shot.index} 的证明依据须逐字引用一条商品卖点`;
+        if (shot.director.beat === "proof" && (!shot.director.evidence.trim() || !replicaProductFacts(job.product.sellingPoints).includes(shot.director.evidence.trim()))) return `镜头 ${shot.index} 的证明依据须逐字引用一条商品卖点`;
     }
     return "";
 }
@@ -426,7 +431,7 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
     const music = record(raw.music);
     const variantOf = record(raw.variantOf);
     const createdAt = text(raw.createdAt, new Date(0).toISOString());
-    return {
+    const normalized: RemakeJob = {
         version: REMAKE_VERSION,
         id,
         revision: count(raw.revision),
@@ -498,4 +503,10 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
             : {}),
         ...(typeof raw.credits === "number" && Number.isFinite(raw.credits) ? { credits: raw.credits } : {}),
     };
+    const directorPlans = readRemakeDirectorPlans(raw.directorPlans, normalized);
+    if (directorPlans.length) {
+        normalized.directorPlans = directorPlans;
+        if (directorPlans.some((plan) => plan.id === raw.activeDirectorPlanId)) normalized.activeDirectorPlanId = text(raw.activeDirectorPlanId);
+    }
+    return normalized;
 }

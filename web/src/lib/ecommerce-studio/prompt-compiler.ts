@@ -88,8 +88,8 @@ export type StudioCompileInput = {
 
 const DEFAULT_MAX_CHARS = 4000;
 const DEFAULT_MAX_REFERENCES = 4;
-// 裁剪顺序：越靠前越先裁。真值、目标、构图、文案、参考图和用户的补充要求不参与裁剪。
-const TRIM_ORDER: StudioPromptLayerId[] = ["quality", "category", "style", "set", "lighting", "audience"];
+// 真值、构图、色板、文案和用户要求是生成契约；不能为满足长度静默丢掉已选配色。
+const TRIM_ORDER: StudioPromptLayerId[] = ["quality", "category", "set", "lighting", "audience"];
 const TRUTH_GROUP_ORDER: StudioFactGroup[] = ["identity", "appearance", "material", "structure", "text", "spec", "package", "usage"];
 const VIEW_ORDER = ["front", "side", "back", "detail", "package", "scene", "other", "tag"] as const;
 

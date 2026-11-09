@@ -142,6 +142,12 @@ func (r *Repository) InteriorProjects(userID string, limit int) ([]model.Interio
 	return items, err
 }
 
+func (r *Repository) InteriorDrawingProjects(userID string, limit int) ([]model.InteriorProject, error) {
+	var items []model.InteriorProject
+	err := r.db.Select("id", "document_json").Where("user_id = ? AND document_json LIKE ?", userID, `%"drawingBaseline"%`).Order("updated_at desc").Limit(limit).Find(&items).Error
+	return items, err
+}
+
 func (r *Repository) InteriorProjectCount(userID string) (int64, error) {
 	var count int64
 	err := r.db.Model(&model.InteriorProject{}).Where("user_id = ?", userID).Count(&count).Error

@@ -41,8 +41,8 @@ export type RemakeStep = "recipe" | "produce";
 
 /** 配方里用户能改的字段：保存时只把这些套到服务端最新版本上，不覆盖生成流程写入的单元和状态。 */
 function recipeFields(job: RemakeJob) {
-    const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign } = job;
-    return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign };
+    const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId } = job;
+    return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId };
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -92,6 +92,7 @@ export function RemakeWorkbench({
     draftRef.current = draft;
     const timer = useRef<number | undefined>(undefined);
     const [rewriting, setRewriting] = useState(false);
+    const [planningDirector, setPlanningDirector] = useState(false);
     const [textModel, setTextModel] = useState("");
     const [starting, setStarting] = useState(false);
     const [exporting, setExporting] = useState(false);
@@ -230,7 +231,7 @@ export function RemakeWorkbench({
     const cta = (() => {
         if (currentStep === "recipe")
             return (
-                <Button type="primary" size="large" block loading={starting} disabled={locked || Boolean(inputError)} icon={<Play size={16} />} onClick={() => void start()} title={inputError || undefined}>
+                <Button type="primary" size="large" block loading={starting} disabled={locked || planningDirector || rewriting || Boolean(inputError)} icon={<Play size={16} />} onClick={() => void start()} title={inputError || undefined}>
                     {pendingChanges || !startedBefore ? "开始生成" : "按新配方重新拼"}
                 </Button>
             );
@@ -360,8 +361,8 @@ export function RemakeWorkbench({
                 <main className="rw-main">
                     {currentStep === "recipe" ? (
                         <div className="rw-recipe-layout">
-                            <RemakeRecipeCards job={draft} config={config} edit={edit} disabled={locked} />
-                            <RemakeStoryboard job={draft} edit={edit} disabled={locked} config={config} textModel={textModel} onTextModel={setTextModel} rewriting={rewriting} onRewrite={() => void rewrite()} />
+                            <RemakeRecipeCards job={draft} config={config} edit={edit} disabled={locked || planningDirector || rewriting} onPlanningChange={setPlanningDirector} />
+                            <RemakeStoryboard job={draft} edit={edit} disabled={locked || planningDirector || rewriting} config={config} textModel={textModel} onTextModel={setTextModel} rewriting={rewriting} onRewrite={() => void rewrite()} />
                         </div>
                     ) : (
                         <RemakeProduce job={job} config={config} onEditRecipe={() => onStep("recipe")} />

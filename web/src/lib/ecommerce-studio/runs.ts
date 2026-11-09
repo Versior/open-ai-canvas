@@ -4,6 +4,7 @@ import { studioAttemptActive, studioShotCopy } from "./product";
 import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
 import { nextStudioComposition } from "./art-direction";
+import { studioDesignProfile } from "./design-knowledge";
 import type { StudioBrief, StudioCompositionId, StudioDetailLayoutId, StudioDetailPlan, StudioPhoto, StudioPlanKind, StudioPlanScope, StudioPlanTarget, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
 
 /**
@@ -256,7 +257,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
                     title: count > 1 ? `${type.label} ${index + 1}` : type.label,
                     ratio: studioRunRatio(role, product),
                     ...copy,
-                    ...(hasCopy && !brief.sameLayout ? { composition: nextStudioComposition(role, product.runs.flatMap((run) => run.shots).find((shot) => shot.role === role)?.composition, index) } : {}),
+                    ...(hasCopy && !brief.sameLayout ? { composition: nextStudioComposition(role, product.runs.flatMap((run) => run.shots).find((shot) => shot.role === role)?.composition, index, studioDesignProfile(product).compositions) } : {}),
                     tweaks: [],
                     attempts: [],
                 };

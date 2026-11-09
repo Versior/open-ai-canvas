@@ -34,7 +34,7 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
                     appearance="field"
                     value={entry.composition}
                     placeholder="按画面说明"
-                    options={STUDIO_COMPOSITION_IDS.map((id) => ({ value: id, label: STUDIO_COMPOSITIONS[id].label }))}
+                    options={STUDIO_COMPOSITION_IDS.map((id) => ({ value: id, label: STUDIO_COMPOSITIONS[id].label, title: STUDIO_COMPOSITIONS[id].render }))}
                     ariaLabel="这一屏的图文构图"
                     onChange={(value: StudioCompositionId) => onChange({ composition: value })}
                 />

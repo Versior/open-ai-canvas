@@ -562,8 +562,8 @@ describe("ecommerce studio detail plan", () => {
         expect(picked.styleId).toBe("candy");
         expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, detailPlan: picked } })?.styleId).name).toBe("童趣糖果");
         // 没有策划时按品类挑；换成主图套图时详情页的策划不算数；选了具体质感时不收策划挑的。
-        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, detailPlan: undefined } })?.styleId).name).toBe("纯净高级白");
-        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, outputType: "main-set", detailPlan: picked } })?.styleId).name).toBe("纯净高级白");
+        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, detailPlan: undefined } })?.styleId).name).toBe("日系原木");
+        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, outputType: "main-set", detailPlan: picked } })?.styleId).name).toBe("日系原木");
         expect(parseDetailPlan(JSON.stringify({ ...JSON.parse(reply), styleId: "candy" }), product, roles, { id: "p3", model: "m", createdAt: "" }).plan.styleId).toBeUndefined();
         expect(normalizeStudioProduct({ id: "p_style", style: "auto" })!.style).toBe("auto");
         expect(createStudioProduct("p_new").style).toBe("auto");

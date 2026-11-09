@@ -4,10 +4,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
 import { buildSceneAnalysisPrompt, buildSceneEditPrompt, knowledgeLines, SCENE_SCOPES, type InteriorSceneScope } from "@/lib/interior/scene-3d";
 import { sceneStats } from "@/lib/interior/scene-compile";
-import { buildSceneSpecEditPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
+import { buildSceneSpecEditPrompt, buildSceneSpecPrompt, type InteriorSceneData } from "@/lib/interior/scene-spec";
+import { drawingBaselineBrief } from "@/lib/interior/scene-drawing-baseline";
 import { modelCompatibilityError } from "@/lib/model-selection";
 import { cn } from "@/lib/utils";
-import type { InteriorCatalog, InteriorImageRef, InteriorProject, InteriorProjectDocument, InteriorSceneItem } from "@/services/api/interior";
+import { getInteriorDrawingBaseline, type InteriorCatalog, type InteriorImageRef, type InteriorProject, type InteriorProjectDocument, type InteriorSceneItem } from "@/services/api/interior";
 import { selectableModelsByCapability, type AiConfig } from "@/stores/use-config-store";
 import { groupPresets, uploadInteriorImage, UploadSlot, type InteriorUpload } from "./interior-composer";
 import { interiorImageUrl, newInteriorId, patchInteriorScene } from "./interior-models";
@@ -209,30 +210,113 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
         }
         const image = reference?.resourceId ? { resourceId: reference.resourceId, ...(reference.width ? { width: reference.width } : {}), ...(reference.height ? { height: reference.height } : {}) } : undefined;
         let found: Awaited<ReturnType<typeof fetchSceneKnowledge>>;
+        let baseline: Awaited<ReturnType<typeof getInteriorDrawingBaseline>> = null;
+        let brief: ReturnType<typeof drawingBaselineBrief> | undefined;
         const account = getActiveUserScope();
         knowledgeRequest.current = true;
         setReadingKnowledge(true);
         try {
-            found = await fetchSceneKnowledge({ scope: scope === "auto" ? undefined : scope, roomKey: room?.key, styleKey: style?.key, text: description });
+            if (image) {
+                baseline = await getInteriorDrawingBaseline(image.resourceId);
+                if (baseline) brief = drawingBaselineBrief(await loadSceneFile(baseline.sceneFile.resourceId), description);
+                if (brief && scope !== "auto" && scope !== brief.scope) throw new Error("这张图的已校准结构范围与当前选择不同，请选择「AI 判断」或原结构范围");
+            }
+            found = await fetchSceneKnowledge({
+                scope: brief?.scope || (scope === "auto" ? undefined : scope),
+                roomKey: room?.key,
+                styleKey: style?.key,
+                text: [description, brief?.spaces.map((space) => space.name).join("、")].filter(Boolean).join("\n"),
+            });
             if (getActiveUserScope() !== account) throw new Error("账号已切换，未提交建模");
         } catch (cause) {
-            setError(`读取室内设计知识库失败：${errorText(cause, "请稍后重试")}`);
+            setError(`准备建模失败：${errorText(cause, "请稍后重试")}`);
             return;
         } finally {
             knowledgeRequest.current = false;
             setReadingKnowledge(false);
         }
         const item: Omit<InteriorSceneItem, "id" | "createdAt" | "status" | "model"> = {
-            scope: scope === "auto" ? "room" : scope,
-            ...(scope === "auto" ? { autoScope: true } : {}),
+            scope: brief?.scope || (scope === "auto" ? "room" : scope),
+            ...(!brief && scope === "auto" ? { autoScope: true } : {}),
             description: description.trim(),
-            stage: "analyze",
+            stage: brief ? "spec" : "analyze",
+            ...(brief && baseline ? { brief, structureSource: { projectId: baseline.projectId, sceneId: baseline.sceneId, title: baseline.title, notice: baseline.notice }, notice: baseline.notice || "复用这张图已校准的结构，只生成材质与家具" } : {}),
             knowledge: found.refs,
             ...(room ? { roomKey: room.key, roomName: room.name } : {}),
             ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
             ...(image ? { reference: image } : {}),
         };
-        void start(item, buildSceneAnalysisPrompt({ scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), knowledge: found.knowledge, ...catalogKeys(catalog) }));
+        void start(
+            item,
+            brief
+                ? buildSceneSpecPrompt({ scope: brief.scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), brief, knowledge: found.knowledge, ...catalogKeys(catalog) })
+                : buildSceneAnalysisPrompt({ scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), knowledge: found.knowledge, ...catalogKeys(catalog) }),
+        );
+    };
+
+    const restoreDrawingBaseline = async () => {
+        if (busy || !selected?.reference || !project) return;
+        if (scenes.length >= MAX_SCENES) {
+            message.error("模型版本数量已达上限，请先整理历史版本");
+            return;
+        }
+        const account = getActiveUserScope();
+        setSubmitting(true);
+        try {
+            const baseline = await getInteriorDrawingBaseline(selected.reference.resourceId);
+            if (!baseline) throw new Error("这张图还没有已确认的结构基准，请先校准结构，或更换看图模型重新读取");
+            const scene = await loadSceneFile(baseline.sceneFile.resourceId);
+            const brief = drawingBaselineBrief(scene, selected.description);
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未恢复结构");
+            await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未保存新版本");
+            const id = newInteriorId();
+            const entry: InteriorSceneItem = {
+                id,
+                createdAt: new Date().toISOString(),
+                status: "succeeded",
+                model: "manual",
+                stage: "edit",
+                scope: brief.scope,
+                description: selected.description,
+                parentId: selected.id,
+                instruction: "恢复同图已校准结构",
+                reference: selected.reference,
+                brief,
+                sceneFile: baseline.sceneFile,
+                title: scene.title,
+                summary: scene.summary,
+                stats: sceneStats(scene),
+                structureSource: { projectId: baseline.projectId, sceneId: baseline.sceneId, title: baseline.title, notice: baseline.notice },
+                notice: baseline.notice || "已恢复本人确认的同图结构，可继续局部调整；未调用生成模型。",
+            };
+            update(project.id, (document) => ({ ...document, scenes: [entry, ...(document.scenes || [])] }));
+            await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未确认保存");
+            setSelectedId(id);
+            message.success("已恢复同图结构并保存新版本，原失败记录保留");
+        } catch (cause) {
+            message.error(errorText(cause, "恢复结构失败"));
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const confirmDrawingBaseline = async () => {
+        if (busy || !project || !selected?.reference || !selectedScene) return;
+        const account = getActiveUserScope();
+        setSubmitting(true);
+        try {
+            drawingBaselineBrief(selectedScene, selected.description);
+            update(project.id, (document) => patchInteriorScene(document, selected.id, { drawingBaseline: !selected.drawingBaseline }));
+            await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未确认保存");
+            message.success(selected.drawingBaseline ? "已取消结构基准" : "这张图再次上传时将复用当前结构");
+        } catch (cause) {
+            message.error(errorText(cause, "保存结构基准失败"));
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     /** 按当前视角截一张图存成素材，带去「效果图」用白模渲染出图。 */
@@ -281,6 +365,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 instruction: instruction.trim(),
                 knowledge: found.refs,
                 ...(editOption ? { editTarget: editOption.target } : {}),
+                ...(editOption && selected.structureSource ? { structureSource: selected.structureSource, notice: selected.structureSource.notice } : {}),
             },
             editOption
                 ? buildSceneLocalEditPrompt(selectedScene, editOption.target, instruction, found.knowledge)
@@ -316,7 +401,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 summary: scene.summary,
                 stats: sceneStats(scene),
                 error: undefined,
-                notice: undefined,
+                notice: selected.structureSource?.notice,
             };
             update(project.id, (document) => ({ ...document, scenes: [entry, ...(document.scenes || [])] }));
             await saveProject();
@@ -555,12 +640,22 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 stage={selected.stage}
                                 stalled={stalledText || undefined}
                                 referenceUrl={referenceUrl}
+                                layout={selected.brief?.layout}
                                 onRetry={() => tasks.retry(selected.id)}
                             />
                         ) : (
                             <div className="itd-scene-empty is-error" role="alert">
-                                <strong>这次没有搭出来</strong>
-                                <span>{selected.error || "生成失败"}</span>
+                                <strong>{selected.stage === "analyze" ? "图纸结构未通过校核" : "这次没有搭出来"}</strong>
+                                <span>{selected.stage === "analyze" ? "模型未能完整保留原图的空间、尺寸或连接，已停止建模。" : "生成未通过检查，原版本保留。"}</span>
+                                {selected.reference ? (
+                                    <Button disabled={busy} loading={submitting} onClick={() => void restoreDrawingBaseline()}>
+                                        恢复已校准结构
+                                    </Button>
+                                ) : null}
+                                <details>
+                                    <summary>查看校核详情</summary>
+                                    <span>{selected.error || "生成失败"}</span>
+                                </details>
                             </div>
                         )}
                     </div>
@@ -668,6 +763,14 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             ) : null}
                             {panel === "info" && selected?.taskId ? <TaskSettlement ids={[selected.taskId]} /> : null}
                             {panel === "info" && selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
+                            {panel === "info" && selected?.status === "succeeded" && selected.reference && selectedScene?.version === 2 && selectedScene.spec.grid?.source === "drawing" ? (
+                                <div>
+                                    <p>对照原图确认房间、门窗和尺寸后，可将当前版本设为同图结构基准。相同图纸再次上传时复用结构，材质与家具仍可调整。</p>
+                                    <Button disabled={busy} loading={submitting} onClick={() => void confirmDrawingBaseline()}>
+                                        {selected.drawingBaseline ? "取消结构基准" : "已核对，设为结构基准"}
+                                    </Button>
+                                </div>
+                            ) : null}
                             {panel === "history" && scenes.length ? (
                                 <ul className="itd-scene-list thin-scrollbar" aria-label="这个项目的 3D 模型">
                                     {scenes.map((item) => (

@@ -50,6 +50,19 @@ func RegisterInteriorRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"entries": items})
 	})
+	r.GET("/interior/drawing-baseline", func(c *gin.Context) {
+		actor, allowed := user(c)
+		if !allowed {
+			return
+		}
+		value, err := svc.InteriorDrawingBaseline(actor, c.Query("resourceId"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		ok(c, gin.H{"baseline": value})
+	})
 	r.GET("/interior/catalog", func(c *gin.Context) {
 		actor, allowed := user(c)
 		if !allowed {

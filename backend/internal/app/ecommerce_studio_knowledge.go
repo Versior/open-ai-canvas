@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"yingce/backend/internal/model"
@@ -107,6 +108,7 @@ func ecommerceStudioPlanContract(metadata map[string]any) string {
 		}
 	}
 	lines = append(lines, "本次先策划商品文案与画面，再由图片模型整体设计图文，文案、摄影、引线与信息分区一起设计；不拆成无字底图加程序文字栏。designAnalysis 给出实拍颜色、可见形体与买家需求如何决定色调、光线、可用机位和字阶，并让 style 与每屏 visual 执行这些依据。")
+	lines = append(lines, "按用户提供的完整版式与构图目录选择，不限于知识示例里的几种。每屏先说明购买问题和真实证据，再选表达方式与图文位置。商品本色与背景色分别判断：儿童眼镜的灰色镜腿不能作为整套灰白背景的理由；没有用户明确的灰白、暗调、参考同款或已选方向约束时，儿童商品自动推荐明亮有温度的配色。")
 	if len(lines) == 0 {
 		return ""
 	}
@@ -161,6 +163,15 @@ func (s *Service) ecommerceStudioPlanKnowledge(req EcommerceCreativeDirectionsRe
 }
 
 func selectEcommerceStudioPlanKnowledge(ranked []model.EcommerceKnowledgeEntry) []model.EcommerceKnowledgeEntry {
+	// 平台和创作类型是本轮约束，不能被高分的版式、摄影条目挤出总量限制。
+	ranked = append([]model.EcommerceKnowledgeEntry(nil), ranked...)
+	priority := func(kind string) int {
+		if kind == "platform_rule" || kind == "creation_type_rule" {
+			return 0
+		}
+		return 1
+	}
+	sort.SliceStable(ranked, func(i, j int) bool { return priority(ranked[i].KnowledgeType) < priority(ranked[j].KnowledgeType) })
 	selected, counts, seen := []model.EcommerceKnowledgeEntry{}, map[string]int{}, map[string]bool{}
 	for _, entry := range ranked {
 		limit := ecommerceStudioPlanKnowledgeTypes[entry.KnowledgeType]

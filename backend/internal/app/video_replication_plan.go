@@ -43,6 +43,9 @@ type videoReplicationPlanHead struct {
 	Canvases []struct {
 		ID string `json:"id"`
 	} `json:"canvases"`
+	Scripts []struct {
+		Strategy *videoReplicaStrategy `json:"strategy,omitempty"`
+	} `json:"scripts"`
 }
 
 // SaveVideoReplicationPlan 保存复刻方案。只接受本人已完成的拆解任务；逐镜处理要和拆解结果的镜头一一对应，
@@ -75,6 +78,13 @@ func (s *Service) SaveVideoReplicationPlan(userID, taskID string, payload []byte
 	if head.Campaign != nil {
 		if err := head.Campaign.validate(); err != nil {
 			return nil, BadAuthRequest(err.Error())
+		}
+	}
+	for _, script := range head.Scripts {
+		if script.Strategy != nil {
+			if err := script.Strategy.validate(); err != nil {
+				return nil, BadAuthRequest(err.Error())
+			}
 		}
 	}
 	if len(head.Shots) != len(bundle.Shots) {

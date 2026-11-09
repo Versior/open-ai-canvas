@@ -26,6 +26,7 @@ export function replicationDeliveryFiles(bundle: VideoTeardownBundle, analysis: 
             onScreenText: item.onScreenText,
             imagePrompt: item.imagePrompt,
             videoPrompt: item.videoPrompt,
+            director: item.director,
             keyframeResourceId: shot.keyframeResourceId,
             plot: rows.get(shot.index)?.plotDescription || "",
         };
@@ -54,7 +55,25 @@ export function replicationDeliveryFiles(bundle: VideoTeardownBundle, analysis: 
             ]),
         },
         { name: "方案口播.srt", data: deliverySrt(subtitles) },
-        { name: "分镜.json", data: JSON.stringify({ version: 1, title: analysis.title, source: bundle.source, plannedDurationMs: cursor, authorized: plan.authorized, product: plan.product, shots, warnings }, null, 2) },
+        {
+            name: "分镜.json",
+            data: JSON.stringify(
+                {
+                    version: 1,
+                    title: analysis.title,
+                    source: bundle.source,
+                    plannedDurationMs: cursor,
+                    authorized: plan.authorized,
+                    product: plan.product,
+                    campaign: plan.campaign,
+                    strategy: plan.scripts.find((script) => script.id === plan.activeScriptId)?.strategy,
+                    shots,
+                    warnings,
+                },
+                null,
+                2,
+            ),
+        },
         {
             name: "交付说明.md",
             data: `# ${analysis.title} · 剪辑交付\n\n本包是当前复刻方案快照，包含原片关键帧、拆解报告、逐镜计划和口播字幕。方案口播.srt 使用删镜后的连续时间轴；原片时间码在 CSV/JSON 中保留。字幕时长沿用镜头时长，实际配音与成片需重新校准。成片与剪映草稿请在复刻工作台导出。\n\n${warnings.map((warning) => `- ${warning}`).join("\n") || "没有检测到口播时长问题。"}\n\n授权仅记录方案勾选状态；商品外观、人物与声音使用权限仍需人工确认。`,

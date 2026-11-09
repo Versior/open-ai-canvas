@@ -19,6 +19,9 @@ func validateFashionWork(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &kind); err != nil {
 		return errors.New("作品结构无效")
 	}
+	if kind.Kind == "fashion-video" {
+		return validateFashionVideoWork(raw)
+	}
 	if kind.Kind != "fashion" {
 		return nil
 	}
@@ -145,7 +148,7 @@ func (s *Service) validateFashionResources(userID string, raw json.RawMessage) e
 	var kind struct {
 		Kind string `json:"kind"`
 	}
-	if err := json.Unmarshal(raw, &kind); err != nil || kind.Kind != "fashion" {
+	if err := json.Unmarshal(raw, &kind); err != nil || kind.Kind != "fashion" && kind.Kind != "fashion-video" {
 		return nil
 	}
 	refs, err := assets.CollectDocumentResourceReferences(string(raw))
@@ -153,9 +156,13 @@ func (s *Service) validateFashionResources(userID string, raw json.RawMessage) e
 		return BadAuthRequest("模特素材引用无效")
 	}
 	seen := map[string]bool{}
+	isVideoWork := kind.Kind == "fashion-video"
 	for _, ref := range refs {
 		kind := "image"
 		if strings.Contains(ref.Path, ".video.") {
+			kind = "video"
+		}
+		if isVideoWork && (strings.HasPrefix(ref.Path, "draft.source.") || strings.HasPrefix(ref.Path, "clip.") || strings.HasPrefix(ref.Path, "units[") && !strings.Contains(ref.Path, ".references[")) {
 			kind = "video"
 		}
 		key := kind + ":" + ref.ResourceID

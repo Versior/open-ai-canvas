@@ -16,9 +16,33 @@ export type StudioPlanKind = "main" | "detail";
 /** model：模型直接把文字画进图里；overlay：模型只出留白底图，文字由程序排版。 */
 export type StudioTextMode = "model" | "overlay";
 /** 详情页一屏的版式：决定画面怎么分区、要点文字排成图标标签、引线标签还是参数行。 */
-export type StudioDetailLayoutId = "poster" | "split" | "icons" | "callout" | "compare" | "grid" | "scene" | "data" | "spec" | "closing" | "pain" | "mechanism" | "ingredients" | "proof";
+export type StudioDetailLayoutId =
+    | "poster"
+    | "split"
+    | "icons"
+    | "callout"
+    | "compare"
+    | "grid"
+    | "scene"
+    | "data"
+    | "spec"
+    | "closing"
+    | "pain"
+    | "mechanism"
+    | "ingredients"
+    | "proof"
+    | "editorial"
+    | "macro"
+    | "storyboard"
+    | "checklist"
+    | "timeline"
+    | "flatlay"
+    | "color-block"
+    | "cutout"
+    | "lookbook"
+    | "material-board";
 /** 构图骨架与内容版式分开：决定文字留白、主体位置和裁切。 */
-export type StudioCompositionId = "left" | "right" | "top" | "bottom" | "center" | "corner";
+export type StudioCompositionId = "left" | "right" | "top" | "bottom" | "center" | "corner" | "diagonal" | "sidebar" | "window" | "diptych" | "triptych" | "mosaic" | "ribbon" | "orbit" | "arch" | "vertical" | "macro" | "timeline";
 /** 「调整这一张」里修改要求的字数上限。 */
 export const STUDIO_SHOT_ADJUST_MAX = 200;
 /** 质感预设；auto 表示按商品推荐：策划详情页时由策划挑，不策划时按品类挑。 */

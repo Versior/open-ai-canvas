@@ -1,5 +1,6 @@
 import type { EcommerceImageRole } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioPromptOverride, studioPromptText } from "./prompt-overrides";
+import { studioDesignProfile } from "./design-knowledge";
 import type { StudioBrief, StudioCategoryFamily, StudioPlanKind, StudioProduct, StudioShotRole, StudioStyleId, StudioStylePresetId } from "./types";
 
 /**
@@ -659,9 +660,10 @@ export function studioStyle(id: StudioStyleId): StudioStylePreset {
  * 这件商品实际用的质感：选了预设就用预设；选「按商品推荐」时用当前出图类型的策划挑的（plannedStyleId，
  * 由调用方按 studioActivePlan 取），没有策划按品类挑。
  */
-export function studioProductStyle(product: Pick<StudioProduct, "style" | "dossier">, plannedStyleId?: StudioStylePresetId): StudioStylePreset {
+export function studioProductStyle(product: Pick<StudioProduct, "style" | "dossier"> & Partial<Pick<StudioProduct, "name" | "brief">>, plannedStyleId?: StudioStylePresetId): StudioStylePreset {
     if (product.style !== "auto") return studioStyle(product.style);
-    return studioStyle(plannedStyleId || STUDIO_FAMILY_STYLE[product.dossier?.family || "generic"]);
+    const profile = studioDesignProfile(product);
+    return studioStyle(plannedStyleId || (profile.key !== "general" ? profile.styles[0] : STUDIO_FAMILY_STYLE[product.dossier?.family || "generic"]));
 }
 
 /** 微调标签：只改这张图的镜头规格，不碰商品真值。 */

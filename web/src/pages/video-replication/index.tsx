@@ -145,7 +145,20 @@ export default function VideoReplicationPage() {
             const analysis = readVideoReplicationAnalysis(record.analysis, bundle.shots.length);
             const job = createRemakeJob(nanoid(12), { teardownId: record.task.id, bundle, analysis, sourceName: fallbackTitle });
             if (analysis && record.plan) {
-                const planned = readReplicaPlan(record.plan, bundle, analysis).product;
+                const plan = readReplicaPlan(record.plan, bundle, analysis);
+                const planned = plan.product;
+                job.campaign = plan.campaign;
+                job.shots = job.shots.map((shot) => {
+                    const saved = plan.shots.find((item) => item.shotNumber === shot.index);
+                    return saved
+                        ? {
+                              ...shot,
+                              ...(plan.activeScriptId || saved.dialogue !== shot.originalDialogue ? { dialogue: saved.dialogue } : {}),
+                              ...(plan.activeScriptId || saved.onScreenText !== shot.onScreenText ? { onScreenText: saved.onScreenText } : {}),
+                              ...(shot.treatment === "remake" && saved.director ? { director: saved.director } : {}),
+                          }
+                        : shot;
+                });
                 if (planned.name || planned.images.length)
                     job.product = {
                         name: planned.name,

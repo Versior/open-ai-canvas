@@ -158,7 +158,7 @@ function planKnowledgeMetadata(product: StudioProduct) {
 }
 
 function knowledgeContext(product: StudioProduct) {
-    return { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name };
+    return { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: [product.name, product.dossier?.name, studioTitleOf(product)].filter(Boolean).join(" ") };
 }
 
 function taskOutputs(task: GenerationTask): StudioOutput[] {
@@ -420,7 +420,7 @@ export function useStudioRunner() {
                     streamText: false,
                     metadata: { ...studioAnalysisMetadata(productId, "directions", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
                 });
-                const items = parseDirections(result.text || "", () => nanoid(10));
+                const items = parseDirections(result.text || "", () => nanoid(10), product);
                 update(
                     productId,
                     (value) => {

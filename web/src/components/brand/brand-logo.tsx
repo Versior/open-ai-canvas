@@ -42,24 +42,33 @@ export function BrandLogo({ className, alt = "", theme = "auto" }: BrandLogoProp
 
 function BuiltinBrandMark({ className, alt }: { className?: string; alt: string }) {
     return (
-        <span className={className} style={{ position: "relative", display: "inline-block", overflow: "visible" }} role={alt ? "img" : undefined} aria-label={alt || undefined} aria-hidden={alt ? undefined : true}>
-            <span style={{ position: "absolute", inset: 0, backgroundColor: "currentColor", mask: "url(/logo.svg) center / contain no-repeat", WebkitMask: "url(/logo.svg) center / contain no-repeat" }} />
-            <span style={{ position: "absolute", width: "7%", aspectRatio: 1, right: "7.5%", bottom: "9.25%", borderRadius: "var(--brand-cue-radius)", backgroundColor: "var(--brand-cue)" }} />
+        <span
+            className={className}
+            style={{ position: "relative", display: "inline-block", flexShrink: 0, overflow: "visible", width: "auto", aspectRatio: "305 / 76" }}
+            role={alt ? "img" : undefined}
+            aria-label={alt || undefined}
+            aria-hidden={alt ? undefined : true}
+        >
+            <span style={{ position: "absolute", inset: 0, backgroundColor: "currentColor", mask: "url(/wordmark.svg) center / contain no-repeat", WebkitMask: "url(/wordmark.svg) center / contain no-repeat" }} />
+            <span style={{ position: "absolute", width: "1.8%", aspectRatio: 1, right: "1.7%", top: "8.5%", borderRadius: "var(--brand-cue-radius)", backgroundColor: "var(--brand-cue)" }} />
         </span>
     );
 }
 
 export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", theme = "auto" }: BrandLogoProps & { logoClassName?: string }) {
     const frameEnabled = useAppearanceStore((state) => state.appearance.logoFrameEnabled);
-    const unframedStyle: CSSProperties | undefined = frameEnabled
-        ? undefined
-        : {
-              background: "transparent",
-              borderColor: "transparent",
-              borderRadius: 0,
-              boxShadow: "none",
-              color: "inherit",
-          };
+    const builtin = useAppearanceStore((state) => !state.appearance.logoConfigured);
+    const unframedStyle: CSSProperties | undefined =
+        frameEnabled && !builtin
+            ? undefined
+            : {
+                  background: "transparent",
+                  borderColor: "transparent",
+                  borderRadius: 0,
+                  boxShadow: "none",
+                  color: "inherit",
+                  ...(builtin ? { width: "auto", height: "auto", flexBasis: "auto" } : {}),
+              };
     return (
         <span className={cn("brand-logo-frame", className)} data-logo-frame-enabled={frameEnabled} style={unframedStyle}>
             <BrandLogo className={logoClassName} fallback={fallback} alt={alt} theme={theme} />
@@ -70,22 +79,5 @@ export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", t
 export function BrandWordmark({ className, builtinClassName }: BrandWordmarkProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
     if (appearance.logoConfigured || appearance.brandName !== "STAGE") return <span className={className}>{appearance.brandName}</span>;
-    return (
-        <span className={builtinClassName} style={{ position: "relative", display: "inline-block", flexShrink: 0, overflow: "visible" }} role="img" aria-label="STAGE">
-            <span style={{ position: "absolute", inset: 0, backgroundColor: "currentColor", mask: "url(/wordmark.svg) left center / contain no-repeat", WebkitMask: "url(/wordmark.svg) left center / contain no-repeat" }} />
-            <span
-                style={{
-                    position: "absolute",
-                    width: "1.8%",
-                    minWidth: "var(--brand-cue-min-size)",
-                    minHeight: "var(--brand-cue-min-size)",
-                    aspectRatio: 1,
-                    right: "1.7%",
-                    top: "8.5%",
-                    borderRadius: "var(--brand-cue-radius)",
-                    backgroundColor: "var(--brand-cue)",
-                }}
-            />
-        </span>
-    );
+    return <BuiltinBrandMark className={builtinClassName} alt="STAGE" />;
 }

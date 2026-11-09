@@ -14,7 +14,7 @@ import { uploadImage } from "@/services/image-storage";
 import type { AiConfig } from "@/stores/use-config-store";
 import { replicaScriptModelError, rewriteReplicaScripts } from "./replication-script";
 import type { ReplicaPlanSaveState } from "./use-replica-plan";
-import { ReplicaCampaignEditor, ReplicaShotDirector } from "./replication-director";
+import { ReplicaCampaignEditor, ReplicaShotDirector, ReplicaStrategyView } from "./replication-director";
 
 const MAX_PRODUCT_BYTES = 20 * 1024 * 1024;
 const CHARS_PER_SECOND = 5;
@@ -298,6 +298,12 @@ function ScriptSection({ bundle, analysis, plan, update, config, model, onModelC
                                     </button>
                                 </div>
                                 {script.hook ? <p className="vr-plan-script-hook">{script.hook}</p> : null}
+                                {script.strategy ? (
+                                    <details>
+                                        <summary>查看全片策划与选法依据</summary>
+                                        <ReplicaStrategyView strategy={script.strategy} />
+                                    </details>
+                                ) : null}
                                 <ol className="vr-plan-script-lines">
                                     {script.lines.map((line) => (
                                         <li key={line.shotNumber}>

@@ -86,7 +86,7 @@ func ecommerceStudioPlaybookIDs(category, name, family, materials, kind string, 
 	}
 	ids = append(ids, categories...)
 	ids = append(ids, pick(kb20PhotoKind, material, ecommerceStudioPlaybookLighting)...)
-	return append(ids, kb20LayoutID, kb20CopyID)
+	return append(ids, kb20LayoutID, kb20CopyID, kb20ColorID, kb20CompositionID)
 }
 
 // ecommerceStudioDesignPlaybook 返回追加到出图策划系统提示词里的设计策划知识；来源被停用或一条都取不到时为空。

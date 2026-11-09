@@ -157,12 +157,17 @@ export type InteriorSceneItem = {
     taskId?: string;
     /** 校验不通过最多自动修正一次；持久化防止刷新后重复付费修正。 */
     repairCount?: number;
+    /** 读图结构校核最多修正一次，独立于材质家具阶段。 */
+    analysisRepairCount?: number;
     /** 旧版分部分搭留下的规划，只读不用。 */
     plan?: unknown;
     /** 各部分的任务；没提交成功的部分是 null。 */
     partTaskIds?: (string | null)[];
     error?: string;
     sceneFile?: { resourceId: string };
+    /** 本人已对照原图确认的结构，允许相同图纸再次上传时复用。 */
+    drawingBaseline?: boolean;
+    structureSource?: { projectId: string; sceneId: string; title: string; notice?: string };
     title?: string;
     summary?: string;
     objectCount?: number;
@@ -181,6 +186,12 @@ export type InteriorProjectDocument = { version: 1; rounds: InteriorRound[]; sce
 export type InteriorProjectSummary = { id: string; name: string; kind: InteriorProjectKind; revision: number; createdAt: string; updatedAt: string };
 export type InteriorProject = InteriorProjectSummary & { document: InteriorProjectDocument };
 export type InteriorProjectInput = { name: string; kind: InteriorProjectKind; document?: InteriorProjectDocument; expectedRevision?: number };
+
+export type InteriorDrawingBaseline = { projectId: string; sceneId: string; title: string; notice?: string; sceneFile: { resourceId: string } };
+
+export function getInteriorDrawingBaseline(resourceId: string) {
+    return http.get<{ baseline: InteriorDrawingBaseline | null }>("/interior/drawing-baseline", { params: { resourceId } }).then((value) => value.baseline);
+}
 
 /** 保存时服务端修订号不一致返回的 reason。 */
 export const INTERIOR_PROJECT_CONFLICT = "interior_project_conflict";

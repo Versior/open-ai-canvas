@@ -155,11 +155,11 @@ function WorkspaceSidebarProfile({ collapsed, user, onExpand, onCollapse }: { co
 function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNavigate: () => void; onExpand: () => void; onCollapse: () => void }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const { t } = useTranslation();
-    // 内置 STAGE cue mark 保持独立、无框；自定义 Logo 的配色不可预知，使用中性浅底方块承托。
+    // 内置品牌只显示完整字母 Logo；自定义 Logo 使用中性浅底承托。
     const mark = (
         <BrandLogoFrame
             className={cn("app-workspace-brand-mark grid shrink-0 place-items-center", !appearance.logoConfigured && "is-builtin")}
-            logoClassName="size-5 object-contain"
+            logoClassName={appearance.logoConfigured ? "size-5 object-contain" : collapsed ? "h-3" : "h-6"}
             alt=""
             fallback={<span className="app-workspace-brand-glyph" aria-hidden />}
         />
@@ -168,7 +168,7 @@ function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNa
         <div className={cn("app-workspace-sidebar-brand-row relative shrink-0", collapsed && "is-collapsed")}>
             <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
                 {mark}
-                {!collapsed ? <BrandWordmark className="app-workspace-brand-wordmark truncate" builtinClassName="app-workspace-brand-wordmark-image" /> : null}
+                {!collapsed && (appearance.logoConfigured || appearance.brandName !== "STAGE") ? <BrandWordmark className="app-workspace-brand-wordmark truncate" builtinClassName="app-workspace-brand-wordmark-image" /> : null}
             </Link>
         </div>
     );

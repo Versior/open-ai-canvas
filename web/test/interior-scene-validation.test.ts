@@ -17,6 +17,11 @@ const plan = {
 };
 
 describe("completed interior model acceptance", () => {
+    test("a reference image cannot skip source detection and drawing geometry by omitting source", () => {
+        const failedReading = { scope: "building", description: "315㎡CAD大平层，北侧电梯厅，外包尺寸30.3m×15.6m", size: { width: 30.3, depth: 15.6 }, spaces: [{ name: "户内空间主体" }] };
+        const options = { scope: "auto" as const, roomKeys: [], styleKeys: [], hasReference: true };
+        expect(() => normalizeSceneBrief(failedReading, options)).toThrow("来源");
+    });
     test("accepts a complete adjacent plan", () => {
         expect(checkSceneCompletion(plan, "home").issues).toEqual([]);
     });
