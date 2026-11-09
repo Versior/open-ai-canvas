@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { LanguageMenu } from "@/components/layout/language-menu";
 
-import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandWordmark } from "@/components/brand/brand-logo";
 import { SiteComplianceFooter } from "@/components/layout/site-compliance-footer";
 import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { useAuthLoginMode } from "@/hooks/use-auth-entry";
@@ -98,8 +98,7 @@ function AuthPageScene() {
                     <div aria-hidden className="auth-scene-video-blend absolute inset-y-0 right-0 hidden w-[clamp(120px,14vw,240px)] lg:block" />
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 p-5 sm:p-7 lg:p-9">
                         <Link to="/" className="auth-scene-brand inline-flex items-center gap-2 text-sm font-semibold drop-shadow-sm transition-opacity hover:opacity-80">
-                            {appearance.logoConfigured ? <BrandLogo theme={theme} className="size-7" alt="" fallback={null} /> : null}
-                            <BrandWordmark builtinClassName="h-6 w-[90px]" />
+                            <BrandWordmark theme={theme} builtinClassName="h-6 w-[90px]" />
                         </Link>
                         <button
                             type="button"

@@ -16,8 +16,6 @@ import "@/styles/workspace-menus.css";
 const workspaceTheme = getWorkspaceAntThemeConfig();
 // 平台唯一的 Agent 面板按需加载，不拖慢首屏；画布编辑器只发布画布上下文，不再自己渲染面板。
 const GlobalAgentPanel = lazy(() => import("@/components/canvas/canvas-cloud-agent-panel").then((module) => ({ default: module.CanvasCloudAgentPanel })));
-// 游客登录弹窗只给游客按需加载，登录用户不下载这段代码。
-const GuestAuthModalHost = lazy(() => import("@/components/auth/auth-modal").then((module) => ({ default: module.GuestAuthModalHost })));
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     const { pathname } = useLocation();
@@ -26,7 +24,6 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const canvasEditor = /^\/canvas\/[^/]+(?:\/|$)/.test(pathname);
     const productWorkspace = !adminWorkspace && !canvasEditor;
     const userId = useUserStore((state) => state.user?.id);
-    const userHydrated = useUserStore((state) => state.hydrated);
     // Agent 停靠在画布右侧时，工作区让出同样的宽度，画布、顶栏和角落控件都不被遮挡。
     const agentDock = useAgentPanelDock();
     const agentDocked = Boolean(userId) && canvasEditor && agentDock.active;
@@ -86,11 +83,6 @@ export default function UserLayout({ children }: { children: ReactNode }) {
                 <AppWorkspaceShell>{children}</AppWorkspaceShell>
             </div>
             {globalAgent}
-            {userHydrated && !userId ? (
-                <Suspense fallback={null}>
-                    <GuestAuthModalHost />
-                </Suspense>
-            ) : null}
         </ConfigProvider>
     );
 }

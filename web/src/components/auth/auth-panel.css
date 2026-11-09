@@ -32,6 +32,7 @@
 }
 
 .auth-panel-title-brand {
+    display: inline-block;
     width: 100px;
     height: 27px;
 }

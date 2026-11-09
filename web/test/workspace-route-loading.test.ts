@@ -54,11 +54,13 @@ describe("workspace route loading", () => {
         expect((Page({}) as { type: unknown }).type).toBe(Loaded);
     });
 
-    test("keeps the creation page at root and preserves the create compatibility route", () => {
+    test("shows the guest home while keeping signed-in root and /create in the creation workspace", () => {
         const router = source("../src/router.tsx");
         const navigation = source("../src/components/layout/workspace-sidebar-nav.tsx");
 
-        expect(router).toContain('{ path: "/", element: deferred(<CreatePage />) }');
+        expect(router).toContain('{ path: "/", element: <SiteHomeLayout />');
+        expect(router).toContain("children: [{ index: true, element: deferred(<CreatePage />) }]");
+        expect(router).toContain("if (!user && welcomeEnabled) return fullScreenDeferred(<WelcomePage />)");
         expect(router).toContain('{ path: "/create", element: deferred(<CreatePage />) }');
         expect(router).toContain("<RequireAuth allowAnonymous={isGuestWorkspacePath(pathname)}>");
         expect(router).toContain('{ path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> }');

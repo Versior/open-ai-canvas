@@ -1,7 +1,8 @@
 import { Clapperboard, LayoutGrid, ShoppingBag, Sparkles, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandFilm } from "@/components/brand/brand-film";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
@@ -53,7 +54,7 @@ export default function AuthDialog({ navigate }: { navigate: (to: string) => voi
             styles={{ header: { margin: 0, padding: 0 } }}
         >
             <div className="auth-dialog-layout">
-                <AuthDialogStage />
+                {open && !signedIn ? <AuthDialogStage /> : null}
                 <div className="auth-dialog-form">
                     <div className="auth-dialog-form-inner">
                         <AuthPanel variant="dialog" view={view} onViewChange={setView} next={next ?? currentPath()} onAuthenticated={finish} />
@@ -70,13 +71,13 @@ function AuthDialogStage() {
     return (
         <aside className="auth-dialog-stage">
             <div className="auth-dialog-brand">
-                {appearance.logoConfigured ? <BrandLogo className="auth-dialog-brand-logo" alt="" fallback={<span className="auth-dialog-brand-logo auth-dialog-brand-mark" aria-hidden />} /> : null}
                 <BrandWordmark builtinClassName="auth-dialog-brand-wordmark" />
             </div>
             <div className="auth-dialog-stage-copy">
                 <p className="auth-dialog-stage-title">{appearance.authHeroTitle}</p>
                 <p className="auth-dialog-stage-tagline">{appearance.authHeroDescription || t("auth.panel.tagline")}</p>
             </div>
+            <BrandFilm className="auth-dialog-film" />
             <ul className="auth-dialog-features">
                 {STAGE_FEATURES.map(({ key, icon: Icon }) => (
                     <li key={key} className="auth-dialog-feature">

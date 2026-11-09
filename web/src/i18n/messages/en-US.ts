@@ -150,6 +150,7 @@ export const enUS: Messages = {
         brandPoster: "{{brand}} brand poster",
         playVideo: "Play brand film",
         videoPlaying: "Creation in progress",
+        videoLoadFailed: "Video failed to load. Please retry.",
         backHome: "Back to home",
         login: {
             method: "Sign-in method",

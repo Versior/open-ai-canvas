@@ -151,6 +151,7 @@ export const deDE: Messages = {
         brandPoster: "Markenplakat von {{brand}}",
         playVideo: "Markenfilm abspielen",
         videoPlaying: "Hier entsteht Kreativität",
+        videoLoadFailed: "Das Video konnte nicht geladen werden. Bitte erneut versuchen.",
         backHome: "Zur Startseite",
         login: {
             method: "Anmeldemethode",

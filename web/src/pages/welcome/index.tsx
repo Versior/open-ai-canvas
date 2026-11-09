@@ -3,14 +3,16 @@ import { Button, ConfigProvider, Tabs } from "antd";
 import { ArrowDown, ArrowRight, ArrowUpRight, Code2, Menu, Pause, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { BrandLogo, BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandFilm } from "@/components/brand/brand-film";
 import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 
 import { WelcomeContributorsCard } from "./contributors-card";
 import { chapters, getWelcomeLook, showcases, welcomeLooks, type WelcomeLook } from "./story";
-// 欢迎页是独立入口、不加载 globals.css；按钮 token 单独引入，antd 主题里的 var(--button-*) 才能解析。
+// 独立欢迎入口也需要按钮 token。
 import "@/styles/button-tokens.css";
 import "./welcome.css";
 import { Select } from "@/components/ui/base/select";
@@ -49,7 +51,7 @@ export default function WelcomePage() {
 }
 
 function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLook; brandName: string; onLookChange: (id: string) => void }) {
-    const logoConfigured = useAppearanceStore((state) => state.appearance.logoConfigured);
+    const authOpen = useAuthDialogStore((state) => state.open);
     const { t } = useTranslation();
     const storyRef = useRef<HTMLElement>(null);
     const progressRef = useRef(0);
@@ -110,8 +112,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
             </a>
             <header className="welcome-header">
                 <a className="welcome-brand" href="/welcome" aria-label={t("shell.brandHome", { brand: brandName })}>
-                    {logoConfigured ? <BrandLogo theme="dark" className="welcome-brand-logo" alt="" fallback={null} /> : null}
-                    <BrandWordmark builtinClassName="welcome-brand-wordmark" />
+                    <BrandWordmark theme="dark" builtinClassName="welcome-brand-wordmark" />
                 </a>
                 <nav className={menu ? "welcome-nav is-open" : "welcome-nav"} aria-label={t("account.welcome.nav")}>
                     <a href="#workbench" onClick={() => setMenu(false)}>
@@ -125,20 +126,25 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                         <ArrowUpRight size={13} />
                     </a>
                 </nav>
+                <Button className="welcome-header-login" type="text" href="/login?next=%2Fcreate">
+                    {t("auth.login.submit")}
+                </Button>
                 <Button className="welcome-header-cta" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
                     {t("account.welcome.start")}
                 </Button>
                 <IconButton className="welcome-icon mobile-menu" variant="ghost" size="lg" icon={menu ? X : Menu} aria-label={menu ? t("account.welcome.closeMenu") : t("account.welcome.openMenu")} aria-expanded={menu} onClick={() => setMenu(!menu)} />
             </header>
-            <aside className="welcome-look-picker" aria-label={t("account.welcome.lookPicker")}>
-                <Select id="welcome-look-select" aria-label={t("account.welcome.look")} value={look.id} options={welcomeLooks.map((item) => ({ label: t(item.label), value: item.id }))} onChange={onLookChange} popupMatchSelectWidth={false} />
-                {look.credit && (
-                    <a href={`/welcome/credits.html#${look.id}`} target="_blank" rel="noreferrer" title={t(look.credit)}>
-                        {t("account.welcome.demoCredit")}
-                        <ArrowUpRight size={12} />
-                    </a>
-                )}
-            </aside>
+            {chapter > 0 ? (
+                <aside className="welcome-look-picker" aria-label={t("account.welcome.lookPicker")}>
+                    <Select id="welcome-look-select" aria-label={t("account.welcome.look")} value={look.id} options={welcomeLooks.map((item) => ({ label: t(item.label), value: item.id }))} onChange={onLookChange} popupMatchSelectWidth={false} />
+                    {look.credit && (
+                        <a href={`/welcome/credits.html#${look.id}`} target="_blank" rel="noreferrer" title={t(look.credit)}>
+                            {t("account.welcome.demoCredit")}
+                            <ArrowUpRight size={12} />
+                        </a>
+                    )}
+                </aside>
+            ) : null}
 
             <main>
                 <section ref={storyRef} id="story" className="welcome-story" aria-label={t("account.welcome.storyLabel")}>
@@ -146,18 +152,21 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                         <div className={`welcome-poster${ready && !staticScene ? " is-ready" : ""}`} aria-hidden="true">
                             <img src={look.frames[staticScene ? chapter * 2 : 0]} alt="" fetchPriority="high" />
                         </div>
-                        {!staticScene && (
+                        {!staticScene && chapter > 0 && (
                             <SceneBoundary onError={() => setFailed(true)}>
                                 <Suspense fallback={null}>
                                     <StoryReel look={look} progress={progressRef} paused={paused} onReady={() => setReady(true)} onError={() => setFailed(true)} />
                                 </Suspense>
                             </SceneBoundary>
                         )}
+                        {chapter === 0 ? <BrandFilm className="welcome-home-film" paused={paused || authOpen} /> : null}
                         <div className="welcome-stage-shade" aria-hidden="true" />
                         {chapters.map((item, index) => (
                             <section key={item.id} className={`welcome-chapter ${index === 0 ? "welcome-opening" : ""} ${index === chapter ? "is-active" : ""}`} aria-hidden={index !== chapter}>
                                 {index === 0 ? (
-                                    <h1>{item.title}</h1>
+                                    <h1>
+                                        <BrandWordmark theme="dark" builtinClassName="welcome-hero-wordmark" />
+                                    </h1>
                                 ) : (
                                     <h2>
                                         {t(item.title)
@@ -250,7 +259,9 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                 </section>
             </main>
             <footer className="welcome-footer">
-                <a href="/welcome">{brandName}</a>
+                <a href="/welcome">
+                    <BrandWordmark theme="dark" builtinClassName="welcome-brand-wordmark" />
+                </a>
                 <span>{t("account.welcome.footer")}</span>
                 <a href={`${github}/blob/main/LICENSE`} target="_blank" rel="noreferrer">
                     Open Source · MIT License

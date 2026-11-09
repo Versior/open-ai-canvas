@@ -23,9 +23,9 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: var(--space-8);
-    overflow: hidden;
-    padding: var(--space-12);
+    gap: var(--space-4);
+    overflow-y: auto;
+    padding: var(--space-8);
     background: radial-gradient(120% 90% at 0% 0%, var(--auth-dialog-glow), transparent 62%), var(--auth-panel-bg);
     color: var(--foreground);
 }
@@ -68,22 +68,14 @@
     font-weight: 600;
 }
 
-.auth-dialog-brand-logo {
-    width: 32px;
-    height: 32px;
-    flex: 0 0 auto;
-}
-
-.auth-dialog-brand-mark {
-    display: block;
-    background: currentColor;
-    mask: url(/logo.svg) center / contain no-repeat;
-    -webkit-mask: url(/logo.svg) center / contain no-repeat;
-}
-
 .auth-dialog-brand-wordmark {
-    width: 85px;
+    width: 96px;
     height: 24px;
+}
+
+.auth-dialog-film {
+    flex-shrink: 0;
+    width: 100%;
 }
 
 .auth-dialog-stage-copy {

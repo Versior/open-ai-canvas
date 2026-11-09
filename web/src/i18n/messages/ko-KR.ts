@@ -151,6 +151,7 @@ export const koKR: Messages = {
         brandPoster: "{{brand}} 브랜드 포스터",
         playVideo: "브랜드 영상 재생",
         videoPlaying: "창작이 진행 중입니다",
+        videoLoadFailed: "동영상을 불러오지 못했습니다. 다시 시도해 주세요.",
         backHome: "홈으로",
         login: {
             method: "로그인 방식",

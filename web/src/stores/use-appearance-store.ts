@@ -50,7 +50,7 @@ export const useAppearanceStore = create<AppearanceStore>((set) => ({
     setAppearance: (appearance) => set({ appearance, resolved: true }),
 }));
 
-/** 标签页标题 =（后台提醒）+ 页面名称 + 品牌；没有页面名称时用 SEO 标题。 */
+/** 标签页标题使用简短品牌；完整 SEO 标题只进入搜索与分享元数据。 */
 function documentTitleFor(appearance: PublicAppearance) {
     const { pageTitle, attentionCount, attentionLabel } = useDocumentTitleStore.getState();
     return composeDocumentTitle({ pageTitle, brandName: appearance.brandName, seoTitle: appearance.seoTitle, attentionCount, attentionLabel });
@@ -70,7 +70,7 @@ export function normalizePublicAppearance(value?: Partial<PublicAppearance> | nu
     const customVideo = Boolean(value?.authVideoConfigured);
     const logoUrl = safeAppearanceURL(value?.logoUrl, DEFAULT_PUBLIC_APPEARANCE.logoUrl);
     const darkLogoUrl = safeAppearanceURL(value?.darkLogoUrl, logoUrl);
-    const resolvedBrandName = brandName || DEFAULT_PUBLIC_APPEARANCE.brandName;
+    const resolvedBrandName = brandName.split(/[|｜]/)[0].trim() || DEFAULT_PUBLIC_APPEARANCE.brandName;
     const seoTitle = normalizeAppearanceCopy(value?.seoTitle, resolvedBrandName);
     const seoDescription = normalizeAppearanceCopy(value?.seoDescription, `${resolvedBrandName}，多模态 AI 创作与内容生产工作台。`, true);
     const seoKeywords = normalizeAppearanceCopy(value?.seoKeywords, "", true);

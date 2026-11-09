@@ -151,6 +151,7 @@ export const jaJP: Messages = {
         brandPoster: "{{brand}}のブランドポスター",
         playVideo: "ブランドムービーを再生",
         videoPlaying: "制作が進行中",
+        videoLoadFailed: "動画を読み込めませんでした。再試行してください。",
         backHome: "ホームに戻る",
         login: {
             method: "ログイン方法",

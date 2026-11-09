@@ -1,5 +1,5 @@
 export type DocumentTitleInput = {
-    /** 当前页面或对象名称，例如画布名；为空时使用站点 SEO 标题。 */
+    /** 当前页面或对象名称，例如画布名；为空时使用品牌名。 */
     pageTitle?: string;
     brandName: string;
     seoTitle?: string;
@@ -12,9 +12,9 @@ export type DocumentTitleInput = {
  * 浏览器标签页标题：「画布名 - 品牌」；后台有新完成的生成时在最前面加「(2) 生成完成 ·」，
  * 标签页很窄时也能先看到提醒。
  */
-export function composeDocumentTitle({ pageTitle, brandName, seoTitle, attentionCount = 0, attentionLabel = "" }: DocumentTitleInput) {
+export function composeDocumentTitle({ pageTitle, brandName, attentionCount = 0, attentionLabel = "" }: DocumentTitleInput) {
     const page = pageTitle?.trim();
-    const base = page ? `${page} - ${brandName}` : seoTitle || brandName;
+    const base = page ? `${page} - ${brandName}` : brandName;
     if (attentionCount <= 0) return base;
     return `(${attentionCount > 99 ? "99+" : attentionCount}) ${attentionLabel ? `${attentionLabel} · ` : ""}${base}`;
 }

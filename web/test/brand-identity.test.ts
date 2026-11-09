@@ -79,10 +79,9 @@ test("built-in mark stays unframed while custom appearance branding is preserved
     ]);
 
     expect(brand).toContain("if (!appearance.logoConfigured) return <BuiltinBrandMark");
-    expect(brand).toContain('if (appearance.logoConfigured || appearance.brandName !== "STAGE")');
-    expect(brand).toContain("<span className={className}>{appearance.brandName}</span>");
+    expect(brand).not.toContain("<span className={className}>{appearance.brandName}</span>");
     expect(sidebar).toContain("内置品牌只显示完整字母 Logo");
-    expect(dialog).toMatch(/appearance\.logoConfigured \? <BrandLogo/);
+    expect(dialog).toContain('<BrandWordmark builtinClassName="auth-dialog-brand-wordmark"');
     expect(panel).toContain('brand: "__BRAND__"');
     expect(panel).toContain('<BrandWordmark className="auth-panel-title-brand-text" builtinClassName="auth-panel-title-brand"');
     expect(globals).toMatch(/\.app-workspace-brand-mark\.is-builtin\s*{[^}]*border-radius: 0;[^}]*background: transparent;/s);
@@ -104,7 +103,7 @@ test("brand components render the built-in identity and configured appearance br
 
     const customAppearance = {
         ...DEFAULT_PUBLIC_APPEARANCE,
-        brandName: "CUSTOM",
+        brandName: "CUSTOM | 短剧·电商·空间设计·视频创意平台",
         logoConfigured: true,
         darkLogoConfigured: true,
         logoUrl: "/custom-light.svg",
@@ -115,9 +114,10 @@ test("brand components render the built-in identity and configured appearance br
     const image = host.querySelector("img");
     expect(image?.getAttribute("src")).toBe("/custom-light.svg");
     expect(image?.getAttribute("alt")).toBe("CUSTOM");
-    expect(host.querySelector(".custom-wordmark")?.textContent).toBe("CUSTOM");
+    expect(host.querySelector(".custom-wordmark")?.textContent).toBe("");
+    expect(host.querySelector("img.custom-wordmark")?.getAttribute("src")).toBe("/custom-light.svg");
 
     await act(async () => image!.dispatchEvent(new Event("error")));
-    expect(host.querySelector("img")).toBeNull();
+    expect(host.querySelector("img.custom-logo")).toBeNull();
     expect(host.querySelector(".custom-logo")?.getAttribute("aria-hidden")).toBe("true");
 });

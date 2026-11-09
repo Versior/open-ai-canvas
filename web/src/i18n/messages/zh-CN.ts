@@ -152,6 +152,7 @@ export const zhCN = {
         brandPoster: "{{brand}}品牌海报",
         playVideo: "播放品牌影片",
         videoPlaying: "创作正在发生",
+        videoLoadFailed: "视频加载失败，请重试。",
         backHome: "返回首页",
         login: {
             method: "登录方式",

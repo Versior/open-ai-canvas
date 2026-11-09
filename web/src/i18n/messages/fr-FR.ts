@@ -151,6 +151,7 @@ export const frFR: Messages = {
         brandPoster: "Affiche de la marque {{brand}}",
         playVideo: "Lire le film de marque",
         videoPlaying: "La création est en cours",
+        videoLoadFailed: "Impossible de charger la vidéo. Réessayez.",
         backHome: "Retour à l'accueil",
         login: {
             method: "Méthode de connexion",

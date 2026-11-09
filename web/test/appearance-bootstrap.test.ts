@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { appearanceLogoURL, normalizePublicAppearance } from "../src/stores/use-appearance-store";
+import { composeDocumentTitle } from "../src/lib/document-title";
 import { moduleGroupSource } from "./helpers/module-group-source";
 
 test("initial HTML stays brand neutral until the public appearance is resolved", async () => {
@@ -36,6 +37,14 @@ test("a custom login video never falls back to the built-in poster", () => {
 test("login video autoplay defaults on and can be disabled explicitly", () => {
     expect(normalizePublicAppearance({}).authVideoAutoplay).toBe(true);
     expect(normalizePublicAppearance({ authVideoAutoplay: false }).authVideoAutoplay).toBe(false);
+});
+
+test("SEO copy cannot become the display brand or browser tab title", () => {
+    const appearance = normalizePublicAppearance({ brandName: "STAGE | 短剧·电商·空间设计·视频创意平台", seoTitle: "STAGE | 短剧·电商·空间设计·视频创意平台" });
+    expect(appearance.brandName).toBe("STAGE");
+    expect(appearance.seoTitle).toBe("STAGE | 短剧·电商·空间设计·视频创意平台");
+    expect(composeDocumentTitle(appearance)).toBe("STAGE");
+    expect(composeDocumentTitle({ ...appearance, pageTitle: "画布 1", attentionCount: 2, attentionLabel: "生成完成" })).toBe("(2) 生成完成 · 画布 1 - STAGE");
 });
 
 test("appearance URLs reject executable and insecure remote schemes", () => {

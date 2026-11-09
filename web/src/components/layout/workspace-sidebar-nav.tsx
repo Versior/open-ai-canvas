@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, Home, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
@@ -395,6 +395,12 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
             </LayoutGroup>
 
             <div className="app-workspace-sidebar-footer shrink-0 px-3 py-3">
+                {features.welcomeEnabled ? (
+                    <a href="/welcome" aria-label={t("auth.backHome")} title={t("auth.backHome")} className="flex h-9 items-center gap-3 rounded-md px-3 text-xs text-foreground/55 hover:bg-surface-hover hover:text-foreground" onClick={onNavigate}>
+                        <Home className="size-4 shrink-0" />
+                        {!collapsed ? <span>{t("auth.backHome")}</span> : null}
+                    </a>
+                ) : null}
                 <WorkspaceSidebarProfile collapsed={collapsed} user={user} onExpand={onExpand} onCollapse={onCollapse} />
                 {footer.length ? (
                     <div className="mt-2 flex flex-col gap-0.5">

@@ -11,6 +11,7 @@ import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
+import { useUserStore } from "@/stores/use-user-store";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
 const EcommerceManagementPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-management-page"));
@@ -87,6 +88,16 @@ const ReferralPage = workspaceRoutePages.referral;
 const AdminReferralPage = lazyAdminPage(() => import("@/pages/admin/referral/referral-admin-page"));
 const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
+const WelcomePage = lazy(() => import("@/pages/welcome"));
+
+function SiteHomeLayout() {
+    const hydrated = useUserStore((state) => state.hydrated);
+    const user = useUserStore((state) => state.user);
+    const welcomeEnabled = useUserStore((state) => state.features.welcomeEnabled);
+    if (!hydrated) return <FullScreenLoader />;
+    if (!user && welcomeEnabled) return fullScreenDeferred(<WelcomePage />);
+    return <AuthenticatedWorkspaceLayout />;
+}
 
 function deferred(element: ReactNode) {
     return <Suspense fallback={<WorkspaceRouteLoader />}>{element}</Suspense>;
@@ -136,6 +147,7 @@ function devRoutes() {
 }
 
 export const router = createBrowserRouter([
+    { path: "/", element: <SiteHomeLayout />, errorElement: <RouteErrorPage />, children: [{ index: true, element: deferred(<CreatePage />) }] },
     {
         element: <AuthScene />,
         errorElement: <RouteErrorPage />,
@@ -153,7 +165,6 @@ export const router = createBrowserRouter([
         element: <AuthenticatedWorkspaceLayout />,
         errorElement: <RouteErrorPage />,
         children: [
-            { path: "/", element: deferred(<CreatePage />) },
             { path: "/create", element: deferred(<CreatePage />) },
             { path: "/inspirations", element: <LegacyInspirationsRedirect /> },
             { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },

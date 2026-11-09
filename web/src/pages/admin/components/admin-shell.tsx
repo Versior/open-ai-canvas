@@ -266,7 +266,7 @@ function AdminShellLayout() {
                                         />
                                     }
                                     label={appearance.brandName}
-                                    showLabel={!collapsed && (appearance.logoConfigured || appearance.brandName !== "STAGE")}
+                                    showLabel={false}
                                     showVersion={!collapsed}
                                     labelClassName="admin-sidebar-brand-title"
                                     versionClassName="admin-sidebar-brand-version"

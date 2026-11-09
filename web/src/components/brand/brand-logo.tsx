@@ -15,6 +15,7 @@ type BrandLogoProps = {
 type BrandWordmarkProps = {
     className?: string;
     builtinClassName?: string;
+    theme?: ThemeName | "auto";
 };
 
 export function BrandLogo({ className, alt = "", theme = "auto" }: BrandLogoProps) {
@@ -76,8 +77,7 @@ export function BrandLogoFrame({ className, logoClassName, fallback, alt = "", t
     );
 }
 
-export function BrandWordmark({ className, builtinClassName }: BrandWordmarkProps) {
+export function BrandWordmark({ className, builtinClassName, theme = "auto" }: BrandWordmarkProps) {
     const appearance = useAppearanceStore((state) => state.appearance);
-    if (appearance.logoConfigured || appearance.brandName !== "STAGE") return <span className={className}>{appearance.brandName}</span>;
-    return <BuiltinBrandMark className={builtinClassName} alt="STAGE" />;
+    return <BrandLogo className={cn(builtinClassName, className)} theme={theme} alt={appearance.brandName} fallback={null} />;
 }
