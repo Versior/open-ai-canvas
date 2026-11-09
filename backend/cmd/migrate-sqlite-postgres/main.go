@@ -183,6 +183,21 @@ func migrateTable[T any](name string) tableMigration {
 	}
 }
 
+func migrateLUTLibraryTable() tableMigration {
+	migration := migrateTable[model.LUTLibraryItem]("lut_library_items")
+	copyTable := migration.run
+	migration.run = func(source, target *gorm.DB, copyRows bool) (int, error) {
+		// 新目标库在建表时种入了预设；迁移时以源库为准，保留管理员修改和删除。
+		if copyRows {
+			if err := target.Where("1 = 1").Delete(&model.LUTLibraryItem{}).Error; err != nil {
+				return 0, err
+			}
+		}
+		return copyTable(source, target, copyRows)
+	}
+	return migration
+}
+
 // validateExplicitStringLengths catches values that SQLite accepts but
 // PostgreSQL would reject for a GORM size:N column. SQLite does not enforce
 // VARCHAR(N), so this check must happen before the first target insert.
@@ -497,6 +512,7 @@ func migrations() []tableMigration {
 		migrateTable[model.InspirationFeedEntry]("inspiration_feed_entries"),
 		migrateTable[model.PoseLibrarySource]("pose_library_sources"),
 		migrateTable[model.PoseLibraryItem]("pose_library_items"),
+		migrateLUTLibraryTable(),
 		migrateTable[model.CloudAgentExecution]("cloud_agent_executions"),
 		migrateTable[model.CloudAgentEventRecord]("cloud_agent_event_records"),
 		migrateTable[model.CloudAgentMessageRecord]("cloud_agent_message_records"),

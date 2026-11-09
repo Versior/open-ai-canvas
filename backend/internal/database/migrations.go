@@ -12,6 +12,7 @@ import (
 	"yingce/backend/internal/model"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const CurrentSchemaVersion int64 = 99
@@ -416,7 +417,7 @@ func migrateLUTLibrary(tx *gorm.DB) error {
 	now := time.Now()
 	for i, preset := range lutlibrary.Presets() {
 		item := model.LUTLibraryItem{ID: "lut-builtin-" + preset.ID, Name: preset.Label, Category: "内置预设", Description: preset.Hint, Preset: preset.ID, CubeSize: 17, DefaultStrength: 1, Enabled: true, SortOrder: i * 10, Version: 1, CreatedAt: now, UpdatedAt: now}
-		if err := tx.Create(&item).Error; err != nil {
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoNothing: true}).Create(&item).Error; err != nil {
 			return err
 		}
 	}

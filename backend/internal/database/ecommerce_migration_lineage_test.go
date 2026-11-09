@@ -382,8 +382,8 @@ func TestMigrateSchemaUpgradesFork97ReferenceControls(t *testing.T) {
 			t.Fatal("reference controls upgrade changed existing cast or segment data")
 		}
 		var count int64
-		if err := db.Model(&schemaMigration{}).Count(&count).Error; err != nil || count != int64(len(originalLedger)+1) {
-			t.Fatalf("upgrade must add exactly one ledger entry: count=%d err=%v", count, err)
+		if err := db.Model(&schemaMigration{}).Count(&count).Error; err != nil || count != int64(len(originalLedger))+CurrentSchemaVersion-97 {
+			t.Fatalf("upgrade must append migrations after version 97: count=%d err=%v", count, err)
 		}
 	}
 	requireMigration(t, db, schemaMigration{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92"})

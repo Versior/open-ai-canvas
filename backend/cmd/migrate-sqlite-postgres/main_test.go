@@ -134,3 +134,39 @@ func TestCanvasHistoryCompositeKeyMigration(t *testing.T) {
 		t.Fatalf("history refs not copied/verified: %d %v", count, err)
 	}
 }
+
+func TestLUTLibraryMigrationReplacesTargetSeedsWithSourceState(t *testing.T) {
+	var databases []*gorm.DB
+	for _, name := range []string{"source", "target"} {
+		db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), name+".db")), &gorm.Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlDB, _ := db.DB()
+		t.Cleanup(func() { _ = sqlDB.Close() })
+		if err := database.MigrateSchema(db); err != nil {
+			t.Fatal(err)
+		}
+		databases = append(databases, db)
+	}
+	source, target := databases[0], databases[1]
+	if err := source.Where("id = ?", "lut-builtin-clear").Delete(&model.LUTLibraryItem{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := source.Model(&model.LUTLibraryItem{}).Where("id = ?", "lut-builtin-warm").Updates(map[string]any{"name": "管理员修改", "enabled": false, "version": 2}).Error; err != nil {
+		t.Fatal(err)
+	}
+	migration := migrateLUTLibraryTable()
+	if count, err := migration.run(source, target, true); err != nil || count != 5 {
+		t.Fatalf("copy source library over seeds: %d %v", count, err)
+	}
+	if count, err := migration.run(source, target, false); err != nil || count != 5 {
+		t.Fatalf("verify existing migration: %d %v", count, err)
+	}
+	if err := source.Where("1 = 1").Delete(&model.LUTLibraryItem{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count, err := migration.run(source, target, true); err != nil || count != 0 {
+		t.Fatalf("empty source must not resurrect target seeds: %d %v", count, err)
+	}
+}
