@@ -150,7 +150,7 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
                                 {unit.takes.length ? "再出一条" : "重做"}
                             </Button>
                             <Button type="text" onClick={onEditRecipe}>
-                                改做法
+                                {unit.status === "failed" ? "更换模型" : "改做法"}
                             </Button>
                         </div>
                     </>

@@ -143,6 +143,7 @@ function RecordWorkspace({
     const playback = useReplicationPlayback(bundle.shots);
     const rows = useMemo(() => new Map(analysis?.rows.map((row) => [row.shotNumber, row])), [analysis]);
     const analyzing = Boolean(ownRun && !ownRun.error);
+    const analysisFailed = Boolean(ownRun?.error);
     const title = analysis?.title || "未命名拆解";
     const summary = analysis?.summary;
 
@@ -187,7 +188,7 @@ function RecordWorkspace({
                     剪辑交付包
                 </Button>
             ) : null}
-            {analysis && view === "teardown" ? (
+            {analysis && view === "teardown" && !analysisFailed ? (
                 <Popover
                     trigger="click"
                     placement="bottomRight"
@@ -242,6 +243,21 @@ function RecordWorkspace({
         <WorkspaceShell title={title} meta={meta} actions={actions} steps={steps} onBack={onBack}>
             {analysis?.taskIds?.length ? <TaskSettlement ids={analysis.taskIds} /> : null}
             {ownRun ? <ReplicationProgress run={ownRun} /> : null}
+            {!analyzing && (!analysis || analysisFailed) ? (
+                <div className="vr-panel vr-analyze">
+                    <div className="vr-analyze-copy">
+                        <p className="vr-analyze-title">{analysisFailed ? "这次分析没有完成" : "镜头已经切好，还差模型分析"}</p>
+                        <p className="vr-analyze-text">
+                            {analysisFailed
+                                ? analysis
+                                    ? "原有分析和复刻方案保留。可以直接重试，或换一个能看图的模型再分析，按所选模型计费。"
+                                    : "镜头和关键帧都还在，可以直接重试，或换一个能看图的模型再分析。"
+                                : "选一个能看图的文本模型，逐镜补全画面、口播、运镜和复刻提示词，按所选模型计费。"}
+                        </p>
+                    </div>
+                    <AnalyzeControls config={config} model={model} onModelChange={onModelChange} busy={busy} label={analysisFailed ? "重试分析" : "开始分析"} onStart={() => onReanalyze(analysis?.title || "")} />
+                </div>
+            ) : null}
             {analysis && view === "plan" ? (
                 <ReplicationPlan bundle={bundle} analysis={analysis} {...planState} config={config} model={model} onModelChange={onModelChange} opening={opening} onOpenCanvas={openCanvas} onNext={() => onViewChange("canvas")} />
             ) : null}
@@ -250,16 +266,6 @@ function RecordWorkspace({
             ) : null}
             {view !== "teardown" ? null : (
                 <>
-                    {/* 还没有分析、也没在分析（含上次分析失败）时，在这里选模型开始或重试。 */}
-                    {!analysis && !analyzing ? (
-                        <div className="vr-panel vr-analyze">
-                            <div className="vr-analyze-copy">
-                                <p className="vr-analyze-title">{ownRun?.error ? "这次分析没有完成" : "镜头已经切好，还差模型分析"}</p>
-                                <p className="vr-analyze-text">{ownRun?.error ? "镜头和关键帧都还在，可以直接重试，或换一个能看图的模型再分析。" : "选一个能看图的文本模型，逐镜补全画面、口播、运镜和复刻提示词，按所选模型计费。"}</p>
-                            </div>
-                            <AnalyzeControls config={config} model={model} onModelChange={onModelChange} busy={busy} label={ownRun?.error ? "重试分析" : "开始分析"} onStart={() => onReanalyze("")} />
-                        </div>
-                    ) : null}
                     <ReplicationTimeline bundle={bundle} summary={summary} activeIndex={playback.activeIndex} video={playback.video} onPick={playback.playShot} />
                     <div className="vr-ws-body" style={{ "--vr-ratio": `${bundle.source.width || 9} / ${bundle.source.height || 16}` } as CSSProperties}>
                         <ReplicationPlayer bundle={bundle} videoRef={playback.videoRef} />
