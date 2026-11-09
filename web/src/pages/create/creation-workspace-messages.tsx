@@ -3,7 +3,7 @@
 import { conversationTimeFormatter, type CreationMessage } from "./creation-types";
 import { creationMessageNeedsResultSync } from "./creation-conversations";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
-import { AlertCircle, AlertTriangle, CircleStop, CloudOff, Copy, Download, FileText, Film, Image as ImageIcon, ImageOff, Maximize2, Music2, Pencil, RefreshCw, RotateCcw, UserRound, X, type LucideIcon, Blocks, Orbit } from "lucide-react";
+import { AlertCircle, AlertTriangle, CircleStop, CloudOff, Copy, Download, FileText, Film, Image as ImageIcon, ImageOff, Maximize2, Music2, Pencil, RefreshCw, RotateCcw, UserRound, X, type LucideIcon, Blocks } from "lucide-react";
 import { GenerationToolCard, type GenerationToolStatus } from "@/components/ai/generation-tool-card";
 import { GenerationPhaseSteps } from "@/components/ai/generation-phase-steps";
 import { MessageReasoning } from "@/components/ai/message-reasoning";
@@ -30,6 +30,8 @@ import { Button } from "antd";
 import { CanvasImagePreview } from "@/components/canvas/canvas-image-preview";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { creationResultEntries } from "./creation-result-urls";
+import { ActiveAgentAvatar } from "@/components/canvas/active-agent-avatar";
+import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 
 export function CreationMessageView({
     item,
@@ -55,6 +57,7 @@ export function CreationMessageView({
     openingCanvas: boolean;
 }) {
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
+    const { pet } = useActiveAgentPet();
     if (item.role === "user") return <CreationUserMessage item={item} shotNumber={shotNumber} onEditUserMessage={onEditUserMessage} />;
     const mode = item.mode || "text";
     const messageState = creationMessageState(item);
@@ -69,7 +72,7 @@ export function CreationMessageView({
             <>
                 {shotNumber > 0 ? <span className="creation-shot-badge">镜 {shotNumber}</span> : null}
                 <span className="creation-message-mark">
-                    <Orbit />
+                    <ActiveAgentAvatar />
                 </span>
                 <strong>{mode === "image" ? "图像生成" : "视频生成"}</strong>
                 {item.status === "done" ? <span className="creation-message-progress-copy">你的{mode === "video" ? "视频" : "图像"}已创建</span> : null}
@@ -86,9 +89,9 @@ export function CreationMessageView({
             <>
                 {shotNumber > 0 ? <span className="creation-shot-badge">镜 {shotNumber}</span> : null}
                 <span className="creation-message-mark">
-                    <Orbit />
+                    <ActiveAgentAvatar />
                 </span>
-                <strong>{brandName}</strong>
+                <strong>{pet?.name || brandName.split(/[|｜]/)[0].trim()}</strong>
                 {item.createdAt ? <time dateTime={item.createdAt}>{formatMessageTime(item.createdAt)}</time> : null}
                 {stateChip}
             </>

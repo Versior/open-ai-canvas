@@ -12,7 +12,7 @@ export function remakeDefaultStep(job?: RemakeJob): RemakeStep {
 /** 一次性建剪辑草稿：后续始终读已保存草稿，不随配方或候选变化重新构建。 */
 export function createRemakeEditTimeline(job: RemakeJob): TimelineProject {
     const size = remakeRenderSize(job);
-    const timeline = remakeTimeline({ ...job, subtitles: { burn: false } }, size);
+    const timeline = remakeTimeline({ ...job, subtitles: { burn: false } }, size, true);
     const sources = new Map<string, { durationMs?: number; width?: number; height?: number }>([[job.source.resourceId, job.source]]);
     for (const unit of job.units) {
         const take = remakeUnitTake(unit);

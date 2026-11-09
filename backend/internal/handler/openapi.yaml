@@ -1582,6 +1582,14 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+  /admin/pose-library/remote-pack:
+    get:
+      tags: [pose-library, admin]
+      summary: 从 GitHub 读取固定版本姿势元数据，供导入前预览体系
+      responses:
+        "200": { description: "data 为 pose-zh.json 数组；不含图片" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /admin/pose-library/items:
     get:
       tags: [pose-library, admin]
@@ -2013,6 +2021,39 @@ paths:
                       pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}}
         "401": {$ref: "#/components/responses/Error"}
         "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/remote-import:
+    get:
+      tags: [admin]
+      summary: 读取形象同步进度和已保存的远端清单地址
+      responses:
+        "200": { description: "data 含 status、manifestUrl、report（total/done/imported/skipped/failed/failures）、error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: 保存 HTTPS 清单地址并在后台同步形象；按 SHA-256 去重
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                manifestUrl: { type: string, maxLength: 2048, description: "不带凭据、查询串的 HTTPS JSON 清单地址；空时使用内置 GitHub 仓库" }
+      responses:
+        "200": { description: "data 为同步进度；关闭窗口后继续，重启后可重复同步" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/agent-pets/remote-import/cancel:
+    post:
+      tags: [admin]
+      summary: 停止当前形象同步；已导入的保留
+      responses:
+        "200": { description: "data 为最近的同步进度" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /admin/agent-pets/import:
     post:
       tags: [admin]
@@ -5317,6 +5358,18 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
   /video-replication/teardowns/{id}:
+    delete:
+      tags: [tasks]
+      summary: 删除自己的已结束拆解记录，保留原视频和素材
+      description: 删除任务、分析、复刻方案及日志；只允许 succeeded/failed/cancelled。作品和画布已有的素材不受影响。其他用户记录返回 404，进行中返回 400。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": { description: "data 为 {deleted: true}" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
     get:
       tags: [tasks]
       summary: 读取一条视频复刻记录

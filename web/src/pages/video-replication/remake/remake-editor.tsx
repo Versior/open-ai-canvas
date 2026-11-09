@@ -224,6 +224,7 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
             <section className="rw-editor editor-workbench" aria-label="复刻剪辑台">
                 <header className="rw-editor-toolbar">
                     <strong>剪辑台</strong>
+                    <span>拖动片段排序，拖两端裁剪；选中后可改属性、分割或删除。</span>
                     <span role="status">{state.saveError ? `未保存：${state.saveError}` : state.saving ? "保存中…" : state.isDirty ? "有未保存修改" : "已保存"}</span>
                     <Button size="small" aria-label="撤销剪辑" icon={<Undo2 size={14} />} onClick={state.undo} disabled={!state.history?.undoStack.length || state.inPreview} />
                     <Button size="small" aria-label="重做剪辑" icon={<Redo2 size={14} />} onClick={state.redo} disabled={!state.history?.redoStack.length || state.inPreview} />

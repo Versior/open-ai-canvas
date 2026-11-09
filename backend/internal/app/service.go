@@ -123,6 +123,8 @@ type Service struct {
 	// studioModelImport 是后台远程拉取模特库的进度：一次只跑一个，只存在本进程内存里。
 	studioModelImportMu sync.Mutex
 	studioModelImport   *studioModelImportJob
+	agentPetImportMu    sync.Mutex
+	agentPetImport      *studioModelImportJob
 	// dramaTaskHook 只在测试中替换短剧调度的任务提交，生产路径始终走 CreateTask 准入。
 	dramaTailFrameHook      func(userID, resourceID string) (string, error)
 	dramaTaskHook           func(userID string, req CreateTaskRequest, timeline *renderProject) (*model.Task, error)

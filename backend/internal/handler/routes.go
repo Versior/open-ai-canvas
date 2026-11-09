@@ -147,6 +147,18 @@ func RegisterTaskRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, detail)
 	})
+	r.DELETE("/video-replication/teardowns/:id", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if err := svc.DeleteVideoReplication(user, c.Param("id")); err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"deleted": true})
+	})
 	r.PUT("/video-replication/teardowns/:id/analysis", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

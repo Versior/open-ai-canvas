@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { addRemakeModels, createRemakeJob, normalizeRemakeJob, remakeJobError } from "@/lib/remake/job";
 import { createRemakeEditTimeline, remakeDefaultStep } from "@/lib/remake/editor";
+import { remakeTimeline, remakeVoiceSignature } from "@/lib/remake/timeline";
 import { remakeModelLimits } from "@/pages/video-replication/remake/remake-config";
 import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
 import { remakeReferenceImages, buildRemakeUnitPrompt } from "@/lib/remake/prompts";
@@ -23,6 +24,34 @@ function fixture() {
     job.units = planRemakeUnits(job.shots, { maxMs: 10000, sourceDurationMs: 8000 });
     return job;
 }
+test("未生成和失败的作品可剪辑原片占位，成功素材保留；成片拼接继续拒绝缺失候选", () => {
+    const job = fixture();
+    job.units[0].status = "failed";
+    const before = JSON.stringify(job);
+    expect(() => remakeTimeline(job, { width: 720, height: 1280 })).toThrow("还有镜头没有生成好");
+    const timeline = createRemakeEditTimeline(job);
+    const clip = timeline.clips.find((item) => item.kind === "video")!;
+    expect(clip.directMedia?.id).toBe("source");
+    expect(clip.title).toContain("待生成");
+    expect(clip.sourceStartMs).toBe(2000);
+    expect(clip.durationMs).toBe(4000);
+    expect(JSON.stringify(job)).toBe(before);
+    const unplanned = fixture();
+    unplanned.units = [];
+    expect(createRemakeEditTimeline(unplanned).clips.some((item) => item.directMedia?.id === "source")).toBe(true);
+});
+test("剪辑草稿保留成功配音和字幕，缺失配音仍阻止直接拼接", () => {
+    const job = fixture();
+    job.units[0].takes = [{ resourceId: "take", taskId: "done", createdAt: "" }];
+    job.audio = "voice";
+    job.shots[0].dialogue = "新口播";
+    expect(() => remakeTimeline(job, { width: 720, height: 1280 })).toThrow("配音没有生成好");
+    const timeline = createRemakeEditTimeline(job);
+    expect(timeline.clips.find((clip) => clip.kind === "subtitle")?.text).toBe("新口播");
+    expect(timeline.clips.some((clip) => clip.trackId.startsWith("audio"))).toBe(false);
+    job.voiceLines = [{ shotIndex: 1, text: "新口播", signature: remakeVoiceSignature(job, "新口播"), status: "succeeded", attempt: 1, resourceId: "voice", durationMs: 1500 }];
+    expect(createRemakeEditTimeline(job).clips.find((clip) => clip.kind === "audio")?.directMedia?.id).toBe("voice");
+});
 test("不出人时隐藏的模特素材不占额度，也不能代替有效生成素材", () => {
     const job = fixture();
     job.people = "none";

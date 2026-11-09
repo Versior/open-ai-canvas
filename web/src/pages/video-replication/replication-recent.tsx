@@ -1,10 +1,14 @@
-import { ChevronDown, ChevronUp, Clapperboard, History, LoaderCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, Clapperboard, History, LoaderCircle, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { App, Button, Checkbox } from "antd";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { orientationLabel } from "@/lib/canvas/video-teardown";
 import { resourceFileUrl } from "@/services/api/resources";
-import type { VideoReplicationRecord } from "@/services/api/video-replication";
+import { deleteVideoReplication, type VideoReplicationRecord } from "@/services/api/video-replication";
+import { getActiveUserScope } from "@/lib/user-scope";
+import { videoReplicationKeys } from "./use-replication-runner";
 import { formatClock } from "./replication-timeline";
 
 type Props = {
@@ -31,6 +35,41 @@ function recordStatus(record: VideoReplicationRecord, running: boolean): Status 
  * 默认排成一行、可以横向滚动，首页一屏放得下；点「展开全部」换成多行网格。
  */
 export function ReplicationRecent({ records, loading, error, runningId, onOpen }: Props) {
+    const { modal, message } = App.useApp();
+    const queryClient = useQueryClient();
+    const scope = getActiveUserScope();
+    const [selecting, setSelecting] = useState(false);
+    const [selected, setSelected] = useState<string[]>([]);
+    const [deleting, setDeleting] = useState(false);
+    const deletable = records?.filter((record) => record.id !== runningId && ["succeeded", "failed", "cancelled"].includes(record.status)) || [];
+    const selectedIds = selected.filter((id) => deletable.some((record) => record.id === id));
+    const remove = () =>
+        modal.confirm({
+            title: `删除选中的 ${selectedIds.length} 条拆解记录？`,
+            content: "会删除拆解分析、方案和日志。原视频、关键帧及已有复刻作品会保留。",
+            okText: "删除记录",
+            cancelText: "取消",
+            okButtonProps: { danger: true },
+            onOk: async () => {
+                setDeleting(true);
+                try {
+                    const results = await Promise.allSettled(selectedIds.map((id) => deleteVideoReplication(id)));
+                    const removed = selectedIds.filter((_, index) => results[index].status === "fulfilled");
+                    setSelected((ids) => ids.filter((id) => !removed.includes(id)));
+                    removed.forEach((id) => queryClient.removeQueries({ queryKey: videoReplicationKeys.detail(scope, id) }));
+                    await queryClient.invalidateQueries({ queryKey: videoReplicationKeys.list(scope) });
+                    if (removed.length) message.success(`已删除 ${removed.length} 条记录`);
+                    const failure = results.find((result) => result.status === "rejected");
+                    if (failure?.status === "rejected") {
+                        const text = failure.reason instanceof Error ? failure.reason.message : "删除失败";
+                        message.error(`有 ${results.length - removed.length} 条未删除：${text}`);
+                        throw new Error(text);
+                    }
+                } finally {
+                    setDeleting(false);
+                }
+            },
+        });
     const [expanded, setExpanded] = useState(false);
     const empty = !loading && !error && !records?.length;
     const expandable = (records?.length || 0) > 4;
@@ -42,6 +81,33 @@ export function ReplicationRecent({ records, loading, error, runningId, onOpen }
                     最近拆解
                 </h2>
                 <span className="vr-section-end">
+                    {records?.length ? (
+                        <Button
+                            size="small"
+                            disabled={deleting}
+                            onClick={() => {
+                                setSelecting(!selecting);
+                                setSelected([]);
+                            }}
+                        >
+                            {selecting ? "取消选择" : "选择记录"}
+                        </Button>
+                    ) : null}
+                    {selecting ? (
+                        <>
+                            <Checkbox
+                                checked={Boolean(deletable.length) && selectedIds.length === deletable.length}
+                                indeterminate={Boolean(selectedIds.length) && selectedIds.length < deletable.length}
+                                disabled={deleting || !deletable.length}
+                                onChange={(event) => setSelected(event.target.checked ? deletable.map((record) => record.id) : [])}
+                            >
+                                全选可删除
+                            </Checkbox>
+                            <Button size="small" danger icon={<Trash2 className="size-3.5" />} loading={deleting} disabled={!selectedIds.length} onClick={remove}>
+                                删除 {selectedIds.length || ""}
+                            </Button>
+                        </>
+                    ) : null}
                     {records?.length ? <span className="vr-section-meta">{`共 ${records.length} 条`}</span> : null}
                     {expandable ? (
                         <button type="button" className="vr-text-button" aria-expanded={expanded} aria-controls="vr-recent-list" onClick={() => setExpanded((value) => !value)}>
@@ -59,14 +125,33 @@ export function ReplicationRecent({ records, loading, error, runningId, onOpen }
             {empty ? <p className="vr-recent-note">还没有拆解过视频。拆完的视频会留在这里，随时回来看分镜、复制提示词。</p> : null}
             {loading || records?.length ? (
                 <ul id="vr-recent-list" className="vr-recent-grid" data-layout={expanded ? "grid" : "row"} aria-busy={loading || undefined}>
-                    {loading ? [0, 1, 2, 3].map((item) => <SkeletonCard key={item} />) : records?.map((record) => <RecordCard key={record.id} record={record} running={record.id === runningId} onOpen={onOpen} />)}
+                    {loading
+                        ? [0, 1, 2, 3].map((item) => <SkeletonCard key={item} />)
+                        : records?.map((record) => (
+                              <RecordCard
+                                  key={record.id}
+                                  record={record}
+                                  running={record.id === runningId}
+                                  onOpen={onOpen}
+                                  selection={
+                                      selecting ? (
+                                          <Checkbox
+                                              aria-label={`选择 ${record.title || "视频拆解"}`}
+                                              checked={selectedIds.includes(record.id)}
+                                              disabled={deleting || !deletable.some((item) => item.id === record.id)}
+                                              onChange={(event) => setSelected((ids) => (event.target.checked ? [...ids, record.id] : ids.filter((id) => id !== record.id)))}
+                                          />
+                                      ) : null
+                                  }
+                              />
+                          ))}
                 </ul>
             ) : null}
         </section>
     );
 }
 
-function RecordCard({ record, running, onOpen }: { record: VideoReplicationRecord; running: boolean; onOpen: (id: string) => void }) {
+function RecordCard({ record, running, onOpen, selection }: { record: VideoReplicationRecord; running: boolean; onOpen: (id: string) => void; selection: React.ReactNode }) {
     const status = recordStatus(record, running);
     const frames = record.previewResourceIds?.length ? record.previewResourceIds : record.coverResourceId ? [record.coverResourceId] : [];
     const landscape = Boolean(record.width && record.height && record.width > record.height);
@@ -77,7 +162,8 @@ function RecordCard({ record, running, onOpen }: { record: VideoReplicationRecor
     // 走到了哪一步：建过画布 > 有复刻方案 > 只拆解分析了。
     const progress = record.canvasCount ? `已建 ${record.canvasCount} 块画布` : record.planUpdatedAt ? "有复刻方案" : "";
     return (
-        <li className="vr-card-item">
+        <li className="vr-card-item" data-replication-id={record.id}>
+            {selection ? <div className="vr-card-selection">{selection}</div> : null}
             <button type="button" className="vr-card" onClick={() => onOpen(record.id)}>
                 <span className="vr-card-strip" data-layout={layout}>
                     {shown.length ? (

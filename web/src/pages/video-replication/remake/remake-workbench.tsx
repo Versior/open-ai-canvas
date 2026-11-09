@@ -199,7 +199,7 @@ export function RemakeWorkbench({
     const generates = draft.shots.some((shot) => shot.treatment === "replace" || shot.treatment === "remake");
     const inputError = planning.error || (generates && draft.model && !suitable.includes(draft.model) ? "当前模型不支持这些镜头做法或已不可用，请更换模型" : generates && typeof limits === "string" ? limits : remakeJobError(draft, usable));
     const startedBefore = job.units.length > 0 || job.status !== "draft";
-    const canEdit = Boolean(job.editTimeline || job.render?.resourceId || (job.units.length && job.units.every((unit) => unit.status === "succeeded")));
+    const canEdit = Boolean(job.editTimeline || (job.source.resourceId && job.shots.some((shot) => shot.treatment !== "skip")));
     const currentStep: RemakeStep = step === "edit" && job.editTimeline ? "edit" : step === "produce" && startedBefore ? "produce" : "recipe";
     const allSucceeded = job.units.length > 0 && job.units.every((unit) => unit.status === "succeeded");
     const pendingChanges = startedBefore && plannedUnits.some((unit) => unit.status !== "succeeded");

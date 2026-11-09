@@ -6,6 +6,10 @@ export const POSE_LIBRARY_MAX_USE = 16;
 /** ai-pose-gallery-zh 线上演示站，同步图片时的默认来源根地址。 */
 export const POSE_LIBRARY_DEFAULT_BASE_URL = "https://ai-pose-gallery.anhao.app/";
 export const POSE_LIBRARY_UPSTREAM_REPO = "https://github.com/anhao/ai-pose-gallery-zh";
+export const POSE_LIBRARY_GITHUB_BASE_URL = "https://raw.githubusercontent.com/anhao/ai-pose-gallery-zh/488939139c69acfe078372b39d4bd0c457dc060e/";
+export function getPoseLibraryRemotePack() {
+    return http.get<unknown>("/admin/pose-library/remote-pack");
+}
 export const POSE_LIBRARY_ANGLES = ["正面", "斜侧", "侧面", "背面", "俯视", "仰视"] as const;
 
 export type PoseLibraryFacet = { name: string; count: number };

@@ -129,6 +129,49 @@ func RegisterAgentPetRoutes(r *gin.RouterGroup, svc *service.Service) {
 		http.ServeContent(c.Writer, c.Request, "preview.png", time.Time{}, bytes.NewReader(preview.Data))
 	})
 
+	r.GET("/admin/agent-pets/remote-import", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		view, err := svc.AgentPetRemoteStatus(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, view)
+	})
+	r.POST("/admin/agent-pets/remote-import", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req service.AgentPetRemoteInput
+		if !bindLimitedJSON(c, 4<<10, &req) {
+			return
+		}
+		view, err := svc.StartAgentPetRemoteImport(actor, req)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, view)
+	})
+	r.POST("/admin/agent-pets/remote-import/cancel", func(c *gin.Context) {
+		actor, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		view, err := svc.CancelAgentPetRemoteImport(actor)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, view)
+	})
 	r.GET("/admin/agent-pets", func(c *gin.Context) {
 		actor, err := currentUser(c, svc)
 		if err != nil {

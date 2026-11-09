@@ -4343,12 +4343,12 @@ summary.agent-tool-step:hover {
 }
 
 .agent-pet-bubble[data-skin]:not([data-skin="site"]) {
-    --agent-pet-bubble-fill: var(--user-surface);
+    --agent-pet-bubble-fill: var(--user-surface, var(--background, #ffffff));
     --agent-pet-bubble-stroke: color-mix(in srgb, var(--agent-skin-accent) 45%, var(--border));
-    --agent-pet-bubble-text: var(--user-ink);
+    --agent-pet-bubble-text: var(--user-ink, var(--foreground, #171717));
 }
 .agent-pet-bubble[data-skin="paper"] {
-    --agent-pet-bubble-fill: color-mix(in srgb, var(--agent-skin-accent) 9%, var(--user-surface));
+    --agent-pet-bubble-fill: color-mix(in srgb, var(--agent-skin-accent) 9%, var(--user-surface, var(--background, #ffffff)));
 }
 .agent-pet-bubble[data-skin="terminal"] {
     font-family: var(--font-mono);

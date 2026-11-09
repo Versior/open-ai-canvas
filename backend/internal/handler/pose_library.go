@@ -83,6 +83,19 @@ func RegisterPoseLibraryRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, result)
 	})
+	r.GET("/admin/pose-library/remote-pack", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		pack, err := svc.PoseLibraryRemotePack(c.Request.Context(), user)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, pack)
+	})
 	r.POST("/admin/pose-library/import", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

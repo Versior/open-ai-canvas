@@ -115,9 +115,9 @@ func (r *Repository) ResourcesForUserByUploadKeys(userID string, uploadKeys []st
 
 // DeleteFinishedTaskRecords 在一个事务里删掉一个任务、它的结果和日志，并写入审计；任务必须还是给定类型和状态，
 // 否则返回 ErrTaskRecordsChanged，什么都不删。任务存过的资源由调用方另行按引用规则清理。
-func (r *Repository) DeleteFinishedTaskRecords(taskID, taskType string, statuses []model.TaskStatus, audit *model.AdminAuditEvent) error {
+func (r *Repository) DeleteFinishedTaskRecords(userID, taskID, taskType string, statuses []model.TaskStatus, audit *model.AdminAuditEvent) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		deleted := tx.Where("id = ? AND type = ? AND status IN ?", taskID, taskType, statuses).Delete(&model.Task{})
+		deleted := tx.Where("user_id = ? AND id = ? AND type = ? AND status IN ?", userID, taskID, taskType, statuses).Delete(&model.Task{})
 		if deleted.Error != nil {
 			return deleted.Error
 		}

@@ -656,6 +656,13 @@ CANVAS_BACKEND_DATA_DIR=/明确的数据目录 ./migrate-schema repair-canvas-re
 - `POST /admin/agent-pets/batch-delete`：请求 `{ ids }`，最多 200 个，只删除没人拥有的上传形象；内置形象和已有人购买或领取的形象跳过并说明原因。返回 `{ pets: [], deleted, skipped }`，审计 `agent_pet.batch_delete`。
 - `POST /admin/agent-pets/import`：multipart `file`，Codex 宠物 ZIP（`pet.json` 在根目录或唯一一级文件夹，图集路径相对 `pet.json`）或单张 WebP / PNG 图集，受上传频率限制（默认每分钟 30 次，后台批量导入逐个调用）。文件最大 32 MiB，图集最大 16 MiB，须带透明通道、不能是动图。`pet.json` 只读取名称和简介，其余字段忽略。导入后默认未上架、免费、未分类，审计 `agent_pet.import`。
 - `DELETE /admin/agent-pets/:id`：只删除上传形象；内置形象返回 400（可下架），已有购买或领取记录返回 409。删除时清除指向它的用户选择，图集资源失去引用后由资源清理流程回收，审计 `agent_pet.delete`。
+- `GET /admin/agent-pets/remote-import`：返回保存的 `manifestUrl`、同步 `status` 和 `report`（total、done、imported、skipped、failed、failures）。默认来源为 `https://raw.githubusercontent.com/Versior/agent-pet-library/main/manifest.json`。
+- `POST /admin/agent-pets/remote-import`：请求 `{ manifestUrl }`，保存来源并启动后台同步；地址须为不带凭据、查询串的 HTTPS 公网地址，正文最大 4 KiB。清单格式 `{ version: 1, items: [{ name, description, url, sha256 }] }`，最多 5000 项、8 MiB。图集逐项校验 SHA-256、格式和透明通道；按内容摘要跳过已有图集，手动上传过的也参与去重，保留原 ID、配置和用户选择。新形象免费、未分类、未上架；可批量设置后上架。单次只运行一个，同步中再启动返回 409。进度仅在进程内存，重启后再次同步跳过已导入内容；来源保存在系统设置中。
+- `POST /admin/agent-pets/remote-import/cancel`：停止当前同步，已导入内容保留；失败条目单独列出，下次可重试。
+
+`GET /admin/pose-library/remote-pack` 由管理员读取 `anhao/ai-pose-gallery-zh` 固定提交 `488939139c69acfe078372b39d4bd0c457dc060e` 的 `data/pose-zh.json`。返回原始数组，供前端预览和选择体系，然后使用现有导入接口；图片来源根地址指向同一 GitHub 提交，导入后通过姿势库同步接口下载。模特库的人脸、姿势、样式来源沿用现有远程拉取入口，肖像授权状态由导入方明确声明。
+
+`DELETE /video-replication/teardowns/:id` 删除当前用户自己的终态拆解任务及其分析、方案、日志。运行中返回 400，其他用户或不存在的记录返回 404。事务删除再次校验用户、类型和状态；保留原视频、关键帧、宫格及已有作品和画布。写入 `video_replication.teardown.user_delete` 审计；最近拆解支持多选逐条删除，部分失败保留未删记录并提示原因。
 
 `GET /public/appearance` 返回当前 `activeSkin`；管理员通过 `GET/PUT /admin/settings/appearance` 读取、保存完整主题库。外观合同版本 8 新增 `tokens.buttons.light/dark`，字段为 `mode`（`solid|gradient`）、整数 `angle`（0–360）、HEX 色值 `start/end`、`hoverStart/hoverEnd`、`activeStart/activeEnd`、`foreground`。纯色模式使用既有主操作颜色，渐变仅用于主按钮。非法模式、角度、色值或修改锁定经典主题均拒绝保存；整块缺失的旧配置按主题身份补齐。此变更不增加数据表迁移。
 

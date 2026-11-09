@@ -1,7 +1,7 @@
 import { App, Button } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
-import { ArrowDownToLine, ArrowUpToLine, BadgePercent, Ban, CircleOff, Eye, FolderTree, Pencil, RefreshCw, Search, Sparkles, Tag, Trash2, Upload, Wallet } from "lucide-react";
+import { ArrowDownToLine, ArrowUpToLine, BadgePercent, Ban, CircleOff, Eye, FolderTree, Pencil, RefreshCw, Search, Sparkles, Tag, Trash2, Upload, Wallet, CloudDownload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
@@ -31,6 +31,7 @@ import { AgentPetBatchDialog, type AgentPetBatchMode } from "./components/agent-
 import { AgentPetCategoryManager } from "./components/agent-pet-category-manager";
 import { agentPetInput, AgentPetEditor } from "./components/agent-pet-editor";
 import { AgentPetImportDialog } from "./components/agent-pet-import-dialog";
+import { AgentPetRemoteDialog } from "./components/agent-pet-remote-dialog";
 import "./agent-pets-page.css";
 
 const THUMB_HEIGHT = 56;
@@ -61,6 +62,7 @@ export default function AgentPetsSettingsPage() {
     const [batchMode, setBatchMode] = useState<AgentPetBatchMode | null>(null);
     const [batchBusy, setBatchBusy] = useState("");
     const [importOpen, setImportOpen] = useState(false);
+    const [remoteOpen, setRemoteOpen] = useState(false);
     const [categoryOpen, setCategoryOpen] = useState(false);
     const now = useMinuteClock();
 
@@ -383,6 +385,9 @@ export default function AgentPetsSettingsPage() {
                     <Button icon={<FolderTree className="size-4" />} onClick={() => setCategoryOpen(true)}>
                         分类管理
                     </Button>
+                    <Button icon={<CloudDownload className="size-4" />} onClick={() => setRemoteOpen(true)}>
+                        GitHub 同步
+                    </Button>
                     <Button type="primary" icon={<Upload className="size-4" />} onClick={() => setImportOpen(true)}>
                         批量导入
                     </Button>
@@ -583,6 +588,7 @@ export default function AgentPetsSettingsPage() {
                     setBatchMode(null);
                 }}
             />
+            {remoteOpen ? <AgentPetRemoteDialog onClose={() => setRemoteOpen(false)} onChanged={() => void load()} /> : null}
             <AgentPetImportDialog
                 open={importOpen}
                 onClose={() => setImportOpen(false)}

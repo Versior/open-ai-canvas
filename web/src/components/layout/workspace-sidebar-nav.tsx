@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 
 import { AuthLoginLink } from "@/components/auth/auth-login-link";
-import { BrandLogoFrame, BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { UserAvatar } from "@/components/layout/user-avatar";
 import { UserGroupAvatarRing, UserGroupBadge } from "@/components/layout/user-group-badge";
 import { Kbd } from "@/components/ui/base/kbd";
@@ -168,7 +168,6 @@ function WorkspaceSwitcher({ collapsed, onNavigate }: { collapsed: boolean; onNa
         <div className={cn("app-workspace-sidebar-brand-row relative shrink-0", collapsed && "is-collapsed")}>
             <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
                 {mark}
-                {!collapsed && (appearance.logoConfigured || appearance.brandName !== "STAGE") ? <BrandWordmark className="app-workspace-brand-wordmark truncate" builtinClassName="app-workspace-brand-wordmark-image" /> : null}
             </Link>
         </div>
     );

@@ -11,6 +11,7 @@ import {
     createPoseLibraryItem,
     deletePoseLibraryItem,
     importPoseLibrary,
+    getPoseLibraryRemotePack,
     isAdultPoseSystem,
     listAdminPoseLibrary,
     poseLibraryFileUrl,
@@ -20,6 +21,7 @@ import {
     POSE_LIBRARY_ANGLES,
     POSE_LIBRARY_DEFAULT_BASE_URL,
     POSE_LIBRARY_UPSTREAM_REPO,
+    POSE_LIBRARY_GITHUB_BASE_URL,
     type AdminPoseLibraryItem,
     type AdminPoseLibrarySystem,
     type PoseLibraryBulkAction,
@@ -426,6 +428,7 @@ function PoseLibraryImportModal({ open, onClose, onImported }: { open: boolean; 
     const [baseUrl, setBaseUrl] = useState(POSE_LIBRARY_DEFAULT_BASE_URL);
     const [error, setError] = useState("");
     const [importing, setImporting] = useState(false);
+    const [fetching, setFetching] = useState(false);
 
     const reset = () => {
         setFile(null);
@@ -467,9 +470,22 @@ function PoseLibraryImportModal({ open, onClose, onImported }: { open: boolean; 
         }
     };
 
+    const pullGitHub = async () => {
+        setFetching(true);
+        try {
+            const pack = await getPoseLibraryRemotePack();
+            await choose(new File([JSON.stringify(pack)], "pose-zh.json", { type: "application/json" }));
+            setBaseUrl(POSE_LIBRARY_GITHUB_BASE_URL);
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "GitHub 数据拉取失败");
+        } finally {
+            setFetching(false);
+        }
+    };
+
     const selectedCount = preview?.systems.filter((item) => selected.has(item.name)).reduce((sum, item) => sum + item.count, 0) || 0;
     const close = () => {
-        if (importing) return;
+        if (importing || fetching) return;
         reset();
         onClose();
     };
@@ -485,30 +501,23 @@ function PoseLibraryImportModal({ open, onClose, onImported }: { open: boolean; 
             cancelText="取消"
             cancelButtonProps={{ disabled: importing }}
             okText={selectedCount ? `导入 ${selectedCount} 条` : "导入"}
-            okButtonProps={{ disabled: !preview || !selected.size || !baseUrl.trim() }}
+            okButtonProps={{ disabled: fetching || !preview || !selected.size || !baseUrl.trim() }}
             confirmLoading={importing}
             onOk={() => void submit()}
             onCancel={close}
         >
             <div className="space-y-4">
                 <Callout title="从 ai-pose-gallery-zh 导入">
-                    <ol className="list-decimal space-y-1 pl-4">
-                        <li>
-                            打开{" "}
-                            <a href={`${POSE_LIBRARY_UPSTREAM_REPO}/blob/main/data/pose-zh.json`} target="_blank" rel="noopener noreferrer">
-                                data/pose-zh.json
-                            </a>
-                            ，点「Download raw file」下载（约 0.6 MB，只有元数据，不含图片）。
-                        </li>
-                        <li>在下面选择这个文件，勾选要导入的体系。成人向体系默认不勾选。</li>
-                        <li>导入后回到列表点「同步图片」，服务器把图片下载到本站数据目录。</li>
-                    </ol>
+                    <p>点击「从 GitHub 拉取」读取固定版本的数据，选择体系后导入，再点「同步图片」。已有条目会更新，无需手动下载上传。成人向体系默认不勾选。</p>
                     <p className="mt-2">也支持 STAGE 通用姿势包（format: yingce-pose-library），格式见文档「姿势库」。</p>
                 </Callout>
 
                 <div>
+                    <Button icon={<CloudDownload className="size-4" />} loading={fetching} disabled={importing} onClick={() => void pullGitHub()}>
+                        从 GitHub 拉取
+                    </Button>{" "}
                     <input ref={inputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void choose(event.target.files?.[0])} />
-                    <Button icon={<Upload className="size-4" />} onClick={() => inputRef.current?.click()}>
+                    <Button icon={<Upload className="size-4" />} disabled={fetching || importing} onClick={() => inputRef.current?.click()}>
                         {file ? "重新选择文件" : "选择 JSON 文件"}
                     </Button>
                     {file ? <span className="ml-3 text-sm text-[var(--text-secondary)]">{file.name}</span> : null}

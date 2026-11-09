@@ -21,6 +21,8 @@ import type { AgentPetRow } from "@/services/api/agent-pets";
 const LOOK_IDLE_MS = 2500;
 /** 有缩略图时，开始播放这么久之后才下载整张图集：滚动时鼠标从卡片上划过、触屏按下就开始滑动，都不会白下载。 */
 const SHEET_DELAY_MS = 150;
+const IDLE_REST_MS = 8000;
+const HOVER_ACTION_COOLDOWN_MS = 20_000;
 
 type LookCell = { row: number; column: number };
 
@@ -72,7 +74,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     dragging = false,
     offsetRight = 0,
     hovered = false,
-    lookAtPointer = true,
+    lookAtPointer = false,
     lazy = false,
     preview,
     label,
@@ -99,17 +101,28 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     const showPreview = Boolean(preview) && near && !(sheet && cachedAgentPetMetrics(sheet));
     const idleRow = agentPetRowForState("idle", stateRows);
     const mappedRow = agentPetRowForState(state, stateRows);
-    const loopRow = forcedRow ?? (state === "completed" ? idleRow : mappedRow);
+    const terminal = ["completed", "failed", "cancelled", "rejected"].includes(state);
+    const loopRow = forcedRow ?? (terminal ? idleRow : mappedRow);
 
     const [oneShot, setOneShot] = useState<AgentPetRow | null>(null);
     const previousState = useRef(state);
+    const lastHoverAction = useRef(-HOVER_ACTION_COOLDOWN_MS);
     useEffect(() => {
-        if (previousState.current !== state && state === "completed" && !forcedRow) setOneShot(mappedRow);
+        setOneShot(null);
         previousState.current = state;
-    }, [state, mappedRow, forcedRow]);
+        lastHoverAction.current = Date.now();
+    }, [src]);
     useEffect(() => {
-        if (hovered && !forcedRow && loopRow === idleRow) setOneShot((current) => current ?? "waving");
-    }, [hovered, forcedRow, loopRow, idleRow]);
+        if (forcedRow) setOneShot(null);
+        else if (previousState.current !== state) setOneShot(terminal && mappedRow !== idleRow ? mappedRow : null);
+        previousState.current = state;
+    }, [state, mappedRow, forcedRow, terminal, idleRow]);
+    useEffect(() => {
+        if (hovered && !forcedRow && !still && loopRow === idleRow && Date.now() - lastHoverAction.current >= HOVER_ACTION_COOLDOWN_MS) {
+            lastHoverAction.current = Date.now();
+            setOneShot((current) => current ?? "waving");
+        }
+    }, [hovered, forcedRow, loopRow, idleRow, still]);
 
     const [facing, setFacing] = useState<"running-right" | "running-left">("running-right");
     const lastOffset = useRef(offsetRight);
@@ -120,7 +133,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
         if (dragging && Math.abs(delta) > 0.5) setFacing(delta > 0 ? "running-right" : "running-left");
     }, [dragging, offsetRight]);
 
-    const activeRow: AgentPetRow = dragging && !forcedRow ? facing : (oneShot ?? loopRow);
+    const activeRow: AgentPetRow = forcedRow ?? (dragging ? facing : (oneShot ?? loopRow));
     const lookEnabled = version === 2 && lookAtPointer && !still && !dragging && !forcedRow && !oneShot && loopRow === idleRow;
     const look = useLookAtPointer(element, lookEnabled);
 
@@ -138,10 +151,10 @@ export const AgentPetSprite = memo(function AgentPetSprite({
                 setFrame(0);
                 if (oneShot && activeRow === oneShot) setOneShot(null);
             },
-            agentPetFrameDuration(activeRow, frame, frameCount),
+            !forcedRow && !oneShot && activeRow === idleRow && frame === 0 ? IDLE_REST_MS : agentPetFrameDuration(activeRow, frame, frameCount),
         );
         return () => window.clearTimeout(timer);
-    }, [still, look, frame, frameCount, activeRow, oneShot]);
+    }, [still, look, frame, frameCount, activeRow, oneShot, forcedRow, idleRow]);
 
     const cell = look ?? { row: agentPetRowIndex(activeRow), column: still ? 0 : Math.min(frame, frameCount - 1) };
     const image = showPreview ? preview : sheet;

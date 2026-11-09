@@ -740,8 +740,16 @@
 }
 
 .vr-card-item {
+    position: relative;
     min-width: 0;
     animation: product-card-enter var(--product-enter, 360ms) var(--product-ease, ease) backwards;
+}
+
+.vr-card-selection {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px;
+    background: var(--user-surface);
 }
 
 .vr-card-item:nth-child(2) {

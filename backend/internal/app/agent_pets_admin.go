@@ -546,6 +546,10 @@ func (s *Service) ImportAgentPet(actor *model.User, header *multipart.FileHeader
 	if err != nil {
 		return nil, err
 	}
+	return s.importAgentPetPackage(actor, pkg, agentpet.UploadIDPrefix+newID())
+}
+
+func (s *Service) importAgentPetPackage(actor *model.User, pkg agentpet.Package, id string) (*AdminAgentPetView, error) {
 	fileName := "spritesheet.webp"
 	if pkg.Sheet.MimeType == "image/png" {
 		fileName = "spritesheet.png"
@@ -568,7 +572,7 @@ func (s *Service) ImportAgentPet(actor *model.User, header *multipart.FileHeader
 		sortOrder = max(sortOrder, row.SortOrder)
 	}
 	pet := model.AgentPet{
-		ID:             agentpet.UploadIDPrefix + newID(),
+		ID:             id,
 		Source:         agentPetSourceUpload,
 		ResourceID:     resource.ID,
 		Name:           firstNonEmpty(pkg.Name, "自定义形象"),

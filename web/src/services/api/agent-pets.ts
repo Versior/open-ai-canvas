@@ -188,3 +188,19 @@ export async function importAdminAgentPet(file: File) {
 export async function deleteAdminAgentPet(id: string) {
     await http.delete<{ deleted: boolean }>(`/admin/agent-pets/${encodeURIComponent(id)}`);
 }
+
+export type AgentPetRemoteImport = {
+    status: "idle" | "running" | "done" | "failed" | "cancelled";
+    manifestUrl: string;
+    error?: string;
+    report: { total: number; done: number; imported: number; skipped: number; failed: number; failures: { name: string; error: string }[] };
+};
+export function getAgentPetRemoteImport() {
+    return http.get<AgentPetRemoteImport>("/admin/agent-pets/remote-import");
+}
+export function startAgentPetRemoteImport(manifestUrl: string) {
+    return http.post<AgentPetRemoteImport>("/admin/agent-pets/remote-import", { manifestUrl });
+}
+export function cancelAgentPetRemoteImport() {
+    return http.post<AgentPetRemoteImport>("/admin/agent-pets/remote-import/cancel");
+}

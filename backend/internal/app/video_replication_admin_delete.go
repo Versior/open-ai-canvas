@@ -57,7 +57,7 @@ func (s *Service) DeleteAdminVideoReplication(actor *model.User, taskID string) 
 		return nil, err
 	}
 	// 先删任务：它的结果里写着这些图，不先删的话图会被它自己挡住。
-	if err := s.repo.DeleteFinishedTaskRecords(task.ID, model.TaskTypeReplicationTeardown, videoReplicationFinishedStatuses, audit); err != nil {
+	if err := s.repo.DeleteFinishedTaskRecords(task.UserID, task.ID, model.TaskTypeReplicationTeardown, videoReplicationFinishedStatuses, audit); err != nil {
 		if errors.Is(err, repository.ErrTaskRecordsChanged) {
 			return nil, BadAuthRequest("拆解记录状态已变化，请刷新后重试")
 		}

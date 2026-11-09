@@ -2,10 +2,25 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/poselibrary"
 )
+
+func (s *Service) PoseLibraryRemotePack(ctx context.Context, actor *model.User) (json.RawMessage, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	data, err := DownloadStudioModelFile(ctx, poseGalleryRaw+"data/pose-zh.json", PoseLibraryMaxImportBytes)
+	if err != nil {
+		return nil, err
+	}
+	if !json.Valid(data) {
+		return nil, BadAuthRequest("GitHub 姿势数据不是有效 JSON")
+	}
+	return json.RawMessage(data), nil
+}
 
 const (
 	PoseLibraryMaxImportBytes = poselibrary.MaxImportBytes

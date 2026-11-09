@@ -6,36 +6,40 @@ import { remakeUnitTake } from "./units";
 // 生成单元的候选按它在参考片段里的位置裁出对应的那一段；保留原片的镜头直接用原视频。
 
 /** 成片里的一小段：在成片里的位置 [startMs, endMs)，对应原片里从 sourceStartMs 开始的同样长度。 */
-export type RemakePiece = { kind: "unit" | "keep"; unitKey?: string; startMs: number; endMs: number; sourceStartMs: number };
+export type RemakePiece = { kind: "unit" | "keep"; unitKey?: string; pending?: boolean; startMs: number; endMs: number; sourceStartMs: number };
 
 function overlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
     return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
 }
 
 /** 成片的分段表：先按原片时间排出每一段，再累计出在成片里的位置。 */
-export function remakePieces(job: Pick<RemakeJob, "shots" | "units">): RemakePiece[] {
-    const raw: { kind: "unit" | "keep"; unit?: RemakeUnit; sourceStartMs: number; sourceEndMs: number }[] = [];
+export function remakePieces(job: Pick<RemakeJob, "shots" | "units">, draft = false): RemakePiece[] {
+    const raw: { kind: "unit" | "keep"; unit?: RemakeUnit; pending?: boolean; sourceStartMs: number; sourceEndMs: number }[] = [];
     for (const shot of job.shots) {
         if (shot.treatment === "skip") continue;
         if (shot.treatment === "keep") {
             const last = raw[raw.length - 1];
-            if (last?.kind === "keep" && last.sourceEndMs === shot.startMs) last.sourceEndMs = shot.endMs;
+            if (last?.kind === "keep" && !last.pending && last.sourceEndMs === shot.startMs) last.sourceEndMs = shot.endMs;
             else raw.push({ kind: "keep", sourceStartMs: shot.startMs, sourceEndMs: shot.endMs });
             continue;
         }
-        for (const unit of job.units) {
+        let cursor = shot.startMs;
+        for (const unit of [...job.units].sort((a, b) => a.startMs - b.startMs)) {
             if (!unit.shotIndexes.includes(shot.index) || !overlap(unit.startMs, unit.endMs, shot.startMs, shot.endMs)) continue;
             const start = Math.max(unit.startMs, shot.startMs);
             const end = Math.min(unit.endMs, shot.endMs);
+            if (draft && start > cursor) raw.push({ kind: "keep", pending: true, sourceStartMs: cursor, sourceEndMs: start });
             const last = raw[raw.length - 1];
             if (last?.unit?.key === unit.key && last.sourceEndMs === start) last.sourceEndMs = end;
             else raw.push({ kind: "unit", unit, sourceStartMs: start, sourceEndMs: end });
+            cursor = Math.max(cursor, end);
         }
+        if (draft && cursor < shot.endMs) raw.push({ kind: "keep", pending: true, sourceStartMs: cursor, sourceEndMs: shot.endMs });
     }
     let cursor = 0;
     return raw.map((item) => {
         const length = item.sourceEndMs - item.sourceStartMs;
-        const piece: RemakePiece = { kind: item.kind, ...(item.unit ? { unitKey: item.unit.key } : {}), startMs: cursor, endMs: cursor + length, sourceStartMs: item.sourceStartMs };
+        const piece: RemakePiece = { kind: item.kind, ...(item.unit ? { unitKey: item.unit.key } : {}), ...(item.pending ? { pending: true } : {}), startMs: cursor, endMs: cursor + length, sourceStartMs: item.sourceStartMs };
         cursor += length;
         return piece;
     });
@@ -80,8 +84,8 @@ export function remakeVoiceLineFor(job: Pick<RemakeJob, "voiceLines" | "voice" |
  * 每句台词在成片里的起止：从这一镜在成片里的开头算起，AI 配音按配音实际时长（没有时按镜头时长），
  * 其余按镜头时长；不超过下一句的开头和成片结尾。删掉的镜头没有台词。
  */
-export function remakeLines(job: Pick<RemakeJob, "shots" | "units" | "audio" | "voiceLines" | "voice" | "language">): RemakeLine[] {
-    const pieces = remakePieces(job);
+export function remakeLines(job: Pick<RemakeJob, "shots" | "units" | "audio" | "voiceLines" | "voice" | "language">, draft = false): RemakeLine[] {
+    const pieces = remakePieces(job, draft);
     const total = pieces[pieces.length - 1]?.endMs || 0;
     const lines = job.shots.flatMap((shot): RemakeLine[] => {
         const text = remakeSpokenText(job, shot);
@@ -112,13 +116,16 @@ export const REMAKE_MUSIC_FADE_MS = 1500;
  * 背景音乐铺满成片、结尾淡出。台词同时写成字幕片段（渲染结果附 SRT，剪映里是字幕轨）；勾了烧录字幕时，
  * 再把画好的字幕图作为叠加图片放在「烧录字幕」轨。
  */
-export function remakeTimeline(job: RemakeJob, size: { width: number; height: number }): RemakeRenderTimeline {
-    const pieces = remakePieces(job);
+export function remakeTimeline(job: RemakeJob, size: { width: number; height: number }, draft = false): RemakeRenderTimeline {
+    const pieces = remakePieces(job, draft);
     if (!pieces.length) throw new Error("没有要拼进成片的镜头");
     const units = new Map(job.units.map((unit) => [unit.key, unit]));
     const clips: RemakeTimelineClip[] = pieces.map((piece, index) => {
         const length = piece.endMs - piece.startMs;
-        if (piece.kind === "keep") {
+        const unit = units.get(piece.unitKey || "");
+        const take = unit ? remakeUnitTake(unit) : undefined;
+        if (piece.kind === "keep" || (draft && !take)) {
+            const title = piece.pending || piece.kind === "unit" ? "待生成 · 原片占位" : "原片";
             return {
                 id: `keep-${index}`,
                 kind: "video",
@@ -127,12 +134,10 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
                 startMs: piece.startMs,
                 durationMs: length,
                 sourceStartMs: piece.sourceStartMs,
-                title: "原片",
-                directMedia: { id: job.source.resourceId, kind: "video", title: "原片", storageKey: `resource:${job.source.resourceId}` },
+                title,
+                directMedia: { id: job.source.resourceId, kind: "video", title, storageKey: `resource:${job.source.resourceId}` },
             };
         }
-        const unit = units.get(piece.unitKey || "");
-        const take = unit ? remakeUnitTake(unit) : undefined;
         if (!unit || !take) throw new Error("还有镜头没有生成好");
         const origin = unit.treatment === "replace" ? unit.clipStartMs : unit.startMs;
         return {
@@ -174,23 +179,25 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
         );
     }
     const durationMs = pieces[pieces.length - 1].endMs;
-    const lines = remakeLines(job);
+    const lines = remakeLines(job, draft);
     if (job.audio === "voice") {
         const missing = lines.filter((line) => !line.voice?.resourceId);
-        if (missing.length) throw new Error(`还有 ${missing.length} 句配音没有生成好`);
-        lines.forEach((line, index) =>
-            clips.push({
-                id: `voice-${index}`,
-                kind: "audio",
-                nodeId: `voice-${index}`,
-                trackId: "voice",
-                startMs: line.startMs,
-                durationMs: line.endMs - line.startMs,
-                sourceStartMs: 0,
-                title: `配音-镜头${line.shotIndex}`,
-                directMedia: { id: line.voice!.resourceId!, kind: "audio", title: "配音", storageKey: `resource:${line.voice!.resourceId}` },
-            }),
-        );
+        if (missing.length && !draft) throw new Error(`还有 ${missing.length} 句配音没有生成好`);
+        lines
+            .filter((line) => line.voice?.resourceId)
+            .forEach((line, index) =>
+                clips.push({
+                    id: `voice-${index}`,
+                    kind: "audio",
+                    nodeId: `voice-${index}`,
+                    trackId: "voice",
+                    startMs: line.startMs,
+                    durationMs: line.endMs - line.startMs,
+                    sourceStartMs: 0,
+                    title: `配音-镜头${line.shotIndex}`,
+                    directMedia: { id: line.voice!.resourceId!, kind: "audio", title: "配音", storageKey: `resource:${line.voice!.resourceId}` },
+                }),
+            );
     }
     if (job.music) {
         clips.push({

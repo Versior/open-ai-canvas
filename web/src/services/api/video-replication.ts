@@ -4,6 +4,10 @@ import type { VideoReplicationAnalysisDocument } from "@/lib/canvas/video-teardo
 import { http } from "@/services/api/request";
 import type { GenerationTask } from "@/services/api/task-center";
 
+export function deleteVideoReplication(id: string) {
+    return http.delete<{ deleted: boolean }>(`/video-replication/teardowns/${encodeURIComponent(id)}`);
+}
+
 /** 一镜开头是怎么来的：start 第一镜，cut 检测到的切点，split 长镜头按时长切开（画面连续）。 */
 export type VideoTeardownBoundary = "start" | "cut" | "split";
 
