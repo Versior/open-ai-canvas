@@ -109,36 +109,10 @@ test("idle timeout, active work, focus, completion and full-body entry", async (
     await dom.happyDOM.abort();
 });
 
-test("window dock uses a zero-height anchor, follows movement and respects viewport space", async () => {
-    const resizeCallbacks = new Set<() => void>();
-    Object.defineProperty(globalThis, "ResizeObserver", {
-        configurable: true,
-        value: class {
-            constructor(private callback: () => void) {
-                resizeCallbacks.add(callback);
-            }
-            observe() {}
-            disconnect() {
-                resizeCallbacks.delete(this.callback);
-            }
-        },
-    });
-    dom.innerWidth = 1280;
-    let left = 20,
-        right = 660,
-        anchorTop = 580;
-    const rect = (x: number, y: number, width: number, height: number) => new dom.DOMRect(x, y, width, height);
-    const originalBounds = dom.HTMLElement.prototype.getBoundingClientRect;
-    dom.HTMLElement.prototype.getBoundingClientRect = function () {
-        if (this.classList.contains("canvas-agent-panel")) return rect(left, 64, right - left, 640);
-        if (this.classList.contains("agent-perch-anchor")) return rect(left, anchorTop, right - left, 0);
-        return originalBounds.call(this);
-    };
-    const panel = dom.document.createElement("aside");
-    panel.className = "canvas-agent-panel";
+test("window dock stays in the composer positioning context", async () => {
     const composer = dom.document.createElement("div");
-    panel.append(composer);
-    dom.document.body.append(panel);
+    composer.className = "relative";
+    dom.document.body.append(composer);
     const root = createRoot(composer);
     await act(async () =>
         root.render(
@@ -147,29 +121,13 @@ test("window dock uses a zero-height anchor, follows movement and respects viewp
             </AgentWindowDock>,
         ),
     );
-    const dock = () => panel.querySelector<HTMLElement>(".agent-window-dock")!;
-    expect(composer.querySelector(".agent-window-dock")).toBeNull();
-    expect(composer.querySelector(".agent-perch-anchor")?.getBoundingClientRect().height).toBe(0);
-    expect(dock().dataset.side).toBe("right");
-    expect(dock().style.bottom).toBe("124px");
-    left = 640;
-    right = 1280;
-    await act(async () => {
-        panel.style.left = "640px";
-    });
-    expect(dock().dataset.side).toBe("left");
-    anchorTop = 520;
-    await act(async () => resizeCallbacks.forEach((callback) => callback()));
-    expect(dock().style.bottom).toBe("184px");
-    dom.innerWidth = 390;
-    left = 0;
-    right = 390;
-    await act(async () => dom.dispatchEvent(new dom.Event("resize")));
-    expect(dock().dataset.side).toBe("inside");
+    const dock = composer.querySelector<HTMLElement>(".agent-window-dock");
+    expect(dock).not.toBeNull();
+    expect(dock?.parentElement).toBe(composer);
+    expect(dock?.hasAttribute("data-side")).toBeFalse();
+    expect(composer.querySelector(".agent-perch-anchor")).toBeNull();
     await act(async () => root.unmount());
-    expect(resizeCallbacks.size).toBe(0);
-    expect(panel.querySelector(".agent-window-dock")).toBeNull();
-    dom.HTMLElement.prototype.getBoundingClientRect = originalBounds;
-    panel.remove();
+    expect(composer.querySelector(".agent-window-dock")).toBeNull();
+    composer.remove();
     await dom.happyDOM.abort();
 });

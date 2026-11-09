@@ -4,21 +4,40 @@ import { useEffect, useRef } from "react";
  * 绿幕形象视频：每帧把视频画到画布上做抠像。抠像在主线程逐像素处理，开销不小，
  * 所以 paused（入口被面板挡住时）和页面隐藏时都不处理帧，也暂停视频解码。
  */
-export function AgentAvatarVideo({ src, loop = true, paused = false, reducedMotion = false, onError, className }: { src: string; loop?: boolean; paused?: boolean; reducedMotion?: boolean; onError?: () => void; className?: string }) {
+export function AgentAvatarVideo({
+    src,
+    loop = true,
+    paused = false,
+    reducedMotion = false,
+    onError,
+    onContentBounds,
+    className,
+}: {
+    src: string;
+    loop?: boolean;
+    paused?: boolean;
+    reducedMotion?: boolean;
+    onError?: () => void;
+    onContentBounds?: (bounds: { top: number; aspect: number }) => void;
+    className?: string;
+}) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const errorRef = useRef(onError);
     errorRef.current = onError;
+    const boundsRef = useRef(onContentBounds);
+    boundsRef.current = onContentBounds;
 
     useEffect(() => {
         const video = videoRef.current;
         const canvas = canvasRef.current;
         const context = canvas?.getContext("2d", { willReadFrequently: true });
-        if (paused || !video || !canvas || !context) return;
+        if (!video || !canvas || !context) return;
         let animationFrame = 0;
         let videoFrame = 0;
         let disposed = false;
         let lastFrameTime = -1;
+        let measured = false;
         const drawFrame = () => {
             if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth <= 0 || video.videoHeight <= 0 || video.currentTime === lastFrameTime) return;
             lastFrameTime = video.currentTime;
@@ -44,9 +63,24 @@ export function AgentAvatarVideo({ src, loop = true, paused = false, reducedMoti
                 }
             }
             context.putImageData(image, 0, 0);
+            if (!measured && boundsRef.current) {
+                let top = height;
+                for (let y = 0; y < height && top === height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        if (pixels[(y * width + x) * 4 + 3] > 32) {
+                            top = y;
+                            break;
+                        }
+                    }
+                }
+                if (top < height) {
+                    measured = true;
+                    boundsRef.current({ top: top / height, aspect: width / height });
+                }
+            }
         };
         const scheduleFrame = () => {
-            if (disposed || document.visibilityState === "hidden" || reducedMotion) return;
+            if (disposed || paused || document.visibilityState === "hidden" || reducedMotion) return;
             if (typeof video.requestVideoFrameCallback === "function") {
                 videoFrame = video.requestVideoFrameCallback(() => {
                     drawFrame();

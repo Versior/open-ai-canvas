@@ -16,10 +16,11 @@
     transition: height 280ms ease;
 }
 .agent-window-perch[data-expanded="false"] {
-    height: 24px;
+    height: 48px;
+    align-items: flex-start;
 }
 .agent-window-perch[data-expanded="false"] .agent-perch-media {
-    transform: translateY(calc(44px - var(--agent-perch-head-top)));
+    transform: translateY(calc(-1 * var(--agent-perch-head-top)));
 }
 .agent-window-perch[data-display="full"] {
     margin: 0;
@@ -39,6 +40,7 @@
     cursor: pointer;
 }
 .agent-perch-media {
+    position: relative;
     display: block;
     width: 104px;
     height: 112px;
@@ -62,37 +64,18 @@
     border-radius: var(--r-md);
     background: var(--agent-surface-base);
 }
-.agent-perch-anchor {
-    height: 0;
-    pointer-events: none;
-}
 .agent-window-dock {
     position: absolute;
-    right: -104px;
+    right: 12px;
+    bottom: 100%;
     width: 104px;
     z-index: 12;
     pointer-events: none;
-    transition:
-        right 280ms ease,
-        left 280ms ease;
-}
-.agent-window-dock[data-side="right"]:has(.agent-window-perch[data-expanded="false"]) {
-    right: -52px;
-}
-.agent-window-dock[data-side="left"]:has(.agent-window-perch[data-expanded="false"]) {
-    left: -52px;
-}
-.agent-window-dock[data-side="left"] {
-    right: auto;
-    left: -104px;
-}
-.agent-window-dock[data-side="inside"] {
-    right: 12px;
 }
 .agent-window-dock .agent-window-perch {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 6px;
     height: auto;
     max-width: 100%;
@@ -100,23 +83,11 @@
     overflow: visible;
     pointer-events: auto;
 }
-.agent-window-dock .agent-window-perch[data-expanded="false"],
-.agent-window-dock[data-side="inside"] .agent-window-perch {
+.agent-window-dock .agent-window-perch[data-expanded="false"] {
     flex-direction: row;
-    align-items: center;
-    height: 24px;
+    align-items: flex-start;
+    height: 48px;
     overflow: hidden;
-}
-.agent-window-dock .agent-window-perch[data-expanded="false"] .agent-perch-media,
-.agent-window-dock[data-side="inside"] .agent-perch-media {
-    transform: translateY(calc(44px - var(--agent-perch-head-top))) scale(1.25);
-    transform-origin: center var(--agent-perch-head-top);
-}
-.agent-window-dock[data-side="inside"] .agent-window-perch:has(.agent-perch-bubble) {
-    overflow: visible;
-}
-.agent-window-dock[data-side="inside"] .agent-perch-character {
-    clip-path: inset(44px 0 44px 0);
 }
 .agent-window-dock .agent-perch-bubble {
     position: relative;
@@ -125,21 +96,6 @@
     max-height: 200px;
     overflow-y: auto;
     text-align: left;
-}
-.agent-window-dock[data-side="left"] .agent-window-perch {
-    align-items: flex-end;
-}
-.agent-window-dock[data-side="inside"] .agent-perch-bubble {
-    position: absolute;
-    bottom: 32px;
-    right: 0;
-    width: 180px;
-    max-width: min(180px, calc(100vw - 36px));
-}
-@media (prefers-reduced-motion: reduce) {
-    .agent-window-dock {
-        transition: none;
-    }
 }
 .canvas-agent-panel[data-skin] .agent-message-body:not(.agent-message-user) {
     padding: 0;

@@ -13,6 +13,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const revision = useAppearanceStore((store) => store.appearance.revision);
     const [manifest, setManifest] = useState<AgentAvatarBundleManifest | null>(null);
     const [failed, setFailed] = useState(false);
+    const [videoBounds, setVideoBounds] = useState<{ top: number; aspect: number }>();
     const [hovered, setHovered] = useState(false);
     const [focused, setFocused] = useState(false);
     const [settled, setSettled] = useState(true);
@@ -37,6 +38,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const manifestUrl = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, revision) : "/doll/avatar.json";
     useEffect(() => {
         setManifest(null);
+        setVideoBounds(undefined);
         if (!bundle) return;
         const controller = new AbortController();
         void fetch(manifestUrl, { credentials: "include", signal: controller.signal })
@@ -68,13 +70,15 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const media = file ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, file, false, revision) : `/doll/${encodeURIComponent(file)}`) : "";
     if ((!pet && !media) || failed) return null;
     const message = display === "perch" ? chatter.message?.text || (speaking ? "我在这里。下一步一起完成。" : "") : "";
+    const contentHeight = videoBounds ? Math.min(112, 104 / videoBounds.aspect) : 112;
+    const mediaTop = pet ? headTop * 112 : videoBounds ? (112 - contentHeight) / 2 + videoBounds.top * contentHeight : 112 * 0.12;
     return (
         <div
             className="agent-window-perch"
             data-display={display}
             data-expanded={expanded}
             data-action={speaking ? "talk" : state}
-            style={{ "--agent-perch-head-top": `${(pet ? headTop : 0.12) * 112}px` } as CSSProperties}
+            style={{ "--agent-perch-head-top": `${mediaTop}px` } as CSSProperties}
             data-canvas-no-zoom
             onPointerDown={(event) => event.stopPropagation()}
         >
@@ -130,7 +134,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                             onError={() => setFailed(true)}
                         />
                     ) : (
-                        <AgentAvatarVideo src={media} reducedMotion={reducedMotion} paused={!expanded} loop={!speaking} onError={() => setFailed(true)} />
+                        <AgentAvatarVideo src={media} reducedMotion={reducedMotion} paused={!expanded} loop={!speaking} onContentBounds={setVideoBounds} onError={() => setFailed(true)} />
                     )}
                 </span>
             </button>
