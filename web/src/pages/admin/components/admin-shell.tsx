@@ -265,11 +265,6 @@ function AdminShellLayout() {
                                             fallback={<InfinityIcon className="size-4" />}
                                         />
                                     }
-                                    label={appearance.brandName}
-                                    showLabel={false}
-                                    showVersion={!collapsed}
-                                    labelClassName="admin-sidebar-brand-title"
-                                    versionClassName="admin-sidebar-brand-version"
                                 />
                             </AdminTooltip>
                         </div>
