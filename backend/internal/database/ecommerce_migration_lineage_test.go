@@ -155,6 +155,15 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		{91, "email_logs_and_notifications", "sha256:email-logs-and-notifications-v91-20261106", func(tx *gorm.DB) error {
 			return tx.AutoMigrate(&model.EmailLog{}, &model.UserNotificationSetting{})
 		}, time.Date(2026, 11, 6, 9, 3, 0, 0, time.UTC)},
+		{92, "drama_reference_controls", "sha256:drama-reference-controls-v92", func(tx *gorm.DB) error {
+			for _, item := range schemaMigrations {
+				if item.name == "drama_reference_controls" {
+					return item.apply(tx)
+				}
+			}
+			t.Fatal("reference controls migration is not registered")
+			return nil
+		}, time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC)},
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
 	for _, fixture := range fixtures {
@@ -187,7 +196,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 97 {
+	if CurrentSchemaVersion != 98 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -217,6 +226,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 95, Name: "reference_video_cost_price", Checksum: "sha256:reference-video-cost-price-v89-20261106"},
 		{Version: 96, Name: "drama_draft_form", Checksum: "sha256:drama-draft-form-v90-20261106"},
 		{Version: 97, Name: "email_logs_and_notifications", Checksum: "sha256:email-logs-and-notifications-v91-20261106"},
+		{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92"},
 	}
 	got := schemaMigrations[len(schemaMigrations)-len(want):]
 	for index, item := range want {
@@ -322,8 +332,67 @@ func TestMigrateSchemaUpgradesFork93WithMissingNewColumns(t *testing.T) {
 	}
 }
 
+func TestMigrateSchemaUpgradesFork97ReferenceControls(t *testing.T) {
+	db := openLineageTestDatabase(t)
+	applyCanonicalMigrationsThrough(t, db, 97)
+	var originalLedger []schemaMigration
+	if err := db.Order("version").Find(&originalLedger).Error; err != nil {
+		t.Fatal(err)
+	}
+	cast := model.DramaCast{ID: "kept-cast", Appearance: "白衣"}
+	segment := model.DramaSegment{ID: "kept-segment", ReferenceCastIDsJSON: `["kept-cast"]`}
+	for _, record := range []any{&cast, &segment} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 旧 AutoMigrate 会读取当前模型，移除新列以复现已部署的 97 号结构。
+	for _, target := range []struct {
+		entity any
+		field  string
+	}{
+		{&model.DramaCast{}, "ImagePrompt"},
+		{&model.DramaSegment{}, "ReferenceImagesJSON"},
+		{&model.DramaSegment{}, "AudioCastIDsJSON"},
+	} {
+		if err := db.Migrator().DropColumn(target.entity, target.field); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := MigrateSchema(db); err != nil {
+			t.Fatalf("upgrade attempt %d: %v", attempt, err)
+		}
+		for _, record := range originalLedger {
+			requireMigration(t, db, record)
+		}
+		if err := validateCanonicalMigrationPhysicalSchema(db, 98); err != nil {
+			t.Fatal(err)
+		}
+		var storedCast model.DramaCast
+		var storedSegment model.DramaSegment
+		if err := db.First(&storedCast, "id = ?", cast.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.First(&storedSegment, "id = ?", segment.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if storedCast.Appearance != cast.Appearance || storedSegment.ReferenceCastIDsJSON != segment.ReferenceCastIDsJSON {
+			t.Fatal("reference controls upgrade changed existing cast or segment data")
+		}
+		var count int64
+		if err := db.Model(&schemaMigration{}).Count(&count).Error; err != nil || count != int64(len(originalLedger)+1) {
+			t.Fatalf("upgrade must add exactly one ledger entry: count=%d err=%v", count, err)
+		}
+	}
+	requireMigration(t, db, schemaMigration{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92"})
+	if err := RequireSchemaVersion(db); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -371,6 +440,7 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 95, Name: "reference_video_cost_price", Checksum: "sha256:reference-video-cost-price-v89-20261106", AppliedAt: applied[89]},
 				{Version: 96, Name: "drama_draft_form", Checksum: "sha256:drama-draft-form-v90-20261106", AppliedAt: applied[90]},
 				{Version: 97, Name: "email_logs_and_notifications", Checksum: "sha256:email-logs-and-notifications-v91-20261106", AppliedAt: applied[91]},
+				{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92", AppliedAt: applied[92]},
 			} {
 				requireMigration(t, db, want)
 			}
@@ -427,15 +497,15 @@ func TestMigrateSchemaNormalizesLegacyEcommerceSchema59(t *testing.T) {
 
 func TestMigrateSchemaRejectsInexactLineagesBeforeChangingLedger(t *testing.T) {
 	t.Run("upstream latest checksum", func(t *testing.T) {
-		db, applied := upstreamSchemaDatabase(t, 91)
-		if err := db.Model(&schemaMigration{}).Where("version = ?", 91).Update("checksum", "sha256:tampered").Error; err != nil {
+		db, applied := upstreamSchemaDatabase(t, 92)
+		if err := db.Model(&schemaMigration{}).Where("version = ?", 92).Update("checksum", "sha256:tampered").Error; err != nil {
 			t.Fatal(err)
 		}
 		if err := MigrateSchema(db); err == nil || !strings.Contains(err.Error(), "校验和不一致") {
 			t.Fatalf("expected latest upstream checksum rejection, got %v", err)
 		}
 		requireMigration(t, db, schemaMigration{Version: 88, Name: "reference_video_billing", Checksum: "sha256:reference-video-billing-v88-20261106", AppliedAt: applied[88]})
-		requireMigration(t, db, schemaMigration{Version: 91, Name: "email_logs_and_notifications", Checksum: "sha256:tampered", AppliedAt: applied[91]})
+		requireMigration(t, db, schemaMigration{Version: 92, Name: "drama_reference_controls", Checksum: "sha256:tampered", AppliedAt: applied[92]})
 	})
 
 	t.Run("fork checksum", func(t *testing.T) {
@@ -596,6 +666,9 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 		{"draft form column", 96, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaProduction{}, "DraftJSON") }},
 		{"email log table", 97, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EmailLog{}) }},
 		{"notification setting table", 97, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserNotificationSetting{}) }},
+		{"cast image prompt column", 98, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaCast{}, "ImagePrompt") }},
+		{"segment reference images column", 98, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaSegment{}, "ReferenceImagesJSON") }},
+		{"segment audio casts column", 98, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaSegment{}, "AudioCastIDsJSON") }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -612,7 +685,7 @@ func TestMigrateSchemaRejectsCanonicalLedgerWithoutPhysicalSchema(t *testing.T) 
 }
 
 func TestMigrateSchemaRollsBackUpstreamRelocationWithLaterFailure(t *testing.T) {
-	for _, version := range []int64{74, 91} {
+	for _, version := range []int64{74, 91, 92} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, _ := upstreamSchemaDatabase(t, version)
 			var originalLedger []schemaMigration

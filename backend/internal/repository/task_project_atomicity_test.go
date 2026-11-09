@@ -87,6 +87,11 @@ func TestRetryTaskRechecksProjectInsideTransaction(t *testing.T) {
 	if !errors.Is(err, ErrProjectNotActive) {
 		t.Fatalf("RetryTaskWithBilling() error = %v, want ErrProjectNotActive", err)
 	}
+	prepared := task
+	prepared.ProjectID = ""
+	if _, err := repo.RetryTaskWithBilling(task.UserID, &prepared, nil, 10); !errors.Is(err, ErrProjectNotActive) {
+		t.Fatalf("retry must validate the stored project even when prepared project is empty: %v", err)
+	}
 	stored, err := repo.Task(task.ID)
 	if err != nil {
 		t.Fatal(err)

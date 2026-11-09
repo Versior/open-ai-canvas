@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const CurrentSchemaVersion int64 = 97
+const CurrentSchemaVersion int64 = 98
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -383,6 +383,27 @@ var schemaMigrations = []migration{
 	{version: 97, name: "email_logs_and_notifications", checksum: "sha256:email-logs-and-notifications-v91-20261106", apply: func(tx *gorm.DB) error {
 		// 邮件发送记录与用户邮件订阅（消费日报，默认关闭）；只建新表。
 		return tx.AutoMigrate(&model.EmailLog{}, &model.UserNotificationSetting{})
+	}},
+	{version: 98, name: "drama_reference_controls", checksum: "sha256:drama-reference-controls-v92", apply: func(tx *gorm.DB) error {
+		for _, change := range []struct {
+			entity any
+			fields []string
+		}{
+			{&model.DramaCast{}, []string{"ImagePrompt"}},
+			{&model.DramaSegment{}, []string{"ReferenceImagesJSON", "AudioCastIDsJSON"}},
+		} {
+			if !tx.Migrator().HasTable(change.entity) {
+				continue
+			}
+			for _, field := range change.fields {
+				if !tx.Migrator().HasColumn(change.entity, field) {
+					if err := tx.Migrator().AddColumn(change.entity, field); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
 	}},
 }
 
@@ -1514,6 +1535,23 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasTable(&model.EmailLog{}) || !tx.Migrator().HasTable(&model.UserNotificationSetting{}) {
 			return fmt.Errorf("邮件记录与订阅迁移账本与物理结构不一致：缺少邮件记录或订阅表")
 		}
+	case 98:
+		for _, target := range []struct {
+			entity any
+			fields []string
+		}{
+			{&model.DramaCast{}, []string{"ImagePrompt"}},
+			{&model.DramaSegment{}, []string{"ReferenceImagesJSON", "AudioCastIDsJSON"}},
+		} {
+			if !tx.Migrator().HasTable(target.entity) {
+				continue
+			}
+			for _, field := range target.fields {
+				if !tx.Migrator().HasColumn(target.entity, field) {
+					return fmt.Errorf("短剧参考控制迁移账本与物理结构不一致：缺少 %s", field)
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -1541,7 +1579,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 	// 上游 main 72–82 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
 	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83；
 	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87，上游 83–87 顺延五位为 88–92；
-	// 上游 88–91 接在 Fork 室内设计知识库之后为 94–97。Fork 自有的形象（84）、模特库（85）、
+	// 上游 88–92 接在 Fork 室内设计知识库之后为 94–98。Fork 自有的形象（84）、模特库（85）、
 	// 室内设计（86）和室内设计知识库（93）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
@@ -1568,6 +1606,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 89, name: "reference_video_cost_price", checksum: "sha256:reference-video-cost-price-v89-20261106"}, 95, "sha256:reference-video-cost-price-v89-20261106"},
 		{migration{version: 90, name: "drama_draft_form", checksum: "sha256:drama-draft-form-v90-20261106"}, 96, "sha256:drama-draft-form-v90-20261106"},
 		{migration{version: 91, name: "email_logs_and_notifications", checksum: "sha256:email-logs-and-notifications-v91-20261106"}, 97, "sha256:email-logs-and-notifications-v91-20261106"},
+		{migration{version: 92, name: "drama_reference_controls", checksum: "sha256:drama-reference-controls-v92"}, 98, "sha256:drama-reference-controls-v92"},
 	}
 	if len(records) > len(upstream) {
 		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)
@@ -1587,7 +1626,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		}
 	}
 
-	// 逆序搬迁避免主键槽位碰撞：先搬上游 91→97 … 88→94，再搬 87→92 … 83→88；后续目标槽位都已腾空。
+	// 逆序搬迁避免主键槽位碰撞：先搬上游 92→98 … 88→94，再搬 87→92 … 83→88；后续目标槽位都已腾空。
 	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]

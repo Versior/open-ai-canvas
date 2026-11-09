@@ -84,6 +84,7 @@ export function canvasNodeRendersStatusContent(node: CanvasNodeData, options: { 
     if (node.metadata?.fileUpload) return false;
     // 已下线节点只显示占位；旧数据里残留的生成状态不再叠加徽章。
     if (isRetiredEcommerceNode(node)) return true;
+    if (options.hasCustomRenderer && node.type === CanvasNodeType.Script) return true;
     if (options.hasCustomRenderer && canvasNodeUsesCustomContent(node, options.isEditingContent)) return false;
     if (node.type === ART_CRITIQUE_NODE_TYPE || node.type === MEDIA_CONVERSION_NODE_TYPE) return false;
     if (options.isBatchRoot) return !node.metadata?.content && !node.metadata?.storageKey;
