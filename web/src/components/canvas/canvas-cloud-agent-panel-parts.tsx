@@ -19,11 +19,11 @@ import { AgentAvatarVideo } from "@/components/canvas/agent-avatar-video";
 import { AgentPetBubble } from "@/components/canvas/agent-pet-bubble";
 import { AgentPetContextMenu, type AgentPetMenuPoint } from "@/components/canvas/agent-pet-context-menu";
 import { AgentPetStoreModal } from "@/components/canvas/agent-pet-picker";
-import { AgentPetSprite, useAgentPetSheetMetrics } from "@/components/canvas/agent-pet-sprite";
+import { AgentPetSprite, useAgentPetSheetMetrics, type AgentPetAction } from "@/components/canvas/agent-pet-sprite";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
 import { AGENT_PET_ASPECT, agentPetLauncherHeight } from "@/lib/canvas/agent-pet";
-import { agentPetSpritesheetURL } from "@/services/api/agent-pets";
+import { agentPetSpritesheetURL, type AgentPetRow } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { FluidOrb } from "@/components/ui/fluid-orb";
 import {
@@ -122,6 +122,12 @@ export const AgentLauncher = memo(function AgentLauncher({
     const bundleActive = appearance.avatarType === "bundle" && !pet;
     const live = !pet && appearance.avatarType === "live2d" && Boolean(appearance.live2dResourceId && appearance.live2dEntry);
     const avatarState = agentAvatarStateForRunStatus(status);
+    const resting = !["queued", "running", "waiting_approval"].includes(avatarState);
+    const [petAction, setPetAction] = useState<AgentPetAction>();
+    const playPetAction = (row: AgentPetRow) => {
+        if (!resting || reducedMotion || hidden) return;
+        setPetAction((current) => ({ id: (current?.id ?? 0) + 1, row }));
+    };
     const bundleManifestURL = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, appearanceRevision) : "/doll/avatar.json";
     const [bundleManifestState, setBundleManifestState] = useState<{ url: string; manifest: AgentAvatarBundleManifest | null } | null>(null);
     useEffect(() => {
@@ -244,6 +250,8 @@ export const AgentLauncher = memo(function AgentLauncher({
                         dragging={dragging}
                         offsetRight={position.right}
                         hovered={petHovered}
+                        ambient
+                        action={petAction}
                         onError={() => setFailedPetId(pet.id)}
                     />
                 ) : petPending ? (
@@ -321,7 +329,12 @@ export const AgentLauncher = memo(function AgentLauncher({
                     approvalPending={approvalPending}
                     onOpenAgent={onOpen}
                     onOpenStore={() => setStoreOpen(true)}
-                    onSpeak={petSpeak}
+                    onSpeak={() => {
+                        petSpeak();
+                        playPetAction("waving");
+                    }}
+                    actionsEnabled={resting && !reducedMotion}
+                    onAction={playPetAction}
                     onToggleCollapsed={toggleCollapsed}
                     onClose={closeMenu}
                 />

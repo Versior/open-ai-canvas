@@ -69,6 +69,19 @@ export const AGENT_PET_ROW_LABELS: Record<AgentPetRow, string> = {
     review: "思考",
 };
 
+/** 右键互动使用动作表情名称，不把「委屈」描述为任务失败。 */
+export const AGENT_PET_INTERACTIONS: ReadonlyArray<{ row: AgentPetRow; label: string }> = [
+    { row: "waving", label: "挥挥手" },
+    { row: "jumping", label: "跳一下" },
+    { row: "review", label: "想一想" },
+    { row: "waiting", label: "歇一歇" },
+    { row: "running-right", label: "向右跑" },
+    { row: "running-left", label: "向左跑" },
+    { row: "running", label: "忙起来" },
+    { row: "failed", label: "小委屈" },
+    { row: "idle", label: "眨眨眼" },
+];
+
 export function isAgentPetRow(value: unknown): value is AgentPetRow {
     return typeof value === "string" && (AGENT_PET_ROWS as readonly string[]).includes(value);
 }

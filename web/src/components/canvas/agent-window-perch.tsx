@@ -5,7 +5,7 @@ import { agentAvatarBundleFileURL } from "@/services/api/appearance";
 import { agentPetSpritesheetURL, type AgentPet } from "@/services/api/agent-pets";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { AgentAvatarVideo } from "./agent-avatar-video";
-import { AgentPetSprite, useAgentPetSheetMetrics } from "./agent-pet-sprite";
+import { AgentPetSprite, useAgentPetSheetMetrics, type AgentPetAction } from "./agent-pet-sprite";
 
 /** 窗沿形象空闲后缩回；首页复用同一形象和动作，保持全身展示。 */
 export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch" }: { pet: AgentPet | null; status: string; reducedMotion: boolean; display?: "perch" | "full" }) {
@@ -18,6 +18,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const [focused, setFocused] = useState(false);
     const [settled, setSettled] = useState(true);
     const [speaking, setSpeaking] = useState(false);
+    const [petAction, setPetAction] = useState<AgentPetAction>();
     const actionTimer = useRef(0);
     const state = agentAvatarStateForRunStatus(status);
     const chatter = useAgentPetChatter({ pet, state, approvalPending: state === "waiting_approval", active: Boolean(pet) && display === "perch", hovered });
@@ -62,6 +63,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const speak = () => {
         setSpeaking(true);
         chatter.speak();
+        if (resting && !reducedMotion) setPetAction((current) => ({ id: (current?.id ?? 0) + 1, row: current?.row === "waving" ? "jumping" : "waving" }));
         window.clearTimeout(actionTimer.current);
         actionTimer.current = window.setTimeout(() => setSpeaking(false), 3500);
     };
@@ -126,7 +128,8 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                             stateRows={pet.stateRows}
                             width={104}
                             height={112}
-                            row={speaking && resting ? "jumping" : undefined}
+                            action={petAction}
+                            ambient={display === "full"}
                             reducedMotion={reducedMotion}
                             pixelated={pet.pixelated}
                             hovered={hovered}
