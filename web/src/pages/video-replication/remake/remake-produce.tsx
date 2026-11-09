@@ -27,7 +27,7 @@ const STATUS_TEXT: Record<RemakeUnit["status"], string> = { pending: "等待生�
  * 出片对比：上面原片和新片并排同步播放，下面双轨时间线（按原片时间对齐：上轨原片各镜，下轨每个生成单元），
  * 右边是选中这一段的候选、定向重做。
  */
-export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; config: AiConfig; onEditRecipe: () => void }) {
+export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: RemakeJob; config: AiConfig; onEditRecipe: () => void; onAddLut?: () => void }) {
     const { message } = App.useApp();
     const progress = useRemakeRuntime((state) => state.progress[job.id]);
     const active = useRemakeRuntime((state) => Boolean(state.active[job.id]));
@@ -176,6 +176,11 @@ export function RemakeProduce({ job, config, onEditRecipe }: { job: RemakeJob; c
                 ) : (
                     <>
                         <h3>整条成片</h3>
+                        {finalId && onAddLut ? (
+                            <Button disabled={active} onClick={onAddLut}>
+                                添加 LUT 滤镜
+                            </Button>
+                        ) : null}
                         <p className="rw-hint">点下面时间线里的一段，看它和原片的对比、挑候选或定向重做。</p>
                     </>
                 )}

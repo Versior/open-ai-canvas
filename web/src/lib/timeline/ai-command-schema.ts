@@ -115,12 +115,12 @@ export function validateAiCommandBatch(project: TimelineProject, plan: AiCommand
 // ---------------------------------------------------------------------------
 
 /** AI 命令 schema 版本；提示词契约或解析规则变化时递增，用于 golden 测试和缓存失效对齐。 */
-export const AI_COMMAND_SCHEMA_VERSION = 1;
+export const AI_COMMAND_SCHEMA_VERSION = 2;
 
 /** 单次 AI 编辑最多允许的命令条数，防止一次模型输出造成不可控的大范围变更。 */
 export const AI_EDITING_MAX_COMMANDS = 8;
 
-/** 12 个黄金 op 的 LLM 可读 payload 契约；op 集合与注册表黄金同步（见测试）。 */
+/** 内建 op 的 LLM 可读 payload 契约；op 集合与注册表黄金同步（见测试）。 */
 export const AI_EDITING_OP_CATALOG: ReadonlyArray<{
     op: string;
     desc: string;
@@ -186,6 +186,7 @@ export const AI_EDITING_OP_CATALOG: ReadonlyArray<{
         desc: "轨道开关",
         payload: "{ trackId, flag: visible|muted, value: boolean }",
     },
+    { op: "setColorLut", desc: "设置整条成片的 LUT 或恢复原色", payload: "{ lut: null | { name, preset: clear|warm|cool|cinema|film|mono, strength: 0–1 } }" },
 ];
 
 /** LLM 输出结构说明（追加到系统提示词，约束其为纯 JSON）。 */

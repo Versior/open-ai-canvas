@@ -191,7 +191,7 @@ export type RemakeJob = {
     credits?: number;
     /** 剪辑草稿独立保存；返回生成台或切换候选不会覆盖已剪辑的内容。 */
     editTimeline?: TimelineProject;
-    editRender?: RemakeJob["render"];
+    editRender?: RemakeJob["render"] & { lutSignature?: string };
     editBurnSubtitles?: boolean;
     editSubtitleImages?: { resourceId: string }[];
 };
@@ -536,7 +536,16 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
         ...(typeof raw.credits === "number" && Number.isFinite(raw.credits) ? { credits: raw.credits } : {}),
         ...(record(raw.editTimeline) ? { editTimeline: normalizeTimelineProject(raw.editTimeline as TimelineProject) } : {}),
         ...(editRender
-            ? { editRender: { taskId: text(editRender.taskId) || undefined, resourceId: text(editRender.resourceId) || undefined, durationMs: positive(editRender.durationMs), width: positive(editRender.width), height: positive(editRender.height) } }
+            ? {
+                  editRender: {
+                      taskId: text(editRender.taskId) || undefined,
+                      resourceId: text(editRender.resourceId) || undefined,
+                      durationMs: positive(editRender.durationMs),
+                      width: positive(editRender.width),
+                      height: positive(editRender.height),
+                      lutSignature: text(editRender.lutSignature) || undefined,
+                  },
+              }
             : {}),
         ...(typeof raw.editBurnSubtitles === "boolean" ? { editBurnSubtitles: raw.editBurnSubtitles } : {}),
         ...(Array.isArray(raw.editSubtitleImages) ? { editSubtitleImages: raw.editSubtitleImages.flatMap((image) => (text(record(image)?.resourceId) ? [{ resourceId: text(record(image)?.resourceId) }] : [])) } : {}),

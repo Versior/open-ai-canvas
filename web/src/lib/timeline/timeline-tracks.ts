@@ -50,5 +50,6 @@ export function normalizeTimelineProject(timeline: Partial<TimelineProject> | nu
         clips,
         durationMs,
         updatedAt: timeline?.updatedAt,
+        colorLut: timeline?.colorLut,
     };
 }

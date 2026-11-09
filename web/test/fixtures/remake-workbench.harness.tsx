@@ -226,8 +226,17 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
     await act(async () => host.querySelector<HTMLButtonElement>("button[aria-label='撤销剪辑']")!.click());
     expect(editor!.getState().project?.clips.filter((clip) => clip.kind === "video")).toHaveLength(1);
     await act(async () => host.querySelector<HTMLButtonElement>("button[aria-label='重做剪辑']")!.click());
+    await act(async () =>
+        Array.from(host.querySelectorAll<HTMLButtonElement>("button"))
+            .find((button) => button.textContent === "LUT 滤镜")!
+            .click(),
+    );
+    const warm = Array.from(host.querySelectorAll<HTMLButtonElement>("button[role='radio']")).find((button) => button.textContent?.includes("暖阳柔肤"))!;
+    await act(async () => warm.click());
+    expect(editor!.getState().project?.colorLut).toMatchObject({ preset: "warm", strength: 1 });
     await act(async () => editor!.getState().flushSave());
     expect(saved.editTimeline?.clips.filter((clip) => clip.kind === "video")).toHaveLength(2);
+    expect(saved.editTimeline?.colorLut?.preset).toBe("warm");
     await act(async () => root.unmount());
     const reopened = createRoot(host);
     await act(async () =>
@@ -245,6 +254,7 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
     });
     expect(renders).toHaveLength(1);
     expect(renders[0]).toMatchObject({ width: 720, height: 1280, fit: "pad" });
+    expect(renders[0].colorLut).toMatchObject({ preset: "warm", strength: 1 });
     expect(renders[0].clips.filter((clip) => clip.kind === "video")).toHaveLength(2);
     expect(polled).toContain("edit-render-task");
     expect(saved.editRender?.resourceId).toBe("edited-video");

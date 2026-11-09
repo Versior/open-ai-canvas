@@ -1,0 +1,8 @@
+[
+  {"id":"clear","label":"通透明亮","hint":"商品展示，轻提亮并保留原色","contrast":1.02,"saturation":1.04,"lift":[0,0,0],"gain":[1,1,1],"gamma":[0.94,0.94,0.94]},
+  {"id":"warm","label":"暖阳柔肤","hint":"人像、亲子与生活场景","contrast":0.98,"saturation":1.04,"lift":[0.012,0.005,0],"gain":[1.02,1,0.94],"gamma":[0.96,0.98,1.02]},
+  {"id":"cool","label":"清冷质感","hint":"科技、金属与冷色场景","contrast":1.08,"saturation":0.94,"lift":[0,0.004,0.012],"gain":[0.94,1,1.04],"gamma":[1.02,1,0.98]},
+  {"id":"cinema","label":"电影青橙","hint":"青色暗部，暖色亮部","contrast":1.12,"saturation":0.92,"lift":[0,0.02,0.035],"gain":[1.08,0.99,0.9],"gamma":[1,1.02,1.04]},
+  {"id":"film","label":"复古胶片","hint":"柔和反差与褪色暖调","contrast":0.88,"saturation":0.82,"lift":[0.025,0.018,0.009],"gain":[1.03,1,0.92],"gamma":[1,1.02,1.04]},
+  {"id":"mono","label":"黑白叙事","hint":"去除色彩，强调光影","contrast":1.12,"saturation":0,"lift":[0,0,0],"gain":[1,1,1],"gamma":[1,1,1]}
+]

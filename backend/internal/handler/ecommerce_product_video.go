@@ -10,8 +10,8 @@ import (
 	"yingce/backend/internal/service"
 )
 
-// 单条作品上限 128 KiB，外加信封留白。
-const productVideoRequestBytes = (128 << 10) + (16 << 10)
+// 单条作品包含剪辑 LUT 数值时上限 2 MiB，外加信封留白。
+const productVideoRequestBytes = (2 << 20) + (16 << 10)
 
 // RegisterProductVideoRoutes 注册视频复刻 · 元素替换的作品读写与参考视频切段接口，受「视频复刻」开关控制。
 func RegisterProductVideoRoutes(r *gin.RouterGroup, svc *service.Service) {

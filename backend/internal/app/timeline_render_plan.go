@@ -62,7 +62,8 @@ type renderProject struct {
 	Width  int `json:"width,omitempty"`
 	Height int `json:"height,omitempty"`
 	// Fit 是画面适配输出画幅的方式：auto（默认，见 renderSegmentFit）、pad（留边）、crop（裁切铺满）。
-	Fit string `json:"fit,omitempty"`
+	Fit      string     `json:"fit,omitempty"`
+	ColorLut *renderLut `json:"colorLut,omitempty"`
 }
 
 type renderSource struct {
@@ -103,6 +104,7 @@ type renderPlan struct {
 	Fit string
 	// PropagateID 写入成片 AIGC 标识的传播内容编号，取渲染任务 ID。
 	PropagateID string
+	ColorLut    *renderLut
 }
 
 // buildRenderPlan 挑选可见视频/图片轨片段按 startMs 排序，并把片段之间的
@@ -152,7 +154,7 @@ func buildRenderPlan(project renderProject) renderPlan {
 		return clips[i].StartMs < clips[j].StartMs
 	})
 
-	plan := renderPlan{SubtitleSRT: buildRenderSubtitleSRT(project), AudioOverlays: overlays, ImageOverlays: renderImageOverlays(images), Width: renderWidth, Height: renderHeight, Fit: normalizeRenderFit(project.Fit)}
+	plan := renderPlan{SubtitleSRT: buildRenderSubtitleSRT(project), AudioOverlays: overlays, ImageOverlays: renderImageOverlays(images), Width: renderWidth, Height: renderHeight, Fit: normalizeRenderFit(project.Fit), ColorLut: project.ColorLut}
 	if project.Width >= 16 && project.Height >= 16 && project.Width <= 4096 && project.Height <= 4096 {
 		// libx264 yuv420p 要求偶数尺寸。
 		plan.Width, plan.Height = project.Width&^1, project.Height&^1
@@ -309,7 +311,15 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 		duration := float64(seg.DurationMs) / 1000
 		// tpad 用最后一帧补足短于片段时长的素材，trim 再裁到精确时长，保证音画时间轴对齐。
 		scale := renderFitFilter(renderSegmentFit(plan.Fit, seg.Source, width, height), width, height)
-		filters = append(filters, fmt.Sprintf("[%d:v]fps=%d,%s,setsar=1,tpad=stop_mode=clone:stop_duration=%.3f,trim=duration=%.3f,setpts=PTS-STARTPTS%s[%s]", videoIn, renderFPS, scale, duration, duration, renderFadeFilters(seg.Clip, duration), videoLabel))
+		videoInput := fmt.Sprintf("[%d:v]", videoIn)
+		if plan.ColorLut != nil && plan.ColorLut.Strength > 0 && seg.Source != nil {
+			filters = append(filters,
+				fmt.Sprintf("%sformat=gbrp,split[lut-original%d][lut-input%d]", videoInput, i, i),
+				fmt.Sprintf("[lut-input%d]lut3d=file=timeline-lut.cube:interp=trilinear[lut-graded%d]", i, i),
+				fmt.Sprintf("[lut-original%d][lut-graded%d]blend=all_expr='A*%.9f+B*%.9f'[lut-mixed%d]", i, i, 1-plan.ColorLut.Strength, plan.ColorLut.Strength, i))
+			videoInput = fmt.Sprintf("[lut-mixed%d]", i)
+		}
+		filters = append(filters, fmt.Sprintf("%sfps=%d,%s,setsar=1,tpad=stop_mode=clone:stop_duration=%.3f,trim=duration=%.3f,setpts=PTS-STARTPTS%s[%s]", videoInput, renderFPS, scale, duration, duration, renderFadeFilters(seg.Clip, duration), videoLabel))
 		silent := seg.Source != nil && seg.Kind != "image" && (!seg.Source.HasAudio || seg.Clip.Volume < 0)
 		if silent {
 			silentLabel := fmt.Sprintf("silent%d", i)

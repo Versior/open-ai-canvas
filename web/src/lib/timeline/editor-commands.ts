@@ -4,6 +4,7 @@
 // 插件可经宿主 API register 自定义 op，与内建命令共用同一注册表与校验纪律。
 
 import type { SrtEntry, TimelineClip, TimelineProject, TimelineTrack, TimelineTrackKind } from "@/types/timeline";
+import { validateTimelineLut } from "./timeline-lut";
 
 export type EditCommand = { op: string; payload: unknown };
 export type CommandHandler = (state: TimelineProject, payload: unknown) => TimelineProject;
@@ -49,20 +50,7 @@ export type RebuildSubtitleClipsPayload = {
     trackId?: string;
 };
 
-export const EDITOR_COMMAND_OPS = [
-    "addClip",
-    "moveClip",
-    "trimClip",
-    "splitClip",
-    "removeClip",
-    "setClipProperty",
-    "addSubtitle",
-    "removeSubtitle",
-    "rebuildSubtitleClips",
-    "addTrack",
-    "removeTrack",
-    "setTrackFlag",
-] as const;
+export const EDITOR_COMMAND_OPS = ["addClip", "moveClip", "trimClip", "splitClip", "removeClip", "setClipProperty", "addSubtitle", "removeSubtitle", "rebuildSubtitleClips", "addTrack", "removeTrack", "setTrackFlag", "setColorLut"] as const;
 
 // ---------------------------------------------------------------------------
 // 校验辅助
@@ -122,7 +110,10 @@ function handleMoveClip(state: TimelineProject, payload: unknown): TimelineProje
     const clip = findClipOrThrow("moveClip", state, id);
     if (trackId !== undefined) findTrackOrThrow("moveClip", state, trackId);
     const moved = { ...clip, startMs, ...(trackId !== undefined ? { trackId } : {}) };
-    return withClips(state, state.clips.map((c) => (c.id === id ? moved : c)));
+    return withClips(
+        state,
+        state.clips.map((c) => (c.id === id ? moved : c)),
+    );
 }
 
 function handleTrimClip(state: TimelineProject, payload: unknown): TimelineProject {
@@ -150,7 +141,10 @@ function handleTrimClip(state: TimelineProject, payload: unknown): TimelineProje
         durationMs: nextDurationMs,
         sourceStartMs: nextSourceStartMs,
     };
-    return withClips(state, state.clips.map((c) => (c.id === id ? trimmed : c)));
+    return withClips(
+        state,
+        state.clips.map((c) => (c.id === id ? trimmed : c)),
+    );
 }
 
 function handleSplitClip(state: TimelineProject, payload: unknown): TimelineProject {
@@ -183,7 +177,10 @@ function handleRemoveClip(state: TimelineProject, payload: unknown): TimelinePro
     const { id } = payload as RemoveClipPayload;
     if (typeof id !== "string" || id.length === 0) fail("removeClip", "id must be a non-empty string");
     findClipOrThrow("removeClip", state, id);
-    return withClips(state, state.clips.filter((c) => c.id !== id));
+    return withClips(
+        state,
+        state.clips.filter((c) => c.id !== id),
+    );
 }
 
 /** setClipProperty 允许修改的属性白名单；结构字段（id/kind/nodeId/trackId/startMs/durationMs/...）由专门命令负责。 */
@@ -200,7 +197,10 @@ function handleSetClipProperty(state: TimelineProject, payload: unknown): Timeli
     findClipOrThrow("setClipProperty", state, id);
 
     const updated = { ...findClipOrThrow("setClipProperty", state, id), ...patch };
-    return withClips(state, state.clips.map((c) => (c.id === id ? updated : c)));
+    return withClips(
+        state,
+        state.clips.map((c) => (c.id === id ? updated : c)),
+    );
 }
 
 function handleAddSubtitle(state: TimelineProject, payload: unknown): TimelineProject {
@@ -216,7 +216,10 @@ function handleRemoveSubtitle(state: TimelineProject, payload: unknown): Timelin
     if (typeof id !== "string" || id.length === 0) fail("removeSubtitle", "id must be a non-empty string");
     const clip = findClipOrThrow("removeSubtitle", state, id);
     if (clip.kind !== "subtitle") fail("removeSubtitle", `clip "${id}" is not a subtitle clip`);
-    return withClips(state, state.clips.filter((c) => c.id !== id));
+    return withClips(
+        state,
+        state.clips.filter((c) => c.id !== id),
+    );
 }
 
 /** 轨道种类的基础标签；新增轨道 label = 基础标签 + 同种类现有轨道数 + 1。 */
@@ -263,7 +266,7 @@ function handleRemoveTrack(state: TimelineProject, payload: unknown): TimelinePr
 function handleSetTrackFlag(state: TimelineProject, payload: unknown): TimelineProject {
     const { trackId, flag, value } = payload as SetTrackFlagPayload;
     if (typeof trackId !== "string" || trackId.length === 0) fail("setTrackFlag", "trackId must be a non-empty string");
-    if (flag !== "visible" && flag !== "muted") fail("setTrackFlag", "flag must be \"visible\" or \"muted\"");
+    if (flag !== "visible" && flag !== "muted") fail("setTrackFlag", 'flag must be "visible" or "muted"');
     if (typeof value !== "boolean") fail("setTrackFlag", "value must be a boolean");
     findTrackOrThrow("setTrackFlag", state, trackId);
     return {
@@ -322,6 +325,15 @@ function handleRebuildSubtitleClips(state: TimelineProject, payload: unknown): T
 // ---------------------------------------------------------------------------
 
 const BUILTIN_HANDLERS: ReadonlyArray<readonly [string, CommandHandler]> = [
+    [
+        "setColorLut",
+        (state, payload) => {
+            if (!payload || typeof payload !== "object" || !("lut" in payload)) fail("setColorLut", "missing lut");
+            const lut = (payload as { lut: unknown }).lut;
+            if (lut !== null) validateTimelineLut(lut);
+            return { ...state, colorLut: lut === null ? undefined : structuredClone(lut) };
+        },
+    ],
     ["addClip", handleAddClip],
     ["moveClip", handleMoveClip],
     ["trimClip", handleTrimClip],

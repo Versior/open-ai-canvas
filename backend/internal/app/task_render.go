@@ -33,6 +33,9 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		return w.failTimelineTask(task, "合成输入无效", "任务缺少有效的时间线快照")
 	}
 	plan := buildRenderPlan(input.Timeline)
+	if err := validateRenderLut(plan.ColorLut); err != nil {
+		return w.failTimelineTask(task, "LUT 配置无效", err.Error())
+	}
 	if !plan.HasMedia {
 		return w.failTimelineTask(task, "合成输入无效", "时间线没有可渲染的媒体片段")
 	}
@@ -48,6 +51,9 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		return w.failTimelineTask(task, "准备合成素材失败", "准备合成素材失败："+renderFailureReason(err))
 	}
 	plan.PropagateID = task.ID
+	if err := writeRenderLut(workDir, plan.ColorLut); err != nil {
+		return w.failTimelineTask(task, "准备 LUT 失败", err.Error())
+	}
 	for _, seg := range plan.Segments {
 		if seg.Source == nil || seg.Kind == "image" {
 			continue

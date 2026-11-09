@@ -22,7 +22,7 @@ const (
 	productVideoPayloadKey      = "productVideos"
 	productVideoDocumentVersion = 1
 	productVideoMaxItems        = 100
-	productVideoMaxItemBytes    = 128 << 10
+	productVideoMaxItemBytes    = 2 << 20 // 剪辑草稿可包含经过校验的 33 阶 LUT 数值。
 	productVideoMaxTitleRunes   = 120
 	productVideoConflictReason  = "product_video_conflict"
 )

@@ -20,6 +20,7 @@ import { createDefaultSubtitleStyle } from "@/types/timeline";
 import { resolveMediaUrl } from "@/services/file-storage";
 import { playbackVariantUrl, refreshResource, resourceFileUrl, resourceIdFromStorageKey } from "@/services/api/resources";
 import type { TimelineClip } from "@/types/timeline";
+import { EditorLutPreview } from "@/components/editor/editor-lut-preview";
 
 // 本地播放时钟 → store.transportMs 的回写节流（毫秒）。太密会让时间线面板每帧重渲染。
 const STORE_PUSH_INTERVAL_MS = 80;
@@ -118,6 +119,8 @@ export function EditorPreviewMonitor() {
     const lastTickRef = useRef<number | null>(null);
     const lastStorePushRef = useRef(0);
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    const imageRef = useRef<HTMLImageElement | null>(null);
+    const [compareLut, setCompareLut] = useState(false);
 
     const activeClip = project ? getPreviewClipAtTime(project, playbackMs, selectedClipId) : null;
     const activeMediaUrl = useClipMediaUrl(activeClip);
@@ -438,6 +441,7 @@ export function EditorPreviewMonitor() {
                     <video
                         key={`v:${activeClip!.id}:${mediaTier}:${variantReadyTick}`}
                         ref={videoRef}
+                        crossOrigin={project?.colorLut ? "anonymous" : undefined}
                         src={videoSrc}
                         muted={videoMuted}
                         playsInline
@@ -448,9 +452,15 @@ export function EditorPreviewMonitor() {
                         onEnded={handleVideoEnded}
                     />
                 ) : imageSrc ? (
-                    <img key={`i:${activeClip!.id}`} src={imageSrc} alt="" className="max-h-full max-w-full rounded-md object-contain shadow-lg" onError={handleMediaError} />
+                    <img ref={imageRef} crossOrigin={project?.colorLut ? "anonymous" : undefined} key={`i:${activeClip!.id}`} src={imageSrc} alt="" className="max-h-full max-w-full rounded-md object-contain shadow-lg" onError={handleMediaError} />
                 ) : null}
+                {!showEmpty ? <EditorLutPreview mediaRef={isVideoClip ? videoRef : imageRef} lut={project?.colorLut} mediaKey={`${activeClip?.id}:${videoSrc || imageSrc}:${variantReadyTick}`} compare={compareLut} /> : null}
                 {subtitle?.text ? <CanvasSubtitleOverlay text={subtitle.text} style={createDefaultSubtitleStyle()} /> : null}
+                {project?.colorLut ? (
+                    <button type="button" aria-pressed={compareLut} onClick={() => setCompareLut((value) => !value)} className="absolute right-2 top-2 rounded px-3 py-1.5 text-xs" style={{ color: "#fff", background: "rgba(0,0,0,.8)" }}>
+                        {compareLut ? "正在看原色 · 返回 LUT" : "查看原色对比"}
+                    </button>
+                ) : null}
             </div>
 
             {/* 播放控制条：画面下方的独立一行（Concat 布局），不悬浮叠加、无进度条；

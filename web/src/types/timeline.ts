@@ -120,4 +120,6 @@ export type TimelineProject = {
     /** 时间线总时长（毫秒），取所有片段末端最大值 */
     durationMs: number;
     updatedAt?: string;
+    /** 成片调色：预览与后端导出共用 3D LUT，字幕叠加在调色之后。 */
+    colorLut?: import("@/lib/timeline/timeline-lut").TimelineLut;
 };

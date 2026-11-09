@@ -105,6 +105,7 @@ export function RemakeWorkbench({
     const [textModel, setTextModel] = useState("");
     const [starting, setStarting] = useState(false);
     const [uploading, setUploading] = useState(false);
+    const [editPanel, setEditPanel] = useState<"inspector" | "lut">("inspector");
     const [exporting, setExporting] = useState(false);
     const [applying, setApplying] = useState(false);
     const versions = useProductVideoStore((state) => state.jobs.filter((item) => isRemakeJob(item) && item.variantOf?.id === id).length);
@@ -479,6 +480,7 @@ export function RemakeWorkbench({
                         </div>
                     ) : currentStep === "edit" ? (
                         <RemakeEditor
+                            initialPanel={editPanel}
                             key={id}
                             job={job}
                             onReady={(store) => {
@@ -487,7 +489,15 @@ export function RemakeWorkbench({
                             onUploadingChange={setUploading}
                         />
                     ) : (
-                        <RemakeProduce job={job} config={config} onEditRecipe={() => onStep("recipe")} />
+                        <RemakeProduce
+                            job={job}
+                            config={config}
+                            onEditRecipe={() => onStep("recipe")}
+                            onAddLut={() => {
+                                setEditPanel("lut");
+                                void openEdit();
+                            }}
+                        />
                     )}
                 </main>
             </div>

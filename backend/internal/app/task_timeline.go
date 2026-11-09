@@ -267,6 +267,9 @@ type timelineRenderResult struct {
 // CreateTimelineRenderTask 创建时间线渲染任务：本地 ffmpeg 合成，不经模型
 // 路由与计费；创建时校验快照至少包含一个可渲染媒体片段。
 func (s *Service) CreateTimelineRenderTask(userID string, req TimelineRenderCreateRequest) (*model.Task, error) {
+	if err := validateRenderLut(req.Timeline.ColorLut); err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
 	if s.IsDraining() {
 		return nil, &AppError{Status: 503, Code: 503, Message: "服务正在维护，暂不接受新的生成任务", Retryable: true}
 	}

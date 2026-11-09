@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,29 @@ func TestProductVideoHTTPRoundTrip(t *testing.T) {
 	RegisterProductVideoRoutes(router.Group("/api"), svc)
 	owner := "pv-owner-session.pv-owner-token"
 	other := "pv-other-session.pv-other-token"
+	// 大于旧 128 KiB 限制的 33 阶 LUT 草稿必须能保存并原样取回。
+	values := make([]float64, 33*33*33*3)
+	for i := range values {
+		values[i] = 0.123456
+	}
+	large, err := json.Marshal(map[string]any{"expectedRevision": 0, "item": map[string]any{"id": "video_lut", "editTimeline": map[string]any{"version": 2, "colorLut": map[string]any{"name": "camera.cube", "strength": 1, "cube": map[string]any{"size": 33, "values": values, "domainMin": []int{0, 0, 0}, "domainMax": []int{1, 1, 1}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(large) <= 128<<10 {
+		t.Fatal("fixture too small")
+	}
+	largeResponse := profileRequest(router, "PUT", "/api/ecommerce/product-videos/video_lut", string(large), owner)
+	if largeResponse.Code != http.StatusOK {
+		t.Fatalf("LUT save: %d", largeResponse.Code)
+	}
+	largeResponse = profileRequest(router, "GET", "/api/ecommerce/product-videos/video_lut", "", owner)
+	if largeResponse.Code != http.StatusOK || !strings.Contains(largeResponse.Body.String(), "camera.cube") {
+		t.Fatal("LUT draft was not restored")
+	}
+	if response := profileRequest(router, "DELETE", "/api/ecommerce/product-videos/video_lut", "", owner); response.Code != http.StatusOK {
+		t.Fatal("LUT fixture cleanup failed")
+	}
 
 	response := profileRequest(router, "PUT", "/api/ecommerce/product-videos/video_aaa", `{"item":{"id":"video_aaa","title":"保温杯"}}`, owner)
 	if response.Code != http.StatusBadRequest {
