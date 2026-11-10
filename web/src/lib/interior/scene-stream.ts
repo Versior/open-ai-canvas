@@ -75,7 +75,7 @@ function parseLoose(json: string): Record<string, unknown> | null {
 }
 
 /** 读到目前为止的回复。读不出来时只给阶段和字数，调用方保留上一次能读的结果。 */
-export function readPartialScene(text: string, scope: InteriorSceneScope | "auto", layout?: SceneSpec): SceneBuildProgress {
+export function readPartialScene(text: string, scope: InteriorSceneScope | "auto", layout?: SceneSpec, preserveFurniture = false): SceneBuildProgress {
     const json = extractSceneJson(text);
     const empty: SceneBuildProgress = { phase: currentPhase(json), reading: [], title: "", floors: 0, rooms: 0, doors: 0, windows: 0, furniture: 0, chars: text.length };
     const value = parseLoose(json);
@@ -91,7 +91,7 @@ export function readPartialScene(text: string, scope: InteriorSceneScope | "auto
             ? {
                   ...layout,
                   palette: value.palette || layout.palette,
-                  floors: layout.floors.map((floor) => ({ ...floor, furniture: (Array.isArray(value.floors) ? value.floors.find((entry) => entry?.name === floor.name)?.furniture : undefined) ?? floor.furniture })),
+                  floors: layout.floors.map((floor) => ({ ...floor, furniture: preserveFurniture ? floor.furniture : ((Array.isArray(value.floors) ? value.floors.find((entry) => entry?.name === floor.name)?.furniture : undefined) ?? floor.furniture) })),
               }
             : value;
         const spec = normalizeSceneSpec(preview, layout?.scope || meta.scope);

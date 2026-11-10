@@ -6,8 +6,9 @@ import { interiorDeliveryFiles, interiorRoomSchedule, reviewInteriorScene } from
 import type { SceneSpec } from "@/lib/interior/scene-spec";
 import { createZip } from "@/lib/zip";
 import { getActiveUserScope } from "@/lib/user-scope";
+import type { InteriorDesignPlan } from "@/lib/interior/design-plan";
 
-export function InteriorSceneDelivery({ spec, onError }: { spec: SceneSpec; onError?: (error: string) => void }) {
+export function InteriorSceneDelivery({ spec, design, onError }: { spec: SceneSpec; design?: InteriorDesignPlan; onError?: (error: string) => void }) {
     const [busy, setBusy] = useState(false);
     const rooms = useMemo(() => interiorRoomSchedule(spec), [spec]);
     const issues = useMemo(() => reviewInteriorScene(spec), [spec]);
@@ -15,7 +16,7 @@ export function InteriorSceneDelivery({ spec, onError }: { spec: SceneSpec; onEr
         const scope = getActiveUserScope();
         setBusy(true);
         try {
-            const zip = await createZip(interiorDeliveryFiles(spec));
+            const zip = await createZip(interiorDeliveryFiles(spec, design));
             if (getActiveUserScope() !== scope) return;
             saveAs(zip, `${deliveryFileStem(spec.title)}-方案包.zip`);
         } catch (error) {
@@ -30,7 +31,7 @@ export function InteriorSceneDelivery({ spec, onError }: { spec: SceneSpec; onEr
                 方案交付与检查 · {rooms.length} 个空间 · {issues.length - 1} 项待核对
             </summary>
             <div className="itd-scene-delivery-body">
-                <p>导出可编辑平面草图、房间面积、家具清单和完整场景数据。尺寸需现场核实。</p>
+                <p>导出平面、顶面、铺装及已标记的水电 / 拆改图层，包含 DXF、SVG、离线网页、工程量报价和完整场景数据。尺寸需现场核实。</p>
                 <table>
                     <thead>
                         <tr>

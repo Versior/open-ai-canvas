@@ -1,6 +1,6 @@
 import { Html, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type RootState } from "@react-three/fiber";
-import { Box as BoxIcon, Building, Download, Eye, EyeOff, Image as ImageIcon, ImagePlay, Layers, Maximize2, RotateCcw, Ruler, Sparkles, Square } from "lucide-react";
+import { Box as BoxIcon, Building, Download, Eye, EyeOff, Image as ImageIcon, ImagePlay, Layers, Maximize2, RotateCcw, Ruler, Sparkles, Square, Footprints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Box3, DoubleSide, HalfFloatType, Matrix4, NeutralToneMapping, PMREMGenerator, Raycaster, SRGBColorSpace, TextureLoader, Vector3, WebGLRenderTarget, type Material, type Mesh, type Object3D, type Texture } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
@@ -15,15 +15,18 @@ import type { InteriorSceneData } from "@/lib/interior/scene-spec";
 import { sceneTargetBounds, type SceneEditTarget } from "@/lib/interior/scene-local-edit";
 import { cn } from "@/lib/utils";
 import { applyCutaway, buildSceneRoot, DIMENSION_GROUP, type FacadeNode } from "./interior-scene-three";
+import { InteriorWalkControls } from "./interior-walk-controls";
+import { designObjects, type InteriorDesignPlan } from "@/lib/interior/design-plan";
 
-type ViewMode = "orbit" | "top";
+type ViewMode = "orbit" | "top" | "walk";
 
 /** 取景：建筑从东南方斜上方看；户型和房间看得更俯一些（约 57 度），剖开的外墙正好朝向镜头，内墙挡住的也少。 */
-export function cameraFor(box: Box3, view: ViewMode, interior: boolean) {
+export function cameraFor(box: Box3, view: ViewMode, interior: boolean, aspect = 1) {
     const center = box.getCenter(new Vector3());
     const size = box.getSize(new Vector3());
     const span = Math.max(size.x, size.y, size.z, 4);
-    const distance = span * 1.15;
+    // 联动画布偏窄时，水平视野随宽高比缩小，需要拉远才能完整看到户型。
+    const distance = (span * 1.15) / (view === "walk" ? 1 : Math.min(1, Math.max(0.2, aspect)));
     const position =
         view === "top"
             ? new Vector3(center.x, center.y + distance * 1.4, center.z + 0.01)
@@ -269,6 +272,10 @@ export function InteriorSceneViewer({
     referenceUrl,
     editTarget,
     onRoomSelect,
+    design,
+    compact = false,
+    activeFloor,
+    onFloorChange,
 }: {
     scene: InteriorSceneData;
     className?: string;
@@ -280,22 +287,50 @@ export function InteriorSceneViewer({
     referenceUrl?: string;
     editTarget?: SceneEditTarget;
     onRoomSelect?: (name: string, elevation: number) => void;
+    design?: InteriorDesignPlan;
+    compact?: boolean;
+    activeFloor: number;
+    onFloorChange: (floor: number) => void;
 }) {
-    const [cutFloor, setCutFloor] = useState<number | undefined>(() => (scene.version === 2 && scene.spec.scope === "home" ? 0 : undefined));
-    const model = useMemo(() => renderModel(scene, { cutFloor }), [scene, cutFloor]);
+    const [cutEnabled, setCutEnabled] = useState(() => scene.version === 2 && (scene.spec.scope === "home" || compact));
+    const cutFloor = cutEnabled ? activeFloor : undefined;
+    const marks = design?.marks;
+    const model = useMemo(() => {
+        const result = renderModel(scene, { cutFloor });
+        if (scene.version === 2 && marks) result.objects = [...result.objects, ...designObjects(scene.spec, { version: 1, prices: {}, budget: null, marks: marks.filter((m) => cutFloor === undefined || m.floor <= cutFloor) })];
+        return result;
+    }, [scene, cutFloor, marks]);
     const built = useMemo(() => buildSceneRoot(model), [model]);
     useEffect(() => () => built.dispose(), [built]);
     const interior = scene.version === 2 && scene.spec.scope !== "building";
     const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
     const [view, setView] = useState<ViewMode>("orbit");
-    const [labels, setLabels] = useState(true);
-    const [dimensions, setDimensions] = useState(interior);
+    const walkFloor = activeFloor;
+    const [walkRoom, setWalkRoom] = useState("");
+    const [labels, setLabels] = useState(!compact);
+    const [dimensions, setDimensions] = useState(interior && !compact);
+    useEffect(() => {
+        if (compact) {
+            setLabels(false);
+            setDimensions(false);
+        }
+    }, [compact]);
     const [cutaway, setCutaway] = useState(true);
     const [quality, setQuality] = useState(true);
     const [drawing, setDrawing] = useState<"off" | "panel" | "overlay">("off");
     const [resetKey, setResetKey] = useState(0);
     const [exporting, setExporting] = useState(false);
     const frameRef = useRef<HTMLDivElement>(null);
+    const [aspect, setAspect] = useState(1);
+    useEffect(() => {
+        const frame = frameRef.current;
+        if (!frame) return;
+        const resize = () => setAspect(frame.clientWidth / Math.max(1, frame.clientHeight));
+        const observer = new ResizeObserver(resize);
+        observer.observe(frame);
+        resize();
+        return () => observer.disconnect();
+    }, []);
     const glRef = useRef<RootState["gl"] | null>(null);
     const outlineRef = useRef<Mesh>(null);
     const selectionBounds = useMemo(() => (editTarget ? sceneTargetBounds(scene, editTarget) : undefined), [scene, editTarget]);
@@ -316,12 +351,22 @@ export function InteriorSceneViewer({
     useEffect(() => {
         setHidden(new Set());
         setView("orbit");
-        setCutFloor(scene.version === 2 && scene.spec.scope === "home" ? 0 : undefined);
+        setCutEnabled(scene.version === 2 && (scene.spec.scope === "home" || compact));
         setDrawing("off");
+        setWalkRoom("");
     }, [scene]);
     useEffect(() => {
-        for (const [name, group] of built.groups) group.visible = name === DIMENSION_GROUP ? dimensions : !hidden.has(name);
-    }, [built, hidden, dimensions]);
+        setWalkRoom("");
+    }, [activeFloor]);
+    useEffect(() => {
+        if (editTarget?.kind === "room" && editTarget.floor === activeFloor) setWalkRoom(editTarget.room);
+    }, [editTarget, activeFloor]);
+    useEffect(() => {
+        if (compact && view !== "walk") setCutEnabled(true);
+    }, [compact, activeFloor, view]);
+    useEffect(() => {
+        for (const [name, group] of built.groups) group.visible = name === DIMENSION_GROUP ? dimensions && view !== "walk" : !hidden.has(name);
+    }, [built, hidden, dimensions, view]);
 
     // 相机按整个模型的包围盒取景（剖切时沿用完整模型的取景，切楼层时画面不跳）。
     // 尺寸线在平面外面，取景时先拿掉，不然画面会偏小。
@@ -333,8 +378,10 @@ export function InteriorSceneViewer({
         if (dims) built.root.add(dims);
     }
     const box = frameBox.current.box;
-    const camera = useMemo(() => cameraFor(box, view, interior), [box, view, interior, resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
-    const visibleLabels = labels ? model.labels : [];
+    const camera = useMemo(() => cameraFor(box, view, interior, aspect), [box, view, interior, aspect, resetKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    const visibleLabels = labels && view !== "walk" ? model.labels : [];
+    const walkPlan = model.plans[walkFloor];
+    const walkObstacles = useMemo(() => marks?.filter((m) => m.floor === walkFloor) || [], [marks, walkFloor]);
 
     const toggleGroup = (name: string) =>
         setHidden((current) => {
@@ -344,13 +391,20 @@ export function InteriorSceneViewer({
             return next;
         });
     const toggleCut = () => {
+        if (view === "walk") return;
         setHidden(new Set());
-        setCutFloor((current) => (current === undefined ? Math.max(0, floors.length - 1) : undefined));
+        setCutEnabled((current) => !current);
     };
     const toggleDrawing = () => {
         const next = drawing === "off" ? "panel" : drawing === "panel" && overlayBox ? "overlay" : "off";
         if (next === "overlay") setView("top");
         setDrawing(next);
+    };
+    const enterWalk = () => {
+        setCutEnabled(false);
+        setHidden(new Set());
+        setDrawing("off");
+        setView("walk");
     };
     const exportGlb = async () => {
         setExporting(true);
@@ -397,7 +451,7 @@ export function InteriorSceneViewer({
                 shadows
                 dpr={[1, 2]}
                 gl={{ antialias: true, alpha: true, logarithmicDepthBuffer: model.legacy, preserveDrawingBuffer: true, toneMapping: NeutralToneMapping, toneMappingExposure: 1.05 }}
-                camera={{ position: camera.position, fov: 40, near: Math.max(0.05, camera.span / 400), far: camera.far }}
+                camera={{ position: camera.position, fov: view === "walk" ? 65 : 40, near: view === "walk" ? 0.03 : Math.max(0.05, camera.span / 400), far: camera.far }}
                 aria-label={`${scene.title}，可以拖动旋转、滚轮缩放`}
                 onCreated={(state) => (glRef.current = state.gl)}
             >
@@ -405,17 +459,30 @@ export function InteriorSceneViewer({
                 <SceneLights target={camera.target} span={camera.span} />
                 <primitive object={built.root} dispose={null} />
                 <SceneLabels labels={visibleLabels} root={built.root} hidden={hidden} details={dimensions} onSelect={scene.version === 2 ? onRoomSelect : undefined} />
-                {selectionBounds ? (
+                {selectionBounds && view !== "walk" ? (
                     <mesh ref={outlineRef} position={selectionBounds.position} rotation={selectionBounds.rotation} renderOrder={30}>
                         <boxGeometry args={selectionBounds.size} />
                         <meshBasicMaterial color="#e8b245" wireframe depthTest={false} transparent opacity={0.85} />
                     </mesh>
                 ) : null}
-                {dimensions && model.dimensions.length ? <DimensionLabels dimensions={model.dimensions} /> : null}
+                {dimensions && view !== "walk" && model.dimensions.length ? <DimensionLabels dimensions={model.dimensions} /> : null}
                 {drawing === "overlay" && referenceUrl && overlayBox && overlayPlan && view === "top" ? <DrawingOverlay url={referenceUrl} plan={overlayPlan} box={overlayBox} y={model.ground.y + 0.05} opacity={0.5} /> : null}
-                <CutawayController facades={built.facades} enabled={cutaway} />
+                <CutawayController facades={built.facades} enabled={cutaway && view !== "walk"} />
                 <AmbientOcclusion enabled={quality && !model.legacy} box={box} />
-                <OrbitControls makeDefault target={camera.target} enableDamping dampingFactor={0.12} maxPolarAngle={view === "top" ? Math.PI / 2 : Math.PI * 0.49} minDistance={0.5} maxDistance={camera.span * 6} />
+                {view === "walk" && scene.version === 2 && walkPlan ? (
+                    <InteriorWalkControls
+                        floor={scene.spec.floors[walkFloor]}
+                        plan={walkPlan}
+                        room={walkRoom}
+                        obstacles={walkObstacles}
+                        onUnavailable={() => {
+                            onError?.("这个空间没有可站立的位置，请选择其他房间");
+                            setView("orbit");
+                        }}
+                    />
+                ) : (
+                    <OrbitControls makeDefault target={camera.target} enableDamping dampingFactor={0.12} maxPolarAngle={view === "top" ? Math.PI / 2 : Math.PI * 0.49} minDistance={0.5} maxDistance={camera.span * 6} />
+                )}
             </Canvas>
             <div className="itd-scene-toolbar" role="toolbar" aria-label="3D 模型查看">
                 <button type="button" className="itd-scene-tool" aria-pressed={view === "orbit"} onClick={() => setView("orbit")} title="自由视角">
@@ -424,15 +491,20 @@ export function InteriorSceneViewer({
                 <button type="button" className="itd-scene-tool" aria-pressed={view === "top"} onClick={() => setView("top")} title="俯视">
                     <Square className="size-4" aria-hidden />
                 </button>
+                {scene.version === 2 ? (
+                    <button type="button" className="itd-scene-tool" aria-pressed={view === "walk"} onClick={enterWalk} title="第一人称漫游" aria-label="第一人称漫游">
+                        <Footprints className="size-4" aria-hidden />
+                    </button>
+                ) : null}
                 <button type="button" className="itd-scene-tool" onClick={() => setResetKey((value) => value + 1)} title="重置视角" aria-label="重置视角">
                     <RotateCcw className="size-4" aria-hidden />
                 </button>
-                {interior && built.facades.length ? (
+                {interior && built.facades.length && view !== "walk" ? (
                     <button type="button" className="itd-scene-tool" aria-pressed={cutaway} onClick={() => setCutaway((value) => !value)} title={cutaway ? "朝向镜头的外墙已剖开，点一下显示全部外墙" : "剖开朝向镜头的外墙，看室内"}>
                         <Building className="size-4" aria-hidden />
                     </button>
                 ) : null}
-                {canCut ? (
+                {canCut && view !== "walk" ? (
                     <button
                         type="button"
                         className="itd-scene-tool"
@@ -443,12 +515,12 @@ export function InteriorSceneViewer({
                         <Layers className="size-4" aria-hidden />
                     </button>
                 ) : null}
-                {model.dimensions.length ? (
+                {model.dimensions.length && view !== "walk" ? (
                     <button type="button" className="itd-scene-tool" aria-pressed={dimensions} onClick={() => setDimensions((value) => !value)} title={dimensions ? "隐藏尺寸" : "显示尺寸线和房间面积"}>
                         <Ruler className="size-4" aria-hidden />
                     </button>
                 ) : null}
-                {model.labels.length ? (
+                {model.labels.length && view !== "walk" ? (
                     <button type="button" className="itd-scene-tool" aria-pressed={labels} onClick={() => setLabels((value) => !value)} title={labels ? "隐藏标注" : "显示标注"}>
                         {labels ? <Eye className="size-4" aria-hidden /> : <EyeOff className="size-4" aria-hidden />}
                     </button>
@@ -487,10 +559,45 @@ export function InteriorSceneViewer({
                     <figcaption>{overlayBox ? "再点一次「对照附图」把图纸叠在俯视图上" : "附图（这次的方案没有读出图纸位置，只能并排对照）"}</figcaption>
                 </figure>
             ) : null}
-            {cutFloor !== undefined ? (
+            {view === "walk" && scene.version === 2 ? (
+                <div className="itd-walk-locations">
+                    <select
+                        aria-label="漫游楼层"
+                        value={walkFloor}
+                        onChange={(event) => {
+                            onFloorChange(Number(event.target.value));
+                            setWalkRoom("");
+                        }}
+                    >
+                        {floors.map((name, i) => (
+                            <option key={i} value={i}>
+                                {name}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        aria-label="漫游房间"
+                        value={walkRoom}
+                        onChange={(event) => {
+                            const room = event.target.value;
+                            setWalkRoom(room);
+                            if (room && walkPlan) onRoomSelect?.(room, walkPlan.elevation + 0.1);
+                        }}
+                    >
+                        <option value="">自动选择入口</option>
+                        {scene.spec.floors[walkFloor].rooms
+                            .filter((r) => !r.part)
+                            .map((r) => (
+                                <option key={r.name} value={r.name}>
+                                    {r.name}
+                                </option>
+                            ))}
+                    </select>
+                </div>
+            ) : cutFloor !== undefined ? (
                 <div className="itd-scene-groups" role="radiogroup" aria-label="剖切到哪一层">
                     {floors.map((name, index) => (
-                        <button key={name} type="button" role="radio" className="itd-scene-group" aria-checked={cutFloor === index} aria-pressed={cutFloor === index} onClick={() => setCutFloor(index)}>
+                        <button key={name} type="button" role="radio" className="itd-scene-group" aria-checked={cutFloor === index} aria-pressed={cutFloor === index} onClick={() => onFloorChange(index)}>
                             {name}
                         </button>
                     ))}
@@ -504,7 +611,7 @@ export function InteriorSceneViewer({
                     ))}
                 </div>
             ) : null}
-            <p className="itd-scene-hint">拖动旋转 · 滚轮缩放 · 右键平移</p>
+            <p className="itd-scene-hint">{view === "walk" ? "先点画面 · W/A/S/D 或方向键行走 · 拖动环顾 · 可切换房间" : "拖动旋转 · 滚轮缩放 · 右键平移"}</p>
         </div>
     );
 }

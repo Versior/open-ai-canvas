@@ -96,6 +96,7 @@ export function InteriorSceneBuildStage({
     stalled,
     referenceUrl,
     layout,
+    preserveFurniture = false,
     onRetry,
 }: {
     text: string;
@@ -105,6 +106,7 @@ export function InteriorSceneBuildStage({
     stalled?: string;
     referenceUrl?: string;
     layout?: SceneSpec;
+    preserveFurniture?: boolean;
     onRetry?: () => void;
 }) {
     const [now, setNow] = useState(() => Date.now());
@@ -115,7 +117,7 @@ export function InteriorSceneBuildStage({
     // 系统要求减少动效时不转镜头，新部分直接出现。
     const reducedMotion = useMemo(() => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches), []);
     const legacyAnalyze = stage === "analyze";
-    const parsed = useMemo(() => (legacyAnalyze ? null : readPartialScene(text, scope, layout)), [text, scope, legacyAnalyze, layout]);
+    const parsed = useMemo(() => (legacyAnalyze ? null : readPartialScene(text, scope, layout, preserveFurniture)), [text, scope, legacyAnalyze, layout, preserveFurniture]);
     // 读不出来的那一刻沿用上一次读到的方案，预览不闪空。
     const lastGood = useRef<SceneBuildProgress | null>(null);
     if (parsed && (parsed.spec || !lastGood.current?.spec)) lastGood.current = parsed;

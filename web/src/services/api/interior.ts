@@ -1,6 +1,7 @@
 import type { InteriorSceneScope, SceneBrief } from "@/lib/interior/scene-3d";
 import type { RenovationSpec } from "@/lib/interior/renovation";
 import type { SceneEditTarget } from "@/lib/interior/scene-local-edit";
+import type { InteriorDesignPlan } from "@/lib/interior/design-plan";
 import { compactApiParams, http } from "@/services/api/request";
 
 export type InteriorSurface = "quick" | "pro";
@@ -132,7 +133,7 @@ export type InteriorRound = {
 export type InteriorSceneItem = {
     id: string;
     createdAt: string;
-    status: InteriorRoundItemStatus;
+    status: InteriorRoundItemStatus | "review";
     scope: InteriorSceneScope;
     /** 用户选了「AI 判断」：方案分析完成后 scope 换成 AI 判断的范围。 */
     autoScope?: boolean;
@@ -165,6 +166,10 @@ export type InteriorSceneItem = {
     partTaskIds?: (string | null)[];
     error?: string;
     sceneFile?: { resourceId: string };
+    /** 与此版本绑定的设计辅助图层和人工报价，不改变图纸结构。 */
+    design?: InteriorDesignPlan;
+    drawingConfirmed?: boolean;
+    furnishing?: "preserve" | "auto";
     /** 本人已对照原图确认的结构，允许相同图纸再次上传时复用。 */
     drawingBaseline?: boolean;
     structureSource?: { projectId: string; sceneId: string; title: string; notice?: string };

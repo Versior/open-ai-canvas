@@ -52,6 +52,19 @@ func NormalizeProjectDocument(raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("项目数据必须是 JSON 对象")
 	}
 	specs := []json.RawMessage{fields["professional"]}
+	if scenesRaw, exists := fields["scenes"]; exists {
+		var scenes []struct {
+			Design json.RawMessage `json:"design"`
+		}
+		if err := json.Unmarshal(scenesRaw, &scenes); err != nil {
+			return "", fmt.Errorf("项目的模型记录格式无效")
+		}
+		for _, scene := range scenes {
+			if err := validateDesignDocument(scene.Design); err != nil {
+				return "", err
+			}
+		}
+	}
 	if roundsRaw, exists := fields["rounds"]; exists {
 		var rounds []json.RawMessage
 		if err := json.Unmarshal(roundsRaw, &rounds); err != nil {

@@ -40,6 +40,16 @@ export type CompiledScene = {
     floors: string[];
     /** 第一层平面（含阳台）的外包框，叠图纸、取景用。 */
     plan: SpecRect;
+    /** 与三维共用已解出的洞口和家具定位，平面、算量和漫游不再另猜坐标。 */
+    plans: CompiledFloorPlan[];
+};
+
+export type CompiledFloorPlan = {
+    index: number;
+    name: string;
+    elevation: number;
+    walls: { start: [number, number]; end: [number, number]; thickness: number; exterior: boolean; holes: { center: number; width: number; kind: string; swing?: number; hinge?: number; bottom: number; height: number }[] }[];
+    furniture: { room: string; index?: number; type: SpecFurnitureType; x: number; z: number; w: number; d: number; rotation: number }[];
 };
 
 /** cutFloor：剖切看某一层（更高的楼层和屋顶不显示，这层的墙只砌到 1.2 米）。 */
@@ -1526,6 +1536,7 @@ function formatMeters(value: number) {
 export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}): CompiledScene {
     const objects: SceneObject[] = [];
     const labels: SceneLabel[] = [];
+    const plans: CompiledFloorPlan[] = [];
     const building = spec.scope === "building";
     const cut = options.cutFloor !== undefined && options.cutFloor >= 0 && options.cutFloor < spec.floors.length ? options.cutFloor : undefined;
     const visibleFloors = cut === undefined ? spec.floors : spec.floors.slice(0, cut + 1);
@@ -1543,6 +1554,17 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
     for (const [index, level] of levels.entries()) {
         if (index >= visibleFloors.length) break;
         const { floor, segs, group } = level;
+        const plan: CompiledFloorPlan = {
+            index,
+            name: floor.name,
+            elevation: level.top,
+            walls: segs.map((seg) => {
+                const ends = segEnds(seg);
+                return { start: onSeg(seg, ends.a, 0), end: onSeg(seg, ends.b, 0), thickness: seg.t, exterior: seg.ext, holes: seg.holes.map((hole) => ({ ...hole })) };
+            }),
+            furniture: [],
+        };
+        plans.push(plan);
         const capped = cut === index;
         const below = levels[index - 1];
         const extRects = (item: FloorLevel) => item.segs.filter((seg) => seg.ext).map((seg) => segRect(seg));
@@ -1666,6 +1688,12 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
             const within = members.map((room) => clearRect(room, segs));
             const listed = floor.furniture.filter((item) => item.room === main.name);
             const placements = layoutRoom(ctx, listed.length || spec.grid?.source === "drawing" ? listed : defaultFurniture(ctx), within, options.onLayoutIssue);
+            const used = new Set<number>();
+            for (const placement of placements) {
+                const original = floor.furniture.findIndex((item, i) => !used.has(i) && item.room === main.name && item.type === placement.type);
+                if (original >= 0) used.add(original);
+                plan.furniture.push({ ...placement, room: main.name, ...(original >= 0 ? { index: original } : {}) });
+            }
             const lampCeiling = capped ? Math.min(ceiling, CUT_HEIGHT + 1.4) : ceiling;
             placements.forEach((placement, order) => objects.push(...furnitureObjects(placement, spec, level.top + FINISH, lampCeiling, group, roomIndex * 7 + order, backFacade(level, segs, placement))));
             for (const room of members) baseboards(level, room, segs, spec, objects);
@@ -1734,7 +1762,7 @@ export function compileSceneSpec(spec: SceneSpec, options: CompileOptions = {}):
         : { material: "concrete", color: "#e4e1dc", size: [r3(bounds[2] - bounds[0] + (building ? 12 : 5)), r3(bounds[3] - bounds[1] + (building ? 12 : 5))], center, y: groundY, holes: [] };
     const dimensionLevel = levels[cut ?? 0];
     const dimensions = dimensionChains(dimensionLevel.floor, spec, building ? 0.08 : groundY + 0.01);
-    return { title: spec.title, summary: spec.summary, ground, objects, labels, dimensions, floors: spec.floors.map((floor) => floor.name), plan: floorBounds(levels[0].floor) };
+    return { title: spec.title, summary: spec.summary, ground, objects, labels, dimensions, floors: spec.floors.map((floor) => floor.name), plan: floorBounds(levels[0].floor), plans };
 }
 
 /** 页面渲染用：第一版场景直接用模型写的物体，第二版按方案现算。legacy 的场景物体可能互相重叠，渲染时要错开一点。 */
@@ -1759,6 +1787,7 @@ export function renderModel(scene: InteriorSceneData, options: CompileOptions = 
         labels: scene.labels,
         dimensions: [],
         floors: [],
+        plans: [],
         plan: [-width / 2, -depth / 2, width / 2, depth / 2],
         legacy: true,
         groups,

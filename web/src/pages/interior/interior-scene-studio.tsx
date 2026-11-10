@@ -13,15 +13,20 @@ import { selectableModelsByCapability, type AiConfig } from "@/stores/use-config
 import { groupPresets, uploadInteriorImage, UploadSlot, type InteriorUpload } from "./interior-composer";
 import { interiorImageUrl, newInteriorId, patchInteriorScene } from "./interior-models";
 import { InteriorSceneBuildStage } from "./interior-scene-build";
-import { catalogKeys, fetchSceneKnowledge, loadSceneFile, sceneModelProblem, sceneModelRequirements, submitSceneTask } from "./interior-scene-tasks";
+import { catalogKeys, fetchSceneKnowledge, loadSceneFile, sceneModelProblem, sceneModelRequirements, scenePromptInput, sceneKnowledgeQuery, submitSceneTask } from "./interior-scene-tasks";
 import { InteriorSceneViewer } from "./interior-scene-viewer";
 import { InteriorSceneDelivery } from "./interior-scene-delivery";
 import { useInteriorSceneTasks } from "./use-interior-scene-tasks";
-import { applySceneLocalEdit, buildSceneLocalEditPrompt, sceneEditOptions } from "@/lib/interior/scene-local-edit";
+import { applySceneLocalEdit, buildSceneLocalEditPrompt, sceneEditOptions, type SceneEditTarget } from "@/lib/interior/scene-local-edit";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { saveSceneFile } from "./interior-scene-tasks";
 import { InteriorLocalControls } from "./interior-local-controls";
 import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
+import { InteriorPlanViewer } from "./interior-plan-viewer";
+import { InteriorDesignBudget } from "./interior-design-budget";
+import { emptyDesignPlan, validateDesignPlan, type InteriorDesignPlan } from "@/lib/interior/design-plan";
+import { checkSceneCompletion } from "@/lib/interior/scene-validation";
+import { InteriorDrawingReview } from "./interior-drawing-review";
 
 /** 一个项目最多保存的 3D 模型数。 */
 const MAX_SCENES = 30;
@@ -94,6 +99,8 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     }, [busy, onBusyChange]);
     const [error, setError] = useState("");
     const [selectedId, setSelectedId] = useState("");
+    const [display, setDisplay] = useState<"3d" | "plan" | "split">("3d");
+    const [activeFloor, setActiveFloor] = useState(0);
     const previewUrls = useRef(new Set<string>());
     const textModels = useMemo(() => selectableModelsByCapability(config, "text"), [config]);
     const requirements = useMemo(() => sceneModelRequirements(config, reference?.resourceId ? 1 : 0), [config, reference?.resourceId]);
@@ -143,11 +150,44 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     }, [selectedFile]);
     const selectedLoad = loaded?.resourceId === selectedFile ? loaded : null;
     const selectedScene = selectedLoad?.scene;
+    const viewFloor = selectedScene?.version === 2 ? Math.min(activeFloor, selectedScene.spec.floors.length - 1) : 0;
+    const design = useMemo(() => selected?.design || emptyDesignPlan(), [selected?.design]);
+    const designError = useMemo(() => {
+        if (selectedScene?.version !== 2) return "";
+        try {
+            validateDesignPlan(design, selectedScene.spec);
+            return "";
+        } catch (cause) {
+            return errorText(cause, "辅助图层数据无效");
+        }
+    }, [design, selectedScene]);
+    const changeDesign = (next: InteriorDesignPlan) => {
+        if (!project || !selected || selectedScene?.version !== 2 || busy) return;
+        try {
+            validateDesignPlan(next, selectedScene.spec);
+            update(project.id, (document) => patchInteriorScene(document, selected.id, { design: next }));
+        } catch (cause) {
+            message.error(errorText(cause, "辅助图层未保存"));
+        }
+    };
+    const selectTarget = (target: SceneEditTarget) => {
+        const option = editOptions.find((item) => JSON.stringify(item.target) === JSON.stringify(target));
+        if (option) {
+            if (target.kind !== "object") setActiveFloor(target.floor);
+            setTargetKey(option.value);
+            setPanel("edit");
+            setComposerOpen(false);
+        }
+    };
     useEffect(() => {
         if (selectedScene) setComposerOpen(false);
     }, [selectedScene]);
     const editOptions = useMemo(() => (selectedScene ? sceneEditOptions(selectedScene) : []), [selectedScene]);
-    const editOption = targetKey === "whole" ? undefined : editOptions.find((item) => item.value === targetKey) || editOptions[0];
+    const editOption = targetKey === "whole" ? undefined : editOptions.find((item) => item.value === targetKey) || editOptions.find((item) => item.target.kind !== "object" && item.target.floor === viewFloor) || editOptions[0];
+    const changeFloor = (floor: number) => {
+        setActiveFloor(floor);
+        setTargetKey("");
+    };
     useEffect(() => {
         setTargetKey("");
         setInstruction("");
@@ -252,6 +292,37 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 ? buildSceneSpecPrompt({ scope: brief.scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), brief, knowledge: found.knowledge, ...catalogKeys(catalog) })
                 : buildSceneAnalysisPrompt({ scope, description, roomName: room?.name, styleName: style?.name, hasReference: Boolean(image), knowledge: found.knowledge, ...catalogKeys(catalog) }),
         );
+    };
+
+    const confirmReadDrawing = async (heights: number[], furnishing: "preserve" | "auto") => {
+        if (busy || !project || selected?.status !== "review" || !selected.brief?.layout) return;
+        const account = getActiveUserScope();
+        setSubmitting(true);
+        setError("");
+        try {
+            const original = selected.brief.layout;
+            if (heights.length !== original.floors.length || heights.some((height) => !Number.isFinite(height) || height < 2 || height > 8)) throw new Error("请确认每层 2–8 米范围内的实际层高");
+            const layout = { ...original, floors: original.floors.map((floor, i) => ({ ...floor, height: heights[i] })) };
+            const { issues } = checkSceneCompletion(layout, layout.scope);
+            if (issues.length) throw new Error(`确认后的结构未通过校核：${issues.join("；")}`);
+            const next = { ...selected, drawingConfirmed: true, furnishing, brief: { ...selected.brief, layout, ...(selected.brief.size ? { size: { ...selected.brief.size, storeyHeight: heights[0] } } : {}) } };
+            const { knowledge, refs } = await fetchSceneKnowledge(sceneKnowledgeQuery(next));
+            await saveProject();
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未继续建模");
+            const prompt = [
+                buildSceneSpecPrompt({ ...scenePromptInput(next, knowledge), ...catalogKeys(catalog) }),
+                furnishing === "preserve" ? "用户选择保留原图布置：不要自动添加家具，保留结构里已有家具；只填写地面与配色。" : "用户确认层高与结构：可在保留房间、门窗和公共区域的前提下补充家具与装修。",
+            ].join("\n");
+            const task = await submitSceneTask(config, selected.model, prompt, "spec", selected.reference);
+            if (getActiveUserScope() !== account) throw new Error("账号已切换，未更新项目");
+            update(project.id, (document) => patchInteriorScene(document, selected.id, { brief: next.brief, furnishing, drawingConfirmed: true, status: "pending", stage: "spec", taskId: task.id, knowledge: refs, notice: undefined }));
+            await saveProject();
+            window.dispatchEvent(new CustomEvent("wallet:updated"));
+        } catch (cause) {
+            setError(errorText(cause, "确认结构后提交失败，请重试"));
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const restoreDrawingBaseline = async () => {
@@ -374,10 +445,15 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
         if (ok) setInstruction("");
     };
 
-    const applyManual = async (patch: Record<string, unknown>) => {
-        if (busy || !selected || !selectedScene || !editOption || !project) throw new Error("请先选择已完成的模型和调整目标");
+    const applyManual = async (patch: Record<string, unknown>, explicitTarget?: SceneEditTarget) => {
+        const target = explicitTarget || editOption?.target;
+        if (busy || !selected || !selectedScene || !target || !project) throw new Error("请先选择已完成的模型和调整目标");
         if (scenes.length >= MAX_SCENES) throw new Error(`一个项目最多保存 ${MAX_SCENES} 个模型，请先整理历史版本`);
-        const scene = applySceneLocalEdit(selectedScene, editOption.target, patch);
+        const scene = applySceneLocalEdit(selectedScene, target, patch);
+        if (explicitTarget && scene.version === 2) {
+            const { issues } = checkSceneCompletion(scene.spec, scene.spec.scope);
+            if (issues.length) throw new Error(`移动未通过空间校核：${issues.join("；")}`);
+        }
         const account = getActiveUserScope();
         setSubmitting(true);
         try {
@@ -391,8 +467,8 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 id,
                 createdAt: new Date().toISOString(),
                 parentId: selected.id,
-                instruction: `手动调整：${editOption.label}`,
-                editTarget: editOption.target,
+                instruction: `手动调整：${editOptions.find((item) => JSON.stringify(item.target) === JSON.stringify(target))?.label || "平面家具"}`,
+                editTarget: target,
                 taskId: undefined,
                 status: "succeeded",
                 stage: "edit",
@@ -567,6 +643,21 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 {header}
                 <div className="itd-model-actions" aria-label="模型工作区工具">
                     <strong title={selected ? sceneTitle(selected) : "3D 模型"}>{selected ? sceneTitle(selected) : "3D 模型"}</strong>
+                    {selectedScene?.version === 2 ? (
+                        <div className="itd-model-display" role="group" aria-label="设计视图">
+                            {(
+                                [
+                                    { value: "3d", label: "3D" },
+                                    { value: "plan", label: "2D 平面" },
+                                    { value: "split", label: "2D / 3D 联动" },
+                                ] as const
+                            ).map((item) => (
+                                <Button size="small" key={item.value} aria-pressed={display === item.value} onClick={() => setDisplay(item.value)}>
+                                    {item.label}
+                                </Button>
+                            ))}
+                        </div>
+                    ) : null}
                     <Button
                         size="small"
                         icon={<Plus className="size-3.5" aria-hidden />}
@@ -598,28 +689,52 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             </div>
                         ) : selected.status === "succeeded" ? (
                             selectedScene ? (
-                                <InteriorSceneViewer
-                                    scene={selectedScene}
-                                    editTarget={editOption?.target}
-                                    onRoomSelect={(name, elevation) => {
-                                        if (!busy && selectedScene.version === 2) {
-                                            const option = editOptions.find((item) => {
-                                                if (item.target.kind !== "room" || item.target.room !== name) return false;
-                                                const bottom = selectedScene.spec.floors.slice(0, item.target.floor).reduce((sum, floor) => sum + floor.height, 0);
-                                                return elevation >= bottom && elevation < bottom + selectedScene.spec.floors[item.target.floor].height;
-                                            });
-                                            if (option) {
-                                                setTargetKey(option.value);
-                                                setComposerOpen(false);
-                                                setPanel("edit");
-                                            }
-                                        }
-                                    }}
-                                    onError={(text) => message.error(text)}
-                                    onSnapshot={(blob) => void render(blob)}
-                                    snapshotBusy={rendering}
-                                    referenceUrl={referenceUrl}
-                                />
+                                <div className={cn("itd-design-views", selectedScene.version === 2 && display === "split" && !designError && "is-split")}>
+                                    {selectedScene.version === 2 && display !== "3d" && !designError ? (
+                                        <InteriorPlanViewer
+                                            spec={selectedScene.spec}
+                                            design={design}
+                                            floor={viewFloor}
+                                            onFloorChange={changeFloor}
+                                            disabled={busy}
+                                            onChange={changeDesign}
+                                            onSelect={selectTarget}
+                                            onMove={(target, pos) => applyManual({ pos }, target)}
+                                            onError={(text) => message.error(text)}
+                                        />
+                                    ) : null}
+                                    {display !== "plan" || selectedScene.version !== 2 || designError ? (
+                                        <div className="itd-design-3d">
+                                            <InteriorSceneViewer
+                                                scene={selectedScene}
+                                                design={designError ? undefined : design}
+                                                activeFloor={viewFloor}
+                                                onFloorChange={changeFloor}
+                                                compact={display === "split"}
+                                                editTarget={editOption?.target}
+                                                onRoomSelect={(name, elevation) => {
+                                                    if (!busy && selectedScene.version === 2) {
+                                                        const option = editOptions.find((item) => {
+                                                            if (item.target.kind !== "room" || item.target.room !== name) return false;
+                                                            const bottom = selectedScene.spec.floors.slice(0, item.target.floor).reduce((sum, floor) => sum + floor.height, 0);
+                                                            return elevation >= bottom && elevation < bottom + selectedScene.spec.floors[item.target.floor].height;
+                                                        });
+                                                        if (option) selectTarget(option.target);
+                                                    }
+                                                }}
+                                                onError={(text) => message.error(text)}
+                                                onSnapshot={(blob) => void render(blob)}
+                                                snapshotBusy={rendering}
+                                                referenceUrl={referenceUrl}
+                                            />
+                                        </div>
+                                    ) : null}
+                                    {designError ? (
+                                        <p className="itd-error" role="alert">
+                                            辅助图层读取失败：{designError}。原保存数据保留，三维结构仍可查看。
+                                        </p>
+                                    ) : null}
+                                </div>
                             ) : selectedLoad?.error ? (
                                 <div className="itd-scene-empty is-error" role="alert">
                                     <strong>打不开这个模型</strong>
@@ -631,6 +746,8 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                     <span>正在读取模型</span>
                                 </div>
                             )
+                        ) : selected.status === "review" && selected.brief?.layout ? (
+                            <InteriorDrawingReview key={selected.id} spec={selected.brief.layout} referenceUrl={referenceUrl} busy={busy} onConfirm={confirmReadDrawing} />
                         ) : selected.status === "pending" ? (
                             <InteriorSceneBuildStage
                                 key={selected.id}
@@ -641,6 +758,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 stalled={stalledText || undefined}
                                 referenceUrl={referenceUrl}
                                 layout={selected.brief?.layout}
+                                preserveFurniture={selected.furnishing === "preserve"}
                                 onRetry={() => tasks.retry(selected.id)}
                             />
                         ) : (
@@ -728,7 +846,11 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                                 showSearch
                                                 optionFilterProp="label"
                                                 options={[...editOptions.map(({ value, label }) => ({ value, label })), { value: "whole", label: "整套方案（可调整结构）" }]}
-                                                onChange={setTargetKey}
+                                                onChange={(value) => {
+                                                    const option = editOptions.find((item) => item.value === value);
+                                                    if (option) selectTarget(option.target);
+                                                    else setTargetKey(value);
+                                                }}
                                             />
                                         </label>
                                         <Input.TextArea
@@ -762,7 +884,12 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                 <InteriorLocalControls key={`${selected.id}:${editOption.value}`} scene={selectedScene} target={editOption.target} disabled={busy} onApply={applyManual} />
                             ) : null}
                             {panel === "info" && selected?.taskId ? <TaskSettlement ids={[selected.taskId]} /> : null}
-                            {panel === "info" && selected?.status === "succeeded" && selectedScene?.version === 2 ? <InteriorSceneDelivery spec={selectedScene.spec} onError={(text) => message.error(text)} /> : null}
+                            {panel === "info" && selected?.status === "succeeded" && selectedScene?.version === 2 && !designError ? (
+                                <>
+                                    <InteriorDesignBudget spec={selectedScene.spec} design={design} disabled={busy} onChange={changeDesign} />
+                                    <InteriorSceneDelivery spec={selectedScene.spec} design={design} onError={(text) => message.error(text)} />
+                                </>
+                            ) : null}
                             {panel === "info" && selected?.status === "succeeded" && selected.reference && selectedScene?.version === 2 && selectedScene.spec.grid?.source === "drawing" ? (
                                 <div>
                                     <p>对照原图确认房间、门窗和尺寸后，可将当前版本设为同图结构基准。相同图纸再次上传时复用结构，材质与家具仍可调整。</p>
@@ -777,7 +904,9 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                                         <li key={item.id}>
                                             <button type="button" disabled={busy} className={cn("itd-scene-card", item.id === selected?.id && "is-active")} aria-pressed={item.id === selected?.id} onClick={() => setSelectedId(item.id)}>
                                                 <strong>{sceneTitle(item)}</strong>
-                                                <span>{item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : item.stats || `${item.objectCount || 0} 个物体`}</span>
+                                                <span>
+                                                    {item.status === "review" ? "待核对图纸结构" : item.status === "pending" ? STAGE_LABELS[item.stage || "plan"] : item.status === "failed" ? "失败" : item.stats || `${item.objectCount || 0} 个物体`}
+                                                </span>
                                                 <small>{[item.instruction ? "改过一版" : SCENE_SCOPES.find((scope) => scope.value === item.scope)?.label, formatTime(item.createdAt)].filter(Boolean).join(" · ")}</small>
                                             </button>
                                             <button type="button" className="itd-scene-card-remove" aria-label={`删除「${sceneTitle(item)}」`} disabled={busy} onClick={() => remove(item)}>

@@ -207,6 +207,10 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
             ...(room ? { roomKey: room.key, roomName: room.name } : {}),
             ...(style ? { styleKey: style.key, styleName: style.name, ...(style.summary ? { styleHint: style.summary } : {}) } : {}),
         };
+        if (brief.source === "drawing" && brief.layout && !item.drawingConfirmed) {
+            const { id: _id, createdAt: _createdAt, ...changed } = next;
+            return { ...changed, status: "review", notice: "图纸结构已读出，请对照原图确认尺寸、层高和空间后继续建模" };
+        }
         const { knowledge, refs } = await fetchSceneKnowledge(sceneKnowledgeQuery(next));
         if (signal.aborted) throw new DOMException("已离开", "AbortError");
         const task = await submitSceneTask(configRef.current, item.model, buildSceneSpecPrompt({ ...scenePromptInput(next, knowledge), ...catalogKeys(catalog) }), "spec", item.reference);
@@ -226,7 +230,8 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
         let spec: SceneSpec | undefined;
         let issues: string[];
         try {
-            const completed = item.brief?.layout ? applyDrawingFinishes(value, item.brief.layout) : value;
+            const finished = item.brief?.layout ? applyDrawingFinishes(value, item.brief.layout) : undefined;
+            const completed = finished && item.furnishing === "preserve" ? { ...finished, floors: finished.floors.map((floor, index) => ({ ...floor, furniture: item.brief!.layout!.floors[index].furniture })) } : finished || value;
             ({ spec, issues } = checkSceneCompletion(completed, meta.scope, { truncated, spaces: item.brief?.spaces, size: item.brief?.dimensionChains ? item.brief.size : undefined }));
         } catch (cause) {
             issues = [errorText(cause, "方案格式无效")];

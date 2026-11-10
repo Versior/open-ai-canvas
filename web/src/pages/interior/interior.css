@@ -1,5 +1,147 @@
 /* 室内设计页：左侧出图设置，右侧出图记录。颜色、圆角、间距只引用全局 token。 */
 
+.itd-model-display,
+.itd-plan-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+.itd-model-display [aria-pressed="true"] {
+    border-color: var(--itd-ink-2);
+    background: var(--itd-muted);
+}
+.itd-design-views {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+}
+.itd-design-views.is-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-2);
+}
+.itd-design-3d {
+    position: relative;
+    min-height: 0;
+}
+.itd-plan-viewer {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-3);
+    gap: var(--space-2);
+    min-height: 0;
+    overflow: auto;
+    background: var(--itd-panel);
+}
+.itd-plan-controls > .ant-select {
+    min-width: 110px;
+    flex: 1;
+}
+.itd-plan-controls > .ant-input {
+    min-width: 120px;
+    flex: 1;
+}
+.itd-plan-canvas {
+    --itd-plan-focus: #3979b4;
+    flex: 1 0 230px;
+    width: 100%;
+    min-height: 230px;
+    background: var(--user-surface-media, #ffffff);
+    touch-action: none;
+    border-radius: var(--r-md);
+}
+/* 平面坐标以米计；焦点用屏幕像素描边，避免普通 outline 随 SVG 放大。 */
+.itd-plan-canvas polygon[role="button"]:focus-visible {
+    outline: none;
+    stroke: var(--itd-plan-focus);
+    stroke-width: var(--focus-ring-width, 2px);
+    vector-effect: non-scaling-stroke;
+}
+.itd-plan-furniture {
+    cursor: grab;
+}
+.itd-plan-furniture:active {
+    cursor: grabbing;
+}
+.itd-plan-note {
+    color: var(--itd-ink-2);
+    font-size: var(--fs-caption);
+    margin: 0;
+}
+.itd-plan-marks {
+    display: grid;
+    gap: var(--space-2);
+    max-height: 130px;
+    overflow: auto;
+    font-size: var(--fs-caption);
+}
+.itd-plan-marks > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+.itd-walk-locations {
+    position: absolute;
+    bottom: var(--space-8);
+    left: var(--space-3);
+    display: flex;
+    gap: var(--space-2);
+    max-width: calc(100% - var(--space-6));
+}
+.itd-walk-locations select {
+    max-width: 160px;
+    padding: var(--space-2);
+    background: var(--itd-panel);
+    color: var(--itd-ink);
+    border: 1px solid var(--itd-line);
+    border-radius: var(--r-md);
+}
+.itd-budget-scroll {
+    overflow: auto;
+}
+.itd-budget-scroll table {
+    min-width: 640px;
+}
+.itd-budget-scroll .ant-input-number {
+    width: 90px;
+}
+.itd-drawing-review {
+    height: 100%;
+    padding: var(--space-4);
+    overflow: auto;
+    background: var(--itd-panel);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+.itd-drawing-review-images {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+.itd-drawing-review-images img {
+    width: 100%;
+    height: 240px;
+    object-fit: contain;
+    background: var(--user-surface-media, #ffffff);
+}
+.itd-scene-delivery-body > label {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    margin-bottom: var(--space-2);
+}
+@media (max-width: 1100px) {
+    .itd-design-views.is-split {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(360px, 1fr) minmax(360px, 1fr);
+        overflow: auto;
+    }
+}
+
 .itd-renovation {
     padding: var(--space-6);
     color: var(--itd-ink);
