@@ -7,7 +7,7 @@ import { REMAKE_ACTIVE, remakeJobError, remakeLanguage, remakeKeptDurationMs, ty
 import { buildRemakeUnitPrompt, remakeReferenceImages } from "@/lib/remake/prompts";
 import { remakeLines, remakePieces, remakeRenderSize, remakeSubtitleSignature, remakeTimeline, remakeVoicePlan } from "@/lib/remake/timeline";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { applyRemakeCreativeSignature, planRemakeUnits, remakeClipSignature, remakeTakeError } from "@/lib/remake/units";
+import { applyRemakeCreativeSignature, planRemakeUnits, remakeClipSignature, remakeTakeError, remakeReviewError } from "@/lib/remake/units";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { parseBackendGenerationResult, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { createProductVideoSplit, parseProductVideoSplitResult } from "@/services/api/product-video";
@@ -98,6 +98,8 @@ export function remakeUnitsFor(job: RemakeJob, config: AiConfig) {
     const limits = remakeLimitsFor(config, job.model, job.shots);
     const maxMs = (typeof limits === "string" ? 15 : limits.maxSegmentSeconds) * 1000;
     const units = job.creative ? job.shots.flatMap((shot) => planRemakeUnits([shot], { maxMs, sourceDurationMs: remakeKeptDurationMs(job) }, job.units)) : planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source?.durationMs || 0 }, job.units);
+    if (job.source && job.audio === "rewrite" && !job.voiceReference && units.filter((unit) => job.shots.some((shot) => unit.shotIndexes.includes(shot.index) && shot.dialogue.trim())).length > 1)
+        throw new Error("多段口播请上传同一份音色参考，或改用统一旁白，不能让每段随机选声音");
     return applyRemakeCreativeSignature(job, units);
 }
 
@@ -173,6 +175,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
                 prompt: buildRemakeUnitPrompt(job, unit, shots, seconds),
                 imageResourceIds: referenceImages.map((image) => resourceIdFromStorageKey(image.storageKey)!),
                 ...(unit.clipResourceId ? { videoResourceId: unit.clipResourceId, videoDurationMs: unit.clipEndMs - unit.clipStartMs } : {}),
+                ...(speaks && job.voiceReference ? { audioResourceId: job.voiceReference.resourceId, audioDurationMs: job.voiceReference.durationMs } : {}),
             };
         }
         await updateRemake(id, patchUnit(key, { status: "running", error: undefined, input }));
@@ -183,6 +186,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
             config: productVideoGenerationConfig(config, input),
             referenceImages: input.imageResourceIds.map((resourceId) => ({ id: resourceId, name: "参考图", type: "image/png", dataUrl: "", storageKey: resourceStorageKey(resourceId) })),
             referenceVideos: input.videoResourceId ? [{ id: `clip-${key}`, name: "参考片段", type: "video/mp4", url: "", storageKey: resourceStorageKey(input.videoResourceId), durationMs: input.videoDurationMs }] : [],
+            referenceAudios: input.audioResourceId ? [{ id: `voice-${key}`, name: "全片音色参考", type: "audio/wav", url: "", storageKey: resourceStorageKey(input.audioResourceId), durationMs: input.audioDurationMs }] : [],
             signal,
             clientOperationId: `${id}-${key}-${unit.attempt}`,
             metadata: { source: "video-remake", remakeId: id, remakeUnit: key },
@@ -207,6 +211,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
             taskId: done.id,
             resourceId,
             createdAt: new Date().toISOString(),
+            inputSignature: unit.creativeSignature || `task:${done.id}`,
             ...(result.video?.durationMs ? { durationMs: result.video.durationMs } : {}),
             ...(result.video?.width ? { width: result.video.width } : {}),
             ...(result.video?.height ? { height: result.video.height } : {}),
@@ -401,6 +406,11 @@ export function runRemake(id: string, config: AiConfig) {
                     await updateRemake(id, (value) => ({ ...value, status: "failed", error: `有 ${failed.length} 段没有生成成功，可以写下问题单独重做` }));
                     return;
                 }
+                await voiceStep(id, config, controller.signal);
+                if (remakeReviewError(read(id))) {
+                    await updateRemake(id, (value) => ({ ...value, status: "review", error: undefined }));
+                    return;
+                }
                 await updateRemake(id, (value) => ({ ...value, status: "assembling", error: undefined }));
             }
             await assembleStep(id, config, controller.signal);
@@ -515,8 +525,26 @@ export async function chooseRemakeTake(id: string, key: string, index: number) {
 
 /** 只重新拼成片（换了候选之后）。 */
 export async function assembleRemake(id: string, config: AiConfig) {
+    const job = read(id);
+    const review = remakeReviewError(job);
+    if (review) throw new Error(review);
+    remakeTimeline(job, remakeRenderSize(job));
     await updateRemake(id, (value) => ({ ...value, status: "assembling", error: undefined, render: undefined }));
     runRemake(id, config);
+}
+
+export async function approveRemakeTake(id: string, key: string) {
+    if (isRemakeRunning(id)) throw new Error("请等待当前生成完成后核对");
+    await updateRemake(id, (job) => {
+        const unit = job.units.find((item) => item.key === key);
+        const take = unit?.takes[unit.chosen];
+        if (!unit || !take || unit.status !== "succeeded") throw new Error("这段没有可核对的候选");
+        const duration = remakeTakeError(unit, take);
+        if (duration) throw new Error(duration);
+        if (unit.creativeSignature && take.inputSignature && unit.creativeSignature !== take.inputSignature) throw new Error("这是旧配方的候选，请重新生成");
+        const approvedSignature = unit.creativeSignature || take.inputSignature;
+        return { ...patchUnit(key, { takes: unit.takes.map((item, index) => (index === unit.chosen ? { ...item, approvedSignature } : item)) })(job), render: undefined };
+    });
 }
 
 export function resumeRemakes(jobs: readonly RemakeJob[], config: AiConfig) {

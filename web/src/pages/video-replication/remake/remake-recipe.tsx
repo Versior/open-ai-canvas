@@ -28,7 +28,8 @@ import { ProductVideoImageSlot, productVideoThumbUrl } from "../replace/product-
 import { remakeLimitsFor } from "./remake-config";
 import { RemakePersonaModal } from "./remake-persona";
 import { RemakeProductPicker } from "./remake-product-picker";
-import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields } from "./remake-sound";
+import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields, RemakeVoiceReference } from "./remake-sound";
+import { RemakeContinuityCard } from "./remake-continuity";
 import { ReplicaCampaignControls, ReplicaShotDirector } from "../replication-director";
 import { RemakeDirectorPlanner } from "./remake-director";
 import { isCommercialCreativeScene } from "@/lib/remake/creative";
@@ -41,9 +42,9 @@ const PEOPLE_OPTIONS: { value: RemakePeople; label: string }[] = [
     { value: "none", label: "不出人" },
 ];
 const AUDIO_HINT: Record<RemakeAudio, string> = {
-    rewrite: "按原片的节奏和说服结构，把口播改写成你的卖点；说话镜头由视频模型同时生成口型和声音",
+    rewrite: "按镜头时间说新台词，同时生成声音和口型。多段口播请提供同一份音色参考，避免每段换声音。",
     voice: "新口播由配音模型用同一个音色朗读，视频模型不出声；音色稳定，适合旁白类视频，说话镜头不对口型",
-    original: "成片换回原视频的声音，只替换画面；原声里可能有别人的品牌和原话",
+    original: "保留整条原声。说话镜头须参考原视频换元素，不能仅凭图片重拍口型；原声中的品牌、参数和卖点也会保留。",
     mute: "成片不带人声，适合后期另配口播或音乐",
 };
 
@@ -72,6 +73,7 @@ export function RemakeRecipeCards({
     disabled,
     onPlanningChange,
     onUploadingChange,
+    flush,
 }: {
     job: RemakeJob;
     config: AiConfig;
@@ -79,10 +81,11 @@ export function RemakeRecipeCards({
     disabled?: boolean;
     onPlanningChange: (busy: boolean) => void;
     onUploadingChange?: (busy: boolean) => void;
+    flush: () => Promise<void>;
 }) {
     const [picking, setPicking] = useState(false);
     const [persona, setPersona] = useState(false);
-    const [uploads, setUploads] = useState({ products: false, models: false, backgrounds: false });
+    const [uploads, setUploads] = useState({ products: false, models: false, backgrounds: false, continuity: false, voice: false });
     const uploading = Object.values(uploads).some(Boolean);
     useEffect(() => {
         onUploadingChange?.(uploading);
@@ -181,8 +184,9 @@ export function RemakeRecipeCards({
                     onAdd={(images) => patchImages("backgrounds", (current) => [...current, ...images].slice(0, 3))}
                     onRemove={(id) => patchImages("backgrounds", (current) => current.filter((image) => image.id !== id))}
                 />
-                {!job.backgrounds.length ? <p className="rw-hint">{job.creative ? "没有场景参考时按脚本与视觉风格设计环境。" : "所有片段共用原片环境关键帧作为布光与色调基准，具体镜头沿用原片布局。"}</p> : null}
+                {!job.backgrounds.length ? <p className="rw-hint">{job.creative ? "没有场景参考时按脚本与视觉风格设计环境。" : "换元素沿用参考视频的场景；跨段人物、商品与色调以确认后的目标定妆图为基准。"}</p> : null}
             </Card>
+            {job.source ? <RemakeContinuityCard job={job} config={config} disabled={disabled || uploading} flush={flush} onBusyChange={(continuity) => setUploads((value) => ({ ...value, continuity }))} /> : null}
             <Card title="口播">
                 <SegmentedControl<RemakeAudio>
                     ariaLabel="口播"
@@ -200,7 +204,8 @@ export function RemakeRecipeCards({
                 <p className="rw-hint">{job.creative && job.audio === "rewrite" ? "按脚本生成口播与人物口型，需要支持声音的视频模型。" : AUDIO_HINT[job.audio]}</p>
                 {remakeWritesDialogue(job.audio) ? <RemakeLanguageField job={job} edit={edit} disabled={disabled} /> : null}
                 {job.audio === "voice" ? <RemakeVoiceFields job={job} config={config} edit={edit} disabled={disabled} /> : null}
-                {job.audio === "rewrite" && typeof limits !== "string" && !limits.generateAudio ? <p className="rw-warn">所选视频模型不能生成声音，换一个能出声的模型，或改用「AI 配音」。</p> : null}
+                {job.audio === "rewrite" ? <RemakeVoiceReference job={job} edit={edit} disabled={disabled} onBusyChange={(voice) => setUploads((value) => ({ ...value, voice }))} /> : null}
+                {job.audio === "rewrite" && typeof limits !== "string" && !limits.generateAudio ? <p className="rw-warn">所选视频模型不能生成声音，换一个能出声的模型，或改用「统一旁白」。</p> : null}
             </Card>
             <RemakeFinishCard job={job} edit={edit} disabled={disabled} />
             <Card title="生成设置">

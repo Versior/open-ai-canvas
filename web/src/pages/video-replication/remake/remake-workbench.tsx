@@ -32,6 +32,7 @@ import { formatProductVideoCredits } from "../replace/use-product-video-estimate
 import { rewriteRemakeDialogue } from "./remake-dialogue";
 import { RemakeJianyingModal } from "./remake-jianying";
 import { RemakeProduce } from "./remake-produce";
+import { remakeReviewError } from "@/lib/remake/units";
 import { RemakeProductPicker } from "./remake-product-picker";
 import { RemakeRecipeCards, RemakeStoryboard, remakeWritesDialogue, type RemakeEdit } from "./remake-recipe";
 import { assembleRemake, remakeUnitsFor, retryRemake, startRemake, stopRemake, useRemakeRuntime } from "./remake-runner";
@@ -48,8 +49,8 @@ export type { RemakeStep } from "@/lib/remake/editor";
 
 /** 配方里用户能改的字段：保存时只把这些套到服务端最新版本上，不覆盖生成流程写入的单元和状态。 */
 function recipeFields(job: RemakeJob) {
-    const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId } = job;
-    return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId };
+    const { title, product, people, models, backgrounds, audio, language, voice, voiceReference, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId } = job;
+    return { title, product, people, models, backgrounds, audio, language, voice, voiceReference, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId };
 }
 
 function applyRecipe(latest: RemakeJob, draft: RemakeJob): RemakeJob {
@@ -211,6 +212,7 @@ export function RemakeWorkbench({
     const canEdit = Boolean(job.editTimeline || (job.source?.resourceId && job.shots.some((shot) => shot.treatment !== "skip")) || (job.creative && job.units.length && job.units.every((unit) => unit.status === "succeeded")));
     const currentStep: RemakeStep = step === "edit" && job.editTimeline ? "edit" : step === "produce" && startedBefore ? "produce" : "recipe";
     const allSucceeded = job.units.length > 0 && job.units.every((unit) => unit.status === "succeeded");
+    const reviewError = allSucceeded ? remakeReviewError(job) : "";
     const pendingChanges = startedBefore && plannedUnits.some((unit) => unit.status !== "succeeded");
     const keptMs = remakeKeptDurationMs(draft);
     const productCover = draft.product.images[0];
@@ -337,8 +339,8 @@ export function RemakeWorkbench({
             );
         if (allSucceeded)
             return (
-                <Button type="primary" icon={<Check size={16} />} onClick={() => void perform(() => assembleRemake(id, configRef.current))}>
-                    拼成片
+                <Button type="primary" disabled={Boolean(reviewError)} title={reviewError || undefined} icon={<Check size={16} />} onClick={() => void perform(() => assembleRemake(id, configRef.current))}>
+                    {reviewError ? "先核对每段候选" : "拼成片"}
                 </Button>
             );
         return (
@@ -485,6 +487,7 @@ export function RemakeWorkbench({
                     {currentStep === "recipe" ? (
                         <div className="rw-recipe-layout">
                             <RemakeRecipeCards
+                                flush={flush}
                                 job={draft}
                                 config={config}
                                 edit={edit}

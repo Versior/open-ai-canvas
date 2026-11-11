@@ -4,11 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
 import { REMAKE_TREATMENT_LABEL, remakeKeptDurationMs, type RemakeJob, type RemakeUnit } from "@/lib/remake/job";
 import { remakeLines, remakePieces, remakeSourceTime } from "@/lib/remake/timeline";
-import { remakeUnitTake } from "@/lib/remake/units";
+import { remakeTakeReviewError, remakeUnitTake } from "@/lib/remake/units";
 import { resourceFileUrl } from "@/services/api/resources";
 import type { AiConfig } from "@/stores/use-config-store";
 import { productVideoThumbUrl } from "../replace/product-video-assets";
-import { chooseRemakeTake, redoRemakeUnit, useRemakeRuntime } from "./remake-runner";
+import { approveRemakeTake, chooseRemakeTake, redoRemakeUnit, useRemakeRuntime } from "./remake-runner";
 import { RemakeComparisonExport } from "./remake-comparison-export";
 
 type Selection = { kind: "final" } | { kind: "unit"; key: string };
@@ -40,6 +40,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     const [selection, setSelection] = useState<Selection>(() => (finalId ? { kind: "final" } : job.units[0] ? { kind: "unit", key: job.units[0].key } : { kind: "final" }));
     const unit = selection.kind === "unit" ? job.units.find((item) => item.key === selection.key) : undefined;
     const take = unit ? remakeUnitTake(unit) : undefined;
+    const needsReview = Boolean(unit && take && remakeTakeReviewError(unit, take));
     const pieces = useMemo(() => remakePieces(job, true), [job]);
     const finalPieces = useMemo(() => {
         let cursor = 0;
@@ -54,6 +55,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     const lines = useMemo(() => remakeLines(job, true), [job]);
     const leftRef = useRef<HTMLVideoElement>(null);
     const rightRef = useRef<HTMLVideoElement>(null);
+    const voiceRefs = useRef(new Map<number, HTMLAudioElement>());
     const [hearOriginal, setHearOriginal] = useState(false);
     const [fix, setFix] = useState("");
     const [playbackError, setPlaybackError] = useState("");
@@ -70,6 +72,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     useEffect(() => setFix(unit?.fix || ""), [unit?.key, unit?.fix]);
     useEffect(() => {
         leftRef.current?.pause();
+        voiceRefs.current.forEach((audio) => audio.pause());
         setPlaybackError("");
     }, [selection.kind, unit?.key, take?.resourceId]);
     const perform = async (operation: () => Promise<void>) => {
@@ -90,10 +93,26 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     const sync = () => {
         const right = rightRef.current;
         const left = leftRef.current;
-        if (!right || !left) return;
+        if (!right) return;
         const target = toSource(right.currentTime * 1000) / 1000;
-        left.playbackRate = right.playbackRate;
-        if (Math.abs(left.currentTime - target) > 0.25) left.currentTime = target;
+        if (left) {
+            left.playbackRate = right.playbackRate;
+            if (Math.abs(left.currentTime - target) > 0.25) left.currentTime = target;
+        }
+        if (selection.kind === "unit" && job.audio === "voice") {
+            for (const line of lines) {
+                const audio = voiceRefs.current.get(line.shotIndex);
+                const shot = job.shots.find((item) => item.index === line.shotIndex);
+                if (!audio || !shot) continue;
+                const offset = target - shot.startMs / 1000;
+                audio.muted = hearOriginal;
+                audio.playbackRate = right.playbackRate;
+                if (offset >= 0 && offset < (line.voice?.durationMs || 0) / 1000 && !right.paused) {
+                    if (Math.abs(audio.currentTime - offset) > 0.2) audio.currentTime = offset;
+                    if (audio.paused) void audio.play().catch(() => setPlaybackError("配音预览加载失败，请重试播放"));
+                } else audio.pause();
+            }
+        }
     };
     const playOriginal = () => {
         sync();
@@ -127,7 +146,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                             <video
                                 ref={leftRef}
                                 src={resourceFileUrl(job.source.resourceId)}
-                                muted={!hearOriginal}
+                                muted={!hearOriginal && !(selection.kind === "unit" && job.audio === "original")}
                                 playsInline
                                 preload="metadata"
                                 aria-label="原片"
@@ -158,7 +177,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                                 controls
                                 playsInline
                                 preload="metadata"
-                                muted={hearOriginal}
+                                muted={hearOriginal || (selection.kind === "unit" && job.audio !== "rewrite")}
                                 aria-label="新片"
                                 onLoadedMetadata={(event) => {
                                     if (selection.kind === "unit") event.currentTarget.currentTime = startOffset;
@@ -166,9 +185,18 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                                 }}
                                 onPlay={playOriginal}
                                 onPlaying={playOriginal}
-                                onWaiting={() => leftRef.current?.pause()}
-                                onPause={() => leftRef.current?.pause()}
-                                onEnded={() => leftRef.current?.pause()}
+                                onWaiting={() => {
+                                    leftRef.current?.pause();
+                                    voiceRefs.current.forEach((audio) => audio.pause());
+                                }}
+                                onPause={() => {
+                                    leftRef.current?.pause();
+                                    voiceRefs.current.forEach((audio) => audio.pause());
+                                }}
+                                onEnded={() => {
+                                    leftRef.current?.pause();
+                                    voiceRefs.current.forEach((audio) => audio.pause());
+                                }}
                                 onRateChange={sync}
                                 onError={() => setPlaybackError("新片加载失败，请检查资源是否可用")}
                                 onSeeked={sync}
@@ -223,6 +251,14 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                                 ))}
                             </div>
                         ) : null}
+                        {take && unit.status === "succeeded" ? (
+                            <div className="rw-review">
+                                <p className="rw-hint">核对目标人物与穿搭、商品包装，再听台词和声音。模型返回视频不代表这些内容正确。</p>
+                                <Button disabled={active || !needsReview} onClick={() => void perform(() => approveRemakeTake(job.id, unit.key))}>
+                                    {needsReview ? "人物、商品和声音正确" : "这条候选已确认"}
+                                </Button>
+                            </div>
+                        ) : null}
                         <label className="rw-fix">
                             <span>这一段哪里不对？</span>
                             <Input.TextArea value={fix} maxLength={200} autoSize={{ minRows: 2, maxRows: 4 }} placeholder="例如：包装上的字糊了，保持正面文字清晰；模特转头时脸变了" onChange={(event) => setFix(event.target.value)} />
@@ -249,6 +285,22 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                     </>
                 )}
             </aside>
+            {selection.kind === "unit" && job.audio === "voice"
+                ? lines
+                      .filter((line) => line.voice?.resourceId)
+                      .map((line) => (
+                          <audio
+                              key={line.shotIndex}
+                              ref={(audio) => {
+                                  if (audio) voiceRefs.current.set(line.shotIndex, audio);
+                                  else voiceRefs.current.delete(line.shotIndex);
+                              }}
+                              src={resourceFileUrl(line.voice!.resourceId!)}
+                              preload="metadata"
+                              aria-label={`镜头 ${line.shotIndex} 配音预览`}
+                          />
+                      ))
+                : null}
 
             <section className="rw-timeline" aria-label="时间线">
                 <div className="rw-timeline-head">

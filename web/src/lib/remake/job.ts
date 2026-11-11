@@ -9,6 +9,7 @@ import { normalizeTimelineProject } from "@/lib/timeline/timeline-tracks";
 import type { TimelineProject } from "@/types/timeline";
 import { creativeProductionError, readCreativeProject, type CreativeProject } from "./creative";
 import { remakeDialogueBudget } from "./prompts";
+import { remakeContinuityImage, remakeNeedsContinuity } from "./continuity";
 
 // 复刻工作台的作品（version 2）：一条拆解过的爆款视频 + 我的商品、模特、场景和口播配方，
 // 逐镜头决定怎么复刻（换元素、重新拍、保留原片、删掉），再按生成单元出片、拼成成片。
@@ -38,7 +39,7 @@ export const REMAKE_RISK_LABEL: Record<RemakeRisk, string> = { product: "有原�
  */
 export type RemakeAudio = "rewrite" | "voice" | "original" | "mute";
 export const REMAKE_AUDIOS: RemakeAudio[] = ["rewrite", "voice", "original", "mute"];
-export const REMAKE_AUDIO_LABEL: Record<RemakeAudio, string> = { rewrite: "改写口播", voice: "AI 配音", original: "保留原声", mute: "不要人声" };
+export const REMAKE_AUDIO_LABEL: Record<RemakeAudio, string> = { rewrite: "改写口播", voice: "统一旁白", original: "保留原声", mute: "不要人声" };
 
 /** 新口播用的语言：改写口播、配音和字幕都按它。cps 是每秒大约能说的字符数，用来限长。 */
 export type RemakeLanguage = "zh" | "en" | "ja" | "ko" | "es" | "pt" | "id" | "th" | "vi" | "fr" | "de";
@@ -107,7 +108,7 @@ export type RemakeShot = {
     dialogue: string;
 };
 
-export type RemakeTake = { taskId: string; resourceId: string; durationMs?: number; width?: number; height?: number; createdAt: string };
+export type RemakeTake = { taskId: string; resourceId: string; durationMs?: number; width?: number; height?: number; createdAt: string; inputSignature?: string; approvedSignature?: string };
 
 export type RemakeUnitStatus = "pending" | "running" | "succeeded" | "failed";
 
@@ -116,7 +117,7 @@ export type RemakeUnitStatus = "pending" | "running" | "succeeded" | "failed";
  * 换元素单元的参考片段是 [clipStartMs, clipEndMs)：太短时向两边补到 4 秒，成片只用 [startMs, endMs) 那部分。
  */
 export type RemakeUnit = {
-    input?: { model: string; ratio: string; resolution: string; seconds: number; audio: "model" | "mute"; prompt: string; imageResourceIds: string[]; videoResourceId?: string; videoDurationMs?: number };
+    input?: { model: string; ratio: string; resolution: string; seconds: number; audio: "model" | "mute"; prompt: string; imageResourceIds: string[]; videoResourceId?: string; videoDurationMs?: number; audioResourceId?: string; audioDurationMs?: number };
     creativeSignature?: string;
     key: string;
     treatment: "replace" | "remake";
@@ -136,8 +137,8 @@ export type RemakeUnit = {
     chosen: number;
 };
 
-export type RemakeStatus = "draft" | "clipping" | "generating" | "assembling" | "succeeded" | "failed";
-export const REMAKE_STATUS_LABEL: Record<RemakeStatus, string> = { draft: "配方中", clipping: "切参考片段", generating: "生成中", assembling: "拼接成片", succeeded: "已完成", failed: "未完成" };
+export type RemakeStatus = "draft" | "clipping" | "generating" | "review" | "assembling" | "succeeded" | "failed";
+export const REMAKE_STATUS_LABEL: Record<RemakeStatus, string> = { draft: "配方中", clipping: "切参考片段", generating: "生成中", review: "待核对候选", assembling: "拼接成片", succeeded: "已完成", failed: "未完成" };
 export const REMAKE_ACTIVE: readonly RemakeStatus[] = ["clipping", "generating", "assembling"];
 
 export type RemakeSource = { teardownId: string; resourceId: string; name: string; durationMs: number; width: number; height: number; hasAudio: boolean };
@@ -174,6 +175,8 @@ export type RemakeJob = {
     audio: RemakeAudio;
     language: RemakeLanguage;
     voice: RemakeVoice;
+    voiceReference?: { resourceId: string; name: string; durationMs: number };
+    continuity?: { input: string; model: string; attempt: number; taskId?: string; image?: ProductVideoImage; confirmed: boolean };
     voiceLines: RemakeVoiceLine[];
     /** 把字幕烧进成片（不勾时只能导出 SRT 或在剪映里编辑）。 */
     subtitles: { burn: boolean };
@@ -281,7 +284,7 @@ export function createRemakeJob(id: string, input: { teardownId: string; bundle:
 }
 
 /** 生成前的检查：返回第一条要用户处理的问题。 */
-export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; generateAudio: boolean }) {
+export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; generateAudio: boolean; maxSegmentSeconds?: number; maxAudios?: number; maxAudioDurationSeconds?: number }) {
     if (job.creative) {
         const error = creativeProductionError(job);
         if (error) return error;
@@ -291,11 +294,16 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
     const generated = active.filter((shot) => shot.treatment === "replace" || shot.treatment === "remake");
     const referenceCount = remakeReferenceImages(job).images.length;
     if (generated.length && !job.product.images.length && !(job.people === "model" && job.models.some((image) => image.role !== "pose")) && !job.backgrounds.length) return "请先放上你的商品图（或模特图、背景图），告诉模型要换成什么";
+    if (generated.some((shot) => shot.risks.includes("product")) && !job.product.images.length) return "镜头包含商品，请上传目标商品图，不能用模特图或背景图代替";
     if (!job.authorized && (active.some((shot) => shot.treatment === "keep") || job.audio === "original" || job.people === "original")) return "保留原片画面、原人物或原声，需要先确认你有使用授权";
+    if (job.audio === "original" && generated.some((shot) => shot.treatment === "remake" && shot.speaker)) return "保留原声的说话镜头不能重新拍：图片和文字无法同步原片口型，请改为换元素并参考原视频，或改写口播同步生成声音";
     if (generated.length && !job.model) return "请选择视频模型";
     if (limits && referenceCount > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
-    if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「AI 配音」";
+    if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「统一旁白」";
     if (job.audio === "voice" && active.some((shot) => shot.dialogue.trim()) && !job.voice.model) return "请选择配音模型";
+    if (job.audio === "rewrite" && limits?.maxSegmentSeconds && generated.some((shot) => shot.dialogue.trim() && shot.endMs - shot.startMs > limits.maxSegmentSeconds! * 1000)) return "有口播的长镜头需先拆分镜头与台词，不能在每个片段重复完整台词";
+    if (job.audio === "rewrite" && job.voiceReference && limits && !limits.maxAudios) return "所选视频模型不支持音色参考，请更换支持参考音频的模型，或使用统一旁白";
+    if (job.audio === "rewrite" && job.voiceReference && limits?.maxAudioDurationSeconds && job.voiceReference.durationMs > limits.maxAudioDurationSeconds * 1000) return `音色参考不能超过 ${limits.maxAudioDurationSeconds} 秒，请上传较短的单人干声`;
     for (const shot of active) if ((job.audio === "voice" || job.audio === "rewrite") && Array.from(shot.dialogue).length > remakeDialogueBudget(shot, job.language)) return `镜头 ${shot.index} 的台词超过时长预算，请缩短台词`;
     const strategy = job.directorPlans?.find((plan) => plan.id === job.activeDirectorPlanId);
     if (strategy && strategy.input !== remakeDirectorInput(job)) return "已选导演策划与当前商品、策略或镜头做法不一致，请重新策划后选用";
@@ -304,7 +312,8 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
         if (!shot.director.action.trim()) return `镜头 ${shot.index} 还没有具体导演动作`;
         if (shot.director.beat === "proof" && (!shot.director.evidence.trim() || !replicaProductFacts(job.product.sellingPoints).includes(shot.director.evidence.trim()))) return `镜头 ${shot.index} 的证明依据须逐字引用一条商品卖点`;
     }
-    if (generated.length > 1 && job.people === "model" && generated.some((shot) => shot.risks.includes("face") || shot.speaker) && !job.models.some((image) => image.role !== "pose")) return "多镜头人物需要同一张人脸或模特参考图，请上传或生成后再出片";
+    if (job.people === "model" && generated.some((shot) => shot.risks.includes("face") || shot.speaker) && !job.models.some((image) => image.role !== "pose")) return "出镜人物需要同一张人脸或模特参考图，请上传或生成后再出片";
+    if (remakeNeedsContinuity(job) && !remakeContinuityImage(job)) return "请先生成并确认全片定妆图，锁定目标人物、穿搭和商品";
     return "";
 }
 
@@ -321,6 +330,7 @@ export function remakeSpokenText(job: Pick<RemakeJob, "audio">, shot: Pick<Remak
  * 成片、报价和切段任务都不带过去。
  */
 export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title: string; product?: RemakeProduct }, now = new Date()): RemakeJob {
+    if (job.continuity?.taskId) throw new Error("请先恢复定妆任务，再复制作品");
     if ((job.creative?.run && !job.creative.run.settled) || job.units.some((unit) => unit.input && unit.status !== "succeeded")) throw new Error("先恢复未确认的任务，再复制作品");
     const time = now.toISOString();
     const swap = Boolean(options.product);
@@ -344,6 +354,7 @@ export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title:
         ...(swap
             ? {
                   product: options.product!,
+                  continuity: undefined,
                   ...(job.creative ? { creative: { ...job.creative, confirmedInput: undefined, activePlanId: undefined, plans: [], analysis: undefined, run: undefined } } : {}),
                   shots: job.creative ? [] : job.shots.map((shot) => ({ ...shot, dialogue: "" })),
                   units: job.creative ? [] : job.units.map((unit) => ({ ...unit, status: "pending" as const, attempt: 1, input: undefined, taskId: undefined, error: undefined, fix: undefined, takes: [], chosen: 0 })),
@@ -383,7 +394,7 @@ function voiceLine(value: unknown): RemakeVoiceLine | undefined {
         ...(text(raw.error) ? { error: text(raw.error) } : {}),
     };
 }
-const STATUSES: RemakeStatus[] = ["draft", "clipping", "generating", "assembling", "succeeded", "failed"];
+const STATUSES: RemakeStatus[] = ["draft", "clipping", "generating", "review", "assembling", "succeeded", "failed"];
 
 function images(value: unknown, limit: number): ProductVideoImage[] {
     return (Array.isArray(value) ? value : [])
@@ -435,7 +446,16 @@ function take(value: unknown): RemakeTake | undefined {
     const raw = record(value);
     const resourceId = text(raw?.resourceId);
     if (!raw || !resourceId) return undefined;
-    return { taskId: text(raw.taskId), resourceId, durationMs: positive(raw.durationMs), width: positive(raw.width), height: positive(raw.height), createdAt: text(raw.createdAt) };
+    return {
+        taskId: text(raw.taskId),
+        resourceId,
+        durationMs: positive(raw.durationMs),
+        width: positive(raw.width),
+        height: positive(raw.height),
+        createdAt: text(raw.createdAt),
+        ...(text(raw.inputSignature) ? { inputSignature: text(raw.inputSignature) } : {}),
+        ...(text(raw.approvedSignature) ? { approvedSignature: text(raw.approvedSignature) } : {}),
+    };
 }
 
 function unit(value: unknown): RemakeUnit | undefined {
@@ -481,7 +501,8 @@ function validUnitInput(input: unknown): input is NonNullable<RemakeUnit["input"
         raw.imageResourceIds.length >= 1 &&
         raw.imageResourceIds.length <= 10 &&
         raw.imageResourceIds.every((id) => typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) &&
-        (raw.videoResourceId === undefined || (typeof raw.videoResourceId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(raw.videoResourceId))),
+        (raw.videoResourceId === undefined || (typeof raw.videoResourceId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(raw.videoResourceId))) &&
+        (raw.audioResourceId === undefined || (typeof raw.audioResourceId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(raw.audioResourceId) && positive(raw.audioDurationMs))),
     );
 }
 
@@ -498,6 +519,8 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
     const editRender = record(raw.editRender);
     const comparisonRender = record(raw.comparisonRender);
     const voice = record(raw.voice) || {};
+    const voiceReference = record(raw.voiceReference);
+    const continuity = record(raw.continuity);
     const subtitleImages = record(raw.subtitleImages);
     const music = record(raw.music);
     const variantOf = record(raw.variantOf);
@@ -533,6 +556,21 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
         audio: oneOf(REMAKE_AUDIOS, raw.audio, "rewrite"),
         language: oneOf(LANGUAGE_VALUES, raw.language, "zh"),
         voice: { model: text(voice.model), voice: text(voice.voice), speed: text(voice.speed, "1") || "1" },
+        ...(voiceReference && text(voiceReference.resourceId) && positive(voiceReference.durationMs)
+            ? { voiceReference: { resourceId: text(voiceReference.resourceId), name: text(voiceReference.name), durationMs: positive(voiceReference.durationMs)! } }
+            : {}),
+        ...(continuity && text(continuity.input) && text(continuity.model)
+            ? {
+                  continuity: {
+                      input: text(continuity.input),
+                      model: text(continuity.model),
+                      attempt: Math.max(1, count(continuity.attempt, 1)),
+                      confirmed: continuity.confirmed === true,
+                      ...(text(continuity.taskId) ? { taskId: text(continuity.taskId) } : {}),
+                      ...(images([continuity.image], 1)[0] ? { image: images([continuity.image], 1)[0] } : {}),
+                  },
+              }
+            : {}),
         voiceLines: (Array.isArray(raw.voiceLines) ? raw.voiceLines : []).map(voiceLine).filter((item): item is RemakeVoiceLine => Boolean(item)),
         subtitles: { burn: record(raw.subtitles)?.burn === true },
         ...(subtitleImages && text(subtitleImages.signature)

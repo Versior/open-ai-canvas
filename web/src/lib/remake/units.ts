@@ -83,6 +83,23 @@ export function remakeTakeError(unit: Pick<RemakeUnit, "treatment" | "startMs" |
     return !take.durationMs || !Number.isFinite(take.durationMs) || take.durationMs + 100 < unit.endMs - origin ? `镜头 ${unit.shotIndexes.join("、")} 的生成时长不足，不能用静止尾帧补成完整视频；原成品保留在任务中心` : "";
 }
 
+/** 模型完成只代表拿到候选，人物、包装和声音核对后才能交付。 */
+export function remakeTakeReviewError(unit: Pick<RemakeUnit, "creativeSignature" | "shotIndexes">, take: Pick<RemakeTake, "inputSignature" | "approvedSignature">) {
+    if (unit.creativeSignature && take.inputSignature && unit.creativeSignature !== take.inputSignature) return `镜头 ${unit.shotIndexes.join("、")} 的候选来自旧配方，请重新生成`;
+    const signature = unit.creativeSignature || take.inputSignature;
+    return signature && take.approvedSignature !== signature ? `镜头 ${unit.shotIndexes.join("、")} 尚未核对人物、商品与声音，请检查候选后确认` : "";
+}
+
+export function remakeReviewError(job: Pick<RemakeJob, "units">) {
+    for (const unit of job.units) {
+        const take = remakeUnitTake(unit);
+        if (!take) return "还有镜头没有生成好";
+        const error = remakeTakeReviewError(unit, take);
+        if (error) return error;
+    }
+    return "";
+}
+
 /** 导演输入变化后重新生成，保留旧候选；不能重提尚未确认结束的付费任务。 */
 export function applyRemakeCreativeSignature(job: RemakeJob, units: RemakeUnit[]) {
     return units.map((unit) => {
@@ -96,6 +113,7 @@ export function applyRemakeCreativeSignature(job: RemakeJob, units: RemakeUnit[]
             job.resolution,
             job.audio,
             job.language,
+            job.audio === "rewrite" ? job.voiceReference?.resourceId : undefined,
         ]);
         // 固定长度的内容指纹，避免每个单元重复保存整份配方而超过作品大小限制；不用于鉴权。
         let hash = BigInt("0xcbf29ce484222325");

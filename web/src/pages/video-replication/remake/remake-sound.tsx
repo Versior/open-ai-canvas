@@ -5,7 +5,8 @@ import { ModelPicker } from "@/components/model-picker";
 import { audioVoiceOptionsForConfig, normalizeAudioVoiceForConfig } from "@/lib/audio-generation";
 import { formatProductVideoSeconds } from "@/lib/product-video/media";
 import { REMAKE_LANGUAGES, type RemakeJob } from "@/lib/remake/job";
-import { getResource, uploadResourceFile } from "@/services/api/resources";
+import { getResource, resourceFileUrl, uploadResourceFile } from "@/services/api/resources";
+import { getActiveUserScope } from "@/lib/user-scope";
 import type { AiConfig } from "@/stores/use-config-store";
 import type { RemakeEdit } from "./remake-recipe";
 
@@ -87,6 +88,60 @@ async function audioDuration(file: File) {
         };
         audio.src = url;
     });
+}
+
+export function RemakeVoiceReference({ job, edit, disabled, onBusyChange }: { job: RemakeJob; edit: RemakeEdit; disabled?: boolean; onBusyChange: (busy: boolean) => void }) {
+    const { message } = App.useApp();
+    const input = useRef<HTMLInputElement>(null);
+    const [busy, setBusy] = useState(false);
+    const upload = async (file?: File) => {
+        if (!file) return;
+        const scope = getActiveUserScope();
+        setBusy(true);
+        onBusyChange(true);
+        try {
+            if (!file.type.startsWith("audio/")) throw new Error("请选择音频文件");
+            const durationMs = await audioDuration(file);
+            if (!durationMs || durationMs < 2000 || durationMs > 15000) throw new Error("请上传 2–15 秒的单人说话干声，避免音乐和多人混音");
+            const resource = await uploadResourceFile(file, "audio", { fileName: file.name, durationMs });
+            if (getActiveUserScope() !== scope) return;
+            edit((value) => ({ ...value, voiceReference: { resourceId: resource.id, name: file.name, durationMs: resource.durationMs || durationMs } }));
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "音色参考上传失败");
+        } finally {
+            setBusy(false);
+            onBusyChange(false);
+        }
+    };
+    return (
+        <div className="rw-fields">
+            <div className="rw-field-row">
+                <span>全片音色参考</span>
+                <Button size="small" loading={busy} disabled={disabled || busy} onClick={() => input.current?.click()}>
+                    {job.voiceReference ? "更换干声" : "上传说话干声"}
+                </Button>
+            </div>
+            {job.voiceReference ? (
+                <>
+                    <audio controls preload="metadata" src={resourceFileUrl(job.voiceReference.resourceId)} aria-label="全片音色参考" />
+                    <Button size="small" type="text" disabled={disabled || busy} onClick={() => edit((value) => ({ ...value, voiceReference: undefined }))}>
+                        去掉音色参考
+                    </Button>
+                </>
+            ) : null}
+            <p className="rw-hint">2–15 秒，同一位说话人、不带背景音乐。各段参考同一音色，具体台词仍按镜头填写；需要视频模型支持参考音频。</p>
+            <input
+                ref={input}
+                type="file"
+                accept="audio/*"
+                hidden
+                onChange={(event) => {
+                    void upload(event.target.files?.[0]);
+                    event.target.value = "";
+                }}
+            />
+        </div>
+    );
 }
 
 /** 字幕和背景音乐：烧录字幕开关、背景音乐（素材库或本机）和音量。 */

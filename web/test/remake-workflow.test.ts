@@ -7,6 +7,7 @@ import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
 import { remakeReferenceImages, buildRemakeUnitPrompt } from "@/lib/remake/prompts";
 import { applyRemakeCreativeSignature, planRemakeUnits, remakeTakeError } from "@/lib/remake/units";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
+import { remakeContinuityInput } from "@/lib/remake/continuity";
 
 const bundle: VideoTeardownBundle = {
     version: 1,
@@ -16,11 +17,12 @@ const bundle: VideoTeardownBundle = {
     transcript: { source: "none", segments: [] },
     warnings: [],
 };
-test("复刻各段共用原片视觉锚点，短候选不能以静止尾帧冒充完整选段", () => {
+test("复刻各段共用确认后的目标视觉锚点，短候选不能以静止尾帧冒充完整选段", () => {
     const job = fixture();
     job.shots[0].treatment = "replace";
     job.units = planRemakeUnits(job.shots, { maxMs: 10000, sourceDurationMs: 8000 });
     job.units[0].takes = [{ resourceId: "short", taskId: "done", createdAt: "", durationMs: 3000, width: 1280, height: 720 }];
+    job.continuity = { input: remakeContinuityInput(job), model: "image", attempt: 1, confirmed: true, image: { id: "anchor", resourceId: "target-frame", name: "目标定妆图" } };
     expect(remakeReferenceImages(job).anchor).toBe("@图片2");
     const prompt = buildRemakeUnitPrompt(job, job.units[0], job.shots, 5);
     expect(prompt).toContain("全片视觉基准：@图片2");
@@ -131,7 +133,7 @@ test("人脸与姿势用途往返保存，姿势不作为人物身份", () => {
     const restored = normalizeRemakeJob(JSON.parse(JSON.stringify(job)))!;
     expect(restored.models[1].role).toBe("pose");
     const refs = remakeReferenceImages(restored);
-    expect(refs.images.map((image) => image.resourceId)).toEqual(["product", "face", "pose", "frame"]);
+    expect(refs.images.map((image) => image.resourceId)).toEqual(["product", "face", "pose"]);
     const prompt = buildRemakeUnitPrompt(restored, restored.units[0], restored.shots, 4);
     expect(prompt).toContain("人脸");
     expect(prompt).toContain("仅参考动作");

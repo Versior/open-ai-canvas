@@ -82,7 +82,7 @@ describe("remake job", () => {
         expect(remakeJobError(job())).toContain("人物需要");
         expect(remakeJobError({ ...job(), product: { name: "", sellingPoints: "", images: [] } })).toContain("商品图");
         expect(remakeJobError(job(["keep", "replace", "replace", "replace", "replace"]))).toContain("授权");
-        expect(remakeJobError({ ...job(["keep", "replace", "replace", "replace", "replace"]), authorized: true, models: [{ id: "actor", resourceId: "actor", name: "同一模特" }] })).toBe("");
+        expect(remakeJobError({ ...job(["keep", "replace", "replace", "replace", "replace"]), authorized: true, models: [{ id: "actor", resourceId: "actor", name: "同一模特" }] })).toContain("全片定妆图");
         expect(remakeJobError(job(["skip", "skip", "skip", "skip", "skip"]))).toContain("至少保留");
         const speaking = { ...job(), shots: job().shots.map((shot) => ({ ...shot, dialogue: "新口播" })) };
         expect(remakeJobError(speaking, { maxImages: 9, generateAudio: false })).toContain("不能生成声音");
@@ -239,6 +239,7 @@ describe("直接出片的导演输入", () => {
         value.shots[0] = { ...value.shots[0], treatment: "remake", director: { ...DEFAULT_REPLICA_DIRECTION, beat: "proof", action: "演示纸巾擦桌子", evidence: "吸水量提高两倍" } };
         expect(remakeJobError(value)).toContain("逐字引用");
         value.shots[0].director!.evidence = "厚实不掉屑";
+        value.models = [{ id: "actor", resourceId: "actor", name: "同一模特" }];
         expect(remakeJobError(value)).toBe("");
     });
     it("不足一秒的镜头不获得额外的一秒口播容量", () => {

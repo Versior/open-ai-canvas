@@ -1330,3 +1330,18 @@
 .rw-lut-options strong {
     overflow-wrap: anywhere;
 }
+.rw-continuity-preview {
+    width: 100%;
+    max-height: 300px;
+    object-fit: contain;
+    border-radius: var(--radius-md);
+    background: var(--muted);
+}
+
+.rw-review {
+    margin-block: var(--space-3);
+}
+
+.rw-fields audio {
+    width: 100%;
+}

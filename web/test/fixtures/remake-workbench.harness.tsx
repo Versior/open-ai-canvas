@@ -113,6 +113,7 @@ mock.module("@/pages/video-replication/remake/remake-runner", () => ({
     assembleRemake: async () => undefined,
     redoRemakeUnit: async () => undefined,
     chooseRemakeTake: async () => undefined,
+    approveRemakeTake: async () => undefined,
 }));
 const storage = await import("@/services/file-storage");
 mock.module("@/services/file-storage", () => ({ ...storage, resolveMediaUrl: async () => "" }));

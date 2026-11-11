@@ -1,6 +1,6 @@
 import type { TimelineClip, TimelineProject } from "@/types/timeline";
 import { remakeSpokenText, type RemakeJob, type RemakeUnit, type RemakeVoiceLine } from "./job";
-import { remakeTakeError, remakeUnitTake } from "./units";
+import { remakeTakeError, remakeTakeReviewError, remakeUnitTake } from "./units";
 
 // 成片拼接：按原片顺序把保留的镜头排起来，删掉的镜头跳过，所以成片比原片短多少就是删掉了多少。
 // 生成单元的候选按它在参考片段里的位置裁出对应的那一段；保留原片的镜头直接用原视频。
@@ -94,7 +94,10 @@ export function remakeLines(job: Pick<RemakeJob, "shots" | "units" | "audio" | "
         const startMs = text ? remakeOutputTime(pieces, shot.startMs) : undefined;
         if (!text || startMs === undefined) return [];
         const voice = job.audio === "voice" ? remakeVoiceLineFor(job, shot.index, text) : undefined;
-        return [{ shotIndex: shot.index, text, startMs, endMs: startMs + (voice?.durationMs || shot.endMs - shot.startMs), ...(voice ? { voice } : {}) }];
+        const availableMs = shot.endMs - shot.startMs;
+        if (!draft && voice && (!voice.durationMs || !Number.isFinite(voice.durationMs))) throw new Error(`镜头 ${shot.index} 的配音时长未知，请重新核对音频`);
+        if (!draft && voice?.durationMs && voice.durationMs > availableMs + 40) throw new Error(`镜头 ${shot.index} 的配音超出镜头时长，请缩短台词或调整语速，不能截掉半句`);
+        return [{ shotIndex: shot.index, text, startMs, endMs: startMs + (voice?.durationMs || availableMs), ...(voice ? { voice } : {}) }];
     });
     lines.sort((a, b) => a.startMs - b.startMs);
     return lines.map((line, index) => ({ ...line, endMs: Math.min(line.endMs, lines[index + 1]?.startMs ?? total, total) })).filter((line) => line.endMs > line.startMs);
@@ -119,6 +122,7 @@ export const REMAKE_MUSIC_FADE_MS = 1500;
  * 再把画好的字幕图作为叠加图片放在「烧录字幕」轨。
  */
 export function remakeTimeline(job: RemakeJob, size: { width: number; height: number }, draft = false): RemakeRenderTimeline {
+    if (!draft && job.audio === "original" && job.shots.some((shot) => shot.treatment === "remake" && shot.speaker)) throw new Error("保留原声的说话镜头不能重新拍，请先改为参考原视频换元素或同步生成新口播");
     const pieces = remakePieces(job, draft);
     if (!pieces.length) throw new Error("没有要拼进成片的镜头");
     const units = new Map(job.units.map((unit) => [unit.key, unit]));
@@ -146,6 +150,8 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
         const sourceStartMs = Math.max(0, piece.sourceStartMs - origin);
         const problem = remakeTakeError(unit, take);
         if (!draft && problem) throw new Error(problem);
+        const review = remakeTakeReviewError(unit, take);
+        if (!draft && review) throw new Error(review);
         return {
             id: `unit-${index}`,
             kind: "video",

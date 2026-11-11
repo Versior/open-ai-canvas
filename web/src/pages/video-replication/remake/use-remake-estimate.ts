@@ -45,7 +45,7 @@ export function useRemakeEstimate(job: RemakeJob, units: readonly RemakeUnit[], 
         const requests = [...groups.values()].map(({ item, times }) => {
             const generation = productVideoGenerationConfig(config, { model: job.model, ratio: job.ratio, resolution: job.resolution, seconds: item.seconds, audio: item.speaks ? "model" : "mute" });
             const requirements = productVideoRequirements(generation, imageCount);
-            if (!item.video && requirements.input) requirements.input = { ...requirements.input, videoCount: 0 };
+            if (requirements.input) requirements.input = { ...requirements.input, videoCount: item.video ? 1 : 0, audioCount: item.speaks && job.voiceReference ? 1 : 0 };
             return { times, request: modelQuoteRequest(generation, job.model, "video", requirements) };
         });
         if (requests.some((item) => !item.request)) {
@@ -64,6 +64,6 @@ export function useRemakeEstimate(job: RemakeJob, units: readonly RemakeUnit[], 
         return () => controller.abort();
         // items 由 key 表示，避免数组引用变化重复报价。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [config, creditsEnabled, imageCount, job.model, job.ratio, job.resolution, key, limits]);
+    }, [config, creditsEnabled, imageCount, job.model, job.ratio, job.resolution, job.voiceReference, key, limits]);
     return { enabled: creditsEnabled, ...estimate, units: items.length };
 }

@@ -5,6 +5,7 @@ import type { ProductVideoImage } from "@/lib/product-video/job";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import { remakeLanguage, type RemakeJob, type RemakeLanguage, type RemakeShot, type RemakeUnit } from "./job";
 import { creativeContext } from "./creative";
+import { remakeContinuityImage } from "./continuity";
 
 // 复刻工作台的提示词：生成单元的视频提示词（换元素 / 重新拍）和改写口播的文本提示词。
 // 参考图按角色绑定：商品图定商品、模特图定人物、背景图定场景；换元素时参考视频定动作、运镜和节奏。
@@ -22,12 +23,14 @@ export function remakeDialogueBudget(shot: Pick<RemakeShot, "startMs" | "endMs">
 export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; face: string; pose: string; background: string; anchor: string };
 
 /** 参考图的顺序就是提示词里的图号：商品图、模特图（选了换模特时）、背景图。 */
-export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" | "models" | "backgrounds"> & Partial<Pick<RemakeJob, "shots" | "source">>): RemakeReferenceImages {
+export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" | "models" | "backgrounds"> & Partial<Pick<RemakeJob, "shots" | "source" | "continuity" | "note">>): RemakeReferenceImages {
     const models = job.people === "model" ? job.models : [];
     const images = [...job.product.images, ...models, ...job.backgrounds];
-    const anchor = job.source ? job.shots?.find((shot) => shot.keyframeResourceId && shot.risks.includes("face")) || job.shots?.find((shot) => shot.keyframeResourceId) : undefined;
+    const target = remakeContinuityImage({ ...job, shots: job.shots || [], note: job.note || "" });
+    const original = job.people === "original" && job.source ? job.shots?.find((shot) => shot.keyframeResourceId && (shot.speaker || shot.risks.includes("face"))) : undefined;
+    const anchor = target || (original ? { resourceId: original.keyframeResourceId } : undefined);
     const anchorOffset = images.length;
-    if (anchor) images.push({ id: "continuity-anchor", resourceId: anchor.keyframeResourceId, name: "原片人物与环境基准" });
+    if (anchor) images.push({ id: "continuity-anchor", resourceId: anchor.resourceId, name: target ? "目标人物与商品定妆基准" : "原人物身份参考" });
     const label = (offset: number, length: number) => Array.from({ length }, (_, index) => `@${imageReferenceLabel(offset + index)}`).join("、");
     return {
         images,
@@ -48,20 +51,31 @@ function productLine(job: Pick<RemakeJob, "product">, refs: RemakeReferenceImage
 
 function peopleLine(job: Pick<RemakeJob, "people">, refs: RemakeReferenceImages, video: string) {
     if (job.people === "none") return "人物：画面里不出现人物的脸，需要时只出现手。";
-    if (job.people === "model" && refs.face) return `人物：以${refs.face}里的人脸作为唯一长相参考，保持五官与身份一致；服装和体型自然适配商品，不照搬人脸图的背景${video ? `，动作与节奏跟随${video}` : ""}。`;
+    if (job.people === "model" && refs.face)
+        return `人物：以${refs.face}里的人脸作为唯一长相参考，保持五官与身份一致；发型、体型与整套服装固定为${refs.anchor || "原片"}的定妆，不在各段随机换装，不照搬人脸图的背景${video ? `，动作与节奏跟随${video}` : ""}。`;
     if (job.people === "model" && refs.model) return `人物：出镜的人换成${refs.model}里的模特，保留模特的脸、发型、服装和体型${video ? `，动作、姿态和表情节奏跟随${video}` : ""}。`;
     if (job.people === "original") return video ? `人物：保留${video}里的人物。` : "";
     return video ? `人物：${video}里的人物换成一位外观不同的普通人，不要还原原片人物的长相。` : "人物：如果需要出镜，用一位外观普通的人，不要模仿任何真人。";
 }
 
-function speechLines(job: Pick<RemakeJob, "audio" | "language">, shots: readonly RemakeShot[]) {
-    if (job.audio === "original") return ["声音：成片会换回原视频的声音，这里只要画面；人物口型和动作节拍跟原视频保持同步。"];
+function speechLines(job: Pick<RemakeJob, "audio" | "language" | "voiceReference">, unit: RemakeUnit, shots: readonly RemakeShot[]) {
+    if (job.audio === "original") {
+        if (unit.treatment === "remake" && shots.some((shot) => shot.speaker)) throw new Error("原声说话镜头需要参考原视频，不能仅凭图片重拍口型");
+        return [unit.treatment === "replace" ? "声音：成片会换回原视频的声音，只生成画面；逐帧沿用参考视频的口型开合、动作节拍和切点，不新增或改变说话动作。" : "声音：成片另配原声作为画外旁白；画面不生成说话口型，只执行展示动作。"];
+    }
     if (job.audio === "mute") return ["声音：不要人声和旁白，只保留轻微的环境声。"];
-    if (job.audio === "voice") return ["声音：不要人声和旁白（成片会另配旁白配音），只保留轻微的环境声；出镜的人可以做讲解的表情和手势，嘴部动作自然，不必对口型。"];
-    const spoken = shots.filter((shot) => shot.dialogue.trim());
+    if (job.audio === "voice") return ["声音：不要人声和旁白（成片会另配旁白配音），只保留轻微的环境声；出镜的人只做展示手势，嘴巴自然闭合，不做对着镜头说话的口型；旁白不冒充人物口播。"];
+    const spoken = shots.filter((shot) => shot.dialogue.trim() && shot.startMs < unit.endMs && shot.endMs > unit.startMs);
     if (!spoken.length) return ["声音：这一段没有台词，只要环境声，不要人声。"];
+    if (spoken.some((shot) => shot.startMs < unit.startMs || shot.endMs > unit.endMs)) throw new Error("有口播的长镜头需先拆分镜头与台词，不能在每个片段重复完整台词");
     const { speech } = remakeLanguage(job.language);
-    return [`台词（${speech}，语速自然，只说这些话，不要加词）：`, ...spoken.map((shot) => `- 镜头 ${shot.index}：${shot.speaker ? "人物对着镜头说" : "画外音旁白"}「${shot.dialogue.trim()}」`), "说话镜头的口型和台词同步；没有台词的镜头只要环境声。"];
+    const origin = unit.treatment === "replace" ? unit.clipStartMs : unit.startMs;
+    return [
+        ...(job.voiceReference ? ["全片音色：@音频1只提供唯一说话人的音色、音高、口音和说话习惯，不复制参考音频的台词或音乐；所有片段使用同一音色。"] : []),
+        `台词（${speech}，语速自然，只说这些话，不要加词）：`,
+        ...spoken.map((shot) => `- ${((shot.startMs - origin) / 1000).toFixed(3)}–${((shot.endMs - origin) / 1000).toFixed(3)} 秒｜镜头 ${shot.index}：${shot.speaker ? "人物对着镜头说" : "画外音旁白"}「${shot.dialogue.trim()}」`),
+        "每句必须在指定区间完整说完，口型与本句声音同步；不提前说，不串句，补齐区间不说台词，额外尾部不复述。",
+    ];
 }
 
 function shotSeconds(shot: Pick<RemakeShot, "startMs" | "endMs">) {
@@ -78,11 +92,15 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
             ? [`以${video}为动作、镜头和时间结构的基础，替换画面里的元素，生成一段约 ${seconds} 秒的视频，镜头顺序、切换点和节奏与${video}一致。`, "替换方式（自然适配：新主体按自己的结构自然套进原动作）："]
             : [
                   `生成一段约 ${seconds} 秒的${job.creative ? "商品创作视频" : "带货短视频"}，共 ${shots.length} 个镜头，按下面的分镜依次硬切：`,
-                  ...shots.map((shot) => `- 镜头 ${shot.index}（约 ${shotSeconds(shot)} 秒）：${remakeShotDescription(shot)}`),
+                  ...shots
+                      .filter((shot) => shot.startMs < unit.endMs && shot.endMs > unit.startMs)
+                      .map((shot) => `- 镜头 ${shot.index}（约 ${shotSeconds({ startMs: Math.max(shot.startMs, unit.startMs), endMs: Math.min(shot.endMs, unit.endMs) })} 秒）：${remakeShotDescription(shot)}`),
                   "素材要求：",
               ];
     lines.push(...[productLine(job, refs), peopleLine(job, refs, video), background].filter(Boolean).map((line) => `- ${line}`));
-    if (refs.anchor)
+    if (refs.anchor && remakeContinuityImage(job))
+        lines.push(`全片视觉基准：${refs.anchor}是已经确认的目标定妆与商品画面。各段沿用同一张图里的目标脸、发型、服装、商品尺寸、包装颜色与文字、曝光和白平衡；原视频只决定动作、镜头和场景切换，不能覆盖目标身份与商品。`);
+    else if (refs.anchor)
         lines.push(
             `全片视觉基准：${refs.anchor}用于跨段核对原场景布局、光线方向、曝光、白平衡和色调。同一场景沿用基准，不在每段重新布景或调色；原片切换场景时按该镜的环境执行，整体色调仍统一。${job.people === "original" ? "人物身份、发型、衣物和体型同时锁定为基准中的原人物。" : "不要复制基准图中的人脸或原商品；目标身份与商品以专用参考图为准。"}${refs.background ? "已指定的背景图优先决定环境布局，原片仅参考布光和整体色调。" : ""}`,
         );
@@ -113,8 +131,8 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
             if (selected) lines.push(`已选全片策划：${JSON.stringify(selected.strategy)}。本单元只执行上述镜头，不重新生成整套剧情；声音意图服从下面的口播模式。`);
         } else lines.push(`全片连续性：${job.campaign.continuity}。换元素保持原镜头动作与机位，不新增剧情。`);
     }
-    lines.push("不要出现原片的品牌名、Logo、店铺名、水印和贴纸；不添加字幕或文字。");
-    lines.push(...speechLines(job, shots));
+    lines.push("原片画面描述中的人物长相、服装、商品和包装仅用于理解动作；目标外观一律服从专用参考图与定妆图。不要出现原商品的品牌、Logo、店铺名、水印和贴纸；保留目标商品包装已有的Logo与文字，不添加字幕或额外文字。");
+    lines.push(...speechLines(job, unit, shots));
     if (job.note.trim()) lines.push(`补充要求：${job.note.trim()}`);
     if (unit.fix?.trim()) lines.push(`这一段重做，请重点修正：${unit.fix.trim()}`);
     return lines.join("\n");

@@ -57,15 +57,16 @@ describe("remake voice-over", () => {
 
     it("places voice clips at the shot start, uses the real voice length and mutes the generated video", () => {
         const value = voiced(produced(["replace", "skip", "replace", "replace", "replace"], "voice"), { 1: 2200, 3: 1800 });
-        // 镜头 1 的配音 2.2 秒，但镜头 3 在成片里从 1.5 秒开始：截到 1.5 秒。
+        expect(() => remakeLines(value)).toThrow("配音超出镜头时长");
+        value.voiceLines[0].durationMs = 1200;
         expect(remakeLines(value).map((line) => [line.shotIndex, line.startMs, line.endMs])).toEqual([
-            [1, 0, 1500],
+            [1, 0, 1200],
             [3, 1500, 3300],
         ]);
         const timeline = remakeTimeline(value, { width: 720, height: 1280 });
         expect(timeline.tracks.find((track) => track.id === "gen")?.muted).toBe(true);
         expect(timeline.clips.filter((clip) => clip.trackId === "voice").map((clip) => [clip.startMs, clip.durationMs, clip.directMedia?.storageKey])).toEqual([
-            [0, 1500, "resource:voice-1"],
+            [0, 1200, "resource:voice-1"],
             [1500, 1800, "resource:voice-3"],
         ]);
         expect(remakeSubtitleSRT(value)).toContain("00:00:01,500 --> 00:00:03,300\n擦桌子不掉屑");
