@@ -7,6 +7,12 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      preview:
+        description: "发布 stage-deploy 预览镜像，保留正式版本和 latest"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -199,12 +205,13 @@ jobs:
           VERSION_TAG: ${{ needs.prepare.outputs.image_tag }}
           DIGEST_DIR: ${{ runner.temp }}/digests
           EXPECTED_DIGESTS: ${{ matrix.image == 'open-ai-canvas-backend' && '2' || '1' }}
+          PREVIEW_IMAGES: ${{ inputs.preview == true }}
         run: bash .github/scripts/promote-image.sh
 
   release:
     name: Publish release assets
     # 上游 checks 可能被跳过，默认的 success() 会因此连带跳过本任务，所以显式只看 publish 结果。
-    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && needs.publish.result == 'success' }}
+    if: ${{ !cancelled() && inputs.preview != true && startsWith(github.ref, 'refs/tags/v') && needs.publish.result == 'success' }}
     needs: publish
     runs-on: ubuntu-latest
     permissions:

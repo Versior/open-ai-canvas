@@ -2,6 +2,7 @@
 set -euo pipefail
 
 : "${IMAGE:?}" "${GITHUB_SHA:?}" "${GITHUB_REF:?}" "${DIGEST_DIR:?}" "${EXPECTED_DIGESTS:?}"
+[[ "${PREVIEW_IMAGES:-false}" == true || "${PREVIEW_IMAGES:-false}" == false ]] || { echo "Invalid preview mode" >&2; exit 1; }
 [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid commit SHA" >&2; exit 1; }
 shopt -s nullglob
 files=("$DIGEST_DIR"/*)
@@ -14,7 +15,9 @@ for file in "${files[@]}"; do
 done
 
 tags=(--tag "$IMAGE:sha-$GITHUB_SHA" --tag "$IMAGE:sha-${GITHUB_SHA:0:7}")
-if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+if [[ "${PREVIEW_IMAGES:-false}" == true ]]; then
+  tags+=(--tag "$IMAGE:stage-deploy")
+elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
   [[ "${VERSION_TAG:?}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?([.-][0-9A-Za-z.-]+)?$ ]] || { echo "Invalid version image tag" >&2; exit 1; }
   tags+=(--tag "$IMAGE:$VERSION_TAG")
 elif [[ "$GITHUB_REF" == refs/heads/main ]]; then

@@ -38,6 +38,7 @@ function fixture(overrides = {}) {
         IMAGE: "ghcr.io/fixture/image",
         VERSION_TAG: "1.5.5",
         EXPECTED_DIGESTS: "1",
+        PREVIEW_IMAGES: "false",
         DIGEST_DIR: digests,
         MOCK_DIGEST: `sha256:${digest}`,
         MOCK_ERROR: "",
@@ -78,6 +79,32 @@ describe("commit image reuse", () => {
 });
 
 describe("digest promotion", () => {
+    test.skipIf(!hasBash)("main preview publishes stage and immutable tags without resolving or changing latest", () => {
+        const repo = fixture({ PREVIEW_IMAGES: "true", MOCK_GH_ERROR: "1" });
+        expect(repo.run("promote-image.sh").status).toBe(0);
+        expect(repo.call()).toContain("ghcr.io/fixture/image:stage-deploy");
+        expect(repo.call()).toContain(`ghcr.io/fixture/image:sha-${sha}`);
+        expect(repo.call()).toContain(`ghcr.io/fixture/image@sha256:${digest}`);
+        expect(repo.call()).not.toContain(":latest");
+        expect(repo.call()).not.toContain("ghcr.io/fixture/image:1.5.5");
+    });
+    test.skipIf(!hasBash)("tag previews cannot publish a release version", () => {
+        const repo = fixture({ PREVIEW_IMAGES: "true", GITHUB_REF: "refs/tags/v1.5.5" });
+        expect(repo.run("promote-image.sh").status).toBe(0);
+        expect(repo.call()).toContain("ghcr.io/fixture/image:stage-deploy");
+        expect(repo.call()).not.toContain("ghcr.io/fixture/image:1.5.5");
+        expect(repo.call()).not.toContain(":latest");
+    });
+    test.skipIf(!hasBash)("invalid preview modes cannot silently promote production tags", () => {
+        const repo = fixture({ PREVIEW_IMAGES: "yes" });
+        expect(repo.run("promote-image.sh").status).not.toBe(0);
+        expect(repo.call()).toBe("");
+    });
+    test.skipIf(!hasBash)("incomplete preview architecture sets block every tag", () => {
+        const repo = fixture({ PREVIEW_IMAGES: "true", EXPECTED_DIGESTS: "2" });
+        expect(repo.run("promote-image.sh").status).not.toBe(0);
+        expect(repo.call()).toBe("");
+    });
     test.skipIf(!hasBash)("current main promotes latest and SHA tags using digests", () => {
         const repo = fixture();
         expect(repo.run("promote-image.sh").status).toBe(0);
