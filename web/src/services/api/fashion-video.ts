@@ -40,7 +40,17 @@ export function parseFashionVideoWork(value: unknown): FashionVideoWork | undefi
         return invalid();
     if (fashionVideoProblem(draft as unknown as FashionVideoWork["draft"])) return invalid();
     const clip = value.clip;
-    if (clip !== undefined && (!object(clip) || !id(clip.key) || !optionalId(clip.taskId) || !optionalId(clip.resourceId) || (clip.hasAudio !== undefined && typeof clip.hasAudio !== "boolean"))) return invalid();
+    if (clip !== undefined && (!object(clip) || !id(clip.key) || !optionalId(clip.taskId) || !optionalId(clip.resourceId) || !optionalId(clip.keyframeResourceId) || (clip.hasAudio !== undefined && typeof clip.hasAudio !== "boolean"))) return invalid();
+    if (object(clip) && clip.segments !== undefined) {
+        if (!Array.isArray(clip.segments) || !clip.segments.length || clip.segments.length > 30 || draft.tool === "showcase") return invalid();
+        let cursor = Number(draft.startMs);
+        for (const segment of clip.segments) {
+            if (!object(segment) || segment.startMs !== cursor || !Number.isSafeInteger(segment.endMs) || Number(segment.endMs) - cursor < 4000 || Number(segment.endMs) - cursor > 30000 || !id(segment.resourceId) || !id(segment.keyframeResourceId))
+                return invalid();
+            cursor = Number(segment.endMs);
+        }
+        if (cursor !== Number(draft.startMs) + Math.round(Number(draft.seconds) * 1000)) return invalid();
+    }
     if (!Array.isArray(value.units) || !value.units.length || value.units.length > 6) return invalid();
     const ids = new Set<unknown>();
     const pairs = planFashionVideos(draft as unknown as FashionVideoWork["draft"], () => "pair").map((unit) => unit.references.map((ref) => ref.resourceId).join(","));
@@ -62,6 +72,27 @@ export function parseFashionVideoWork(value: unknown): FashionVideoWork | undefi
         )
             return invalid();
         ids.add(unit.id);
+        if (unit.parts !== undefined) {
+            if (!Array.isArray(unit.parts) || !object(clip) || !Array.isArray(clip.segments) || unit.parts.length !== clip.segments.length) return invalid();
+            for (const [index, part] of unit.parts.entries()) {
+                const segment = clip.segments[index];
+                if (
+                    !object(part) ||
+                    !object(segment) ||
+                    part.parts !== undefined ||
+                    part.startMs !== segment.startMs ||
+                    part.endMs !== segment.endMs ||
+                    part.clipResourceId !== segment.resourceId ||
+                    !Array.isArray(part.references) ||
+                    part.references.map((ref) => ref.resourceId).join(",") !== unit.references.map((ref) => ref.resourceId).join(",")
+                )
+                    return invalid();
+                if (ids.has(part.id)) return invalid();
+                ids.add(part.id);
+                parseFashionVideoWork({ ...value, draft: { ...draft, startMs: part.startMs, seconds: (Number(part.endMs) - Number(part.startMs)) / 1000 }, clip: undefined, units: [part] });
+                if (unit.status === "succeeded" && part.status !== "succeeded") return invalid();
+            }
+        }
         const pairIndex = pairs.indexOf(unit.references.map((ref: { resourceId: string }) => ref.resourceId).join(","));
         if (pairIndex < 0) return invalid();
         pairs.splice(pairIndex, 1);
@@ -69,6 +100,7 @@ export function parseFashionVideoWork(value: unknown): FashionVideoWork | undefi
         const render = unit.render;
         if (render !== undefined && (!object(render) || render.started !== true || !optionalId(render.taskId) || !optionalId(render.resourceId))) return invalid();
         if (unit.status === "succeeded" && (!unit.resourceId || !object(render) || !render.resourceId)) return invalid();
+        if (unit.status === "succeeded" && object(clip) && Array.isArray(clip.segments) && clip.segments.length > 1 && !Array.isArray(unit.parts)) return invalid();
     }
     return value as unknown as FashionVideoWork;
 }

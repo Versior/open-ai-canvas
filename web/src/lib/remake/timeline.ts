@@ -1,6 +1,6 @@
 import type { TimelineClip, TimelineProject } from "@/types/timeline";
 import { remakeSpokenText, type RemakeJob, type RemakeUnit, type RemakeVoiceLine } from "./job";
-import { remakeUnitTake } from "./units";
+import { remakeTakeError, remakeUnitTake } from "./units";
 
 // 成片拼接：按原片顺序把保留的镜头排起来，删掉的镜头跳过，所以成片比原片短多少就是删掉了多少。
 // 生成单元的候选按它在参考片段里的位置裁出对应的那一段；保留原片的镜头直接用原视频。
@@ -28,6 +28,7 @@ export function remakePieces(job: Pick<RemakeJob, "shots" | "units">, draft = fa
             if (!unit.shotIndexes.includes(shot.index) || !overlap(unit.startMs, unit.endMs, shot.startMs, shot.endMs)) continue;
             const start = Math.max(unit.startMs, shot.startMs);
             const end = Math.min(unit.endMs, shot.endMs);
+            if (!draft && start !== cursor) throw new Error(`镜头 ${shot.index} 的生成片段没有完整覆盖，或存在重叠`);
             if (draft && start > cursor) raw.push({ kind: "keep", pending: true, sourceStartMs: cursor, sourceEndMs: start });
             const last = raw[raw.length - 1];
             if (last?.unit?.key === unit.key && last.sourceEndMs === start) last.sourceEndMs = end;
@@ -35,6 +36,7 @@ export function remakePieces(job: Pick<RemakeJob, "shots" | "units">, draft = fa
             cursor = Math.max(cursor, end);
         }
         if (draft && cursor < shot.endMs) raw.push({ kind: "keep", pending: true, sourceStartMs: cursor, sourceEndMs: shot.endMs });
+        if (!draft && cursor !== shot.endMs) throw new Error(`镜头 ${shot.index} 的生成片段没有完整覆盖`);
     }
     let cursor = 0;
     return raw.map((item) => {
@@ -125,6 +127,7 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
         const unit = units.get(piece.unitKey || "");
         const take = unit ? remakeUnitTake(unit) : undefined;
         if (piece.kind === "keep" || (draft && !take)) {
+            if (!job.source) throw new Error("商品新创作需先生成镜头，再进入剪辑台");
             const title = piece.pending || piece.kind === "unit" ? "待生成 · 原片占位" : "原片";
             return {
                 id: `keep-${index}`,
@@ -140,6 +143,9 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
         }
         if (!unit || !take) throw new Error("还有镜头没有生成好");
         const origin = unit.treatment === "replace" ? unit.clipStartMs : unit.startMs;
+        const sourceStartMs = Math.max(0, piece.sourceStartMs - origin);
+        const problem = remakeTakeError(unit, take);
+        if (!draft && problem) throw new Error(problem);
         return {
             id: `unit-${index}`,
             kind: "video",
@@ -147,13 +153,15 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
             trackId: "gen",
             startMs: piece.startMs,
             durationMs: length,
-            sourceStartMs: Math.max(0, piece.sourceStartMs - origin),
+            sourceStartMs,
             ...(take.durationMs ? { sourceDurationMs: take.durationMs } : {}),
             title: "生成片段",
             directMedia: { id: take.resourceId, kind: "video", title: "生成片段", storageKey: `resource:${take.resourceId}` },
         };
     });
-    if (job.audio === "original" && job.source.hasAudio) {
+    if (job.audio === "original" && !job.source) throw new Error("没有原视频，不能保留原声");
+    if (job.audio === "original" && job.source?.hasAudio) {
+        const source = job.source;
         let run: { startMs: number; endMs: number; sourceStartMs: number } | null = null;
         const runs: { startMs: number; endMs: number; sourceStartMs: number }[] = [];
         for (const piece of pieces) {
@@ -174,7 +182,7 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
                 durationMs: item.endMs - item.startMs,
                 sourceStartMs: item.sourceStartMs,
                 title: "原声",
-                directMedia: { id: job.source.resourceId, kind: "audio", title: "原声", storageKey: `resource:${job.source.resourceId}` },
+                directMedia: { id: source.resourceId, kind: "audio", title: "原声", storageKey: `resource:${source.resourceId}` },
             }),
         );
     }
@@ -254,12 +262,16 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
 }
 
 /** 成片画幅：取第一条候选的尺寸，没有时用原片尺寸（短边不超过 1080）。 */
-export function remakeRenderSize(job: Pick<RemakeJob, "units" | "source">) {
+export function remakeRenderSize(job: Pick<RemakeJob, "units" | "source"> & Partial<Pick<RemakeJob, "ratio">>) {
+    if (job.source && job.units.some((unit) => unit.treatment === "replace")) return { width: job.source.width, height: job.source.height };
     for (const unit of job.units) {
         const take = remakeUnitTake(unit);
         if (take?.width && take.height) return { width: take.width, height: take.height };
     }
-    const { width, height } = job.source;
+    const ratio = job.ratio?.match(/^(\d+):(\d+)$/);
+    const rw = ratio ? Number(ratio[1]) : 9,
+        rh = ratio ? Number(ratio[2]) : 16;
+    const { width, height } = job.source || { width: rw >= rh ? 1280 : Math.round((1280 * rw) / rh), height: rh >= rw ? 1280 : Math.round((1280 * rh) / rw) };
     const scale = Math.min(1, 1080 / Math.max(1, Math.min(width || 720, height || 1280)));
     return { width: Math.round((width || 720) * scale), height: Math.round((height || 1280) * scale) };
 }

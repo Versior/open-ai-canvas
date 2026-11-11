@@ -31,7 +31,7 @@ function produced(treatments: RemakeTreatment[], audio: RemakeJob["audio"]): Rem
     value.units = planRemakeUnits(value.shots, { maxMs: 15_000, sourceDurationMs: 12_000 }).map((unit, index) => ({
         ...unit,
         status: "succeeded" as const,
-        takes: [{ taskId: `t${index}`, resourceId: `gen-${index}`, createdAt: "", width: 720, height: 1280 }],
+        takes: [{ taskId: `t${index}`, resourceId: `gen-${index}`, createdAt: "", width: 720, height: 1280, durationMs: unit.clipEndMs - unit.clipStartMs }],
     }));
     return value;
 }

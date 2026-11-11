@@ -19,7 +19,11 @@ let submissions = 0;
 let studioSubmit: (input: { clientOperationId?: string }) => Promise<GenerationTask>;
 const capabilities = await import("@/lib/model-capabilities");
 const selection = await import("@/lib/model-selection");
-mock.module("@/lib/model-capabilities", () => ({ ...capabilities, modelCapabilityConfigFor: () => ({ text: { references: { maxImages: 4 } } }) }));
+let frozenVideoProfile = false;
+mock.module("@/lib/model-capabilities", () => ({
+    ...capabilities,
+    modelCapabilityConfigFor: (_config: unknown, model: string) => ({ text: { references: { maxImages: 4 } }, ...(frozenVideoProfile && model === "frozen-video" ? { video: capabilities.defaultModelCapabilityConfig("volcengine-ark-video").video } : {}) }),
+}));
 mock.module("@/lib/model-selection", () => ({ ...selection, modelCompatibilityError: () => "" }));
 const canvasGeneration = await import("@/lib/canvas/canvas-project-generation");
 const taskGeneration = await import("@/services/api/generation-task");
@@ -360,13 +364,15 @@ test("unmounting one studio runner preserves another runner's queued shot", asyn
 
 const { createRemakeJob } = await import("@/lib/remake/job");
 let remake = createRemakeJob("remake", { teardownId: "teardown", bundle, analysis: null, sourceName: "demo" });
+let beforeRemakeSave: (() => void) | undefined;
 mock.module("@/pages/video-replication/replace/use-product-video-store", () => ({
     readRemake: () => remake,
     updateRemake: async (_id: string, update: (value: typeof remake) => typeof remake) => {
+        beforeRemakeSave?.();
         remake = update(remake);
     },
 }));
-const { retryRemake, stopRemake, redoRemakeUnit, isRemakeRunning } = await import("@/pages/video-replication/remake/remake-runner");
+const { startRemake, retryRemake, stopRemake, redoRemakeUnit, isRemakeRunning } = await import("@/pages/video-replication/remake/remake-runner");
 async function finishRemake() {
     for (let i = 0; i < 100 && isRemakeRunning(remake.id); i++) await new Promise((resolve) => setTimeout(resolve, 1));
     expect(isRemakeRunning(remake.id)).toBe(false);
@@ -393,6 +399,56 @@ test("remake retry queries its original task without incrementing the attempt or
     expect(remake.units[0]).toMatchObject({ status: "failed", attempt: 2, taskId: "original-video-task" });
     expect(created).toBe(0);
     await expect(redoRemakeUnit(remake.id, "unit", "redo", defaultConfig)).rejects.toThrow("原任务状态尚未确认");
+});
+test("unknown video submission restores its frozen model even if the visible model is unavailable", async () => {
+    pendingRemake();
+    remake.model = "unavailable-new-model";
+    remake.units[0].taskId = undefined;
+    const input = { model: "frozen-video", ratio: "9:16", resolution: "720p", seconds: 4, audio: "mute" as const, prompt: "冻结商品与动作", imageResourceIds: ["original-image"] };
+    remake.units[0].input = input;
+    const submitted: Array<{ clientOperationId?: string; prompt?: string; config?: { model: string } }> = [];
+    studioSubmit = async (request) => {
+        submitted.push(request);
+        throw new Error("response still offline");
+    };
+    frozenVideoProfile = true;
+    try {
+        await retryRemake(remake.id, defaultConfig);
+        await finishRemake();
+        expect(submitted).toHaveLength(1);
+        expect(submitted[0]).toMatchObject({ clientOperationId: "remake-unit-2", prompt: input.prompt, config: { model: input.model } });
+        expect(remake.units[0].input).toEqual(input);
+        expect(remake.units[0].attempt).toBe(2);
+    } finally {
+        frozenVideoProfile = false;
+    }
+});
+test("starting video production rejects a recipe changed during CAS replay before any submission", async () => {
+    pendingRemake();
+    remake.model = "frozen-video";
+    remake.audio = "mute";
+    remake.units = [];
+    remake.shots[0].treatment = "remake";
+    remake.product.images = [{ id: "image", resourceId: "original-image", name: "商品" }];
+    beforeRemakeSave = () => {
+        beforeRemakeSave = undefined;
+        remake = { ...remake, note: "另一窗口的新动作" };
+    };
+    let submitted = 0;
+    studioSubmit = async () => {
+        submitted++;
+        throw new Error("must not submit");
+    };
+    frozenVideoProfile = true;
+    try {
+        await expect(startRemake(remake.id, defaultConfig)).rejects.toThrow("配方已被另一窗口修改");
+        expect(submitted).toBe(0);
+        expect(remake.note).toBe("另一窗口的新动作");
+        expect(remake.units).toHaveLength(0);
+    } finally {
+        frozenVideoProfile = false;
+        beforeRemakeSave = undefined;
+    }
 });
 test("unconfirmed remake cancellation preserves video, voice and render task IDs", async () => {
     pendingRemake();

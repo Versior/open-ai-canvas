@@ -1,11 +1,12 @@
-import { App, Button, Input, Spin } from "antd";
-import { ArrowLeft, Check, Clapperboard, Copy, Download, FileText, PackagePlus, Play, RefreshCw, Square, Scissors } from "lucide-react";
+import { App, Button, Dropdown, Input, Spin } from "antd";
+import { ArrowLeft, Check, Clapperboard, Copy, Download, FileText, MoreHorizontal, PackagePlus, Play, RefreshCw, Square } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { EmptyState } from "@/components/ui/product/empty-state";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { productVideoDefaultRatio } from "@/lib/product-video/media";
+import { isCommercialCreativeScene } from "@/lib/remake/creative";
 import {
     duplicateRemakeJob,
     isRemakeJob,
@@ -40,6 +41,8 @@ import { createRemakeEditTimeline, type RemakeStep } from "@/lib/remake/editor";
 import { RemakeEditor } from "./remake-editor";
 import type { EditorStore } from "@/stores/editor/editor-store";
 import type { StoreApi, UseBoundStore } from "zustand";
+import { CreativePlanner } from "./creative-planner";
+import "./creative.css";
 
 export type { RemakeStep } from "@/lib/remake/editor";
 
@@ -47,6 +50,10 @@ export type { RemakeStep } from "@/lib/remake/editor";
 function recipeFields(job: RemakeJob) {
     const { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId } = job;
     return { title, product, people, models, backgrounds, audio, language, voice, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId };
+}
+
+function applyRecipe(latest: RemakeJob, draft: RemakeJob): RemakeJob {
+    return { ...latest, ...recipeFields(draft), ...(latest.creative && draft.creative ? { creative: { ...latest.creative, brief: draft.creative.brief, confirmedInput: draft.creative.confirmedInput } } : {}) };
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -73,6 +80,7 @@ export function RemakeWorkbench({
     onBack,
     onOpen,
     onOpenTeardown,
+    creativeRunning = false,
 }: {
     id: string;
     step: RemakeStep;
@@ -81,6 +89,7 @@ export function RemakeWorkbench({
     /** 打开另一条作品（再做一版之后）。 */
     onOpen: (id: string) => void;
     onOpenTeardown: (teardownId: string) => void;
+    creativeRunning?: boolean;
 }) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
@@ -109,13 +118,13 @@ export function RemakeWorkbench({
     const [exporting, setExporting] = useState(false);
     const [applying, setApplying] = useState(false);
     const versions = useProductVideoStore((state) => state.jobs.filter((item) => isRemakeJob(item) && item.variantOf?.id === id).length);
-    const locked = Boolean(job && (REMAKE_ACTIVE.includes(job.status) || active || starting));
+    const locked = Boolean(job && (REMAKE_ACTIVE.includes(job.status) || active || starting || creativeRunning));
 
     // 换了作品或生成流程改了作品（单元、状态）时，配方之外的字段跟着服务端走；配方以本地为准，直到保存。
     useEffect(() => {
         if (!job) return;
         const current = draftRef.current;
-        const next = current && current.id === job.id && editVersion.current > savedVersion.current ? { ...job, ...recipeFields(current) } : job;
+        const next = current && current.id === job.id && editVersion.current > savedVersion.current ? applyRecipe(job, current) : job;
         draftRef.current = next;
         setDraft(next);
     }, [job]);
@@ -127,7 +136,7 @@ export function RemakeWorkbench({
         const version = editVersion.current;
         if (!value || version <= savedVersion.current) return;
         try {
-            await updateRemake(value.id, (latest) => ({ ...latest, ...recipeFields(value) }));
+            await updateRemake(value.id, (latest) => applyRecipe(latest, value));
             savedVersion.current = Math.max(savedVersion.current, version);
             setSaveError("");
         } catch (error) {
@@ -160,7 +169,7 @@ export function RemakeWorkbench({
         const model = draft.model || (suitable.includes(config.videoModel) ? config.videoModel : suitable[0] || "");
         if (model && !suitable.includes(model)) return;
         const videoProfile = model ? modelCapabilityConfigFor(config, model).video : undefined;
-        const ratio = videoProfile && !videoProfile.ratios.includes(draft.ratio) ? productVideoDefaultRatio(videoProfile.ratios, draft.source.width, draft.source.height, videoProfile.defaultRatio) : draft.ratio;
+        const ratio = videoProfile && !videoProfile.ratios.includes(draft.ratio) ? productVideoDefaultRatio(videoProfile.ratios, draft.source?.width || 720, draft.source?.height || 1280, videoProfile.defaultRatio) : draft.ratio;
         const resolution = videoProfile && !videoProfile.resolutions.includes(draft.resolution) ? videoProfile.defaultResolution || videoProfile.resolutions[0] || "" : draft.resolution;
         if (model !== draft.model || ratio !== draft.ratio || resolution !== draft.resolution) edit((value) => ({ ...value, model, ratio, resolution }));
     }, [config, draft, edit, locked, suitable, profile]);
@@ -199,12 +208,13 @@ export function RemakeWorkbench({
     const generates = draft.shots.some((shot) => shot.treatment === "replace" || shot.treatment === "remake");
     const inputError = planning.error || (generates && draft.model && !suitable.includes(draft.model) ? "当前模型不支持这些镜头做法或已不可用，请更换模型" : generates && typeof limits === "string" ? limits : remakeJobError(draft, usable));
     const startedBefore = job.units.length > 0 || job.status !== "draft";
-    const canEdit = Boolean(job.editTimeline || (job.source.resourceId && job.shots.some((shot) => shot.treatment !== "skip")));
+    const canEdit = Boolean(job.editTimeline || (job.source?.resourceId && job.shots.some((shot) => shot.treatment !== "skip")) || (job.creative && job.units.length && job.units.every((unit) => unit.status === "succeeded")));
     const currentStep: RemakeStep = step === "edit" && job.editTimeline ? "edit" : step === "produce" && startedBefore ? "produce" : "recipe";
     const allSucceeded = job.units.length > 0 && job.units.every((unit) => unit.status === "succeeded");
     const pendingChanges = startedBefore && plannedUnits.some((unit) => unit.status !== "succeeded");
     const keptMs = remakeKeptDurationMs(draft);
     const productCover = draft.product.images[0];
+    const subject = draft.creative && !isCommercialCreativeScene(draft.creative.brief.scene);
     const navigate = async (action: () => void) => {
         if (uploading) {
             message.info("素材正在上传，完成后再切换页面");
@@ -309,30 +319,30 @@ export function RemakeWorkbench({
     const cta = (() => {
         if (currentStep === "recipe")
             return (
-                <Button type="primary" size="large" block loading={starting} disabled={locked || uploading || planningDirector || rewriting || Boolean(inputError)} icon={<Play size={16} />} onClick={() => void start()} title={inputError || undefined}>
+                <Button type="primary" loading={starting} disabled={locked || uploading || planningDirector || rewriting || Boolean(inputError)} icon={<Play size={16} />} onClick={() => void start()} title={inputError || undefined}>
                     {pendingChanges || !startedBefore ? "开始生成" : "按新配方重新拼"}
                 </Button>
             );
         if (locked)
             return (
-                <Button size="large" block icon={<Square size={14} />} onClick={() => void perform(() => stopRemake(id))}>
+                <Button icon={<Square size={14} />} onClick={() => void perform(() => stopRemake(id))}>
                     停止
                 </Button>
             );
         if (job.render?.resourceId)
             return (
-                <Button type="primary" size="large" block icon={<Download size={16} />} onClick={() => void download()}>
+                <Button type="primary" icon={<Download size={16} />} onClick={() => void download()}>
                     下载成片
                 </Button>
             );
         if (allSucceeded)
             return (
-                <Button type="primary" size="large" block icon={<Check size={16} />} onClick={() => void perform(() => assembleRemake(id, configRef.current))}>
+                <Button type="primary" icon={<Check size={16} />} onClick={() => void perform(() => assembleRemake(id, configRef.current))}>
                     拼成片
                 </Button>
             );
         return (
-            <Button type="primary" size="large" block icon={<RefreshCw size={16} />} onClick={() => void perform(() => retryRemake(id, configRef.current))}>
+            <Button type="primary" icon={<RefreshCw size={16} />} onClick={() => void perform(() => retryRemake(id, configRef.current))}>
                 接着生成
             </Button>
         );
@@ -340,33 +350,33 @@ export function RemakeWorkbench({
 
     return (
         <WorkspacePage fluid scroll={false} className="rw-page">
-            <div className="rw-shell" data-step={currentStep}>
-                <aside className="rw-rail" aria-label="复刻步骤">
+            <div className="rw-shell" data-step={currentStep} data-creative={Boolean(draft.creative)}>
+                <header className="rw-rail" aria-label="作品步骤与操作">
                     <button type="button" className="rw-back" onClick={() => void navigate(onBack)}>
                         <ArrowLeft size={14} aria-hidden /> 我的作品
                     </button>
                     <Input className="rw-title" value={draft.title} maxLength={60} variant="borderless" disabled={locked} onChange={(event) => edit((value) => ({ ...value, title: event.target.value }))} aria-label="作品名称" />
                     <ol className="rw-steps">
                         <li data-state="done">
-                            <button type="button" onClick={() => void navigate(() => onOpenTeardown(job.source.teardownId))} disabled={!job.source.teardownId}>
+                            <button type="button" onClick={() => void navigate(() => (job.source ? onOpenTeardown(job.source.teardownId) : onStep("recipe")))} disabled={!job.creative && !job.source?.teardownId}>
                                 <span className="rw-step-no">
                                     <Check size={12} />
                                 </span>
-                                放爆款
-                                <small>{job.source.name}</small>
+                                {job.creative ? (subject ? "主体素材" : "商品素材") : "放爆款"}
+                                <small>{job.source?.name || job.product.name || (subject ? "添加主体参考图" : "上传商品照片")}</small>
                             </button>
                         </li>
                         <li data-state={currentStep === "recipe" ? "current" : "done"}>
-                            <button type="button" onClick={() => void navigate(() => onStep("recipe"))}>
+                            <button type="button" aria-current={currentStep === "recipe" ? "step" : undefined} onClick={() => void navigate(() => onStep("recipe"))}>
                                 <span className="rw-step-no">{currentStep === "recipe" ? 2 : <Check size={12} />}</span>
-                                换成我的
-                                <small>商品、人物、口播和逐镜做法</small>
+                                {job.creative ? "策划与分镜" : "换成我的"}
+                                <small>{job.creative ? "确认资料、比较脚本、逐镜编辑" : "商品、人物、口播和逐镜做法"}</small>
                             </button>
                         </li>
                         <li data-state={currentStep === "produce" ? "current" : startedBefore ? "done" : "todo"}>
-                            <button type="button" disabled={!startedBefore} onClick={() => void navigate(() => onStep("produce"))}>
+                            <button type="button" aria-current={currentStep === "produce" ? "step" : undefined} disabled={!startedBefore} onClick={() => void navigate(() => onStep("produce"))}>
                                 <span className="rw-step-no">3</span>
-                                出片对比
+                                {job.creative ? "生成与候选" : "出片对比"}
                                 <small>
                                     {REMAKE_STATUS_LABEL[job.status]}
                                     {progress?.stage ? ` · ${progress.stage}` : ""}
@@ -374,58 +384,63 @@ export function RemakeWorkbench({
                             </button>
                         </li>
                         <li data-state={currentStep === "edit" ? "current" : canEdit ? "done" : "todo"}>
-                            <button type="button" disabled={!canEdit || locked} onClick={() => void openEdit()}>
+                            <button type="button" aria-current={currentStep === "edit" ? "step" : undefined} disabled={!canEdit || locked} onClick={() => void openEdit()}>
                                 <span className="rw-step-no">4</span>剪辑台<small>裁剪、分割、字幕和导出</small>
                             </button>
                         </li>
                     </ol>
-                    <div className="rw-summary">
-                        <div className="rw-summary-product">
-                            <span className="rw-summary-cover">{productCover ? <img src={productVideoThumbUrl(productCover.resourceId)} alt="" /> : null}</span>
-                            <span>
-                                <strong>{draft.product.name || (productCover ? "已上传商品" : "还没选商品")}</strong>
-                                <small>{draft.product.images.length} 张商品图</small>
-                            </span>
+                    <details className="rw-summary-toggle">
+                        <summary>配方摘要</summary>
+                        <div className="rw-summary">
+                            <div className="rw-summary-product">
+                                <span className="rw-summary-cover">{productCover ? <img src={productVideoThumbUrl(productCover.resourceId)} alt="" /> : null}</span>
+                                <span>
+                                    <strong>{draft.product.name || (subject ? (productCover ? "已添加主体" : "还没添加主体") : productCover ? "已上传商品" : "还没选商品")}</strong>
+                                    <small>
+                                        {draft.product.images.length} 张{subject ? "主体参考图" : "商品图"}
+                                    </small>
+                                </span>
+                            </div>
+                            <dl>
+                                <dt>人物</dt>
+                                <dd>{draft.people === "model" ? (draft.models.length ? `换成模特（${draft.models.length} 张）` : "换成普通人") : draft.people === "original" ? "保留原人物" : "不出人"}</dd>
+                                {draft.people === "model" && draft.models.length ? (
+                                    <>
+                                        <dt>参考</dt>
+                                        <dd className="rw-summary-references">
+                                            {draft.models.map((image) => (
+                                                <figure key={image.id}>
+                                                    <img src={productVideoThumbUrl(image.resourceId)} alt={image.name} />
+                                                    <figcaption>{image.role === "face" ? "人脸" : image.role === "pose" ? "姿势" : "模特"}</figcaption>
+                                                </figure>
+                                            ))}
+                                        </dd>
+                                    </>
+                                ) : null}
+                                <dt>模型</dt>
+                                <dd title={draft.model}>
+                                    {draft.model || "未选择"}
+                                    <small>{[draft.ratio, draft.resolution].filter(Boolean).join(" · ")}</small>
+                                </dd>
+                                <dt>场景</dt>
+                                <dd>{draft.backgrounds.length ? `参考背景（${draft.backgrounds.length} 张）` : job.creative ? "按脚本设计" : "沿用原片布局"}</dd>
+                                <dt>口播</dt>
+                                <dd>
+                                    {draft.creative && draft.audio === "rewrite" ? "原生口播" : REMAKE_AUDIO_LABEL[draft.audio]}
+                                    {remakeWritesDialogue(draft.audio) ? ` · ${remakeLanguage(draft.language).label}` : ""}
+                                </dd>
+                                <dt>收尾</dt>
+                                <dd>{[draft.subtitles.burn && draft.audio !== "mute" ? "烧录字幕" : "不烧字幕", draft.music ? "有背景音乐" : ""].filter(Boolean).join(" · ")}</dd>
+                                <dt>做法</dt>
+                                <dd>
+                                    {REMAKE_TREATMENTS.map((treatment) => [treatment, draft.shots.filter((shot) => shot.treatment === treatment).length] as const)
+                                        .filter(([, value]) => value)
+                                        .map(([treatment, value]) => `${REMAKE_TREATMENT_LABEL[treatment]} ${value}`)
+                                        .join(" · ")}
+                                </dd>
+                            </dl>
                         </div>
-                        <dl>
-                            <dt>人物</dt>
-                            <dd>{draft.people === "model" ? (draft.models.length ? `换成模特（${draft.models.length} 张）` : "换成普通人") : draft.people === "original" ? "保留原人物" : "不出人"}</dd>
-                            {draft.people === "model" && draft.models.length ? (
-                                <>
-                                    <dt>参考</dt>
-                                    <dd className="rw-summary-references">
-                                        {draft.models.map((image) => (
-                                            <figure key={image.id}>
-                                                <img src={productVideoThumbUrl(image.resourceId)} alt={image.name} />
-                                                <figcaption>{image.role === "face" ? "人脸" : image.role === "pose" ? "姿势" : "模特"}</figcaption>
-                                            </figure>
-                                        ))}
-                                    </dd>
-                                </>
-                            ) : null}
-                            <dt>模型</dt>
-                            <dd title={draft.model}>
-                                {draft.model || "未选择"}
-                                <small>{[draft.ratio, draft.resolution].filter(Boolean).join(" · ")}</small>
-                            </dd>
-                            <dt>场景</dt>
-                            <dd>{draft.backgrounds.length ? `换成背景图（${draft.backgrounds.length} 张）` : "沿用原片布局"}</dd>
-                            <dt>口播</dt>
-                            <dd>
-                                {REMAKE_AUDIO_LABEL[draft.audio]}
-                                {remakeWritesDialogue(draft.audio) ? ` · ${remakeLanguage(draft.language).label}` : ""}
-                            </dd>
-                            <dt>收尾</dt>
-                            <dd>{[draft.subtitles.burn && draft.audio !== "mute" ? "烧录字幕" : "不烧字幕", draft.music ? "有背景音乐" : ""].filter(Boolean).join(" · ")}</dd>
-                            <dt>做法</dt>
-                            <dd>
-                                {REMAKE_TREATMENTS.map((treatment) => [treatment, draft.shots.filter((shot) => shot.treatment === treatment).length] as const)
-                                    .filter(([, value]) => value)
-                                    .map(([treatment, value]) => `${REMAKE_TREATMENT_LABEL[treatment]} ${value}`)
-                                    .join(" · ")}
-                            </dd>
-                        </dl>
-                    </div>
+                    </details>
                     <div className="rw-rail-foot">
                         <div className="rw-estimate">
                             {estimate.enabled && estimate.state !== "idle" ? (
@@ -447,36 +462,51 @@ export function RemakeWorkbench({
                             </p>
                         ) : null}
                         {currentStep !== "edit" ? cta : null}
-                        {currentStep === "produce" && canEdit ? (
-                            <Button block icon={<Scissors size={14} />} disabled={locked} onClick={() => void openEdit()}>
-                                进入剪辑台
+                        <Dropdown
+                            trigger={["click"]}
+                            menu={{
+                                items: [
+                                    ...(currentStep === "produce" && job.render?.resourceId ? [{ key: "jianying", icon: <Clapperboard size={14} />, label: "导出剪映草稿", onClick: () => setExporting(true) }] : []),
+                                    ...(currentStep === "produce" && remakeLines(draft, true).length
+                                        ? [{ key: "srt", icon: <FileText size={14} />, label: "导出字幕（SRT）", onClick: () => downloadText(`${job.title || "复刻成片"}.srt`, remakeSubtitleSRT(draft)) }]
+                                        : []),
+                                    { key: "another", icon: <Copy size={14} />, label: "再做一版", disabled: locked || uploading, onClick: () => void another() },
+                                    ...(!subject ? [{ key: "product", icon: <PackagePlus size={14} />, label: "套用到其他商品", disabled: locked || uploading, onClick: () => setApplying(true) }] : []),
+                                ],
+                            }}
+                        >
+                            <Button icon={<MoreHorizontal size={16} />} aria-label="更多作品操作">
+                                更多
                             </Button>
-                        ) : null}
-                        {currentStep === "produce" && job.render?.resourceId ? (
-                            <Button block icon={<Clapperboard size={14} />} onClick={() => setExporting(true)}>
-                                导出剪映草稿
-                            </Button>
-                        ) : null}
-                        {currentStep === "produce" && remakeLines(draft).length ? (
-                            <Button block icon={<FileText size={14} />} onClick={() => downloadText(`${job.title || "复刻成片"}.srt`, remakeSubtitleSRT(draft))}>
-                                导出字幕（SRT）
-                            </Button>
-                        ) : null}
-                        <div className="rw-rail-more">
-                            <Button size="small" type="text" icon={<Copy size={14} />} disabled={locked || uploading} onClick={() => void another()} title="同一条爆款再做一版：换钩子、换模型或换口播，已有候选都保留">
-                                再做一版
-                            </Button>
-                            <Button size="small" type="text" icon={<PackagePlus size={14} />} disabled={locked || uploading} onClick={() => setApplying(true)} title="同一套做法和节奏，给其他商品各做一条">
-                                套用到其他商品
-                            </Button>
-                        </div>
+                        </Dropdown>
                     </div>
-                </aside>
+                </header>
                 <main className="rw-main">
                     {currentStep === "recipe" ? (
                         <div className="rw-recipe-layout">
-                            <RemakeRecipeCards job={draft} config={config} edit={edit} disabled={locked || planningDirector || rewriting} onPlanningChange={setPlanningDirector} onUploadingChange={setUploading} />
-                            <RemakeStoryboard job={draft} edit={edit} disabled={locked || planningDirector || rewriting} config={config} textModel={textModel} onTextModel={setTextModel} rewriting={rewriting} onRewrite={() => void rewrite()} />
+                            <RemakeRecipeCards
+                                job={draft}
+                                config={config}
+                                edit={edit}
+                                disabled={locked || planningDirector || rewriting || Boolean(draft.creative?.run && !draft.creative.run.settled)}
+                                onPlanningChange={setPlanningDirector}
+                                onUploadingChange={setUploading}
+                            />
+                            <div className="cv-planner">
+                                {draft.creative ? <CreativePlanner job={draft} config={config} edit={edit} disabled={locked || uploading} running={creativeRunning} flush={flush} onBusy={setPlanningDirector} /> : null}
+                                {draft.shots.length ? (
+                                    <RemakeStoryboard
+                                        job={draft}
+                                        edit={edit}
+                                        disabled={locked || planningDirector || rewriting || Boolean(draft.creative?.run && !draft.creative.run.settled)}
+                                        config={config}
+                                        textModel={textModel}
+                                        onTextModel={setTextModel}
+                                        rewriting={rewriting}
+                                        onRewrite={() => void rewrite()}
+                                    />
+                                ) : null}
+                            </div>
                         </div>
                     ) : currentStep === "edit" ? (
                         <RemakeEditor

@@ -545,6 +545,9 @@ export const frFR: DeepStringRecord<typeof zhCN> = {
             },
         },
         showcases: {
+            video: { name: "Création vidéo", detail: "Planifiez un scénario à partir des produits et des personnages, ou recréez une vidéo plan par plan avant le montage et l’export comparatif." },
+            studio: { name: "Studio produit", detail: "Analysez les photos, préparez les visuels et les pages produit, puis vérifiez les informations et le style de chaque panneau." },
+            interior: { name: "Design intérieur", detail: "Créez des rendus à partir de photos et de références, puis affinez l’agencement, les matériaux et le plan 3D." },
             canvas: { name: "Canevas libre", description: "Relier les idées jusqu'à l'œuvre.", detail: "Organisez les références, reliez les nœuds, comparez les résultats et poursuivez la création à votre façon." },
             create: { name: "Création instantanée", description: "Tout commence par une phrase.", detail: "Choisissez des modèles et des ressources de référence, puis réalisez images et vidéos pas à pas en conversation." },
             projects: { name: "Atelier de projet", description: "Structurer les longues histoires.", detail: "Organisez la production autour des chapitres, personnages et storyboards, et revenez à votre histoire à tout moment." },

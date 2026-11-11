@@ -7,6 +7,8 @@ import { readRemakeDirectorPlans, remakeDirectorInput, replicaProductFacts, type
 import { remakeReferenceImages } from "./prompts";
 import { normalizeTimelineProject } from "@/lib/timeline/timeline-tracks";
 import type { TimelineProject } from "@/types/timeline";
+import { creativeProductionError, readCreativeProject, type CreativeProject } from "./creative";
+import { remakeDialogueBudget } from "./prompts";
 
 // 复刻工作台的作品（version 2）：一条拆解过的爆款视频 + 我的商品、模特、场景和口播配方，
 // 逐镜头决定怎么复刻（换元素、重新拍、保留原片、删掉），再按生成单元出片、拼成成片。
@@ -114,6 +116,7 @@ export type RemakeUnitStatus = "pending" | "running" | "succeeded" | "failed";
  * 换元素单元的参考片段是 [clipStartMs, clipEndMs)：太短时向两边补到 4 秒，成片只用 [startMs, endMs) 那部分。
  */
 export type RemakeUnit = {
+    input?: { model: string; ratio: string; resolution: string; seconds: number; audio: "model" | "mute"; prompt: string; imageResourceIds: string[]; videoResourceId?: string; videoDurationMs?: number };
     creativeSignature?: string;
     key: string;
     treatment: "replace" | "remake";
@@ -160,7 +163,8 @@ export type RemakeJob = {
     updatedAt: string;
     status: RemakeStatus;
     error?: string;
-    source: RemakeSource;
+    source?: RemakeSource;
+    creative?: CreativeProject;
     /** 原片在卖什么、开头怎么抓人：改写口播时给模型参考。 */
     sourceSummary: { product: string; hook: string; genre: string };
     product: RemakeProduct;
@@ -187,11 +191,12 @@ export type RemakeJob = {
     units: RemakeUnit[];
     /** 换元素单元参考片段的切段任务；key 是幂等键，先记下再提交。 */
     clips?: { key: string; taskId?: string; signature: string };
-    render?: { taskId?: string; resourceId?: string; durationMs?: number; width?: number; height?: number };
+    render?: { taskId?: string; resourceId?: string; durationMs?: number; width?: number; height?: number; sourcePieces?: { sourceStartMs: number; durationMs: number }[] };
+    comparisonRender?: RemakeJob["render"] & { signature: string; audio: "render" | "reference" | "mute"; error?: string };
     credits?: number;
     /** 剪辑草稿独立保存；返回生成台或切换候选不会覆盖已剪辑的内容。 */
     editTimeline?: TimelineProject;
-    editRender?: RemakeJob["render"] & { lutSignature?: string };
+    editRender?: RemakeJob["render"] & { lutSignature?: string; signature?: string };
     editBurnSubtitles?: boolean;
     editSubtitleImages?: { resourceId: string }[];
 };
@@ -277,16 +282,21 @@ export function createRemakeJob(id: string, input: { teardownId: string; bundle:
 
 /** 生成前的检查：返回第一条要用户处理的问题。 */
 export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; generateAudio: boolean }) {
+    if (job.creative) {
+        const error = creativeProductionError(job);
+        if (error) return error;
+    } else if (!job.source?.resourceId) return "原视频记录不完整";
     const active = job.shots.filter((shot) => shot.treatment !== "skip");
     if (!active.length) return "至少保留一个镜头";
     const generated = active.filter((shot) => shot.treatment === "replace" || shot.treatment === "remake");
     const referenceCount = remakeReferenceImages(job).images.length;
-    if (generated.length && !referenceCount) return "请先放上你的商品图（或模特图、背景图），告诉模型要换成什么";
+    if (generated.length && !job.product.images.length && !(job.people === "model" && job.models.some((image) => image.role !== "pose")) && !job.backgrounds.length) return "请先放上你的商品图（或模特图、背景图），告诉模型要换成什么";
     if (!job.authorized && (active.some((shot) => shot.treatment === "keep") || job.audio === "original" || job.people === "original")) return "保留原片画面、原人物或原声，需要先确认你有使用授权";
     if (generated.length && !job.model) return "请选择视频模型";
     if (limits && referenceCount > limits.maxImages) return `所选模型一次最多参考 ${limits.maxImages} 张图，请减少素材或换一个模型`;
     if (job.audio === "rewrite" && generated.some((shot) => shot.dialogue.trim()) && limits && !limits.generateAudio) return "所选模型不能生成声音，换一个能出声的模型，或把口播改成「AI 配音」";
     if (job.audio === "voice" && active.some((shot) => shot.dialogue.trim()) && !job.voice.model) return "请选择配音模型";
+    for (const shot of active) if ((job.audio === "voice" || job.audio === "rewrite") && Array.from(shot.dialogue).length > remakeDialogueBudget(shot, job.language)) return `镜头 ${shot.index} 的台词超过时长预算，请缩短台词`;
     const strategy = job.directorPlans?.find((plan) => plan.id === job.activeDirectorPlanId);
     if (strategy && strategy.input !== remakeDirectorInput(job)) return "已选导演策划与当前商品、策略或镜头做法不一致，请重新策划后选用";
     for (const shot of generated) {
@@ -294,6 +304,7 @@ export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; gen
         if (!shot.director.action.trim()) return `镜头 ${shot.index} 还没有具体导演动作`;
         if (shot.director.beat === "proof" && (!shot.director.evidence.trim() || !replicaProductFacts(job.product.sellingPoints).includes(shot.director.evidence.trim()))) return `镜头 ${shot.index} 的证明依据须逐字引用一条商品卖点`;
     }
+    if (generated.length > 1 && job.people === "model" && generated.some((shot) => shot.risks.includes("face") || shot.speaker) && !job.models.some((image) => image.role !== "pose")) return "多镜头人物需要同一张人脸或模特参考图，请上传或生成后再出片";
     return "";
 }
 
@@ -310,6 +321,7 @@ export function remakeSpokenText(job: Pick<RemakeJob, "audio">, shot: Pick<Remak
  * 成片、报价和切段任务都不带过去。
  */
 export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title: string; product?: RemakeProduct }, now = new Date()): RemakeJob {
+    if ((job.creative?.run && !job.creative.run.settled) || job.units.some((unit) => unit.input && unit.status !== "succeeded")) throw new Error("先恢复未确认的任务，再复制作品");
     const time = now.toISOString();
     const swap = Boolean(options.product);
     return {
@@ -325,14 +337,16 @@ export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title:
         credits: undefined,
         editTimeline: undefined,
         editRender: undefined,
+        comparisonRender: undefined,
         editSubtitleImages: undefined,
         clips: undefined,
         variantOf: { id: job.id, title: job.title },
         ...(swap
             ? {
                   product: options.product!,
-                  shots: job.shots.map((shot) => ({ ...shot, dialogue: "" })),
-                  units: job.units.map((unit) => ({ ...unit, status: "pending" as const, attempt: 1, taskId: undefined, error: undefined, fix: undefined, takes: [], chosen: 0 })),
+                  ...(job.creative ? { creative: { ...job.creative, confirmedInput: undefined, activePlanId: undefined, plans: [], analysis: undefined, run: undefined } } : {}),
+                  shots: job.creative ? [] : job.shots.map((shot) => ({ ...shot, dialogue: "" })),
+                  units: job.creative ? [] : job.units.map((unit) => ({ ...unit, status: "pending" as const, attempt: 1, input: undefined, taskId: undefined, error: undefined, fix: undefined, takes: [], chosen: 0 })),
                   voiceLines: [],
               }
             : { units: job.units.map((unit) => (unit.status === "running" ? { ...unit, status: "pending" as const, taskId: undefined } : unit)) }),
@@ -429,6 +443,7 @@ function unit(value: unknown): RemakeUnit | undefined {
     if (!raw || !text(raw.key)) return undefined;
     const takes = (Array.isArray(raw.takes) ? raw.takes : []).map(take).filter((item): item is RemakeTake => Boolean(item));
     return {
+        ...(record(raw.input) ? { input: raw.input as NonNullable<RemakeUnit["input"]> } : {}),
         ...(text(raw.creativeSignature) ? { creativeSignature: text(raw.creativeSignature) } : {}),
         key: text(raw.key),
         treatment: raw.treatment === "remake" ? "remake" : "replace",
@@ -448,16 +463,40 @@ function unit(value: unknown): RemakeUnit | undefined {
     };
 }
 
+function validUnitInput(input: unknown): input is NonNullable<RemakeUnit["input"]> {
+    const raw = record(input);
+    return Boolean(
+        raw &&
+        text(raw.model).trim() &&
+        text(raw.model).length <= 200 &&
+        typeof raw.ratio === "string" &&
+        typeof raw.resolution === "string" &&
+        Number.isSafeInteger(raw.seconds) &&
+        count(raw.seconds) >= 1 &&
+        count(raw.seconds) <= 120 &&
+        ["model", "mute"].includes(text(raw.audio)) &&
+        text(raw.prompt).trim() &&
+        Array.from(text(raw.prompt)).length <= 12000 &&
+        Array.isArray(raw.imageResourceIds) &&
+        raw.imageResourceIds.length >= 1 &&
+        raw.imageResourceIds.length <= 10 &&
+        raw.imageResourceIds.every((id) => typeof id === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) &&
+        (raw.videoResourceId === undefined || (typeof raw.videoResourceId === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(raw.videoResourceId))),
+    );
+}
+
 export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
     const raw = record(value);
     const id = text(raw?.id);
     const source = record(raw?.source);
-    if (!raw || !id || raw.version !== REMAKE_VERSION || !source || !text(source.resourceId)) return undefined;
+    if (!raw || !id || raw.version !== REMAKE_VERSION || (!raw.creative && (!source || !text(source.resourceId))) || (raw.creative && source)) return undefined;
+    if (Array.isArray(raw.units) && raw.units.some((item) => record(item)?.input !== undefined && !validUnitInput(record(item)?.input))) return undefined;
     const product = record(raw.product) || {};
     const summary = record(raw.sourceSummary) || {};
     const clips = record(raw.clips);
     const render = record(raw.render);
     const editRender = record(raw.editRender);
+    const comparisonRender = record(raw.comparisonRender);
     const voice = record(raw.voice) || {};
     const subtitleImages = record(raw.subtitleImages);
     const music = record(raw.music);
@@ -472,15 +511,19 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
         updatedAt: text(raw.updatedAt, createdAt),
         status: oneOf(STATUSES, raw.status, "failed"),
         ...(text(raw.error) ? { error: text(raw.error) } : {}),
-        source: {
-            teardownId: text(source.teardownId),
-            resourceId: text(source.resourceId),
-            name: text(source.name),
-            durationMs: count(source.durationMs),
-            width: count(source.width),
-            height: count(source.height),
-            hasAudio: source.hasAudio !== false,
-        },
+        ...(source
+            ? {
+                  source: {
+                      teardownId: text(source.teardownId),
+                      resourceId: text(source.resourceId),
+                      name: text(source.name),
+                      durationMs: count(source.durationMs),
+                      width: count(source.width),
+                      height: count(source.height),
+                      hasAudio: source.hasAudio !== false,
+                  },
+              }
+            : {}),
         sourceSummary: { product: text(summary.product), hook: text(summary.hook), genre: text(summary.genre) },
         ...(readReplicaCampaign(raw.campaign) ? { campaign: readReplicaCampaign(raw.campaign) } : {}),
         product: { ...(text(product.studioProductId) ? { studioProductId: text(product.studioProductId) } : {}), name: text(product.name), sellingPoints: text(product.sellingPoints), images: images(product.images, 4) },
@@ -530,10 +573,25 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
                       durationMs: positive(render.durationMs),
                       width: positive(render.width),
                       height: positive(render.height),
+                      ...(Array.isArray(render.sourcePieces) ? { sourcePieces: render.sourcePieces.map((item) => ({ sourceStartMs: count(record(item)?.sourceStartMs), durationMs: count(record(item)?.durationMs) })) } : {}),
                   },
               }
             : {}),
         ...(typeof raw.credits === "number" && Number.isFinite(raw.credits) ? { credits: raw.credits } : {}),
+        ...(comparisonRender && text(comparisonRender.signature)
+            ? {
+                  comparisonRender: {
+                      signature: text(comparisonRender.signature),
+                      audio: oneOf(["render", "reference", "mute"] as const, comparisonRender.audio, "render"),
+                      taskId: text(comparisonRender.taskId) || undefined,
+                      resourceId: text(comparisonRender.resourceId) || undefined,
+                      durationMs: positive(comparisonRender.durationMs),
+                      width: positive(comparisonRender.width),
+                      height: positive(comparisonRender.height),
+                      error: text(comparisonRender.error) || undefined,
+                  },
+              }
+            : {}),
         ...(record(raw.editTimeline) ? { editTimeline: normalizeTimelineProject(raw.editTimeline as TimelineProject) } : {}),
         ...(editRender
             ? {
@@ -544,12 +602,18 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
                       width: positive(editRender.width),
                       height: positive(editRender.height),
                       lutSignature: text(editRender.lutSignature) || undefined,
+                      signature: text(editRender.signature) || undefined,
                   },
               }
             : {}),
         ...(typeof raw.editBurnSubtitles === "boolean" ? { editBurnSubtitles: raw.editBurnSubtitles } : {}),
         ...(Array.isArray(raw.editSubtitleImages) ? { editSubtitleImages: raw.editSubtitleImages.flatMap((image) => (text(record(image)?.resourceId) ? [{ resourceId: text(record(image)?.resourceId) }] : [])) } : {}),
     };
+    if (raw.creative) {
+        const creative = readCreativeProject(raw.creative, normalized, raw.shots);
+        if (!creative) return undefined;
+        normalized.creative = creative;
+    }
     const directorPlans = readRemakeDirectorPlans(raw.directorPlans, normalized);
     if (directorPlans.length) {
         normalized.directorPlans = directorPlans;

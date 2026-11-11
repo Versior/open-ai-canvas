@@ -43,34 +43,52 @@
     font-size: 12px;
 }
 .fashion-tool-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
-    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
 }
 .fashion-tool-grid button {
-    border: 1px solid var(--user-border);
-    border-radius: var(--r-lg);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 32px;
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--user-ink-muted);
     text-align: left;
-    padding: 14px;
+    padding: var(--space-1) var(--space-2);
 }
 .fashion-tool-grid button[aria-pressed="true"] {
     background: var(--user-surface-muted);
-    border-color: var(--user-ink);
+    color: var(--user-ink);
+}
+.fashion-tool-grid button:hover {
+    background: var(--user-surface-hover);
 }
 .fashion-tool-grid svg {
-    width: 17px;
-    height: 17px;
+    width: 15px;
+    height: 15px;
     color: var(--user-ink-soft);
 }
 .fashion-tool-grid strong {
-    display: block;
-    margin: 6px 0 3px;
-    font-size: 13px;
+    margin: 0;
+    font-size: var(--fs-caption);
+    font-weight: 500;
 }
-.fashion-tool-grid span {
+.fashion-video-workbench > .fashion-head {
+    margin-bottom: var(--space-2);
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+.fashion-head > .fashion-tool-grid {
+    margin-bottom: 0;
+}
+.fashion-tool-hint {
     color: var(--user-ink-muted);
-    font-size: 11px;
+    font-size: var(--fs-caption);
+    margin-bottom: var(--space-4);
 }
 .fashion-tool-grid button:focus-visible {
     outline: 2px solid var(--user-ink);
@@ -267,9 +285,6 @@
     .fashion-workbench {
         padding: 16px;
     }
-    .fashion-tool-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .fashion-columns {
         grid-template-columns: 1fr;
     }
@@ -278,5 +293,18 @@
     }
     .fashion-head h2 {
         font-size: 20px;
+    }
+}
+.fashion-inline .fashion-workbench {
+    padding: 0;
+    max-height: none;
+    overflow-y: visible;
+}
+.fashion-inline .fashion-columns {
+    grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1fr);
+}
+@media (max-width: 1100px) {
+    .fashion-inline .fashion-columns {
+        grid-template-columns: minmax(0, 1fr);
     }
 }

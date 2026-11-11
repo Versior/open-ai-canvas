@@ -79,7 +79,8 @@
 }
 .rw-shell {
     display: grid;
-    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     gap: var(--space-3);
     width: 100%;
     height: 100%;
@@ -99,20 +100,20 @@
     overflow-y: auto;
 }
 
-/* ---------- 左栏：步骤、配方摘要、积分和主操作 ---------- */
+/* ---------- 顶部：作品信息、步骤和主操作 ---------- */
 .rw-rail {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: auto minmax(160px, 1fr) auto auto;
+    align-items: center;
     gap: var(--space-3);
     min-height: 0;
     padding: var(--space-4);
-    overflow-y: auto;
+    border: 1px solid var(--rw-line);
     border-radius: var(--rw-radius);
     background: var(--rw-panel);
 }
 .rw-back {
     display: inline-flex;
-    align-self: flex-start;
     align-items: center;
     gap: var(--space-1);
     padding: 0;
@@ -128,12 +129,14 @@
 .rw-title.ant-input {
     padding: 0;
     color: var(--rw-ink);
-    font-size: var(--fs-heading);
+    font-size: var(--fs-body-lg);
     font-weight: 650;
 }
 .rw-steps {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-column: 1 / -1;
+    grid-row: 2;
     gap: var(--space-1);
     margin: 0;
     padding: 0;
@@ -187,7 +190,29 @@
     color: var(--rw-panel);
 }
 .rw-steps [data-state="current"] button {
-    background: var(--rw-muted);
+    background: var(--control-selected-bg);
+}
+.rw-summary-toggle {
+    grid-column: 3;
+    grid-row: 1;
+    font-size: var(--fs-caption);
+    color: var(--rw-ink-2);
+}
+.rw-summary-toggle summary {
+    padding: var(--space-2);
+    cursor: pointer;
+}
+.rw-summary-toggle[open] {
+    grid-row: 3;
+    grid-column: 1 / -1;
+}
+.rw-summary-toggle[open] .rw-summary {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.5fr) minmax(0, 1fr);
+}
+.rw-shell :is(button, summary):focus-visible {
+    outline: var(--focus-ring-width) solid var(--control-focus-ring);
+    outline-offset: 2px;
 }
 .rw-steps [data-state="current"] .rw-step-no {
     background: var(--control-selected-border);
@@ -249,9 +274,16 @@
 }
 .rw-rail-foot {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    grid-column: 4;
+    grid-row: 1;
     gap: var(--space-2);
-    margin-top: auto;
+}
+.rw-rail-foot .rw-warn {
+    flex-basis: 100%;
+    max-width: 360px;
 }
 .rw-estimate {
     display: flex;
@@ -262,7 +294,7 @@
 }
 .rw-estimate strong {
     color: var(--rw-ink);
-    font-size: var(--fs-body-lg, 16px);
+    font-size: var(--fs-caption);
     font-weight: 650;
 }
 .rw-warn {
@@ -485,6 +517,28 @@
     grid-template-rows: auto auto;
     gap: var(--space-3);
 }
+.rw-comparison-export {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--rw-line);
+}
+.rw-comparison-export h3 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.rw-comparison-export .rw-hint {
+    display: block;
+    line-height: 1.6;
+}
+.rw-comparison-export label {
+    display: grid;
+    gap: var(--space-2);
+    font-size: var(--fs-caption);
+    color: var(--rw-ink-2);
+}
 .rw-compare,
 .rw-inspector,
 .rw-timeline {
@@ -495,6 +549,7 @@
 }
 .rw-compare-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
     margin-bottom: var(--space-3);
@@ -539,7 +594,7 @@
     position: relative;
     display: grid;
     place-items: center;
-    height: clamp(180px, 38vh, 380px);
+    height: clamp(220px, 48vh, 480px);
     margin: 0;
     overflow: hidden;
     border-radius: var(--rw-radius-control);
@@ -1143,13 +1198,6 @@
     .rw-recipe-layout {
         grid-template-columns: minmax(0, 1fr);
     }
-    .rw-produce {
-        grid-template-columns: minmax(0, 1fr);
-    }
-    /* 单列时时间线紧跟播放区，选中某段后的详情放最后。 */
-    .rw-inspector {
-        order: 1;
-    }
 }
 @media (max-width: 720px) {
     .rw-persona {
@@ -1157,6 +1205,12 @@
     }
 }
 @media (max-width: 1023px) {
+    .rw-produce {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .rw-inspector[data-selection="unit"] {
+        order: 1;
+    }
     .rw-shell {
         grid-template-columns: minmax(0, 1fr);
         overflow-y: auto;
@@ -1167,24 +1221,52 @@
     .rw-shell[data-step="edit"] .rw-main {
         overflow: visible;
     }
-    .rw-shell[data-step="edit"] .rw-rail {
-        gap: var(--space-2);
-    }
-    .rw-shell[data-step="edit"] .rw-steps {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: var(--space-1);
-    }
-    .rw-shell[data-step="edit"] .rw-steps small,
-    .rw-shell[data-step="edit"] .rw-summary,
-    .rw-shell[data-step="edit"] .rw-rail-foot {
-        display: none;
-    }
     .rw-compare-panes {
         grid-template-columns: 1fr 1fr;
     }
     .rw-pane {
-        height: 42vh;
+        height: clamp(220px, 36vh, 340px);
+    }
+}
+@media (max-width: 760px) {
+    .rw-shell {
+        padding: var(--space-2);
+        grid-template-rows: auto auto;
+    }
+    .rw-rail {
+        padding: var(--space-3);
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: var(--space-2);
+    }
+    .rw-summary-toggle {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .rw-summary-toggle[open] {
+        grid-row: 4;
+    }
+    .rw-summary-toggle[open] .rw-summary {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    .rw-rail-foot {
+        grid-column: 2;
+        grid-row: 2;
+    }
+    .rw-rail-foot .rw-estimate {
+        display: none;
+    }
+    .rw-steps {
+        grid-row: 3;
+    }
+    .rw-steps button {
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: center;
+        padding: var(--space-2) var(--space-1);
+        font-size: var(--fs-caption);
+        gap: var(--space-1);
+    }
+    .rw-steps small {
+        display: none;
     }
 }
 @media (prefers-reduced-motion: reduce) {

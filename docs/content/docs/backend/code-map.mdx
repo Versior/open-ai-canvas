@@ -470,3 +470,10 @@ HTTP 请求 -> handler -> service（稳定导入面 / 别名）-> app（组合�
 ### 参考素材发送方式
 
 `backend/internal/app/media_transport.go` 管理渠道策略的事务保存、配置继承和请求兼容校验；`provider_media_hydration.go` 按图片、视频、音频分别准备归属校验后的签名 URL 或 Base64。`web/src/pages/admin/components/media-transport-fields.tsx` 提供渠道默认及模型覆盖的共同设置控件。
+
+## 视频创作首页、热点账号与对比导出
+
+- `pages/video-replication/replication-home.tsx` 收集素材、人物、声音和用途；`use-material-analysis.ts` 控制 AI 回填；`lib/remake/creative.ts` 与 `remake/creative-runner.ts` 管理导演策划、快照和恢复。
+- `hot-topic-picker.tsx` 只读选题；`admin/video-replication/trend-accounts-panel.tsx` 管理站点账号。后端由 `handler/video_trends.go → app/video_trends.go / video_trends_oauth.go → internal/trends` 校验管理员、保护凭据并读取固定来源。
+- `lib/remake/comparison.ts` 和 `remake-comparison-export.tsx` 构造导出；`app/timeline_render_plan.go` 分别拼接后左右合成；`task_render.go` 校验实际时长，复用资源和任务中心。
+- 公开首页预览在 `pages/welcome/story.ts`，使用当前二开真实界面截图；品牌影片在 `components/brand/brand-film.tsx`，登录弹窗在 `components/auth/auth-dialog.tsx` 与组件样式。

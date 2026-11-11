@@ -110,22 +110,25 @@ function ShotRow({ shot, row, ratio, active, onPlay, onCopy }: { shot: VideoTear
                 <p className="vr-shot-plot" data-empty={!row?.plotDescription || undefined}>
                     {row?.plotDescription || "还没有模型分析"}
                 </p>
-                {details.length ? (
-                    <dl className="vr-dl">
-                        {details.map(([label, value]) => (
-                            <Fragment key={label}>
-                                <dt>{label}</dt>
-                                <dd>{value}</dd>
-                            </Fragment>
-                        ))}
-                    </dl>
-                ) : null}
-                {row?.imageGenerationPrompt || row?.videoMotionPrompt ? (
-                    <div className="vr-prompts">
-                        <Prompt label="首帧提示词" text={row.imageGenerationPrompt} onCopy={onCopy} />
-                        <Prompt label="视频提示词" text={row.videoMotionPrompt} onCopy={onCopy} />
-                    </div>
-                ) : null}
+                <details className="vr-shot-details">
+                    <summary>镜头细节与提示词</summary>
+                    {details.length ? (
+                        <dl className="vr-dl">
+                            {details.map(([label, value]) => (
+                                <Fragment key={label}>
+                                    <dt>{label}</dt>
+                                    <dd>{value}</dd>
+                                </Fragment>
+                            ))}
+                        </dl>
+                    ) : null}
+                    {row?.imageGenerationPrompt || row?.videoMotionPrompt ? (
+                        <div className="vr-prompts">
+                            <Prompt label="首帧提示词" text={row.imageGenerationPrompt} onCopy={onCopy} />
+                            <Prompt label="视频提示词" text={row.videoMotionPrompt} onCopy={onCopy} />
+                        </div>
+                    ) : null}
+                </details>
             </div>
         </li>
     );

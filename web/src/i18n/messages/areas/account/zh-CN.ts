@@ -538,6 +538,9 @@ export const zhCN = {
             },
         },
         showcases: {
+            video: { name: "视频创作", detail: "上传商品与人物素材，让导演策划完整脚本，或沿着参考视频逐镜复刻、剪辑与对比交付。" },
+            studio: { name: "电商生图台", detail: "从商品照片开始，分析素材、规划主图与详情页，统一画面风格并检查每一屏的信息。" },
+            interior: { name: "室内设计", detail: "将房间照片、设计参考和空间要求转为效果图，继续核对布局、材质与三维方案。" },
             canvas: { name: "自由画布", description: "把灵感连成作品。", detail: "整理参考、连接节点、比较结果，沿着自己的思路继续创作。" },
             create: { name: "即时创作", description: "从一句话开始。", detail: "选择模型与参考素材，在对话中逐步完成图片和视频。" },
             projects: { name: "项目工作台", description: "让长故事有条理。", detail: "围绕章节、人物与分镜组织制作，随时回到正在推进的故事。" },

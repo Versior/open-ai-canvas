@@ -26,6 +26,11 @@ describe("welcome story", () => {
         for (const showcase of showcases) expect(existsSync(publicFile(showcase.image))).toBe(true);
     });
 
+    test("previews point to the fork workbenches and their current screenshots", () => {
+        expect(showcases.map((item) => item.href)).toEqual(["/video-replication", "/studio", "/interior"]);
+        expect(showcases.every((item) => item.image.endsWith("-v2.jpg"))).toBe(true);
+    });
+
     test("credits cover all looks separately from the code license", () => {
         const credits = readFileSync(publicFile("/welcome/credits.html"), "utf8");
         expect(credits).toContain("https://creativecommons.org/licenses/by/4.0/");

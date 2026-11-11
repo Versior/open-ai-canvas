@@ -545,6 +545,9 @@ export const deDE: DeepStringRecord<typeof zhCN> = {
             },
         },
         showcases: {
+            video: { name: "Videoerstellung", detail: "Planen Sie Drehbücher mit Produkt- und Personenreferenzen oder erstellen Sie Referenzvideos Szene für Szene neu, inklusive Schnitt und Vergleichsexport." },
+            studio: { name: "Produktbildstudio", detail: "Analysieren Sie Produktfotos, planen Sie Hauptbilder und Detailseiten und prüfen Sie Informationen und Stil jedes Abschnitts." },
+            interior: { name: "Innenraumgestaltung", detail: "Erstellen Sie Renderings aus Raumfotos und Referenzen und prüfen Sie Raumaufteilung, Materialien und den 3D-Entwurf." },
             canvas: { name: "Freie Leinwand", description: "Ideen zu fertigen Werken verbinden.", detail: "Referenzen ordnen, Knoten verbinden, Ergebnisse vergleichen und dem eigenen Gedankengang folgend weiterarbeiten." },
             create: { name: "Sofort erstellen", description: "Mit einem einzigen Satz beginnen.", detail: "Modelle und Referenz-Assets wählen und im Dialog Schritt für Schritt Bilder und Videos erstellen." },
             projects: { name: "Projekt-Werkbank", description: "Lange Geschichten übersichtlich halten.", detail: "Die Produktion nach Kapiteln, Figuren und Storyboards organisieren und jederzeit zur laufenden Geschichte zurückkehren." },

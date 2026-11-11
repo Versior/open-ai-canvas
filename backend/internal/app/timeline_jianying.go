@@ -134,7 +134,7 @@ func (s *Service) PrepareTimelineJianyingDraft(userID string, req TimelineJianyi
 
 func timelineJianyingReadme(draft jianying.Draft) string {
 	var builder strings.Builder
-	builder.WriteString("STAGE 视频复刻 · 剪映草稿\n\n")
+	builder.WriteString("STAGE 视频创作 · 剪映草稿\n\n")
 	builder.WriteString(jianyingImportSteps(draft))
 	builder.WriteString("\n主轨是成片的画面（保留原片的镜头已静音），音频轨分别是配音、原声和背景音乐，字幕轨是可编辑的文字。\n")
 	return builder.String()

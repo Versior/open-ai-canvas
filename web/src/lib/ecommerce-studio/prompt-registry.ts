@@ -1,6 +1,7 @@
 import { STUDIO_MARKETS, STUDIO_SHOOTINGS } from "./brief";
 import { STUDIO_FAMILY_RULES, STUDIO_SHOT_PROMPT_FIELDS, STUDIO_STYLES, STUDIO_TWEAKS, studioDefaultShotSpec, studioShotPromptKey, type StudioShotPromptField } from "./shot-specs";
 import { STUDIO_FAMILY_LABEL, type StudioCategoryFamily, type StudioShotRole } from "./types";
+import { CREATIVE_ANALYSIS_RULE, CREATIVE_PLAN_RULE, CREATIVE_SCENES, CREATIVE_TONES } from "@/lib/remake/creative";
 
 /**
  * 后台「出图提示词」能改的条目清单：编号、显示名和内置写法。编号与出图时查覆盖用的编号一致，
@@ -56,6 +57,22 @@ export function studioPromptGroups(): StudioPromptGroup[] {
     });
     return [
         ...shots,
+        {
+            id: "video.planning",
+            title: "商品视频 · 分析与策划",
+            hint: "商品视频策划使用；JSON结构、事实依据和时长校验由代码维护。",
+            entries: [
+                { key: "video.analysis", label: "素材分析", defaultText: CREATIVE_ANALYSIS_RULE },
+                { key: "video.planning", label: "整片策划", defaultText: CREATIVE_PLAN_RULE },
+            ],
+        },
+        {
+            id: "video.scene",
+            title: "商品视频 · 内容类型",
+            hint: "内容类型进入整片脚本与每个生成单元的提示词。",
+            entries: CREATIVE_SCENES.map((scene) => ({ key: `video.scene.${scene.id}`, label: `${scene.group} · ${scene.name}`, defaultText: scene.prompt })),
+        },
+        { id: "video.tone", title: "商品视频 · 视觉风格", hint: "统一全片布光和配色，保留真实商品颜色。", entries: Object.entries(CREATIVE_TONES).map(([id, tone]) => ({ key: `video.tone.${id}`, label: tone.name, defaultText: tone.prompt })) },
         {
             id: "shooting",
             title: "拍摄方式",

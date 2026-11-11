@@ -3,6 +3,7 @@ import { modelQuoteRequest } from "@/lib/model-pricing";
 import { productVideoShotSeconds, type ProductVideoModelLimits } from "@/lib/product-video/media";
 import type { RemakeJob } from "@/lib/remake/job";
 import type { RemakeUnit } from "@/lib/remake/job";
+import { remakeReferenceImages } from "@/lib/remake/prompts";
 import { quoteModel } from "@/services/api/logical-models";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
@@ -19,7 +20,7 @@ export function useRemakeEstimate(job: RemakeJob, units: readonly RemakeUnit[], 
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const [estimate, setEstimateState] = useState<Estimate>({ credits: null, state: "idle" });
     const setEstimate = (next: Estimate) => setEstimateState((current) => (current.credits === next.credits && current.state === next.state ? current : next));
-    const imageCount = job.product.images.length + (job.people === "model" ? job.models.length : 0) + job.backgrounds.length;
+    const imageCount = remakeReferenceImages(job).images.length;
     const items = useMemo(() => {
         if (!limits) return [];
         return units
@@ -54,7 +55,9 @@ export function useRemakeEstimate(job: RemakeJob, units: readonly RemakeUnit[], 
         const controller = new AbortController();
         setEstimate({ credits: null, state: "loading" });
         Promise.all(requests.map(({ times, request }) => quoteModel(request!, controller.signal).then(({ quote }) => (quote.amountMicrocredits / 1_000_000) * times)))
-            .then((values) => setEstimate({ credits: values.reduce((sum, value) => sum + value, 0), state: "ready" }))
+            .then((values) => {
+                if (!controller.signal.aborted) setEstimate({ credits: values.reduce((sum, value) => sum + value, 0), state: "ready" });
+            })
             .catch(() => {
                 if (!controller.signal.aborted) setEstimate({ credits: null, state: "unavailable" });
             });

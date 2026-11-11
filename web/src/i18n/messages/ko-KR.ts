@@ -38,7 +38,7 @@ export const koKR: Messages = {
         sidebar: {
             ecommerceStudio: "이커머스 스튜디오",
             interior: "인테리어 디자인",
-            videoReplication: "영상 리메이크",
+            videoReplication: "영상 제작",
             conversations: "대화",
             canvases: "캔버스",
             newConversation: "새 대화",
@@ -65,7 +65,7 @@ export const koKR: Messages = {
             headingAssets: "에셋과 기록",
         },
         collapsed: {
-            videoReplication: "리메이크",
+            videoReplication: "영상",
             interior: "인테리어",
             inspiration: "영감",
             home: "창작",
@@ -79,7 +79,7 @@ export const koKR: Messages = {
         pageTitles: {
             ecommerce: "이커머스",
             studio: "이커머스 스튜디오",
-            videoReplication: "영상 리메이크",
+            videoReplication: "영상 제작",
             interior: "인테리어 디자인",
             inspiration: "영감",
             home: "창작",

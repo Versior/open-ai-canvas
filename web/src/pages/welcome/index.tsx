@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ConfigProvider, Tabs } from "antd";
-import { ArrowDown, ArrowRight, ArrowUpRight, Code2, Menu, Pause, Play, X } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Menu, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { BrandWordmark } from "@/components/brand/brand-logo";
@@ -8,9 +8,6 @@ import { BrandFilm } from "@/components/brand/brand-film";
 import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
-import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
-
-import { WelcomeContributorsCard } from "./contributors-card";
 import { chapters, getWelcomeLook, showcases, welcomeLooks, type WelcomeLook } from "./story";
 // 独立欢迎入口也需要按钮 token。
 import "@/styles/button-tokens.css";
@@ -18,7 +15,6 @@ import "./welcome.css";
 import { Select } from "@/components/ui/base/select";
 
 const StoryReel = lazy(() => import("./story-reel"));
-const github = "https://github.com/Versior/open-ai-canvas";
 
 export default function WelcomePage() {
     const [look, setLook] = useState(getWelcomeLook);
@@ -51,17 +47,15 @@ export default function WelcomePage() {
 }
 
 function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLook; brandName: string; onLookChange: (id: string) => void }) {
-    const authOpen = useAuthDialogStore((state) => state.open);
     const { t } = useTranslation();
     const storyRef = useRef<HTMLElement>(null);
     const progressRef = useRef(0);
     const [chapter, setChapter] = useState(0);
     const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    const [paused, setPaused] = useState(false);
     const [failed, setFailed] = useState(false);
     const [ready, setReady] = useState(false);
     const [menu, setMenu] = useState(false);
-    const [showcase, setShowcase] = useState(1);
+    const [showcase, setShowcase] = useState(0);
     const [playing, setPlaying] = useState(false);
     const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -118,13 +112,6 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                     <a href="#workbench" onClick={() => setMenu(false)}>
                         {t("account.welcome.navWorkbench")}
                     </a>
-                    <a href="#contributors" onClick={() => setMenu(false)}>
-                        {t("account.welcome.navContributors")}
-                    </a>
-                    <a href={github} target="_blank" rel="noreferrer">
-                        GitHub
-                        <ArrowUpRight size={13} />
-                    </a>
                 </nav>
                 <Button className="welcome-header-login" type="text" href="/login?next=%2Fcreate">
                     {t("auth.login.submit")}
@@ -155,11 +142,11 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                         {!staticScene && chapter > 0 && (
                             <SceneBoundary onError={() => setFailed(true)}>
                                 <Suspense fallback={null}>
-                                    <StoryReel look={look} progress={progressRef} paused={paused} onReady={() => setReady(true)} onError={() => setFailed(true)} />
+                                    <StoryReel look={look} progress={progressRef} paused={false} onReady={() => setReady(true)} onError={() => setFailed(true)} />
                                 </Suspense>
                             </SceneBoundary>
                         )}
-                        {chapter === 0 ? <BrandFilm className="welcome-home-film" paused={paused || authOpen} /> : null}
+                        {chapter === 0 ? <BrandFilm className="welcome-home-film" /> : null}
                         <div className="welcome-stage-shade" aria-hidden="true" />
                         {chapters.map((item, index) => (
                             <section key={item.id} className={`welcome-chapter ${index === 0 ? "welcome-opening" : ""} ${index === chapter ? "is-active" : ""}`} aria-hidden={index !== chapter}>
@@ -217,16 +204,6 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                                     </button>
                                 ))}
                             </nav>
-                            <IconButton
-                                className="welcome-icon"
-                                variant="ghost"
-                                icon={paused || staticScene ? Play : Pause}
-                                title={paused || staticScene ? t("account.welcome.play") : t("account.welcome.pause")}
-                                aria-label={paused || staticScene ? t("account.welcome.play") : t("account.welcome.pause")}
-                                aria-pressed={paused || staticScene}
-                                disabled={staticScene}
-                                onClick={() => setPaused(!paused)}
-                            />
                         </div>
                     </div>
                 </section>
@@ -255,7 +232,9 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                         <br />
                         {t("account.welcome.endingLine2")}
                     </h2>
-                    <WelcomeContributorsCard />
+                    <Button className="welcome-primary" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
+                        {t("account.welcome.start")}
+                    </Button>
                 </section>
             </main>
             <footer className="welcome-footer">
@@ -263,10 +242,6 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                     <BrandWordmark theme="dark" builtinClassName="welcome-brand-wordmark" />
                 </a>
                 <span>{t("account.welcome.footer")}</span>
-                <a href={`${github}/blob/main/LICENSE`} target="_blank" rel="noreferrer">
-                    Open Source · MIT License
-                    <ArrowUpRight size={12} />
-                </a>
             </footer>
             {look.credit && (
                 <div className="welcome-media-credit">
@@ -301,7 +276,7 @@ function FilmDialog({ look, onClose, videoRef }: { look: WelcomeLook; onClose: (
         >
             <div>
                 <IconButton autoFocus className="welcome-icon" variant="ghost" size="lg" icon={X} aria-label={t("account.welcome.closeFilm")} onClick={onClose} />
-                <video ref={videoRef} src={look.video} poster={look.frames[0]} controls autoPlay muted playsInline />
+                <video ref={videoRef} src={look.video} poster={look.frames[0]} autoPlay muted playsInline loop />
                 <p>{t(look.credit ?? look.title)}</p>
             </div>
         </dialog>

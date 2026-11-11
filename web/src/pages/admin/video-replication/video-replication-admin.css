@@ -690,6 +690,146 @@ div.admin-vr-failure {
     margin-left: auto;
 }
 
+.admin-vr-trend-accounts {
+    display: grid;
+    gap: 16px;
+}
+.admin-vr-trend-intro {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+.admin-vr-trend-intro h2 {
+    margin: 0;
+    color: var(--admin-text);
+    font-size: 15px;
+}
+.admin-vr-trend-intro p {
+    margin: 6px 0 0;
+    color: var(--admin-text-muted);
+    font-size: 12px;
+}
+.admin-vr-trend-sources {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+.admin-vr-trend-sources > button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--admin-radius-lg);
+    background: var(--admin-surface);
+    text-align: left;
+}
+.admin-vr-trend-sources > button[aria-pressed="true"] {
+    border-color: var(--admin-border-strong);
+    background: var(--admin-surface-2);
+}
+.admin-vr-trend-sources strong {
+    color: var(--admin-text);
+    font-size: 14px;
+}
+.admin-vr-trend-sources small {
+    grid-column: 1 / -1;
+    color: var(--admin-text-muted);
+}
+.admin-vr-trend-workspace {
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+.admin-vr-trend-visibility {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+}
+.admin-vr-trend-help {
+    color: var(--admin-text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+.admin-vr-trend-help a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--admin-text-secondary);
+}
+.admin-vr-trend-help p {
+    margin: 6px 0 0;
+}
+.admin-vr-trend-form {
+    display: grid;
+    gap: 12px;
+}
+.admin-vr-trend-form label {
+    display: grid;
+    gap: 6px;
+    color: var(--admin-text-secondary);
+    font-size: 12px;
+}
+.admin-vr-trend-form small,
+.admin-vr-trend-preview > small {
+    color: var(--admin-text-muted);
+    line-height: 1.6;
+}
+.admin-vr-trend-error {
+    margin: 0;
+    color: var(--admin-status-error);
+    font-size: 12px;
+}
+.admin-vr-trend-preview ol {
+    display: grid;
+    gap: 0;
+    max-height: 460px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+.admin-vr-trend-preview li {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) 24px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 0;
+    color: var(--admin-text-secondary);
+    font-size: 13px;
+}
+.admin-vr-trend-preview li + li {
+    border-top: 1px solid var(--admin-divider);
+}
+.admin-vr-trend-preview li > :first-child {
+    color: var(--admin-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.admin-vr-trend-preview li a {
+    color: var(--admin-text-muted);
+}
+.admin-vr-trend-sources > button:focus-visible {
+    outline: 2px solid var(--admin-focus);
+    outline-offset: 2px;
+}
+@media (max-width: 960px) {
+    .admin-vr-trend-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+@media (max-width: 720px) {
+    .admin-vr-trend-sources {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 @media (max-width: 1280px) {
     .admin-vr-stats {
         grid-template-columns: repeat(3, minmax(0, 1fr));

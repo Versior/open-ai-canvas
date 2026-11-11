@@ -62,6 +62,8 @@ export function ProductVideoImageSlot({
     onRemove,
     generate,
     onPendingChange,
+    displayLabel,
+    hint,
 }: {
     slot: ProductVideoSlot;
     items: ProductVideoImage[];
@@ -70,6 +72,8 @@ export function ProductVideoImageSlot({
     onRemove: (id: string) => void;
     generate?: { label: string; onClick: () => void };
     onPendingChange?: (pending: boolean) => void;
+    displayLabel?: string;
+    hint?: string;
 }) {
     const { message } = App.useApp();
     const input = useRef<HTMLInputElement>(null);
@@ -82,7 +86,7 @@ export function ProductVideoImageSlot({
     const [dragging, setDragging] = useState(false);
     const [picker, setPicker] = useState<"assets" | "figure" | "face" | "pose" | null>(null);
     const limit = PRODUCT_VIDEO_LIMITS[slot];
-    const label = PRODUCT_VIDEO_SLOT_LABEL[slot];
+    const label = displayLabel ?? PRODUCT_VIDEO_SLOT_LABEL[slot];
     const left = Math.max(0, limit - items.length - pending);
 
     const accept = (wanted: number) => {
@@ -151,7 +155,7 @@ export function ProductVideoImageSlot({
                     {label}
                     <span>（最多 {limit} 张）</span>
                 </strong>
-                <span>{items.length ? `${items.length}/${limit}` : HINTS[slot]}</span>
+                <span>{items.length ? `${items.length}/${limit}` : (hint ?? HINTS[slot])}</span>
             </header>
             <div className="pv-slot-row">
                 {items.map((image) => (

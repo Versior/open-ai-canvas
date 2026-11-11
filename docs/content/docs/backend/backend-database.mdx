@@ -839,3 +839,9 @@ Schema 32 为 `channel_models` 新增 `tags`（TEXT、NOT NULL、默认 `'[]'`�
 ### 参考素材发送策略
 
 渠道默认策略保存于 `system_settings` 的 `channel_media_transport:<channelId>`，与渠道编辑在同一事务提交；未提交字段保持已有值。模型覆盖保存在已有 `capability_config_json.mediaTransport`。字段 `image`、`audio`、`video` 分别支持 `inherit`、`protocol`、`url`、`base64`；不新增数据表、列或迁移版本。渠道复制、导入导出保留策略，不包含素材签名或凭证。执行时由后端重新读取管理员配置，客户端任务不能覆盖系统渠道策略。
+
+## 视频创作与热点账号快照
+
+新创作的 `creative`、复刻的 `render.sourcePieces` 和对比导出的 `comparisonRender` 扩展既有 `EcommerceLibrary.payload.productVideos` JSON，继续使用作品 `expectedRevision` 比较交换。素材与任务保存前校验归属；`imageResourceIds`、`videoResourceId`、`clipResourceId` 参与资源引用保护。无新增表列或数据库迁移。
+
+站点账号保存在 `system_settings` 的 `video_trend_site:<source>`，包含 AES-GCM 加密连接、预览、发布开关、版本与共享读取租约。OAuth state 使用 `video_trend_admin_oauth:<adminId>:<source>`，只保存绑定管理员的单次哈希与到期时间。备份与迁移同时保留既有 `.settings-key`。服务器环境中的应用密钥及 Cookie 不回传前端。详见[视频创作与对比交付](./product-video-creative)。

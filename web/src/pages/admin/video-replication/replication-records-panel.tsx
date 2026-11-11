@@ -269,7 +269,7 @@ export function ReplicationRecordsPanel({ active, recordId, onOpenRecord, onReco
                     />
                 }
                 table={{ rowKey: "id", loading, pagination: false, columns, dataSource: records, scroll: { x: 1220 } }}
-                empty={filtered ? <AdminTableEmpty filtered /> : <AdminTableEmpty title="还没有拆解记录" description="用户在「视频复刻」里拆解视频后，记录会出现在这里。" />}
+                empty={filtered ? <AdminTableEmpty filtered /> : <AdminTableEmpty title="还没有拆解记录" description="用户在「视频创作」里拆解参考视频后，记录会出现在这里。" />}
             />
             <ReplicationRecordDrawer id={recordId} onClose={() => onOpenRecord("")} />
         </div>

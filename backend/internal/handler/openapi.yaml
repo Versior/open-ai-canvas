@@ -38,6 +38,260 @@ tags:
   - name: pose-library
     description: 站点姿势库：浏览、选用，管理员导入与图片同步
 paths:
+  /timeline/renders:
+    post:
+      tags: [tasks]
+      summary: 创建时间线成片或左右对比渲染任务
+      description: 需要登录。普通时间线按可见片段顺序拼接；设置 comparison 后，原片序列在左、主序列在右，同长度并行合成，每侧最多256段，总时长不超过60分钟。所有引用须为本人就绪的资源；创建时检查授权声明、连续时间线及资源类型，Worker 再检查实际选段时长。输出等比留边，音频三选一，不调用模型。异步结果包含 resourceId、durationMs、合计 width/height、AIGC 和来源记录。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [timeline]
+              properties:
+                projectId: {type: string, description: 可为空；非空时校验本人有效项目}
+                timeline:
+                  type: object
+                  required: [version, tracks, clips]
+                  properties:
+                    version: {type: integer, enum: [2]}
+                    tracks: {type: array, items: {type: object}}
+                    clips: {type: array, items: {type: object}, description: 片段含 kind、trackId、startMs、durationMs、sourceStartMs、directMedia.storageKey}
+                    durationMs: {type: integer}
+                    width: {type: integer, description: 对比模式为两侧合计宽度，须为4的倍数，32到4096}
+                    height: {type: integer, description: 对比模式须为偶数，16到4096}
+                    fit: {type: string, enum: [auto, pad, crop]}
+                    comparison:
+                      type: object
+                      required: [authorized, audio, clips]
+                      properties:
+                        authorized: {type: boolean, enum: [true], description: 确认原片使用授权}
+                        audio: {type: string, enum: [render, reference, mute]}
+                        clips: {type: array, minItems: 1, maxItems: 256, items: {type: object}, description: 连续原片视频片段；startMs 从0累计，sourceStartMs 指向原片对应选段}
+      responses:
+        "200": {description: 已创建异步 timeline_render 任务，data 为任务}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /admin/video-replication/trends/{source}/refresh:
+    parameters:
+      - in: path
+        name: source
+        required: true
+        schema: {type: string, enum: [douhot, qianchuan, oceanengine]}
+    post:
+      tags: [admin]
+      summary: 管理员同步站点选题预览
+      description: 使用服务器保存的凭据，30秒共享读取租约阻止重复取数。成功更新预览；失败记录错误并保留旧预览，不自动开启展示。
+      responses:
+        "200":
+          $ref: "#/paths/~1video-creation~1trends/get/responses/200"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/trends/{source}/connection:
+    parameters:
+      - in: path
+        name: source
+        required: true
+        schema: {type: string, enum: [douhot, qianchuan, oceanengine]}
+    delete:
+      tags: [admin]
+      summary: 管理员断开站点平台账号
+      description: 清除数据库保存的凭据和预览，关闭前台展示，使较早读取失效。环境配置需由管理员另行移除。
+      responses:
+        "200":
+          description: 信封data含disconnected=true
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [admin]
+      summary: 管理员验证并保存站点平台账号
+      description: 千川为账户视频素材，巨量为广告项目推荐，OAuth广告主必须属于授权列表。热点宝只接受有效Cookie并调用固定网页API；不代表官方OAuth。凭据AES-GCM加密，读取成功后才保存预览及展示开关。请求24KiB上限，每管理员每分钟5次，失败不覆盖旧配置。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                enabled: {type: boolean, default: false}
+                advertiserId: {type: string, pattern: '^[0-9]+$', maxLength: 19}
+                projectId: {type: string, pattern: '^[0-9]+$', maxLength: 19, description: oceanengine来源必填}
+                accessToken: {type: string, minLength: 1, maxLength: 4096, writeOnly: true}
+                cookie: {type: string, maxLength: 16384, writeOnly: true, description: 仅热点宝，留空可复用站点现有凭据}
+      responses:
+        "200":
+          $ref: "#/paths/~1video-creation~1trends/get/responses/200"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/trends/{source}/oauth/callback:
+    parameters:
+      - in: path
+        name: source
+        required: true
+        schema: {type: string, enum: [qianchuan, oceanengine]}
+    get:
+      tags: [admin]
+      summary: 接收平台官方授权回调
+      description: 要求发起授权的管理员登录态；校验管理员、来源、应用、单次state及有效期。服务端换取并加密保存站点令牌，清空旧预览并关闭展示，需重新选择账户同步。返回no-store和no-referrer，不回显授权码或令牌。
+      parameters:
+        - in: query
+          name: auth_code
+          required: true
+          schema: {type: string, maxLength: 4096}
+        - in: query
+          name: state
+          required: true
+          schema: {type: string, minLength: 64, maxLength: 64}
+      responses:
+        "303":
+          description: 回到后台视频创作的热点账号页签选择广告主与项目
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/trends/{source}/oauth:
+    parameters:
+      - in: path
+        name: source
+        required: true
+        schema: {type: string, enum: [qianchuan, oceanengine]}
+    post:
+      tags: [admin]
+      summary: 创建官方应用授权链接
+      description: 仅管理员。服务器配置获批应用、官方授权链接与HTTPS回调。创建绑定管理员和来源的10分钟单次state。管理员浏览器完成授权，服务器保存站点凭据。
+      responses:
+        "200":
+          description: 信封data含官方授权url，不含应用密钥
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/trends/{source}:
+    patch:
+      tags: [admin]
+      summary: 管理员控制前台展示
+      description: 启用要求成功且未过期的预览，必要时先验证同步。配置版本检查阻止较早请求重新发布已禁用的内容。
+      parameters:
+        - in: path
+          name: source
+          required: true
+          schema: {type: string, enum: [douhot, qianchuan, oceanengine]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        "200":
+          description: 脱敏平台配置状态
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /admin/video-replication/trends:
+    get:
+      tags: [admin]
+      summary: 管理员读取站点平台账号状态和预览
+      description: 返回三个平台的配置状态、展示开关、授权广告主列表、项目、到期时间、内容预览和同步错误。不返回Cookie、访问令牌或刷新令牌。
+      responses:
+        "200":
+          description: 信封data为平台状态数组
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /video-creation/trends:
+    get:
+      tags: [tasks]
+      summary: 视频创作热点选题
+      description: 登录用户只读。百度和B站读取公开热榜；平台来源使用管理员验证并发布的站点共享预览。未启用返回unavailable和空列表，不暴露账号信息。成功快照缓存5分钟，过期后按共享租约更新；失败保留旧快照并标stale，后台记录原因，公共路径一分钟内不重复尝试。千川账户素材和巨量广告项目推荐不代表全站榜单。热点宝为网页API。8秒超时、2MiB上限，每账号每分钟20次。旧个人快照及授权不自动共享。标题仅作灵感。
+      parameters:
+        - in: query
+          name: source
+          schema:
+            type: string
+            enum: [douhot, qianchuan, oceanengine, baidu, bilibili]
+            default: baidu
+      responses:
+        "200":
+          description: 榜单来源、UTC抓取时间、话题标题、来源搜索链接及原榜排名
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [source, status, topics]
+                        properties:
+                          source: {type: string, enum: [douhot, qianchuan, oceanengine, baidu, bilibili]}
+                          status: {type: string, enum: [live, api, web_api, stale, unavailable]}
+                          description: {type: string, description: 数据用途与来源说明}
+                          fetchedAt: {type: string, format: date-time, description: 抓取或平台页面采集时间}
+                          pageUrl: {type: string, format: uri, description: 平台页面地址，不包含查询或登录参数}
+                          topics:
+                            type: array
+                            maxItems: 50
+                            items:
+                              type: object
+                              required: [title, url, rank]
+                              properties:
+                                title: {type: string, maxLength: 100}
+                                url: {type: string, format: uri}
+                                rank: {type: integer, minimum: 1}
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
   /admin/api-logs/{id}:
     get:
       tags: [admin]

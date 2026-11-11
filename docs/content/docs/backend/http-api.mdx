@@ -1422,3 +1422,11 @@ install 的 Base URL、协议、能力和成本全部从服务端快照读取，
 ### 系统渠道参考素材发送方式
 
 管理端创建/更新渠道的现有 JSON 请求及渠道响应支持可选 `mediaTransport`，包括独立的 `image`、`audio`、`video` 字段。渠道未提交此对象时保留原设置，提交空对象恢复协议默认。模型的同名配置位于 `capabilityConfig.mediaTransport`，支持 `inherit`（跟随渠道）、`protocol`（使用协议默认并取消渠道强制值）、`url`、`base64`。后端执行任务时重新读取管理员配置，不接受客户端任务覆盖系统渠道策略。此字段只影响参考素材输入，不改变结果 `response_format`。
+
+## 视频创作热点与左右对比
+
+- `GET /api/video-creation/trends?source=douhot|qianchuan|oceanengine|baidu|bilibili`：登录用户只读标题、链接、顺序与 UTC 抓取时间。站点账号未发布返回 `unavailable`，更新失败保留旧内容并标 `stale`。每账号 20 次/分钟。
+- `/api/admin/video-replication/trends`：管理员 `GET` 读取脱敏预览；`POST /:source/oauth` 和 `GET /:source/oauth/callback` 完成官方授权；`PUT /:source/connection` 验证连接；`POST /:source/refresh` 同步预览；`PATCH /:source` 控制前台展示；`DELETE /:source/connection` 断开并清除数据库凭据与预览。账号变更使旧请求失效，失败不覆盖工作配置。
+- `POST /api/timeline/renders` 的 `timeline.comparison` 支持左右合成。`authorized` 必须为 `true`；`audio` 为 `render|reference|mute`；`clips` 以本人资源组成连续原片序列。两侧等长，每侧最多 256 段，总时长不超过 60 分钟，合计宽度为 4 的倍数，高度为偶数，均不超过 4096。Worker 校验实际素材时长。
+
+主体新创作以 `creative` 代替 `source`，继续使用既有作品保存和通用任务接口，完整合同见[视频创作与对比交付](./product-video-creative)。

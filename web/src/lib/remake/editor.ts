@@ -5,6 +5,11 @@ import { remakeUnitTake } from "./units";
 
 export type RemakeStep = "recipe" | "produce" | "edit";
 
+/** 保存时间不影响成片；镜头、音轨、字幕、LUT、画幅和烧录开关共同决定导出版本。 */
+export function remakeEditRenderSignature(project: TimelineProject, size: { width: number; height: number }, burnSubtitles: boolean) {
+    return JSON.stringify({ ...project, updatedAt: undefined, ...size, burnSubtitles });
+}
+
 export function remakeDefaultStep(job?: RemakeJob): RemakeStep {
     return job && (job.units.length || job.render?.resourceId || job.status !== "draft") ? "produce" : "recipe";
 }
@@ -13,7 +18,7 @@ export function remakeDefaultStep(job?: RemakeJob): RemakeStep {
 export function createRemakeEditTimeline(job: RemakeJob): TimelineProject {
     const size = remakeRenderSize(job);
     const timeline = remakeTimeline({ ...job, subtitles: { burn: false } }, size, true);
-    const sources = new Map<string, { durationMs?: number; width?: number; height?: number }>([[job.source.resourceId, job.source]]);
+    const sources = new Map<string, { durationMs?: number; width?: number; height?: number }>(job.source ? [[job.source.resourceId, job.source]] : []);
     for (const unit of job.units) {
         const take = remakeUnitTake(unit);
         if (take) sources.set(take.resourceId, take);

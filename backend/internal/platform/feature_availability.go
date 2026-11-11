@@ -210,7 +210,7 @@ func (s *Service) RequireFeature(feature string) error {
 	case FeatureEcommerceStudio:
 		return kernel.Forbidden("电商生图台暂未开放")
 	case FeatureVideoReplication:
-		return kernel.Forbidden("视频复刻暂未开放")
+		return kernel.Forbidden("视频创作暂未开放")
 	case FeatureSocialVideoImport:
 		return kernel.Forbidden("视频链接导入暂未开放")
 	case FeatureInterior:

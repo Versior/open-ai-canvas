@@ -12,7 +12,7 @@ import {
     type ProductVideoJob,
     type ProductVideoSegment,
 } from "../src/lib/product-video/job";
-import { plannedProductVideoSegments, productVideoDefaultRatio, productVideoModelLimits, productVideoShotSeconds, productVideoTimeline } from "../src/lib/product-video/media";
+import { plannedProductVideoSegments, productVideoDefaultRatio, productVideoModelLimits, productVideoRenderSize, productVideoShotSeconds, productVideoTimeline } from "../src/lib/product-video/media";
 import { assessProductVideo, buildProductVideoShotPrompt, productVideoReferenceImages } from "../src/lib/product-video/prompt";
 
 const image = (id: string) => ({ id, resourceId: `res-${id}`, name: `${id}.png` });
@@ -154,8 +154,23 @@ describe("product video timeline", () => {
         const model = productVideoTimeline(job({ audio: "model" }), { width: 720, height: 1280 });
         expect(model.tracks.find((track) => track.id === "video")?.muted).toBe(false);
         expect(model.clips.some((clip) => clip.kind === "audio")).toBe(false);
-        const silent = productVideoTimeline(job({ audio: "original", split: { ...job().split!, hasAudio: false } }), { width: 720, height: 1280 });
+        const silent = productVideoTimeline(job({ audio: "mute", split: { ...job().split!, hasAudio: false } }), { width: 720, height: 1280 });
         expect(silent.clips.some((clip) => clip.kind === "audio")).toBe(false);
+        expect(() => productVideoTimeline(job({ audio: "original", split: { ...job().split!, hasAudio: false } }), { width: 720, height: 1280 })).toThrow("音轨");
         expect(() => productVideoTimeline(job({ shots: pendingProductVideoShots(segments) }), { width: 720, height: 1280 })).toThrow("第 1 段");
+    });
+    it("legacy element replacement preserves source ratio and rejects short, unknown or missing segments", () => {
+        const value = job();
+        value.reference = { ...value.reference!, width: 808, height: 720 };
+        value.shots[0].width = 720;
+        value.shots[0].height = 1280;
+        expect(productVideoRenderSize(value)).toEqual({ width: 808, height: 720 });
+        value.shots[0].durationMs = 6000;
+        expect(() => productVideoTimeline(value, productVideoRenderSize(value))).toThrow("时长不足");
+        delete value.shots[0].durationMs;
+        expect(() => productVideoTimeline(value, productVideoRenderSize(value))).toThrow("时长不足");
+        value.shots[0].durationMs = 8000;
+        value.split = { ...value.split!, segments: [{ ...segments[0] }, { ...segments[1], startMs: 9500 }] };
+        expect(() => productVideoTimeline(value, productVideoRenderSize(value))).toThrow("连续覆盖");
     });
 });

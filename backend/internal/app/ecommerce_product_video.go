@@ -98,6 +98,9 @@ func (s *Service) SaveProductVideo(actor *model.User, id string, raw json.RawMes
 	if err := s.validateFashionResources(actor.ID, raw); err != nil {
 		return nil, err
 	}
+	if err := s.validateCreativeWorkResources(actor.ID, raw); err != nil {
+		return nil, err
+	}
 	var saved json.RawMessage
 	revision, err := s.mutateProductVideos(actor.ID, func(items []json.RawMessage) ([]json.RawMessage, error) {
 		index, stored := ecommerceStudioFindProduct(items, id)
@@ -228,7 +231,7 @@ func normalizeProductVideoItem(id string, raw json.RawMessage) (map[string]json.
 		return nil, BadAuthRequest("作品标识无效")
 	}
 	if len(raw) == 0 || len(raw) > productVideoMaxItemBytes {
-		return nil, BadAuthRequest("单条作品数据须在 128KB 以内")
+		return nil, BadAuthRequest("单条作品数据须在 2MB 以内")
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
@@ -251,6 +254,9 @@ func normalizeProductVideoItem(id string, raw json.RawMessage) (map[string]json.
 	if err := validateProductVideoDirector(raw); err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
+	if err := validateProductVideoCreative(raw); err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
 	if err := validateFashionWork(raw); err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
@@ -269,7 +275,7 @@ func encodeProductVideoItem(fields map[string]json.RawMessage, revision int64) (
 		return nil, err
 	}
 	if len(encoded) > productVideoMaxItemBytes {
-		return nil, BadAuthRequest("单条作品数据须在 128KB 以内")
+		return nil, BadAuthRequest("单条作品数据须在 2MB 以内")
 	}
 	return encoded, nil
 }

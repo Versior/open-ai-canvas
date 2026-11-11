@@ -19,7 +19,7 @@ const featureNames: Record<FeatureKey, string> = {
     imageWorkbenchEnabled: "生图",
     videoWorkbenchEnabled: "视频",
     ecommerceStudioEnabled: "电商生图台",
-    videoReplicationEnabled: "视频复刻",
+    videoReplicationEnabled: "视频创作",
     interiorEnabled: "室内设计",
 };
 

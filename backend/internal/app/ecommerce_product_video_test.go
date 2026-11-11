@@ -202,7 +202,7 @@ func TestCreateProductVideoSplitTaskValidatesAndReplays(t *testing.T) {
 	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"videoReplicationEnabled":false}`}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateProductVideoSplitTask("usr-a", "split-key-0000", ProductVideoSplitRequest{ResourceID: "res-ref", EndMs: 10_000}); err == nil || !strings.Contains(err.Error(), "视频复刻暂未开放") {
+	if _, err := svc.CreateProductVideoSplitTask("usr-a", "split-key-0000", ProductVideoSplitRequest{ResourceID: "res-ref", EndMs: 10_000}); err == nil || !strings.Contains(err.Error(), "视频创作暂未开放") {
 		t.Fatalf("closed video replication must refuse splits: %v", err)
 	}
 	if err := svc.repo.SaveSystemSetting(&model.SystemSetting{Key: featureAvailabilitySettingKey, ValueJSON: `{"videoReplicationEnabled":true,"ecommerceStudioEnabled":false}`}); err != nil {

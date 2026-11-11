@@ -1,6 +1,6 @@
 import { http } from "@/services/api/request";
 import type { GenerationTask } from "@/services/api/task-center";
-import type { TimelineProject } from "@/types/timeline";
+import type { TimelineClip, TimelineProject } from "@/types/timeline";
 
 // 时间线字幕转写任务 API。
 // 创建入参与后端 TimelineTranscriptionCreateRequest 保持同名字段，结果由任务中心统一查询。
@@ -33,7 +33,12 @@ export async function createTimelineTranscriptionTask(payload: TimelineTranscrip
 
 export type TimelineRenderCreateRequest = {
     projectId: string;
-    timeline: TimelineProject;
+    timeline: TimelineProject & {
+        width?: number;
+        height?: number;
+        fit?: string;
+        comparison?: { authorized: boolean; audio: "render" | "reference" | "mute"; clips: TimelineClip[] };
+    };
 };
 
 export type TimelineRenderResult = {
@@ -42,6 +47,8 @@ export type TimelineRenderResult = {
     size?: number;
     durationMs?: number;
     subtitleSrt?: string;
+    width?: number;
+    height?: number;
 };
 
 export async function createTimelineRenderTask(payload: TimelineRenderCreateRequest, signal?: AbortSignal): Promise<GenerationTask> {

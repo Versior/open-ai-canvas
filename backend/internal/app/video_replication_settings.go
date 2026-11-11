@@ -105,7 +105,7 @@ func (s *Service) videoReplicationSettings() (VideoReplicationSettings, error) {
 	}
 	if row != nil && strings.TrimSpace(row.ValueJSON) != "" {
 		if err := json.Unmarshal([]byte(row.ValueJSON), &value); err != nil {
-			return VideoReplicationSettings{}, fmt.Errorf("读取视频复刻设置失败: %w", err)
+			return VideoReplicationSettings{}, fmt.Errorf("读取视频创作设置失败: %w", err)
 		}
 	}
 	return normalizeStoredVideoReplicationSettings(value), nil
@@ -180,7 +180,7 @@ func (s *Service) UpdateVideoReplicationSettings(actor *model.User, patch VideoR
 	if saved == before {
 		return saved, nil
 	}
-	if err := s.appendAdminAudit(actor, "video_replication.settings.update", "system_setting", videoReplicationSettingsKey, "更新视频复刻设置", map[string]any{"before": before, "after": saved}); err != nil {
+	if err := s.appendAdminAudit(actor, "video_replication.settings.update", "system_setting", videoReplicationSettingsKey, "更新视频创作设置", map[string]any{"before": before, "after": saved}); err != nil {
 		return VideoReplicationSettings{}, err
 	}
 	return saved, nil

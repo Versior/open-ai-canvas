@@ -1,0 +1,92 @@
+.cv-planner {
+    display: grid;
+    gap: var(--space-4, 16px);
+    min-width: 0;
+}
+.rw-shell[data-creative="true"] .rw-rail,
+.rw-shell[data-creative="true"] .rw-recipe-layout > .rw-recipe,
+.rw-shell[data-creative="true"] .rw-recipe-layout > .cv-planner {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rw-line) transparent;
+}
+@media (min-width: 1280px) {
+    .rw-shell[data-creative="true"][data-step="recipe"] .rw-main {
+        overflow: hidden;
+    }
+    .rw-shell[data-creative="true"] .rw-recipe-layout {
+        height: 100%;
+        min-height: 0;
+    }
+    .rw-shell[data-creative="true"] .rw-recipe-layout > .rw-recipe,
+    .rw-shell[data-creative="true"] .rw-recipe-layout > .cv-planner {
+        height: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        align-content: start;
+    }
+    .rw-shell[data-creative="true"] .rw-recipe > .rw-card {
+        flex-shrink: 0;
+    }
+}
+.cv-reference {
+    max-width: 100%;
+    max-height: 240px;
+    object-fit: contain;
+}
+.cv-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3, 12px);
+    margin-bottom: var(--space-4, 16px);
+}
+.cv-fields label {
+    display: grid;
+    gap: var(--space-2, 8px);
+    color: var(--rw-ink-2);
+    font-size: var(--fs-label);
+}
+.cv-fields .ant-select,
+.cv-fields .ant-input-number {
+    width: 100%;
+}
+.cv-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3, 12px);
+    margin: var(--space-4, 16px) 0;
+}
+.cv-analysis,
+.cv-recover,
+.cv-plan {
+    padding: var(--space-3, 12px);
+    border: 1px solid var(--rw-line);
+    border-radius: var(--rw-radius-control);
+    margin: var(--space-3, 12px) 0;
+}
+.cv-analysis,
+.cv-plan p,
+.cv-plan blockquote {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.cv-plan summary {
+    cursor: pointer;
+    color: var(--rw-ink);
+    font-weight: 600;
+}
+.cv-plan ol {
+    padding-left: var(--space-5, 20px);
+}
+.cv-plan li {
+    margin-bottom: var(--space-4, 16px);
+}
+.cv-plan blockquote {
+    padding-left: var(--space-3, 12px);
+    color: var(--rw-ink-2);
+}
+@media (max-width: 640px) {
+    .cv-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

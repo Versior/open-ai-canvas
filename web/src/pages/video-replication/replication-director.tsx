@@ -117,7 +117,7 @@ export function ReplicaShotDirector({ shot, onChange, disabled = false }: { shot
     );
 }
 
-export function ReplicaStrategyView({ strategy }: { strategy: ReplicaStrategy }) {
+export function ReplicaStrategyView({ strategy, creative = false }: { strategy: ReplicaStrategy; creative?: boolean }) {
     return (
         <div className="vr-plan-fields" aria-label="全片策划依据">
             {(
@@ -126,7 +126,7 @@ export function ReplicaStrategyView({ strategy }: { strategy: ReplicaStrategy })
                     { key: "insight", label: "观众顾虑" },
                     { key: "proposition", label: "核心主张" },
                     { key: "hook", label: "开头可见的钩子" },
-                    { key: "rationale", label: "选法理由与原片取舍" },
+                    { key: "rationale", label: creative ? "创意与拍法理由" : "选法理由与原片取舍" },
                     { key: "visual", label: "场景、布光与色调" },
                     { key: "sound", label: "声音与剪辑" },
                     { key: "cta", label: "收束与下一步" },

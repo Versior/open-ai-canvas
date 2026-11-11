@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -21,19 +22,28 @@ func TestVideoReplicationAdminRoutesAndOpenAPI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	RegisterVideoReplicationAdminRoutes(router.Group("/api"), &service.Service{})
+	RegisterVideoTrendRoutes(router.Group("/api"), &service.Service{})
 	RegisterTaskRoutes(router.Group("/api"), &service.Service{})
 	wanted := map[string]string{
-		"GET /api/video-replication/config":                 "/video-replication/config",
-		"GET /api/admin/video-replication/overview":         "/admin/video-replication/overview",
-		"GET /api/admin/video-replication/teardowns":        "/admin/video-replication/teardowns",
-		"GET /api/admin/video-replication/teardowns/:id":    "/admin/video-replication/teardowns/{id}",
-		"DELETE /api/admin/video-replication/teardowns/:id": "/admin/video-replication/teardowns/{id}",
-		"GET /api/admin/video-replication/settings":         "/admin/video-replication/settings",
-		"PATCH /api/admin/video-replication/settings":       "/admin/video-replication/settings",
-		"POST /api/video-replication/teardowns":             "/video-replication/teardowns",
-		"GET /api/video-replication/teardowns":              "/video-replication/teardowns",
-		"GET /api/video-replication/teardowns/:id":          "/video-replication/teardowns/{id}",
-		"PUT /api/video-replication/teardowns/:id/analysis": "/video-replication/teardowns/{id}/analysis",
+		"GET /api/admin/video-replication/trends":                        "/admin/video-replication/trends",
+		"POST /api/admin/video-replication/trends/:source/oauth":         "/admin/video-replication/trends/{source}/oauth",
+		"GET /api/admin/video-replication/trends/:source/oauth/callback": "/admin/video-replication/trends/{source}/oauth/callback",
+		"GET /api/video-creation/trends":                                 "/video-creation/trends",
+		"PUT /api/admin/video-replication/trends/:source/connection":     "/admin/video-replication/trends/{source}/connection",
+		"DELETE /api/admin/video-replication/trends/:source/connection":  "/admin/video-replication/trends/{source}/connection",
+		"POST /api/admin/video-replication/trends/:source/refresh":       "/admin/video-replication/trends/{source}/refresh",
+		"PATCH /api/admin/video-replication/trends/:source":              "/admin/video-replication/trends/{source}",
+		"GET /api/video-replication/config":                              "/video-replication/config",
+		"GET /api/admin/video-replication/overview":                      "/admin/video-replication/overview",
+		"GET /api/admin/video-replication/teardowns":                     "/admin/video-replication/teardowns",
+		"GET /api/admin/video-replication/teardowns/:id":                 "/admin/video-replication/teardowns/{id}",
+		"DELETE /api/admin/video-replication/teardowns/:id":              "/admin/video-replication/teardowns/{id}",
+		"GET /api/admin/video-replication/settings":                      "/admin/video-replication/settings",
+		"PATCH /api/admin/video-replication/settings":                    "/admin/video-replication/settings",
+		"POST /api/video-replication/teardowns":                          "/video-replication/teardowns",
+		"GET /api/video-replication/teardowns":                           "/video-replication/teardowns",
+		"GET /api/video-replication/teardowns/:id":                       "/video-replication/teardowns/{id}",
+		"PUT /api/video-replication/teardowns/:id/analysis":              "/video-replication/teardowns/{id}/analysis",
 	}
 	registered := map[string]bool{}
 	for _, route := range router.Routes() {
@@ -57,6 +67,8 @@ func TestVideoReplicationAdminRoutesAndOpenAPI(t *testing.T) {
 }
 
 func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
+	t.Setenv("CANVAS_QIANCHUAN_APP_ID", "")
+	t.Setenv("CANVAS_OCEANENGINE_APP_ID", "")
 	gin.SetMode(gin.TestMode)
 	db, err := database.Open(database.Config{Driver: "sqlite", DSN: ":memory:"})
 	if err != nil {
@@ -90,6 +102,7 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 	api := router.Group("/api")
 	RegisterFeatureAvailabilityRoutes(api, svc)
 	RegisterVideoReplicationAdminRoutes(api, svc)
+	RegisterVideoTrendRoutes(api, svc)
 	RegisterTaskRoutes(api, svc)
 	call := func(method, path, body, cookie string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
@@ -104,6 +117,80 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 		return response
 	}
 	const admin, user = "vr-admin-session.admin-token", "vr-user-session.user-token"
+	if response := call(http.MethodPost, "/api/admin/video-replication/trends/qianchuan/oauth", "", ""); response.Code != http.StatusUnauthorized {
+		t.Fatal("anonymous authorization accepted")
+	}
+	if response := call(http.MethodPost, "/api/admin/video-replication/trends/qianchuan/oauth", "", admin); response.Code != http.StatusServiceUnavailable {
+		t.Fatal("unconfigured authorization accepted")
+	}
+	if response := call(http.MethodPost, "/api/admin/video-replication/trends/douhot/oauth", "", admin); response.Code != http.StatusBadRequest {
+		t.Fatal("unsupported platform authorization accepted")
+	}
+	if response := call(http.MethodGet, "/api/admin/video-replication/trends/qianchuan/oauth/callback?auth_code=FAKE_CODE&state=FAKE_STATE", "", admin); response.Code != http.StatusBadRequest || strings.Contains(response.Body.String(), "FAKE_CODE") || response.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatal("invalid callback accepted or leaked")
+	}
+	t.Run("configured official authorization start", func(t *testing.T) {
+		t.Setenv("CANVAS_PUBLIC_BASE_URL", "https://canvas.example.test")
+		t.Setenv("CANVAS_QIANCHUAN_APP_ID", "123")
+		t.Setenv("CANVAS_QIANCHUAN_APP_SECRET", "EXAMPLE_APP_SECRET")
+		t.Setenv("CANVAS_QIANCHUAN_AUTHORIZE_URL", "https://qianchuan.jinritemai.com/openapi/qc/audit/oauth.html?app_id=123")
+		response := call(http.MethodPost, "/api/admin/video-replication/trends/qianchuan/oauth", "{}", admin)
+		var result struct {
+			Data service.VideoTrendAuthorization `json:"data"`
+		}
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &result) != nil {
+			t.Fatal("configured authorization start failed")
+		}
+		u, err := url.Parse(result.Data.URL)
+		if err != nil || u.Host != "qianchuan.jinritemai.com" || len(u.Query().Get("state")) != 64 || u.Query().Get("redirect_uri") != "https://canvas.example.test/api/admin/video-replication/trends/qianchuan/oauth/callback" || strings.Contains(result.Data.URL, "EXAMPLE_APP_SECRET") {
+			t.Fatal("invalid server authorization response")
+		}
+	})
+	if response := call(http.MethodGet, "/api/video-creation/trends", "", ""); response.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous trends status = %d", response.Code)
+	}
+	if response := call(http.MethodGet, "/api/video-creation/trends?source=unknown", "", user); response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"reason":"invalid_argument"`) {
+		t.Fatalf("invalid trends source = %d %s", response.Code, response.Body.String())
+	}
+	for _, source := range []string{"douhot", "qianchuan", "oceanengine"} {
+		response := call(http.MethodGet, "/api/video-creation/trends?source="+source, "", user)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"unavailable"`) || !strings.Contains(response.Body.String(), `"topics":[]`) || strings.Contains(response.Body.String(), "fetchedAt") {
+			t.Fatalf("business source authorization status = %d %s", response.Code, response.Body.String())
+		}
+	}
+	for _, operation := range []struct{ method, path string }{
+		{http.MethodGet, "/api/admin/video-replication/trends"},
+		{http.MethodPost, "/api/admin/video-replication/trends/qianchuan/oauth"},
+		{http.MethodGet, "/api/admin/video-replication/trends/qianchuan/oauth/callback"},
+		{http.MethodPut, "/api/admin/video-replication/trends/douhot/connection"},
+		{http.MethodPost, "/api/admin/video-replication/trends/douhot/refresh"},
+		{http.MethodPatch, "/api/admin/video-replication/trends/douhot"},
+		{http.MethodDelete, "/api/admin/video-replication/trends/douhot/connection"},
+	} {
+		if response := call(operation.method, operation.path, "{}", user); response.Code != http.StatusForbidden {
+			t.Fatal("ordinary user accessed site account")
+		}
+	}
+	if response := call(http.MethodGet, "/api/admin/video-replication/trends", "", admin); response.Code != http.StatusOK || strings.Contains(response.Body.String(), "accessToken") {
+		t.Fatal("invalid admin account response")
+	}
+	if response := call(http.MethodPut, "/api/video-creation/trends/douhot", "{}", user); response.Code != http.StatusNotFound {
+		t.Fatal("old public write route still registered")
+	}
+	for _, input := range []string{`{"advertiserId":"1","accessToken":"YOUR_API_KEY_HERE","cookie":"FAKE"}`, `{"advertiserId":"0","accessToken":"YOUR_API_KEY_HERE"}`, `{"advertiserId":"1","accessToken":"YOUR_API_KEY_HERE"} {}`} {
+		if response := call(http.MethodPut, "/api/admin/video-replication/trends/oceanengine/connection", input, admin); response.Code != http.StatusBadRequest || strings.Contains(response.Body.String(), "YOUR_API_KEY_HERE") {
+			t.Fatal("invalid connection accepted")
+		}
+	}
+	if response := call(http.MethodPatch, "/api/admin/video-replication/trends/douhot", "{}", admin); response.Code != http.StatusBadRequest {
+		t.Fatal("missing visibility accepted")
+	}
+	if response := call(http.MethodPatch, "/api/admin/video-replication/trends/douhot", `{"enabled":true}`, admin); response.Code == http.StatusOK {
+		t.Fatal("unvalidated account published")
+	}
+	if response := call(http.MethodDelete, "/api/admin/video-replication/trends/douhot/connection", "", admin); response.Code != http.StatusOK {
+		t.Fatal("admin disconnect failed")
+	}
 
 	for _, path := range []string{"/api/admin/video-replication/overview", "/api/admin/video-replication/teardowns", "/api/admin/video-replication/teardowns/vt-http-1", "/api/admin/video-replication/settings"} {
 		if response := call(http.MethodGet, path, "", user); response.Code != http.StatusForbidden {
@@ -163,13 +250,13 @@ func TestVideoReplicationAdminHTTPFlow(t *testing.T) {
 	if closed := call(http.MethodPatch, "/api/admin/settings/features", `{"videoReplicationEnabled":false}`, admin); closed.Code != http.StatusOK || !strings.Contains(closed.Body.String(), `"videoReplicationEnabled":false`) || !strings.Contains(closed.Body.String(), `"socialVideoImportEnabled":true`) {
 		t.Fatalf("close feature = %d %s", closed.Code, closed.Body.String())
 	}
-	for _, path := range []string{"/api/video-replication/config", "/api/video-replication/teardowns"} {
-		if response := call(http.MethodGet, path, "", user); response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "视频复刻暂未开放") {
+	for _, path := range []string{"/api/video-replication/config", "/api/video-replication/teardowns", "/api/video-creation/trends"} {
+		if response := call(http.MethodGet, path, "", user); response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "视频创作暂未开放") {
 			t.Fatalf("%s with the feature off = %d %s", path, response.Code, response.Body.String())
 		}
 	}
 	// 后台管理不受功能开关影响。
-	for _, path := range []string{"/api/admin/video-replication/teardowns", "/api/admin/video-replication/settings"} {
+	for _, path := range []string{"/api/admin/video-replication/teardowns", "/api/admin/video-replication/settings", "/api/admin/video-replication/trends"} {
 		if response := call(http.MethodGet, path, "", admin); response.Code != http.StatusOK {
 			t.Fatalf("admin %s with the feature off = %d", path, response.Code)
 		}

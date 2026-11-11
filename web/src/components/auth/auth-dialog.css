@@ -1,168 +1,131 @@
-/* 登录弹窗：左侧品牌舞台 + 右侧登录面板。品牌舞台属于设计规范允许装饰渐变的登录品牌区域；
-   暖色光晕是组件级 token，底色仍来自 --auth-panel-bg，跟随皮肤与明暗主题。 */
-
 .auth-dialog {
-    --auth-dialog-glow: rgba(240, 206, 170, 0.62);
-    --auth-dialog-orb: rgba(255, 255, 255, 0.5);
-}
-
-.dark .auth-dialog {
-    --auth-dialog-glow: rgba(176, 128, 82, 0.16);
-    --auth-dialog-orb: rgba(255, 255, 255, 0.025);
+    --auth-dialog-stage-bg: var(--color-neutral-950);
+    --auth-dialog-stage-ink: var(--color-neutral-50);
+    --auth-dialog-stage-muted: color-mix(in srgb, var(--auth-dialog-stage-ink) 72%, transparent);
 }
 
 .auth-dialog-layout {
     display: grid;
-    min-height: min(600px, calc(100dvh - 48px));
+    min-height: min(580px, calc(100dvh - 48px));
     max-height: calc(100dvh - 48px);
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.04fr) minmax(0, 1fr);
+    overflow: hidden;
 }
 
 .auth-dialog-stage {
     position: relative;
+    isolation: isolate;
     display: flex;
     min-width: 0;
+    min-height: 0;
     flex-direction: column;
-    gap: var(--space-4);
-    overflow-y: auto;
+    overflow: hidden;
     padding: var(--space-8);
-    background: radial-gradient(120% 90% at 0% 0%, var(--auth-dialog-glow), transparent 62%), var(--auth-panel-bg);
-    color: var(--foreground);
+    background: var(--auth-dialog-stage-bg);
+    color: var(--auth-dialog-stage-ink);
 }
 
-/* 两枚大圆只做背景装饰，不参与布局与读屏。 */
-.auth-dialog-stage::before,
 .auth-dialog-stage::after {
     position: absolute;
-    border-radius: var(--r-full);
-    background: var(--auth-dialog-orb);
+    z-index: -1;
+    inset: 0;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--auth-dialog-stage-bg) 36%, transparent), transparent 28%, color-mix(in srgb, var(--auth-dialog-stage-bg) 86%, transparent) 76%, var(--auth-dialog-stage-bg));
     content: "";
     pointer-events: none;
 }
 
-.auth-dialog-stage::before {
-    top: -120px;
-    right: -110px;
-    width: 300px;
-    height: 300px;
-}
-
-.auth-dialog-stage::after {
-    bottom: -150px;
-    left: -120px;
-    width: 280px;
-    height: 280px;
-}
-
-/* ::after 在 DOM 顺序上排在内容之后，内容需要显式抬到装饰圆之上。 */
-.auth-dialog-stage > * {
-    position: relative;
-    z-index: 1;
+.auth-dialog-stage > .auth-dialog-film {
+    position: absolute;
+    z-index: -2;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: 0;
 }
 
 .auth-dialog-brand {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: var(--fs-heading);
-    font-weight: 600;
+    flex-shrink: 0;
 }
 
 .auth-dialog-brand-wordmark {
     width: 96px;
-    height: 24px;
-}
-
-.auth-dialog-film {
-    flex-shrink: 0;
-    width: 100%;
+    height: 28px;
 }
 
 .auth-dialog-stage-copy {
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
-    margin-top: var(--space-4);
+    margin-top: auto;
+    padding-top: var(--space-8);
 }
 
 .auth-dialog-stage-title {
     margin: 0;
-    font-size: var(--fs-display);
+    font-size: clamp(28px, 3vw, 40px);
     font-weight: 600;
     letter-spacing: var(--ls-title);
-    line-height: var(--lh-heading);
+    line-height: 1.15;
     white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 .auth-dialog-stage-tagline {
     margin: 0;
-    color: color-mix(in srgb, var(--foreground) 64%, transparent);
-    font-size: var(--fs-body);
+    color: var(--auth-dialog-stage-muted);
+    font-size: var(--fs-ui);
     line-height: var(--lh-body);
     white-space: pre-line;
 }
 
 .auth-dialog-features {
     display: grid;
-    margin: auto 0 0;
-    padding: 0;
-    gap: var(--space-4);
+    margin: var(--space-6) 0 0;
+    padding: var(--space-5) 0 0;
+    gap: var(--space-3) var(--space-4);
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid color-mix(in srgb, var(--auth-dialog-stage-ink) 18%, transparent);
     list-style: none;
 }
 
 .auth-dialog-feature {
     display: flex;
     min-width: 0;
-    align-items: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    border-radius: var(--r-lg);
-    background: var(--auth-card-bg);
+    align-items: center;
+    gap: var(--space-2);
 }
 
 .auth-dialog-feature-icon {
-    display: grid;
-    width: 36px;
-    height: 36px;
+    display: inline-flex;
     flex: 0 0 auto;
-    place-items: center;
-    border-radius: var(--r-md);
-    background: color-mix(in srgb, var(--foreground) 5%, transparent);
-    color: var(--foreground);
+    color: var(--auth-dialog-stage-muted);
 }
 
 .auth-dialog-feature-icon svg {
-    width: 18px;
-    height: 18px;
-    stroke-width: 1.75;
-}
-
-.auth-dialog-feature strong,
-.auth-dialog-feature small {
-    display: block;
+    width: 15px;
+    height: 15px;
+    stroke-width: 1.5;
 }
 
 .auth-dialog-feature strong {
-    font-size: var(--fs-body);
-    font-weight: 600;
-    line-height: 1.4;
-}
-
-.auth-dialog-feature small {
-    margin-top: var(--space-1);
-    color: var(--auth-muted);
     font-size: var(--fs-caption);
+    font-weight: 500;
     line-height: 1.5;
 }
 
 .auth-dialog-form {
     display: flex;
     min-width: 0;
+    min-height: 0;
+    overflow-x: hidden;
     overflow-y: auto;
-    padding: var(--space-12) var(--space-12) var(--space-8);
+    padding: var(--space-12) var(--space-10);
     background: var(--auth-card-bg);
     overscroll-behavior: contain;
+    scrollbar-width: thin;
 }
 
 /* 用 auto 外边距垂直居中：内容超过可视高度时仍从顶部开始滚动，不会被裁掉。 */
@@ -171,7 +134,7 @@
     margin-block: auto;
 }
 
-@media (max-width: 860px) {
+@media (max-width: 860px), (max-height: 560px) {
     .auth-dialog-layout {
         min-height: 0;
         grid-template-columns: minmax(0, 1fr);

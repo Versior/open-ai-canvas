@@ -1,13 +1,14 @@
 import { motion, useReducedMotion } from "motion/react";
 import { App } from "antd";
-import { ArrowLeft, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowLeft } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Link, Navigate, Outlet, useLocation, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 
 import { LanguageMenu } from "@/components/layout/language-menu";
 
 import { BrandWordmark } from "@/components/brand/brand-logo";
+import { BrandFilm } from "@/components/brand/brand-film";
 import { SiteComplianceFooter } from "@/components/layout/site-compliance-footer";
 import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { useAuthLoginMode } from "@/hooks/use-auth-entry";
@@ -54,62 +55,17 @@ function AuthPageScene() {
     const theme = useThemeStore((state) => state.theme);
     const reducedMotion = useReducedMotion();
     const { t } = useTranslation();
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const [manualVideoActive, setManualVideoActive] = useState(false);
-    const [videoPlaying, setVideoPlaying] = useState(false);
-    const [failedPosterURL, setFailedPosterURL] = useState("");
-    const automaticVideoActive = appearance.authVideoAutoplay && !reducedMotion;
-    const videoActive = Boolean(appearance.authVideoUrl && (automaticVideoActive || manualVideoActive));
-
-    useEffect(() => {
-        setManualVideoActive(false);
-        setVideoPlaying(false);
-    }, [appearance.authVideoUrl, appearance.authVideoAutoplay]);
-
-    const playVideo = () => {
-        setManualVideoActive(true);
-        requestAnimationFrame(() => {
-            void videoRef.current?.play().catch(() => setVideoPlaying(false));
-        });
-    };
-
     return (
         <main className="auth-scene h-dvh min-h-0 overflow-y-auto lg:overflow-hidden">
             <div className="grid min-h-full lg:h-full lg:grid-cols-[minmax(0,1.32fr)_minmax(520px,1fr)]">
                 <section className="auth-scene-hero relative min-h-[250px] overflow-hidden sm:min-h-[320px] lg:min-h-0" aria-label={t("auth.brandFilm", { brand: appearance.brandName })}>
-                    {videoActive && appearance.authVideoUrl ? (
-                        <video
-                            ref={videoRef}
-                            className="absolute inset-0 size-full object-cover"
-                            src={appearance.authVideoUrl}
-                            poster={appearance.authVideoPosterUrl || undefined}
-                            autoPlay
-                            muted
-                            loop
-                            playsInline
-                            preload="metadata"
-                            onPlay={() => setVideoPlaying(true)}
-                            onPause={() => setVideoPlaying(false)}
-                        />
-                    ) : appearance.authVideoPosterUrl && failedPosterURL !== appearance.authVideoPosterUrl ? (
-                        <img className="absolute inset-0 size-full object-cover" src={appearance.authVideoPosterUrl} alt="" decoding="async" onError={() => setFailedPosterURL(appearance.authVideoPosterUrl)} />
-                    ) : null}
+                    <BrandFilm className="auth-scene-film" />
                     <div aria-hidden className="auth-scene-hero-overlay absolute inset-0" />
                     <div aria-hidden className="auth-scene-video-blend absolute inset-y-0 right-0 hidden w-[clamp(120px,14vw,240px)] lg:block" />
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 p-5 sm:p-7 lg:p-9">
                         <Link to="/" className="auth-scene-brand inline-flex items-center gap-2 text-sm font-semibold drop-shadow-sm transition-opacity hover:opacity-80">
                             <BrandWordmark theme={theme} builtinClassName="h-6 w-[90px]" />
                         </Link>
-                        <button
-                            type="button"
-                            className="auth-scene-hero-control inline-flex items-center gap-2 rounded-full px-3 py-2 text-[var(--fs-label)] backdrop-blur-xl transition disabled:cursor-default"
-                            onClick={playVideo}
-                            disabled={videoPlaying || !appearance.authVideoUrl}
-                            aria-pressed={videoPlaying}
-                        >
-                            <Play className="size-3 fill-current" />
-                            {videoPlaying ? t("auth.videoPlaying") : t("auth.playVideo")}
-                        </button>
                     </div>
                     <motion.div
                         initial={reducedMotion ? false : { opacity: 0, y: 18 }}

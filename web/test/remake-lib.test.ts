@@ -79,10 +79,10 @@ describe("remake job", () => {
     });
 
     it("requires materials, authorization for original content and a model that can speak", () => {
-        expect(remakeJobError(job())).toBe("");
+        expect(remakeJobError(job())).toContain("人物需要");
         expect(remakeJobError({ ...job(), product: { name: "", sellingPoints: "", images: [] } })).toContain("商品图");
         expect(remakeJobError(job(["keep", "replace", "replace", "replace", "replace"]))).toContain("授权");
-        expect(remakeJobError({ ...job(["keep", "replace", "replace", "replace", "replace"]), authorized: true })).toBe("");
+        expect(remakeJobError({ ...job(["keep", "replace", "replace", "replace", "replace"]), authorized: true, models: [{ id: "actor", resourceId: "actor", name: "同一模特" }] })).toBe("");
         expect(remakeJobError(job(["skip", "skip", "skip", "skip", "skip"]))).toContain("至少保留");
         const speaking = { ...job(), shots: job().shots.map((shot) => ({ ...shot, dialogue: "新口播" })) };
         expect(remakeJobError(speaking, { maxImages: 9, generateAudio: false })).toContain("不能生成声音");
@@ -129,7 +129,7 @@ describe("remake timeline", () => {
         value.units = planRemakeUnits(value.shots, { maxMs: 15_000, sourceDurationMs: 12_000 }).map((unit, index) => ({
             ...unit,
             status: "succeeded" as const,
-            takes: [{ taskId: `t${index}`, resourceId: `gen-${index}`, createdAt: "", width: 720, height: 1280 }],
+            takes: [{ taskId: `t${index}`, resourceId: `gen-${index}`, createdAt: "", width: 720, height: 1280, durationMs: unit.clipEndMs - unit.clipStartMs }],
         }));
         return value;
     }

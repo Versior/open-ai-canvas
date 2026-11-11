@@ -164,7 +164,7 @@ func TestVideoTeardownFollowsReplicationSettingsAndFeatureSwitch(t *testing.T) {
 		"detail": func() error { _, err := svc.VideoReplication("usr-a", created.ID); return err },
 		"config": func() error { _, err := svc.VideoReplicationConfig(); return err },
 	} {
-		if err := call(); !errors.As(err, &authErr) || authErr.Status != 403 || authErr.Message != "视频复刻暂未开放" {
+		if err := call(); !errors.As(err, &authErr) || authErr.Status != 403 || authErr.Message != "视频创作暂未开放" {
 			t.Fatalf("%s with the feature off: err = %v", name, err)
 		}
 	}

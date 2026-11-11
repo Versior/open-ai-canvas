@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { emptyFashionVideoDraft, fashionVideoProblem, fashionVideoTimeline, planFashionVideos, type FashionVideoDraft, type FashionVideoWork } from "@/lib/fashion/video-workflow";
+import { emptyFashionVideoDraft, fashionVideoProblem, fashionVideoRenderMatches, fashionVideoTimeline, planFashionVideos, type FashionVideoDraft, type FashionVideoWork } from "@/lib/fashion/video-workflow";
 import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
 import { setActiveUserScope } from "@/lib/user-scope";
 import { parseFashionVideoWork } from "@/services/api/fashion-video";
@@ -53,6 +53,105 @@ function setup() {
     };
     return { work, config };
 }
+test("source selections preserve millisecond duration and original frame instead of model output defaults", () => {
+    const value = { ...draft("face"), startMs: 0, seconds: 28.544, source: { ...draft().source!, durationMs: 28544, width: 808, height: 720 } };
+    expect(fashionVideoProblem(value)).toBe("");
+    const { work } = setup();
+    work.draft = { ...value, seconds: 12.345 };
+    const unit = { ...work.units[0], resourceId: "generated", durationMs: 13000, width: 720, height: 1280 };
+    const timeline = fashionVideoTimeline(work, unit);
+    expect(timeline.durationMs).toBe(12345);
+    expect([timeline.width, timeline.height]).toEqual([808, 720]);
+});
+test("long face replacement shares source clips and anchor, then joins the exact source range", async () => {
+    const { work, config } = setup();
+    work.draft = { ...draft("face"), startMs: 0, seconds: 28.544, source: { ...draft().source!, durationMs: 28544, width: 808, height: 720 } };
+    work.units = planFashionVideos(work.draft, () => "whole");
+    const calls: { url: string; body: Record<string, any> }[] = [];
+    const tasks = new Map<string, Record<string, any>>();
+    apiClient.defaults.adapter = async (request) => {
+        const body = typeof request.data === "string" ? JSON.parse(request.data) : request.data || {};
+        const url = request.url!;
+        calls.push({ url, body });
+        let task: Record<string, any>;
+        if (request.method === "get") task = tasks.get(url.split("/").at(-1)!)!;
+        else {
+            const type = url.endsWith("splits") ? "product_video_split" : url.endsWith("renders") ? "timeline_render" : "canvas_video";
+            const id = `task-${tasks.size}`;
+            const result =
+                type === "product_video_split"
+                    ? {
+                          source: { hasAudio: true },
+                          segments: body.ranges.map((range: { startMs: number; endMs: number }, index: number) => ({
+                              ...range,
+                              index: index + 1,
+                              resourceId: `cut-${index}`,
+                              keyframeResourceId: `anchor-${index}`,
+                              durationMs: range.endMs - range.startMs,
+                              width: 808,
+                              height: 720,
+                          })),
+                      }
+                    : type === "canvas_video"
+                      ? { video: { storageKey: `resource:generated-${id}`, durationMs: 15000, width: 720, height: 1280 } }
+                      : { resourceId: `render-${id}` };
+            task = { id, type, status: "succeeded", prompt: "test", attempts: 1, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), resultJson: JSON.stringify(result) };
+            tasks.set(id, task);
+        }
+        return { status: 200, statusText: "OK", headers: {}, config: request, data: { code: 0, msg: "", data: task } };
+    };
+    const result = await runFashionVideoWork(work, config, async (value) => parseFashionVideoWork({ ...value, revision: value.revision + 1 })!, new AbortController().signal);
+    const cuts = calls.filter((call) => call.url.endsWith("splits"));
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0].body.ranges).toEqual([
+        { startMs: 0, endMs: 14272 },
+        { startMs: 14272, endMs: 28544 },
+    ]);
+    const generated = calls.filter((call) => call.url === "/tasks");
+    expect(generated).toHaveLength(2);
+    for (const call of generated) {
+        expect(call.body.input.referenceImages.map((image: { storageKey: string }) => image.storageKey)).toEqual(["resource:identity", "resource:anchor-0"]);
+        expect(call.body.input.referenceVideos[0].durationMs).toBe(14272);
+    }
+    const assembled = calls.filter((call) => call.url.endsWith("renders")).at(-1)!.body.timeline;
+    expect([assembled.width, assembled.height, assembled.durationMs]).toEqual([808, 720, 28544]);
+    expect(assembled.clips.map((clip: { startMs: number; durationMs: number }) => [clip.startMs, clip.durationMs])).toEqual([
+        [0, 14272],
+        [14272, 14272],
+    ]);
+    expect(result.units[0].status).toBe("succeeded");
+    const expected = fashionVideoTimeline(result, result.units[0]);
+    expect(fashionVideoRenderMatches(assembled, expected)).toBe(true);
+    expect(fashionVideoRenderMatches({ ...assembled, clips: assembled.clips.slice(0, 1) }, expected)).toBe(false);
+    expect(fashionVideoRenderMatches({ ...assembled, width: 720, height: 1280 }, expected)).toBe(false);
+    const reloaded = parseFashionVideoWork(JSON.parse(JSON.stringify(result)))!;
+    const before = calls.length;
+    await runFashionVideoWork(reloaded, { ...config, channels: [] }, async (value) => value, new AbortController().signal);
+    expect(calls).toHaveLength(before);
+    expect(() => parseFashionVideoWork({ ...result, clip: { ...result.clip, segments: result.clip!.segments!.slice(0, 1) } })).toThrow("无效");
+    const duplicated = structuredClone(result);
+    duplicated.units[0].parts![1].id = duplicated.units[0].parts![0].id;
+    expect(() => parseFashionVideoWork(duplicated)).toThrow("无效");
+    const incomplete = structuredClone(result);
+    delete incomplete.units[0].parts;
+    expect(() => parseFashionVideoWork(incomplete)).toThrow("无效");
+    const retry = structuredClone(result);
+    retry.id = "new-version";
+    retry.units = [
+        {
+            id: "new-whole",
+            title: result.units[0].title,
+            prompt: result.units[0].prompt,
+            references: result.units[0].references,
+            status: "pending",
+            parts: [result.units[0].parts![0], { ...result.units[0].parts![1], id: "new-part", status: "pending", taskId: undefined, resourceId: undefined, render: undefined }],
+        },
+    ];
+    const beforeRetry = calls.length;
+    await runFashionVideoWork(parseFashionVideoWork(retry)!, config, async (value) => parseFashionVideoWork({ ...value, revision: value.revision + 1 })!, new AbortController().signal);
+    expect(calls.slice(beforeRetry).filter((call) => call.url === "/tasks")).toHaveLength(1);
+    expect(calls.slice(beforeRetry).some((call) => call.url.endsWith("splits"))).toBe(false);
+});
 test("video tools require source video and use distinct identity, garment and motion instructions", () => {
     for (const tool of ["tryon", "face", "head", "motion", "print"] as const) {
         const value = draft(tool);
@@ -98,7 +197,7 @@ test("timeline preserves precise original sound and refuses short or unconfirmed
     work.clip.hasAudio = false;
     expect(() => fashionVideoTimeline(work, unit)).toThrow("音轨");
 });
-function mockTransport(calls: { url: string; body: Record<string, any> }[], splitAudio = true) {
+function mockTransport(calls: { url: string; body: Record<string, any> }[], splitAudio = true, generatedDurationMs = 5000) {
     apiClient.defaults.adapter = async (config) => {
         const body = typeof config.data === "string" ? JSON.parse(config.data) : config.data || {};
         calls.push({ url: config.url!, body });
@@ -109,7 +208,7 @@ function mockTransport(calls: { url: string; body: Record<string, any> }[], spli
                 ? { source: { hasAudio: splitAudio }, startMs: 2000, endMs: 7000, segments: [{ index: 1, startMs: 2000, endMs: 7000, durationMs: 5000, resourceId: "selected-clip", keyframeResourceId: "keyframe", width: 720, height: 1280 }] }
                 : type === "timeline_render"
                   ? { resourceId: "delivered" }
-                  : { video: { storageKey: "resource:generated", durationMs: 5000, width: 720, height: 1280 } };
+                  : { video: { storageKey: "resource:generated", durationMs: generatedDurationMs, width: 720, height: 1280 } };
         return {
             status: 200,
             statusText: "OK",
@@ -119,6 +218,17 @@ function mockTransport(calls: { url: string; body: Record<string, any> }[], spli
         };
     };
 }
+test("completed short output is marked failed and remains available for review instead of getting stuck running", async () => {
+    const { work, config } = setup();
+    const calls: { url: string; body: Record<string, any> }[] = [];
+    mockTransport(calls, true, 4000);
+    const result = await runFashionVideoWork(work, config, async (value) => value, new AbortController().signal);
+    expect(result.units[0].status).toBe("failed");
+    expect(result.units[0].resourceId).toBe("generated");
+    expect(result.units[0].error).toContain("短于");
+    expect(calls.some((call) => call.url.endsWith("renders"))).toBe(false);
+    expect(result.units[0].render).toBeUndefined();
+});
 test("actual generation request receives the cut video and image; all delivery stages persist", async () => {
     const { work, config } = setup();
     const calls: { url: string; body: Record<string, any> }[] = [];

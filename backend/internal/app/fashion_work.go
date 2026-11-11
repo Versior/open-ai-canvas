@@ -165,6 +165,9 @@ func (s *Service) validateFashionResources(userID string, raw json.RawMessage) e
 		if isVideoWork && (strings.HasPrefix(ref.Path, "draft.source.") || strings.HasPrefix(ref.Path, "clip.") || strings.HasPrefix(ref.Path, "units[") && !strings.Contains(ref.Path, ".references[")) {
 			kind = "video"
 		}
+		if ref.ReferenceType == "keyframeResourceId" {
+			kind = "image"
+		}
 		key := kind + ":" + ref.ResourceID
 		if seen[key] {
 			continue

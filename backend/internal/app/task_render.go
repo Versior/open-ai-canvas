@@ -32,6 +32,9 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	if err := json.Unmarshal([]byte(task.InputJSON), &input); err != nil {
 		return w.failTimelineTask(task, "合成输入无效", "任务缺少有效的时间线快照")
 	}
+	if err := validateRenderComparison(input.Timeline); err != nil {
+		return w.failTimelineTask(task, "对比输入无效", err.Error())
+	}
 	plan := buildRenderPlan(input.Timeline)
 	if err := validateRenderLut(plan.ColorLut); err != nil {
 		return w.failTimelineTask(task, "LUT 配置无效", err.Error())
@@ -54,7 +57,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	if err := writeRenderLut(workDir, plan.ColorLut); err != nil {
 		return w.failTimelineTask(task, "准备 LUT 失败", err.Error())
 	}
-	for _, seg := range plan.Segments {
+	for _, seg := range append(append([]renderSegment{}, plan.Segments...), plan.Comparison...) {
 		if seg.Source == nil || seg.Kind == "image" {
 			continue
 		}
@@ -223,6 +226,7 @@ type renderSourceFile struct {
 	path          string
 	width, height int
 	aigc          string
+	durationMs    int64
 }
 
 // materializeRenderSources 把计划中每个媒体片段对应的资源下载到临时目录，
@@ -238,6 +242,9 @@ func materializeRenderSources(ctx context.Context, s *Service, userID string, pl
 	segments := make([]*renderSegment, 0, len(plan.Segments)+len(plan.AudioOverlays)+len(plan.ImageOverlays))
 	for i := range plan.Segments {
 		segments = append(segments, &plan.Segments[i])
+	}
+	for i := range plan.Comparison {
+		segments = append(segments, &plan.Comparison[i])
 	}
 	for i := range plan.AudioOverlays {
 		segments = append(segments, &plan.AudioOverlays[i])
@@ -278,8 +285,9 @@ func materializeRenderSources(ctx context.Context, s *Service, userID string, pl
 			}
 			file.Close()
 			reader.Close()
-			entry = renderSourceFile{path: path, width: max(resource.Width, 0), height: max(resource.Height, 0)}
+			entry = renderSourceFile{path: path, width: max(resource.Width, 0), height: max(resource.Height, 0), durationMs: resource.DurationMs}
 			if info, probeErr := probeMediaFile(ctx, path); probeErr == nil {
+				entry.durationMs = info.DurationMs
 				if info.Width > 0 && info.Height > 0 {
 					entry.width, entry.height = info.Width, info.Height
 				}
@@ -288,6 +296,10 @@ func materializeRenderSources(ctx context.Context, s *Service, userID string, pl
 				}
 			}
 			cache[resourceID] = entry
+		}
+		if len(plan.Comparison) > 0 && seg.Kind == "video" && (entry.durationMs <= 0 || seg.Clip.SourceStartMs > entry.durationMs || seg.DurationMs > entry.durationMs-seg.Clip.SourceStartMs+40) {
+			cleanup()
+			return "", nil, fmt.Errorf("对比视频选段超出来源素材实际时长")
 		}
 		seg.Source = &renderSource{ResourceID: resourceID, Clip: seg.Clip, Path: entry.path, Ext: filepath.Ext(entry.path), Width: entry.width, Height: entry.height, AIGC: entry.aigc}
 	}

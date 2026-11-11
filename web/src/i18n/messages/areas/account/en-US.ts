@@ -544,6 +544,9 @@ export const enUS: DeepStringRecord<typeof zhCN> = {
             },
         },
         showcases: {
+            video: { name: "Video creation", detail: "Plan scripts from product and cast references, or recreate a reference video shot by shot, then edit and export a comparison." },
+            studio: { name: "Product image studio", detail: "Analyze product photos, plan hero images and detail pages, and review the visual style and information on every panel." },
+            interior: { name: "Interior design", detail: "Turn room photos and design references into renders, then refine the layout, materials and 3D plan." },
             canvas: { name: "Free Canvas", description: "Connect ideas into finished work.", detail: "Organize references, connect nodes, compare results and keep creating along your own line of thought." },
             create: { name: "Instant Create", description: "Start with a single sentence.", detail: "Choose models and reference assets, then build images and videos step by step in conversation." },
             projects: { name: "Project Workbench", description: "Keep long stories organized.", detail: "Organize production around chapters, characters and storyboards, and return to your story anytime." },

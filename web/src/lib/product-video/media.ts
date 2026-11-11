@@ -68,17 +68,22 @@ export function productVideoDefaultRatio(ratios: readonly string[], width?: numb
 export type ProductVideoRenderTimeline = TimelineProject & { width: number; height: number; fit: "auto" };
 
 /**
- * 成片的时间线快照：生成好的各段按原视频顺序首尾相接，每段裁到参考片段的原长（生成得短时用最后一帧补齐），
+ * 成片的时间线快照：生成好的各段按原视频顺序首尾相接，每段裁到参考片段的原长，短候选拒绝交付，
  * 所以成片时长跟随参考视频。保留原声时画面轨静音，再把原视频这一段的声音铺满整条；不要声音时只静音。
  */
-export function productVideoTimeline(job: Pick<ProductVideoJob, "audio" | "reference" | "shots" | "split">, size: { width: number; height: number }): ProductVideoRenderTimeline {
+export function productVideoTimeline(job: Pick<ProductVideoJob, "audio" | "reference" | "shots" | "split" | "startMs" | "endMs">, size: { width: number; height: number }): ProductVideoRenderTimeline {
     const segments = job.split?.segments || [];
     if (!segments.length) throw new Error("还没有切好的参考片段");
+    if (segments[0].startMs !== job.startMs || segments[segments.length - 1].endMs !== job.endMs) throw new Error("参考视频切段没有完整覆盖所选范围");
     const shots = new Map(job.shots.map((shot) => [shot.index, shot]));
     const first = segments[0];
+    let cursor = first.startMs;
     const clips: TimelineClip[] = segments.map((segment: ProductVideoSegment) => {
+        if (segment.startMs !== cursor || segment.endMs <= segment.startMs || Math.abs(segment.durationMs - (segment.endMs - segment.startMs)) > 100) throw new Error("参考视频切段没有完整连续覆盖选段");
+        cursor = segment.endMs;
         const shot = shots.get(segment.index);
         if (!shot?.resourceId) throw new Error(`第 ${segment.index} 段还没有生成好`);
+        if (!shot.durationMs || shot.durationMs + 100 < segment.durationMs) throw new Error(`第 ${segment.index} 段生成时长不足，不能用静止尾帧补成完整视频`);
         return {
             id: `shot-${segment.index}`,
             kind: "video",
@@ -93,7 +98,8 @@ export function productVideoTimeline(job: Pick<ProductVideoJob, "audio" | "refer
     });
     const last = segments[segments.length - 1];
     const durationMs = last.endMs - first.startMs;
-    const original = job.audio === "original" && job.split?.hasAudio !== false && job.reference;
+    if (job.audio === "original" && (!job.reference || job.split?.hasAudio !== true)) throw new Error("原视频没有确认可用音轨，请选择静音或模型声音后再合成");
+    const original = job.audio === "original" && job.reference;
     if (original && job.reference) {
         clips.push({
             id: "original-audio",
@@ -120,12 +126,12 @@ export function productVideoTimeline(job: Pick<ProductVideoJob, "audio" | "refer
     };
 }
 
-/** 成片画幅：取第一段生成结果的尺寸，没有时用参考片段的尺寸。 */
-export function productVideoRenderSize(job: Pick<ProductVideoJob, "shots" | "split">) {
-    const shot = job.shots.find((item) => item.width && item.height);
-    if (shot?.width && shot.height) return { width: shot.width, height: shot.height };
+/** 原视频元素替换按源尺寸交付，生成模型的默认竖屏不能覆盖参考比例。 */
+export function productVideoRenderSize(job: Pick<ProductVideoJob, "reference" | "split">) {
+    if (job.reference?.width && job.reference.height) return { width: job.reference.width, height: job.reference.height };
     const segment = job.split?.segments?.[0];
-    return { width: segment?.width || 720, height: segment?.height || 1280 };
+    if (!segment?.width || !segment.height) throw new Error("原视频尺寸尚未确认，不能按默认比例交付");
+    return { width: segment.width, height: segment.height };
 }
 
 export function formatProductVideoSeconds(ms: number) {

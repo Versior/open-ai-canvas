@@ -56,7 +56,7 @@ export function getWelcomeLook(search = window.location.search) {
 }
 
 export const showcases = [
-    { name: "account.welcome.showcases.canvas.name", image: "/welcome/workbench-canvas.webp", description: "account.welcome.showcases.canvas.description", detail: "account.welcome.showcases.canvas.detail", href: "/canvas" },
-    { name: "account.welcome.showcases.create.name", image: "/welcome/workbench-create.webp", description: "account.welcome.showcases.create.description", detail: "account.welcome.showcases.create.detail", href: "/create" },
-    { name: "account.welcome.showcases.projects.name", image: "/welcome/workbench-project.webp", description: "account.welcome.showcases.projects.description", detail: "account.welcome.showcases.projects.detail", href: "/projects" },
+    { name: "account.welcome.showcases.video.name", image: "/welcome/workbench-video-v2.jpg", detail: "account.welcome.showcases.video.detail", href: "/video-replication" },
+    { name: "account.welcome.showcases.studio.name", image: "/welcome/workbench-studio-v2.jpg", detail: "account.welcome.showcases.studio.detail", href: "/studio" },
+    { name: "account.welcome.showcases.interior.name", image: "/welcome/workbench-interior-v2.jpg", detail: "account.welcome.showcases.interior.detail", href: "/interior" },
 ] as const;

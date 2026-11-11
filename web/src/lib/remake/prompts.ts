@@ -4,6 +4,7 @@ import { imageReferenceLabel } from "@/lib/image-reference-prompt";
 import type { ProductVideoImage } from "@/lib/product-video/job";
 import { seedanceReferenceLabel } from "@/lib/seedance-video";
 import { remakeLanguage, type RemakeJob, type RemakeLanguage, type RemakeShot, type RemakeUnit } from "./job";
+import { creativeContext } from "./creative";
 
 // 复刻工作台的提示词：生成单元的视频提示词（换元素 / 重新拍）和改写口播的文本提示词。
 // 参考图按角色绑定：商品图定商品、模特图定人物、背景图定场景；换元素时参考视频定动作、运镜和节奏。
@@ -18,12 +19,15 @@ export function remakeDialogueBudget(shot: Pick<RemakeShot, "startMs" | "endMs">
     return Math.max(0, Math.floor(((shot.endMs - shot.startMs) / 1000) * cps));
 }
 
-export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; face: string; pose: string; background: string };
+export type RemakeReferenceImages = { images: ProductVideoImage[]; product: string; model: string; face: string; pose: string; background: string; anchor: string };
 
 /** 参考图的顺序就是提示词里的图号：商品图、模特图（选了换模特时）、背景图。 */
-export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" | "models" | "backgrounds">): RemakeReferenceImages {
+export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" | "models" | "backgrounds"> & Partial<Pick<RemakeJob, "shots" | "source">>): RemakeReferenceImages {
     const models = job.people === "model" ? job.models : [];
     const images = [...job.product.images, ...models, ...job.backgrounds];
+    const anchor = job.source ? job.shots?.find((shot) => shot.keyframeResourceId && shot.risks.includes("face")) || job.shots?.find((shot) => shot.keyframeResourceId) : undefined;
+    const anchorOffset = images.length;
+    if (anchor) images.push({ id: "continuity-anchor", resourceId: anchor.keyframeResourceId, name: "原片人物与环境基准" });
     const label = (offset: number, length: number) => Array.from({ length }, (_, index) => `@${imageReferenceLabel(offset + index)}`).join("、");
     return {
         images,
@@ -32,6 +36,7 @@ export function remakeReferenceImages(job: Pick<RemakeJob, "product" | "people" 
         face: models.flatMap((image, index) => (image.role === "face" ? [label(job.product.images.length + index, 1)] : [])).join("、"),
         pose: models.flatMap((image, index) => (image.role === "pose" ? [label(job.product.images.length + index, 1)] : [])).join("、"),
         background: label(job.product.images.length + models.length, job.backgrounds.length),
+        anchor: anchor ? label(anchorOffset, 1) : "",
     };
 }
 
@@ -71,15 +76,36 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
     const lines: string[] =
         unit.treatment === "replace"
             ? [`以${video}为动作、镜头和时间结构的基础，替换画面里的元素，生成一段约 ${seconds} 秒的视频，镜头顺序、切换点和节奏与${video}一致。`, "替换方式（自然适配：新主体按自己的结构自然套进原动作）："]
-            : [`生成一段约 ${seconds} 秒的带货短视频，共 ${shots.length} 个镜头，按下面的分镜依次硬切：`, ...shots.map((shot) => `- 镜头 ${shot.index}（约 ${shotSeconds(shot)} 秒）：${remakeShotDescription(shot)}`), "素材要求："];
+            : [
+                  `生成一段约 ${seconds} 秒的${job.creative ? "商品创作视频" : "带货短视频"}，共 ${shots.length} 个镜头，按下面的分镜依次硬切：`,
+                  ...shots.map((shot) => `- 镜头 ${shot.index}（约 ${shotSeconds(shot)} 秒）：${remakeShotDescription(shot)}`),
+                  "素材要求：",
+              ];
     lines.push(...[productLine(job, refs), peopleLine(job, refs, video), background].filter(Boolean).map((line) => `- ${line}`));
+    if (refs.anchor)
+        lines.push(
+            `全片视觉基准：${refs.anchor}用于跨段核对原场景布局、光线方向、曝光、白平衡和色调。同一场景沿用基准，不在每段重新布景或调色；原片切换场景时按该镜的环境执行，整体色调仍统一。${job.people === "original" ? "人物身份、发型、衣物和体型同时锁定为基准中的原人物。" : "不要复制基准图中的人脸或原商品；目标身份与商品以专用参考图为准。"}${refs.background ? "已指定的背景图优先决定环境布局，原片仅参考布光和整体色调。" : ""}`,
+        );
     if (refs.pose)
         lines.push(
             unit.treatment === "remake"
                 ? `姿势：${refs.pose}仅参考动作、肢体关系与姿态，不使用姿势图里的人脸、服装、商品和背景；在此姿态基础上执行导演动作。`
                 : `姿势：换元素仍以${video}为动作依据，${refs.pose}仅参考动作的自然程度，不改变原片时序与机位，不作为人物身份。`,
         );
-    if (unit.treatment === "replace") lines.push("保留原视频的动作、运镜、构图和剪辑节奏，以及人物与商品之间的遮挡、接触和空间关系；人物参考不改变背景，背景参考不改变人物，商品参考不改变手部动作。");
+    if (unit.treatment === "replace")
+        lines.push(
+            "保留原视频的动作、运镜、构图和剪辑节奏，以及人物与商品之间的遮挡、接触和空间关系；人物参考不改变背景，背景参考不改变人物，商品参考不改变手部动作。",
+            "参考片段与生成片段共用时间轴，按原秒数执行动作，不把参考动作拉伸到生成时长；多余尾部只延续最后动作。",
+            ...shots.map(
+                (shot) => `参考片段 ${((Math.max(shot.startMs, unit.startMs) - unit.clipStartMs) / 1000).toFixed(3)}–${((Math.min(shot.endMs, unit.endMs) - unit.clipStartMs) / 1000).toFixed(3)} 秒：镜头 ${shot.index}，${remakeShotDescription(shot)}。`,
+            ),
+        );
+    else lines.push("跨镜头身份锁：所有镜头使用同一人物、同一发型、同一套衣物与同一商品尺寸。不得在每次生成时重新选演员；手持与遮挡后的外观仍与专用参考图一致。");
+    if (job.creative) {
+        lines.push(creativeContext(job));
+        const plan = job.creative.plans.find((item) => item.id === job.creative?.activePlanId);
+        if (plan) lines.push(`全片创意：${JSON.stringify(plan.strategy)}。仅执行本单元镜头，勿在每段重复完整剧情。`);
+    }
     if (job.campaign) {
         if (unit.treatment === "remake") {
             lines.push(replicaCampaignPrompt(job.campaign));

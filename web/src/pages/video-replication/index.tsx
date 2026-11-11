@@ -7,7 +7,10 @@ import { WorkspacePage } from "@/components/layout/workspace-page";
 import { nanoid } from "nanoid";
 import { readReplicaPlan } from "@/lib/canvas/video-replica-plan";
 import { readVideoReplicationAnalysis, videoTeardownModelError, type VideoTeardownAnalysis } from "@/lib/canvas/video-teardown";
-import { createRemakeJob, isRemakeJob } from "@/lib/remake/job";
+import { createRemakeJob, isRemakeJob, type RemakeProduct } from "@/lib/remake/job";
+import { CREATIVE_SCENES, createCreativeJob, creativeFactsInput, creativeCastError, isCommercialCreativeScene, type CreativeBrief, type CreativeCast } from "@/lib/remake/creative";
+import { executeCreativeRun } from "./remake/creative-runner";
+import { replicaScriptImageCount, replicaScriptModelError } from "./replication-script";
 import { remakeDefaultStep } from "@/lib/remake/editor";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getVideoReplication, getVideoReplicationConfig, listVideoReplications, parseVideoTeardownBundle, type VideoReplicationDetail, type VideoTeardownBundle } from "@/services/api/video-replication";
@@ -25,13 +28,15 @@ import { resumeProductVideos } from "./replace/product-video-runner";
 import { createProductVideo, loadProductVideos, useProductVideoStore } from "./replace/use-product-video-store";
 import "./remake/remake.css";
 import "./video-replication.css";
+import "./video-creation.css";
+import { loadStudioPromptConfig } from "@/pages/ecommerce-studio/studio-prompt-config";
 
 function errorText(error: unknown) {
     return error ? (error instanceof Error ? error.message : "读取失败") : "";
 }
 
 /**
- * 视频复刻：首页两个页签「新建复刻」和「我的作品」（?tab=works；旧地址 ?mode=replace 也进作品页）。
+ * 视频创作：首页提供素材创作、参考复刻与人物处理入口，作品列表由 ?tab=works 进入。
  * 拆解记录（?id=）拆完后点「开始复刻」建一条复刻作品，进复刻工作台（?remake=，见 remake/remake-workbench.tsx）。
  * 没有 ?id= 时是首页（拆解入口 + 最近拆解），有 ?id= 时是这条记录的工作区（时间线、原视频、分镜）。
  * 新建的拆解任务一建好就跳到它的工作区看进度；拆解结果（镜头事实和模型分析）都存在服务端，
@@ -48,6 +53,11 @@ export default function VideoReplicationPage() {
     const model = pickedModel || defaultModel;
     const [transcribe, setTranscribe] = useState(true);
     const [opening, setOpening] = useState(false);
+    const [creatingCreative, setCreatingCreative] = useState(false);
+    const [directorJobId, setDirectorJobId] = useState("");
+    const creativeCreating = useRef(false);
+    const directorController = useRef<AbortController | undefined>(undefined);
+    useEffect(() => () => directorController.current?.abort(), [scope]);
     const rootRef = useRef<HTMLDivElement>(null);
     const linkImportEnabled = useUserStore((state) => state.features.socialVideoImportEnabled);
 
@@ -78,7 +88,7 @@ export default function VideoReplicationPage() {
     const works = useProductVideoStore((state) => state.jobs);
     const selectedWork = works.find((job) => job.id === remakeId);
     const remakeStep: RemakeStep = params.get("step") === "edit" ? "edit" : params.get("step") === "produce" ? "produce" : params.get("step") === "recipe" ? "recipe" : remakeDefaultStep(isRemakeJob(selectedWork) ? selectedWork : undefined);
-    const relatedWorks = works.filter((job) => isRemakeJob(job) && job.source.teardownId === selectedId);
+    const relatedWorks = works.filter((job) => isRemakeJob(job) && job.source?.teardownId === selectedId);
     const worksStatus = useProductVideoStore((state) => state.status);
     const worksError = useProductVideoStore((state) => state.error);
     const changeTab = useCallback((next: ReplicationTab) => setParams(next === "works" ? { tab: "works" } : {}), [setParams]);
@@ -88,6 +98,13 @@ export default function VideoReplicationPage() {
     const { run, running } = useReplicationRun(select);
     const configRef = useRef(config);
     configRef.current = config;
+    useEffect(() => {
+        const controller = new AbortController();
+        void loadStudioPromptConfig(controller.signal).catch(() => {
+            if (!controller.signal.aborted) message.warning("视频策划提示词配置读取失败，本次使用内置规则");
+        });
+        return () => controller.abort();
+    }, [scope, message]);
     // 作品列表一到就接着跑上次没跑完的复刻（刷新或关页面时打断的）。
     useEffect(() => {
         void loadProductVideos(true);
@@ -176,6 +193,51 @@ export default function VideoReplicationPage() {
         }
     };
 
+    const createCreative = async (product: RemakeProduct, start: { brief: CreativeBrief; note: string; ratio: string; director: { model: string; confirmedInput: string }; cast: CreativeCast }) => {
+        if (creativeCreating.current) return;
+        if (!product.name.trim() || !product.images.length) {
+            message.error("请先填写名称并添加主体图片");
+            return;
+        }
+        const startingScope = getActiveUserScope();
+        const problem =
+            (!Number.isInteger(start.brief.seconds) || start.brief.seconds < 4 || start.brief.seconds > 60 ? "目标片长须为4–60整数秒" : "") ||
+            creativeCastError(start.brief.scene, start.cast) ||
+            replicaScriptModelError(config, start.director.model) ||
+            (!replicaScriptImageCount(config, start.director.model, product.images.length) ? "导演分析需要支持参考图片的文本模型" : "") ||
+            (start.director.confirmedInput !== creativeFactsInput({ product }) ? "主体资料已变化，请重新核对" : "");
+        if (problem) {
+            message.error(problem);
+            return;
+        }
+        const controller = new AbortController();
+        directorController.current = controller;
+        creativeCreating.current = true;
+        setCreatingCreative(true);
+        try {
+            const job = createCreativeJob(nanoid(12), product);
+            Object.assign(job, start.cast);
+            job.creative!.brief = start.brief;
+            job.creative!.confirmedInput = start.director.confirmedInput;
+            job.note = start.note;
+            job.ratio = start.ratio;
+            job.title = `${CREATIVE_SCENES.find((scene) => scene.id === start.brief.scene)!.name} · ${product.name}`.slice(0, 60);
+            if (!isCommercialCreativeScene(start.brief.scene)) {
+                job.campaign = { ...job.campaign!, goal: "engagement", continuity: "主体外观、人物身份、场景光线与动作衔接一致" };
+            }
+            await createProductVideo(job);
+            if (controller.signal.aborted || getActiveUserScope() !== startingScope) return;
+            setDirectorJobId(job.id);
+            setParams({ remake: job.id });
+            await executeCreativeRun(job.id, config, controller.signal, { kind: "plan", model: start.director.model, count: 4 });
+        } catch (error) {
+            if (!controller.signal.aborted && getActiveUserScope() === startingScope) message.error(errorText(error));
+        } finally {
+            if (directorController.current === controller) directorController.current = undefined;
+            creativeCreating.current = false;
+            setCreatingCreative(false);
+        }
+    };
     if (remakeId)
         return (
             <RemakeWorkbench
@@ -186,6 +248,7 @@ export default function VideoReplicationPage() {
                 onBack={() => setParams({ tab: "works" })}
                 onOpen={(next) => setParams({ remake: next })}
                 onOpenTeardown={(teardownId) => setParams({ id: teardownId, returnRemake: remakeId })}
+                creativeRunning={creatingCreative && directorJobId === remakeId}
             />
         );
 
@@ -225,18 +288,8 @@ export default function VideoReplicationPage() {
                     </>
                 ) : (
                     <ReplicationHome
-                        onTool={(tool) => {
-                            if (tool === "works") return changeTab("works");
-                            if (tool === "teardown") {
-                                const composer = rootRef.current?.querySelector<HTMLElement>(".vr-composer");
-                                composer?.scrollIntoView({ behavior: "smooth", block: "center" });
-                                composer?.querySelector<HTMLElement>("textarea, .vr-drop, .vr-file-actions button")?.focus({ preventScroll: true });
-                                return;
-                            }
-                            const analyzed = records?.find((item) => item.status === "succeeded");
-                            if (analyzed) setParams({ id: analyzed.id, view: "plan" });
-                            else message.info("请先上传或导入一条视频完成拆解，再编写逐镜脚本与导演方案");
-                        }}
+                        creating={creatingCreative}
+                        onCreative={(brief, note, ratio, product, director, cast) => createCreative(product, { brief, note, ratio, director, cast })}
                         composer={{
                             config,
                             model,

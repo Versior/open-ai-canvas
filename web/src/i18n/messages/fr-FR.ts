@@ -38,7 +38,7 @@ export const frFR: Messages = {
         sidebar: {
             ecommerceStudio: "Studio e-commerce",
             interior: "Design intérieur",
-            videoReplication: "Réplication vidéo",
+            videoReplication: "Création vidéo",
             conversations: "Conversations",
             canvases: "Canevas",
             newConversation: "Nouvelle conversation",
@@ -65,7 +65,7 @@ export const frFR: Messages = {
             headingAssets: "Ressources et historique",
         },
         collapsed: {
-            videoReplication: "Répliquer",
+            videoReplication: "Vidéo",
             interior: "Intérieur",
             inspiration: "Idées",
             home: "Créer",
@@ -79,7 +79,7 @@ export const frFR: Messages = {
         pageTitles: {
             ecommerce: "E-commerce",
             studio: "Studio e-commerce",
-            videoReplication: "Réplication vidéo",
+            videoReplication: "Création vidéo",
             interior: "Design intérieur",
             inspiration: "Inspiration",
             home: "Créer",

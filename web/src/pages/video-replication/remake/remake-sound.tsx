@@ -42,6 +42,7 @@ export function RemakeVoiceFields({ job, config, edit, disabled }: { job: Remake
                 config={config}
                 capability="audio"
                 value={job.voice.model}
+                modelDisabledReason={() => (disabled ? "正在处理" : "")}
                 onChange={(model) => edit((value) => ({ ...value, voice: { ...value.voice, model, voice: "" } }))}
                 fullWidth
                 showSelectedPrice={false}

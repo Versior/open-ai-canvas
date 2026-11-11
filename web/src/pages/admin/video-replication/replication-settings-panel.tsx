@@ -15,14 +15,14 @@ type SwitchKey = "videoReplicationEnabled" | "socialVideoImportEnabled";
 const SWITCHES: { key: SwitchKey; title: string; description: string; icon: ReactNode }[] = [
     {
         key: "videoReplicationEnabled",
-        title: "视频复刻",
-        description: "关闭后侧栏不显示入口，用户不能新建拆解，页面上也看不到记录；已经开始的拆解和分析照常完成，记录和关键帧都保留，重新开启后恢复。",
+        title: "视频创作",
+        description: "控制商品视频策划、参考视频创作与作品工作台。关闭后隐藏入口，用户不能新建；已经开始的拆解和分析照常完成，作品、记录和关键帧保留，重新开启后恢复。",
         icon: <ScanSearch className="size-4" aria-hidden="true" />,
     },
     {
         key: "socialVideoImportEnabled",
         title: "视频链接导入",
-        description: "粘贴抖音、快手等分享链接导入视频（画布粘贴和视频复刻共用）。关闭后画布按普通文字粘贴，视频复刻只能上传文件；解析接口的巡检、自动恢复和订阅同步一并暂停，已经开始的导入会跑完。",
+        description: "粘贴抖音、快手等分享链接导入视频（画布粘贴和视频创作共用）。关闭后画布按普通文字粘贴，参考视频只能上传文件；解析接口的巡检、自动恢复和订阅同步一并暂停，已经开始的导入会跑完。",
         icon: <Link2 className="size-4" aria-hidden="true" />,
     },
 ];
@@ -101,7 +101,7 @@ export function ReplicationSettingsPanel({ active, features, featuresError, onFe
                 setLoadError("");
             })
             .catch((cause) => {
-                if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : "读取视频复刻设置失败");
+                if (!controller.signal.aborted) setLoadError(cause instanceof Error ? cause.message : "读取视频创作设置失败");
             });
         return () => controller.abort();
     }, [active, reloadKey]);

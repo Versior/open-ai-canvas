@@ -23,7 +23,7 @@ import { downloadBrowserMedia } from "@/services/browser-download";
 import { readRemake, updateRemake } from "../replace/use-product-video-store";
 import "@/lib/plugins/builtin/editor/editor-shell.css";
 import { EditorLutTools } from "@/components/editor/editor-lut-tools";
-import { timelineLutSignature } from "@/lib/timeline/timeline-lut";
+import { remakeEditRenderSignature } from "@/lib/remake/editor";
 
 type Store = UseBoundStore<StoreApi<EditorStore>>;
 const AssetPicker = lazy(() => import("@/pages/workbench/workbench-asset-picker").then((module) => ({ default: module.WorkbenchAssetPicker })));
@@ -39,12 +39,12 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
         return value;
     });
     const state = store();
-    const lutChanged = Boolean(job.editRender?.resourceId && (job.editRender.lutSignature || "") !== timelineLutSignature(state.project?.colorLut));
     const [panel, setPanel] = useState<"inspector" | "subtitles" | "lut">(initialPanel);
     const [rendering, setRendering] = useState(false);
     const [renderError, setRenderError] = useState("");
     const [stage, setStage] = useState("");
     const [burnSubtitles, setBurnSubtitles] = useState(job.editBurnSubtitles ?? job.subtitles.burn);
+    const renderChanged = Boolean(job.editRender?.resourceId && state.project && job.editRender.signature !== remakeEditRenderSignature(state.project, remakeRenderSize(job), burnSubtitles));
     const [importing, setImporting] = useState(false);
     const [lutBusy, setLutBusy] = useState(false);
     const [picking, setPicking] = useState(false);
@@ -205,7 +205,7 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
             await updateRemake(job.id, (value) => ({ ...value, editBurnSubtitles: burnSubtitles, editSubtitleImages: overlays.map((clip) => ({ resourceId: clip.directMedia!.id })) }));
             const renderTimeline = { ...timeline, ...size, fit: "pad", tracks: [...timeline.tracks, { id: "edit-burn", kind: "image" as const, label: "烧录字幕", order: timeline.tracks.length }], clips: [...timeline.clips, ...overlays] };
             const created = await createTimelineRenderTask({ projectId: "", timeline: renderTimeline }, abort.signal);
-            await updateRemake(job.id, (value) => ({ ...value, editRender: { taskId: created.id, ...size, lutSignature: timelineLutSignature(timeline.colorLut) } }));
+            await updateRemake(job.id, (value) => ({ ...value, editRender: { taskId: created.id, ...size, signature: remakeEditRenderSignature(timeline, size, burnSubtitles) } }));
             // 保存任务后交给恢复 effect 查询同一个任务。
         } catch (error) {
             if (!abort.signal.aborted) setRenderError(error instanceof Error ? error.message : "导出失败");
@@ -256,10 +256,14 @@ export function RemakeEditor({ job, onReady, onUploadingChange, initialPanel = "
                     </Button>
                     {job.editRender?.resourceId ? (
                         <Button size="small" icon={<Download size={14} />} onClick={() => void download()}>
-                            {lutChanged ? "下载上次剪辑版" : "下载剪辑版"}
+                            {renderChanged ? "下载上次剪辑版" : "下载剪辑版"}
                         </Button>
                     ) : null}
-                    {lutChanged ? <span className="rw-hint">LUT 已更改，重新导出后更新成片</span> : null}
+                    {renderChanged ? (
+                        <span className="rw-hint" role="status">
+                            剪辑已有变化，重新导出后更新成片
+                        </span>
+                    ) : null}
                     {renderError ? (
                         <span role="alert" className="rw-warn">
                             {renderError}

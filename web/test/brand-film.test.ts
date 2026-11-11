@@ -33,6 +33,36 @@ afterAll(() => {
     }
 });
 
+test("brand film autoplays muted in a loop without progress or pause controls", async () => {
+    const prototype = dom.HTMLMediaElement.prototype;
+    const original = Object.getOwnPropertyDescriptor(prototype, "play");
+    let starts = 0;
+    Object.defineProperty(prototype, "play", {
+        configurable: true,
+        value() {
+            starts++;
+            return Promise.resolve();
+        },
+    });
+    try {
+        useAppearanceStore.setState({ appearance: { ...DEFAULT_PUBLIC_APPEARANCE, authVideoUrl: "/brand-video.mp4" } });
+        host = document.createElement("div");
+        document.body.append(host);
+        root = createRoot(host);
+        await act(async () => root!.render(createElement(I18nextProvider, { i18n: language }, createElement(BrandFilm))));
+        const video = host.querySelector("video")!;
+        expect(video.autoplay).toBe(true);
+        expect(video.muted).toBe(true);
+        expect(video.loop).toBe(true);
+        expect(video.controls).toBe(false);
+        expect(host.querySelector("button")).toBeNull();
+        expect(starts).toBeGreaterThan(0);
+    } finally {
+        if (original) Object.defineProperty(prototype, "play", original);
+        else Reflect.deleteProperty(prototype, "play");
+    }
+});
+
 test("an early media error survives mount effects and retry reloads the same source", async () => {
     // A fast 404 can set video.error before React's mount effect, without another error event.
     const prototype = dom.HTMLMediaElement.prototype;

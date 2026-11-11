@@ -11,9 +11,10 @@ import { ParsePoolPanel } from "./parse-pool-panel";
 import { ReplicationOverviewPanel, type VideoReplicationAdminTab } from "./replication-overview-panel";
 import { ReplicationRecordsPanel } from "./replication-records-panel";
 import { ReplicationSettingsPanel } from "./replication-settings-panel";
+import { TrendAccountsPanel } from "./trend-accounts-panel";
 import "./video-replication-admin.css";
 
-const TABS: VideoReplicationAdminTab[] = ["overview", "records", "parse", "settings"];
+const TABS: VideoReplicationAdminTab[] = ["overview", "records", "parse", "trends", "settings"];
 
 function errorText(cause: unknown, fallback: string) {
     return cause instanceof Error ? cause.message : fallback;
@@ -51,7 +52,7 @@ export default function VideoReplicationAdminPage() {
             if (featuresResult.status === "fulfilled") setFeatures(featuresResult.value.features);
             setFeaturesError(featuresResult.status === "rejected" ? errorText(featuresResult.reason, "读取功能开放配置失败") : "");
         }
-        const failures = [overviewResult.status === "rejected" ? errorText(overviewResult.reason, "读取视频复刻统计失败") : "", parseResult.status === "rejected" ? errorText(parseResult.reason, "读取解析接口失败") : ""].filter(Boolean);
+        const failures = [overviewResult.status === "rejected" ? errorText(overviewResult.reason, "读取视频创作统计失败") : "", parseResult.status === "rejected" ? errorText(parseResult.reason, "读取解析接口失败") : ""].filter(Boolean);
         setOverviewError(failures.join("；"));
         setLoading(false);
     }, []);
@@ -88,8 +89,8 @@ export default function VideoReplicationAdminPage() {
 
     return (
         <AdminPageFrame
-            title="视频复刻"
-            description="用户拆解视频的统计和记录、链接导入用的第三方解析接口，以及拆解的开关和限制。"
+            title="视频创作"
+            description="管理视频拆解、平台账号、热点选题和创作设置。"
             scroll
             actions={
                 tab === "overview" ? (
@@ -141,6 +142,28 @@ export default function VideoReplicationAdminPage() {
                         label: "解析接口",
                         // 解析接口页签读到的新数据同步给概览，改完接口回到概览时接口数和可导入平台是新的。
                         children: <ParsePoolPanel linkImportEnabled={features?.socialVideoImportEnabled} onLoaded={setParse} onOpenSettings={() => navigate({ tab: "settings" })} />,
+                    },
+                    {
+                        key: "trends",
+                        label: "热点账号",
+                        children:
+                            tab === "trends" ? (
+                                <TrendAccountsPanel
+                                    active
+                                    source={params.get("source") || undefined}
+                                    onSourceChange={(source) =>
+                                        setParams(
+                                            (current) => {
+                                                const next = new URLSearchParams(current);
+                                                next.set("tab", "trends");
+                                                next.set("source", source);
+                                                return next;
+                                            },
+                                            { replace: true },
+                                        )
+                                    }
+                                />
+                            ) : null,
                     },
                     {
                         key: "settings",

@@ -21,7 +21,7 @@ import {
     type RemakeShot,
     type RemakeTreatment,
 } from "@/lib/remake/job";
-import { remakeDialogueBudget } from "@/lib/remake/prompts";
+import { remakeDialogueBudget, remakeReferenceImages } from "@/lib/remake/prompts";
 import { remakeRecommendReason } from "@/lib/remake/recommend";
 import type { AiConfig } from "@/stores/use-config-store";
 import { ProductVideoImageSlot, productVideoThumbUrl } from "../replace/product-video-assets";
@@ -31,6 +31,7 @@ import { RemakeProductPicker } from "./remake-product-picker";
 import { RemakeFinishCard, RemakeLanguageField, RemakeVoiceFields } from "./remake-sound";
 import { ReplicaCampaignControls, ReplicaShotDirector } from "../replication-director";
 import { RemakeDirectorPlanner } from "./remake-director";
+import { isCommercialCreativeScene } from "@/lib/remake/creative";
 
 export type RemakeEdit = (updater: (job: RemakeJob) => RemakeJob) => void;
 
@@ -88,48 +89,55 @@ export function RemakeRecipeCards({
     }, [uploading, onUploadingChange]);
     const profile = useMemo(() => (job.model ? modelCapabilityConfigFor(config, job.model).video : undefined), [config, job.model]);
     const limits = useMemo(() => remakeLimitsFor(config, job.model, job.shots), [config, job.model, job.shots]);
-    const imageCount = job.product.images.length + (job.people === "model" ? job.models.length : 0) + job.backgrounds.length;
+    const imageCount = remakeReferenceImages(job).images.length;
     const patchImages = (key: "models" | "backgrounds", next: (images: ProductVideoImage[]) => ProductVideoImage[]) => edit((value) => ({ ...value, [key]: next(value[key]) }));
     const needsAuth = job.audio === "original" || job.people === "original" || job.shots.some((shot) => shot.treatment === "keep");
+    const subject = job.creative && !isCommercialCreativeScene(job.creative.brief.scene);
     return (
         <div className="rw-recipe">
-            <details className="rw-strategy">
-                <summary>导演与平台策略</summary>
-                <Card title="策划设置">
-                    <ReplicaCampaignControls value={job.campaign} disabled={disabled} onChange={(campaign) => edit((value) => ({ ...value, campaign }))} />
-                    {job.campaign ? <RemakeDirectorPlanner job={job} config={config} edit={edit} disabled={disabled} onBusyChange={onPlanningChange} /> : null}
-                    <p className="rw-shot-reason">重拍镜头按导演动作生成；换元素保留原片动作与机位。</p>
-                </Card>
-            </details>
+            {!job.creative ? (
+                <details className="rw-strategy">
+                    <summary>导演与平台策略</summary>
+                    <Card title="策划设置">
+                        <ReplicaCampaignControls value={job.campaign} disabled={disabled} onChange={(campaign) => edit((value) => ({ ...value, campaign }))} />
+                        {job.campaign ? <RemakeDirectorPlanner job={job} config={config} edit={edit} disabled={disabled} onBusyChange={onPlanningChange} /> : null}
+                        <p className="rw-shot-reason">重拍镜头按导演动作生成；换元素保留原片动作与机位。</p>
+                    </Card>
+                </details>
+            ) : null}
             <Card
-                title="我的商品"
+                title={subject ? "主体参考" : "我的商品"}
                 extra={
-                    <Button size="small" icon={<Package size={14} />} disabled={disabled} onClick={() => setPicking(true)}>
-                        从电商生图台选
-                    </Button>
+                    subject ? undefined : (
+                        <Button size="small" icon={<Package size={14} />} disabled={disabled} onClick={() => setPicking(true)}>
+                            从电商生图台选
+                        </Button>
+                    )
                 }
             >
                 <div className="rw-fields">
                     <Input
                         value={job.product.name}
                         maxLength={60}
-                        placeholder="商品名称，例如：绿色纸巾 整箱装"
+                        placeholder={subject ? "主体名称，例如：城市街景、陶艺师、橘猫" : "商品名称，例如：绿色纸巾 整箱装"}
                         disabled={disabled}
                         onChange={(event) => edit((value) => ({ ...value, product: { ...value.product, name: event.target.value } }))}
-                        aria-label="商品名称"
+                        aria-label={subject ? "主体名称" : "商品名称"}
                     />
                     <Input.TextArea
                         value={job.product.sellingPoints}
                         maxLength={400}
                         autoSize={{ minRows: 2, maxRows: 5 }}
-                        placeholder="卖点，一行一条：厚实不掉屑、一提 24 包…（改写口播会用到）"
+                        placeholder={subject ? "已确认的信息，一行一条" : "卖点，一行一条：厚实不掉屑、一提 24 包…"}
                         disabled={disabled}
                         onChange={(event) => edit((value) => ({ ...value, product: { ...value.product, sellingPoints: event.target.value } }))}
-                        aria-label="商品卖点"
+                        aria-label={subject ? "主体资料" : "商品卖点"}
                     />
                 </div>
                 <ProductVideoImageSlot
                     slot="products"
+                    displayLabel={subject ? "主体参考图" : undefined}
+                    hint={job.creative ? "主体外观与细节参考" : undefined}
                     onPendingChange={(pending) => setUploads((value) => ({ ...value, products: pending }))}
                     items={job.product.images}
                     disabled={disabled}
@@ -138,7 +146,15 @@ export function RemakeRecipeCards({
                 />
             </Card>
             <Card title="人物">
-                <SegmentedControl<RemakePeople> ariaLabel="人物" value={job.people} block size="sm" disabled={disabled} onChange={(people) => edit((value) => ({ ...value, people }))} options={PEOPLE_OPTIONS} />
+                <SegmentedControl<RemakePeople>
+                    ariaLabel="人物"
+                    value={job.people}
+                    block
+                    size="sm"
+                    disabled={disabled}
+                    onChange={(people) => edit((value) => ({ ...value, people }))}
+                    options={job.creative ? PEOPLE_OPTIONS.filter((item) => item.value !== "original").map((item) => ({ ...item, label: item.value === "model" ? "人物出镜" : item.label })) : PEOPLE_OPTIONS}
+                />
                 {job.people === "model" ? (
                     <ProductVideoImageSlot
                         slot="models"
@@ -152,19 +168,20 @@ export function RemakeRecipeCards({
                 ) : (
                     <p className="rw-hint">{job.people === "original" ? "保留原片里的人，需要你有肖像使用授权。" : "画面里不出现人脸，需要时只出现手。"}</p>
                 )}
-                {job.people === "model" && !job.models.length ? <p className="rw-hint">不放模特图时，出镜的人会换成一位外观不同的普通人，不还原原片人物的长相。</p> : null}
-                {job.people === "model" ? <p className="rw-hint">人脸定长相，模特定整个人，二选一；姿势只参考动作。换元素的动作与节奏仍跟随原片。</p> : null}
+                {job.people === "model" && !job.models.length ? <p className="rw-hint">多镜头有人出镜时，先上传同一人物的人脸或全身图，也可生成一张模特图。每段共用这张身份参考。</p> : null}
+                {job.people === "model" ? <p className="rw-hint">人脸定长相，模特定整个人，二选一；姿势只参考动作。{job.creative ? "脚本决定镜头动作与节奏。" : "换元素的动作与节奏仍跟随原片。"}</p> : null}
             </Card>
             <Card title="场景">
                 <ProductVideoImageSlot
                     slot="backgrounds"
+                    hint={job.creative ? "场景光线、构图与环境参考" : undefined}
                     onPendingChange={(pending) => setUploads((value) => ({ ...value, backgrounds: pending }))}
                     items={job.backgrounds}
                     disabled={disabled}
                     onAdd={(images) => patchImages("backgrounds", (current) => [...current, ...images].slice(0, 3))}
                     onRemove={(id) => patchImages("backgrounds", (current) => current.filter((image) => image.id !== id))}
                 />
-                {!job.backgrounds.length ? <p className="rw-hint">不放背景图就沿用原片的场景布局，去掉原片的招牌和品牌。</p> : null}
+                {!job.backgrounds.length ? <p className="rw-hint">{job.creative ? "没有场景参考时按脚本与视觉风格设计环境。" : "所有片段共用原片环境关键帧作为布光与色调基准，具体镜头沿用原片布局。"}</p> : null}
             </Card>
             <Card title="口播">
                 <SegmentedControl<RemakeAudio>
@@ -174,9 +191,13 @@ export function RemakeRecipeCards({
                     size="sm"
                     disabled={disabled}
                     onChange={(audio) => edit((value) => ({ ...value, audio }))}
-                    options={REMAKE_AUDIOS.map((value) => ({ value, label: REMAKE_AUDIO_LABEL[value], disabled: value === "original" && !job.source.hasAudio }))}
+                    options={REMAKE_AUDIOS.filter((value) => !job.creative || value !== "original").map((value) => ({
+                        value,
+                        label: job.creative && value === "rewrite" ? "原生口播" : REMAKE_AUDIO_LABEL[value],
+                        disabled: value === "original" && !job.source?.hasAudio,
+                    }))}
                 />
-                <p className="rw-hint">{AUDIO_HINT[job.audio]}</p>
+                <p className="rw-hint">{job.creative && job.audio === "rewrite" ? "按脚本生成口播与人物口型，需要支持声音的视频模型。" : AUDIO_HINT[job.audio]}</p>
                 {remakeWritesDialogue(job.audio) ? <RemakeLanguageField job={job} edit={edit} disabled={disabled} /> : null}
                 {job.audio === "voice" ? <RemakeVoiceFields job={job} config={config} edit={edit} disabled={disabled} /> : null}
                 {job.audio === "rewrite" && typeof limits !== "string" && !limits.generateAudio ? <p className="rw-warn">所选视频模型不能生成声音，换一个能出声的模型，或改用「AI 配音」。</p> : null}
@@ -229,13 +250,15 @@ export function RemakeRecipeCards({
                     />
                 </div>
             </Card>
-            <label className="rw-auth" data-required={needsAuth || undefined}>
-                <Checkbox checked={job.authorized} disabled={disabled} onChange={(event) => edit((value) => ({ ...value, authorized: event.target.checked }))} />
-                <span>
-                    我对原片有使用授权
-                    <small>保留原片画面、原人物或原声时需要。只借结构不用原片内容时不用勾。</small>
-                </span>
-            </label>
+            {!job.creative ? (
+                <label className="rw-auth" data-required={needsAuth || undefined}>
+                    <Checkbox checked={job.authorized} disabled={disabled} onChange={(event) => edit((value) => ({ ...value, authorized: event.target.checked }))} />
+                    <span>
+                        我对原片有使用授权
+                        <small>保留原片画面、原人物或原声时需要。只借结构不用原片内容时不用勾。</small>
+                    </span>
+                </label>
+            ) : null}
             {persona ? <RemakePersonaModal config={config} left={3 - job.models.length} onClose={() => setPersona(false)} onAdd={(image) => patchImages("models", (current) => addRemakeModels(current, [image]))} /> : null}
             {picking ? (
                 <RemakeProductPicker
@@ -252,7 +275,7 @@ export function RemakeRecipeCards({
 
 const TREATMENT_SHORT: Record<RemakeTreatment, string> = { replace: "换元素", remake: "重拍", keep: "保留", skip: "删掉" };
 
-function ShotRow({ shot, audio, language, disabled, edit }: { shot: RemakeShot; audio: RemakeAudio; language: RemakeLanguage; disabled?: boolean; edit: RemakeEdit }) {
+function ShotRow({ shot, audio, language, disabled, edit, creative }: { shot: RemakeShot; audio: RemakeAudio; language: RemakeLanguage; disabled?: boolean; edit: RemakeEdit; creative?: boolean }) {
     const patch = (next: Partial<RemakeShot>) => edit((value) => ({ ...value, shots: value.shots.map((item) => (item.index === shot.index ? { ...item, ...next } : item)) }));
     const budget = remakeDialogueBudget(shot, language);
     const length = Array.from(shot.dialogue).length;
@@ -282,12 +305,16 @@ function ShotRow({ shot, audio, language, disabled, edit }: { shot: RemakeShot; 
                     value={shot.treatment}
                     disabled={disabled}
                     onChange={(treatment) => patch({ treatment })}
-                    options={REMAKE_TREATMENTS.map((value) => ({ value, label: `${TREATMENT_SHORT[value]}${value === shot.recommended ? " ·荐" : ""}`, title: REMAKE_TREATMENT_HINT[value] }))}
+                    options={REMAKE_TREATMENTS.filter((value) => !creative || value === "remake" || value === "skip").map((value) => ({
+                        value,
+                        label: `${TREATMENT_SHORT[value]}${value === shot.recommended ? " ·荐" : ""}`,
+                        title: REMAKE_TREATMENT_HINT[value],
+                    }))}
                 />
                 {reason ? <span className="rw-shot-reason">{reason}</span> : null}
             </div>
             <div className="rw-shot-voice">
-                {shot.originalDialogue ? <span className="rw-shot-original">原：{shot.originalDialogue}</span> : <span className="rw-shot-original">原片这一镜没有口播</span>}
+                {!creative ? shot.originalDialogue ? <span className="rw-shot-original">原：{shot.originalDialogue}</span> : <span className="rw-shot-original">原片这一镜没有口播</span> : null}
                 {remakeWritesDialogue(audio) && shot.treatment !== "skip" ? (
                     <>
                         <Input.TextArea
@@ -349,7 +376,7 @@ export function RemakeStoryboard({
                             全部按推荐
                         </Button>
                     ) : null}
-                    {remakeWritesDialogue(job.audio) ? (
+                    {remakeWritesDialogue(job.audio) && !job.creative ? (
                         <>
                             <div className="rw-text-model">
                                 <ModelPicker config={config} capability="text" value={textModel} onChange={onTextModel} showSelectedPrice={false} showOptionPrices placeholder="改写用的文本模型" />
@@ -365,7 +392,7 @@ export function RemakeStoryboard({
             </header>
             <ol className="rw-shots">
                 {job.shots.map((shot) => (
-                    <ShotRow key={shot.index} shot={shot} audio={job.audio} language={job.language} disabled={disabled} edit={edit} />
+                    <ShotRow key={shot.index} shot={shot} audio={job.audio} language={job.language} disabled={disabled} edit={edit} creative={Boolean(job.creative)} />
                 ))}
             </ol>
             {!job.shots.some((shot) => shot.plot) ? (

@@ -3,11 +3,11 @@ import { isDoubaoAudioConfig } from "@/lib/audio-generation";
 import { buildGenerationConfig } from "@/lib/canvas/canvas-project-generation";
 import { createClientId } from "@/lib/client-id";
 import { productVideoShotSeconds } from "@/lib/product-video/media";
-import { REMAKE_ACTIVE, remakeLanguage, type RemakeJob, type RemakeUnit, type RemakeVoiceLine } from "@/lib/remake/job";
+import { REMAKE_ACTIVE, remakeJobError, remakeLanguage, remakeKeptDurationMs, type RemakeJob, type RemakeUnit, type RemakeVoiceLine } from "@/lib/remake/job";
 import { buildRemakeUnitPrompt, remakeReferenceImages } from "@/lib/remake/prompts";
-import { remakeLines, remakeRenderSize, remakeSubtitleSignature, remakeTimeline, remakeVoicePlan } from "@/lib/remake/timeline";
+import { remakeLines, remakePieces, remakeRenderSize, remakeSubtitleSignature, remakeTimeline, remakeVoicePlan } from "@/lib/remake/timeline";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { applyRemakeCreativeSignature, planRemakeUnits, remakeClipSignature } from "@/lib/remake/units";
+import { applyRemakeCreativeSignature, planRemakeUnits, remakeClipSignature, remakeTakeError } from "@/lib/remake/units";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { parseBackendGenerationResult, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { createProductVideoSplit, parseProductVideoSplitResult } from "@/services/api/product-video";
@@ -97,13 +97,15 @@ function limitsOf(config: AiConfig, job: RemakeJob) {
 export function remakeUnitsFor(job: RemakeJob, config: AiConfig) {
     const limits = remakeLimitsFor(config, job.model, job.shots);
     const maxMs = (typeof limits === "string" ? 15 : limits.maxSegmentSeconds) * 1000;
-    return applyRemakeCreativeSignature(job, planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source.durationMs }, job.units));
+    const units = job.creative ? job.shots.flatMap((shot) => planRemakeUnits([shot], { maxMs, sourceDurationMs: remakeKeptDurationMs(job) }, job.units)) : planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source?.durationMs || 0 }, job.units);
+    return applyRemakeCreativeSignature(job, units);
 }
 
 async function clipStep(id: string, signal: AbortSignal) {
     const job = read(id);
     const missing = job.units.filter((unit) => unit.treatment === "replace" && !unit.clipResourceId);
     if (!missing.length) return;
+    if (!job.source?.resourceId) throw new Error("换元素必须有原视频");
     const signature = remakeClipSignature(missing);
     const clips = job.clips?.signature === signature && job.clips.key ? job.clips : { key: createClientId(), signature };
     setProgress(id, { stage: "切参考片段" });
@@ -147,27 +149,40 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
     if (unit.taskId) {
         task = await queryGenerationTask(unit.taskId, { signal });
         if (terminal(task)) {
-            await updateRemake(id, patchUnit(key, { status: "failed", error: task.error || "生成失败", taskId: undefined }));
+            await updateRemake(id, patchUnit(key, { status: "failed", error: task.error || "生成失败", taskId: undefined, input: undefined }));
             return;
         }
     }
     if (!task) {
-        const limits = limitsOf(config, job);
-        if (unit.treatment === "replace" && !unit.clipResourceId) throw new Error("参考片段还没切好");
-        const shots = job.shots.filter((shot) => unit!.shotIndexes.includes(shot.index));
-        const length = unit.treatment === "replace" ? unit.clipEndMs - unit.clipStartMs : unit.endMs - unit.startMs;
-        const seconds = productVideoShotSeconds(length, limits.durations);
-        // 只有改写口播让视频模型出声；AI 配音另配，视频静音。
-        const speaks = job.audio === "rewrite" && shots.some((shot) => shot.dialogue.trim());
-        const { referenceImages, referenceVideos } = unitReferences(job, unit);
-        await updateRemake(id, patchUnit(key, { status: "running", error: undefined }));
+        let input = unit.input;
+        if (!input) {
+            const limits = limitsOf(config, job);
+            if (unit.treatment === "replace" && !unit.clipResourceId) throw new Error("参考片段还没切好");
+            const shots = job.shots.filter((shot) => unit!.shotIndexes.includes(shot.index));
+            const length = unit.treatment === "replace" ? unit.clipEndMs - unit.clipStartMs : unit.endMs - unit.startMs;
+            const seconds = productVideoShotSeconds(length, limits.durations);
+            // 只有改写口播让视频模型出声；AI 配音另配，视频静音。
+            const speaks = job.audio === "rewrite" && shots.some((shot) => shot.dialogue.trim());
+            const { referenceImages } = unitReferences(job, unit);
+            input = {
+                model: job.model,
+                ratio: job.ratio,
+                resolution: job.resolution,
+                seconds,
+                audio: speaks ? "model" : "mute",
+                prompt: buildRemakeUnitPrompt(job, unit, shots, seconds),
+                imageResourceIds: referenceImages.map((image) => resourceIdFromStorageKey(image.storageKey)!),
+                ...(unit.clipResourceId ? { videoResourceId: unit.clipResourceId, videoDurationMs: unit.clipEndMs - unit.clipStartMs } : {}),
+            };
+        }
+        await updateRemake(id, patchUnit(key, { status: "running", error: undefined, input }));
         task = await submitBackendGenerationTask({
             expectedUserScope: activeScopes.get(id),
             mode: "video",
-            prompt: buildRemakeUnitPrompt(job, unit, shots, seconds),
-            config: productVideoGenerationConfig(config, { model: job.model, ratio: job.ratio, resolution: job.resolution, seconds, audio: speaks ? "model" : "mute" }),
-            referenceImages,
-            referenceVideos,
+            prompt: input.prompt,
+            config: productVideoGenerationConfig(config, input),
+            referenceImages: input.imageResourceIds.map((resourceId) => ({ id: resourceId, name: "参考图", type: "image/png", dataUrl: "", storageKey: resourceStorageKey(resourceId) })),
+            referenceVideos: input.videoResourceId ? [{ id: `clip-${key}`, name: "参考片段", type: "video/mp4", url: "", storageKey: resourceStorageKey(input.videoResourceId), durationMs: input.videoDurationMs }] : [],
             signal,
             clientOperationId: `${id}-${key}-${unit.attempt}`,
             metadata: { source: "video-remake", remakeId: id, remakeUnit: key },
@@ -176,6 +191,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
         job = read(id);
         unit = job.units.find((item) => item.key === key)!;
     }
+    let completed = false;
     try {
         const done = await waitForGenerationTask(task.id, {
             initialTask: task,
@@ -183,6 +199,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
             timeoutMs: VIDEO_TIMEOUT_MS,
             onTaskUpdate: (item) => typeof item.progress === "number" && setProgress(id, { units: { [key]: Math.round(item.progress) } }),
         });
+        completed = true;
         const result = parseBackendGenerationResult(done);
         const resourceId = resourceIdFromStorageKey(result.video?.storageKey);
         if (!resourceId) throw new Error("任务完成但没有可用的视频，请到任务中心核对");
@@ -194,6 +211,8 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
             ...(result.video?.width ? { width: result.video.width } : {}),
             ...(result.video?.height ? { height: result.video.height } : {}),
         };
+        const problem = remakeTakeError(unit, takeItem);
+        if (problem) throw new Error(problem);
         await updateRemake(
             id,
             patchUnit(key, (value) => {
@@ -203,7 +222,7 @@ async function unitStep(id: string, key: string, config: AiConfig, signal: Abort
         );
     } catch (error) {
         if (signal.aborted) throw error;
-        await updateRemake(id, patchUnit(key, { status: "failed", error: errorMessage(error, "生成失败"), ...(isGenerationTaskTerminalError(error) ? { taskId: undefined } : {}) }));
+        await updateRemake(id, patchUnit(key, { status: "failed", error: errorMessage(error, "生成失败"), ...(completed || isGenerationTaskTerminalError(error) ? { taskId: undefined, input: undefined } : {}) }));
     }
 }
 
@@ -345,10 +364,12 @@ async function assembleStep(id: string, config: AiConfig, signal: AbortSignal) {
     job = read(id);
     setProgress(id, { stage: "拼接成片" });
     let task = job.render?.taskId ? await queryGenerationTask(job.render.taskId, { signal }) : undefined;
+    let sourcePieces = job.render?.sourcePieces;
     if (!task || terminal(task)) {
         assertScope(id);
+        sourcePieces = job.source ? remakePieces(job).map((piece) => ({ sourceStartMs: piece.sourceStartMs, durationMs: piece.endMs - piece.startMs })) : undefined;
         task = await createTimelineRenderTask({ projectId: "", timeline: remakeTimeline(job, size) }, signal);
-        await updateRemake(id, (value) => ({ ...value, render: { taskId: task!.id } }));
+        await updateRemake(id, (value) => ({ ...value, render: { taskId: task!.id, sourcePieces } }));
     }
     const done = await waitForGenerationTask(task.id, { initialTask: task, signal, timeoutMs: RENDER_TIMEOUT_MS, intervalMs: 3000, onTaskUpdate: (item) => setProgress(id, { stage: "拼接成片", percent: item.progress }) });
     const parsed = JSON.parse(done.resultJson || "{}") as TimelineRenderResult;
@@ -357,7 +378,7 @@ async function assembleStep(id: string, config: AiConfig, signal: AbortSignal) {
         ...value,
         status: "succeeded",
         error: undefined,
-        render: { taskId: task!.id, resourceId: parsed.resourceId, ...(parsed.durationMs ? { durationMs: parsed.durationMs } : {}), width: size.width, height: size.height },
+        render: { taskId: task!.id, resourceId: parsed.resourceId, ...(parsed.durationMs ? { durationMs: parsed.durationMs } : {}), width: size.width, height: size.height, sourcePieces },
     }));
 }
 
@@ -398,15 +419,22 @@ export function runRemake(id: string, config: AiConfig) {
 /** 开始生成：按当前做法排好单元（沿用没变的），清掉旧成片，再跑。 */
 export async function startRemake(id: string, config: AiConfig, credits?: number) {
     const job = read(id);
+    const problem = remakeJobError(job, job.shots.some((shot) => shot.treatment === "replace" || shot.treatment === "remake") ? limitsOf(config, job) : undefined);
+    if (problem) throw new Error(problem);
     const units = remakeUnitsFor(job, config);
-    await updateRemake(id, (value) => ({
-        ...value,
-        units,
-        status: units.some((unit) => unit.treatment === "replace" && !unit.clipResourceId) ? "clipping" : "generating",
-        error: undefined,
-        render: undefined,
-        ...(credits !== undefined ? { credits } : {}),
-    }));
+    const signatures = (items: RemakeUnit[]) => JSON.stringify(items.map((unit) => [unit.key, unit.creativeSignature]));
+    await updateRemake(id, (value) => {
+        const latest = remakeUnitsFor(value, config);
+        if (signatures(latest) !== signatures(units) || remakeJobError(value)) throw new Error("配方已被另一窗口修改，请核对设置后重新开始生成");
+        return {
+            ...value,
+            units: latest,
+            status: latest.some((unit) => unit.treatment === "replace" && !unit.clipResourceId) ? "clipping" : "generating",
+            error: undefined,
+            render: undefined,
+            ...(credits !== undefined ? { credits } : {}),
+        };
+    });
     runRemake(id, config);
 }
 
@@ -439,7 +467,9 @@ export async function stopRemake(id: string) {
         ...value,
         status: "failed",
         error: running.some((taskId) => !confirmed.has(taskId)) ? "已暂停等待；部分任务取消未确认，接着生成会先查询原任务" : "已停止",
-        units: value.units.map((unit) => (unit.status === "running" ? { ...unit, status: "failed", error: stopError(unit.taskId), taskId: stopped(unit.taskId) ? undefined : unit.taskId } : unit)),
+        units: value.units.map((unit) =>
+            unit.status === "running" ? { ...unit, status: "failed", error: stopError(unit.taskId), taskId: stopped(unit.taskId) ? undefined : unit.taskId, input: unit.taskId && confirmed.has(unit.taskId) ? undefined : unit.input } : unit,
+        ),
         voiceLines: value.voiceLines.map((line) => (line.status === "running" ? { ...line, status: "failed", error: stopError(line.taskId), taskId: stopped(line.taskId) ? undefined : line.taskId } : line)),
         render: value.render?.resourceId || !stopped(value.render?.taskId) ? value.render : undefined,
     }));
@@ -449,9 +479,9 @@ export async function stopRemake(id: string) {
 export async function redoRemakeUnit(id: string, key: string, fix: string, config: AiConfig) {
     const unit = read(id).units.find((item) => item.key === key);
     if (!unit) throw new Error("生成单元不存在");
-    if (unit.taskId) throw new Error("原任务状态尚未确认，请先接着生成查询结果，再重做");
+    if (unit.taskId || (unit.input && unit.status !== "succeeded")) throw new Error("原任务状态尚未确认，请先接着生成查询结果，再重做");
     await updateRemake(id, (value) => ({
-        ...patchUnit(key, (unit) => ({ status: "pending", attempt: unit.attempt + 1, error: undefined, taskId: undefined, ...(fix.trim() ? { fix: fix.trim() } : { fix: undefined }) }))(value),
+        ...patchUnit(key, (unit) => ({ status: "pending", attempt: unit.attempt + 1, input: undefined, error: undefined, taskId: undefined, ...(fix.trim() ? { fix: fix.trim() } : { fix: undefined }) }))(value),
         status: "generating",
         error: undefined,
         render: undefined,
@@ -465,7 +495,7 @@ export async function retryRemake(id: string, config: AiConfig) {
         ...value,
         status: "generating",
         error: undefined,
-        units: value.units.map((unit) => (unit.status === "failed" ? { ...unit, status: "pending", attempt: unit.attempt + (unit.taskId ? 0 : 1), error: undefined } : unit)),
+        units: value.units.map((unit) => (unit.status === "failed" ? { ...unit, status: "pending", attempt: unit.attempt + (unit.taskId || unit.input ? 0 : 1), error: undefined } : unit)),
         voiceLines: value.voiceLines.map((line) => (line.status === "failed" ? { ...line, status: "pending", attempt: line.attempt + (line.taskId ? 0 : 1), error: undefined } : line)),
         render: value.render,
     }));
@@ -474,6 +504,11 @@ export async function retryRemake(id: string, config: AiConfig) {
 
 /** 换一条候选：成片要重新拼。 */
 export async function chooseRemakeTake(id: string, key: string, index: number) {
+    const unit = read(id).units.find((item) => item.key === key);
+    const take = unit?.takes[index];
+    if (!unit || !take) throw new Error("候选不存在，请重新读取作品");
+    const problem = remakeTakeError(unit, take);
+    if (problem) throw new Error(problem);
     // 成片清掉，页面提示重新拼；作品状态不变。
     await updateRemake(id, (value) => ({ ...patchUnit(key, { chosen: index })(value), render: undefined }));
 }

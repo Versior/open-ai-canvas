@@ -1,4 +1,4 @@
-import type { RemakeJob, RemakeShot, RemakeUnit } from "./job";
+import type { RemakeJob, RemakeShot, RemakeTake, RemakeUnit } from "./job";
 import { buildRemakeUnitPrompt, remakeReferenceImages } from "./prompts";
 
 /** 换元素单元的参考片段至少 4 秒：多数视频模型的参考视频要 2 秒以上、生成至少 4 秒，片段和成片一一对应。 */
@@ -77,6 +77,12 @@ export function remakeUnitTake(unit: Pick<RemakeUnit, "takes" | "chosen">) {
     return unit.takes[unit.chosen] || unit.takes[unit.takes.length - 1];
 }
 
+/** 参考片段可能从镜头前开始，候选必须覆盖到该单元在参考时间轴上的末尾。 */
+export function remakeTakeError(unit: Pick<RemakeUnit, "treatment" | "startMs" | "endMs" | "clipStartMs" | "shotIndexes">, take: Pick<RemakeTake, "durationMs">) {
+    const origin = unit.treatment === "replace" ? unit.clipStartMs : unit.startMs;
+    return !take.durationMs || !Number.isFinite(take.durationMs) || take.durationMs + 100 < unit.endMs - origin ? `镜头 ${unit.shotIndexes.join("、")} 的生成时长不足，不能用静止尾帧补成完整视频；原成品保留在任务中心` : "";
+}
+
 /** 导演输入变化后重新生成，保留旧候选；不能重提尚未确认结束的付费任务。 */
 export function applyRemakeCreativeSignature(job: RemakeJob, units: RemakeUnit[]) {
     return units.map((unit) => {
@@ -97,7 +103,7 @@ export function applyRemakeCreativeSignature(job: RemakeJob, units: RemakeUnit[]
         for (let index = 0; index < input.length; index++) hash = BigInt.asUintN(64, (hash ^ BigInt(input.charCodeAt(index))) * prime);
         const signature = `director-v1:${hash.toString(16)}`;
         if (unit.creativeSignature === signature) return unit;
-        if (unit.taskId) throw new Error("旧镜头任务尚未确认结束，请完成取消或等待后再应用导演修改");
-        return { ...unit, creativeSignature: signature, status: "pending" as const, taskId: undefined, error: undefined, attempt: unit.attempt + (unit.takes.length || unit.taskId ? 1 : 0) };
+        if (unit.taskId || (unit.input && unit.status !== "succeeded")) throw new Error("旧镜头任务尚未确认结束，请完成取消或等待后再应用导演修改");
+        return { ...unit, creativeSignature: signature, input: undefined, status: "pending" as const, taskId: undefined, error: undefined, attempt: unit.attempt + (unit.takes.length || unit.taskId ? 1 : 0) };
     });
 }

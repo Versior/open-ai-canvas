@@ -1,7 +1,7 @@
 import { App, Button, Input, Select } from "antd";
 import { Download, History, ImagePlus, Shirt, Video, X, Users, Layers, Move, ScanFace, Sparkles, UserRound, Scissors, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppModal } from "@/components/ui/product/app-modal";
+import { FashionWorkbenchShell } from "./fashion-workbench-shell";
 import { ModelPicker } from "@/components/model-picker";
 import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
 import {
@@ -32,7 +32,7 @@ import "./fashion.css";
 
 const TOOL_ICONS = { tryon: Shirt, "multi-model": Users, "multi-garment": Layers, pose: Move, face: ScanFace, "smart-face": Sparkles, head: UserRound, print: Scissors };
 
-export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () => void; initialTool?: FashionDraft["tool"]; onUse?: (image: FashionImage) => void }) {
+export function FashionWorkbench({ onClose, initialTool, onUse, inline, onBusyChange }: { onClose: () => void; initialTool?: FashionDraft["tool"]; onUse?: (image: FashionImage) => void; inline?: boolean; onBusyChange?: (busy: boolean) => void }) {
     const { message, modal } = App.useApp();
     const config = useEffectiveConfig();
     const [draft, setDraft] = useState<FashionDraft>(() => ({ ...emptyFashionDraft(), ...(initialTool ? { tool: initialTool } : {}) }));
@@ -46,6 +46,16 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
     const [busy, setBusy] = useState(false);
     const [uploading, setUploading] = useState(false);
     const [view, setView] = useState<"new" | "history">("new");
+    useEffect(() => {
+        onBusyChange?.(busy || uploading);
+    }, [busy, uploading, onBusyChange]);
+    useEffect(() => {
+        if (initialTool) {
+            setDraft((value) => ({ ...value, tool: initialTool }));
+            setWork(undefined);
+            setView("new");
+        }
+    }, [initialTool]);
     const scope = getActiveUserScope();
     const controller = useRef<AbortController | undefined>(undefined);
     const alive = useRef(true);
@@ -259,18 +269,14 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
         });
     };
     return (
-        <AppModal open centered closable={false} onCancel={onClose} footer={null} width={1120} flush title={null} rootClassName="fashion-modal">
+        <FashionWorkbenchShell inline={inline} width={1120} onClose={onClose}>
             <div className="fashion-workbench">
                 <header className="fashion-head">
-                    <div>
-                        <small>FASHION & IDENTITY STUDIO</small>
-                        <h2>模特与服饰工作台</h2>
-                        <p>先确认图片，再生成展示视频。素材、分组与任务进度保存到账号。</p>
-                    </div>
+                    <div>{!inline ? <h2>服装与人物 · 图片</h2> : null}</div>
                     <Button icon={<History size={15} />} onClick={() => setView(view === "new" ? "history" : "new")} disabled={busy}>
                         {view === "new" ? "历史作品" : "返回创作"}
                     </Button>
-                    <Button type="text" aria-label="关闭模特工作台" icon={<X size={18} />} onClick={onClose} />
+                    {!inline ? <Button type="text" aria-label="关闭模特工作台" icon={<X size={18} />} onClick={onClose} /> : null}
                 </header>
                 {error ? (
                     <div role="alert" className="fashion-error">
@@ -324,12 +330,13 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
                 ) : (
                     <>
                         <div className="fashion-tool-grid" role="group" aria-label="模特处理方式">
-                            {FASHION_TOOLS.map((tool) => {
+                            {FASHION_TOOLS.filter((tool) => tool.id !== "smart-face").map((tool) => {
                                 const Icon = TOOL_ICONS[tool.id];
                                 return (
                                     <button
                                         key={tool.id}
                                         type="button"
+                                        title={tool.text}
                                         aria-pressed={draft.tool === tool.id}
                                         disabled={busy || uploading}
                                         onClick={() => {
@@ -339,11 +346,13 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
                                     >
                                         <Icon aria-hidden />
                                         <strong>{tool.title}</strong>
-                                        <span>{tool.text}</span>
                                     </button>
                                 );
                             })}
                         </div>
+                        <p className="fashion-tool-hint" role="status">
+                            {tools.text}
+                        </p>
                         <div className="fashion-columns">
                             <section className="fashion-inputs">
                                 {tools.needs.map((slot) => (
@@ -525,6 +534,6 @@ export function FashionWorkbench({ onClose, initialTool, onUse }: { onClose: () 
                     </>
                 )}
             </div>
-        </AppModal>
+        </FashionWorkbenchShell>
     );
 }

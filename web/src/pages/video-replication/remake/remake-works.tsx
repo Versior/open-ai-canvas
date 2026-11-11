@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/product/empty-state";
 import { PRODUCT_VIDEO_ACTIVE, PRODUCT_VIDEO_STATUS_LABEL, type ProductVideoJob } from "@/lib/product-video/job";
 import { formatProductVideoSeconds } from "@/lib/product-video/media";
 import { isRemakeJob, REMAKE_ACTIVE, REMAKE_STATUS_LABEL, remakeKeptDurationMs, remakeLanguage, type RemakeJob } from "@/lib/remake/job";
+import { CREATIVE_SCENES } from "@/lib/remake/creative";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceFileUrl, resourceStorageKey } from "@/services/api/resources";
 import type { StoredWork } from "@/services/api/product-video";
@@ -59,7 +60,7 @@ function RemakeCard({ job, onOpen }: { job: RemakeJob; onOpen: (id: string) => v
     const remove = useRemove();
     const busy = active || REMAKE_ACTIVE.includes(job.status);
     const done = job.units.filter((unit) => unit.status === "succeeded").length;
-    const cover = job.shots.find((shot) => shot.treatment !== "skip")?.keyframeResourceId;
+    const cover = job.shots.find((shot) => shot.treatment !== "skip")?.keyframeResourceId || job.product.images[0]?.resourceId;
     return (
         <article className="rw-work" data-status={job.status}>
             <button type="button" className="rw-work-media" onClick={() => onOpen(job.id)} aria-label={`打开 ${job.title}`}>
@@ -79,7 +80,7 @@ function RemakeCard({ job, onOpen }: { job: RemakeJob; onOpen: (id: string) => v
             <div className="rw-work-body">
                 <div className="rw-work-tags">
                     <span className="rw-tag" data-tone="accent">
-                        逐镜复刻
+                        {job.creative ? CREATIVE_SCENES.find((scene) => scene.id === job.creative!.brief.scene)!.name : "逐镜复刻"}
                     </span>
                     <span className="rw-tag" data-status={job.status}>
                         {REMAKE_STATUS_LABEL[job.status]}

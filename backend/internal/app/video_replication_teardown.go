@@ -286,7 +286,7 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	// 按执行时的设置校验：排队期间后台调低了时长或镜头数上限、关了口播识别，也照新设置执行。
 	settings, err := s.videoReplicationSettings()
 	if err != nil {
-		return videoTeardownBundle{}, errors.New("无法读取视频复刻设置")
+		return videoTeardownBundle{}, errors.New("无法读取视频创作设置")
 	}
 	input.MaxShots = min(input.MaxShots, settings.MaxShots)
 	ffmpeg, err := videoTeardownFFmpeg()

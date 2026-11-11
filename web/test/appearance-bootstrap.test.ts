@@ -80,9 +80,7 @@ test("appearance selects theme logos and falls back to the single configured log
 test("auth scene consumes resolved appearance instead of hardcoded media constants", async () => {
     const source = await Bun.file(new URL("../src/pages/auth/auth-scene.tsx", import.meta.url)).text();
 
-    expect(source).toContain("appearance.authVideoUrl");
-    expect(source).toContain("appearance.authVideoAutoplay");
-    expect(source).toContain("appearance.authVideoPosterUrl || undefined");
+    expect(source).toContain('<BrandFilm className="auth-scene-film" />');
     expect(source).toContain("appearance.brandName");
     expect(source).toContain("appearance.authHeroTitle");
     expect(source).toContain("appearance.authHeroDescription");

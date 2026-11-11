@@ -1,10 +1,23 @@
 import { App, Button, Checkbox, Input, InputNumber, Select } from "antd";
 import { Download, History, ImagePlus, Video, X, Shirt, Users, Layers, ScanFace, UserRound, Move, Play, Scissors } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AppModal } from "@/components/ui/product/app-modal";
+import { FashionWorkbenchShell } from "./fashion-workbench-shell";
 import { ModelPicker } from "@/components/model-picker";
 import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
-import { FASHION_VIDEO_TOOLS, emptyFashionVideoDraft, fashionVideoProblem, fashionVideoTool, planFashionVideos, type FashionVideoDraft, type FashionVideoTool, type FashionVideoUnit, type FashionVideoWork } from "@/lib/fashion/video-workflow";
+import {
+    FASHION_VIDEO_TOOLS,
+    emptyFashionVideoDraft,
+    fashionVideoProblem,
+    fashionVideoRanges,
+    fashionVideoRenderMatches,
+    fashionVideoTimeline,
+    fashionVideoTool,
+    planFashionVideos,
+    type FashionVideoDraft,
+    type FashionVideoTool,
+    type FashionVideoUnit,
+    type FashionVideoWork,
+} from "@/lib/fashion/video-workflow";
 import type { FashionImage } from "@/lib/fashion/workflow";
 import { modelCapabilityConfigFor, videoDurationOptions } from "@/lib/model-capabilities";
 import { productVideoDefaultRatio } from "@/lib/product-video/media";
@@ -16,7 +29,7 @@ import { resourceFileUrl, uploadResourceFile } from "@/services/api/resources";
 import { queryGenerationTask } from "@/services/api/task-center";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { newFashionId } from "@/services/fashion-generation";
-import { fashionVideoGenerationConfig, fashionVideoRequirements, runFashionVideoWork } from "@/services/fashion-video-generation";
+import { fashionVideoGenerationConfig, fashionVideoRequirements, fashionVideoSegmentLimit, runFashionVideoWork } from "@/services/fashion-video-generation";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import "./fashion.css";
 import "./fashion-video.css";
@@ -24,7 +37,7 @@ import "./fashion-video.css";
 const ICONS = { tryon: Shirt, "multi-garment": Layers, "multi-model": Users, face: ScanFace, head: UserRound, motion: Move, print: Scissors, showcase: Play };
 const STATUSES = { pending: "待提交", submitting: "确认提交中", running: "视频生成中", rendering: "处理声音与交付", succeeded: "已交付", failed: "原任务已结束" };
 
-export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { initialTool?: FashionVideoTool; onClose: () => void }) {
+export function FashionVideoWorkbench({ initialTool = "tryon", onClose, inline, onBusyChange }: { initialTool?: FashionVideoTool; onClose: () => void; inline?: boolean; onBusyChange?: (busy: boolean) => void }) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
     const [draft, setDraft] = useState<FashionVideoDraft>(() => ({ ...emptyFashionVideoDraft(), tool: initialTool }));
@@ -38,6 +51,14 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
     const [renderId, setRenderId] = useState("");
+    useEffect(() => {
+        onBusyChange?.(busy || uploading);
+    }, [busy, uploading, onBusyChange]);
+    useEffect(() => {
+        setDraft((value) => ({ ...value, tool: initialTool, ...(initialTool === "showcase" && value.audio === "original" ? { audio: "mute" } : {}) }));
+        setWork(undefined);
+        setView("new");
+    }, [initialTool]);
     const scope = useRef(getActiveUserScope()).current;
     const alive = useRef(true);
     const controller = useRef<AbortController | undefined>(undefined);
@@ -66,20 +87,33 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
     useEffect(() => {
         if (!profile || locked || work) return;
         const durations = videoDurationOptions(profile).filter((seconds) => seconds >= 4 && seconds <= 30 && (!tool.source || !profile.references.maxVideoDurationSeconds || seconds <= profile.references.maxVideoDurationSeconds));
-        if (!durations.includes(draft.seconds) && durations.length) setDraft((value) => ({ ...value, seconds: durations[0] }));
+        if (!tool.source && !durations.includes(draft.seconds) && durations.length) setDraft((value) => ({ ...value, seconds: durations[0] }));
         if (!profile.ratios.includes(ratio)) setRatio(productVideoDefaultRatio(profile.ratios, draft.source?.width || draft.models[0]?.width || 1080, draft.source?.height || draft.models[0]?.height || 1920, profile.defaultRatio));
         if (!profile.resolutions.includes(resolution)) setResolution(profile.defaultResolution || profile.resolutions[0] || "");
     }, [profile, draft.seconds, draft.source, draft.models, ratio, resolution, locked, tool.source, work]);
     const imageCount = draft.tool === "multi-model" ? 2 : 1;
-    const requirements = useMemo(() => fashionVideoRequirements({ draft }, imageCount), [draft, imageCount]);
+    const referenceCount = imageCount + Number(tool.source && draft.tool !== "motion");
+    const requirements = useMemo(() => {
+        try {
+            return fashionVideoRequirements({ draft }, referenceCount, profile);
+        } catch {
+            return fashionVideoRequirements({ draft }, referenceCount);
+        }
+    }, [draft, referenceCount, profile]);
     const settings = { model, ratio, resolution, draft };
     let problem = fashionVideoProblem(draft);
     try {
-        fashionVideoGenerationConfig(config, settings, imageCount);
+        fashionVideoGenerationConfig(config, settings, referenceCount);
     } catch (e) {
         problem ||= e instanceof Error ? e.message : "模型不能执行此操作";
     }
     const count = draft.tool === "multi-model" || draft.tool === "showcase" ? draft.models.length : draft.tool === "multi-garment" ? draft.garments.length : 1;
+    let parts = 1;
+    try {
+        if (profile && tool.source) parts = fashionVideoRanges(draft, fashionVideoSegmentLimit(profile)).length;
+    } catch (e) {
+        problem ||= e instanceof Error ? e.message : "无法规划切段";
+    }
     const save = async (next: FashionVideoWork) => {
         check();
         const saved = await saveFashionVideoWork(next);
@@ -132,7 +166,9 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                 ...value,
                 source: { resourceId: resource.id, name: file.name, width: resource.width || meta.width, height: resource.height || meta.height, durationMs: resource.durationMs || meta.durationMs!, hasAudio: meta.hasAudio },
                 startMs: 0,
+                seconds: Math.min(120000, resource.durationMs || meta.durationMs!) / 1000,
             }));
+            setRatio(productVideoDefaultRatio(profile?.ratios || [], resource.width || meta.width, resource.height || meta.height, profile?.defaultRatio));
             setWork(undefined);
         } catch (e) {
             if (alive.current) setError(e instanceof Error ? e.message : "视频上传失败");
@@ -150,7 +186,7 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
             let next = existing;
             if (!next) {
                 const units = planFashionVideos(draft, newFashionId);
-                units.forEach((unit) => fashionVideoGenerationConfig(config, settings, unit.references.length));
+                units.forEach((unit) => fashionVideoGenerationConfig(config, settings, unit.references.length + Number(tool.source && draft.tool !== "motion")));
                 next = await save({
                     kind: "fashion-video",
                     id: `fashion_video_${newFashionId()}`,
@@ -174,14 +210,23 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
     const newVersion = async (unit: FashionVideoUnit) => {
         if (!work || locked) return;
         try {
-            fashionVideoGenerationConfig(config, work, unit.references.length);
+            fashionVideoGenerationConfig(config, work, unit.references.length + Number(fashionVideoTool(work.draft.tool).source && work.draft.tool !== "motion"));
+            const id = newFashionId();
+            const parts =
+                unit.status === "failed"
+                    ? unit.parts?.map((part, index) =>
+                          part.status === "succeeded"
+                              ? part
+                              : { id: `${id}_part_${index + 1}`, title: part.title, prompt: part.prompt, references: part.references, status: "pending" as const, startMs: part.startMs, endMs: part.endMs, clipResourceId: part.clipResourceId },
+                      )
+                    : undefined;
             const next: FashionVideoWork = {
                 ...work,
                 id: `fashion_video_${newFashionId()}`,
                 revision: 0,
                 createdAt: new Date().toISOString(),
                 title: `${work.title.slice(0, 108)} · 新版本`,
-                units: [{ id: newFashionId(), title: unit.title, prompt: unit.prompt, references: unit.references, status: "pending" }],
+                units: [{ id, title: unit.title, prompt: unit.prompt, references: unit.references, status: "pending", ...(parts ? { parts } : {}) }],
             };
             await run(next);
         } catch (e) {
@@ -195,8 +240,11 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
             const task = await queryGenerationTask(renderId.trim());
             check();
             const input = JSON.parse(task.inputJson || "{}");
-            if (task.type !== "timeline_render" || !input.timeline?.clips?.some((clip: { directMedia?: { storageKey?: string } }) => clip.directMedia?.storageKey === `resource:${unit.resourceId}`)) throw new Error("此任务不是当前生成视频的合成任务");
-            await save({ ...work, units: work.units.map((item) => (item.id === unit.id ? { ...item, render: { started: true, taskId: task.id }, error: undefined } : item)) });
+            const part = work.units.flatMap((item) => item.parts || []).find((item) => item.id === unit.id);
+            const renderWork = part ? { ...work, draft: { ...work.draft, startMs: part.startMs, seconds: (part.endMs - part.startMs) / 1000 }, clip: { key: `clip_${part.id}`, resourceId: part.clipResourceId, hasAudio: work.clip?.hasAudio } } : work;
+            if (task.type !== "timeline_render" || !fashionVideoRenderMatches(input.timeline, fashionVideoTimeline(renderWork, unit))) throw new Error("此任务的片段、时长、比例或声音与当前视频不一致，不能关联");
+            const patch = (item: FashionVideoUnit) => ({ ...item, render: { started: true as const, taskId: task.id }, error: undefined });
+            await save({ ...work, units: work.units.map((item) => (item.id === unit.id ? patch(item) : { ...item, ...(item.parts ? { parts: item.parts.map((part) => (part.id === unit.id ? { ...part, ...patch(part) } : part)) } : {}) })) });
             setRenderId("");
         } catch (e) {
             if (alive.current && getActiveUserScope() === scope) setError(e instanceof Error ? e.message : "关联任务失败");
@@ -209,19 +257,44 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
         setWork(undefined);
     };
     return (
-        <AppModal open centered closable={false} onCancel={onClose} footer={null} width={1180} flush title={null} rootClassName="fashion-modal">
+        <FashionWorkbenchShell inline={inline} width={1180} onClose={onClose}>
             <div className="fashion-workbench fashion-video-workbench">
                 <header className="fashion-head">
-                    <div>
-                        <small>VIDEO FASHION & IDENTITY</small>
-                        <h2>服饰与人物视频工作台</h2>
-                        <p>原视频编辑、动作参考与图生展示分别执行。每个版本保存输入、任务和成片。</p>
-                    </div>
-                    <Button icon={<History size={15} />} disabled={locked} onClick={() => setView(view === "new" ? "history" : "new")}>
+                    {!inline ? <h2>服装与人物 · 视频</h2> : null}
+                    {view === "new" ? (
+                        <div className="fashion-tool-grid" role="group" aria-label="视频处理方式">
+                            {FASHION_VIDEO_TOOLS.map((item) => {
+                                const Icon = ICONS[item.id];
+                                return (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        title={item.text}
+                                        aria-pressed={draft.tool === item.id}
+                                        disabled={locked}
+                                        onClick={() => patchDraft({ tool: item.id, ...(item.id === "showcase" && draft.audio === "original" ? { audio: "mute" } : {}) })}
+                                    >
+                                        <Icon aria-hidden />
+                                        <strong>{item.title}</strong>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div>
+                            <h2>视频作品</h2>
+                        </div>
+                    )}
+                    <Button type="text" size="small" icon={<History size={15} />} disabled={locked} onClick={() => setView(view === "new" ? "history" : "new")}>
                         {view === "new" ? "视频作品" : "返回创作"}
                     </Button>
-                    <Button type="text" aria-label="关闭视频工作台" icon={<X size={18} />} onClick={onClose} />
+                    {!inline ? <Button type="text" aria-label="关闭视频工作台" icon={<X size={18} />} onClick={onClose} /> : null}
                 </header>
+                {view === "new" ? (
+                    <p className="fashion-tool-hint" role="status">
+                        {tool.text}
+                    </p>
+                ) : null}
                 {error ? (
                     <p role="alert" className="fashion-error">
                         {error}
@@ -256,18 +329,6 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                     </div>
                 ) : (
                     <>
-                        <div className="fashion-tool-grid" role="group" aria-label="视频处理方式">
-                            {FASHION_VIDEO_TOOLS.map((item) => {
-                                const Icon = ICONS[item.id];
-                                return (
-                                    <button key={item.id} aria-pressed={draft.tool === item.id} disabled={locked} onClick={() => patchDraft({ tool: item.id, ...(item.id === "showcase" && draft.audio === "original" ? { audio: "mute" } : {}) })}>
-                                        <Icon />
-                                        <strong>{item.title}</strong>
-                                        <span>{item.text}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
                         <div className="fashion-columns">
                             <section className="fashion-inputs">
                                 {tool.source ? (
@@ -294,20 +355,46 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                             <>
                                                 <video className="fv-source" controls preload="metadata" src={`${resourceFileUrl(draft.source.resourceId)}#t=${draft.startMs / 1000},${draft.startMs / 1000 + draft.seconds}`} />
                                                 <p>
-                                                    {draft.source.name} · {(draft.source.durationMs / 1000).toFixed(1)}秒
+                                                    {draft.source.name} · {(draft.source.durationMs / 1000).toFixed(1)}秒{` · ${draft.source.width} × ${draft.source.height}`}
                                                 </p>
                                                 <label>
                                                     片段起点（秒）
                                                     <InputNumber
                                                         aria-label="原视频片段起点"
                                                         min={0}
-                                                        max={Math.max(0, draft.source.durationMs / 1000 - draft.seconds)}
-                                                        step={0.1}
+                                                        max={Math.max(0, (draft.startMs + Math.round(draft.seconds * 1000)) / 1000 - 4)}
+                                                        step={0.001}
+                                                        precision={3}
                                                         value={draft.startMs / 1000}
                                                         disabled={locked}
-                                                        onChange={(value) => patchDraft({ startMs: Math.round((value || 0) * 1000) })}
+                                                        onChange={(value) => {
+                                                            const startMs = Math.round((value || 0) * 1000);
+                                                            const endMs = Math.round(draft.startMs + draft.seconds * 1000);
+                                                            patchDraft({ startMs, seconds: (endMs - startMs) / 1000 });
+                                                        }}
                                                     />
                                                 </label>
+                                                <label>
+                                                    片段终点（秒）
+                                                    <InputNumber
+                                                        aria-label="原视频片段终点"
+                                                        min={draft.startMs / 1000 + 4}
+                                                        max={Math.min(draft.source.durationMs, draft.startMs + 120000) / 1000}
+                                                        step={0.001}
+                                                        precision={3}
+                                                        value={(draft.startMs + Math.round(draft.seconds * 1000)) / 1000}
+                                                        disabled={locked}
+                                                        onChange={(value) => {
+                                                            if (value !== null) patchDraft({ seconds: (Math.round(value * 1000) - draft.startMs) / 1000 });
+                                                        }}
+                                                    />
+                                                </label>
+                                                <Button disabled={locked || draft.source.durationMs > 120000} onClick={() => patchDraft({ startMs: 0, seconds: draft.source!.durationMs / 1000 })}>
+                                                    处理整段原片
+                                                </Button>
+                                                <p className="fv-hint">
+                                                    选中 {draft.seconds.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")} 秒 · 每个版本分 {parts} 段生成，按原视频比例合成。
+                                                </p>
                                             </>
                                         ) : (
                                             <p>先选原视频，再设置要处理的片段。上传完整视频，模型只收到选定片段。</p>
@@ -328,7 +415,7 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                                 multiple
                                                 accept="image/*"
                                                 disabled={locked}
-                                                aria-label={`上传${slot}`}
+                                                aria-label={slot === "models" ? "上传人物参考图" : slot === "faces" ? "上传身份参考图" : draft.tool === "print" ? "上传印花参考图" : "上传服装参考图"}
                                                 onChange={(e) => {
                                                     void uploadImage(slot, e.target.files);
                                                     e.target.value = "";
@@ -363,17 +450,36 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                 />
                                 <div className="fv-settings">
                                     <label>
-                                        片段时长
-                                        <Select
-                                            aria-label="视频片段时长"
-                                            disabled={locked}
-                                            value={draft.seconds}
-                                            onChange={(seconds) => patchDraft({ seconds })}
-                                            options={(profile ? videoDurationOptions(profile) : [5]).filter((seconds) => seconds >= 4 && seconds <= 30).map((value) => ({ value, label: `${value} 秒` }))}
-                                        />
+                                        {tool.source ? "选段时长" : "片段时长"}
+                                        {tool.source ? (
+                                            draft.source ? (
+                                                <InputNumber
+                                                    aria-label="选段时长（秒）"
+                                                    min={4}
+                                                    max={Math.min(120, (draft.source.durationMs - draft.startMs) / 1000)}
+                                                    step={0.001}
+                                                    precision={3}
+                                                    value={draft.seconds}
+                                                    disabled={locked}
+                                                    onChange={(seconds) => {
+                                                        if (seconds !== null) patchDraft({ seconds });
+                                                    }}
+                                                />
+                                            ) : (
+                                                <span className="fv-hint">上传后可选 4–120 秒，默认整段</span>
+                                            )
+                                        ) : (
+                                            <Select
+                                                aria-label="视频片段时长"
+                                                disabled={locked}
+                                                value={draft.seconds}
+                                                onChange={(seconds) => patchDraft({ seconds })}
+                                                options={(profile ? videoDurationOptions(profile) : [5]).filter((seconds) => seconds >= 4 && seconds <= 30).map((value) => ({ value, label: `${value} 秒` }))}
+                                            />
+                                        )}
                                     </label>
                                     <label>
-                                        画幅
+                                        {tool.source ? "模型生成画幅" : "画幅"}
                                         <Select
                                             aria-label="视频画幅"
                                             disabled={locked}
@@ -436,12 +542,12 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                 <Checkbox disabled={locked} checked={draft.authorized} onChange={(e) => patchDraft({ authorized: e.target.checked })}>
                                     确认这些视频、服装和人物形象可用于本次创作
                                 </Checkbox>
-                                <p className="fv-hint">{problem || `将独立生成${count}段视频。先切所选片段，再提交视频模型，最后处理声音。`}</p>
-                                <GenerationCostNotice config={config} model={model} capability="video" requirements={requirements} count={Math.max(1, count)} label="视频生成" />
+                                <p className="fv-hint">{problem || `将生成${count}个版本，共${count * parts}个片段。各版本共用原片布光参考，按原时长和原比例交付。`}</p>
+                                <GenerationCostNotice config={config} model={model} capability="video" requirements={requirements} count={Math.max(1, count * parts)} label="视频生成" />
                                 <Button type="primary" block disabled={locked || Boolean(problem)} onClick={() => void run()} icon={<Video size={16} />}>
                                     生成{count > 1 ? ` ${count} 段` : ""}视频
                                 </Button>
-                                <p className="fv-hint">原片编辑需要接受视频与图片参考的模型；图生展示不等于原视频换装。复杂遮挡、文字和身份一致性须在成片检查。</p>
+                                <p className="fv-hint">生成后检查遮挡、图案文字和人物一致性。</p>
                             </section>
                             <section className="fashion-output">
                                 {work ? (
@@ -454,7 +560,7 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                                 <Button onClick={() => void run(work)}>恢复原任务</Button>
                                             ) : null}
                                         </div>
-                                        <TaskSettlement ids={work.units.flatMap((unit) => [unit.taskId || "", unit.render?.taskId || ""])} />
+                                        <TaskSettlement ids={work.units.flatMap((unit) => [unit.taskId || "", unit.render?.taskId || "", ...(unit.parts || []).flatMap((part) => [part.taskId || "", part.render?.taskId || ""])])} />
                                         <div className="fv-results">
                                             {work.units.map((unit) => (
                                                 <article key={unit.id}>
@@ -472,6 +578,29 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                                     )}
                                                     {unit.resourceId && !unit.render?.resourceId ? <p role="status">这是模型原始视频，声音与交付尚未完成。</p> : null}
                                                     {unit.error ? <p role="alert">{unit.error}</p> : null}
+                                                    {unit.parts ? (
+                                                        <details open={!unit.render?.resourceId}>
+                                                            <summary>
+                                                                片段进度 · {unit.parts.filter((part) => part.status === "succeeded").length}/{unit.parts.length}
+                                                            </summary>
+                                                            {unit.parts.map((part) => (
+                                                                <div key={part.id}>
+                                                                    <p>
+                                                                        {(part.startMs / 1000).toFixed(3)}–{(part.endMs / 1000).toFixed(3)} 秒 · {STATUSES[part.status]}
+                                                                    </p>
+                                                                    {part.error ? <p role="alert">{part.error}</p> : null}
+                                                                    {part.render?.started && !part.render.taskId ? (
+                                                                        <div className="fv-render-link">
+                                                                            <Input aria-label={`片段${part.id}原渲染任务ID`} value={renderId} onChange={(e) => setRenderId(e.target.value)} placeholder="从任务中心复制原渲染任务ID" />
+                                                                            <Button disabled={locked} onClick={() => void associateRender(part)}>
+                                                                                关联原任务
+                                                                            </Button>
+                                                                        </div>
+                                                                    ) : null}
+                                                                </div>
+                                                            ))}
+                                                        </details>
+                                                    ) : null}
                                                     {unit.render?.started && !unit.render.taskId ? (
                                                         <div className="fv-render-link">
                                                             <Input aria-label="原渲染任务ID" value={renderId} onChange={(e) => setRenderId(e.target.value)} placeholder="从任务中心复制原渲染任务ID" />
@@ -493,7 +622,7 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                                         ) : null}
                                                         {["succeeded", "failed"].includes(unit.status) ? (
                                                             <Button disabled={locked} onClick={() => void newVersion(unit)}>
-                                                                保留原版，生成新版本
+                                                                {unit.status === "failed" && unit.parts ? "保留成功片段，重做失败片段" : "保留原版，生成新版本"}
                                                             </Button>
                                                         ) : null}
                                                     </div>
@@ -516,8 +645,8 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                                 ) : (
                                     <div className="fashion-empty">
                                         <Video size={32} />
-                                        <h3>这里显示真实视频任务与成片</h3>
-                                        <p>原片编辑保留所选视频的时间结构。展示视频从已确认人物图起拍，两个流程各用对应模型能力。</p>
+                                        <h3>暂无视频作品</h3>
+                                        <p>选择素材和处理方式，生成后在这里预览。</p>
                                     </div>
                                 )}
                             </section>
@@ -525,6 +654,6 @@ export function FashionVideoWorkbench({ initialTool = "tryon", onClose }: { init
                     </>
                 )}
             </div>
-        </AppModal>
+        </FashionWorkbenchShell>
     );
 }

@@ -47,7 +47,7 @@ export default function AuthDialog({ navigate }: { navigate: (to: string) => voi
             open={open && !signedIn}
             onCancel={closeDialog}
             footer={null}
-            width="min(1000px, calc(100vw - 32px))"
+            width="min(960px, calc(100vw - 32px))"
             className="auth-dialog"
             // 视觉标题在右侧面板内；这里只为对话框提供无障碍名称。
             title={<span className="sr-only">{t("auth.panel.dialogLabel")}</span>}
@@ -70,24 +70,21 @@ function AuthDialogStage() {
     const appearance = useAppearanceStore((state) => state.appearance);
     return (
         <aside className="auth-dialog-stage">
+            <BrandFilm className="auth-dialog-film" />
             <div className="auth-dialog-brand">
-                <BrandWordmark builtinClassName="auth-dialog-brand-wordmark" />
+                <BrandWordmark builtinClassName="auth-dialog-brand-wordmark" theme="dark" />
             </div>
             <div className="auth-dialog-stage-copy">
                 <p className="auth-dialog-stage-title">{appearance.authHeroTitle}</p>
                 <p className="auth-dialog-stage-tagline">{appearance.authHeroDescription || t("auth.panel.tagline")}</p>
             </div>
-            <BrandFilm className="auth-dialog-film" />
             <ul className="auth-dialog-features">
                 {STAGE_FEATURES.map(({ key, icon: Icon }) => (
                     <li key={key} className="auth-dialog-feature">
                         <span className="auth-dialog-feature-icon">
                             <Icon aria-hidden />
                         </span>
-                        <span className="min-w-0">
-                            <strong>{t(`auth.panel.features.${key}.title`)}</strong>
-                            <small>{t(`auth.panel.features.${key}.description`)}</small>
-                        </span>
+                        <strong>{t(`auth.panel.features.${key}.title`)}</strong>
                     </li>
                 ))}
             </ul>

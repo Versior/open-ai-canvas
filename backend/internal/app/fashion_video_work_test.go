@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"yingce/backend/internal/model"
 )
@@ -44,15 +45,64 @@ func TestFashionVideoContract(t *testing.T) {
 		})
 	}
 }
+func TestFashionVideoLongSelectionContract(t *testing.T) {
+	makeWork := func() map[string]any {
+		work := fashionVideoTestWork()
+		draft := work["draft"].(map[string]any)
+		draft["seconds"], draft["startMs"] = 28.544, 0
+		draft["source"].(map[string]any)["durationMs"] = 28544
+		unit := work["units"].([]any)[0].(map[string]any)
+		segments, parts := []any{}, []any{}
+		for i, span := range [][2]int{{0, 14272}, {14272, 28544}} {
+			clipID := fmt.Sprintf("clip_%d", i)
+			segments = append(segments, map[string]any{"startMs": span[0], "endMs": span[1], "resourceId": clipID, "keyframeResourceId": fmt.Sprintf("frame_%d", i)})
+			parts = append(parts, map[string]any{"id": fmt.Sprintf("part_%d", i), "title": "原片分段", "prompt": "同一身份与环境", "status": "pending", "references": unit["references"], "startMs": span[0], "endMs": span[1], "clipResourceId": clipID})
+		}
+		work["clip"] = map[string]any{"key": "cut_whole", "segments": segments, "keyframeResourceId": "frame_0"}
+		unit["parts"] = parts
+		return work
+	}
+	if err := validateFashionVideoWork(fashionVideoRaw(t, makeWork())); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(map[string]any){
+		"empty parts":    func(w map[string]any) { w["units"].([]any)[0].(map[string]any)["parts"] = []any{} },
+		"empty segments": func(w map[string]any) { w["clip"].(map[string]any)["segments"] = []any{} },
+		"missing tail": func(w map[string]any) {
+			u := w["units"].([]any)[0].(map[string]any)
+			u["parts"] = u["parts"].([]any)[:1]
+		},
+		"wrong range": func(w map[string]any) {
+			w["units"].([]any)[0].(map[string]any)["parts"].([]any)[1].(map[string]any)["startMs"] = 14200
+		},
+		"different identity": func(w map[string]any) {
+			w["units"].([]any)[0].(map[string]any)["parts"].([]any)[1].(map[string]any)["references"] = []any{map[string]any{"resourceId": "other_image", "name": "另一身份"}}
+		},
+		"duplicate segment": func(w map[string]any) {
+			w["units"].([]any)[0].(map[string]any)["parts"].([]any)[1].(map[string]any)["id"] = "part_0"
+		},
+		"wrong clip": func(w map[string]any) {
+			w["units"].([]any)[0].(map[string]any)["parts"].([]any)[1].(map[string]any)["clipResourceId"] = "other_clip"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			work := makeWork()
+			mutate(work)
+			if validateFashionVideoWork(fashionVideoRaw(t, work)) == nil {
+				t.Fatal("invalid long work accepted")
+			}
+		})
+	}
+}
 func TestFashionVideoSaveReadRevisionAndResourceKinds(t *testing.T) {
 	svc, db, _, owner := newAdminStorageDeleteTestService(t)
-	for id, kind := range map[string]string{"source_aaa": "video", "clip_aaa": "video", "garment_aaa": "image", "generated_aaa": "video", "rendered_aaa": "video"} {
+	for id, kind := range map[string]string{"source_aaa": "video", "clip_aaa": "video", "anchor_aaa": "image", "garment_aaa": "image", "generated_aaa": "video", "rendered_aaa": "video"} {
 		if err := db.Create(&model.Resource{ID: id, UserID: owner.ID, Kind: kind, Status: model.ResourceStatusReady}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	w := fashionVideoTestWork()
-	w["clip"] = map[string]any{"key": "cut_aaa", "taskId": "split_aaa", "resourceId": "clip_aaa", "hasAudio": true}
+	w["clip"] = map[string]any{"key": "cut_aaa", "taskId": "split_aaa", "resourceId": "clip_aaa", "keyframeResourceId": "anchor_aaa", "hasAudio": true}
 	u := w["units"].([]any)[0].(map[string]any)
 	u["resourceId"], u["status"], u["durationMs"], u["width"], u["height"] = "generated_aaa", "succeeded", 5000, 720, 1280
 	u["render"] = map[string]any{"started": true, "taskId": "render_aaa", "resourceId": "rendered_aaa"}

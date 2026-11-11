@@ -5,7 +5,6 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { GenerationCostNotice } from "@/components/generation-cost-notice";
-import { HoverBorderGradient } from "@/components/ui/aceternity/hover-border-gradient";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { Switch } from "@/components/ui/base/switch";
 import { formatDurationLimit, formatTeardownTime, orientationLabel, videoTeardownModelError, videoTeardownTextRequirements, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
@@ -45,8 +44,7 @@ const MONOCHROME_LOGOS = new Set(["douyin", "tiktok"]);
  * 支持的平台：能导入的排前面；后台还没给某个平台配解析接口时显示成灰色，说明可以先下载再上传。
  */
 function PlatformStrip({ platforms, loading }: { platforms: readonly SocialVideoPlatform[]; loading: boolean }) {
-    const sorted = [...platforms].sort((left, right) => Number(right.available) - Number(left.available));
-    const missing = sorted.filter((platform) => !platform.available);
+    const available = platforms.filter((platform) => platform.available);
     return (
         <div className="vr-platforms" aria-busy={loading || undefined}>
             <span className="vr-platforms-label" id="vr-platforms-label">
@@ -55,7 +53,7 @@ function PlatformStrip({ platforms, loading }: { platforms: readonly SocialVideo
             <ul className="vr-platform-list" aria-labelledby="vr-platforms-label">
                 {loading
                     ? [0, 1, 2, 3].map((item) => <li key={item} className="vr-platform vr-skeleton" aria-hidden />)
-                    : sorted.map((platform) => (
+                    : available.map((platform) => (
                           <li
                               key={platform.id}
                               className="vr-platform"
@@ -74,7 +72,7 @@ function PlatformStrip({ platforms, loading }: { platforms: readonly SocialVideo
                           </li>
                       ))}
             </ul>
-            {!loading && missing.length ? <span className="vr-platforms-hint">灰色的还没接入，可以下载后上传</span> : null}
+            {!loading && !available.length ? <span className="vr-platforms-hint">链接解析暂不可用，可直接上传本地视频</span> : null}
         </div>
     );
 }
@@ -100,11 +98,11 @@ function useObjectUrl(file: File | null) {
  */
 export function ReplicationComposer({ config, model, onModelChange, transcribe, transcribeNote, onTranscribeChange, limits, linkImportEnabled, busy, run, onStart }: Props) {
     const { message } = App.useApp();
-    const [pickedMode, setMode] = useState<"link" | "file">("link");
-    const mode = linkImportEnabled ? pickedMode : "file";
+    const [pickedMode, setMode] = useState<"link" | "file">("file");
     const [linkText, setLinkText] = useState("");
     const [file, setFile] = useState<File | null>(null);
     const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
+    const [fileProbeError, setFileProbeError] = useState("");
     const [dragging, setDragging] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const previewUrl = useObjectUrl(file);
@@ -114,15 +112,17 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
     // 能识别哪些平台、哪些平台后台配了解析接口，以服务端为准；没取到时先按抖音 / TikTok 的内置规则识别。
     const platformsQuery = useQuery({ queryKey: ["social-video-platforms", getActiveUserScope()], queryFn: ({ signal }) => listSocialVideoPlatforms(signal), staleTime: 60_000 });
     const platforms = platformsQuery.data?.length ? platformsQuery.data : BUILTIN_SOCIAL_VIDEO_PLATFORMS.map((platform) => ({ ...platform, available: false }));
+    const hasLinkImport = linkImportEnabled && platforms.some((platform) => platform.available);
+    const mode = hasLinkImport ? pickedMode : "file";
     const platformNames = socialVideoPlatformNames(platforms);
 
     const modelError = videoTeardownModelError(config, model);
     const link = socialVideoLinkFromText(linkText, platforms);
     const linkValid = Boolean(link?.platform.available);
     const tooLong = Boolean(limits && fileInfo && fileInfo.durationMs > limits.maxDurationSeconds * 1000);
-    const fileValid = Boolean(file && file.type.startsWith("video/") && !tooLong);
+    const fileValid = Boolean(file && file.type.startsWith("video/") && fileInfo && !fileProbeError && !tooLong);
     const linkError = !linkText.trim() ? "" : !link ? `只支持${platformNames}的单视频链接或分享文字` : !link.platform.available ? `${link.platform.name}链接暂时无法导入：后台还没有可用的解析接口` : "";
-    const fileError = file && !file.type.startsWith("video/") ? "请选择视频文件" : limits && tooLong ? `视频超过 ${formatDurationLimit(limits.maxDurationSeconds)}，请先剪短再拆解` : "";
+    const fileError = fileProbeError || (file && !file.type.startsWith("video/") ? "请选择视频文件" : limits && tooLong ? `视频超过 ${formatDurationLimit(limits.maxDurationSeconds)}，请先剪短再拆解` : "");
     // 链接的问题显示在输入框里；这里只放文件和模型的问题。
     const footerError = (mode === "file" ? fileError : "") || modelError;
     const ready = (mode === "link" ? linkValid : fileValid) && !modelError && !busy;
@@ -133,18 +133,21 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
         else if (file) onStart({ kind: "file", file }, { model, transcribe });
     };
     const pickFile = (next: File | null | undefined) => {
-        if (!next) return;
+        if (!next || busy) return;
         setFile(next);
         setFileInfo(null);
+        setFileProbeError("");
         setMode("file");
     };
     const removeFile = () => {
         setFile(null);
         setFileInfo(null);
+        setFileProbeError("");
     };
     const drop = (event: DragEvent) => {
         event.preventDefault();
         setDragging(false);
+        if (busy) return;
         const files = Array.from(event.dataTransfer.files);
         pickFile(files.find((item) => item.type.startsWith("video/")) || files[0]);
     };
@@ -160,11 +163,12 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
 
     return (
         <div className="vr-composer-wrap">
-            <HoverBorderGradient as="div" duration={2.2} containerClassName="vr-composer-shell" className="vr-composer-shell-inner">
+            <div className="vr-composer-shell">
                 <div
                     className="vr-composer"
                     data-dragging={dragging || undefined}
                     onDragOver={(event) => {
+                        if (busy) return;
                         if (!event.dataTransfer.types.includes("Files")) return;
                         event.preventDefault();
                         setDragging(true);
@@ -180,10 +184,11 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                 ariaLabel="视频来源"
                                 size="sm"
                                 value={mode}
+                                disabled={busy}
                                 onChange={setMode}
                                 options={[
-                                    { value: "link", label: "粘贴链接", icon: <Link2 className="size-3.5" aria-hidden /> },
                                     { value: "file", label: "上传视频", icon: <Upload className="size-3.5" aria-hidden /> },
+                                    { value: "link", label: "粘贴链接", disabled: !hasLinkImport, icon: <Link2 className="size-3.5" aria-hidden /> },
                                 ]}
                             />
                         ) : (
@@ -194,10 +199,12 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         )}
                         {limits ? <span className="vr-composer-limit">{`最长 ${formatDurationLimit(limits.maxDurationSeconds)} · 最多 ${limits.maxShots} 个镜头`}</span> : null}
                     </div>
+                    {linkImportEnabled && !hasLinkImport && !platformsQuery.isPending ? <p className="vr-composer-note">{platformsQuery.isError ? "链接平台读取失败，可直接上传视频。" : "后台暂无可用的链接解析，可直接上传视频。"}</p> : null}
                     {mode === "link" ? <PlatformStrip platforms={platforms} loading={platformsQuery.isPending} /> : null}
                     {mode === "link" ? (
                         <div className="vr-link-field" data-hint={link && linkValid ? "ok" : linkError ? "error" : undefined}>
                             <Input.TextArea
+                                disabled={busy}
                                 variant="borderless"
                                 className="vr-textarea"
                                 value={linkText}
@@ -225,7 +232,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                 </span>
                             ) : null}
                             {canPaste && !linkText ? (
-                                <Button size="small" className="vr-paste" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void paste()}>
+                                <Button size="small" disabled={busy} className="vr-paste" icon={<ClipboardPaste className="size-3.5" />} onClick={() => void paste()}>
                                     粘贴
                                 </Button>
                             ) : null}
@@ -235,6 +242,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                             <span className="vr-file-preview">
                                 {previewUrl ? (
                                     <video
+                                        key={previewUrl}
                                         src={previewUrl}
                                         muted
                                         playsInline
@@ -242,8 +250,11 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                         aria-hidden
                                         onLoadedMetadata={(event) => {
                                             const video = event.currentTarget;
-                                            if (Number.isFinite(video.duration)) setFileInfo({ durationMs: Math.round(video.duration * 1000), width: video.videoWidth, height: video.videoHeight });
+                                            if (Number.isFinite(video.duration) && video.duration > 0 && video.videoWidth > 0 && video.videoHeight > 0)
+                                                setFileInfo({ durationMs: Math.round(video.duration * 1000), width: video.videoWidth, height: video.videoHeight });
+                                            else setFileProbeError("无法读取视频尺寸或时长，请换一个可播放的视频");
                                         }}
+                                        onError={() => setFileProbeError("视频无法播放，请换一个文件或转为 H.264 MP4")}
                                     />
                                 ) : (
                                     <FileVideo aria-hidden />
@@ -264,16 +275,16 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                                 </span>
                             </span>
                             <span className="vr-file-actions">
-                                <Button size="small" onClick={() => fileInputRef.current?.click()}>
+                                <Button size="small" disabled={busy} onClick={() => fileInputRef.current?.click()}>
                                     换一个
                                 </Button>
-                                <button type="button" className="vr-icon-button" aria-label="移除视频" title="移除视频" onClick={removeFile}>
+                                <button type="button" disabled={busy} className="vr-icon-button" aria-label="移除视频" title="移除视频" onClick={removeFile}>
                                     <X aria-hidden />
                                 </button>
                             </span>
                         </div>
                     ) : (
-                        <button type="button" className="vr-drop" onClick={() => fileInputRef.current?.click()}>
+                        <button type="button" disabled={busy} className="vr-drop" onClick={() => fileInputRef.current?.click()}>
                             <span className="vr-drop-icon" aria-hidden>
                                 <UploadCloud />
                             </span>
@@ -284,6 +295,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                     <input
                         ref={fileInputRef}
                         type="file"
+                        disabled={busy}
                         accept="video/*"
                         className="hidden"
                         aria-label="选择要拆解的视频"
@@ -302,10 +314,20 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         {/* 分析模型是次要设置：不显示单价，选择器里仍能看到各模型价格。 */}
                         <div className="vr-toolbar-model">
                             <span className="vr-toolbar-label">分析模型</span>
-                            <ModelPicker config={config} capability="text" value={model} onChange={onModelChange} requirements={videoTeardownTextRequirements(config, 1)} placeholder="选择能看图的文本模型" showSelectedPrice={false} showOptionPrices />
+                            <ModelPicker
+                                config={config}
+                                capability="text"
+                                value={model}
+                                onChange={onModelChange}
+                                modelDisabledReason={() => (busy ? "正在拆解视频" : "")}
+                                requirements={videoTeardownTextRequirements(config, 1)}
+                                placeholder="选择能看图的文本模型"
+                                showSelectedPrice={false}
+                                showOptionPrices
+                            />
                         </div>
                         <label className="vr-chip" title={transcribeNote || undefined} data-disabled={transcribeNote ? true : undefined}>
-                            <Switch size="sm" checked={transcribe} disabled={Boolean(transcribeNote)} onChange={onTranscribeChange} aria-label="识别口播" aria-describedby={transcribeNote ? "vr-transcribe-note" : undefined} />
+                            <Switch size="sm" checked={transcribe} disabled={busy || Boolean(transcribeNote)} onChange={onTranscribeChange} aria-label="识别口播" aria-describedby={transcribeNote ? "vr-transcribe-note" : undefined} />
                             <span>识别口播</span>
                         </label>
                         <span className="vr-toolbar-end">
@@ -321,7 +343,7 @@ export function ReplicationComposer({ config, model, onModelChange, transcribe, 
                         </p>
                     ) : null}
                 </div>
-            </HoverBorderGradient>
+            </div>
             {run ? <ReplicationProgress run={run} className="vr-composer-progress" /> : null}
         </div>
     );

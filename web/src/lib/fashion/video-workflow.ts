@@ -42,6 +42,7 @@ export type FashionVideoUnit = {
     height?: number;
     render?: { started: true; taskId?: string; resourceId?: string };
     error?: string;
+    parts?: (FashionVideoUnit & { startMs: number; endMs: number; clipResourceId: string })[];
 };
 export type FashionVideoWork = {
     kind: "fashion-video";
@@ -54,7 +55,7 @@ export type FashionVideoWork = {
     resolution: string;
     draft: FashionVideoDraft;
     units: FashionVideoUnit[];
-    clip?: { key: string; taskId?: string; resourceId?: string; hasAudio?: boolean };
+    clip?: { key: string; taskId?: string; resourceId?: string; keyframeResourceId?: string; hasAudio?: boolean; segments?: { startMs: number; endMs: number; resourceId: string; keyframeResourceId: string }[] };
 };
 export const emptyFashionVideoDraft = (): FashionVideoDraft => ({ tool: "tryon", startMs: 0, seconds: 5, models: [], garments: [], faces: [], region: "upper", audio: "mute", motion: "缓慢转身，手部自然，镜头稳定", note: "", authorized: false });
 export const fashionVideoTool = (id: FashionVideoTool) => FASHION_VIDEO_TOOLS.find((tool) => tool.id === id)!;
@@ -62,10 +63,10 @@ export const fashionVideoTool = (id: FashionVideoTool) => FASHION_VIDEO_TOOLS.fi
 export function fashionVideoProblem(draft: FashionVideoDraft, requireAuthorization = true) {
     const tool = fashionVideoTool(draft.tool);
     if (!tool) return "请选择有效的视频处理方式";
-    if (!Number.isInteger(draft.seconds) || draft.seconds < 4 || draft.seconds > 30) return "视频片段须为4–30秒的整数时长";
+    if (!Number.isFinite(draft.seconds) || !Number.isSafeInteger(Math.round(draft.seconds * 1000)) || draft.seconds < 4 || draft.seconds > (tool.source ? 120 : 30)) return tool.source ? "请选择4–120秒的原视频范围" : "展示视频须为4–30秒";
     if (!Number.isSafeInteger(draft.startMs) || draft.startMs < 0 || [...draft.note].length > 600 || [...draft.motion].length > 300) return "片段范围或视频要求无效";
     if (!(["upper", "lower", "dress"] as string[]).includes(draft.region) || !(["original", "model", "mute"] as string[]).includes(draft.audio)) return "服装区域或声音方式无效";
-    if (tool.source && (!draft.source?.resourceId || !Number.isFinite(draft.source.durationMs) || draft.startMs + draft.seconds * 1000 > draft.source.durationMs)) return "请添加原视频，并选择视频范围内的处理片段";
+    if (tool.source && (!draft.source?.resourceId || !Number.isFinite(draft.source.durationMs) || draft.startMs + Math.round(draft.seconds * 1000) > draft.source.durationMs)) return "请添加原视频，并选择视频范围内的处理片段";
     if (!tool.source && draft.audio === "original") return "模特图展示没有原视频声音，请选择模型声音或静音";
     if (draft.audio === "original" && draft.source?.hasAudio === false) return "原视频没有音轨，请选择模型声音或静音";
     for (const slot of ["models", "garments", "faces"] as const) {
@@ -77,6 +78,15 @@ export function fashionVideoProblem(draft: FashionVideoDraft, requireAuthorizati
     if (!["multi-model", "multi-garment", "showcase"].includes(draft.tool) && tool.needs.some((slot) => draft[slot].length !== 1)) return "当前处理每类素材选择一张，批量请用多模特或多套视频";
     if (requireAuthorization && !draft.authorized) return "请确认原素材和人物形象的使用授权";
     return "";
+}
+
+/** 选段保留毫秒精度，模型只接收能力范围内的均分片段，尾段不会变成不足四秒的碎片。 */
+export function fashionVideoRanges(draft: FashionVideoDraft, maxSeconds: number) {
+    if (!Number.isFinite(maxSeconds) || maxSeconds < 4) throw new Error("所选模型单段须支持至少4秒");
+    const durationMs = Math.round(draft.seconds * 1000);
+    const count = Math.ceil(durationMs / Math.floor(maxSeconds * 1000));
+    if (durationMs / count < 4000) throw new Error("当前模型上限无法把选段分成至少4秒的片段，请选择单段上限更长的模型");
+    return Array.from({ length: count }, (_, index) => ({ startMs: draft.startMs + Math.round((durationMs * index) / count), endMs: draft.startMs + Math.round((durationMs * (index + 1)) / count) }));
 }
 
 export function planFashionVideos(draft: FashionVideoDraft, id: () => string): FashionVideoUnit[] {
@@ -120,16 +130,38 @@ export function planFashionVideos(draft: FashionVideoDraft, id: () => string): F
 }
 
 export function fashionVideoTimeline(work: FashionVideoWork, unit: FashionVideoUnit): TimelineProject & { width: number; height: number; fit: "auto" } {
+    if (unit.parts) {
+        if (!work.draft.source || !unit.parts.length || unit.parts.some((part) => part.status !== "succeeded" || !part.render?.resourceId)) throw new Error("部分片段未成功，不能交付完整视频");
+        return {
+            version: 2,
+            durationMs: Math.round(work.draft.seconds * 1000),
+            width: work.draft.source.width,
+            height: work.draft.source.height,
+            fit: "auto",
+            tracks: [{ id: "visual", kind: "video", label: "按原片顺序合成", order: 0 }],
+            clips: unit.parts.map((part) => ({
+                id: part.id,
+                nodeId: part.id,
+                trackId: "visual",
+                kind: "video",
+                startMs: part.startMs - work.draft.startMs,
+                durationMs: part.endMs - part.startMs,
+                sourceStartMs: 0,
+                sourceDurationMs: part.endMs - part.startMs,
+                directMedia: { id: part.render!.resourceId!, kind: "video", title: part.title, storageKey: `resource:${part.render!.resourceId!}` },
+            })),
+        };
+    }
     if (!unit.resourceId || !unit.durationMs || !unit.width || !unit.height) throw new Error("视频成品的时长或尺寸尚未确认，请先检查原任务");
-    const durationMs = work.draft.seconds * 1000;
+    const durationMs = Math.round(work.draft.seconds * 1000);
     if (unit.durationMs + 100 < durationMs) throw new Error("生成视频短于所选片段，不能截断原声或伪造完整视频，请生成新版本");
     const original = work.draft.audio === "original";
     if (original && (!work.clip?.resourceId || work.clip.hasAudio !== true)) throw new Error("所选原视频片段没有确认可用音轨，原声音合成未执行");
     return {
         version: 2,
         durationMs,
-        width: unit.width,
-        height: unit.height,
+        width: fashionVideoTool(work.draft.tool).source ? work.draft.source!.width : unit.width,
+        height: fashionVideoTool(work.draft.tool).source ? work.draft.source!.height : unit.height,
         fit: "auto",
         tracks: [
             { id: "visual", kind: "video", label: "生成画面", order: 0, muted: work.draft.audio !== "model" },
@@ -163,4 +195,30 @@ export function fashionVideoTimeline(work: FashionVideoWork, unit: FashionVideoU
                 : []),
         ],
     };
+}
+
+/** 关联提交未知的原任务时，必须核对完整片段及声音，不能仅匹配其中一个素材。 */
+export function fashionVideoRenderMatches(value: unknown, expected: ReturnType<typeof fashionVideoTimeline>) {
+    if (!value || typeof value !== "object") return false;
+    const timeline = value as ReturnType<typeof fashionVideoTimeline>;
+    if (timeline.width !== expected.width || timeline.height !== expected.height || timeline.durationMs !== expected.durationMs || timeline.fit !== expected.fit) return false;
+    if (!Array.isArray(timeline.clips) || !Array.isArray(timeline.tracks) || timeline.clips.length !== expected.clips.length || timeline.tracks.length !== expected.tracks.length) return false;
+    return (
+        expected.clips.every((clip, index) => {
+            const actual = timeline.clips[index];
+            return (
+                actual &&
+                actual.kind === clip.kind &&
+                actual.trackId === clip.trackId &&
+                actual.startMs === clip.startMs &&
+                actual.durationMs === clip.durationMs &&
+                (actual.sourceStartMs || 0) === (clip.sourceStartMs || 0) &&
+                actual.directMedia?.storageKey === clip.directMedia?.storageKey
+            );
+        }) &&
+        expected.tracks.every((track, index) => {
+            const actual = timeline.tracks[index];
+            return actual && actual.id === track.id && actual.kind === track.kind && Boolean(actual.muted) === Boolean(track.muted) && actual.order === track.order;
+        })
+    );
 }

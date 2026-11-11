@@ -267,6 +267,9 @@ type timelineRenderResult struct {
 // CreateTimelineRenderTask 创建时间线渲染任务：本地 ffmpeg 合成，不经模型
 // 路由与计费；创建时校验快照至少包含一个可渲染媒体片段。
 func (s *Service) CreateTimelineRenderTask(userID string, req TimelineRenderCreateRequest) (*model.Task, error) {
+	if err := validateRenderComparison(req.Timeline); err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
 	if err := validateRenderLut(req.Timeline.ColorLut); err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
@@ -279,6 +282,18 @@ func (s *Service) CreateTimelineRenderTask(userID string, req TimelineRenderCrea
 	plan := buildRenderPlan(req.Timeline)
 	if !plan.HasMedia {
 		return nil, BadAuthRequest("时间线没有可渲染的媒体片段")
+	}
+	if req.Timeline.Comparison != nil {
+		for _, seg := range append(append(append(append([]renderSegment{}, plan.Segments...), plan.Comparison...), plan.AudioOverlays...), plan.ImageOverlays...) {
+			resourceID, ok := mediaResourceID(seg.Clip)
+			if !ok {
+				return nil, BadAuthRequest("对比素材引用无效")
+			}
+			resource, err := s.repo.ResourceForUser(userID, resourceID)
+			if err != nil || resource == nil || resource.Status != model.ResourceStatusReady || (seg.Kind == "video" && resource.Kind != "video") || ((seg.Kind == "image" || seg.Kind == "overlay") && resource.Kind != "image") || (seg.Kind == "audio" && resource.Kind != "audio" && resource.Kind != "video") {
+				return nil, BadAuthRequest("对比素材不存在、未就绪、类型不符或不属于当前用户")
+			}
+		}
 	}
 	policy, err := s.RuntimePolicy()
 	if err != nil {

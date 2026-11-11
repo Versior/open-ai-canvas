@@ -77,7 +77,7 @@ function evidenceOf(value: unknown): StudioEvidence {
     return "pending";
 }
 
-export function buildRecognitionPrompt(input: { photos: StudioPhoto[]; platformName: string; sellerNotes?: string }) {
+export function buildRecognitionPrompt(input: { photos: Pick<StudioPhoto, "view">[]; platformName: string; sellerNotes?: string }) {
     const manifest = input.photos.map((photo, index) => `图${index + 1}：${STUDIO_VIEW_LABEL[photo.view]}${photo.view === "tag" ? "（读取吊牌文字）" : ""}`).join("；");
     return [
         "识别随附商品图里的这件商品，建立商品档案。",
@@ -126,7 +126,7 @@ export function parseRecognition(raw: string, createId: StudioIdFactory, recogni
 }
 
 /** 表单上的「识别商品」：一次看图同时建档、提炼品牌和类型、写主标题与卖点，结果填回表单。 */
-export function buildFillPrompt(input: { photos: StudioPhoto[]; platformName: string; sellerNotes?: string; brand?: string; productType?: string; title?: string }) {
+export function buildFillPrompt(input: { photos: Pick<StudioPhoto, "view">[]; platformName: string; sellerNotes?: string; brand?: string; productType?: string; title?: string }) {
     const known = [
         input.brand?.trim() ? `品牌：${input.brand.trim()}` : "",
         input.productType?.trim() ? `商品类型：${input.productType.trim()}` : "",

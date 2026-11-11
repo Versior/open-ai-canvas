@@ -543,6 +543,9 @@ export const koKR: DeepStringRecord<typeof zhCN> = {
             },
         },
         showcases: {
+            video: { name: "영상 제작", detail: "상품과 인물 자료로 대본을 기획하거나 참고 영상을 장면별로 재제작하고 편집 및 비교 영상을 내보냅니다." },
+            studio: { name: "상품 이미지 스튜디오", detail: "상품 사진을 분석하고 대표 이미지와 상세 페이지를 기획하며 각 화면의 정보와 스타일을 확인합니다." },
+            interior: { name: "인테리어 디자인", detail: "공간 사진과 디자인 자료로 렌더링을 만들고 배치, 재질 및 3D 설계를 검토합니다." },
             canvas: { name: "자유 캔버스", description: "영감을 이어 작품으로.", detail: "참고 자료를 정리하고 노드를 연결하고 결과를 비교하며, 자신의 흐름대로 창작을 이어 가세요." },
             create: { name: "즉시 창작", description: "한 문장에서 시작하세요.", detail: "모델과 참고 소재를 선택하고 대화하며 이미지와 동영상을 차근차근 완성합니다." },
             projects: { name: "프로젝트 워크벤치", description: "긴 이야기도 체계적으로.", detail: "챕터, 캐릭터, 콘티를 중심으로 제작을 정리하고 진행 중인 이야기로 언제든 돌아갈 수 있습니다." },

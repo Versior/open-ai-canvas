@@ -30,12 +30,16 @@ export function RemakeProductPicker({
     multiple,
     onPickMany,
     title = "从电商生图台选商品",
+    onCreateEmpty,
+    busy,
 }: {
     onClose: () => void;
     onPick?: (product: RemakeProduct) => void;
     multiple?: boolean;
     onPickMany?: (products: RemakeProduct[]) => void;
     title?: string;
+    onCreateEmpty?: () => void;
+    busy?: boolean;
 }) {
     const [products, setProducts] = useState<StudioProduct[]>();
     const [error, setError] = useState("");
@@ -67,6 +71,10 @@ export function RemakeProductPicker({
                             每件做一条
                         </Button>
                     </div>
+                ) : onCreateEmpty ? (
+                    <Button type="primary" loading={busy} onClick={onCreateEmpty}>
+                        直接上传商品素材
+                    </Button>
                 ) : null
             }
         >
@@ -86,6 +94,7 @@ export function RemakeProductPicker({
                             const cover = value.images[0];
                             return (
                                 <button
+                                    disabled={busy}
                                     key={product.id}
                                     type="button"
                                     className="rw-picker-item"

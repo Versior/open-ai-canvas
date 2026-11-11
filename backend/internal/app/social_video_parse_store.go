@@ -559,7 +559,7 @@ func (s *Service) requireSocialVideoParseAPI(platform string) error {
 	if info := socialVideoPlatformByID(platform); info != nil {
 		name = info.Name
 	}
-	appErr := BadAuthRequest(name + "链接暂时无法导入：后台还没有可用的解析接口，请联系管理员在「视频复刻 · 解析接口」里添加")
+	appErr := BadAuthRequest(name + "链接暂时无法导入：后台还没有可用的解析接口，请联系管理员在「视频创作 · 解析接口」里添加")
 	appErr.Reason = kernel.ReasonFailedPrecondition
 	return appErr
 }

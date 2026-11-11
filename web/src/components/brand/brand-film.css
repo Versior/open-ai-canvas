@@ -14,6 +14,15 @@
     object-fit: cover;
 }
 
+.auth-scene-hero > .auth-scene-film {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    border-radius: 0;
+}
+
 .brand-film-status {
     position: absolute;
     inset: 0;

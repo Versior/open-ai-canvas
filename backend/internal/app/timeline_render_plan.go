@@ -64,6 +64,14 @@ type renderProject struct {
 	// Fit 是画面适配输出画幅的方式：auto（默认，见 renderSegmentFit）、pad（留边）、crop（裁切铺满）。
 	Fit      string     `json:"fit,omitempty"`
 	ColorLut *renderLut `json:"colorLut,omitempty"`
+	// Comparison 放在左侧，主时间线放在右侧；Width 为两侧合计宽度。
+	Comparison *renderComparison `json:"comparison,omitempty"`
+}
+
+type renderComparison struct {
+	Authorized bool         `json:"authorized"`
+	Audio      string       `json:"audio"`
+	Clips      []renderClip `json:"clips"`
 }
 
 type renderSource struct {
@@ -91,7 +99,9 @@ type renderSegment struct {
 }
 
 type renderPlan struct {
-	Segments []renderSegment
+	Segments        []renderSegment
+	Comparison      []renderSegment
+	ComparisonAudio string
 	// AudioOverlays 是音频轨上的独立片段（配音、音乐），在主序列拼接后按 startMs 混入。
 	AudioOverlays []renderSegment
 	// ImageOverlays 是叠在成片画面上的整幅透明图（烧录字幕），按 startMs 排序且互不重叠。
@@ -173,7 +183,55 @@ func buildRenderPlan(project renderProject) renderPlan {
 			break
 		}
 	}
+	if project.Comparison != nil {
+		plan.ComparisonAudio = project.Comparison.Audio
+		for _, clip := range project.Comparison.Clips {
+			plan.Comparison = append(plan.Comparison, renderSegment{Kind: "video", DurationMs: clip.DurationMs, Clip: clip})
+		}
+	}
 	return plan
+}
+
+// 对比是两个连续、同长度的序列，不接受重叠轨或默默补黑场的无效引用。
+func validateRenderComparison(project renderProject) error {
+	comparison := project.Comparison
+	if comparison == nil {
+		return nil
+	}
+	if !comparison.Authorized {
+		return fmt.Errorf("对比导出需要确认原片使用授权")
+	}
+	if comparison.Audio != "render" && comparison.Audio != "reference" && comparison.Audio != "mute" {
+		return fmt.Errorf("请选择复刻声音、原片声音或静音")
+	}
+	if project.Width < 32 || project.Width > 4096 || project.Width%4 != 0 || project.Height < 16 || project.Height > 4096 || project.Height%2 != 0 {
+		return fmt.Errorf("对比画幅无效，宽度须为4的倍数，高度须为偶数，且不超过4096")
+	}
+	plan := buildRenderPlan(project)
+	if len(comparison.Clips) == 0 || len(comparison.Clips) > 256 || len(plan.Segments) == 0 || len(plan.Segments) > 256 {
+		return fmt.Errorf("对比导出须包含原片与复刻片段，且每侧不超过256段")
+	}
+	var cursor int64
+	for _, seg := range plan.Segments {
+		if seg.DurationMs > 60*60*1000-cursor {
+			return fmt.Errorf("对比视频时长不能超过60分钟")
+		}
+		if _, ok := mediaResourceID(seg.Clip); !ok || seg.Clip.StartMs != cursor || seg.DurationMs <= 0 || seg.Clip.SourceStartMs < 0 {
+			return fmt.Errorf("复刻时间线须连续且具有有效素材")
+		}
+		cursor += seg.DurationMs
+	}
+	var referenceCursor int64
+	for _, clip := range comparison.Clips {
+		if _, ok := mediaResourceID(clip); !ok || clip.Kind != "video" || clip.StartMs != referenceCursor || clip.DurationMs <= 0 || clip.SourceStartMs < 0 || clip.DurationMs > cursor-referenceCursor {
+			return fmt.Errorf("原片片段须连续且具有有效视频素材")
+		}
+		referenceCursor += clip.DurationMs
+	}
+	if referenceCursor != cursor {
+		return fmt.Errorf("原片与复刻的对比时长须一致")
+	}
+	return nil
 }
 
 // renderImageOverlays 按起点排序叠加图，后一张和前一张重叠时从前一张结束处开始，完全被盖住的丢掉。
@@ -257,10 +315,15 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 		return nil
 	}
 	width, height := plan.size()
+	segments := plan.Segments
+	if len(plan.Comparison) > 0 {
+		width /= 2
+		segments = append(append([]renderSegment{}, segments...), plan.Comparison...)
+	}
 	black := fmt.Sprintf("color=c=black:s=%dx%d:r=%d", width, height, renderFPS)
 	silence := fmt.Sprintf("anullsrc=r=%d:cl=stereo", renderSampleRate)
 	args := []string{"-nostdin", "-y"}
-	for _, seg := range plan.Segments {
+	for _, seg := range segments {
 		seconds := fmt.Sprintf("%.3f", float64(seg.DurationMs)/1000)
 		switch {
 		case seg.Kind == "gap" || seg.Source == nil:
@@ -277,7 +340,7 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 			}
 		}
 	}
-	overlayBase := len(plan.Segments) * 2
+	overlayBase := len(segments) * 2
 	overlays := make([]renderSegment, 0, len(plan.AudioOverlays))
 	for _, overlay := range plan.AudioOverlays {
 		if overlay.Source == nil {
@@ -305,14 +368,17 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 
 	filters := make([]string, 0, len(plan.Segments)*2+len(overlays)+len(images)*2+4)
 	labels := make([]string, 0, len(plan.Segments)*2)
-	for i, seg := range plan.Segments {
+	for i, seg := range segments {
 		videoIn, audioIn := 2*i, 2*i+1
 		videoLabel, audioLabel := fmt.Sprintf("v%d", i), fmt.Sprintf("a%d", i)
 		duration := float64(seg.DurationMs) / 1000
 		// tpad 用最后一帧补足短于片段时长的素材，trim 再裁到精确时长，保证音画时间轴对齐。
 		scale := renderFitFilter(renderSegmentFit(plan.Fit, seg.Source, width, height), width, height)
+		if len(plan.Comparison) > 0 {
+			scale = renderFitFilter(renderFitPad, width, height)
+		}
 		videoInput := fmt.Sprintf("[%d:v]", videoIn)
-		if plan.ColorLut != nil && plan.ColorLut.Strength > 0 && seg.Source != nil {
+		if i < len(plan.Segments) && plan.ColorLut != nil && plan.ColorLut.Strength > 0 && seg.Source != nil {
 			filters = append(filters,
 				fmt.Sprintf("%sformat=gbrp,split[lut-original%d][lut-input%d]", videoInput, i, i),
 				fmt.Sprintf("[lut-input%d]lut3d=file=timeline-lut.cube:interp=trilinear[lut-graded%d]", i, i),
@@ -336,7 +402,7 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 		labels = append(labels, videoLabel, audioLabel)
 	}
 	var concatInputs strings.Builder
-	for _, label := range labels {
+	for _, label := range labels[:len(plan.Segments)*2] {
 		fmt.Fprintf(&concatInputs, "[%s]", label)
 	}
 	audioOut, videoOut := "aout", "vout"
@@ -370,10 +436,32 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 	if len(images) > 0 {
 		filters = append(filters, renderImageOverlayFilters(images, imageBase, width, height)...)
 	}
+	if len(plan.Comparison) > 0 {
+		var referenceInputs strings.Builder
+		for _, label := range labels[len(plan.Segments)*2:] {
+			fmt.Fprintf(&referenceInputs, "[%s]", label)
+		}
+		filters = append(filters, fmt.Sprintf("%sconcat=n=%d:v=1:a=1[referencev][referencea]", referenceInputs.String(), len(plan.Comparison)),
+			"[referencev][vout]hstack=inputs=2:shortest=1[comparisonv]")
+		videoOut = "comparisonv"
+		switch plan.ComparisonAudio {
+		case "reference":
+			filters = append(filters, "[aout]anullsink")
+			audioOut = "referencea"
+		case "mute":
+			filters = append(filters, "[aout]anullsink", "[referencea]anullsink", fmt.Sprintf("%s,atrim=duration=%.3f[comparisona]", silence, planTotalSeconds(plan)))
+			audioOut = "comparisona"
+		default:
+			filters = append(filters, "[referencea]anullsink")
+			audioOut = "aout"
+		}
+	} else {
+		videoOut, audioOut = "vout", "aout"
+	}
 
 	args = append(args,
 		"-filter_complex", strings.Join(filters, ";"),
-		"-map", "[vout]", "-map", "[aout]",
+		"-map", "["+videoOut+"]", "-map", "["+audioOut+"]",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "128k",
 		// 不继承任何来源的容器元数据，只写本次合成的 AIGC 隐式标识与说明；use_metadata_tags 让 mp4
@@ -448,15 +536,20 @@ type renderSourceRecord struct {
 // renderSourceRecords 按成片顺序列出画面片段与音频轨片段的来源。
 func renderSourceRecords(plan renderPlan) []renderSourceRecord {
 	width, height := plan.size()
+	fit := plan.Fit
+	if len(plan.Comparison) > 0 {
+		width /= 2
+		fit = renderFitPad
+	}
 	records := make([]renderSourceRecord, 0, len(plan.Segments)+len(plan.AudioOverlays)+len(plan.ImageOverlays))
-	for _, seg := range plan.Segments {
+	for _, seg := range append(append([]renderSegment{}, plan.Segments...), plan.Comparison...) {
 		if seg.Source == nil {
 			continue
 		}
 		records = append(records, renderSourceRecord{
 			ClipID: seg.Clip.ID, ResourceID: seg.Source.ResourceID, Kind: seg.Kind,
 			Width: seg.Source.Width, Height: seg.Source.Height,
-			Fit: renderSegmentFit(plan.Fit, seg.Source, width, height), AIGC: seg.Source.AIGC,
+			Fit: renderSegmentFit(fit, seg.Source, width, height), AIGC: seg.Source.AIGC,
 		})
 	}
 	for _, overlay := range plan.AudioOverlays {
@@ -505,6 +598,9 @@ func renderAIGCLabel(plan renderPlan) aigcImplicitLabel {
 	label := aigcImplicitLabel{ContentPropagator: AIGCPlatformPropagator, PropagateID: plan.PropagateID}
 	sources := make([]*renderSource, 0, len(plan.Segments)+len(plan.AudioOverlays))
 	for _, seg := range plan.Segments {
+		sources = append(sources, seg.Source)
+	}
+	for _, seg := range plan.Comparison {
 		sources = append(sources, seg.Source)
 	}
 	for _, overlay := range plan.AudioOverlays {

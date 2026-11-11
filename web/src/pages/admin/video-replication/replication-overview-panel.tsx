@@ -8,7 +8,7 @@ import type { FeatureAvailability } from "@/stores/use-user-store";
 import { formatParseClock, formatParseTime, platformName } from "./parse-shared";
 import { percentOf } from "./replication-admin-shared";
 
-export type VideoReplicationAdminTab = "overview" | "records" | "parse" | "settings";
+export type VideoReplicationAdminTab = "overview" | "records" | "parse" | "trends" | "settings";
 
 type Props = {
     overview: AdminVideoReplicationOverview | null;
@@ -45,9 +45,9 @@ export function ReplicationOverviewPanel({ overview, parse, features, featuresEr
     const statusItems = [
         {
             key: "replication",
-            label: "视频复刻",
+            label: "视频创作",
             badge: switchBadge(features?.videoReplicationEnabled, featuresError),
-            detail: !features ? unknownSwitch : features.videoReplicationEnabled ? "用户可以在侧栏进入视频复刻" : "侧栏不显示入口，用户不能新建拆解",
+            detail: !features ? unknownSwitch : features.videoReplicationEnabled ? "用户可以在侧栏进入视频创作" : "侧栏不显示入口，用户不能新建视频创作",
             tab: "settings" as const,
         },
         {
@@ -68,7 +68,7 @@ export function ReplicationOverviewPanel({ overview, parse, features, featuresEr
 
     return (
         <div className="admin-vr-overview">
-            <ul className="admin-vr-status" aria-label="视频复刻现状">
+            <ul className="admin-vr-status" aria-label="视频创作现状">
                 {statusItems.map((item) => (
                     <li key={item.key}>
                         <button type="button" className="admin-vr-status-item" onClick={() => onOpenTab(item.tab)}>

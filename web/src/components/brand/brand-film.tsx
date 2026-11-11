@@ -5,19 +5,17 @@ import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { cn } from "@/lib/utils";
 import "./brand-film.css";
 
-/** 首页与登录弹窗共用后台配置的视频；失败时保留播放器和明确的重试入口。 */
-export function BrandFilm({ className, paused = false }: { className?: string; paused?: boolean }) {
+/** 品牌影片作为循环背景展示；读取失败时提供重试。 */
+export function BrandFilm({ className }: { className?: string }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const reducedMotion = useReducedMotion();
     const { t } = useTranslation();
     const ref = useRef<HTMLVideoElement>(null);
     const [failed, setFailed] = useState(false);
-    const [playing, setPlaying] = useState(false);
-    const autoplay = appearance.authVideoAutoplay && !reducedMotion && !paused;
+    const autoplay = appearance.authVideoAutoplay && !reducedMotion;
 
     useEffect(() => {
         setFailed(Boolean(ref.current?.error));
-        setPlaying(false);
     }, [appearance.authVideoUrl]);
 
     useEffect(() => {
@@ -25,7 +23,10 @@ export function BrandFilm({ className, paused = false }: { className?: string; p
         if (!video) return;
         const update = () => {
             if (!autoplay || document.hidden) video.pause();
-            else void video.play().catch(() => setPlaying(false));
+            else
+                void video.play().catch(() => {
+                    if (video.error) setFailed(true);
+                });
         };
         update();
         document.addEventListener("visibilitychange", update);
@@ -37,7 +38,6 @@ export function BrandFilm({ className, paused = false }: { className?: string; p
         if (ref.current?.error) ref.current.load();
         setFailed(false);
         void ref.current?.play().catch(() => {
-            setPlaying(false);
             if (ref.current?.error) setFailed(true);
         });
     };
@@ -52,18 +52,15 @@ export function BrandFilm({ className, paused = false }: { className?: string; p
                 muted
                 loop
                 playsInline
-                controls
                 preload="metadata"
                 aria-label={t("auth.brandFilm", { brand: appearance.brandName })}
-                onPlay={() => setPlaying(true)}
-                onPause={() => setPlaying(false)}
                 onError={() => setFailed(true)}
             />
-            {failed || !playing ? (
+            {failed ? (
                 <div className="brand-film-status">
-                    {failed ? <span role="alert">{t("auth.videoLoadFailed")}</span> : null}
+                    <span role="alert">{t("auth.videoLoadFailed")}</span>
                     <button type="button" onClick={play}>
-                        {failed ? t("common.retry") : t("auth.playVideo")}
+                        {t("common.retry")}
                     </button>
                 </div>
             ) : null}

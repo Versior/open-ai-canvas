@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { addRemakeModels, createRemakeJob, normalizeRemakeJob, remakeJobError } from "@/lib/remake/job";
 import { createRemakeEditTimeline, remakeDefaultStep } from "@/lib/remake/editor";
-import { remakeTimeline, remakeVoiceSignature } from "@/lib/remake/timeline";
+import { remakeRenderSize, remakeTimeline, remakeVoiceSignature } from "@/lib/remake/timeline";
 import { remakeModelLimits } from "@/pages/video-replication/remake/remake-config";
 import { defaultModelCapabilityConfig } from "@/lib/model-capabilities";
 import { remakeReferenceImages, buildRemakeUnitPrompt } from "@/lib/remake/prompts";
-import { applyRemakeCreativeSignature, planRemakeUnits } from "@/lib/remake/units";
+import { applyRemakeCreativeSignature, planRemakeUnits, remakeTakeError } from "@/lib/remake/units";
 import type { VideoTeardownBundle } from "@/services/api/video-replication";
 
 const bundle: VideoTeardownBundle = {
@@ -16,6 +16,30 @@ const bundle: VideoTeardownBundle = {
     transcript: { source: "none", segments: [] },
     warnings: [],
 };
+test("复刻各段共用原片视觉锚点，短候选不能以静止尾帧冒充完整选段", () => {
+    const job = fixture();
+    job.shots[0].treatment = "replace";
+    job.units = planRemakeUnits(job.shots, { maxMs: 10000, sourceDurationMs: 8000 });
+    job.units[0].takes = [{ resourceId: "short", taskId: "done", createdAt: "", durationMs: 3000, width: 1280, height: 720 }];
+    expect(remakeReferenceImages(job).anchor).toBe("@图片2");
+    const prompt = buildRemakeUnitPrompt(job, job.units[0], job.shots, 5);
+    expect(prompt).toContain("全片视觉基准：@图片2");
+    expect(prompt).toContain("参考片段 0.000–4.000 秒");
+    expect(() => remakeTimeline(job, remakeRenderSize(job))).toThrow("生成时长不足");
+    expect(remakeRenderSize(job)).toEqual({ width: 720, height: 1280 });
+});
+test("正式交付拒绝漏镜与重叠，候选时长包含参考片段的前置偏移", () => {
+    const job = fixture();
+    const unit = job.units[0];
+    unit.takes = [{ resourceId: "take", taskId: "done", createdAt: "", durationMs: 4000 }];
+    job.shots.push({ ...job.shots[0], index: 2, startMs: 6000, endMs: 8000 });
+    expect(() => remakeTimeline(job, remakeRenderSize(job))).toThrow("镜头 2 的生成片段没有完整覆盖");
+    job.shots.pop();
+    job.units.push({ ...unit, key: "overlap" });
+    expect(() => remakeTimeline(job, remakeRenderSize(job))).toThrow("重叠");
+    expect(remakeTakeError({ ...unit, treatment: "replace", clipStartMs: 1000 }, { durationMs: 4000 })).toContain("时长不足");
+    expect(remakeTakeError({ ...unit, treatment: "replace", clipStartMs: 1000 }, { durationMs: 5000 })).toBe("");
+});
 function fixture() {
     const job = createRemakeJob("remake", { teardownId: "teardown", bundle, analysis: null, sourceName: "参考视频" });
     job.product.images = [{ id: "product", resourceId: "product", name: "本地商品.png" }];
@@ -42,7 +66,7 @@ test("未生成和失败的作品可剪辑原片占位，成功素材保留；�
 });
 test("剪辑草稿保留成功配音和字幕，缺失配音仍阻止直接拼接", () => {
     const job = fixture();
-    job.units[0].takes = [{ resourceId: "take", taskId: "done", createdAt: "" }];
+    job.units[0].takes = [{ resourceId: "take", taskId: "done", createdAt: "", durationMs: 4000 }];
     job.audio = "voice";
     job.shots[0].dialogue = "新口播";
     expect(() => remakeTimeline(job, { width: 720, height: 1280 })).toThrow("配音没有生成好");
@@ -56,7 +80,7 @@ test("不出人时隐藏的模特素材不占额度，也不能代替有效生�
     const job = fixture();
     job.people = "none";
     job.models = [{ id: "person", resourceId: "person", name: "模特" }];
-    expect(remakeJobError(job, { maxImages: 1, generateAudio: false })).toBe("");
+    expect(remakeJobError(job, { maxImages: 2, generateAudio: false })).toBe("");
     job.product.images = [];
     expect(remakeJobError(job)).toContain("请先放上");
 });
@@ -107,7 +131,7 @@ test("人脸与姿势用途往返保存，姿势不作为人物身份", () => {
     const restored = normalizeRemakeJob(JSON.parse(JSON.stringify(job)))!;
     expect(restored.models[1].role).toBe("pose");
     const refs = remakeReferenceImages(restored);
-    expect(refs.images.map((image) => image.resourceId)).toEqual(["product", "face", "pose"]);
+    expect(refs.images.map((image) => image.resourceId)).toEqual(["product", "face", "pose", "frame"]);
     const prompt = buildRemakeUnitPrompt(restored, restored.units[0], restored.shots, 4);
     expect(prompt).toContain("人脸");
     expect(prompt).toContain("仅参考动作");

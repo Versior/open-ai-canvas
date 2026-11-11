@@ -39,7 +39,7 @@ export const zhCN = {
         sidebar: {
             ecommerceStudio: "电商生图台",
             interior: "室内设计",
-            videoReplication: "视频复刻",
+            videoReplication: "视频创作",
             conversations: "对话",
             canvases: "画布",
             newConversation: "新建对话",
@@ -66,7 +66,7 @@ export const zhCN = {
             headingAssets: "资产与历史",
         },
         collapsed: {
-            videoReplication: "复刻",
+            videoReplication: "视频",
             interior: "室内",
             inspiration: "灵感",
             home: "创作",
@@ -80,7 +80,7 @@ export const zhCN = {
         pageTitles: {
             ecommerce: "电商创作",
             studio: "电商生图台",
-            videoReplication: "视频复刻",
+            videoReplication: "视频创作",
             interior: "室内设计",
             inspiration: "灵感广场",
             home: "创作",

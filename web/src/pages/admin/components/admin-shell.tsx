@@ -128,7 +128,7 @@ const adminNavigation: AdminNavigationGroup[] = [
         label: "创作与扩展",
         items: [
             { path: "/admin/workbench-tools", keywords: "工作台 工具 首页", label: "工作台工具", shortLabel: "工具", icon: <Shapes className="size-4" /> },
-            { path: "/admin/video-replication", keywords: "视频 复刻 导演 策划 平台策略", label: "视频复刻", shortLabel: "复刻", icon: <ScanSearch className="size-4" /> },
+            { path: "/admin/video-replication", keywords: "视频 创作 复刻 导演 策划 热点 平台账号", label: "视频创作", shortLabel: "视频", icon: <ScanSearch className="size-4" /> },
             { path: "/admin/prompt-templates", keywords: "提示词 模板 分镜 prompt", label: "提示词模板", shortLabel: "模板", icon: <MessageSquareText className="size-4" /> },
             { path: "/admin/pose-library", keywords: "姿势 动作 pose", label: "姿势库", shortLabel: "姿势", icon: <PersonStanding className="size-4" /> },
             { path: "/admin/lut-library", keywords: "lut 滤镜 调色 cube", label: "LUT 滤镜库", shortLabel: "LUT", icon: <Palette className="size-4" /> },
