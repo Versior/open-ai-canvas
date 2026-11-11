@@ -11,7 +11,7 @@ import (
 	"yingce/backend/internal/model"
 )
 
-func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
+func TestPostgresChannelWebsiteMigrationUpgradesVersion103(t *testing.T) {
 	dsn := strings.TrimSpace(os.Getenv("CANVAS_TEST_POSTGRES_DSN"))
 	if dsn == "" {
 		t.Skip("CANVAS_TEST_POSTGRES_DSN is not configured")
@@ -48,11 +48,12 @@ func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
 	}
 	defer dbSQL.Close()
 
-	// Recreate the v96 channel/pricing slice without website_id or the three
-	// new tables; unrelated historical migrations are recorded, not rerun.
+	// Upstream v96 maps to canonical v103. Build its physical schema and
+	// migration ledger before removing the not-yet-migrated website column.
 	if err := db.AutoMigrate(&schemaMigration{}, &model.ModelChannel{}, &model.ChannelModel{}, &model.ChannelModelPriceTier{}); err != nil {
 		t.Fatal(err)
 	}
+	applyCanonicalMigrationsThrough(t, db, 103)
 	if err := db.Migrator().DropColumn(&model.ModelChannel{}, "WebsiteID"); err != nil {
 		t.Fatal(err)
 	}
@@ -75,13 +76,6 @@ func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
 	if err := db.Create(&tier).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, migration := range schemaMigrations {
-		if migration.version < 97 {
-			if err := db.Create(&schemaMigration{Version: migration.version, Name: migration.name, Checksum: migration.checksum, AppliedAt: stamp}).Error; err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	var oldRecords []schemaMigration
 	if err := db.Order("version").Find(&oldRecords).Error; err != nil {
 		t.Fatal(err)
@@ -96,7 +90,7 @@ func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := ReadSchemaStatus(db)
-	if err != nil || status.Current != 96 || status.Ready {
+	if err != nil || status.Current != 103 || status.Ready {
 		t.Fatalf("legacy schema status: %+v err=%v", status, err)
 	}
 	// Startup migrates a newly opened pool before reading channel rows. Keep
@@ -114,7 +108,7 @@ func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
 	}
 	defer dbSQL.Close()
 	if err := MigrateSchema(db); err != nil {
-		t.Fatalf("v96 to v97 migration: %v", err)
+		t.Fatalf("v103 to v104 migration: %v", err)
 	}
 	if err := RequireSchemaVersion(db); err != nil {
 		t.Fatal(err)
@@ -161,7 +155,7 @@ func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
 	// Repeat the production migration entry with populated new tables; every
 	// original row and every generated website ID must remain unchanged.
 	if err := MigrateSchema(db); err != nil {
-		t.Fatalf("repeat v97 migration: %v", err)
+		t.Fatalf("repeat v104 migration: %v", err)
 	}
 	var again []model.ModelChannel
 	var againSites []model.ChannelWebsite
@@ -192,7 +186,7 @@ func TestPostgresChannelWebsiteMigrationUpgradesVersion96(t *testing.T) {
 	}
 	var applied []migration
 	for _, entry := range schemaMigrations {
-		if entry.version >= 97 {
+		if entry.version >= 104 {
 			applied = append(applied, entry)
 		}
 	}
