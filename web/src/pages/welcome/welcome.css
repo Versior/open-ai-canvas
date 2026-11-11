@@ -265,157 +265,14 @@ body:has(.welcome-page) {
     height: 100%;
     object-fit: cover;
 }
+.welcome-poster.is-ready {
+    opacity: 0;
+}
 .welcome-stage-shade {
     pointer-events: none;
     position: absolute;
     inset: 0;
     background: linear-gradient(180deg, #08080830 0%, transparent 23%, transparent 50%, #08080844 70%, #080808e8 100%);
-}
-.welcome-scene {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    pointer-events: none;
-    background: var(--welcome-black);
-    animation: welcome-scene-in 450ms ease-out both;
-}
-.welcome-scene-landscape {
-    position: absolute;
-    inset: 16% auto auto 6%;
-    width: 65%;
-    height: 60%;
-    object-fit: cover;
-    mask-image: linear-gradient(to right, black 65%, transparent);
-}
-.welcome-script-page {
-    position: absolute;
-    top: 22%;
-    right: 9%;
-    width: min(360px, 35vw);
-    padding: 32px;
-    background: var(--welcome-paper);
-    color: var(--welcome-black);
-    transform: rotate(3deg);
-    box-shadow: 0 20px 60px var(--welcome-black);
-}
-.welcome-script-page > span {
-    display: block;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--welcome-muted);
-    font-size: 11px;
-    letter-spacing: 0.08em;
-}
-.welcome-script-page h3 {
-    margin: 24px 0 16px;
-    font-size: 15px;
-}
-.welcome-script-page p {
-    margin-bottom: 12px;
-    font-family: "Noto Serif SC", serif;
-}
-.welcome-character-frames {
-    position: absolute;
-    inset: 18% 42% 12% 8%;
-}
-.welcome-character-frames img {
-    position: absolute;
-    width: 70%;
-    height: 85%;
-    object-fit: cover;
-}
-.welcome-character-frames img:first-child {
-    top: 0;
-    left: 0;
-    transform: rotate(-6deg);
-}
-.welcome-character-frames img:last-child {
-    bottom: 0;
-    right: 0;
-    width: 50%;
-    height: 65%;
-    transform: rotate(5deg);
-    border: 6px solid var(--welcome-black);
-}
-.welcome-storyboard {
-    position: absolute;
-    inset: 40% var(--welcome-gutter) auto;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 20px;
-}
-.welcome-storyboard figure,
-.welcome-canvas-spread figure {
-    margin: 0;
-    overflow: hidden;
-    background: var(--welcome-paper);
-    color: var(--welcome-black);
-}
-.welcome-storyboard img {
-    display: block;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-}
-.welcome-storyboard figcaption {
-    display: flex;
-    gap: 16px;
-    padding: 12px 16px;
-    font-size: 12px;
-}
-.welcome-storyboard figcaption span {
-    color: var(--welcome-muted);
-}
-.welcome-scene-4 > img,
-.welcome-scene-4 > video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-.welcome-moving-frame {
-    animation: welcome-frame-drift 18s ease-in-out infinite alternate;
-}
-.welcome-canvas-spread {
-    position: absolute;
-    inset: 38% 8% 14%;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: center;
-    gap: 20px;
-}
-.welcome-canvas-spread figure:first-child {
-    transform: rotate(-5deg) translateY(20px);
-}
-.welcome-canvas-spread figure:last-child {
-    transform: rotate(5deg) translateY(20px);
-}
-.welcome-canvas-spread img {
-    display: block;
-    width: 100%;
-    aspect-ratio: 16 / 10;
-    object-fit: cover;
-    object-position: top;
-}
-.welcome-canvas-spread figcaption {
-    padding: 10px 14px;
-    font-size: 12px;
-}
-@keyframes welcome-scene-in {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-@keyframes welcome-frame-drift {
-    from {
-        transform: scale(1);
-    }
-    to {
-        transform: scale(1.08) translateX(-1%);
-    }
 }
 .chapter-3 .welcome-stage-shade {
     background: linear-gradient(180deg, #08080870 0%, #080808c7 28%, transparent 50%, #080808c7 100%);
@@ -462,22 +319,16 @@ body:has(.welcome-page) {
     color: var(--welcome-paper);
 }
 .chapter-1 .welcome-chapter {
-    bottom: 18%;
-    top: auto;
-    text-align: left;
+    bottom: auto;
+    top: 44%;
+    text-align: center;
 }
 .chapter-3 .welcome-chapter {
     bottom: auto;
     top: 20%;
 }
 .chapter-2 .welcome-chapter {
-    left: 57%;
-    top: 28%;
-    bottom: auto;
     text-align: right;
-}
-.chapter-2 .welcome-chapter h2 {
-    font-size: clamp(36px, 4.2vw, 64px);
 }
 .chapter-5 .welcome-chapter {
     top: 17%;
@@ -849,16 +700,12 @@ body:has(.welcome-page) {
         height: 12px;
     }
     .chapter-1 .welcome-chapter {
-        top: auto;
-        bottom: 16%;
+        top: 43%;
     }
     .chapter-3 .welcome-chapter {
         top: max(16%, calc(var(--welcome-header-height) + 94px));
     }
     .chapter-2 .welcome-chapter {
-        top: 23%;
-        left: var(--welcome-gutter);
-        right: var(--welcome-gutter);
         text-align: left;
     }
     .chapter-5 .welcome-chapter {
@@ -880,46 +727,6 @@ body:has(.welcome-page) {
     }
     .welcome-chapter-nav button span {
         width: 16px;
-    }
-    .welcome-script-page {
-        top: 22%;
-        right: 8%;
-        width: 64%;
-        padding: 20px;
-    }
-    .welcome-script-page h3 {
-        margin: 16px 0 12px;
-    }
-    .welcome-script-page p {
-        font-size: 12px;
-    }
-    .welcome-character-frames {
-        inset: 42% 12% 14%;
-    }
-    .welcome-storyboard {
-        top: 44%;
-        gap: 8px;
-    }
-    .welcome-storyboard img {
-        aspect-ratio: 3 / 4;
-    }
-    .welcome-storyboard figcaption {
-        padding: 8px;
-        font-size: 10px;
-        flex-direction: column;
-        gap: 4px;
-    }
-    .welcome-canvas-spread {
-        inset: 44% 10% 14%;
-        gap: 8px;
-    }
-    .welcome-canvas-spread img {
-        aspect-ratio: 2 / 3;
-        object-position: top left;
-    }
-    .welcome-canvas-spread figcaption {
-        padding: 6px;
-        font-size: 10px;
     }
     .welcome-workbench {
         padding-top: 68px;

@@ -20,6 +20,7 @@ for (const [key, value] of Object.entries({
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 mock.module("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 mock.module("@/components/brand/brand-film", () => ({ BrandFilm: () => null }));
+mock.module("@/pages/welcome/story-reel", () => ({ default: ({ progress }: { progress: { current: number } }) => <canvas className="welcome-webgl" data-progress={progress.current} /> }));
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { default: WelcomePage } = await import("@/pages/welcome");
@@ -45,10 +46,12 @@ test("欢迎页在固定应用外壳里使用自己的滚动容器，箭头与�
         await act(async () => host.querySelector<HTMLButtonElement>(".welcome-next")!.click());
         expect(calls, "下一幕必须滚动欢迎页，不能滚动被锁住的 window").toBe(1);
         expect(host.querySelector(".welcome-stage")!.classList.contains("chapter-1")).toBe(true);
+        expect(host.querySelector(".welcome-webgl")).not.toBeNull();
         for (const index of [4, 2, 5, 0]) {
             await act(async () => host.querySelectorAll<HTMLButtonElement>(".welcome-chapter-nav button")[index].click());
             expect(host.querySelector(".welcome-stage")!.classList.contains(`chapter-${index}`)).toBe(true);
             expect(host.querySelectorAll(".welcome-chapter-nav [aria-current='step']")).toHaveLength(1);
+            if (index > 0) expect(Math.floor(Number(host.querySelector(".welcome-webgl")!.getAttribute("data-progress")) * 6)).toBe(index);
         }
     } finally {
         await act(async () => root.unmount());

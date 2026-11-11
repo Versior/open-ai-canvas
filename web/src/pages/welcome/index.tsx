@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ConfigProvider, Tabs } from "antd";
 import { ArrowDown, ArrowUpRight, Menu, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,11 +9,12 @@ import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { chapters, getWelcomeLook, showcases, welcomeLooks, type WelcomeLook } from "./story";
-import { WelcomeScene } from "./welcome-scene";
 // 独立欢迎入口也需要按钮 token。
 import "@/styles/button-tokens.css";
 import "./welcome.css";
 import { Select } from "@/components/ui/base/select";
+
+const StoryReel = lazy(() => import("./story-reel"));
 
 export default function WelcomePage() {
     const [look, setLook] = useState(getWelcomeLook);
@@ -49,8 +50,11 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
     const { t } = useTranslation();
     const pageRef = useRef<HTMLDivElement>(null);
     const storyRef = useRef<HTMLElement>(null);
+    const progressRef = useRef(0);
     const [chapter, setChapter] = useState(0);
     const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    const [failedLook, setFailedLook] = useState("");
+    const [readyLook, setReadyLook] = useState("");
     const [menu, setMenu] = useState(false);
     const [showcase, setShowcase] = useState(0);
     const [playing, setPlaying] = useState(false);
@@ -65,6 +69,8 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
             if (!storyRef.current) return;
             const rect = storyRef.current.getBoundingClientRect();
             const progress = Math.max(0, Math.min(1, -rect.top / (rect.height - window.innerHeight)));
+            progressRef.current = progress;
+            if (progress < 1 / 6) setReadyLook("");
             setChapter(Math.min(5, Math.floor(progress * 6)));
         };
         page?.addEventListener("scroll", onScroll, { passive: true });
@@ -93,6 +99,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
         pageRef.current.scrollTo({ top: top + height * (index === 5 ? 0.97 : index / 6 + (index ? 0.04 : 0)), behavior: "instant" });
         setMenu(false);
     };
+    const staticScene = reduced || failedLook === look.id;
     const active = showcases[showcase];
 
     return (
@@ -131,11 +138,17 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
 
             <main>
                 <section ref={storyRef} id="story" className="welcome-story" aria-label={t("account.welcome.storyLabel")}>
-                    <div className={`welcome-stage chapter-${chapter}${reduced ? " is-static" : ""}`}>
-                        <div className="welcome-poster" aria-hidden="true">
+                    <div className={`welcome-stage chapter-${chapter}${staticScene ? " is-static" : ""}`}>
+                        <div className={`welcome-poster${chapter > 0 && readyLook === look.id && !staticScene ? " is-ready" : ""}`} aria-hidden="true">
                             <img src={look.frames[chapter * 2]} alt="" fetchPriority="high" />
                         </div>
-                        {chapter > 0 ? <WelcomeScene key={`${look.id}-${chapter}`} chapter={chapter} look={look} reduced={reduced} /> : null}
+                        {!staticScene && chapter > 0 ? (
+                            <SceneBoundary key={look.id} onError={() => setFailedLook(look.id)}>
+                                <Suspense fallback={null}>
+                                    <StoryReel look={look} progress={progressRef} paused={false} onReady={() => setReadyLook(look.id)} onError={() => setFailedLook(look.id)} />
+                                </Suspense>
+                            </SceneBoundary>
+                        ) : null}
                         {chapter === 0 ? <BrandFilm className="welcome-home-film" /> : null}
                         <div className="welcome-stage-shade" aria-hidden="true" />
                         {chapters.map((item, index) => (
@@ -272,4 +285,17 @@ function FilmDialog({ look, onClose, videoRef }: { look: WelcomeLook; onClose: (
             </div>
         </dialog>
     );
+}
+
+class SceneBoundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
+    state = { failed: false };
+    static getDerivedStateFromError() {
+        return { failed: true };
+    }
+    componentDidCatch() {
+        this.props.onError();
+    }
+    render() {
+        return this.state.failed ? null : this.props.children;
+    }
 }
