@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -182,12 +183,34 @@ func videoTeardownFFmpeg() (string, error) {
 	return renderFfmpegBinary()
 }
 
+// 分析过程只使用关键帧所需的清晰度，原片的尺寸、音轨和时间范围仍用于素材记录与转写。
+func prepareVideoTeardownAnalysis(ctx context.Context, ffmpeg, source, dir string, width, height int) (string, error) {
+	if max(width, height) <= videoTeardownFrameEdge {
+		return source, nil
+	}
+	output := filepath.Join(dir, "analysis.mp4")
+	threads := strconv.Itoa(min(runtime.GOMAXPROCS(0), videoTeardownFrameConcurrent))
+	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+		"-threads", threads, "-filter_threads", "1", "-i", source,
+		"-map", "0:v:0", "-an", "-sn", "-dn", "-vf",
+		fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2", videoTeardownFrameEdge, videoTeardownFrameEdge),
+		"-fps_mode", "passthrough", "-c:v", "libx264", "-threads", threads, "-preset", "ultrafast", "-crf", "18", "-g", "30", output)
+	combined, err := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if err != nil {
+		return "", fmt.Errorf("准备分析视频失败（ffmpeg）：%s", commandTail(combined))
+	}
+	return output, nil
+}
+
 // detectVideoTeardownCuts 用场景分数找硬切和明显转场：先缩到 320 宽再算，3 分钟视频通常几秒内完成。
 // windowMs > 0 时只检测从 startMs 起这一段，返回的切点仍是相对这一段开头的毫秒数。
 func detectVideoTeardownCuts(ctx context.Context, ffmpeg, path string, startMs, windowMs int64) ([]int64, error) {
 	filter := fmt.Sprintf("scale=320:-2,select='gt(scene,%.2f)',showinfo", videoTeardownSceneThreshold)
 	stderr := &boundedCommandOutput{limit: videoTeardownStderrLimit}
-	args := []string{"-hide_banner", "-nostdin", "-nostats"}
+	args := []string{"-hide_banner", "-nostdin", "-nostats", "-threads", "2", "-filter_threads", "1"}
 	if windowMs > 0 {
 		args = append(args, "-ss", strconv.FormatFloat(float64(startMs)/1000, 'f', 3, 64), "-t", strconv.FormatFloat(float64(windowMs)/1000, 'f', 3, 64))
 	}
@@ -214,6 +237,7 @@ func extractVideoTeardownFrame(ctx context.Context, ffmpeg, source, output strin
 	for _, at := range []int64{timeMs, max(timeMs-200, 0), fallbackMs} {
 		_ = os.Remove(output)
 		cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+			"-threads", "1", "-filter_threads", "1",
 			"-ss", strconv.FormatFloat(float64(at)/1000, 'f', 3, 64), "-i", source,
 			"-frames:v", "1", "-an", "-vf", scale, "-q:v", "3", output)
 		combined, err := cmd.CombinedOutput()
@@ -233,7 +257,7 @@ func extractVideoTeardownFrame(ctx context.Context, ffmpeg, source, output strin
 func extractVideoTeardownFrames(ctx context.Context, ffmpeg, source, dir string, segments []videoTeardownSegment, durationMs int64) ([][3]string, error) {
 	frames := make([][3]string, len(segments))
 	group, groupCtx := errgroup.WithContext(ctx)
-	group.SetLimit(videoTeardownFrameConcurrent)
+	group.SetLimit(min(runtime.GOMAXPROCS(0), videoTeardownFrameConcurrent))
 	for index, segment := range segments {
 		times := videoTeardownFrameTimes(segment, durationMs)
 		for role, at := range times {

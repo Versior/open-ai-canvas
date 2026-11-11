@@ -46,6 +46,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	if err := w.progress(task, "准备媒体…", 10); err != nil {
 		return err
 	}
+	phaseStart := time.Now()
 	workDir, cleanup, err := materializeRenderSources(ctx, s, task.UserID, &plan)
 	if cleanup != nil {
 		defer cleanup()
@@ -67,6 +68,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		}
 		seg.Source.HasAudio = hasAudio
 	}
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("合成素材准备耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
 
 	args := buildRenderFFmpegArgs(plan, filepath.Join(workDir, "render-output.mp4"))
 	if len(args) == 0 {
@@ -77,6 +79,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	}
 	cmd := exec.CommandContext(ctx, ffmpegBin, args...)
 	cmd.Dir = workDir
+	phaseStart = time.Now()
 	output, runErr := cmd.CombinedOutput()
 	if runErr != nil {
 		detail := strings.TrimSpace(string(output))
@@ -85,6 +88,7 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 		}
 		return w.failTimelineTask(task, "渲染失败", fmt.Sprintf("ffmpeg 渲染失败：%s", detail))
 	}
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("视频编码耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
 
 	if err := w.progress(task, "写入资源…", 85); err != nil {
 		return err
@@ -105,10 +109,12 @@ func (w *taskWorkerCoordinator) processTimelineRender(task *model.Task, ctx cont
 	durationMs := planDurationMs(plan)
 	fileName := fmt.Sprintf("timeline-render-%s.mp4", time.Now().Format("20060102-150405"))
 	outWidth, outHeight := plan.size()
+	phaseStart = time.Now()
 	resource, _, err := s.storeResource(task.UserID, "media", fileName, "video/mp4", stat.Size(), outWidth, outHeight, durationMs, file, nil, false)
 	if err != nil || resource == nil {
 		return w.failTimelineTask(task, "保存成片失败", renderSaveFailureMessage(err))
 	}
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("成片写入资源耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
 
 	result := timelineRenderOutput{
 		timelineRenderResult: timelineRenderResult{

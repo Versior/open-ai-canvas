@@ -86,10 +86,15 @@ jobs:
         run: npm ci --omit=dev --ignore-scripts
       - name: Install redis-server for integration tests
         # 用例自己拉起临时 redis-server（unix socket），所以需要的是可执行文件而不是 redis 服务。
+        # 官方 Debian 镜像的二进制可在 Ubuntu Runner 运行，避免 apt 镜像 DNS 故障阻断所有分片。
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq redis-server
-          sudo systemctl stop redis-server || true
+          set -euo pipefail
+          container=$(docker create redis:7.4-bookworm)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/local/bin/redis-server" "$RUNNER_TEMP/redis-server"
+          chmod +x "$RUNNER_TEMP/redis-server"
+          "$RUNNER_TEMP/redis-server" --version
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Check formatting
         if: matrix.shard == 'rest'
         shell: bash

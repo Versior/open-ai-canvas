@@ -320,14 +320,26 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	}
 	hasAudio, _ := probeHasAudioStream(ctx, sourcePath)
 
+	phaseStart := time.Now()
+	if err := w.progress(task, "准备分析视频", 15); err != nil {
+		return videoTeardownBundle{}, err
+	}
+	analysisPath, err := prepareVideoTeardownAnalysis(ctx, ffmpeg, sourcePath, workDir, probe.Width, probe.Height)
+	if err != nil {
+		return videoTeardownBundle{}, err
+	}
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("分析视频准备耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
+	phaseStart = time.Now()
 	if err := w.progress(task, "检测镜头切点", 20); err != nil {
 		return videoTeardownBundle{}, err
 	}
-	cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, sourcePath, 0, 0)
+	cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, analysisPath, 0, 0)
 	if err != nil {
 		return videoTeardownBundle{}, err
 	}
 	segments := buildVideoTeardownSegments(probe.DurationMs, cuts, input.MaxShots)
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("镜头切点检测耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
+	phaseStart = time.Now()
 
 	if err := w.progress(task, fmt.Sprintf("截取 %d 个镜头的画面", len(segments)), 35); err != nil {
 		return videoTeardownBundle{}, err
@@ -336,10 +348,11 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	if err := os.MkdirAll(framesDir, 0o700); err != nil {
 		return videoTeardownBundle{}, errors.New("无法创建关键帧目录")
 	}
-	frames, err := extractVideoTeardownFrames(ctx, ffmpeg, sourcePath, framesDir, segments, probe.DurationMs)
+	frames, err := extractVideoTeardownFrames(ctx, ffmpeg, analysisPath, framesDir, segments, probe.DurationMs)
 	if err != nil {
 		return videoTeardownBundle{}, err
 	}
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("关键帧提取耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
 
 	if err := w.progress(task, "拼接宫格", 55); err != nil {
 		return videoTeardownBundle{}, err

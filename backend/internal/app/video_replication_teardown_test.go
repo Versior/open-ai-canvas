@@ -177,6 +177,17 @@ func TestReplicationTeardownSplitsShotsAndSavesKeyframes(t *testing.T) {
 	svc.dataDir = t.TempDir()
 	t.Setenv(whisperLangEnv, "")
 	source := seedTeardownVideoResource(t, svc, "usr-teardown")
+	// 记录真实 worker 的 FFmpeg 调用，防止每张关键帧重新解码高分辨率原片。
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandLog := filepath.Join(t.TempDir(), "commands.log")
+	wrapper := filepath.Join(t.TempDir(), "ffmpeg")
+	if err := os.WriteFile(wrapper, []byte(fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$@\" >> %q\nexec %q \"$@\"\n", commandLog, ffmpeg)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(renderFfmpegEnv, wrapper)
 	inputJSON, _ := json.Marshal(videoTeardownInput{Version: 1, ResourceID: source.ID, Transcribe: true, MaxShots: 60, Fingerprint: "fp"})
 	task := &model.Task{ID: fmt.Sprintf("vt-test-%d", time.Now().UnixNano()), UserID: "usr-teardown", Type: model.TaskTypeReplicationTeardown, Status: model.TaskStatusRunning, Stage: "已领取", InputJSON: string(inputJSON)}
 	if err := db.Create(task).Error; err != nil {
@@ -185,6 +196,19 @@ func TestReplicationTeardownSplitsShotsAndSavesKeyframes(t *testing.T) {
 
 	if err := newTaskWorkerCoordinator(svc).processReplicationTeardown(task, context.Background()); err != nil {
 		t.Fatalf("process: %v", err)
+	}
+	commands, err := os.ReadFile(commandLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceDecodes := 0
+	for _, arg := range strings.Split(string(commands), "\n") {
+		if strings.HasSuffix(arg, "/source.mp4") {
+			sourceDecodes++
+		}
+	}
+	if sourceDecodes != 1 {
+		t.Fatalf("original video decoded %d times, want one shared analysis pass", sourceDecodes)
 	}
 	var stored model.Task
 	if err := db.First(&stored, "id = ?", task.ID).Error; err != nil {

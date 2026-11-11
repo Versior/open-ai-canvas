@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -322,16 +323,19 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 	}
 	black := fmt.Sprintf("color=c=black:s=%dx%d:r=%d", width, height, renderFPS)
 	silence := fmt.Sprintf("anullsrc=r=%d:cl=stereo", renderSampleRate)
-	args := []string{"-nostdin", "-y"}
+	// 多段输入各自解码，加上叠图和左右对比会放大默认线程数；两核服务器尤其容易互相争抢。
+	threads := strconv.Itoa(min(runtime.GOMAXPROCS(0), 4))
+	args := []string{"-nostdin", "-y", "-filter_complex_threads", threads}
 	for _, seg := range segments {
 		seconds := fmt.Sprintf("%.3f", float64(seg.DurationMs)/1000)
 		switch {
 		case seg.Kind == "gap" || seg.Source == nil:
 			args = append(args, "-f", "lavfi", "-t", seconds, "-i", black, "-f", "lavfi", "-t", seconds, "-i", silence)
 		case seg.Kind == "image":
-			args = append(args, "-loop", "1", "-t", seconds, "-i", seg.Source.Path, "-f", "lavfi", "-t", seconds, "-i", silence)
+			args = append(args, "-threads", "1", "-loop", "1", "-t", seconds, "-i", seg.Source.Path, "-f", "lavfi", "-t", seconds, "-i", silence)
 		default:
 			for range 2 {
+				args = append(args, "-threads", "1")
 				// 音频输入复用同一媒体文件；无音轨时改用静音源（见下方滤镜）。
 				if seg.Clip.SourceStartMs > 0 {
 					args = append(args, "-ss", fmt.Sprintf("%.3f", float64(seg.Clip.SourceStartMs)/1000))
@@ -362,7 +366,7 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 		if image.Source == nil {
 			continue
 		}
-		args = append(args, "-loop", "1", "-t", fmt.Sprintf("%.3f", float64(image.DurationMs)/1000), "-i", image.Source.Path)
+		args = append(args, "-threads", "1", "-loop", "1", "-t", fmt.Sprintf("%.3f", float64(image.DurationMs)/1000), "-i", image.Source.Path)
 		images = append(images, image)
 	}
 
@@ -462,7 +466,7 @@ func buildRenderFFmpegArgs(plan renderPlan, target string) []string {
 	args = append(args,
 		"-filter_complex", strings.Join(filters, ";"),
 		"-map", "["+videoOut+"]", "-map", "["+audioOut+"]",
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
+		"-c:v", "libx264", "-threads", threads, "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p",
 		"-c:a", "aac", "-b:a", "128k",
 		// 不继承任何来源的容器元数据，只写本次合成的 AIGC 隐式标识与说明；use_metadata_tags 让 mp4
 		// 以 mdta 键保存自定义的 AIGC 字段（默认的 iTunes 元数据会丢弃未知键）。

@@ -267,19 +267,19 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
     };
 }
 
-/** 成片画幅：取第一条候选的尺寸，没有时用原片尺寸（短边不超过 1080）。 */
+/** 换元素沿用原片比例，清晰度取候选中最低短边，避免将低清素材放大后重复编码。 */
 export function remakeRenderSize(job: Pick<RemakeJob, "units" | "source"> & Partial<Pick<RemakeJob, "ratio">>) {
-    if (job.source && job.units.some((unit) => unit.treatment === "replace")) return { width: job.source.width, height: job.source.height };
-    for (const unit of job.units) {
-        const take = remakeUnitTake(unit);
-        if (take?.width && take.height) return { width: take.width, height: take.height };
-    }
+    const takes = job.units.map(remakeUnitTake).filter((take) => take?.width && take.height);
+    const first = takes[0];
     const ratio = job.ratio?.match(/^(\d+):(\d+)$/);
     const rw = ratio ? Number(ratio[1]) : 9,
         rh = ratio ? Number(ratio[2]) : 16;
-    const { width, height } = job.source || { width: rw >= rh ? 1280 : Math.round((1280 * rw) / rh), height: rh >= rw ? 1280 : Math.round((1280 * rh) / rw) };
-    const scale = Math.min(1, 1080 / Math.max(1, Math.min(width || 720, height || 1280)));
-    return { width: Math.round((width || 720) * scale), height: Math.round((height || 1280) * scale) };
+    const size = job.source && job.units.some((unit) => unit.treatment === "replace") ? job.source : first || job.source;
+    const width = size?.width || (rw >= rh ? 1280 : Math.round((1280 * rw) / rh));
+    const height = size?.height || (rh >= rw ? 1280 : Math.round((1280 * rh) / rw));
+    const shortEdge = Math.min(1080, ...takes.map((take) => Math.min(take!.width!, take!.height!)));
+    const scale = Math.min(1, shortEdge / Math.min(width, height));
+    return { width: Math.max(16, Math.round((width * scale) / 2) * 2), height: Math.max(16, Math.round((height * scale) / 2) * 2) };
 }
 
 function srtTime(ms: number) {

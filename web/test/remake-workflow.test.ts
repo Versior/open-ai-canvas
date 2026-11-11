@@ -50,6 +50,18 @@ function fixture() {
     job.units = planRemakeUnits(job.shots, { maxMs: 10000, sourceDurationMs: 8000 });
     return job;
 }
+test("换元素保留原片比例，480P 候选不会被无效放大成 4K", () => {
+    const job = fixture();
+    job.source = { ...job.source!, width: 2160, height: 3834 };
+    job.units[0].treatment = "replace";
+    job.units[0].takes = [{ resourceId: "take", taskId: "done", createdAt: "", durationMs: 4000, width: 480, height: 854 }];
+    expect(remakeRenderSize(job)).toEqual({ width: 480, height: 852 });
+    job.units.push({ ...job.units[0], key: "second", takes: [{ resourceId: "second", taskId: "done", createdAt: "", width: 720, height: 1280 }] });
+    expect(remakeRenderSize(job)).toEqual({ width: 480, height: 852 });
+    job.units[0].takes = [];
+    job.units[1].takes = [];
+    expect(remakeRenderSize(job)).toEqual({ width: 1080, height: 1918 });
+});
 test("未生成和失败的作品可剪辑原片占位，成功素材保留；成片拼接继续拒绝缺失候选", () => {
     const job = fixture();
     job.units[0].status = "failed";
