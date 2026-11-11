@@ -22,6 +22,10 @@ function unitTitle(unit: RemakeUnit) {
     return `${shots} · ${REMAKE_TREATMENT_LABEL[unit.treatment]} · ${seconds(unit.endMs - unit.startMs)}`;
 }
 
+function unitOffsetSeconds(unit: RemakeUnit) {
+    return Math.max(0, unit.startMs - (unit.treatment === "replace" ? unit.clipStartMs : unit.startMs)) / 1000;
+}
+
 const STATUS_TEXT: Record<RemakeUnit["status"], string> = { pending: "等待生成", running: "生成中", succeeded: "已生成", failed: "没有生成成功" };
 
 /**
@@ -96,7 +100,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
         void leftRef.current?.play().catch(() => setPlaybackError("原片暂时无法同步播放，请检查素材或重新点击播放"));
     };
     const rightSrc = selection.kind === "final" ? (finalId ? resourceFileUrl(finalId) : "") : take ? resourceFileUrl(take.resourceId) : "";
-    const startOffset = unit ? Math.max(0, unit.startMs - (unit.treatment === "replace" ? unit.clipStartMs : unit.startMs)) / 1000 : 0;
+    const startOffset = unit ? unitOffsetSeconds(unit) : 0;
 
     return (
         <div className="rw-produce">
@@ -273,21 +277,26 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                     </div>
                     <span className="rw-track-label">新片</span>
                     <div className="rw-track">
-                        {job.units.map((item) => (
-                            <button
-                                key={item.key}
-                                type="button"
-                                className="rw-block rw-block-unit"
-                                data-treatment={item.treatment}
-                                data-status={item.status}
-                                aria-pressed={selection.kind === "unit" && selection.key === item.key}
-                                style={{ left: `${(item.startMs / duration) * 100}%`, width: `${((item.endMs - item.startMs) / duration) * 100}%` }}
-                                onClick={() => setSelection({ kind: "unit", key: item.key })}
-                                title={unitTitle(item)}
-                            >
-                                <span>{item.status === "running" && progress?.units?.[item.key] !== undefined ? `${progress.units[item.key]}%` : item.takes.length > 1 ? `${item.takes.length} 条` : STATUS_TEXT[item.status]}</span>
-                            </button>
-                        ))}
+                        {job.units.map((item) => {
+                            const chosenTake = remakeUnitTake(item);
+                            return (
+                                <button
+                                    key={item.key}
+                                    type="button"
+                                    className="rw-block rw-block-unit"
+                                    data-treatment={item.treatment}
+                                    data-status={item.status}
+                                    aria-pressed={selection.kind === "unit" && selection.key === item.key}
+                                    style={{ left: `${(item.startMs / duration) * 100}%`, width: `${((item.endMs - item.startMs) / duration) * 100}%` }}
+                                    onClick={() => setSelection({ kind: "unit", key: item.key })}
+                                    title={unitTitle(item)}
+                                    aria-label={`${unitTitle(item)} · ${STATUS_TEXT[item.status]}`}
+                                >
+                                    {chosenTake ? <video key={chosenTake.resourceId} src={`${resourceFileUrl(chosenTake.resourceId)}#t=${unitOffsetSeconds(item) + 0.04}`} muted playsInline preload="metadata" aria-hidden /> : null}
+                                    <span>{item.status === "running" && progress?.units?.[item.key] !== undefined ? `${progress.units[item.key]}%` : item.takes.length > 1 ? `${item.takes.length} 条` : STATUS_TEXT[item.status]}</span>
+                                </button>
+                            );
+                        })}
                         {job.shots
                             .filter((shot) => shot.treatment === "keep" || shot.treatment === "skip")
                             .map((shot) => (

@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ConfigProvider, Tabs } from "antd";
 import { ArrowDown, ArrowUpRight, Menu, Play, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -9,12 +9,11 @@ import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { chapters, getWelcomeLook, showcases, welcomeLooks, type WelcomeLook } from "./story";
+import { WelcomeScene } from "./welcome-scene";
 // 独立欢迎入口也需要按钮 token。
 import "@/styles/button-tokens.css";
 import "./welcome.css";
 import { Select } from "@/components/ui/base/select";
-
-const StoryReel = lazy(() => import("./story-reel"));
 
 export default function WelcomePage() {
     const [look, setLook] = useState(getWelcomeLook);
@@ -41,19 +40,17 @@ export default function WelcomePage() {
     };
     return (
         <ConfigProvider theme={getAntThemeConfig(true, appearance.activeSkin)} button={{ autoInsertSpace: false }}>
-            <WelcomeExperience key={look.id} look={look} brandName={appearance.brandName} onLookChange={changeLook} />
+            <WelcomeExperience look={look} brandName={appearance.brandName} onLookChange={changeLook} />
         </ConfigProvider>
     );
 }
 
 function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLook; brandName: string; onLookChange: (id: string) => void }) {
     const { t } = useTranslation();
+    const pageRef = useRef<HTMLDivElement>(null);
     const storyRef = useRef<HTMLElement>(null);
-    const progressRef = useRef(0);
     const [chapter, setChapter] = useState(0);
     const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-    const [failed, setFailed] = useState(false);
-    const [ready, setReady] = useState(false);
     const [menu, setMenu] = useState(false);
     const [showcase, setShowcase] = useState(0);
     const [playing, setPlaying] = useState(false);
@@ -63,20 +60,19 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
         const media = window.matchMedia("(prefers-reduced-motion: reduce)");
         const onMotion = () => setReduced(media.matches);
         media.addEventListener("change", onMotion);
+        const page = pageRef.current;
         const onScroll = () => {
             if (!storyRef.current) return;
             const rect = storyRef.current.getBoundingClientRect();
             const progress = Math.max(0, Math.min(1, -rect.top / (rect.height - window.innerHeight)));
-            progressRef.current = progress;
-            storyRef.current.style.setProperty("--story-progress", String(progress));
             setChapter(Math.min(5, Math.floor(progress * 6)));
         };
-        window.addEventListener("scroll", onScroll, { passive: true });
+        page?.addEventListener("scroll", onScroll, { passive: true });
         window.addEventListener("resize", onScroll);
         onScroll();
         return () => {
             media.removeEventListener("change", onMotion);
-            window.removeEventListener("scroll", onScroll);
+            page?.removeEventListener("scroll", onScroll);
             window.removeEventListener("resize", onScroll);
         };
     }, []);
@@ -91,16 +87,16 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
     }, [playing]);
 
     const jumpTo = (index: number) => {
-        if (!storyRef.current) return;
+        if (!storyRef.current || !pageRef.current) return;
         const height = storyRef.current.offsetHeight - window.innerHeight;
-        window.scrollTo({ top: storyRef.current.offsetTop + height * (index === 5 ? 0.97 : index / 6 + (index ? 0.04 : 0)), behavior: reduced ? "instant" : "smooth" });
+        const top = storyRef.current.getBoundingClientRect().top + pageRef.current.scrollTop;
+        pageRef.current.scrollTo({ top: top + height * (index === 5 ? 0.97 : index / 6 + (index ? 0.04 : 0)), behavior: "instant" });
         setMenu(false);
     };
-    const staticScene = reduced || failed;
     const active = showcases[showcase];
 
     return (
-        <div className="welcome-page">
+        <div ref={pageRef} className="welcome-page">
             <a className="welcome-skip" href="#workbench">
                 {t("account.welcome.skip")}
             </a>
@@ -135,17 +131,11 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
 
             <main>
                 <section ref={storyRef} id="story" className="welcome-story" aria-label={t("account.welcome.storyLabel")}>
-                    <div className={`welcome-stage chapter-${chapter}${staticScene ? " is-static" : ""}`}>
-                        <div className={`welcome-poster${ready && !staticScene ? " is-ready" : ""}`} aria-hidden="true">
-                            <img src={look.frames[staticScene ? chapter * 2 : 0]} alt="" fetchPriority="high" />
+                    <div className={`welcome-stage chapter-${chapter}${reduced ? " is-static" : ""}`}>
+                        <div className="welcome-poster" aria-hidden="true">
+                            <img src={look.frames[chapter * 2]} alt="" fetchPriority="high" />
                         </div>
-                        {!staticScene && chapter > 0 && (
-                            <SceneBoundary onError={() => setFailed(true)}>
-                                <Suspense fallback={null}>
-                                    <StoryReel look={look} progress={progressRef} paused={false} onReady={() => setReady(true)} onError={() => setFailed(true)} />
-                                </Suspense>
-                            </SceneBoundary>
-                        )}
+                        {chapter > 0 ? <WelcomeScene key={`${look.id}-${chapter}`} chapter={chapter} look={look} reduced={reduced} /> : null}
                         {chapter === 0 ? <BrandFilm className="welcome-home-film" /> : null}
                         <div className="welcome-stage-shade" aria-hidden="true" />
                         {chapters.map((item, index) => (
@@ -199,8 +189,9 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                             />
                             <nav className="welcome-chapter-nav" aria-label={t("account.welcome.chapterNav")}>
                                 {chapters.map((item, index) => (
-                                    <button key={item.id} className={chapter === index ? "is-current" : ""} aria-label={t(item.label)} title={t(item.label)} aria-current={chapter === index ? "step" : undefined} onClick={() => jumpTo(index)}>
+                                    <button type="button" key={item.id} className={chapter === index ? "is-current" : ""} aria-label={t(item.label)} title={t(item.label)} aria-current={chapter === index ? "step" : undefined} onClick={() => jumpTo(index)}>
                                         <span />
+                                        <small>{t(item.label)}</small>
                                     </button>
                                 ))}
                             </nav>
@@ -281,17 +272,4 @@ function FilmDialog({ look, onClose, videoRef }: { look: WelcomeLook; onClose: (
             </div>
         </dialog>
     );
-}
-
-class SceneBoundary extends Component<{ children: ReactNode; onError: () => void }, { failed: boolean }> {
-    state = { failed: false };
-    static getDerivedStateFromError() {
-        return { failed: true };
-    }
-    componentDidCatch() {
-        this.props.onError();
-    }
-    render() {
-        return this.state.failed ? null : this.props.children;
-    }
 }

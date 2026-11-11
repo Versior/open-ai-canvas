@@ -173,3 +173,54 @@ test("视频生成失败后有明确的更换模型入口，点击只打开设�
         host.remove();
     }
 });
+
+test("已生成片段在时间线显示所选候选，切换候选与片段后预览同步", async () => {
+    const { RemakeProduce } = await import("@/pages/video-replication/remake/remake-produce");
+    const { directorJob } = await import("./video-director-data");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const unit = {
+        key: "first",
+        shotIndexes: [1],
+        treatment: "replace" as const,
+        startMs: 1000,
+        endMs: 6000,
+        clipStartMs: 0,
+        clipEndMs: 6000,
+        status: "succeeded" as const,
+        attempt: 1,
+        takes: [
+            { taskId: "task-a", resourceId: "take-a", durationMs: 6000, createdAt: "" },
+            { taskId: "task-b", resourceId: "take-b", durationMs: 6000, createdAt: "" },
+        ],
+        chosen: 0,
+    };
+    const second = { ...unit, key: "second", startMs: 6000, endMs: 12000, clipStartMs: 6000, clipEndMs: 12000, shotIndexes: [2], takes: [{ taskId: "task-c", resourceId: "take-c", durationMs: 6000, createdAt: "" }] };
+    const render = async (chosen: number, generated = true) =>
+        act(async () =>
+            root.render(
+                <App>
+                    <RemakeProduce job={{ ...directorJob, units: [{ ...unit, chosen, status: generated ? "succeeded" : "running", takes: generated ? unit.takes : [] }, second] }} config={defaultConfig} onEditRecipe={() => {}} />
+                </App>,
+            ),
+        );
+    try {
+        const preview = () => host.querySelector<HTMLVideoElement>(".rw-block-unit:first-child video");
+        await render(0, false);
+        expect(preview()).toBeNull();
+        await render(0);
+        expect(preview(), "生成结果需要显示在新片轨道").not.toBeNull();
+        expect(preview()!.src).toContain("take-a");
+        expect(preview()!.src).toContain("#t=1");
+        expect(preview()!.muted).toBe(true);
+        expect(preview()!.autoplay).toBe(false);
+        await render(1);
+        expect(preview()!.src).toContain("take-b");
+        await act(async () => host.querySelectorAll<HTMLButtonElement>(".rw-block-unit")[1].click());
+        expect(host.querySelector<HTMLVideoElement>('video[aria-label="新片"]')!.src).toContain("take-c");
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});

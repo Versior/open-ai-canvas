@@ -115,7 +115,7 @@ export function RemakeComparisonExport({ job, disabled }: { job: RemakeJob; disa
             {busy ? (
                 <div role="status">
                     <Progress percent={progress.percent} size="small" />
-                    <p className="rw-hint">{progress.stage}，可离开页面，任务会继续。</p>
+                    <p className="rw-hint">{progress.stage.includes("渲染") ? "正在合成对比视频" : progress.stage}，可离开页面，任务会继续。</p>
                 </div>
             ) : null}
             {request.error || current?.error ? (
@@ -124,7 +124,7 @@ export function RemakeComparisonExport({ job, disabled }: { job: RemakeJob; disa
                 </p>
             ) : null}
             <Button block icon={current?.resourceId ? <Download size={14} /> : <Columns2 size={14} />} loading={busy} disabled={disabled || Boolean(request.error)} onClick={() => void exportVideo()}>
-                {current?.resourceId ? "下载对比视频" : current?.error ? "重试对比导出" : "导出左右对比 MP4"}
+                {busy ? "正在合成对比视频" : current?.resourceId ? "下载对比视频" : current?.error ? "重试对比导出" : "导出左右对比 MP4"}
             </Button>
             {current?.resourceId ? (
                 <p className="rw-hint" role="status">

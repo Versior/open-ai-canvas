@@ -28,6 +28,7 @@ test("welcome effects preserve configured SEO title", () => {
                 document,
                 window: { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} },
                 storyRef: { current: null },
+                pageRef: { current: null },
                 dialogRef: { current: null },
                 restorePickerFocus: { current: false },
                 setReduced() {},
