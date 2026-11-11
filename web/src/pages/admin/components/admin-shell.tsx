@@ -137,6 +137,7 @@ const adminNavigation: AdminNavigationGroup[] = [
             { path: "/admin/settings/ecommerce", keywords: "电商 生图台 商品档案 套图 模板", label: "电商生图台", shortLabel: "生图台", icon: <Package className="size-4" /> },
             { path: "/admin/settings/studio-models", keywords: "电商 模特库 人物", label: "电商模特库", shortLabel: "模特库", icon: <UserRound className="size-4" /> },
             { path: "/admin/plugins", keywords: "插件 扩展 协议 plugin", label: "插件管理", shortLabel: "插件", icon: <PlugZap className="size-4" /> },
+            { path: "/admin/mcp", keywords: "MCP 工具 连接 市场 Agent", label: "MCP 管理", shortLabel: "MCP", icon: <PlugZap className="size-4" /> },
             { path: "/admin/skills", keywords: "技能 skill", label: "技能管理", shortLabel: "技能", icon: <Wand2 className="size-4" /> },
             { path: "/admin/skill-curation", keywords: "技能 分类 推荐", label: "技能分类", shortLabel: "分类", icon: <Sparkles className="size-4" /> },
             { path: "/admin/resources", keywords: "资源 文件 素材 存储 清理", label: "存储资源", shortLabel: "资源", icon: <Database className="size-4" /> },

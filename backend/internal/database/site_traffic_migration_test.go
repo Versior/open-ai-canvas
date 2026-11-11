@@ -14,10 +14,20 @@ import (
 )
 
 func TestSiteTrafficMigration99IsAdditiveAndPreservesPublishedLedger(t *testing.T) {
-	if CurrentSchemaVersion != 106 {
+	if CurrentSchemaVersion < 106 {
 		t.Fatalf("schema version/plan = %d/%d", CurrentSchemaVersion, len(schemaMigrations))
 	}
-	migration := schemaMigrations[len(schemaMigrations)-1]
+	trafficIndex := -1
+	for i, item := range schemaMigrations {
+		if item.version == 106 {
+			trafficIndex = i
+			break
+		}
+	}
+	if trafficIndex < 0 {
+		t.Fatal("missing traffic migration")
+	}
+	migration := schemaMigrations[trafficIndex]
 	if migration.version != 106 || migration.name != "site_traffic_events" || migration.checksum != "sha256:site-traffic-events-v99-20261111" || migration.apply == nil {
 		t.Fatalf("unexpected traffic migration: %+v", migration)
 	}
@@ -35,8 +45,8 @@ func TestSiteTrafficMigration99IsAdditiveAndPreservesPublishedLedger(t *testing.
 		t.Fatal(err)
 	}
 	// 构造完整的 Fork v105 结构，验证访问统计迁移保留已发布账本。
-	records := make([]schemaMigration, 0, len(schemaMigrations)-1)
-	for _, item := range schemaMigrations[:len(schemaMigrations)-1] {
+	records := make([]schemaMigration, 0, trafficIndex)
+	for _, item := range schemaMigrations[:trafficIndex] {
 		if err := item.apply(db); err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +81,7 @@ func TestSiteTrafficMigration99IsAdditiveAndPreservesPublishedLedger(t *testing.
 	if err := db.Order("version").Find(&after).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(after) != len(before)+1 || !reflect.DeepEqual(after[:len(before)], before) {
+	if len(after) != len(schemaMigrations) || !reflect.DeepEqual(after[:len(before)], before) {
 		t.Fatal("v99 changed published migration identities or applied timestamps")
 	}
 	if !db.Migrator().HasTable(&model.SiteTrafficEvent{}) {

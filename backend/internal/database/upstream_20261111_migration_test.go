@@ -44,8 +44,8 @@ func TestFork99UpgradePreservesPublishedLedgerAndLUTState(t *testing.T) {
 	}
 }
 
-func TestUpstream99UpgradePreservesNewMigrationIdentities(t *testing.T) {
-	db, applied := upstreamSchemaDatabase(t, 99)
+func TestUpstream100UpgradePreservesNewMigrationIdentities(t *testing.T) {
+	db, applied := upstreamSchemaDatabase(t, 100)
 	if err := MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}

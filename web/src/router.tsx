@@ -30,6 +30,7 @@ const ChannelsPage = lazyAdminPage(() => import("@/pages/admin/channels/channels
 const VideoReplicationAdminPage = lazyAdminPage(() => import("@/pages/admin/video-replication/video-replication-admin-page"));
 const LogicalModelsPage = lazyAdminPage(() => import("@/pages/admin/logical-models/logical-models-page"));
 const AdminPluginsPage = lazyAdminPage(() => import("@/pages/admin/plugins/plugins-page"));
+const AdminMCPPage = lazyAdminPage(() => import("@/pages/admin/mcp/mcp-page"));
 const SkillCurationPage = lazyAdminPage(() => import("@/pages/admin/skill-curation-page"));
 const AdminSkillsPage = lazyAdminPage(() => import("@/pages/admin/skills/skills-page"));
 const AdminSkillWorkbenchPage = lazyAdminPage(() => import("@/pages/admin/skills/admin-skill-workbench-page"));
@@ -329,6 +330,7 @@ export const router = createBrowserRouter([
                     { path: "interior/knowledge", element: <InteriorAdminPage /> },
                     { path: "interior/settings", element: <InteriorAdminPage /> },
                     { path: "plugins", element: <AdminPluginsPage /> },
+                    { path: "mcp", element: <AdminMCPPage /> },
                     { path: "workbench-tools", element: <WorkbenchToolsPage /> },
                     // 视频复刻的统计、记录、解析接口和设置；关闭视频复刻只影响用户端，后台仍可进入。
                     { path: "video-replication", element: <VideoReplicationAdminPage /> },

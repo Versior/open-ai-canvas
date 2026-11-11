@@ -34,10 +34,12 @@ const (
 )
 
 const (
-	appearanceSchemaVersion        = 12
-	appearanceLogoMaxBytes   int64 = 5 << 20
-	appearancePosterMaxBytes int64 = 10 << 20
-	appearanceVideoMaxBytes  int64 = 256 << 20
+	appearanceBrandMigrationVersion         = 12
+	appearanceThemePackLibraryVersion       = 13
+	appearanceSchemaVersion                 = appearanceThemePackLibraryVersion
+	appearanceLogoMaxBytes            int64 = 5 << 20
+	appearancePosterMaxBytes          int64 = 10 << 20
+	appearanceVideoMaxBytes           int64 = 256 << 20
 )
 
 const (
@@ -453,12 +455,15 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 	// Decode stored themes without reusing built-in slice entries: omitted
 	// fields must be migrated according to each stored theme's identity.
 	value.SkinThemes = nil
+	// An omitted version in an old record must still trigger the upgrade.
+	value.SchemaVersion = 0
 	storedBrand := storedAppearanceBrandFields{}
 	encoded := []byte(setting.ValueJSON)
 	if strings.TrimSpace(setting.ValueJSON) == "" || json.Unmarshal(encoded, &storedBrand) != nil || json.Unmarshal(encoded, &value) != nil {
 		return nil, AppearanceSetting{}, errors.New("外观配置格式无效")
 	}
 	migrateLegacyBuiltInAppearance(&value, storedBrand)
+	storedSchemaVersion := value.SchemaVersion
 	value.SchemaVersion = appearanceSchemaVersion
 	value.BrandName = strings.TrimSpace(value.BrandName)
 	if value.BrandName == "" {
@@ -481,6 +486,9 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 		value.SkinThemes = defaultAppearanceSkinThemes()
 	}
 	value.SkinThemes = normalizeAppearanceSkinThemes(value.SkinThemes)
+	if storedSchemaVersion < appearanceThemePackLibraryVersion {
+		value.SkinThemes = appendMissingAppearanceThemePackSkins(value.SkinThemes)
+	}
 	value.SEOTitle = normalizeAppearanceSingleLine(value.SEOTitle)
 	value.SEODescription = normalizeAppearanceCopy(value.SEODescription)
 	value.SEOKeywords = normalizeAppearanceSingleLine(value.SEOKeywords)
@@ -491,7 +499,7 @@ func (s *Service) readAppearance() (*model.SystemSetting, AppearanceSetting, err
 }
 
 func migrateLegacyBuiltInAppearance(value *AppearanceSetting, stored storedAppearanceBrandFields) {
-	if stored.SchemaVersion >= appearanceSchemaVersion || stored.BrandName == nil || strings.TrimSpace(*stored.BrandName) != legacyAppearanceBrandName {
+	if stored.SchemaVersion >= appearanceBrandMigrationVersion || stored.BrandName == nil || strings.TrimSpace(*stored.BrandName) != legacyAppearanceBrandName {
 		return
 	}
 	if stored.BrandSlug != nil {

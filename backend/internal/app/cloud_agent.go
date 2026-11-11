@@ -524,7 +524,7 @@ func (s *Service) CreateCloudAgentRun(userID string, req CloudAgentRequest, pare
 	if err != nil {
 		return nil, err
 	}
-	memory, err := s.cloudAgentMemorySnapshotForRun(userID, req.Prompt)
+	memory, err := s.cloudAgentMemorySnapshotForRun(userID, req.Prompt, parentID)
 	if err != nil {
 		return nil, err
 	}

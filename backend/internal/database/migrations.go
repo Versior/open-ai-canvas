@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const CurrentSchemaVersion int64 = 106
+const CurrentSchemaVersion int64 = 107
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -424,6 +424,7 @@ var schemaMigrations = []migration{
 	{version: 106, name: "site_traffic_events", checksum: "sha256:site-traffic-events-v99-20261111", apply: func(tx *gorm.DB) error {
 		return tx.AutoMigrate(&model.SiteTrafficEvent{})
 	}},
+	{version: 107, name: "agent_mcp_connections", checksum: "sha256:agent-mcp-connections-v100", apply: migrateAgentMCP},
 }
 
 func migrateLUTLibrary(tx *gorm.DB) error {
@@ -1632,6 +1633,12 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 		if !tx.Migrator().HasTable(&model.SiteTrafficEvent{}) {
 			return fmt.Errorf("访问统计迁移账本与物理结构不一致：缺少事件表")
 		}
+	case 107:
+		for _, entity := range []any{&model.MCPServerTemplate{}, &model.MCPConnection{}, &model.MCPToolExecution{}} {
+			if !tx.Migrator().HasTable(entity) {
+				return fmt.Errorf("MCP 迁移账本与物理结构不一致：缺少连接表")
+			}
+		}
 	}
 	return nil
 }
@@ -1694,6 +1701,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 97, name: "channel_websites", checksum: "sha256:channel-websites-v97-20261110"}, 104, "sha256:channel-websites-v97-20261110"},
 		{migration{version: 98, name: "api_log_generation_content", checksum: "sha256:api-log-generation-content-v98"}, 105, "sha256:api-log-generation-content-v98"},
 		{migration{version: 99, name: "site_traffic_events", checksum: "sha256:site-traffic-events-v99-20261111"}, 106, "sha256:site-traffic-events-v99-20261111"},
+		{migration{version: 100, name: "agent_mcp_connections", checksum: "sha256:agent-mcp-connections-v100"}, 107, "sha256:agent-mcp-connections-v100"},
 	}
 	if len(records) > len(upstream) {
 		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)
