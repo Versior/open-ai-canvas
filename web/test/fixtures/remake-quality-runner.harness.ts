@@ -47,7 +47,7 @@ mock.module("@/services/api/timeline-tasks", () => ({
         return { id: "render", status: "succeeded" };
     },
 }));
-const { createProductVideo, readRemake } = await import("@/pages/video-replication/replace/use-product-video-store");
+const { createProductVideo, readRemake, updateRemake } = await import("@/pages/video-replication/replace/use-product-video-store");
 const { startRemake, isRemakeRunning, approveRemakeTake, assembleRemake } = await import("@/pages/video-replication/remake/remake-runner");
 
 async function finished(id: string) {
@@ -99,6 +99,19 @@ test("真实生成流程冻结同一组目标图与音色，候选核对前不�
     expect(rendered).toBe(1);
     expect(submitted).toHaveLength(2);
     expect(readRemake(job.id)?.render?.resourceId).toBe("final");
+});
+
+test("修改商品后不能确认或合成旧配方的候选，即使原候选已确认", async () => {
+    const changed = structuredClone(readRemake("runner-quality")!);
+    changed.id = "quality-changed-recipe";
+    changed.product.images[0].resourceId = "different-product";
+    await createProductVideo(changed);
+    const before = rendered;
+    await expect(approveRemakeTake(changed.id, changed.units[0].key)).rejects.toThrow("旧配方");
+    await expect(assembleRemake(changed.id, defaultConfig)).rejects.toThrow("旧配方");
+    await updateRemake(changed.id, (job) => ({ ...job, title: "更换商品后重新制作" }));
+    expect(readRemake(changed.id)?.title).toBe("更换商品后重新制作");
+    expect(rendered).toBe(before);
 });
 
 test("换素材或图片模型后仍能取回旧定妆任务，旧图不冒充当前定妆且不再提交收费任务", async () => {

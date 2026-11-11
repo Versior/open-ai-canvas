@@ -130,7 +130,13 @@ async function persist(id: string, scope: string) {
 export function updateStoredWork(id: string, updater: Updater): Promise<void> {
     const scope = resetIfScopeChanged();
     const stamped: Updater = (job) => ({ ...updater(job), updatedAt: new Date().toISOString() });
-    pending.set(id, [...(pending.get(id) || []), stamped]);
+    const updaters = [...(pending.get(id) || []), stamped];
+    try {
+        fold(id, updaters);
+    } catch (error) {
+        return Promise.reject(error);
+    }
+    pending.set(id, updaters);
     publish(id);
     const previous = saving.get(id) || Promise.resolve();
     const next = previous.catch(() => undefined).then(() => persist(id, scope));

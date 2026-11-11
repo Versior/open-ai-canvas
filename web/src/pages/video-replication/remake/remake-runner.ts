@@ -525,11 +525,14 @@ export async function chooseRemakeTake(id: string, key: string, index: number) {
 
 /** 只重新拼成片（换了候选之后）。 */
 export async function assembleRemake(id: string, config: AiConfig) {
-    const job = read(id);
-    const review = remakeReviewError(job);
-    if (review) throw new Error(review);
-    remakeTimeline(job, remakeRenderSize(job));
-    await updateRemake(id, (value) => ({ ...value, status: "assembling", error: undefined, render: undefined }));
+    read(id);
+    await updateRemake(id, (job) => {
+        if (applyRemakeCreativeSignature(job, job.units).some((unit, index) => unit.creativeSignature !== job.units[index].creativeSignature)) throw new Error("候选来自旧配方，请按当前商品、人物和口播重新生成");
+        const review = remakeReviewError(job);
+        if (review) throw new Error(review);
+        remakeTimeline(job, remakeRenderSize(job));
+        return { ...job, status: "assembling", error: undefined, render: undefined };
+    });
     runRemake(id, config);
 }
 
@@ -539,6 +542,7 @@ export async function approveRemakeTake(id: string, key: string) {
         const unit = job.units.find((item) => item.key === key);
         const take = unit?.takes[unit.chosen];
         if (!unit || !take || unit.status !== "succeeded") throw new Error("这段没有可核对的候选");
+        if (applyRemakeCreativeSignature(job, [unit])[0].creativeSignature !== unit.creativeSignature) throw new Error("这是旧配方的候选，请按当前商品、人物和口播重新生成");
         const duration = remakeTakeError(unit, take);
         if (duration) throw new Error(duration);
         if (unit.creativeSignature && take.inputSignature && unit.creativeSignature !== take.inputSignature) throw new Error("这是旧配方的候选，请重新生成");
