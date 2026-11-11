@@ -10,6 +10,7 @@ export const STUDIO_DESIGN_KNOWLEDGE_VERSION = catalog.version;
 /** 从详情页设计心得与成品拆解提炼；策划、出图和成品检查使用同一标准。 */
 export const STUDIO_POSTER_DESIGN_RULE = catalog.posterDesign.principles;
 export const STUDIO_HERO_DESIGN_RULE = catalog.posterDesign.hero;
+export const STUDIO_EDITORIAL_DESIGN_RULE = catalog.posterDesign.editorial;
 
 export function studioPosterDesignLines(shot: Pick<StudioShot, "role" | "layout">, hasCopy: boolean, planned = false): string[] {
     const layout = shot.layout;
@@ -151,6 +152,7 @@ export function studioDesignKnowledgeLines(product: StudioProduct): string[] {
         `场景与摄影：${profile.scenes}。边界：${profile.avoid}。`,
         `【平面设计标准】${STUDIO_POSTER_DESIGN_RULE}`,
         `【首屏与海报构成】${STUDIO_HERO_DESIGN_RULE}`,
+        `【文案与版面策划】${STUDIO_EDITORIAL_DESIGN_RULE}`,
         "色彩判断：商品本色、背景主色、强调色分别考虑。灰色镜腿或透明镜片是商品颜色，不代表整套背景应该灰；按人群与品牌方向选择背景，用明度与色相差展示真实轮廓。给出背景主色、辅助色、文字色的色名与 HEX，并说明各自作用。",
         "先遵守白底与无字等平台硬规则。卖家明确选择的质感、参考同款、已选方向和本次调整优先；候选不得覆盖用户锁定的设计。designAnalysis 说明实际证据、所选版式及未选其他套路的原因。",
     ];

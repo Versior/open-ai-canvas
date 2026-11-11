@@ -47,8 +47,6 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     /** 这一屏的信息元素：几个图标画什么、引线指向哪里、拼格放什么。 */
     elements: 600,
     eyebrow: 28,
-    headline: 24,
-    subline: 40,
     lines: 6,
     line: 30,
     facts: 6,
@@ -315,8 +313,8 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         ...(studioCompositionOf(record.composition) ? { composition: studioCompositionOf(record.composition) } : {}),
         elements,
         eyebrow: studioEyebrowText(eyebrow),
-        headline: text(record.headline, limits.headline),
-        subline: text(record.subline, limits.subline),
+        headline: typeof record.headline === "string" ? record.headline.trim() : "",
+        subline: typeof record.subline === "string" ? record.subline.trim() : "",
         lines: Array.isArray(record.lines) ? record.lines.filter((line): line is string => typeof line === "string") : [],
         facts: textList(record.facts, limits.facts, 40),
         ...(record.noText === true ? { noText: true } : {}),
@@ -393,7 +391,7 @@ export type StudioPlanField = "detailPlan" | "mainPlan" | "singlePlan" | "templa
 /** 各策划范围的策划存在表单的哪个字段。 */
 export const STUDIO_PLAN_FIELD: Record<StudioPlanScope, StudioPlanField> = { detail: "detailPlan", main: "mainPlan", single: "singlePlan", template: "templatePlan" };
 
-/** 改策划里的一屏；要点保留原文，密度问题在编辑与生成时提示，不静默删掉用户输入。 */
+/** 文案保留完整原文，按整屏阅读预算提示密度，不截掉利益条件或句子后半段。 */
 export function patchStudioDetailPlanScreen(
     brief: StudioBrief,
     index: number,
@@ -412,8 +410,8 @@ export function patchStudioDetailPlanScreen(
         ...(patch.layout && STUDIO_DETAIL_LAYOUT_IDS.includes(patch.layout) ? { layout: patch.layout } : {}),
         ...(studioCompositionOf(patch.composition) ? { composition: patch.composition } : {}),
         ...(patch.elements !== undefined ? { elements: patch.elements } : {}),
-        ...(patch.headline !== undefined ? { headline: patch.headline.slice(0, limits.headline) } : {}),
-        ...(patch.subline !== undefined ? { subline: patch.subline.slice(0, limits.subline) } : {}),
+        ...(patch.headline !== undefined ? { headline: patch.headline } : {}),
+        ...(patch.subline !== undefined ? { subline: patch.subline } : {}),
         ...(patch.lines !== undefined ? { lines: patch.lines } : {}),
     };
     return { ...brief, [field]: { ...plan, screens: plan.screens.map((screen, position) => (position === index ? next : screen)) } };
@@ -428,7 +426,7 @@ export function studioDetailPlanKey(index: number) {
 export const STUDIO_SHOT_VISUAL_MAX = 3000;
 
 /** 出图时写进提示词的这一屏：版式、目的、画面、信息元素依次写。画面被清空时返回空，这一屏改按镜头规格出。 */
-export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "layout" | "composition" | "elements">>) {
+export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "layout" | "composition" | "elements" | "facts">>) {
     const visual = screen.visual.trim();
     if (!visual) return "";
     const layout = screen.layout ? STUDIO_DETAIL_LAYOUTS[screen.layout] : undefined;
@@ -439,6 +437,7 @@ export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpo
         layout ? `内容版式「${layout.label}」：${layout.render}。` : "",
         composition ? `本屏构图「${composition.label}」（主体和文字的位置以此为准）：${composition.render}。` : "",
         purpose ? `这一屏要让买家明白：${purpose}` : "",
+        screen.facts?.length ? `本屏依据主题：${screen.facts.join("、")}；具体数值与属性以商品资料为准，不展开其他卖点。` : "",
         `画面：${visual}`,
         elements ? `信息元素：${elements}` : "",
     ]

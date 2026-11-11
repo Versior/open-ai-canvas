@@ -18,7 +18,6 @@ export const STUDIO_PREP_LIMITS = {
     concept: 60,
     palette: 4,
     colorName: 10,
-    headline: 14,
     visual: 160,
     why: 60,
 } as const;
@@ -72,7 +71,7 @@ export function studioDirectionOf(value: unknown): StudioDirection | undefined {
         concept,
         ...(tone ? { tone } : {}),
         palette: studioPaletteOf(record.palette),
-        headline: text(record.headline, limits.headline),
+        headline: typeof record.headline === "string" ? record.headline.trim() : "",
         visual: text(record.visual, limits.visual),
         why: text(record.why, limits.why),
     };

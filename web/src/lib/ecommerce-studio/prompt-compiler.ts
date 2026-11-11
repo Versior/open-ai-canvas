@@ -491,8 +491,8 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
             ? { composition: shot.composition, ratio: shot.ratio }
             : undefined;
     const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief, modelReferences), goalLayer(product, shot, spec, hasCopy, planned)];
-    if (!spec.neutralBackground && (hasCopy || planned)) layers.push({ id: "artwork", title: "平面设计执行标准", source: "详情页设计方法", text: studioPosterDesignLines(shot, hasCopy, planned).join("\n") });
-    const proof = proofLayer(product, shot);
+    // 完整策划已指定本屏证据，不能把全局卖点重新灌进每屏，覆盖定稿文案与阅读重点。
+    const proof = !planned || shot.sellingPointIds.length ? proofLayer(product, shot) : undefined;
     if (proof) layers.push(proof);
     if (revisionReference)
         layers.splice(1, 0, {
@@ -505,7 +505,12 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     if (duty) layers.push(duty);
     const composition = compositionLayer(shot, spec, planned, layoutGuide ? referenceCount + 1 : undefined);
     if (composition) layers.push(composition);
-    if (planned) layers.push(visualLayer(shot));
+    if (planned) {
+        layers.push(visualLayer(shot));
+        const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief, true);
+        if (copy) layers.push(copy);
+    }
+    if (!spec.neutralBackground && (hasCopy || planned)) layers.push({ id: "artwork", title: "平面设计执行标准", source: "详情页设计方法", text: studioPosterDesignLines(shot, hasCopy, planned).join("\n") });
     const extra = brief ? briefLayers(brief, hasCopy) : [];
     const shooting = extra.find((layer) => layer.id === "shooting");
     if (shooting && !planned && !spec.neutralBackground) layers.push(shooting);
@@ -553,8 +558,10 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     for (const layer of extra) if (layer.id !== "shooting") layers.push(layer);
     const layout = brief ? layoutLayer(brief, references, styleReferences, modelReferences.length) : undefined;
     if (layout) layers.push(layout);
-    const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief, planned, designTone);
-    if (copy) layers.push(copy);
+    if (!planned) {
+        const copy = copyLayer(shot, spec, effective.mode, hasCopy, brief, false, designTone);
+        if (copy) layers.push(copy);
+    }
     if (brief?.extra.trim()) layers.push({ id: "extra", title: "补充要求", source: "生图表单", text: `${sentence(brief.extra)}（以上要求不改变商品外观。）` });
     if (shot.adjust?.trim()) layers.push({ id: "adjust", title: "这一张的修改要求", source: "调整这一张", text: `${sentence(shot.adjust)}与上面的画面、构图要求冲突时以这一条为准；商品外观仍以商品图为准。` });
     const avoid = planned ? ["只出现商品图里有的部件、配件和细节", "不出现其他品牌、价格、促销角标和水印"] : [...spec.avoid];

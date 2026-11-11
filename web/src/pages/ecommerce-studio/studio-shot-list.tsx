@@ -54,14 +54,14 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
                 />
             </label>
             <label className="es-shot-edit-field" data-span="2" htmlFor={`${id}-elements`}>
-                <span>信息元素</span>
+                <span>排版与信息元素</span>
                 <Input.TextArea
                     id={`${id}-elements`}
                     variant="filled"
                     autoSize={{ minRows: 1, maxRows: 4 }}
                     maxLength={limits.elements}
                     value={entry.elements || ""}
-                    placeholder="例如：4 个线框图标，分别画镜框、镜腿、鼻托、铰链"
+                    placeholder="写明标题的语义分行、对齐轴线，以及哪条说明紧邻哪幅证据"
                     onChange={(event) => onChange({ elements: event.target.value })}
                 />
             </label>
@@ -71,11 +71,11 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
                 <>
                     <label className="es-shot-edit-field" htmlFor={`${id}-headline`}>
                         <span>主标题</span>
-                        <Input id={`${id}-headline`} variant="filled" maxLength={limits.headline} value={copy.headline} onChange={(event) => onChange({ headline: event.target.value })} />
+                        <Input.TextArea id={`${id}-headline`} variant="filled" autoSize={{ minRows: 1, maxRows: 3 }} value={copy.headline} onChange={(event) => onChange({ headline: event.target.value })} />
                     </label>
                     <label className="es-shot-edit-field" htmlFor={`${id}-subline`}>
-                        <span>副标题</span>
-                        <Input id={`${id}-subline`} variant="filled" maxLength={limits.subline} value={copy.subline} onChange={(event) => onChange({ subline: event.target.value })} />
+                        <span>补充依据</span>
+                        <Input.TextArea id={`${id}-subline`} variant="filled" autoSize={{ minRows: 1, maxRows: 3 }} value={copy.subline} onChange={(event) => onChange({ subline: event.target.value })} />
                     </label>
                     <label className="es-shot-edit-field" data-span="2" htmlFor={`${id}-lines`}>
                         <span>
@@ -95,7 +95,7 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
                             {copyIssue}
                         </p>
                     ) : (
-                        <p className="es-shot-edit-note">这一屏只讲一个重点，全部文案约 {budget.units} 个汉字以内。</p>
+                        <p className="es-shot-edit-note">这一屏只讲一个重点，全部文案约 {budget.units} 个汉字以内。标题可按语义换行，无新信息的说明留空。</p>
                     )}
                 </>
             )}

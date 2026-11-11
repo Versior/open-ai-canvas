@@ -56,7 +56,7 @@ func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if catalog.PosterDesign.Hero == "" || catalog.PosterDesign.Principles == "" {
+	if catalog.PosterDesign.Hero == "" || catalog.PosterDesign.Principles == "" || catalog.PosterDesign.Editorial == "" {
 		t.Fatal("shared poster methods are missing")
 	}
 	svc, _, _, _ := ecommerceCreationTestService(t)
@@ -76,7 +76,7 @@ func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
 				if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
 					t.Fatal(err)
 				}
-				for _, method := range []string{catalog.PosterDesign.Principles, catalog.PosterDesign.Hero, "标题中的实际词组", "不能只换背景"} {
+				for _, method := range []string{catalog.PosterDesign.Principles, catalog.PosterDesign.Hero, catalog.PosterDesign.Editorial, "标题中的实际词组", "不能只换背景"} {
 					if !strings.Contains(input.Config.SystemPrompt, method) {
 						t.Fatalf("worker lost shared method for %s/%s", product.name, kind)
 					}
@@ -89,7 +89,7 @@ func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
 func TestStudioDesignKnowledgeUpgradePreservesAdminChoices(t *testing.T) {
 	svc, db, _, _ := ecommerceCreationTestService(t)
 	previous := shippedWith(t, func(entries []model.EcommerceKnowledgeEntry) []model.EcommerceKnowledgeEntry {
-		for _, id := range []string{kb20LayoutID, kb20MethodID, "kb20-single-hero"} {
+		for _, id := range []string{kb20LayoutID, kb20MethodID, kb20CopyID, "kb20-single-hero"} {
 			bumpEntry(&entries[indexOfEntry(t, entries, id)], "kb20-v7-20261111", "旧版设计方法")
 		}
 		return entries

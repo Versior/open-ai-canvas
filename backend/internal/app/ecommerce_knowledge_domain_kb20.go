@@ -17,7 +17,7 @@ import (
 // 生图台出图策划按商品类型、名称和材质挑相关的几条，整段写进策划的系统提示词；也和其他内置知识一样进知识库，管理员可以停用或改写。
 const (
 	ecommerceKB20Domain  = "KB20"
-	ecommerceKB20Version = "kb20-v8-20261111"
+	ecommerceKB20Version = "kb20-v9-20261111"
 )
 
 // kb20DesignSpec 是一条设计策划知识；keywords 用来按商品类型、名称和材质挑选，为空的是每次都带的通用方法。
@@ -61,6 +61,14 @@ func kb20PosterDesignMethod() string {
 	return catalog.PosterDesign.Principles + "\n" + catalog.PosterDesign.Hero
 }
 
+func kb20EditorialDesignMethod() string {
+	catalog, err := ecommerceagent.ReadStudioDesignCatalog()
+	if err != nil || catalog.PosterDesign.Editorial == "" {
+		panic(fmt.Sprintf("invalid embedded studio editorial design method: %v", err))
+	}
+	return catalog.PosterDesign.Editorial
+}
+
 var kb20DesignSpecs = []kb20DesignSpec{
 	{id: kb20ColorID, kind: "visual_style", title: "商品、人群与背景色分别判断",
 		guidance: "先区分商品本色、背景主色、文字色和强调色。灰色镜腿、透明镜框、银色接口是商品事实，不是灰白背景的理由。儿童眼镜：家长看适用条件，孩子看真实使用情境；未锁定风格时优先天空蓝与暖黄、珊瑚与奶油、草绿与杏色等明亮有温度的候选，不默认冷灰、黑白实验舱，也不强制卡通。食品用真实食物色泽与清楚轮廓，数码用可见接口和受控反射，穿戴用实际人群与本色。先判断商品与背景的明度、色相对比，再按平台阅读情境分配标题和注解；商品本色不随全套调色改变。用户指定灰色、暗调、白底或参考同款优先。参考 WCAG 的可读性方法：小字和背景对比至少 4.5:1，大字至少 3:1；这是设计自查目标，不保证生图文字通过像素验证。来源：https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html 。"},
@@ -71,7 +79,7 @@ var kb20DesignSpecs = []kb20DesignSpec{
 	{id: kb20LayoutID, kind: "layout_pattern", title: "版式与字体：让字成为设计的一部分",
 		guidance: "网格由内容产生，文字与摄影共同构图。" + kb20PosterDesignMethod() + "由图片模型整体生成图文，不拆成无字底图后程序叠字；不添加未给定的英文、页码和屏号，不用描边、渐变或发光替代排版。方法依据：https://www.smashingmagazine.com/2022/10/typographic-hierarchies/ ；https://opentextbc.ca/graphicdesign/chapter/3-3-organizational-principles/ 。"},
 	{id: kb20CopyID, kind: "copywriting_pattern", title: "商品文案：购买问题、具体事实与语言节奏",
-		guidance: "先回答买家这屏最关心的一个问题，再决定句式。headline 给明确结论，subline 说明已确认的理由，lines 展开参数或证据。短句、动词、对仗是表达工具，不能代替商品事实。已确认的配色、结构、容量和尺寸可以直接成为主题：例如「清透前框 柔灰收边」讲外观，「500ml 随身容量」讲容量，下一层再写具体部位或规格；不能从透明框推导视力改善，从小包装推导足够一天，从拧盖推导防漏。功效、耐用、舒适、认证、排名、销量、对比结果必须有对应的卖家依据，未知就省略。参数屏可以罗列已确认规格，用「项目｜数值与条件」逐行排；外观屏可以描述可见细节，不为了所谓高级感把它们改成空洞情绪口号。主标题以手机可读、信息准确为准，不硬卡字数；一组标题不能反复换词表达同一句话。拒绝「品质之选」「匠心」「臻品」「甄选」「高端大气」「更亮眼」「更出众」「陪你每一天」等缺乏区分度的口号。写完自查：买家知道了哪一条具体信息？每个数值与利益是否有依据？这句话是否只是适用于任何商品的套话？不满足就重写。"},
+		guidance: kb20EditorialDesignMethod() + "已确认的配色、结构、容量和尺寸可以直接成为主题，如「清透前框，柔灰收边」讲外观，「500ml 随身容量」讲容量；不能从透明框推导视力改善，从小包装推导足够一天，从拧盖推导防漏。功效、耐用、舒适、认证、排名、销量和对比结果必须有卖家依据。参数屏可以罗列已确认规格，用「项目｜数值与条件」逐行排，单位与条件紧邻数值，不改写成情绪口号。拒绝「品质之选」「匠心」「臻品」「甄选」「高端大气」「更亮眼」「更出众」「陪你每一天」等泛口号。写完检查：读者知道了什么具体信息？副文案是否提供了新证据？没有答案就重写。"},
 	{id: "kb20-category-skincare", kind: kb20CategoryKind, title: "品类打法 · 护肤美妆",
 		keywords: []string{"护肤", "美妆", "面霜", "精华", "乳液", "爽肤水", "化妆水", "面膜", "洁面", "洗面奶", "防晒", "口红", "粉底", "眼霜", "身体乳", "精油", "喷雾"}, families: []string{"beauty"},
 		guidance: "买家要三件事：看得见的质地、说得清的成分、摸得到的肤感。必有：① 质地屏——膏体、凝胶或液体的微距（挤出的一段、拉丝、涂开的一道、托在指尖），侧逆光打出透明和光泽，往往是整套最出彩的一屏；② 成分屏——把成分做成实物或视觉隐喻（原料植物实拍、水滴和分子结构、透明容器里的分层液体），不画参数表；③ 肤感屏——手背、指尖或侧脸局部，皮肤保留真实纹理；④ 信任屏——检测、备案、专利只写已确认的。视觉：从包装或成分里取一个主色撑整屏（BAIMISS 紫草喷雾用紫色紫草花和苔藓托着瓶身），产品放在有质感的自然物或台面上（苔藓、石头、水面、玻璃块），水波、水滴、光斑做元素。避免：每屏都摆同一张产品照，整套蓝白波浪模板。"},

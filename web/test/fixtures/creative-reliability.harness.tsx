@@ -5,7 +5,19 @@ import type { VideoTeardownBundle } from "@/services/api/video-replication";
 import type { GenerationTask } from "@/services/api/task-center";
 
 const dom = new Window({ url: "http://localhost/" });
-for (const [key, value] of Object.entries({ window: dom, document: dom.document, navigator: dom.navigator, HTMLElement: dom.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true })) Object.defineProperty(globalThis, key, { configurable: true, value });
+for (const [key, value] of Object.entries({
+    window: dom,
+    document: dom.document,
+    navigator: dom.navigator,
+    HTMLElement: dom.HTMLElement,
+    Element: dom.Element,
+    SVGElement: dom.SVGElement,
+    ShadowRoot: dom.ShadowRoot,
+    ResizeObserver: dom.ResizeObserver,
+    getComputedStyle: dom.getComputedStyle.bind(dom),
+    IS_REACT_ACT_ENVIRONMENT: true,
+}))
+    Object.defineProperty(globalThis, key, { configurable: true, value });
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { ApiError } = await import("@/services/api/request");
@@ -615,4 +627,43 @@ test("unconfirmed remake cancellation preserves video, voice and render task IDs
     expect(remake.units[0].taskId).toBeUndefined();
     expect(remake.voiceLines[0].taskId).toBeUndefined();
     expect(remake.render).toBeUndefined();
+});
+
+test("the actual planned-shot editor displays and edits full semantic title lines", async () => {
+    const { StudioShotList } = await import("@/pages/ecommerce-studio/studio-shot-list");
+    const editorHost = dom.document.createElement("div");
+    dom.document.body.append(editorHost);
+    const editorRoot = createRoot(editorHost);
+    const headline = "弧面靠背与开放间隔\n让餐桌旁的空间关系与结构细节一眼看清";
+    const subline = "奶油白软包与黑色框架相接，靠背与坐垫之间保留开放间隔，具体材质与尺寸以已确认商品资料为准";
+    let changed: { headline?: string } | undefined;
+    try {
+        await act(async () =>
+            editorRoot.render(
+                <StudioShotList
+                    entries={[{ key: "p0", role: "detail-scene", title: "空间关系", purpose: "辨认开放间隔", included: true, planIndex: 0, layout: "scene", visual: "餐桌旁的完整餐椅", copy: { headline, subline, lines: [] } }]}
+                    unit="屏"
+                    onToggle={() => {}}
+                    onMove={() => {}}
+                    onEditPlan={(_index, patch) => {
+                        changed = patch;
+                    }}
+                />,
+            ),
+        );
+        await act(async () => editorHost.querySelector<HTMLButtonElement>('[aria-label="修改这一屏：空间关系"]')!.click());
+        const title = editorHost.querySelector<HTMLTextAreaElement>("textarea#es-plan-p0-headline")!;
+        const supporting = editorHost.querySelector<HTMLTextAreaElement>("textarea#es-plan-p0-subline")!;
+        expect(title.value).toBe(headline);
+        expect(supporting.value).toBe(subline);
+        const edited = headline.replace("一眼看清", "看得清楚");
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(dom.HTMLTextAreaElement.prototype, "value")!.set!.call(title, edited);
+            title.dispatchEvent(new dom.Event("input", { bubbles: true }));
+        });
+        expect(changed?.headline).toBe(edited);
+    } finally {
+        await act(async () => editorRoot.unmount());
+        editorHost.remove();
+    }
 });

@@ -13,6 +13,7 @@ type StudioDesignCatalog struct {
 	PosterDesign struct {
 		Principles string `json:"principles"`
 		Hero       string `json:"hero"`
+		Editorial  string `json:"editorial"`
 	} `json:"posterDesign"`
 	Compositions map[string]struct {
 		Label  string          `json:"label"`

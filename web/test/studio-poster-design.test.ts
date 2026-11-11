@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
-import { studioDetailPlanRoles } from "@/lib/ecommerce-studio/detail-plan";
+import { patchStudioDetailPlanScreen, studioDetailPlanRoles, studioScreenCopyIssue } from "@/lib/ecommerce-studio/detail-plan";
 import { buildDetailPlanPrompt, parseDetailPlan } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { buildStudioDesignCheckPrompt } from "@/lib/ecommerce-studio/design-check";
 import { createStudioProduct, normalizeStudioProduct } from "@/lib/ecommerce-studio/product";
 import { compileStudioPrompt, studioMaterialLighting } from "@/lib/ecommerce-studio/prompt-compiler";
-import { createStudioRun } from "@/lib/ecommerce-studio/runs";
+import { appendStudioRun, createStudioRun } from "@/lib/ecommerce-studio/runs";
+import { locateStudioShot, studioImageInput } from "@/lib/ecommerce-studio/generation-input";
+import { defaultConfig } from "@/stores/use-config-store";
 import type { StudioShot } from "@/lib/ecommerce-studio/types";
 
 function chair() {
@@ -18,6 +20,71 @@ function chair() {
 }
 
 const poster: StudioShot = { id: "hero", role: "detail-hero", title: "弧背餐椅", ratio: "3:4", composition: "left", headline: "圆润弧背", subline: "奶油白与黑框", lines: [], tweaks: [], attempts: [], sellingPointIds: [] };
+
+test("完整文案与语义分行经过解析、编辑、刷新和实际出图输入仍保留", () => {
+    let product = chair();
+    product.brief.detailScreens = 3;
+    const headline = "弧面靠背与开放间隔\n让餐桌旁的空间关系与结构细节一眼看清";
+    const subline = "奶油白软包与黑色框架相接，靠背与坐垫之间保留开放间隔，具体材质与尺寸以已确认商品资料为准";
+    expect(headline.length).toBeGreaterThan(24);
+    expect(subline.length).toBeGreaterThan(40);
+    product.brief.detailPlan = parseDetailPlan(
+        JSON.stringify({
+            style: "奶油白底与深棕字，说明与摄影边界对齐",
+            screens: [
+                { role: "detail-hero", visual: "完整餐椅与一条短标题", headline: "弧背餐椅" },
+                { role: "detail-scene", visual: "餐桌旁的完整餐椅，注解紧邻开放间隔", elements: "弧面靠背与开放间隔为首行，下一行接续空间关系", headline, subline },
+                { role: "detail-closing", visual: "完整餐椅与选购提示", headline: "看看放进餐桌的样子" },
+            ],
+        }),
+        product,
+        studioDetailPlanRoles(product),
+        { id: "editorial", model: "planner", createdAt: "" },
+    ).plan;
+    expect(product.brief.detailPlan.screens[1]).toMatchObject({ headline, subline });
+    const editedHeadline = headline.replace("一眼看清", "看得清楚");
+    product.brief = patchStudioDetailPlanScreen(product.brief, 1, { headline: editedHeadline, subline });
+    product = normalizeStudioProduct(JSON.parse(JSON.stringify(product)))!;
+    expect(studioScreenCopyIssue(product.brief.detailPlan!.screens[1])).toBeUndefined();
+    let id = 0;
+    const run = createStudioRun(product, () => `copy-${++id}`);
+    product = appendStudioRun(product, run);
+    const input = studioImageInput(product, locateStudioShot(product, { runId: run.id }, run.shots[1].id)!, "gpt-image", defaultConfig);
+    expect(input.compiled.prompt).toContain(`「${editedHeadline}」`);
+    expect(input.compiled.prompt).toContain(`「${subline}」`);
+    expect(input.compiled.layers.findIndex((layer) => layer.id === "copy")).toBeLessThan(input.compiled.layers.findIndex((layer) => layer.id === "style"));
+
+    product.brief = patchStudioDetailPlanScreen(product.brief, 1, { subline: subline.repeat(3) });
+    const restored = normalizeStudioProduct(JSON.parse(JSON.stringify(product)))!;
+    expect(restored.brief.detailPlan!.screens[1].subline).toBe(subline.repeat(3));
+    const crowded = createStudioRun(restored, () => `crowded-${++id}`);
+    expect(() => compileStudioPrompt({ product: restored, shot: crowded.shots[1], model: "gpt-image" })).toThrow("信息过密");
+});
+
+test("策划屏只执行本屏依据，不把全局卖点重新注入每张图", () => {
+    const product = chair();
+    product.sellingPoints = ["空间搭配", "软包外观", "黑框轮廓"].map((title, index) => ({ id: `point-${index}`, title, detail: `${title}的卖家说明`, evidence: "confirmed", factIds: [], enabled: true }));
+    product.brief.detailPlan = parseDetailPlan(
+        JSON.stringify({
+            screens: [
+                { role: "detail-hero", visual: "完整餐椅，标题沿弧背轮廓留白", headline: "圆润弧背" },
+                { role: "detail-closing", visual: "只展示开放间隔的局部，说明紧邻对应部位", purpose: "看清靠背与坐垫间隔", facts: ["开放间隔"], headline: "靠背与坐垫之间" },
+            ],
+        }),
+        product,
+        studioDetailPlanRoles(product),
+        { id: "focus", model: "planner", createdAt: "" },
+    ).plan;
+    let id = 0;
+    const run = createStudioRun(product, () => `focus-${++id}`);
+    const compiled = compileStudioPrompt({ product, shot: run.shots[1], brief: product.brief, suite: run.suite, model: "gpt-image" });
+    expect(compiled.prompt).toContain("本屏依据主题：开放间隔");
+    expect(compiled.layers.some((layer) => layer.id === "proof")).toBe(false);
+    for (const point of product.sellingPoints) expect(compiled.prompt).not.toContain(point.detail);
+    const direct = compileStudioPrompt({ product, shot: { ...run.shots[1], role: "detail-selling", visual: undefined, sellingPointIds: ["point-1"] }, model: "gpt-image" });
+    expect(direct.layers.find((layer) => layer.id === "proof")?.text).toContain("软包外观的卖家说明");
+    expect(direct.layers.find((layer) => layer.id === "proof")?.text).not.toContain("空间搭配的卖家说明");
+});
 
 test("逐屏美术蓝图和设计元素经策划解析、保存、生成记录进入最终图像请求", () => {
     const product = chair();
