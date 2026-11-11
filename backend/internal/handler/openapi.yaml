@@ -2866,6 +2866,21 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /admin/channels/{id}/model-metadata:
+    get:
+      tags: [admin]
+      summary: 读取上游模型能力资料
+      description: 使用服务端保存的渠道凭据读取固定 models 目录，返回声明的能力、默认值、可选参数及图片引用数。不导入模型，不修改配置，不返回凭据。与目录拉取共用限流。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: 信封 data.models 为模型资料数组，每项包含 id、可选 displayName、modelType、supportedEndpointTypes、defaultParameters、options、supportsImages、minImages、maxImages
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
   /admin/channel-websites:
     get:
       tags: [admin]

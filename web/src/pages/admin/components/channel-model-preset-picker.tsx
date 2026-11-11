@@ -1,11 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Button, Select } from "antd";
 import { ModelLogo } from "@/components/model-logo";
-import { Check, SlidersHorizontal } from "lucide-react";
+import { Check, SlidersHorizontal, WandSparkles } from "lucide-react";
+import type { ChannelModelCatalogItem } from "@/lib/channel-model-catalog";
 import { consolidateModelPresets, matchingModelPresets, presetApplicationError, presetKey, presetModelIcon, type ModelMetadataCatalog, type ModelMetadataPreset } from "@/lib/model-metadata-presets";
 import "./channel-model-assist.css";
 
-export function ChannelModelPresetPicker({ modelId, capability, disabled, onApply }: { modelId: string; capability: string; disabled: boolean; onApply: (preset: ModelMetadataPreset) => void }) {
+export function ChannelModelPresetPicker({
+    modelId,
+    capability,
+    disabled,
+    onApply,
+    identifying = false,
+    status = "",
+    error: identificationError = "",
+    upstreamModels = [],
+    onIdentify,
+    onReadUpstream,
+}: {
+    modelId: string;
+    capability: string;
+    disabled: boolean;
+    onApply: (preset: ModelMetadataPreset) => void;
+    identifying?: boolean;
+    status?: string;
+    error?: string;
+    upstreamModels?: ChannelModelCatalogItem[];
+    onIdentify?: (modelId?: string) => void;
+    onReadUpstream?: () => void;
+}) {
     const [catalog, setCatalog] = useState<ModelMetadataCatalog>();
     const [error, setError] = useState("");
     const [attempt, setAttempt] = useState(0);
@@ -44,10 +67,21 @@ export function ChannelModelPresetPicker({ modelId, capability, disabled, onAppl
                 <SlidersHorizontal size={16} aria-hidden />
                 <div>
                     <h2>模型参数预设</h2>
-                    <p>选择模型，填入能力与参数，保存后生效。</p>
+                    <p>填写标识后一键识别；选择预设自动填入参数与空白标识，保存后生效。</p>
                 </div>
+                {onIdentify ? (
+                    <Button className="admin-model-identify-button" size="small" icon={<WandSparkles size={14} aria-hidden />} loading={identifying} disabled={disabled && !identifying} onClick={() => onIdentify()}>
+                        自动识别并填写
+                    </Button>
+                ) : null}
             </header>
             <div className="admin-model-assist-content">
+                {status ? (
+                    <p className="admin-model-assist-note" role="status">
+                        {status}
+                    </p>
+                ) : null}
+                {identificationError ? <Alert type="warning" title={identificationError} /> : null}
                 {error ? (
                     <Alert
                         type="error"
@@ -72,9 +106,31 @@ export function ChannelModelPresetPicker({ modelId, capability, disabled, onAppl
                         onChange={(value) => {
                             setSelectedKey(value || "");
                             setApplied(false);
+                            const preset = models.find((item) => presetKey(item) === value);
+                            if (preset && !presetApplicationError(preset, capability)) {
+                                onApply(preset);
+                                setApplied(true);
+                            }
                         }}
                     />
                 )}
+                {onReadUpstream ? (
+                    <div className="admin-model-upstream-picker">
+                        <Select
+                            className="admin-model-assist-select"
+                            aria-label="选择上游模型自动配置"
+                            showSearch={{ optionFilterProp: "label" }}
+                            placeholder="也可从渠道上游目录选择模型"
+                            disabled={disabled || !upstreamModels.length}
+                            value={undefined}
+                            options={upstreamModels.map((item) => ({ value: item.id, label: `${item.displayName || item.id} · ${item.id}${item.modelType ? ` · ${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[item.modelType]}` : ""}` }))}
+                            onChange={(id) => onIdentify?.(id)}
+                        />
+                        <Button size="small" disabled={disabled} onClick={onReadUpstream}>
+                            {upstreamModels.length ? "刷新目录" : "读取上游目录"}
+                        </Button>
+                    </div>
+                ) : null}
                 {catalog && !selected ? <p className="admin-model-assist-note">未找到对应模型，可搜索选择参数预设。</p> : null}
                 {selected ? (
                     <>
@@ -117,7 +173,10 @@ export function ChannelModelPresetPicker({ modelId, capability, disabled, onAppl
                         <footer className="admin-model-assist-footer">
                             <details className="admin-model-preset-help">
                                 <summary>应用范围</summary>
-                                <p>{selected.vision ? "支持图片识别；图片数量最多应用 100 张，未声明时保留现值，未配置则先设 1 张。" : "应用后关闭图片引用。"} 单图大小和其他自定义限制保留。推理能力不自动切换思考开关。</p>
+                                <p>
+                                    {selected.vision ? "支持图片识别；图片数量最多应用 100 张，未声明时保留现值，未配置则先设 1 张。" : "应用后关闭图片引用。"} 单图大小和其他自定义限制保留。空白标识使用所选预设
+                                    ID，已有标识保留。推理能力不自动切换思考开关。
+                                </p>
                             </details>
                             {!applicationError ? (
                                 <Button

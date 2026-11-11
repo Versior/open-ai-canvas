@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { canonicalize } from "json-canonicalize";
-import { Alert, App, AutoComplete, Button, Form, Input, Segmented, Select, Switch, Tabs } from "antd";
+import { Alert, App, AutoComplete, Button, Form, Input, Segmented, Switch, Tabs } from "antd";
 import { useAdminContext } from "../admin-context";
 import { ModelDisplayNameInput } from "./model-display-name-input";
 import { AdminModal } from "@/pages/admin/ui/overlays";
-import { Copy, FlaskConical, Plus } from "lucide-react";
+import { FlaskConical, Plus } from "lucide-react";
 import { ModelIconPicker } from "@/components/model-logo";
 import { ModelIcon } from "@/components/model-picker";
 import { ModelProtocolBrowser } from "@/components/model-protocol-browser";
@@ -12,7 +12,7 @@ import { MediaTransportFields } from "./media-transport-fields";
 import { ModelCapabilityEditor } from "@/components/model-capability-editor";
 import { defaultModelCapabilityConfig, normalizeModelCapabilityConfig, type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import type { ModelProtocolDefinition } from "@/lib/model-protocols";
-import { createAdminChannelModel, getAdminChannelProtocolSuggestion, listAdminChannelModels, testAdminChannelModel, updateAdminChannelModel, type ChannelModel, type ChannelProtocolSuggestion } from "@/services/api/wallet";
+import { createAdminChannelModel, fetchAdminChannelModelMetadata, getAdminChannelProtocolSuggestion, testAdminChannelModel, updateAdminChannelModel, type ChannelModel, type ChannelProtocolSuggestion } from "@/services/api/wallet";
 import type { ModelChannel } from "@/stores/use-config-store";
 import { priceCurrencyOptions } from "@/services/api/user-groups";
 import { defaultPriceTier, normalizeUpstreamModelKey, priceTierPayloadFromForm } from "./channel-model-price-tier-form";
@@ -20,10 +20,13 @@ import { PriceTierFields } from "./channel-model-price-tier-fields";
 import { TokenPriceRulesSection } from "./channel-model-token-rules";
 import { ChannelModelTagsEditor } from "./channel-model-tags-editor";
 import { ChannelModelPresetPicker } from "./channel-model-preset-picker";
-import { applyModelMetadataPreset, loadModelMetadataPresets } from "@/lib/model-metadata-presets";
-import { autoConfigureChannelModel, copyChannelModelPrices } from "./channel-model-editor-form";
+import { applyModelMetadataPreset, loadModelMetadataPresets, modelFamilyIdentity } from "@/lib/model-metadata-presets";
+import { autoConfigureChannelModel, copyChannelModelConfiguration, copyChannelModelPrices } from "./channel-model-editor-form";
 import { CapabilityTemplatePanel, PricingTemplatePanel } from "./channel-model-template-panels";
 import { priceSelectorIssues } from "./channel-model-templates";
+import { ChannelModelCopyPicker } from "./channel-model-copy-picker";
+import { identifyChannelModelConfiguration } from "./channel-model-identification";
+import type { ChannelModelCatalogItem } from "@/lib/channel-model-catalog";
 import {
     changeChannelModelCapability,
     changeChannelModelProtocol,
@@ -89,41 +92,14 @@ export function ChannelModelEditor({
     const hasDefaultPriceTier = priceTiers.some((tier) => tier.matchMode === "default");
     const tiersWithOwnUpstream = priceTiers.filter((tier) => tier.providerModelKey?.trim());
     const modelUpstream = normalizeUpstreamModelKey(providerModelKey || modelKey);
-    const busy = saving || testing;
+    const [identifying, setIdentifying] = useState(false);
+    const [upstreamCatalog, setUpstreamCatalog] = useState<ChannelModelCatalogItem[]>([]);
+    const [identificationStatus, setIdentificationStatus] = useState("");
+    const [identificationError, setIdentificationError] = useState("");
+    const busy = saving || testing || identifying;
     // 协议由网站建议或用户明确选择；本地型号匹配不能在保存时覆盖它。
     const protectedFields = useRef(new Set<string>(["protocol"]));
     const [autoSource, setAutoSource] = useState("");
-    const [priceSourceChannel, setPriceSourceChannel] = useState(channel.id);
-    const [priceSources, setPriceSources] = useState(existingModels);
-    const [priceSourcesLoading, setPriceSourcesLoading] = useState(false);
-    const [priceSourcesError, setPriceSourcesError] = useState("");
-    const [priceSourceId, setPriceSourceId] = useState<string>();
-    const priceSourceChannels = [{ value: channel.id, label: channel.name }, ...references.channels.filter((item) => item.id !== channel.id).map((item) => ({ value: item.id, label: item.name }))];
-    useEffect(() => {
-        setPriceSourceId(undefined);
-        setPriceSourcesError("");
-        if (priceSourceChannel === channel.id) {
-            setPriceSources(existingModels);
-            setPriceSourcesLoading(false);
-            return;
-        }
-        let active = true;
-        setPriceSources([]);
-        setPriceSourcesLoading(true);
-        void listAdminChannelModels(priceSourceChannel)
-            .then((result) => {
-                if (active) setPriceSources(result.models);
-            })
-            .catch((error) => {
-                if (active) setPriceSourcesError(error instanceof Error ? error.message : "读取价格来源失败");
-            })
-            .finally(() => {
-                if (active) setPriceSourcesLoading(false);
-            });
-        return () => {
-            active = false;
-        };
-    }, [priceSourceChannel, channel.id, existingModels]);
     useEffect(() => {
         if (editing || draftValues || !modelUpstream || busy || protocolLoading || protocolError) return;
         let active = true;
@@ -192,6 +168,8 @@ export function ChannelModelEditor({
 
     const handleFormValuesChange = (changed: Partial<FormValues>) => {
         dirtyRef.current = true;
+        setIdentificationStatus("");
+        setIdentificationError("");
         for (const key of Object.keys(changed)) protectedFields.current.add(key);
         if (changed.capability) {
             explicitProtocol.current = false;
@@ -217,6 +195,55 @@ export function ChannelModelEditor({
                 form.setFieldValue("capabilityConfig", next.capabilityConfig);
                 setConfigurationChange((previous) => previous || "parameters");
             }
+        }
+    };
+
+    const applyConfiguration = (next: FormValues) => {
+        const previous = form.getFieldsValue(true);
+        explicitProtocol.current = true;
+        preserveTemplateCapability.current = true;
+        setProtocolSuggestion(undefined);
+        setSuggestionError("");
+        replaceChannelModelFormValues(form, next);
+        for (const key of Object.keys(next)) protectedFields.current.add(key);
+        previousUpstream.current = normalizeUpstreamModelKey(next.providerModelKey || next.modelKey);
+        dirtyRef.current = true;
+        if (previous.capability !== next.capability) setConfigurationChange("capability");
+        else if (previous.protocol !== next.protocol) setConfigurationChange("protocol");
+        else if (canonicalize(previous.capabilityConfig) !== canonicalize(next.capabilityConfig)) setConfigurationChange("parameters");
+    };
+
+    const identifyModel = async (selectedId?: string, loadOnly = false) => {
+        if (busyRef.current) return;
+        const current = form.getFieldsValue(true);
+        const values = selectedId ? { ...current, modelKey: current.modelKey.trim() || selectedId, providerModelKey: selectedId } : current;
+        if (!loadOnly && !values.providerModelKey?.trim() && !values.modelKey.trim()) {
+            setIdentificationError("请先填写模型标识，或选择预设，也可读取上游目录选择模型");
+            return;
+        }
+        busyRef.current = true;
+        setIdentifying(true);
+        setIdentificationError("");
+        setIdentificationStatus("");
+        try {
+            const [metadata, presets] = await Promise.allSettled([upstreamCatalog.length && !loadOnly ? Promise.resolve({ models: upstreamCatalog }) : fetchAdminChannelModelMetadata(channel.id), loadModelMetadataPresets()]);
+            const catalog = metadata.status === "fulfilled" ? metadata.value.models : [];
+            if (metadata.status === "fulfilled") setUpstreamCatalog(catalog);
+            if (loadOnly) {
+                if (metadata.status === "rejected") throw metadata.reason;
+                setIdentificationStatus(catalog.length ? `已读取 ${catalog.length} 个上游模型，选择后自动填写配置。` : "上游目录未返回模型");
+                return;
+            }
+            const result = identifyChannelModelConfiguration(values, existingModels, protocols, presets.status === "fulfilled" ? presets.value : [], catalog, channel.apiFormat);
+            applyConfiguration(result.values);
+            const warnings = [metadata.status === "rejected" ? "上游目录读取失败，使用已配置型号和本地资料" : "", presets.status === "rejected" ? "文本预设读取失败" : ""].filter(Boolean);
+            setIdentificationStatus(`${result.source}。已填入，保存后生效；请核对参数。${warnings.length ? ` ${warnings.join("；")}。` : ""}`);
+            if (metadata.status === "rejected" || presets.status === "rejected") setIdentificationError(warnings.join("；"));
+        } catch (error) {
+            setIdentificationError(error instanceof Error ? error.message : "模型参数识别失败，请重试");
+        } finally {
+            busyRef.current = false;
+            setIdentifying(false);
         }
     };
 
@@ -361,7 +388,7 @@ export function ChannelModelEditor({
                         <Button
                             icon={<FlaskConical className="size-4" />}
                             loading={testing}
-                            disabled={saving || protocolLoading || Boolean(protocolError)}
+                            disabled={saving || identifying || protocolLoading || Boolean(protocolError)}
                             onClick={() => modal.confirm({ title: "测试模型连接？", content: "测试会向上游发送真实请求，可能产生供应商费用；不会保存当前修改。", okText: "开始测试", cancelText: "取消", onOk: testModel })}
                         >
                             测试模型
@@ -369,7 +396,7 @@ export function ChannelModelEditor({
                         <Button disabled={busy} onClick={requestClose}>
                             取消
                         </Button>
-                        <Button type="primary" loading={saving} disabled={testing || protocolLoading || Boolean(protocolError) || selectorIssues.length > 0} onClick={() => void save()}>
+                        <Button type="primary" loading={saving} disabled={testing || identifying || protocolLoading || Boolean(protocolError) || selectorIssues.length > 0} onClick={() => void save()}>
                             {editing ? "保存修改" : "添加模型"}
                         </Button>
                     </div>
@@ -399,20 +426,55 @@ export function ChannelModelEditor({
                                             {autoSource || "填写模型 ID 后自动补齐参数，并参考当前渠道同类模型的接口与价格。"}
                                         </p>
                                     )}
-                                    <ChannelModelPresetPicker
-                                        modelId={providerModelKey || modelKey}
-                                        capability={modelCapability || initialValues.capability}
-                                        disabled={busy}
-                                        onApply={(preset) => {
-                                            const next = applyModelMetadataPreset(form.getFieldsValue(true), preset);
-                                            form.setFieldValue("icon", next.icon);
-                                            form.setFieldValue("capabilityConfig", next.capabilityConfig);
-                                            protectedFields.current.add("capabilityConfig");
-                                            protectedFields.current.add("icon");
-                                            dirtyRef.current = true;
-                                            message.success("模型预设已填入，保存后生效");
-                                        }}
-                                    />
+                                    <div className="admin-model-editor-assists">
+                                        <ChannelModelPresetPicker
+                                            modelId={providerModelKey || modelKey}
+                                            capability={modelCapability || initialValues.capability}
+                                            disabled={busy}
+                                            identifying={identifying}
+                                            status={identificationStatus}
+                                            error={identificationError}
+                                            upstreamModels={upstreamCatalog}
+                                            onIdentify={(id) => void identifyModel(id)}
+                                            onReadUpstream={() => void identifyModel(undefined, true)}
+                                            onApply={(preset) => {
+                                                const values = form.getFieldsValue(true);
+                                                const next = applyModelMetadataPreset(
+                                                    {
+                                                        ...values,
+                                                        modelKey: values.modelKey.trim() || preset.id,
+                                                        providerModelKey: values.providerModelKey?.trim() || preset.id,
+                                                        channelLabel: values.channelLabel?.trim() || values.providerModelKey?.trim() || preset.id,
+                                                    },
+                                                    preset,
+                                                );
+                                                if (!values.displayName?.trim() || values.displayName === "未分类") next.displayName = modelFamilyIdentity(preset.id)?.category || "未分类";
+                                                applyConfiguration(next);
+                                                setIdentificationStatus(`参数预设 ${preset.id} 已填入，保存后生效。`);
+                                                setIdentificationError("");
+                                                message.success("模型预设已填入，保存后生效");
+                                            }}
+                                        />
+                                        <ChannelModelCopyPicker
+                                            mode="configuration"
+                                            channel={channel}
+                                            models={existingModels}
+                                            target={editing}
+                                            capability={modelCapability || initialValues.capability}
+                                            protocols={protocols}
+                                            disabled={busy || protocolLoading || Boolean(protocolError)}
+                                            onApply={(source, copySkuRoutes) => {
+                                                try {
+                                                    applyConfiguration(copyChannelModelConfiguration(form.getFieldsValue(true), source, protocols, copySkuRoutes));
+                                                    setAutoSource(`完整配置来自 ${source.providerModelKey || source.modelKey}`);
+                                                    setConfigurationChange(null);
+                                                    message.success("完整模型配置已填入，保存后生效");
+                                                } catch (error) {
+                                                    message.warning(error instanceof Error ? error.message : "复制配置失败");
+                                                }
+                                            }}
+                                        />
+                                    </div>
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="模型身份" description="区分产品侧展示标识与上游实际调用 ID。" />
                                         <div className="admin-model-editor-section-content admin-model-identity-grid admin-model-identity-grid-with-icon">
@@ -546,10 +608,10 @@ export function ChannelModelEditor({
                                         <Alert
                                             type="warning"
                                             showIcon
-                                            title={configurationChange === "capability" ? "模型能力已变更" : configurationChange === "protocol" ? "调用协议已变更" : "图片参数已更新"}
+                                            title={configurationChange === "capability" ? "模型能力已变更" : configurationChange === "protocol" ? "调用协议已变更" : modelCapability === "image" ? "图片参数已更新" : "模型参数已更新"}
                                             description={
                                                 configurationChange === "parameters"
-                                                    ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。"
+                                                    ? "模型参数已更新，请检查规格价格是否仍适用。金额与计费方式保持不变。"
                                                     : "引用与参数已恢复为新协议默认值，不兼容的规格条件已清除。金额与计费方式保持不变，请在保存前核对。"
                                             }
                                         />
@@ -636,7 +698,7 @@ export function ChannelModelEditor({
                                             type="warning"
                                             showIcon
                                             title="请核对定价"
-                                            description={configurationChange === "parameters" ? "图片参数已随模型更新，请检查规格价格是否仍适用。金额与计费方式保持不变。" : "能力或协议已变更。请重新检查规格条件、计费方式和金额；不会自动转换价格单位。"}
+                                            description={configurationChange === "parameters" ? "模型参数已更新，请检查规格价格是否仍适用。金额与计费方式保持不变。" : "能力或协议已变更。请重新检查规格条件、计费方式和金额；不会自动转换价格单位。"}
                                             action={
                                                 <Button size="small" onClick={() => setConfigurationChange(null)}>
                                                     已核对
@@ -644,66 +706,28 @@ export function ChannelModelEditor({
                                             }
                                         />
                                     )}{" "}
-                                    <section className="admin-model-assist-card" aria-label="从现有模型复制价格">
-                                        <header className="admin-model-assist-heading">
-                                            <Copy size={16} aria-hidden />
-                                            <div>
-                                                <h2>从现有模型复制价格</h2>
-                                                <p>选择来源渠道与模型，复制整套售价、成本和规格条件。</p>
-                                            </div>
-                                        </header>
-                                        <div className="admin-model-assist-content">
-                                            <div className="admin-model-price-source-fields">
-                                                <div>
-                                                    <span className="admin-model-assist-label">来源渠道</span>
-                                                    <Select className="admin-model-assist-select" aria-label="价格来源渠道" value={priceSourceChannel} options={priceSourceChannels} disabled={busy} onChange={setPriceSourceChannel} />
-                                                </div>
-                                                <div>
-                                                    <span className="admin-model-assist-label">来源模型</span>
-                                                    <Select
-                                                        className="admin-model-assist-select"
-                                                        aria-label="价格来源模型"
-                                                        showSearch={{ optionFilterProp: "label" }}
-                                                        allowClear
-                                                        placeholder="选择相同能力的现有模型"
-                                                        notFoundContent="此渠道暂无相同能力的模型"
-                                                        value={priceSourceId}
-                                                        loading={priceSourcesLoading}
-                                                        disabled={busy || priceSourcesLoading}
-                                                        options={priceSources
-                                                            .filter((item) => item.capability === modelCapability && item.id !== editing?.id)
-                                                            .map((item) => ({ value: item.id, label: `${item.channelLabel || item.providerModelKey || item.modelKey} · ${item.protocol || "未配置协议"} · ${item.priceTiers?.length || 1} 个价格档` }))}
-                                                        onChange={setPriceSourceId}
-                                                    />
-                                                </div>
-                                            </div>
-                                            {priceSourcesError && <Alert type="error" title="读取价格来源失败" description={priceSourcesError} />}
-                                            <footer className="admin-model-assist-footer">
-                                                <p className="admin-model-assist-note">替换当前价格表，保存后生效。</p>
-                                                <Button
-                                                    icon={<Copy size={14} aria-hidden />}
-                                                    disabled={busy || priceSourcesLoading || !priceSourceId}
-                                                    onClick={() => {
-                                                        const source = priceSources.find((item) => item.id === priceSourceId);
-                                                        if (!source) return;
-                                                        try {
-                                                            const next = copyChannelModelPrices(form.getFieldsValue(true), source);
-                                                            form.setFieldValue("priceTiers", next.priceTiers);
-                                                            form.setFieldValue("priceCurrency", next.priceCurrency);
-                                                            protectedFields.current.add("priceTiers");
-                                                            protectedFields.current.add("priceCurrency");
-                                                            dirtyRef.current = true;
-                                                            message.success("价格已复制到表单，保存后生效");
-                                                        } catch (error) {
-                                                            message.warning(error instanceof Error ? error.message : "复制价格失败");
-                                                        }
-                                                    }}
-                                                >
-                                                    复制价格到表单
-                                                </Button>
-                                            </footer>
-                                        </div>
-                                    </section>
+                                    <ChannelModelCopyPicker
+                                        mode="prices"
+                                        channel={channel}
+                                        models={existingModels}
+                                        target={editing}
+                                        capability={modelCapability || initialValues.capability}
+                                        protocols={protocols}
+                                        disabled={busy}
+                                        onApply={(source) => {
+                                            try {
+                                                const next = copyChannelModelPrices(form.getFieldsValue(true), source);
+                                                form.setFieldValue("priceTiers", next.priceTiers);
+                                                form.setFieldValue("priceCurrency", next.priceCurrency);
+                                                protectedFields.current.add("priceTiers");
+                                                protectedFields.current.add("priceCurrency");
+                                                dirtyRef.current = true;
+                                                message.success("价格已复制到表单，保存后生效");
+                                            } catch (error) {
+                                                message.warning(error instanceof Error ? error.message : "复制价格失败");
+                                            }
+                                        }}
+                                    />
                                     <section className="admin-model-editor-section">
                                         <SectionHeading title="用户积分价格" description="默认只需填写一个统一价格；需要区分生成方式、质量或尺寸时，再添加规格价格。" />
                                         <div className="admin-model-editor-section-content">

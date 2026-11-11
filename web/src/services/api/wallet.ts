@@ -425,6 +425,11 @@ export function fetchAdminChannelModels(channelId: string) {
     return http.post<ChannelCatalogDiff>(`/admin/channels/${encodeURIComponent(channelId)}/models/fetch`);
 }
 
+/** Uses server-side channel credentials; does not import models or return credentials. */
+export function fetchAdminChannelModelMetadata(channelId: string) {
+    return http.get<{ models: import("@/lib/channel-model-catalog").ChannelModelCatalogItem[] }>(`/admin/channels/${encodeURIComponent(channelId)}/model-metadata`, { timeout: 30_000 });
+}
+
 export function importAdminChannelModels(channelId: string, models: string[]) {
     return http.post<{ models: string[]; added: number }>(`/admin/channels/${encodeURIComponent(channelId)}/models/import`, { models });
 }

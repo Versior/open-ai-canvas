@@ -155,7 +155,7 @@ function hasCatalogCapabilityConfig(item: ChannelModelCatalogItem) {
     return Boolean(item.defaultParameters || item.options || item.supportsImages !== undefined || item.minImages !== undefined || item.maxImages !== undefined);
 }
 
-function catalogCapabilityConfig(item: ChannelModelCatalogItem, protocol: ModelProtocol | undefined, capability: "image" | "video", existing: ModelCapabilityConfig | undefined, isNew: boolean): ModelCapabilityConfig {
+export function catalogCapabilityConfig(item: ChannelModelCatalogItem, protocol: ModelProtocol | undefined, capability: "image" | "video", existing: ModelCapabilityConfig | undefined, isNew: boolean): ModelCapabilityConfig {
     const fallback = defaultModelCapabilityConfig(protocol, item.id);
     const existingProfile = capability === "image" ? existing?.image : existing?.video;
     const config = structuredClone(existingProfile ? existing! : fallback);

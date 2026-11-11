@@ -295,6 +295,22 @@ func RegisterFinanceRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		ok(c, gin.H{"model": adminChannelModel(*item)})
 	})
+	r.GET("/admin/channels/:id/model-metadata", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		if !enforceRateLimit(c, "admin-channel-models-fetch:"+user.ID+":"+c.Param("id"), 10, time.Minute) {
+			return
+		}
+		models, err := svc.AdminChannelModelMetadata(c.Request.Context(), user, c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"models": models})
+	})
 	r.POST("/admin/channels/:id/models/fetch", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

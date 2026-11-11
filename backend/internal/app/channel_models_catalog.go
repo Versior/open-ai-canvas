@@ -82,6 +82,22 @@ func (s *Service) PreviewAdminChannelModels(ctx context.Context, actor *model.Us
 	return s.fetchAdminChannelModelCatalog(ctx, actor, channelID)
 }
 
+// AdminChannelModelMetadata returns upstream declarations without importing or altering models.
+func (s *Service) AdminChannelModelMetadata(ctx context.Context, actor *model.User, channelID string) ([]ChannelModelCatalogItem, error) {
+	if err := s.RequireAdmin(actor); err != nil {
+		return nil, err
+	}
+	channel, err := s.adminSystemChannel(channelID)
+	if err != nil {
+		return nil, err
+	}
+	headers, err := ParseOutboundHeadersJSON(channel.HeadersJSON)
+	if err != nil {
+		return nil, err
+	}
+	return s.FetchChannelModelCatalog(ctx, actor, ChannelModelsRequest{BaseURL: channel.BaseURL, APIKey: channel.APIKey, APIFormat: channel.APIFormat, ProxyURL: channel.ProxyURL, Headers: headers})
+}
+
 // ImportAdminChannelModels 只导入管理员明确选择、且仍存在于上游目录中的模型。
 func (s *Service) ImportAdminChannelModels(ctx context.Context, actor *model.User, channelID string, selected []string) (*AdminChannelModelFetchResult, error) {
 	if err := s.RequireAdmin(actor); err != nil {

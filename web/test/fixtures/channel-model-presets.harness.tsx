@@ -53,10 +53,15 @@ async function enterModelId(id: string, value: string) {
         input.dispatchEvent(new dom.Event("input", { bubbles: true }));
     });
 }
-async function chooseOption(label: string, option: string) {
+async function chooseOption(label: string, option: string, search = "") {
     const input = document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
     expect(input).toBeDefined();
     await act(async () => input.parentElement!.dispatchEvent(new dom.MouseEvent("mousedown", { bubbles: true })));
+    if (search)
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(dom.HTMLInputElement.prototype, "value")!.set!.call(input, search);
+            input.dispatchEvent(new dom.Event("input", { bubbles: true }));
+        });
     await settle();
     const choice = Array.from(document.querySelectorAll<HTMLElement>(".ant-select-item-option")).find((item) => item.textContent?.includes(option));
     expect(choice).toBeDefined();
@@ -461,4 +466,217 @@ test("real picker shows model parameters without supplier choices or external li
     expect(host.textContent).toContain("图片输入不代表图片生成能力");
     expect(button("应用预设到表单")).toBeUndefined();
     expect(applied).toHaveLength(1);
+});
+
+test("full configuration copy overwrites an existing model through the update API and never routes to the source", async () => {
+    await act(async () =>
+        root.render(
+            <App>
+                <div />
+            </App>,
+        ),
+    );
+    const protocols = [{ value: "chat-completion", label: "Chat", capability: "text" as const, create: "POST /v1/chat/completions", contentType: "application/json", media: "url" }];
+    const base = {
+        channelId: "test",
+        icon: "",
+        capability: "text" as const,
+        protocol: "chat-completion",
+        billingMode: "token" as const,
+        unitPriceMicrocredits: 0,
+        inputTokenPriceMicrocredits: 0,
+        outputTokenPriceMicrocredits: 0,
+        cachedTokenPriceMicrocredits: 0,
+        cacheWriteTokenPriceMicrocredits: 0,
+        priceConfigured: true,
+        enabled: true,
+        priceVersion: 1,
+        priceTiers: [],
+        createdAt: "",
+        updatedAt: "",
+    };
+    const source = {
+        ...base,
+        id: "copy-source",
+        modelKey: "source",
+        providerModelKey: "source-upstream",
+        displayName: "来源配置",
+        description: "复制说明",
+        tags: [{ text: "推荐", color: "green" }],
+        inputTokenPriceMicrocredits: 3_000_000,
+        outputTokenPriceMicrocredits: 12_000_000,
+        priceCurrency: "USD" as const,
+        capabilityConfig: defaultModelCapabilityConfig("chat-completion"),
+    };
+    source.capabilityConfig.text!.contextWindowTokens = 64_000;
+    const target = {
+        ...base,
+        id: "copy-target",
+        modelKey: "target-product",
+        providerModelKey: "target-upstream",
+        channelLabel: "保留渠道名",
+        displayName: "目标配置",
+        protocol: undefined,
+        enabled: false,
+        capabilityConfig: { version: 1, text: { ...defaultModelCapabilityConfig().text!, contextWindowTokens: 128_000 } },
+    };
+    let payload: any;
+    let releaseSuggestion: (() => void) | undefined;
+    apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion"))
+            return new Promise((resolve) => {
+                releaseSuggestion = () => resolve({ data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} });
+            });
+        expect(config.method).toBe("patch");
+        expect(config.url).toBe("/admin/channels/test/models/copy-target");
+        payload = config.data;
+        return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
+    }) as typeof apiClient.request;
+    await act(async () =>
+        root.render(
+            <App>
+                <ChannelModelEditor
+                    channel={{ id: "test", name: "测试", baseUrl: "https://example.invalid", apiKey: "", apiFormat: "openai", models: [] }}
+                    existingModels={[source, target]}
+                    editing={target}
+                    protocols={protocols}
+                    protocolLoading={false}
+                    protocolError=""
+                    onRetryProtocols={() => {}}
+                    onClose={() => {}}
+                    onSaved={async () => {}}
+                />
+            </App>,
+        ),
+    );
+    await chooseOption("配置来源模型", "source-upstream");
+    expect(document.body.textContent).toContain("将替换");
+    expect(document.body.textContent).toContain("目标模型标识、上游 ID");
+    await act(async () => button("复制完整配置到表单").click());
+    expect(payload).toBeUndefined();
+    expect(document.querySelector<HTMLInputElement>("input#modelKey")!.value).toBe(target.modelKey);
+    expect(releaseSuggestion).toBeDefined();
+    await act(async () => releaseSuggestion!());
+    await settle();
+    await act(async () => button("保存修改").click());
+    await settle();
+    expect(payload).toMatchObject({
+        modelKey: "target-product",
+        providerModelKey: "target-upstream",
+        channelLabel: "保留渠道名",
+        enabled: false,
+        displayName: source.displayName,
+        tags: source.tags,
+        description: source.description,
+        protocol: source.protocol,
+        protocolSelectionExplicit: true,
+        priceCurrency: "USD",
+        capabilityConfig: { text: { contextWindowTokens: 64_000 } },
+    });
+    expect(payload.priceTiers[0]).toMatchObject({ providerModelKey: "target-upstream", inputTokenPriceMicrocredits: 3_000_000, outputTokenPriceMicrocredits: 12_000_000 });
+});
+
+test("choosing a metadata preset automatically fills blank identifiers and parameters without a save", async () => {
+    await act(async () =>
+        root.render(
+            <App>
+                <div />
+            </App>,
+        ),
+    );
+    const protocols = [{ value: "chat-completion", label: "Chat", capability: "text" as const, create: "POST /v1/chat/completions", contentType: "application/json", media: "url" }];
+    let saves = 0;
+    apiClient.request = (async () => {
+        saves++;
+        return { data: { code: 0, data: {}, msg: "ok" }, status: 200, headers: {} };
+    }) as typeof apiClient.request;
+    await act(async () =>
+        root.render(
+            <App>
+                <ChannelModelEditor
+                    channel={{ id: "test", name: "测试", baseUrl: "https://example.invalid", apiKey: "", apiFormat: "openai", models: [] }}
+                    editing={null}
+                    protocols={protocols}
+                    protocolLoading={false}
+                    protocolError=""
+                    onRetryProtocols={() => {}}
+                    onClose={() => {}}
+                    onSaved={async () => {}}
+                />
+            </App>,
+        ),
+    );
+    await settle();
+    await chooseOption("选择模型资料预设", "Gemini 2.5 Flash · gemini-2.5-flash", "gemini-2.5-flash");
+    expect(document.querySelector<HTMLInputElement>("input#modelKey")!.value).toBe("gemini-2.5-flash");
+    expect(document.querySelector<HTMLInputElement>("input#providerModelKey")!.value).toBe("gemini-2.5-flash");
+    expect(document.querySelector<HTMLInputElement>("input#displayName")!.value).toBe("Gemini");
+    expect(document.body.textContent).toContain("1,048,576");
+    expect(saves).toBe(0);
+    await enterModelId("modelKey", "my-product-alias");
+    await enterModelId("providerModelKey", "");
+    await chooseOption("选择模型资料预设", "Gemini 2.5 Flash · gemini-2.5-flash", "gemini-2.5-flash");
+    expect(document.querySelector<HTMLInputElement>("input#modelKey")!.value).toBe("my-product-alias");
+    expect(document.querySelector<HTMLInputElement>("input#providerModelKey")!.value).toBe("gemini-2.5-flash");
+    expect(saves).toBe(0);
+});
+
+test("existing models can identify upstream video parameters and save them without automatic pricing changes", async () => {
+    await act(async () =>
+        root.render(
+            <App>
+                <div />
+            </App>,
+        ),
+    );
+    const protocols = [{ value: "video", label: "Video", capability: "video" as const, create: "POST /v1/videos", contentType: "application/json", media: "url" }];
+    const draft = initialChannelModelValues(null, protocols);
+    Object.assign(draft, { modelKey: "video-product", providerModelKey: "video-upstream", capability: "video", protocol: "video", capabilityConfig: defaultModelCapabilityConfig("video"), displayName: "我的视频" });
+    draft.priceTiers[0].unitPrice = 17;
+    let payload: any;
+    let reads = 0;
+    apiClient.request = (async (config) => {
+        if (config.method === "get") {
+            expect(config.url).toBe("/admin/channels/test/model-metadata");
+            reads++;
+            return {
+                data: {
+                    code: 0,
+                    data: { models: [{ id: "video-upstream", modelType: "video", options: { durationSeconds: [{ value: "5" }, { value: "12" }], resolution: [{ value: "1080p" }] }, defaultParameters: { durationSeconds: "12", resolution: "1080p" } }] },
+                    msg: "ok",
+                },
+                status: 200,
+                headers: {},
+            };
+        }
+        payload = config.data;
+        return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
+    }) as typeof apiClient.request;
+    await act(async () =>
+        root.render(
+            <App>
+                <ChannelModelEditor
+                    channel={{ id: "test", name: "测试", baseUrl: "https://example.invalid", apiKey: "", apiFormat: "openai", models: [] }}
+                    editing={null}
+                    draftValues={draft}
+                    protocols={protocols}
+                    protocolLoading={false}
+                    protocolError=""
+                    onRetryProtocols={() => {}}
+                    onClose={() => {}}
+                    onSaved={async () => {}}
+                />
+            </App>,
+        ),
+    );
+    await act(async () => button("自动识别并填写").click());
+    await settle();
+    expect(reads).toBe(1);
+    expect(payload).toBeUndefined();
+    expect(document.body.textContent).toContain("上游模型目录 video-upstream");
+    await act(async () => button("添加模型").click());
+    await settle();
+    expect(payload.capabilityConfig.video).toMatchObject({ duration: { values: [5, 12], default: 12 }, resolutions: ["1080p"], defaultResolution: "1080p" });
+    expect(payload).toMatchObject({ modelKey: "video-product", providerModelKey: "video-upstream", displayName: "我的视频" });
+    expect(payload.priceTiers[0].unitPriceMicrocredits).toBe(17_000_000);
 });

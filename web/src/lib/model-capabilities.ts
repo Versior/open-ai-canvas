@@ -553,9 +553,10 @@ export function defaultModelCapabilityConfig(protocol?: ModelProtocol, model = "
     return { version: 1, text, image: defaultImageCapabilityConfig(protocol, model), video };
 }
 
-export function pluginWorkflowCapabilityConfig(protocol: ModelProtocol, workflow: ModelProtocolWorkflow): ModelCapabilityConfig | undefined {
+export function pluginWorkflowCapabilityConfig(protocol: ModelProtocol, workflow: ModelProtocolWorkflow, existing?: ModelCapabilityConfig): ModelCapabilityConfig | undefined {
     if (workflow.capability !== "image" && workflow.capability !== "video") return undefined;
-    const fallback = defaultModelCapabilityConfig(protocol, workflow.id);
+    const defaults = defaultModelCapabilityConfig(protocol, workflow.id);
+    const fallback = existing ? { ...defaults, ...existing } : defaults;
     const fields: WorkflowVideoFieldLike[] = workflow.parameters.map((parameter) => ({
         fieldName: parameter.name,
         source: parameter.mapping,

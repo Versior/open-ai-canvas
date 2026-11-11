@@ -42,6 +42,25 @@ export function copyChannelModelPrices(values: ChannelModelFormValues, source: C
     return next;
 }
 
+export function copyChannelModelConfiguration(values: ChannelModelFormValues, source: ChannelModel, protocols: ModelProtocolDefinition[], copySkuRoutes = false): ChannelModelFormValues {
+    validateChannelModelProtocol(source.capability, source.protocol, protocols);
+    const configuration = structuredClone(initialChannelModelValues(source, protocols));
+    const sourceUpstream = normalizeUpstreamModelKey(source.providerModelKey || source.modelKey);
+    const next = {
+        ...configuration,
+        modelKey: values.modelKey,
+        providerModelKey: values.providerModelKey,
+        channelLabel: values.channelLabel,
+        enabled: values.enabled,
+        priceTiers: configuration.priceTiers.map((tier) => ({
+            ...tier,
+            providerModelKey: copySkuRoutes && normalizeUpstreamModelKey(tier.providerModelKey) !== sourceUpstream ? tier.providerModelKey : "",
+        })),
+    };
+    validateChannelModelPrices(next);
+    return next;
+}
+
 export function autoConfigureChannelModel(values: ChannelModelFormValues, models: ChannelModel[], protocols: ModelProtocolDefinition[], presets: ModelMetadataPreset[], protectedFields = new Set<string>()) {
     const id = values.providerModelKey?.trim() || values.modelKey.trim();
     const ranked = models
