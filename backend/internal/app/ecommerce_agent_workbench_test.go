@@ -503,9 +503,12 @@ func TestEcommerceWorkbenchPlanningEnforcesProductClaimEvidence(t *testing.T) {
 		// dropped) and listed after the marker; the paid plan still succeeds.
 		{name: "unverified certification", copy: "看见设计\nCE认证", wantReject: true},
 		{name: "unverified health claim", copy: "看见设计\n无毒安心", wantReject: true},
-		// Inferred product information stays and is listed for seller review.
+		// Inferred facts stay pending until the seller confirms or removes them.
 		{name: "inferred specification", copy: "看见设计\n续航24小时"},
 		{name: "inferred function", copy: "看见设计\n主动降噪"},
+		{name: "inferred prompt function", prompt: "展示耳机主动降噪功能", uncertain: []string{}},
+		{name: "inferred prompt material", prompt: "商品瓶身使用玻璃材质", uncertain: []string{}},
+		{name: "scene and portrait material are not product facts", prompt: "玻璃窗旁展示商品，人物避免玻璃眼珠与塑料高光"},
 		{name: "seller supplied specification", copy: "续航24小时", specifications: "续航24小时"},
 		{name: "internal visual exploration", prompt: "以抽象光影和轮廓线进行内部视觉探索，不还原或暗示真实内部结构、零件或功能。", uncertain: []string{"内部结构尚未确认，仅用于内部视觉探索，等待人工审阅"}},
 	}
@@ -545,9 +548,16 @@ func TestEcommerceWorkbenchPlanningEnforcesProductClaimEvidence(t *testing.T) {
 			if strings.HasPrefix(tc.name, "inferred") {
 				var got model.EcommercePlan
 				_ = json.Unmarshal([]byte(stringValue(result["text"])), &got)
-				claim := strings.Split(tc.copy, "\n")[1]
-				if got.Images[0].Copy != tc.copy || !strings.Contains(strings.Join(got.QualityChecks, "\n"), "发布前请商家核对") {
-					t.Fatalf("inferred product information was not kept for review: copy=%q checks=%v claim=%s", got.Images[0].Copy, got.QualityChecks, claim)
+				claim := tc.copy + tc.prompt
+				if (tc.copy != "" && got.Images[0].Copy != tc.copy) || len(got.UncertainFacts) == 0 {
+					t.Fatalf("inferred product information bypassed confirmation: copy=%q uncertain=%v claim=%s", got.Images[0].Copy, got.UncertainFacts, claim)
+				}
+			}
+			if len(tc.uncertain) > 0 {
+				var got model.EcommercePlan
+				_ = json.Unmarshal([]byte(stringValue(result["text"])), &got)
+				if len(got.UncertainFacts) == 0 {
+					t.Fatal("planning silently discarded facts requiring review")
 				}
 			}
 		})

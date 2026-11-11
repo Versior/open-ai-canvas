@@ -4,6 +4,7 @@ import { STUDIO_DESIGN_TONE_IDS, STUDIO_DESIGN_TONES, STUDIO_PLAN_SCOPES, studio
 import { extractStudioJson } from "./dossier-tasks";
 import { STUDIO_PREP_LIMITS, studioAskOf, studioDirectionOf, studioPrepPromptLines } from "./plan-prep";
 import { studioAutoColorIssue, studioDesignKnowledgeLines } from "./design-knowledge";
+import { studioPlanImageLines, type StudioPlanImages } from "./detail-plan-tasks";
 import { STUDIO_FACT_GROUP_LABEL, STUDIO_VIEW_LABEL, studioFactUsable, type StudioAsk, type StudioDirection, type StudioPlanScope, type StudioProduct } from "./types";
 
 /**
@@ -82,15 +83,14 @@ function scopeLabel(product: StudioProduct, scope: StudioPlanScope | undefined) 
 }
 
 /** images 是随任务附带的商品图张数和参考图张数。 */
-export function buildDirectionsPrompt(product: StudioProduct, scope: StudioPlanScope | undefined, images?: { photos: number; references: number }) {
+export function buildDirectionsPrompt(product: StudioProduct, scope: StudioPlanScope | undefined, images?: StudioPlanImages) {
     const platform = ecommercePlatform(product.platform)?.name || "电商平台";
     const brief = product.brief;
-    const imageNote = images && images.photos + images.references > 0 ? [`附图：前 ${images.photos} 张是商品图（外观唯一依据）${images.references ? `，后 ${images.references} 张是卖家给的参考图（学它的设计语言，不照搬商品和文字）` : ""}。`] : [];
     return [
         `为这件商品想 3 个明显不同的视角方案，卖家会挑一个，再按它排${platform}的${scopeLabel(product, scope)}。`,
         "",
         ...productLines(product),
-        ...imageNote,
+        ...studioPlanImageLines(images),
         ...studioDesignKnowledgeLines(product),
         ...studioPrepPromptLines({ asks: brief.prep?.asks || [], directions: [] }),
         "",

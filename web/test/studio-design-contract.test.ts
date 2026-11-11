@@ -100,7 +100,7 @@ test("single-image corrections retain the actual selected candidate and product 
     expect(compiled.prompt).toContain("图2是待修正的当前成品");
     const limited = compileStudioPrompt({
         product,
-        shot: source,
+        shot: { ...source, role: "detail-model", visual: "模特佩戴商品，商品清楚可见" },
         model: "gpt-image",
         maxReferences: 2,
         revisionResourceId: "artwork",

@@ -1021,7 +1021,7 @@ describe("真实电商页面生命周期", () => {
         });
         expect(host.querySelector<HTMLTextAreaElement>('[aria-label="电商创作输入"]')?.value).toBe("保留这次商品需求");
     });
-    test("点击知识推荐方向只提交一次隐藏策划，并在任务结束后直接提交图片", async () => {
+    test.each([false, true])("点击知识推荐方向只提交一次策划，待确认事实=%s 时决定是否自动生图", async (pendingFacts) => {
         draft = { ...draft, references: [], noText: true, instruction: "为蓝色耳机创作" };
         const post = spyOn(http, "post").mockImplementation((async (path: string) => {
             if (path === "/ecommerce/projects") {
@@ -1103,7 +1103,7 @@ describe("真实电商页面生命周期", () => {
         const plan = {
             productSummary: "蓝色耳机",
             confirmedFacts: [],
-            uncertainFacts: [],
+            uncertainFacts: pendingFacts ? ["容量待确认"] : [],
             qualityChecks: [],
             visualStrategy: "按已选方向展示商品",
             images: [
@@ -1135,6 +1135,13 @@ describe("真实电商页面生命周期", () => {
             observers.get(id)?.forEach((listener) => listener(done));
         });
         expect(errors).toEqual([]);
+        if (pendingFacts) {
+            expect(images).not.toHaveBeenCalled();
+            expect(host.textContent).toContain("资料待确认");
+            expect(sessions.peekEcommerceWorkspace(scope)?.plan?.uncertainFacts).toEqual(["容量待确认"]);
+            expect(paidSubmissions).toHaveLength(2);
+            return;
+        }
         if (!images.mock.calls.length) throw new Error(host.querySelector(".commerce-assistant-status")?.textContent || JSON.stringify([...observers.keys()]));
         expect(images).toHaveBeenCalledTimes(1);
         expect(host.querySelector('.commerce-output-card[data-status="working"]')).not.toBeNull();

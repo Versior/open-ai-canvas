@@ -16,7 +16,7 @@ import (
 // absolute safety promises); they are always removed unless the seller
 // supplied them. Soft claims (material, capacity, function, specs) may be
 // written by the Agent as inferred product-information copy and are listed
-// for the seller to verify before publishing.
+// for the seller to verify before generation.
 var ecommerceClaimPatterns = []struct {
 	label   string
 	pattern *regexp.Regexp
@@ -272,7 +272,7 @@ func ecommerceDropCopyClaim(copy string, start, end int) string {
 func ecommerceInferredClaims(draft EcommerceDraft, page model.EcommercePlanTask) []string {
 	verified := ecommercePageEvidence(draft, page)
 	found := []string{}
-	for _, text := range []string{page.Copy, page.VerifiedClaims} {
+	for field, text := range []string{page.Copy, page.VerifiedClaims, strings.Split(page.Prompt, ecommerceUnverifiedClaimMarker)[0]} {
 		for _, check := range ecommerceClaimPatterns {
 			if check.hard {
 				continue
@@ -285,6 +285,9 @@ func ecommerceInferredClaims(draft EcommerceDraft, page model.EcommercePlanTask)
 			}
 		}
 		for _, loc := range ecommerceSpecificMaterial.FindAllStringIndex(text, -1) {
+			if field == 2 && !ecommerceMaterialRefersToProduct(text, loc[0]) {
+				continue
+			}
 			claim := strings.TrimSpace(text[loc[0]:loc[1]])
 			if !ecommerceClaimIsNegated(text, loc[0]) && !ecommerceClaimHasEvidence(verified, normalizeEcommerceClaim(claim)) {
 				found = append(found, claim)

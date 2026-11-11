@@ -11,16 +11,22 @@ export const STUDIO_DESIGN_KNOWLEDGE_VERSION = catalog.version;
 export const STUDIO_POSTER_DESIGN_RULE = catalog.posterDesign.principles;
 export const STUDIO_HERO_DESIGN_RULE = catalog.posterDesign.hero;
 
-export function studioPosterDesignLines(shot: Pick<StudioShot, "role" | "layout">, hasCopy: boolean): string[] {
+export function studioPosterDesignLines(shot: Pick<StudioShot, "role" | "layout">, hasCopy: boolean, planned = false): string[] {
     const layout = shot.layout;
     const hero = ["detail-hero", "detail-campaign", "main-selling"].includes(shot.role) || layout === "poster" || layout === "color-block" || layout === "cutout";
     const evidence = ["callout", "macro", "grid", "material-board"].includes(layout || "") || /closeup|material|main-detail/.test(shot.role);
     const information = ["spec", "data", "icons", "checklist", "timeline", "compare"].includes(layout || "") || /spec|size|steps|compare/.test(shot.role);
     return [
-        hasCopy ? STUDIO_POSTER_DESIGN_RULE : "无字画面先确定要展示的形态或使用关系，再用主体尺度、光影与负空间形成一个视觉焦点；摄影承担信息，辅助元素支持主体，保留系列色板与光影体系。保持无字，不添加题签或标签。",
+        hasCopy
+            ? planned
+                ? "执行本屏蓝图的摄影、字块与图形关系，建立一个主焦点；说明贴近对应证据，组内靠近、组间留空。沿用系列字体、色板与光影，手机端文字清楚。不另套默认版式，不增加无关道具与文案。"
+                : STUDIO_POSTER_DESIGN_RULE
+            : "无字画面先确定要展示的形态或使用关系，再用主体尺度、光影与负空间形成一个视觉焦点；摄影承担信息，辅助元素支持主体，保留系列色板与光影体系。保持无字，不添加题签或标签。",
         hero
             ? hasCopy
-                ? STUDIO_HERO_DESIGN_RULE
+                ? planned
+                    ? "主视觉页让标题词组与商品轮廓形成清楚的阅读入口；尺度、分行、裁切和负空间按本屏蓝图执行，辅助元素不抢主体。"
+                    : STUDIO_HERO_DESIGN_RULE
                 : "无字主视觉页：用真实形态的尺度差、轮廓与负空间或真实使用动作形成停留入口；主摄影建立商品识别，辅助景别与空间纵深按内容选用，不强加文字、标签和拼贴。"
             : evidence
               ? "证据页：让一个真实可见细节解释本屏结论，完整轮廓在需要时作小比例定位；微距、局部放大或拼版按证据选择，避免同一整件商品缩小后复制多次。标签与证据就近对应，必要的引线落在实际部位；细节与说明共享网格和间距。"

@@ -809,13 +809,11 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                     setStage(failure);
                     return;
                 }
-                if (autoStartRef.current) {
+                if (autoStartRef.current && !nextPlan.uncertainFacts.length) {
                     autoStartRef.current = false;
                     autoStartTaskRef.current = "";
                     setStage("商品分析与策划完成，正在提交图片任务");
-                    const safePlan = nextPlan.uncertainFacts.length ? excludeCommerceFacts(nextPlan) : nextPlan;
-                    setPlan(safePlan);
-                    void generationRef.current?.(safePlan, nextDraft);
+                    void generationRef.current?.(nextPlan, nextDraft);
                 } else {
                     autoStartRef.current = false;
                     setStage(nextPlan.uncertainFacts.length ? "商品分析完成，请先核对待确认事实" : "商品分析完成，策划方案已保存，请审阅后确认生成");
@@ -1419,6 +1417,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         try {
             assertCommercePlanCurrent(selectedPlan, selectedDraft);
             selectedPlan = groundCommerceClaims(selectedPlan, selectedDraft);
+            assertCommerceClaimsGrounded(selectedPlan, selectedDraft);
             validateCommerceReferencePlan(selectedPlan, selectedDraft);
         } catch (cause) {
             message.error(errorText(cause));
@@ -1616,7 +1615,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         if (!originalImage) throw new Error("原图片方案已更新，请重新打开图片编辑");
         const source = originalImage.sourceDraft || projectDraft(originalProject);
         edited = manuallyEditedCommerceImage(originalImage, edited);
-        assertCommerceClaimsGrounded({ ...plan, images: [edited] }, source, { hardOnly: true });
+        assertCommerceClaimsGrounded({ ...plan, images: [edited] }, source);
         const profile = modelCapabilityConfigFor(config, edited.imageModel).image;
         const refs = commerceImageReferences(source, edited, Math.max(0, originalImage.referenceScreen ? originalImage.referenceScreen.screenIndex - 1 : plan.images.findIndex((image) => image.id === edited.id)), false);
         if (!imageModels.includes(edited.imageModel) || !profile) throw new Error("该模型不能接收本图所需商品素材，请选择支持的模型");

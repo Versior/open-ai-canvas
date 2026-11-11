@@ -67,7 +67,7 @@ export const STUDIO_SHOOTINGS: { id: StudioShooting; label: string; prompt: stri
     { id: "auto", label: "按出图类型", prompt: "" },
     { id: "studio", label: "纯商品棚拍", prompt: "纯商品棚拍：无缝背景，不放生活道具，光线干净可控。" },
     { id: "lifestyle", label: "生活场景", prompt: "放进真实的生活场景里拍摄，环境与商品用途一致，道具不超过 3 件。" },
-    { id: "model", label: "模特穿搭/使用", prompt: "画面出现一位成年模特自然地穿戴或使用这件商品，商品清晰完整，是画面焦点；版型、颜色和细节与商品图一致。" },
+    { id: "model", label: "模特穿搭/使用", prompt: "模特自然地穿戴或使用这件商品，年龄、身份与体态按所选人物资料、目标人群和本屏蓝图确定；商品清晰完整，是画面焦点，版型、颜色和细节与商品图一致。" },
     { id: "hand", label: "手持展示", prompt: "一只干净自然的手握住或托起商品展示，手部比例真实，不遮挡商品的标识和关键结构。" },
     { id: "flatlay", label: "平铺俯拍", prompt: "垂直俯拍的平铺构图，商品平放在干净的台面上，可以有少量呼应用途的小物件。" },
     { id: "macro", label: "微距特写", prompt: "微距特写，放大材质纹理和做工细节，浅景深。" },

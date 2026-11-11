@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 import { nanoid } from "nanoid";
-import { canonicalize } from "json-canonicalize";
 import { create } from "zustand";
 import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
@@ -12,6 +11,8 @@ import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResu
 import { buildAskPrompt, buildDirectionsPrompt, parseAsks, parseDirections } from "@/lib/ecommerce-studio/plan-prep-tasks";
 import { buildStudioImageGeneration, compileStudioShot, locateStudioShot, studioImageInput, type StudioShotRef } from "@/lib/ecommerce-studio/generation-input";
 import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
+import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection";
 import { patchStudioShot, studioAttemptActive, studioShotPreview, studioGenerationSource } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioActivePlan, studioPlanScopeOf, studioSingleTargets, trimStudioRuns } from "@/lib/ecommerce-studio/runs";
 import { studioFactUsable, type StudioAsk, type StudioAttempt, type StudioAttemptStatus, type StudioDirection, type StudioOutput, type StudioPhoto, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
@@ -20,11 +21,13 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { ApiError } from "@/services/api/request";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
+import { emptyEcommerceDraft } from "@/services/api/ecommerce";
 import { isGenerationTaskTerminalError, waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import { workbenchTaskOutputs } from "@/pages/workbench/workbench-batches";
+import { prepareCommerceReferenceViews } from "@/pages/ecommerce/long-reference-media";
 import { useStudioStore } from "./use-studio-store";
 import { studioLayoutGuideReference } from "./studio-layout-guide";
 
@@ -113,18 +116,31 @@ function inputSummary(imageCount: number) {
 
 type ModelConfigInput = Parameters<typeof buildEcommerceAnalysisGeneration>[0];
 
-/**
- * 策划类任务随附的图：商品图让模型看清外观，最多两张；卖家上传的参考图（大牌或爆款截图）再带最多两张，让策划学它的设计语言。
- * 参考图至少给商品图留一个名额；模型不收图时只按表单和档案的文字。
- */
-function planImages(product: StudioProduct, current: ModelConfigInput, textModel: string, withReferences = true) {
+/** 商品身份与设计参考分组传递，容量由当前文本模型决定。 */
+async function planImages(product: StudioProduct, current: ModelConfigInput, textModel: string, withReferences = true, assertCurrent?: () => void) {
     const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
-    const budget = Math.min(4, modelCapabilityConfigFor(current, draft.model).text?.references.maxImages ?? 2);
-    const uploaded = withReferences ? product.references.filter((photo) => photo.resourceId) : [];
-    const referenceCount = Math.min(2, uploaded.length, Math.max(0, budget - 1));
-    const photos = budget > 0 ? studioReferencePhotos(product.photos, Math.min(2, budget - referenceCount)) : [];
-    const references = uploaded.slice(0, referenceCount);
-    return { photos, references, images: [...photos, ...references] };
+    const capacity = modelCapabilityConfigFor(current, draft.model).text?.references.maxImages ?? 2;
+    const selected = studioPlanningImages(product, capacity, withReferences);
+    if (!selected.references.length) return { ...selected, readingViews: undefined };
+    const prepared = await prepareCommerceReferenceViews(
+        {
+            ...emptyEcommerceDraft(),
+            referenceMode: "style",
+            references: selected.photos.map(({ resourceId }) => ({ resourceId, role: "primary" as const })),
+            layoutReferences: selected.references.map(({ resourceId, name, width, height }) => ({ resourceId, role: "style" as const, name, width, height })),
+        },
+        capacity,
+        assertCurrent,
+    );
+    const windows: StudioPhoto[] = prepared.views.map((view) => ({ id: view.resourceId, resourceId: view.resourceId, name: view.name, width: view.width, height: view.height, url: "", view: "other", truth: false, addedAt: "" }));
+    const references = [...selected.references, ...windows];
+    const readingViews = prepared.views.map((view, index) => ({
+        imageIndex: selected.images.length + index + 1,
+        sourceIndex: selected.photos.length + selected.references.findIndex((photo) => photo.resourceId === view.sourceResourceId) + 1,
+        top: view.top,
+        bottom: view.bottom,
+    }));
+    return { ...selected, references, images: [...selected.photos, ...references], readingViews };
 }
 
 /** 策划类任务给服务端的知识检索提示：策划范围（模板套图按模板用途）、单张类型、品类大类和材质。 */
@@ -280,21 +296,24 @@ export function useStudioRunner() {
         (productId: string, textModel: string, options: { revise?: boolean } = {}) =>
             trackAnalysis(productId, "plan", async (): Promise<StudioDetailPlanResult> => {
                 const product = read(productId);
-                const inputFingerprint = canonicalize(studioGenerationSource(product));
+                const inputFingerprint = studioPlanInputSignature(product);
                 const planScope = studioPlanScopeOf(product);
                 if (!planScope) throw new Error("先选择一套模板，再按模板策划");
                 const suite = planScope === "template" ? product.brief.suite : undefined;
                 const targets = planScope === "single" ? studioSingleTargets(product.brief) : undefined;
                 const current = configRef.current;
-                const { photos, references, images } = planImages(product, current, textModel);
+                const assertCurrent = () => {
+                    if (studioPlanInputSignature(read(productId)) !== inputFingerprint) throw new Error("读取参考图期间商品信息或创作要求已修改，请重新策划");
+                };
+                const { photos, references, images, readingViews } = await planImages(product, current, textModel, true, assertCurrent);
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
                 const request: StudioPlanRequest = {
                     scope: planScope,
                     ...(targets ? { targets } : {}),
-                    ...(options.revise ? { previous: studioActivePlan(product) } : {}),
+                    ...(options.revise ? { previous: product.brief[STUDIO_PLAN_FIELD[planScope]] } : {}),
                     ...(!options.revise ? { alternative: studioActivePlan(product) } : {}),
-                    ...(images.length ? { images: { photos: photos.length, references: references.length } } : {}),
+                    ...(images.length ? { images: { photos: photos.length, references: references.length, readingViews } } : {}),
                 };
                 const roles = planScope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, planScope === "main" ? "main" : "detail");
                 const result = await runBackendGenerationTask({
@@ -312,10 +331,10 @@ export function useStudioRunner() {
                 const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);
                 const field = STUDIO_PLAN_FIELD[planScope];
                 const staleMessage = "策划期间商品信息或出图要求已修改，请按当前输入重新策划";
-                if (canonicalize(studioGenerationSource(read(productId))) !== inputFingerprint) throw new Error(staleMessage);
+                if (studioPlanInputSignature(read(productId)) !== inputFingerprint) throw new Error(staleMessage);
                 let outdated = false;
                 update(productId, (value) => {
-                    if (canonicalize(studioGenerationSource(value)) !== inputFingerprint) {
+                    if (studioPlanInputSignature(value) !== inputFingerprint) {
                         outdated = true;
                         return value;
                     }
@@ -337,7 +356,7 @@ export function useStudioRunner() {
             trackAnalysis(productId, "ask", async (): Promise<StudioAsk[]> => {
                 const product = read(productId);
                 const current = configRef.current;
-                const { images } = planImages(product, current, textModel, false);
+                const { images } = await planImages(product, current, textModel, false);
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 const result = await runBackendGenerationTask({
                     mode: "text",
@@ -373,12 +392,12 @@ export function useStudioRunner() {
             trackAnalysis(productId, "directions", async (): Promise<StudioDirection[]> => {
                 const product = read(productId);
                 const current = configRef.current;
-                const { photos, references, images } = planImages(product, current, textModel);
+                const { photos, references, images, readingViews } = await planImages(product, current, textModel);
                 const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
                 const result = await runBackendGenerationTask({
                     mode: "text",
                     expectedUserScope: scope,
-                    prompt: buildDirectionsPrompt(product, studioPlanScopeOf(product), images.length ? { photos: photos.length, references: references.length } : undefined),
+                    prompt: buildDirectionsPrompt(product, studioPlanScopeOf(product), images.length ? { photos: photos.length, references: references.length, readingViews } : undefined),
                     config: generation,
                     referenceImages: images.map(photoReference),
                     streamText: false,

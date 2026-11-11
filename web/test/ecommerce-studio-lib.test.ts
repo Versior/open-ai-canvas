@@ -140,7 +140,7 @@ describe("detail page requested screen count", () => {
         expect(normalizeStudioProduct(product).brief.detailPlan?.requestedScreens).toBe(4);
         const reset = resetStudioBriefParameters(product.brief);
         expect(reset.detailScreens).toBe(4);
-        expect(studioActivePlan({ brief: { ...reset, outputType: "detail-set" } })?.screens).toHaveLength(4);
+        expect(studioActivePlan({ ...product, brief: { ...reset, outputType: "detail-set" } })?.screens).toHaveLength(4);
         product.brief.detailScreens = 6;
         expect(studioActivePlan(product)).toBeUndefined();
         expect(() => createStudioRun(product, ids())).toThrow("先按所选 6 屏完成策划");
@@ -205,7 +205,8 @@ describe("ecommerce studio prompt compiler", () => {
         const shot = plan.shots[0];
         const full = compileStudioPrompt({ product, plan, shot, model: "gpt-image-2" });
         const tight = compileStudioPrompt({ product, plan, shot, model: "gpt-image-2", maxChars: full.prompt.length - 40 });
-        expect(tight.trimmed[0]).toBe("quality");
+        expect(tight.trimmed[0]).toBe("design");
+        expect(tight.layers.some((layer) => layer.id === "quality")).toBe(true);
         expect(tight.prompt.length).toBeLessThanOrEqual(full.prompt.length - 40);
         expect(tight.prompt).toContain("商品真值");
         expect(tight.prompt).toContain("这张图做什么");
@@ -499,6 +500,8 @@ describe("ecommerce studio detail plan", () => {
         expect(createStudioRun(skipped, ids(), "2026-11-01T00:00:00Z").shots.map((shot) => shot.title)).toEqual(["首屏", "容量", "杯盖", "握持", "办公桌", "收尾"]);
         // 不加文字时策划的文案也不进图。
         const textless = { ...product, brief: { ...product.brief, language: "none" as const } };
+        expect(studioActivePlan(textless)).toBeUndefined();
+        textless.brief.detailPlan = parseDetailPlan(reply, textless, studioDetailPlanRoles(textless), { id: "textless", model: "m", createdAt: "" }).plan;
         expect(createStudioRun(textless, ids(), "2026-11-01T00:00:00Z").shots.every((shot) => !shot.headline && !shot.lines.length)).toBe(true);
     });
 
@@ -561,10 +564,10 @@ describe("ecommerce studio detail plan", () => {
         expect(prompt).toContain("candy（童趣糖果）");
         const picked = parseDetailPlan(JSON.stringify({ ...JSON.parse(reply), styleId: "candy" }), auto, roles, { id: "p2", model: "m", createdAt: "" }).plan;
         expect(picked.styleId).toBe("candy");
-        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, detailPlan: picked } })?.styleId).name).toBe("童趣糖果");
+        expect(studioProductStyle(auto, studioActivePlan({ ...auto, brief: { ...auto.brief, detailPlan: picked } })?.styleId).name).toBe("童趣糖果");
         // 没有策划时按品类挑；换成主图套图时详情页的策划不算数；选了具体质感时不收策划挑的。
-        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, detailPlan: undefined } })?.styleId).name).toBe("日系原木");
-        expect(studioProductStyle(auto, studioActivePlan({ brief: { ...auto.brief, outputType: "main-set", detailPlan: picked } })?.styleId).name).toBe("日系原木");
+        expect(studioProductStyle(auto, studioActivePlan({ ...auto, brief: { ...auto.brief, detailPlan: undefined } })?.styleId).name).toBe("日系原木");
+        expect(studioProductStyle(auto, studioActivePlan({ ...auto, brief: { ...auto.brief, outputType: "main-set", detailPlan: picked } })?.styleId).name).toBe("日系原木");
         expect(parseDetailPlan(JSON.stringify({ ...JSON.parse(reply), styleId: "candy" }), product, roles, { id: "p3", model: "m", createdAt: "" }).plan.styleId).toBeUndefined();
         expect(normalizeStudioProduct({ id: "p_style", style: "auto" })!.style).toBe("auto");
         expect(createStudioProduct("p_new").style).toBe("auto");
@@ -619,7 +622,7 @@ describe("ecommerce studio plans for every output type", () => {
         // 主图套图按主图的策划出，详情页的策划不混进来。
         const plannedProduct = { ...product, brief: { ...product.brief, mainPlan: result.plan } };
         expect(studioActivePlan(plannedProduct)?.id).toBe("plan_x");
-        expect(studioActivePlan({ brief: { ...plannedProduct.brief, outputType: "detail-set" } })).toBeUndefined();
+        expect(studioActivePlan({ ...plannedProduct, brief: { ...plannedProduct.brief, outputType: "detail-set" } })).toBeUndefined();
         const run = createStudioRun(plannedProduct, ids(), "2026-11-01T00:00:00Z");
         expect(run.kind).toBe("main");
         expect(run.suite).toMatchObject({ name: "按商品策划", tone: "global-minimal" });

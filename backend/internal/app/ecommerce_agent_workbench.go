@@ -842,8 +842,8 @@ func (s *Service) validateEcommerceWorkbenchResult(userID string, input canvasGe
 				return BadAuthRequest("策划结果去掉违规宣称后没有可上图的文案，请重新策划")
 			}
 		}
-		// Inferred product information (capacity, function, material, specs)
-		// stays on the page and is listed for the seller to verify.
+		// Product claims inferred by the model remain pending; a quality note
+		// cannot replace the seller's confirmation before paid generation.
 		inferred = append(inferred, ecommerceInferredClaims(draft, *image)...)
 	}
 	if draft.ImageType == "sku" {
@@ -859,16 +859,7 @@ func (s *Service) validateEcommerceWorkbenchResult(userID string, input canvasGe
 			}
 		}
 	}
-	if draft.ImageType == "detail" && len(plan.UncertainFacts) > 0 {
-		// Detail pages keep the Agent's inferred product information; the
-		// open questions become items for the seller to verify instead of
-		// being stripped from the copy before generation.
-		inferred = append(inferred, plan.UncertainFacts...)
-		plan.UncertainFacts = []string{}
-	}
-	if inferred = ecommerceUniqueStrings(inferred); len(inferred) > 0 {
-		plan.QualityChecks = append(plan.QualityChecks, "发布前请商家核对 Agent 推断的商品信息（与实物不符请修改该页文案后重新生成）："+strings.Join(inferred, "、"))
-	}
+	plan.UncertainFacts = ecommerceUniqueStrings(append(plan.UncertainFacts, inferred...))
 	if policy, ok := ecommerceagent.PlatformKnowledgeFor(draft.Platform); ok {
 		plan.QualityChecks = append(plan.QualityChecks, "发布前核对站点、类目、成片文字与实物、图片文件规格及商品资质；平台资料适用范围："+policy.Scope)
 		if policy.ID == "etsy" && len(policy.OfficialRules) > 0 {

@@ -33,7 +33,7 @@ export function compileStudioShot(product: StudioProduct, located: StudioLocated
         shot: located.shot,
         model,
         maxChars: profile?.references.promptMaxChars,
-        maxReferences: profile?.references.maxImages || undefined,
+        maxReferences: profile?.references.maxImages,
         revisionResourceId,
         brief,
         ...(located.suite ? { suite: located.suite } : {}),
@@ -57,5 +57,6 @@ export function buildStudioImageGeneration(config: AiConfig, model: string, inpu
     if (!input.compiled.prompt.trim() || !input.compiled.references.some((photo) => photo.resourceId)) throw new Error("保存的生成输入不完整，请重新生成");
     const node = { id: `studio-${shotId}`, type: CanvasNodeType.Image, title: "", width: 0, height: 0, position: { x: 0, y: 0 }, metadata: { model } } as CanvasNodeData;
     const references = studioImageInputCount(input);
-    return buildEcommerceImageGeneration(config, node, { ...DEFAULT_ECOMMERCE_BRIEF, ...input.request }, { textCount: 1, imageCount: references, referenceImageCount: references, videoCount: 0, audioCount: 0, characterCount: 0 }).config;
+    return buildEcommerceImageGeneration({ ...config, systemPrompt: "" }, node, { ...DEFAULT_ECOMMERCE_BRIEF, ...input.request }, { textCount: 1, imageCount: references, referenceImageCount: references, videoCount: 0, audioCount: 0, characterCount: 0 })
+        .config;
 }

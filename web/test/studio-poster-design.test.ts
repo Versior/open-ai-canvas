@@ -50,7 +50,7 @@ test("逐屏美术蓝图和设计元素经策划解析、保存、生成记录�
     expect(compiled.prompt).toContain(visual);
     expect(compiled.prompt).toContain(elements);
     expect(compiled.prompt).toContain(designAnalysis);
-    expect(compiled.prompt).toContain("图像直接解释形态、操作或使用关系");
+    expect(compiled.prompt).toContain("执行本屏蓝图的摄影、字块与图形关系");
     expect(compiled.prompt).not.toContain("5–8:1");
     expect(compiled.prompt).toContain("奶油白底，深棕文字，橙棕强调");
     expect(compiled.prompt).toContain("靠背与坐垫之间有开放间隔");
@@ -64,9 +64,10 @@ test("没有策划的单张海报按所选质感排字，设计标准在裁剪�
     expect(full.prompt).toContain("深底浅字、浅底深字");
     expect(full.prompt).not.toContain("粗体无衬线字体，深色");
     const trimmed = compileStudioPrompt({ product, shot: poster, model: "gpt-image", maxChars: full.prompt.length - 40 });
-    expect(trimmed.trimmed).toContain("quality");
+    expect(trimmed.trimmed).toContain("design");
+    expect(trimmed.layers.some((layer) => layer.id === "quality")).toBe(true);
     expect(trimmed.layers.some((layer) => layer.id === "artwork")).toBe(true);
-    expect(trimmed.layers.some((layer) => layer.id === "design")).toBe(true);
+    expect(trimmed.prompt).toContain("标题用中等字重宋体");
     expect(trimmed.prompt).toContain("阅读入口→商品或使用画面→邻近说明");
     expect(full.layers.find((layer) => layer.id === "copy")?.text).not.toContain("三分之一");
     expect(trimmed.prompt).toContain("「圆润弧背」");

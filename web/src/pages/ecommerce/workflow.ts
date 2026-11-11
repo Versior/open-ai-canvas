@@ -7,7 +7,7 @@ import { resourceStorageKey } from "@/services/api/resources";
 import { createWorkbenchTask } from "@/services/api/workbench";
 import { createEcommerceProject, getEcommerceSkillPrompt, normalizeEcommerceReferenceGroups, saveEcommerceProject, type EcommerceDraft, type EcommercePlan, type EcommerceProject } from "@/services/api/ecommerce";
 import { logicalModelIDForConfig, modelOptionName, resolveModelChannel, type AiConfig } from "@/stores/use-config-store";
-import { plannerPrompt, parsePlannerOutput, assertCommercePlanCurrent, groundCommerceClaims, assertCommerceDetailRhythm } from "./planner";
+import { plannerPrompt, parsePlannerOutput, assertCommercePlanCurrent, assertCommerceClaimsGrounded, groundCommerceClaims, assertCommerceDetailRhythm } from "./planner";
 import { commerceDisplayDirective } from "./display-slots";
 import { selectedCreationRequirements, typeValidation } from "./type-config";
 import { labelOf, languages, resolveAutoImageSize, styles } from "./catalog";
@@ -346,6 +346,7 @@ export async function submitCommerceImages(config: Config, draft: EcommerceDraft
         if (phrase) throw new Error(`第${index + 1}张含高风险宣传词「${phrase}」，请改为有依据的具体描述后再生成`);
     }
     plan = groundCommerceClaims(plan, draft);
+    assertCommerceClaimsGrounded(plan, draft);
     assertCommerceDetailRhythm(plan, draft);
     validateCommerceReferencePlan(plan, draft);
     if (plan.images.length !== draft.count || plan.uncertainFacts.length) throw new Error("请核对策划数量与待确认商品事实后再生成");

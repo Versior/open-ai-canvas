@@ -234,6 +234,8 @@ export type StudioDesignToneId = "global-minimal" | "editorial" | "oriental" | "
 export type StudioDetailPlan = {
     id: string;
     createdAt: string;
+    /** 生成策划时的商品与创作输入；缺失或不匹配时必须重新策划。 */
+    inputSignature?: string;
     /** 策划用的文本模型。 */
     model: string;
     /** 策划思路。 */

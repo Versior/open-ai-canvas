@@ -31,6 +31,7 @@ import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioChannelDesign } from "@/lib/ecommerce-studio/art-direction";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
+import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection";
 import { studioChangeStyle } from "@/lib/ecommerce-studio/product";
 import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, studioScreenCopyIssue, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
 import { studioAnsweredAsks, studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
@@ -218,6 +219,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const planUnit = scope === "template" ? unit : scopeMeta?.unit || "张";
     const planMissing = !activePlan && (scope === "detail" || (scope === "main" && Boolean(text.value)));
     const planField = scope ? STUDIO_PLAN_FIELD[scope] : "detailPlan";
+    const storedPlan = scope ? brief[planField] : undefined;
+    const planOutdated = Boolean(storedPlan && !activePlan);
+    const planningImages = studioPlanningImages(product, modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages ?? 2);
     const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
     // 明确不收图的文本模型识别不了商品：「AI 分析并策划」跳过识别，直接按表单和档案的文字策划。
     const textSeesPhotos = !text.value || modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages !== 0;
@@ -355,6 +359,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     };
     const planDetail = () => {
         const note = brief.planNote?.trim();
+        if (note && storedPlan) return void analyzeAndPlan({ revise: true });
         if (!activePlan) return void analyzeAndPlan();
         // 写了补充调整：按意见改这一版；没写时从头重新策划，先确认会替换改过的内容。
         if (note) return void analyzeAndPlan({ revise: true });
@@ -691,12 +696,15 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                     <span>
                                         {activePlan
                                             ? activePlan.summary || `每一${planUnit}的画面和文案按这件商品写好，点笔形按钮可以修改。`
-                                            : text.value
-                                              ? scope === "template"
-                                                  ? `模板定每${planUnit}讲什么，AI 按这件商品重写画面和文案。`
-                                                  : `先补充信息、选一个视角，AI 再排每一${planUnit}的画面和文案${scope === "single" ? "；直接点生成会先策划再出图" : ""}。`
-                                              : "添加文本模型后可以按商品策划。"}
+                                            : planOutdated
+                                              ? "商品资料、图片或创作要求已变化，请按当前输入重新策划。已生成的图片仍保留原策划。"
+                                              : text.value
+                                                ? scope === "template"
+                                                    ? `模板定每${planUnit}讲什么，AI 按这件商品重写画面和文案。`
+                                                    : `先补充信息、选一个视角，AI 再排每一${planUnit}的画面和文案${scope === "single" ? "；直接点生成会先策划再出图" : ""}。`
+                                                : "添加文本模型后可以按商品策划。"}
                                     </span>
+                                    {text.value && planningImages.notice ? <span>{planningImages.notice}</span> : null}
                                     {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
                                     {activePlan?.concept ? <span>创意主线：{activePlan.concept}</span> : null}
                                     {activePlan?.motifs?.length ? <span>视觉元素：{activePlan.motifs.join(" · ")}</span> : null}
@@ -726,19 +734,21 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                                 ? "分析商品中…"
                                                 : planning
                                                   ? "策划中…"
-                                                  : activePlan
-                                                    ? brief.planNote?.trim()
-                                                        ? "按补充调整重新策划"
-                                                        : pickedDirection
-                                                          ? `按「${pickedDirection.angle}」重新策划`
-                                                          : "重新策划"
-                                                    : pickedDirection
-                                                      ? `按「${pickedDirection.angle}」策划 ${planScreens} ${planUnit}`
-                                                      : product.dossier || !textSeesPhotos
-                                                        ? `AI 策划 ${planScreens} ${planUnit}`
-                                                        : "AI 分析并策划"}
+                                                  : storedPlan && brief.planNote?.trim()
+                                                    ? "按补充调整重新策划"
+                                                    : activePlan
+                                                      ? brief.planNote?.trim()
+                                                          ? "按补充调整重新策划"
+                                                          : pickedDirection
+                                                            ? `按「${pickedDirection.angle}」重新策划`
+                                                            : "重新策划"
+                                                      : pickedDirection
+                                                        ? `按「${pickedDirection.angle}」策划 ${planScreens} ${planUnit}`
+                                                        : product.dossier || !textSeesPhotos
+                                                          ? `AI 策划 ${planScreens} ${planUnit}`
+                                                          : "AI 分析并策划"}
                                         </Button>
-                                        <FillModelPopover imageCount={Math.min(2, truthCount)} purpose="策划" />
+                                        <FillModelPopover imageCount={planningImages.images.length} purpose="策划" />
                                         {planBeforeGenerate ? (
                                             <Button type="link" size="small" disabled={Boolean(blocked) || planning || filling} onClick={() => void generate({ direct: true })}>
                                                 {scope === "template" ? "不策划，按模板直接生成" : "不策划，直接生成"}

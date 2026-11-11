@@ -479,11 +479,19 @@ test("an old plan response cannot replace requirements edited while planning", a
     product.brief.outputType = "detail-set";
     await mountStudio(product);
     let finish!: (result: { text: string }) => void;
+    let started!: () => void;
+    const submitted = new Promise<void>((resolve) => {
+        started = resolve;
+    });
     analysisReply = () =>
         new Promise((resolve) => {
             finish = resolve;
+            started();
         });
     const result = runner.plan(product.id, "test").catch((error) => error);
+    await act(async () => {
+        await submitted;
+    });
     useStudioStore.getState().update(product.id, (value) => ({ ...value, sellerNotes: "new requirements", brief: { ...value.brief, language: "en" } }));
     const text = JSON.stringify({
         screens: Array.from({ length: 10 }, (_, index) => ({ role: index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene", title: "商品展示", headline: "清晰外观", visual: "真实外观", layout: "editorial" })),

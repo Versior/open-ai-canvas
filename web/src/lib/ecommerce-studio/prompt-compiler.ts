@@ -6,6 +6,8 @@ import { STUDIO_COMPOSITIONS } from "./art-direction";
 import { STUDIO_STYLE_TONES, studioTypeInstruction } from "./typography";
 import { studioPosterDesignLines } from "./design-knowledge";
 import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
+import { studioReferencePhotos } from "./reference-selection";
+export { studioReferencePhotos } from "./reference-selection";
 import {
     STUDIO_FACT_GROUP_LABEL,
     STUDIO_VIEW_LABEL,
@@ -112,9 +114,8 @@ export type StudioCompileInput = {
 const DEFAULT_MAX_CHARS = 4000;
 const DEFAULT_MAX_REFERENCES = 4;
 // 真值、构图、色板、文案和用户要求是生成契约；不能为满足长度静默丢掉已选配色。
-const TRIM_ORDER: StudioPromptLayerId[] = ["quality", "category", "set", "lighting", "audience"];
+const TRIM_ORDER: StudioPromptLayerId[] = ["product-design", "design", "artwork", "category"];
 const TRUTH_GROUP_ORDER: StudioFactGroup[] = ["identity", "appearance", "material", "structure", "text", "spec", "package", "usage"];
-const VIEW_ORDER = ["front", "side", "back", "detail", "package", "scene", "other", "tag"] as const;
 
 export function studioModelAdapter(model: string): StudioModelAdapter {
     const name = model.toLowerCase();
@@ -124,13 +125,6 @@ export function studioModelAdapter(model: string): StudioModelAdapter {
     if (/gemini|nano[-_ ]?banana|imagen/.test(name)) return { family: "gemini", label: "Gemini 图像", textRendering: "fair" };
     if (/flux/.test(name)) return { family: "flux", label: "FLUX", textRendering: "weak" };
     return { family: "generic", label: "通用图像模型", textRendering: "fair" };
-}
-
-/** 出图用的参考图：只取外观真值图，正面优先，吊牌这类读文字的图不进生图参考。 */
-export function studioReferencePhotos(photos: StudioPhoto[], maxReferences = DEFAULT_MAX_REFERENCES) {
-    const truth = photos.filter((photo) => photo.truth && photo.view !== "tag");
-    const ordered = [...truth].sort((a, b) => VIEW_ORDER.indexOf(a.view) - VIEW_ORDER.indexOf(b.view));
-    return ordered.slice(0, Math.max(1, maxReferences));
 }
 
 export function studioShotHasCopy(shot: Pick<StudioShot, "headline" | "subline" | "lines">, spec: Pick<StudioShotSpec, "copySlot">) {
@@ -177,9 +171,12 @@ function oneLine(value: string) {
         .join("；");
 }
 
-/** 这张图有没有模特：上身效果镜头，或者表单选了「模特穿搭/使用」拍法。 */
-export function studioShotUsesModel(shot: Pick<StudioShot, "role">, brief?: Pick<StudioBrief, "shooting">) {
-    return shot.role === "detail-model" || brief?.shooting === "model";
+/** 人物按本屏蓝图出现；单张白底和纯商品细节不因全局拍法强塞人物。 */
+export function studioShotUsesModel(shot: Pick<StudioShot, "role"> & Partial<Pick<StudioShot, "visual">>, brief?: Pick<StudioBrief, "shooting">) {
+    if (shot.role === "main-white") return false;
+    if (shot.role === "detail-model") return true;
+    if (shot.visual?.trim()) return shot.visual.split(/[。；\n]/).some((line) => /模特|人物|儿童|孩子|宝宝|婴儿|家长|男孩|女孩|男性|女性|男人|女人|model\b|person\b|child\b/i.test(line) && !/不(?:出现|需要|添加|安排)|无人物|没有人物|纯商品/.test(line));
+    return brief?.shooting === "model";
 }
 
 type CastImageKind = "face" | "figure" | "pose";
@@ -451,7 +448,8 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const family = product.dossier?.family || "generic";
     const spec = studioShotSpec(shot.role, family);
     const adapter = studioModelAdapter(input.model);
-    const capacity = Math.max(1, input.maxReferences || DEFAULT_MAX_REFERENCES);
+    const capacity = Math.max(0, input.maxReferences ?? DEFAULT_MAX_REFERENCES);
+    if (capacity < 1) throw new Error("当前图片模型不支持商品参考图，请选择支持图片参考的模型");
     const revisionOutput = input.revisionResourceId
         ? shot.attempts
               .filter((attempt) => attempt.status === "succeeded")
@@ -471,11 +469,16 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const references = studioReferencePhotos(product.photos, Math.max(1, maxReferences - Math.min(extras, maxReferences - 1)));
     const modelReferences = wantedModel.slice(0, Math.max(0, maxReferences - references.length));
     const styleReferences = wantedStyle.slice(0, Math.max(0, maxReferences - references.length - modelReferences.length));
-    const dropped = [wantedModel.length > modelReferences.length ? "模特参考图" : "", wantedStyle.length > styleReferences.length ? (styleReferences.length ? "多出的参考图" : "参考图") : ""].filter(Boolean);
+    const availableProduct = studioReferencePhotos(product.photos, product.photos.length).length;
+    const dropped = [
+        availableProduct > references.length ? `${availableProduct - references.length}张商品图` : "",
+        wantedModel.length > modelReferences.length ? "模特参考图" : "",
+        wantedStyle.length > styleReferences.length ? (styleReferences.length ? "多出的参考图" : "参考图") : "",
+    ].filter(Boolean);
     const referenceNotice = dropped.length ? `这个模型一次最多带 ${capacity} 张图${revisionReference ? "，已为待修正成品预留一张" : ""}，${dropped.join("和")}没有带上${wantedModel.length > modelReferences.length ? "，模特改用文字描述" : ""}` : undefined;
     const hasCopy = studioShotHasCopy(shot, spec);
     const effective = hasCopy ? studioEffectiveTextMode({ textMode }, adapter) : { mode: textMode };
-    const style = studioProductStyle(product, studioActivePlan({ brief: brief ?? product.brief })?.styleId);
+    const style = studioProductStyle(product, studioActivePlan({ ...product, brief: brief ?? product.brief })?.styleId);
     // 策划过的屏：画面层代替镜头规格的构图、光线、背景和避坑项，免得每件商品都套同一套写法。
     const planned = Boolean(shot.visual?.trim());
     const referenceCount = references.length + modelReferences.length + styleReferences.length;
@@ -485,7 +488,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
             ? { composition: shot.composition, ratio: shot.ratio }
             : undefined;
     const layers: StudioPromptLayer[] = [truthLayer(product, references, styleReferences, brief, modelReferences), goalLayer(product, shot, spec, hasCopy, planned)];
-    if (!spec.neutralBackground && (hasCopy || planned)) layers.push({ id: "artwork", title: "平面设计执行标准", source: "详情页设计方法", text: studioPosterDesignLines(shot, hasCopy).join("\n") });
+    if (!spec.neutralBackground && (hasCopy || planned)) layers.push({ id: "artwork", title: "平面设计执行标准", source: "详情页设计方法", text: studioPosterDesignLines(shot, hasCopy, planned).join("\n") });
     const proof = proofLayer(product, shot);
     if (proof) layers.push(proof);
     if (revisionReference)
@@ -502,7 +505,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     if (planned) layers.push(visualLayer(shot));
     const extra = brief ? briefLayers(brief, hasCopy) : [];
     const shooting = extra.find((layer) => layer.id === "shooting");
-    if (shooting) layers.push(shooting);
+    if (shooting && !planned && !spec.neutralBackground) layers.push(shooting);
     const modelSetting = cast ? modelLayer(cast, modelReferences, references.length) : undefined;
     if (modelSetting) layers.push(modelSetting);
     if (!planned) {

@@ -5,6 +5,7 @@ import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-spec
 import { studioSuiteShotRole } from "./suites";
 import { nextStudioComposition } from "./art-direction";
 import { studioDesignProfile } from "./design-knowledge";
+import { studioPlanInputSignature } from "./plan-input";
 import type { StudioBrief, StudioCompositionId, StudioDetailLayoutId, StudioDetailPlan, StudioPhoto, StudioPlanKind, StudioPlanScope, StudioPlanTarget, StudioProduct, StudioRun, StudioShot, StudioShotRole } from "./types";
 
 /**
@@ -94,12 +95,12 @@ export function studioSingleTargets(brief: Pick<StudioBrief, "outputType" | "mix
     return studioSingleTypes(brief).map((type) => ({ type: type.id, count }));
 }
 
-/** 当前出图类型正在用的策划；单张图的选择和策划时不一样、模板换了一套（或张数变了）时不用。 */
-export function studioActivePlan(product: Pick<StudioProduct, "brief">): StudioDetailPlan | undefined {
+/** 当前商品与创作输入匹配的策划；历史生成组继续使用自己的快照。 */
+export function studioActivePlan(product: StudioProduct): StudioDetailPlan | undefined {
     const scope = studioPlanScopeOf(product);
     if (!scope) return undefined;
     const plan = product.brief[STUDIO_PLAN_FIELD[scope]];
-    if (!plan) return undefined;
+    if (!plan?.inputSignature || plan.inputSignature !== studioPlanInputSignature(product)) return undefined;
     if (scope === "single") return studioSameTargets(plan.targets, studioSingleTargets(product.brief)) ? plan : undefined;
     if (scope === "template") {
         const suite = product.brief.suite;

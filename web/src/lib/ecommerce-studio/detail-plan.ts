@@ -43,9 +43,9 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     maxScreens: STUDIO_SUITE_LIMITS.shots,
     title: 16,
     purpose: 80,
-    visual: 400,
+    visual: 1200,
     /** 这一屏的信息元素：几个图标画什么、引线指向哪里、拼格放什么。 */
-    elements: 200,
+    elements: 600,
     eyebrow: 28,
     headline: 24,
     subline: 40,
@@ -292,7 +292,7 @@ function textList(value: unknown, max: number, length: number) {
 }
 
 /**
- * 读一屏：屏型要认识，其余字段按上限截断。模型给的结果要求画面不为空；
+ * 读一屏：屏型要认识，模型蓝图超长时明确拒绝，避免截掉末尾的关键要求。
  * 读回用户改过的策划时画面可以清空，出图时这一屏改按镜头规格出。
  */
 export function studioPlannedScreenOf(value: unknown, requireVisual = true): StudioPlannedScreen | undefined {
@@ -300,7 +300,9 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
     const record = value as Record<string, unknown>;
     const limits = STUDIO_DETAIL_PLAN_LIMITS;
     const role = typeof record.role === "string" && SCREEN_ROLES.includes(record.role as StudioShotRole) ? (record.role as StudioShotRole) : undefined;
-    const visual = text(record.visual, limits.visual);
+    const visual = typeof record.visual === "string" ? record.visual.trim() : "";
+    const elements = typeof record.elements === "string" ? record.elements.trim() : "";
+    if (requireVisual && (visual.length > limits.visual || elements.length > limits.elements)) throw new Error(`策划画面或信息元素超过上限（画面 ${limits.visual} 字、信息元素 ${limits.elements} 字），请精简后重新策划`);
     if (!role || (requireVisual && !visual)) return undefined;
     const layout = typeof record.layout === "string" && STUDIO_DETAIL_LAYOUT_IDS.includes(record.layout as StudioDetailLayoutId) ? (record.layout as StudioDetailLayoutId) : studioRoleLayout(role);
     const eyebrow = text(record.eyebrow, limits.eyebrow);
@@ -311,7 +313,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         visual,
         layout,
         ...(studioCompositionOf(record.composition) ? { composition: studioCompositionOf(record.composition) } : {}),
-        elements: text(record.elements, limits.elements),
+        elements,
         eyebrow: studioEyebrowText(eyebrow),
         headline: text(record.headline, limits.headline),
         subline: text(record.subline, limits.subline),
@@ -339,6 +341,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
     return {
         id: record.id.slice(0, 40),
         createdAt: text(record.createdAt, 40),
+        ...(typeof record.inputSignature === "string" ? { inputSignature: record.inputSignature } : {}),
         model: text(record.model, 120),
         summary: text(record.summary, STUDIO_DETAIL_PLAN_LIMITS.summary),
         ...(text(record.designAnalysis, STUDIO_DETAIL_PLAN_LIMITS.designAnalysis) ? { designAnalysis: text(record.designAnalysis, STUDIO_DETAIL_PLAN_LIMITS.designAnalysis) } : {}),
@@ -401,13 +404,14 @@ export function patchStudioDetailPlanScreen(
     const current = plan?.screens[index];
     if (!plan || !current) return brief;
     const limits = STUDIO_DETAIL_PLAN_LIMITS;
+    if ((patch.visual?.length || 0) > limits.visual || (patch.elements?.length || 0) > limits.elements) throw new Error("画面或信息元素超过上限，请精简后保存");
     const next: StudioPlannedScreen = {
         ...current,
         ...(patch.title !== undefined ? { title: patch.title.slice(0, limits.title) } : {}),
-        ...(patch.visual !== undefined ? { visual: patch.visual.slice(0, limits.visual) } : {}),
+        ...(patch.visual !== undefined ? { visual: patch.visual } : {}),
         ...(patch.layout && STUDIO_DETAIL_LAYOUT_IDS.includes(patch.layout) ? { layout: patch.layout } : {}),
         ...(studioCompositionOf(patch.composition) ? { composition: patch.composition } : {}),
-        ...(patch.elements !== undefined ? { elements: patch.elements.slice(0, limits.elements) } : {}),
+        ...(patch.elements !== undefined ? { elements: patch.elements } : {}),
         ...(patch.headline !== undefined ? { headline: patch.headline.slice(0, limits.headline) } : {}),
         ...(patch.subline !== undefined ? { subline: patch.subline.slice(0, limits.subline) } : {}),
         ...(patch.lines !== undefined ? { lines: patch.lines } : {}),
@@ -421,7 +425,7 @@ export function studioDetailPlanKey(index: number) {
 }
 
 /** 出图记录里一屏的版式、目的、画面和信息元素合在一起的上限。 */
-export const STUDIO_SHOT_VISUAL_MAX = 1000;
+export const STUDIO_SHOT_VISUAL_MAX = 3000;
 
 /** 出图时写进提示词的这一屏：版式、目的、画面、信息元素依次写。画面被清空时返回空，这一屏改按镜头规格出。 */
 export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpose" | "visual"> & Partial<Pick<StudioPlannedScreen, "layout" | "composition" | "elements">>) {
@@ -431,7 +435,7 @@ export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpo
     const purpose = screen.purpose.trim();
     const elements = screen.elements?.trim() || "";
     const composition = screen.composition ? STUDIO_COMPOSITIONS[screen.composition] : undefined;
-    return [
+    const blueprint = [
         layout ? `内容版式「${layout.label}」：${layout.render}。` : "",
         composition ? `本屏构图「${composition.label}」（主体和文字的位置以此为准）：${composition.render}。` : "",
         purpose ? `这一屏要让买家明白：${purpose}` : "",
@@ -439,6 +443,7 @@ export function studioPlannedShotVisual(screen: Pick<StudioPlannedScreen, "purpo
         elements ? `信息元素：${elements}` : "",
     ]
         .filter(Boolean)
-        .join("\n")
-        .slice(0, STUDIO_SHOT_VISUAL_MAX);
+        .join("\n");
+    if (blueprint.length > STUDIO_SHOT_VISUAL_MAX) throw new Error("这一屏的完整画面蓝图超过上限，请精简后生成");
+    return blueprint;
 }
