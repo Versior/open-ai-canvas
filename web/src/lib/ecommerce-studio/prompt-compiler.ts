@@ -5,7 +5,7 @@ import { studioActivePlan, studioStyleReferences } from "./runs";
 import { STUDIO_COMPOSITIONS } from "./art-direction";
 import { STUDIO_STYLE_TONES, studioTypeInstruction } from "./typography";
 import { studioPosterDesignLines } from "./design-knowledge";
-import { studioFamilyRule, studioProductStyle, studioShotSpec, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
+import { studioFamilyRule, studioProductStyle, studioShotSpec, studioStyle, studioTweakInstruction, type StudioShotSpec } from "./shot-specs";
 import { studioReferencePhotos } from "./reference-selection";
 export { studioReferencePhotos } from "./reference-selection";
 import {
@@ -23,6 +23,7 @@ import {
     type StudioPlan,
     type StudioProduct,
     type StudioShot,
+    type StudioStylePresetId,
     type StudioTextMode,
 } from "./types";
 
@@ -97,6 +98,8 @@ export type StudioCompileInput = {
     /** 助手方案按方案的文字方式；表单记录直接传 textMode。 */
     plan?: Pick<StudioPlan, "textMode">;
     textMode?: StudioTextMode;
+    /** 已生成记录的质感快照，精修不依赖当前策划是否仍有效。 */
+    styleId?: StudioStylePresetId;
     shot: StudioShot;
     model: string;
     /** 模型能力里的提示词上限；缺省按 4000 字处理。 */
@@ -478,7 +481,7 @@ export function compileStudioPrompt(input: StudioCompileInput): StudioCompiledPr
     const referenceNotice = dropped.length ? `这个模型一次最多带 ${capacity} 张图${revisionReference ? "，已为待修正成品预留一张" : ""}，${dropped.join("和")}没有带上${wantedModel.length > modelReferences.length ? "，模特改用文字描述" : ""}` : undefined;
     const hasCopy = studioShotHasCopy(shot, spec);
     const effective = hasCopy ? studioEffectiveTextMode({ textMode }, adapter) : { mode: textMode };
-    const style = studioProductStyle(product, studioActivePlan({ ...product, brief: brief ?? product.brief })?.styleId);
+    const style = input.styleId ? studioStyle(input.styleId) : studioProductStyle(product, studioActivePlan({ ...product, brief: brief ?? product.brief })?.styleId);
     // 策划过的屏：画面层代替镜头规格的构图、光线、背景和避坑项，免得每件商品都套同一套写法。
     const planned = Boolean(shot.visual?.trim());
     const referenceCount = references.length + modelReferences.length + styleReferences.length;

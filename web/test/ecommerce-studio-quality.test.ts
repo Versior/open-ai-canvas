@@ -102,6 +102,34 @@ test("historical runs keep the original planned product when the live product ch
     expect(after.compiled.references[0].resourceId).toBe("product-front");
 });
 
+test("legacy runs retain their saved style when their old plan has no input signature", () => {
+    let product = plannedProduct();
+    product.name = "陶瓷杯";
+    product.brief.audience = "日常办公";
+    product.brief.shooting = "auto";
+    product.brief.detailPlan = parseDetailPlan(
+        JSON.stringify({
+            styleId: "candy",
+            screens: [
+                { role: "detail-hero", visual: "桌上杯身", headline: "快乐日常" },
+                { role: "detail-closing", visual: "侧面杯身", headline: "杯中色彩" },
+            ],
+        }),
+        product,
+        studioDetailPlanRoles(product),
+        { id: "historical", model: "planner", createdAt: "" },
+    ).plan;
+    let id = 0;
+    const run = createStudioRun(product, () => `history-${++id}`);
+    product = appendStudioRun(product, run);
+    const ref = { runId: run.id };
+    const before = studioImageInput(product, locateStudioShot(product, ref, run.shots[0].id)!, "gpt-image", defaultConfig).compiled.prompt;
+    delete product.runs[0].source!.brief.detailPlan!.inputSignature;
+    const reloaded = normalizeStudioProduct(product)!;
+    expect(studioImageInput(reloaded, locateStudioShot(reloaded, ref, run.shots[0].id)!, "gpt-image", defaultConfig).compiled.prompt).toBe(before);
+    expect(reloaded.runs[0].styleId).toBe("candy");
+});
+
 test("child casting is not overridden by adult defaults in the final image request", () => {
     const product = plannedProduct();
     const run = createStudioRun(product, () => "shot");

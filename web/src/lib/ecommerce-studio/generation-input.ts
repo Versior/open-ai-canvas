@@ -7,20 +7,20 @@ import { studioImageRequest } from "./image-options";
 import { compileStudioPrompt } from "./prompt-compiler";
 import { studioPlanOf } from "./product";
 import { studioRunOf } from "./runs";
-import type { StudioAttempt, StudioGenerationSource, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioTextMode } from "./types";
+import type { StudioAttempt, StudioGenerationSource, StudioPlanKind, StudioProduct, StudioRun, StudioShot, StudioStylePresetId, StudioTextMode } from "./types";
 
 export type StudioShotRef = { runId: string } | { planKind: StudioPlanKind };
-export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; source?: StudioGenerationSource; suite?: StudioRun["suite"] };
+export type StudioLocatedShot = { shot: StudioShot; textMode: StudioTextMode; quality: string; resolution: string; fromForm: boolean; styleId?: StudioStylePresetId; source?: StudioGenerationSource; suite?: StudioRun["suite"] };
 
 export function locateStudioShot(product: StudioProduct, ref: StudioShotRef, shotId: string): StudioLocatedShot | undefined {
     if ("runId" in ref) {
         const run = studioRunOf(product, ref.runId);
         const shot = run?.shots.find((item) => item.id === shotId);
-        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, source: run.source, suite: run.suite } : undefined;
+        return run && shot ? { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, styleId: run.styleId, source: run.source, suite: run.suite } : undefined;
     }
     const plan = studioPlanOf(product, ref.planKind);
     const shot = plan?.shots.find((item) => item.id === shotId);
-    return plan && shot ? { shot, textMode: plan.textMode, quality: product.brief.quality, resolution: product.brief.resolution, fromForm: false } : undefined;
+    return plan && shot ? { shot, textMode: plan.textMode, quality: product.brief.quality, resolution: product.brief.resolution, fromForm: false, styleId: plan.styleId } : undefined;
 }
 
 export function compileStudioShot(product: StudioProduct, located: StudioLocatedShot, model: string, config: AiConfig, revisionResourceId?: string) {
@@ -36,6 +36,7 @@ export function compileStudioShot(product: StudioProduct, located: StudioLocated
         maxReferences: profile?.references.maxImages,
         revisionResourceId,
         brief,
+        styleId: located.styleId,
         ...(located.suite ? { suite: located.suite } : {}),
     });
     return { profile, compiled };
