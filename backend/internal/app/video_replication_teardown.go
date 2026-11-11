@@ -321,24 +321,15 @@ func (w *taskWorkerCoordinator) runReplicationTeardown(ctx context.Context, task
 	hasAudio, _ := probeHasAudioStream(ctx, sourcePath)
 
 	phaseStart := time.Now()
-	if err := w.progress(task, "准备分析视频", 15); err != nil {
+	if err := w.progress(task, "检测镜头并准备分析画面", 20); err != nil {
 		return videoTeardownBundle{}, err
 	}
-	analysisPath, err := prepareVideoTeardownAnalysis(ctx, ffmpeg, sourcePath, workDir, probe.Width, probe.Height)
+	analysisPath, cuts, err := prepareVideoTeardownAnalysis(ctx, ffmpeg, sourcePath, workDir, probe.Width, probe.Height)
 	if err != nil {
 		return videoTeardownBundle{}, err
 	}
-	s.logInfo(task.UserID, task.ID, fmt.Sprintf("分析视频准备耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
-	phaseStart = time.Now()
-	if err := w.progress(task, "检测镜头切点", 20); err != nil {
-		return videoTeardownBundle{}, err
-	}
-	cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, analysisPath, 0, 0)
-	if err != nil {
-		return videoTeardownBundle{}, err
-	}
+	s.logInfo(task.UserID, task.ID, fmt.Sprintf("镜头检测与分析视频准备耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
 	segments := buildVideoTeardownSegments(probe.DurationMs, cuts, input.MaxShots)
-	s.logInfo(task.UserID, task.ID, fmt.Sprintf("镜头切点检测耗时 %.2fs", time.Since(phaseStart).Seconds()), "")
 	phaseStart = time.Now()
 
 	if err := w.progress(task, fmt.Sprintf("截取 %d 个镜头的画面", len(segments)), 35); err != nil {

@@ -183,26 +183,32 @@ func videoTeardownFFmpeg() (string, error) {
 	return renderFfmpegBinary()
 }
 
-// 分析过程只使用关键帧所需的清晰度，原片的尺寸、音轨和时间范围仍用于素材记录与转写。
-func prepareVideoTeardownAnalysis(ctx context.Context, ffmpeg, source, dir string, width, height int) (string, error) {
+// 原片只解码一次：切点直接从原帧检测，另一支生成取帧代理，避免代理压缩改变场景分数。
+func prepareVideoTeardownAnalysis(ctx context.Context, ffmpeg, source, dir string, width, height int) (string, []int64, error) {
 	if max(width, height) <= videoTeardownFrameEdge {
-		return source, nil
+		cuts, err := detectVideoTeardownCuts(ctx, ffmpeg, source, 0, 0)
+		return source, cuts, err
 	}
 	output := filepath.Join(dir, "analysis.mp4")
 	threads := strconv.Itoa(min(runtime.GOMAXPROCS(0), videoTeardownFrameConcurrent))
-	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
-		"-threads", threads, "-filter_threads", "1", "-i", source,
-		"-map", "0:v:0", "-an", "-sn", "-dn", "-vf",
-		fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2", videoTeardownFrameEdge, videoTeardownFrameEdge),
-		"-fps_mode", "passthrough", "-c:v", "libx264", "-threads", threads, "-preset", "ultrafast", "-crf", "18", "-g", "30", output)
-	combined, err := cmd.CombinedOutput()
+	filter := fmt.Sprintf("[0:v:0]split[scene-input][frame-input];[scene-input]scale=320:-2,select='gt(scene,%.2f)',showinfo[cuts];[frame-input]scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2[analysis]", videoTeardownSceneThreshold, videoTeardownFrameEdge, videoTeardownFrameEdge)
+	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-nostats", "-y",
+		"-threads", threads, "-filter_complex_threads", "1", "-i", source, "-filter_complex", filter,
+		"-map", "[analysis]", "-an", "-sn", "-dn", "-fps_mode", "passthrough", "-c:v", "libx264", "-threads", threads, "-preset", "ultrafast", "-crf", "18", "-g", "30", output,
+		"-map", "[cuts]", "-an", "-sn", "-dn", "-fps_mode", "passthrough", "-f", "null", "-")
+	stderr := &boundedCommandOutput{limit: videoTeardownStderrLimit}
+	cmd.Stdout, cmd.Stderr = io.Discard, stderr
+	err := cmd.Run()
 	if ctx.Err() != nil {
-		return "", ctx.Err()
+		return "", nil, ctx.Err()
 	}
 	if err != nil {
-		return "", fmt.Errorf("准备分析视频失败（ffmpeg）：%s", commandTail(combined))
+		return "", nil, fmt.Errorf("准备分析视频失败（ffmpeg）：%s", commandTail(stderr.Bytes()))
 	}
-	return output, nil
+	if stderr.overflow {
+		return "", nil, errors.New("镜头检测输出过长，视频可能切换过于频繁")
+	}
+	return output, parseVideoTeardownCuts(stderr.Bytes()), nil
 }
 
 // detectVideoTeardownCuts 用场景分数找硬切和明显转场：先缩到 320 宽再算，3 分钟视频通常几秒内完成。
