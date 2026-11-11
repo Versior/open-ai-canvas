@@ -252,10 +252,22 @@ export const useStudioStore = create<StudioStore>((set, get) => {
             set((state) => ({ products: state.products.filter((item) => item.id !== id) }));
         },
         async flush(id) {
-            const timer = timers.get(id);
-            if (!timer && get().saveStates[id] !== "error" && get().saveStates[id] !== "dirty") return inflight.get(id);
-            if (timer) clearTimeout(timer);
-            await persist(id);
+            const scope = get().scope;
+            const generation = session;
+            const through = pending.get(id)?.at(-1)?.seq ?? 0;
+            // 冲突重放会排入下一次保存；等到调用时的操作被服务端确认才放行。
+            for (;;) {
+                if (generation !== session || scope !== getActiveUserScope()) throw new DOMException("账号已切换", "AbortError");
+                const active = inflight.get(id);
+                if (active) await active;
+                else {
+                    const timer = timers.get(id);
+                    if (timer) clearTimeout(timer);
+                    if (!get().products.some((product) => product.id === id)) return;
+                    if (!(pending.get(id) || []).some((operation) => operation.seq <= through) && get().saveStates[id] === "saved") return;
+                    await persist(id);
+                }
+            }
         },
         async refresh(id) {
             const scope = get().scope;

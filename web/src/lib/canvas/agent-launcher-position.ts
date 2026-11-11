@@ -1,4 +1,4 @@
-export type AgentLauncherPosition = { right: number; bottom: number };
+export type AgentLauncherPosition = { right: number; bottom: number; dock?: "left" | "right" };
 export type AgentLauncherViewport = { width: number; height: number };
 export type AgentLauncherGesture = { x: number; y: number; start: AgentLauncherPosition; dragged: boolean };
 
@@ -12,7 +12,8 @@ export const AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH = 768;
 /** 大形象（Live2D / 动画包）的入口高度：受外观设置、视口和宽高比约束，离开画布编辑器或窄屏时再封顶。 */
 export function resolveAgentLauncherAvatarHeight(preferred: number, aspectRatio: number, viewport: AgentLauncherViewport, inCanvasEditor: boolean) {
     const compact = !inCanvasEditor || viewport.width < AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH;
-    return Math.max(40, Math.min(preferred, viewport.height - 60, (viewport.width - 40) / aspectRatio, compact ? AGENT_LAUNCHER_COMPACT_AVATAR_HEIGHT : Infinity));
+    const maximum = viewport.width < AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH ? AGENT_LAUNCHER_SIZE : compact ? AGENT_LAUNCHER_COMPACT_AVATAR_HEIGHT : Infinity;
+    return Math.max(40, Math.min(preferred, viewport.height - 60, (viewport.width - 40) / aspectRatio, maximum));
 }
 
 export function clampAgentLauncherPosition(position: AgentLauncherPosition, viewport: AgentLauncherViewport, size = { width: AGENT_LAUNCHER_SIZE, height: AGENT_LAUNCHER_SIZE }): AgentLauncherPosition {
@@ -21,7 +22,18 @@ export function clampAgentLauncherPosition(position: AgentLauncherPosition, view
         const margin = Math.min(MARGIN, available / 2);
         return Math.min(Math.max(value, margin), available - margin);
     };
-    return { right: clamp(position.right, viewport.width, size.width), bottom: clamp(position.bottom, viewport.height, size.height) };
+    const bottom = clamp(position.bottom, viewport.height, size.height);
+    if (position.dock === "left" || position.dock === "right") {
+        return { right: position.dock === "right" ? -size.width * 0.45 : viewport.width - size.width * 0.55, bottom, dock: position.dock };
+    }
+    return { right: clamp(position.right, viewport.width, size.width), bottom };
+}
+
+/** 主动拖到窗边才吸附；留出一半身体，向内拖动即可恢复。 */
+export function dockAgentLauncherPosition(position: AgentLauncherPosition, viewport: AgentLauncherViewport, size: AgentLauncherViewport): AgentLauncherPosition {
+    const available = Math.max(0, viewport.width - size.width);
+    const dock = position.right <= 12 ? "right" : position.right >= available - 12 ? "left" : undefined;
+    return dock ? clampAgentLauncherPosition({ ...position, dock }, viewport, size) : position;
 }
 
 export function restoreAgentLauncherPosition(raw: string | null, viewport: AgentLauncherViewport, size?: AgentLauncherViewport): AgentLauncherPosition {
@@ -36,12 +48,12 @@ export function restoreAgentLauncherPosition(raw: string | null, viewport: Agent
     return clampAgentLauncherPosition({ right: MARGIN, bottom: MARGIN }, viewport, size);
 }
 
-export function moveAgentLauncher(gesture: AgentLauncherGesture, x: number, y: number, viewport: AgentLauncherViewport, size?: AgentLauncherViewport) {
+export function moveAgentLauncher(gesture: AgentLauncherGesture, x: number, y: number, viewport: AgentLauncherViewport, size?: AgentLauncherViewport, allowDock = false) {
     const dx = x - gesture.x;
     const dy = y - gesture.y;
     const dragged = gesture.dragged || Math.hypot(dx, dy) >= 6;
-    return {
-        dragged,
-        position: clampAgentLauncherPosition(dragged ? { right: gesture.start.right - dx, bottom: gesture.start.bottom - dy } : gesture.start, viewport, size),
-    };
+    const candidate = dragged ? { right: gesture.start.right - dx, bottom: gesture.start.bottom - dy } : gesture.start;
+    const position = clampAgentLauncherPosition(candidate, viewport, size);
+    if (allowDock && dragged) position.right = Math.min(Math.max(candidate.right, 0), Math.max(0, viewport.width - (size?.width ?? AGENT_LAUNCHER_SIZE)));
+    return { dragged, position };
 }

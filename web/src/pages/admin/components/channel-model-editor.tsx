@@ -78,6 +78,7 @@ export function ChannelModelEditor({
     const busyRef = useRef(false);
     const dirtyRef = useRef(false);
     const explicitProtocol = useRef(false);
+    const preserveConfiguredProtocol = useRef(false);
     const preserveTemplateCapability = useRef(false);
     const [protocolSuggestion, setProtocolSuggestion] = useState<ChannelProtocolSuggestion>();
     const [suggestionError, setSuggestionError] = useState("");
@@ -126,14 +127,14 @@ export function ChannelModelEditor({
     useEffect(() => {
         // 复制草稿保留预填协议，但预填本身不构成新的明确选择事件。
         const copiedProtocol = draftValues?.protocol && draftValues.capability === modelCapability;
-        if (editing?.protocol || copiedProtocol || explicitProtocol.current || !modelUpstream || !modelCapability || protocolLoading || protocolError) return;
+        if (editing?.protocol || copiedProtocol || explicitProtocol.current || preserveConfiguredProtocol.current || !modelUpstream || !modelCapability || protocolLoading || protocolError) return;
         let cancelled = false;
         setProtocolSuggestion(undefined);
         setSuggestionError("");
         form.setFieldValue("protocol", undefined);
         void getAdminChannelProtocolSuggestion(channel.id, modelUpstream, modelCapability)
             .then((suggestion) => {
-                if (cancelled || explicitProtocol.current) return;
+                if (cancelled || explicitProtocol.current || preserveConfiguredProtocol.current) return;
                 const definition = protocols.find((item) => item.value === suggestion.protocol && item.capability === modelCapability && item.enabled !== false);
                 if (suggestion.protocol && !definition) {
                     setProtocolSuggestion({ ...suggestion, source: "invalid", reason: "建议的协议未安装、已停用或与当前能力不匹配，请手动选择" });
@@ -173,6 +174,7 @@ export function ChannelModelEditor({
         for (const key of Object.keys(changed)) protectedFields.current.add(key);
         if (changed.capability) {
             explicitProtocol.current = false;
+            preserveConfiguredProtocol.current = false;
             preserveTemplateCapability.current = false;
             setProtocolSuggestion(undefined);
             replaceChannelModelFormValues(form, changeChannelModelCapability(form.getFieldsValue(true), protocols));
@@ -200,8 +202,10 @@ export function ChannelModelEditor({
 
     const applyConfiguration = (next: FormValues) => {
         const previous = form.getFieldsValue(true);
-        explicitProtocol.current = true;
-        preserveTemplateCapability.current = true;
+        // 复制和识别保留配置，不向上游记录为用户手动选定的协议。
+        preserveConfiguredProtocol.current = Boolean(next.protocol);
+        preserveTemplateCapability.current = Boolean(next.capabilityConfig);
+        explicitProtocol.current = false;
         setProtocolSuggestion(undefined);
         setSuggestionError("");
         replaceChannelModelFormValues(form, next);

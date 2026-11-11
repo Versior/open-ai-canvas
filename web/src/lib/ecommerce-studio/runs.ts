@@ -1,6 +1,6 @@
 import { STUDIO_SINGLE_TYPES, studioDisplayName, studioInfoPoints, studioInfoText, studioOutputSpec, studioPlatformForbidsText, studioRunRatio, studioSingleTypes, studioTitleOf } from "./brief";
 import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioDetailScreenCount, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
-import { studioAttemptActive, studioShotCopy } from "./product";
+import { studioAttemptActive, studioShotCopy, studioGenerationSource } from "./product";
 import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-specs";
 import { studioSuiteShotRole } from "./suites";
 import { nextStudioComposition } from "./art-direction";
@@ -211,7 +211,16 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
     const spec = studioOutputSpec(brief.outputType);
     const kind = studioSetKind(product);
     const plan = studioActivePlan(product);
-    const base = { id: createId(), createdAt: now, type: spec.id, textMode: "model" as const, quality: brief.quality, styleId: studioProductStyle(product, plan?.styleId).id, ...(brief.resolution ? { resolution: brief.resolution } : {}) };
+    const base = {
+        id: createId(),
+        createdAt: now,
+        type: spec.id,
+        textMode: "model" as const,
+        source: studioGenerationSource(product),
+        quality: brief.quality,
+        styleId: studioProductStyle(product, plan?.styleId).id,
+        ...(brief.resolution ? { resolution: brief.resolution } : {}),
+    };
     // 策划的整套视觉规范和模板的一样代替风格锁，记在 suite 里（另带设计调性和创意主线），结果区的组名带上「按商品策划」；
     // 按模板策划的组名前面再带上模板名。
     const planName = brief.outputType === "template-set" && brief.suite ? `${brief.suite.name} · ${STUDIO_DETAIL_PLAN_NAME}` : STUDIO_DETAIL_PLAN_NAME;
@@ -285,7 +294,12 @@ function runActive(run: StudioRun) {
 /** 新的一组放最前；组数或占用超出上限时从最旧的删起，还有任务在跑的记录不删。 */
 export function appendStudioRun(product: StudioProduct, run: StudioRun): StudioProduct {
     if (product.runs.some((item) => item.id === run.id)) return product;
-    const runs = [run, ...product.runs];
+    return trimStudioRuns({ ...product, runs: [run, ...product.runs] });
+}
+
+/** 添加尝试快照后也裁旧的已完成记录，活动任务始终保留。 */
+export function trimStudioRuns(product: StudioProduct): StudioProduct {
+    const runs = [...product.runs];
     for (let index = runs.length - 1; runs.length > STUDIO_MAX_RUNS && index > 0; index -= 1) {
         if (!runActive(runs[index])) runs.splice(index, 1);
     }

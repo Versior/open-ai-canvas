@@ -62,10 +62,12 @@ test("composition survives trimming and precedes the visual and shared style", (
 test("layout reference never displaces product truth or a locked seller reference", () => {
     const product = createStudioProduct("design-test");
     product.photos = [{ id: "truth", resourceId: "truth", url: "", view: "front", truth: true, name: "商品图", addedAt: "" }];
-    const guided = compileStudioPrompt({ product, shot, model: "gpt-image", maxReferences: 2 });
+    const guided = compileStudioPrompt({ product, shot: { ...shot, visual: undefined }, model: "gpt-image", maxReferences: 2 });
     expect(guided.layoutGuide?.composition).toBe("left");
     expect(guided.references.map((photo) => photo.id)).toEqual(["truth"]);
-    expect(guided.prompt).toContain("图2为本屏布局草图");
+    expect(guided.prompt).toContain("图2为图文区域参考");
+    expect(guided.prompt).toContain("不复制草图的两条等大粗线");
+    expect(compileStudioPrompt({ product, shot, model: "gpt-image", maxReferences: 2 }).layoutGuide).toBeUndefined();
     expect(compileStudioPrompt({ product, shot, model: "gpt-image", maxReferences: 1 }).layoutGuide).toBeUndefined();
     expect(compileStudioPrompt({ product, shot, model: "gpt-image", brief: { ...product.brief, sameLayout: true } }).layoutGuide).toBeUndefined();
     expect(compileStudioPrompt({ product, shot: { ...shot, headline: "", subline: "" }, model: "gpt-image" }).layoutGuide).toBeUndefined();

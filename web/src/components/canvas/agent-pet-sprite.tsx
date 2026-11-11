@@ -22,9 +22,10 @@ const LOOK_IDLE_MS = 2500;
 /** 有缩略图时，开始播放这么久之后才下载整张图集：滚动时鼠标从卡片上划过、触屏按下就开始滑动，都不会白下载。 */
 const SHEET_DELAY_MS = 150;
 const IDLE_REST_MS = 8000;
+const AMBIENT_REST_MS = 1800;
 const HOVER_ACTION_COOLDOWN_MS = 12_000;
-/** 每个动作之间回首帧休息；跑动、异常等动作不参与空闲轮换。 */
-const IDLE_ACTIVITIES: readonly AgentPetRow[] = ["idle", "review", "idle", "waving", "waiting", "idle", "jumping"];
+/** 陪伴动作自动轮换；任务工作与异常状态由真实任务驱动。 */
+const IDLE_ACTIVITIES: readonly AgentPetRow[] = ["idle", "review", "waiting", "idle", "waving", "waiting"];
 
 export type AgentPetAction = { id: number; row: AgentPetRow };
 
@@ -52,6 +53,8 @@ export type AgentPetSpriteProps = {
     hovered?: boolean;
     /** v2 图集在待机时看向鼠标。 */
     lookAtPointer?: boolean;
+    /** 窗边待机朝向页面内部，仍允许真实鼠标视线覆盖。 */
+    peekSide?: "left" | "right";
     /** 列表缩略图用：接近可视区域才加载图集，避免打开商店或后台时一次下载、解码整个形象库。 */
     lazy?: boolean;
     /**
@@ -85,6 +88,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     offsetRight = 0,
     hovered = false,
     lookAtPointer = false,
+    peekSide,
     lazy = false,
     preview,
     label,
@@ -145,7 +149,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
     useEffect(() => {
         if (hovered && resting && !dragging && !forcedRow && !still && loopRow === idleRow && Date.now() - lastHoverAction.current >= HOVER_ACTION_COOLDOWN_MS) {
             lastHoverAction.current = Date.now();
-            const next = hoverActivity.current++ % 2 === 0 ? "waving" : "jumping";
+            const next = hoverActivity.current++ % 2 === 0 ? "waving" : "review";
             setOneShot((current) => current ?? next);
         }
     }, [hovered, forcedRow, loopRow, idleRow, still, resting, dragging]);
@@ -181,12 +185,13 @@ export const AgentPetSprite = memo(function AgentPetSprite({
                 setFrame(0);
                 if (oneShot && activeRow === oneShot) setOneShot(null);
             },
-            !forcedRow && !oneShot && activeRow === idleRow && frame === 0 ? IDLE_REST_MS : agentPetFrameDuration(activeRow, frame, frameCount),
+            !forcedRow && !oneShot && activeRow === idleRow && frame === 0 ? (ambient ? AMBIENT_REST_MS : IDLE_REST_MS) : agentPetFrameDuration(activeRow, frame, frameCount),
         );
         return () => window.clearTimeout(timer);
     }, [still, look, frame, frameCount, activeRow, oneShot, forcedRow, idleRow, ambient, resting, dragging, hovered, action?.id]);
 
-    const cell = look ?? { row: agentPetRowIndex(activeRow), column: still ? 0 : Math.min(frame, frameCount - 1) };
+    const edgeLook = peekSide && version === 2 && resting && !oneShot ? agentPetLookCell(peekSide === "right" ? -100 : 100, -20) : undefined;
+    const cell = look ?? edgeLook ?? { row: agentPetRowIndex(activeRow), column: still ? 0 : Math.min(frame, frameCount - 1) };
     const image = showPreview ? preview : sheet;
     const style: CSSProperties = {
         width,
@@ -205,7 +210,7 @@ export const AgentPetSprite = memo(function AgentPetSprite({
             role={label ? "img" : undefined}
             aria-label={label}
             aria-hidden={label ? undefined : true}
-            data-pet-row={look ? "look" : activeRow}
+            data-pet-row={look || edgeLook ? "look" : activeRow}
             data-pet-preview={showPreview || undefined}
         />
     );
@@ -280,7 +285,7 @@ function useDocumentHidden() {
     return hidden;
 }
 
-/** 待机时按“头部 → 鼠标”的角度选择视线格；鼠标停下一段时间或移到形象身上时恢复待机动画。 */
+/** 持续移动时视线优先于待机，停止、离开页面或移到身体热区后恢复动作。 */
 function useLookAtPointer(element: { current: HTMLElement | null }, enabled: boolean) {
     const [look, setLook] = useState<LookCell | null>(null);
     useEffect(() => {
@@ -306,14 +311,28 @@ function useLookAtPointer(element: { current: HTMLElement | null }, enabled: boo
             setLook((current) => (current && current.row === next.row && current.column === next.column ? current : next));
         };
         const move = (event: PointerEvent) => {
+            if (event.pointerType === "touch") return;
             pointer = { x: event.clientX, y: event.clientY };
             if (!frameRequest) frameRequest = window.requestAnimationFrame(update);
             window.clearTimeout(idleTimer);
-            idleTimer = window.setTimeout(() => setLook(null), LOOK_IDLE_MS);
+            idleTimer = window.setTimeout(() => {
+                setLook(null);
+            }, LOOK_IDLE_MS);
+        };
+        const leave = () => {
+            window.cancelAnimationFrame(frameRequest);
+            window.clearTimeout(idleTimer);
+            frameRequest = 0;
+            pointer = null;
+            setLook(null);
         };
         window.addEventListener("pointermove", move, { passive: true });
+        window.addEventListener("blur", leave);
+        document.addEventListener("pointerleave", leave);
         return () => {
             window.removeEventListener("pointermove", move);
+            window.removeEventListener("blur", leave);
+            document.removeEventListener("pointerleave", leave);
             window.cancelAnimationFrame(frameRequest);
             window.clearTimeout(idleTimer);
         };

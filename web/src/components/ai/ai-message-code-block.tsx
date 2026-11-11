@@ -109,6 +109,7 @@ function detectLanguage(children: ReactNode, ownClassName?: string): string {
  */
 export function AiMessageCodeBlock({ children, className, isStreaming = false, ...props }: AiMessageCodeBlockProps) {
     const [copied, setCopied] = useState(false);
+    const [copyError, setCopyError] = useState(false);
     const [highlightHtml, setHighlightHtml] = useState<string | null>(null);
     const timerRef = useRef<number | undefined>(undefined);
     const codeText = collectText(children);
@@ -142,21 +143,28 @@ export function AiMessageCodeBlock({ children, className, isStreaming = false, .
         };
     }, [codeText, language, isStreaming]);
 
-    const handleCopy = () => {
+    const handleCopy = async () => {
         const payload = codeText.trimEnd();
-        void navigator.clipboard?.writeText(payload).catch(() => {});
-        setCopied(true);
         window.clearTimeout(timerRef.current);
-        timerRef.current = window.setTimeout(() => setCopied(false), 1600);
+        setCopied(false);
+        setCopyError(false);
+        try {
+            if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+            await navigator.clipboard.writeText(payload);
+            setCopied(true);
+            timerRef.current = window.setTimeout(() => setCopied(false), 1600);
+        } catch {
+            setCopyError(true);
+        }
     };
 
     return (
         <div className="ai-message-codeblock">
             <div className="ai-message-codeblock-header">
                 <span className="ai-message-codeblock-lang">{language || "code"}</span>
-                <button type="button" className="ai-message-codeblock-copy" aria-label={copied ? "已复制" : "复制代码"} onClick={handleCopy}>
+                <button type="button" className="ai-message-codeblock-copy" aria-label={copyError ? "复制失败，请手动选中复制" : copied ? "已复制" : "复制代码"} onClick={handleCopy}>
                     {copied ? <Check /> : <Copy />}
-                    <span>{copied ? "已复制" : "复制"}</span>
+                    <span aria-live="polite">{copyError ? "复制失败" : copied ? "已复制" : "复制"}</span>
                 </button>
             </div>
             {highlightHtml ? (

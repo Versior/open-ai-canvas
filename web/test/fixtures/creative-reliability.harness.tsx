@@ -12,6 +12,7 @@ const { ApiError } = await import("@/services/api/request");
 const { setActiveUserScope, getActiveUserScope } = await import("@/lib/user-scope");
 let analysisInput: { expectedUserScope?: string } | undefined;
 let analysisText = "invalid";
+let analysisReply: (() => Promise<{ text: string }>) | undefined;
 const { defaultConfig } = await import("@/stores/use-config-store");
 const tasks = await import("@/services/api/task-center");
 let waits: string[] = [];
@@ -35,7 +36,7 @@ mock.module("@/services/api/generation-task", () => ({
         submissions++;
         analysisInput = input;
         if (input.expectedUserScope && input.expectedUserScope !== getActiveUserScope()) throw new DOMException("账号已切换，已取消生成", "AbortError");
-        return { text: analysisText };
+        return analysisReply ? analysisReply() : { text: analysisText };
     },
     submitBackendGenerationTask: (input: { clientOperationId?: string }) => studioSubmit(input),
 }));
@@ -175,7 +176,16 @@ mock.module("@/lib/ecommerce/ecommerce-image-generation", () => ({ ...imageGener
 const compiler = await import("@/lib/ecommerce-studio/prompt-compiler");
 mock.module("@/lib/ecommerce-studio/prompt-compiler", () => ({
     ...compiler,
-    compileStudioPrompt: () => ({ prompt: "product", references: [{ id: "photo", resourceId: "photo", view: "front", truth: true, addedAt: "2026-11-01", url: "/api/resources/photo/file" }], modelReferences: [], styleReferences: [] }),
+    compileStudioPrompt: ({ product }: { product: { name: string; brief: { language: string } } }) => ({
+        prompt: `${product.name} ${product.brief.language}`,
+        layers: [],
+        trimmed: [],
+        textMode: "model",
+        adapter: { family: "generic", label: "test", textRendering: "strong" },
+        references: [{ id: "photo", resourceId: "photo", view: "front", truth: true, addedAt: "2026-11-01", url: "/api/resources/photo/file" }],
+        modelReferences: [],
+        styleReferences: [],
+    }),
 }));
 const { createStudioProduct } = await import("@/lib/ecommerce-studio/product");
 const { useStudioStore } = await import("@/pages/ecommerce-studio/use-studio-store");
@@ -222,7 +232,7 @@ function studioProduct(taskId?: string) {
 }
 async function mountStudio(product: ReturnType<typeof studioProduct>) {
     setActiveUserScope("studio-user");
-    useStudioStore.setState({ scope: "studio-user", products: [product], status: "ready", saveStates: {} });
+    useStudioStore.setState({ scope: "studio-user", products: [product], status: "ready", saveStates: { [product.id]: "saved" } });
     await act(async () => studioRoot.render(<RunnerProbe />));
 }
 const attempt = () => useStudioStore.getState().products[0].runs[0].shots[0].attempts[0];
@@ -303,16 +313,23 @@ test("queued account A save cannot read or save account B's product", async () =
         return { product: { ...product, revision: 2 } };
     };
     useStudioStore.getState().update(productA.id, (product) => ({ ...product, name: "account-a-edit" }));
-    const first = useStudioStore.getState().flush(productA.id);
+    const first = useStudioStore
+        .getState()
+        .flush(productA.id)
+        .catch((error) => error);
     await savingStarted;
     useStudioStore.getState().update(productA.id, (product) => ({ ...product, name: "account-a-queued" }));
-    const queued = useStudioStore.getState().flush(productA.id);
+    const queued = useStudioStore
+        .getState()
+        .flush(productA.id)
+        .catch((error) => error);
     setActiveUserScope("studio-other");
     await useStudioStore.getState().load();
     const productB = { ...productA, name: "account-b-product" };
     useStudioStore.setState({ products: [productB] });
     finish();
-    await Promise.all([first, queued]);
+    expect(await first).toMatchObject({ name: "AbortError" });
+    expect(await queued).toMatchObject({ name: "AbortError" });
     expect(names).toEqual(["account-a-edit"]);
     expect(useStudioStore.getState().products[0].name).toBe("account-b-product");
     studioSave = async (product) => ({ product });
@@ -360,6 +377,125 @@ test("unmounting one studio runner preserves another runner's queued shot", asyn
     expect(useStudioStore.getState().products.find((item) => item.id === b.id)?.runs[0].shots[0].attempts[0].status).toBe("succeeded");
     await act(async () => rootB.unmount());
     useUserStore.setState({ runtimeLimits: previous });
+});
+
+test("studio save failure blocks every paid submission and reports failed attempts", async () => {
+    const product = studioProduct();
+    product.runs = [];
+    product.photos = [{ id: "photo", resourceId: "photo", view: "front", truth: true, addedAt: "2026-11-01", url: "/api/resources/photo/file" }];
+    await mountStudio(product);
+    let submitted = 0;
+    studioSubmit = async () => {
+        submitted++;
+        return task("should-not-exist", "succeeded");
+    };
+    studioSave = async () => {
+        throw new Error("save offline");
+    };
+    await act(async () => {
+        await expect(runner.generate(product.id, "test")).rejects.toThrow("save offline");
+    });
+    expect(submitted).toBe(0);
+    const shots = useStudioStore.getState().products[0].runs[0].shots;
+    expect(shots.every((shot) => shot.attempts.at(-1)?.status === "failed")).toBe(true);
+    studioSave = async (product) => ({ product });
+    await useStudioStore.getState().flush(product.id);
+});
+
+test("task ID save failure recovers the saved operation and frozen request after reload", async () => {
+    const product = studioProduct();
+    product.runs = [];
+    product.name = "durable-input";
+    product.photos = [{ id: "photo", resourceId: "photo", view: "front", truth: true, addedAt: "2026-11-01", url: "/api/resources/photo/file" }];
+    await mountStudio(product);
+    let durable = structuredClone(product);
+    studioSave = async (value) => {
+        if (value.runs.some((run) => run.shots.some((shot) => shot.attempts.some((attempt) => attempt.taskId)))) throw new Error("task ID save failed");
+        durable = structuredClone(value);
+        return { product: value };
+    };
+    const operations: (string | undefined)[] = [];
+    const prompts: string[] = [];
+    studioSubmit = async (input) => {
+        operations.push(input.clientOperationId);
+        prompts.push((input as { prompt: string }).prompt);
+        return task("existing-paid-task", "succeeded");
+    };
+    studioWait = async (id) => task(id, "succeeded");
+    await act(async () => {
+        await runner.generate(product.id, "test", { firstOnly: true });
+    });
+    expect(operations).toHaveLength(1);
+    expect(durable.runs[0].shots[0].attempts[0]).toMatchObject({ id: operations[0], status: "submitting" });
+    expect(durable.runs[0].shots[0].attempts[0].taskId).toBeUndefined();
+    await act(async () => studioRoot.render(null));
+    setActiveUserScope("reload-reset");
+    await useStudioStore.getState().load();
+    studioSave = async (product) => ({ product });
+    durable.name = "changed-after-reload";
+    await mountStudio(durable);
+    await act(async () => runner.resume(durable));
+    expect(operations).toEqual([operations[0], operations[0]]);
+    expect(prompts).toEqual(["durable-input zh", "durable-input zh"]);
+    expect(useStudioStore.getState().products[0].runs[0].shots[0].attempts[0]).toMatchObject({ taskId: "existing-paid-task", status: "succeeded" });
+});
+
+test("a queued group keeps its original inputs after editing the form", async () => {
+    const { useUserStore } = await import("@/stores/use-user-store");
+    const previous = useUserStore.getState().runtimeLimits;
+    useUserStore.setState({ runtimeLimits: { ...previous, activeTaskLimit: 1 } });
+    const product = studioProduct();
+    product.runs = [];
+    product.name = "original";
+    product.photos = [{ id: "photo", resourceId: "photo", view: "front", truth: true, addedAt: "2026-11-01", url: "/api/resources/photo/file" }];
+    product.brief.count = 4;
+    await mountStudio(product);
+    const prompts: string[] = [];
+    let finish!: (task: GenerationTask) => void;
+    studioSubmit = async (input) => {
+        prompts.push((input as { prompt?: string }).prompt!);
+        if (prompts.length === 1)
+            return new Promise((resolve) => {
+                finish = resolve;
+            });
+        return task(`queue-${prompts.length}`, "succeeded");
+    };
+    studioWait = async (id) => task(id, "succeeded");
+    await act(async () => {
+        await runner.generate(product.id, "test");
+    });
+    expect(prompts).toEqual(["original zh"]);
+    await act(async () => {
+        useStudioStore.getState().update(product.id, (value) => ({ ...value, name: "edited", brief: { ...value.brief, language: "en" } }));
+        finish(task("queue-first", "succeeded"));
+    });
+    expect(prompts).toEqual(Array(4).fill("original zh"));
+    expect(useStudioStore.getState().products[0].name).toBe("edited");
+    useUserStore.setState({ runtimeLimits: previous });
+});
+
+test("an old plan response cannot replace requirements edited while planning", async () => {
+    const product = studioProduct();
+    product.brief.outputType = "detail-set";
+    await mountStudio(product);
+    let finish!: (result: { text: string }) => void;
+    analysisReply = () =>
+        new Promise((resolve) => {
+            finish = resolve;
+        });
+    const result = runner.plan(product.id, "test").catch((error) => error);
+    useStudioStore.getState().update(product.id, (value) => ({ ...value, sellerNotes: "new requirements", brief: { ...value.brief, language: "en" } }));
+    const text = JSON.stringify({
+        screens: Array.from({ length: 10 }, (_, index) => ({ role: index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene", title: "商品展示", headline: "清晰外观", visual: "真实外观", layout: "editorial" })),
+    });
+    await act(async () => {
+        finish({ text });
+    });
+    expect((await result).message).toContain("已修改");
+    expect(useStudioStore.getState().products[0].brief.detailPlan).toBeUndefined();
+    expect(useStudioStore.getState().products[0].sellerNotes).toBe("new requirements");
+    analysisReply = undefined;
+    await useStudioStore.getState().flush(product.id);
 });
 
 const { createRemakeJob } = await import("@/lib/remake/job");

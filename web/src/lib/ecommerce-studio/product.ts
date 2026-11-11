@@ -16,6 +16,7 @@ import {
     type StudioEvidence,
     type StudioFact,
     type StudioFactGroup,
+    type StudioGenerationSource,
     type StudioGenerationRequest,
     type StudioOutput,
     type StudioOutputType,
@@ -61,6 +62,31 @@ export function createStudioProduct(id: string, now = new Date().toISOString()):
         plans: [],
         activePlan: "main",
         runs: [],
+    };
+}
+
+export function studioGenerationSource(product: StudioProduct): StudioGenerationSource {
+    const { name, platform, style, sellerNotes, photos, references, dossier, sellingPoints, copy, brief } = product;
+    return structuredClone({ name, platform, style, sellerNotes, photos, references, dossier, sellingPoints, copy, brief });
+}
+
+/** 换质感后重新策划当前表单，已有生成组继续使用自己的快照。 */
+export function studioChangeStyle(product: StudioProduct, style: StudioProduct["style"]): StudioProduct {
+    if (product.style === style) return product;
+    const prep = product.brief.prep;
+    return {
+        ...product,
+        style,
+        brief: {
+            ...product.brief,
+            detailPlan: undefined,
+            mainPlan: undefined,
+            singlePlan: undefined,
+            templatePlan: undefined,
+            shotOrder: [],
+            shotSkip: [],
+            ...(prep ? { prep: { ...prep, picked: undefined } } : {}),
+        },
     };
 }
 
@@ -219,6 +245,7 @@ function normalizeAttempt(attempt: Record<string, unknown>, fallbackTime: string
         id: attempt.id,
         taskId: typeof attempt.taskId === "string" ? attempt.taskId : undefined,
         revisionResourceId: typeof attempt.revisionResourceId === "string" ? attempt.revisionResourceId : undefined,
+        ...(isRecord(attempt.input) ? { input: normalizeAttemptInput(attempt.input, fallbackTime) } : {}),
         status: (STATUSES.has(str(attempt.status)) ? attempt.status : "failed") as StudioAttemptStatus,
         model: str(attempt.model),
         ...(attempt.textMode === "model" || attempt.textMode === "overlay" ? { textMode: attempt.textMode } : {}),
@@ -227,6 +254,41 @@ function normalizeAttempt(attempt: Record<string, unknown>, fallbackTime: string
         completedAt: typeof attempt.completedAt === "string" ? attempt.completedAt : undefined,
         error: typeof attempt.error === "string" ? attempt.error : undefined,
         outputs: arrayOf(attempt.outputs, normalizeOutput),
+    };
+}
+
+function normalizeAttemptInput(input: Record<string, unknown>, time: string): StudioAttempt["input"] {
+    const compiled = input.compiled;
+    const request = input.request;
+    if (!isRecord(compiled) || !isRecord(request) || typeof compiled.prompt !== "string" || !isRecord(compiled.adapter) || !isRecord(request.imageSettings)) return undefined;
+    const settings = request.imageSettings;
+    return {
+        compiled: {
+            prompt: compiled.prompt,
+            layers: arrayOf(compiled.layers, (layer) =>
+                typeof layer.id === "string" && typeof layer.text === "string" ? { id: layer.id as NonNullable<StudioAttempt["input"]>["compiled"]["layers"][number]["id"], title: str(layer.title), source: str(layer.source), text: layer.text } : undefined,
+            ),
+            textMode: compiled.textMode === "overlay" ? "overlay" : "model",
+            adapter: { family: compiled.adapter.family as NonNullable<StudioAttempt["input"]>["compiled"]["adapter"]["family"], label: str(compiled.adapter.label), textRendering: compiled.adapter.textRendering as "strong" | "fair" | "weak" },
+            references: arrayOf(compiled.references, (photo) => normalizePhoto(photo, time, true)),
+            modelReferences: arrayOf(compiled.modelReferences, (photo) => normalizePhoto(photo, time, false)),
+            styleReferences: arrayOf(compiled.styleReferences, (photo) => normalizePhoto(photo, time, false)),
+            ...(isRecord(compiled.revisionReference) ? { revisionReference: normalizePhoto(compiled.revisionReference, time, false) } : {}),
+            ...(isRecord(compiled.layoutGuide) && studioCompositionOf(compiled.layoutGuide.composition) && typeof compiled.layoutGuide.ratio === "string"
+                ? { layoutGuide: { composition: studioCompositionOf(compiled.layoutGuide.composition)!, ratio: compiled.layoutGuide.ratio } }
+                : {}),
+            trimmed: strings(compiled.trimmed) as NonNullable<StudioAttempt["input"]>["compiled"]["trimmed"],
+            ...(typeof compiled.textModeNotice === "string" ? { textModeNotice: compiled.textModeNotice } : {}),
+            ...(typeof compiled.referenceNotice === "string" ? { referenceNotice: compiled.referenceNotice } : {}),
+        },
+        request: {
+            ...(typeof request.aspectRatio === "string" ? { aspectRatio: request.aspectRatio } : {}),
+            imageSettings: {
+                ...(typeof settings.size === "string" ? { size: settings.size } : {}),
+                ...(typeof settings.quality === "string" ? { quality: settings.quality } : {}),
+                ...(typeof settings.imageResolution === "string" ? { imageResolution: settings.imageResolution } : {}),
+            },
+        },
     };
 }
 
@@ -259,6 +321,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
     const shots = arrayOf(run.shots, (shot) => normalizeShot(shot, fallbackTime));
     if (!shots.length) return undefined;
     const style = STUDIO_STYLES.find((style) => style.id === run.styleId);
+    const source = isRecord(run.source) ? normalizeStudioProduct({ ...run.source, schema: STUDIO_PRODUCT_SCHEMA, id: "snapshot", runs: [], plans: [] }) : undefined;
     return {
         id: run.id,
         createdAt: str(run.createdAt, fallbackTime),
@@ -266,6 +329,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
         ...(run.kind === "main" || run.kind === "detail" ? { kind: run.kind } : {}),
         textMode: run.textMode === "overlay" ? "overlay" : "model",
         quality: str(run.quality),
+        ...(source ? { source: studioGenerationSource(source) } : {}),
         ...(style ? { styleId: style.id } : {}),
         ...(typeof run.resolution === "string" && /^(1k|1\.5k|2k|4k)$/.test(run.resolution) ? { resolution: run.resolution } : {}),
         ...(isRecord(run.suite) && typeof run.suite.id === "string" && typeof run.suite.name === "string"

@@ -8,7 +8,8 @@ import { AdminEmpty, AdminStatusBadge } from "../components/admin-ui";
 const SECTIONS = [
     { title: "主图镜头", match: (group: StudioPromptGroup) => group.id.startsWith("shot.main-") },
     { title: "详情页镜头", match: (group: StudioPromptGroup) => group.id.startsWith("shot.detail-") },
-    { title: "通用规则", match: (group: StudioPromptGroup) => !group.id.startsWith("shot.") },
+    { title: "商品视频", match: (group: StudioPromptGroup) => group.id.startsWith("video.") },
+    { title: "通用规则", match: (group: StudioPromptGroup) => !group.id.startsWith("shot.") && !group.id.startsWith("video.") },
 ];
 
 const shortTitle = (group: StudioPromptGroup) => group.title.replace(/^(主图|详情页) · /, "");

@@ -123,7 +123,7 @@ describe("detail page requested screen count", () => {
         expect(restored.runs[0].suite?.designAnalysis).toBe(analysis);
         const compiled = compileStudioPrompt({ product: restored, shot: run.shots[0], model: "gpt-image-2", suite: restored.runs[0].suite, brief: restored.brief });
         expect(compiled.layers.find((layer) => layer.id === "product-design")?.text).toContain(analysis);
-        expect(buildDetailPlanPrompt(product, studioDetailPlanRoles(product))).toContain("不能套固定暖光");
+        expect(buildDetailPlanPrompt(product, studioDetailPlanRoles(product))).toContain("解释所选草图为何比备选更易辨认商品");
     });
 
     test("four selected screens drive planning and survive product persistence", () => {
@@ -385,7 +385,8 @@ describe("ecommerce studio detail plan", () => {
         expect(model.prompt).toContain("左图右文");
         expect(model.prompt).toContain("标题位置、字号与主体裁切以本屏图文构图为准");
         expect(model.layers.find((layer) => layer.id === "copy")?.text).toContain("遵守前面的「左图右文」构图契约");
-        expect(model.layers.find((layer) => layer.id === "composition")?.text).toContain("本屏构图优先于画面描述");
+        expect(model.layers.find((layer) => layer.id === "composition")?.text).toContain("骨架锁定图文方向与阅读关系");
+        expect(model.layers.find((layer) => layer.id === "composition")?.text).toContain("本屏画面蓝图决定具体排字");
         expect(model.prompt).toContain("主标题不放到横跨画面的顶部");
         const top = compileStudioPrompt({ product, shot: { ...run.shots[0], composition: "top" }, textMode: "model", model: "gpt-image-2", brief: product.brief, suite: run.suite });
         expect(top.prompt).not.toContain("不能把左右分栏改成顶部标题");
@@ -463,7 +464,7 @@ describe("ecommerce studio detail plan", () => {
         expect(prompt).toContain("共 7 屏");
         expect(prompt).toContain("正好排 7 屏");
         expect(prompt).toContain("屏型可以重复使用");
-        expect(prompt).toContain("买这件商品的人下单前最关心什么");
+        expect(prompt).toContain("从已有资料确定读者关心的问题");
         expect(prompt).not.toContain("信息少就少排");
         expect(result.plan.screens.map((screen) => screen.role)).toEqual(["detail-hero", "detail-scene", "detail-size", "detail-closeup", "detail-model", "detail-scene", "detail-closing"]);
         expect(result.dropped).toBe(1);
@@ -686,7 +687,7 @@ describe("ecommerce studio plans for every output type", () => {
         expect(prompt).toContain("- global-minimal（国际大牌极简）");
         expect(prompt).toContain("【文案要求】");
         expect(prompt).toContain("神器");
-        expect(prompt).toContain("visual 和 style 里不写任何品牌名");
+        expect(prompt).toContain("visual 与 style 不写品牌名");
         expect(buildDetailPlanPrompt({ ...product, brief: { ...product.brief, planNote: "" } }, roles)).not.toContain("补充调整】");
 
         const screens = Array.from({ length: 10 }, (_, index) => screen(index === 0 ? "detail-hero" : index === 9 ? "detail-closing" : "detail-scene", `第${index + 1}屏`));
@@ -704,8 +705,8 @@ describe("ecommerce studio plans for every output type", () => {
         const compiled = compileStudioPrompt({ product: plannedProduct, textMode: run.textMode, shot: run.shots[1], model: "gpt-image-2", brief: plannedProduct.brief, suite: run.suite });
         expect(compiled.prompt).toContain("【设计调性「时尚大片」】");
         expect(compiled.prompt).toContain("时尚杂志式版面");
-        // 主标题的字重跟设计调性走，不一律加粗。
-        expect(compiled.prompt).toContain("字重按设计调性");
+        // 已策划字重服从蓝图，不再由通用调性覆盖。
+        expect(compiled.prompt).toContain("字形、字面宽窄、字重、字号、字距、分行和注解比例以本屏蓝图及整套规范为准");
         expect(compiled.prompt).not.toContain("粗字重");
         const restored = normalizeStudioProduct(JSON.parse(JSON.stringify({ ...plannedProduct, runs: [run] })))!;
         expect(restored.runs[0].suite?.tone).toBe("editorial");
@@ -718,12 +719,12 @@ describe("ecommerce studio plans for every output type", () => {
         const prompt = buildDetailPlanPrompt(product, roles, { scope: "detail", images: { photos: 2, references: 1 } });
         expect(prompt).toContain("附图：图1–图2 是商品图（外观唯一依据）；图3 是卖家给的参考图（大牌或爆款的图，不是这件商品）。");
         expect(prompt).toContain("参考图怎么用：先看懂它好在哪里");
-        // 先做视觉策划：同质化、差异化定位、视觉主题和视觉元素库；元素每张只选用一两个，商品完整摆拍不超过一半。
+        // 商品依据决定主题与构成，参考只迁移设计关系。
         expect(prompt).toContain("1. 先做视觉策划，再排每一张");
-        expect(prompt).toContain("写进 positioning");
-        expect(prompt).toContain("放进 concept");
-        expect(prompt).toContain("写进 motifs");
-        expect(prompt).toContain("换成别的商品就不成立");
+        expect(prompt).toContain("写差异化定位 positioning");
+        expect(prompt).toContain("视觉主题 concept");
+        expect(prompt).toContain("图形元素 motifs");
+        expect(prompt).toContain("换商品必须重选构成依据");
         expect(prompt).toContain("不强制数量比例");
         expect(prompt).toContain("短页优先讲清商品");
         expect(prompt).toContain("不写空洞大词和泛情绪口号");

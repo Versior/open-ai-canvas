@@ -1,15 +1,17 @@
 import { App, Button, Skeleton } from "antd";
-import { RotateCw, Shirt } from "lucide-react";
+import { RotateCw, Shirt, Clapperboard } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
+import { createCreativeJob } from "@/lib/remake/creative";
+import { createProductVideo } from "@/pages/video-replication/replace/use-product-video-store";
+import { remakeProductFromStudio } from "@/pages/video-replication/remake/remake-product-picker";
 import { WorkspacePage } from "@/components/layout/workspace-page";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { EmptyState } from "@/components/ui/product/empty-state/empty-state";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
-import { setStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
-import { getStudioPrompts } from "@/services/api/ecommerce-studio";
+import { loadStudioPromptConfig } from "./studio-prompt-config";
 import { createStudioProduct, studioOutputCount } from "@/lib/ecommerce-studio/product";
 import type { StudioOutput, StudioProduct, StudioShot } from "@/lib/ecommerce-studio/types";
 import { downloadBrowserMedia } from "@/services/browser-download";
@@ -40,6 +42,8 @@ export default function EcommerceStudioPage() {
     const userId = useUserStore((state) => state.user?.id);
     const { message } = App.useApp();
     const [params, setParams] = useSearchParams();
+    const navigate = useNavigate();
+    const [openingVideo, setOpeningVideo] = useState(false);
     const requested = params.get("product") || "";
     const status = useStudioStore((state) => state.status);
     const error = useStudioStore((state) => state.error);
@@ -65,13 +69,13 @@ export default function EcommerceStudioPage() {
     // 后台改过的出图提示词：读不到时按内置写法出图，并告诉用户这一次没用上后台的写法。
     useEffect(() => {
         const controller = new AbortController();
-        void getStudioPrompts(controller.signal)
-            .then(setStudioPromptOverrides)
-            .catch((failure) => {
-                if (!controller.signal.aborted) message.warning(`后台的出图提示词没有读到，这次按内置写法出图：${failure instanceof Error ? failure.message : "请稍后刷新"}`);
-            });
+        void loadStudioPromptConfig(controller.signal).catch((failure) => {
+            if (!controller.signal.aborted) {
+                message.warning(`后台的出图提示词没有读到，这次按内置写法出图：${failure instanceof Error ? failure.message : "请稍后刷新"}`);
+            }
+        });
         return () => controller.abort();
-    }, [message]);
+    }, [message, userId]);
 
     const ready = status === "ready";
     const stored = products.find((item) => item.id === requested) || (!requested ? products[0] : undefined);
@@ -151,12 +155,12 @@ export default function EcommerceStudioPage() {
     };
 
     /** 大图里调整这一张：先把微调和文案写回这张镜头，再按它出一张新的；之前的结果都保留。 */
-    const tune = (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch, revisionResourceId?: string) => {
+    const tune = async (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch, revisionResourceId?: string) => {
         if (!product) return;
         if (blocked) return void message.warning(blocked);
         try {
             edit((current) => patchStudioShotAt(current, group.ref, shot.id, (value) => ({ ...value, ...patch })), { immediate: true });
-            if (!runner.rerun(product.id, group.ref, [shot.id], image.value, revisionResourceId)) message.info("这张图正在生成，等它完成");
+            if (!(await runner.rerun(product.id, group.ref, [shot.id], image.value, revisionResourceId))) message.info("这张图正在生成，等它完成");
         } catch (failure) {
             message.error(failure instanceof Error ? failure.message : "提交失败");
         }
@@ -195,6 +199,32 @@ export default function EcommerceStudioPage() {
                             onDeleted={() => setParams({}, { replace: true })}
                         />
                         <div className="es-tabs">
+                            <Button
+                                icon={<Clapperboard size={15} />}
+                                loading={openingVideo}
+                                disabled={!product.photos.length}
+                                onClick={() => {
+                                    if (openingVideo) return;
+                                    setOpeningVideo(true);
+                                    void (async () => {
+                                        try {
+                                            const id = ensure();
+                                            await useStudioStore.getState().flush(id);
+                                            const saved = useStudioStore.getState().products.find((item) => item.id === id);
+                                            if (!saved) throw new Error("商品未保存");
+                                            const video = createCreativeJob(nanoid(12), remakeProductFromStudio(saved));
+                                            await createProductVideo(video);
+                                            navigate(`/video-replication?remake=${encodeURIComponent(video.id)}`);
+                                        } catch (error) {
+                                            message.error(error instanceof Error ? error.message : "新建商品视频失败");
+                                        } finally {
+                                            setOpeningVideo(false);
+                                        }
+                                    })();
+                                }}
+                            >
+                                商品视频策划
+                            </Button>
                             <Button icon={<Shirt size={15} />} onClick={() => setFashionOpen(true)}>
                                 换装 · 换脸 · 印花
                             </Button>

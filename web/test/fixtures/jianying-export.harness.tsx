@@ -193,7 +193,7 @@ test("form validation error keeps settings and offers a new check", async () => 
     await accept();
     await click("确认并请求下载");
     const frame = document.querySelector<HTMLIFrameElement>("iframe")!;
-    frame.contentDocument!.body.textContent = JSON.stringify({ code: 409, msg: "导出清单已变化" });
+    frame.srcdoc = JSON.stringify({ code: 409, msg: "导出清单已变化" });
     await act(async () => frame.dispatchEvent(new Event("load")));
     expect(document.body.textContent).toContain("导出清单已变化");
     expect((document.querySelector('[aria-label="本机剪映草稿目录"]') as HTMLInputElement).value).toBe(preview.draftRoot);

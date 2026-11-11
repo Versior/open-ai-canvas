@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"yingce/backend/internal/ecommerceagent"
 	"yingce/backend/internal/model"
 )
 
@@ -40,10 +41,92 @@ func TestStudioExpandedDesignKnowledgeReachesWorker(t *testing.T) {
 	if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
 		t.Fatal(err)
 	}
-	for _, text := range []string{"商品、人群与背景色分别判断", "微距压边", "生活分镜", "灰色镜腿", "用户选择 4 屏", "4.5:1"} {
+	for _, text := range []string{"商品、人群与背景色分别判断", "微距压边", "生活分镜", "灰色镜腿", "用户选择 4 屏", "4.5:1", "字块、主图轮廓与留白", "说明紧邻对应证据", "不固定标题与注解比例", "视觉策划：内容、证据与阅读路径"} {
 		if !strings.Contains(input.Config.SystemPrompt, text) {
 			t.Fatalf("worker system prompt lost %q", text)
 		}
+	}
+	if strings.Contains(input.Config.SystemPrompt, "注解约标题字号的三分之一") {
+		t.Fatal("worker still imposes the obsolete headline ratio")
+	}
+}
+
+func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
+	catalog, err := ecommerceagent.ReadStudioDesignCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.PosterDesign.Hero == "" || catalog.PosterDesign.Principles == "" {
+		t.Fatal("shared poster methods are missing")
+	}
+	svc, _, _, _ := ecommerceCreationTestService(t)
+	if _, err := svc.EnsureBuiltinEcommerceKnowledge(); err != nil {
+		t.Fatal(err)
+	}
+	for _, product := range []struct{ name, family string }{
+		{"儿童眼镜", "generic"}, {"机械键盘", "electronics"}, {"曲奇饼干", "food"}, {"护理精华", "beauty"}, {"衬衫", "apparel"}, {"陶瓷杯", "home"},
+	} {
+		for _, kind := range []string{"detail", "main", "single"} {
+			t.Run(product.name+"/"+kind, func(t *testing.T) {
+				input := canvasGenerationInput{Mode: "text", Prompt: "策划", Metadata: map[string]any{
+					"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
+					"studioProductName": product.name, "studioCategory": product.name, "studioFamily": product.family,
+					"studioPlatform": "taobao", "studioPlanKind": kind, "studioPlanTargets": "poster", "studioDetailScreens": 2,
+				}}
+				if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
+					t.Fatal(err)
+				}
+				for _, method := range []string{catalog.PosterDesign.Principles, catalog.PosterDesign.Hero, "标题中的实际词组", "不能只换背景"} {
+					if !strings.Contains(input.Config.SystemPrompt, method) {
+						t.Fatalf("worker lost shared method for %s/%s", product.name, kind)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestStudioDesignKnowledgeUpgradePreservesAdminChoices(t *testing.T) {
+	svc, db, _, _ := ecommerceCreationTestService(t)
+	previous := shippedWith(t, func(entries []model.EcommerceKnowledgeEntry) []model.EcommerceKnowledgeEntry {
+		for _, id := range []string{kb20LayoutID, kb20MethodID, "kb20-single-hero"} {
+			bumpEntry(&entries[indexOfEntry(t, entries, id)], "kb20-v7-20261111", "旧版设计方法")
+		}
+		return entries
+	})
+	if _, err := svc.ensureBuiltinEcommerceKnowledge(previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("id = ?", kb20MethodID).Update("content_json", `{"guidance":"管理员自定阅读方法"}`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("id = ?", "kb20-single-hero").Update("review_status", "rejected").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.EcommerceKnowledgeSource{}).Where("id = ?", ecommerceBuiltinSourceID(ecommerceKB20Domain)).Update("status", "disabled").Error; err != nil {
+		t.Fatal(err)
+	}
+	report, err := svc.EnsureBuiltinEcommerceKnowledge()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(report.Updated, kb20LayoutID) || !slices.Contains(report.PreservedLocal, kb20MethodID) {
+		t.Fatalf("new layout must upgrade and local method must be preserved: updated=%v preserved=%v", report.Updated, report.PreservedLocal)
+	}
+	layout, err := svc.repo.EcommerceKnowledgeEntryByID(kb20LayoutID)
+	if err != nil || layout.Version != ecommerceKB20Version || !strings.Contains(layout.ContentJSON, "核心词与支持词") {
+		t.Fatal("stored layout did not receive the new design method")
+	}
+	hero, err := svc.repo.EcommerceKnowledgeEntryByID("kb20-single-hero")
+	if err != nil || hero.ReviewStatus != "rejected" {
+		t.Fatal("design upgrade changed the admin review status")
+	}
+	method, err := svc.repo.EcommerceKnowledgeEntryByID(kb20MethodID)
+	if err != nil || !strings.Contains(method.ContentJSON, "管理员自定阅读方法") {
+		t.Fatal("design upgrade overwrote the local method")
+	}
+	if got := svc.ecommerceStudioDesignPlaybook("餐椅", "弧背餐椅", "home", "", "single", []string{"poster"}); got != "" {
+		t.Fatal("design upgrade re-enabled a disabled source")
 	}
 }
 
@@ -284,6 +367,9 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 			t.Fatalf("gel playbook is missing %s: %v", id, gel)
 		}
 	}
+	if chair := ecommerceStudioPlaybookIDs("餐椅", "奶油白餐椅", "home", "颜色 奶油白；黑框", "detail", nil); slices.Contains(chair, "kb20-light-texture") {
+		t.Fatal("chair color must not unlock gel lighting in the worker")
+	}
 	kids := ecommerceStudioPlaybookIDs("儿童眼镜", "透明椭圆框儿童眼镜", "generic", "镜框颜色 透明", "detail", nil)
 	for _, id := range []string{"kb20-category-kids", "kb20-category-eyewear", "kb20-light-transparent"} {
 		if !slices.Contains(kids, id) {
@@ -312,7 +398,7 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 	svc, db, _, _ := ecommerceCreationTestService(t)
 	// 数据库里还没有 KB20：用内置原文。
 	before := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "白色塑料软管；透明凝胶", "detail", nil)
-	for _, text := range []string{"电商设计策划知识库（KB20）", "【视觉策划五步：先从同质化里跳出来】", "【品类打法 · 医用护理与医疗器械】", "【布光 · 凝胶、乳霜和液体质地】", "不能从透明框推导视力改善", "参数屏可以罗列已确认规格", "项目｜数值与条件"} {
+	for _, text := range []string{"电商设计策划知识库（KB20）", "【视觉策划：内容、证据与阅读路径】", "【品类打法 · 医用护理与医疗器械】", "【布光 · 凝胶、乳霜和液体质地】", "不能从透明框推导视力改善", "参数屏可以罗列已确认规格", "项目｜数值与条件"} {
 		if !strings.Contains(before, text) {
 			t.Fatalf("builtin playbook is missing %q: %s", text, before)
 		}
@@ -336,7 +422,7 @@ func TestEcommerceStudioDesignPlaybook(t *testing.T) {
 	if err := db.Model(&model.EcommerceKnowledgeEntry{}).Where("id = ?", "kb20-category-medical").Update("review_status", "rejected").Error; err != nil {
 		t.Fatal(err)
 	}
-	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "", "detail", nil); strings.Contains(got, "医用护理与医疗器械") || !strings.Contains(got, "视觉策划五步") {
+	if got := svc.ecommerceStudioDesignPlaybook("医用凝胶", "医用重组胶原蛋白凝胶", "beauty", "", "detail", nil); strings.Contains(got, "医用护理与医疗器械") || !strings.Contains(got, "视觉策划：内容、证据与阅读路径") {
 		t.Fatalf("rejected entry should be skipped: %s", got)
 	}
 	if err := db.Model(&model.EcommerceKnowledgeSource{}).Where("id = ?", ecommerceBuiltinSourceID(ecommerceKB20Domain)).Update("status", "disabled").Error; err != nil {

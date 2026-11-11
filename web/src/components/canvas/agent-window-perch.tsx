@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
+import { useAgentAvatarMotion } from "@/hooks/use-agent-avatar-motion";
 import { agentAvatarClipForState, agentAvatarStateForRunStatus, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
 import { agentAvatarBundleFileURL } from "@/services/api/appearance";
 import { agentPetSpritesheetURL, type AgentPet } from "@/services/api/agent-pets";
@@ -21,7 +22,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const [petAction, setPetAction] = useState<AgentPetAction>();
     const actionTimer = useRef(0);
     const state = agentAvatarStateForRunStatus(status);
-    const chatter = useAgentPetChatter({ pet, state, approvalPending: state === "waiting_approval", active: Boolean(pet) && display === "perch", hovered });
+    const chatter = useAgentPetChatter({ pet, state, approvalPending: state === "waiting_approval", active: Boolean(pet), hovered });
     const spriteUrl = pet ? agentPetSpritesheetURL(pet) : "";
     const { headTop } = useAgentPetSheetMetrics(spriteUrl, pet?.spriteVersion ?? 2);
     const resting = state !== "running" && state !== "queued" && state !== "waiting_approval";
@@ -34,7 +35,19 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
         }
         const timer = window.setTimeout(() => setSettled(true), 4000);
         return () => window.clearTimeout(timer);
-    }, [awake, state, pet?.id, display]);
+    }, [awake, state, pet?.id, display, settled]);
+    useEffect(() => {
+        if (display === "full" || reducedMotion || awake || !settled) return;
+        const timer = window.setTimeout(() => {
+            if (!document.hidden) setSettled(false);
+        }, 15_000);
+        return () => window.clearTimeout(timer);
+    }, [display, reducedMotion, awake, settled]);
+    useEffect(() => {
+        if (display === "perch" && expanded && !awake && !reducedMotion && pet) {
+            setPetAction((current) => ({ id: (current?.id ?? 0) + 1, row: current?.row === "waving" ? "review" : "waving" }));
+        }
+    }, [display, expanded, awake, reducedMotion, pet?.id]);
     const bundle = !pet && appearance.avatarType === "bundle";
     const manifestUrl = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, revision) : "/doll/avatar.json";
     useEffect(() => {
@@ -67,11 +80,20 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
         window.clearTimeout(actionTimer.current);
         actionTimer.current = window.setTimeout(() => setSpeaking(false), 3500);
     };
-    const clip = manifest ? (speaking && manifest.clips.talk ? "talk" : hovered && resting && manifest.clips.wave ? "wave" : agentAvatarClipForState(appearance, state, manifest)) : "";
+    const avatarMotion = useAgentAvatarMotion({
+        manifest,
+        state,
+        stateClip: manifest ? agentAvatarClipForState(appearance, state, manifest) : "",
+        idleClip: manifest ? agentAvatarClipForState(appearance, "idle", manifest) : "",
+        paused: !expanded,
+        reducedMotion,
+        engaged: hovered || focused || (display === "perch" && !settled && resting),
+    });
+    const clip = avatarMotion.clip;
     const file = manifest?.clips[clip];
     const media = file ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, file, false, revision) : `/doll/${encodeURIComponent(file)}`) : "";
     if ((!pet && !media) || failed) return null;
-    const message = display === "perch" ? chatter.message?.text || (speaking ? "我在这里。下一步一起完成。" : "") : "";
+    const message = chatter.message?.text || (speaking ? "我在这里。下一步一起完成。" : "");
     const contentHeight = videoBounds ? Math.min(112, 104 / videoBounds.aspect) : 112;
     const mediaTop = pet ? headTop * 112 : videoBounds ? (112 - contentHeight) / 2 + videoBounds.top * contentHeight : 112 * 0.12;
     return (
@@ -80,6 +102,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
             data-display={display}
             data-expanded={expanded}
             data-action={speaking ? "talk" : state}
+            data-avatar-clip={!pet ? clip : undefined}
             style={{ "--agent-perch-head-top": `${mediaTop}px` } as CSSProperties}
             data-canvas-no-zoom
             onPointerDown={(event) => event.stopPropagation()}
@@ -107,6 +130,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                 onBlur={() => setFocused(false)}
                 onClick={(event) => {
                     speak();
+                    avatarMotion.interact();
                     if (event.detail > 0) event.currentTarget.blur();
                 }}
                 onKeyDown={(event) => {
@@ -129,7 +153,8 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                             width={104}
                             height={112}
                             action={petAction}
-                            ambient={display === "full"}
+                            ambient
+                            lookAtPointer
                             reducedMotion={reducedMotion}
                             pixelated={pet.pixelated}
                             hovered={hovered}
@@ -137,7 +162,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                             onError={() => setFailed(true)}
                         />
                     ) : (
-                        <AgentAvatarVideo src={media} reducedMotion={reducedMotion} paused={!expanded} loop={!speaking} onContentBounds={setVideoBounds} onError={() => setFailed(true)} />
+                        <AgentAvatarVideo key={avatarMotion.key} src={media} reducedMotion={reducedMotion} paused={!expanded} loop={avatarMotion.loop} onEnded={avatarMotion.onEnded} onContentBounds={setVideoBounds} onError={() => setFailed(true)} />
                     )}
                 </span>
             </button>

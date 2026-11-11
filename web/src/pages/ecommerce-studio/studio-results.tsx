@@ -288,10 +288,10 @@ function GroupCard({
     const platform = ecommercePlatform(product.platform)?.name;
     const isSet = Boolean(group.kind);
 
-    const rerun = (shotIds: string[]) => {
+    const rerun = async (shotIds: string[]) => {
         if (blocked) return void message.warning(blocked);
         try {
-            const count = runner.rerun(product.id, group.ref, shotIds, imageModel);
+            const count = await runner.rerun(product.id, group.ref, shotIds, imageModel);
             if (!count) message.info("这些图正在生成，等它们完成");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "提交失败");
@@ -530,10 +530,10 @@ export function StudioResults({
                         product={product}
                         blocked={blocked}
                         onDismiss={() => clearRequest(request.id)}
-                        onConfirm={(shotIds) => {
-                            clearRequest(request.id);
+                        onConfirm={async (shotIds) => {
                             try {
-                                runner.rerun(product.id, { planKind: request.kind }, shotIds, imageModel);
+                                await runner.rerun(product.id, { planKind: request.kind }, shotIds, imageModel);
+                                clearRequest(request.id);
                             } catch (error) {
                                 message.error(error instanceof Error ? error.message : "提交失败");
                             }

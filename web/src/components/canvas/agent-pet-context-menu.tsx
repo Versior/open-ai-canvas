@@ -8,11 +8,11 @@ import { AgentPetSprite } from "@/components/canvas/agent-pet-sprite";
 import { Switch } from "@/components/ui/base/switch";
 import { agentPetCatalogQueryKey, useApplyAgentPet } from "@/hooks/use-active-agent-pet";
 import type { CanvasTheme } from "@/lib/canvas-theme";
-import { AGENT_PET_ASPECT, AGENT_PET_INTERACTIONS, AGENT_PET_SIZE_OPTIONS } from "@/lib/canvas/agent-pet";
+import { AGENT_PET_ASPECT, AGENT_PET_SIZE_OPTIONS } from "@/lib/canvas/agent-pet";
 import { AGENT_SKINS, agentSkinAccent, resolveAgentSkin } from "@/lib/canvas/agent-skin";
 import { agentPetGreeting, agentPetPersona } from "@/lib/canvas/agent-pet-lines";
 import { AGENT_PET_SEARCH_THRESHOLD, AGENT_PET_TONE_LABELS, matchesAgentPetQuery } from "@/lib/canvas/agent-pet-store";
-import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, type AgentPet, type AgentPetRow } from "@/services/api/agent-pets";
+import { agentPetPreviewURL, agentPetSpritesheetURL, getAgentPetCatalog, type AgentPet } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
 import { useUserStore } from "@/stores/use-user-store";
 import "./agent-pet-store.css";
@@ -39,8 +39,6 @@ type AgentPetContextMenuProps = {
     onOpenAgent: () => void;
     onOpenStore: () => void;
     onSpeak: () => void;
-    actionsEnabled: boolean;
-    onAction: (row: AgentPetRow) => void;
     onToggleCollapsed: () => void;
     /** restoreFocus 为 true 时焦点回到入口（Esc、执行完命令）；点到外面关闭时不抢焦点。 */
     onClose: (restoreFocus: boolean) => void;
@@ -50,7 +48,7 @@ type AgentPetContextMenuProps = {
  * 智能体入口的右键菜单：顶部是当前形象的名片（说话风格配色、台词），下面是常用操作、大小、头顶气泡和收起。
  * 在光标处打开，靠近屏幕边缘时向内翻转；点外面、按 Esc、窗口尺寸变化或失焦时关闭；方向键在各项之间移动。
  */
-export function AgentPetContextMenu({ theme, point, pet, agentName, petShown, collapsed, approvalPending, onOpenAgent, onOpenStore, onSpeak, actionsEnabled, onAction, onToggleCollapsed, onClose }: AgentPetContextMenuProps) {
+export function AgentPetContextMenu({ theme, point, pet, agentName, petShown, collapsed, approvalPending, onOpenAgent, onOpenStore, onSpeak, onToggleCollapsed, onClose }: AgentPetContextMenuProps) {
     const element = useRef<HTMLDivElement>(null);
     const reducedMotion = Boolean(useReducedMotion());
     const userId = useUserStore((state) => state.user?.id || "");
@@ -167,17 +165,6 @@ export function AgentPetContextMenu({ theme, point, pet, agentName, petShown, co
                             <>
                                 <MenuDivider theme={theme} />
                                 <div className="px-1.5 pb-1 pt-0.5 font-medium" style={{ color: theme.node.faint, fontSize: "var(--fs-label)" }}>
-                                    {actionsEnabled ? "做个动作 · 播完回待机" : reducedMotion ? "动作 · 系统已减少动画" : "动作 · 任务状态优先"}
-                                </div>
-                                <div className="agent-pet-skin-grid" role="group" aria-label="形象动作">
-                                    {AGENT_PET_INTERACTIONS.map((item) => (
-                                        <button key={item.row} type="button" data-agent-pet-menu-item disabled={!actionsEnabled} onClick={() => run(() => onAction(item.row))}>
-                                            {item.label}
-                                        </button>
-                                    ))}
-                                </div>
-                                <MenuDivider theme={theme} />
-                                <div className="px-1.5 pb-1 pt-0.5 font-medium" style={{ color: theme.node.faint, fontSize: "var(--fs-label)" }}>
                                     大小
                                 </div>
                                 <div className="agent-pet-menu-segmented mx-1" role="group" aria-label="形象大小">
@@ -221,7 +208,7 @@ export function AgentPetContextMenu({ theme, point, pet, agentName, petShown, co
                                 </button>
                             ))}
                         </div>
-                        <MenuItem theme={theme} icon={collapsed ? <Maximize2 /> : <Minus />} label={collapsed ? "展开形象" : "收起形象"} detail={collapsed ? undefined : "只留一个小圆点"} onClick={() => run(onToggleCollapsed)} />
+                        {!pet ? <MenuItem theme={theme} icon={collapsed ? <Maximize2 /> : <Minus />} label={collapsed ? "展开形象" : "收起形象"} detail={collapsed ? undefined : "只留一个小圆点"} onClick={() => run(onToggleCollapsed)} /> : null}
                     </>
                 )}
             </div>

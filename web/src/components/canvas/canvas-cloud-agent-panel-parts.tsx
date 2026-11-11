@@ -22,6 +22,7 @@ import { AgentPetStoreModal } from "@/components/canvas/agent-pet-picker";
 import { AgentPetSprite, useAgentPetSheetMetrics, type AgentPetAction } from "@/components/canvas/agent-pet-sprite";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
+import { useAgentAvatarMotion } from "@/hooks/use-agent-avatar-motion";
 import { AGENT_PET_ASPECT, agentPetLauncherHeight } from "@/lib/canvas/agent-pet";
 import { agentPetSpritesheetURL, type AgentPetRow } from "@/services/api/agent-pets";
 import { useAgentPetPrefsStore } from "@/stores/use-agent-pet-prefs-store";
@@ -154,7 +155,18 @@ export const AgentLauncher = memo(function AgentLauncher({
     const currentBundleManifestState = bundleManifestState?.url === bundleManifestURL ? bundleManifestState : null;
     const bundleManifest = currentBundleManifestState?.manifest ?? null;
     const bundleManifestLoading = bundleActive && currentBundleManifestState === null;
-    const clip = bundleManifest ? agentAvatarClipForState(appearance, avatarState, bundleManifest) : "";
+    const [minimized, setCollapsed] = useState(readAgentLauncherCollapsed);
+    const collapsed = !pet && minimized;
+    const avatarMotion = useAgentAvatarMotion({
+        manifest: bundleManifest,
+        state: avatarState,
+        stateClip: bundleManifest ? agentAvatarClipForState(appearance, avatarState, bundleManifest) : "",
+        idleClip: bundleManifest ? agentAvatarClipForState(appearance, "idle", bundleManifest) : "",
+        paused: Boolean(hidden) || collapsed,
+        reducedMotion,
+        engaged: petHovered,
+    });
+    const clip = avatarMotion.clip;
     const clipFile = bundleManifest?.clips[clip] || "";
     const mediaURL = bundleActive && clipFile ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, clipFile, false, appearanceRevision) : `/doll/${encodeURIComponent(clipFile)}`) : "";
     const [mediaError, setMediaError] = useState(false);
@@ -167,7 +179,6 @@ export const AgentLauncher = memo(function AgentLauncher({
         window.addEventListener("resize", resize);
         return () => window.removeEventListener("resize", resize);
     }, []);
-    const [collapsed, setCollapsed] = useState(readAgentLauncherCollapsed);
     const toggleCollapsed = () => {
         const next = !collapsed;
         setCollapsed(next);
@@ -191,19 +202,45 @@ export const AgentLauncher = memo(function AgentLauncher({
     const avatarHeight = pet ? agentPetLauncherHeight(petSize, appearance.avatarHeight, viewport, inCanvasEditor) : resolveAgentLauncherAvatarHeight(appearance.avatarHeight, aspectRatio, viewport, inCanvasEditor);
     const height = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? avatarHeight : 76;
     const width = collapsed ? AGENT_LAUNCHER_COLLAPSED_SIZE : keepsAvatarSize ? Math.round(height * aspectRatio) : 76;
-    const { position, dragging, handlers } = useAgentLauncherPosition(onOpen, width, height);
+    const { position, dragging, handlers } = useAgentLauncherPosition(onOpen, width, height, Boolean(pet));
+    const [peeking, setPeeking] = useState(false);
+    useEffect(() => {
+        setPeeking(false);
+        if (!pet || !position.dock || hidden || reducedMotion || dragging) return;
+        let timer: number;
+        const schedule = () => {
+            timer = window.setTimeout(
+                () => {
+                    if (!document.hidden) {
+                        setPeeking(true);
+                    }
+                    timer = window.setTimeout(() => {
+                        setPeeking(false);
+                        schedule();
+                    }, 2400);
+                },
+                18000 + Math.random() * 12000,
+            );
+        };
+        schedule();
+        return () => window.clearTimeout(timer);
+    }, [pet?.id, position.dock, hidden, reducedMotion, dragging]);
+    const peekSide = pet && !dragging && !approvalPending ? position.dock : undefined;
+    const peekEngaged = petHovered || peeking;
+    // 通用图集没有侧身探头帧。保留完整形象，靠边时只用视线互动，避免裁脸和整图倾斜。
+    const displayPosition = { right: position.dock ? (position.dock === "right" ? 8 : viewport.width - width - 8) : position.right, bottom: position.bottom };
     const { onClick, onKeyDown, onDoubleClick, ...pointerHandlers } = handlers;
     // 大形象的外框大多是透明像素：外框不接收指针，只有身体热区可点、可拖，透明处的点击落到下面的页面。
     // 键盘聚焦与激活仍在按钮上；小圆球和默认 76px 入口整块可点。
     const bodyHitOnly = keepsAvatarSize && (live || media || Boolean(pet));
     const hitInset = bodyHitOnly && (!avatarLoading || showBuiltinPoster) ? AGENT_LAUNCHER_HIT_INSET : null;
-    const petHoverHandlers = pet ? { onPointerEnter: () => setPetHovered(true), onPointerLeave: () => setPetHovered(false) } : null;
+    const petHoverHandlers = { onPointerEnter: () => setPetHovered(true), onPointerLeave: () => setPetHovered(false) };
     // 宠物形象不显示状态圆点、入口文字和待审批角标，改由头顶云朵气泡说话。
     const petShown = Boolean(pet) && !collapsed;
     const petSheetURL = pet ? agentPetSpritesheetURL(pet) : "";
     const petMetrics = useAgentPetSheetMetrics(petSheetURL, pet?.spriteVersion ?? 1);
     const { message: petMessage, dismiss: dismissPetMessage, speak: petSpeak } = useAgentPetChatter({ pet, state: avatarState, approvalPending, active: petShown && !hidden, hovered: petHovered });
-    const showToggle = !hidden && (largeAvatar || collapsed) && (!avatarLoading || showBuiltinPoster);
+    const showToggle = !pet && !hidden && (largeAvatar || collapsed) && (!avatarLoading || showBuiltinPoster);
     const openMenu = (event: ReactMouseEvent<HTMLElement>) => {
         event.preventDefault();
         event.stopPropagation();
@@ -228,42 +265,53 @@ export const AgentLauncher = memo(function AgentLauncher({
                     keepsAvatarSize && live && "canvas-agent-launcher-live2d",
                     keepsAvatarSize && (media || Boolean(pet) || bundleManifestLoading) && "canvas-agent-launcher-media",
                 )}
-                style={{ ...position, width, height, color: theme.node.text, "--canvas-agent-launcher-shadow": theme.spatial.shadow, ...(hidden ? { display: "none" } : null) } as CSSProperties}
+                style={{ width, height, color: theme.node.text, "--canvas-agent-launcher-shadow": theme.spatial.shadow, ...(hidden ? { display: "none" } : null) } as CSSProperties}
+                animate={displayPosition}
+                initial={false}
+                data-pet-dock={pet ? position.dock : undefined}
                 aria-hidden={hidden || undefined}
                 tabIndex={hidden ? -1 : undefined}
                 data-canvas-no-zoom
+                data-avatar-clip={bundleActive ? clip : undefined}
+                onFocus={() => setPetHovered(true)}
+                onBlur={() => setPetHovered(false)}
                 onDragStart={(event) => event.preventDefault()}
                 {...(bodyHitOnly ? null : pointerHandlers)}
                 onClick={onClick}
                 onKeyDown={onKeyDown}
                 onDoubleClick={onDoubleClick}
                 onContextMenu={openMenu}
-                whileHover={reducedMotion || dragging ? undefined : { scale: 1.035 }}
-                whileTap={reducedMotion || dragging ? undefined : { scale: 0.96 }}
-                transition={{ duration: reducedMotion ? 0 : 0.18 }}
+                whileHover={reducedMotion || dragging || position.dock ? undefined : { scale: 1.035 }}
+                whileTap={reducedMotion || dragging || position.dock ? undefined : { scale: 0.96 }}
+                transition={{ duration: reducedMotion || dragging ? 0 : 0.18 }}
             >
-                {hitInset ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} {...petHoverHandlers} /> : null}
+                {hitInset && !pet ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} {...petHoverHandlers} /> : null}
                 {showBuiltinPoster ? <img src="/doll/mascot-idle.webp" className="canvas-agent-launcher-poster" alt="" aria-hidden="true" draggable={false} width={320} height={288} /> : null}
                 {collapsed ? (
                     <AgentOrb state={agentOrbStateForAvatar(avatarState)} size={30} color="#7164f6" />
                 ) : pet ? (
-                    <AgentPetSprite
-                        src={petSheetURL}
-                        version={pet.spriteVersion}
-                        state={avatarState}
-                        stateRows={pet.stateRows}
-                        width={width}
-                        height={height}
-                        paused={hidden}
-                        reducedMotion={reducedMotion}
-                        pixelated={pet.pixelated}
-                        dragging={dragging}
-                        offsetRight={position.right}
-                        hovered={petHovered}
-                        ambient
-                        action={petAction}
-                        onError={() => setFailedPetId(pet.id)}
-                    />
+                    <motion.span className="canvas-agent-pet-pose" data-peek-side={peekSide} animate={{ y: peekSide && peekEngaged && !reducedMotion ? -3 : 0 }} transition={{ duration: reducedMotion || dragging ? 0 : 0.2 }}>
+                        {hitInset ? <span className="canvas-agent-launcher-hit" aria-hidden="true" style={{ inset: `${hitInset.top * 100}% ${hitInset.side * 100}% ${hitInset.bottom * 100}%` }} {...pointerHandlers} {...petHoverHandlers} /> : null}
+                        <AgentPetSprite
+                            src={petSheetURL}
+                            version={pet.spriteVersion}
+                            state={avatarState}
+                            stateRows={pet.stateRows}
+                            width={width}
+                            height={height}
+                            paused={hidden}
+                            reducedMotion={reducedMotion}
+                            pixelated={pet.pixelated}
+                            dragging={dragging}
+                            offsetRight={displayPosition.right}
+                            hovered={petHovered && !peekSide}
+                            ambient={!peekSide}
+                            peekSide={peekSide}
+                            lookAtPointer
+                            action={petAction}
+                            onError={() => setFailedPetId(pet.id)}
+                        />
+                    </motion.span>
                 ) : petPending ? (
                     <span role="status" aria-busy="true">
                         <LoaderCircle className={reducedMotion ? "size-6" : "size-6 motion-safe:animate-spin"} aria-hidden="true" />
@@ -280,7 +328,16 @@ export const AgentLauncher = memo(function AgentLauncher({
                         onError={setLive2DError}
                     />
                 ) : mediaURL && !mediaError ? (
-                    <AgentAvatarVideo src={mediaURL} loop={!["completed", "failed", "cancelled", "rejected"].includes(avatarState)} paused={hidden} onReady={() => setReadyBundleURL(bundleManifestURL)} onError={() => setMediaError(true)} />
+                    <AgentAvatarVideo
+                        key={avatarMotion.key}
+                        src={mediaURL}
+                        loop={avatarMotion.loop}
+                        onEnded={avatarMotion.onEnded}
+                        reducedMotion={reducedMotion}
+                        paused={hidden}
+                        onReady={() => setReadyBundleURL(bundleManifestURL)}
+                        onError={() => setMediaError(true)}
+                    />
                 ) : bundleManifestLoading ? null : (
                     <AgentOrb state={agentOrbStateForAvatar(avatarState)} size={60} color="#7164f6" />
                 )}
@@ -311,7 +368,7 @@ export const AgentLauncher = memo(function AgentLauncher({
                     text={petMessage.text}
                     tone={selectedPet?.tone}
                     accent={petMetrics.accent}
-                    anchor={{ left: viewport.width - position.right - width, top: viewport.height - position.bottom - height, width, height, headTop: petMetrics.headTop }}
+                    anchor={{ left: viewport.width - displayPosition.right - width, top: viewport.height - position.bottom - height, width, height, headTop: petMetrics.headTop }}
                     viewport={viewport}
                     onDismiss={dismissPetMessage}
                 />
@@ -350,8 +407,6 @@ export const AgentLauncher = memo(function AgentLauncher({
                         petSpeak();
                         playPetAction("waving");
                     }}
-                    actionsEnabled={resting && !reducedMotion}
-                    onAction={playPetAction}
                     onToggleCollapsed={toggleCollapsed}
                     onClose={closeMenu}
                 />

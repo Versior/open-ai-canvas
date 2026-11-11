@@ -90,7 +90,7 @@ func (r *Repository) AnalyticsTasks(filter AnalyticsFilter) ([]model.Task, error
 		query = query.Where("user_id = ?", filter.UserID)
 	}
 	if filter.Model != "" {
-		query = query.Where("model = ?", filter.Model)
+		query = whereAnalyticsModel(query, "model", filter.Model)
 	}
 	if filter.Capability != "" {
 		if filter.Capability == "text" {
@@ -403,7 +403,7 @@ func (r *Repository) apiCallLogQuery(filter AnalyticsFilter) *gorm.DB {
 		query = query.Where("api_call_logs.user_id = ?", filter.UserID)
 	}
 	if filter.Model != "" {
-		query = query.Where("api_call_logs.model = ?", filter.Model)
+		query = whereAnalyticsModel(query, "api_call_logs.model", filter.Model)
 	}
 	if filter.ChannelID != "" {
 		query = query.Where("api_call_logs.channel_id = ?", filter.ChannelID)
@@ -412,6 +412,13 @@ func (r *Repository) apiCallLogQuery(filter AnalyticsFilter) *gorm.DB {
 		query = query.Where("api_call_logs.capability = ?", filter.Capability)
 	}
 	return query
+}
+
+func whereAnalyticsModel(query *gorm.DB, column, name string) *gorm.DB {
+	name = model.BaseModelName(name)
+	// LIKE wildcards in actual model names must stay literal.
+	escaped := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(name)
+	return query.Where("("+column+" = ? OR "+column+" LIKE ? ESCAPE '\\')", name, "%::"+escaped)
 }
 
 func (r *Repository) ModelPricings() ([]model.ModelPricing, error) {

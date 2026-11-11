@@ -19,7 +19,7 @@ export const STUDIO_PREP_LIMITS = {
     palette: 4,
     colorName: 10,
     headline: 14,
-    visual: 90,
+    visual: 160,
     why: 60,
 } as const;
 

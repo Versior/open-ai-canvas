@@ -12,7 +12,7 @@
 
 [![GitHub stars](https://img.shields.io/github/stars/Versior/open-ai-canvas?style=flat-square&logo=github&color=111827)](https://github.com/Versior/open-ai-canvas/stargazers)
 [![License](https://img.shields.io/github/license/Versior/open-ai-canvas?style=flat-square&color=10b981)](LICENSE)
-[![Last commit](https://img.shields.io/github/last-commit/Versior/open-ai-canvas/feat/ecommerce-canvas?style=flat-square&color=6366f1)](https://github.com/Versior/open-ai-canvas/commits/feat/ecommerce-canvas)
+[![Last commit](https://img.shields.io/github/last-commit/Versior/open-ai-canvas/main?style=flat-square&color=6366f1)](https://github.com/Versior/open-ai-canvas/commits/main)
 [![Bun](https://img.shields.io/badge/Bun-1.3.9-14151A?style=flat-square&logo=bun)](web/package.json)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&logo=go&logoColor=white)](backend/go.mod)
 
@@ -249,7 +249,7 @@ STAGE 基于 Open AI Canvas 持续二次开发，将原本偏影视的工作台�
 - **Operations**：模型渠道、成本售价、任务质量、用户、积分、存储和公告管理。
 - **Compatibility**：保留旧存储键、插件协议、导入格式和部署变量，避免破坏现有数据。
 
-当前开发分支为 [`feat/ecommerce-canvas`](https://github.com/Versior/open-ai-canvas/tree/feat/ecommerce-canvas)。
+二开功能统一发布到 [`main`](https://github.com/Versior/open-ai-canvas/tree/main)。
 
 ## Quick Start
 
@@ -260,16 +260,9 @@ STAGE 基于 Open AI Canvas 持续二次开发，将原本偏影视的工作台�
 
 ### Docker Compose
 
-```bash
-git clone -b feat/ecommerce-canvas https://github.com/Versior/open-ai-canvas.git stage
-cd stage
-docker compose -f docker-compose.local.yml up -d --build
-```
+镜像由本仓库 GitHub Actions 构建，服务器只拉取并运行 `ghcr.io/versior/open-ai-canvas-*` 镜像。`main` 发布提交镜像和 `latest`；Host Updater 使用带镜像和校验附件的正式 Release。
 
-构建完成后打开 <http://localhost:3000>。首次使用时注册管理员账号，然后在后台配置模型渠道。
-
-> [!TIP]
-> 本地构建编排只暴露 Web 端口，后端保留在 Compose 网络内。不要把后端 `8080` 端口直接暴露到公网。
+首次服务器安装使用 `scripts/install-server-image.sh` 和 `docker-compose.deploy.yml`，固定到已经发布的 Release。部署后默认访问 <http://localhost:3000>，首次管理员初始化和模型渠道在后台完成。具体安装、现有部署核验与更新方式见[二开部署与版本核验](docs/content/docs/backend/fork-deployment.mdx)。
 
 ### Local development
 
@@ -277,7 +270,7 @@ docker compose -f docker-compose.local.yml up -d --build
 <summary><strong>展开宿主机开发步骤</strong></summary>
 
 ```bash
-git clone -b feat/ecommerce-canvas https://github.com/Versior/open-ai-canvas.git stage
+git clone -b main https://github.com/Versior/open-ai-canvas.git stage
 cd stage
 
 mkdir -p .local/project-workbench-debug .local/cache/go-build .local/cache/go-mod
@@ -308,7 +301,7 @@ bun run dev
 - 不要在 URL、日志、Issue 或仓库中暴露 API Key、Cookie、数据库和生产配置。
 - 限制 `.env`、数据库、上传目录、备份和 `.settings-key` 的文件权限。
 
-完整部署方式、环境变量和安全边界请查阅[本地开发文档](docs/content/docs/backend/local-development.mdx)与[安全策略](SECURITY.md)。
+完整部署方式、环境变量和版本核验请查阅[二开部署文档](docs/content/docs/backend/fork-deployment.mdx)、[本地开发文档](docs/content/docs/backend/local-development.mdx)与[安全策略](SECURITY.md)。
 
 ## Documentation
 

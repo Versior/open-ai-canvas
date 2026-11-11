@@ -408,10 +408,7 @@ func (s *Service) AdminInteriorOverview(actor *model.User) (*AdminInteriorOvervi
 
 // modelDisplayLabel 去掉系统渠道前缀（CHANNEL_000005::gpt-image-2），统计里按模型名显示。
 func modelDisplayLabel(value string) string {
-	if index := strings.LastIndex(value, "::"); index >= 0 {
-		return value[index+2:]
-	}
-	return value
+	return model.BaseModelName(value)
 }
 
 // AdminInteriorGenerations 按时间倒序列出所有用户的室内设计出图，可按状态、出图方式和用户（用户名、昵称、邮箱）或任务 ID 筛选。

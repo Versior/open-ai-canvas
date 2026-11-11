@@ -53,7 +53,7 @@ const build = await Bun.build({
 expect(build.success).toBe(true);
 const source = await build.outputs[0].text();
 
-function harness() {
+function harness(allowDock = false) {
     const cells = [];
     let cursor = 0;
     let opens = 0;
@@ -87,11 +87,13 @@ function harness() {
     runInNewContext(source, { module, exports: module.exports, hooks, window, localStorage: { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) }, console });
     const render = () => {
         cursor = 0;
-        return module.exports.useAgentLauncherPosition(() => opens++);
+        return module.exports.useAgentLauncherPosition(() => opens++, 76, 76, allowDock);
     };
     let current = render();
     let captured = null;
     const target = {
+        closest: () => null,
+        getBoundingClientRect: () => ({ right: window.innerWidth - current.position.right, bottom: window.innerHeight - current.position.bottom }),
         setPointerCapture: (id) => {
             captured = id;
         },
@@ -126,6 +128,21 @@ function harness() {
         },
     };
 }
+
+test("宠物拖到窗边半身吸附，放手不打开助手，键盘可以离开窗边", () => {
+    const h = harness(true);
+    h.fire("onPointerDown");
+    h.fire("onPointerMove", { clientX: 9999 });
+    h.fire("onPointerUp", { clientX: 9999 });
+    h.fire("onClick");
+    expect(h.opens).toBe(0);
+    expect(h.state.position.dock).toBe("right");
+    expect(h.state.position.right).toBe(-34.2);
+    h.fire("onKeyDown", { key: "ArrowUp" });
+    expect(h.state.position.dock).toBe("right");
+    h.fire("onKeyDown", { key: "ArrowLeft" });
+    expect(h.state.position).toEqual({ right: 20, bottom: 30 });
+});
 
 test("production handlers preserve click and suppress drag-release activation", () => {
     const h = harness();

@@ -75,8 +75,8 @@ test("儿童眼镜与数码获得不同候选，构图与设计依据进入保�
         expect(run.shots[0].composition).toBe(composition);
         expect(compiled.prompt).toContain(STUDIO_COMPOSITIONS[composition].render);
         expect(compiled.prompt).toContain("#FFE27A");
-        expect(compiled.layoutGuide?.composition).toBe(composition === "corner" ? undefined : composition);
-        if (compiled.layoutGuide) expect(compiled.prompt).toContain("草图不提供颜色");
+        expect(compiled.layoutGuide).toBeUndefined();
+        expect(compiled.prompt).toContain("本屏画面蓝图决定具体排字");
         const compressed = compileStudioPrompt({ product: restored, shot: run.shots[0], suite: run.suite, brief: restored.brief, model: "gpt-image-2", maxChars: compiled.prompt.length - 10 });
         expect(compressed.trimmed).not.toContain("style");
         expect(compressed.prompt).toContain("#FFE27A");

@@ -569,12 +569,13 @@ async function tab(name: string) {
     expect(found).toBeTruthy();
     await act(async () => (found as HTMLElement).click());
 }
-async function mountEditor(editing: ChannelModel | null, catalog = protocols, draftValues?: ChannelModelFormValues, initialProtocolLoading = false) {
+async function mountEditor(editing: ChannelModel | null, catalog = protocols, draftValues?: ChannelModelFormValues, initialProtocolLoading = false, existingModels: ChannelModel[] = []) {
     const originalRequest = apiClient.request;
     const saves: any[] = [];
     const suggestions: Array<{ config: any; resolve(value: any): void }> = [];
     apiClient.request = (async (config: any) => {
         if (config.url.includes("protocol-suggestion")) return new Promise((resolve) => suggestions.push({ config, resolve: (data) => resolve({ status: 200, data: { code: 0, data } }) }));
+        if (config.url.endsWith("/model-metadata")) return { status: 200, data: { code: 0, data: { models: [] } } };
         if (config.url.endsWith("/references")) return { status: 200, data: { code: 0, data: { channels: [], users: [] } } };
         if (["post", "put", "patch"].includes(config.method.toLowerCase())) saves.push(config.data);
         return { status: 200, data: { code: 0, data: {} } };
@@ -592,6 +593,7 @@ async function mountEditor(editing: ChannelModel | null, catalog = protocols, dr
                         <ChannelModelEditor
                             channel={{ id: "test-channel", name: "测试 Key", baseUrl: "https://example.com/v1", apiKey: "", enabled: true, models: [] }}
                             editing={editing}
+                            existingModels={existingModels}
                             draftValues={draftValues}
                             protocols={catalog}
                             protocolLoading={protocolLoading}
@@ -763,6 +765,35 @@ test("完整模型编辑器：手动选择优先于待返回建议，保存明�
         expect(fixture.saves[0]).toMatchObject({ protocol: "text-b", protocolSelectionExplicit: true });
     } finally {
         await fixture.close();
+    }
+});
+
+test("完整模型编辑器：复制或识别后迟到的建议不覆盖配置，也不记录手动协议选择", async () => {
+    const catalog = [...protocols, { ...protocols[0], value: "other-image", label: "另一图片协议" }];
+    const sourceValues = { ...draft(), protocol: "other-image" };
+    sourceValues.capabilityConfig!.image!.references.maxImageBytes = 7 * 1024 * 1024;
+    const source = savedModel(sourceValues);
+    for (const action of ["copy", "identify"]) {
+        const initial = { ...draft(), protocol: "", modelKey: "", providerModelKey: "" };
+        const fixture = await mountEditor(null, catalog, initial, false, [source]);
+        try {
+            await inputValue('input[id="modelKey"]', "gpt-image-2");
+            expect(fixture.suggestions).toHaveLength(1);
+            if (action === "copy") {
+                await choose("配置来源模型", `${source.channelLabel || source.providerModelKey || source.modelKey} · other-image · 1 个价格档`);
+                await click("复制完整配置到表单");
+            } else {
+                await click("自动识别并填写");
+            }
+            await act(async () => fixture.suggestions[0].resolve({ protocol: "openai-image", source: "selection", candidates: ["openai-image"] }));
+            await tab("能力与参数");
+            expect((document.querySelector(".choice-browser input:checked") as HTMLInputElement).value).toBe("other-image");
+            await click("添加模型");
+            expect(fixture.saves).toHaveLength(1);
+            expect(fixture.saves[0]).toMatchObject({ protocol: "other-image", protocolSelectionExplicit: false, capabilityConfig: { image: { references: { maxImageBytes: 7 * 1024 * 1024 } } } });
+        } finally {
+            await fixture.close();
+        }
     }
 });
 

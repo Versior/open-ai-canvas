@@ -2,6 +2,7 @@ import { afterAll, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { ComponentProps } from "react";
 import type { RemakeProduct } from "@/lib/remake/job";
+import type { StudioSetEntry } from "@/lib/ecommerce-studio/runs";
 
 const dom = new Window({ url: "http://localhost/" });
 for (const key of ["window", "document", "navigator", "HTMLElement", "SVGElement", "ShadowRoot", "Element", "Node", "Event", "CustomEvent", "MutationObserver", "ResizeObserver"]) {
@@ -318,4 +319,33 @@ test("首页导演任务显示实际进度，离开后才提供恢复，使用�
     await act(async () => paint(false));
     expect(host.textContent).not.toContain("恢复上次策划");
     expect(button("生成脚本方案").disabled).toBe(false);
+});
+
+test("生图前的首屏编辑器同样显示两条预算并保留超限原文", async () => {
+    const { StudioShotList } = await import("@/pages/ecommerce-studio/studio-shot-list");
+    let entry: StudioSetEntry = { key: "p0", planIndex: 0, role: "detail-hero", title: "首屏", purpose: "识别", layout: "poster", included: true, copy: { headline: "蓝色杯身", subline: "可见把手", lines: [] } };
+    const paint = () =>
+        root.render(
+            <App>
+                <StudioShotList
+                    entries={[entry]}
+                    unit="屏"
+                    onToggle={noop}
+                    onMove={noop}
+                    onEditPlan={(_index, patch) => {
+                        entry = { ...entry, copy: { ...entry.copy!, ...patch } };
+                        paint();
+                    }}
+                />
+            </App>,
+        );
+    await act(async () => paint());
+    await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="修改这一屏：首屏"]')!.click());
+    expect(host.textContent).toContain("最多 2 条");
+    const field = host.querySelector<HTMLTextAreaElement>("#es-plan-p0-lines")!;
+    const raw = Array.from({ length: 7 }, (_, index) => `要点${index + 1}`).join("\n");
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field), "value")!.set!.call(field, raw);
+    await act(async () => field.dispatchEvent(new dom.Event("input", { bubbles: true })));
+    expect(host.querySelector<HTMLTextAreaElement>("#es-plan-p0-lines")!.value).toBe(raw);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("信息过密");
 });

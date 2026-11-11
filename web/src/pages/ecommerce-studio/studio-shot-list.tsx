@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, PenLine } from "lucide-react";
 import { useState } from "react";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_LAYOUTS, STUDIO_DETAIL_PLAN_LIMITS } from "@/lib/ecommerce-studio/detail-plan";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_LAYOUTS, STUDIO_DETAIL_PLAN_LIMITS, studioScreenCopyBudget, studioScreenCopyIssue } from "@/lib/ecommerce-studio/detail-plan";
 import { STUDIO_COMPOSITION_IDS, STUDIO_COMPOSITIONS } from "@/lib/ecommerce-studio/art-direction";
 import type { StudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import type { StudioCompositionId, StudioDetailLayoutId, StudioPlannedScreen } from "@/lib/ecommerce-studio/types";
@@ -18,6 +18,8 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
     const copy = entry.copy || { headline: "", subline: "", lines: [] };
     const id = `es-plan-${entry.key}`;
     const layout = entry.layout ? STUDIO_DETAIL_LAYOUTS[entry.layout] : undefined;
+    const budget = studioScreenCopyBudget(entry.role);
+    const copyIssue = studioScreenCopyIssue({ ...copy, role: entry.role, eyebrow: entry.eyebrow, noText: entry.noText });
     return (
         <div className="es-shot-edit">
             <label className="es-shot-edit-field" htmlFor={`${id}-title`}>
@@ -77,10 +79,24 @@ function PlannedScreenEditor({ entry, onChange }: { entry: StudioSetEntry; onCha
                     </label>
                     <label className="es-shot-edit-field" data-span="2" htmlFor={`${id}-lines`}>
                         <span>
-                            {layout ? layout.lines.replace(/（[^）]*）$/, "") : "要点"}（一行一条，最多 {limits.lines} 条）
+                            {layout ? layout.lines.replace(/（[^）]*）$/, "") : "要点"}（一行一条，最多 {budget.lines} 条）
                         </span>
-                        <Input.TextArea id={`${id}-lines`} variant="filled" autoSize={{ minRows: 1, maxRows: limits.lines }} value={copy.lines.join("\n")} onChange={(event) => onChange({ lines: event.target.value.split("\n").slice(0, limits.lines) })} />
+                        <Input.TextArea
+                            id={`${id}-lines`}
+                            variant="filled"
+                            autoSize={{ minRows: 1, maxRows: limits.lines }}
+                            status={copyIssue ? "error" : undefined}
+                            value={copy.lines.join("\n")}
+                            onChange={(event) => onChange({ lines: event.target.value.split("\n") })}
+                        />
                     </label>
+                    {copyIssue ? (
+                        <p className="es-shot-edit-note" role="alert">
+                            {copyIssue}
+                        </p>
+                    ) : (
+                        <p className="es-shot-edit-note">这一屏只讲一个重点，全部文案约 {budget.units} 个汉字以内。</p>
+                    )}
                 </>
             )}
         </div>

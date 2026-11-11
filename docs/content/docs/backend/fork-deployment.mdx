@@ -1,0 +1,44 @@
+---
+title: 二开部署与版本核验
+description: 确认服务器运行的是 Versior 二开镜像，并区分代码提交、镜像发布与正式版本
+---
+
+# 二开部署与版本核验
+
+本二开仓库的功能统一进入 `Versior/open-ai-canvas/main`。不要继续从已删除的 `feat/ecommerce-canvas` 分支安装，也不要把上游 `ddcat-ai` 的镜像当作本仓库更新。
+
+## 发布与安装来源
+
+`main` 的「Publish container images」成功后，`ghcr.io/versior/open-ai-canvas-web`、`open-ai-canvas-backend` 和 `open-ai-canvas-yingce-agent` 发布同一提交的 `sha-<完整提交编号>`、`sha-<七位提交编号>` 和 `latest`。代码推送成功与镜像发布成功是两个步骤。没有成功发布的提交不能用于服务器升级。
+
+生产 Host Updater 根据 GitHub Release 更新。正式版本还需要版本标签、Release 附件、更新器二进制和 `SHA256SUMS`；仅推送 `main` 不会生成这些附件。生产安装脚本要求固定版本，不接受 `latest`。
+
+`scripts/install-server-image.sh` 默认以 `REPOSITORY=Versior/open-ai-canvas` 读取 Compose 和更新器脚本，镜像仓库使用其小写名称。脚本把仓库传入更新器安装器，更新器配置保存 `CANVAS_UPDATER_REPOSITORY`。自定义 `REPOSITORY`、`IMAGE_REPOSITORY` 和下载地址仍优先使用显式值。
+
+首次安装应先在本仓库 Release 页确认所选版本的三个镜像和附件已经发布，再用同一版本的安装脚本。安装器负责 PostgreSQL、Redis、迁移、独立 Agent、Web、后端和宿主机更新器；镜像由 GitHub Actions 构建。
+
+## 已部署但仍显示旧页面
+
+先确认部署使用的 Compose 文件，然后在它所在目录读取镜像列表：
+
+```bash
+docker compose --env-file .env -f docker-compose.deploy.yml images
+```
+
+如果现有部署使用其他文件名，应换成实际文件名。检查三个应用镜像的仓库所有者与提交。受管部署以 `.env` 的 `CANVAS_WEB_IMAGE`、`CANVAS_BACKEND_IMAGE` 和 `CANVAS_YINGCE_AGENT_IMAGE` 固定 digest；修改标签后只执行 `pull` 不会替换这些已固定的 digest，也不会重建运行中的容器。
+
+对运行中的应用容器，可以核对镜像的提交标签：
+
+```bash
+docker image inspect IMAGE_ID --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+```
+
+`IMAGE_ID` 使用上一条命令中 Web、后端或 Agent 的实际镜像 ID。三者须与目标发布提交一致。只更新后端不会更新页面，只执行 `git pull` 也不会替换容器内的静态页面。
+
+如果三者版本正确，再核对反向代理访问的实例，重新打开页面，并检查 CDN 是否仍缓存入口 HTML。保留用于旧标签页的历史静态资源，不要为了清缓存删除 Web 数据卷。
+
+## 现有部署的更新边界
+
+新的默认仓库只影响新安装及未显式配置仓库的更新器。现有部署已经固定的镜像 digest、更新器配置和数据库不会自行迁移。核验原 Compose、数据库、数据卷并备份后，再选择本仓库对应版本进行升级；不要用首次安装命令直接覆盖不明的旧部署。
+
+模型调用、真实热点账号授权、资源访问和成片导出仍需在同版本前后端上验证。镜像健康检查只能证明入口可用。

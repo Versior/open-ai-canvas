@@ -1,8 +1,10 @@
 import { App, Button, Input } from "antd";
 import { Copy, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { studioPromptOverridesRevision, subscribeStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
 import { studioPlatformForbidsText } from "@/lib/ecommerce-studio/brief";
 import { reviewStudioCopy, studioFactCopyOptions } from "@/lib/ecommerce-studio/art-direction";
+import { studioScreenCopyBudget, studioScreenCopyIssue } from "@/lib/ecommerce-studio/detail-plan";
 import { STUDIO_TWEAKS, studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { STUDIO_SHOT_ADJUST_MAX, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
 import { useEffectiveConfig } from "@/stores/use-config-store";
@@ -45,6 +47,7 @@ export function StudioShotTuner({
 }) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
+    const promptRevision = useSyncExternalStore(subscribeStudioPromptOverrides, studioPromptOverridesRevision);
     const [tweaks, setTweaks] = useState(shot.tweaks);
     const [headline, setHeadline] = useState(shot.headline);
     const [subline, setSubline] = useState(shot.subline);
@@ -72,25 +75,28 @@ export function StudioShotTuner({
             lines: lines
                 .split("\n")
                 .map((line) => line.trim())
-                .filter(Boolean)
-                .slice(0, 6),
+                .filter(Boolean),
             adjust: adjust.trim().slice(0, STUDIO_SHOT_ADJUST_MAX),
         }),
         [adjust, headline, lines, subline, tweaks],
     );
     const changed = !sameList(patch.tweaks, shot.tweaks) || patch.headline !== shot.headline || patch.subline !== shot.subline || !sameList(patch.lines, shot.lines) || patch.adjust !== (shot.adjust || "");
+    const copyBudget = studioScreenCopyBudget(shot.role);
+    const copyIssue = copyAllowed ? studioScreenCopyIssue({ ...shot, ...patch }) : undefined;
 
     const preview = useMemo(() => {
         if (!promptOpen) return undefined;
         if (!imageModel) return { error: "先在左侧选择图片模型" };
         const located = locateStudioShot(product, shotRef, shot.id);
         if (!located) return { error: "这张图已不在记录里" };
+        const latest = located.shot.attempts.at(-1);
+        if (!changed && latest?.input && ["submitting", "queued", "running"].includes(latest.status)) return { compiled: latest.input.compiled };
         try {
             return { compiled: compileStudioShot(product, { ...located, shot: { ...located.shot, ...patch } }, imageModel, config, revisionResourceId && (changed || patch.adjust || patch.tweaks.length) ? revisionResourceId : undefined).compiled };
         } catch (error) {
             return { error: error instanceof Error ? error.message : "提示词编译失败" };
         }
-    }, [config, imageModel, patch, product, promptOpen, shot.id, shotRef, revisionResourceId, changed]);
+    }, [config, imageModel, patch, product, promptOpen, shot.id, shotRef, revisionResourceId, changed, promptRevision]);
 
     const toggle = (id: string) => setTweaks((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
 
@@ -153,17 +159,22 @@ export function StudioShotTuner({
                     ) : null}
                     {spec.copySlot === "points" || planned || onApplyCopy ? (
                         <label className="es-tuner-field">
-                            <span>要点（每行一条，最多 6 条）</span>
+                            <span>要点（每行一条，最多 {copyBudget.lines} 条）</span>
                             <Input.TextArea value={lines} autoSize={{ minRows: 2, maxRows: 6 }} maxLength={300} onChange={(event) => setLines(event.target.value)} />
                         </label>
                     ) : null}
                 </div>
             ) : null}
-            <Button type="primary" icon={<RefreshCw size={14} />} disabled={Boolean(blocked) || active} title={blocked || undefined} onClick={() => onRun(patch)}>
+            {copyIssue ? (
+                <p className="es-prompt-note" role="alert">
+                    {copyIssue}
+                </p>
+            ) : null}
+            <Button type="primary" icon={<RefreshCw size={14} />} disabled={Boolean(blocked || copyIssue) || active} title={blocked || copyIssue || undefined} onClick={() => onRun(patch)}>
                 {active ? "正在出新的一张…" : changed ? "按调整再出一张" : "再出一张"}
             </Button>
             {onApplyCopy && copyAllowed ? (
-                <Button disabled={active} onClick={() => onApplyCopy(patch)}>
+                <Button disabled={active || Boolean(copyIssue)} onClick={() => onApplyCopy(patch)}>
                     仅更新排字 · 不重新生图
                 </Button>
             ) : null}

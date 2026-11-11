@@ -91,7 +91,7 @@ func applyAnalyticsFinance(overview *AnalyticsOverview, records map[string]analy
 		if point := points[record.Log.CreatedAt.UTC().Format("2006-01-02")]; point != nil {
 			point.ConsumedMicrocredits += record.Revenue
 		}
-		if row := rows[[2]string{firstNonEmpty(record.Log.Model, "未识别"), record.Log.Capability}]; row != nil {
+		if row := rows[[2]string{firstNonEmpty(model.BaseModelName(record.Log.Model), "未识别"), record.Log.Capability}]; row != nil {
 			row.add(record)
 		}
 	}

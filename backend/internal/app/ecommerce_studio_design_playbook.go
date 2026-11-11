@@ -125,7 +125,7 @@ func (s *Service) ecommerceStudioDesignPlaybook(category, name, family, material
 			}
 		}
 	}
-	lines := []string{"以下是电商设计策划知识库（KB20）里和这件商品相关的方法，来自对高赞电商全案和大牌官网的拆解。排这组图之前先照着做（参考方法，不是这件商品的事实）："}
+	lines := []string{"以下是电商设计策划知识库（KB20）里和这件商品相关的方法，包含电商案例拆解、版面组织与字体层级方法。按本次内容选择并细化（参考方法，不是这件商品的事实）："}
 	for _, id := range ids {
 		if text := strings.TrimSpace(guidance[id]); text != "" {
 			lines = append(lines, "【"+titles[id]+"】"+text)

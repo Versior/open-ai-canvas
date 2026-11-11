@@ -569,7 +569,7 @@ test("full configuration copy overwrites an existing model through the update AP
         tags: source.tags,
         description: source.description,
         protocol: source.protocol,
-        protocolSelectionExplicit: true,
+        protocolSelectionExplicit: false,
         priceCurrency: "USD",
         capabilityConfig: { text: { contextWindowTokens: 64_000 } },
     });

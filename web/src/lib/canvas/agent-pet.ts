@@ -1,5 +1,5 @@
 import type { AgentAvatarState } from "@/lib/canvas/agent-appearance";
-import { resolveAgentLauncherAvatarHeight, type AgentLauncherViewport } from "@/lib/canvas/agent-launcher-position";
+import { AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH, resolveAgentLauncherAvatarHeight, type AgentLauncherViewport } from "@/lib/canvas/agent-launcher-position";
 import { AGENT_PET_ROWS, type AgentPetRow } from "@/services/api/agent-pets";
 import { agentSpriteAccent } from "@/lib/canvas/agent-skin";
 
@@ -22,11 +22,11 @@ export const AGENT_PET_SIZE_OPTIONS: ReadonlyArray<{ id: AgentPetSize; label: st
 
 /**
  * 宠物入口的高度。跟随站点时与其他大形象一致：离开画布编辑器或窄屏时封顶；
- * 用户选了档位就按所选高度显示，只保证整只放得进视口。
+ * 桌面上用户选了档位就按所选高度显示；窄屏统一缩小，避免遮住正文。
  */
 export function agentPetLauncherHeight(size: AgentPetSize, siteHeight: number, viewport: AgentLauncherViewport, inCanvasEditor: boolean) {
     const height = AGENT_PET_SIZE_OPTIONS.find((option) => option.id === size)?.height;
-    if (!height) return resolveAgentLauncherAvatarHeight(Math.min(siteHeight, AGENT_PET_CELL_HEIGHT), AGENT_PET_ASPECT, viewport, inCanvasEditor);
+    if (!height || viewport.width < AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH) return resolveAgentLauncherAvatarHeight(height ?? Math.min(siteHeight, AGENT_PET_CELL_HEIGHT), AGENT_PET_ASPECT, viewport, inCanvasEditor);
     return Math.max(40, Math.min(height, viewport.height - 60, (viewport.width - 40) / AGENT_PET_ASPECT));
 }
 

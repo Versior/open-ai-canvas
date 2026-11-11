@@ -2772,6 +2772,11 @@ summary.agent-tool-step:hover {
     pointer-events: auto;
     touch-action: none;
 }
+.canvas-agent-pet-pose {
+    position: absolute;
+    inset: 0;
+    display: block;
+}
 
 .canvas-agent-launcher.is-body-hit .canvas-agent-launcher-label,
 .canvas-agent-launcher.is-body-hit .canvas-agent-launcher-badge {

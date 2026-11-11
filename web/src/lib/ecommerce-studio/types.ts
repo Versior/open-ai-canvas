@@ -1,4 +1,6 @@
 import type { EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
+import type { StudioImageRequest } from "./image-options";
+import type { StudioCompiledPrompt } from "./prompt-compiler";
 
 /**
  * 电商生图台的数据模型。整份商品对象由前端定义、服务端按商品整体保存；
@@ -147,6 +149,8 @@ export type StudioAttempt = {
     taskId?: string;
     /** 单张修正所基于的成品；恢复提交时仍使用同一张图。 */
     revisionResourceId?: string;
+    /** 排队前持久化的请求输入；不包含渠道配置或凭据。 */
+    input?: { compiled: StudioCompiledPrompt; request: StudioImageRequest };
     status: StudioAttemptStatus;
     model: string;
     tweaks: string[];
@@ -372,10 +376,14 @@ export type StudioRun = {
     styleId?: StudioStylePresetId;
     /** 点生成那一刻的清晰度，重出这一组的图也按它。 */
     resolution?: string;
+    /** 商品与表单在点生成时的快照，后续编辑只影响新的一组。 */
+    source?: StudioGenerationSource;
     /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性和创意主线。 */
     suite?: { id: string; name: string; style: string; designAnalysis?: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[] };
     shots: StudioShot[];
 };
+
+export type StudioGenerationSource = Pick<StudioProduct, "name" | "platform" | "style" | "sellerNotes" | "photos" | "references" | "dossier" | "sellingPoints" | "copy" | "brief">;
 
 /** 助手交给页面的出图请求：只有用户在生图台确认后才会按镜头提交任务。 */
 export type StudioGenerationRequest = {

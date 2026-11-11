@@ -113,9 +113,9 @@ const SHOT_SPECS: Record<StudioShotRole, StudioShotSpec> = {
     "detail-selling": {
         role: "detail-selling",
         title: "核心卖点",
-        purpose: "把三个核心卖点讲清楚。",
+        purpose: "让买家看见核心卖点如何在真实使用中起作用，一个主画面讲清一个利益点。",
         platformRole: "detail",
-        composition: "商品放在画面右侧，约占一半宽度；左侧留出竖向排布三条卖点的干净区域，商品对应卖点的部位清晰可见。",
+        composition: "以商品真实使用、作用部位或有依据的同条件对照为视觉中心，局部放大帮助解释结构；短文案贴近对应画面，避免只摆商品加三条卖点列表。",
         camera: "平视机位，等效 85mm 镜头。",
         lighting: "均匀柔光，商品每个部位都清晰可读。",
         set: "浅色干净背景，可以有极淡的几何纹理；配色跟随风格锁，只用一个强调色。",

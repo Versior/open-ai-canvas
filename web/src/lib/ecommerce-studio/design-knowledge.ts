@@ -1,11 +1,34 @@
 import catalog from "../../../../backend/internal/ecommerceagent/studio_design_catalog.json";
 import { STUDIO_COMPOSITIONS } from "./art-direction";
-import { studioFactUsable, type StudioCompositionId, type StudioDetailLayoutId, type StudioProduct, type StudioStylePresetId } from "./types";
+import { studioFactUsable, type StudioCompositionId, type StudioDetailLayoutId, type StudioProduct, type StudioShot, type StudioStylePresetId } from "./types";
 
 /** 策划、直接生成与结果校验共用商品设计策略；这里的场景和色彩是候选方法，不是 SKU 事实。 */
 type DesignProduct = Pick<StudioProduct, "style" | "dossier"> & Partial<Pick<StudioProduct, "name" | "brief">>;
 type DesignProfile = { key: string; reason: string; styles: StudioStylePresetId[]; layouts: StudioDetailLayoutId[]; compositions: StudioCompositionId[]; scenes: string; avoid: string };
 export const STUDIO_DESIGN_KNOWLEDGE_VERSION = catalog.version;
+
+/** 从详情页设计心得与成品拆解提炼；策划、出图和成品检查使用同一标准。 */
+export const STUDIO_POSTER_DESIGN_RULE = catalog.posterDesign.principles;
+export const STUDIO_HERO_DESIGN_RULE = catalog.posterDesign.hero;
+
+export function studioPosterDesignLines(shot: Pick<StudioShot, "role" | "layout">, hasCopy: boolean): string[] {
+    const layout = shot.layout;
+    const hero = ["detail-hero", "detail-campaign", "main-selling"].includes(shot.role) || layout === "poster" || layout === "color-block" || layout === "cutout";
+    const evidence = ["callout", "macro", "grid", "material-board"].includes(layout || "") || /closeup|material|main-detail/.test(shot.role);
+    const information = ["spec", "data", "icons", "checklist", "timeline", "compare"].includes(layout || "") || /spec|size|steps|compare/.test(shot.role);
+    return [
+        hasCopy ? STUDIO_POSTER_DESIGN_RULE : "无字画面先确定要展示的形态或使用关系，再用主体尺度、光影与负空间形成一个视觉焦点；摄影承担信息，辅助元素支持主体，保留系列色板与光影体系。保持无字，不添加题签或标签。",
+        hero
+            ? hasCopy
+                ? STUDIO_HERO_DESIGN_RULE
+                : "无字主视觉页：用真实形态的尺度差、轮廓与负空间或真实使用动作形成停留入口；主摄影建立商品识别，辅助景别与空间纵深按内容选用，不强加文字、标签和拼贴。"
+            : evidence
+              ? "证据页：让一个真实可见细节解释本屏结论，完整轮廓在需要时作小比例定位；微距、局部放大或拼版按证据选择，避免同一整件商品缩小后复制多次。标签与证据就近对应，必要的引线落在实际部位；细节与说明共享网格和间距。"
+              : information
+                ? "信息页：用对照、参数分列或有序动作解释一个购买问题；图、值与说明一一对应。手机端摄影或信息最多三栏，窄区改单列，文字长时扩大信息区，不缩成不可读的小字；数据和步骤只使用已确认资料。"
+                : "场景与编辑页：真实动作、商品接触与环境关系回答本屏问题；主摄影与短注按自然负空间、摄影边界和阅读顺序组织。需要多图时让不同景别补充不同信息，场景道具不抢主体；满版与分区都可使用，不固定一大两小或统一标题条。",
+    ];
+}
 
 const PROFILES: Record<string, DesignProfile> = {
     kids: {
@@ -120,6 +143,8 @@ export function studioDesignKnowledgeLines(product: StudioProduct): string[] {
         `【商品设计匹配 · ${STUDIO_DESIGN_KNOWLEDGE_VERSION}】这是方法候选，不是商品事实。匹配：${profile.key}；依据：${profile.reason}。`,
         `优先信息版式：${layouts.join("、")}；优先图文骨架：${profile.compositions.map((id) => `${id}（${STUDIO_COMPOSITIONS[id].label}）`).join("、")}。逐屏先写购买问题和已有证据，再选信息表达与图文位置；不按序号轮转固定几种。`,
         `场景与摄影：${profile.scenes}。边界：${profile.avoid}。`,
+        `【平面设计标准】${STUDIO_POSTER_DESIGN_RULE}`,
+        `【首屏与海报构成】${STUDIO_HERO_DESIGN_RULE}`,
         "色彩判断：商品本色、背景主色、强调色分别考虑。灰色镜腿或透明镜片是商品颜色，不代表整套背景应该灰；按人群与品牌方向选择背景，用明度与色相差展示真实轮廓。给出背景主色、辅助色、文字色的色名与 HEX，并说明各自作用。",
         "先遵守白底与无字等平台硬规则。卖家明确选择的质感、参考同款、已选方向和本次调整优先；候选不得覆盖用户锁定的设计。designAnalysis 说明实际证据、所选版式及未选其他套路的原因。",
     ];

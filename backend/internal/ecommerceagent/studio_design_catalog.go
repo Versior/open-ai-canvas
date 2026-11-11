@@ -10,6 +10,10 @@ import (
 type StudioDesignCatalog struct {
 	Version      string `json:"version"`
 	Provenance   string `json:"provenance"`
+	PosterDesign struct {
+		Principles string `json:"principles"`
+		Hero       string `json:"hero"`
+	} `json:"posterDesign"`
 	Compositions map[string]struct {
 		Label  string          `json:"label"`
 		Render string          `json:"render"`

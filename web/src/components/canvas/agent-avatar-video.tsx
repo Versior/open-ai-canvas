@@ -12,6 +12,7 @@ export function AgentAvatarVideo({
     onReady,
     onError,
     onContentBounds,
+    onEnded,
     className,
 }: {
     src: string;
@@ -21,6 +22,7 @@ export function AgentAvatarVideo({
     onReady?: (src: string) => void;
     onError?: () => void;
     onContentBounds?: (bounds: { top: number; aspect: number }) => void;
+    onEnded?: () => void;
     className?: string;
 }) {
     const videoRef = useRef<HTMLVideoElement>(null);
@@ -111,14 +113,18 @@ export function AgentAvatarVideo({
         };
         // 回到前台时重新排帧；隐藏时 scheduleFrame 不再续排。
         const resumeWhenVisible = () => {
-            if (document.visibilityState === "hidden") return;
             cancelFrame();
+            if (document.visibilityState === "hidden") {
+                video.pause();
+                return;
+            }
+            if (!paused && !reducedMotion) void video.play().catch(() => undefined);
             scheduleFrame();
         };
         document.addEventListener("visibilitychange", resumeWhenVisible);
         const loaded = () => {
             drawFrame();
-            if (reducedMotion) video.pause();
+            if (reducedMotion || paused || document.hidden) video.pause();
         };
         video.addEventListener("loadeddata", loaded);
         drawFrame();
@@ -135,7 +141,7 @@ export function AgentAvatarVideo({
         const video = videoRef.current;
         if (!video) return;
         video.loop = loop;
-        if (paused || (reducedMotion && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)) {
+        if (paused || document.hidden || (reducedMotion && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)) {
             video.pause();
             return;
         }
@@ -149,7 +155,7 @@ export function AgentAvatarVideo({
             <video
                 ref={videoRef}
                 src={src}
-                autoPlay={!paused}
+                autoPlay={!paused && !reducedMotion && !document.hidden}
                 muted
                 loop={loop}
                 playsInline
@@ -157,6 +163,7 @@ export function AgentAvatarVideo({
                 aria-hidden="true"
                 draggable={false}
                 onError={() => errorRef.current?.()}
+                onEnded={onEnded}
                 className="canvas-agent-video-source"
                 style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
             />

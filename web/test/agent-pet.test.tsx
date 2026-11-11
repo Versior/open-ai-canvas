@@ -56,13 +56,22 @@ describe("agent pet atlas math", () => {
         // 选了档位：画布外也按所选高度，只受视口约束。
         expect(agentPetLauncherHeight("s", 260, desktop, true)).toBe(96);
         expect(agentPetLauncherHeight("xl", 120, desktop, false)).toBe(208);
-        expect(agentPetLauncherHeight("xl", 120, { width: 390, height: 240 }, false)).toBe(180);
+        expect(agentPetLauncherHeight("xl", 120, { width: 390, height: 844 }, false)).toBe(76);
+        expect(agentPetLauncherHeight("auto", 160, { width: 390, height: 844 }, false)).toBe(76);
         // 损坏的偏好按跟随站点处理。
         expect(agentPetLauncherHeight("huge" as never, 160, desktop, true)).toBe(160);
     });
 });
 
 describe("AgentPetSprite markup", () => {
+    test("窗边探头使用朝页面内部的视线，不横切半张脸", () => {
+        const right = renderToStaticMarkup(<AgentPetSprite src="/a.webp" version={2} state="idle" width={96} height={104} peekSide="right" />);
+        const left = renderToStaticMarkup(<AgentPetSprite src="/a.webp" version={2} state="idle" width={96} height={104} peekSide="left" />);
+        expect(right).toContain('data-pet-row="look"');
+        expect(right).toContain("background-position:-480px -1040px");
+        expect(left).toContain("background-position:-288px -936px");
+        expect(renderToStaticMarkup(<AgentPetSprite src="/a.webp" version={1} state="idle" width={96} height={104} peekSide="right" />)).toContain('data-pet-row="idle"');
+    });
     test("positions the background on the mapped row without bleeding between cells", () => {
         const markup = renderToStaticMarkup(<AgentPetSprite src="/api/agent-pets/pingo/spritesheet?v=1" version={2} state="running" width={96} height={104} />);
         expect(markup).toContain('data-pet-row="running"');

@@ -169,6 +169,7 @@ func buildAnalyticsModels(tasks []model.Task, logs []model.ApiCallLog) []Analyti
 	}
 	items := map[string]*accumulator{}
 	get := func(modelName string, capability string) *accumulator {
+		modelName = model.BaseModelName(modelName)
 		if modelName == "" {
 			modelName = "未识别"
 		}
@@ -261,7 +262,7 @@ func buildAnalyticsUsers(filter repository.AnalyticsFilter, tasks []model.Task, 
 		if models[task.UserID] == nil {
 			models[task.UserID] = map[string]int{}
 		}
-		models[task.UserID][task.Model]++
+		models[task.UserID][model.BaseModelName(task.Model)]++
 		get(task.UserID).Tasks++
 	}
 	if hasCreationDimensionFilter(filter) {

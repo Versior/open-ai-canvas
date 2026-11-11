@@ -58,7 +58,8 @@ describe("ecommerce studio store", () => {
         useStudioStore.getState().update("store_race", (product) => ({ ...product, sellerNotes: "卖家补充：容量 500ml" }));
         agentWrites("store_race", (product) => ({ ...product, dossier: { name: "陶瓷马克杯", category: "马克杯", family: "home", summary: "", facts: [], invariants: [], questions: [] } }));
         await useStudioStore.getState().flush("store_race");
-        await settle(() => server.get("store_race")?.revision === 3 && state("store_race") === "saved");
+        expect(server.get("store_race")?.revision).toBe(3);
+        expect(state("store_race")).toBe("saved");
         const saved = server.get("store_race")!;
         expect(saved.sellerNotes).toBe("卖家补充：容量 500ml");
         expect(saved.dossier?.category).toBe("马克杯");

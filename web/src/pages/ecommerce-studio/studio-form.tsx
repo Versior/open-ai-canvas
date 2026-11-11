@@ -1,6 +1,8 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
 import { ChevronDown, LayoutTemplate, ListChecks, RotateCcw, ScanSearch } from "lucide-react";
-import { useMemo, useState, type ClipboardEvent, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ClipboardEvent, type ReactNode } from "react";
+import { studioPromptOverridesRevision, subscribeStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
+import { studioImageInput } from "@/lib/ecommerce-studio/generation-input";
 import { Checkbox } from "@/components/ui/base/checkbox";
 import { Select } from "@/components/ui/base/select";
 import { ECOMMERCE_PLATFORMS, ecommercePlatform, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
@@ -19,7 +21,6 @@ import {
     studioOutputSpec,
     studioPlatformForbidsText,
     studioRatioValid,
-    studioRunRatio,
     studioInfoPoints,
     studioSingleTypes,
     studioSuggestion,
@@ -30,9 +31,10 @@ import { studioCopyIssues } from "@/lib/ecommerce-studio/dossier-tasks";
 import { studioChannelDesign } from "@/lib/ecommerce-studio/art-direction";
 import { studioEffectiveQuality, studioEffectiveResolution, studioImageRequest, studioQualityOptions, studioRatioOptions, studioResolutionOptions, type StudioImageRequest } from "@/lib/ecommerce-studio/image-options";
 import { studioModelAdapter, studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
-import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
+import { studioChangeStyle } from "@/lib/ecommerce-studio/product";
+import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, studioScreenCopyIssue, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
 import { studioAnsweredAsks, studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
-import { moveStudioSetEntry, studioActivePlan, studioEntryRatio, studioPlanScopeOf, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { createStudioRun, moveStudioSetEntry, studioActivePlan, studioPlanScopeOf, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
@@ -183,14 +185,23 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const unit = setKind === "detail" ? "屏" : "张";
     // 单张类型可以多选，数量是每种出几张；单张图策划过时按策划清单里勾选的张数。
     const images = setKind || (scope === "single" && activePlan) ? included.length : singles.length * brief.count;
-    const firstEntry = included[0] || entries[0];
-    const firstRatio = setKind && firstEntry ? studioEntryRatio(firstEntry, product) : studioRunRatio(singles[0]?.role || "main-selling", product);
     const truthCount = studioReferencePhotos(product.photos, 8).length;
     // 有模特的图才用模特设定：选了模特图、模特拍法，或者套图清单里有上身效果。
     const castRelevant = singles.some((item) => item.id === "model") || brief.shooting === "model" || entries.some((entry) => entry.included && entry.role === "detail-model");
     const castReferences = castRelevant ? [brief.model?.figure ?? brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
     const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + castReferences + product.references.length);
-    const estimate = useStudioEstimate({ model: image.value, images, references: referenceCount, quality, resolution, ratio: firstRatio });
+    const promptRevision = useSyncExternalStore(subscribeStudioPromptOverrides, studioPromptOverridesRevision);
+    const estimateInputs = useMemo(() => {
+        if (!image.value || !product.photos.length) return [];
+        try {
+            let index = 0;
+            const run = createStudioRun(product, () => `estimate-${++index}`);
+            return run.shots.map((shot) => studioImageInput(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite }, image.value, image.config));
+        } catch {
+            return [];
+        }
+    }, [product, image.value, image.config, promptRevision]);
+    const estimate = useStudioEstimate({ model: image.value, inputs: estimateInputs });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
     const adapter = studioModelAdapter(image.value);
@@ -210,6 +221,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
     // 明确不收图的文本模型识别不了商品：「AI 分析并策划」跳过识别，直接按表单和档案的文字策划。
     const textSeesPhotos = !text.value || modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages !== 0;
+    const copyProblem = included.map((entry) => ({ entry, issue: entry.copy ? studioScreenCopyIssue({ ...entry.copy, role: entry.role, eyebrow: entry.eyebrow, noText: entry.noText }) : undefined })).find((item) => item.issue);
     const blocked = !product.photos.length
         ? "先上传商品图"
         : !truthCount
@@ -224,7 +236,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                   ? `先策划这 ${planScreens} ${planUnit}`
                   : (setKind || (scope === "single" && activePlan)) && !included.length
                     ? "镜头清单里至少留一张"
-                    : "";
+                    : copyProblem
+                      ? `${copyProblem.entry.title}：${copyProblem.issue}`
+                      : "";
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
     // 质感选「按商品推荐」：详情页由策划挑，其他出图类型按品类挑。
     const styleHint =
@@ -358,7 +372,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             if (!(await analyzeAndPlan())) return;
         }
         try {
-            runner.generate(ensure(), image.value, { firstOnly });
+            await runner.generate(ensure(), image.value, { firstOnly });
             onGenerated();
         } catch (error) {
             message.error(error instanceof Error ? error.message : "生成失败");
@@ -556,7 +570,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         <Select appearance="field" size="large" value={brief.language} options={LANGUAGE_OPTIONS} ariaLabel="图上文字的语言" onChange={(value: StudioLanguage) => editBrief({ language: value })} />
                     </Field>
                     <Field label="质感" span={3} hint={styleHint || undefined}>
-                        <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => ({ ...current, style: value }))} />
+                        <Select appearance="field" size="large" value={product.style} options={STYLE_OPTIONS} ariaLabel="质感" onChange={(value: StudioStyleId) => edit((current) => studioChangeStyle(current, value))} />
                     </Field>
                     <Field label="拍摄方式" span={3}>
                         <Select appearance="field" size="large" value={brief.shooting} options={SHOOTING_OPTIONS} ariaLabel="拍摄方式" onChange={(value: StudioShooting) => editBrief({ shooting: value })} />
@@ -770,6 +784,11 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                 }}
             />
             <footer className="es-form-foot">
+                {copyProblem ? (
+                    <span className="es-estimate" role="alert">
+                        {copyProblem.entry.title}：{copyProblem.issue}
+                    </span>
+                ) : null}
                 <span className="es-estimate">{estimate}</span>
                 <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
                     重置参数

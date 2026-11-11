@@ -31,7 +31,8 @@ export function StudioArtworkCheck({ product, shot, output, onRevision }: { prod
         }
     });
     const model = selection.scope === scope && models.includes(selection.model) ? selection.model : defaultModel;
-    const prompt = buildStudioDesignCheckPrompt(product, shot, Boolean(studioReferencePhotos(product.photos, 1).length));
+    const execution = shot.attempts.find((attempt) => attempt.outputs.some((item) => item.resourceId === output.resourceId))?.input?.compiled;
+    const prompt = buildStudioDesignCheckPrompt(product, shot, Boolean(studioReferencePhotos(product.photos, 1).length), execution);
     const key = JSON.stringify([scope, output.resourceId, model, prompt]);
     const live = useChecks((state) => state.items[key]);
     let restored: StudioCheckState | undefined, restoreError: string | undefined;

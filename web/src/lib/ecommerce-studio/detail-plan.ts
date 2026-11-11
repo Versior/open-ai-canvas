@@ -125,22 +125,22 @@ export const STUDIO_DESIGN_TONES: Record<StudioDesignToneId, { label: string; us
     "global-minimal": {
         label: "国际大牌极简",
         use: "像苹果、戴森、无印良品的产品页：一屏只讲一件事，文案极短、克制、有分量，用感受和结果说话",
-        render: "国际大牌官网式的极简版面：大面积留白，商品像雕塑一样被光塑形，用强烈的明暗对比、真实可见的近景和超大字号制造张力，极简但不平淡；标题用细到中等字重的现代黑体，字距略宽，不加粗黑描边；栏目小标题仅在文案提供且允许时出现，用选定语言；数字用细体大字号做视觉；除了标题和一行注解几乎不放小字，元素严格对齐；留白和标题位置服从本屏构图",
+        render: "国际大牌官网式的极简版面：以留白、真实形体和受控光线建立清楚重心；标题可用细到中等字重的现代黑体，字阶按内容和手机阅读选择，以明暗、位置和间距形成层级；说明紧邻标题或对应证据，元素沿共同轴线对齐；栏目仅在给定且允许时出现，数字只用已有事实；留白和标题位置服从本屏蓝图",
     },
     editorial: {
         label: "时尚大片",
         use: "像 Nike、Lululemon 或时尚杂志：人物和动态是主角，一屏一句态度型短句",
-        render: "时尚杂志式版面：人物或商品大胆裁切、有动态，超大字号的标题压在画面上或贴边排列，高对比配色，构图有张力；字体用利落的无衬线粗细对比，英文大字可做装饰底纹",
+        render: "时尚杂志式版面：由人物或商品的轮廓、动作和摄影边界组织阅读；裁切、标题尺度和明暗对比按内容选择，黑体或宋体与正文形成明确层级，字块和主图共同构图；只有已给定的文案可用于文字构成，不新增英文装饰字",
     },
     oriental: {
         label: "东方雅致",
         use: "像观夏、花西子：意象化、有诗意的文案，借自然、节气和器物说话",
-        render: "东方雅致的版面：宣纸或细肌理底色，大量留白，标题可竖排，用宋体或带书法意味的标题字，小字用细黑体，点缀一枚小印章或细线框；色彩低饱和，光影柔和",
+        render: "东方雅致的版面：细肌理与留白组织清楚层级，宋体标题配黑体说明，分行和方向按内容选择；温和色彩与柔光展示真实形体，图形仅在承担分区或信息职责时使用，不自动添加印章或伪书法",
     },
     lifestyle: {
         label: "日系生活",
         use: "像无印良品、UNIQLO：朴素具体的文案，讲生活里的小场景和真实感受",
-        render: "日系生活杂志式版面：自然光生活场景照片，每张抓住一个打动人的生活瞬间（动作、表情或光影），网格化排版，细黑体小字配适中的标题，色彩温和自然但有明暗层次，有生活的温度但不杂乱",
+        render: "日系生活杂志式版面：真实场景与动作解释用途，自然光展示商品，字块沿摄影边界或主体轴线排布，黑体说明与标题有清楚层级；色彩自然且主次明确，说明按手机阅读设置足够字号，道具不抢主体",
     },
     tech: {
         label: "科技发布",
@@ -261,6 +261,23 @@ function studioReadyRoles(product: StudioProduct, roles: StudioShotRole[]): Stud
     return roles.filter((role) => ready[role] !== false);
 }
 
+export function studioScreenCopyBudget(role: StudioShotRole) {
+    const hero = role === "detail-hero" || role === "main-selling";
+    const information = ["detail-spec", "detail-size", "detail-steps"].includes(role);
+    return { lines: information ? 6 : hero ? 2 : 3, units: information ? 160 : hero ? 60 : 90 };
+}
+
+/** 购买沟通页控制阅读负担；参数和步骤页保留必要信息。英文按半个汉字的显示宽度计算。 */
+export function studioScreenCopyIssue(screen: { role: StudioShotRole; headline: string; subline: string; lines: string[]; eyebrow?: string; noText?: boolean }): string | undefined {
+    if (screen.noText || screen.role === "main-white") return;
+    const budget = studioScreenCopyBudget(screen.role);
+    const lines = screen.lines.map((line) => line.trim()).filter(Boolean);
+    const units = [...[screen.eyebrow, screen.headline, screen.subline, ...lines].filter(Boolean).join("")].reduce((sum, char) => sum + (char.charCodeAt(0) > 255 ? 1 : 0.5), 0);
+    if (lines.length > budget.lines || units > budget.units) return `信息过密：这一屏最多 ${budget.lines} 条要点、约 ${budget.units} 个汉字。请保留一个核心利益，其余内容移到对应详情屏`;
+    const copy = [screen.headline, screen.subline, ...lines].map((line) => line.trim()).filter(Boolean);
+    if (new Set(copy).size !== copy.length) return "文案重复：标题、注解和要点需要各讲一件事，请去掉重复文字";
+}
+
 function text(value: unknown, max: number) {
     return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
@@ -298,7 +315,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         eyebrow: studioEyebrowText(eyebrow),
         headline: text(record.headline, limits.headline),
         subline: text(record.subline, limits.subline),
-        lines: textList(record.lines, limits.lines, limits.line),
+        lines: Array.isArray(record.lines) ? record.lines.filter((line): line is string => typeof line === "string") : [],
         facts: textList(record.facts, limits.facts, 40),
         ...(record.noText === true ? { noText: true } : {}),
     };
@@ -373,7 +390,7 @@ export type StudioPlanField = "detailPlan" | "mainPlan" | "singlePlan" | "templa
 /** 各策划范围的策划存在表单的哪个字段。 */
 export const STUDIO_PLAN_FIELD: Record<StudioPlanScope, StudioPlanField> = { detail: "detailPlan", main: "mainPlan", single: "singlePlan", template: "templatePlan" };
 
-/** 改策划里的一屏（标题、版式、画面、信息元素和文案），返回新的表单参数；超出上限的部分截掉。 */
+/** 改策划里的一屏；要点保留原文，密度问题在编辑与生成时提示，不静默删掉用户输入。 */
 export function patchStudioDetailPlanScreen(
     brief: StudioBrief,
     index: number,
@@ -393,7 +410,7 @@ export function patchStudioDetailPlanScreen(
         ...(patch.elements !== undefined ? { elements: patch.elements.slice(0, limits.elements) } : {}),
         ...(patch.headline !== undefined ? { headline: patch.headline.slice(0, limits.headline) } : {}),
         ...(patch.subline !== undefined ? { subline: patch.subline.slice(0, limits.subline) } : {}),
-        ...(patch.lines !== undefined ? { lines: patch.lines.slice(0, limits.lines).map((line) => line.slice(0, limits.line)) } : {}),
+        ...(patch.lines !== undefined ? { lines: patch.lines } : {}),
     };
     return { ...brief, [field]: { ...plan, screens: plan.screens.map((screen, position) => (position === index ? next : screen)) } };
 }
