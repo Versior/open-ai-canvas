@@ -230,8 +230,10 @@ test("account switching prevents a pending upload from publishing into another s
         task = api.createFileNode(new File(["text"], "scope.md", { type: "text/markdown" }), { x: 0, y: 0 }, undefined, options);
     });
     setActiveUserScope("another-upload-user");
+    const cancellation = task.catch((error) => error);
     pending.get("scope.md")!.resolve(uploaded("scope.md"));
-    expect(await task).toBeNull();
+    expect(await cancellation).toMatchObject({ name: "AbortError" });
+    expect(nodesRef.current).toEqual([]);
     expect(persisted).toEqual([]);
 });
 
