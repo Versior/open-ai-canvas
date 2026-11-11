@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { DEFAULT_REPLICA_CAMPAIGN, DEFAULT_REPLICA_DIRECTION, REPLICA_DIRECTOR_OPTIONS } from "@/lib/canvas/replica-director";
 import { normalizeRemakeJob } from "@/lib/remake/job";
 import { buildRemakeUnitPrompt } from "@/lib/remake/prompts";
+import { planRemakeUnits } from "@/lib/remake/units";
 import { applyRemakeDirectorPlan, buildRemakeDirectorPrompt, parseRemakeDirectorPlans, replicaProductFacts } from "@/lib/remake/director-plan";
 import { directorJob, directorPlanOutput } from "./fixtures/video-director-data";
 import { remakeJobError } from "@/lib/remake/job";
@@ -23,7 +24,8 @@ test("director choices cover distinct publishing contexts and production methods
 });
 
 test("proof and its source reach actual remake video generation", () => {
-    const prompt = buildRemakeUnitPrompt(job, { treatment: "remake" } as Parameters<typeof buildRemakeUnitPrompt>[1], job.shots, 6);
+    const unit = planRemakeUnits(job.shots, { maxMs: 6000, sourceDurationMs: 6000 })[0];
+    const prompt = buildRemakeUnitPrompt(job, unit, job.shots, 6);
     expect(prompt).toContain("证明依据：柔软镜腿");
 });
 
@@ -51,8 +53,10 @@ test("a plan includes decisions, product evidence and shot actions, then survive
     const stored = normalizeRemakeJob(JSON.parse(JSON.stringify(selected)))!;
     expect(stored.directorPlans?.[0].strategy).toEqual(plans[0].strategy);
     expect(stored.activeDirectorPlanId).toBe(plans[0].id);
-    expect(buildRemakeUnitPrompt(stored, { treatment: "remake" } as Parameters<typeof buildRemakeUnitPrompt>[1], [stored.shots[0]], 6)).toContain("不知道鼻托怎样调节");
-    expect(buildRemakeUnitPrompt(stored, { treatment: "replace" } as Parameters<typeof buildRemakeUnitPrompt>[1], [stored.shots[1]], 6)).not.toContain("不知道鼻托怎样调节");
+    const remakeUnit = planRemakeUnits([stored.shots[0]], { maxMs: 6000, sourceDurationMs: stored.source!.durationMs })[0];
+    const replaceUnit = planRemakeUnits([stored.shots[1]], { maxMs: 6000, sourceDurationMs: stored.source!.durationMs })[0];
+    expect(buildRemakeUnitPrompt(stored, remakeUnit, [stored.shots[0]], 6)).toContain("不知道鼻托怎样调节");
+    expect(buildRemakeUnitPrompt(stored, replaceUnit, [stored.shots[1]], 6)).not.toContain("不知道鼻托怎样调节");
 });
 
 test("incomplete strategies, duplicate shots, invented proof and truncated actions are rejected", () => {
