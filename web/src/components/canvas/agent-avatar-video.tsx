@@ -9,6 +9,7 @@ export function AgentAvatarVideo({
     loop = true,
     paused = false,
     reducedMotion = false,
+    onReady,
     onError,
     onContentBounds,
     className,
@@ -17,6 +18,7 @@ export function AgentAvatarVideo({
     loop?: boolean;
     paused?: boolean;
     reducedMotion?: boolean;
+    onReady?: (src: string) => void;
     onError?: () => void;
     onContentBounds?: (bounds: { top: number; aspect: number }) => void;
     className?: string;
@@ -27,6 +29,9 @@ export function AgentAvatarVideo({
     errorRef.current = onError;
     const boundsRef = useRef(onContentBounds);
     boundsRef.current = onContentBounds;
+    const readyRef = useRef(onReady);
+    readyRef.current = onReady;
+    const readySourceRef = useRef("");
 
     useEffect(() => {
         const video = videoRef.current;
@@ -77,6 +82,11 @@ export function AgentAvatarVideo({
                     measured = true;
                     boundsRef.current({ top: top / height, aspect: width / height });
                 }
+            }
+            // 首帧完成抠像后才撤掉占位，loadeddata 仍可能早于画布绘制。
+            if (readySourceRef.current !== src) {
+                readySourceRef.current = src;
+                readyRef.current?.(src);
             }
         };
         const scheduleFrame = () => {

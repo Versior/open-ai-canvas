@@ -84,7 +84,7 @@ describe("去画布复刻", () => {
         expect(script.metadata?.storyboard?.visibleColumns).toContain("imageGenerationPrompt");
         // 重拍：不用原片画面，首帧都要重新生成。
         expect(rows.map((item) => item.imageNodeId)).toEqual([undefined, undefined, undefined]);
-        expect(nodes.filter((node) => node.type === CanvasNodeType.Markdown)).toHaveLength(1);
+        expect(nodes.filter((node) => node.type === CanvasNodeType.Text && node.metadata?.textFormat === "markdown")).toHaveLength(1);
     });
 
     test("original binds the keyframes as first frames only when authorized", () => {

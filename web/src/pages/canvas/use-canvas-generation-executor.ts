@@ -14,7 +14,8 @@ import { resolveCanvasBatchInputContext } from "@/lib/canvas/canvas-batch-input-
 import { isRetiredEcommerceNode } from "@/lib/canvas/canvas-retired-nodes";
 import { buildTextRewritePrompt } from "@/lib/prompts";
 import { resolveCanvasStyleExecution } from "@/lib/canvas/canvas-style-execution";
-import { generationFailureMetadata } from "@/lib/generation-error";
+import { generationErrorMessage, generationFailureMetadata } from "@/lib/generation-error";
+import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { modelCompatibilityError, modelGroupReferenceLimits, modelPromptLengthError, modelRequestOptions, type ModelRequirements } from "@/lib/model-selection";
 import { navigateToSettings } from "@/lib/settings-navigation";
 import { getActiveUserScope } from "@/lib/user-scope";
@@ -290,6 +291,13 @@ export function useCanvasGenerationExecutor({
                             return;
                         }
                         const generationContext = { ...rawGenerationContext, prompt: effectivePrompt };
+                        if (mode === "video") {
+                            const minReferenceImages = modelCapabilityConfigFor(generationConfig, generationConfig.model).video?.references.minImages ?? 0;
+                            if ((generationContext.referenceImages?.length ?? 0) < minReferenceImages) {
+                                failPreflight(new Error(translate("canvasPage.generation.videoRequiresReferenceImages", { count: minReferenceImages })));
+                                return;
+                            }
+                        }
                         if (mode === "audio" && generationContext.characterReferences.length) {
                             if (generationContext.characterReferences.length !== 1) {
                                 message.error(translate("canvasPage.generation.voiceOneCharacter"));

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AgentWelcome } from "@/components/canvas/canvas-agent-welcome";
+import { AgentConversation } from "@/components/canvas/canvas-cloud-agent-panel-parts";
 import { AgentChatComposer } from "@/components/canvas/canvas-cloud-agent-chat-ui";
 import { agentPermissionVisual } from "@/components/canvas/canvas-cloud-agent-settings";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -24,6 +25,15 @@ test("empty canvas disables only the canvas-analysis shortcut", () => {
     expect(html.match(/disabled=""/g)).toHaveLength(1);
     expect(html).toContain("添加节点后，一起梳理创作思路");
     expect(html).not.toContain("生成前由你确认");
+});
+
+const conversationProps = { theme: canvasThemes.light, references: [], approval: null, approvalSubmitting: false, onApprovalReasonChange: noop, onApprove: noop, onReject: noop };
+
+test("submission state is explicit instead of claiming the model is thinking", () => {
+    const html = renderToStaticMarkup(<AgentConversation {...conversationProps} messages={[]} busy activity="submitting" />);
+    expect(html).toContain("正在发送…");
+    expect(html).not.toContain("正在思考");
+    expect(html).not.toContain("实时处理中");
 });
 
 test("agent request leaves skill routing to the backend marketplace search", () => {

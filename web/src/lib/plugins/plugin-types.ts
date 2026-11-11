@@ -1,17 +1,10 @@
 import type { Asset } from "@/stores/use-asset-store";
 
 export const PLUGIN_API_VERSION = "yingce.plugin/v1" as const;
+
 export const PLUGIN_API_VERSION_V2 = "yingce.plugin/v2" as const;
 
-export type EditorSlotKind =
-    | "timeline-panel"
-    | "preview-renderer"
-    | "inspector"
-    | "asset-ingest"
-    | "subtitle-tool"
-    | "transcription-provider"
-    | "export-renderer"
-    | "ai-assistant";
+export type EditorSlotKind = "timeline-panel" | "preview-renderer" | "inspector" | "asset-ingest" | "subtitle-tool" | "transcription-provider" | "export-renderer" | "ai-assistant";
 
 export type EditorSlotContribution = {
     slot: EditorSlotKind;
@@ -326,19 +319,16 @@ export type PluginAgentAction = {
 };
 
 export type RegisteredPlugin = {
+    editorSlots?: EditorSlotContribution[];
     agentActions?: PluginAgentAction[];
     /** Pure, bounded projection: never return embedded media or provider credentials. */
     readAgentNode?: (node: import("@/types/canvas").CanvasNodeData, snapshot: import("@/lib/canvas/canvas-operation-contract").CanvasSnapshot) => Record<string, unknown>;
-    /** v1 或 v2 插件清单；v2 清单结构为 v1 超集（含 editorSlots 声明）。 */
     manifest: PluginManifest | PluginManifestV2;
     source?: "bundled" | "uploaded" | string;
     activate?: (context: PluginHostContext) => Promise<void> | void;
     deactivate?: (context: PluginHostContext) => Promise<void> | void;
     createAssetSource?: (context: PluginHostContext) => AssetSourceProvider;
     createPromptOptimizer?: (context: PluginHostContext) => PromptOptimizerProvider;
-    /** v2 插件由注册器从 manifest 提取的编辑器插槽声明（v1 插件无此字段）。 */
-    editorSlots?: EditorSlotContribution[];
-    /** v2 插件 UI 插槽的实际渲染函数由插件 activate() 阶段经 registerEditorSlot 提供。 */
 };
 
 export type PluginInstallation = {

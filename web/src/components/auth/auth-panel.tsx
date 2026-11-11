@@ -5,6 +5,7 @@ import { BrandWordmark } from "@/components/brand/brand-logo";
 import { useAuthSettings } from "@/hooks/use-auth-entry";
 import type { AuthView } from "@/lib/auth-entry";
 import { cn } from "@/lib/utils";
+import { useThemePack } from "@/themes/use-theme-pack";
 import { AuthLoginForm } from "./auth-login-form";
 import { AuthRecoveryForm } from "./auth-recovery-form";
 import "./auth-panel.css";
@@ -24,6 +25,7 @@ export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant }
     const titleId = useId();
     const { settings, failed, reload } = useAuthSettings();
     // 登录与注册是同一个表单；/register 仍保留给推广链接，打开的也是一体表单。
+    const themeLoginTitle = useThemePack()?.copy?.loginTitle;
     const title = view === "recovery" ? t("auth.panel.recoveryTitle") : t("auth.panel.loginTitle", { brand: "__BRAND__" });
     const [titleBeforeBrand, titleAfterBrand = ""] = title.split("__BRAND__");
     const formProps = { settings, next, onAuthenticated, onViewChange };
@@ -32,8 +34,8 @@ export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant }
         <section className={cn("auth-panel", variant === "page" ? "is-page" : "is-dialog")} aria-labelledby={titleId}>
             <header className="auth-panel-header">
                 <h2 id={titleId} className="auth-panel-title">
-                    {view === "recovery" ? (
-                        title
+                    {view === "recovery" || themeLoginTitle ? (
+                        themeLoginTitle || title
                     ) : (
                         <>
                             {titleBeforeBrand}

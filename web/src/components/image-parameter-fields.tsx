@@ -2,13 +2,15 @@ import { Input, InputNumber, Switch } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { ImageSizePresetsEditor } from "./image-size-presets-editor";
 import { ImageSizePicker } from "./image-size-picker";
+import { protocolImageSizePresets } from "@/lib/protocol-image-presets";
 import { IMAGE_RESOLUTIONS, imageSingleSizeTier, imageSizeConfigWithPresets, imageSizePresets } from "@/lib/image-size-presets";
 import { Select } from "@/components/ui/base/select";
-import { imageHostControls, imageParameterAccepts, imageParameterRequest, parseImageParameters, updateImageParameterSchema, updateImageParameterSize, type ImageParameter, type ImageParameterValue } from "@/lib/image-parameters";
+import { commonImageParameter, imageHostControls, imageParameterAccepts, parseImageParameters, updateImageParameterSchema, updateImageParameterSize, type ImageParameter, type ImageParameterValue } from "@/lib/image-parameters";
 import type { ImageCapabilityConfig } from "@/lib/model-capabilities";
 import type { AiConfig } from "@/stores/use-config-store";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { preserveImageSettings } from "@/lib/media-settings";
 
 export function ImageParameterInput({
     field,
@@ -45,7 +47,21 @@ export function ImageParameterInput({
                             return (
                                 <button type="button" key={`${typeof option}:${option}`} disabled={disabled} aria-pressed={value === option} onClick={() => onChange(option)}>
                                     {width > 0 && height > 0 ? <span aria-hidden="true" className="image-size-ratio-icon" style={{ width: 24 * Math.min(1, width / height), height: 24 * Math.min(1, height / width) }} /> : null}
-                                    <span>{typeof option === "boolean" ? (option ? "开启" : "关闭") : String(option)}</span>
+                                    <span>
+                                        {option === "auto"
+                                            ? field.name === "size"
+                                                ? "自动尺寸"
+                                                : field.name === "quality"
+                                                  ? "自动质量"
+                                                  : "自动"
+                                            : typeof option === "boolean"
+                                              ? option
+                                                  ? "开启"
+                                                  : "关闭"
+                                              : field.name === "imageResolution"
+                                                ? String(option).toUpperCase()
+                                                : String(option)}
+                                    </span>
                                 </button>
                             );
                         })}
@@ -122,6 +138,7 @@ export function ImageParameterFields({
     showSize = true,
     showQuality = true,
     showTransparent = true,
+    countLimit,
 }: {
     profile: ImageCapabilityConfig;
     config: AiConfig;
@@ -130,8 +147,21 @@ export function ImageParameterFields({
     showSize?: boolean;
     showQuality?: boolean;
     showTransparent?: boolean;
+    /** 画布与创作页的张数是拆单数，传值时按账号同时任务数取上限，不再受单模型 maxOutputs 限制。 */
+    countLimit?: number;
 }) {
-    const values = imageParameterRequest(profile, config) || {};
+    const preserved = preserveImageSettings(profile, config);
+    const values = {
+        ...parseImageParameters(preserved.imageParameters),
+        ...Object.fromEntries(
+            (profile.parameters || [])
+                .filter((field) => imageHostControls.has(field.name))
+                .map((field) => {
+                    const raw = preserved[field.name as keyof typeof preserved];
+                    return [field.name, field.type === "boolean" ? raw === "true" : field.type === "number" || field.type === "integer" ? Number(raw) : raw];
+                }),
+        ),
+    };
     const sizeField = profile.parameters?.find((p) => p.name === "size");
     const usesSizePresets = profile.resolution.supported || profile.size.parameter === "size" || sizeField?.encoding === "pixels" || profile.parameters?.some((p) => p.name === "imageResolution");
     const groupedSize = showSize && profile.size.parameter !== "none" && usesSizePresets && imageSizePresets(profile).length > 0;
@@ -139,7 +169,7 @@ export function ImageParameterFields({
         (p) =>
             p.enabled !== false &&
             (!groupedSize || (p.name !== "size" && p.name !== "imageResolution")) &&
-            (p.name !== "count" || (showCount && (p.max ?? 1) > 1)) &&
+            (p.name !== "count" || (showCount && (countLimit === undefined ? (p.max ?? 1) > 1 : countLimit > 1))) &&
             (p.name !== "size" || showSize) &&
             (p.name !== "quality" || showQuality) &&
             (p.name !== "transparentBackground" || showTransparent),
@@ -160,8 +190,9 @@ export function ImageParameterFields({
             ) : null}
             {fields.map((field) => {
                 if (field.name === "count") {
-                    const max = Number(field.max ?? profile.maxOutputs ?? 15);
-                    const countVal = Number(values.count ?? config.count ?? 1);
+                    const max = countLimit === undefined ? Number(field.max ?? profile.maxOutputs ?? 15) : Math.min(15, countLimit);
+                    // 传了 countLimit 时 config.count 才是拆单数，参数里的 count 固定为每单 1 张。
+                    const countVal = countLimit === undefined ? Number(values.count ?? config.count ?? 1) : Math.max(1, Math.min(max, Math.floor(Number(config.count ?? 1)) || 1));
                     return (
                         <div className="space-y-2" key="count">
                             <div className="text-xs font-medium">生成张数</div>
@@ -181,7 +212,7 @@ export function ImageParameterFields({
                                 ))}
                                 {max >= 4 ? <ImageCountStepper value={countVal} max={max} onChange={(next) => onChange("count", String(next))} /> : null}
                             </div>
-                            {field.description ? <p className="text-xs leading-relaxed text-foreground/55">{field.description}</p> : null}
+                            {field.description && countLimit === undefined ? <p className="text-xs leading-relaxed text-foreground/55">{field.description}</p> : null}
                         </div>
                     );
                 }
@@ -219,10 +250,11 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
         <div className="space-y-3">
             <p className="text-xs leading-relaxed text-foreground/55">选择此模型支持的参数和范围。生成界面同步显示启用项，标记“可计价”的参数可用于规格价格。</p>
             {parameters.map((field) => {
-                const definition = definitions.find((p) => p.name === field.name) || field;
+                const declared = definitions.find((p) => p.name === field.name) || field;
+                const definition = commonImageParameter(field.name) ? { ...commonImageParameter(field.name)!, required: declared.required } : declared;
                 const isResolution = field.name === "imageResolution" && field.type === "string";
                 const baseTiers = ["1k", "1.5k", "2k", "4k"];
-                const resolutionChoices = isResolution ? (definition.values?.length ? [...new Set([...definition.values.map(String), "1.5k"])] : baseTiers.filter((tier) => imageParameterAccepts(definition, tier))) : [];
+                const resolutionChoices = isResolution ? [...new Set([...(declared.values?.length ? declared.values.map(String) : baseTiers.filter((tier) => imageParameterAccepts(definition, tier))), ...(field.values || []).map(String)])] : [];
                 const quickResolutionChoices = isResolution ? (resolutionChoices.length ? resolutionChoices : baseTiers) : [];
                 const updateValues = (items: string[]) => {
                     const values = [
@@ -261,7 +293,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                                 disabled={disabled}
                                                 value={(field.values || []).map(String)}
                                                 options={(isResolution ? resolutionChoices : definition.values || []).map((v) => ({
-                                                    label: isResolution && IMAGE_RESOLUTIONS.includes(String(v).toLowerCase()) ? String(v).toUpperCase() : String(v),
+                                                    label: v === "auto" ? "自动" : isResolution && IMAGE_RESOLUTIONS.includes(String(v).toLowerCase()) ? String(v).toUpperCase() : String(v),
                                                     value: String(v),
                                                 }))}
                                                 tokenSeparators={[",", "，"]}
@@ -282,7 +314,7 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                                                 aria-pressed={selected}
                                                                 onClick={() => updateValues((selected ? (field.values || []).filter((value) => value !== tier) : [...(field.values || []), tier]).map(String))}
                                                             >
-                                                                {String(tier).toUpperCase()}
+                                                                {tier === "auto" ? "自动" : String(tier).toUpperCase()}
                                                             </button>
                                                         );
                                                     })}
@@ -330,20 +362,22 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
     );
 }
 
-export function ImageParameterSizeEditor({ profile, definition, disabled, onChange }: { profile: ImageCapabilityConfig; definition: ImageParameter; disabled?: boolean; onChange: (profile: ImageCapabilityConfig) => void }) {
+export function ImageParameterSizeEditor({ profile, definition, disabled, onChange, protocol }: { profile: ImageCapabilityConfig; definition: ImageParameter; disabled?: boolean; onChange: (profile: ImageCapabilityConfig) => void; protocol?: string }) {
+    definition = { ...commonImageParameter("size")!, encoding: definition.encoding, required: definition.required };
     const [draft, setDraft] = useState("");
     const [error, setError] = useState("");
     const field = profile.parameters!.find((p) => p.name === "size")!;
     const pixelSize = field.encoding === "pixels";
     const grouped = profile.resolution.supported;
     const singleTier = imageSingleSizeTier(profile);
-    const tiers = grouped ? profile.resolution.values : [singleTier ?? ""];
+    const tiers = grouped ? profile.resolution.values.filter((tier) => tier !== "auto") : [singleTier ?? ""];
     const updateField = (patch: Partial<ImageParameter>) =>
         onChange(
             updateImageParameterSchema(
                 profile,
                 profile.parameters!.map((p) => (p.name === "size" ? { ...p, ...patch } : p)),
                 [definition],
+                protocol,
             ),
         );
     const updateSize = (size: ImageCapabilityConfig["size"]) => {
@@ -391,7 +425,27 @@ export function ImageParameterSizeEditor({ profile, definition, disabled, onChan
                         请先在上方分辨率中选择支持的档位，再配置各档位的比例和尺寸。
                     </p>
                 ) : grouped || pixelSize ? (
-                    <ImageSizePresetsEditor profile={editorProfile} tiers={tiers} grouped={grouped} ratios={definition.values?.filter((v) => String(v).includes(":")).map(String)} allowCustomRatio disabled={disabled} onChange={updateSize} />
+                    <ImageSizePresetsEditor
+                        profile={editorProfile}
+                        tiers={tiers}
+                        grouped={grouped}
+                        ratios={
+                            definition.values?.length
+                                ? [
+                                      ...new Set([
+                                          ...definition.values.filter((v) => String(v).includes(":")).map(String),
+                                          ...protocolImageSizePresets(protocol)
+                                              .filter((p) => imageParameterAccepts(definition, p.size))
+                                              .map((p) => p.ratio),
+                                      ]),
+                                  ]
+                                : undefined
+                        }
+                        defaultPresets={protocolImageSizePresets(protocol)}
+                        allowCustomRatio
+                        disabled={disabled}
+                        onChange={updateSize}
+                    />
                 ) : (
                     <>
                         <div className="image-size-picker">

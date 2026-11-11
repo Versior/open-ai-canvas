@@ -455,19 +455,21 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         // 服务端 queued 是等待执行资源，叫「等待启动」，与输入框的排队消息区分开。
         status === "waiting_approval"
             ? "等待审批"
-            : status === "queued"
-              ? "等待启动"
-              : status === "running"
-                ? "运行中"
-                : status === "completed"
-                  ? "已完成"
-                  : status === "failed"
-                    ? "异常"
-                    : status === "cancelled"
-                      ? "已停止"
-                      : status === "rejected"
-                        ? "已拒绝"
-                        : "待命";
+            : pendingQuestion
+              ? "等待回答"
+              : status === "queued"
+                ? "等待启动"
+                : status === "running"
+                  ? "运行中"
+                  : status === "completed"
+                    ? "已完成"
+                    : status === "failed"
+                      ? "异常"
+                      : status === "cancelled"
+                        ? "已停止"
+                        : status === "rejected"
+                          ? "已拒绝"
+                          : "待命";
     // 状态色走语义 token（皮肤和明暗主题自动适配）；停止、拒绝、待命用次要文字色。
     const statusColor = status === "failed" ? "var(--status-error)" : status === "waiting_approval" ? "var(--status-warning)" : status === "running" || status === "queued" ? "var(--status-success)" : theme.node.muted;
 
@@ -2351,6 +2353,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                 ) : (
                                     <motion.div key="chat" className="flex min-h-0 flex-1 flex-col" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
                                         <AgentHeader
+                                            conversationTitle={conversations.find((conversation) => conversation.id === activeConversationId)?.title}
                                             theme={theme}
                                             hasMessages={messages.length > 0}
                                             statusLabel={statusLabel}

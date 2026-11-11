@@ -177,12 +177,12 @@ export function buildVideoTeardownCanvas(anchor: CanvasNodeData, bundle: VideoTe
 
     const report: CanvasNodeData = {
         id: `markdown-${nanoid()}`,
-        type: CanvasNodeType.Markdown,
+        type: CanvasNodeType.Text,
         title: `拆解报告 · ${title}`,
         position: { x: startX, y: framesBottom + NODE_GAP },
         width: REPORT_SIZE.width,
         height: REPORT_SIZE.height,
-        metadata: { content: videoTeardownReportMarkdown(bundle, analysis, baseRows), status: "success" },
+        metadata: { content: videoTeardownReportMarkdown(bundle, analysis, baseRows), textFormat: "markdown", status: "success" },
     };
     connections.push({ id: nanoid(), fromNodeId: anchor.id, toNodeId: report.id });
 

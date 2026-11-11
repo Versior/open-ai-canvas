@@ -17,6 +17,9 @@ import (
 func Models() []any {
 	return []any{
 		&model.LUTLibraryItem{},
+		&model.ChannelWebsite{},
+		&model.ChannelCatalogSnapshot{},
+		&model.ChannelProtocolSelection{},
 		&model.CloudAgentExecution{},
 		&model.UploadReservation{},
 		&model.CloudAgentPiSession{},
@@ -56,6 +59,7 @@ func Models() []any {
 		&model.LogicalModelRoute{},
 		&model.RouteAttempt{},
 		&model.ApiCallLog{},
+		&model.SiteTrafficEvent{},
 		&model.ModelPricing{},
 		&model.CreditAccount{},
 		&model.CreditLedgerEntry{},
@@ -177,6 +181,7 @@ func Models() []any {
 		&model.InteriorProject{},
 		// Fork 自有：室内设计知识库（迁移 93 建表）。
 		&model.InteriorKnowledgeEntry{},
+		&model.EcommerceRound{},
 	}
 }
 

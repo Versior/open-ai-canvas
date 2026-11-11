@@ -18,7 +18,6 @@ import { resolveMediaUrl } from "@/services/file-storage";
 import type { ProjectAsset } from "@/services/api/projects";
 import type { TimelineProject } from "@/types/timeline";
 
-
 const MEDIA_ACCEPT = "video/*,audio/*,image/*";
 /** 库内重复判定用的归一键（文件名+媒体类型）。 */
 function assetDedupeKey(title: string | undefined, mediaType: string): string {
@@ -179,14 +178,7 @@ function MediaPreview({ asset }: { asset: ProjectAsset }) {
     if (asset.mediaType === "video") {
         return (
             <div className="relative overflow-hidden rounded-md bg-black">
-                <video
-                    src={url ?? undefined}
-                    poster={poster ?? undefined}
-                    preload="metadata"
-                    controls
-                    playsInline
-                    className="aspect-video w-full"
-                />
+                <video src={url ?? undefined} poster={poster ?? undefined} preload="metadata" controls playsInline className="aspect-video w-full" />
                 {!url ? <div className="aspect-video w-full animate-pulse bg-[var(--previs-control-hover)]" /> : null}
             </div>
         );
@@ -200,17 +192,7 @@ function MediaPreview({ asset }: { asset: ProjectAsset }) {
 }
 /** 展开详情浮层：覆盖在素材列表上方（列表保持原位不被挤压、滚动位置不变），
  *  自带头部（标题+关闭）、可滚动内容区与固定底部操作；Esc 或关闭按钮退出。 */
-function AssetDetailSheet({
-    asset,
-    added,
-    onAdd,
-    onClose,
-}: {
-    asset: ProjectAsset;
-    added: boolean;
-    onAdd: () => void;
-    onClose: () => void;
-}) {
+function AssetDetailSheet({ asset, added, onAdd, onClose }: { asset: ProjectAsset; added: boolean; onAdd: () => void; onClose: () => void }) {
     const closeRef = useRef<HTMLButtonElement | null>(null);
     const [shown, setShown] = useState(false);
     useEffect(() => {
@@ -241,9 +223,7 @@ function AssetDetailSheet({
                 <span className="grid size-5 shrink-0 place-items-center rounded-[4px] bg-[var(--previs-accent)]/15">
                     <AssetIcon mediaType={asset.mediaType} />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)]">
-                    {asset.title || asset.storageKey}
-                </span>
+                <span className="min-w-0 flex-1 truncate text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)]">{asset.title || asset.storageKey}</span>
                 <button
                     ref={closeRef}
                     type="button"
@@ -268,9 +248,7 @@ function AssetDetailSheet({
                         </>
                     ) : null}
                 </dl>
-                {asset.previewText ? (
-                    <p className="mt-2 line-clamp-2 text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/60">{asset.previewText}</p>
-                ) : null}
+                {asset.previewText ? <p className="mt-2 line-clamp-2 text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/60">{asset.previewText}</p> : null}
             </div>
             <div className="border-t border-[var(--previs-sequencer-border)] p-2">
                 <button
@@ -278,9 +256,7 @@ function AssetDetailSheet({
                     disabled={added}
                     onClick={onAdd}
                     className={`flex h-7 w-full items-center justify-center gap-1 rounded-md text-[var(--fs-label)] font-medium transition-colors ${
-                        added
-                            ? "bg-[var(--previs-success-soft)] text-[var(--previs-success)]"
-                            : "bg-[var(--previs-accent)] text-[var(--previs-on-accent)] hover:bg-[var(--previs-accent-hover)]"
+                        added ? "bg-[var(--previs-success-soft)] text-[var(--previs-success)]" : "bg-[var(--previs-accent)] text-[var(--previs-on-accent)] hover:bg-[var(--previs-accent-hover)]"
                     }`}
                 >
                     {added ? <Check className="size-3.5" /> : <Plus className="size-3.5" />}
@@ -487,9 +463,7 @@ export function EditorAssetIngest() {
                         aria-pressed={filter === tab.id}
                         onClick={() => setFilter(tab.id)}
                         className={`h-6 rounded-md px-2 text-[var(--fs-label)] transition-colors ${
-                            filter === tab.id
-                                ? "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]"
-                                : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
+                            filter === tab.id ? "bg-[var(--previs-dock-active-surface)] text-[var(--previs-dock-fg-strong)]" : "text-[var(--previs-dock-fg)] hover:bg-[var(--previs-control-hover)]"
                         }`}
                     >
                         {tab.label}
@@ -502,92 +476,83 @@ export function EditorAssetIngest() {
 
             <div className="relative min-h-0 flex-1">
                 <div className="director-scroll h-full overflow-y-auto p-2">
-                {assets.length === 0 ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                        <p className="text-xs text-[var(--previs-dock-fg)]/60">项目暂无资产</p>
-                        <p className="max-w-[180px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
-                    </div>
-                ) : visibleGroups.every((g) => g.items.length === 0) ? (
-                    <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                        <p className="text-xs text-[var(--previs-dock-fg)]/60">
-                            {filter === "uploaded" ? "暂无本地上传的媒体" : filter === "project" ? "暂无项目素材" : "项目暂无资产"}
-                        </p>
-                        <p className="max-w-[180px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-1">
-                        {visibleGroups.map((group) => {
-                            if (group.items.length === 0) return null;
-                            const open = openGroups[group.id];
-                            return (
-                                <div key={group.id} className="flex flex-col">
-                                    <button
-                                        type="button"
-                                        aria-expanded={open}
-                                        onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
-                                        className="group flex h-7 w-full items-center gap-2 rounded-md px-1 text-left transition-colors hover:bg-[var(--previs-control-hover)]"
-                                    >
-                                        <span
-                                            className={`grid size-4 shrink-0 place-items-center rounded-[4px] transition-colors ${
-                                                open ? "bg-[var(--previs-accent)]/15 text-[var(--previs-accent)]" : "bg-[var(--previs-control-hover)] text-[var(--previs-dock-fg)]/55 group-hover:text-[var(--previs-dock-fg-strong)]"
-                                            }`}
+                    {assets.length === 0 ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                            <p className="text-xs text-[var(--previs-dock-fg)]/60">项目暂无资产</p>
+                            <p className="max-w-[180px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
+                        </div>
+                    ) : visibleGroups.every((g) => g.items.length === 0) ? (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                            <p className="text-xs text-[var(--previs-dock-fg)]/60">{filter === "uploaded" ? "暂无本地上传的媒体" : filter === "project" ? "暂无项目素材" : "项目暂无资产"}</p>
+                            <p className="max-w-[180px] text-[var(--fs-label)] leading-relaxed text-[var(--previs-dock-fg)]/45">点击上方导入媒体，或将文件拖入此区域</p>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-1">
+                            {visibleGroups.map((group) => {
+                                if (group.items.length === 0) return null;
+                                const open = openGroups[group.id];
+                                return (
+                                    <div key={group.id} className="flex flex-col">
+                                        <button
+                                            type="button"
+                                            aria-expanded={open}
+                                            onClick={() => setOpenGroups((s) => ({ ...s, [group.id]: !open }))}
+                                            className="group flex h-7 w-full items-center gap-2 rounded-md px-1 text-left transition-colors hover:bg-[var(--previs-control-hover)]"
                                         >
-                                            <ChevronRight className={`size-3 transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`} />
-                                        </span>
-                                        <group.icon className={`size-3.5 shrink-0 transition-colors ${open ? "text-[var(--previs-accent)]" : "text-[var(--previs-dock-fg)]/60"}`} />
-                                        <span className="truncate text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)]">{group.label}</span>
-                                        <span className="ml-auto rounded-full bg-[var(--previs-control-hover)] px-2 text-[var(--fs-label)] tabular-nums text-[var(--previs-dock-fg)]/70">{group.items.length}</span>
-                                    </button>
-                                    {open ? (
-                                        <ul className="flex flex-col">
-                                            {group.items.map((asset) => {
-                                                const expanded = expandedId === asset.id;
-                                                return (
-                                                    <li key={asset.id}>
-                                                        <button
-                                                            type="button"
-                                                            aria-expanded={expanded}
-                                                            onClick={() => setExpandedId(expanded ? null : asset.id)}
-                                                            title={asset.title || asset.storageKey}
-                                                            className={`group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition-colors ${
-                                                                added === asset.id ? "bg-[var(--previs-accent)]/15" : "hover:bg-[var(--previs-control-hover)]"
-                                                            }`}
-                                                        >
-                                                            <AssetThumb asset={asset} />
-                                                            <span className="min-w-0 flex-1">
-                                                                <span className="block truncate text-[var(--fs-label)] text-[var(--previs-dock-fg-strong)]">{asset.title || asset.storageKey}</span>
-                                                                <span className="mt-0.5 flex items-center gap-1 text-[var(--fs-label)] text-[var(--previs-dock-fg)]/60">
-                                                                    <span className="uppercase">{asset.mediaType}</span>
-                                                                    {asset.durationMs ? <span className="tabular-nums opacity-80">{formatDurationMs(asset.durationMs)}</span> : null}
-                                                                </span>
-                                                            </span>
-                                                            <span
-                                                                className={`grid size-5 shrink-0 place-items-center rounded-[4px] transition-colors ${
-                                                                    expanded ? "bg-[var(--previs-accent)]/15 text-[var(--previs-accent)]" : "text-[var(--previs-dock-fg)]/40 group-hover:text-[var(--previs-dock-fg)]/80"
+                                            <span
+                                                className={`grid size-4 shrink-0 place-items-center rounded-[4px] transition-colors ${
+                                                    open ? "bg-[var(--previs-accent)]/15 text-[var(--previs-accent)]" : "bg-[var(--previs-control-hover)] text-[var(--previs-dock-fg)]/55 group-hover:text-[var(--previs-dock-fg-strong)]"
+                                                }`}
+                                            >
+                                                <ChevronRight className={`size-3 transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`} />
+                                            </span>
+                                            <group.icon className={`size-3.5 shrink-0 transition-colors ${open ? "text-[var(--previs-accent)]" : "text-[var(--previs-dock-fg)]/60"}`} />
+                                            <span className="truncate text-[var(--fs-label)] font-medium text-[var(--previs-dock-fg-strong)]">{group.label}</span>
+                                            <span className="ml-auto rounded-full bg-[var(--previs-control-hover)] px-2 text-[var(--fs-label)] tabular-nums text-[var(--previs-dock-fg)]/70">{group.items.length}</span>
+                                        </button>
+                                        {open ? (
+                                            <ul className="flex flex-col">
+                                                {group.items.map((asset) => {
+                                                    const expanded = expandedId === asset.id;
+                                                    return (
+                                                        <li key={asset.id}>
+                                                            <button
+                                                                type="button"
+                                                                aria-expanded={expanded}
+                                                                onClick={() => setExpandedId(expanded ? null : asset.id)}
+                                                                title={asset.title || asset.storageKey}
+                                                                className={`group flex w-full items-center gap-2 rounded-md px-1 py-1 text-left transition-colors ${
+                                                                    added === asset.id ? "bg-[var(--previs-accent)]/15" : "hover:bg-[var(--previs-control-hover)]"
                                                                 }`}
                                                             >
-                                                                <ChevronDown className={`size-3.5 transition-transform duration-150 ease-out ${expanded ? "rotate-180" : ""}`} />
-                                                            </span>
-                                                        </button>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    ) : null}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
+                                                                <AssetThumb asset={asset} />
+                                                                <span className="min-w-0 flex-1">
+                                                                    <span className="block truncate text-[var(--fs-label)] text-[var(--previs-dock-fg-strong)]">{asset.title || asset.storageKey}</span>
+                                                                    <span className="mt-0.5 flex items-center gap-1 text-[var(--fs-label)] text-[var(--previs-dock-fg)]/60">
+                                                                        <span className="uppercase">{asset.mediaType}</span>
+                                                                        {asset.durationMs ? <span className="tabular-nums opacity-80">{formatDurationMs(asset.durationMs)}</span> : null}
+                                                                    </span>
+                                                                </span>
+                                                                <span
+                                                                    className={`grid size-5 shrink-0 place-items-center rounded-[4px] transition-colors ${
+                                                                        expanded ? "bg-[var(--previs-accent)]/15 text-[var(--previs-accent)]" : "text-[var(--previs-dock-fg)]/40 group-hover:text-[var(--previs-dock-fg)]/80"
+                                                                    }`}
+                                                                >
+                                                                    <ChevronDown className={`size-3.5 transition-transform duration-150 ease-out ${expanded ? "rotate-180" : ""}`} />
+                                                                </span>
+                                                            </button>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        ) : null}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
-                {expandedAsset ? (
-                    <AssetDetailSheet
-                        asset={expandedAsset}
-                        added={added === expandedAsset.id}
-                        onClose={() => setExpandedId(null)}
-                        onAdd={() => addToTimeline(expandedAsset)}
-                    />
-                ) : null}
+                {expandedAsset ? <AssetDetailSheet asset={expandedAsset} added={added === expandedAsset.id} onClose={() => setExpandedId(null)} onAdd={() => addToTimeline(expandedAsset)} /> : null}
             </div>
         </div>
     );

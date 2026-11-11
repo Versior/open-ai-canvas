@@ -1,3 +1,4 @@
+import { migrateCanvasNodeModel } from "@/lib/canvas/migrate-canvas-node-model";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
@@ -16,12 +17,12 @@ import { CanvasFolderCard } from "@/components/canvas/canvas-folder-card";
 import { CanvasHistoryDrawer } from "@/components/canvas/canvas-history-drawer";
 import type { CanvasExportFile } from "@/types/canvas-export";
 import { CanvasNodeType, type CanvasNodeData } from "@/types/canvas";
-import { flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { canvasDraftNavigationState, flushCanvasStorePersistence, useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { exportCanvasProjects } from "@/lib/canvas/canvas-export";
 import { resetGenerationTaskMetadata } from "@/lib/canvas/canvas-task-state";
 import { saveCanvasDrawing, type CanvasDrawingRenderDraft } from "@/lib/canvas/canvas-drawing-storage";
-import { createCanvasProjectWithRemoteSync, hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow, scheduleRemoteUserDataSync } from "@/services/user-data-sync";
+import { hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow, scheduleRemoteUserDataSync } from "@/services/user-data-sync";
 import { listRemoteCanvasProjectsPage, type CanvasLibrarySummary } from "@/services/api/user-data";
 import { useUserStore } from "@/stores/use-user-store";
 import { listProjects } from "@/services/api/projects";
@@ -31,6 +32,7 @@ import { primeResourceBlobCache } from "@/services/resource-blob-cache";
 import { useSyncProgressStore } from "@/stores/use-sync-progress-store";
 import { ensureCanvasNodeAsset } from "@/services/project-asset-sync";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
+import { trackSiteTrafficAction } from "@/services/site-traffic";
 
 const CanvasDeleteProjectsDialog = lazy(() => import("@/components/canvas/canvas-delete-projects-dialog").then((module) => ({ default: module.CanvasDeleteProjectsDialog })));
 
@@ -69,11 +71,7 @@ export default function CanvasPage() {
         () =>
             userId
                 ? libraryQuery.data?.pages.flatMap((page) => page.projects) || []
-                : localProjects.map((project) => ({
-                      ...project,
-                      nodeCount: project.nodes.length,
-                      previewNodes: project.nodes.filter((node) => node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video).slice(0, 4),
-                  })),
+                : localProjects.map((project) => ({ ...project, nodeCount: project.nodes.length, previewNodes: project.nodes.filter((node) => node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video).slice(0, 4) })),
         [libraryQuery.data, localProjects, userId],
     );
     const totalProjects = userId ? libraryQuery.data?.pages[0]?.total || 0 : projects.length;
@@ -100,26 +98,14 @@ export default function CanvasPage() {
             openingProjectIdRef.current = id;
             setOpeningProjectId(id);
             preloadProject();
-            window.requestAnimationFrame(() => navigate(`/canvas/${id}${forwardedQuery}`));
+            window.requestAnimationFrame(() => navigate(`/canvas/${id}${forwardedQuery}`, { state: canvasDraftNavigationState(id) }));
         },
         [forwardedQuery, navigate, preloadProject],
     );
-    const [creating, setCreating] = useState(false);
-    const creatingRef = useRef(false);
-    const createAndEnter = async () => {
-        if (creatingRef.current) return;
-        creatingRef.current = true;
-        setCreating(true);
-        try {
-            const { id, syncError } = await createCanvasProjectWithRemoteSync(`自由画布 ${projects.length + 1}`);
-            if (syncError) message.warning(syncError instanceof Error ? `画布已在本地创建，云端同步失败：${syncError.message}` : "画布已在本地创建，云端同步失败");
-            enterProject(id);
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "创建画布失败");
-        } finally {
-            creatingRef.current = false;
-            setCreating(false);
-        }
+    const createAndEnter = () => {
+        trackSiteTrafficAction("new_canvas");
+        const id = useCanvasStore.getState().createDraftProject(`自由画布 ${projects.length + 1}`);
+        enterProject(id);
     };
     const filteredProjects = useMemo(() => {
         if (userId) return projects;
@@ -195,6 +181,7 @@ export default function CanvasPage() {
             const data = JSON.parse(await projectFile.text()) as CanvasExportFile;
             if (!Array.isArray(data.projects)) throw new Error("projects.json 中缺少画布列表");
             for (const item of data.projects) {
+                item.project = migrateCanvasNodeModel(item.project);
                 if (!Array.isArray(item.files)) throw new Error(`画布「${item.project?.title || "未命名画布"}」的媒体清单无效`);
                 const missing = item.files.find((entry) => !zip.get(entry.path));
                 if (missing) throw new Error(`压缩包缺少媒体文件：${missing.path}`);
@@ -442,7 +429,8 @@ export default function CanvasPage() {
             enterProject(projects[0].id);
             return;
         }
-        void createAndEnter();
+        const id = useCanvasStore.getState().createDraftProject(`自由画布 ${projects.length + 1}`);
+        enterProject(id);
     }, [hydrated, message, mode, projects, sessionHydrated, userId, libraryQuery.isSuccess]);
 
     if (hydrated && !libraryQuery.isError && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
@@ -456,7 +444,7 @@ export default function CanvasPage() {
                     meta={<span className="app-projects-header-meta">{totalProjects} 个</span>}
                     actions={
                         <div className="collection-header-actions">
-                            <Button disabled={!hydrated || creating} loading={creating} icon={<Plus />} onClick={() => void createAndEnter()}>
+                            <Button disabled={!hydrated} icon={<Plus />} onClick={() => void createAndEnter()}>
                                 新建画布
                             </Button>
                             <Button disabled={!hydrated} icon={<FileUp />} onClick={() => inputRef.current?.click()}>
@@ -568,7 +556,7 @@ export default function CanvasPage() {
                         title="让第一个想法落在画布上"
                         description="图片、分镜和灵感，都可以在这里自由组织。"
                         action={
-                            <Button type="primary" icon={<Plus />} disabled={!hydrated || creating} title={hydrated ? undefined : "正在恢复本地画布，完成后可新建"} onClick={() => void createAndEnter()}>
+                            <Button type="primary" icon={<Plus />} disabled={!hydrated} title={hydrated ? undefined : "正在恢复本地画布，完成后可新建"} onClick={createAndEnter}>
                                 新建画布
                             </Button>
                         }

@@ -16,6 +16,8 @@ for (const [key, value] of Object.entries({
     MutationObserver: dom.MutationObserver,
     ResizeObserver: dom.ResizeObserver,
     getComputedStyle: dom.getComputedStyle.bind(dom),
+    requestAnimationFrame: dom.requestAnimationFrame.bind(dom),
+    cancelAnimationFrame: dom.cancelAnimationFrame.bind(dom),
     IS_REACT_ACT_ENVIRONMENT: true,
 })) {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
@@ -94,6 +96,7 @@ test("real price picker copies existing model prices and keeps the target identi
     };
     let payload: any;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         payload = config.data;
         return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
@@ -150,6 +153,7 @@ test("renaming an image model with unchanged parameters does not ask to recheck 
     draft.priceTiers[0].unitPrice = 19;
     let payload: any;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         payload = config.data;
         return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
@@ -195,6 +199,7 @@ test("protocol changes require pricing review, acknowledge it and warn again aft
     Object.assign(draft.priceTiers[0], { billingMode: "token", inputTokenPrice: 3, outputTokenPrice: 12, cachedTokenPrice: 0.5 });
     let payload: any;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         payload = config.data;
         return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
@@ -241,6 +246,7 @@ test("upstream changes that actually change image specifications still warn with
     draft.priceTiers[0].unitPrice = 19;
     let payload: any;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         payload = config.data;
         return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
@@ -287,6 +293,7 @@ test("real editor applies metadata only on command and saves it through the exis
     let payload: any;
     let saved = 0;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         expect(config.method).toBe("post");
         expect(config.url).toBe("/admin/channels/test/models");
         payload = config.data;
@@ -346,6 +353,7 @@ test("new model editor automatically fills fuzzy metadata and saves without appl
     const protocols = [{ value: "chat-completion", label: "Chat", capability: "text" as const, create: "POST /v1/chat/completions", contentType: "application/json", media: "url" }];
     let payload: any;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         payload = config.data;
         return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
@@ -394,6 +402,7 @@ test("manual category survives automatic matching and subsequent model renaming"
     const protocols = [{ value: "chat-completion", label: "Chat", capability: "text" as const, create: "POST /v1/chat/completions", contentType: "application/json", media: "url" }];
     let payload: any;
     apiClient.request = (async (config) => {
+        if (config.url?.endsWith("/protocol-suggestion")) return { data: { code: 0, data: { source: "history", protocol: "chat-completion", candidates: ["chat-completion"] }, msg: "ok" }, status: 200, headers: {} };
         payload = config.data;
         return { data: { code: 0, data: { model: {} }, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;

@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const CurrentSchemaVersion int64 = 99
+const CurrentSchemaVersion int64 = 106
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -408,6 +408,22 @@ var schemaMigrations = []migration{
 		return nil
 	}},
 	{version: 99, name: "lut_library", checksum: "sha256:lut-library-v99-20261109", apply: migrateLUTLibrary},
+	{version: 100, name: "ecommerce_round_history", checksum: "sha256:ecommerce-round-history-v93-20261109", apply: func(tx *gorm.DB) error {
+		// Additive only: a new table plus a nullable pointer column. Existing
+		// projects stay readable and are converted lazily on their next save.
+		if err := tx.AutoMigrate(&model.EcommerceProject{}, &model.EcommerceRound{}); err != nil {
+			return err
+		}
+		return nil
+	}},
+	{version: 101, name: "drama_cast_styles_import", checksum: "sha256:drama-cast-styles-import-v94", apply: migrateDramaCastStylesImport},
+	{version: 102, name: "ark_private_asset_binding_identity", checksum: "sha256:ark-private-asset-binding-identity-v95", apply: migrateArkPrivateAssetBindingIdentity},
+	{version: 103, name: "canvas_unified_text_nodes", checksum: canvasNodeModelChecksum, apply: migrateCanvasNodeModel},
+	{version: 104, name: "channel_websites", checksum: "sha256:channel-websites-v97-20261110", apply: migrateChannelWebsites},
+	{version: 105, name: "api_log_generation_content", checksum: "sha256:api-log-generation-content-v98", apply: migrateAPILogGenerationContent},
+	{version: 106, name: "site_traffic_events", checksum: "sha256:site-traffic-events-v99-20261111", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.SiteTrafficEvent{})
+	}},
 }
 
 func migrateLUTLibrary(tx *gorm.DB) error {
@@ -422,6 +438,13 @@ func migrateLUTLibrary(tx *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+func migrateAPILogGenerationContent(tx *gorm.DB) error {
+	if !tx.Migrator().HasTable(&model.ApiCallLog{}) || tx.Migrator().HasColumn(&model.ApiCallLog{}, "GenerationContentJSON") {
+		return nil
+	}
+	return tx.Migrator().AddColumn(&model.ApiCallLog{}, "GenerationContentJSON")
 }
 
 // migrateReferenceVideoCostPrice 为价格档成本和账单成本快照增加带参考视频的成本价。
@@ -1578,6 +1601,37 @@ func validateCanonicalMigrationPhysicalSchema(tx *gorm.DB, version int64) error 
 				}
 			}
 		}
+	case 100:
+		if !tx.Migrator().HasTable(&model.EcommerceRound{}) || !tx.Migrator().HasColumn(&model.EcommerceProject{}, "ActiveRoundID") {
+			return fmt.Errorf("电商轮次迁移账本与物理结构不一致")
+		}
+	case 101:
+		for _, field := range []string{"ImageStyleID", "ImageStyleName", "ImageStylePrompt", "SourceProjectID", "SourceCastID"} {
+			if !tx.Migrator().HasColumn(&model.DramaCast{}, field) {
+				return fmt.Errorf("短剧独立风格迁移账本与物理结构不一致：缺少 %s", field)
+			}
+		}
+	case 102:
+		if !tx.Migrator().HasIndex(&model.ArkPrivateAssetBinding{}, "idx_ark_private_asset_binding_resource_project") {
+			return fmt.Errorf("方舟素材绑定迁移账本与物理结构不一致：缺少唯一索引")
+		}
+	case 104:
+		for _, entity := range []any{&model.ChannelWebsite{}, &model.ChannelCatalogSnapshot{}, &model.ChannelProtocolSelection{}} {
+			if !tx.Migrator().HasTable(entity) {
+				return fmt.Errorf("渠道网站迁移账本与物理结构不一致：缺少关联表")
+			}
+		}
+		if !tx.Migrator().HasColumn(&model.ModelChannel{}, "WebsiteID") {
+			return fmt.Errorf("渠道网站迁移账本与物理结构不一致：缺少 website_id")
+		}
+	case 105:
+		if tx.Migrator().HasTable(&model.ApiCallLog{}) && !tx.Migrator().HasColumn(&model.ApiCallLog{}, "GenerationContentJSON") {
+			return fmt.Errorf("生成快照迁移账本与物理结构不一致：缺少 generation_content_json")
+		}
+	case 106:
+		if !tx.Migrator().HasTable(&model.SiteTrafficEvent{}) {
+			return fmt.Errorf("访问统计迁移账本与物理结构不一致：缺少事件表")
+		}
 	}
 	return nil
 }
@@ -1605,7 +1659,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 	// 上游 main 72–82 在 Fork 中的位置：72–77 顺延两位；上游 78（短剧声音与造型）在 Fork 为 81，
 	// 上游 79（电商 Agent）在 Fork 为 80 并改写为 Fork 记录的校验和；上游 80、81 顺延两位为 82、83；
 	// 上游 82（文本 Token 缓存写入价）接在 Fork 自有迁移之后为 87，上游 83–87 顺延五位为 88–92；
-	// 上游 88–92 接在 Fork 室内设计知识库之后为 94–98。Fork 自有的形象（84）、模特库（85）、
+	// 上游 88–92 接在 Fork 室内设计知识库之后为 94–98，上游 93–99 接在 LUT 库之后为 100–106。Fork 自有的形象（84）、模特库（85）、
 	// 室内设计（86）和室内设计知识库（93）在搬迁后照常补跑。未列出的上游新版本一律拒绝自动重排。
 	upstream := []struct {
 		migration
@@ -1633,6 +1687,13 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 90, name: "drama_draft_form", checksum: "sha256:drama-draft-form-v90-20261106"}, 96, "sha256:drama-draft-form-v90-20261106"},
 		{migration{version: 91, name: "email_logs_and_notifications", checksum: "sha256:email-logs-and-notifications-v91-20261106"}, 97, "sha256:email-logs-and-notifications-v91-20261106"},
 		{migration{version: 92, name: "drama_reference_controls", checksum: "sha256:drama-reference-controls-v92"}, 98, "sha256:drama-reference-controls-v92"},
+		{migration{version: 93, name: "ecommerce_round_history", checksum: "sha256:ecommerce-round-history-v93-20261109"}, 100, "sha256:ecommerce-round-history-v93-20261109"},
+		{migration{version: 94, name: "drama_cast_styles_import", checksum: "sha256:drama-cast-styles-import-v94"}, 101, "sha256:drama-cast-styles-import-v94"},
+		{migration{version: 95, name: "ark_private_asset_binding_identity", checksum: "sha256:ark-private-asset-binding-identity-v95"}, 102, "sha256:ark-private-asset-binding-identity-v95"},
+		{migration{version: 96, name: "canvas_unified_text_nodes", checksum: canvasNodeModelChecksum}, 103, canvasNodeModelChecksum},
+		{migration{version: 97, name: "channel_websites", checksum: "sha256:channel-websites-v97-20261110"}, 104, "sha256:channel-websites-v97-20261110"},
+		{migration{version: 98, name: "api_log_generation_content", checksum: "sha256:api-log-generation-content-v98"}, 105, "sha256:api-log-generation-content-v98"},
+		{migration{version: 99, name: "site_traffic_events", checksum: "sha256:site-traffic-events-v99-20261111"}, 106, "sha256:site-traffic-events-v99-20261111"},
 	}
 	if len(records) > len(upstream) {
 		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)
@@ -1652,7 +1713,7 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		}
 	}
 
-	// 逆序搬迁避免主键槽位碰撞：先搬上游 92→98 … 88→94，再搬 87→92 … 83→88；后续目标槽位都已腾空。
+	// 逆序搬迁避免主键槽位碰撞：先搬上游 99→106 … 93→100，再搬 92→98 … 88→94，最后搬 87→92 … 83→88；后续目标槽位都已腾空。
 	// AppliedAt 不参与更新。
 	for index := len(records) - 1; index >= 0; index-- {
 		applied := records[index]

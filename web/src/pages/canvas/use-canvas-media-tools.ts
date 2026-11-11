@@ -144,7 +144,6 @@ export function useCanvasMediaTools({
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const extractingVideoFramesNodeIdRef = useRef<string | null>(null);
-    const mergeVideoRunningRef = useRef(false);
     const layerSubmissionIds = useRef(new Set<string>());
     const [activeLayerGroupIds, setActiveLayerGroupIds] = useState<ReadonlySet<string>>(new Set());
     const [cropNodeId, setCropNodeId] = useState<string | null>(null);
@@ -161,11 +160,12 @@ export function useCanvasMediaTools({
     const [emotionNodeId, setEmotionNodeId] = useState<string | null>(null);
     const [frameDialogNodeId, setFrameDialogNodeId] = useState<string | null>(null);
     const [extractingVideoFramesNodeId, setExtractingVideoFramesNodeId] = useState<string | null>(null);
-    const [mergeVideoProgress, setMergeVideoProgress] = useState<MergeVideoProgress | null>(null);
     const [segmentDialogNodeId, setSegmentDialogNodeId] = useState<string | null>(null);
     const [segmentDialogMode, setSegmentDialogMode] = useState<"audio" | "video" | null>(null);
     const [segmentRunningMode, setSegmentRunningMode] = useState<"audio" | "video" | null>(null);
     const segmentRunningRef = useRef(false);
+    const mergeVideoRunningRef = useRef(false);
+    const [mergeVideoProgress, setMergeVideoProgress] = useState<MergeVideoProgress | null>(null);
     const [panoramaConfigNodeId, setPanoramaConfigNodeId] = useState<string | null>(null);
     const [enhanceDialogNodeId, setEnhanceDialogNodeId] = useState<string | null>(null);
 
@@ -2145,6 +2145,9 @@ export function useCanvasMediaTools({
     );
 
     return {
+        mergeVideoProgress,
+        mergeVideosByIds,
+        mergeSelectedVideos,
         enhanceDialogNodeId,
         setEnhanceDialogNodeId,
         openVideoEnhance,
@@ -2179,9 +2182,6 @@ export function useCanvasMediaTools({
         imageEditPreset,
         layerDecompositionNodeId,
         textEditNodeId,
-        mergeSelectedVideos,
-        mergeVideosByIds,
-        mergeVideoProgress,
         saveAnnotatedImageNode,
         segmentDialogMode,
         segmentDialogNodeId,

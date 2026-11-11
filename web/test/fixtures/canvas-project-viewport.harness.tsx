@@ -17,7 +17,7 @@ let remoteFailure = false;
 let remoteSaves = 0;
 let save: (options?: { requireRemote?: boolean }) => Promise<boolean>;
 mock.module("antd", () => ({ App: { useApp: () => ({ message }) } }));
-mock.module("react-router", () => ({ useNavigate: () => noop }));
+mock.module("react-router", () => ({ useNavigate: () => noop, useLocation: () => ({ pathname: "/canvas/product-project", search: "", hash: "", state: null }) }));
 const { canvasAppearanceForTheme } = await import("../../src/lib/canvas/canvas-appearance");
 const appearance = canvasAppearanceForTheme("dark");
 // 旧电商画布 kind 仍可能出现在存量数据里，按普通画布打开；节点用居中在原点的普通图片。
@@ -38,10 +38,11 @@ const project: CanvasProject = {
     viewport: { x: 0, y: 0, k: 1 },
     previsScenes: [],
 };
-const store = { hydrated: true, projects: [project], openProject: () => project, updateProject: noop, renameProject: noop };
+const store = { hydrated: true, projects: [project], getDraftProject: () => undefined, materializeDraft: noop, openProject: () => project, updateProject: noop, renameProject: noop };
 const canvasStore = Object.assign((selector: (state: typeof store) => unknown) => selector(store), { getState: () => store });
 mock.module("@/stores/canvas/use-canvas-store", () => ({
     useCanvasStore: canvasStore,
+    canvasDraftNavigationState: () => undefined,
     flushCanvasStorePersistence: async () => {
         if (localFailure) throw new Error("local disk unavailable");
     },

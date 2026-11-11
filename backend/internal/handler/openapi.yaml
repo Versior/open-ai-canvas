@@ -27,10 +27,10 @@ tags:
   - name: admin
   - name: skills
   - name: workbench
+  - name: dramas
+    description: 短剧作品与角色、场景、道具设定
   - name: feedback
     description: 用户反馈与管理员收件箱
-  - name: guest
-    description: 游客只读展示接口：功能开关、模型目录与 LibTV 公开作品
   - name: referral
     description: 推广中心：推广码、邀请记录与返佣
   - name: inspirations
@@ -38,883 +38,309 @@ tags:
   - name: pose-library
     description: 站点姿势库：浏览、选用，管理员导入与图片同步
 paths:
-  /canvas-projects:
-    get:
-      tags: [canvas]
-      summary: 分页读取自己的画布
-      description: 旧版电商画布已下线，带 kind=ecommerce 的存量画布与自由画布在同一列表中返回。
-      parameters:
-        - {in: query, name: page, schema: {type: integer, minimum: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50}}
-      responses:
-        "200": {description: 分页信封 data 包含 projects、total、hasMore；每项包含受限预览}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-  /admin/settings/ecommerce/defaults:
+  /admin/api-logs/{id}:
     get:
       tags: [admin]
-      summary: 管理员读取内置默认指令全文
-      description: data.defaults 按能力标识及四种用途返回 worker 实际使用的内置规则。只读，不修改覆盖或 revision；普通用户无权读取。
-      responses:
-        "200": {description: data.defaults 为字符串映射；Cache-Control 为 no-store}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /ecommerce/templates:
-    get:
-      tags: [canvas]
-      summary: 搜索分页读取项目内置套图库
-      description: 登录可读，普通用户须开放「电商生图台」；管理员不受开关限制。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。category 只取这个一级类目；categories 按搜索词统计每个一级类目的套数（不受 category 影响），数量多的在前。
+      summary: 管理员读取单条模型请求详情
+      description: 仅管理员可读。视频 create 根日志提供 generationContent；优先使用请求时白名单快照，旧日志只按可证明属于该次请求的任务输入或请求正文降级。列表和 CSV 不返回生成内容。媒体缺失时 available 为 false，不提供外链。
       parameters:
-        - {in: query, name: q, schema: {type: string, maxLength: 100}}
-        - {in: query, name: category, description: 一级类目名，空为全部, schema: {type: string, maxLength: 50}}
-        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+        - { in: path, name: id, required: true, schema: { type: string } }
       responses:
-        "200": {description: data 包含 items、total、categories、page、pageSize；每项含 id、name、category、description、count；categories 每项含 name、count}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /ecommerce/templates/{templateId}:
-    get:
-      tags: [canvas]
-      summary: 读取单套内置模板的完整视觉规范与画面参考
-      description: 权限同套图库。data.template 可作为分析参考或载入后台草稿，原内置内容只读。
-      parameters:
-        - {in: path, name: templateId, required: true, schema: {type: string}}
-      responses:
-        "200": {description: data.template 为 EcommerceSuiteTemplate}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio/templates:
-    get:
-      tags: [canvas]
-      summary: 读取后台已启用的套图模板
-      description: 权限同套图库。只返回 enabled 为 true 的模板，供生图台「模板套图」选择；停用草稿不返回。
-      responses:
-        "200": {description: data.templates 为 EcommerceSuiteTemplate 数组}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio/prompts:
-    get:
-      tags: [canvas]
-      summary: 读取后台改过的生图台出图提示词
-      description: 权限同套图库。data.prompts 是提示词编号到文字的映射，只含后台改过的条目；生图台出图时用它替换内置写法。
-      responses:
-        "200": {description: data.prompts 为对象，值为字符串}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio/models:
-    get:
-      tags: [canvas]
-      summary: 浏览电商模特库
-      description: 登录可读，普通用户须开放「电商生图台」，只返回已上架的素材；管理员不受开关限制。kind 为 face 模特人脸、figure 全身模特、pose 姿势、style 模特样式。
-      parameters:
-        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, figure, pose, style]}}
-        - {in: query, name: q, schema: {type: string, maxLength: 60}}
-        - {in: query, name: category, schema: {type: string}}
-        - {in: query, name: gender, schema: {type: string, enum: ["", female, male]}}
-        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
-      responses:
-        "200": {description: data 包含 items、total、page、pageSize、categories；每项含 id、kind、name、category、gender、tags、prompt、hasImage、width、height、revision}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio/models/{id}/image:
-    get:
-      tags: [canvas]
-      summary: 读取模特库素材图
-      description: 权限同浏览；未上架的素材只有管理员能看。variant=thumb 给不超过 512 像素的缩略图；带 v=revision 时可缓存一天。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-        - {in: query, name: variant, schema: {type: string, enum: [thumb]}}
-        - {in: query, name: v, schema: {type: string}}
-      responses:
-        "200": {description: 图片二进制}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio/models/{id}/attach:
-    post:
-      tags: [canvas]
-      summary: 选用模特库素材
-      description: 把素材原图复制到当前用户的资源库并返回 data.resourceId，出图任务引用用户自己的资源。同一用户对同一张原图只复制一次，计入上传配额；按上传频率限流。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      responses:
-        "200": {description: data 包含 resourceId、width、height}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /admin/studio-models:
-    get:
-      tags: [admin]
-      summary: 管理员列出模特库素材
-      description: 包括未上架的素材；可按分类和上下架筛选（无 gender）。
-      parameters:
-        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, figure, pose, style]}}
-        - {in: query, name: q, schema: {type: string, maxLength: 60}}
-        - {in: query, name: category, schema: {type: string, maxLength: 24}}
-        - {in: query, name: status, description: 空为全部, schema: {type: string, enum: [enabled, disabled]}}
-        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
-      responses:
-        "200": {description: 结构同浏览接口，素材另含 enabled、consent、sortOrder、updatedAt；data 另含 kindCounts（face、figure、pose、style 各自总条数）与 categoryCounts（当前类型各分类的 name、count，条数多的在前，不含未分类）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/studio-models/import:
-    post:
-      tags: [admin]
-      summary: 管理员新增模特库素材
-      description: multipart 表单：kind、name、category、gender、tags（JSON 数组或逗号分隔）、prompt、consent、enabled 与可选 file（PNG/JPEG/WebP，12 MiB、4000 万像素以内）。人脸、全身模特和姿势必须带图，人脸和全身模特须确认肖像授权才能上架，模特样式必须写造型描述。原图与缩略图存为本地 studio-model 资源，不计入个人容量。
-      responses:
-        "200": {description: data.item 为新素材}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/studio-models/{id}:
-    put:
-      tags: [admin]
-      summary: 管理员修改模特库素材
-      description: 只改文字字段、授权确认与上下架；类型和图片不能改。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      responses:
-        "200": {description: data.item 为修改后的素材}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [admin]
-      summary: 管理员删除模特库素材
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      responses:
-        "200": {description: data.affected 为删除条数}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /admin/studio-models/batch:
-    post:
-      tags: [admin]
-      summary: 管理员批量上架、下架或删除模特库素材
-      description: 请求体 {"ids":[...],"action":"enable|disable|delete"}，一次 1–200 条。上架时有人脸或全身模特没确认肖像授权则整批不执行。
-      responses:
-        "200": {description: data.affected 为影响条数}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /admin/studio-models/remote-import:
-    get:
-      tags: [admin]
-      summary: 管理员查看模特库远程拉取进度
-      description: 返回最近一次拉取的进度与可以一键拉取的内置来源。进度只存在本进程内存里，后端重启后回到 idle。
-      responses:
-        "200": {description: data 包含 status（idle、running、done、failed、cancelled）、source（来源名称或去掉查询串的清单地址）、startedAt、finishedAt、error、report（total、done、imported、skipped、failed、failures，failures 只留前 50 条）与 sources（每项 id、name、description、notice）}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    post:
-      tags: [admin]
-      summary: 管理员开始远程拉取模特库
-      description: 请求体 {"source":"ai-pose-gallery-zh"} 或 {"manifestUrl":"https://…"}，二选一，可带 faceConsentAttested。服务端在后台下载清单与图片，逐条走与后台新增相同的校验、缩略图和存储，按类型 + 分类 + 名称跳过已有的；faceConsentAttested 为假时人脸和全身模特不标授权、不上架。清单地址按出站规则拒绝本机、内网和链路本地地址。一次只跑一个。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                source: {type: string, enum: [ai-pose-gallery-zh]}
-                manifestUrl: {type: string, maxLength: 2048}
-                faceConsentAttested: {type: boolean}
-      responses:
-        "200": {description: data 结构同 GET，status 为 running}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [admin]
-      summary: 管理员停止模特库远程拉取
-      description: 停止正在进行的拉取，已经导入的保留，再拉会跳过它们。没有在跑时原样返回进度。
-      responses:
-        "200": {description: data 结构同 GET}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/settings/ecommerce:
-    get:
-      tags: [admin]
-      summary: 管理员读取完整电商生图台配置
-      description: 后台页面只编辑商品档案能力与套图模板；旧版电商画布的字段（总开关、其他能力、公共模特）仍随配置保存，保存时原样提交。
-      responses:
-        "200": {description: 标准信封 data.setting 为 EcommerceSetting}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    put:
-      tags: [admin]
-      summary: 保存配置并保留上一版
-      description: 需要管理员，携带读取时 revision，过期版本拒绝覆盖。当前配置、上一版和审计在同一事务提交。新增图片须属于当前管理员；已有及上一版引用允许其他管理员维护。请求体上限 2 MiB。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/EcommerceSetting"}
-      responses:
-        "200": {description: 标准信封 data.setting 为新 revision 的完整配置}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/settings/ecommerce/previous:
-    get:
-      tags: [admin]
-      summary: 管理员读取上一版供草稿恢复
-      description: 只读取不激活，保存时须使用当前配置 revision。
-      responses:
-        "200": {description: 标准信封 data.setting 为上一版 EcommerceSetting}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio:
-    get:
-      tags: [canvas]
-      summary: 读取当前用户的电商生图台工作区
-      description: 登录可读，只返回本人的商品档案、出图方案与采用结果。revision 为整份工作区的修订号，每次保存或删除加一。Cache-Control 为 no-store。
-      responses:
-        "200": {description: data 包含 revision 与 products；products 为前端定义的商品对象数组}
-        "401": {$ref: "#/components/responses/Error"}
-  /ecommerce/studio/products/{productId}:
-    get:
-      tags: [canvas]
-      summary: 读取一个生图台商品
-      description: 只返回本人的商品；保存冲突后用它载入最新版本。Cache-Control 为 no-store。
-      parameters:
-        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
-      responses:
-        "200": {description: data 包含工作区 revision 与 product；product.revision 是该商品的修订号}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-    put:
-      tags: [canvas]
-      summary: 新建或整体替换一个生图台商品
-      description: 请求体只能是 {product, expectedRevision}，product.id 必须与地址一致（6–80 位字母、数字、下划线或连字符）。expectedRevision 是上次读到的商品修订号（新商品为 0），与服务端不一致时返回 409、reason=studio_product_conflict、details.revision 为当前值；省略时直接覆盖。product.revision 由服务端写入，客户端传来的值被忽略。单个商品不超过 1 MiB、整份工作区不超过 8 MiB、最多 200 个商品；不能内嵌 data URL，图片须先上传为资源，并以 resourceId 字段引用，孤儿清理会据此保留这些资源。与旧私有库共用一行数据，其他键原样保留。受画布写入频率限制。
-      parameters:
-        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [product]
-              additionalProperties: false
-              properties:
-                product: {type: object}
-                expectedRevision: {type: integer, minimum: 0}
-      responses:
-        "200": {description: data 包含新的工作区 revision 与规范化后的 product（带新的 product.revision）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [canvas]
-      summary: 删除一个生图台商品
-      description: 幂等，商品不存在时同样返回当前 revision。只删除工作区记录，不删除已上传的素材与任务。
-      parameters:
-        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
-      responses:
-        "200": {description: data.revision 为删除后的修订号}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /ecommerce/product-videos:
-    get:
-      tags: [canvas]
-      summary: 视频复刻 · 元素替换的作品列表
-      description: 需要登录并打开「视频复刻」开关。只返回本人的作品；作品对象由前端定义（素材、参考视频片段、每段生成任务、成片）。revision 是电商私有数据整行的修订号。Cache-Control 为 no-store。
-      responses:
-        "200": {description: data 包含 revision 与 items；items 为作品对象数组，每条带服务端维护的 revision}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /ecommerce/product-videos/{videoId}:
-    get:
-      tags: [canvas]
-      summary: 读取一条元素替换作品
-      description: 只返回本人的作品；保存冲突后用它载入最新版本。Cache-Control 为 no-store。
-      parameters:
-        - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
-      responses:
-        "200": {description: data 包含整行 revision 与 item；item.revision 是该作品的修订号}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-    put:
-      tags: [canvas]
-      summary: 新建或整体替换一条元素替换作品
-      description: 请求体只能是 {item, expectedRevision}，item.id 必须与地址一致。expectedRevision 必填，是上次读到的作品修订号（新作品为 0），不一致时返回 409、reason=product_video_conflict、details.revision 为当前值。item.revision 由服务端写入。单条不超过 128 KiB、最多 100 条，和生图台共用的电商私有数据整行不超过 8 MiB；不能内嵌 data URL，素材和成片以 resourceId / keyframeResourceId 字段引用，孤儿清理会据此保留这些资源。与生图台共用一行数据，其他键原样保留。受画布写入频率限制。
-      parameters:
-        - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [item, expectedRevision]
-              additionalProperties: false
-              properties:
-                item: {type: object}
-                expectedRevision: {type: integer, minimum: 0}
-      responses:
-        "200": {description: data 包含新的整行 revision 与规范化后的 item（带新的 item.revision）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [canvas]
-      summary: 删除一条元素替换作品
-      description: 幂等，作品不存在时同样成功。只删除作品记录，不删除已上传的素材、参考片段、生成任务与成片资源。
-      parameters:
-        - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
-      responses:
-        "200": {description: data.revision 为删除后的整行修订号}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /ecommerce/product-videos/splits:
-    post:
-      tags: [tasks]
-      summary: 视频复刻 · 元素替换：把参考视频按镜头切成一次生成能参考的片段
-      description: 需要登录并打开「视频复刻」开关。异步任务（type=product_video_split），服务端用本地 ffmpeg 在选段内检测镜头切点，尽量在切点处断开，每段不超过 maxSegmentSeconds（8–30 秒，默认 15）、不短于 4 秒；单个镜头超长时均分。每段重新编码为短边不超过 720、30fps 的 H.264/AAC mp4，并截一帧封面，都作为本人的资源保存。结果写入任务 resultJson：source（原视频尺寸、时长、有无音轨）、startMs/endMs、segments[{index, startMs, endMs, durationMs, boundary, resourceId, width, height, keyframeResourceId}]、warnings。选段须在 4–120 秒之间。不调用模型、不计费。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
-      parameters:
-        - in: header
-          name: X-Idempotency-Key
-          required: true
-          schema: {type: string, minLength: 8, maxLength: 128}
-          description: 客户端为一次切段生成的稳定幂等键；重试原请求时必须复用
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [resourceId]
-              properties:
-                resourceId: {type: string, description: 本人已就绪的视频资源}
-                startMs: {type: integer, minimum: 0, description: 选段开头，默认 0}
-                endMs: {type: integer, minimum: 0, description: 选段结尾，0 表示到视频结尾}
-                maxSegmentSeconds: {type: integer, minimum: 8, maximum: 30, description: 每段时长上限，按所选模型的参考视频时长传入；0 表示 15 秒}
-                ranges:
-                  type: array
-                  maxItems: 60
-                  description: 复刻工作台用。给了就按这些范围原样切，不检测镜头、忽略 startMs/endMs；每段 1 秒到 maxSegmentSeconds，范围可以重叠，segments 按给定顺序返回；结尾比视频略长时截到结尾，超出太多时任务失败
-                  items:
-                    type: object
-                    required: [startMs, endMs]
+        "200":
+          description: 请求详情
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
                     properties:
-                      startMs: {type: integer, minimum: 0}
-                      endMs: {type: integer, minimum: 0}
+                      data:
+                        type: object
+                        properties:
+                          log:
+                            type: object
+                            properties:
+                              generationContent: { $ref: "#/components/schemas/APICallGenerationContent" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/api-logs/{id}/references/{refId}/media:
+    get:
+      tags: [admin]
+      summary: 管理员读取该次视频请求的原始参考媒体
+      description: 校验管理员、日志用户、引用和资源归属。refId 必须来自该日志生成内容；固定 original，通过后端流返回，不重定向、不返回存储 URL。不接受任何查询参数（包括 url、variant、access）。响应带 private,no-store、no-referrer 和 nosniff；支持单段 Range。
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: refId, required: true, schema: { type: string } }
+        - { in: header, name: Range, schema: { type: string }, description: 例如 bytes=0-1023 }
       responses:
-        "200": {description: 已创建或复用异步切段任务，data 为任务}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-        "413": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-        "503": {$ref: "#/components/responses/Error"}
-  /timeline/jianying-draft:
+        "200":
+          description: 原始媒体完整字节
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "206":
+          description: 原始媒体部分字节
+          headers:
+            Content-Range: { schema: { type: string } }
+            Accept-Ranges: { schema: { type: string, enum: [bytes] } }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "416": { description: Range 不满足原始媒体长度 }
+  /dramas/{id}/episodes/{episodeId}/jianying-draft/preview:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+      - { in: path, name: episodeId, required: true, schema: { type: string } }
     post:
-      tags: [tasks]
-      summary: 把一份时间线快照导出成剪映草稿 ZIP
-      description: 需要登录。表单提交（application/x-www-form-urlencoded），正文不超过 512 KiB。timeline 与 POST /timeline/renders 的 timeline 同结构（v2 tracks/clips，片段用 directMedia.storageKey=resource:<id> 引用本人就绪的资源，最多 600 个片段）。video 片段按 startMs/sourceStartMs 放在主轨，静音轨上的片段音量为 0；audio 片段按 trackId 分到音频轨（loop=true 时按素材时长切成几段），可以引用音频文件或视频文件里的声音；subtitle 片段的 text 进字幕轨并附 SRT；overlay 图片片段不导出。任何素材不可用时返回 400，不导出缺素材的草稿。成功时直接返回 application/zip 附件，压缩包里是草稿文件夹（draft_content.json、draft_info.json、draft_meta_info.json、materials/、导入说明.txt）。超容量只读时仍可导出。
+      tags: [dramas]
+      summary: 预检剪映草稿的目录与可用素材
+      description: 只校验当前用户的作品/剧集归属、资源记录和媒体首字节，不生成 ZIP、不保存目录配置。返回缺段、旧版本、估时提示及交付指纹；目录只在 POST 正文中传递。响应 private,no-store，请求最多 16 KiB。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [draftRoot, captions]
+              properties:
+                draftRoot: { type: string, maxLength: 400, description: Windows/macOS 本机绝对草稿目录；支持共享目录下的子文件夹 }
+                captions: { type: boolean, description: 是否按分镜估时附带字幕轨与 SRT }
+      responses:
+        "200":
+          description: 预检结果；availableSegments 为零时不得提交下载
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: integer, enum: [0] }
+                  msg: { type: string }
+                  data:
+                    type: object
+                    required: [draftRoot, revision, totalSegments, availableSegments, missingSegments, staleSegments, durationMs, mediaBytes, captionCount, segments, warnings]
+                    properties:
+                      draftRoot: { type: string, description: 规范化后的本机目录 }
+                      revision: { type: string, pattern: '^[a-f0-9]{64}$', description: 实际交付相关数据的指纹，无服务器持久化令牌 }
+                      totalSegments: { type: integer }
+                      availableSegments: { type: integer }
+                      missingSegments: { type: integer }
+                      staleSegments: { type: integer }
+                      durationMs: { type: integer, format: int64 }
+                      mediaBytes: { type: integer, format: int64, description: 媒体字节估计，不包含 ZIP 目录和草稿文本 }
+                      captionCount: { type: integer }
+                      warnings: { type: array, items: { type: string } }
+                      segments:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            index: { type: integer, description: 从 0 开始的剧情段序号 }
+                            title: { type: string }
+                            included: { type: boolean }
+                            stale: { type: boolean }
+                            reason: { type: string, description: 不可用原因，不包含敏感存储地址 }
+                            durationMs: { type: integer, format: int64 }
+                            durationEstimated: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/episodes/{episodeId}/jianying-draft:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+      - { in: path, name: episodeId, required: true, schema: { type: string } }
+    post:
+      tags: [dramas]
+      summary: 按已确认的预检结果流式下载剪映草稿
+      description: 再次校验归属、文件读取状态和交付指纹；缺少或过期 revision 返回 409。缺段/旧版本必须分别明确确认。通过后流式 ZIP 交给浏览器，不代表客户端下载完成；传输中断不补写 JSON 或完整 ZIP 目录。具体剪映版本兼容性需要实际验收。
       requestBody:
         required: true
         content:
           application/x-www-form-urlencoded:
             schema:
               type: object
-              required: [draftRoot, timeline]
+              required: [draftRoot, captions, revision]
               properties:
-                draftRoot: {type: string, description: 用户本机剪映草稿目录的绝对路径，素材路径按它写入草稿}
-                name: {type: string, description: 草稿名，会加上导出时间}
-                timeline: {type: string, description: 时间线快照 JSON 字符串}
+                draftRoot: { type: string, maxLength: 400 }
+                captions: { type: string, enum: ["0", "1"] }
+                revision: { type: string, pattern: '^[a-f0-9]{64}$' }
+                allowIncomplete: { type: string, enum: ["0", "1"], default: "0" }
+                allowStale: { type: string, enum: ["0", "1"], default: "0" }
       responses:
-        "200": {description: 剪映草稿 ZIP 附件}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "413": {$ref: "#/components/responses/Error"}
-  /interior/catalog:
-    get:
-      tags: [canvas]
-      summary: 读取室内设计的出图方式、风格、空间和前台设置
-      description: 需要登录并打开「室内设计」功能开关。只返回开放的条目；不包含提示词模板、风格片段和参数片段。settings.defaultModel 是站点默认出图模型（可能为空）。Cache-Control 为 no-store。
-      responses:
-        "200": {description: data 包含 settings、modes、styles、rooms}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /interior/generate:
-    post:
-      tags: [canvas]
-      summary: 室内设计出图
-      description: 服务端按出图方式的模板编译提示词，每个所选风格创建一个 canvas_image 任务（metadata.source=interior-design），编译后的提示词写在任务 prompt 里。计费、并发与取消走通用任务。原图和参考图须是本人已就绪的图片资源；快速出图使用管理员配置的默认模型，专业模式可在允许范围内选择系统模型。第一个任务失败直接返回错误，之后的失败在 items 里逐项说明。任务创建频率按所选风格数计次。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/InteriorGenerateInput"
-      responses:
-        "200": {description: data 包含实际使用的 model、count、params 与 items（每个风格的任务回执或错误）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /interior/estimate:
-    post:
-      tags: [canvas]
-      summary: 室内设计积分报价
-      description: 与出图复用模型选择、资源归属、模式参数和风格校验；按每个风格的实际参考图数与生成数量汇总现有模型报价。不创建任务、不预留余额。报价是当前配置下的预估，实际结算以任务为准。需要登录、开启室内设计并遵守限流，响应 no-store。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/InteriorGenerateInput"}
-      responses:
-        "200": {description: data 包含 model、images（总图片数）、amountMicrocredits（微积分合计）、estimated（是否包含预估报价）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /interior/projects:
-    get:
-      tags: [canvas]
-      summary: 列出本人的室内设计项目
-      description: 按更新时间倒序，最多 200 个，不含项目文档。
-      responses:
-        "200": {description: data.projects 为项目摘要数组}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    post:
-      tags: [canvas]
-      summary: 新建室内设计项目
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [name]
-              properties:
-                name: {type: string, maxLength: 120}
-                kind: {type: string, enum: [home, client]}
-                document: {type: object}
-      responses:
-        "200": {description: data 为新项目（含 revision 与 document）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /interior/projects/{projectId}:
+        "200":
+          description: 流式 ZIP 附件；包含视频、草稿、可选字幕与导入说明
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/cast:
     parameters:
-      - {in: path, name: projectId, required: true, schema: {type: string, maxLength: 80}}
-    get:
-      tags: [canvas]
-      summary: 读取一个室内设计项目
-      description: 只返回本人的项目。Cache-Control 为 no-store。
+      - { in: path, name: id, required: true, schema: { type: string } }
+    post:
+      tags: [dramas]
+      summary: 手动创建角色、场景或道具草稿
+      description: 校验当前用户的作品归属；保存 imageStatus=draft，不创建作业、不调用模型、不扣费。请求体最多 128 KiB。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDramaCastRequest" }
       responses:
-        "200": {description: data 为项目（含 revision 与 document）}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-    put:
-      tags: [canvas]
-      summary: 整体保存室内设计项目
-      description: expectedRevision 必填，与服务端不一致时返回 409、reason=interior_project_conflict、details.revision 为当前值。document 不超过 1 MiB、出图轮次不超过 300，不能内嵌 data URL；图片以 resourceId 字段引用，资源清理据此保留。受画布写入频率限制。
+        "200":
+          description: 已创建独立设定草稿
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DramaCastEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/cast/{castId}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+      - { in: path, name: castId, required: true, schema: { type: string } }
+    patch:
+      tags: [dramas]
+      summary: 保存设定文字、图片提示词与独立画风
+      description: 省略字段保持原值；imagePrompt 和画风字段传空串清空。保存保留当前参考图，不自动生成。请求体最多 128 KiB。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateDramaCastRequest" }
+      responses:
+        "200":
+          description: 已保存设定
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DramaCastEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/cast/{castId}/image-prompt:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+      - { in: path, name: castId, required: true, schema: { type: string } }
+    post:
+      tags: [dramas]
+      summary: 按当前外观和画风重新编排参考图提示词
+      description: 省略字段使用已保存值；覆盖字段仅供本次预览。使用真实生成入口的编排函数和作品参考图方案，忽略旧 imagePrompt，不调用收费模型、不保存、不递归嵌入旧提示词。适用于基础设定和造型。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DramaCastImagePromptRequest" }
+      responses:
+        "200":
+          description: 可编辑的完整图片提示词
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [imagePrompt]
+                        properties:
+                          imagePrompt: { type: string }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/cast/import:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+    post:
+      tags: [dramas]
+      summary: 从当前用户的另一部作品关联导入设定
+      description: |
+        只选择基础设定 ID，角色自动携带造型、当前图片和声音。原子事务创建独立目标记录并保存来源 ID，图片与声音资源必须归当前用户且已就绪；无图片可导入草稿，不复制生成中状态或作业、不触发生成或收费。
+        同类型同名仅唯一匹配；已有来源优先匹配。同名命中有图且未允许替换时只关联来源并计入 skipped，原图与本季设定保留。重复导入默认保持本季编辑。显式 replaceExisting=true 可更新设定并替换已有图片，旧图保留在 takes，相关下游内容标记过期。来源无图不会清除目标已有图。
+        造型 parentId 重映射到本季角色，复制的默认章节范围重置不限，每个角色最多 6 套造型。冲突、歧义或生成中的目标返回 409，reason=drama_cast_import_conflict，整个导入回滚。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImportDramaCastRequest" }
+      responses:
+        "200":
+          description: imported/skipped 按基础设定与造型记录合计；cast 返回本次关联到的目标记录（包括 skipped）。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [imported, skipped, cast]
+                        properties:
+                          imported: { type: integer, minimum: 0 }
+                          skipped: { type: integer, minimum: 0 }
+                          cast:
+                            type: array
+                            items: { $ref: "#/components/schemas/DramaCast" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/cast/{castId}/looks:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+      - { in: path, name: castId, required: true, schema: { type: string } }
+    post:
+      tags: [dramas]
+      summary: 新增角色造型草稿
+      description: 仅基础角色可以新增造型，每个角色最多 6 套。保存不生成；图片提示词和画风按造型独立选择，三项画风字段全空时继承作品画风。请求体最多 128 KiB。
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: false
-              required: [name, expectedRevision]
-              properties:
-                name: {type: string, maxLength: 120}
-                kind: {type: string, enum: [home, client]}
-                document: {type: object}
-                expectedRevision: {type: integer, minimum: 1}
-      responses:
-        "200": {description: data 为保存后的项目（revision 加一）}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [canvas]
-      summary: 删除室内设计项目
-      description: 只删除项目和出图记录，不删除图片资源与任务。
-      responses:
-        "200": {description: data.deleted 为 true}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /interior/knowledge:
-    get:
-      tags: [interior]
-      summary: 取室内设计知识库里的相关条目
-      description: >-
-        要求登录并打开室内设计。按范围、空间、风格和需求原文从内置知识库（尺寸规范、家具尺寸、动线间距、风格配色、建模要点）里取最多 16 条，
-        页面写进 AI 方案分析和 3D 建模的提示词。rooms、styles 可以重复传或用逗号分隔，各最多 12 个。
-      parameters:
-        - {in: query, name: scope, schema: {type: string, enum: [room, home, building]}}
-        - {in: query, name: rooms, schema: {type: array, items: {type: string}}}
-        - {in: query, name: styles, schema: {type: array, items: {type: string}}}
-        - {in: query, name: q, schema: {type: string, maxLength: 1000}, description: 需求原文，超过 1000 字截断}
-      responses:
-        "200": {description: "data.entries: [{ id, kind, kindName, title, guidance }]"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/interior/knowledge:
-    get:
-      tags: [admin]
-      summary: 室内设计知识库
-      description: 要求管理员。全部条目（含停用的），每条带记录 ID、标识 key、类别、标题、正文、适用范围 scopes、空间 rooms、风格 styles、关键词 tags、排序、启用、是否内置、内置条目是否改过（edited）和 version；kinds 是类别和每类每次最多取几条。
-      responses:
-        "200": {description: data.entries、data.kinds}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    post:
-      tags: [admin]
-      summary: 新增室内设计知识
-      description: key 只能用小写字母、数字和短横线，不能和已有条目重复；kind 是七个类别之一；scopes 只能是 room、home、building；rooms、styles 是空间和风格标识，各最多 30 个；tags 最多 16 个；标题不超过 60 字，正文不超过 1200 字。
-      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
-      responses:
-        "200": {description: data.entry}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/interior/knowledge/{id}:
-    put:
-      tags: [admin]
-      summary: 修改室内设计知识
-      description: key 不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。改了内置条目的内容会标成 edited，之后程序更新不再覆盖它；只改启用或排序不算改内容。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
-      responses:
-        "200": {description: data.entry}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [admin]
-      summary: 删除管理员新增的室内设计知识
-      description: 内置条目不能删除（400），只能停用。version 不一致返回 409。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-        - {in: query, name: version, required: true, schema: {type: integer}}
-      responses:
-        "200": {description: data.deleted}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-  /admin/interior/knowledge/{id}/reset:
-    post:
-      tags: [admin]
-      summary: 恢复内置知识的原内容
-      description: 只用于内置条目：内容恢复成程序自带的版本、去掉 edited 标记，启用状态不动。请求体 {version}，不一致返回 409。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {version: {type: integer}}}}}}
-      responses:
-        "200": {description: data.entry}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-  /admin/interior/overview:
-    get:
-      tags: [admin]
-      summary: 室内设计近 30 天出图统计
-      description: >-
-        要求管理员，不受功能开关限制。按 UTC 自然日统计近 30 天室内设计页提交的出图任务（一个风格一次算一个任务，超过 5000 条只算最新的并返回 truncated=true）：
-        generations（按状态、近 7 天、今天、人数、快速出图 / 专业模式）、projects（项目总数、我的房子、客户方案、人数，不限时间）、
-        config（站点默认模型是否设置、开着的出图方式里没有默认模型的名称）、daily（近 14 天每天的出图和失败数）、
-        modes / styles / rooms / models（出图次数和失败数，风格、空间、模型取前 10）、recentFailures（最近 8 次失败，原因不做用户侧改写）。
-      responses:
-        "200": {description: data 为统计}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/interior/generations:
-    get:
-      tags: [admin]
-      summary: 所有用户的室内设计出图记录
-      description: 要求管理员。按创建时间倒序分页返回室内设计页提交的出图任务，每条带用户、状态与失败原因、出图方式、空间、风格、模型、原图 / 参考图 / 效果图的资源 ID（用 GET /admin/resources/{id}/file 读）和所属项目 ID。
-      parameters:
-        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
-        - {in: query, name: status, schema: {type: string, enum: [queued, running, succeeded, failed, cancelled]}}
-        - {in: query, name: mode, schema: {type: string}, description: 出图方式的机器标识，例如 style-redesign}
-        - {in: query, name: keyword, schema: {type: string, maxLength: 100}, description: 匹配用户名、昵称、邮箱，或完整的任务 ID}
-      responses:
-        "200": {description: "data 为 { records, total, page, pageSize }"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/interior/generations/{id}:
-    get:
-      tags: [admin]
-      summary: 一条室内设计出图记录
-      description: 要求管理员。在列表字段之外带服务端拼好的完整提示词 prompt、参数 params 和所属项目名 projectName；不是室内设计任务返回 404。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      responses:
-        "200": {description: data 为出图记录}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /admin/interior/modes:
-    get:
-      tags: [admin]
-      summary: 管理员读取全部室内设计出图方式
-      description: 包含提示词模板与参数片段；不受功能开关限制。
-      responses:
-        "200": {description: data.modes}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    post:
-      tags: [admin]
-      summary: 新增室内设计出图方式
-      description: 校验标识、输入、参数、模板变量白名单与模型选择；写管理审计。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {type: object}
-      responses:
-        "200": {description: data.mode}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/interior/modes/{id}:
-    put:
-      tags: [admin]
-      summary: 修改室内设计出图方式
-      description: 标识不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {type: object}
-      responses:
-        "200": {description: data.mode}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-  /admin/interior/presets:
-    get:
-      tags: [admin]
-      summary: 管理员读取室内设计风格或空间
-      parameters:
-        - {in: query, name: type, required: true, schema: {type: string, enum: [style, room]}}
-      responses:
-        "200": {description: data.presets}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    post:
-      tags: [admin]
-      summary: 新增室内设计风格或空间
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {type: object}
-      responses:
-        "200": {description: data.preset}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/interior/presets/{id}:
-    put:
-      tags: [admin]
-      summary: 修改室内设计风格或空间
-      description: 类型和标识不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {type: object}
-      responses:
-        "200": {description: data.preset}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-  /admin/interior/settings:
-    get:
-      tags: [admin]
-      summary: 读取室内设计全局设置
-      responses:
-        "200": {description: data 包含 defaultSurface、allowSurfaceSwitch、defaultModel、maxStylesPerRun、maxCountPerStyle}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-    put:
-      tags: [admin]
-      summary: 保存室内设计全局设置
-      description: 写入 system_settings 的 interior_settings 键并记录管理审计。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [defaultSurface, allowSurfaceSwitch, maxStylesPerRun, maxCountPerStyle]
-              properties:
-                defaultSurface: {type: string, enum: [quick, pro]}
-                allowSurfaceSwitch: {type: boolean}
-                defaultModel: {type: object}
-                maxStylesPerRun: {type: integer, minimum: 1, maximum: 4}
-                maxCountPerStyle: {type: integer, minimum: 1, maximum: 4}
-      responses:
-        "200": {description: data 为保存后的设置}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /libtv/gallery:
-    get:
-      tags: [libtv]
-      summary: 读取 LibTV 公开作品列表
-      description: 登录后匿名读取已审核的公开作品，不发送管理员 LibTV Token。total 不作为全库数量；后续分页保留首次返回的 requestId，按 hasMore 判断是否继续。不存储媒体原件，不创建生成任务。
-      parameters:
-        - {in: query, name: page, schema: {type: integer, minimum: 1, maximum: 1000, default: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 40, default: 20}}
-        - {in: query, name: keyword, schema: {type: string, maxLength: 100}}
-        - {in: query, name: tagId, schema: {type: integer, minimum: 0}}
-        - {in: query, name: requestId, schema: {type: string, format: uuid}}
+              allOf:
+                - { $ref: "#/components/schemas/DramaCastLookRequest" }
+                - type: object
+                  required: [lookName, appearance]
       responses:
         "200":
-          description: 标准信封 data 为 items、page、pageSize、hasMore、requestId；每项包含 templateUuid、projectUuid、title、description、coverUrl、mediaUrl、mediaType、authorName、authorAvatar、likeCount、publishedAt、tags、sourceUrl。
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-        "502": {$ref: "#/components/responses/Error"}
-  /public/features:
-    get:
-      tags: [guest]
-      summary: 游客读取功能开关
-      description: 不需要登录。只返回各功能开关与 configured，不含操作人与更新时间。每个来源地址每分钟 60 次，全站游客每分钟 1200 次。
-      responses:
-        "200": {description: "标准信封 data.features；Cache-Control 为 private, no-store"}
-        "429": {$ref: "#/components/responses/Error"}
-  /public/model-catalog:
-    get:
-      tags: [guest]
-      summary: 游客读取模型目录
-      description: 不需要登录。按默认分组的渠道可见性与价格展示模型名称、图标、能力与价格档，不附加可用率统计，服务端缓存 60 秒。报价、可用性检查与任务创建仍要求登录。每个来源地址每分钟 30 次，全站游客每分钟 600 次。
-      responses:
-        "200": {description: "结构同 GET /model-catalog；Cache-Control 为 private, no-store"}
-        "429": {$ref: "#/components/responses/Error"}
-  /public/libtv/gallery:
-    get:
-      tags: [guest]
-      summary: 游客读取 LibTV 公开作品列表
-      description: 不需要登录，参数与返回同 GET /libtv/gallery。同一组参数（含 requestId）缓存 60 秒；首页不带 requestId 时游客共用缓存里的同一个 requestId，翻页保持同一顺序。每个来源地址每分钟 20 次，全站游客每分钟 200 次（与作品详情共用）。
-      parameters:
-        - {in: query, name: page, schema: {type: integer, minimum: 1, maximum: 1000, default: 1}}
-        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 40, default: 20}}
-        - {in: query, name: keyword, schema: {type: string, maxLength: 100}}
-        - {in: query, name: tagId, schema: {type: integer, minimum: 0}}
-        - {in: query, name: requestId, schema: {type: string, format: uuid}}
-      responses:
-        "200": {description: 结构同 GET /libtv/gallery}
-        "400": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-        "502": {$ref: "#/components/responses/Error"}
-  /public/libtv/works/{uuid}:
-    get:
-      tags: [guest]
-      summary: 游客读取 LibTV 作品详情
-      description: 不需要登录，返回同 GET /libtv/works/{uuid}，按作品缓存 60 秒；导入画布仍要求登录。
-      parameters:
-        - {in: path, name: uuid, required: true, schema: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}}
-      responses:
-        "200": {description: "结构同 GET /libtv/works/{uuid}"}
-        "400": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-        "502": {$ref: "#/components/responses/Error"}
-  /libtv/works/{uuid}:
-    get:
-      tags: [libtv]
-      summary: 读取 LibTV 已发布模板的制作步骤
-      description: uuid 为公开 templateUuid，不是原项目 projectUuid。仅接受已审核的公开快照；steps 是快照节点顺序，不保证为执行顺序。模型名称仅为来源信息，不自动映射本站模型或发起收费生成。
-      parameters:
-        - {in: path, name: uuid, required: true, schema: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}}
-      responses:
-        "200":
-          description: 标准信封 data 为 work、steps、nodeCount、connectionCount、canImport、warnings。步骤包含 id、title、type、prompt、text、model、mediaUrls、aspectRatio、resolution、durationSeconds、referenceNodeIds。计数为来源总数，失效节点或连线通过 warnings 报告。
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-        "502": {$ref: "#/components/responses/Error"}
-  /canvas-projects/{id}/import/libtv-template:
-    post:
-      tags: [libtv, canvas]
-      summary: 预览并转换 LibTV 已发布模板
-      description: 先校验目标画布属于当前用户，再读取公开 templateUuid；无需管理员 Token，不读取原项目私有详情。只返回转换后的节点、连线和报告，不写入画布。前端确认后通过现有画布保存合同持久化；媒体保留外链，不上传原件。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
+          description: 已创建造型草稿
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DramaCastLookEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /dramas/{id}/looks/{lookId}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string } }
+      - { in: path, name: lookId, required: true, schema: { type: string } }
+    patch:
+      tags: [dramas]
+      summary: 保存角色造型与独立画风
+      description: imagePrompt 和三项画风字段省略时不变、空串清空；造型生成中不可修改。保存保留旧图，不自动生成。请求体最多 128 KiB。
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [uuid]
-              properties:
-                uuid: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}
+            schema: { $ref: "#/components/schemas/DramaCastLookRequest" }
       responses:
         "200":
-          description: '标准信封 data 与原 LibTV 导入结果一致，包含 batchId、batchCreatedAt、projectUuid、projectName、nodes、connections、计数及 skippedNodes、skippedConnections、warnings；节点增加可选 parentId、aspectRatio，来源 metadata 增加 templateUuid、snapshotId。媒体节点 results 为全部有效结果，项包含 sourceIndex（上游原数组零基索引）、content 及可选 naturalWidth、naturalHeight、durationMs、mimeType，顶层媒体为首个有效结果。multiResultNodeCount 统计有效结果超过一个的来源节点；importedNodeCount 不包含前端结果卡的展开数量。'
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-        "502": {$ref: "#/components/responses/Error"}
+          description: 已保存造型，data.affectedSegments 返回按请求标记过期的剧情段数量
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DramaCastLookEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /admin/ecommerce/skills/install:
     post:
       tags: [admin]
@@ -1247,7 +673,7 @@ paths:
             schema:
               {
                 type: string,
-                enum: [password, email, sms, linuxdo, verification, unknown],
+                enum: [password, email, sms, linuxdo, oidc, verification, unknown],
               },
           }
         - {
@@ -1582,14 +1008,6 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
-  /admin/pose-library/remote-pack:
-    get:
-      tags: [pose-library, admin]
-      summary: 从 GitHub 读取固定版本姿势元数据，供导入前预览体系
-      responses:
-        "200": { description: "data 为 pose-zh.json 数组；不含图片" }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
   /admin/pose-library/items:
     get:
       tags: [pose-library, admin]
@@ -1879,327 +1297,6 @@ paths:
           { description: JSON 或 MP4 原始内容，支持 Range；停用后拒绝公开读取 }
         "400": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-  /agent-pets:
-    get:
-      tags: [agent]
-      summary: 列出当前用户可见的智能体形象（已上架和已购买）及使用资格
-      responses:
-        "200":
-          description: 成功信封 data 为形象列表；selectedPetId 为空表示使用站点默认形象
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer, enum: [0]}
-                  msg: {type: string}
-                  data:
-                    type: object
-                    required: [pets, selectedPetId, creditsEnabled, consumedMicrocredits]
-                    properties:
-                      pets: {type: array, items: {$ref: "#/components/schemas/AgentPet"}}
-                      selectedPetId: {type: string}
-                      creditsEnabled: {type: boolean}
-                      consumedMicrocredits: {type: integer, format: int64, description: 累计消费（已结算的模型调用积分），用于累计消费解锁}
-        "401": {$ref: "#/components/responses/Error"}
-  /agent-pets/selection:
-    get:
-      tags: [agent]
-      summary: 读取当前使用的形象；未选择或已失去资格时 data.pet 为 null
-      responses:
-        "200":
-          description: 成功信封 data.pet
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer, enum: [0]}
-                  data:
-                    type: object
-                    properties:
-                      pet: {allOf: [{$ref: "#/components/schemas/AgentPet"}], nullable: true}
-        "401": {$ref: "#/components/responses/Error"}
-    put:
-      tags: [agent]
-      summary: 切换当前形象；petId 为空字符串时恢复站点默认形象
-      description: 累计消费已达标（claimable）的形象在这里自动领取，之后调整门槛不影响已领取的用户。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [petId]
-              properties:
-                petId: {type: string}
-      responses:
-        "200": {$ref: "#/components/responses/Envelope"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /agent-pets/{id}/purchase:
-    post:
-      tags: [agent]
-      summary: 用积分购买付费形象（幂等，已购买时不重复扣费）
-      description: expectedPriceMicrocredits 必须等于当前价格，否则返回 409；余额不足返回 400，reason 为 failed_precondition。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [expectedPriceMicrocredits]
-              properties:
-                expectedPriceMicrocredits: {type: integer, format: int64, minimum: 1}
-      responses:
-        "200":
-          description: 成功信封 data 包含已购形象、本次是否扣费和购买后的可用积分
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer, enum: [0]}
-                  data:
-                    type: object
-                    required: [pet, charged, availableMicrocredits]
-                    properties:
-                      pet: {$ref: "#/components/schemas/AgentPet"}
-                      charged: {type: boolean}
-                      availableMicrocredits: {type: integer, format: int64}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
-  /agent-pets/{id}/spritesheet:
-    get:
-      tags: [agent]
-      summary: 读取形象图集（WebP 或 PNG，8 列 × 9/11 行，单格 192×208）
-      description: 已上架的形象所有登录用户可读；已下架的只有已拥有（购买或领取）的用户和管理员可读。v 等于当前 revision 时长期缓存，支持 If-None-Match。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-        - {in: query, name: v, schema: {type: string}}
-      responses:
-        "200": {description: 图集原始内容}
-        "304": {description: 未变化}
-        "401": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /agent-pets/{id}/preview:
-    get:
-      tags: [agent]
-      summary: 读取形象列表缩略图（PNG，192×208，待机动作第一格有画面的帧）
-      description: 商店、换形象菜单和后台列表先显示缩略图，悬停或选中时才加载整张图集。读取权限与图集相同。v 等于 revision 时长期缓存；待机状态改用其他动作时 v 为 revision 加 “.动作名”。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-        - {in: query, name: v, schema: {type: string}}
-      responses:
-        "200": {description: PNG 缩略图}
-        "304": {description: 未变化}
-        "401": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-  /admin/agent-pets:
-    get:
-      tags: [admin]
-      summary: 列出形象库（内置和上传），含开放方式与拥有人数（购买或领取）
-      responses:
-        "200":
-          description: 成功信封 data.pets
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer, enum: [0]}
-                  data:
-                    type: object
-                    properties:
-                      pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/agent-pets/remote-import:
-    get:
-      tags: [admin]
-      summary: 读取形象同步进度和已保存的远端清单地址
-      responses:
-        "200": { description: "data 含 status、manifestUrl、report（total/done/imported/skipped/failed/failures）、error" }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-    post:
-      tags: [admin]
-      summary: 保存 HTTPS 清单地址并在后台同步形象；按 SHA-256 去重
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                manifestUrl: { type: string, maxLength: 2048, description: "不带凭据、查询串的 HTTPS JSON 清单地址；空时使用内置 GitHub 仓库" }
-      responses:
-        "200": { description: "data 为同步进度；关闭窗口后继续，重启后可重复同步" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
-  /admin/agent-pets/remote-import/cancel:
-    post:
-      tags: [admin]
-      summary: 停止当前形象同步；已导入的保留
-      responses:
-        "200": { description: "data 为最近的同步进度" }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-  /admin/agent-pets/import:
-    post:
-      tags: [admin]
-      summary: 导入 Codex 宠物 ZIP（pet.json + 图集）或单张 WebP/PNG 图集，导入后默认未上架
-      description: 文件最大 32 MiB、图集最大 16 MiB；图集须为带透明通道的 1536×1872（v1）或 1536×2288（v2）。pet.json 只读取名称和简介。
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file: {type: string, format: binary}
-      responses:
-        "200": {$ref: "#/components/responses/Envelope"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "429": {$ref: "#/components/responses/Error"}
-  /admin/agent-pets/batch:
-    post:
-      tags: [admin]
-      summary: 批量修改形象（上架、分类、角标、开放方式与价格、促销、排序位置），只改提供了的字段
-      description: 一次最多 200 个。不适用的形象（如给非积分购买的形象开促销、打折后价格不变）跳过并在 skipped 说明；任一形象校验失败整批不保存。access 改成非 paid 时同时结束促销；promotion.enabled 为 false 时结束所选形象的促销，为 true 时按 percent（原价的百分比，0 为限时免费）定促销价，四舍五入到 0.01 积分。sortPosition 为 first / last 时把所选形象按原来的先后移到形象库最前或最后（间隔 10），其余形象的排序值不变；新排序值超出 -100000 到 100000 时整批拒绝。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
-                enabled: {type: boolean}
-                category: {type: string, maxLength: 12, description: 空字符串表示移出分类}
-                badge: {type: string, maxLength: 6}
-                access:
-                  type: object
-                  required: [mode]
-                  properties:
-                    mode: {type: string, enum: [free, vip, paid, spend]}
-                    priceMicrocredits: {type: integer, format: int64}
-                    unlockMicrocredits: {type: integer, format: int64}
-                    groupCodes: {type: array, items: {type: string}}
-                promotion:
-                  type: object
-                  required: [enabled]
-                  properties:
-                    enabled: {type: boolean}
-                    label: {type: string, maxLength: 8}
-                    percent: {type: integer, minimum: 0, maximum: 99}
-                    startsAt: {type: string, format: date-time, nullable: true}
-                    endsAt: {type: string, format: date-time, nullable: true}
-                sortPosition: {type: string, enum: [first, last]}
-      responses:
-        "200":
-          description: 成功信封 data 为批量结果
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer, enum: [0]}
-                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/agent-pets/batch-delete:
-    post:
-      tags: [admin]
-      summary: 批量删除上传的形象；内置形象和已有人拥有的形象跳过并说明原因
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ids]
-              properties:
-                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
-      responses:
-        "200":
-          description: 成功信封 data 为批量结果（deleted、skipped）
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer, enum: [0]}
-                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-  /admin/agent-pets/{id}:
-    put:
-      tags: [admin]
-      summary: 保存形象的完整配置（名称、简介、上架、开放方式与价格、分组、分类、角标、促销、状态映射、说话风格、像素清晰、排序）
-      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用；spend 累计消费门槛须大于 0，达标后免费领取，所选分组免费使用。促销只对 paid 生效，促销价须低于原价（0 为限时免费），结束时间须晚于现在、开始时间，且一次不超过一年；未改动的促销原样保留。tone 与 lines 只对上传形象生效。
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, enabled, access, priceMicrocredits, unlockMicrocredits, groupCodes, stateRows, pixelated, sortOrder]
-              properties:
-                name: {type: string, maxLength: 40}
-                description: {type: string, maxLength: 200}
-                enabled: {type: boolean}
-                access: {type: string, enum: [free, vip, paid, spend]}
-                priceMicrocredits: {type: integer, format: int64, description: paid 的价格}
-                unlockMicrocredits: {type: integer, format: int64, description: spend 的累计消费门槛}
-                groupCodes: {type: array, items: {type: string}}
-                stateRows: {type: object, additionalProperties: {type: string}}
-                pixelated: {type: boolean}
-                sortOrder: {type: integer}
-                category: {type: string, maxLength: 12}
-                badge: {type: string, maxLength: 6}
-                promoEnabled: {type: boolean}
-                promoLabel: {type: string, maxLength: 8}
-                promoPriceMicrocredits: {type: integer, format: int64, minimum: 0}
-                promoStartsAt: {type: string, format: date-time, nullable: true}
-                promoEndsAt: {type: string, format: date-time, nullable: true}
-                tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 仅上传形象}
-                lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 仅上传形象}
-      responses:
-        "200": {$ref: "#/components/responses/Envelope"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-    delete:
-      tags: [admin]
-      summary: 删除上传的形象；内置形象只能下架，已有人购买或领取的形象返回 409
-      parameters:
-        - {in: path, name: id, required: true, schema: {type: string}}
-      responses:
-        "200": {$ref: "#/components/responses/Envelope"}
-        "400": {$ref: "#/components/responses/Error"}
-        "401": {$ref: "#/components/responses/Error"}
-        "403": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-        "409": {$ref: "#/components/responses/Error"}
   /tools:
     get:
       tags: [canvas]
@@ -3769,6 +2866,134 @@ paths:
             application/yaml:
               schema:
                 type: string
+  /admin/channel-websites:
+    get:
+      tags: [admin]
+      summary: 列出系统渠道网站及 Key 分组数量
+      responses:
+        "200":
+          description: 信封 data.websites 数组；每项包含 id、name、baseUrl、apiFormat、proxyUrl、headers、keyCount、createdAt、updatedAt，不包含 Key 密钥
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 新建系统渠道网站
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChannelWebsiteRequest"}
+      responses:
+        "200": {description: 信封 data.website 为新建网站及 keyCount}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/channel-websites/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    patch:
+      tags: [admin]
+      summary: 保存网站及共享连接配置
+      description: |
+        提交完整网站字段和原 updatedAt 作为 expectedUpdatedAt；版本过期时整批拒绝。
+        同事务同步所属 Key 的连接与公共头，保留每个 Key 的密钥和私有头；连接变化后原目录快照标记 stale。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/ChannelWebsiteRequest"}
+                - {type: object, required: [expectedUpdatedAt]}
+      responses:
+        "200": {description: 信封 data.website 为更新后的网站及 keyCount}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 删除空网站
+      description: 仅允许删除没有所属 Key 分组的网站。
+      responses:
+        "200": {description: 信封 data.ok 为 true}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/channels/{id}/catalog-status:
+    get:
+      tags: [admin]
+      summary: 查看当前 Key 的最近成功目录快照
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: 信封 data 包含 models 字符串数组、可选 readAt 和 stale；从未读取时 models 为空且无 readAt，连接或凭据变化后 stale 为 true
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/channels/{id}/models/fetch:
+    post:
+      tags: [admin]
+      summary: 读取当前 Key 的上游目录并比较快照
+      description: |
+        仅保存成功完整读取的目录快照，不创建渠道模型；需通过原 models/import 接口确认导入。
+        失败、不完整分页或读取期间连接变化均不替换旧快照。连接变化后的首次成功读取重置比较基准。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: 信封 data 包含 models、added、retained、missing 字符串数组，firstRead、baselineReset 布尔值，readAt 和可选 previousReadAt；首次读取或重置时全部模型归入 added
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /admin/channels/{id}/protocol-suggestion:
+    get:
+      tags: [admin]
+      summary: 查询同网站、上游模型与能力的协议建议
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: providerModelKey, schema: {type: string}}
+        - {in: query, name: capability, schema: {type: string, enum: [text, image, video]}}
+      responses:
+        "200":
+          description: 信封 data 包含 source（none、selection、history、conflict 或 invalid）、candidates 数组及可选 protocol、reason、selectedAt；冲突或失效时不自动选协议
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/channels/{id}/models/batch-update:
+    post:
+      tags: [admin]
+      summary: 同 Key 统一批量修改模型配置
+      description: |
+        仅管理员可用，请求上限 2 MiB、1–100 个模型。按三项版本校验后，将协议、能力模板、积分模板和稀疏修改合并为最终状态再完整校验。
+        任一模型失效、归属不符、版本过期或配置不兼容均整批拒绝；模型、价格档、显式协议记忆与审计同事务提交。
+        只修改启停时保留现有成本、售价、SKU 和规则。能力模板不选择协议；无类型模型初始化必须明确提交 capability 与 protocol。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChannelModelBatchUpdateRequest"}
+      responses:
+        "200": {description: 信封 data.updated 为修改的模型数量}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/channel-models/batch-update:
+    post:
+      tags: [admin]
+      summary: 跨 Key 统一批量修改系统模型配置
+      description: 规则同同 Key batch-update；各模型按所属系统渠道的凭据与能力校验，整批原子提交。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChannelModelBatchUpdateRequest"}
+      responses:
+        "200": {description: 信封 data.updated 为修改的模型数量}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
   /admin/channels/{id}/duplicate:
     post:
       tags: [admin]
@@ -3913,8 +3138,9 @@ paths:
       tags: [admin]
       summary: 批量修改系统渠道模型的调用协议
       description: |
-        仅管理员可用。把同一系统渠道内所选模型切换到同一调用协议；协议能力必须与每个模型的能力一致。
-        保留原能力配置与价格档，只按新协议重新规范化并校验；任一模型不兼容、已删除或被并发修改时整批拒绝。
+        仅管理员可用。兼容原 modelIds + protocol 单协议请求，也接受 groups 分组协议请求；两种格式互斥，最多共 100 个模型，请求上限 32 KiB。
+        每组按原能力选择兼容协议，模型不能重复；保留原能力配置与价格档，只按新协议重新规范化并校验。
+        任一模型不兼容、已删除或被并发修改时整批拒绝；显式协议记忆与模型同事务更新。
       parameters:
         - in: path
           name: id
@@ -3925,15 +3151,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [modelIds, protocol]
-              properties:
-                modelIds:
-                  type: array
-                  minItems: 1
-                  maxItems: 100
-                  items: { type: string, minLength: 1 }
-                protocol: { type: string, minLength: 1 }
+              $ref: "#/components/schemas/ChannelModelBatchProtocolRequest"
       responses:
         "200":
           description: 更新成功，data.updated 为更新的模型数量
@@ -3966,15 +3184,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [modelIds, protocol]
-              properties:
-                modelIds:
-                  type: array
-                  minItems: 1
-                  maxItems: 100
-                  items: { type: string, minLength: 1 }
-                protocol: { type: string, minLength: 1 }
+              $ref: "#/components/schemas/ChannelModelBatchProtocolRequest"
       responses:
         "200":
           description: 更新成功，data.updated 为更新的模型数量
@@ -4442,6 +3652,36 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /auth/oidc/start:
+    get:
+      tags: [auth]
+      security: []
+      summary: 发起 OIDC 登录
+      parameters:
+        - { name: next, in: query, schema: { type: string } }
+        - { name: acceptedTerms, in: query, schema: { type: boolean } }
+      responses:
+        "302":
+          description: 设置一次性状态 Cookie 并重定向到 OIDC 提供方
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /auth/oidc/callback:
+    get:
+      tags: [auth]
+      security: []
+      summary: 处理 OIDC 授权码回调
+      parameters:
+        - { name: state, in: query, schema: { type: string } }
+        - { name: code, in: query, schema: { type: string } }
+      responses:
+        "302":
+          description: 登录后设置会话 Cookie 并跳转，或返回登录页显示认证错误
+        "400":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
   /projects:
     get:
       tags: [projects]
@@ -4709,6 +3949,1313 @@ paths:
           $ref: "#/components/responses/Envelope"
         "400":
           $ref: "#/components/responses/Error"
+  /tasks/{id}/recover-media:
+    post:
+      tags: [tasks]
+      summary: 按原任务 ID 重试作品保存，不重新生成或创建计费订单
+      description: 仅当前用户有恢复记录的保存失败任务可重入队；已在队列或运行中时幂等返回。每任务最多手动恢复三次，间隔至少一分钟。已取消、已退款或归属项目不可用时拒绝。
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /tasks/{id}/text-events:
+    get:
+      tags: [tasks]
+      summary: 文本任务 SSE
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: query
+          name: after
+          schema: { type: integer }
+          description: 递增事件游标，不要用任务 ID
+      responses:
+        "200":
+          description: text/event-stream
+  /assets:
+    get:
+      tags: [assets]
+      summary: 用户素材库
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+  /assets/batch-delete:
+    post:
+      tags: [assets]
+      summary: 批量彻底删除当前用户素材
+      description: 顶层 JSON 数组，一次请求、一个数据库事务。所有 ID 必须属于当前用户，不受任务、画布或历史引用阻塞；共享文件保留，其余通过 Outbox 异步清理，失败重试。任一素材不存在、越权或数据库写入失败时整批不删除。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              minItems: 1
+              maxItems: 1000
+              items:
+                type: string
+                minLength: 1
+            example: ["asset-1", "asset-2"]
+      responses:
+        "200":
+          description: 成功信封，data.ids 返回本次请求的素材 ID 数组；物理文件清理由后台执行。
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [ids]
+                        properties:
+                          ids:
+                            type: array
+                            items: { type: string }
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+  /assets/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [assets]
+      summary: 彻底删除当前用户素材
+      description: 不依赖素材 archived 状态，也不受画布、任务、项目或历史快照引用阻塞；其他素材共享的物理对象仍保留。
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /canvas-projects:
+    get:
+      tags: [canvas]
+      summary: 分页读取自己的画布
+      description: 旧版电商画布已下线，带 kind=ecommerce 的存量画布与自由画布在同一列表中返回。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50}}
+      responses:
+        "200": {description: 分页信封 data 包含 projects、total、hasMore；每项包含受限预览}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce/defaults:
+    get:
+      tags: [admin]
+      summary: 管理员读取内置默认指令全文
+      description: data.defaults 按能力标识及四种用途返回 worker 实际使用的内置规则。只读，不修改覆盖或 revision；普通用户无权读取。
+      responses:
+        "200": {description: data.defaults 为字符串映射；Cache-Control 为 no-store}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/templates:
+    get:
+      tags: [canvas]
+      summary: 搜索分页读取项目内置套图库
+      description: 登录可读，普通用户须开放「电商生图台」；管理员不受开关限制。返回摘要，逐套读取完整提示词，避免向配置接口装载全库。category 只取这个一级类目；categories 按搜索词统计每个一级类目的套数（不受 category 影响），数量多的在前。
+      parameters:
+        - {in: query, name: q, schema: {type: string, maxLength: 100}}
+        - {in: query, name: category, description: 一级类目名，空为全部, schema: {type: string, maxLength: 50}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        "200": {description: data 包含 items、total、categories、page、pageSize；每项含 id、name、category、description、count；categories 每项含 name、count}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/templates/{templateId}:
+    get:
+      tags: [canvas]
+      summary: 读取单套内置模板的完整视觉规范与画面参考
+      description: 权限同套图库。data.template 可作为分析参考或载入后台草稿，原内置内容只读。
+      parameters:
+        - {in: path, name: templateId, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data.template 为 EcommerceSuiteTemplate}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/templates:
+    get:
+      tags: [canvas]
+      summary: 读取后台已启用的套图模板
+      description: 权限同套图库。只返回 enabled 为 true 的模板，供生图台「模板套图」选择；停用草稿不返回。
+      responses:
+        "200": {description: data.templates 为 EcommerceSuiteTemplate 数组}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/prompts:
+    get:
+      tags: [canvas]
+      summary: 读取后台改过的生图台出图提示词
+      description: 权限同套图库。data.prompts 是提示词编号到文字的映射，只含后台改过的条目；生图台出图时用它替换内置写法。
+      responses:
+        "200": {description: data.prompts 为对象，值为字符串}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/models:
+    get:
+      tags: [canvas]
+      summary: 浏览电商模特库
+      description: 登录可读，普通用户须开放「电商生图台」，只返回已上架的素材；管理员不受开关限制。kind 为 face 模特人脸、figure 全身模特、pose 姿势、style 模特样式。
+      parameters:
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, figure, pose, style]}}
+        - {in: query, name: q, schema: {type: string, maxLength: 60}}
+        - {in: query, name: category, schema: {type: string}}
+        - {in: query, name: gender, schema: {type: string, enum: ["", female, male]}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
+      responses:
+        "200": {description: data 包含 items、total、page、pageSize、categories；每项含 id、kind、name、category、gender、tags、prompt、hasImage、width、height、revision}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/models/{id}/image:
+    get:
+      tags: [canvas]
+      summary: 读取模特库素材图
+      description: 权限同浏览；未上架的素材只有管理员能看。variant=thumb 给不超过 512 像素的缩略图；带 v=revision 时可缓存一天。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: variant, schema: {type: string, enum: [thumb]}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: 图片二进制}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/models/{id}/attach:
+    post:
+      tags: [canvas]
+      summary: 选用模特库素材
+      description: 把素材原图复制到当前用户的资源库并返回 data.resourceId，出图任务引用用户自己的资源。同一用户对同一张原图只复制一次，计入上传配额；按上传频率限流。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data 包含 resourceId、width、height}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/studio-models:
+    get:
+      tags: [admin]
+      summary: 管理员列出模特库素材
+      description: 包括未上架的素材；可按分类和上下架筛选（无 gender）。
+      parameters:
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [face, figure, pose, style]}}
+        - {in: query, name: q, schema: {type: string, maxLength: 60}}
+        - {in: query, name: category, schema: {type: string, maxLength: 24}}
+        - {in: query, name: status, description: 空为全部, schema: {type: string, enum: [enabled, disabled]}}
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 60, default: 24}}
+      responses:
+        "200": {description: 结构同浏览接口，素材另含 enabled、consent、sortOrder、updatedAt；data 另含 kindCounts（face、figure、pose、style 各自总条数）与 categoryCounts（当前类型各分类的 name、count，条数多的在前，不含未分类）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/import:
+    post:
+      tags: [admin]
+      summary: 管理员新增模特库素材
+      description: multipart 表单：kind、name、category、gender、tags（JSON 数组或逗号分隔）、prompt、consent、enabled 与可选 file（PNG/JPEG/WebP，12 MiB、4000 万像素以内）。人脸、全身模特和姿势必须带图，人脸和全身模特须确认肖像授权才能上架，模特样式必须写造型描述。原图与缩略图存为本地 studio-model 资源，不计入个人容量。
+      responses:
+        "200": {description: data.item 为新素材}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/{id}:
+    put:
+      tags: [admin]
+      summary: 管理员修改模特库素材
+      description: 只改文字字段、授权确认与上下架；类型和图片不能改。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data.item 为修改后的素材}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 管理员删除模特库素材
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data.affected 为删除条数}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/batch:
+    post:
+      tags: [admin]
+      summary: 管理员批量上架、下架或删除模特库素材
+      description: 请求体 {"ids":[...],"action":"enable|disable|delete"}，一次 1–200 条。上架时有人脸或全身模特没确认肖像授权则整批不执行。
+      responses:
+        "200": {description: data.affected 为影响条数}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/studio-models/remote-import:
+    get:
+      tags: [admin]
+      summary: 管理员查看模特库远程拉取进度
+      description: 返回最近一次拉取的进度与可以一键拉取的内置来源。进度只存在本进程内存里，后端重启后回到 idle。
+      responses:
+        "200": {description: data 包含 status（idle、running、done、failed、cancelled）、source（来源名称或去掉查询串的清单地址）、startedAt、finishedAt、error、report（total、done、imported、skipped、failed、failures，failures 只留前 50 条）与 sources（每项 id、name、description、notice）}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 管理员开始远程拉取模特库
+      description: 请求体 {"source":"ai-pose-gallery-zh"} 或 {"manifestUrl":"https://…"}，二选一，可带 faceConsentAttested。服务端在后台下载清单与图片，逐条走与后台新增相同的校验、缩略图和存储，按类型 + 分类 + 名称跳过已有的；faceConsentAttested 为假时人脸和全身模特不标授权、不上架。清单地址按出站规则拒绝本机、内网和链路本地地址。一次只跑一个。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source: {type: string, enum: [ai-pose-gallery-zh]}
+                manifestUrl: {type: string, maxLength: 2048}
+                faceConsentAttested: {type: boolean}
+      responses:
+        "200": {description: data 结构同 GET，status 为 running}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 管理员停止模特库远程拉取
+      description: 停止正在进行的拉取，已经导入的保留，再拉会跳过它们。没有在跑时原样返回进度。
+      responses:
+        "200": {description: data 结构同 GET}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce:
+    get:
+      tags: [admin]
+      summary: 管理员读取完整电商生图台配置
+      description: 后台页面只编辑商品档案能力与套图模板；旧版电商画布的字段（总开关、其他能力、公共模特）仍随配置保存，保存时原样提交。
+      responses:
+        "200": {description: 标准信封 data.setting 为 EcommerceSetting}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [admin]
+      summary: 保存配置并保留上一版
+      description: 需要管理员，携带读取时 revision，过期版本拒绝覆盖。当前配置、上一版和审计在同一事务提交。新增图片须属于当前管理员；已有及上一版引用允许其他管理员维护。请求体上限 2 MiB。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/EcommerceSetting"}
+      responses:
+        "200": {description: 标准信封 data.setting 为新 revision 的完整配置}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/settings/ecommerce/previous:
+    get:
+      tags: [admin]
+      summary: 管理员读取上一版供草稿恢复
+      description: 只读取不激活，保存时须使用当前配置 revision。
+      responses:
+        "200": {description: 标准信封 data.setting 为上一版 EcommerceSetting}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio:
+    get:
+      tags: [canvas]
+      summary: 读取当前用户的电商生图台工作区
+      description: 登录可读，只返回本人的商品档案、出图方案与采用结果。revision 为整份工作区的修订号，每次保存或删除加一。Cache-Control 为 no-store。
+      responses:
+        "200": {description: data 包含 revision 与 products；products 为前端定义的商品对象数组}
+        "401": {$ref: "#/components/responses/Error"}
+  /ecommerce/studio/products/{productId}:
+    get:
+      tags: [canvas]
+      summary: 读取一个生图台商品
+      description: 只返回本人的商品；保存冲突后用它载入最新版本。Cache-Control 为 no-store。
+      parameters:
+        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      responses:
+        "200": {description: data 包含工作区 revision 与 product；product.revision 是该商品的修订号}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [canvas]
+      summary: 新建或整体替换一个生图台商品
+      description: 请求体只能是 {product, expectedRevision}，product.id 必须与地址一致（6–80 位字母、数字、下划线或连字符）。expectedRevision 是上次读到的商品修订号（新商品为 0），与服务端不一致时返回 409、reason=studio_product_conflict、details.revision 为当前值；省略时直接覆盖。product.revision 由服务端写入，客户端传来的值被忽略。单个商品不超过 1 MiB、整份工作区不超过 8 MiB、最多 200 个商品；不能内嵌 data URL，图片须先上传为资源，并以 resourceId 字段引用，孤儿清理会据此保留这些资源。与旧私有库共用一行数据，其他键原样保留。受画布写入频率限制。
+      parameters:
+        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product]
+              additionalProperties: false
+              properties:
+                product: {type: object}
+                expectedRevision: {type: integer, minimum: 0}
+      responses:
+        "200": {description: data 包含新的工作区 revision 与规范化后的 product（带新的 product.revision）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [canvas]
+      summary: 删除一个生图台商品
+      description: 幂等，商品不存在时同样返回当前 revision。只删除工作区记录，不删除已上传的素材与任务。
+      parameters:
+        - {in: path, name: productId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      responses:
+        "200": {description: data.revision 为删除后的修订号}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /ecommerce/product-videos:
+    get:
+      tags: [canvas]
+      summary: 视频复刻 · 元素替换的作品列表
+      description: 需要登录并打开「视频复刻」开关。只返回本人的作品；作品对象由前端定义（素材、参考视频片段、每段生成任务、成片）。revision 是电商私有数据整行的修订号。Cache-Control 为 no-store。
+      responses:
+        "200": {description: data 包含 revision 与 items；items 为作品对象数组，每条带服务端维护的 revision}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /ecommerce/product-videos/{videoId}:
+    get:
+      tags: [canvas]
+      summary: 读取一条元素替换作品
+      description: 只返回本人的作品；保存冲突后用它载入最新版本。Cache-Control 为 no-store。
+      parameters:
+        - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      responses:
+        "200": {description: data 包含整行 revision 与 item；item.revision 是该作品的修订号}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [canvas]
+      summary: 新建或整体替换一条元素替换作品
+      description: 请求体只能是 {item, expectedRevision}，item.id 必须与地址一致。expectedRevision 必填，是上次读到的作品修订号（新作品为 0），不一致时返回 409、reason=product_video_conflict、details.revision 为当前值。item.revision 由服务端写入。单条不超过 128 KiB、最多 100 条，和生图台共用的电商私有数据整行不超过 8 MiB；不能内嵌 data URL，素材和成片以 resourceId / keyframeResourceId 字段引用，孤儿清理会据此保留这些资源。与生图台共用一行数据，其他键原样保留。受画布写入频率限制。
+      parameters:
+        - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [item, expectedRevision]
+              additionalProperties: false
+              properties:
+                item: {type: object}
+                expectedRevision: {type: integer, minimum: 0}
+      responses:
+        "200": {description: data 包含新的整行 revision 与规范化后的 item（带新的 item.revision）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [canvas]
+      summary: 删除一条元素替换作品
+      description: 幂等，作品不存在时同样成功。只删除作品记录，不删除已上传的素材、参考片段、生成任务与成片资源。
+      parameters:
+        - {in: path, name: videoId, required: true, schema: {type: string, minLength: 6, maxLength: 80}}
+      responses:
+        "200": {description: data.revision 为删除后的整行修订号}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /ecommerce/product-videos/splits:
+    post:
+      tags: [tasks]
+      summary: 视频复刻 · 元素替换：把参考视频按镜头切成一次生成能参考的片段
+      description: 需要登录并打开「视频复刻」开关。异步任务（type=product_video_split），服务端用本地 ffmpeg 在选段内检测镜头切点，尽量在切点处断开，每段不超过 maxSegmentSeconds（8–30 秒，默认 15）、不短于 4 秒；单个镜头超长时均分。每段重新编码为短边不超过 720、30fps 的 H.264/AAC mp4，并截一帧封面，都作为本人的资源保存。结果写入任务 resultJson：source（原视频尺寸、时长、有无音轨）、startMs/endMs、segments[{index, startMs, endMs, durationMs, boundary, resourceId, width, height, keyframeResourceId}]、warnings。选段须在 4–120 秒之间。不调用模型、不计费。相同用户使用相同幂等键和请求参数时返回原任务，参数不同返回 409。
+      parameters:
+        - in: header
+          name: X-Idempotency-Key
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 128}
+          description: 客户端为一次切段生成的稳定幂等键；重试原请求时必须复用
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resourceId]
+              properties:
+                resourceId: {type: string, description: 本人已就绪的视频资源}
+                startMs: {type: integer, minimum: 0, description: 选段开头，默认 0}
+                endMs: {type: integer, minimum: 0, description: 选段结尾，0 表示到视频结尾}
+                maxSegmentSeconds: {type: integer, minimum: 8, maximum: 30, description: 每段时长上限，按所选模型的参考视频时长传入；0 表示 15 秒}
+                ranges:
+                  type: array
+                  maxItems: 60
+                  description: 复刻工作台用。给了就按这些范围原样切，不检测镜头、忽略 startMs/endMs；每段 1 秒到 maxSegmentSeconds，范围可以重叠，segments 按给定顺序返回；结尾比视频略长时截到结尾，超出太多时任务失败
+                  items:
+                    type: object
+                    required: [startMs, endMs]
+                    properties:
+                      startMs: {type: integer, minimum: 0}
+                      endMs: {type: integer, minimum: 0}
+      responses:
+        "200": {description: 已创建或复用异步切段任务，data 为任务}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /timeline/jianying-draft:
+    post:
+      tags: [tasks]
+      summary: 把一份时间线快照导出成剪映草稿 ZIP
+      description: 需要登录。表单提交（application/x-www-form-urlencoded），正文不超过 512 KiB。timeline 与 POST /timeline/renders 的 timeline 同结构（v2 tracks/clips，片段用 directMedia.storageKey=resource:<id> 引用本人就绪的资源，最多 600 个片段）。video 片段按 startMs/sourceStartMs 放在主轨，静音轨上的片段音量为 0；audio 片段按 trackId 分到音频轨（loop=true 时按素材时长切成几段），可以引用音频文件或视频文件里的声音；subtitle 片段的 text 进字幕轨并附 SRT；overlay 图片片段不导出。任何素材不可用时返回 400，不导出缺素材的草稿。成功时直接返回 application/zip 附件，压缩包里是草稿文件夹（draft_content.json、draft_info.json、draft_meta_info.json、materials/、导入说明.txt）。超容量只读时仍可导出。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [draftRoot, timeline]
+              properties:
+                draftRoot: {type: string, description: 用户本机剪映草稿目录的绝对路径，素材路径按它写入草稿}
+                name: {type: string, description: 草稿名，会加上导出时间}
+                timeline: {type: string, description: 时间线快照 JSON 字符串}
+      responses:
+        "200": {description: 剪映草稿 ZIP 附件}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+  /interior/catalog:
+    get:
+      tags: [canvas]
+      summary: 读取室内设计的出图方式、风格、空间和前台设置
+      description: 需要登录并打开「室内设计」功能开关。只返回开放的条目；不包含提示词模板、风格片段和参数片段。settings.defaultModel 是站点默认出图模型（可能为空）。Cache-Control 为 no-store。
+      responses:
+        "200": {description: data 包含 settings、modes、styles、rooms}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /interior/generate:
+    post:
+      tags: [canvas]
+      summary: 室内设计出图
+      description: 服务端按出图方式的模板编译提示词，每个所选风格创建一个 canvas_image 任务（metadata.source=interior-design），编译后的提示词写在任务 prompt 里。计费、并发与取消走通用任务。原图和参考图须是本人已就绪的图片资源；快速出图使用管理员配置的默认模型，专业模式可在允许范围内选择系统模型。第一个任务失败直接返回错误，之后的失败在 items 里逐项说明。任务创建频率按所选风格数计次。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InteriorGenerateInput"
+      responses:
+        "200": {description: data 包含实际使用的 model、count、params 与 items（每个风格的任务回执或错误）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /interior/estimate:
+    post:
+      tags: [canvas]
+      summary: 室内设计积分报价
+      description: 与出图复用模型选择、资源归属、模式参数和风格校验；按每个风格的实际参考图数与生成数量汇总现有模型报价。不创建任务、不预留余额。报价是当前配置下的预估，实际结算以任务为准。需要登录、开启室内设计并遵守限流，响应 no-store。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InteriorGenerateInput"}
+      responses:
+        "200": {description: data 包含 model、images（总图片数）、amountMicrocredits（微积分合计）、estimated（是否包含预估报价）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /interior/projects:
+    get:
+      tags: [canvas]
+      summary: 列出本人的室内设计项目
+      description: 按更新时间倒序，最多 200 个，不含项目文档。
+      responses:
+        "200": {description: data.projects 为项目摘要数组}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [canvas]
+      summary: 新建室内设计项目
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 120}
+                kind: {type: string, enum: [home, client]}
+                document: {type: object}
+      responses:
+        "200": {description: data 为新项目（含 revision 与 document）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /interior/projects/{projectId}:
+    parameters:
+      - {in: path, name: projectId, required: true, schema: {type: string, maxLength: 80}}
+    get:
+      tags: [canvas]
+      summary: 读取一个室内设计项目
+      description: 只返回本人的项目。Cache-Control 为 no-store。
+      responses:
+        "200": {description: data 为项目（含 revision 与 document）}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [canvas]
+      summary: 整体保存室内设计项目
+      description: expectedRevision 必填，与服务端不一致时返回 409、reason=interior_project_conflict、details.revision 为当前值。document 不超过 1 MiB、出图轮次不超过 300，不能内嵌 data URL；图片以 resourceId 字段引用，资源清理据此保留。受画布写入频率限制。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, expectedRevision]
+              properties:
+                name: {type: string, maxLength: 120}
+                kind: {type: string, enum: [home, client]}
+                document: {type: object}
+                expectedRevision: {type: integer, minimum: 1}
+      responses:
+        "200": {description: data 为保存后的项目（revision 加一）}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [canvas]
+      summary: 删除室内设计项目
+      description: 只删除项目和出图记录，不删除图片资源与任务。
+      responses:
+        "200": {description: data.deleted 为 true}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /interior/knowledge:
+    get:
+      tags: [interior]
+      summary: 取室内设计知识库里的相关条目
+      description: >-
+        要求登录并打开室内设计。按范围、空间、风格和需求原文从内置知识库（尺寸规范、家具尺寸、动线间距、风格配色、建模要点）里取最多 16 条，
+        页面写进 AI 方案分析和 3D 建模的提示词。rooms、styles 可以重复传或用逗号分隔，各最多 12 个。
+      parameters:
+        - {in: query, name: scope, schema: {type: string, enum: [room, home, building]}}
+        - {in: query, name: rooms, schema: {type: array, items: {type: string}}}
+        - {in: query, name: styles, schema: {type: array, items: {type: string}}}
+        - {in: query, name: q, schema: {type: string, maxLength: 1000}, description: 需求原文，超过 1000 字截断}
+      responses:
+        "200": {description: "data.entries: [{ id, kind, kindName, title, guidance }]"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/knowledge:
+    get:
+      tags: [admin]
+      summary: 室内设计知识库
+      description: 要求管理员。全部条目（含停用的），每条带记录 ID、标识 key、类别、标题、正文、适用范围 scopes、空间 rooms、风格 styles、关键词 tags、排序、启用、是否内置、内置条目是否改过（edited）和 version；kinds 是类别和每类每次最多取几条。
+      responses:
+        "200": {description: data.entries、data.kinds}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 新增室内设计知识
+      description: key 只能用小写字母、数字和短横线，不能和已有条目重复；kind 是七个类别之一；scopes 只能是 room、home、building；rooms、styles 是空间和风格标识，各最多 30 个；tags 最多 16 个；标题不超过 60 字，正文不超过 1200 字。
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        "200": {description: data.entry}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/knowledge/{id}:
+    put:
+      tags: [admin]
+      summary: 修改室内设计知识
+      description: key 不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。改了内置条目的内容会标成 edited，之后程序更新不再覆盖它；只改启用或排序不算改内容。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
+      responses:
+        "200": {description: data.entry}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 删除管理员新增的室内设计知识
+      description: 内置条目不能删除（400），只能停用。version 不一致返回 409。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: version, required: true, schema: {type: integer}}
+      responses:
+        "200": {description: data.deleted}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /admin/interior/knowledge/{id}/reset:
+    post:
+      tags: [admin]
+      summary: 恢复内置知识的原内容
+      description: 只用于内置条目：内容恢复成程序自带的版本、去掉 edited 标记，启用状态不动。请求体 {version}，不一致返回 409。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody: {required: true, content: {application/json: {schema: {type: object, properties: {version: {type: integer}}}}}}
+      responses:
+        "200": {description: data.entry}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /admin/interior/overview:
+    get:
+      tags: [admin]
+      summary: 室内设计近 30 天出图统计
+      description: >-
+        要求管理员，不受功能开关限制。按 UTC 自然日统计近 30 天室内设计页提交的出图任务（一个风格一次算一个任务，超过 5000 条只算最新的并返回 truncated=true）：
+        generations（按状态、近 7 天、今天、人数、快速出图 / 专业模式）、projects（项目总数、我的房子、客户方案、人数，不限时间）、
+        config（站点默认模型是否设置、开着的出图方式里没有默认模型的名称）、daily（近 14 天每天的出图和失败数）、
+        modes / styles / rooms / models（出图次数和失败数，风格、空间、模型取前 10）、recentFailures（最近 8 次失败，原因不做用户侧改写）。
+      responses:
+        "200": {description: data 为统计}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/generations:
+    get:
+      tags: [admin]
+      summary: 所有用户的室内设计出图记录
+      description: 要求管理员。按创建时间倒序分页返回室内设计页提交的出图任务，每条带用户、状态与失败原因、出图方式、空间、风格、模型、原图 / 参考图 / 效果图的资源 ID（用 GET /admin/resources/{id}/file 读）和所属项目 ID。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {in: query, name: status, schema: {type: string, enum: [queued, running, succeeded, failed, cancelled]}}
+        - {in: query, name: mode, schema: {type: string}, description: 出图方式的机器标识，例如 style-redesign}
+        - {in: query, name: keyword, schema: {type: string, maxLength: 100}, description: 匹配用户名、昵称、邮箱，或完整的任务 ID}
+      responses:
+        "200": {description: "data 为 { records, total, page, pageSize }"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/generations/{id}:
+    get:
+      tags: [admin]
+      summary: 一条室内设计出图记录
+      description: 要求管理员。在列表字段之外带服务端拼好的完整提示词 prompt、参数 params 和所属项目名 projectName；不是室内设计任务返回 404。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: data 为出图记录}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/interior/modes:
+    get:
+      tags: [admin]
+      summary: 管理员读取全部室内设计出图方式
+      description: 包含提示词模板与参数片段；不受功能开关限制。
+      responses:
+        "200": {description: data.modes}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 新增室内设计出图方式
+      description: 校验标识、输入、参数、模板变量白名单与模型选择；写管理审计。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: data.mode}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/modes/{id}:
+    put:
+      tags: [admin]
+      summary: 修改室内设计出图方式
+      description: 标识不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: data.mode}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /admin/interior/presets:
+    get:
+      tags: [admin]
+      summary: 管理员读取室内设计风格或空间
+      parameters:
+        - {in: query, name: type, required: true, schema: {type: string, enum: [style, room]}}
+      responses:
+        "200": {description: data.presets}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [admin]
+      summary: 新增室内设计风格或空间
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: data.preset}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/interior/presets/{id}:
+    put:
+      tags: [admin]
+      summary: 修改室内设计风格或空间
+      description: 类型和标识不能修改。请求带上次读到的 version，不一致返回 409、reason=interior_version_conflict。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: data.preset}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /admin/interior/settings:
+    get:
+      tags: [admin]
+      summary: 读取室内设计全局设置
+      responses:
+        "200": {description: data 包含 defaultSurface、allowSurfaceSwitch、defaultModel、maxStylesPerRun、maxCountPerStyle}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [admin]
+      summary: 保存室内设计全局设置
+      description: 写入 system_settings 的 interior_settings 键并记录管理审计。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [defaultSurface, allowSurfaceSwitch, maxStylesPerRun, maxCountPerStyle]
+              properties:
+                defaultSurface: {type: string, enum: [quick, pro]}
+                allowSurfaceSwitch: {type: boolean}
+                defaultModel: {type: object}
+                maxStylesPerRun: {type: integer, minimum: 1, maximum: 4}
+                maxCountPerStyle: {type: integer, minimum: 1, maximum: 4}
+      responses:
+        "200": {description: data 为保存后的设置}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /libtv/gallery:
+    get:
+      tags: [libtv]
+      summary: 读取 LibTV 公开作品列表
+      description: 登录后匿名读取已审核的公开作品，不发送管理员 LibTV Token。total 不作为全库数量；后续分页保留首次返回的 requestId，按 hasMore 判断是否继续。不存储媒体原件，不创建生成任务。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1, maximum: 1000, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 40, default: 20}}
+        - {in: query, name: keyword, schema: {type: string, maxLength: 100}}
+        - {in: query, name: tagId, schema: {type: integer, minimum: 0}}
+        - {in: query, name: requestId, schema: {type: string, format: uuid}}
+      responses:
+        "200":
+          description: 标准信封 data 为 items、page、pageSize、hasMore、requestId；每项包含 templateUuid、projectUuid、title、description、coverUrl、mediaUrl、mediaType、authorName、authorAvatar、likeCount、publishedAt、tags、sourceUrl。
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /public/features:
+    get:
+      tags: [guest]
+      summary: 游客读取功能开关
+      description: 不需要登录。只返回各功能开关与 configured，不含操作人与更新时间。每个来源地址每分钟 60 次，全站游客每分钟 1200 次。
+      responses:
+        "200": {description: "标准信封 data.features；Cache-Control 为 private, no-store"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/model-catalog:
+    get:
+      tags: [guest]
+      summary: 游客读取模型目录
+      description: 不需要登录。按默认分组的渠道可见性与价格展示模型名称、图标、能力与价格档，不附加可用率统计，服务端缓存 60 秒。报价、可用性检查与任务创建仍要求登录。每个来源地址每分钟 30 次，全站游客每分钟 600 次。
+      responses:
+        "200": {description: "结构同 GET /model-catalog；Cache-Control 为 private, no-store"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/libtv/gallery:
+    get:
+      tags: [guest]
+      summary: 游客读取 LibTV 公开作品列表
+      description: 不需要登录，参数与返回同 GET /libtv/gallery。同一组参数（含 requestId）缓存 60 秒；首页不带 requestId 时游客共用缓存里的同一个 requestId，翻页保持同一顺序。每个来源地址每分钟 20 次，全站游客每分钟 200 次（与作品详情共用）。
+      parameters:
+        - {in: query, name: page, schema: {type: integer, minimum: 1, maximum: 1000, default: 1}}
+        - {in: query, name: pageSize, schema: {type: integer, minimum: 1, maximum: 40, default: 20}}
+        - {in: query, name: keyword, schema: {type: string, maxLength: 100}}
+        - {in: query, name: tagId, schema: {type: integer, minimum: 0}}
+        - {in: query, name: requestId, schema: {type: string, format: uuid}}
+      responses:
+        "200": {description: 结构同 GET /libtv/gallery}
+        "400": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /public/libtv/works/{uuid}:
+    get:
+      tags: [guest]
+      summary: 游客读取 LibTV 作品详情
+      description: 不需要登录，返回同 GET /libtv/works/{uuid}，按作品缓存 60 秒；导入画布仍要求登录。
+      parameters:
+        - {in: path, name: uuid, required: true, schema: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}}
+      responses:
+        "200": {description: "结构同 GET /libtv/works/{uuid}"}
+        "400": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /libtv/works/{uuid}:
+    get:
+      tags: [libtv]
+      summary: 读取 LibTV 已发布模板的制作步骤
+      description: uuid 为公开 templateUuid，不是原项目 projectUuid。仅接受已审核的公开快照；steps 是快照节点顺序，不保证为执行顺序。模型名称仅为来源信息，不自动映射本站模型或发起收费生成。
+      parameters:
+        - {in: path, name: uuid, required: true, schema: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}}
+      responses:
+        "200":
+          description: 标准信封 data 为 work、steps、nodeCount、connectionCount、canImport、warnings。步骤包含 id、title、type、prompt、text、model、mediaUrls、aspectRatio、resolution、durationSeconds、referenceNodeIds。计数为来源总数，失效节点或连线通过 warnings 报告。
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /canvas-projects/{id}/import/libtv-template:
+    post:
+      tags: [libtv, canvas]
+      summary: 预览并转换 LibTV 已发布模板
+      description: 先校验目标画布属于当前用户，再读取公开 templateUuid；无需管理员 Token，不读取原项目私有详情。只返回转换后的节点、连线和报告，不写入画布。前端确认后通过现有画布保存合同持久化；媒体保留外链，不上传原件。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uuid]
+              properties:
+                uuid: {type: string, pattern: '^[A-Fa-f0-9]{32}$'}
+      responses:
+        "200":
+          description: '标准信封 data 与原 LibTV 导入结果一致，包含 batchId、batchCreatedAt、projectUuid、projectName、nodes、connections、计数及 skippedNodes、skippedConnections、warnings；节点增加可选 parentId、aspectRatio，来源 metadata 增加 templateUuid、snapshotId。媒体节点 results 为全部有效结果，项包含 sourceIndex（上游原数组零基索引）、content 及可选 naturalWidth、naturalHeight、durationMs、mimeType，顶层媒体为首个有效结果。multiResultNodeCount 统计有效结果超过一个的来源节点；importedNodeCount 不包含前端结果卡的展开数量。'
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+  /admin/pose-library/remote-pack:
+    get:
+      tags: [pose-library, admin]
+      summary: 从 GitHub 读取固定版本姿势元数据，供导入前预览体系
+      responses:
+        "200": { description: "data 为 pose-zh.json 数组；不含图片" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /agent-pets:
+    get:
+      tags: [agent]
+      summary: 列出当前用户可见的智能体形象（已上架和已购买）及使用资格
+      responses:
+        "200":
+          description: 成功信封 data 为形象列表；selectedPetId 为空表示使用站点默认形象
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  msg: {type: string}
+                  data:
+                    type: object
+                    required: [pets, selectedPetId, creditsEnabled, consumedMicrocredits]
+                    properties:
+                      pets: {type: array, items: {$ref: "#/components/schemas/AgentPet"}}
+                      selectedPetId: {type: string}
+                      creditsEnabled: {type: boolean}
+                      consumedMicrocredits: {type: integer, format: int64, description: 累计消费（已结算的模型调用积分），用于累计消费解锁}
+        "401": {$ref: "#/components/responses/Error"}
+  /agent-pets/selection:
+    get:
+      tags: [agent]
+      summary: 读取当前使用的形象；未选择或已失去资格时 data.pet 为 null
+      responses:
+        "200":
+          description: 成功信封 data.pet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data:
+                    type: object
+                    properties:
+                      pet: {allOf: [{$ref: "#/components/schemas/AgentPet"}], nullable: true}
+        "401": {$ref: "#/components/responses/Error"}
+    put:
+      tags: [agent]
+      summary: 切换当前形象；petId 为空字符串时恢复站点默认形象
+      description: 累计消费已达标（claimable）的形象在这里自动领取，之后调整门槛不影响已领取的用户。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [petId]
+              properties:
+                petId: {type: string}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/purchase:
+    post:
+      tags: [agent]
+      summary: 用积分购买付费形象（幂等，已购买时不重复扣费）
+      description: expectedPriceMicrocredits 必须等于当前价格，否则返回 409；余额不足返回 400，reason 为 failed_precondition。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedPriceMicrocredits]
+              properties:
+                expectedPriceMicrocredits: {type: integer, format: int64, minimum: 1}
+      responses:
+        "200":
+          description: 成功信封 data 包含已购形象、本次是否扣费和购买后的可用积分
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data:
+                    type: object
+                    required: [pet, charged, availableMicrocredits]
+                    properties:
+                      pet: {$ref: "#/components/schemas/AgentPet"}
+                      charged: {type: boolean}
+                      availableMicrocredits: {type: integer, format: int64}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/spritesheet:
+    get:
+      tags: [agent]
+      summary: 读取形象图集（WebP 或 PNG，8 列 × 9/11 行，单格 192×208）
+      description: 已上架的形象所有登录用户可读；已下架的只有已拥有（购买或领取）的用户和管理员可读。v 等于当前 revision 时长期缓存，支持 If-None-Match。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: 图集原始内容}
+        "304": {description: 未变化}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /agent-pets/{id}/preview:
+    get:
+      tags: [agent]
+      summary: 读取形象列表缩略图（PNG，192×208，待机动作第一格有画面的帧）
+      description: 商店、换形象菜单和后台列表先显示缩略图，悬停或选中时才加载整张图集。读取权限与图集相同。v 等于 revision 时长期缓存；待机状态改用其他动作时 v 为 revision 加 “.动作名”。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+        - {in: query, name: v, schema: {type: string}}
+      responses:
+        "200": {description: PNG 缩略图}
+        "304": {description: 未变化}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets:
+    get:
+      tags: [admin]
+      summary: 列出形象库（内置和上传），含开放方式与拥有人数（购买或领取）
+      responses:
+        "200":
+          description: 成功信封 data.pets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data:
+                    type: object
+                    properties:
+                      pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/remote-import:
+    get:
+      tags: [admin]
+      summary: 读取形象同步进度和已保存的远端清单地址
+      responses:
+        "200": { description: "data 含 status、manifestUrl、report（total/done/imported/skipped/failed/failures）、error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      summary: 保存 HTTPS 清单地址并在后台同步形象；按 SHA-256 去重
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                manifestUrl: { type: string, maxLength: 2048, description: "不带凭据、查询串的 HTTPS JSON 清单地址；空时使用内置 GitHub 仓库" }
+      responses:
+        "200": { description: "data 为同步进度；关闭窗口后继续，重启后可重复同步" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/agent-pets/remote-import/cancel:
+    post:
+      tags: [admin]
+      summary: 停止当前形象同步；已导入的保留
+      responses:
+        "200": { description: "data 为最近的同步进度" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/agent-pets/import:
+    post:
+      tags: [admin]
+      summary: 导入 Codex 宠物 ZIP（pet.json + 图集）或单张 WebP/PNG 图集，导入后默认未上架
+      description: 文件最大 32 MiB、图集最大 16 MiB；图集须为带透明通道的 1536×1872（v1）或 1536×2288（v2）。pet.json 只读取名称和简介。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/batch:
+    post:
+      tags: [admin]
+      summary: 批量修改形象（上架、分类、角标、开放方式与价格、促销、排序位置），只改提供了的字段
+      description: 一次最多 200 个。不适用的形象（如给非积分购买的形象开促销、打折后价格不变）跳过并在 skipped 说明；任一形象校验失败整批不保存。access 改成非 paid 时同时结束促销；promotion.enabled 为 false 时结束所选形象的促销，为 true 时按 percent（原价的百分比，0 为限时免费）定促销价，四舍五入到 0.01 积分。sortPosition 为 first / last 时把所选形象按原来的先后移到形象库最前或最后（间隔 10），其余形象的排序值不变；新排序值超出 -100000 到 100000 时整批拒绝。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
+                enabled: {type: boolean}
+                category: {type: string, maxLength: 12, description: 空字符串表示移出分类}
+                badge: {type: string, maxLength: 6}
+                access:
+                  type: object
+                  required: [mode]
+                  properties:
+                    mode: {type: string, enum: [free, vip, paid, spend]}
+                    priceMicrocredits: {type: integer, format: int64}
+                    unlockMicrocredits: {type: integer, format: int64}
+                    groupCodes: {type: array, items: {type: string}}
+                promotion:
+                  type: object
+                  required: [enabled]
+                  properties:
+                    enabled: {type: boolean}
+                    label: {type: string, maxLength: 8}
+                    percent: {type: integer, minimum: 0, maximum: 99}
+                    startsAt: {type: string, format: date-time, nullable: true}
+                    endsAt: {type: string, format: date-time, nullable: true}
+                sortPosition: {type: string, enum: [first, last]}
+      responses:
+        "200":
+          description: 成功信封 data 为批量结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/batch-delete:
+    post:
+      tags: [admin]
+      summary: 批量删除上传的形象；内置形象和已有人拥有的形象跳过并说明原因
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: {type: array, minItems: 1, maxItems: 200, items: {type: string}}
+      responses:
+        "200":
+          description: 成功信封 data 为批量结果（deleted、skipped）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer, enum: [0]}
+                  data: {$ref: "#/components/schemas/AdminAgentPetBatchResult"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /admin/agent-pets/{id}:
+    put:
+      tags: [admin]
+      summary: 保存形象的完整配置（名称、简介、上架、开放方式与价格、分组、分类、角标、促销、状态映射、说话风格、像素清晰、排序）
+      description: access 为 free 时忽略价格和分组；vip 至少选一个分组且不能购买；paid 价格须大于 0，所选分组免费使用；spend 累计消费门槛须大于 0，达标后免费领取，所选分组免费使用。促销只对 paid 生效，促销价须低于原价（0 为限时免费），结束时间须晚于现在、开始时间，且一次不超过一年；未改动的促销原样保留。tone 与 lines 只对上传形象生效。
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, enabled, access, priceMicrocredits, unlockMicrocredits, groupCodes, stateRows, pixelated, sortOrder]
+              properties:
+                name: {type: string, maxLength: 40}
+                description: {type: string, maxLength: 200}
+                enabled: {type: boolean}
+                access: {type: string, enum: [free, vip, paid, spend]}
+                priceMicrocredits: {type: integer, format: int64, description: paid 的价格}
+                unlockMicrocredits: {type: integer, format: int64, description: spend 的累计消费门槛}
+                groupCodes: {type: array, items: {type: string}}
+                stateRows: {type: object, additionalProperties: {type: string}}
+                pixelated: {type: boolean}
+                sortOrder: {type: integer}
+                category: {type: string, maxLength: 12}
+                badge: {type: string, maxLength: 6}
+                promoEnabled: {type: boolean}
+                promoLabel: {type: string, maxLength: 8}
+                promoPriceMicrocredits: {type: integer, format: int64, minimum: 0}
+                promoStartsAt: {type: string, format: date-time, nullable: true}
+                promoEndsAt: {type: string, format: date-time, nullable: true}
+                tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 仅上传形象}
+                lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 仅上传形象}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [admin]
+      summary: 删除上传的形象；内置形象只能下架，已有人购买或领取的形象返回 409
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {$ref: "#/components/responses/Envelope"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
   /social-video/imports:
     post:
       tags: [tasks]
@@ -5462,107 +6009,6 @@ paths:
           $ref: "#/components/responses/Error"
         "413":
           $ref: "#/components/responses/Error"
-  /tasks/{id}/recover-media:
-    post:
-      tags: [tasks]
-      summary: 按原任务 ID 重试作品保存，不重新生成或创建计费订单
-      description: 仅当前用户有恢复记录的保存失败任务可重入队；已在队列或运行中时幂等返回。每任务最多手动恢复三次，间隔至少一分钟。已取消、已退款或归属项目不可用时拒绝。
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          $ref: "#/components/responses/Envelope"
-        "400":
-          $ref: "#/components/responses/Error"
-        "401":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-  /tasks/{id}/text-events:
-    get:
-      tags: [tasks]
-      summary: 文本任务 SSE
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string }
-        - in: query
-          name: after
-          schema: { type: integer }
-          description: 递增事件游标，不要用任务 ID
-      responses:
-        "200":
-          description: text/event-stream
-  /assets:
-    get:
-      tags: [assets]
-      summary: 用户素材库
-      responses:
-        "200":
-          $ref: "#/components/responses/Envelope"
-  /assets/batch-delete:
-    post:
-      tags: [assets]
-      summary: 批量彻底删除当前用户素材
-      description: 顶层 JSON 数组，一次请求、一个数据库事务。所有 ID 必须属于当前用户，不受任务、画布或历史引用阻塞；共享文件保留，其余通过 Outbox 异步清理，失败重试。任一素材不存在、越权或数据库写入失败时整批不删除。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: array
-              minItems: 1
-              maxItems: 1000
-              items:
-                type: string
-                minLength: 1
-            example: ["asset-1", "asset-2"]
-      responses:
-        "200":
-          description: 成功信封，data.ids 返回本次请求的素材 ID 数组；物理文件清理由后台执行。
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: "#/components/schemas/Envelope"
-                  - type: object
-                    properties:
-                      data:
-                        type: object
-                        required: [ids]
-                        properties:
-                          ids:
-                            type: array
-                            items: { type: string }
-        "400":
-          $ref: "#/components/responses/Error"
-        "401":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "500":
-          $ref: "#/components/responses/Error"
-  /assets/{id}:
-    parameters:
-      - in: path
-        name: id
-        required: true
-        schema: { type: string }
-    delete:
-      tags: [assets]
-      summary: 彻底删除当前用户素材
-      description: 不依赖素材 archived 状态，也不受画布、任务、项目或历史快照引用阻塞；其他素材共享的物理对象仍保留。
-      responses:
-        "200":
-          $ref: "#/components/responses/Envelope"
-        "401":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
 components:
   parameters:
     AgentRunID:
@@ -5577,518 +6023,244 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
-    InteriorGenerateInput:
+    APICallGenerationContent:
       type: object
-      additionalProperties: false
-      required: [surface, modeId, sourceResourceId, count]
+      required: [prompt, references, source, incomplete]
       properties:
-        surface: {type: string, enum: [quick, pro]}
-        modeId: {type: string}
-        roomKey: {type: string}
-        styleKeys: {type: array, maxItems: 4, items: {type: string}}
-        params: {type: object, additionalProperties: {type: string}}
-        notes: {type: string, maxLength: 500}
-        sourceResourceId: {type: string}
-        referenceResourceIds: {type: array, maxItems: 3, items: {type: string}}
-        count: {type: integer, minimum: 1, maximum: 4}
-        size: {type: string, enum: [auto, "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]}
-        quality: {type: string, enum: [auto, low, medium, high], description: 仅专业模式}
-        model:
-          type: object
-          additionalProperties: false
-          required: [model]
-          properties:
-            model: {type: string}
-            channelId: {type: string}
-            logicalModelId: {type: string}
-            label: {type: string}
-        projectId: {type: string, description: 关联本人的室内设计项目}
-        roundId: {type: string, description: 页面用来回填结果的轮次标识}
-    AgentPetPromotion:
-      type: object
-      required: [label, endsAt]
-      properties:
-        label: {type: string, maxLength: 8, description: 活动名称，默认“限时特惠”，促销价为 0 时默认“限时免费”}
-        endsAt: {type: string, format: date-time, nullable: true, description: 为空表示管理员手动结束前一直有效}
-    AgentPet:
-      type: object
-      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, listPriceMicrocredits, promotion, unlockMicrocredits, owned, memberFree, usable, purchasable, claimable, category, badge, tone, lines]
-      properties:
-        id: {type: string}
-        name: {type: string}
-        description: {type: string}
-        spriteVersion: {type: integer, enum: [1, 2], description: 2 表示带 16 个视线方向，可跟随鼠标}
-        revision: {type: string, description: 图集缓存版本}
-        pixelated: {type: boolean}
-        stateRows: {type: object, additionalProperties: {type: string, enum: [idle, running-right, running-left, waving, jumping, failed, waiting, running, review]}, description: 助手状态到图集动作的覆盖项}
-        access: {type: string, enum: [free, vip, paid, spend]}
-        priceMicrocredits: {type: integer, format: int64, description: 此刻的售价（促销中为促销价，限时免费为 0）；仅 paid 有值}
-        listPriceMicrocredits: {type: integer, format: int64, description: 原价；仅 paid 有值}
-        promotion: {allOf: [{$ref: "#/components/schemas/AgentPetPromotion"}], nullable: true, description: 只在促销进行中时返回}
-        unlockMicrocredits: {type: integer, format: int64, description: 仅 spend 时大于 0，累计消费达到即可领取}
-        category: {type: string, maxLength: 12, description: 商店分类，空为未分类}
-        badge: {type: string, maxLength: 6, description: 卡片角标，如“新品”}
-        owned: {type: boolean}
-        memberFree: {type: boolean, description: 付费形象对当前用户分组免费}
-        usable: {type: boolean}
-        purchasable: {type: boolean}
-        claimable: {type: boolean, description: 累计消费已达标、尚未领取；选择时自动领取}
-        tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 头顶气泡的说话风格；上传形象为空，前端用通用语气}
-        lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 形象专属台词}
-    AdminAgentPet:
-      allOf:
-        - $ref: "#/components/schemas/AgentPet"
-        - type: object
-          required: [source, enabled, groupCodes, sortOrder, ownerCount, revenueMicrocredits, promoEnabled, promoLabel, promoPriceMicrocredits, promoStartsAt, promoEndsAt, promoState]
-          properties:
-            source: {type: string, enum: [builtin, upload]}
-            enabled: {type: boolean}
-            groupCodes: {type: array, items: {type: string}}
-            sortOrder: {type: integer}
-            ownerCount: {type: integer, format: int64, description: 拥有人数（购买或领取）}
-            revenueMicrocredits: {type: integer, format: int64, description: 累计购买收入}
-            promoEnabled: {type: boolean}
-            promoLabel: {type: string}
-            promoPriceMicrocredits: {type: integer, format: int64}
-            promoStartsAt: {type: string, format: date-time, nullable: true}
-            promoEndsAt: {type: string, format: date-time, nullable: true}
-            promoState: {type: string, enum: [none, scheduled, active, ended]}
-            updatedAt: {type: string, format: date-time}
-    AdminAgentPetBatchResult:
-      type: object
-      required: [pets, deleted, skipped]
-      properties:
-        pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}, description: 修改后的形象}
-        deleted: {type: array, items: {type: string}, description: 已删除的形象 ID}
-        skipped:
+        prompt: { type: string, description: 当次请求提示词；工具引用已展开，图片视频音频编号按各请求数组顺序，敏感地址与凭据已脱敏 }
+        references:
           type: array
-          items:
-            type: object
-            required: [id, name, reason]
-            properties:
-              id: {type: string}
-              name: {type: string}
-              reason: {type: string}
-    VideoReplicationRecord:
+          maxItems: 100
+          items: { $ref: "#/components/schemas/APICallGenerationReference" }
+        source: { type: string, enum: [snapshot, task, request] }
+        incomplete: { type: boolean }
+        note: { type: string }
+    APICallGenerationReference:
       type: object
-      required: [id, status, stage, progress, createdAt, durationMs, shotCount]
+      required: [id, kind, label, name, available]
       properties:
-        id: {type: string, description: 拆解任务 ID}
-        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
-        stage: {type: string}
-        progress: {type: integer}
-        error: {type: string}
-        createdAt: {type: string, format: date-time}
-        durationMs: {type: integer}
-        shotCount: {type: integer}
-        coverResourceId: {type: string, description: 第一镜关键帧的图片资源 ID}
-        previewResourceIds: {type: array, items: {type: string}, description: 均匀取自全片的最多 4 张关键帧图片资源 ID}
-        width: {type: integer, description: 原视频宽度}
-        height: {type: integer, description: 原视频高度}
-        title: {type: string, description: 已保存分析的标题}
-        model: {type: string, description: 已保存分析所用的模型}
-        analyzedAt: {type: string, format: date-time}
-        planUpdatedAt: {type: string, format: date-time, description: 复刻方案最后保存的时间}
-        canvasCount: {type: integer, description: 按复刻方案建过几块画布}
-    VideoReplicationDetail:
+        id: { type: string, description: 日志内稳定引用标识，不是资源 ID 或画布节点 ID }
+        kind: { type: string, enum: [image, video, audio] }
+        label: { type: string, description: 图片1、视频1、音频1 等 }
+        name: { type: string, description: 请求时媒体名称，已脱敏 }
+        role: { type: string, enum: [reference, first_frame, last_frame] }
+        available: { type: boolean }
+        unavailableReason: { type: string }
+        mediaUrl: { type: string, description: 仅 available=true 提供的同源管理员媒体路径，不包含外部 URL 或访问凭据 }
+    DramaCastImageSettings:
       type: object
-      required: [task]
+      description: 图片提示词与画风独立于作品；三项画风字段全空时继承作品，任一非空时覆盖作品画风和 visualRules。更新传空串清空，省略保持原值。
       properties:
-        task:
-          $ref: "#/components/schemas/Task"
-        analysis:
-          $ref: "#/components/schemas/VideoReplicationAnalysis"
-        analyzedAt: {type: string, format: date-time}
-        plan:
-          $ref: "#/components/schemas/VideoReplicationPlan"
-        planUpdatedAt: {type: string, format: date-time}
-    VideoReplicationPlan:
-      type: object
-      description: 复刻方案。服务端只校验版本、镜头、处理方式、授权和商品图归属，台词和提示词等字段由前端定义。
-      required: [version, shots]
-      additionalProperties: true
-      properties:
-        version: {type: integer, enum: [1]}
-        authorized: {type: boolean, description: 用户确认是自己的视频或已获授权；为 false 时不能用 original}
-        product:
-          type: object
-          additionalProperties: true
+        imagePrompt: { type: string, maxLength: 12000, description: 完整自定义图片提示词；空串使用作品参考图方案重新编排 }
+        imageStyleId: { type: string, maxLength: 64 }
+        imageStyleName: { type: string, maxLength: 120 }
+        imageStylePrompt: { type: string, maxLength: 4000 }
+    CreateDramaCastRequest:
+      allOf:
+        - { $ref: "#/components/schemas/DramaCastImageSettings" }
+        - type: object
+          required: [kind, name, appearance]
           properties:
-            name: {type: string, maxLength: 60}
-            sellingPoints: {type: string}
-            audience: {type: string}
-            look: {type: string}
-            images:
+            kind: { type: string, enum: [character, scene, prop] }
+            name: { type: string, minLength: 1, maxLength: 60 }
+            appearance: { type: string, minLength: 1, maxLength: 1000 }
+            description: { type: string, maxLength: 1000 }
+    UpdateDramaCastRequest:
+      allOf:
+        - { $ref: "#/components/schemas/DramaCastImageSettings" }
+        - type: object
+          properties:
+            name: { type: string, minLength: 1, maxLength: 60 }
+            appearance: { type: string, minLength: 1, maxLength: 1000 }
+            description: { type: string, maxLength: 1000 }
+            aliases:
               type: array
-              maxItems: 4
-              items:
-                type: object
-                required: [resourceId]
-                additionalProperties: true
-                properties:
-                  resourceId: {type: string}
-                  width: {type: integer}
-                  height: {type: integer}
-        scripts:
-          type: array
-          items: {type: object, additionalProperties: true}
-        activeScriptId: {type: string}
-        canvases:
-          type: array
-          maxItems: 20
-          description: 按方案建过的画布，只用来在页面上列出和打开。
-          items:
-            type: object
-            required: [id]
-            additionalProperties: true
-            properties:
-              id: {type: string, maxLength: 64}
-              title: {type: string}
-              createdAt: {type: string}
-              shots: {type: integer}
-        shots:
-          type: array
-          items:
-            type: object
-            required: [shotNumber, treatment]
-            additionalProperties: true
-            properties:
-              shotNumber: {type: integer, minimum: 1}
-              treatment: {type: string, enum: [remake, product, original, skip]}
-              dialogue: {type: string}
-              onScreenText: {type: string}
-              imagePrompt: {type: string}
-              videoPrompt: {type: string}
-    VideoReplicationAnalysis:
-      type: object
-      required: [version, model, rows]
-      additionalProperties: true
-      properties:
-        version: {type: integer, enum: [1]}
-        model: {type: string, maxLength: 200}
-        title: {type: string, maxLength: 200}
-        summary: {type: object, nullable: true, additionalProperties: true}
-        rows:
-          type: array
-          items:
-            type: object
-            required: [shotNumber]
-            additionalProperties: true
-            properties:
-              shotNumber: {type: integer, minimum: 1}
-    VideoTeardownRequest:
-      type: object
-      required: [resourceId]
-      additionalProperties: false
-      properties:
-        resourceId:
-          type: string
-          maxLength: 128
-          description: 当前账号自己的视频资源 ID，时长不超过 3 分钟
-        projectId:
-          type: string
-          description: 可选，当前账号的活动画布或项目 ID
-        transcribe:
-          type: boolean
-          default: true
-          description: 是否识别口播。服务端没有配置转写服务时任务照常完成，并在结果 warnings 里说明
-        language:
-          type: string
-          maxLength: 16
-          description: 口播语言提示，例如 zh、en；auto 或留空表示自动识别
-        maxShots:
-          type: integer
-          minimum: 1
-          maximum: 60
-          description: 镜头数上限，超过时合并最短的镜头。不传时用后台设置的上限（默认 60），传了也不能超过它
-    VideoReplicationSettings:
-      type: object
-      required: [maxDurationSeconds, maxShots, transcribeEnabled, transcriptionChannelModelId]
-      properties:
-        maxDurationSeconds: {type: integer, minimum: 10, maximum: 180, description: 能拆解的视频最长秒数，默认 180}
-        maxShots: {type: integer, minimum: 1, maximum: 60, description: 一次拆解最多几个镜头，默认 60}
-        transcribeEnabled: {type: boolean, description: 是否允许识别口播，默认 true；关闭后拆解不调用转写服务}
-        transcriptionChannelModelId: {type: string, description: 后台选的转写模型（系统渠道里 OpenAI Audio 协议的音频模型，调 /audio/transcriptions，费用由平台承担）；空字符串表示用服务器自建的 whisper.cpp 服务}
-    VideoReplicationSettingsPatch:
-      type: object
-      description: 没传的字段保持原值
-      properties:
-        maxDurationSeconds: {type: integer, minimum: 10, maximum: 180}
-        maxShots: {type: integer, minimum: 1, maximum: 60}
-        transcribeEnabled: {type: boolean}
-        transcriptionChannelModelId: {type: string, description: 选转写模型；保存前校验模型和所在渠道都启用、是 OpenAI Audio 协议的音频模型，否则 400。传空字符串改回自建服务}
-    VideoReplicationTranscription:
-      type: object
-      required: [enabled, featureEnabled, serviceConfigured, available]
-      properties:
-        enabled: {type: boolean, description: 后台是否允许识别口播}
-        featureEnabled: {type: boolean, description: 「功能开放」里的字幕转写是否开放}
-        serviceConfigured: {type: boolean, description: 有能用的转写方式：后台选的转写模型能用，或服务器配置了自建转写服务}
-        available: {type: boolean, description: 三项都满足，拆解时会识别口播}
-        engine: {type: string, enum: [channel, whisper], description: 实际会用的转写方式；channel 是后台选的转写模型，whisper 是服务器自建服务。都没有时不返回}
-        model: {type: string, description: engine 为 channel 时的模型和渠道名称}
-        modelIssue: {type: string, description: 后台选了转写模型但现在不能用时的原因（已删除、已停用、协议不对）}
-        note: {type: string, description: 不能识别时的原因}
-    AdminVideoReplicationSettingsView:
-      type: object
-      required: [settings, transcription]
-      properties:
-        settings: {$ref: "#/components/schemas/VideoReplicationSettings"}
-        transcription: {$ref: "#/components/schemas/VideoReplicationTranscription"}
-    VideoReplicationConfig:
-      type: object
-      required: [maxDurationSeconds, maxShots, transcribeAvailable]
-      properties:
-        maxDurationSeconds: {type: integer}
-        maxShots: {type: integer}
-        transcribeAvailable: {type: boolean, description: 后台允许口播识别、字幕转写已开放且服务器配置了转写服务}
-        transcribeNote: {type: string, description: 不能识别口播时的原因}
-    AdminVideoReplicationRecord:
+              items: { type: string }
+            voiceInstructions: { type: string, maxLength: 500 }
+            locked: { type: boolean }
+    DramaCastLookRequest:
       allOf:
-        - $ref: "#/components/schemas/VideoReplicationRecord"
+        - { $ref: "#/components/schemas/DramaCastImageSettings" }
         - type: object
-          required: [user]
           properties:
-            user:
-              type: object
-              required: [id]
-              properties:
-                id: {type: string}
-                username: {type: string}
-                displayName: {type: string}
-            projectId: {type: string}
-            transcript: {type: string, enum: [asr, none], description: 口播来源，任务没完成时省略}
-            warnings: {type: array, items: {type: string}}
-            completedAt: {type: string, format: date-time}
-    SocialVideoParseHeader:
+            lookName: { type: string, minLength: 1, maxLength: 60 }
+            appearance: { type: string, minLength: 1, maxLength: 1000 }
+            fromChapter: { type: integer, description: 原著章节号，从 1 起；0 或空表示不限，负数归零，起止颠倒会交换 }
+            toChapter: { type: integer }
+            restyleSegments: { type: boolean, default: false }
+    DramaCastImagePromptRequest:
       type: object
-      required: [name, value]
       properties:
-        name: { type: string, maxLength: 64 }
-        value: { type: string, maxLength: 1024, description: "可以用 {url}、{platform}、{key} 变量" }
-    SocialVideoParseAPIRequest:
+        appearance: { type: string, minLength: 1, maxLength: 1000 }
+        imageStyleId: { type: string, maxLength: 64 }
+        imageStyleName: { type: string, maxLength: 120 }
+        imageStylePrompt: { type: string, maxLength: 4000 }
+    ImportDramaCastRequest:
       type: object
-      required: [name, platforms, url]
+      required: [sourceProjectId, castIds]
       properties:
-        name: { type: string, maxLength: 60 }
-        category: { type: string, maxLength: 60, description: 独立于视频平台的管理分类 }
-        platforms:
+        sourceProjectId: { type: string, minLength: 1, maxLength: 36, description: 当前用户的另一部作品 ID }
+        castIds:
           type: array
           minItems: 1
-          items: { type: string, enum: [douyin, tiktok, kuaishou, xiaohongshu, bilibili, weibo, youtube, instagram, facebook, twitter, vimeo, pinterest, threads, xigua, weishi, haokan, wechat, zhihu, snackvideo, cocofun, pipigx, zuiyou] }
-        enabled: { type: boolean }
-        priority: { type: integer, minimum: 0, maximum: 9999, description: 优先级策略下数字越小越先用 }
-        weight: { type: integer, minimum: 1, maximum: 100, description: 按权重随机策略下的权重 }
-        method: { type: string, enum: [GET, POST] }
-        url: { type: string, maxLength: 2048, description: "接口地址模板，用 {url} 放视频链接（自动 URL 编码），{key} 放密钥，{platform} 放平台" }
-        bodyType: { type: string, enum: [none, json, form] }
-        body: { type: string, maxLength: 8192, description: POST 请求体模板，JSON 里变量写在字符串中 }
+          maxItems: 500
+          description: 来源基础设定 ID，不可直接选择造型；重复 ID 合并处理
+          items: { type: string, minLength: 1, maxLength: 36 }
+        matchByName: { type: boolean, default: false }
+        replaceExisting: { type: boolean, default: false }
+    DramaCast:
+      allOf:
+        - { $ref: "#/components/schemas/DramaCastImageSettings" }
+        - type: object
+          required: [id, projectId, kind, name, appearance, imageStatus, imageVersion, revision]
+          properties:
+            id: { type: string }
+            projectId: { type: string }
+            kind: { type: string, enum: [character, scene, prop] }
+            name: { type: string }
+            aliasesJson: { type: string, description: 别名数组的 JSON 字符串 }
+            role: { type: string }
+            description: { type: string }
+            appearance: { type: string }
+            voiceInstructions: { type: string }
+            voiceProfileId: { type: string }
+            voiceSampleResourceId: { type: string }
+            parentId: { type: string, description: 非空表示该行是角色的造型，指向本作品基础角色 }
+            lookName: { type: string }
+            lookFromChapter: { type: integer }
+            lookToChapter: { type: integer }
+            sourceProjectId: { type: string, description: 复制时的来源作品 ID，仅记录来源，之后两季编辑相互独立 }
+            sourceCastId: { type: string, description: 来源设定或造型 ID，在目标作品内唯一，避免重复导入 }
+            importance: { type: integer }
+            imageResourceId: { type: string }
+            imageStatus: { type: string, enum: ["", draft, queued, running, ready, failed, stale, skipped] }
+            imageVersion: { type: integer }
+            locked: { type: boolean }
+            position: { type: integer }
+            revision: { type: integer, format: int64 }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    DramaCastEnvelope:
+      allOf:
+        - { $ref: "#/components/schemas/Envelope" }
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [cast]
+              properties:
+                cast: { $ref: "#/components/schemas/DramaCast" }
+    DramaCastLookEnvelope:
+      allOf:
+        - { $ref: "#/components/schemas/Envelope" }
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [look]
+              properties:
+                look: { $ref: "#/components/schemas/DramaCast" }
+                affectedSegments: { type: integer, minimum: 0 }
+
+    ChannelWebsiteRequest:
+      type: object
+      required: [name, baseUrl]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        baseUrl: {type: string, format: uri}
+        apiFormat: {type: string, enum: [openai, gemini], default: openai}
+        proxyUrl: {type: string, description: 可为空；网站共享代理地址}
         headers:
           type: array
-          maxItems: 20
-          items: { $ref: "#/components/schemas/SocialVideoParseHeader" }
-        secret: { type: string, description: 只写不读；留空表示不修改 }
-        clearSecret: { type: boolean }
-        timeoutSeconds: { type: integer, minimum: 3, maximum: 60 }
-        mapping:
-          type: object
-          properties:
-            successPath: { type: string, description: 判断成功的字段路径，如 code }
-            successValues: { type: string, description: 逗号分隔的成功取值，默认 200,0,true,success,ok }
-            videoUrlPath: { type: string, description: 视频地址字段路径，如 data.url；留空自动识别 }
-            titlePath: { type: string }
-            coverPath: { type: string }
-            idPath: { type: string }
-            durationPath: { type: string }
-            durationUnit: { type: string, enum: [s, ms] }
-            messagePath: { type: string, description: 失败时的错误信息字段 }
-        downloadHeaders:
-          type: array
-          maxItems: 20
-          items: { $ref: "#/components/schemas/SocialVideoParseHeader" }
-        remark: { type: string, maxLength: 200 }
-    SocialVideoParseSettings:
-      type: object
-      properties:
-        strategy: { type: string, enum: [priority, round_robin, weighted, fastest] }
-        maxAttempts: { type: integer, minimum: 1, maximum: 10, description: 一次导入最多依次尝试几个接口 }
-        failureThreshold: { type: integer, minimum: 1, maximum: 20, description: 连续失败几次自动停用 }
-        autoRecover: { type: boolean }
-        recoverAfterMinutes: { type: integer, minimum: 5, maximum: 1440 }
-        healthCheckMinutes: { type: integer, minimum: 0, maximum: 1440, description: 0 表示不定期巡检，否则最少 10 分钟 }
-        sampleLinks:
-          type: object
-          additionalProperties: { type: string }
-          description: 各平台用于测试、巡检和自动恢复的视频链接
-    SocialVideoParseSourceRequest:
-      type: object
-      required: [name, url]
-      properties:
-        name: { type: string, maxLength: 60 }
-        url: { type: string, maxLength: 2048, description: 返回导出格式或接口数组 JSON 的地址，最大 1 MiB }
-        enabled: { type: boolean }
-        intervalHours: { type: integer, minimum: 1, maximum: 168 }
-        autoEnable: { type: boolean, description: 新采集的接口测试通过后自动启用 }
-    SocialVideoParseTestRequest:
-      type: object
-      properties:
-        id: { type: string, description: 已保存接口的 ID；只传 id 时测试已保存的定义并计入运行状态 }
-        api: { $ref: "#/components/schemas/SocialVideoParseAPIRequest" }
-        url: { type: string, description: 测试链接；留空用设置里这个平台的测试链接 }
-        platform: { type: string }
-    SocialVideoImportRequest:
+          description: 仅允许 Anthropic-Version、OpenAI-Beta（名称不区分大小写）；鉴权和其他私有头只能保存在 Key 分组
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: {type: string}
+              value: {type: string}
+        expectedUpdatedAt: {type: string, format: date-time, description: 更新必填，取自最近读取的网站 updatedAt}
+    ChannelModelProtocolGroup:
       type: object
       additionalProperties: false
-      required: [url]
+      required: [modelIds, protocol]
       properties:
-        url:
-          type: string
-          minLength: 1
-          maxLength: 4096
-          description: 受支持平台（见 GET /social-video/platforms）的单视频 URL，也可以是只包含一个视频 URL 的分享文本
-        projectId:
-          type: string
-          description: 可选；关联的当前用户活动项目 ID
-        maxDurationSeconds:
-          type: integer
-          minimum: 1
-          maximum: 180
-          description: 可选；这次导入能接受的最长秒数，不传按 180。解析接口给了时长时下载前就拦下，没给时下载后校验，超长的视频不存成资源。同一幂等键换了这个值算不同的请求
-    Task:
-      type: object
-      required: [id, type, status, stage, progress, createdAt, updatedAt]
-      properties:
-        id: { type: string }
-        projectId: { type: string }
-        type: { type: string }
-        status: { type: string, enum: [queued, running, succeeded, failed, cancelled, text_replay] }
-        stage: { type: string }
-        progress: { type: integer, minimum: 0, maximum: 100 }
-        provider: { type: string }
-        model: { type: string }
-        billing:
-          type: object
-          description: 列表和单任务详情共用账务摘要；冻结不是扣费，仅 settled 返回 chargedMicrocredits
-          properties:
-            status: { type: string, enum: [reserved, running, settled, refunded, uncertain] }
-            amountMicrocredits: { type: integer, format: int64 }
-            reservedMicrocredits: { type: integer, format: int64 }
-            chargedMicrocredits: { type: integer, format: int64 }
-            refundedMicrocredits: { type: integer, format: int64 }
-        resultJson:
-          type: string
-          description: 成功时为 JSON 字符串；社交视频导入包含 platform、canonicalId、title、resourceId、width、height、durationMs、mimeType、size
-        error: { type: string }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-    EcommerceSetting:
-      type: object
-      required: [enabled, modelLibraryEnabled, autoBindEnabled, flows, models, templates, revision]
-      properties:
-        enabled: {type: boolean}
-        modelLibraryEnabled: {type: boolean}
-        autoBindEnabled: {type: boolean}
-        revision: {type: string, description: 读取时的版本，新配置为 initial}
-        capabilities:
-          type: object
-          additionalProperties: false
-          required: [planning, suite-forge, model-cast, pattern, listing, print-pack, pipeline, layers]
-          properties:
-            planning: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            suite-forge: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            model-cast: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            pattern: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            listing: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            print-pack: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            pipeline: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            layers: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-        templates:
+        modelIds:
           type: array
-          maxItems: 200
-          description: 整份配置请求体最多 2 MiB；公共接口只返回已发布且用途启用的模板
-          items: {$ref: "#/components/schemas/EcommerceSuiteTemplate"}
-        flows:
-          type: object
-          required: [detail, main, wear, seed]
+          minItems: 1
+          maxItems: 100
+          items: {type: string, minLength: 1}
+        protocol: {type: string, minLength: 1}
+    ChannelModelBatchProtocolRequest:
+      oneOf:
+        - {$ref: "#/components/schemas/ChannelModelProtocolGroup"}
+        - type: object
           additionalProperties: false
+          required: [groups]
           properties:
-            detail: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            main: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            wear: {$ref: "#/components/schemas/EcommerceFlowSetting"}
-            seed: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            groups:
+              type: array
+              minItems: 1
+              maxItems: 100
+              items: {$ref: "#/components/schemas/ChannelModelProtocolGroup"}
+    ChannelModelBatchUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [models]
+      properties:
         models:
           type: array
-          maxItems: 200
-          items:
-            type: object
-            required: [id, name, enabled, tags, resourceIds]
-            properties:
-              id: {type: string, maxLength: 100}
-              name: {type: string, maxLength: 100}
-              enabled: {type: boolean, description: 启用须至少一张图片}
-              tags: {type: array, maxItems: 20, items: {type: string, maxLength: 50}}
-              resourceIds: {type: array, maxItems: 12, uniqueItems: true, items: {type: string, maxLength: 100}}
-    EcommerceSuiteTemplate:
-      type: object
-      required: [id, name, flow, category, enabled, style, source, shots]
-      properties:
-        id: {type: string, minLength: 1, maxLength: 150}
-        name: {type: string, minLength: 1, maxLength: 100}
-        flow: {type: string, enum: [detail, main, wear, seed]}
-        category: {type: string, maxLength: 200}
-        enabled: {type: boolean}
-        style: {type: string, maxLength: 6000}
-        source: {type: string, maxLength: 500}
-        shots:
-          type: array
           minItems: 1
-          maxItems: 30
+          maxItems: 100
           items:
             type: object
-            required: [title, duty]
+            additionalProperties: false
+            required: [modelId, priceVersion, capabilityVersion, updatedAt, changes]
             properties:
-              title: {type: string, minLength: 1, maxLength: 100}
-              duty: {type: string, minLength: 1, maxLength: 12000}
-    EcommerceFlowSetting:
-      type: object
-      required: [enabled]
-      properties:
-        enabled: {type: boolean}
-        directorPrompt: {type: string, maxLength: 20000, description: 仅管理员接口读写；公共接口省略。空串使用服务端内置指令}
-    EcommerceAgentRequest:
-      type: object
-      required: [fileInfoList, platform]
-      description: 商品分析、预检、策划和出图共用请求；生成时还须传 generateType 与 imageCount。模型由后台配置选择。
-      properties:
-        fileInfoList:
-          type: array
-          minItems: 1
-          maxItems: 5
-          items:
-            type: object
-            required: [url]
-            properties:
-              url: {type: string, minLength: 1, maxLength: 2048, description: 当前用户已上传素材的文件地址或 HTTPS 商品图地址}
-        query: {type: string, maxLength: 4000}
-        platform: {type: string, description: 受支持的平台名称或知识库平台标识}
-        language: {type: string}
-        panelType: {type: string}
-        generateType: {type: integer, enum: [100, 101, 102, 103, 200, 400]}
-        imageCount: {type: integer, minimum: 1, maximum: 15, description: 生成类型 200 要求至少 5 页}
-        aspectRatio: {type: string}
-        selectedRecommendationId: {type: string}
-        modelKey: {type: string}
-        channel: {type: string, enum: ["", promotion, premium]}
-        needText: {type: boolean, nullable: true}
-        userSellingPoints: {type: string, maxLength: 2000}
-        brand:
-          type: object
-          properties:
-            brandName: {type: string}
-            styleDesc: {type: string}
-            themeColors: {type: string}
-        projectId: {type: string}
-        idempotencyKey: {type: string, maxLength: 150}
+              modelId: {type: string, minLength: 1}
+              priceVersion: {type: integer, format: int64, minimum: 0}
+              capabilityVersion: {type: integer, format: int64, minimum: 0}
+              updatedAt: {type: string, format: date-time}
+              changes:
+                type: object
+                minProperties: 1
+                additionalProperties: false
+                description: 仅提交需要修改的字段；缺省保留原值，不接受 null
+                properties:
+                  capability: {type: string, enum: [text, image, video]}
+                  protocol: {type: string}
+                  displayName: {type: string, maxLength: 160}
+                  description: {type: string, maxLength: 500}
+                  enabled: {type: boolean}
+                  pricingEnabled: {type: boolean, description: 统一切换各价格档的 enabled；停用保留 priceConfigured、金额、成本、SKU 和规则，启用前校验金额完整性}
+                  capabilityTemplate:
+                    type: object
+                    additionalProperties: false
+                    required: [capabilityConfig]
+                    properties:
+                      protocol: {type: string, deprecated: true, description: 兼容字段，不参与协议选择；仅 changes.protocol 可指定协议}
+                      capabilityConfig:
+                        type: object
+                        description: 与模型编辑的 ModelCapabilityConfig 相同，包含 version 及对应 text/image/video 和可选 mediaTransport；最终按目标模型协议完整校验，标量不接受 null
+                  pricingTemplate:
+                    type: object
+                    additionalProperties: false
+                    required: [priceCurrency, referenceVideoBilling, priceTiers]
+                    properties:
+                      priceCurrency: {type: string, enum: [credits, USD, CNY]}
+                      referenceVideoBilling: {type: boolean}
+                      priceTiers:
+                        type: array
+                        minItems: 1
+                        maxItems: 48
+                        description: 完整替换价格档；与模型编辑的 ChannelModelPriceTierRequest 相同。每档必填 billingMode、priceConfigured、enabled，以及对应计费模式的全部金额字段；缺失金额不能视为免费，所有字段拒绝 null。支持 selector、resolution、videoSeconds、providerModelKey、costPricing、Token 规则和参考视频价。
+                        items:
+                          type: object
+                          required: [billingMode, priceConfigured, enabled]
+                          properties:
+                            billingMode: {type: string}
+                            priceConfigured: {type: boolean}
+                            enabled: {type: boolean}
     ThinkingRequest:
       type: string
       enum: ["", auto, deep, off, minimal, low, medium, high, max]
@@ -6221,7 +6393,7 @@ components:
         method:
           {
             type: string,
-            enum: [password, email, sms, linuxdo, verification, unknown],
+            enum: [password, email, sms, linuxdo, oidc, verification, unknown],
           }
         source: { type: string, enum: [login, registration, logout] }
         result: { type: string, enum: [success, failed] }
@@ -6790,6 +6962,518 @@ components:
                 - provider_request_failed
                 - model_catalog_mismatch
                 - invalid_model_selection
+    InteriorGenerateInput:
+      type: object
+      additionalProperties: false
+      required: [surface, modeId, sourceResourceId, count]
+      properties:
+        surface: {type: string, enum: [quick, pro]}
+        modeId: {type: string}
+        roomKey: {type: string}
+        styleKeys: {type: array, maxItems: 4, items: {type: string}}
+        params: {type: object, additionalProperties: {type: string}}
+        notes: {type: string, maxLength: 500}
+        sourceResourceId: {type: string}
+        referenceResourceIds: {type: array, maxItems: 3, items: {type: string}}
+        count: {type: integer, minimum: 1, maximum: 4}
+        size: {type: string, enum: [auto, "1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"]}
+        quality: {type: string, enum: [auto, low, medium, high], description: 仅专业模式}
+        model:
+          type: object
+          additionalProperties: false
+          required: [model]
+          properties:
+            model: {type: string}
+            channelId: {type: string}
+            logicalModelId: {type: string}
+            label: {type: string}
+        projectId: {type: string, description: 关联本人的室内设计项目}
+        roundId: {type: string, description: 页面用来回填结果的轮次标识}
+    AgentPetPromotion:
+      type: object
+      required: [label, endsAt]
+      properties:
+        label: {type: string, maxLength: 8, description: 活动名称，默认“限时特惠”，促销价为 0 时默认“限时免费”}
+        endsAt: {type: string, format: date-time, nullable: true, description: 为空表示管理员手动结束前一直有效}
+    AgentPet:
+      type: object
+      required: [id, name, description, spriteVersion, revision, pixelated, stateRows, access, priceMicrocredits, listPriceMicrocredits, promotion, unlockMicrocredits, owned, memberFree, usable, purchasable, claimable, category, badge, tone, lines]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        spriteVersion: {type: integer, enum: [1, 2], description: 2 表示带 16 个视线方向，可跟随鼠标}
+        revision: {type: string, description: 图集缓存版本}
+        pixelated: {type: boolean}
+        stateRows: {type: object, additionalProperties: {type: string, enum: [idle, running-right, running-left, waving, jumping, failed, waiting, running, review]}, description: 助手状态到图集动作的覆盖项}
+        access: {type: string, enum: [free, vip, paid, spend]}
+        priceMicrocredits: {type: integer, format: int64, description: 此刻的售价（促销中为促销价，限时免费为 0）；仅 paid 有值}
+        listPriceMicrocredits: {type: integer, format: int64, description: 原价；仅 paid 有值}
+        promotion: {allOf: [{$ref: "#/components/schemas/AgentPetPromotion"}], nullable: true, description: 只在促销进行中时返回}
+        unlockMicrocredits: {type: integer, format: int64, description: 仅 spend 时大于 0，累计消费达到即可领取}
+        category: {type: string, maxLength: 12, description: 商店分类，空为未分类}
+        badge: {type: string, maxLength: 6, description: 卡片角标，如“新品”}
+        owned: {type: boolean}
+        memberFree: {type: boolean, description: 付费形象对当前用户分组免费}
+        usable: {type: boolean}
+        purchasable: {type: boolean}
+        claimable: {type: boolean, description: 累计消费已达标、尚未领取；选择时自动领取}
+        tone: {type: string, enum: ["", gentle, kitty, puppy, robot, mystic, sunny], description: 头顶气泡的说话风格；上传形象为空，前端用通用语气}
+        lines: {type: array, maxItems: 4, items: {type: string, maxLength: 40}, description: 形象专属台词}
+    AdminAgentPet:
+      allOf:
+        - $ref: "#/components/schemas/AgentPet"
+        - type: object
+          required: [source, enabled, groupCodes, sortOrder, ownerCount, revenueMicrocredits, promoEnabled, promoLabel, promoPriceMicrocredits, promoStartsAt, promoEndsAt, promoState]
+          properties:
+            source: {type: string, enum: [builtin, upload]}
+            enabled: {type: boolean}
+            groupCodes: {type: array, items: {type: string}}
+            sortOrder: {type: integer}
+            ownerCount: {type: integer, format: int64, description: 拥有人数（购买或领取）}
+            revenueMicrocredits: {type: integer, format: int64, description: 累计购买收入}
+            promoEnabled: {type: boolean}
+            promoLabel: {type: string}
+            promoPriceMicrocredits: {type: integer, format: int64}
+            promoStartsAt: {type: string, format: date-time, nullable: true}
+            promoEndsAt: {type: string, format: date-time, nullable: true}
+            promoState: {type: string, enum: [none, scheduled, active, ended]}
+            updatedAt: {type: string, format: date-time}
+    AdminAgentPetBatchResult:
+      type: object
+      required: [pets, deleted, skipped]
+      properties:
+        pets: {type: array, items: {$ref: "#/components/schemas/AdminAgentPet"}, description: 修改后的形象}
+        deleted: {type: array, items: {type: string}, description: 已删除的形象 ID}
+        skipped:
+          type: array
+          items:
+            type: object
+            required: [id, name, reason]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              reason: {type: string}
+    VideoReplicationRecord:
+      type: object
+      required: [id, status, stage, progress, createdAt, durationMs, shotCount]
+      properties:
+        id: {type: string, description: 拆解任务 ID}
+        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        stage: {type: string}
+        progress: {type: integer}
+        error: {type: string}
+        createdAt: {type: string, format: date-time}
+        durationMs: {type: integer}
+        shotCount: {type: integer}
+        coverResourceId: {type: string, description: 第一镜关键帧的图片资源 ID}
+        previewResourceIds: {type: array, items: {type: string}, description: 均匀取自全片的最多 4 张关键帧图片资源 ID}
+        width: {type: integer, description: 原视频宽度}
+        height: {type: integer, description: 原视频高度}
+        title: {type: string, description: 已保存分析的标题}
+        model: {type: string, description: 已保存分析所用的模型}
+        analyzedAt: {type: string, format: date-time}
+        planUpdatedAt: {type: string, format: date-time, description: 复刻方案最后保存的时间}
+        canvasCount: {type: integer, description: 按复刻方案建过几块画布}
+    VideoReplicationDetail:
+      type: object
+      required: [task]
+      properties:
+        task:
+          $ref: "#/components/schemas/Task"
+        analysis:
+          $ref: "#/components/schemas/VideoReplicationAnalysis"
+        analyzedAt: {type: string, format: date-time}
+        plan:
+          $ref: "#/components/schemas/VideoReplicationPlan"
+        planUpdatedAt: {type: string, format: date-time}
+    VideoReplicationPlan:
+      type: object
+      description: 复刻方案。服务端只校验版本、镜头、处理方式、授权和商品图归属，台词和提示词等字段由前端定义。
+      required: [version, shots]
+      additionalProperties: true
+      properties:
+        version: {type: integer, enum: [1]}
+        authorized: {type: boolean, description: 用户确认是自己的视频或已获授权；为 false 时不能用 original}
+        product:
+          type: object
+          additionalProperties: true
+          properties:
+            name: {type: string, maxLength: 60}
+            sellingPoints: {type: string}
+            audience: {type: string}
+            look: {type: string}
+            images:
+              type: array
+              maxItems: 4
+              items:
+                type: object
+                required: [resourceId]
+                additionalProperties: true
+                properties:
+                  resourceId: {type: string}
+                  width: {type: integer}
+                  height: {type: integer}
+        scripts:
+          type: array
+          items: {type: object, additionalProperties: true}
+        activeScriptId: {type: string}
+        canvases:
+          type: array
+          maxItems: 20
+          description: 按方案建过的画布，只用来在页面上列出和打开。
+          items:
+            type: object
+            required: [id]
+            additionalProperties: true
+            properties:
+              id: {type: string, maxLength: 64}
+              title: {type: string}
+              createdAt: {type: string}
+              shots: {type: integer}
+        shots:
+          type: array
+          items:
+            type: object
+            required: [shotNumber, treatment]
+            additionalProperties: true
+            properties:
+              shotNumber: {type: integer, minimum: 1}
+              treatment: {type: string, enum: [remake, product, original, skip]}
+              dialogue: {type: string}
+              onScreenText: {type: string}
+              imagePrompt: {type: string}
+              videoPrompt: {type: string}
+    VideoReplicationAnalysis:
+      type: object
+      required: [version, model, rows]
+      additionalProperties: true
+      properties:
+        version: {type: integer, enum: [1]}
+        model: {type: string, maxLength: 200}
+        title: {type: string, maxLength: 200}
+        summary: {type: object, nullable: true, additionalProperties: true}
+        rows:
+          type: array
+          items:
+            type: object
+            required: [shotNumber]
+            additionalProperties: true
+            properties:
+              shotNumber: {type: integer, minimum: 1}
+    VideoTeardownRequest:
+      type: object
+      required: [resourceId]
+      additionalProperties: false
+      properties:
+        resourceId:
+          type: string
+          maxLength: 128
+          description: 当前账号自己的视频资源 ID，时长不超过 3 分钟
+        projectId:
+          type: string
+          description: 可选，当前账号的活动画布或项目 ID
+        transcribe:
+          type: boolean
+          default: true
+          description: 是否识别口播。服务端没有配置转写服务时任务照常完成，并在结果 warnings 里说明
+        language:
+          type: string
+          maxLength: 16
+          description: 口播语言提示，例如 zh、en；auto 或留空表示自动识别
+        maxShots:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: 镜头数上限，超过时合并最短的镜头。不传时用后台设置的上限（默认 60），传了也不能超过它
+    VideoReplicationSettings:
+      type: object
+      required: [maxDurationSeconds, maxShots, transcribeEnabled, transcriptionChannelModelId]
+      properties:
+        maxDurationSeconds: {type: integer, minimum: 10, maximum: 180, description: 能拆解的视频最长秒数，默认 180}
+        maxShots: {type: integer, minimum: 1, maximum: 60, description: 一次拆解最多几个镜头，默认 60}
+        transcribeEnabled: {type: boolean, description: 是否允许识别口播，默认 true；关闭后拆解不调用转写服务}
+        transcriptionChannelModelId: {type: string, description: 后台选的转写模型（系统渠道里 OpenAI Audio 协议的音频模型，调 /audio/transcriptions，费用由平台承担）；空字符串表示用服务器自建的 whisper.cpp 服务}
+    VideoReplicationSettingsPatch:
+      type: object
+      description: 没传的字段保持原值
+      properties:
+        maxDurationSeconds: {type: integer, minimum: 10, maximum: 180}
+        maxShots: {type: integer, minimum: 1, maximum: 60}
+        transcribeEnabled: {type: boolean}
+        transcriptionChannelModelId: {type: string, description: 选转写模型；保存前校验模型和所在渠道都启用、是 OpenAI Audio 协议的音频模型，否则 400。传空字符串改回自建服务}
+    VideoReplicationTranscription:
+      type: object
+      required: [enabled, featureEnabled, serviceConfigured, available]
+      properties:
+        enabled: {type: boolean, description: 后台是否允许识别口播}
+        featureEnabled: {type: boolean, description: 「功能开放」里的字幕转写是否开放}
+        serviceConfigured: {type: boolean, description: 有能用的转写方式：后台选的转写模型能用，或服务器配置了自建转写服务}
+        available: {type: boolean, description: 三项都满足，拆解时会识别口播}
+        engine: {type: string, enum: [channel, whisper], description: 实际会用的转写方式；channel 是后台选的转写模型，whisper 是服务器自建服务。都没有时不返回}
+        model: {type: string, description: engine 为 channel 时的模型和渠道名称}
+        modelIssue: {type: string, description: 后台选了转写模型但现在不能用时的原因（已删除、已停用、协议不对）}
+        note: {type: string, description: 不能识别时的原因}
+    AdminVideoReplicationSettingsView:
+      type: object
+      required: [settings, transcription]
+      properties:
+        settings: {$ref: "#/components/schemas/VideoReplicationSettings"}
+        transcription: {$ref: "#/components/schemas/VideoReplicationTranscription"}
+    VideoReplicationConfig:
+      type: object
+      required: [maxDurationSeconds, maxShots, transcribeAvailable]
+      properties:
+        maxDurationSeconds: {type: integer}
+        maxShots: {type: integer}
+        transcribeAvailable: {type: boolean, description: 后台允许口播识别、字幕转写已开放且服务器配置了转写服务}
+        transcribeNote: {type: string, description: 不能识别口播时的原因}
+    AdminVideoReplicationRecord:
+      allOf:
+        - $ref: "#/components/schemas/VideoReplicationRecord"
+        - type: object
+          required: [user]
+          properties:
+            user:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string}
+                username: {type: string}
+                displayName: {type: string}
+            projectId: {type: string}
+            transcript: {type: string, enum: [asr, none], description: 口播来源，任务没完成时省略}
+            warnings: {type: array, items: {type: string}}
+            completedAt: {type: string, format: date-time}
+    SocialVideoParseHeader:
+      type: object
+      required: [name, value]
+      properties:
+        name: { type: string, maxLength: 64 }
+        value: { type: string, maxLength: 1024, description: "可以用 {url}、{platform}、{key} 变量" }
+    SocialVideoParseAPIRequest:
+      type: object
+      required: [name, platforms, url]
+      properties:
+        name: { type: string, maxLength: 60 }
+        category: { type: string, maxLength: 60, description: 独立于视频平台的管理分类 }
+        platforms:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [douyin, tiktok, kuaishou, xiaohongshu, bilibili, weibo, youtube, instagram, facebook, twitter, vimeo, pinterest, threads, xigua, weishi, haokan, wechat, zhihu, snackvideo, cocofun, pipigx, zuiyou] }
+        enabled: { type: boolean }
+        priority: { type: integer, minimum: 0, maximum: 9999, description: 优先级策略下数字越小越先用 }
+        weight: { type: integer, minimum: 1, maximum: 100, description: 按权重随机策略下的权重 }
+        method: { type: string, enum: [GET, POST] }
+        url: { type: string, maxLength: 2048, description: "接口地址模板，用 {url} 放视频链接（自动 URL 编码），{key} 放密钥，{platform} 放平台" }
+        bodyType: { type: string, enum: [none, json, form] }
+        body: { type: string, maxLength: 8192, description: POST 请求体模板，JSON 里变量写在字符串中 }
+        headers:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/SocialVideoParseHeader" }
+        secret: { type: string, description: 只写不读；留空表示不修改 }
+        clearSecret: { type: boolean }
+        timeoutSeconds: { type: integer, minimum: 3, maximum: 60 }
+        mapping:
+          type: object
+          properties:
+            successPath: { type: string, description: 判断成功的字段路径，如 code }
+            successValues: { type: string, description: 逗号分隔的成功取值，默认 200,0,true,success,ok }
+            videoUrlPath: { type: string, description: 视频地址字段路径，如 data.url；留空自动识别 }
+            titlePath: { type: string }
+            coverPath: { type: string }
+            idPath: { type: string }
+            durationPath: { type: string }
+            durationUnit: { type: string, enum: [s, ms] }
+            messagePath: { type: string, description: 失败时的错误信息字段 }
+        downloadHeaders:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/SocialVideoParseHeader" }
+        remark: { type: string, maxLength: 200 }
+    SocialVideoParseSettings:
+      type: object
+      properties:
+        strategy: { type: string, enum: [priority, round_robin, weighted, fastest] }
+        maxAttempts: { type: integer, minimum: 1, maximum: 10, description: 一次导入最多依次尝试几个接口 }
+        failureThreshold: { type: integer, minimum: 1, maximum: 20, description: 连续失败几次自动停用 }
+        autoRecover: { type: boolean }
+        recoverAfterMinutes: { type: integer, minimum: 5, maximum: 1440 }
+        healthCheckMinutes: { type: integer, minimum: 0, maximum: 1440, description: 0 表示不定期巡检，否则最少 10 分钟 }
+        sampleLinks:
+          type: object
+          additionalProperties: { type: string }
+          description: 各平台用于测试、巡检和自动恢复的视频链接
+    SocialVideoParseSourceRequest:
+      type: object
+      required: [name, url]
+      properties:
+        name: { type: string, maxLength: 60 }
+        url: { type: string, maxLength: 2048, description: 返回导出格式或接口数组 JSON 的地址，最大 1 MiB }
+        enabled: { type: boolean }
+        intervalHours: { type: integer, minimum: 1, maximum: 168 }
+        autoEnable: { type: boolean, description: 新采集的接口测试通过后自动启用 }
+    SocialVideoParseTestRequest:
+      type: object
+      properties:
+        id: { type: string, description: 已保存接口的 ID；只传 id 时测试已保存的定义并计入运行状态 }
+        api: { $ref: "#/components/schemas/SocialVideoParseAPIRequest" }
+        url: { type: string, description: 测试链接；留空用设置里这个平台的测试链接 }
+        platform: { type: string }
+    SocialVideoImportRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: 受支持平台（见 GET /social-video/platforms）的单视频 URL，也可以是只包含一个视频 URL 的分享文本
+        projectId:
+          type: string
+          description: 可选；关联的当前用户活动项目 ID
+        maxDurationSeconds:
+          type: integer
+          minimum: 1
+          maximum: 180
+          description: 可选；这次导入能接受的最长秒数，不传按 180。解析接口给了时长时下载前就拦下，没给时下载后校验，超长的视频不存成资源。同一幂等键换了这个值算不同的请求
+    Task:
+      type: object
+      required: [id, type, status, stage, progress, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        type: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, cancelled, text_replay] }
+        stage: { type: string }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        provider: { type: string }
+        model: { type: string }
+        billing:
+          type: object
+          description: 列表和单任务详情共用账务摘要；冻结不是扣费，仅 settled 返回 chargedMicrocredits
+          properties:
+            status: { type: string, enum: [reserved, running, settled, refunded, uncertain] }
+            amountMicrocredits: { type: integer, format: int64 }
+            reservedMicrocredits: { type: integer, format: int64 }
+            chargedMicrocredits: { type: integer, format: int64 }
+            refundedMicrocredits: { type: integer, format: int64 }
+        resultJson:
+          type: string
+          description: 成功时为 JSON 字符串；社交视频导入包含 platform、canonicalId、title、resourceId、width、height、durationMs、mimeType、size
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    EcommerceSetting:
+      type: object
+      required: [enabled, modelLibraryEnabled, autoBindEnabled, flows, models, templates, revision]
+      properties:
+        enabled: {type: boolean}
+        modelLibraryEnabled: {type: boolean}
+        autoBindEnabled: {type: boolean}
+        revision: {type: string, description: 读取时的版本，新配置为 initial}
+        capabilities:
+          type: object
+          additionalProperties: false
+          required: [planning, suite-forge, model-cast, pattern, listing, print-pack, pipeline, layers]
+          properties:
+            planning: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            suite-forge: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            model-cast: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            pattern: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            listing: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            print-pack: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            pipeline: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            layers: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+        templates:
+          type: array
+          maxItems: 200
+          description: 整份配置请求体最多 2 MiB；公共接口只返回已发布且用途启用的模板
+          items: {$ref: "#/components/schemas/EcommerceSuiteTemplate"}
+        flows:
+          type: object
+          required: [detail, main, wear, seed]
+          additionalProperties: false
+          properties:
+            detail: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            main: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            wear: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+            seed: {$ref: "#/components/schemas/EcommerceFlowSetting"}
+        models:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [id, name, enabled, tags, resourceIds]
+            properties:
+              id: {type: string, maxLength: 100}
+              name: {type: string, maxLength: 100}
+              enabled: {type: boolean, description: 启用须至少一张图片}
+              tags: {type: array, maxItems: 20, items: {type: string, maxLength: 50}}
+              resourceIds: {type: array, maxItems: 12, uniqueItems: true, items: {type: string, maxLength: 100}}
+    EcommerceSuiteTemplate:
+      type: object
+      required: [id, name, flow, category, enabled, style, source, shots]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 150}
+        name: {type: string, minLength: 1, maxLength: 100}
+        flow: {type: string, enum: [detail, main, wear, seed]}
+        category: {type: string, maxLength: 200}
+        enabled: {type: boolean}
+        style: {type: string, maxLength: 6000}
+        source: {type: string, maxLength: 500}
+        shots:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: object
+            required: [title, duty]
+            properties:
+              title: {type: string, minLength: 1, maxLength: 100}
+              duty: {type: string, minLength: 1, maxLength: 12000}
+    EcommerceFlowSetting:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: {type: boolean}
+        directorPrompt: {type: string, maxLength: 20000, description: 仅管理员接口读写；公共接口省略。空串使用服务端内置指令}
+    EcommerceAgentRequest:
+      type: object
+      required: [fileInfoList, platform]
+      description: 商品分析、预检、策划和出图共用请求；生成时还须传 generateType 与 imageCount。模型由后台配置选择。
+      properties:
+        fileInfoList:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            type: object
+            required: [url]
+            properties:
+              url: {type: string, minLength: 1, maxLength: 2048, description: 当前用户已上传素材的文件地址或 HTTPS 商品图地址}
+        query: {type: string, maxLength: 4000}
+        platform: {type: string, description: 受支持的平台名称或知识库平台标识}
+        language: {type: string}
+        panelType: {type: string}
+        generateType: {type: integer, enum: [100, 101, 102, 103, 200, 400]}
+        imageCount: {type: integer, minimum: 1, maximum: 15, description: 生成类型 200 要求至少 5 页}
+        aspectRatio: {type: string}
+        selectedRecommendationId: {type: string}
+        modelKey: {type: string}
+        channel: {type: string, enum: ["", promotion, premium]}
+        needText: {type: boolean, nullable: true}
+        userSellingPoints: {type: string, maxLength: 2000}
+        brand:
+          type: object
+          properties:
+            brandName: {type: string}
+            styleDesc: {type: string}
+            themeColors: {type: string}
+        projectId: {type: string}
+        idempotencyKey: {type: string, maxLength: 150}
   responses:
     ModelQuote:
       description: 当前参数对应的费用报价，位于信封 data.quote

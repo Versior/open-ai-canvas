@@ -318,8 +318,15 @@ func manifestRequestValues(request GenerationRequest) map[string]any {
 		providerOptionsValue = map[string]any{}
 	}
 
+	// Additive text projection; non-text tasks avoid decoding media twice.
+	textMessages, textInput := []any{}, map[string]any{}
+	if request.Capability == CapabilityText {
+		textMessages, textInput = manifestTextValues(messages, request)
+	}
 	return map[string]any{
 		"imageParameters": request.ImageParameters,
+		"textMessages":    textMessages,
+		"textInput":       textInput,
 		"capability":      request.Capability,
 		"model":           request.Model,
 		"prompt":          request.Prompt,

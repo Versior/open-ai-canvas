@@ -45,9 +45,10 @@ type DramaArchive struct {
 }
 
 type dramaArchiveEntry struct {
-	path       string
-	resourceID string
-	data       []byte
+	path         string
+	resourceID   string
+	expectedSize int64
+	data         []byte
 }
 
 func newDramaArchive(fileName string) *DramaArchive {
@@ -89,13 +90,20 @@ func (s *Service) WriteDramaArchive(ctx context.Context, userID string, archive 
 			if err != nil {
 				return err
 			}
-			_, copyErr := io.Copy(target, body)
+			var reader io.Reader = body
+			if entry.expectedSize > 0 {
+				reader = io.LimitReader(body, entry.expectedSize+1)
+			}
+			written, copyErr := io.Copy(target, reader)
 			closeErr := body.Close()
 			if copyErr != nil {
 				return copyErr
 			}
 			if closeErr != nil {
 				return closeErr
+			}
+			if entry.expectedSize > 0 && written != entry.expectedSize {
+				return errors.New("导出资源大小发生变化，下载已中断，请重新检查素材")
 			}
 		}
 		if err := writer.Flush(); err != nil {
@@ -176,87 +184,45 @@ func dramaEffectiveSegmentPrompt(segment model.DramaSegment) (string, bool) {
 
 // DramaJianyingDraftRequest 中 DraftRoot 是用户本机的剪映草稿目录，素材绝对路径据此写入草稿。
 type DramaJianyingDraftRequest struct {
-	DraftRoot string
-	Captions  bool
+	DraftRoot       string `json:"draftRoot"`
+	Captions        bool   `json:"captions"`
+	Revision        string `json:"revision,omitempty"`
+	AllowIncomplete bool   `json:"allowIncomplete,omitempty"`
+	AllowStale      bool   `json:"allowStale,omitempty"`
 }
 
-// PrepareDramaJianyingDraft 把一集已生成的剧情段视频装配为剪映草稿：主轨按成片顺序首尾相接，
-// 可选附带按镜头时长估算的台词字幕轨。未生成视频的段跳过并写进导入说明。
+// PrepareDramaJianyingDraft 重新核对预检清单后才装配 ZIP 清单，不预读整份视频。
 func (s *Service) PrepareDramaJianyingDraft(userID, projectID, episodeID string, req DramaJianyingDraftRequest) (*DramaArchive, error) {
-	root, err := jianying.NormalizeRoot(req.DraftRoot)
-	if err != nil {
-		return nil, BadAuthRequest(err.Error())
-	}
-	project, productionRow, err := s.dramaForUser(userID, projectID)
+	plan, err := s.planDramaJianyingDraft(userID, projectID, episodeID, req)
 	if err != nil {
 		return nil, err
 	}
-	episode, err := s.repo.DramaEpisode(project.ID, strings.TrimSpace(episodeID))
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, NotFound("剧集不存在")
+	preview := plan.Preview
+	if req.Revision == "" || req.Revision != preview.Revision {
+		return nil, NewAppError(409, "导出清单已变化或尚未检查，请重新检查后再下载")
 	}
-	if err != nil {
-		return nil, err
+	if preview.AvailableSegments == 0 {
+		return nil, BadAuthRequest("本集没有可导出的剧情段视频，请先生成或修复素材")
 	}
-	segments, err := s.repo.DramaSegments(episode.ID)
-	if err != nil {
-		return nil, err
+	if preview.MissingSegments > 0 && !req.AllowIncomplete {
+		return nil, BadAuthRequest("存在缺失剧情段，请确认只导出可用片段")
 	}
-	shots, err := s.repo.DramaShots(episode.ID)
-	if err != nil {
-		return nil, err
+	if preview.StaleSegments > 0 && !req.AllowStale {
+		return nil, BadAuthRequest("存在过期视频，请确认导出当前旧版本")
 	}
-	settings := parseDramaSettings(productionRow.SettingsJSON)
-	width, height := dramaRenderSize(settings.AspectRatio)
 	now := time.Now()
-	name := jianying.SafeName(fmt.Sprintf("%s-第%02d集-%s", project.Name, episode.Number, now.In(dramaExportLocation).Format("0102-1504")), "STAGE短剧草稿", 80)
-	draft := jianying.Draft{Name: name, Root: root, Width: width, Height: height, FPS: 30, Now: now}
+	// 后缀始终保留，长作品名和连续导出不会覆盖同一个草稿文件夹。
+	name := fmt.Sprintf("%s-第%02d集-%s-%s", jianying.SafeName(plan.Project.Name, "STAGE短剧", 40), plan.Episode.Number, now.In(dramaExportLocation).Format("20060102-150405"), newID()[:8])
+	draft := jianying.Draft{Name: name, Root: preview.DraftRoot, Width: plan.Width, Height: plan.Height, FPS: 30, Now: now, Captions: plan.Captions}
 	archive := newDramaArchive(name + ".zip")
-	shotsBySegment := dramaShotsBySegment(shots)
-	var skipped []string
-	var coverResourceID string
-	var cursor int64
-	for _, segment := range segments {
-		segmentShots := shotsBySegment[segment.SegmentIndex]
-		if len(segmentShots) == 0 {
-			continue
-		}
-		label := fmt.Sprintf("第 %d 段", segment.SegmentIndex+1)
-		if segment.VideoResourceID == "" || (segment.VideoStatus != model.DramaMediaReady && segment.VideoStatus != model.DramaMediaStale) {
-			skipped = append(skipped, label+"：视频尚未生成")
-			continue
-		}
-		resource := s.dramaExportResource(userID, segment.VideoResourceID, "video")
-		if resource == nil {
-			skipped = append(skipped, label+"：视频文件不可用")
-			continue
-		}
-		durationMs := resource.DurationMs
-		if durationMs <= 0 {
-			durationMs = int64(segment.VideoSeconds) * 1000
-		}
-		if durationMs <= 0 {
-			skipped = append(skipped, label+"：视频时长未知")
-			continue
-		}
-		fileName := fmt.Sprintf("%02d-%s%s", segment.SegmentIndex+1, jianying.SafeName(dramaSegmentTitle(segmentShots, segment.SegmentIndex), "剧情段", 40), dramaResourceExtension(resource, ".mp4"))
-		if err := archive.addResource(name+"/"+jianying.MaterialsDir+"/"+fileName, resource); err != nil {
+	for _, media := range plan.Media {
+		if err := archive.addResource(name+"/"+jianying.MaterialsDir+"/"+media.Clip.FileName, media.Resource); err != nil {
 			return nil, err
 		}
-		durationUs := durationMs * 1000
-		draft.Clips = append(draft.Clips, jianying.Clip{FileName: fileName, Name: fileName, DurationUs: durationUs, Width: resource.Width, Height: resource.Height})
-		if req.Captions {
-			draft.Captions = append(draft.Captions, dramaSegmentCaptions(segmentShots, cursor, durationUs)...)
-		}
-		if coverResourceID == "" {
-			coverResourceID = segment.TailFrameResourceID
-		}
-		cursor += durationUs
+		archive.entries[len(archive.entries)-1].expectedSize = media.Resource.Size
+		draft.Clips = append(draft.Clips, media.Clip)
 	}
-	if len(draft.Clips) == 0 {
-		return nil, BadAuthRequest("本集还没有可导出的剧情段视频，请先生成段视频")
-	}
-	if cover := s.dramaDraftCover(userID, coverResourceID); cover != nil {
+	if cover := s.dramaDraftCover(userID, plan.CoverResourceID); cover != nil {
 		draft.HasCover = true
 		archive.addData(name+"/"+jianying.CoverFile, cover)
 	}
@@ -264,14 +230,23 @@ func (s *Service) PrepareDramaJianyingDraft(userID, projectID, episodeID string,
 	if err != nil {
 		return nil, err
 	}
-	// Windows 版读取 draft_content.json，macOS 版读取 draft_info.json；两份内容相同。
 	archive.addData(name+"/draft_content.json", content)
 	archive.addData(name+"/draft_info.json", content)
 	archive.addData(name+"/draft_meta_info.json", meta)
 	if len(draft.Captions) > 0 {
 		archive.addData(name+"/台词字幕.srt", []byte(jianying.SRT(draft.Captions)))
 	}
-	archive.addData(name+"/导入说明.txt", []byte(dramaJianyingReadme(draft, skipped)))
+	var notes []string
+	for _, segment := range preview.Segments {
+		if !segment.Included {
+			notes = append(notes, fmt.Sprintf("第 %d 段：%s", segment.Index+1, segment.Reason))
+		}
+	}
+	readme := dramaJianyingReadme(draft, notes)
+	if len(preview.Warnings) > 0 {
+		readme += "\n本次导出提示：\n- " + strings.Join(preview.Warnings, "\n- ") + "\n"
+	}
+	archive.addData(name+"/导入说明.txt", []byte(readme))
 	return archive, nil
 }
 

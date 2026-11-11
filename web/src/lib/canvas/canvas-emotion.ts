@@ -49,9 +49,7 @@ export type CanvasEmotionEditPlan = {
 };
 
 export function resolveEmotionEditPlan(maskSupported: boolean): CanvasEmotionEditPlan {
-    return maskSupported
-        ? { mode: "provider-mask", includeMask: true }
-        : { mode: "local-composite", includeMask: false, notice: "当前渠道不支持蒙版，使用脸部裁切与本地羽化融合" };
+    return maskSupported ? { mode: "provider-mask", includeMask: true } : { mode: "local-composite", includeMask: false, notice: "当前渠道不支持蒙版，使用脸部裁切与本地羽化融合" };
 }
 
 export function emotionProviderMask<T>(plan: CanvasEmotionEditPlan, mask: T) {
@@ -437,7 +435,8 @@ function drawFaceCrop(image: ImageBitmap, box: CanvasFaceBox, imageWidth: number
 }
 
 async function loadImageBitmap(dataUrl: string) {
-    const response = await fetch(dataUrl);
+    // 同识别人脸：避免复用画布图片缓存里不带 CORS 头的响应。
+    const response = await fetch(dataUrl, { cache: "no-store" });
     if (!response.ok) throw new Error("无法读取源图片，请重新上传后再试");
     return createImageBitmap(await response.blob());
 }

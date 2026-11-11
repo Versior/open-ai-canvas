@@ -5,6 +5,7 @@ import { readImageMeta } from "@/lib/image-utils";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getResourceAccess, importResourceFromUrl, isResourceUrl, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile } from "@/services/api/resources";
 import { getCachedResourceBlob, primeResourceBlobCache } from "@/services/resource-blob-cache";
+import { assertLocalMediaSession, localMediaSession, peekLocalMediaObjectUrl, releaseLocalMediaObjectUrls, storeLocalMediaObjectUrl } from "@/services/local-media-object-urls";
 
 export type UploadedImage = {
     url: string;
@@ -24,7 +25,6 @@ export type UploadedImage = {
 };
 
 const store = localforage.createInstance({ name: "yingce", storeName: "image_files" });
-const objectUrls = new Map<string, string>();
 
 function assertImageUploadBoundary(expectedScope: string, signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException("Request canceled", "AbortError");
@@ -37,6 +37,7 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
     assertBoundary();
     // 同一个逻辑上传在直传失败后会退回 IndexedDB，并由云端数据同步再次提交。
     // 提前生成本地 key，确保两条路径向后端发送相同的幂等标识。
+    const session = localMediaSession();
     const storageKey = `image:${expectedScope}:${nanoid()}`;
     if (typeof input === "string" && shouldImportRemoteImage(input)) {
         try {
@@ -59,7 +60,7 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
     const blob = typeof input === "string" ? await (await fetch(input, { signal: options?.signal })).blob() : input;
     assertBoundary();
     const previewUrl = URL.createObjectURL(blob);
-    let retainPreviewUrl = false;
+    let retained = false;
     try {
         // 调用方已解码过真实尺寸时直接复用，避免同一张大图在上传前再完整解码一次。
         const meta = knownSize?.width && knownSize.height ? { ...knownSize, mimeType: blob.type || "image/png" } : await readImageMeta(previewUrl);
@@ -69,6 +70,7 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
             const resource = await uploadResourceFile(blob, "image", { width: meta.width, height: meta.height, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress, { expectedScope, signal: options?.signal });
             await primeResourceBlobCache(resourceStorageKey(resource.id), blob).catch(() => "");
             assertBoundary();
+            assertLocalMediaSession(session);
             return {
                 url: resource.publicUrl || resourceFileUrl(resource.id),
                 storageKey: resourceStorageKey(resource.id),
@@ -92,11 +94,11 @@ export async function uploadImage(input: string | Blob, onProgress?: (uploadedBy
             await store.removeItem(storageKey).catch(() => undefined);
             throw error;
         }
-        retainPreviewUrl = true;
-        objectUrls.set(storageKey, previewUrl);
-        return { url: previewUrl, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingRemoteUpload: true, remoteUploadError };
+        const url = storeLocalMediaObjectUrl("image", storageKey, blob, session, { replace: true, url: previewUrl });
+        retained = true;
+        return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType, pendingRemoteUpload: true, remoteUploadError };
     } finally {
-        if (!retainPreviewUrl) URL.revokeObjectURL(previewUrl);
+        if (!retained) URL.revokeObjectURL(previewUrl);
     }
 }
 
@@ -111,13 +113,13 @@ export async function resolveImageUrl(storageKey?: string, fallback = "", option
         // 远程资源展示直接使用 OSS/CDN 授权地址，不把媒体内容读进浏览器 Blob。
         return resolveResourceAccessURL((await getResourceAccess(storageKey, "display")).url);
     }
-    const cached = objectUrls.get(storageKey);
+    const session = localMediaSession();
+    const cached = peekLocalMediaObjectUrl("image", storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
+    assertLocalMediaSession(session);
     if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("image", storageKey, blob, session);
 }
 
 export async function getImageBlob(storageKey: string) {
@@ -127,10 +129,9 @@ export async function getImageBlob(storageKey: string) {
 
 export async function setImageBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
+    const session = localMediaSession();
     await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("image", storageKey, blob, session, { replace: true });
 }
 
 export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string; name?: string; type?: string; mimeType?: string }) {
@@ -150,10 +151,8 @@ export async function deleteStoredImages(keys: Iterable<string>) {
     await Promise.all(
         Array.from(new Set(keys)).map(async (key) => {
             if (resourceIdFromStorageKey(key)) return;
-            const url = objectUrls.get(key);
-            if (url) URL.revokeObjectURL(url);
-            objectUrls.delete(key);
             await store.removeItem(key);
+            releaseLocalMediaObjectUrls("image", key);
         }),
     );
 }

@@ -1,4 +1,4 @@
-import type { PluginManifest, PluginManifestV2 } from "@/lib/plugins/plugin-types";
+import type { PluginManifest as PluginManifestV1, PluginManifestV2 } from "@/lib/plugins/plugin-types";
 
 const permissionLabels: Record<string, string> = {
     "canvas.read": "读取画布",
@@ -16,7 +16,7 @@ export function pluginPermissionLabel(permission: string) {
     return permissionLabels[permission] || permission;
 }
 
-export function getPluginDocumentation(manifest: PluginManifest | PluginManifestV2) {
+export function getPluginDocumentation(manifest: PluginManifest) {
     if (manifest.documentation?.trim()) return manifest.documentation.trim();
 
     const capabilities = manifest.permissions.map(pluginPermissionLabel);
@@ -34,3 +34,5 @@ export function getPluginDocumentation(manifest: PluginManifest | PluginManifest
         manifest.contributes.providers?.length ? "> 此插件没有提供接入文档。请联系插件作者补充 `documentation`，不要仅凭清单字段推测上游接口。" : "> 该插件当前没有单独的使用文档。",
     ].join("\n");
 }
+
+type PluginManifest = PluginManifestV1 | PluginManifestV2;

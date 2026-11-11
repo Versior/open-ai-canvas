@@ -7,15 +7,17 @@ import { useReducedMotion } from "motion/react";
 import { AgentWindowPerch } from "@/components/canvas/agent-window-perch";
 import "@/components/canvas/agent-skin-scene.css";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
-import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { canvasDraftNavigationState, useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { openAuthModal } from "@/stores/use-auth-modal-store";
-import { createCanvasProjectWithRemoteSync, hasRemoteUserDataSyncSession, saveRemoteUserDataNow } from "@/services/user-data-sync";
+import { hasRemoteUserDataSyncSession } from "@/services/user-data-sync";
+import { useAuthEntry } from "@/hooks/use-auth-entry";
 
-/** Agent 依赖真实画布 ID，先完成服务端保存，再进入同一个画布 Agent。 */
+/** 进入时只分配草稿 ID；明确提交创作时再建立同一画布的服务端记录。 */
 export function CreationAgentEntry() {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const { openAuth } = useAuthEntry();
     const { message } = App.useApp();
     const hydrated = useCanvasStore((state) => state.hydrated);
     const { pet, pending } = useActiveAgentPet();
@@ -26,9 +28,8 @@ export function CreationAgentEntry() {
     const created = useRef<{ id: string; userId: string } | null>(null);
     const start = async () => {
         if (lock.current) return;
-        // 新建画布要写云端：游客先登录，不把「同步会话未就绪」当成报错丢给游客。
         if (!useUserStore.getState().user) {
-            openAuthModal();
+            openAuth({ preferDialog: true });
             return;
         }
         lock.current = true;
@@ -40,15 +41,11 @@ export function CreationAgentEntry() {
             if (!hydrated) throw new Error(t("create.agentEntry.canvasRestoring"));
             if (created.current?.userId !== userId) created.current = null;
             if (!created.current) {
-                const result = await createCanvasProjectWithRemoteSync(t("create.agentEntry.canvasTitle"));
-                if (!result.id) throw new Error(t("create.agentEntry.missingId"));
-                created.current = { id: result.id, userId };
-                if (result.syncError) throw new Error(t("create.agentEntry.syncPending"));
-            } else {
-                await saveRemoteUserDataNow(created.current.id);
+                const id = useCanvasStore.getState().createDraftProject(t("create.agentEntry.canvasTitle"));
+                created.current = { id, userId };
             }
             if (useUserStore.getState().user?.id !== userId) return;
-            navigate(`/canvas/${encodeURIComponent(created.current.id)}?agent=1`);
+            navigate(`/canvas/${encodeURIComponent(created.current.id)}?agent=1`, { state: canvasDraftNavigationState(created.current.id) });
         } catch (cause) {
             if (useUserStore.getState().user?.id === userId) {
                 const detail = cause instanceof Error ? cause.message : t("create.agentEntry.startFailed");
@@ -73,7 +70,7 @@ export function CreationAgentEntry() {
                     {created.current ? t("create.agentEntry.retryEnter") : t("create.agentEntry.newCanvas")}
                     <ArrowUpRight />
                 </Button>
-                <Button icon={<FolderOpen />} disabled={busy} onClick={() => (useUserStore.getState().user ? navigate("/canvas?agent=1") : openAuthModal())}>
+                <Button icon={<FolderOpen />} disabled={busy} onClick={() => (useUserStore.getState().user ? navigate("/canvas?agent=1") : openAuth({ preferDialog: true }))}>
                     {t("create.agentEntry.continueExisting")}
                 </Button>
             </div>

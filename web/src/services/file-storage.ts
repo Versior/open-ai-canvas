@@ -6,6 +6,7 @@ import { captureVideoPoster, detectVideoAudioTrackFromBlob } from "@/lib/video-p
 import { getResourceAccess, resolveResourceAccessURL, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, ResourceUploadError, uploadResourceFile, type ResourceAccessVariant } from "@/services/api/resources";
 import { uploadImage, type UploadedImage } from "@/services/image-storage";
 import { getCachedResourceBlob, primeResourceBlobCache } from "@/services/resource-blob-cache";
+import { assertLocalMediaSession, localMediaSession, peekLocalMediaObjectUrl, releaseLocalMediaObjectUrls, storeLocalMediaObjectUrl } from "@/services/local-media-object-urls";
 
 export type UploadedFile = {
     url: string;
@@ -27,7 +28,6 @@ export type UploadedFile = {
 };
 
 const store = localforage.createInstance({ name: "yingce", storeName: "media_files" });
-const objectUrls = new Map<string, string>();
 
 type UploadMediaFileOptions = { expectedScope?: string; signal?: AbortSignal };
 
@@ -43,6 +43,7 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
     };
     assertBoundary();
     // 直传和失败后的本地同步必须复用同一上传身份，避免响应丢失后创建第二个对象。
+    const session = localMediaSession();
     const storageKey = `${prefix}:${expectedScope}:${nanoid()}`;
     const blob = input;
     const previewUrl = URL.createObjectURL(blob);
@@ -108,6 +109,7 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             const kind = blob.type.startsWith("video/") ? "video" : blob.type.startsWith("audio/") ? "audio" : "file";
             const resource = await uploadResourceFile(blob, kind, { ...meta, fileName: input instanceof File ? input.name : undefined, idempotencyKey: storageKey }, onProgress, { expectedScope, signal: options?.signal });
             assertBoundary();
+            assertLocalMediaSession(session);
             try {
                 await primeResourceBlobCache(resourceStorageKey(resource.id), blob);
             } catch (error) {
@@ -136,6 +138,7 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
         }
 
         // 瞬时失败退回本机：文件仍可用，且云端数据同步会用同一幂等键重传。
+        assertLocalMediaSession(session);
         await store.setItem(storageKey, blob);
         try {
             assertBoundary();
@@ -143,8 +146,8 @@ export async function uploadMediaFile(input: Blob, prefix = "file", onProgress?:
             await store.removeItem(storageKey).catch(() => undefined);
             throw error;
         }
+        storeLocalMediaObjectUrl("media", storageKey, blob, session, { replace: true, url: previewUrl });
         retainPreviewUrl = true;
-        objectUrls.set(storageKey, previewUrl);
         return { url: previewUrl, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta, preview: poster, pendingRemoteUpload: true, remoteUploadError };
     } finally {
         // 只有本地降级结果需要把 objectURL 留给页面；成功上传和所有异常路径都及时释放。
@@ -159,13 +162,13 @@ export async function resolveMediaUrl(storageKey?: string, fallback = "", varian
         // 展示直接命中 OSS/CDN；平台资源文件接口只保留给私有源站代理或本地存储兜底。
         return resolveResourceAccessURL((await getResourceAccess(storageKey, "display", variant)).url);
     }
-    const cached = objectUrls.get(storageKey);
+    const session = localMediaSession();
+    const cached = peekLocalMediaObjectUrl("media", storageKey);
     if (cached) return cached;
     const blob = await store.getItem<Blob>(storageKey);
+    assertLocalMediaSession(session);
     if (!blob) return fallback;
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("media", storageKey, blob, session);
 }
 
 /** Resolve a video through the browser-compatible playback variant when one exists. */
@@ -180,20 +183,17 @@ export async function getMediaBlob(storageKey: string) {
 
 export async function setMediaBlob(storageKey: string, blob: Blob) {
     if (resourceIdFromStorageKey(storageKey)) return primeResourceBlobCache(storageKey, blob);
+    const session = localMediaSession();
     await store.setItem(storageKey, blob);
-    const url = URL.createObjectURL(blob);
-    objectUrls.set(storageKey, url);
-    return url;
+    return storeLocalMediaObjectUrl("media", storageKey, blob, session, { replace: true });
 }
 
 export async function deleteStoredMedia(keys: Iterable<string>) {
     await Promise.all(
         Array.from(new Set(keys)).map(async (key) => {
             if (resourceIdFromStorageKey(key)) return;
-            const url = objectUrls.get(key);
-            if (url) URL.revokeObjectURL(url);
-            objectUrls.delete(key);
             await store.removeItem(key);
+            releaseLocalMediaObjectUrls("media", key);
         }),
     );
 }
