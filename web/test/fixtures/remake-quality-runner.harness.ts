@@ -1,6 +1,6 @@
 import { expect, mock, test } from "bun:test";
 import { createRemakeJob } from "@/lib/remake/job";
-import { remakeContinuityInput } from "@/lib/remake/continuity";
+import { remakeContinuityImage, remakeContinuityInput } from "@/lib/remake/continuity";
 import { defaultConfig } from "@/stores/use-config-store";
 import type { BackendGenerationTaskOptions } from "@/services/api/generation-task";
 import type { StoredWork } from "@/services/api/product-video";
@@ -32,7 +32,7 @@ mock.module("@/services/api/generation-task", () => ({
         submitted.push(options);
         return { id: `task-${submitted.length}`, status: "succeeded" };
     },
-    parseBackendGenerationResult: (task: { id: string }) => ({ video: { storageKey: `resource:take-${task.id}`, durationMs: 4000, width: 720, height: 1280 } }),
+    parseBackendGenerationResult: (task: { id: string }) => ({ video: { storageKey: `resource:take-${task.id}`, durationMs: 4000, width: 720, height: 1280 }, images: [{ storageKey: `resource:image-${task.id}`, width: 720, height: 1280 }] }),
 }));
 mock.module("@/services/api/task-center", () => ({
     queryGenerationTask: async (id: string) => ({ id, status: "succeeded" }),
@@ -99,4 +99,23 @@ test("真实生成流程冻结同一组目标图与音色，候选核对前不�
     expect(rendered).toBe(1);
     expect(submitted).toHaveLength(2);
     expect(readRemake(job.id)?.render?.resourceId).toBe("final");
+});
+
+test("换素材或图片模型后仍能取回旧定妆任务，旧图不冒充当前定妆且不再提交收费任务", async () => {
+    const { generateContinuity } = await import("@/pages/video-replication/remake/remake-continuity");
+    const previous = structuredClone(readRemake("runner-quality")!);
+    previous.id = "continuity-recovery";
+    previous.continuity = { input: remakeContinuityInput(previous), model: "old-image-model", attempt: 2, confirmed: false, taskId: "existing-continuity" };
+    previous.product.images[0].resourceId = "changed-product";
+    await createProductVideo(previous);
+    const before = submitted.length;
+    await generateContinuity(previous.id, defaultConfig, "changed-image-model");
+    const recovered = readRemake(previous.id)!;
+    expect(submitted).toHaveLength(before);
+    expect(recovered.continuity?.image?.resourceId).toBe("image-existing-continuity");
+    expect(recovered.continuity?.model).toBe("old-image-model");
+    expect(recovered.continuity?.attempt).toBe(2);
+    expect(recovered.continuity?.taskId).toBeUndefined();
+    expect(recovered.product.images[0].resourceId).toBe("changed-product");
+    expect(remakeContinuityImage(recovered)).toBeUndefined();
 });

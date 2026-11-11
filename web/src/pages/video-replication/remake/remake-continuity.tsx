@@ -29,7 +29,7 @@ export function remakeContinuityGeneration(job: RemakeJob, config: AiConfig, mod
 }
 
 /** 定妆任务先持久化幂等键；中断后查询原任务，不重复收费。 */
-async function generateContinuity(id: string, config: AiConfig, model: string) {
+export async function generateContinuity(id: string, config: AiConfig, model: string) {
     const scope = getActiveUserScope();
     const assertScope = () => {
         if (getActiveUserScope() !== scope) throw new Error("账号已切换");
@@ -38,11 +38,9 @@ async function generateContinuity(id: string, config: AiConfig, model: string) {
     if (!job) throw new Error("作品不存在");
     const input = remakeContinuityInput(job);
     const previous = job.continuity;
-    if (previous?.taskId && (previous.input !== input || previous.model !== model)) throw new Error("上一张定妆图还没有确认结束，请先恢复原任务");
-    const request = remakeContinuityGeneration(job, config, model);
-    const state: NonNullable<RemakeJob["continuity"]> = previous && !previous.image && previous.input === input && previous.model === model ? previous : { input, model, attempt: (previous?.attempt || 0) + 1, confirmed: false };
+    const state: NonNullable<RemakeJob["continuity"]> = previous && (previous.taskId || (!previous.image && previous.input === input && previous.model === model)) ? previous : { input, model, attempt: (previous?.attempt || 0) + 1, confirmed: false };
     await updateRemake(id, (value) => {
-        if (remakeContinuityInput(value) !== input) throw new Error("素材已在另一窗口修改，请重新核对");
+        if (previous?.taskId ? value.continuity?.taskId !== previous.taskId : remakeContinuityInput(value) !== input) throw new Error("素材或任务已在另一窗口修改，请重新核对");
         return { ...value, continuity: state };
     });
     assertScope();
@@ -53,6 +51,7 @@ async function generateContinuity(id: string, config: AiConfig, model: string) {
         throw new Error(task.error || "定妆任务已停止，可以重新生成");
     }
     if (!task) {
+        const request = remakeContinuityGeneration(job, config, model);
         task = await submitBackendGenerationTask({
             mode: "image",
             expectedUserScope: scope,
