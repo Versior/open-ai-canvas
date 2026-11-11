@@ -9,10 +9,14 @@ for (const [key, value] of Object.entries({
     navigator: dom.navigator,
     localStorage: dom.localStorage,
     HTMLElement: dom.HTMLElement,
+    SVGElement: dom.SVGElement,
+    ShadowRoot: dom.ShadowRoot,
     Element: dom.Element,
     Node: dom.Node,
     Event: dom.Event,
     MouseEvent: dom.MouseEvent,
+    ResizeObserver: dom.ResizeObserver,
+    getComputedStyle: dom.getComputedStyle.bind(dom),
     IS_REACT_ACT_ENVIRONMENT: true,
 })) {
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
@@ -54,6 +58,7 @@ const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query
 const { MemoryRouter, useLocation } = await import("react-router");
 await import("@/i18n");
 const { WorkspaceSidebarHistory } = await import("@/components/layout/workspace-sidebar-history");
+const { useCanvasUiStore } = await import("@/stores/canvas/use-canvas-ui-store");
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 let client: InstanceType<typeof QueryClient>;
@@ -124,6 +129,7 @@ beforeEach(() => {
     canSelect = true;
     activeId = "conversation-1";
     navigated = 0;
+    useCanvasUiStore.setState({ deleteProjectIds: [], selectedProjectIds: [] });
     client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     host = document.createElement("div");
     document.body.append(host);
@@ -146,6 +152,31 @@ test("两组首屏最多五条，创作对话用视频、图片、文本图标�
     await act(async () => section("对话").querySelectorAll<HTMLAnchorElement>("li a")[1].click());
     expect(host.querySelector("output")?.textContent).toBe("/?conversation=conversation-2");
     expect(navigated).toBe(1);
+});
+
+test("画布右键菜单只选择当前条目删除，不导航、不沿用其他批量选择", async () => {
+    await render();
+    await eventually(() => expect(rows("画布")).toHaveLength(5));
+    useCanvasUiStore.setState({ selectedProjectIds: ["canvas-1", "canvas-4"] });
+    const link = section("画布").querySelectorAll<HTMLAnchorElement>("li a")[1];
+    await act(async () => link.dispatchEvent(new dom.MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })));
+    await eventually(() => expect(document.querySelector('[role="menuitem"]')?.textContent).toContain("删除"));
+    expect(host.querySelector("output")?.textContent).toBe("/");
+    expect(useCanvasUiStore.getState().deleteProjectIds).toEqual([]);
+    await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    expect(useCanvasUiStore.getState().deleteProjectIds).toEqual(["canvas-2"]);
+    expect(useCanvasUiStore.getState().selectedProjectIds).toEqual(["canvas-1", "canvas-4"]);
+    expect(host.querySelector("output")?.textContent).toBe("/");
+    expect(navigated).toBe(0);
+});
+
+test("画布左键仍直接打开条目，不显示删除弹窗", async () => {
+    await render();
+    await eventually(() => expect(rows("画布")).toHaveLength(5));
+    await act(async () => section("画布").querySelectorAll<HTMLAnchorElement>("li a")[2].click());
+    expect(host.querySelector("output")?.textContent).toBe("/canvas/canvas-3");
+    expect(navigated).toBe(1);
+    expect(useCanvasUiStore.getState().deleteProjectIds).toEqual([]);
 });
 
 test("每次追加五条，末页停止，收起后重新展开复用缓存", async () => {

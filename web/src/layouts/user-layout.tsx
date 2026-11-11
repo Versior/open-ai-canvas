@@ -9,12 +9,14 @@ import { isSpatialWorkbenchPath } from "@/lib/workspace-routes";
 import { getWorkspaceAntThemeConfig } from "@/lib/app-theme";
 import { useGlobalAgentStore } from "@/stores/use-global-agent-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import "@/styles/workspace-product.css";
 import "@/styles/workspace-menus.css";
 
 const workspaceTheme = getWorkspaceAntThemeConfig();
 // 平台唯一的 Agent 面板按需加载，不拖慢首屏；画布编辑器只发布画布上下文，不再自己渲染面板。
 const GlobalAgentPanel = lazy(() => import("@/components/canvas/canvas-cloud-agent-panel").then((module) => ({ default: module.CanvasCloudAgentPanel })));
+const CanvasDeleteProjectsDialog = lazy(() => import("@/components/canvas/canvas-delete-projects-dialog").then((module) => ({ default: module.CanvasDeleteProjectsDialog })));
 
 export default function UserLayout({ children }: { children: ReactNode }) {
     const { pathname } = useLocation();
@@ -23,6 +25,7 @@ export default function UserLayout({ children }: { children: ReactNode }) {
     const canvasEditor = /^\/canvas\/[^/]+(?:\/|$)/.test(pathname);
     const productWorkspace = !adminWorkspace && !canvasEditor;
     const userId = useUserStore((state) => state.user?.id);
+    const deleteDialogOpen = useCanvasUiStore((state) => state.deleteProjectIds.length > 0);
     // Agent 停靠在画布右侧时，工作区让出同样的宽度，画布、顶栏和角落控件都不被遮挡。
     const agentDock = useAgentPanelDock();
     const agentDocked = Boolean(userId) && canvasEditor && agentDock.active;
@@ -54,6 +57,13 @@ export default function UserLayout({ children }: { children: ReactNode }) {
             <GlobalAgentPanel key={userId} />
         </Suspense>
     ) : null;
+    const deleteDialog = deleteDialogOpen ? (
+        <ConfigProvider theme={workspaceTheme}>
+            <Suspense fallback={null}>
+                <CanvasDeleteProjectsDialog />
+            </Suspense>
+        </ConfigProvider>
+    ) : null;
 
     if (adminWorkspace)
         return (
@@ -64,20 +74,23 @@ export default function UserLayout({ children }: { children: ReactNode }) {
         );
 
     return (
-        <ConfigProvider
-            theme={productWorkspace ? workspaceTheme : undefined}
-            select={productWorkspace ? { classNames: { popup: { root: "workspace-quiet-popup" } } } : undefined}
-            dropdown={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
-            popover={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
-        >
-            <div
-                className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}
-                style={agentDocked ? { paddingRight: agentDock.width } : undefined}
-                data-agent-docked={agentDocked || undefined}
+        <>
+            <ConfigProvider
+                theme={productWorkspace ? workspaceTheme : undefined}
+                select={productWorkspace ? { classNames: { popup: { root: "workspace-quiet-popup" } } } : undefined}
+                dropdown={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
+                popover={productWorkspace ? { classNames: { root: "workspace-quiet-popup" } } : undefined}
             >
-                <AppWorkspaceShell>{children}</AppWorkspaceShell>
-            </div>
-            {globalAgent}
-        </ConfigProvider>
+                <div
+                    className={cn("app-user-workspace h-dvh overflow-hidden text-foreground", spatialWorkbench && "app-spatial-workspace", productWorkspace && "app-product-workspace")}
+                    style={agentDocked ? { paddingRight: agentDock.width } : undefined}
+                    data-agent-docked={agentDocked || undefined}
+                >
+                    <AppWorkspaceShell>{children}</AppWorkspaceShell>
+                </div>
+                {globalAgent}
+            </ConfigProvider>
+            {deleteDialog}
+        </>
     );
 }

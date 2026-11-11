@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, FileText, Image as ImageIcon, LoaderCircle, PanelsTopLeft, Plus, Video } from "lucide-react";
+import { Dropdown } from "antd";
+import { ChevronDown, ChevronUp, FileText, Image as ImageIcon, LoaderCircle, PanelsTopLeft, Plus, Trash2, Video } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -11,6 +12,7 @@ import { listRemoteCanvasProjectsPage, type CanvasLibrarySummary } from "@/servi
 import { resolveBackendApiUrl } from "@/stores/use-config-store";
 import { useCreationSidebarHistory } from "@/hooks/use-creation-sidebar-history";
 import { useUserStore } from "@/stores/use-user-store";
+import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { CanvasNodeType } from "@/types/canvas";
 
 const PAGE_SIZE = 5;
@@ -148,6 +150,7 @@ function CanvasThumbnail({ project }: { project: CanvasLibrarySummary }) {
 function CanvasHistory({ userId, onNavigate }: { userId: string; onNavigate: () => void }) {
     const { t } = useTranslation();
     const hydrated = useUserStore((state) => state.hydrated);
+    const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const loadingMore = useRef(false);
     const query = useInfiniteQuery({
@@ -196,10 +199,22 @@ function CanvasHistory({ userId, onNavigate }: { userId: string; onNavigate: () 
                 <ul className="workspace-history-list">
                     {projects.slice(0, visibleCount).map((project) => (
                         <li key={project.id}>
-                            <Link to={`/canvas/${project.id}`} className="workspace-history-item" title={project.title || t("create.recent.untitledCanvas")} onClick={onNavigate} onPointerEnter={preload} onFocus={preload}>
-                                <CanvasThumbnail project={project} />
-                                <span className="workspace-history-title">{project.title || t("create.recent.untitledCanvas")}</span>
-                            </Link>
+                            <Dropdown
+                                trigger={["contextMenu"]}
+                                menu={{
+                                    items: [{ key: "delete", label: t("common.delete"), icon: <Trash2 className="size-3.5" aria-hidden />, danger: true }],
+                                    onClick: ({ domEvent }) => {
+                                        domEvent.preventDefault();
+                                        domEvent.stopPropagation();
+                                        setDeleteIds([project.id]);
+                                    },
+                                }}
+                            >
+                                <Link to={`/canvas/${project.id}`} className="workspace-history-item" title={project.title || t("create.recent.untitledCanvas")} onClick={onNavigate} onPointerEnter={preload} onFocus={preload} aria-haspopup="menu">
+                                    <CanvasThumbnail project={project} />
+                                    <span className="workspace-history-title">{project.title || t("create.recent.untitledCanvas")}</span>
+                                </Link>
+                            </Dropdown>
                         </li>
                     ))}
                 </ul>

@@ -88,7 +88,7 @@ describe("workspace route loading", () => {
         expect(canvasCard).toContain("正在打开");
     });
 
-    test("keeps the drama studio views in-page and canvas-only state out of the global layout", () => {
+    test("keeps drama studio views in-page and lazily shares canvas deletion across workspace routes", () => {
         const detail = source("../src/pages/projects/detail.tsx");
         const layout = source("../src/layouts/user-layout.tsx");
         const canvas = source("../src/pages/canvas/index.tsx");
@@ -96,9 +96,12 @@ describe("workspace route loading", () => {
         // 角色、待处理、设置都是制作台内的整页视图，不再用抽屉遮挡分镜。
         for (const panel of ["CastPanel", "InboxPanel", "SettingsPanel"]) expect(detail).toContain(`<${panel}`);
         expect(detail).not.toContain("AppDrawer");
-        expect(layout).not.toContain("useCanvasUiStore");
-        expect(layout).not.toContain("CanvasDeleteProjectsDialog");
-        expect(canvas).toMatch(/deleteDialogOpen\s*\?\s*\(?\s*<Suspense/);
+        // 侧栏现在跨页面删除画布；共用确认仍按需加载，不提前载入画布编辑状态。
+        expect(layout).not.toContain('from "@/stores/canvas/use-canvas-store"');
+        expect(layout).toContain('lazy(() => import("@/components/canvas/canvas-delete-projects-dialog")');
+        expect(layout).toMatch(/deleteDialogOpen\s*\?\s*\(?\s*<ConfigProvider/);
+        expect(layout.match(/<CanvasDeleteProjectsDialog\s*\/>/g)).toHaveLength(1);
+        expect(canvas).not.toContain("CanvasDeleteProjectsDialog");
     });
 
     test("does not poll wallet balance from permanent workspace chrome", () => {
