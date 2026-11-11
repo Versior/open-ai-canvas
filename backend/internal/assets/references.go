@@ -113,6 +113,13 @@ func walkReferenceDocument(value any, parentKey, path, nodeID string, references
 			child := item[key]
 			childPath := joinReferencePath(path, key)
 			if text, ok := child.(string); ok {
+				if childPath == "replication.run.input" || childPath == "replication.plan.input" {
+					var snapshot any
+					if json.Unmarshal([]byte(text), &snapshot) == nil {
+						walkReferenceDocument(snapshot, key, childPath, currentNodeID, references)
+					}
+					continue
+				}
 				if resourceID := resourceIDForField(key, text); resourceID != "" {
 					*references = append(*references, DocumentResourceReference{
 						ResourceID: resourceID, Path: childPath, NodeID: currentNodeID, ReferenceType: key,

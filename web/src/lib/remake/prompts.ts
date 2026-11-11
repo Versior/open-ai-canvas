@@ -84,6 +84,7 @@ function shotSeconds(shot: Pick<RemakeShot, "startMs" | "endMs">) {
 
 /** 一个生成单元的视频提示词。shots 是这个单元覆盖的镜头（按顺序）。 */
 export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: readonly RemakeShot[], seconds: number) {
+    if (job.replication && unit.treatment !== "remake") throw new Error("结构与风格复刻不向视频模型提交原片动作参考");
     const refs = remakeReferenceImages(job);
     const video = unit.treatment === "replace" ? `@${seedanceReferenceLabel("video", 0)}` : "";
     const background = refs.background ? `场景：环境换成${refs.background}的场景，透视、光线方向和地面关系与前景一致。` : video ? `场景：保留${video}的环境布局，但不要出现原片的品牌、招牌和店铺名。` : "";
@@ -130,6 +131,12 @@ export function buildRemakeUnitPrompt(job: RemakeJob, unit: RemakeUnit, shots: r
             const selected = job.directorPlans?.find((plan) => plan.id === job.activeDirectorPlanId);
             if (selected) lines.push(`已选全片策划：${JSON.stringify(selected.strategy)}。本单元只执行上述镜头，不重新生成整套剧情；声音意图服从下面的口播模式。`);
         } else lines.push(`全片连续性：${job.campaign.continuity}。换元素保持原镜头动作与机位，不新增剧情。`);
+    }
+    if (job.replication?.plan) {
+        lines.push(
+            `${job.replication.mode === "structure" ? "结构复刻：仅保留原片的叙事用途、镜头顺序和切点，按目标主体执行上述新动作；不逐帧模仿原人物、商品或口型。" : "风格复刻：仅借用参考片的视觉与镜头语言，目标内容、动作和时间线均按已选新方案执行。"}`,
+        );
+        lines.push(`全片风格合同：${JSON.stringify(job.replication.plan.style)}。目标商品本色、包装和人物身份优先于色彩风格；声音意图服从下面的口播模式，不复制参考片音乐或声线。`);
     }
     lines.push("原片画面描述中的人物长相、服装、商品和包装仅用于理解动作；目标外观一律服从专用参考图与定妆图。不要出现原商品的品牌、Logo、店铺名、水印和贴纸；保留目标商品包装已有的Logo与文字，不添加字幕或额外文字。");
     lines.push(...speechLines(job, unit, shots));

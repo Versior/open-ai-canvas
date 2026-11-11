@@ -10,6 +10,7 @@ import type { TimelineProject } from "@/types/timeline";
 import { creativeProductionError, readCreativeProject, type CreativeProject } from "./creative";
 import { remakeDialogueBudget } from "./prompts";
 import { remakeContinuityImage, remakeNeedsContinuity } from "./continuity";
+import { readReferenceReplication, referenceReplicationError, type ReferenceReplication } from "./reference-replication";
 
 // 复刻工作台的作品（version 2）：一条拆解过的爆款视频 + 我的商品、模特、场景和口播配方，
 // 逐镜头决定怎么复刻（换元素、重新拍、保留原片、删掉），再按生成单元出片、拼成成片。
@@ -153,6 +154,7 @@ export function addRemakeModels(current: ProductVideoImage[], added: ProductVide
 }
 
 export type RemakeJob = {
+    replication?: ReferenceReplication;
     campaign?: ReplicaCampaign;
     directorPlans?: RemakeDirectorPlan[];
     activeDirectorPlanId?: string;
@@ -285,6 +287,8 @@ export function createRemakeJob(id: string, input: { teardownId: string; bundle:
 
 /** 生成前的检查：返回第一条要用户处理的问题。 */
 export function remakeJobError(job: RemakeJob, limits?: { maxImages: number; generateAudio: boolean; maxSegmentSeconds?: number; maxAudios?: number; maxAudioDurationSeconds?: number }) {
+    const referenceError = referenceReplicationError(job);
+    if (referenceError) return referenceError;
     if (job.creative) {
         const error = creativeProductionError(job);
         if (error) return error;
@@ -330,6 +334,7 @@ export function remakeSpokenText(job: Pick<RemakeJob, "audio">, shot: Pick<Remak
  * 成片、报价和切段任务都不带过去。
  */
 export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title: string; product?: RemakeProduct }, now = new Date()): RemakeJob {
+    if (job.replication?.run) throw new Error("请先恢复参考规划任务，再复制作品");
     if (job.continuity?.taskId) throw new Error("请先恢复定妆任务，再复制作品");
     if ((job.creative?.run && !job.creative.run.settled) || job.units.some((unit) => unit.input && unit.status !== "succeeded")) throw new Error("先恢复未确认的任务，再复制作品");
     const time = now.toISOString();
@@ -354,6 +359,7 @@ export function duplicateRemakeJob(job: RemakeJob, id: string, options: { title:
         ...(swap
             ? {
                   product: options.product!,
+                  ...(job.replication ? { replication: { ...job.replication, confirmed: false } } : {}),
                   continuity: undefined,
                   ...(job.creative ? { creative: { ...job.creative, confirmedInput: undefined, activePlanId: undefined, plans: [], analysis: undefined, run: undefined } } : {}),
                   shots: job.creative ? [] : job.shots.map((shot) => ({ ...shot, dialogue: "" })),
@@ -651,6 +657,11 @@ export function normalizeRemakeJob(value: unknown): RemakeJob | undefined {
         const creative = readCreativeProject(raw.creative, normalized, raw.shots);
         if (!creative) return undefined;
         normalized.creative = creative;
+    }
+    if (raw.replication !== undefined) {
+        const replication = readReferenceReplication(raw.replication, normalized);
+        if (!replication || normalized.creative || !normalized.source) return undefined;
+        normalized.replication = replication;
     }
     const directorPlans = readRemakeDirectorPlans(raw.directorPlans, normalized);
     if (directorPlans.length) {

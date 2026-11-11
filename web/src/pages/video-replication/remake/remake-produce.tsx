@@ -1,6 +1,6 @@
 import { App, Button, Input, Progress, Spin } from "antd";
-import { Film, RotateCcw, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Film, Maximize2, Minimize2, RotateCcw, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatTeardownTime } from "@/lib/canvas/video-teardown";
 import { REMAKE_TREATMENT_LABEL, remakeKeptDurationMs, type RemakeJob, type RemakeUnit } from "@/lib/remake/job";
 import { remakeLines, remakePieces, remakeSourceTime } from "@/lib/remake/timeline";
@@ -37,6 +37,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     const progress = useRemakeRuntime((state) => state.progress[job.id]);
     const active = useRemakeRuntime((state) => Boolean(state.active[job.id]));
     const finalId = job.render?.resourceId;
+    const styleReference = job.replication?.mode === "style";
     const [selection, setSelection] = useState<Selection>(() => (finalId ? { kind: "final" } : job.units[0] ? { kind: "unit", key: job.units[0].key } : { kind: "final" }));
     const unit = selection.kind === "unit" ? job.units.find((item) => item.key === selection.key) : undefined;
     const take = unit ? remakeUnitTake(unit) : undefined;
@@ -59,8 +60,12 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     const [hearOriginal, setHearOriginal] = useState(false);
     const [fix, setFix] = useState("");
     const [playbackError, setPlaybackError] = useState("");
+    const [expandedPreview, setExpandedPreview] = useState(false);
     const previousFinal = useRef(finalId);
-    const duration = Math.max(1, job.source?.durationMs || remakeKeptDurationMs(job));
+    const duration = Math.max(1, styleReference ? remakeKeptDurationMs(job) : job.source?.durationMs || remakeKeptDurationMs(job));
+    const sourceRatio = job.source?.width && job.source.height ? job.source.width / job.source.height : 3 / 4;
+    const resultSize = selection.kind === "final" ? job.render : take;
+    const resultRatio = resultSize?.width && resultSize.height ? resultSize.width / resultSize.height : sourceRatio;
 
     useEffect(() => {
         if (finalId && previousFinal.current !== finalId) setSelection({ kind: "final" });
@@ -71,10 +76,10 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     }, [finalId, job.units, selection.kind]);
     useEffect(() => setFix(unit?.fix || ""), [unit?.key, unit?.fix]);
     useEffect(() => {
-        leftRef.current?.pause();
+        if (!styleReference) leftRef.current?.pause();
         voiceRefs.current.forEach((audio) => audio.pause());
         setPlaybackError("");
-    }, [selection.kind, unit?.key, take?.resourceId]);
+    }, [selection.kind, unit?.key, take?.resourceId, styleReference]);
     const perform = async (operation: () => Promise<void>) => {
         try {
             await operation();
@@ -95,7 +100,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
         const left = leftRef.current;
         if (!right) return;
         const target = toSource(right.currentTime * 1000) / 1000;
-        if (left) {
+        if (left && !styleReference) {
             left.playbackRate = right.playbackRate;
             if (Math.abs(left.currentTime - target) > 0.25) left.currentTime = target;
         }
@@ -116,13 +121,14 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
     };
     const playOriginal = () => {
         sync();
+        if (styleReference) return;
         void leftRef.current?.play().catch(() => setPlaybackError("原片暂时无法同步播放，请检查素材或重新点击播放"));
     };
     const rightSrc = selection.kind === "final" ? (finalId ? resourceFileUrl(finalId) : "") : take ? resourceFileUrl(take.resourceId) : "";
     const startOffset = unit ? unitOffsetSeconds(unit) : 0;
 
     return (
-        <div className="rw-produce">
+        <div className="rw-produce" data-preview={expandedPreview ? "expanded" : "compact"}>
             <section className="rw-compare" aria-label={job.creative ? "脚本与生成候选" : "原片和新片对比"}>
                 <div className="rw-compare-head">
                     <div className="rw-compare-tabs" role="tablist" aria-label="对比内容">
@@ -134,17 +140,21 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                         </button>
                     </div>
                     <span>{selection.kind === "final" ? (finalId ? `成片 ${seconds(job.render?.durationMs || pieces[pieces.length - 1]?.endMs || 0)}` : "还没有拼成片") : unit ? unitTitle(unit) : ""}</span>
-                    {job.source ? (
+                    {job.source && !styleReference ? (
                         <Button size="small" type="text" icon={hearOriginal ? <Volume2 size={14} /> : <VolumeX size={14} />} onClick={() => setHearOriginal((value) => !value)}>
                             {hearOriginal ? "听原片" : "原片静音"}
                         </Button>
                     ) : null}
+                    <Button size="small" type="text" icon={expandedPreview ? <Minimize2 size={14} /> : <Maximize2 size={14} />} aria-pressed={expandedPreview} onClick={() => setExpandedPreview((value) => !value)}>
+                        {expandedPreview ? "紧凑预览" : "放大预览"}
+                    </Button>
                 </div>
                 <div className="rw-compare-panes">
-                    <figure className="rw-pane">
+                    <figure className="rw-pane" style={{ "--rw-preview-ratio": sourceRatio } as CSSProperties}>
                         {job.source ? (
                             <video
                                 ref={leftRef}
+                                controls={styleReference}
                                 src={resourceFileUrl(job.source.resourceId)}
                                 muted={!hearOriginal && !(selection.kind === "unit" && job.audio === "original")}
                                 playsInline
@@ -166,9 +176,9 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                                 </span>
                             </div>
                         )}
-                        <figcaption>{job.creative ? "商品与脚本" : "原片"}</figcaption>
+                        <figcaption>{job.creative ? "商品与脚本" : styleReference ? "风格参考 · 独立播放" : "原片"}</figcaption>
                     </figure>
-                    <figure className="rw-pane" data-empty={!rightSrc || undefined}>
+                    <figure className="rw-pane" style={{ "--rw-preview-ratio": resultRatio } as CSSProperties} data-empty={!rightSrc || undefined}>
                         {rightSrc ? (
                             <video
                                 key={rightSrc}
@@ -186,15 +196,15 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                                 onPlay={playOriginal}
                                 onPlaying={playOriginal}
                                 onWaiting={() => {
-                                    leftRef.current?.pause();
+                                    if (!styleReference) leftRef.current?.pause();
                                     voiceRefs.current.forEach((audio) => audio.pause());
                                 }}
                                 onPause={() => {
-                                    leftRef.current?.pause();
+                                    if (!styleReference) leftRef.current?.pause();
                                     voiceRefs.current.forEach((audio) => audio.pause());
                                 }}
                                 onEnded={() => {
-                                    leftRef.current?.pause();
+                                    if (!styleReference) leftRef.current?.pause();
                                     voiceRefs.current.forEach((audio) => audio.pause());
                                 }}
                                 onRateChange={sync}
@@ -229,7 +239,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                     <>
                         <h3>{unitTitle(unit)}</h3>
                         <p className="rw-hint">
-                            {job.creative ? "脚本" : "原片"} {formatTeardownTime(unit.startMs)}–{formatTeardownTime(unit.endMs)} · {STATUS_TEXT[unit.status]}
+                            {job.creative || styleReference ? "目标镜头" : "原片"} {formatTeardownTime(unit.startMs)}–{formatTeardownTime(unit.endMs)} · {STATUS_TEXT[unit.status]}
                             {unit.attempt > 1 ? ` · 第 ${unit.attempt} 次` : ""}
                         </p>
                         {unit.error ? <p className="rw-warn">{unit.error}</p> : null}
@@ -281,7 +291,7 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
                             </Button>
                         ) : null}
                         <p className="rw-hint">{job.creative ? "选择时间线里的镜头，检查脚本画面、挑选候选或定向重做。" : "点下面时间线里的一段，看它和原片的对比、挑候选或定向重做。"}</p>
-                        {finalId && job.source ? <RemakeComparisonExport job={job} disabled={active} /> : null}
+                        {finalId && job.source && !styleReference ? <RemakeComparisonExport job={job} disabled={active} /> : null}
                     </>
                 )}
             </aside>
@@ -305,11 +315,16 @@ export function RemakeProduce({ job, config, onEditRecipe, onAddLut }: { job: Re
             <section className="rw-timeline" aria-label="时间线">
                 <div className="rw-timeline-head">
                     <h3>时间线</h3>
-                    <span>{job.creative ? "上轨脚本 · 下轨生成候选" : "上轨原片 · 下轨新片 · 按原片时间对齐"}</span>
+                    <span>{job.creative || styleReference ? "上轨目标分镜 · 下轨生成候选" : "上轨原片 · 下轨新片 · 按原片时间对齐"}</span>
                     {progress?.stage ? <span className="rw-timeline-stage">{progress.stage}</span> : null}
                 </div>
+                <div className="rw-time-ruler" aria-label={styleReference ? "目标时间刻度" : "原片时间刻度"}>
+                    {Array.from({ length: 5 }, (_, index) => (
+                        <span key={index}>{formatTeardownTime((duration * index) / 4)}</span>
+                    ))}
+                </div>
                 <div className="rw-tracks">
-                    <span className="rw-track-label">{job.creative ? "脚本" : "原片"}</span>
+                    <span className="rw-track-label">{job.creative || styleReference ? "脚本" : "原片"}</span>
                     <div className="rw-track">
                         {job.shots.map((shot) => (
                             <div

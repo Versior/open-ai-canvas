@@ -324,6 +324,7 @@ func validateProductVideoCreative(raw json.RawMessage) error {
 func (s *Service) validateCreativeWorkResources(userID string, raw json.RawMessage) error {
 	var head struct {
 		Creative         json.RawMessage `json:"creative"`
+		Replication      json.RawMessage `json:"replication"`
 		ComparisonRender json.RawMessage `json:"comparisonRender"`
 		Units            []struct {
 			Input json.RawMessage `json:"input"`
@@ -337,7 +338,7 @@ func (s *Service) validateCreativeWorkResources(userID string, raw json.RawMessa
 	}) bool {
 		return len(u.Input) > 0
 	})
-	if len(head.Creative) == 0 && !hasInput && len(head.ComparisonRender) == 0 {
+	if len(head.Creative) == 0 && len(head.Replication) == 0 && !hasInput && len(head.ComparisonRender) == 0 {
 		return nil
 	}
 	refs, err := assets.CollectDocumentResourceReferences(string(raw))
@@ -346,6 +347,7 @@ func (s *Service) validateCreativeWorkResources(userID string, raw json.RawMessa
 	}
 	resources := map[string]*model.Resource{}
 	for _, ref := range refs {
+		path := strings.TrimPrefix(strings.TrimPrefix(ref.Path, "replication.run.input."), "replication.plan.input.")
 		resource := resources[ref.ResourceID]
 		if resource == nil {
 			resource, err = s.repo.ResourceForUser(userID, ref.ResourceID)
@@ -356,11 +358,11 @@ func (s *Service) validateCreativeWorkResources(userID string, raw json.RawMessa
 		}
 		expectedKind := ""
 		switch {
-		case strings.HasPrefix(ref.Path, "product.images["), strings.HasPrefix(ref.Path, "models["), strings.HasPrefix(ref.Path, "backgrounds["), strings.Contains(ref.Path, "imageResourceIds["), strings.Contains(ref.Path, "keyframeResourceId"), strings.HasPrefix(ref.Path, "subtitleImages."), strings.HasPrefix(ref.Path, "editSubtitleImages["):
+		case strings.HasPrefix(path, "product.images["), strings.HasPrefix(path, "models["), strings.HasPrefix(path, "backgrounds["), strings.Contains(path, "imageResourceIds["), strings.Contains(path, "keyframeResourceId"), strings.HasPrefix(path, "subtitleImages."), strings.HasPrefix(path, "editSubtitleImages["):
 			expectedKind = "image"
-		case strings.HasPrefix(ref.Path, "music."), strings.HasPrefix(ref.Path, "voiceLines["):
+		case strings.HasPrefix(path, "music."), strings.HasPrefix(path, "voiceLines["):
 			expectedKind = "audio"
-		case strings.HasPrefix(ref.Path, "source."), strings.HasPrefix(ref.Path, "render."), strings.HasPrefix(ref.Path, "editRender."), strings.HasPrefix(ref.Path, "comparisonRender."), strings.HasSuffix(ref.Path, ".videoResourceId"), strings.HasSuffix(ref.Path, ".clipResourceId"), strings.Contains(ref.Path, ".takes["):
+		case strings.HasPrefix(path, "source."), strings.HasPrefix(path, "render."), strings.HasPrefix(path, "editRender."), strings.HasPrefix(path, "comparisonRender."), strings.HasSuffix(path, ".videoResourceId"), strings.HasSuffix(path, ".clipResourceId"), strings.Contains(path, ".takes["):
 			expectedKind = "video"
 		}
 		if expectedKind != "" && resource.Kind != expectedKind {
@@ -369,6 +371,20 @@ func (s *Service) validateCreativeWorkResources(userID string, raw json.RawMessa
 	}
 	var document any
 	_ = json.Unmarshal(raw, &document)
+	var reference struct {
+		Replication *struct {
+			Run *struct {
+				TaskID string `json:"taskId"`
+			} `json:"run"`
+		} `json:"replication"`
+	}
+	_ = json.Unmarshal(raw, &reference)
+	if reference.Replication != nil && reference.Replication.Run != nil && reference.Replication.Run.TaskID != "" {
+		task, err := s.repo.Task(reference.Replication.Run.TaskID)
+		if err != nil || task.UserID != userID || task.Type != "canvas_text" {
+			return BadAuthRequest("参考规划必须引用当前用户的文本任务")
+		}
+	}
 	checkedTasks := map[string]bool{}
 	var checkReferences func(any, string) error
 	checkReferences = func(value any, field string) error {

@@ -122,6 +122,7 @@ export const REMAKE_MUSIC_FADE_MS = 1500;
  * 再把画好的字幕图作为叠加图片放在「烧录字幕」轨。
  */
 export function remakeTimeline(job: RemakeJob, size: { width: number; height: number }, draft = false): RemakeRenderTimeline {
+    if (job.replication && job.audio === "original") throw new Error("结构与风格复刻不能套用原声口型");
     if (!draft && job.audio === "original" && job.shots.some((shot) => shot.treatment === "remake" && shot.speaker)) throw new Error("保留原声的说话镜头不能重新拍，请先改为参考原视频换元素或同步生成新口播");
     const pieces = remakePieces(job, draft);
     if (!pieces.length) throw new Error("没有要拼进成片的镜头");
@@ -131,6 +132,7 @@ export function remakeTimeline(job: RemakeJob, size: { width: number; height: nu
         const unit = units.get(piece.unitKey || "");
         const take = unit ? remakeUnitTake(unit) : undefined;
         if (piece.kind === "keep" || (draft && !take)) {
+            if (job.replication?.mode === "style") throw new Error("风格复刻使用独立时间线，请先生成目标镜头，再进入剪辑台");
             if (!job.source) throw new Error("商品新创作需先生成镜头，再进入剪辑台");
             const title = piece.pending || piece.kind === "unit" ? "待生成 · 原片占位" : "原片";
             return {

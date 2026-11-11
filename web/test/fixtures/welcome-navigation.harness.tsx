@@ -2,6 +2,34 @@ import { afterAll, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
 
 const dom = new Window({ url: "http://localhost/welcome" });
+let hidden = false;
+let reduced = false;
+const motionListeners = new Set<() => void>();
+Object.defineProperty(dom.document, "hidden", { get: () => hidden });
+const matchMedia = dom.matchMedia.bind(dom);
+dom.matchMedia = ((query: string) =>
+    query === "(prefers-reduced-motion: reduce)"
+        ? {
+              get matches() {
+                  return reduced;
+              },
+              addEventListener: (_: string, listener: () => void) => motionListeners.add(listener),
+              removeEventListener: (_: string, listener: () => void) => motionListeners.delete(listener),
+          }
+        : matchMedia(query)) as typeof dom.matchMedia;
+const interval = dom.setInterval.bind(dom);
+const clearInterval = dom.clearInterval.bind(dom);
+const cycleTimers = new Map<number, () => void>();
+let timerId = 10000;
+dom.setInterval = ((callback: () => void, delay: number, ...args: unknown[]) => {
+    if (delay !== 12_000) return interval(callback, delay, ...args);
+    const id = timerId++;
+    cycleTimers.set(id, callback);
+    return id;
+}) as typeof dom.setInterval;
+dom.clearInterval = ((id: number) => {
+    if (!cycleTimers.delete(id)) clearInterval(id);
+}) as typeof dom.clearInterval;
 for (const [key, value] of Object.entries({
     window: dom,
     document: dom.document,
@@ -20,19 +48,25 @@ for (const [key, value] of Object.entries({
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 mock.module("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 mock.module("@/components/brand/brand-film", () => ({ BrandFilm: () => null }));
-mock.module("@/pages/welcome/story-reel", () => ({ default: ({ progress }: { progress: { current: number } }) => <canvas className="welcome-webgl" data-progress={progress.current} /> }));
-const { act } = await import("react");
+mock.module("@/pages/welcome/story-reel", () => ({ default: ({ progress, paused }: { progress: { current: number }; paused: boolean }) => <canvas className="welcome-webgl" data-progress={progress.current} data-paused={paused} /> }));
+const { act, StrictMode } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { default: WelcomePage } = await import("@/pages/welcome");
 afterAll(() => dom.happyDOM.abort());
 
-test("欢迎页在固定应用外壳里使用自己的滚动容器，箭头与章节导航均可切换", async () => {
+test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循动画偏好", async () => {
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;inset:0;overflow:hidden;height:100%";
     document.body.append(host);
     const root = createRoot(host);
     try {
-        await act(async () => root.render(<WelcomePage />));
+        await act(async () =>
+            root.render(
+                <StrictMode>
+                    <WelcomePage />
+                </StrictMode>,
+            ),
+        );
         const page = host.querySelector<HTMLElement>(".welcome-page")!;
         const story = host.querySelector<HTMLElement>(".welcome-story")!;
         let calls = 0;
@@ -43,18 +77,62 @@ test("欢迎页在固定应用外壳里使用自己的滚动容器，箭头与�
         };
         story.getBoundingClientRect = () => ({ top: -page.scrollTop, height: 5700 }) as DOMRect;
         Object.defineProperty(story, "offsetHeight", { value: 5700 });
-        await act(async () => host.querySelector<HTMLButtonElement>(".welcome-next")!.click());
-        expect(calls, "下一幕必须滚动欢迎页，不能滚动被锁住的 window").toBe(1);
+        expect(cycleTimers.size, "品牌首幕不轮换演示素材").toBe(0);
+        const scrollChapter = (index: number) => page.scrollTo({ top: (5700 - window.innerHeight) * (index / 6 + (index ? 0.04 : 0)) });
+        await act(async () => scrollChapter(1));
+        expect(calls).toBe(1);
         expect(host.querySelector(".welcome-stage")!.classList.contains("chapter-1")).toBe(true);
         expect(host.querySelector(".welcome-webgl")).not.toBeNull();
+        expect(host.querySelector(".welcome-look-picker")).toBeNull();
+        expect(host.querySelector("#welcome-look-select")).toBeNull();
+        expect(host.querySelector(".welcome-next")).toBeNull();
+        expect(host.querySelector(".welcome-chapter-nav")).toBeNull();
+        expect(host.querySelector(".welcome-look-credit")).toBeNull();
+        expect(host.querySelector(".welcome-media-credit")).toBeNull();
+        expect(host.querySelector(".welcome-hero-actions a")!.getAttribute("href")).toBe("/create");
+        expect(cycleTimers.size).toBe(1);
+        const lookId = () => host.querySelector(".welcome-poster img")!.getAttribute("src")!.split("/")[2];
+        const looks = new Set([lookId()]);
+        for (let tick = 0; tick < 2; tick++) {
+            const previous = lookId();
+            await act(async () => [...cycleTimers.values()].forEach((callback) => callback()));
+            expect(lookId()).not.toBe(previous);
+            expect(host.querySelector(".welcome-poster img")!.getAttribute("src")).toContain(`/welcome/${lookId()}/`);
+            looks.add(lookId());
+        }
+        expect(looks.size).toBe(3);
+        await act(async () => {
+            hidden = true;
+            document.dispatchEvent(new Event("visibilitychange"));
+        });
+        expect(cycleTimers.size, "后台页面暂停轮换和演示动画").toBe(0);
+        expect(host.querySelector(".welcome-webgl")!.getAttribute("data-paused")).toBe("true");
+        await act(async () => {
+            hidden = false;
+            document.dispatchEvent(new Event("visibilitychange"));
+        });
+        expect(cycleTimers.size).toBe(1);
+        await act(async () => {
+            reduced = true;
+            motionListeners.forEach((callback) => callback());
+        });
+        expect(cycleTimers.size, "减少动画偏好停止自动轮换").toBe(0);
+        expect(host.querySelector(".welcome-webgl")).toBeNull();
+        await act(async () => {
+            reduced = false;
+            motionListeners.forEach((callback) => callback());
+        });
+        expect(cycleTimers.size).toBe(1);
+        await act(async () => page.scrollTo({ top: 5700 }));
+        expect(cycleTimers.size, "离开演示区域后暂停轮换").toBe(0);
         for (const index of [4, 2, 5, 0]) {
-            await act(async () => host.querySelectorAll<HTMLButtonElement>(".welcome-chapter-nav button")[index].click());
+            await act(async () => scrollChapter(index));
             expect(host.querySelector(".welcome-stage")!.classList.contains(`chapter-${index}`)).toBe(true);
-            expect(host.querySelectorAll(".welcome-chapter-nav [aria-current='step']")).toHaveLength(1);
             if (index > 0) expect(Math.floor(Number(host.querySelector(".welcome-webgl")!.getAttribute("data-progress")) * 6)).toBe(index);
         }
     } finally {
         await act(async () => root.unmount());
+        expect(cycleTimers.size).toBe(0);
         host.remove();
     }
 });

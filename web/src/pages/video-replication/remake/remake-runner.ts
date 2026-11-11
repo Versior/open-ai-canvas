@@ -97,7 +97,10 @@ function limitsOf(config: AiConfig, job: RemakeJob) {
 export function remakeUnitsFor(job: RemakeJob, config: AiConfig) {
     const limits = remakeLimitsFor(config, job.model, job.shots);
     const maxMs = (typeof limits === "string" ? 15 : limits.maxSegmentSeconds) * 1000;
-    const units = job.creative ? job.shots.flatMap((shot) => planRemakeUnits([shot], { maxMs, sourceDurationMs: remakeKeptDurationMs(job) }, job.units)) : planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source?.durationMs || 0 }, job.units);
+    const units =
+        job.creative || job.replication
+            ? job.shots.flatMap((shot) => planRemakeUnits([shot], { maxMs, sourceDurationMs: remakeKeptDurationMs(job) }, job.units))
+            : planRemakeUnits(job.shots, { maxMs, sourceDurationMs: job.source?.durationMs || 0 }, job.units);
     if (job.source && job.audio === "rewrite" && !job.voiceReference && units.filter((unit) => job.shots.some((shot) => unit.shotIndexes.includes(shot.index) && shot.dialogue.trim())).length > 1)
         throw new Error("多段口播请上传同一份音色参考，或改用统一旁白，不能让每段随机选声音");
     return applyRemakeCreativeSignature(job, units);
@@ -372,7 +375,7 @@ async function assembleStep(id: string, config: AiConfig, signal: AbortSignal) {
     let sourcePieces = job.render?.sourcePieces;
     if (!task || terminal(task)) {
         assertScope(id);
-        sourcePieces = job.source ? remakePieces(job).map((piece) => ({ sourceStartMs: piece.sourceStartMs, durationMs: piece.endMs - piece.startMs })) : undefined;
+        sourcePieces = job.source && job.replication?.mode !== "style" ? remakePieces(job).map((piece) => ({ sourceStartMs: piece.sourceStartMs, durationMs: piece.endMs - piece.startMs })) : undefined;
         task = await createTimelineRenderTask({ projectId: "", timeline: remakeTimeline(job, size) }, signal);
         await updateRemake(id, (value) => ({ ...value, render: { taskId: task!.id, sourcePieces } }));
     }

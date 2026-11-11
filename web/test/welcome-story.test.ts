@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { chapters, getWelcomeLook, showcases, welcomeLooks } from "../src/pages/welcome/story";
+import { chapters, shuffleWelcomeLooks, showcases, welcomeLooks } from "../src/pages/welcome/story";
 
 const publicFile = (url: string) => resolve(import.meta.dir, "../public", url.replace(/^\//, ""));
 
@@ -9,9 +9,21 @@ describe("welcome story", () => {
     test("uses Yingce and only the three approved looks", () => {
         expect(chapters[0].title).toBe("STAGE");
         expect(welcomeLooks.map((look) => look.id)).toEqual(["spring", "charge", "wing-it"]);
-        expect(getWelcomeLook("").id).toBe("spring");
-        expect(getWelcomeLook("?look=unknown").id).toBe("spring");
-        for (const look of welcomeLooks) expect(getWelcomeLook(`?look=${look.id}`)).toBe(look);
+    });
+
+    test("random cycles show every look once and never repeat at their boundary", () => {
+        for (const seed of [0, 0.4, 0.999]) {
+            let previous = "";
+            for (let cycle = 0; cycle < 10; cycle++) {
+                const ids = shuffleWelcomeLooks(previous, () => seed).map((look) => {
+                    expect(look.id).not.toBe(previous);
+                    previous = look.id;
+                    return look.id;
+                });
+                expect([...ids].sort()).toEqual(welcomeLooks.map((look) => look.id).sort());
+            }
+        }
+        expect(shuffleWelcomeLooks("", () => 0)[0].id).not.toBe(shuffleWelcomeLooks("", () => 0.999)[0].id);
     });
 
     test("every reel slot has local media and screenplay", () => {

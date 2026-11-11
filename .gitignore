@@ -24,6 +24,7 @@ docs/content/docs/backend/*
 !docs/content/docs/backend/agent-mcp.mdx
 !docs/content/docs/backend/canvas-agent-appearance.mdx
 !docs/content/docs/backend/video-director-planning.mdx
+!docs/content/docs/backend/video-reference-replication.mdx
 !docs/content/docs/backend/product-video-creative.mdx
 !docs/content/docs/backend/fork-deployment.mdx
 !docs/content/docs/backend/fashion-video-workbench.mdx

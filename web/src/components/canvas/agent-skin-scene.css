@@ -24,6 +24,8 @@
 }
 .agent-window-perch[data-display="full"] {
     margin: 0;
+    flex-direction: column;
+    height: auto;
     justify-content: center;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -63,6 +65,13 @@
     padding: 5px 8px;
     border-radius: var(--r-md);
     background: var(--agent-surface-base);
+}
+.agent-window-perch[data-display="full"] .agent-perch-bubble {
+    flex: none;
+    width: 100%;
+    max-height: 144px;
+    overflow-y: auto;
+    text-align: left;
 }
 .agent-window-dock {
     position: absolute;

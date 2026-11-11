@@ -38,6 +38,7 @@ let releasePage: (() => void) | undefined;
 let overlapping = false;
 const projects: CanvasLibrarySummary[] = Array.from({ length: 12 }, (_, index) => ({ id: `canvas-${index + 1}`, title: `画布 ${index + 1}`, createdAt: "2026-11-10T00:00:00Z", updatedAt: "2026-11-10T00:00:00Z", nodeCount: 0, previewNodes: [] }));
 mock.module("@/services/api/user-data", () => ({
+    listRemoteCanvasProjects: async () => ({ projects }),
     listRemoteCanvasProjectsPage: async (options: { page: number; pageSize: number; signal?: AbortSignal }) => {
         calls.push(options);
         if (holdPage === options.page)
@@ -59,6 +60,7 @@ const { MemoryRouter, useLocation } = await import("react-router");
 await import("@/i18n");
 const { WorkspaceSidebarHistory } = await import("@/components/layout/workspace-sidebar-history");
 const { useCanvasUiStore } = await import("@/stores/canvas/use-canvas-ui-store");
+const { useSidebarHistoryPrefsStore } = await import("@/stores/use-sidebar-history-prefs-store");
 let root: ReturnType<typeof createRoot>;
 let host: HTMLDivElement;
 let client: InstanceType<typeof QueryClient>;
@@ -130,6 +132,7 @@ beforeEach(() => {
     activeId = "conversation-1";
     navigated = 0;
     useCanvasUiStore.setState({ deleteProjectIds: [], selectedProjectIds: [] });
+    useSidebarHistoryPrefsStore.setState({ users: {} });
     client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
     host = document.createElement("div");
     document.body.append(host);
@@ -160,10 +163,10 @@ test("画布右键菜单只选择当前条目删除，不导航、不沿用其�
     useCanvasUiStore.setState({ selectedProjectIds: ["canvas-1", "canvas-4"] });
     const link = section("画布").querySelectorAll<HTMLAnchorElement>("li a")[1];
     await act(async () => link.dispatchEvent(new dom.MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 })));
-    await eventually(() => expect(document.querySelector('[role="menuitem"]')?.textContent).toContain("删除"));
+    await eventually(() => expect([...document.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.includes("删除"))).toBe(true));
     expect(host.querySelector("output")?.textContent).toBe("/");
     expect(useCanvasUiStore.getState().deleteProjectIds).toEqual([]);
-    await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click());
+    await act(async () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.includes("删除"))!.click());
     expect(useCanvasUiStore.getState().deleteProjectIds).toEqual(["canvas-2"]);
     expect(useCanvasUiStore.getState().selectedProjectIds).toEqual(["canvas-1", "canvas-4"]);
     expect(host.querySelector("output")?.textContent).toBe("/");
@@ -177,6 +180,66 @@ test("画布左键仍直接打开条目，不显示删除弹窗", async () => {
     expect(host.querySelector("output")?.textContent).toBe("/canvas/canvas-3");
     expect(navigated).toBe(1);
     expect(useCanvasUiStore.getState().deleteProjectIds).toEqual([]);
+});
+
+async function rowAction(title: string, action: string) {
+    const trigger = host.querySelector<HTMLButtonElement>(`button[aria-label="${title}的操作"]`)!;
+    await act(async () => trigger.click());
+    const menu = () => document.getElementById(trigger.getAttribute("aria-controls")!);
+    await eventually(() => expect([...menu()!.querySelectorAll('[role="menuitem"]')].some((item) => item.textContent?.trim() === action)).toBe(true));
+    await act(async () => [...menu()!.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === action)!.click());
+}
+
+function canvasTitles() {
+    return [...section("画布").querySelectorAll(".workspace-history-title")].map((node) => node.textContent);
+}
+
+test("更多按钮置顶与上移不导航，重置顺序保留置顶并隔离账号", async () => {
+    await render();
+    await eventually(() => expect(rows("画布")).toHaveLength(5));
+    await rowAction("画布 3", "上移");
+    expect(canvasTitles()).toEqual(["画布 1", "画布 3", "画布 2", "画布 4", "画布 5"]);
+    await rowAction("画布 4", "置顶");
+    expect(canvasTitles()[0]).toBe("画布 4");
+    await rowAction("画布 3", "恢复最近更新顺序");
+    expect(canvasTitles()).toEqual(["画布 4", "画布 1", "画布 2", "画布 3", "画布 5"]);
+    expect(host.querySelector("output")?.textContent).toBe("/");
+    expect(navigated).toBe(0);
+    await render("user-b");
+    await eventually(() => expect(canvasTitles()[0]).toBe("画布 1"));
+    await render("user-a");
+    await eventually(() => expect(canvasTitles()[0]).toBe("画布 4"));
+    await rowAction("画布 4", "取消置顶");
+    expect(canvasTitles()[0]).toBe("画布 1");
+});
+
+test("第二页置顶在重新请求第一页后仍可发现，只持久化条目 ID", async () => {
+    await render();
+    await eventually(() => expect(rows("画布")).toHaveLength(5));
+    await click("加载更多", "画布");
+    await eventually(() => expect(rows("画布")).toHaveLength(10));
+    await rowAction("画布 8", "置顶");
+    expect(canvasTitles()[0]).toBe("画布 8");
+    await render("user-b");
+    client.removeQueries({ queryKey: ["canvas-library", "user-a"] });
+    await render("user-a");
+    await eventually(() => expect(canvasTitles()[0]).toBe("画布 8"));
+    expect(canvasTitles()).toHaveLength(5);
+    const saved = localStorage.getItem("yingce:sidebar-history-prefs")!;
+    expect(saved).toContain("canvas-8");
+    expect(saved).not.toContain("画布 8");
+    expect(saved).not.toContain("previewNodes");
+});
+
+test("对话同样可以置顶与调序，置顶条目不能上移跨组", async () => {
+    await render();
+    await rowAction("创作 3", "置顶");
+    expect(section("对话").querySelector(".workspace-history-title")?.textContent).toBe("创作 3");
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="创作 1的操作"]')!.click());
+    await eventually(() => expect([...document.querySelectorAll('.ant-dropdown:not(.ant-dropdown-hidden) [role="menuitem"][aria-disabled="true"]')].some((item) => item.textContent === "上移")).toBe(true));
+    await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="创作 1的操作"]')!.click());
+    await rowAction("创作 5", "上移");
+    expect([...section("对话").querySelectorAll(".workspace-history-title")].map((node) => node.textContent)).toEqual(["创作 3", "创作 1", "创作 2", "创作 5", "创作 4"]);
 });
 
 test("每次追加五条，末页停止，收起后重新展开复用缓存", async () => {

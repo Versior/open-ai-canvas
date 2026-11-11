@@ -50,9 +50,15 @@ export const welcomeLooks: WelcomeLook[] = [
     },
 ];
 
-export function getWelcomeLook(search = window.location.search) {
-    const id = new URLSearchParams(search).get("look");
-    return welcomeLooks.find((look) => look.id === id) ?? welcomeLooks[0];
+/** 每轮展示全部素材，轮次交界也不连续重复。 */
+export function shuffleWelcomeLooks(previousId = "", random = Math.random): WelcomeLook[] {
+    const looks = [...welcomeLooks];
+    for (let index = looks.length - 1; index > 0; index--) {
+        const other = Math.floor(random() * (index + 1));
+        [looks[index], looks[other]] = [looks[other], looks[index]];
+    }
+    if (looks[0].id === previousId) [looks[0], looks[1]] = [looks[1], looks[0]];
+    return looks;
 }
 
 export const showcases = [

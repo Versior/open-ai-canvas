@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ConfigProvider, Tabs } from "antd";
-import { ArrowDown, ArrowUpRight, Menu, Play, X } from "lucide-react";
+import { ArrowUpRight, Menu, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { BrandWordmark } from "@/components/brand/brand-logo";
@@ -8,46 +8,26 @@ import { BrandFilm } from "@/components/brand/brand-film";
 import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
-import { chapters, getWelcomeLook, showcases, welcomeLooks, type WelcomeLook } from "./story";
+import { chapters, shuffleWelcomeLooks, showcases } from "./story";
 // 独立欢迎入口也需要按钮 token。
 import "@/styles/button-tokens.css";
 import "./welcome.css";
-import { Select } from "@/components/ui/base/select";
 
 const StoryReel = lazy(() => import("./story-reel"));
 
 export default function WelcomePage() {
-    const [look, setLook] = useState(getWelcomeLook);
     const appearance = useAppearanceStore((state) => state.appearance);
-    const restorePickerFocus = useRef(false);
-    useEffect(() => {
-        if (!restorePickerFocus.current) return;
-        document.getElementById("welcome-look-select")?.focus({ preventScroll: true });
-        restorePickerFocus.current = false;
-    }, [look]);
-    useEffect(() => {
-        const onHistory = () => setLook(getWelcomeLook());
-        window.addEventListener("popstate", onHistory);
-        return () => window.removeEventListener("popstate", onHistory);
-    }, []);
-    const changeLook = (id: string) => {
-        const next = welcomeLooks.find((item) => item.id === id);
-        if (!next || next.id === look.id) return;
-        const url = new URL(window.location.href);
-        url.searchParams.set("look", id);
-        window.history.pushState(null, "", url);
-        restorePickerFocus.current = true;
-        setLook(next);
-    };
     return (
         <ConfigProvider theme={getAntThemeConfig(true, appearance.activeSkin)} button={{ autoInsertSpace: false }}>
-            <WelcomeExperience look={look} brandName={appearance.brandName} onLookChange={changeLook} />
+            <WelcomeExperience brandName={appearance.brandName} />
         </ConfigProvider>
     );
 }
 
-function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLook; brandName: string; onLookChange: (id: string) => void }) {
+function WelcomeExperience({ brandName }: { brandName: string }) {
     const { t } = useTranslation();
+    const [remainingLooks, setRemainingLooks] = useState(() => shuffleWelcomeLooks());
+    const look = remainingLooks[0];
     const pageRef = useRef<HTMLDivElement>(null);
     const storyRef = useRef<HTMLElement>(null);
     const progressRef = useRef(0);
@@ -57,17 +37,20 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
     const [readyLook, setReadyLook] = useState("");
     const [menu, setMenu] = useState(false);
     const [showcase, setShowcase] = useState(0);
-    const [playing, setPlaying] = useState(false);
-    const videoRef = useRef<HTMLVideoElement>(null);
+    const [hidden, setHidden] = useState(() => document.hidden);
+    const [storyVisible, setStoryVisible] = useState(true);
 
     useEffect(() => {
         const media = window.matchMedia("(prefers-reduced-motion: reduce)");
         const onMotion = () => setReduced(media.matches);
+        const onVisibility = () => setHidden(document.hidden);
         media.addEventListener("change", onMotion);
+        document.addEventListener("visibilitychange", onVisibility);
         const page = pageRef.current;
         const onScroll = () => {
             if (!storyRef.current) return;
             const rect = storyRef.current.getBoundingClientRect();
+            setStoryVisible(rect.top > -rect.height + window.innerHeight);
             const progress = Math.max(0, Math.min(1, -rect.top / (rect.height - window.innerHeight)));
             progressRef.current = progress;
             if (progress < 1 / 6) setReadyLook("");
@@ -78,28 +61,19 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
         onScroll();
         return () => {
             media.removeEventListener("change", onMotion);
+            document.removeEventListener("visibilitychange", onVisibility);
             page?.removeEventListener("scroll", onScroll);
             window.removeEventListener("resize", onScroll);
         };
     }, []);
 
-    useEffect(() => {
-        if (!playing) return;
-        const close = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setPlaying(false);
-        };
-        window.addEventListener("keydown", close);
-        return () => window.removeEventListener("keydown", close);
-    }, [playing]);
-
-    const jumpTo = (index: number) => {
-        if (!storyRef.current || !pageRef.current) return;
-        const height = storyRef.current.offsetHeight - window.innerHeight;
-        const top = storyRef.current.getBoundingClientRect().top + pageRef.current.scrollTop;
-        pageRef.current.scrollTo({ top: top + height * (index === 5 ? 0.97 : index / 6 + (index ? 0.04 : 0)), behavior: "instant" });
-        setMenu(false);
-    };
     const staticScene = reduced || failedLook === look.id;
+    const paused = hidden || !storyVisible;
+    useEffect(() => {
+        if (chapter === 0 || reduced || paused) return;
+        const timer = window.setInterval(() => setRemainingLooks((current) => (current.length > 1 ? current.slice(1) : shuffleWelcomeLooks(current[0].id))), 12_000);
+        return () => window.clearInterval(timer);
+    }, [chapter, reduced, paused]);
     const active = showcases[showcase];
 
     return (
@@ -119,23 +93,11 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                 <Button className="welcome-header-login" type="text" href="/login?next=%2Fcreate">
                     {t("auth.login.submit")}
                 </Button>
-                <Button className="welcome-header-cta" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
+                <Button className="welcome-action welcome-header-cta" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
                     {t("account.welcome.start")}
                 </Button>
                 <IconButton className="welcome-icon mobile-menu" variant="ghost" size="lg" icon={menu ? X : Menu} aria-label={menu ? t("account.welcome.closeMenu") : t("account.welcome.openMenu")} aria-expanded={menu} onClick={() => setMenu(!menu)} />
             </header>
-            {chapter > 0 ? (
-                <aside className="welcome-look-picker" aria-label={t("account.welcome.lookPicker")}>
-                    <Select id="welcome-look-select" aria-label={t("account.welcome.look")} value={look.id} options={welcomeLooks.map((item) => ({ label: t(item.label), value: item.id }))} onChange={onLookChange} popupMatchSelectWidth={false} />
-                    {look.credit && (
-                        <a href={`/welcome/credits.html#${look.id}`} target="_blank" rel="noreferrer" title={t(look.credit)}>
-                            {t("account.welcome.demoCredit")}
-                            <ArrowUpRight size={12} />
-                        </a>
-                    )}
-                </aside>
-            ) : null}
-
             <main>
                 <section ref={storyRef} id="story" className="welcome-story" aria-label={t("account.welcome.storyLabel")}>
                     <div className={`welcome-stage chapter-${chapter}${staticScene ? " is-static" : ""}`}>
@@ -145,7 +107,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                         {!staticScene && chapter > 0 ? (
                             <SceneBoundary key={look.id} onError={() => setFailedLook(look.id)}>
                                 <Suspense fallback={null}>
-                                    <StoryReel look={look} progress={progressRef} paused={false} onReady={() => setReadyLook(look.id)} onError={() => setFailedLook(look.id)} />
+                                    <StoryReel look={look} progress={progressRef} paused={paused} onReady={() => setReadyLook(look.id)} onError={() => setFailedLook(look.id)} />
                                 </Suspense>
                             </SceneBoundary>
                         ) : null}
@@ -172,43 +134,15 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                                 {"subtitle" in item && (
                                     <>
                                         <p className="welcome-subtitle">{t(item.subtitle)}</p>
-                                        {look.video && (
-                                            <Button
-                                                type="text"
-                                                className="welcome-film-link"
-                                                onClick={() => setPlaying(true)}
-                                                tabIndex={chapter === 0 ? 0 : -1}
-                                                icon={
-                                                    <span className="welcome-play-mark">
-                                                        <Play size={17} fill="currentColor" />
-                                                    </span>
-                                                }
-                                            >
-                                                {t("account.welcome.watchClip")}
+                                        <div className="welcome-hero-actions">
+                                            <Button className="welcome-action" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end" tabIndex={chapter === 0 ? 0 : -1}>
+                                                {t("account.welcome.start")}
                                             </Button>
-                                        )}
+                                        </div>
                                     </>
                                 )}
                             </section>
                         ))}
-                        <div className="welcome-stage-bottom">
-                            <IconButton
-                                className="welcome-next"
-                                variant="ghost"
-                                size="lg"
-                                icon={ArrowDown}
-                                aria-label={chapter === 5 ? t("account.welcome.enterStudio") : t("account.welcome.nextChapter")}
-                                onClick={() => (chapter < 5 ? jumpTo(chapter + 1) : document.getElementById("workbench")?.scrollIntoView({ behavior: reduced ? "instant" : "smooth" }))}
-                            />
-                            <nav className="welcome-chapter-nav" aria-label={t("account.welcome.chapterNav")}>
-                                {chapters.map((item, index) => (
-                                    <button type="button" key={item.id} className={chapter === index ? "is-current" : ""} aria-label={t(item.label)} title={t(item.label)} aria-current={chapter === index ? "step" : undefined} onClick={() => jumpTo(index)}>
-                                        <span />
-                                        <small>{t(item.label)}</small>
-                                    </button>
-                                ))}
-                            </nav>
-                        </div>
                     </div>
                 </section>
 
@@ -236,7 +170,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                         <br />
                         {t("account.welcome.endingLine2")}
                     </h2>
-                    <Button className="welcome-primary" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
+                    <Button className="welcome-action welcome-primary" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
                         {t("account.welcome.start")}
                     </Button>
                 </section>
@@ -247,43 +181,7 @@ function WelcomeExperience({ look, brandName, onLookChange }: { look: WelcomeLoo
                 </a>
                 <span>{t("account.welcome.footer")}</span>
             </footer>
-            {look.credit && (
-                <div className="welcome-media-credit">
-                    <a href={`/welcome/credits.html#${look.id}`} target="_blank" rel="noreferrer">
-                        {t("account.welcome.creditLicense", { credit: t(look.credit) })}
-                        <ArrowUpRight size={12} />
-                    </a>
-                </div>
-            )}
-            {playing && look.video && <FilmDialog look={look} onClose={() => setPlaying(false)} videoRef={videoRef} />}
         </div>
-    );
-}
-
-function FilmDialog({ look, onClose, videoRef }: { look: WelcomeLook; onClose: () => void; videoRef: React.RefObject<HTMLVideoElement | null> }) {
-    const { t } = useTranslation();
-    const dialogRef = useRef<HTMLDialogElement>(null);
-    useEffect(() => {
-        const dialog = dialogRef.current;
-        dialog?.showModal();
-        return () => dialog?.close();
-    }, []);
-    return (
-        <dialog
-            ref={dialogRef}
-            className="welcome-film-dialog"
-            aria-label={t("account.welcome.filmLabel", { title: t(look.title) })}
-            onCancel={onClose}
-            onClick={(event) => {
-                if (event.target === event.currentTarget) onClose();
-            }}
-        >
-            <div>
-                <IconButton autoFocus className="welcome-icon" variant="ghost" size="lg" icon={X} aria-label={t("account.welcome.closeFilm")} onClick={onClose} />
-                <video ref={videoRef} src={look.video} poster={look.frames[0]} autoPlay muted playsInline loop />
-                <p>{t(look.credit ?? look.title)}</p>
-            </div>
-        </dialog>
     );
 }
 

@@ -33,6 +33,7 @@ import { RemakeContinuityCard } from "./remake-continuity";
 import { ReplicaCampaignControls, ReplicaShotDirector } from "../replication-director";
 import { RemakeDirectorPlanner } from "./remake-director";
 import { isCommercialCreativeScene } from "@/lib/remake/creative";
+import { ReferenceReplicationCard } from "./reference-replication-card";
 
 export type RemakeEdit = (updater: (job: RemakeJob) => RemakeJob) => void;
 
@@ -98,7 +99,8 @@ export function RemakeRecipeCards({
     const subject = job.creative && !isCommercialCreativeScene(job.creative.brief.scene);
     return (
         <div className="rw-recipe">
-            {!job.creative ? (
+            {job.source ? <ReferenceReplicationCard job={job} config={config} edit={edit} disabled={disabled || uploading} flush={flush} onBusyChange={onPlanningChange} /> : null}
+            {!job.creative && !job.replication ? (
                 <details className="rw-strategy">
                     <summary>导演与平台策略</summary>
                     <Card title="策划设置">
@@ -156,7 +158,7 @@ export function RemakeRecipeCards({
                     size="sm"
                     disabled={disabled}
                     onChange={(people) => edit((value) => ({ ...value, people }))}
-                    options={job.creative ? PEOPLE_OPTIONS.filter((item) => item.value !== "original").map((item) => ({ ...item, label: item.value === "model" ? "人物出镜" : item.label })) : PEOPLE_OPTIONS}
+                    options={job.creative || job.replication ? PEOPLE_OPTIONS.filter((item) => item.value !== "original").map((item) => ({ ...item, label: item.value === "model" ? "人物出镜" : item.label })) : PEOPLE_OPTIONS}
                 />
                 {job.people === "model" ? (
                     <ProductVideoImageSlot
@@ -195,7 +197,7 @@ export function RemakeRecipeCards({
                     size="sm"
                     disabled={disabled}
                     onChange={(audio) => edit((value) => ({ ...value, audio }))}
-                    options={REMAKE_AUDIOS.filter((value) => !job.creative || value !== "original").map((value) => ({
+                    options={REMAKE_AUDIOS.filter((value) => !(job.creative || job.replication) || value !== "original").map((value) => ({
                         value,
                         label: job.creative && value === "rewrite" ? "原生口播" : REMAKE_AUDIO_LABEL[value],
                         disabled: value === "original" && !job.source?.hasAudio,
@@ -280,7 +282,7 @@ export function RemakeRecipeCards({
 
 const TREATMENT_SHORT: Record<RemakeTreatment, string> = { replace: "换元素", remake: "重拍", keep: "保留", skip: "删掉" };
 
-function ShotRow({ shot, audio, language, disabled, edit, creative }: { shot: RemakeShot; audio: RemakeAudio; language: RemakeLanguage; disabled?: boolean; edit: RemakeEdit; creative?: boolean }) {
+function ShotRow({ shot, audio, language, disabled, edit, creative, reference }: { shot: RemakeShot; audio: RemakeAudio; language: RemakeLanguage; disabled?: boolean; edit: RemakeEdit; creative?: boolean; reference?: boolean }) {
     const patch = (next: Partial<RemakeShot>) => edit((value) => ({ ...value, shots: value.shots.map((item) => (item.index === shot.index ? { ...item, ...next } : item)) }));
     const budget = remakeDialogueBudget(shot, language);
     const length = Array.from(shot.dialogue).length;
@@ -310,7 +312,7 @@ function ShotRow({ shot, audio, language, disabled, edit, creative }: { shot: Re
                     value={shot.treatment}
                     disabled={disabled}
                     onChange={(treatment) => patch({ treatment })}
-                    options={REMAKE_TREATMENTS.filter((value) => !creative || value === "remake" || value === "skip").map((value) => ({
+                    options={REMAKE_TREATMENTS.filter((value) => (reference ? value === "remake" : !creative || value === "remake" || value === "skip")).map((value) => ({
                         value,
                         label: `${TREATMENT_SHORT[value]}${value === shot.recommended ? " ·荐" : ""}`,
                         title: REMAKE_TREATMENT_HINT[value],
@@ -397,7 +399,7 @@ export function RemakeStoryboard({
             </header>
             <ol className="rw-shots">
                 {job.shots.map((shot) => (
-                    <ShotRow key={shot.index} shot={shot} audio={job.audio} language={job.language} disabled={disabled} edit={edit} creative={Boolean(job.creative)} />
+                    <ShotRow key={shot.index} shot={shot} audio={job.audio} language={job.language} disabled={disabled} edit={edit} creative={Boolean(job.creative)} reference={Boolean(job.replication)} />
                 ))}
             </ol>
             {!job.shots.some((shot) => shot.plot) ? (

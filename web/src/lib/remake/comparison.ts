@@ -7,6 +7,7 @@ export type ComparisonAudio = "render" | "reference" | "mute";
 
 /** 使用成片生成时冻结的原片映射，改配方后仍与正在导出的那条成片一致。 */
 export function remakeComparison(job: RemakeJob, audio: ComparisonAudio): TimelineRenderCreateRequest["timeline"] {
+    if (job.replication?.mode === "style") throw new Error("风格复刻使用独立时间线，不能导出逐帧同步原片对比");
     if (!job.source?.resourceId) throw new Error("这条作品没有原片，无法导出原片对比");
     if (!job.authorized) throw new Error("请在配方中确认原片使用授权，再导出对比");
     if (!job.render?.resourceId) throw new Error("请先拼成片，再导出对比视频");

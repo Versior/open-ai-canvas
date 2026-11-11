@@ -43,6 +43,7 @@ import { RemakeEditor } from "./remake-editor";
 import type { EditorStore } from "@/stores/editor/editor-store";
 import type { StoreApi, UseBoundStore } from "zustand";
 import { CreativePlanner } from "./creative-planner";
+import { referenceReplicationInput } from "@/lib/remake/reference-replication";
 import "./creative.css";
 
 export type { RemakeStep } from "@/lib/remake/editor";
@@ -54,7 +55,13 @@ function recipeFields(job: RemakeJob) {
 }
 
 function applyRecipe(latest: RemakeJob, draft: RemakeJob): RemakeJob {
-    return { ...latest, ...recipeFields(draft), ...(latest.creative && draft.creative ? { creative: { ...latest.creative, brief: draft.creative.brief, confirmedInput: draft.creative.confirmedInput } } : {}) };
+    if (latest.replication?.mode !== draft.replication?.mode) throw new Error("复刻方式已在另一窗口改变，请重新打开配方");
+    const next = { ...latest, ...recipeFields(draft), ...(latest.creative && draft.creative ? { creative: { ...latest.creative, brief: draft.creative.brief, confirmedInput: draft.creative.confirmedInput } } : {}) };
+    if (next.replication && draft.replication) {
+        next.replication = { ...next.replication, brief: draft.replication.brief, targetDurationMs: draft.replication.targetDurationMs };
+        if (next.replication.plan?.input !== referenceReplicationInput(next)) next.replication.confirmed = false;
+    }
+    return next;
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -125,7 +132,12 @@ export function RemakeWorkbench({
     useEffect(() => {
         if (!job) return;
         const current = draftRef.current;
-        const next = current && current.id === job.id && editVersion.current > savedVersion.current ? applyRecipe(job, current) : job;
+        const pending = current && current.id === job.id && editVersion.current > savedVersion.current;
+        if (pending && current.replication?.mode !== job.replication?.mode) {
+            setSaveError("复刻方式已在另一窗口改变，本地未保存配方仍保留，请重新核对作品");
+            return;
+        }
+        const next = pending ? applyRecipe(job, current) : job;
         draftRef.current = next;
         setDraft(next);
     }, [job]);
@@ -209,7 +221,11 @@ export function RemakeWorkbench({
     const generates = draft.shots.some((shot) => shot.treatment === "replace" || shot.treatment === "remake");
     const inputError = planning.error || (generates && draft.model && !suitable.includes(draft.model) ? "当前模型不支持这些镜头做法或已不可用，请更换模型" : generates && typeof limits === "string" ? limits : remakeJobError(draft, usable));
     const startedBefore = job.units.length > 0 || job.status !== "draft";
-    const canEdit = Boolean(job.editTimeline || (job.source?.resourceId && job.shots.some((shot) => shot.treatment !== "skip")) || (job.creative && job.units.length && job.units.every((unit) => unit.status === "succeeded")));
+    const canEdit = Boolean(
+        job.editTimeline ||
+        (job.source?.resourceId && job.replication?.mode !== "style" && job.shots.some((shot) => shot.treatment !== "skip")) ||
+        ((job.creative || job.replication?.mode === "style") && job.units.length && job.units.every((unit) => unit.status === "succeeded")),
+    );
     const currentStep: RemakeStep = step === "edit" && job.editTimeline ? "edit" : step === "produce" && startedBefore ? "produce" : "recipe";
     const allSucceeded = job.units.length > 0 && job.units.every((unit) => unit.status === "succeeded");
     const reviewError = allSucceeded ? remakeReviewError(job) : "";

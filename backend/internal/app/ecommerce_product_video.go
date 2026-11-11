@@ -254,6 +254,9 @@ func normalizeProductVideoItem(id string, raw json.RawMessage) (map[string]json.
 	if err := validateProductVideoDirector(raw); err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}
+	if err := validateProductVideoReferenceReplication(raw); err != nil {
+		return nil, BadAuthRequest(err.Error())
+	}
 	if err := validateProductVideoCreative(raw); err != nil {
 		return nil, BadAuthRequest(err.Error())
 	}

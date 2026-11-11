@@ -22,7 +22,7 @@ test("welcome effects preserve configured SEO title", () => {
     const effects = [...page.matchAll(/useEffect\(\(\) => \{([\s\S]*?)\n    \}, \[([^\]]*)\]\);/g)].filter((match) => match[2] === "");
     assert.ok(effects.length > 0);
     for (const title of ["Custom SEO Title", "Custom Site Name"]) {
-        const document = { title };
+        const document = { title, addEventListener() {}, removeEventListener() {} };
         for (const [, body] of effects) {
             vm.runInNewContext(`(() => {${body}\n})()`, {
                 document,

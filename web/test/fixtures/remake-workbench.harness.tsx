@@ -38,6 +38,8 @@ import type { RemakeJob } from "@/lib/remake/job";
 import type { EditorStore } from "@/stores/editor/editor-store";
 import type { StoreApi, UseBoundStore } from "zustand";
 import type { TimelineProject } from "@/types/timeline";
+import { referenceFixture, referencePlanOutput } from "./reference-replication-data";
+import { applyReferenceReplicationPlan, parseReferenceReplicationPlan, referenceReplicationInput, setReferenceReplicationMode } from "@/lib/remake/reference-replication";
 
 const job = createRemakeJob("ui-work", {
     teardownId: "source-analysis",
@@ -149,9 +151,64 @@ mock.module("@/services/api/lut-library", () => ({
 const resources = await import("@/services/api/resources");
 mock.module("@/services/api/resources", () => ({ ...resources, uploadResourceFile: async () => ({ id: "uploaded-product", width: 720, height: 1280 }) }));
 const { loadProductVideos, updateRemake, useProductVideoStore } = await import("@/pages/video-replication/replace/use-product-video-store");
+let planningRelease: (() => void) | undefined;
+let planningDelay: Promise<void> | undefined;
+const modeChanges: string[] = [];
+mock.module("@/pages/video-replication/remake/reference-replication-runner", () => ({
+    changeReferenceReplicationMode: async (id: string, mode: "elements" | "structure" | "style") => {
+        modeChanges.push(mode);
+        await updateRemake(id, (value) => setReferenceReplicationMode(value, mode, value.replication?.sourceShots || value.shots));
+    },
+    generateReferenceReplicationPlan: async (id: string, _config: unknown, model: string) => {
+        await planningDelay;
+        await updateRemake(id, (value) => ({
+            ...value,
+            replication: {
+                ...value.replication!,
+                run: undefined,
+                confirmed: false,
+                plan: parseReferenceReplicationPlan(JSON.stringify(referencePlanOutput(value.replication?.mode === "style")), value, { id: "ui-plan", model, createdAt: "2026-01-01T00:00:00Z" }),
+            },
+        }));
+    },
+}));
 const { RemakeWorkbench } = await import("@/pages/video-replication/remake/remake-workbench");
 const { RemakeEditor } = await import("@/pages/video-replication/remake/remake-editor");
+const { RemakeProduce } = await import("@/pages/video-replication/remake/remake-produce");
+const { ReferenceReplicationCard } = await import("@/pages/video-replication/remake/reference-replication-card");
 afterAll(() => dom.happyDOM.abort());
+
+test("对比预览按两份媒体比例显示，默认紧凑且可放大，逐段选择保留候选核对", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const previewJob = { ...structuredClone(job), render: { resourceId: "final", width: 1920, height: 1080, durationMs: 6000 } };
+    previewJob.units[0].creativeSignature = "current-recipe";
+    previewJob.units[0].takes[0].inputSignature = "current-recipe";
+    await act(async () =>
+        root.render(
+            <App>
+                <RemakeProduce job={previewJob} config={defaultConfig} onEditRecipe={() => undefined} />
+            </App>,
+        ),
+    );
+    expect(host.querySelector(".rw-produce")?.getAttribute("data-preview")).toBe("compact");
+    const panes = host.querySelectorAll<HTMLElement>(".rw-pane");
+    expect(Number(panes[0].style.getPropertyValue("--rw-preview-ratio"))).toBe(720 / 1280);
+    expect(Number(panes[1].style.getPropertyValue("--rw-preview-ratio"))).toBe(1920 / 1080);
+    const expand = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "放大预览")!;
+    await act(async () => expand.click());
+    expect(expand.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector(".rw-produce")?.getAttribute("data-preview")).toBe("expanded");
+    await act(async () => expand.click());
+    await act(async () => host.querySelector<HTMLButtonElement>(".rw-block-unit")!.click());
+    expect(host.querySelector(".rw-inspector")?.getAttribute("data-selection")).toBe("unit");
+    expect(Number(panes[1].style.getPropertyValue("--rw-preview-ratio"))).toBe(720 / 1280);
+    expect(host.textContent).toContain("人物、商品和声音正确");
+    expect(host.querySelectorAll(".rw-time-ruler span")).toHaveLength(5);
+    await act(async () => root.unmount());
+    host.remove();
+});
 
 test("上传商品无需名称也显示已上传，人脸、姿势与模型都有摘要；保存中编辑不丢失", async () => {
     await loadProductVideos(true);
@@ -290,5 +347,103 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
     expect(saved.editRender?.resourceId).toBe("edited-video");
     expect(host.textContent).toContain("下载剪辑版");
     await act(async () => reopened.unmount());
+    host.remove();
+});
+
+test("真实参考卡片切换模式、锁定规划、展示迁移依据、应用与过期后恢复", async () => {
+    saved = referenceFixture();
+    await loadProductVideos(true);
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const busyStates: boolean[] = [];
+    function CardHarness() {
+        const current = useProductVideoStore((state) => state.jobs.find((item) => item.id === saved.id)) as RemakeJob;
+        return <ReferenceReplicationCard job={current} config={{ ...defaultConfig, textModel: "video-a" }} edit={(update) => void updateRemake(current.id, update)} flush={async () => undefined} onBusyChange={(busy) => busyStates.push(busy)} />;
+    }
+    const button = (text: string) => [...host.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent === text)!;
+    await act(async () =>
+        root.render(
+            <App>
+                <CardHarness />
+            </App>,
+        ),
+    );
+    expect(host.querySelectorAll("button[role=radio]")).toHaveLength(3);
+    await act(async () => button("风格复刻").click());
+    expect(modeChanges.at(-1)).toBe("style");
+    expect(host.querySelector("input[aria-label='风格复刻目标时长']")).toBeTruthy();
+    planningDelay = new Promise((resolve) => {
+        planningRelease = resolve;
+    });
+    await act(async () => button("分析参考并规划目标分镜").click());
+    expect([...host.querySelectorAll<HTMLButtonElement>("button[role=radio]")].every((item) => item.disabled)).toBe(true);
+    expect(host.querySelector<HTMLTextAreaElement>("textarea[aria-label='参考改编要求']")!.disabled).toBe(true);
+    await act(async () => {
+        planningRelease!();
+        await planningDelay;
+    });
+    expect(busyStates).toContain(true);
+    expect(busyStates.at(-1)).toBe(false);
+    expect(host.textContent).toContain("原镜头作用与迁移依据");
+    expect(host.querySelectorAll(".rw-reference-shots li")).toHaveLength(3);
+    await act(async () => button("应用方案，进入目标分镜").click());
+    expect(saved.replication?.confirmed).toBe(true);
+    expect(saved.shots).toHaveLength(3);
+    expect(button("已应用目标分镜").disabled).toBe(true);
+    await act(async () => updateRemake(saved.id, (value) => ({ ...value, product: { ...value.product, name: "新的扶手椅" }, replication: { ...value.replication!, confirmed: false } })));
+    expect(host.textContent).toContain("资料已变化");
+    expect(button("应用方案，进入目标分镜").disabled).toBe(true);
+    await act(async () =>
+        updateRemake(saved.id, (value) => ({
+            ...value,
+            replication: {
+                ...value.replication!,
+                run: { key: "pending", model: "video-a", input: referenceReplicationInput(value), createdAt: "2026-01-01T00:00:00Z", imageCount: 2, targetImageCount: 1, requestSignature: "a".repeat(64), taskId: "pending-task" },
+            },
+        })),
+    );
+    expect(button("恢复参考规划任务").disabled).toBe(false);
+    await act(async () => button("恢复参考规划任务").click());
+    expect(saved.replication?.run).toBeUndefined();
+    expect(button("应用方案，进入目标分镜").disabled).toBe(false);
+    await act(async () => root.unmount());
+    host.remove();
+});
+
+test("风格参考独立播放，新片暂停、等待、换段与进度不控制原片", async () => {
+    const value = referenceFixture("style");
+    value.replication!.plan = parseReferenceReplicationPlan(JSON.stringify(referencePlanOutput(true)), value, { id: "style-plan", model: "vision-model", createdAt: "2026-01-01T00:00:00Z" });
+    const preview = applyReferenceReplicationPlan(value);
+    preview.units = preview.shots
+        .flatMap((shot) => planRemakeUnits([shot], { maxMs: 10000, sourceDurationMs: 8000 }))
+        .map((unit) => ({ ...unit, status: "succeeded", takes: [{ taskId: `task-${unit.key}`, resourceId: `take-${unit.key}`, createdAt: "", durationMs: unit.endMs - unit.startMs }] }));
+    preview.render = { resourceId: "style-final", durationMs: 8000 };
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    await act(async () =>
+        root.render(
+            <App>
+                <RemakeProduce job={preview} config={defaultConfig} onEditRecipe={() => undefined} />
+            </App>,
+        ),
+    );
+    const left = host.querySelector<HTMLVideoElement>("video[aria-label='原片']")!;
+    const right = host.querySelector<HTMLVideoElement>("video[aria-label='新片']")!;
+    let pauses = 0;
+    left.pause = () => {
+        pauses++;
+    };
+    left.currentTime = 1;
+    right.currentTime = 3;
+    for (const event of ["timeupdate", "play", "pause", "waiting", "ended", "ratechange", "seeked"]) await act(async () => right.dispatchEvent(new Event(event)));
+    await act(async () => host.querySelector<HTMLButtonElement>(".rw-block-unit")!.click());
+    expect(left.controls).toBe(true);
+    expect(left.currentTime).toBe(1);
+    expect(pauses).toBe(0);
+    expect(host.textContent).toContain("风格参考 · 独立播放");
+    expect(host.textContent).not.toContain("导出对比视频");
+    await act(async () => root.unmount());
     host.remove();
 });

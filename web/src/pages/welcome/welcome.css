@@ -14,6 +14,11 @@
     --welcome-heading: 80px;
     --welcome-z-navigation: 30;
     --welcome-z-copy: 3;
+    --welcome-action-gap: var(--space-3, 12px);
+    --welcome-action-padding: var(--space-5, 20px);
+    --welcome-action-radius: var(--r-md, 8px);
+    --welcome-action-offset: var(--space-6, 24px);
+    --welcome-action-motion: var(--user-motion, 180ms);
     background: var(--welcome-black);
     color: var(--welcome-paper);
     font-family: "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -144,79 +149,38 @@ body:has(.welcome-page) {
 .welcome-nav a:hover {
     opacity: 0.65;
 }
-.welcome-header-cta.ant-btn {
+.welcome-page .welcome-action.ant-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--welcome-action-gap);
+    height: 44px;
+    padding: 0 var(--welcome-action-padding);
+    border: 1px solid var(--welcome-paper);
+    border-radius: var(--welcome-action-radius);
+    background: var(--welcome-paper);
+    color: var(--welcome-black) !important;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: var(--button-primary-shadow);
+    transition:
+        background var(--welcome-action-motion),
+        transform var(--welcome-action-motion);
+}
+.welcome-page .welcome-action.ant-btn:hover {
+    background: var(--welcome-accent);
+    border-color: var(--welcome-accent);
+}
+.welcome-page .welcome-action.ant-btn:active {
+    box-shadow: var(--button-primary-active-shadow);
+    transform: translateY(1px);
+}
+.welcome-hero-actions {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 24px;
-    height: 40px;
-    padding: 0 20px;
-    border-radius: var(--welcome-radius);
-    color: var(--welcome-black) !important;
-    font-size: 12px;
-}
-/* 与统一主按钮同一种质感：浅色实底用底部 1px 内阴影交代按键厚度，不加发光。 */
-.welcome-page .welcome-header-cta.ant-btn:not(:disabled) {
-    box-shadow: var(--button-primary-shadow);
-}
-.welcome-page .welcome-header-cta.ant-btn:not(:disabled):active {
-    box-shadow: var(--button-primary-active-shadow);
-}
-.welcome-look-picker {
-    position: fixed;
-    top: calc(var(--welcome-header-height) + 6px);
-    right: var(--welcome-gutter);
-    z-index: calc(var(--welcome-z-navigation) - 1);
-    width: 164px;
-}
-.welcome-look-picker .ant-select {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    border-color: var(--welcome-border) !important;
-    background: color-mix(in srgb, var(--welcome-black) 82%, transparent) !important;
-    color: var(--welcome-paper);
-    font-size: 12px;
-    white-space: nowrap;
-    backdrop-filter: blur(14px);
-}
-.welcome-look-picker .ant-select-content {
-    min-width: 0;
-}
-.welcome-look-picker .ant-select-suffix {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    margin-left: 8px;
-    color: var(--welcome-paper);
-}
-.welcome-look-picker .ant-select-selector {
-    border-color: var(--welcome-border) !important;
-    background: transparent !important;
-}
-.welcome-look-picker .ant-select-selection-item,
-.welcome-look-picker .ant-select-arrow {
-    color: var(--welcome-paper);
-}
-.welcome-look-picker > a {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
-    padding: 8px 0;
-    font-size: 11px;
-    color: var(--welcome-muted);
-    text-shadow: 0 1px 4px var(--welcome-black);
-}
-.welcome-media-credit {
-    padding: 0 var(--welcome-gutter) 24px;
-    color: var(--welcome-muted);
-    font-size: 11px;
-}
-.welcome-media-credit a {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+    margin-top: var(--welcome-action-offset);
+    pointer-events: auto;
 }
 .welcome-icon {
     display: grid;
@@ -311,8 +275,9 @@ body:has(.welcome-page) {
 .welcome-chapter h2 > span {
     display: inline-block;
 }
-.welcome-opening {
+.welcome-chapter.welcome-opening {
     bottom: 18%;
+    text-align: center;
 }
 .welcome-subtitle {
     font-size: clamp(18px, 1.6vw, 24px);
@@ -337,112 +302,6 @@ body:has(.welcome-page) {
 }
 .chapter-5 .welcome-chapter h2 {
     font-size: 58px;
-}
-.welcome-film-link.ant-btn {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    height: auto;
-    padding: 8px 0 8px 16px;
-    color: var(--welcome-paper);
-    font-size: 12px;
-    pointer-events: auto;
-}
-.welcome-film-link.ant-btn:hover {
-    color: var(--welcome-paper) !important;
-    background: transparent !important;
-}
-.welcome-play-mark {
-    display: grid;
-    place-items: center;
-    width: 64px;
-    height: 64px;
-    border: 1px solid #ffffff70;
-    border-radius: 50%;
-    transition:
-        background 180ms,
-        transform 180ms;
-}
-.welcome-film-link:hover .welcome-play-mark {
-    background: #ffffff20;
-    transform: scale(1.06);
-}
-.welcome-stage-bottom {
-    position: absolute;
-    z-index: calc(var(--welcome-z-copy) + 1);
-    inset: auto var(--welcome-gutter) 25px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-}
-.welcome-next {
-    appearance: none;
-    display: grid;
-    place-items: center;
-    width: 48px;
-    height: 48px;
-    padding: 0;
-    color: var(--welcome-paper);
-    background: #ffffff18;
-    border: 1px solid #ffffff4d;
-    border-radius: 50%;
-    backdrop-filter: blur(16px);
-    transition:
-        background 180ms,
-        border-color 180ms,
-        transform 180ms;
-}
-.welcome-next:hover {
-    background: #ffffff2e;
-    border-color: #ffffff8a;
-    transform: translateY(2px);
-}
-.welcome-next:active {
-    transform: translateY(3px) scale(0.96);
-}
-.welcome-next svg {
-    width: 18px;
-    height: 18px;
-}
-.welcome-chapter-nav {
-    display: flex;
-    gap: 4px;
-}
-.welcome-chapter-nav button {
-    display: grid;
-    place-items: center;
-    border: 0;
-    background: none;
-    min-width: 42px;
-    height: 44px;
-    padding: 0;
-}
-.welcome-chapter-nav button small {
-    font-size: 10px;
-    color: var(--welcome-muted);
-}
-.welcome-chapter-nav .is-current small {
-    color: var(--welcome-paper);
-}
-.welcome-chapter-nav button span {
-    display: block;
-    width: 22px;
-    height: 1px;
-    background: #ffffff48;
-    transition:
-        background 0.2s,
-        height 0.2s;
-}
-.welcome-chapter-nav .is-current span {
-    height: 2px;
-    background: var(--welcome-paper);
-}
-.welcome-chapter-nav button:hover span {
-    background: var(--welcome-paper);
 }
 .welcome-workbench {
     position: relative;
@@ -528,25 +387,7 @@ body:has(.welcome-page) {
     margin-bottom: 40px;
 }
 .welcome-primary.ant-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 40px;
     height: 52px;
-    padding: 0 28px;
-    border-radius: var(--welcome-radius);
-    color: var(--welcome-black) !important;
-    font-size: 14px;
-    font-weight: 500;
-}
-.welcome-source {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 28px;
-    font-size: 12px;
-    color: var(--welcome-muted) !important;
 }
 .welcome-footer {
     display: flex;
@@ -566,32 +407,6 @@ body:has(.welcome-page) {
     display: flex;
     gap: 4px;
     align-items: center;
-}
-.welcome-film-dialog {
-    border: 0;
-    padding: 0;
-    max-width: min(1000px, 94%);
-    width: 100%;
-    background: #111;
-    color: #f3f2ef;
-    border-radius: 4px;
-    overflow: visible;
-}
-.welcome-film-dialog::backdrop {
-    background: #000d;
-}
-.welcome-film-dialog video {
-    width: 100%;
-    display: block;
-}
-.welcome-film-dialog p {
-    font-size: 12px;
-    padding: 16px 20px;
-}
-.welcome-film-dialog .welcome-icon {
-    position: absolute;
-    right: 10px;
-    top: -50px;
 }
 @media (min-width: 1600px) {
     .welcome-page {
@@ -626,9 +441,6 @@ body:has(.welcome-page) {
     .welcome-header {
         gap: 16px;
     }
-    .welcome-look-picker {
-        width: 148px;
-    }
     .welcome-brand {
         font-size: 14px;
         gap: 8px;
@@ -639,9 +451,6 @@ body:has(.welcome-page) {
     }
     .welcome-header-cta {
         margin-left: auto;
-        padding: 8px 12px;
-        gap: 8px;
-        font-size: 11px;
     }
     .mobile-menu {
         display: grid;
@@ -683,22 +492,6 @@ body:has(.welcome-page) {
     .welcome-subtitle {
         font-size: 14px;
     }
-    .welcome-film-link {
-        bottom: -65px;
-        right: auto;
-        left: 0;
-        padding: 0;
-        font-size: 11px !important;
-        gap: 8px;
-    }
-    .welcome-play-mark {
-        width: 38px;
-        height: 38px;
-    }
-    .welcome-play-mark svg {
-        width: 12px;
-        height: 12px;
-    }
     .chapter-1 .welcome-chapter {
         top: 43%;
     }
@@ -714,19 +507,6 @@ body:has(.welcome-page) {
     .chapter-5 .welcome-chapter h2 {
         font-size: 36px;
         max-width: 100%;
-    }
-    .welcome-stage-bottom {
-        bottom: 18px;
-        gap: 12px;
-    }
-    .welcome-chapter-nav {
-        gap: 0;
-    }
-    .welcome-chapter-nav button {
-        min-width: 36px;
-    }
-    .welcome-chapter-nav button span {
-        width: 16px;
     }
     .welcome-workbench {
         padding-top: 68px;

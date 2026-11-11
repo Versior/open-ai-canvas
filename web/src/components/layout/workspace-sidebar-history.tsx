@@ -1,6 +1,6 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
-import { Dropdown } from "antd";
-import { ChevronDown, ChevronUp, FileText, Image as ImageIcon, LoaderCircle, PanelsTopLeft, Plus, Trash2, Video } from "lucide-react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { Dropdown, type MenuProps } from "antd";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileText, Image as ImageIcon, LoaderCircle, MoreHorizontal, PanelsTopLeft, Pin, PinOff, Plus, RotateCcw, Trash2, Video } from "lucide-react";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
@@ -8,12 +8,13 @@ import { Link } from "react-router";
 import { CachedResourceImage } from "@/components/cached-resource-image";
 import { cn } from "@/lib/utils";
 import { loadCanvasProjectPage } from "@/lib/workspace-route-modules";
-import { listRemoteCanvasProjectsPage, type CanvasLibrarySummary } from "@/services/api/user-data";
+import { listRemoteCanvasProjects, listRemoteCanvasProjectsPage, type CanvasLibrarySummary } from "@/services/api/user-data";
 import { resolveBackendApiUrl } from "@/stores/use-config-store";
 import { useCreationSidebarHistory } from "@/hooks/use-creation-sidebar-history";
 import { useUserStore } from "@/stores/use-user-store";
 import { useCanvasUiStore } from "@/stores/canvas/use-canvas-ui-store";
 import { CanvasNodeType } from "@/types/canvas";
+import { EMPTY_HISTORY_PREFS, orderSidebarHistory, useSidebarHistoryPrefsStore, type SidebarHistoryKind } from "@/stores/use-sidebar-history-prefs-store";
 
 const PAGE_SIZE = 5;
 
@@ -67,9 +68,61 @@ function HistoryPagination({ hasMore, expanded, loading, failed, onMore, onColla
 
 const conversationIcons = { video: Video, image: ImageIcon, text: FileText };
 
+function HistoryRow({ userId, kind, id, title, ids, children, onDelete }: { userId: string; kind: SidebarHistoryKind; id: string; title: string; ids: string[]; children: ReactNode; onDelete?: () => void }) {
+    const { t } = useTranslation();
+    const prefs = useSidebarHistoryPrefsStore((state) => state.users[userId]?.[kind] || EMPTY_HISTORY_PREFS);
+    const [open, setOpen] = useState(false);
+    const pinned = prefs.pinned.includes(id);
+    const index = ids.indexOf(id);
+    const menuId = `sidebar-history-menu-${kind}-${id}`;
+    const menu: MenuProps = {
+        id: menuId,
+        items: [
+            { key: "pin", label: t(pinned ? "nav.sidebar.unpin" : "nav.sidebar.pin"), icon: pinned ? <PinOff /> : <Pin /> },
+            { key: "up", label: t("nav.sidebar.moveUp"), icon: <ArrowUp />, disabled: index <= 0 || pinned !== prefs.pinned.includes(ids[index - 1]) },
+            { key: "down", label: t("nav.sidebar.moveDown"), icon: <ArrowDown />, disabled: index >= ids.length - 1 || pinned !== prefs.pinned.includes(ids[index + 1]) },
+            { key: "reset", label: t("nav.sidebar.resetOrder"), icon: <RotateCcw />, disabled: !prefs.order.length },
+            ...(onDelete ? [{ type: "divider" as const }, { key: "delete", label: t("common.delete"), icon: <Trash2 />, danger: true }] : []),
+        ],
+        onClick: ({ key, domEvent }) => {
+            domEvent.preventDefault();
+            domEvent.stopPropagation();
+            const store = useSidebarHistoryPrefsStore.getState();
+            if (key === "pin") store.togglePin(userId, kind, id);
+            if (key === "up" || key === "down") store.move(userId, kind, ids, id, key === "up" ? -1 : 1);
+            if (key === "reset") store.resetOrder(userId, kind);
+            if (key === "delete") onDelete?.();
+            setOpen(false);
+        },
+    };
+    return (
+        <li className={cn("workspace-history-row", open && "is-menu-open", pinned && "is-pinned")}>
+            <Dropdown trigger={["contextMenu"]} menu={menu} open={open} onOpenChange={setOpen} destroyOnHidden classNames={{ root: "workspace-history-menu" }}>
+                <div className="workspace-history-row-content">
+                    {children}
+                    {pinned ? <Pin className="workspace-history-pin" aria-label={t("nav.sidebar.pinned")} /> : null}
+                    <button
+                        type="button"
+                        className="workspace-history-actions"
+                        aria-label={t("nav.sidebar.itemActions", { title })}
+                        aria-haspopup="menu"
+                        aria-controls={open ? menuId : undefined}
+                        aria-expanded={open}
+                        onClick={() => setOpen((value) => !value)}
+                    >
+                        <MoreHorizontal aria-hidden />
+                    </button>
+                </div>
+            </Dropdown>
+        </li>
+    );
+}
+
 function ConversationHistory({ userId, onNavigate }: { userId: string; onNavigate: () => void }) {
     const { t } = useTranslation();
     const history = useCreationSidebarHistory(userId);
+    const prefs = useSidebarHistoryPrefsStore((state) => state.users[userId]?.conversations || EMPTY_HISTORY_PREFS);
+    const items = useMemo(() => orderSidebarHistory(history.items, prefs), [history.items, prefs]);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     return (
         <HistorySection
@@ -101,12 +154,12 @@ function ConversationHistory({ userId, onNavigate }: { userId: string; onNavigat
                 </div>
             ) : null}
             <ul className="workspace-history-list">
-                {history.items.slice(0, visibleCount).map((item) => {
+                {items.slice(0, visibleCount).map((item) => {
                     const current = item.id === history.activeId;
                     const disabled = !current && !history.canSelect;
                     const Icon = conversationIcons[item.mode];
                     return (
-                        <li key={item.id}>
+                        <HistoryRow key={item.id} userId={userId} kind="conversations" id={item.id} title={item.title || t("nav.sidebar.newConversation")} ids={items.map((value) => value.id)}>
                             <Link
                                 to={`/?conversation=${encodeURIComponent(item.id)}`}
                                 className={cn("workspace-history-item", current && "is-active")}
@@ -123,7 +176,7 @@ function ConversationHistory({ userId, onNavigate }: { userId: string; onNavigat
                                 </span>
                                 <span className="workspace-history-title">{item.title || t("nav.sidebar.newConversation")}</span>
                             </Link>
-                        </li>
+                        </HistoryRow>
                     );
                 })}
             </ul>
@@ -151,6 +204,8 @@ function CanvasHistory({ userId, onNavigate }: { userId: string; onNavigate: () 
     const { t } = useTranslation();
     const hydrated = useUserStore((state) => state.hydrated);
     const setDeleteIds = useCanvasUiStore((state) => state.setDeleteProjectIds);
+    const prefs = useSidebarHistoryPrefsStore((state) => state.users[userId]?.canvases || EMPTY_HISTORY_PREFS);
+    const preferredIds = useMemo(() => new Set([...prefs.pinned, ...prefs.order]), [prefs]);
     const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
     const loadingMore = useRef(false);
     const query = useInfiniteQuery({
@@ -160,12 +215,20 @@ function CanvasHistory({ userId, onNavigate }: { userId: string; onNavigate: () 
         getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
         enabled: hydrated,
     });
+    // Saved pins/order may point beyond page one. Resolve them from the owner's lightweight
+    // server metadata, never from cached titles or whole canvas documents.
+    const preferredQuery = useQuery({
+        queryKey: ["canvas-library", userId, "sidebar-preferences"],
+        queryFn: listRemoteCanvasProjects,
+        enabled: hydrated && preferredIds.size > 0,
+    });
     // 更新排序的分页可能重叠：保留首次出现的最新摘要，避免重复条目。
     const projects = useMemo(() => {
         const unique = new Map<string, CanvasLibrarySummary>();
         for (const page of query.data?.pages ?? []) for (const project of page.projects) if (!unique.has(project.id)) unique.set(project.id, project);
-        return [...unique.values()];
-    }, [query.data]);
+        for (const project of preferredQuery.data?.projects ?? []) if (preferredIds.has(project.id) && !unique.has(project.id)) unique.set(project.id, { ...project, nodeCount: 0, previewNodes: [] });
+        return orderSidebarHistory([...unique.values()], prefs);
+    }, [query.data, preferredQuery.data, preferredIds, prefs]);
     const loadMore = async () => {
         if (query.isFetching || loadingMore.current) return;
         if (projects.length >= visibleCount + PAGE_SIZE || !query.hasNextPage) {
@@ -198,24 +261,12 @@ function CanvasHistory({ userId, onNavigate }: { userId: string; onNavigate: () 
             ) : (
                 <ul className="workspace-history-list">
                     {projects.slice(0, visibleCount).map((project) => (
-                        <li key={project.id}>
-                            <Dropdown
-                                trigger={["contextMenu"]}
-                                menu={{
-                                    items: [{ key: "delete", label: t("common.delete"), icon: <Trash2 className="size-3.5" aria-hidden />, danger: true }],
-                                    onClick: ({ domEvent }) => {
-                                        domEvent.preventDefault();
-                                        domEvent.stopPropagation();
-                                        setDeleteIds([project.id]);
-                                    },
-                                }}
-                            >
-                                <Link to={`/canvas/${project.id}`} className="workspace-history-item" title={project.title || t("create.recent.untitledCanvas")} onClick={onNavigate} onPointerEnter={preload} onFocus={preload} aria-haspopup="menu">
-                                    <CanvasThumbnail project={project} />
-                                    <span className="workspace-history-title">{project.title || t("create.recent.untitledCanvas")}</span>
-                                </Link>
-                            </Dropdown>
-                        </li>
+                        <HistoryRow key={project.id} userId={userId} kind="canvases" id={project.id} title={project.title || t("create.recent.untitledCanvas")} ids={projects.map((value) => value.id)} onDelete={() => setDeleteIds([project.id])}>
+                            <Link to={`/canvas/${project.id}`} className="workspace-history-item" title={project.title || t("create.recent.untitledCanvas")} onClick={onNavigate} onPointerEnter={preload} onFocus={preload} aria-haspopup="menu">
+                                <CanvasThumbnail project={project} />
+                                <span className="workspace-history-title">{project.title || t("create.recent.untitledCanvas")}</span>
+                            </Link>
+                        </HistoryRow>
                     ))}
                 </ul>
             )}
@@ -230,6 +281,14 @@ function CanvasHistory({ userId, onNavigate }: { userId: string; onNavigate: () 
                 </div>
             ) : !query.isPending && !projects.length ? (
                 <p className="workspace-history-state">{t("nav.sidebar.noCanvases")}</p>
+            ) : null}
+            {preferredQuery.isError && preferredIds.size ? (
+                <div className="workspace-history-state" role="alert">
+                    <span>{t("nav.sidebar.preferencesFailed")}</span>
+                    <button type="button" className="workspace-history-more" onClick={() => void preferredQuery.refetch()}>
+                        {t("common.retry")}
+                    </button>
+                </div>
             ) : null}
             <HistoryPagination
                 hasMore={projects.length > visibleCount || Boolean(query.hasNextPage)}
