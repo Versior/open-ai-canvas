@@ -69,6 +69,11 @@ test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循�
         );
         const page = host.querySelector<HTMLElement>(".welcome-page")!;
         const story = host.querySelector<HTMLElement>(".welcome-story")!;
+        expect(host.querySelectorAll('.welcome-header a[href="/create"]').length, "顶部不重复展示开始创作入口").toBe(0);
+        const heroActions = host.querySelectorAll<HTMLAnchorElement>(".welcome-hero-actions a");
+        expect(heroActions.length, "首屏保留一个居中主入口").toBe(1);
+        expect(heroActions[0].getAttribute("href")).toBe("/create");
+        expect(heroActions[0].tabIndex).toBe(0);
         let calls = 0;
         page.scrollTo = (options: ScrollToOptions | number) => {
             calls++;

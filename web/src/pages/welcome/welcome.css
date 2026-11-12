@@ -449,7 +449,7 @@ body:has(.welcome-page) {
         width: 22px;
         height: 22px;
     }
-    .welcome-header-cta {
+    .welcome-header-login {
         margin-left: auto;
     }
     .mobile-menu {

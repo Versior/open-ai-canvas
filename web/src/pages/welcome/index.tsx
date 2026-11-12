@@ -93,9 +93,6 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
                 <Button className="welcome-header-login" type="text" href="/login?next=%2Fcreate">
                     {t("auth.login.submit")}
                 </Button>
-                <Button className="welcome-action welcome-header-cta" type="primary" href="/create" icon={<ArrowUpRight size={16} />} iconPlacement="end">
-                    {t("account.welcome.start")}
-                </Button>
                 <IconButton className="welcome-icon mobile-menu" variant="ghost" size="lg" icon={menu ? X : Menu} aria-label={menu ? t("account.welcome.closeMenu") : t("account.welcome.openMenu")} aria-expanded={menu} onClick={() => setMenu(!menu)} />
             </header>
             <main>
