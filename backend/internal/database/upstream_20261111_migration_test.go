@@ -2,6 +2,7 @@ package database
 
 import (
 	"reflect"
+	"strconv"
 	"testing"
 
 	"yingce/backend/internal/model"
@@ -44,18 +45,54 @@ func TestFork99UpgradePreservesPublishedLedgerAndLUTState(t *testing.T) {
 	}
 }
 
-func TestUpstream100UpgradePreservesNewMigrationIdentities(t *testing.T) {
-	db, applied := upstreamSchemaDatabase(t, 100)
-	if err := MigrateSchema(db); err != nil {
+func TestUpstream100To104UpgradePreservesNewMigrationIdentities(t *testing.T) {
+	for _, version := range []int64{100, 101, 102, 103, 104} {
+		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
+			db, applied := upstreamSchemaDatabase(t, version)
+			for range 2 {
+				if err := MigrateSchema(db); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, item := range schemaMigrations {
+				if item.version < 100 || item.version > version+7 {
+					continue
+				}
+				requireMigration(t, db, schemaMigration{Version: item.version, Name: item.name, Checksum: item.checksum, AppliedAt: applied[item.version-7]})
+			}
+		})
+	}
+}
+
+func TestFork107UpgradePreservesPublishedLedger(t *testing.T) {
+	db := openLineageTestDatabase(t)
+	applyCanonicalMigrationsThrough(t, db, 107)
+	var before, after []schemaMigration
+	if err := db.Order("version").Find(&before).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, item := range schemaMigrations {
-		if item.version < 100 {
-			continue
+	for range 2 {
+		if err := MigrateSchema(db); err != nil {
+			t.Fatal(err)
 		}
-		requireMigration(t, db, schemaMigration{Version: item.version, Name: item.name, Checksum: item.checksum, AppliedAt: applied[item.version-7]})
 	}
-	if err := MigrateSchema(db); err != nil {
+	if err := db.Where("version <= ?", 107).Order("version").Find(&after).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, after) {
+		t.Fatal("upgrade changed the fork's published migration identities or timestamps")
+	}
+	for _, entity := range []any{&model.CreationConversation{}, &model.CreationConversationMessage{}, &model.CreationConversationResource{}, &model.MCPConnectionGrant{}, &model.MCPStorageUsage{}, &model.AgentStorageUsage{}} {
+		if !db.Migrator().HasTable(entity) {
+			t.Fatalf("missing new migration table: %T", entity)
+		}
+	}
+	for _, field := range []string{"Purpose", "ClientID", "ProfileJSON"} {
+		if !db.Migrator().HasColumn(&model.OAuthState{}, field) {
+			t.Fatalf("missing Wechat migration field: %s", field)
+		}
+	}
+	if err := RequireSchemaVersion(db); err != nil {
 		t.Fatal(err)
 	}
 }

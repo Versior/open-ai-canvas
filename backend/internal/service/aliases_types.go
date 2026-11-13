@@ -35,6 +35,7 @@ type (
 	PaymentOrderQuery                      = app.PaymentOrderQuery
 	PaymentReconciliationQuery             = app.PaymentReconciliationQuery
 	CloudAgentRequest                      = app.CloudAgentRequest
+	CloudAgentPageContext                  = app.CloudAgentPageContext
 	CloudAgentRunViewOptions               = app.CloudAgentRunViewOptions
 	CloudAgentMediaSettings                = app.CloudAgentMediaSettings
 	CloudAgentCapabilitySet                = app.CloudAgentCapabilitySet
@@ -232,6 +233,9 @@ type (
 	LibTVWorkDetail                        = app.LibTVWorkDetail
 	LibTVWorkStep                          = app.LibTVWorkStep
 	LibTVSettingRequest                    = app.LibTVSettingRequest
+	LibTVConnectStartRequest               = app.LibTVConnectStartRequest
+	LibTVConnectStartResult                = app.LibTVConnectStartResult
+	LibTVConnectCompleteRequest            = app.LibTVConnectCompleteRequest
 	LinkCanvasUnitRequest                  = app.LinkCanvasUnitRequest
 	LinkProjectAssetRequest                = app.LinkProjectAssetRequest
 	LinkShotAssetRequest                   = app.LinkShotAssetRequest

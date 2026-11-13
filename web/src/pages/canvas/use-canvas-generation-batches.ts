@@ -233,11 +233,11 @@ export function useCanvasGenerationBatches({ projectId, projectLoaded, nodes, no
             if (!hasWaitingItems) return;
 
             const tasks = await listGenerationTasks(100, { projectId, activeOnly: true }).catch(() => null);
-            if (!tasks) return;
             if (getActiveUserScope() !== schedulingScope) {
                 failBatchesOutsideScope(getActiveUserScope());
                 return;
             }
+            if (!tasks) return;
             // Awaiting capacity can outlive node edits, deletion or queue cancellation.
             const currentNodes = nodesRef.current;
             const activeTaskCount = tasks.filter((task) => task.status === "queued" || task.status === "running").length;

@@ -201,7 +201,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 107 {
+	if CurrentSchemaVersion != 111 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -234,7 +234,7 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92"},
 		{Version: 99, Name: "lut_library", Checksum: "sha256:lut-library-v99-20261109"},
 	}
-	got := schemaMigrations[len(schemaMigrations)-len(want)-8 : len(schemaMigrations)-8]
+	got := schemaMigrations[len(schemaMigrations)-len(want)-12 : len(schemaMigrations)-12]
 	for index, item := range want {
 		if got[index].version != item.Version || got[index].name != item.Name || got[index].checksum != item.Checksum {
 			t.Fatalf("migration tail[%d] = %#v, want %#v", index, got[index], item)
@@ -398,7 +398,7 @@ func TestMigrateSchemaUpgradesFork97ReferenceControls(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}

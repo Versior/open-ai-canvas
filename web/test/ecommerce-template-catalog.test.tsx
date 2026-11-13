@@ -27,6 +27,8 @@ test("catalog searches, retries details without losing selection, clones applied
     let lastCategory: string | undefined;
     let lastPage: number | undefined;
     let failList = false;
+    let holdList = false;
+    const heldRequests: Array<() => void> = [];
     apiClient.request = (async (config) => {
         let data;
         if (config.url === "/ecommerce/templates") {
@@ -50,6 +52,7 @@ test("catalog searches, retries details without losing selection, clones applied
             if (++detailReads === 1) throw new Error("detail unavailable");
             data = { template };
         } else throw new Error("Unexpected request");
+        if (holdList && config.url === "/ecommerce/templates") await new Promise<void>((resolve) => heldRequests.push(resolve));
         return { data: { code: 0, data, msg: "ok" }, status: 200, headers: {} };
     }) as typeof apiClient.request;
     let tree: ReactNode, applied: EcommerceSuiteTemplate | undefined;
@@ -102,11 +105,17 @@ test("catalog searches, retries details without losing selection, clones applied
         expect(listReads).toBe(2);
         expect(lastCategory).toBe("Cups");
         expect(lastPage).toBe(1);
+        // 保持旧页请求在途，再检查搜索变化是否取消它；完成请求会移除取消监听。
+        holdList = true;
+        await click("下一页");
+        await settle();
         const oldSignal = lastSignal!;
+        holdList = false;
         await act(async () => {
             find(tree, (props) => props["aria-label"] === "搜索内置套图库")!.onChange!({ target: { value: "cup" } });
         });
         expect(oldSignal.aborted).toBe(true);
+        heldRequests.forEach((release) => release());
         await settle();
         expect(lastQuery).toBe("cup");
         expect(lastCategory).toBe("Cups");
@@ -120,13 +129,20 @@ test("catalog searches, retries details without losing selection, clones applied
         await click("重新读取套图库");
         await settle();
         expect(find(tree, (props) => props.children === "重新读取套图库")).toBeUndefined();
+        holdList = true;
+        await act(async () => {
+            find(tree, (props) => props["aria-label"] === "搜索内置套图库")!.onChange!({ target: { value: "pending" } });
+        });
+        await settle();
     } finally {
         await act(async () => {
             reconciler.updateContainer(null, root, null, null);
         });
-        expect(lastSignal?.aborted).toBe(true);
+        const aborted = lastSignal?.aborted;
         apiClient.request = original;
         if (actDescriptor) Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", actDescriptor);
         else Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
+        heldRequests.forEach((release) => release());
+        expect(aborted).toBe(true);
     }
 }, 10000);

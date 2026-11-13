@@ -21,7 +21,7 @@ func TestMutateCloudAgentUsesSingleTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&model.CloudAgentExecution{}, &model.CloudAgentEventRecord{}, &model.CloudAgentMessageRecord{}); err != nil {
+	if err := db.AutoMigrate(&model.CloudAgentExecution{}, &model.CloudAgentPiSession{}, &model.CloudAgentCanvasMutation{}, &model.CloudAgentEventRecord{}, &model.CloudAgentMessageRecord{}, &model.AgentStorageUsage{}); err != nil {
 		t.Fatal(err)
 	}
 	run := model.CloudAgentExecution{ID: "run", UserID: "user", Status: "queued", Revision: 3, CheckpointVersion: 2, EventCount: 1}

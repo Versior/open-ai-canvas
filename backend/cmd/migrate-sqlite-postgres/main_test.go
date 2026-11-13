@@ -171,7 +171,7 @@ func TestLUTLibraryMigrationReplacesTargetSeedsWithSourceState(t *testing.T) {
 	}
 }
 
-func TestChannelWebsiteMigrationDependencyOrder(t *testing.T) {
+func TestMigrationDependencyOrder(t *testing.T) {
 	positions := make(map[string]int)
 	for i, migration := range migrations() {
 		positions[migration.name] = i
@@ -182,6 +182,10 @@ func TestChannelWebsiteMigrationDependencyOrder(t *testing.T) {
 		{"channel_websites", "channel_protocol_selections"},
 		{"channel_models", "channel_protocol_selections"},
 		{"users", "channel_protocol_selections"},
+		{"users", "mcp_connection_grants"},
+		{"mcp_connections", "mcp_connection_grants"},
+		{"users", "mcp_storage_usages"},
+		{"users", "agent_storage_usages"},
 	} {
 		parent, parentFound := positions[dependency[0]]
 		child, childFound := positions[dependency[1]]

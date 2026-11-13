@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"yingce/backend/internal/database"
 	"yingce/backend/internal/model"
 )
 
@@ -18,7 +19,7 @@ func TestProjectAssetImageCompletionFallsBackToLibraryWhenProjectUnavailable(t *
 	for _, state := range []string{"deleted", "archived", "ambiguous"} {
 		t.Run(state, func(t *testing.T) {
 			svc, db, projectID, projectAsset := seedProjectVisualAsset(t, model.AssetCategoryEnvironment)
-			if err := db.AutoMigrate(&model.SystemSetting{}, &model.TaskLog{}, &model.Result{}, &model.ApiCallLog{}, &model.TaskTextDelta{}, &model.EcommerceProject{}); err != nil {
+			if err := database.MigrateSchema(db); err != nil {
 				t.Fatal(err)
 			}
 			svc.dataDir = t.TempDir()
@@ -87,7 +88,7 @@ func TestProjectAssetImageCompletionFallsBackToLibraryWhenProjectUnavailable(t *
 
 func TestProjectAssetImageCompletionKeepsClaimOnProjectLookupFailure(t *testing.T) {
 	svc, db, projectID, projectAsset := seedProjectVisualAsset(t, model.AssetCategoryEnvironment)
-	if err := db.AutoMigrate(&model.SystemSetting{}, &model.TaskLog{}, &model.Result{}, &model.ApiCallLog{}, &model.TaskTextDelta{}, &model.EcommerceProject{}); err != nil {
+	if err := database.MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
 	input, err := json.Marshal(map[string]any{"metadata": map[string]any{
@@ -135,7 +136,7 @@ func TestProjectAssetImageCompletionKeepsClaimOnProjectLookupFailure(t *testing.
 
 func TestProjectAssetImageCompletionDoesNotHideRegistrationErrorWhenProjectBecomesUnavailable(t *testing.T) {
 	svc, db, projectID, projectAsset := seedProjectVisualAsset(t, model.AssetCategoryEnvironment)
-	if err := db.AutoMigrate(&model.SystemSetting{}, &model.TaskLog{}, &model.Result{}, &model.ApiCallLog{}, &model.TaskTextDelta{}, &model.EcommerceProject{}); err != nil {
+	if err := database.MigrateSchema(db); err != nil {
 		t.Fatal(err)
 	}
 	svc.dataDir = t.TempDir()
@@ -211,7 +212,7 @@ func TestProjectAssetImageCompletionFallsBackWhenProjectBecomesUnavailableDuring
 	for _, state := range []string{"archived", "deleted"} {
 		t.Run(state, func(t *testing.T) {
 			svc, db, projectID, projectAsset := seedProjectVisualAsset(t, model.AssetCategoryEnvironment)
-			if err := db.AutoMigrate(&model.SystemSetting{}, &model.TaskLog{}, &model.Result{}, &model.ApiCallLog{}, &model.TaskTextDelta{}, &model.EcommerceProject{}); err != nil {
+			if err := database.MigrateSchema(db); err != nil {
 				t.Fatal(err)
 			}
 			svc.dataDir = t.TempDir()

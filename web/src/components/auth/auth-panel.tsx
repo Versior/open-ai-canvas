@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router";
 
 import { BrandWordmark } from "@/components/brand/brand-logo";
 import { useAuthSettings } from "@/hooks/use-auth-entry";
@@ -8,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { useThemePack } from "@/themes/use-theme-pack";
 import { AuthLoginForm } from "./auth-login-form";
 import { AuthRecoveryForm } from "./auth-recovery-form";
+import { WechatRegistrationForm } from "./wechat-registration-form";
 import "./auth-panel.css";
 
 export type AuthPanelProps = {
@@ -24,9 +26,11 @@ export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant }
     const { t } = useTranslation();
     const titleId = useId();
     const { settings, failed, reload } = useAuthSettings();
+    const [params] = useSearchParams();
+    const wechatRegistration = params.get("wechat_register") === "1";
     // 登录与注册是同一个表单；/register 仍保留给推广链接，打开的也是一体表单。
     const themeLoginTitle = useThemePack()?.copy?.loginTitle;
-    const title = view === "recovery" ? t("auth.panel.recoveryTitle") : t("auth.panel.loginTitle", { brand: "__BRAND__" });
+    const title = wechatRegistration ? t("auth.wechat.completeTitle", { defaultValue: "完成微信注册" }) : view === "recovery" ? t("auth.panel.recoveryTitle") : themeLoginTitle || t("auth.panel.loginTitle", { brand: "__BRAND__" });
     const [titleBeforeBrand, titleAfterBrand = ""] = title.split("__BRAND__");
     const formProps = { settings, next, onAuthenticated, onViewChange };
 
@@ -34,8 +38,8 @@ export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant }
         <section className={cn("auth-panel", variant === "page" ? "is-page" : "is-dialog")} aria-labelledby={titleId}>
             <header className="auth-panel-header">
                 <h2 id={titleId} className="auth-panel-title">
-                    {view === "recovery" || themeLoginTitle ? (
-                        themeLoginTitle || title
+                    {wechatRegistration || view === "recovery" || themeLoginTitle ? (
+                        title
                     ) : (
                         <>
                             {titleBeforeBrand}
@@ -47,7 +51,13 @@ export function AuthPanel({ view, onViewChange, next, onAuthenticated, variant }
                 {view === "recovery" ? <p className="auth-panel-description">{t("auth.panel.recoveryDescription")}</p> : null}
             </header>
             <div key={view} className="auth-panel-body">
-                {view !== "recovery" ? <AuthLoginForm {...formProps} settingsFailed={failed} onReloadSettings={() => void reload()} /> : <AuthRecoveryForm settings={settings} onViewChange={onViewChange} />}
+                {wechatRegistration ? (
+                    <WechatRegistrationForm settings={settings} settingsFailed={failed} onReloadSettings={() => void reload()} next={next} />
+                ) : view !== "recovery" ? (
+                    <AuthLoginForm {...formProps} settingsFailed={failed} onReloadSettings={() => void reload()} />
+                ) : (
+                    <AuthRecoveryForm settings={settings} onViewChange={onViewChange} />
+                )}
             </div>
         </section>
     );

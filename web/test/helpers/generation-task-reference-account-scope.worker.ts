@@ -20,11 +20,13 @@ Object.defineProperty(globalThis, "window", {
     },
 });
 
+const { setActiveUserScope } = await import("../../src/lib/user-scope");
+
 mock.module("@/services/image-storage", () => ({
     imageToDataUrl: async () => "data:image/png;base64,eA==",
     getImageBlob: async () => {
         await Promise.resolve();
-        if (scenario === "indexeddb-switch") currentScope = "user-b";
+        if (scenario === "indexeddb-switch") setActiveUserScope("user-b");
         return new Blob(["image"], { type: "image/png" });
     },
 }));
@@ -48,7 +50,7 @@ const nativeFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
     if (scenario === "local-blob-switch") {
         await Promise.resolve();
-        currentScope = "user-b";
+        setActiveUserScope("user-b");
         return new Response(new Blob(["image"], { type: "image/png" }));
     }
     return nativeFetch(input, init);
@@ -77,7 +79,7 @@ function task(status: "pending" | "completed") {
 
 async function run(input: Scenario) {
     scenario = input;
-    currentScope = "user-a";
+    setActiveUserScope("user-a");
     createCalls = 0;
     uploadCalls.length = 0;
     const controller = new AbortController();

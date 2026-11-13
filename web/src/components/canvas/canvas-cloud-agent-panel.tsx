@@ -2,6 +2,7 @@ import { createClientUUID } from "@/lib/client-id";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent } from "react";
 import { App, Button } from "antd";
 import { appQueryClient } from "@/lib/query-client";
+import { sameAgentRequestTarget, type AgentRequestTarget } from "@/lib/agent-page-context";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { EyeOff, FileText, ImagePlus, MoveDiagonal2, SquareDashedMousePointer, X } from "lucide-react";
 import { canvasNodeMentionToken } from "@/lib/canvas/canvas-resource-references";
@@ -59,7 +60,7 @@ import {
     type AgentRun,
 } from "@/services/api/agent";
 import { agentApprovalMatchesSettings, agentApprovalTargetGenerating } from "@/lib/canvas/agent-media-approval";
-import { appendAgentPromptPrefill } from "@/lib/canvas/agent-prompt-prefill";
+import { appendAgentPromptPrefill, resolveAgentPromptPrefill } from "@/lib/canvas/agent-prompt-prefill";
 import type { CanvasNodeData } from "@/types/canvas";
 import type { AgentMediaSettings } from "@/services/api/agent";
 import { addSkill, listAddedSkills, listSkills, setSkillAgentMode, type Skill, type SkillAgentMode } from "@/services/api/skills";
@@ -74,6 +75,7 @@ import {
     saveCloudAgentConversations,
     saveCloudAgentPendingSubmission,
     type CloudAgentConversation,
+    type CloudAgentDraftPrefill,
     type CloudAgentPendingSubmission,
     type CloudAgentMessagePresentation,
 } from "@/services/cloud-agent-conversations";
@@ -160,6 +162,12 @@ type AgentDraftAttachment = {
 };
 /** 来自输入框的消息额外带上的内容：附件节点引用（排在选区前作为重点），以及是否不带选区。 */
 type ComposerExtras = { attachmentNodeIds: string[]; excludeSelection: boolean };
+type AgentDraftPresentation = CloudAgentMessagePresentation & { requiresVision?: boolean; target?: AgentRequestTarget };
+
+function currentAgentTarget(): AgentRequestTarget {
+    const { canvas, studio, page } = useGlobalAgentStore.getState();
+    return canvas ? { canvasId: canvas.canvasId } : studio ? { canvasId: "", studioProductId: studio.productId } : { canvasId: "", ...(page ? { pageContext: { ...page.context } } : {}) };
+}
 
 /** 读一轮第 1 条到 untilSeq 的持久事件（每页最多 500 条），只用来补齐本轮统计和上下文读数。 */
 async function loadAgentRunEventPrefix(runId: string, untilSeq: number, signal: AbortSignal) {
@@ -188,8 +196,7 @@ const EMPTY_REFERENCES: CanvasResourceReference[] = [];
 
 /**
  * 平台唯一的 Agent 面板，挂在用户布局上，所有页面共用同一份对话。
- * 画布编辑器通过 useGlobalAgentStore 发布当前画布；发送时有画布就绑定该画布，
- * 离开画布后下一轮不再携带画布 ID（后端只开放无画布工具）。
+ * 页面通过 useGlobalAgentStore 发布画布或短剧上下文，发送时冻结当前目标。
  */
 export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     // 只订阅渲染要用的字段。画布每次选中、拖动或编辑都会重发上下文；订阅整份会让面板和全部消息跟着重渲染。
@@ -198,10 +205,14 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const domainProjectId = useGlobalAgentStore((state) => state.canvas?.domainProjectId);
     const nodeCount = useGlobalAgentStore((state) => state.canvas?.nodeCount ?? 0);
     const references = useGlobalAgentStore((state) => state.canvas?.references ?? EMPTY_REFERENCES);
-    const prefillRequest = useGlobalAgentStore((state) => state.canvas?.prefillRequest ?? state.studio?.prefillRequest ?? null);
+    const canvasPrefillRequest = useGlobalAgentStore((state) => state.canvas?.prefillRequest ?? state.studio?.prefillRequest ?? null);
     // 电商生图台发布的商品；画布优先，二者不会同时绑定到一轮对话。
     const studioProductId = useGlobalAgentStore((state) => (state.canvas ? "" : (state.studio?.productId ?? "")));
     const studioProductName = useGlobalAgentStore((state) => (state.canvas ? "" : (state.studio?.productName ?? "")));
+    const pageContext = useGlobalAgentStore((state) => (state.canvas || state.studio ? undefined : state.page?.context));
+    const pageLabel = useGlobalAgentStore((state) => (state.canvas || state.studio ? "" : state.page?.label || ""));
+    const globalPrefillRequest = useGlobalAgentStore((state) => state.prefillRequest);
+    const clearGlobalPrefill = useGlobalAgentStore((state) => state.clearPrefill);
     const onFocusNode = useGlobalAgentStore((state) => state.canvas?.onFocusNode);
     const insertAgentMarkdown = useGlobalAgentStore((state) => state.canvas?.insertAgentMarkdown);
     const open = useGlobalAgentStore((state) => state.open);
@@ -234,8 +245,9 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const [messages, setMessages] = useState<CloudAgentChatMessage[]>([]);
     const [prompt, setPrompt] = useState("");
     const [restoredModel, setRestoredModel] = useState<string | null>(null);
-    const lastPrefillIdRef = useRef(0);
-    const prefilledSubmissionRef = useRef<AgentPrefillRequest | null>(null);
+    const lastCanvasPrefillRef = useRef("");
+    const lastGlobalPrefillIdRef = useRef(0);
+    const prefilledSubmissionRef = useRef<CloudAgentDraftPrefill | null>(null);
     // 本机发送队列（排队 / 插话），按对话保存。owner 不是当前对话时视为还没读到，不能写也不能发。
     // 异步流程读写都走 outboxStoreRef，避免拿到旧闭包里的队列。
     const [outboxStore, setOutboxStore] = useState<{ conversationId: string; outbox: AgentOutbox } | null>(null);
@@ -481,23 +493,30 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const statusColor = status === "failed" ? "var(--status-error)" : status === "waiting_approval" ? "var(--status-warning)" : status === "running" || status === "queued" ? "var(--status-success)" : theme.node.muted;
 
     useEffect(() => {
-        // 画布页卸载后预填撤回；新画布页的编号从 1 重新开始，不能被上一页的编号挡住。
-        if (!prefillRequest) {
-            lastPrefillIdRef.current = 0;
-            return;
-        }
-        if (prefillRequest.id === lastPrefillIdRef.current) return;
-        lastPrefillIdRef.current = prefillRequest.id;
+        if (!canvasPrefillRequest) lastCanvasPrefillRef.current = "";
+        if (!historyHydrated || !pendingHydrated || cloudOpeningId) return;
+        const fromGlobal = Boolean(globalPrefillRequest && globalPrefillRequest.id !== lastGlobalPrefillIdRef.current);
+        const prefillRequest = fromGlobal ? globalPrefillRequest : canvasPrefillRequest;
+        const canvasPrefillKey = JSON.stringify([canvasId, canvasPrefillRequest?.id]);
+        if (!prefillRequest || (!fromGlobal && canvasPrefillKey === lastCanvasPrefillRef.current)) return;
+        if (fromGlobal) {
+            lastGlobalPrefillIdRef.current = prefillRequest.id;
+            clearGlobalPrefill(prefillRequest.id);
+        } else lastCanvasPrefillRef.current = canvasPrefillKey;
         if (!prefillRequest.text.trim()) return;
         setView("chat");
+        const prepared = { ...prefillRequest, target: prefillRequest.target || currentAgentTarget() };
         // 自动发送的预填直接进入队列：空闲时立即发出，运行中排在队尾，可见、可删，只发一次。
         if (prefillRequest.autoSubmit) {
-            if (enqueueOutboxItem(outboxItemFromDraft(prefillRequest.text, prefillRequest))) return;
+            if (enqueueOutboxItem(outboxItemFromDraft(prepared.text, prepared))) return;
             void appMessage.warning(`排队消息已满 ${AGENT_OUTBOX_MAX_ITEMS} 条，这条已放进输入框`);
         }
-        setPrompt((current) => appendAgentPromptPrefill(current, prefillRequest.displayText || prefillRequest.text));
-        prefilledSubmissionRef.current = prefillRequest;
-    }, [prefillRequest]);
+        setPrompt((current) => {
+            const shown = appendAgentPromptPrefill(current, prepared.displayText || prepared.text);
+            prefilledSubmissionRef.current = { ...prepared, text: appendAgentPromptPrefill(current, prepared.text), displayText: shown };
+            return shown;
+        });
+    }, [clearGlobalPrefill, globalPrefillRequest, canvasPrefillRequest, canvasId, historyHydrated, pendingHydrated, cloudOpeningId]);
 
     const reloadProfile = useCallback(async () => {
         const requestId = ++profileRequestRef.current;
@@ -627,6 +646,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         replayCursorRef.current = { runId: "", seq: 0 };
         setRestoredModel(null);
         pendingSubmission.current = null;
+        prefilledSubmissionRef.current = null;
         setBusy(false);
         setConversations([]);
         setRun(null);
@@ -656,6 +676,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     replayCursorRef.current = { runId: current.run?.id || "", seq: current.lastEventSeq || 0 };
                     setApproval(approvalStateFromRun(current.run));
                     setPrompt(current.draft || "");
+                    prefilledSubmissionRef.current = current.draftPrefill || null;
                     setPermissionMode(current.permissionMode);
                     setRestoredModel(current.model || null);
                     let pending = await waitForCanvasSync(loadCloudAgentPendingSubmission(current.id, accountScope));
@@ -775,6 +796,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     setConnectionStatus("connecting");
                 }
                 if (!sameConversation) {
+                    prefilledSubmissionRef.current = candidate.draftPrefill || null;
                     setPrompt(pending?.request ? pending.displayText || pending.request.prompt : candidate.draft || "");
                     setPermissionMode(candidate.permissionMode);
                     setRestoredModel(candidate.model || null);
@@ -824,6 +846,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 lastEventSeq: run?.id === replayCursorRef.current.runId ? replayCursorRef.current.seq : existing?.lastEventSeq,
                 // 编辑排队消息时输入框里是那条消息，草稿是暂存的原输入。
                 draft: (outboxEdit ? outboxEdit.stash : prompt) || undefined,
+                draftPrefill: resolveAgentPromptPrefill(outboxEdit ? outboxEdit.stash : prompt, prefilledSubmissionRef.current) || undefined,
                 model: restoredModel || selectedModel || undefined,
                 permissionMode,
                 createdAt: existing?.createdAt || now,
@@ -957,7 +980,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 canvasSyncRef.current?.receive(event);
                 notifyStudioAgentEvent(event);
                 // 采用到短剧改的是短剧数据而不是画布：刷新短剧侧栏、过期标记与制作台缓存。
-                if (event.type === "tool_completed" && event.payload?.toolName === "drama_adopt_canvas_media") void appQueryClient.invalidateQueries({ queryKey: ["drama"] });
+                if (event.type === "tool_completed" && (event.payload?.toolName === "drama_adopt_canvas_media" || event.payload?.toolName === "drama_shot_update")) void appQueryClient.invalidateQueries({ queryKey: ["drama"] });
             },
             {
                 after,
@@ -1031,16 +1054,17 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const existing = nodes ? new Set(nodes.map((node) => node.id)) : null;
         return { focusNodeIds: existing ? item.focusNodeIds.filter((id) => existing.has(id)) : item.focusNodeIds, focusNodeOmittedCount: item.focusNodeOmittedCount };
     };
-    const outboxItemFromDraft = (text: string, presentation?: CloudAgentMessagePresentation & { requiresVision?: boolean }, extras?: ComposerExtras): AgentOutboxItem => {
+    const outboxItemFromDraft = (text: string, presentation?: AgentDraftPresentation, extras?: ComposerExtras): AgentOutboxItem => {
         const attachmentIds = extras?.attachmentNodeIds ?? EMPTY_IDS;
+        const target = presentation?.target || currentAgentTarget();
         return {
             id: createClientUUID(),
             text: appendAgentNodeReferences(text, attachmentIds),
             ...(presentation?.displayText ? { displayText: appendAgentNodeReferences(presentation.displayText, attachmentIds) } : {}),
             ...(presentation?.canvasReferenceNodeId ? { canvasReferenceNodeId: presentation.canvasReferenceNodeId } : {}),
             ...(presentation?.requiresVision ? { requiresVision: true } : {}),
-            canvasId,
-            ...liveFocusSnapshot(extras),
+            ...target,
+            ...(target.canvasId === canvasId ? liveFocusSnapshot(extras) : { focusNodeIds: [], focusNodeOmittedCount: 0 }),
             settings: currentRunSettings(),
             status: "queued",
             createdAt: new Date().toISOString(),
@@ -1176,7 +1200,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             return;
         }
         updateOutbox(conversationScope, (current) => {
-            let next = rebindAgentOutboxItem(moveAgentOutboxItemToHead(current, item.id), item.id, canvasId);
+            let next = rebindAgentOutboxItem(moveAgentOutboxItemToHead(current, item.id), item.id, canvasId, pageContext, studioProductId || undefined);
             if (item.status === "failed") next = updateAgentOutboxItem(next, item.id, { status: "queued", error: undefined });
             return next;
         });
@@ -1222,7 +1246,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
 
     // 发起新一轮：输入框发送、回答提问、点选项卡片、重试待确认请求，以及队列出队都走这里。
     // 队列项带着入队时的设置快照，幂等键就是队列项 ID；其余入口用当前设置。
-    const submit = async (override?: string, options?: CloudAgentMessagePresentation & { requiresVision?: boolean; outboxItem?: AgentOutboxItem; composerExtras?: ComposerExtras }): Promise<"sent" | "skipped" | "failed"> => {
+    const submit = async (override?: string, options?: AgentDraftPresentation & { outboxItem?: AgentOutboxItem; composerExtras?: ComposerExtras }): Promise<"sent" | "skipped" | "failed"> => {
         const outboxItem = options?.outboxItem;
         const composerExtras = outboxItem ? undefined : options?.composerExtras;
         if (!accountIsCurrent() || cloudOpeningRef.current || (canvasId && !cloudHistoryReady && !pendingSubmission.current?.request) || (modelRestoreError && !pendingSubmission.current?.request && !outboxItem)) return "skipped";
@@ -1232,9 +1256,14 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         const pendingRequest = pendingSubmission.current;
         // 待确认的提交优先：它没核对完之前，队列不能越过它发出新一轮。
         if (outboxItem && pendingRequest?.request) return "skipped";
-        const prefilled = outboxItem ? null : prefilledSubmissionRef.current;
+        const prefilled = outboxItem ? null : resolveAgentPromptPrefill(draft, prefilledSubmissionRef.current);
         const matchesPending = !outboxItem && Boolean(pendingRequest?.request) && (pendingRequest!.displayText?.trim() || pendingRequest!.request!.prompt) === draft;
-        const matchesPrefill = !outboxItem && !matchesPending && Boolean(prefilled?.displayText) && prefilled!.displayText!.trim() === draft;
+        const matchesPrefill = !outboxItem && !matchesPending && Boolean(prefilled);
+        const target: AgentRequestTarget = outboxItem ? { canvasId: outboxItem.canvasId, pageContext: outboxItem.pageContext, studioProductId: outboxItem.studioProductId } : (matchesPrefill ? prefilled?.target : options?.target) || currentAgentTarget();
+        if (!matchesPending && !sameAgentRequestTarget(target, currentAgentTarget())) {
+            void appMessage.warning("这条消息针对的页面或分镜已变化，请回到原目标后发送，或编辑输入内容后重新提交");
+            return "skipped";
+        }
         let value = matchesPending ? pendingRequest!.request!.prompt : matchesPrefill ? prefilled!.text : draft;
         options = outboxItem
             ? { displayText: outboxItem.displayText, canvasReferenceNodeId: outboxItem.canvasReferenceNodeId, requiresVision: outboxItem.requiresVision, outboxItem }
@@ -1285,25 +1314,25 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 const capabilities = await getAgentCapabilities();
                 if (!accountIsCurrent() || currentScope.current !== scope) return "skipped";
                 if (!capabilities.permissionModes.includes(settings.permissionMode)) throw new Error("当前后端不支持所选 Agent 权限，请更新后端");
-                // 只有当前页面是画布时才绑定画布；其他页面发出的是平台级对话轮次。
-                if (canvasId) await prepareCanvasForCloudAction(canvasId);
+                if (settings.skillIds.length && !capabilities.skills) throw new Error("当前后端尚未接入技能库");
+                // 请求使用点击发送时的目标；等待同步期间切页不能改变已确认的对象。
+                if (target.canvasId) await prepareCanvasForCloudAction(target.canvasId);
                 if (!accountIsCurrent() || currentScope.current !== scope) return "skipped";
                 const agentConfig = { ...config, model: effectiveModel };
                 const requestConfig = resolveModelRequestConfig(agentConfig, effectiveModel);
                 const logicalModelId = logicalModelIDForConfig(agentConfig);
                 const focus = outboxItem ? outboxFocus(outboxItem) : liveFocusSnapshot(composerExtras);
                 const input = {
-                    canvasId,
+                    ...target,
                     prompt: value,
                     reasoningMode: settings.reasoningMode,
                     profileRevision: profileView.revision,
                     model: modelOptionName(effectiveModel) || undefined,
                     ...(logicalModelId ? { logicalModelId } : requestConfig.channelId ? { channelId: requestConfig.channelId, channelModelKey: modelOptionName(effectiveModel) || undefined } : {}),
-                    focusNodeIds: canvasId ? focus.focusNodeIds : [],
-                    focusNodeOmittedCount: canvasId ? focus.focusNodeOmittedCount : 0,
+                    focusNodeIds: target.canvasId ? focus.focusNodeIds : [],
+                    focusNodeOmittedCount: target.canvasId ? focus.focusNodeOmittedCount : 0,
                     permissionMode: settings.permissionMode,
-                    contextScope: canvasId ? settings.contextScope : studioProductId ? ["studio"] : [],
-                    ...(!canvasId && studioProductId ? { studioProductId } : {}),
+                    contextScope: target.canvasId ? settings.contextScope : target.studioProductId ? ["studio"] : [],
                     budget: {
                         maxCredits: positiveNumber(settings.maxCredits),
                         maxGenerationTasks: settings.permissionMode === "read_only" ? 0 : Number(settings.maxGenerationTasks),
@@ -1439,7 +1468,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                         setPrompt(restoredDraft);
                         if (matchesPrefill) prefilledSubmissionRef.current = prefilled;
                     } else {
-                        requeue({ ...outboxItemFromDraft(value, options), settings });
+                        requeue({ ...outboxItemFromDraft(value, { ...options, target }), settings });
                     }
                 }
                 if (reason === "agent_conversation_stale_parent") {
@@ -1495,6 +1524,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         connected: online && (!run || connectionStatus === "connected"),
         canvasBusy: otherAgentRunning,
         canvasId,
+        pageContext,
+        studioProductId: studioProductId || undefined,
         canvasReady: !canvasId || cloudHistoryReady,
         forceItemId: forceDispatchId,
     });
@@ -1698,6 +1729,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         setRun(null);
         setUndoStates({});
         setMessages([]);
+        prefilledSubmissionRef.current = null;
         setPrompt("");
         setApproval(null);
         lastSeqRef.current = 0;
@@ -1740,6 +1772,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         setMessages(conversation.messages);
         setPermissionMode(conversation.permissionMode);
         setApproval(approvalStateFromRun(conversation.run));
+        prefilledSubmissionRef.current = conversation.draftPrefill || null;
         setPrompt(conversation.draft || "");
         setRestoredModel(conversation.model || null);
         setView("chat");
@@ -1983,8 +2016,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
     const contextBar =
-        (canvasId && selectionCount > 0) || visionMissing || longTextVisible ? (
+        pageContext || (canvasId && selectionCount > 0) || visionMissing || longTextVisible || (running && run && !sameAgentRequestTarget({ canvasId, pageContext }, run)) ? (
             <>
+                {pageContext ? (
+                    <AgentContextChip icon={<FileText className="size-3.5 shrink-0" aria-hidden="true" />} title="小影会读取当前页面的最新分镜，修改前展示审批预览">
+                        {pageLabel || "当前短剧制作台"}
+                    </AgentContextChip>
+                ) : null}
+                {running && run && !sameAgentRequestTarget({ canvasId, pageContext }, run) ? (
+                    <AgentContextChip tone="warning" icon={<FileText className="size-3.5 shrink-0" aria-hidden="true" />}>
+                        本轮仍在处理发起时的页面，下一条消息使用当前页面
+                    </AgentContextChip>
+                ) : null}
                 {canvasId && selectionCount > 0 ? (
                     <AgentContextChip
                         tone={selectionExcluded ? "off" : "default"}
@@ -2086,6 +2129,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         setRetryingRun(true);
         try {
             await submit(latest.userPrompt, {
+                target: { canvasId: latest.canvasId, pageContext: latest.pageContext, ...(!latest.canvasId && studioProductId ? { studioProductId } : {}) },
                 ...(original && original.text !== latest.userPrompt && !original.formAnswer ? { displayText: original.text } : {}),
                 ...(original?.canvasReferenceNodeId ? { canvasReferenceNodeId: original.canvasReferenceNodeId } : {}),
             });
@@ -2108,8 +2152,8 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             return;
         }
         if (!outboxReady) return;
-        const prefilled = prefilledSubmissionRef.current;
-        const matchesPrefill = Boolean(prefilled?.displayText) && prefilled!.displayText!.trim() === draft;
+        const prefilled = resolveAgentPromptPrefill(draft, prefilledSubmissionRef.current);
+        const matchesPrefill = Boolean(prefilled);
         const item = matchesPrefill ? outboxItemFromDraft(prefilled!.text, prefilled!, extras) : outboxItemFromDraft(draft, undefined, extras);
         if (agentTextLength(item.text) > AGENT_PROMPT_MAX_CHARS) {
             void appMessage.warning(`单条消息最多 ${AGENT_PROMPT_MAX_CHARS} 字`);
@@ -2189,26 +2233,31 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const outboxPrimaryAction = (item: AgentOutboxItem): AgentOutboxPrimaryAction => {
         if (agentRunAcceptsInterjection(run) || stopping) return { kind: "interject", label: "插话", disabledReason: agentOutboxInterjectBlocker(item, outboxInterjectContext()) };
         const kind = pendingQuestion ? "answer" : "send";
-        const label = pendingQuestion ? "作为回答发送" : item.canvasId !== canvasId ? "在此页面发送" : item.status === "failed" ? "重试" : "立即发送";
+        const differentTarget = !sameAgentRequestTarget(item, { canvasId, pageContext });
+        const fixedTarget = differentTarget && Boolean(item.displayText && item.displayText !== item.text);
+        const label = fixedTarget ? "回到原页面后发送" : differentTarget ? "在此页面发送" : pendingQuestion ? "作为回答发送" : item.status === "failed" ? "重试" : "立即发送";
         const disabledReason = running
             ? "本轮收尾中，结束后再发"
-            : busy || pendingNow?.request
-              ? "上一条消息确认后再发"
-              : run && connectionStatus !== "connected"
-                ? "连接断开，恢复后再发"
-                : otherAgentRunning
-                  ? "画布上有别的 Agent 在运行"
-                  : !outboxDispatchReady
-                    ? "正在准备…"
-                    : item.status !== "queued" && item.status !== "failed"
-                      ? "正在处理"
-                      : null;
+            : fixedTarget
+              ? "这条消息绑定了原分镜，请回到原页面及镜头后发送"
+              : busy || pendingNow?.request
+                ? "上一条消息确认后再发"
+                : run && connectionStatus !== "connected"
+                  ? "连接断开，恢复后再发"
+                  : otherAgentRunning
+                    ? "画布上有别的 Agent 在运行"
+                    : !outboxDispatchReady
+                      ? "正在准备…"
+                      : item.status !== "queued" && item.status !== "failed"
+                        ? "正在处理"
+                        : null;
         return { kind, label, disabledReason };
     };
 
     const outboxItemMeta = (item: AgentOutboxItem) => {
         const parts: string[] = [];
         if (item.canvasId !== canvasId) parts.push(item.canvasId ? "排在另一个画布" : "排在画布外");
+        else if (!sameAgentRequestTarget(item, { canvasId, pageContext })) parts.push("针对另一个页面或分镜");
         if (item.settings.model && item.settings.model !== selectedModel) parts.push(`模型：${modelDisplayName(config, item.settings.model)}`);
         if (item.settings.permissionMode !== permissionMode) parts.push(agentPermissionLabel(item.settings.permissionMode));
         if (item.focusNodeIds.length && item.canvasId === canvasId) parts.push(`带 ${item.focusNodeIds.length} 个选中节点${item.focusNodeOmittedCount ? `（另 ${item.focusNodeOmittedCount} 个超出上限）` : ""}`);
@@ -2425,11 +2474,13 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             key={activeConversationId}
                                             theme={theme}
                                             messages={messages}
+                                            onChooseSkill={() => setSkillRecommendationsOpen(true)}
                                             onFocusNode={onFocusNode}
                                             onUndo={busy || running || otherAgentRunning ? undefined : (target) => void undoCanvasStep(target)}
                                             undoStates={undoStates}
                                             references={references}
                                             busy={busy || running}
+                                            activity={stopping ? "stopping" : busy ? "submitting" : status === "queued" ? "queued" : "running"}
                                             approval={approval}
                                             approvalTargetGenerating={approvalTargetGenerating}
                                             nodeCount={canvasId ? nodeCount : null}
@@ -2437,7 +2488,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             approvalSubmitting={approvalSubmitting}
                                             approvalBlockedReason={approvalBlockedReason}
                                             onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
-                                            onDraftPrompt={(draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft))}
+                                            onDraftPrompt={historyHydrated && pendingHydrated && !cloudOpeningId && (!canvasId || cloudHistoryReady) ? (draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft)) : undefined}
                                             onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
                                             onApprove={(settings) => void submitApproval("approve", settings)}
                                             onReject={() => void submitApproval("reject")}
@@ -2526,9 +2577,12 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             primaryDisabled={composerSubmitMode === "queue" && outboxIsFull}
                                             sending={busy}
                                             running={running}
-                                            placeholder={canvasId ? "说说要做什么，@ 引用节点…" : "说说要做什么…"}
+                                            placeholder={canvasId ? "说说要做什么，@ 引用节点，可粘贴图片" : pageContext ? "说说这个分镜想怎么改，或让小影先读本集镜头" : "说说要做什么…"}
                                             theme={theme}
-                                            onPromptChange={setPrompt}
+                                            onPromptChange={(value) => {
+                                                if (!outboxEdit && !resolveAgentPromptPrefill(value, prefilledSubmissionRef.current)) prefilledSubmissionRef.current = null;
+                                                setPrompt(value);
+                                            }}
                                             onSubmit={handleComposerSubmit}
                                             onEscape={handleComposerEscape}
                                             tray={outboxTray}

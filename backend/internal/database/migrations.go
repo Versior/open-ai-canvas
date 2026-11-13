@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const CurrentSchemaVersion int64 = 107
+const CurrentSchemaVersion int64 = 111
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -425,6 +425,24 @@ var schemaMigrations = []migration{
 		return tx.AutoMigrate(&model.SiteTrafficEvent{})
 	}},
 	{version: 107, name: "agent_mcp_connections", checksum: "sha256:agent-mcp-connections-v100", apply: migrateAgentMCP},
+	{version: 108, name: "creation_conversation_history", checksum: "sha256:creation-conversation-history-v101", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.CreationConversation{}, &model.CreationConversationMessage{}, &model.CreationConversationResource{})
+	}},
+	{version: 109, name: "wechat_oauth", checksum: "sha256:wechat-oauth-v102", apply: func(tx *gorm.DB) error {
+		if !tx.Migrator().HasTable(&model.OAuthState{}) {
+			return nil
+		}
+		for _, field := range []string{"Purpose", "ClientID", "ProfileJSON"} {
+			if !tx.Migrator().HasColumn(&model.OAuthState{}, field) {
+				if err := tx.Migrator().AddColumn(&model.OAuthState{}, field); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
+	{version: 110, name: "mcp_tenant_boundaries", checksum: "sha256:mcp-tenant-boundaries-v103", apply: migrateMCPTenantBoundaries},
+	{version: 111, name: "agent_storage_limits", checksum: "sha256:agent-storage-limits-v104", apply: migrateAgentStorageLimits},
 }
 
 func migrateLUTLibrary(tx *gorm.DB) error {
@@ -1702,6 +1720,10 @@ func normalizeUpstreamMigrations(tx *gorm.DB) (bool, error) {
 		{migration{version: 98, name: "api_log_generation_content", checksum: "sha256:api-log-generation-content-v98"}, 105, "sha256:api-log-generation-content-v98"},
 		{migration{version: 99, name: "site_traffic_events", checksum: "sha256:site-traffic-events-v99-20261111"}, 106, "sha256:site-traffic-events-v99-20261111"},
 		{migration{version: 100, name: "agent_mcp_connections", checksum: "sha256:agent-mcp-connections-v100"}, 107, "sha256:agent-mcp-connections-v100"},
+		{migration{version: 101, name: "creation_conversation_history", checksum: "sha256:creation-conversation-history-v101"}, 108, "sha256:creation-conversation-history-v101"},
+		{migration{version: 102, name: "wechat_oauth", checksum: "sha256:wechat-oauth-v102"}, 109, "sha256:wechat-oauth-v102"},
+		{migration{version: 103, name: "mcp_tenant_boundaries", checksum: "sha256:mcp-tenant-boundaries-v103"}, 110, "sha256:mcp-tenant-boundaries-v103"},
+		{migration{version: 104, name: "agent_storage_limits", checksum: "sha256:agent-storage-limits-v104"}, 111, "sha256:agent-storage-limits-v104"},
 	}
 	if len(records) > len(upstream) {
 		return false, fmt.Errorf("上游迁移账本在版本 %d 后仍有记录，拒绝自动重排", upstream[len(upstream)-1].version)

@@ -11,45 +11,48 @@ import (
 const SessionCookieName = auth.SessionCookieName
 
 type (
-	EmailCodeCooldownError     = auth.EmailCodeCooldownError
-	RegisterRequest            = auth.RegisterRequest
-	LoginRequest               = auth.LoginRequest
-	LoginContext               = auth.LoginContext
-	PublicAuthSettings         = auth.PublicAuthSettings
-	AuthSessionResult          = auth.AuthSessionResult
-	AuthUser                   = auth.AuthUser
-	RegistrationSettingRequest = auth.RegistrationSettingRequest
-	PublicRegistrationSetting  = auth.PublicRegistrationSetting
-	PasswordResetRequest       = auth.PasswordResetRequest
-	EmailSettingRequest        = auth.EmailSettingRequest
-	PublicEmailSetting         = auth.PublicEmailSetting
-	EmailLogQuery              = auth.EmailLogQuery
-	EmailLogPage               = auth.EmailLogPage
-	LinuxDOSettingRequest      = auth.LinuxDOSettingRequest
-	PublicLinuxDOSetting       = auth.PublicLinuxDOSetting
-	LinuxDOCallbackResult      = auth.OAuthCallbackResult
-	LibTVSettingRequest        = auth.LibTVSettingRequest
-	PublicLibTVSetting         = auth.PublicLibTVSetting
-	LibTVImportRequest         = auth.LibTVImportRequest
-	LibTVImportResult          = auth.LibTVImportResult
-	LibTVCanvasConnection      = auth.LibTVCanvasConnection
-	LibTVCanvasNode            = auth.LibTVCanvasNode
-	LibTVImportIssue           = auth.LibTVImportIssue
-	LibTVImportMetadata        = auth.LibTVImportMetadata
-	LibTVImportWarning         = auth.LibTVImportWarning
-	LibTVGalleryRequest        = auth.LibTVGalleryRequest
-	LibTVGalleryResult         = auth.LibTVGalleryResult
-	LibTVGalleryItem           = auth.LibTVGalleryItem
-	LibTVGalleryTag            = auth.LibTVGalleryTag
-	LibTVWorkDetail            = auth.LibTVWorkDetail
-	LibTVWorkStep              = auth.LibTVWorkStep
-	TapNowImportRequest        = auth.TapNowImportRequest
-	TapNowImportResult         = auth.TapNowImportResult
-	TapNowCanvasConnection     = auth.TapNowCanvasConnection
-	TapNowCanvasNode           = auth.TapNowCanvasNode
-	TapNowImportIssue          = auth.TapNowImportIssue
-	TapNowImportMetadata       = auth.TapNowImportMetadata
-	TapNowImportWarning        = auth.TapNowImportWarning
+	EmailCodeCooldownError      = auth.EmailCodeCooldownError
+	RegisterRequest             = auth.RegisterRequest
+	LoginRequest                = auth.LoginRequest
+	LoginContext                = auth.LoginContext
+	PublicAuthSettings          = auth.PublicAuthSettings
+	AuthSessionResult           = auth.AuthSessionResult
+	AuthUser                    = auth.AuthUser
+	RegistrationSettingRequest  = auth.RegistrationSettingRequest
+	PublicRegistrationSetting   = auth.PublicRegistrationSetting
+	PasswordResetRequest        = auth.PasswordResetRequest
+	EmailSettingRequest         = auth.EmailSettingRequest
+	PublicEmailSetting          = auth.PublicEmailSetting
+	EmailLogQuery               = auth.EmailLogQuery
+	EmailLogPage                = auth.EmailLogPage
+	LinuxDOSettingRequest       = auth.LinuxDOSettingRequest
+	PublicLinuxDOSetting        = auth.PublicLinuxDOSetting
+	LinuxDOCallbackResult       = auth.OAuthCallbackResult
+	LibTVSettingRequest         = auth.LibTVSettingRequest
+	PublicLibTVSetting          = auth.PublicLibTVSetting
+	LibTVConnectStartRequest    = auth.LibTVConnectStartRequest
+	LibTVConnectStartResult     = auth.LibTVConnectStartResult
+	LibTVConnectCompleteRequest = auth.LibTVConnectCompleteRequest
+	LibTVImportRequest          = auth.LibTVImportRequest
+	LibTVImportResult           = auth.LibTVImportResult
+	LibTVCanvasConnection       = auth.LibTVCanvasConnection
+	LibTVCanvasNode             = auth.LibTVCanvasNode
+	LibTVImportIssue            = auth.LibTVImportIssue
+	LibTVImportMetadata         = auth.LibTVImportMetadata
+	LibTVImportWarning          = auth.LibTVImportWarning
+	LibTVGalleryRequest         = auth.LibTVGalleryRequest
+	LibTVGalleryResult          = auth.LibTVGalleryResult
+	LibTVGalleryItem            = auth.LibTVGalleryItem
+	LibTVGalleryTag             = auth.LibTVGalleryTag
+	LibTVWorkDetail             = auth.LibTVWorkDetail
+	LibTVWorkStep               = auth.LibTVWorkStep
+	TapNowImportRequest         = auth.TapNowImportRequest
+	TapNowImportResult          = auth.TapNowImportResult
+	TapNowCanvasConnection      = auth.TapNowCanvasConnection
+	TapNowCanvasNode            = auth.TapNowCanvasNode
+	TapNowImportIssue           = auth.TapNowImportIssue
+	TapNowImportMetadata        = auth.TapNowImportMetadata
+	TapNowImportWarning         = auth.TapNowImportWarning
 )
 
 type authHost struct {
@@ -157,6 +160,10 @@ func (s *Service) Logout(cookieValue string, contexts ...LoginContext) error {
 	return s.authDomain().Logout(cookieValue, contexts...)
 }
 
+func (s *Service) LogoutForExpectedUser(cookieValue, expectedUserID string, contexts ...LoginContext) error {
+	return s.authDomain().LogoutForExpectedUser(cookieValue, expectedUserID, contexts...)
+}
+
 func (s *Service) CurrentUser(cookieValue string) (*model.User, error) {
 	return s.authDomain().CurrentUser(cookieValue)
 }
@@ -259,6 +266,22 @@ func (s *Service) LibTVWork(ctx context.Context, actor *model.User, templateUUID
 
 func (s *Service) ImportLibTVTemplate(ctx context.Context, userID, canvasProjectID, templateUUID string) (*LibTVImportResult, error) {
 	return s.authDomain().ImportLibTVTemplate(ctx, userID, canvasProjectID, templateUUID)
+}
+
+func (s *Service) StartLibTVOAuth(actor *model.User, req LibTVConnectStartRequest) (*LibTVConnectStartResult, error) {
+	return s.authDomain().StartLibTVOAuth(actor, req)
+}
+
+func (s *Service) CompleteLibTVOAuth(actor *model.User, req LibTVConnectCompleteRequest) (*PublicLibTVSetting, error) {
+	return s.authDomain().CompleteLibTVOAuth(actor, req)
+}
+
+func (s *Service) CompleteLibTVOAuthCallback(code, state, errorCode, errorDescription string) (string, int, error) {
+	return s.authDomain().CompleteLibTVOAuthCallback(code, state, errorCode, errorDescription)
+}
+
+func (s *Service) DisconnectLibTV(actor *model.User) (*PublicLibTVSetting, error) {
+	return s.authDomain().DisconnectLibTV(actor)
 }
 
 func (s *Service) ImportTapNow(userID, canvasProjectID, shareID string) (*TapNowImportResult, error) {

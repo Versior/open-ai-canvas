@@ -21,6 +21,7 @@ import (
 )
 
 const (
+	libTVMaxResponseBytes  = 8 << 20
 	libTVPublicFeedURL     = "https://api.liblib.tv/api/community/project/template/feed/stream"
 	libTVPublicTemplateURL = "https://api.liblib.tv/api/canvas/project/template/detail"
 	libTVResourceHost      = "libtv-res.liblib.art"

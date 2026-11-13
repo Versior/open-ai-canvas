@@ -13,6 +13,8 @@ import (
 type cloudAgentReadHandler func(*repository.Repository, string, *cloudAgentRuntime, cloudAgentCall, ...*Service) (any, error)
 type cloudAgentWriteHandler func(*repository.Repository, string, string, cloudAgentCall, RuntimePolicySetting, ...cloudAgentMutationRecorder) (any, error)
 type cloudAgentPreviewHandler func(*repository.Repository, string, string, cloudAgentCall) (cloudAgentApprovalPreview, error)
+type cloudAgentPageWriteHandler func(*repository.Repository, string, *CloudAgentPageContext, cloudAgentCall, *Service) (any, error)
+type cloudAgentPagePreviewHandler func(*repository.Repository, string, *CloudAgentPageContext, cloudAgentCall, *Service) (cloudAgentApprovalPreview, error)
 
 type cloudAgentToolPipeline uint8
 
@@ -23,10 +25,12 @@ const (
 )
 
 type cloudAgentToolHandler struct {
-	Read     cloudAgentReadHandler
-	Write    cloudAgentWriteHandler
-	Preview  cloudAgentPreviewHandler
-	Pipeline cloudAgentToolPipeline
+	Read        cloudAgentReadHandler
+	Write       cloudAgentWriteHandler
+	Preview     cloudAgentPreviewHandler
+	PageWrite   cloudAgentPageWriteHandler
+	PagePreview cloudAgentPagePreviewHandler
+	Pipeline    cloudAgentToolPipeline
 }
 
 var cloudAgentRegistryCache struct {
@@ -77,8 +81,9 @@ func cloudAgentToolScope(req CloudAgentRequest, profile bool) agenttool.Scope {
 	return agenttool.Scope{
 		Canvas: cloudAgentCanvasScope(req), Skills: req.SkillsEnabled,
 		Vision: req.VisionEnabled, ReadOnly: req.PermissionMode == "read_only", IncludeProfile: profile,
-		Drama:  req.DramaLinked && cloudAgentCanvasScope(req),
-		Memory: req.MemoryMode == model.AgentMemoryDocumentModeAuto || req.MemoryMode == model.AgentMemoryDocumentModeReview,
-		Studio: cloudAgentStudioScope(req),
+		Drama:            req.DramaLinked && cloudAgentCanvasScope(req),
+		Memory:           req.MemoryMode == model.AgentMemoryDocumentModeAuto || req.MemoryMode == model.AgentMemoryDocumentModeReview,
+		Studio:           cloudAgentStudioScope(req),
+		DramaPageContext: req.CanvasID == "" && req.PageContext != nil && validateCloudAgentPageContextShape(*req.PageContext) == nil,
 	}
 }

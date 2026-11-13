@@ -85,6 +85,8 @@ export type ResourceUploadMeta = {
     durationMs?: number;
     fileName?: string;
     idempotencyKey?: string;
+    expectedUserId?: string;
+    signal?: AbortSignal;
 };
 
 export type ResourceUploadOptions = {
@@ -272,7 +274,7 @@ const CHUNK_UPLOAD_THRESHOLD = 50 << 20;
 const CHUNK_UPLOAD_RETRIES = 2;
 
 export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "audio" | "file", meta?: ResourceUploadMeta, onProgress?: (uploadedBytes: number, totalBytes: number) => void, options?: ResourceUploadOptions): Promise<RemoteResource> {
-    const boundary = { ...options, expectedScope: options?.expectedScope ?? getActiveUserScope() };
+    const boundary = { signal: options?.signal ?? meta?.signal, expectedScope: options?.expectedScope ?? meta?.expectedUserId ?? getActiveUserScope() };
     const name = meta?.fileName || (file instanceof File ? file.name : `${kind}.${extensionFromMime(file.type, kind)}`);
     // 分片与 multipart 两条路径的失败都要归一成 ResourceUploadError，
     // 否则调用方只能靠文案猜测该重试还是该报错。
@@ -290,8 +292,7 @@ export async function uploadResourceFile(file: Blob, kind: "image" | "video" | "
         if (meta?.durationMs) formData.append("durationMs", String(Math.round(meta.durationMs)));
         assertUploadBoundary(boundary);
         const data = await http.post<{ resource: RemoteResource }>("/resources", formData, {
-            ...uploadRequestConfig(meta?.idempotencyKey, file.size),
-            signal: boundary.signal,
+            ...scopedUploadConfig(boundary, uploadRequestConfig(meta?.idempotencyKey, file.size)),
             onUploadProgress: onProgress
                 ? ({ loaded, total }) => {
                       if (total && total > 0) onProgress(Math.min(file.size, (file.size * loaded) / total), file.size);
@@ -315,6 +316,7 @@ async function uploadFileInChunks(file: Blob, name: string, kind: "image" | "vid
             return await runChunkedUpload(file, name, kind, meta, onProgress, boundary);
         } catch (error) {
             if (error instanceof DOMException && error.name === "AbortError") throw error;
+            assertUploadBoundary(boundary);
             if (attempt === CHUNK_UPLOAD_RETRIES - 1) throw error;
         }
     }
@@ -326,7 +328,7 @@ async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video
     const session = await http.post<{ uploadId: string; chunkSize: number; chunkCount: number }>(
         "/resources/uploads",
         { fileName: name, kind, size: file.size, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs },
-        { ...uploadRequestConfig(meta?.idempotencyKey), signal: boundary.signal },
+        scopedUploadConfig(boundary, uploadRequestConfig(meta?.idempotencyKey)),
     );
     assertUploadBoundary(boundary);
     for (let index = 0; index < session.chunkCount; index++) {
@@ -336,9 +338,9 @@ async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video
         // raw 二进制直传，与后端按裸 body 逐片落盘对齐。
         assertUploadBoundary(boundary);
         await http.put<{ index: number }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/chunks/${index}`, blob, {
+            ...scopedUploadConfig(boundary),
             timeout: uploadTimeoutMs(blob.size),
-            headers: { "Content-Type": "application/octet-stream" },
-            signal: boundary.signal,
+            headers: { ...scopedUploadConfig(boundary).headers, "Content-Type": "application/octet-stream" },
             onUploadProgress: onProgress ? ({ loaded }) => onProgress(start + Math.min(loaded, blob.size), file.size) : undefined,
         });
         assertUploadBoundary(boundary);
@@ -346,7 +348,7 @@ async function runChunkedUpload(file: Blob, name: string, kind: "image" | "video
     }
     // 合并时后端要把整份文件写入存储（对象存储为同步上传），超时按整份大小计算。
     assertUploadBoundary(boundary);
-    const complete = await http.post<{ resource: RemoteResource }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/complete`, undefined, { timeout: uploadTimeoutMs(file.size), signal: boundary.signal });
+    const complete = await http.post<{ resource: RemoteResource }>(`/resources/uploads/${encodeURIComponent(session.uploadId)}/complete`, undefined, { ...scopedUploadConfig(boundary), timeout: uploadTimeoutMs(file.size) });
     assertUploadBoundary(boundary);
     return complete.resource;
 }
@@ -373,9 +375,9 @@ function normalizeUploadError(error: unknown): ResourceUploadError {
 }
 
 export async function importResourceFromUrl(url: string, kind: "image" | "video" | "audio" | "file", meta?: Omit<ResourceUploadMeta, "fileName">, options?: ResourceUploadOptions) {
-    const boundary = { ...options, expectedScope: options?.expectedScope ?? getActiveUserScope() };
+    const boundary = { signal: options?.signal ?? meta?.signal, expectedScope: options?.expectedScope ?? meta?.expectedUserId ?? getActiveUserScope() };
     assertUploadBoundary(boundary);
-    const data = await http.post<{ resource: RemoteResource }>("/resources/import", { url, kind, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs }, { ...uploadRequestConfig(meta?.idempotencyKey), signal: boundary.signal });
+    const data = await http.post<{ resource: RemoteResource }>("/resources/import", { url, kind, width: meta?.width, height: meta?.height, durationMs: meta?.durationMs }, scopedUploadConfig(boundary, uploadRequestConfig(meta?.idempotencyKey)));
     assertUploadBoundary(boundary);
     resourceCache.set(resourceCacheKey(data.resource.id), data.resource);
     return data.resource;
@@ -400,6 +402,11 @@ export function uploadTimeoutMs(bytes = 0) {
 function uploadRequestConfig(idempotencyKey?: string, bytes?: number) {
     const value = idempotencyKey?.trim();
     return { timeout: uploadTimeoutMs(bytes), ...(value ? { headers: { "X-Idempotency-Key": value } } : {}) };
+}
+
+function scopedUploadConfig(boundary: ResourceUploadOptions, config?: ReturnType<typeof uploadRequestConfig>) {
+    assertUploadBoundary(boundary);
+    return { ...config, signal: boundary.signal, headers: { ...config?.headers, ...(boundary.expectedScope ? { "X-Canvas-Expected-User": boundary.expectedScope } : {}) } };
 }
 
 export function getResource(id: string): Promise<RemoteResource> {

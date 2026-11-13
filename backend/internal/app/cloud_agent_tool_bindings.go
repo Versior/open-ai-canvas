@@ -56,6 +56,8 @@ func cloudAgentToolHandlers() map[string]cloudAgentToolHandler {
 		agenttool.StudioUpdateDossier:     {Write: applyCloudAgentStudioDossier, Preview: cloudAgentPreviewStudioDossier},
 		agenttool.StudioPlanShots:         {Write: applyCloudAgentStudioPlan, Preview: cloudAgentPreviewStudioPlan},
 		agenttool.StudioRequestGeneration: {Read: cloudAgentHandleStudioRequestGeneration},
+		agenttool.DramaShotRead:           {Read: cloudAgentHandleDramaShotRead},
+		agenttool.DramaShotUpdate:         {PageWrite: applyCloudAgentDramaShotUpdate, PagePreview: cloudAgentPreviewDramaShotUpdate},
 	}
 }
 

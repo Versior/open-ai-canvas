@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	testLibTVTemplateUUID = "11111111111111111111111111111111"
-	testLibTVProjectUUID  = "22222222222222222222222222222222"
+	testLibTVTemplateUUID       = "11111111111111111111111111111111"
+	testLibTVGalleryProjectUUID = "22222222222222222222222222222222"
 )
 
 func TestLibTVGalleryQueryValidation(t *testing.T) {
@@ -106,7 +106,7 @@ func TestLibTVGalleryProjectsApprovedMetadataOnly(t *testing.T) {
 
 func testLibTVPublishedSnapshot(t *testing.T) (*libTVPublishedTemplate, *libTVTemplateSnapshot) {
 	t.Helper()
-	work := &libTVPublishedTemplate{TemplateUUID: testLibTVTemplateUUID, ProjectUUID: testLibTVProjectUUID, Name: "测试作品", AuditStatus: 1, SnapshotID: 12}
+	work := &libTVPublishedTemplate{TemplateUUID: testLibTVTemplateUUID, ProjectUUID: testLibTVGalleryProjectUUID, Name: "测试作品", AuditStatus: 1, SnapshotID: 12}
 	var snapshot libTVTemplateSnapshot
 	if err := json.Unmarshal([]byte(`{"nodes":[
 		{"id":"group","type":"group","position":{"x":100,"y":200},"width":800,"height":700,"data":{"type":"group","name":"场景"}},
