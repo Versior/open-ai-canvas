@@ -1576,7 +1576,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                 return;
             }
             const priorId = sessionStorage.getItem(receiptKey);
-            const task = priorId ? await queryGenerationTask(priorId) : await retryGenerationTask(image.taskId);
+            const task = priorId ? await queryGenerationTask(priorId) : await retryGenerationTask(image.taskId, "canvas_image");
             sessionStorage.setItem(receiptKey, task.id);
             if (isCurrent(session)) setTasks((current) => ({ ...current, [task.id]: task }));
             const target = image.roundId ? await ensureRoundTarget(image.id) : null;

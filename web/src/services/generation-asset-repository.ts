@@ -16,6 +16,12 @@ const ARTIFACT_COMMIT_LOCK_PREFIX = "yingce:generation-artifact-commit-lock:";
 const assetStorageTails = new Map<string, Promise<void>>();
 const artifactCommitTails = new Map<string, Promise<void>>();
 
+export function assertGenerationStorageSupported() {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    if (typeof navigator !== "undefined" && navigator.locks) return;
+    throw new Error("当前浏览器无法安全保存生成结果。请通过 HTTPS（本机可用 localhost）访问，并使用支持 Web Locks 的新版浏览器，再重试生成或恢复已完成的任务。");
+}
+
 function throwIfAborted(signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
 }
@@ -63,7 +69,12 @@ function runWithBrowserStorageLock<T>(scope: string, operation: () => Promise<T>
  */
 export function withGenerationAssetStorageLock<T>(scope: string, operation: () => Promise<T>, options: GenerationStorageLockOptions = {}): Promise<T> {
     const previous = assetStorageTails.get(scope) ?? Promise.resolve();
-    const pending = previous.then(() => undefined, () => undefined).then(() => runWithBrowserStorageLock(scope, operation, options));
+    const pending = previous
+        .then(
+            () => undefined,
+            () => undefined,
+        )
+        .then(() => runWithBrowserStorageLock(scope, operation, options));
     const tail = pending.then(
         () => undefined,
         () => undefined,
@@ -78,7 +89,10 @@ export function withGenerationAssetStorageLock<T>(scope: string, operation: () =
 export function withGenerationArtifactCommitLock<T>(scope: string, operation: () => Promise<T>, options: GenerationStorageLockOptions = {}): Promise<T> {
     const previous = artifactCommitTails.get(scope) ?? Promise.resolve();
     const pending = previous
-        .then(() => undefined, () => undefined)
+        .then(
+            () => undefined,
+            () => undefined,
+        )
         .then(() => {
             const locks = typeof window !== "undefined" && typeof navigator !== "undefined" ? (navigator.locks as AsyncStorageLock | undefined) : undefined;
             if (locks) return locks.request(`${ARTIFACT_COMMIT_LOCK_PREFIX}${scope}`, operation);

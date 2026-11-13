@@ -1,40 +1,62 @@
-import i18next, { type Resource } from "i18next";
+import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 
 import { useLocaleStore } from "@/stores/use-locale-store";
-import { AREA_CATALOGS } from "./areas";
-import { DEFAULT_LOCALE, SUPPORTED_LOCALES, type AppLocale } from "./locales";
-import { deDE } from "./messages/de-DE";
-import { enUS } from "./messages/en-US";
-import { frFR } from "./messages/fr-FR";
-import { jaJP } from "./messages/ja-JP";
-import { koKR } from "./messages/ko-KR";
-import { zhCN } from "./messages/zh-CN";
+import { DEFAULT_LOCALE, type AppLocale } from "./locales";
+import zhCN from "./catalogs/zh-CN";
 
-const CORE_CATALOGS: Record<AppLocale, object> = { "zh-CN": zhCN, "en-US": enUS, "fr-FR": frFR, "de-DE": deDE, "ja-JP": jaJP, "ko-KR": koKR };
-
-/** 每种语言 = 公共目录 + 各页面区域目录（区域名作为顶级命名空间）。 */
-function buildResources(): Resource {
-    return Object.fromEntries(SUPPORTED_LOCALES.map(({ code }) => [code, { translation: { ...CORE_CATALOGS[code], ...Object.fromEntries(Object.entries(AREA_CATALOGS).map(([area, catalog]) => [area, catalog[code]])) } }]));
-}
+const loaders = {
+    "en-US": () => import("./catalogs/en-US"),
+    "fr-FR": () => import("./catalogs/fr-FR"),
+    "de-DE": () => import("./catalogs/de-DE"),
+    "ja-JP": () => import("./catalogs/ja-JP"),
+    "ko-KR": () => import("./catalogs/ko-KR"),
+};
+const loading = new Map<AppLocale, Promise<void>>();
 
 /**
  * 应用唯一的 i18next 实例。语言来自 useLocaleStore（本设备偏好，首次按浏览器语言），
- * 缺失的键回退到简体中文，保证未翻译的页面仍可用。资源随包内联，初始化同步完成。
+ * 中文回退同步可用；其他语言只在首选或切换到该语言时加载。
  */
 export const i18n = i18next.createInstance();
 
 void i18n.use(initReactI18next).init({
-    resources: buildResources(),
-    lng: useLocaleStore.getState().locale,
+    resources: { [DEFAULT_LOCALE]: { translation: zhCN } },
+    lng: DEFAULT_LOCALE,
     fallbackLng: DEFAULT_LOCALE,
     initAsync: false,
     returnNull: false,
     interpolation: { escapeValue: false },
 });
 
+export function loadLocale(locale: AppLocale): Promise<void> {
+    if (locale === DEFAULT_LOCALE) return Promise.resolve();
+    const pending = loading.get(locale);
+    if (pending) return pending;
+    const request = loaders[locale]()
+        .then(({ default: catalog }) => {
+            i18n.addResourceBundle(locale, "translation", catalog);
+        })
+        .catch((error: unknown) => {
+            loading.delete(locale);
+            throw error;
+        });
+    loading.set(locale, request);
+    return request;
+}
+
+export async function syncLocale() {
+    const locale = currentLocale();
+    await loadLocale(locale);
+    if (currentLocale() === locale) await i18n.changeLanguage(locale);
+}
+
+export const i18nReady = syncLocale().catch(() => {
+    console.warn("界面语言加载失败，已回退到简体中文。");
+    return i18n.changeLanguage(DEFAULT_LOCALE);
+});
 useLocaleStore.subscribe((state, previous) => {
-    if (state.locale !== previous.locale) void i18n.changeLanguage(state.locale);
+    if (state.locale !== previous.locale) void syncLocale().catch(() => console.warn("界面语言加载失败，保留当前文案，请刷新重试。"));
 });
 
 /** 当前界面语言；用于 Intl 日期与数字格式化。 */

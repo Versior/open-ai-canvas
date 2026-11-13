@@ -12,7 +12,7 @@ func TestTaskAdmissionErrorStatus(t *testing.T) {
 		drain              bool
 		status             int
 	}{
-		{"maintenance", `{"type":"canvas_image","prompt":"test"}`, "service_unavailable", true, http.StatusServiceUnavailable},
+		{"maintenance", `{"type":"canvas_image","prompt":"test"}`, "unavailable", true, http.StatusServiceUnavailable},
 		{"missing type", `{"prompt":"test"}`, "invalid_argument", false, http.StatusBadRequest},
 		{"unsupported type", `{"type":"unknown","prompt":"test"}`, "invalid_argument", false, http.StatusBadRequest},
 		{"missing prompt", `{"type":"canvas_image"}`, "invalid_argument", false, http.StatusBadRequest},

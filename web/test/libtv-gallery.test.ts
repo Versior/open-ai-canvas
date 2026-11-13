@@ -1,12 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import { InfiniteQueryObserver, QueryClient } from "@tanstack/query-core";
 
-import { createLatestRequestGuard, getNextLibTVGalleryPageParam, hasLibTVTemplateMarker, libTVGalleryInfiniteQuery, resolveLibTVMakeSame, shuffleLibTVGalleryPages } from "../src/lib/libtv-gallery";
+import { createLatestRequestGuard, getNextLibTVGalleryPageParam, hasLibTVTemplateMarker, libTVGalleryInfiniteQuery, libTVGalleryTagLabel, resolveLibTVMakeSame, shuffleLibTVGalleryPages } from "../src/lib/libtv-gallery";
 import { buildLibTVGalleryQuery } from "../src/services/api/libtv-gallery";
 import type { LibTVGalleryItem, LibTVGalleryParams, LibTVGalleryResponse, LibTVWorkDetailResponse, LibTVWorkStep } from "../src/types/libtv-gallery";
 
 // 字段与 backend/internal/auth/libtv_gallery.go 的 JSON tag 一一对应；媒体均为占位地址，不含真实用户作品。
 const REQUEST_ID = "6f1c2d3e-4b5a-4c6d-8e7f-9a0b1c2d3e4f";
+
+test("同名标签保留独立筛选身份，名称使用上游 code 或唯一标签编号消歧", () => {
+    const catalog = [
+        { id: 1, code: "tutorial", label: "教学教程" },
+        { id: 2, code: "learn", label: "教学教程" },
+        { id: 3, code: "shared", label: "人物" },
+        { id: 4, code: "shared", label: "人物" },
+        { id: 5, code: "cinema", label: "电影" },
+    ];
+    expect(catalog.map((tag) => libTVGalleryTagLabel(tag, catalog))).toEqual(["教学教程（tutorial）", "教学教程（learn）", "人物（标签 3）", "人物（标签 4）", "电影"]);
+});
 
 function galleryItem(index: number, overrides: Partial<LibTVGalleryItem> = {}): LibTVGalleryItem {
     return {

@@ -5,6 +5,7 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { creativeCastDefaults, type CreativeCast } from "@/lib/remake/creative";
 import type { RemakeProduct } from "@/lib/remake/job";
 import type { VideoChatSettings, VideoChatTurn } from "@/lib/remake/video-chat";
+import { parseVideoChatArchive, saveVideoChatSession, VIDEO_CHAT_HISTORY_KEY, type VideoChatArchive } from "@/services/video-chat-history-storage";
 
 export type VideoChatDraft = VideoChatSettings & {
     product: RemakeProduct;
@@ -17,8 +18,8 @@ export type VideoChatDraft = VideoChatSettings & {
     edited: Array<"name" | "sellingPoints" | "note" | "audience" | "objective" | "brand" | "tone" | "ratio">;
 };
 export type VideoChatSession = { id: string; turns: VideoChatTurn[]; draft: VideoChatDraft; updatedAt: string };
-type Archive = { version: 1; activeId: string; sessions: VideoChatSession[] };
-export const VIDEO_CHAT_HISTORY_KEY = "video-creation-conversations";
+type Archive = VideoChatArchive;
+export { VIDEO_CHAT_HISTORY_KEY };
 
 export function emptyVideoChatDraft(model: string): VideoChatDraft {
     return {
@@ -55,17 +56,30 @@ export function useVideoChatHistory(draft: VideoChatDraft, onRestore: (draft: Vi
     latest.current = { draft, onRestore };
     const current = useRef(archive);
     const writes = useRef(Promise.resolve());
+    const savedSessions = useRef(new Map<string, VideoChatSession>());
+    const sessionIds = useRef(new Map<string, string>());
     const mounted = useRef(false);
     const serializedDraft = JSON.stringify(draft);
 
     const save = (value: Archive) => {
         if (scope === "guest") return;
         setSaving(true);
-        const serialized = JSON.stringify(value);
+        const session = value.sessions.find((item) => item.id === value.activeId)!;
         writes.current = writes.current.then(async () => {
             try {
-                await storage.setItem(VIDEO_CHAT_HISTORY_KEY, serialized);
-                if (mounted.current) setError("");
+                const id = sessionIds.current.get(session.id) ?? session.id;
+                const stored = await saveVideoChatSession(scope, { ...session, id }, savedSessions.current.get(id));
+                sessionIds.current.set(session.id, stored.activeId);
+                savedSessions.current.set(stored.activeId, { ...session, id: stored.activeId });
+                if (!mounted.current) return;
+                const sessions = current.current.sessions.map((item) => (item.id === session.id ? { ...item, id: stored.activeId } : item));
+                current.current = {
+                    version: 1,
+                    activeId: current.current.activeId === session.id ? stored.activeId : current.current.activeId,
+                    sessions: [...sessions, ...stored.sessions.filter((item) => !sessions.some((local) => local.id === item.id))],
+                };
+                setArchive(current.current);
+                setError("");
             } catch {
                 if (mounted.current) setError("对话未能保存到本机，请重试保存后再刷新。");
             }
@@ -89,8 +103,8 @@ export function useVideoChatHistory(draft: VideoChatDraft, onRestore: (draft: Vi
                 const raw = scope === "guest" ? null : await storage.getItem(VIDEO_CHAT_HISTORY_KEY);
                 if (!active) return;
                 if (raw) {
-                    const stored = JSON.parse(raw) as Archive;
-                    if (stored.version !== 1 || !Array.isArray(stored.sessions) || !stored.sessions.some((session) => session.id === stored.activeId && Array.isArray(session.turns) && session.draft)) throw new Error("invalid conversation archive");
+                    const stored = parseVideoChatArchive(raw);
+                    savedSessions.current = new Map(stored.sessions.map((session) => [session.id, session]));
                     current.current = stored;
                     latest.current.onRestore(stored.sessions.find((session) => session.id === stored.activeId)!.draft);
                     setArchive(stored);

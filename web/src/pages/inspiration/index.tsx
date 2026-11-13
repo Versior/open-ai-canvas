@@ -4,7 +4,7 @@ import { RotateCw, Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { libTVGalleryInfiniteQuery, rankLibTVGalleryTags } from "@/lib/libtv-gallery";
+import { libTVGalleryInfiniteQuery, libTVGalleryTagLabel, rankLibTVGalleryTags } from "@/lib/libtv-gallery";
 import { getLibTVGallery } from "@/services/api/libtv-gallery";
 import type { LibTVGalleryItem, LibTVGalleryTag } from "@/types/libtv-gallery";
 
@@ -120,8 +120,8 @@ export function LibTVGalleryContent() {
                             全部
                         </Tag.CheckableTag>
                         {visibleTags.map((tag) => (
-                            <Tag.CheckableTag key={tag.id} checked={selectedTagId === tag.id} onChange={() => handleTagClick(tag.id)}>
-                                {tag.label}
+                            <Tag.CheckableTag key={tag.id} checked={selectedTagId === tag.id} onChange={() => handleTagClick(selectedTagId === tag.id ? undefined : tag.id)}>
+                                {libTVGalleryTagLabel(tag, knownTags)}
                             </Tag.CheckableTag>
                         ))}
                         {knownTags.length > tagRank.visible.length && (

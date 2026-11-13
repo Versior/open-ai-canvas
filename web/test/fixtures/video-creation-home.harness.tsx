@@ -1,10 +1,12 @@
 import { afterAll, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
+import "fake-indexeddb/auto";
 import type { ComponentProps } from "react";
 import type { RemakeProduct } from "@/lib/remake/job";
 import type { StudioSetEntry } from "@/lib/ecommerce-studio/runs";
 
 const dom = new Window({ url: "http://localhost/" });
+Object.defineProperty(dom, "indexedDB", { configurable: true, value: indexedDB });
 for (const key of ["window", "document", "navigator", "localStorage", "HTMLElement", "SVGElement", "ShadowRoot", "Element", "Node", "Event", "CustomEvent", "MutationObserver", "ResizeObserver"]) {
     Object.defineProperty(globalThis, key, { configurable: true, value: key === "window" ? dom : key === "document" ? dom.document : dom[key as keyof Window] });
 }

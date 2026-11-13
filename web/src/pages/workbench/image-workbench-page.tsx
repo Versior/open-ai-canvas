@@ -1143,7 +1143,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const retryTask = async (task: GenerationTask, notify = true) => {
         markTaskBusy(task.id, true);
         try {
-            applyTaskUpdate(await retryGenerationTask(task.id));
+            applyTaskUpdate(await retryGenerationTask(task.id, task.type));
             if (notify) message.success("已重新提交");
             pollKickRef.current();
             return true;

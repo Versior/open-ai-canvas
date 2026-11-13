@@ -475,7 +475,7 @@ describe("LibTV gallery tag containment", () => {
         expect(gallery).toContain("const visibleTags = tagsExpanded ? knownTags : tagRank.visible;");
         // 选中态与清除入口都在，且筛选用的仍是真实 tagId。
         expect(gallery).toContain("checked={selectedTagId === tag.id}");
-        expect(gallery).toContain("onChange={() => handleTagClick(tag.id)}");
+        expect(gallery).toContain("onChange={() => handleTagClick(selectedTagId === tag.id ? undefined : tag.id)}");
         expect(gallery).toContain("checked={!selectedTagId}");
         expect(gallery).toContain("onChange={() => handleTagClick(undefined)}");
         expect(gallery).toContain("aria-expanded={tagsExpanded}");

@@ -116,6 +116,12 @@ export function pickLibTVRecommendations(items: LibTVGalleryItem[], currentTempl
 
 export type LibTVGalleryTagRank = { visible: LibTVGalleryTag[]; hiddenCount: number };
 
+export function libTVGalleryTagLabel(tag: LibTVGalleryTag, catalog: LibTVGalleryTag[]): string {
+    const peers = catalog.filter((other) => other.id !== tag.id && other.label === tag.label);
+    if (peers.length === 0) return tag.label;
+    return `${tag.label}（${tag.code && peers.every((other) => other.code !== tag.code) ? tag.code : `标签 ${tag.id}`}）`;
+}
+
 /**
  * 标签很多时只平铺常用的几个，其余按需展开；不虚构层级、不改写标签，仍然拿真实 tagId 筛选。
  * 顺序按已加载作品的真实出现次数（并列时保持首次出现顺序），当前选中的标签始终可见，切到冷门标签也不会「看不见自己在筛什么」。

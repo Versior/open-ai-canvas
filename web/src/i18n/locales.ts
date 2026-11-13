@@ -11,7 +11,7 @@ export const SUPPORTED_LOCALES = [
 
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number]["code"];
 
-export const DEFAULT_LOCALE: AppLocale = "zh-CN";
+export const DEFAULT_LOCALE = "zh-CN";
 
 export function isAppLocale(value: unknown): value is AppLocale {
     return SUPPORTED_LOCALES.some((locale) => locale.code === value);

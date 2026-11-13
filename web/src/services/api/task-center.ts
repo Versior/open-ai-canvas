@@ -4,6 +4,7 @@ import { consumeTaskTextStream, createTaskTextStreamParser, type TaskTextStreamE
 import { recordDiagnosticEvent } from "@/services/diagnostics/client-diagnostics";
 import { observeGenerationTaskStatus, observeGenerationTaskStatuses } from "@/services/generation-completion-tracker";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { assertGenerationStorageSupported } from "@/services/generation-asset-repository";
 
 export type { BackendEnvelope } from "@/services/api/request";
 
@@ -140,6 +141,7 @@ export type CreateTaskInput = {
     input?: Record<string, unknown>;
 };
 export function createGenerationTask(input: CreateTaskInput) {
+    if (["image", "video", "audio"].includes(input.operation ?? "") || ["canvas_image", "canvas_video", "canvas_audio"].includes(input.type ?? "")) assertGenerationStorageSupported();
     return http.post<GenerationTask>("/tasks", input).then((task) => {
         recordDiagnosticEvent({ level: "info", category: "task", message: "任务已创建", taskId: task.id, projectId: task.projectId });
         observeGenerationTaskStatus(task);
@@ -350,7 +352,8 @@ export function queryTaskTextReplay(id: string, after = 0) {
     return http.get<TaskTextReplay>(`/tasks/${encodeURIComponent(id)}/text-deltas`, { params: { after } });
 }
 
-export function retryGenerationTask(id: string) {
+export function retryGenerationTask(id: string, taskType: string) {
+    if (["canvas_image", "canvas_video", "canvas_audio"].includes(taskType)) assertGenerationStorageSupported();
     // 重试会在服务端预占/结算积分，与 cancel 对齐派发钱包事件，顶栏余额才不会停留在旧值。
     return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/retry`).then((task) => {
         const observed = observedTask(task);
@@ -360,6 +363,7 @@ export function retryGenerationTask(id: string) {
 }
 
 export function recoverGenerationTaskMedia(id: string) {
+    assertGenerationStorageSupported();
     return http.post<GenerationTask>(`/tasks/${encodeURIComponent(id)}/recover-media`).then((task) => {
         window.dispatchEvent(new CustomEvent("wallet:updated"));
         return task;
