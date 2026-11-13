@@ -40,6 +40,7 @@ for (const [key, value] of Object.entries({
     SVGElement: dom.SVGElement,
     ShadowRoot: dom.ShadowRoot,
     Event: dom.Event,
+    WheelEvent: dom.WheelEvent,
     MutationObserver: dom.MutationObserver,
     ResizeObserver: dom.ResizeObserver,
     getComputedStyle: dom.getComputedStyle.bind(dom),
@@ -153,8 +154,37 @@ test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循�
             await act(async () => scrollChapter(index));
             expect(host.querySelector(".welcome-stage")!.classList.contains(`chapter-${index}`)).toBe(true);
             if (index > 0) expect(Math.floor(Number(host.querySelector(".welcome-webgl")!.getAttribute("data-progress")) * 6)).toBe(index);
+            if (index === 5) expect(cycleTimers.size, "展开画布时不重建场景轮换素材").toBe(0);
         }
         expect(host.querySelector(".welcome-reel")!.classList.contains("is-ready"), "回首幕不丢弃已准备的圆环").toBe(true);
+        const wheel = (deltaY: number, options: WheelEventInit = {}) => {
+            const event = new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true, ...options });
+            Object.defineProperty(event, "ctrlKey", { value: options.ctrlKey ?? false });
+            page.dispatchEvent(event);
+            return event;
+        };
+        await act(async () => {
+            for (let tick = 0; tick < 5; tick++) expect(wheel(3600).defaultPrevented, "原生滚轮不被章节限制或减速接管").toBe(false);
+        });
+        expect(page.scrollTop, "不排队产生松手后的额外位移").toBe(0);
+        expect(wheel(10, { ctrlKey: true }).defaultPrevented, "不拦截浏览器缩放").toBe(false);
+        expect(wheel(10, { deltaX: 200 }).defaultPrevented, "不拦截水平滚动").toBe(false);
+        await act(async () => {
+            scrollChapter(5);
+            expect(wheel(3600).defaultPrevented, "画布幕无硬停").toBe(false);
+        });
+        await act(async () => page.scrollTo({ top: 5700 }));
+        expect(wheel(3600).defaultPrevented, "工作台区域保留原生滚动").toBe(false);
+        await act(async () => {
+            reduced = true;
+            motionListeners.forEach((callback) => callback());
+            scrollChapter(1);
+        });
+        expect(wheel(3600).defaultPrevented, "减少动画时保留原生滚动").toBe(false);
+        await act(async () => {
+            reduced = false;
+            motionListeners.forEach((callback) => callback());
+        });
         await act(async () => scrollChapter(1));
         await act(async () => sceneError());
         expect(host.querySelector(".welcome-webgl")).toBeNull();

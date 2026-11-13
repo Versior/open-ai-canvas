@@ -71,10 +71,10 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
     const staticScene = reduced || failedLook === look.id;
     const paused = hidden || !storyVisible || chapter === 0;
     useEffect(() => {
-        if (staticScene || paused) return;
+        if (staticScene || paused || chapter === 5) return;
         const timer = window.setInterval(() => setRemainingLooks((current) => (current.length > 1 ? current.slice(1) : shuffleWelcomeLooks(current[0].id))), 12_000);
         return () => window.clearInterval(timer);
-    }, [staticScene, paused]);
+    }, [staticScene, paused, chapter]);
     const active = showcases[showcase];
 
     return (

@@ -270,8 +270,9 @@ test("导演入口强校验图文模型，修改主体资料与图片后需要�
     await click("选择测试商品");
     recognized = true;
     await render();
+    const previousRetries = retries;
     await click("重新识别");
-    expect(retries).toBe(1);
+    expect(retries).toBe(previousRetries + 1);
     recognized = false;
     await render();
 });

@@ -234,12 +234,12 @@ export default function StoryReel({ look, progress, paused, onReady, onError }: 
                         video.pause();
                         return;
                     }
-                    if (pausedRef.current && progress.current < 1 / 6) current = progress.current;
-                    if (pausedRef.current && (!wasPaused || progress.current < 1 / 6)) frozen = current;
+                    if (pausedRef.current && (progress.current < 1 / 6 || progress.current === 1)) current = progress.current;
+                    if (pausedRef.current && (!wasPaused || progress.current < 1 / 6 || progress.current === 1)) frozen = current;
                     wasPaused = pausedRef.current;
                     const target = pausedRef.current ? frozen : progress.current;
                     const velocity = target - current;
-                    current += velocity * (1 - Math.exp(-dt * 7));
+                    current = Math.abs(velocity) > 1 / 6 ? target : current + velocity * (1 - Math.exp(-dt * 7));
                     if (!pausedRef.current) idle += dt * 0.035;
                     const stage = Math.min(5, Math.floor(current * 6));
                     const videoReady = video.readyState >= 2 && !playbackBlocked;
