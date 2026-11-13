@@ -208,6 +208,10 @@ func TestCloudAgentAdmissionAndCanvasDeletionAcrossConnections(t *testing.T) {
 					if taskCount != 1 || canvasCount != 1 {
 						t.Fatalf("accepted run lost its canvas: tasks=%d canvases=%d", taskCount, canvasCount)
 					}
+					// Finish this round before admitting another live session for the same account.
+					if err := admission.db.Model(&model.Task{}).Where("id = ?", runID).Update("status", model.TaskStatusSucceeded).Error; err != nil {
+						t.Fatal(err)
+					}
 				case deleteErr == nil && errors.Is(admitErr, gorm.ErrRecordNotFound):
 					if taskCount != 0 || canvasCount != 0 {
 						t.Fatalf("deleted canvas admitted a run: tasks=%d canvases=%d", taskCount, canvasCount)
