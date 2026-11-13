@@ -114,7 +114,7 @@ const props: ComponentProps<typeof ReplicationHome> = {
         submitted.push(structuredClone(args));
     },
 };
-const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === text)!;
+const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text)!;
 function paint() {
     root.render(
         <QueryClientProvider client={client}>
@@ -145,12 +145,11 @@ async function confirmFacts() {
 }
 const closeSettings = () => act(async () => document.querySelector<HTMLButtonElement>(".ant-drawer-close")!.click());
 async function scene(value: string) {
-    await click("创作设置");
+    await click("视频要求");
     await fill("视频用途", value);
     await closeSettings();
 }
 async function inspiration() {
-    await click("更多");
     await click("热点与投放灵感");
     await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -161,6 +160,22 @@ afterAll(async () => {
     await act(async () => root.unmount());
     client.clear();
     await dom.happyDOM.abort();
+});
+
+test("全部视频功能紧凑悬浮在输入框上方，开始对话后仍能切换", async () => {
+    setActiveUserScope("home-visible-functions");
+    await render();
+    expect(host.querySelectorAll(".vchat-replies button")).toHaveLength(12);
+    expect(button("视频换头")).toBeDefined();
+    expect(button("多模特同款视频")).toBeDefined();
+    expect(button("更多")).toBeUndefined();
+    expect(host.querySelectorAll(".vchat-turns .vchat-replies")).toHaveLength(0);
+    expect(host.querySelector(".vchat-replies")!.nextElementSibling === host.querySelector(".vchat-composer")).toBe(true);
+    expect(host.querySelector(".vchat-replies small")).toBeNull();
+    await click("用图片拍一条");
+    expect(host.querySelectorAll(".vchat-replies button")).toHaveLength(12);
+    await click("视频换头");
+    expect(host.textContent).toContain("准备视频换头素材");
 });
 
 test("刷新恢复消息、输入草稿与素材，历史切换不重新识别素材", async () => {
@@ -192,7 +207,7 @@ test("商品展示直接要求图片，选商品只回填，不提前创建作�
     await act(async () => useUserStore.getState().setUser({ id: "home-fixture", username: "test", displayName: "测试", role: "user", status: "active" }));
     useUserStore.setState((state) => ({ features: { ...state.features, customChannelsEnabled: true } }));
     await render();
-    expect(host.querySelectorAll(".vchat-replies button")).toHaveLength(6);
+    expect(host.querySelectorAll(".vchat-replies button")).toHaveLength(12);
     expect(host.querySelectorAll(".vchat-composer textarea")).toHaveLength(1);
     await click("用图片拍一条");
     expect(host.querySelector('[aria-label="上传主体图片"]')).not.toBeNull();
@@ -244,17 +259,15 @@ test("导演入口强校验图文模型，修改主体资料与图片后需要�
 });
 
 test("切换用途与流程保留素材，创建时一次交接所有输入", async () => {
-    await click("更多");
     await click("复刻镜头结构");
     expect(host.textContent).toContain("上传参考视频");
-    await click("更多");
     await click("我想换脸");
     await click("加素材");
     expect(host.textContent).toContain("既有人物处理工作台");
     await click("返回对话");
-    await click("更多");
     await click("用图片拍一条");
-    await click("创作设置");
+    await click("视频要求");
+    expect(document.body.textContent).toContain("导演会参考这些要求继续对话，并用于后续策划");
     await fill("视频用途", "creative-ad");
     await fill("拍摄要求", "展示杯身与使用动作");
     await fill("画幅", "16:9");
@@ -273,7 +286,6 @@ test("切换用途与流程保留素材，创建时一次交接所有输入", as
 });
 
 test("人物流程点击热点会切回素材创作并带入主题，不静默失效", async () => {
-    await click("更多");
     await click("我想换脸");
     await inspiration();
     await click("实拍杯身教程");
@@ -286,7 +298,7 @@ test("人物流程点击热点会切回素材创作并带入主题，不静默�
 test("创建期间不能换流程，账号变化清除上一账号的素材和要求", async () => {
     props.creating = true;
     await render();
-    expect(button("更多").disabled).toBe(true);
+    expect(button("热点与投放灵感").disabled).toBe(true);
     expect(button("正在准备方案…").disabled).toBe(true);
     props.creating = false;
     setActiveUserScope("next_user");
@@ -356,7 +368,7 @@ test("热点宝服务器网页接口标明来源并能选择主题，不标成�
 test("AI回填未修改字段，保留手动输入与商品档案资料", async () => {
     await click("从生图台选择商品");
     await click("选择测试商品");
-    await click("创作设置");
+    await click("视频要求");
     await fill("拍摄要求", "保留我的要求");
     await act(async () => applyMaterial({ name: "AI杯", sellingPoints: "AI卖点", audience: "桌面收纳爱好者", objective: "了解外观", brand: "柔和光线", note: "AI拍法", tone: "natural", questions: [] }));
     expect(host.querySelector<HTMLInputElement>(".vchat-fields input")!.value).toBe("测试杯");

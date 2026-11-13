@@ -55,7 +55,6 @@ type Props = {
 };
 const emptyProduct = (): RemakeProduct => ({ name: "", sellingPoints: "", images: [] });
 const initialBrief = (): CreativeBrief => ({ scene: "showcase", tone: "natural", seconds: 15, audience: "", objective: "", brand: "" });
-const quickIds = ["creative", "structure", "style", "elements", "face", "tryon"];
 
 /** 对话整理需求，解析、素材识别、策划与生成使用现有真实任务。 */
 export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen, tabs, tab, works, onCreative, creating, referenceId, onReferenceChange, onRemake }: Props) {
@@ -71,7 +70,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
     const [product, setProduct] = useState(emptyProduct);
     const [cast, setCast] = useState(() => creativeCastDefaults("showcase"));
     const [text, setText] = useState("");
-    const [panel, setPanel] = useState<"settings" | "functions" | "history" | "conversations" | "inspiration" | null>(null);
+    const [panel, setPanel] = useState<"settings" | "history" | "conversations" | "inspiration" | null>(null);
     const [picking, setPicking] = useState(false);
     const [fashion, setFashion] = useState<FashionVideoTool>();
     const [uploading, setUploading] = useState(false);
@@ -246,16 +245,6 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
             setStarting(false);
         }
     };
-    const choices = (all = false) => (
-        <div className="vchat-replies">
-            {VIDEO_CHAT_INTENTS.filter((item) => all || quickIds.includes(item.id)).map((item) => (
-                <button key={item.id} type="button" disabled={locked} onClick={() => choose(item.id)}>
-                    {item.reply}
-                </button>
-            ))}
-        </div>
-    );
-
     return (
         <div className="vchat-page">
             <header className="vr-home-head">
@@ -275,9 +264,9 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                         <button disabled={locked} onClick={() => setPanel("history")}>
                             最近拆解
                         </button>
-                        <button disabled={locked} onClick={() => setPanel("settings")}>
+                        <button disabled={locked} title="设置时长、画幅与拍摄要求，导演会参考这些资料继续对话" onClick={() => setPanel("settings")}>
                             <SlidersHorizontal size={15} />
-                            创作设置
+                            视频要求
                         </button>
                         <button disabled={locked} aria-label="新建视频对话" onClick={reset}>
                             <Plus size={17} />
@@ -285,27 +274,12 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                     </div>
                 </div>
                 <div className="vchat-turns" ref={scroll}>
-                    <article className="vchat-assistant vchat-opening">
-                        <span className="vchat-speaker">
-                            <Sparkles size={15} />
-                            视频导演
-                        </span>
-                        <h2>今天，我们拍点什么？</h2>
-                        <p>
-                            发我一条视频链接，我帮你拆镜头、找灵感。
-                            <br />
-                            也可以从你的图片和想法开始，一起把它拍出来。
-                        </p>
-                        {!started ? (
-                            <>
-                                <p className="vchat-muted">可以直接说，也可以这样开个头：</p>
-                                {choices()}
-                                <button className="vchat-text-action" onClick={() => setPanel("inspiration")}>
-                                    看看热点与投放灵感
-                                </button>
-                            </>
-                        ) : null}
-                    </article>
+                    {!started ? (
+                        <article className="vchat-assistant vchat-opening">
+                            <h2>今天，我们拍点什么？</h2>
+                            <p className="vchat-muted">选一种拍法，发视频链接、图片，或直接说你的想法。</p>
+                        </article>
+                    ) : null}
                     {chat.turns.map((turn, index) => (
                         <article key={index} className={`vchat-${turn.role} agent-message-body${turn.role === "user" ? " agent-message-user" : ""}`}>
                             {turn.role === "assistant" ? (
@@ -358,7 +332,6 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                                 <p>{source.transcript.segments.map((segment) => segment.text).join(" ") || source.transcript.note || "没有可用的口播转写"}</p>
                                 <button onClick={() => onOpen(referenceId)}>打开完整拆解</button>
                             </details>
-                            {choices()}
                         </article>
                     ) : null}
                     {started && !chat.busy ? (
@@ -478,6 +451,13 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                         </p>
                     ) : null}
                 </div>
+                <div className="vchat-replies" role="group" aria-label="视频创作功能">
+                    {VIDEO_CHAT_INTENTS.map((item) => (
+                        <button key={item.id} className="vchat-function" type="button" aria-label={item.reply} title={item.description} aria-pressed={started && intent === item.id} disabled={locked} onClick={() => choose(item.id)}>
+                            {item.reply}
+                        </button>
+                    ))}
+                </div>
                 <form
                     className="vchat-composer agent-composer-surface"
                     onSubmit={(event) => {
@@ -532,8 +512,8 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                                 <Link2 size={15} />
                                 解析链接
                             </button>
-                            <button type="button" disabled={locked} onClick={() => setPanel("functions")}>
-                                更多
+                            <button type="button" disabled={locked} onClick={() => setPanel("inspiration")}>
+                                热点与投放灵感
                             </button>
                         </div>
                         <button
@@ -568,12 +548,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                 />
             </div>
             {tab === "works" ? works : null}
-            <AppDrawer
-                open={panel !== null}
-                title={panel === "conversations" ? "对话历史" : panel === "settings" ? "创作设置" : panel === "functions" ? "更多视频玩法" : panel === "inspiration" ? "热点与投放灵感" : "最近拆解"}
-                onClose={() => setPanel(null)}
-                size={480}
-            >
+            <AppDrawer open={panel !== null} title={panel === "conversations" ? "对话历史" : panel === "settings" ? "视频要求" : panel === "inspiration" ? "热点与投放灵感" : "最近拆解"} onClose={() => setPanel(null)} size={480}>
                 {panel === "conversations" ? (
                     <div className="vchat-history">
                         {[...history.sessions]
@@ -596,14 +571,6 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                             ))}
                     </div>
                 ) : null}
-                {panel === "functions" ? (
-                    <>
-                        {choices(true)}
-                        <button type="button" className="vchat-text-action" disabled={locked} onClick={() => setPanel("inspiration")}>
-                            热点与投放灵感
-                        </button>
-                    </>
-                ) : null}
                 {panel === "history" ? <ReplicationRecent records={records} loading={loading} error={error} runningId={activeRun?.id || ""} onOpen={onOpen} /> : null}
                 {panel === "inspiration" ? (
                     <HotTopicPicker
@@ -625,6 +592,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                 ) : null}
                 {panel === "settings" ? (
                     <div className="vchat-fields">
+                        <p className="vchat-muted">导演会参考这些要求继续对话，并用于后续策划。修改要求不会自动生成视频。</p>
                         <label>
                             视频用途
                             <select

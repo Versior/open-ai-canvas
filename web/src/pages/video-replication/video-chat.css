@@ -68,7 +68,7 @@
     color: var(--user-ink-muted);
     font-size: var(--fs-caption);
 }
-.vchat-page button:not(.vr-create-command),
+.vchat-page button:not(.vr-create-command, .pv-add, .pv-thumb-remove, .vchat-function),
 .vchat-replies button {
     display: inline-flex;
     align-items: center;
@@ -82,6 +82,15 @@
     border-radius: var(--r-md);
     color: var(--user-ink-muted);
     font-size: var(--fs-caption);
+    white-space: nowrap;
+}
+.vchat-toolbar button > svg,
+.vchat-compose-tools button > svg {
+    flex-shrink: 0;
+}
+.vchat-compose-tools > div {
+    flex-wrap: wrap;
+    min-width: 0;
 }
 .vchat-page button:disabled,
 .vchat-replies button:disabled {
@@ -151,18 +160,32 @@
     font-size: var(--fs-caption);
 }
 .vchat-replies {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    margin: var(--space-3) 0;
-}
-.vchat-replies button {
-    padding: var(--space-2) var(--space-3);
+    display: grid;
+    flex-shrink: 0;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--space-1);
+    margin-bottom: var(--space-2);
+    padding: var(--space-2);
     border: 1px solid var(--user-border);
     border-radius: var(--r-lg);
     background: var(--user-surface);
+    box-shadow: var(--elevation-card);
+}
+.vchat-replies button {
+    min-width: 0;
+    min-height: var(--space-8);
+    padding: var(--space-1);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
     color: var(--user-ink-muted);
-    font-size: var(--fs-caption);
+    font-size: var(--fs-label);
+    white-space: nowrap;
+    line-height: 1.5;
+}
+.vchat-replies button[aria-pressed="true"] {
+    border-color: var(--control-selected-border);
+    background: var(--control-selected-bg);
+    color: var(--user-ink);
 }
 .vchat-assistant details {
     margin: var(--space-3) 0;
@@ -228,6 +251,7 @@
     line-height: 1.6;
 }
 .vchat-compose-tools .agent-composer-send {
+    flex-shrink: 0;
     height: var(--space-7);
     padding: 0 var(--space-3);
     border-radius: var(--r-full);
@@ -251,6 +275,9 @@
     color: var(--status-error);
 }
 @media (max-width: 640px) {
+    .vchat-replies {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
     .vchat-page {
         padding: var(--space-3) var(--space-2);
     }
