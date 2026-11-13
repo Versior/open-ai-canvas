@@ -22,6 +22,10 @@ const { act, useRef, useState } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { App } = await import("antd");
 const { useCanvasConnectionController } = await import("../../src/pages/canvas/use-canvas-connection-controller");
+const { useCanvasNodeOperations } = await import("../../src/pages/canvas/use-canvas-node-operations");
+const { useCanvasNodeEditor } = await import("../../src/pages/canvas/use-canvas-node-editor");
+const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+const { ensureMediaNodeMinimumSize } = await import("../../src/lib/canvas/canvas-node-size");
 const { CanvasConnectionDrafts } = await import("../../src/components/canvas/canvas-connection-drafts");
 const { defaultConfig } = await import("../../src/stores/use-config-store");
 const { canvasThemes } = await import("../../src/lib/canvas-theme");
@@ -43,17 +47,20 @@ const nodes: CanvasNodeData[] = [
     { id: "back", title: "后景", type: CanvasNodeType.Text, position: { x: 300, y: 0 }, width: 200, height: 200 },
 ];
 
-async function mount() {
+async function mount(initialNodes = nodes) {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
     let controller!: ReturnType<typeof useCanvasConnectionController>;
+    let operations!: ReturnType<typeof useCanvasNodeOperations>;
+    let editor!: ReturnType<typeof useCanvasNodeEditor>;
+    let currentNodes = initialNodes;
     let edges: CanvasConnection[] = [];
     let hit: Element | null = null;
     const originalHit = document.elementFromPoint;
     document.elementFromPoint = () => hit;
     function Harness() {
-        const [items, setNodes] = useState(nodes);
+        const [items, setNodes] = useState(initialNodes);
         const [connections, setConnections] = useState<CanvasConnection[]>([]);
         const nodesRef = useRef(items);
         nodesRef.current = items;
@@ -61,6 +68,35 @@ async function mount() {
         connectionsRef.current = connections;
         const viewportRef = useRef({ x: 0, y: 0, k: 1 });
         const containerRef = useRef<HTMLDivElement>(null);
+        const selectedNodeIdsRef = useRef(new Set<string>());
+        currentNodes = items;
+        operations = useCanvasNodeOperations({
+            projectId: "test",
+            defaultDrawingEngine: "excalidraw",
+            nodesRef,
+            connectionsRef,
+            selectedNodeIdsRef,
+            getCanvasCenter: () => ({ x: 500, y: 500 }),
+            setNodes,
+            setConnections,
+            setSelectedNodeIds: noop,
+            setSelectedConnectionId: noop,
+            setContextMenu: noop,
+            setDialogNodeId: noop,
+            onNodesDeleted: noop,
+        });
+        editor = useCanvasNodeEditor({
+            config: defaultConfig,
+            canvasId: "test",
+            canvasTitle: "test",
+            nodesRef,
+            setNodes,
+            setSelectedNodeIds: noop,
+            setSelectedConnectionId: noop,
+            setDialogNodeId: noop,
+            setToolbarNodeId: noop,
+            setHoveredNodeId: noop,
+        });
         edges = connections;
         controller = useCanvasConnectionController({
             projectId: "test",
@@ -103,15 +139,20 @@ async function mount() {
     }
     await act(async () =>
         root.render(
-            <App>
-                <Harness />
-            </App>,
+            <QueryClientProvider client={new QueryClient()}>
+                <App>
+                    <Harness />
+                </App>
+            </QueryClientProvider>,
         ),
     );
     const event = (type: string, x: number, y: number) => new dom.PointerEvent(type, { bubbles: true, pointerId: 1, clientX: x, clientY: y, button: 0 });
     return {
         host,
         controller: () => controller,
+        nodes: () => currentNodes,
+        create: async (type: CanvasNodeData["type"]) => act(async () => operations.createNode(type)),
+        resize: async (id: string, width: number, height: number) => act(async () => editor.handleNodeResize(id, width, height)),
         edges: () => edges,
         hit: (id: string | null) => {
             hit = id ? host.querySelector(`[data-node-id="${id}"] span`) : null;
@@ -159,6 +200,41 @@ for (const batch of [false, true]) {
         }
     });
 }
+
+test("放大后新建同类节点沿用工作尺寸，其他类型保持独立", async () => {
+    const h = await mount([]);
+    try {
+        await h.create(CanvasNodeType.Image);
+        const first = h.nodes()[0];
+        await h.resize(first.id, 2160, 1215);
+        await h.create(CanvasNodeType.Image);
+        const next = h.nodes()[1];
+        expect([next.width, next.height]).toEqual([2160, 1215]);
+        expect(next.position).toEqual({ x: 500 - 1080, y: 500 - 607.5 });
+        expect(ensureMediaNodeMinimumSize(next)).toEqual(next);
+        await h.create(CanvasNodeType.Text);
+        expect(h.nodes()[2].width).toBe(340);
+        await h.resize(first.id, 1440, 810);
+        await h.create(CanvasNodeType.Image);
+        expect(h.nodes()[3].width).toBe(1440);
+    } finally {
+        await h.dispose();
+    }
+});
+
+test("重载后连线新建跟随手动尺寸，保持来源边缘间距", async () => {
+    const source: CanvasNodeData = { id: "source", type: CanvasNodeType.Image, title: "大参考图", position: { x: 0, y: 0 }, width: 1600, height: 1200, metadata: { manualSize: true, naturalWidth: 800, naturalHeight: 600 } };
+    const h = await mount([source]);
+    try {
+        await act(async () => h.controller().createConnectedNode(CanvasNodeType.Image, { connection: { nodeId: source.id, handleType: "source" }, position: { x: 1700, y: 600 }, quick: true }));
+        const next = h.nodes()[1];
+        expect([next.width, next.height]).toEqual([1600, 1200]);
+        expect(next.position).toEqual({ x: 1696, y: 0 });
+        expect(ensureMediaNodeMinimumSize(next)).toEqual(next);
+    } finally {
+        await h.dispose();
+    }
+});
 
 test("无效可见主体不穿透也不打开新增菜单", async () => {
     const h = await mount();

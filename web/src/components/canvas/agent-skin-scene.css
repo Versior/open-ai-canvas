@@ -1,4 +1,4 @@
-.canvas-agent-panel[data-skin] {
+:is(.canvas-agent-panel, .agent-chat-theme)[data-skin] {
     --agent-usage-line: color-mix(in srgb, var(--agent-ink) 14%, transparent);
 }
 .agent-panel-content {
@@ -106,20 +106,20 @@
     overflow-y: auto;
     text-align: left;
 }
-.canvas-agent-panel[data-skin] .agent-message-body:not(.agent-message-user) {
+:is(.canvas-agent-panel, .agent-chat-theme)[data-skin] .agent-message-body:not(.agent-message-user) {
     padding: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
 }
-.canvas-agent-panel[data-skin="cloud"] .agent-message-user {
+:is(.canvas-agent-panel, .agent-chat-theme)[data-skin="cloud"] .agent-message-user {
     border-radius: 20px 20px 5px 20px;
     padding: 10px 12px;
     border: 1px solid var(--agent-usage-line);
     background: var(--agent-surface-base);
 }
-.canvas-agent-panel[data-skin="paper"] .agent-message-user {
+:is(.canvas-agent-panel, .agent-chat-theme)[data-skin="paper"] .agent-message-user {
     padding: 10px 14px;
     border: 1px solid color-mix(in srgb, var(--agent-accent) 40%, var(--agent-usage-line));
     border-radius: 3px 12px 12px 3px;
@@ -130,7 +130,7 @@
     border-radius: 4px 15px 4px 15px;
     border-style: dashed;
 }
-.canvas-agent-panel[data-skin="terminal"] .agent-message-user {
+:is(.canvas-agent-panel, .agent-chat-theme)[data-skin="terminal"] .agent-message-user {
     padding: 10px 12px;
     border: 1px solid var(--agent-usage-line);
     border-radius: 2px 12px 2px 2px;
@@ -140,7 +140,7 @@
     border-radius: 3px;
     border-color: color-mix(in srgb, var(--agent-accent) 45%, var(--agent-usage-line));
 }
-.canvas-agent-panel[data-skin="aurora"] .agent-message-user {
+:is(.canvas-agent-panel, .agent-chat-theme)[data-skin="aurora"] .agent-message-user {
     padding: 10px 12px;
     border: 1px solid var(--agent-usage-line);
     border-radius: 18px 4px 18px 4px;

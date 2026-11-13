@@ -39,7 +39,11 @@ createRoot(document.getElementById("root")!).render(
                         tabs={null}
                         tab="new"
                         works={null}
-                        onTool={() => {}}
+                        referenceId=""
+                        onReferenceChange={() => {}}
+                        onRemake={async () => {}}
+                        creating={false}
+                        onCreative={async () => {}}
                     />
                 </App>
             </QueryClientProvider>

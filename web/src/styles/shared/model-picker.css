@@ -684,7 +684,7 @@ html:not(.dark) .creation-home .creation-chat-composer .creation-model-picker.ca
     min-width: 0;
     align-items: center;
     gap: 8px;
-    color: color-mix(in srgb, currentColor 55%, transparent);
+    color: var(--muted-foreground);
     font-size: 11px;
     line-height: 1.4;
 }
@@ -811,7 +811,7 @@ html:not(.dark) .creation-home .creation-chat-composer .creation-model-picker.ca
 
 /* 积分独立于选中态，金黄色图标与紧凑标签保持常驻可读。 */
 .model-picker-price {
-    --model-price-ink: #946900;
+    --model-price-ink: #795500;
     color: var(--model-price-ink);
     font-weight: 600;
     line-height: 1.3;

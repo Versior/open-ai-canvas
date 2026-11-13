@@ -19,6 +19,7 @@ import (
 func TestParseVideoTeardownCutsReadsSelectedFrameTimes(t *testing.T) {
 	stderr := strings.Join([]string{
 		"[Parsed_showinfo_2 @ 0x600003a4c000] config in time_base: 1/15360, frame_rate: 30/1",
+		"[Parsed_showinfo_2 @ 0x600003a4c000] n:   0 pts:      0 pts_time:0       duration:    512",
 		"[Parsed_showinfo_2 @ 0x600003a4c000] n:   0 pts:  23040 pts_time:1.5     duration:    512 duration_time:0.0333333 fmt:yuv420p",
 		"[Parsed_showinfo_2 @ 0x600003a4c000]   color_range:tv color_space:unknown",
 		"[Parsed_showinfo_2 @ 0x600003a4c000] n:   1 pts:  46080 pts_time:3       duration:    512",
@@ -98,6 +99,47 @@ func TestVideoTeardownFrameTimesStayInsideTheShotAndBeforeTheLastFrame(t *testin
 func TestReplicationTeardownUsesItsOwnTimeout(t *testing.T) {
 	if got := taskExecutionTimeoutWithPolicy(model.TaskTypeReplicationTeardown, RuntimeTaskPolicy{VideoTimeoutMinutes: 120}); got != 10*time.Minute {
 		t.Fatalf("timeout = %v, want 10m", got)
+	}
+}
+
+func TestPrepareVideoTeardownAnalysisWithoutHardCuts(t *testing.T) {
+	requireFFmpegTools(t)
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []struct{ width, height int }{{320, 180}, {720, 1280}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			dir := t.TempDir()
+			source := filepath.Join(dir, "source.mp4")
+			output, err := exec.Command(ffmpeg, "-v", "error", "-y", "-f", "lavfi", "-i",
+				fmt.Sprintf("color=c=white:s=%dx%d:r=30:d=2", size.width, size.height),
+				"-c:v", "libx264", "-pix_fmt", "yuv420p", source).CombinedOutput()
+			if err != nil {
+				t.Fatalf("generate continuous video: %v %s", err, output)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			analysis, cuts, err := prepareVideoTeardownAnalysis(ctx, ffmpeg, source, dir, size.width, size.height)
+			if err != nil {
+				t.Fatalf("continuous video must remain analyzable: %v", err)
+			}
+			if len(cuts) != 0 {
+				t.Fatalf("continuous video acquired false cuts: %v", cuts)
+			}
+			probe, err := probeMediaFile(ctx, analysis)
+			if err != nil || probe.DurationMs != 2000 || max(probe.Width, probe.Height) > videoTeardownFrameEdge {
+				t.Fatalf("analysis video = %+v, err = %v", probe, err)
+			}
+			segments := buildVideoTeardownSegments(probe.DurationMs, cuts, 60)
+			if len(segments) != 1 || segments[0].Boundary != videoTeardownBoundaryStart {
+				t.Fatalf("continuous video segments = %+v", segments)
+			}
+			frames, err := extractVideoTeardownFrames(ctx, ffmpeg, analysis, dir, segments, probe.DurationMs)
+			if err != nil || len(frames) != 1 {
+				t.Fatalf("continuous video keyframes = %v, err = %v", frames, err)
+			}
+		})
 	}
 }
 

@@ -504,9 +504,7 @@ func parseImageResponse(payload map[string]any) (CreateResult, error) {
 			continue
 		}
 		if value := firstString(media, "b64_json", "data"); value != "" {
-			if !strings.HasPrefix(value, "data:") {
-				value = "data:image/png;base64," + value
-			}
+			value = NormalizeInlineMediaDataURL(value, "image", firstString(media, "output_format", "mime_type", "mimeType"))
 			images = append(images, MediaReference{DataURL: value, Kind: "image"})
 		}
 	}
@@ -828,9 +826,7 @@ func mediaFromArray(value any, capability Capability) []MediaReference {
 		if m, ok := item.(map[string]any); ok {
 			if capability == CapabilityImage {
 				if value := firstString(m, "b64_json", "data"); value != "" {
-					if !strings.HasPrefix(value, "data:") {
-						value = "data:image/png;base64," + value
-					}
+					value = NormalizeInlineMediaDataURL(value, "image", firstString(m, "output_format", "mime_type", "mimeType"))
 					result = append(result, MediaReference{DataURL: value, Kind: kind})
 					continue
 				}

@@ -5,6 +5,7 @@ import type { ChatCompletionPayload, ChatCompletionStreamState, GeminiPart, Gemi
 
 type TextSink = (text: string) => void;
 type TextState = { text: string; reasoning: string };
+const imageFormatMimes: Record<string, string> = { gif: "image/gif", jpeg: "image/jpeg", jpg: "image/jpeg", webp: "image/webp" };
 
 function record(value: unknown): Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -41,7 +42,10 @@ export function parseImagePayload(payload: ImageApiResponse) {
     function* sources() {
         for (const item of payload.data ?? []) {
             const encoded = text(item.b64_json);
-            yield encoded ? `data:image/png;base64,${encoded}` : text(item.url);
+            const gif = encoded.match(/^(?:data:[^,]*;base64,)?(R0lGOD[\s\S]*)$/)?.[1];
+            const format = text(item.output_format) || text(item.mime_type) || text(item.mimeType) || text(payload.output_format);
+            const mime = imageFormatMimes[format] || (format.startsWith("image/") ? format : "image/png");
+            yield gif ? `data:image/gif;base64,${gif}` : encoded ? (encoded.startsWith("data:") ? encoded : `data:${mime};base64,${encoded}`) : text(item.url);
         }
     }
     return imagesFrom(sources(), "接口没有返回图片");

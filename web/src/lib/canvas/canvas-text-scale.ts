@@ -4,6 +4,10 @@ const DEFAULT_TEXT_FONT_SIZE = 14;
 const MIN_TEXT_FONT_SIZE = 8;
 const MAX_TEXT_FONT_SIZE = 72;
 
+export function canvasNodeStateScale(width: number, height: number) {
+    return Math.max(1, Math.min(width / DEFAULT_TEXT_NODE_WIDTH, height / DEFAULT_TEXT_NODE_HEIGHT));
+}
+
 /**
  * Keep text readable while a text node is resized.
  *

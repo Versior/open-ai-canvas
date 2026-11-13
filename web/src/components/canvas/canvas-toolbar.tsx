@@ -319,7 +319,7 @@ export function CanvasToolbar({
                                     <Info className="size-3" />
                                     {t("canvasC.toolbar.mediaInfo")}
                                 </span>
-                                <Switch size="sm" checked={showImageInfo} onChange={onShowImageInfoChange} />
+                                <Switch size="sm" aria-label={t("canvasC.toolbar.mediaInfo")} checked={showImageInfo} onChange={onShowImageInfoChange} />
                             </div>
                         </SpotlightSurface>
                     </motion.div>

@@ -73,19 +73,19 @@ export function ImageNodeContent(props: CanvasNodeContentProps) {
 export function EmptyImageContent({ node, theme, isBatchRoot, batchCount, batchPreviewNodes, batchExpanded, batchOpening, batchRecovering, onToggleBatch }: CanvasNodeContentProps) {
     const isCharacterReference = node.metadata?.workflowKind === "character" && node.metadata?.characterView === "multi";
     const content = (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
+        <div className="canvas-node-state flex h-full w-full flex-col items-center justify-center gap-3" style={{ color: theme.node.placeholder }}>
             <div className="flex size-14 items-center justify-center rounded-[var(--r-lg)]" style={{ background: theme.toolbar.activeBg }}>
-                <ImageIcon className="size-6 opacity-30" />
+                <ImageIcon className="size-6" />
             </div>
             {isCharacterReference ? (
                 <div className="max-w-[80%] text-center">
                     <div className="truncate text-xs font-medium" title={node.metadata?.characterName || node.title} style={{ color: theme.node.muted }}>
                         {node.metadata?.characterName || node.title}
                     </div>
-                    <div className="mt-1 text-[var(--fs-tiny)] tracking-[0.12em] opacity-50">多视角参考 · 待生成</div>
+                    <div className="mt-1 text-[var(--fs-tiny)] tracking-[0.12em]">多视角参考 · 待生成</div>
                 </div>
             ) : (
-                <span className="text-[var(--fs-tiny)] tracking-[0.18em] opacity-50">空图片节点</span>
+                <span className="text-[var(--fs-tiny)] tracking-[0.18em]">空图片节点</span>
             )}
         </div>
     );
@@ -478,19 +478,19 @@ export function useVideoPlaybackUrl(node: CanvasNodeData, active: boolean) {
 
 export function InactiveMediaCard({ icon, title, hint, theme }: { icon: ReactNode; title: string; hint: string; theme: CanvasTheme }) {
     return (
-        <div className="flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-4 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
-            <span className="opacity-40">{icon}</span>
+        <div className="canvas-node-state flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-4 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
+            <span>{icon}</span>
             <span className="max-w-full truncate text-xs font-medium" title={title}>
                 {title}
             </span>
-            <span className="text-[var(--fs-tiny)] opacity-50">{hint}</span>
+            <span className="text-[var(--fs-tiny)]">{hint}</span>
         </div>
     );
 }
 
 export function MediaLoadingState({ icon, label }: { icon: ReactNode; label: string }) {
     return (
-        <div role="status" className="flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] bg-black text-white/75">
+        <div role="status" className="canvas-node-state flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] bg-black text-white/75">
             <span className="grid size-10 place-items-center rounded-full bg-white/10">{icon}</span>
             <span className="text-xs font-medium">{label}</span>
         </div>
@@ -499,7 +499,7 @@ export function MediaLoadingState({ icon, label }: { icon: ReactNode; label: str
 
 export function EmptyMediaContent({ icon, label, color }: { icon: ReactNode; label: string; color: string }) {
     return (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-3" style={{ color }}>
+        <div className="canvas-node-state flex h-full w-full flex-col items-center justify-center gap-3" style={{ color }}>
             {icon}
             <span className="text-sm">{label}</span>
         </div>
@@ -520,7 +520,7 @@ export function ImageContent({
 }: Pick<CanvasNodeContentProps, "renderLOD" | "node" | "theme" | "isBatchRoot" | "batchCount" | "batchPreviewNodes" | "batchExpanded" | "batchOpening" | "batchRecovering" | "onToggleBatch">) {
     const imageContainerRef = useRef<HTMLDivElement>(null);
     const nearViewport = useNearViewport(imageContainerRef, renderLOD !== "shell");
-    const resourceVariant = renderLOD === "full" && (node.metadata?.imageLayer || node.metadata?.imageLayerGroup) ? "original" : "thumbnail";
+    const resourceVariant = node.metadata?.mimeType === "image/gif" || (renderLOD === "full" && (node.metadata?.imageLayer || node.metadata?.imageLayerGroup)) ? "original" : "thumbnail";
     const { url, loading, failed: accessFailed, originalWidth, originalHeight } = useNodeResourceUrl(node, nearViewport, resourceVariant);
     const importedFromLibTV = node.metadata?.importSource?.provider === "libtv";
     const { updateMediaNode } = useCanvasNodeActions();
@@ -741,11 +741,11 @@ export function RetainedCanvasImage({
             {currentDisplayedSrc ? (
                 <span className="canvas-image-reveal-sweep" aria-hidden="true" style={{ "--canvas-gen-surface": theme.node.fill } as CSSProperties} />
             ) : loading || preparing ? (
-                <span className="canvas-image-skeleton" data-active={downloading ? "true" : undefined} role="status" aria-label="正在载入图片" style={surfaceStyle}>
+                <span className="canvas-node-state canvas-image-skeleton" data-active={downloading ? "true" : undefined} role="status" aria-label="正在载入图片" style={surfaceStyle}>
                     {slowIdentity === identity ? <span className="canvas-image-state-hint">图片较大，仍在加载</span> : null}
                 </span>
             ) : failed ? (
-                <div className="canvas-image-state" data-state="error" role="alert" style={surfaceStyle}>
+                <div className="canvas-node-state canvas-image-state" data-state="error" role="alert" style={surfaceStyle}>
                     <ImageOff className="canvas-image-state-icon" aria-hidden="true" />
                     <span className="canvas-image-state-label">图片暂时无法显示</span>
                     <button
@@ -765,7 +765,7 @@ export function RetainedCanvasImage({
                 </div>
             ) : (
                 // 尚未进入视口或还没有地址：用静态底板占住节点，不再露出画布网格。
-                <div className="canvas-image-state" data-state="idle" aria-hidden="true" style={surfaceStyle}>
+                <div className="canvas-node-state canvas-image-state" data-state="idle" aria-hidden="true" style={surfaceStyle}>
                     <ImageIcon className="canvas-image-state-icon" />
                 </div>
             )}

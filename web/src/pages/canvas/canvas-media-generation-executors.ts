@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { canGenerateMediaInPlace } from "@/lib/canvas/canvas-generation-layout";
 import { buildGenerationNodeTitle, manualNodeTitle } from "@/lib/canvas/canvas-generation-title";
-import { nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { canvasNodeCreationSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { nextCanvasVersionLabel } from "@/lib/canvas/canvas-layout";
 import { buildAudioGenerationMetadata, buildVideoGenerationMetadata, generationReferenceUrls, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { canvasGenerationPromptMetadata } from "@/lib/canvas/canvas-generation-submission";
@@ -20,6 +20,7 @@ const NODE_STATUS_SUCCESS = "success" as const;
 export async function executeVideoGeneration({
     nodeId,
     sourceNode,
+    canvasNodes,
     prompt,
     effectivePrompt,
     generationConfig,
@@ -40,7 +41,12 @@ export async function executeVideoGeneration({
     taskContext,
     retryContext,
 }: CanvasGenerationExecution) {
-    const spec = nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video];
+    const spec = canvasNodeCreationSize(
+        CanvasNodeType.Video,
+        nodeSizeFromRatio(generationConfig.size, NODE_DEFAULT_SIZE[CanvasNodeType.Video].width, NODE_DEFAULT_SIZE[CanvasNodeType.Video].height) || NODE_DEFAULT_SIZE[CanvasNodeType.Video],
+        canvasNodes,
+        { sourceNodeId: sourceNode?.id, preserveRatio: true },
+    );
     const reuseSourceNode = canGenerateMediaInPlace(sourceNode, CanvasNodeType.Video);
     const isExistingVideoNode = sourceNode?.type === CanvasNodeType.Video && Boolean(sourceNode.metadata?.content) && !reuseSourceNode;
     const videoId = reuseSourceNode ? nodeId : nanoid();
@@ -59,6 +65,7 @@ export async function executeVideoGeneration({
         metadata: {
             // 就地重生成不能继承旧任务的计时字段；媒体内容与提示词不在清理范围内。
             ...resetGenerationTaskMetadata(reuseSourceNode ? sourceNode?.metadata : undefined, NODE_STATUS_LOADING),
+            manualSize: reuseSourceNode ? sourceNode?.metadata?.manualSize : spec.manualSize,
             ...(reuseSourceNode ? mediaVersionFieldsBeforeReplace(sourceNode) : {}),
             taskCreatedAt: new Date().toISOString(),
             ...canvasGenerationPromptMetadata(prompt, effectivePrompt),
@@ -153,6 +160,7 @@ export async function executeVideoGeneration({
 export async function executeAudioGeneration({
     nodeId,
     sourceNode,
+    canvasNodes,
     prompt,
     effectivePrompt,
     generationConfig,
@@ -171,7 +179,7 @@ export async function executeAudioGeneration({
     skillMetadata,
     retryContext,
 }: CanvasGenerationExecution) {
-    const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Audio];
+    const spec = canvasNodeCreationSize(CanvasNodeType.Audio, NODE_DEFAULT_SIZE[CanvasNodeType.Audio], canvasNodes, { sourceNodeId: sourceNode?.id });
     // 空音频节点与已有生成结果都原位产出；旧音频进入版本历史，生成期间仍可试听。
     const reuseSourceNode = canGenerateMediaInPlace(sourceNode, CanvasNodeType.Audio);
     const isExistingAudioNode = sourceNode?.type === CanvasNodeType.Audio && Boolean(sourceNode.metadata?.content);
@@ -189,6 +197,8 @@ export async function executeAudioGeneration({
             ...(reuseSourceNode && isExistingAudioNode ? { ...resetGenerationTaskMetadata(sourceNode?.metadata, NODE_STATUS_LOADING), ...mediaVersionFieldsBeforeReplace(sourceNode) } : {}),
             // 空音频节点原位生成会重建 metadata，命名标记要跟着保留，下次重新生成仍沿用名称。
             ...(keptAudioTitle ? { manualTitle: true } : {}),
+            manualSize: reuseSourceNode ? sourceNode?.metadata?.manualSize : spec.manualSize,
+            manualSizeOrder: reuseSourceNode ? sourceNode?.metadata?.manualSizeOrder : undefined,
             ...canvasGenerationPromptMetadata(prompt, effectivePrompt),
             status: NODE_STATUS_LOADING,
             ...buildAudioGenerationMetadata(generationConfig),

@@ -12,12 +12,13 @@ import { CREATIVE_SCENES, createCreativeJob, creativeFactsInput, creativeCastErr
 import { executeCreativeRun } from "./remake/creative-runner";
 import { replicaScriptImageCount, replicaScriptModelError } from "./replication-script";
 import { remakeDefaultStep } from "@/lib/remake/editor";
+import { setReferenceReplicationMode } from "@/lib/remake/reference-replication";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { getVideoReplication, getVideoReplicationConfig, listVideoReplications, parseVideoTeardownBundle, type VideoReplicationDetail, type VideoTeardownBundle } from "@/services/api/video-replication";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import { openVideoTeardownInCanvas, type VideoReplicaOptions } from "./replication-canvas";
-import { ReplicationHome } from "./replication-home";
+import { ReplicationHome, type ChatRemakeOptions } from "./replication-home";
 import { ReplicationTabs, type ReplicationTab } from "./replication-mode-switch";
 import { ReplicationWorkspace, type ReplicationView } from "./replication-workspace";
 import { dismissReplicationError, reanalyzeReplication, resumePendingReplication, startReplication, useReplicationRun, videoReplicationKeys, type ReplicationSource } from "./use-replication-runner";
@@ -39,14 +40,14 @@ function errorText(error: unknown) {
  * 视频创作：首页提供素材创作、参考复刻与人物处理入口，作品列表由 ?tab=works 进入。
  * 拆解记录（?id=）拆完后点「开始复刻」建一条复刻作品，进复刻工作台（?remake=，见 remake/remake-workbench.tsx）。
  * 没有 ?id= 时是首页（拆解入口 + 最近拆解），有 ?id= 时是这条记录的工作区（时间线、原视频、分镜）。
- * 新建的拆解任务一建好就跳到它的工作区看进度；拆解结果（镜头事实和模型分析）都存在服务端，
+ * 新建拆解的进度与结果留在首页对话；拆解结果（镜头事实和模型分析）都存在服务端，
  * 「去画布复刻」再把它们铺到一张新画布上（复刻分镜、关键帧、商品图和报告），在画布里生成首帧、视频和成片。
  */
 export default function VideoReplicationPage() {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
     const [params, setParams] = useSearchParams();
-    const scope = getActiveUserScope();
+    const scope = useUserStore((state) => state.user?.id || "guest");
     const models = useMemo(() => selectableModelsByCapability(config, "text"), [config]);
     const defaultModel = useMemo(() => [config.textModel, ...models].find((item) => item && !videoTeardownModelError(config, item)) || "", [config, models]);
     const [pickedModel, setPickedModel] = useState("");
@@ -55,6 +56,9 @@ export default function VideoReplicationPage() {
     const [opening, setOpening] = useState(false);
     const [creatingCreative, setCreatingCreative] = useState(false);
     const [directorJobId, setDirectorJobId] = useState("");
+    const [chatReference, setChatReference] = useState({ scope, id: "" });
+    const referenceId = chatReference.scope === scope ? chatReference.id : "";
+    const remakeCreating = useRef(false);
     const creativeCreating = useRef(false);
     const directorController = useRef<AbortController | undefined>(undefined);
     useEffect(() => () => directorController.current?.abort(), [scope]);
@@ -95,7 +99,8 @@ export default function VideoReplicationPage() {
     const tabs = <ReplicationTabs value={tab} onChange={changeTab} works={works.length} />;
     const select = useCallback((id: string) => setParams(id ? { id } : {}), [setParams]);
     const changeView = useCallback((next: ReplicationView) => setParams(next === "teardown" ? { id: selectedId } : { id: selectedId, view: next }), [selectedId, setParams]);
-    const { run, running } = useReplicationRun(select);
+    const receiveReference = useCallback((id: string) => setChatReference({ scope, id }), [scope]);
+    const { run, running } = useReplicationRun(receiveReference);
     const configRef = useRef(config);
     configRef.current = config;
     useEffect(() => {
@@ -127,6 +132,8 @@ export default function VideoReplicationPage() {
     }, [selectedId, view]);
 
     const startRun = (source: ReplicationSource, options: { model: string; transcribe: boolean }) => {
+        if (running) return;
+        setChatReference({ scope, id: "" });
         dismissReplicationError();
         void startReplication(source, options, config, limits).then((started) => {
             if (!started) message.info("已有一条拆解在进行，等它结束再开始");
@@ -159,7 +166,12 @@ export default function VideoReplicationPage() {
     };
 
     // 拆解记录 → 复刻作品：带上镜头、AI 解读和复刻方案里填过的商品，进工作台的「换成我的」。
-    const startRemakeFrom = async (record: VideoReplicationDetail, fallbackTitle: string) => {
+    const startRemakeFrom = async (record: VideoReplicationDetail, fallbackTitle: string, options?: ChatRemakeOptions) => {
+        if (remakeCreating.current) return;
+        if (options && (!options.product.name.trim() || !options.product.images.length)) throw new Error("请先确认主体名称与图片");
+        if (options?.mode === "style" && (!Number.isInteger(options.seconds) || options.seconds < 5 || options.seconds > 60)) throw new Error("风格复刻的目标片长须为5–60整数秒");
+        const startingScope = getActiveUserScope();
+        remakeCreating.current = true;
         try {
             const bundle = parseVideoTeardownBundle(record.task);
             const analysis = readVideoReplicationAnalysis(record.analysis, bundle.shots.length);
@@ -186,10 +198,20 @@ export default function VideoReplicationPage() {
                         images: planned.images.map((image) => ({ id: image.resourceId, resourceId: image.resourceId, name: planned.name, width: image.width, height: image.height })),
                     };
             }
-            await createProductVideo(job);
-            setParams({ remake: job.id });
-        } catch (error) {
-            message.error(`没能开始复刻：${errorText(error)}`);
+            const prepared = options ? setReferenceReplicationMode(job, options.mode, job.shots) : job;
+            if (options) {
+                prepared.product = options.product;
+                prepared.note = options.note;
+                if (options.ratio) prepared.ratio = options.ratio;
+                if (prepared.replication) {
+                    prepared.replication.brief = options.note;
+                    if (options.mode === "style") prepared.replication.targetDurationMs = options.seconds * 1000;
+                }
+            }
+            await createProductVideo(prepared);
+            if (getActiveUserScope() === startingScope) setParams({ remake: prepared.id });
+        } finally {
+            remakeCreating.current = false;
         }
     };
 
@@ -283,11 +305,18 @@ export default function VideoReplicationPage() {
                             onBack={() => select("")}
                             view={view}
                             onViewChange={changeView}
-                            onRemake={(record, fallbackTitle) => void startRemakeFrom(record, fallbackTitle)}
+                            onRemake={(record, fallbackTitle) => void startRemakeFrom(record, fallbackTitle).catch((error) => message.error(`没能开始复刻：${errorText(error)}`))}
                         />
                     </>
                 ) : (
                     <ReplicationHome
+                        key={scope}
+                        referenceId={referenceId}
+                        onReferenceChange={(id) => {
+                            setChatReference({ scope, id });
+                            dismissReplicationError();
+                        }}
+                        onRemake={startRemakeFrom}
                         creating={creatingCreative}
                         onCreative={(brief, note, ratio, product, director, cast) => createCreative(product, { brief, note, ratio, director, cast })}
                         composer={{
@@ -300,7 +329,7 @@ export default function VideoReplicationPage() {
                             limits,
                             linkImportEnabled,
                             busy: running,
-                            run: run && !run.id ? run : null,
+                            run,
                             onStart: startRun,
                         }}
                         records={records}

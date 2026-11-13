@@ -552,7 +552,7 @@ func mediaReferencesFromManifestValue(value any, kind string, ephemeral bool) []
 				reference.DataURL = firstString(typed, "data_url", "b64_json")
 			}
 			// OpenAI / Ark 等渠道常直接返回裸 b64_json；声明式结果下载要求 data URL。
-			reference.DataURL = normalizeManifestInlineDataURL(reference.DataURL, reference.Kind, firstString(typed, "output_format", "mime_type", "mimeType"))
+			reference.DataURL = NormalizeInlineMediaDataURL(reference.DataURL, reference.Kind, firstString(typed, "output_format", "mime_type", "mimeType"))
 			if reference.URL != "" || reference.DataURL != "" {
 				result = append(result, reference)
 			}
@@ -561,8 +561,16 @@ func mediaReferencesFromManifestValue(value any, kind string, ephemeral bool) []
 	return result
 }
 
-func normalizeManifestInlineDataURL(value, kind, formatHint string) string {
+// NormalizeInlineMediaDataURL identifies GIF bytes even when a response template labels them as PNG.
+func NormalizeInlineMediaDataURL(value, kind, formatHint string) string {
 	value = strings.TrimSpace(value)
+	encoded := value
+	if strings.HasPrefix(value, "data:") {
+		_, encoded, _ = strings.Cut(value, ";base64,")
+	}
+	if kind == "image" && strings.HasPrefix(encoded, "R0lGOD") {
+		return "data:image/gif;base64," + encoded
+	}
 	if value == "" || strings.HasPrefix(value, "data:") {
 		return value
 	}

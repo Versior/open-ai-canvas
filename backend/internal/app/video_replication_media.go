@@ -191,7 +191,8 @@ func prepareVideoTeardownAnalysis(ctx context.Context, ffmpeg, source, dir strin
 	}
 	output := filepath.Join(dir, "analysis.mp4")
 	threads := strconv.Itoa(min(runtime.GOMAXPROCS(0), videoTeardownFrameConcurrent))
-	filter := fmt.Sprintf("[0:v:0]split[scene-input][frame-input];[scene-input]scale=320:-2,select='gt(scene,%.2f)',showinfo[cuts];[frame-input]scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2[analysis]", videoTeardownSceneThreshold, videoTeardownFrameEdge, videoTeardownFrameEdge)
+	// 无切点时也输出首帧，避免 FFmpeg 的第二路输出因空流失败；解析切点时会忽略 0 秒。
+	filter := fmt.Sprintf("[0:v:0]split[scene-input][frame-input];[scene-input]scale=320:-2,select='eq(n,0)+gt(scene,%.2f)',showinfo[cuts];[frame-input]scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2[analysis]", videoTeardownSceneThreshold, videoTeardownFrameEdge, videoTeardownFrameEdge)
 	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-nostdin", "-nostats", "-y",
 		"-threads", threads, "-filter_complex_threads", "1", "-i", source, "-filter_complex", filter,
 		"-map", "[analysis]", "-an", "-sn", "-dn", "-fps_mode", "passthrough", "-c:v", "libx264", "-threads", threads, "-preset", "ultrafast", "-crf", "18", "-g", "30", output,

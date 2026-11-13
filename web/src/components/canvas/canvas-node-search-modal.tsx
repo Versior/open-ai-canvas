@@ -56,16 +56,17 @@ export function CanvasNodeSearchModal({ open, nodes, onClose, onFocus }: { open:
             <Input
                 autoFocus
                 allowClear
+                classNames={{ input: "placeholder:text-muted-foreground!" }}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={handleInputKeyDown}
-                prefix={<Search className="size-4 opacity-50" />}
+                prefix={<Search className="size-4 text-muted-foreground" />}
                 placeholder="搜索节点、章节、镜头、模型或标签…"
                 aria-label="搜索画布节点"
                 aria-controls={RESULT_LIST_ID}
                 aria-activedescendant={results[activeIndex] ? `canvas-node-search-result-${results[activeIndex].id}` : undefined}
             />
-            <div className="mt-2 flex min-h-7 items-center justify-between gap-3 border-b pb-2 text-[var(--fs-label)] tracking-[0.015em] text-foreground/45">
+            <div className="mt-2 flex min-h-7 items-center justify-between gap-3 border-b pb-2 text-[var(--fs-label)] tracking-[0.015em] text-muted-foreground">
                 <span className="tabular-nums">{query.trim() ? `找到 ${results.length} 个节点` : `最近编辑 · ${results.length} 个节点`}</span>
                 <span className="hidden sm:inline">↑↓ 选择 · Enter 定位 · Esc 关闭</span>
             </div>
@@ -107,17 +108,17 @@ const CanvasNodeSearchResult = memo(function CanvasNodeSearchResult({ node, conf
                     <span className="min-w-0 truncate text-[var(--fs-ui)] font-medium leading-5 text-foreground" title={node.title}>
                         {node.title || getNodeListLabel(node.type)}
                     </span>
-                    <span className="max-w-[210px] shrink truncate rounded-full bg-foreground/[0.055] px-2 py-0.5 text-[var(--fs-label)] font-medium tracking-[0.02em] text-foreground/50" title={materialSummary}>
+                    <span className="max-w-[210px] shrink truncate rounded-full bg-foreground/[0.055] px-2 py-0.5 text-[var(--fs-label)] font-medium tracking-[0.02em] text-muted-foreground" title={materialSummary}>
                         {materialSummary}
                     </span>
                 </span>
-                <span className="mt-0.5 flex min-w-0 items-center gap-2 text-[var(--fs-label)] leading-4 text-foreground/45">
+                <span className="mt-0.5 flex min-w-0 items-center gap-2 text-[var(--fs-label)] leading-4 text-muted-foreground">
                     {node.metadata?.chapterTitle ? <BookOpenText className="size-3 shrink-0" /> : null}
                     <span className="truncate" title={context}>
                         {context}
                     </span>
                 </span>
-                <span className="mt-1 hidden items-center gap-3 text-[var(--fs-label)] tabular-nums tracking-[0.015em] text-foreground/40 max-sm:flex">
+                <span className="mt-1 hidden items-center gap-3 text-[var(--fs-label)] tabular-nums tracking-[0.015em] text-muted-foreground max-sm:flex">
                     <time dateTime={times.createdAt} title={fullTime(times.createdAt)}>
                         创建 {times.createdLabel}
                     </time>
@@ -126,7 +127,7 @@ const CanvasNodeSearchResult = memo(function CanvasNodeSearchResult({ node, conf
                     </time>
                 </span>
             </span>
-            <span className="grid min-w-[112px] gap-0.5 border-l pl-3 text-[var(--fs-label)] tabular-nums tracking-[0.015em] text-foreground/40 max-sm:hidden" style={{ borderColor: "color-mix(in srgb, var(--foreground) 8%, transparent)" }}>
+            <span className="grid min-w-[112px] gap-0.5 border-l pl-3 text-[var(--fs-label)] tabular-nums tracking-[0.015em] text-muted-foreground max-sm:hidden" style={{ borderColor: "color-mix(in srgb, var(--foreground) 8%, transparent)" }}>
                 <span className="flex items-center gap-2">
                     <Clock3 className="size-3" />
                     <span>创建</span>
@@ -172,7 +173,7 @@ function CanvasNodeSearchThumbnail({ node }: { node: CanvasNodeData }) {
     const textPreview = node.metadata?.previewContent || node.metadata?.composerContent || node.metadata?.prompt || node.metadata?.content;
     if (textPreview && (node.type === CanvasNodeType.Text || node.type === CanvasNodeType.Script)) {
         return (
-            <span aria-hidden="true" className="line-clamp-3 h-11 w-16 overflow-hidden rounded-[var(--r-sm)] border px-2 py-1 text-[var(--fs-label)] leading-[11px] text-foreground/55" style={commonStyle}>
+            <span aria-hidden="true" className="line-clamp-3 h-11 w-16 overflow-hidden rounded-[var(--r-sm)] border px-2 py-1 text-[var(--fs-label)] leading-[11px] text-muted-foreground" style={commonStyle}>
                 {textPreview}
             </span>
         );

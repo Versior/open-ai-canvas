@@ -22,7 +22,7 @@ test("模型行只保留选中高亮，价格使用独立的彩色标签", async
     expect(badge).toContain("border-radius: var(--r-sm)");
     expect(badge).toContain("background: color-mix");
     expect(badge).toContain("padding: 2px 4px");
-    expect(price).toContain("--model-price-ink: #946900");
+    expect(price).toContain("--model-price-ink: #795500");
     expect(component).toContain('<Coins className="model-picker-price-icon" aria-hidden="true" />');
     expect(styles).toContain("width: min(800px, calc(100vw - 24px))");
 });

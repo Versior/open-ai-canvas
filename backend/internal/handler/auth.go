@@ -131,7 +131,7 @@ func RegisterAuthRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		if !enforceRateLimit(c, "login:"+c.ClientIP()+":"+subject, policy.Request.LoginAccountPerTenMinutes, 10*time.Minute) {
+		if !enforceRateLimit(c, "login-account:"+subject, policy.Request.LoginAccountPerTenMinutes, 10*time.Minute) {
 			return
 		}
 		req.LoginContext = loginRequestContext(c)

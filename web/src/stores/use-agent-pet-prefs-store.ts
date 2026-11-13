@@ -8,7 +8,7 @@ import { AGENT_SKINS, type AgentSkin } from "@/lib/canvas/agent-skin";
 type AgentPetPrefsStore = {
     /** 头顶气泡的闲聊（问候、时间、灵感、未完成提醒）。关闭后仍会提示待审批。 */
     chatter: boolean;
-    /** 形象大小，auto 跟随站点设置。 */
+    /** 形象大小，auto 跟随站点设置但不超过小号。 */
     size: AgentPetSize;
     skin: AgentSkin;
     setSkin: (skin: AgentSkin) => void;

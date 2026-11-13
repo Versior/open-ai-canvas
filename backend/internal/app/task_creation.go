@@ -118,7 +118,7 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		normalizedInput["prompt"] = prompt
 	}
 	if prompt == "" {
-		return nil, errors.New("prompt is required")
+		return nil, BadAuthRequest("prompt is required")
 	}
 	// Fail admission before queueing or charging; the worker validates again in
 	// case a tool is deleted or its visibility changes while queued.
@@ -165,9 +165,9 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 
 	if strings.HasPrefix(taskType, "video_") && !hasExecutableProviderVideoConfig(normalizedInput) {
 		if mode, _ := normalizedInput["mode"].(string); mode != "video" {
-			return nil, errors.New("视频任务必须使用 video 模式")
+			return nil, BadAuthRequest("视频任务必须使用 video 模式")
 		}
-		return nil, errors.New("视频任务缺少可执行的模型配置")
+		return nil, BadAuthRequest("视频任务缺少可执行的模型配置")
 	}
 	// 前端自管的文本持久化任务：直连模型生成、增量上报 text-deltas，不排入 worker 队列生成。
 	if isTextReplayTaskRequest(normalizedInput) {
@@ -547,7 +547,7 @@ func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, nor
 		prompt = strings.TrimSpace(fmt.Sprint(normalizedInput["prompt"]))
 	}
 	if prompt == "" {
-		return nil, errors.New("prompt is required")
+		return nil, BadAuthRequest("prompt is required")
 	}
 	taskType := strings.TrimSpace(req.Type)
 	if err := validateTaskType(taskType); err != nil {
@@ -588,9 +588,9 @@ func validateTaskType(taskType string) error {
 		return nil
 	}
 	if taskType == "" {
-		return errors.New("task type is required")
+		return BadAuthRequest("task type is required")
 	}
-	return fmt.Errorf("不支持的任务类型：%s", taskType)
+	return BadAuthRequest(fmt.Sprintf("不支持的任务类型：%s", taskType))
 }
 
 func (s *Service) requireCustomChannelsForTaskInput(input map[string]any) error {

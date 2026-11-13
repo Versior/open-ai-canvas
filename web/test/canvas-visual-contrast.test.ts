@@ -1,8 +1,32 @@
 import { describe, expect, test } from "bun:test";
 
 import { canvasThemes } from "../src/lib/canvas-theme";
+import { getAntThemeConfig } from "../src/lib/app-theme";
+
+function contrast(foreground: string, background: string) {
+    const luminance = (hex: string) =>
+        hex
+            .slice(1)
+            .match(/../g)!
+            .map((channel) => parseInt(channel, 16) / 255)
+            .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4))
+            .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
+    return (values[0] + 0.05) / (values[1] + 0.05);
+}
 
 describe("canvas visual contrast", () => {
+    test("dark auxiliary text stays readable on node surfaces", () => {
+        for (const ink of [canvasThemes.dark.node.muted, canvasThemes.dark.node.faint, canvasThemes.dark.node.placeholder]) {
+            expect(contrast(ink, canvasThemes.dark.node.fill)).toBeGreaterThanOrEqual(4.5);
+        }
+    });
+    test("light auxiliary text stays readable on white and selected surfaces", () => {
+        for (const ink of [canvasThemes.light.node.muted, canvasThemes.light.node.faint, canvasThemes.light.node.placeholder]) {
+            for (const surface of ["#ffffff", "#eaeaea"]) expect(contrast(ink, surface)).toBeGreaterThanOrEqual(4.5);
+        }
+        expect(contrast(getAntThemeConfig(false).components!.Segmented!.itemColor as string, "#f7f7f7")).toBeGreaterThanOrEqual(4.5);
+    });
     test("uses white light surfaces and contrasting dark canvas surfaces", () => {
         expect(canvasThemes.light.canvas.background.toLowerCase()).toBe(canvasThemes.light.node.fill.toLowerCase());
         expect(canvasThemes.dark.canvas.background.toLowerCase()).not.toBe(canvasThemes.dark.node.fill.toLowerCase());
@@ -39,10 +63,11 @@ describe("canvas visual contrast", () => {
         expect(source).toContain('opacity: mode === "dots" ? 0.62 : 0.4');
     });
 
-    test("keeps the original transparent edge for standard canvas nodes", async () => {
+    test("separates white nodes from the canvas without adding borders to media", async () => {
         const source = await Bun.file(new URL("../src/components/canvas/canvas-node.tsx", import.meta.url)).text();
 
-        expect(source).toContain('border: isComposerNode ? "0" : "1px solid transparent"');
-        expect(source).not.toContain('border: isComposerNode ? "0" : `1px solid ${theme.node.edge}`');
+        expect(contrast(canvasThemes.light.node.border, canvasThemes.light.canvas.background)).toBeGreaterThanOrEqual(1.5);
+        expect(canvasThemes.dark.node.border).toBe("transparent");
+        expect(source).toContain('hasImageContent || hasVideoContent ? "transparent" : theme.node.border');
     });
 });

@@ -440,6 +440,8 @@ Agent 通过 `mcp_list_tools` 分三步读取连接目录、指定连接的工�
 
 渠道模型的 `capabilityConfig.image.responseFormat` 包含 `supported` 和可选的 `default`。默认值为 `auto`，表示请求中不发送 `response_format`，由上游决定返回 URL 或 Base64；`b64_json` 和 `url` 会分别强制发送对应值。该配置按模型保存，不根据 `openai-image` 协议名称自动推断，避免兼容网关不接受 Base64 时生成失败。需要持久化 Base64 结果的模型（例如已验证的 ddcat 图片模型）应将默认值设为 `b64_json`。
 
+GIF 生成结果按原始字节保存，资源 MIME 为 `image/gif`，下载扩展名为 `.gif`。通过 `b64_json` 的 GIF 文件签名识别实际格式，包括插件模板误标为 PNG 的 Data URL；其他 Data URL 保留原 MIME，其他裸 Base64 使用响应格式提示，无提示时按 PNG 处理。画布的 GIF 节点在完整和概览模式都加载原图，避免静态缩略图丢失动画。是否能生成 GIF、是否需要专用请求参数仍取决于上游模型；接收 GIF 不会改变模型能力配置。
+
 ## 邮件发送记录与消费日报
 
 菜单“运行监控 → 邮件记录”，页面 `/admin/email-logs`。管理员权限在 service 校验：匿名 401、普通用户 403。

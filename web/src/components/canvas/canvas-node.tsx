@@ -52,6 +52,8 @@ import { useCanvasConnectionTilt } from "./use-canvas-connection-tilt";
 import { useCanvasNodeResizeStyle } from "./canvas-node-resize-motion";
 import { canvasNodeRendersStatusContent, canvasNodeUsesCustomContent, CanvasNodeContent, CanvasNodeImageInfo, CanvasNodeProducedModel } from "./canvas-node-content";
 import { canvasNodeCanResyncTask } from "@/lib/canvas/canvas-task-state";
+import { canvasNodeStateScale } from "@/lib/canvas/canvas-text-scale";
+import "./canvas-node-state.css";
 
 type CanvasTheme = (typeof canvasThemes)[keyof typeof canvasThemes];
 
@@ -254,6 +256,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                     transform: `translate(${data.position.x + (dragOffset?.x || 0)}px, ${data.position.y + (dragOffset?.y || 0)}px)`,
                     width: data.width,
                     height: data.height,
+                    "--canvas-node-state-scale": canvasNodeStateScale(data.width, data.height),
                     contain: "layout style",
                     ...(entranceDelay === null ? {} : { "--agent-enter-delay": `${entranceDelay}ms` }),
                 } as CSSProperties
@@ -301,8 +304,8 @@ export const CanvasNode = React.memo(function CanvasNode({
                 style={
                     {
                         background: hasImageContent || hasVideoContent ? "transparent" : theme.node.fill,
-                        // 固定占位但不绘制描边，避免聚焦切换时边框宽度变化造成白边跳动。
-                        border: isComposerNode ? "0" : "1px solid transparent",
+                        // 固定边框宽度；媒体保持无描边，浅色空节点用边缘区分白色画布。
+                        border: isComposerNode ? "0" : `1px solid ${hasImageContent || hasVideoContent ? "transparent" : theme.node.border}`,
                         boxShadow: isComposerNode || !showChrome ? "none" : isSelected || isFocusRelated ? theme.node.hoverShadow : theme.node.shadow,
                         outline: !showChrome && isActive ? `1px solid ${theme.node.activeStroke}` : undefined,
                     } as React.CSSProperties
@@ -541,7 +544,7 @@ function ResourceLabelBadge({ reference, theme }: { reference: CanvasResourceRef
     return (
         <span
             className="pointer-events-none min-w-0 max-w-28 truncate rounded-md px-2 py-1 text-[var(--fs-tiny)] font-medium leading-none"
-            style={{ background: reference.active ? theme.accent.primary : "rgba(0,0,0,.35)", color: reference.active ? theme.accent.onPrimary : "#ffffff", opacity: reference.active ? 1 : 0.75 }}
+            style={{ background: reference.active ? theme.accent.primary : "rgba(0,0,0,.65)", color: reference.active ? theme.accent.onPrimary : "#ffffff" }}
             title={reference.title || reference.label}
         >
             {reference.label}
@@ -566,11 +569,11 @@ function ArkCertificationBadge({ assetId, storageKey }: { assetId: string; stora
 
 function ResourceStorageBadge({ storageKey, active, theme }: { storageKey?: string; active: boolean; theme: CanvasTheme }) {
     const location = resourceStorageLocation(storageKey);
-    const background = active ? (location === "local" ? "rgba(245,158,11,.9)" : theme.accent.primary) : "rgba(0,0,0,.35)";
+    const background = active ? (location === "local" ? "#92400e" : theme.accent.primary) : "rgba(0,0,0,.65)";
     return (
         <span
             className="pointer-events-auto shrink-0 rounded-md px-2 py-1 text-[var(--fs-tiny)] font-medium leading-none"
-            style={{ background, color: active && location !== "local" ? theme.accent.onPrimary : "#ffffff", opacity: active ? 1 : 0.75 }}
+            style={{ background, color: active && location !== "local" ? theme.accent.onPrimary : "#ffffff" }}
             title={resourceStorageTitle(storageKey)}
         >
             {resourceStorageLabel(storageKey)}
@@ -812,7 +815,7 @@ function NodeExternalHeader({
                     <button
                         type="button"
                         className="group flex min-w-0 flex-1 items-center gap-1 rounded px-0.5 text-xs font-medium outline-none transition-opacity hover:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-                        style={{ opacity: active ? 1 : 0.78, outlineColor: theme.node.muted }}
+                        style={{ opacity: active ? 1 : 0.9, outlineColor: theme.node.muted }}
                         onClick={onEdit}
                         aria-label={`编辑节点名称：${node.title}`}
                     >
@@ -822,7 +825,7 @@ function NodeExternalHeader({
                         <Pencil className="size-2.5 shrink-0 opacity-55 transition-opacity group-hover:opacity-100" />
                     </button>
                 ) : (
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium" title={node.title} style={{ opacity: active ? 1 : 0.78 }}>
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium" title={node.title} style={{ opacity: active ? 1 : 0.9 }}>
                         {node.title}
                     </span>
                 )}

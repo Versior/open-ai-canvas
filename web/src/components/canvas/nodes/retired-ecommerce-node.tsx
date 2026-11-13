@@ -11,7 +11,7 @@ import type { CanvasNodeData } from "@/types/canvas";
 export function RetiredEcommerceNodeContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     const typeName = retiredEcommerceNodeName(node);
     return (
-        <div data-retired-node={node.type} className="flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-4 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
+        <div data-retired-node={node.type} className="canvas-node-state flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-4 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
             <Archive className="size-5 opacity-60" aria-hidden="true" />
             <strong className="max-w-full truncate text-sm font-medium" style={{ color: theme.node.text }} title={node.title || typeName}>
                 {node.title || typeName}

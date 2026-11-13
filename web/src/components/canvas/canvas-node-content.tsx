@@ -117,8 +117,8 @@ export function CanvasNodeContent(props: CanvasNodeContentProps) {
 function CanvasNodeShellContent({ node, theme }: { node: CanvasNodeData; theme: CanvasTheme }) {
     const Icon = node.type === CanvasNodeType.Video ? Video : node.type === CanvasNodeType.Audio ? Music2 : node.type === CanvasNodeType.Image ? ImageIcon : FileText;
     return (
-        <div className="flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-3 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
-            <Icon className="size-6 opacity-40" />
+        <div className="canvas-node-state flex size-full flex-col items-center justify-center gap-2 rounded-[var(--node-radius)] px-3 text-center" style={{ background: theme.node.fill, color: theme.node.muted }}>
+            <Icon className="size-6" />
             <span className="max-w-full truncate text-xs font-medium" title={node.title}>
                 {node.title || "画布节点"}
             </span>

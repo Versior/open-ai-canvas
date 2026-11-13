@@ -5,7 +5,7 @@ import { NODE_DEFAULT_SIZE } from "@/constant/canvas";
 import { canGenerateImageInPlace, findAvailableGenerationGroupPosition, imageGenerationChildPosition, imageGenerationGroupSize } from "@/lib/canvas/canvas-generation-layout";
 import { cancelIncompleteImageBatch, hasImageBatchResult, reconcileImageBatchRoot, retireImageBatchChildren } from "@/lib/canvas/canvas-image-batch-retry";
 import { buildImageGenerationNodeTitle, manualNodeTitle } from "@/lib/canvas/canvas-generation-title";
-import { fitImageNodeSize, imageNodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { canvasNodeCreationSize, fitImageNodeSize, imageNodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
 import { canvasImageReferenceLimitError, buildImageGenerationMetadata, getGenerationCount, isGenerationCanceled, resetGenerationTaskMetadata, runCanvasGenerationTaskToConsumer } from "@/lib/canvas/canvas-project-generation";
 import { imageGenerationReferenceConnections } from "@/lib/canvas/canvas-resource-references";
 import { followsReferenceImageSize } from "@/lib/canvas/canvas-reference-image-size";
@@ -84,7 +84,7 @@ export async function executeImageGeneration(
     const referenceNode = referenceImages.length === 1 ? canvasNodes.find((node) => node.id === referenceImages[0].id && node.type === CanvasNodeType.Image) : undefined;
     const referenceSize = referenceImages.length === 1 && referenceImages[0].width && referenceImages[0].height ? fitImageNodeSize(referenceImages[0].width, referenceImages[0].height) : undefined;
     const imageSizeSource = requestedImageSize ? undefined : isExistingImageNode ? sourceNode : referenceNode;
-    const outputNodeSize =
+    const suggestedNodeSize =
         reuseSourceNode && sourceNode?.metadata?.manualSize
             ? { width: sourceNode.width, height: sourceNode.height }
             : !requestedImageSize && !isExistingImageNode && referenceSize
@@ -92,6 +92,7 @@ export async function executeImageGeneration(
               : imageSizeSource
                 ? fitImageNodeSize(imageSizeSource.metadata?.naturalWidth || imageSizeSource.width, imageSizeSource.metadata?.naturalHeight || imageSizeSource.height)
                 : imageConfig;
+    const outputNodeSize = canvasNodeCreationSize(CanvasNodeType.Image, suggestedNodeSize, reuseSourceNode ? (sourceNode ? [sourceNode] : []) : canvasNodes, { sourceNodeId: sourceNode?.id, preserveRatio: true });
     const parentPosition = sourceNode?.position || { x: 0, y: 0 };
     const parentWidth = sourceNode?.width || parentConfig.width;
     const parentHeight = sourceNode?.height || parentConfig.height;
@@ -118,6 +119,7 @@ export async function executeImageGeneration(
         height: rootHeight,
         metadata: {
             ...resetGenerationTaskMetadata(reuseSourceNode ? sourceNode?.metadata : undefined, NODE_STATUS_LOADING),
+            manualSize: outputNodeSize.manualSize,
             // 原位生成会清空旧图，先把它登记进版本历史，失败时也能从版本面板恢复。
             ...(reuseSourceNode && count <= 1 ? mediaVersionFieldsBeforeReplace(sourceNode) : {}),
             imageLayerGroup: undefined,
@@ -159,6 +161,7 @@ export async function executeImageGeneration(
             size: generationConfig.size,
             ...sizeSourceMetadata,
             batchRootId: rootId,
+            manualSize: outputNodeSize.manualSize,
             ...generationMetadata,
             ...styleMetadata,
             ...skillMetadata,

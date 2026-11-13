@@ -2,6 +2,7 @@ import { animate } from "motion";
 import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 
 import { createCanvasNodeResizeMotion, type CanvasNodeResizeMotion } from "@/lib/canvas/canvas-node-resize-motion";
+import { canvasNodeStateScale } from "@/lib/canvas/canvas-text-scale";
 import type { CanvasNodeData, Position } from "@/types/canvas";
 
 // 比例过渡沿用 BeUI AspectRatio 的弹簧手感，直接插值几何以保留画布坐标与媒体比例。
@@ -60,6 +61,7 @@ export function useCanvasNodeResizeStyle(ref: RefObject<HTMLDivElement | null>, 
             element.style.transform = `translate(${visual.position.x + (dragOffset?.x || 0)}px, ${visual.position.y + (dragOffset?.y || 0)}px)`;
             element.style.width = `${visual.width}px`;
             element.style.height = `${visual.height}px`;
+            element.style.setProperty("--canvas-node-state-scale", String(canvasNodeStateScale(visual.width, visual.height)));
         };
         update();
         return motion.subscribeNode(node.id, update);

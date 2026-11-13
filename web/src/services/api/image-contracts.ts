@@ -74,6 +74,7 @@ export type ChatCompletionStreamState = { buffer: string; text: string; reasonin
 
 export type ImageApiResponse = {
     data?: Array<Record<string, unknown>>;
+    output_format?: string;
     error?: { message?: string };
     code?: number;
     msg?: string;

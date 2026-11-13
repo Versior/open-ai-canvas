@@ -1,0 +1,9 @@
+/* 状态 UI 按节点尺寸整体缩放，保持文字、图标和操作按钮的比例。 */
+.canvas-node-state {
+    position: absolute;
+    inset: 0;
+    width: calc(100% / var(--canvas-node-state-scale, 1));
+    height: calc(100% / var(--canvas-node-state-scale, 1));
+    transform: scale(var(--canvas-node-state-scale, 1));
+    transform-origin: top left;
+}

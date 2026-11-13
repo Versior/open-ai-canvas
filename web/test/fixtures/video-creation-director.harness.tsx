@@ -2,6 +2,7 @@ import { afterAll, expect, mock, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { ComponentProps } from "react";
 import type { RemakeJob } from "@/lib/remake/job";
+import type { VideoTeardownBundle, VideoReplicationDetail } from "@/services/api/video-replication";
 
 const dom = new Window({ url: "http://localhost/" });
 for (const key of ["window", "document", "navigator", "HTMLElement", "SVGElement", "ShadowRoot", "Element", "Node", "Event", "CustomEvent", "MutationObserver", "ResizeObserver"]) {
@@ -82,10 +83,23 @@ mock.module("@/pages/video-replication/remake/remake-runner", () => ({ resumeRem
 mock.module("@/pages/video-replication/replace/product-video-runner", () => ({ resumeProductVideos: () => {} }));
 mock.module("@/pages/ecommerce-studio/studio-prompt-config", () => ({ loadStudioPromptConfig: async () => {} }));
 mock.module("@/pages/video-replication/replication-canvas", () => ({ openVideoTeardownInCanvas: async () => null }));
-mock.module("@/services/api/video-replication", () => ({ getVideoReplicationConfig: async () => ({}), listVideoReplications: async () => [], getVideoReplication: async () => null, parseVideoTeardownBundle: () => ({}) }));
+const bundle: VideoTeardownBundle = {
+    version: 1,
+    source: { resourceId: "test_video", durationMs: 8000, width: 720, height: 1280, hasAudio: false },
+    shots: [0, 1].map((index) => ({ index: index + 1, startMs: index * 4000, endMs: (index + 1) * 4000, boundary: "cut", keyframeTimeMs: index * 4000 + 1000, keyframeResourceId: `frame_${index}`, keyframeWidth: 720, keyframeHeight: 1280 })),
+    grids: [],
+    transcript: { source: "none", segments: [] },
+    warnings: [],
+};
+const reference: VideoReplicationDetail = { task: { id: "chat_reference", type: "video_teardown", status: "succeeded", prompt: "", attempts: 1, createdAt: "2026-01-01", updatedAt: "2026-01-01" } };
+let receiveRecord: (id: string) => void;
+mock.module("@/services/api/video-replication", () => ({ getVideoReplicationConfig: async () => ({}), listVideoReplications: async () => [], getVideoReplication: async () => null, parseVideoTeardownBundle: () => bundle }));
 mock.module("@/pages/video-replication/use-replication-runner", () => ({
     videoReplicationKeys: { config: (scope: string) => ["config", scope], list: (scope: string) => ["list", scope], detail: (scope: string, id: string) => ["detail", scope, id] },
-    useReplicationRun: () => ({ run: null, running: false }),
+    useReplicationRun: (onRecord: typeof receiveRecord) => {
+        receiveRecord = onRecord;
+        return { run: null, running: false };
+    },
     dismissReplicationError: () => {},
     reanalyzeReplication: async () => {},
     resumePendingReplication: () => {},
@@ -118,9 +132,50 @@ afterAll(async () => {
     await dom.happyDOM.abort();
 });
 
+test("新建拆解留在对话，复刻模式和主体要求完整交接；保存失败继续留在原页面", async () => {
+    setActiveUserScope("reference-home-test");
+    useUserStore.getState().setUser({ id: "reference-home-test", username: "test", displayName: "测试", role: "user", status: "active" });
+    await render();
+    await act(async () => receiveRecord("chat_reference"));
+    expect(home.referenceId).toBe("chat_reference");
+    expect(host.textContent).toContain("素材创作首页");
+    for (const mode of ["structure", "style", "elements"] as const) {
+        let pending!: Promise<void>;
+        await act(async () => {
+            pending = home.onRemake(reference, "参考广告", { mode, product, note: "不要音乐", seconds: 20, ratio: "1:1" });
+        });
+        await act(async () => {
+            finishSave();
+            await pending;
+        });
+        expect(savedJob).toMatchObject({ product, note: "不要音乐", ratio: "1:1", source: { teardownId: "chat_reference", resourceId: "test_video" } });
+        if (mode === "elements") expect(savedJob!.replication).toBeUndefined();
+        if (mode !== "elements") expect(savedJob!.replication).toMatchObject({ mode, targetDurationMs: mode === "style" ? 20000 : 8000, brief: "不要音乐", confirmed: false });
+        expect(host.querySelector("[data-job]")?.getAttribute("data-job")).toBe(savedJob!.id);
+        await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+    }
+    saveError = true;
+    let rejected!: Promise<void>;
+    await act(async () => {
+        rejected = home.onRemake(reference, "参考广告", { mode: "style", product, note: "", seconds: 20 });
+    });
+    await act(async () => {
+        finishSave();
+        await expect(rejected).rejects.toThrow("测试保存失败");
+    });
+    expect(host.textContent).toContain("素材创作首页");
+    saveError = false;
+    await act(async () => home.onReferenceChange(""));
+    expect(home.referenceId).toBe("");
+    calls.length = 0;
+});
+
 test("首页服务端保存后直接启动导演策划，同一作品显示运行中，重复点击只提交一次", async () => {
     setActiveUserScope("director-home-test");
-    useUserStore.setState((state) => ({ features: { ...state.features, customChannelsEnabled: true } }));
+    await act(async () => {
+        useUserStore.getState().setUser({ id: "director-home-test", username: "test", displayName: "测试", role: "user", status: "active" });
+        useUserStore.setState((state) => ({ features: { ...state.features, customChannelsEnabled: true } }));
+    });
     await render();
     let pending!: Promise<void>;
     await act(async () => {
@@ -163,6 +218,7 @@ test("没有确认或保存失败不调用模型，账号切换会取消首页�
     await act(async () => finishSave());
     expect(runSignal!.aborted).toBe(false);
     setActiveUserScope("another-director-test");
+    await act(async () => useUserStore.getState().setUser({ id: "another-director-test", username: "other", displayName: "另一个测试", role: "user", status: "active" }));
     await render();
     expect(runSignal!.aborted).toBe(true);
     await act(async () => {

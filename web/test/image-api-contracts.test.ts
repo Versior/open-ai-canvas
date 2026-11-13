@@ -3,6 +3,18 @@ import { describe, expect, test } from "bun:test";
 import { consumeChatCompletionStreamText, consumeGeminiStreamText, consumeResponseStreamText, parseChatCompletionPayload, parseGeminiToolResponse, parseImagePayload, parseToolResponse } from "../src/services/api/image-response";
 import { normalizeQuality, resolveRequestSize, validateImageSize } from "../src/services/api/image-validation";
 
+test("GIF image responses retain their media type and encoded bytes", async () => {
+    const encoded = "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+    const inline = `data:image/gif;base64,${encoded}`;
+    for (const item of [{ b64_json: encoded }, { b64_json: encoded, output_format: "gif" }, { b64_json: inline }, { b64_json: `data:image/png;base64,${encoded}` }, { url: inline }]) {
+        const [image] = parseImagePayload({ data: [item] });
+        expect(image.dataUrl).toBe(inline);
+        const blob = await (await fetch(image.dataUrl)).blob();
+        expect(blob.type).toBe("image/gif");
+        expect(Buffer.from(await blob.arrayBuffer()).toString("base64")).toBe(encoded);
+    }
+});
+
 describe("image api contracts", () => {
     test("规范化质量和尺寸，拒绝超出边界的图像", () => {
         expect(normalizeQuality("1k")).toBe("low");

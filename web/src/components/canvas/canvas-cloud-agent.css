@@ -1,10 +1,11 @@
-.canvas-agent-panel {
+.canvas-agent-panel,
+.agent-chat-theme {
     /* Canvas theme -> material tokens. */
     --agent-material-solid: var(--agent-surface-base);
     --agent-surface-soft: color-mix(in srgb, var(--agent-ink) 4%, transparent);
     --agent-surface-hover: color-mix(in srgb, var(--agent-ink) 7%, transparent);
     --agent-surface-raised: color-mix(in srgb, var(--agent-ink) 6%, var(--agent-material-solid));
-    --agent-caption: color-mix(in srgb, var(--agent-ink) 62%, var(--agent-surface-base));
+    --agent-caption: color-mix(in srgb, var(--agent-ink) 70%, var(--agent-surface-base));
     --agent-radius-shell: calc(var(--radius) * 3.5);
     --agent-radius-surface: calc(var(--radius) * 2.5);
     --agent-material-shadow: 0 24px 80px var(--agent-shadow-color);
@@ -1793,7 +1794,7 @@
     border-radius: 9px;
     background: transparent;
     padding: 5px 6px;
-    color: color-mix(in srgb, var(--agent-activity-ink) 50%, transparent);
+    color: color-mix(in srgb, var(--agent-activity-ink) 70%, transparent);
     font: inherit;
     font-size: var(--fs-caption);
     line-height: 18px;
@@ -1864,7 +1865,7 @@
     border-radius: 999px;
     background: color-mix(in srgb, var(--agent-activity-ink) 6%, transparent);
     padding: 0 6px;
-    color: color-mix(in srgb, var(--agent-activity-ink) 50%, transparent);
+    color: color-mix(in srgb, var(--agent-activity-ink) 70%, transparent);
     font-size: var(--fs-label);
     font-variant-numeric: tabular-nums;
     line-height: 16px;

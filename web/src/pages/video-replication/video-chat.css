@@ -1,0 +1,289 @@
+.vr-page[data-view="home"] {
+    height: 100%;
+}
+.vchat-page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: var(--space-4) var(--space-5);
+    color: var(--user-ink);
+}
+
+.vchat-history {
+    display: grid;
+    gap: 8px;
+}
+.vchat-history button {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+.vchat-history button[aria-current="true"] {
+    background: var(--muted);
+    border-color: var(--muted-foreground);
+}
+.vchat-history button span {
+    color: var(--muted-foreground);
+    font-size: var(--fs-label);
+}
+.vchat-page > header {
+    flex-shrink: 0;
+    margin-bottom: var(--space-3);
+}
+.vchat-session {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: min(860px, 100%);
+    min-height: 0;
+    margin: 0 auto;
+}
+.vchat-session[hidden] {
+    display: none;
+}
+.vchat-toolbar,
+.vchat-toolbar > div,
+.vchat-compose-tools,
+.vchat-compose-tools > div,
+.vchat-speaker,
+.vchat-status,
+.vchat-cost {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.vchat-toolbar,
+.vchat-compose-tools {
+    justify-content: space-between;
+}
+.vchat-toolbar {
+    flex-shrink: 0;
+    padding-bottom: var(--space-3);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+.vchat-page button:not(.vr-create-command),
+.vchat-replies button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+}
+.vchat-toolbar button,
+.vchat-compose-tools button:not(.agent-composer-send),
+.vchat-text-action {
+    padding: var(--space-2);
+    border-radius: var(--r-md);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+.vchat-page button:disabled,
+.vchat-replies button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+.vchat-toolbar button:hover:not(:disabled),
+.vchat-compose-tools button:hover:not(:disabled),
+.vchat-replies button:hover:not(:disabled) {
+    background: var(--user-surface-hover);
+}
+.vchat-page button:focus-visible,
+.vchat-page summary:focus-visible,
+.vchat-replies button:focus-visible {
+    outline: 2px solid var(--user-accent);
+    outline-offset: 3px;
+}
+.vchat-turns {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-5);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--space-5) var(--space-4) var(--space-6);
+    scrollbar-gutter: stable;
+}
+.vchat-turns > * {
+    flex-shrink: 0;
+}
+.vchat-assistant {
+    max-width: 100%;
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+}
+.vchat-speaker {
+    margin-bottom: var(--space-2);
+    color: var(--agent-caption);
+    font-size: var(--fs-caption);
+}
+.vchat-opening h2 {
+    margin: var(--space-3) 0;
+    font-size: var(--fs-title);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+.vchat-opening > p,
+.vchat-next > p {
+    margin-bottom: var(--space-3);
+}
+.vchat-assistant > p,
+.vchat-user > p {
+    white-space: pre-wrap;
+}
+.vchat-user {
+    align-self: flex-end;
+    max-width: 82%;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--fs-body);
+    line-height: var(--space-6);
+    overflow-wrap: anywhere;
+}
+.vchat-muted,
+.vchat-status {
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+.vchat-replies {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: var(--space-3) 0;
+}
+.vchat-replies button {
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-lg);
+    background: var(--user-surface);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+.vchat-assistant details {
+    margin: var(--space-3) 0;
+    padding: var(--space-3) 0;
+    border-block: 1px solid var(--user-border);
+}
+.vchat-assistant summary {
+    cursor: pointer;
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+.vchat-assistant ol {
+    padding-left: var(--space-5);
+    list-style: decimal;
+}
+.vchat-video {
+    max-width: 100%;
+    max-height: 260px;
+    margin: var(--space-3) 0;
+    border-radius: var(--r-md);
+}
+.vchat-fields {
+    display: grid;
+    gap: var(--space-3);
+    margin: var(--space-3) 0;
+}
+.vchat-fields label {
+    display: grid;
+    gap: var(--space-2);
+    color: var(--user-ink-muted);
+    font-size: var(--fs-caption);
+}
+.vchat-fields input,
+.vchat-fields textarea,
+.vchat-fields select {
+    width: 100%;
+    min-width: 0;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--user-border);
+    border-radius: var(--r-md);
+    background: var(--user-surface);
+    color: var(--user-ink);
+    font: inherit;
+}
+.vchat-fields textarea {
+    min-height: 72px;
+    resize: vertical;
+}
+.vchat-composer {
+    flex-shrink: 0;
+}
+.vchat-composer > textarea {
+    display: block;
+    width: 100%;
+    height: 70px;
+    padding: var(--space-2);
+    border: 0;
+    outline: 0;
+    resize: none;
+    background: transparent;
+    color: var(--user-ink);
+    font: inherit;
+    line-height: 1.6;
+}
+.vchat-compose-tools .agent-composer-send {
+    height: var(--space-7);
+    padding: 0 var(--space-3);
+    border-radius: var(--r-full);
+    font-size: var(--fs-label);
+    font-weight: 500;
+}
+.vchat-assistant.agent-message-body {
+    font-size: var(--fs-body);
+    line-height: var(--space-6);
+}
+.vchat-cost {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-2) 0;
+    color: var(--user-ink-soft);
+    font-size: var(--fs-caption);
+}
+.vchat-error {
+    padding: var(--space-3);
+    border: 1px solid var(--status-error);
+    border-radius: var(--r-md);
+    color: var(--status-error);
+}
+@media (max-width: 640px) {
+    .vchat-page {
+        padding: var(--space-3) var(--space-2);
+    }
+    .vchat-toolbar {
+        flex-wrap: wrap;
+    }
+    .vchat-toolbar > div {
+        max-width: 100%;
+        flex-wrap: wrap;
+    }
+    .vchat-turns {
+        padding: var(--space-3) var(--space-2) var(--space-4);
+    }
+    .vchat-opening h2 {
+        font-size: var(--fs-section);
+    }
+    .vchat-composer {
+        padding: var(--space-2);
+    }
+    .vchat-composer > textarea,
+    .vchat-fields input,
+    .vchat-fields select,
+    .vchat-fields textarea {
+        font-size: 16px;
+    }
+    .vchat-compose-tools,
+    .vchat-compose-tools > div {
+        gap: var(--space-1);
+    }
+    .vchat-compose-tools button {
+        padding-inline: var(--space-2);
+    }
+    .vchat-cost > span:last-child {
+        flex-basis: 100%;
+    }
+}

@@ -12,7 +12,7 @@ import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { audioMetadata, imageMetadata, videoMetadata } from "@/lib/canvas/canvas-generation-task-sync";
 import { createCanvasNode } from "@/lib/canvas/canvas-project-domain";
 import { isAudioFile } from "@/lib/canvas/canvas-project-generation";
-import { fitImageNodeSize, fitNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
+import { fitImageNodeSize, fitNodeSize, inheritCanvasNodeSize, VIDEO_NODE_MAX_SIZE } from "@/lib/canvas/canvas-node-size";
 import { CANVAS_UPLOAD_ACCEPT, createFileUploadPlaceholder, uploadNodeType, uploadPercent } from "@/lib/canvas/canvas-file-upload";
 import { recordReplacedMediaVersion } from "@/lib/canvas/canvas-media-versions";
 import { getResource, resourceFileUrl, resourceIdFromStorageKey, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
@@ -236,7 +236,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                                     })
                                   : item,
                           )
-                        : [...current, ownUploadNode(placeholder)],
+                        : [...current, ownUploadNode(inheritCanvasNodeSize(placeholder, current, { preserveRatio: fileType === CanvasNodeType.Image || fileType === CanvasNodeType.Video }))],
                 );
                 if (!silent) selectInsertedNode(id, "close");
                 let lastPercent: number | undefined;
@@ -417,7 +417,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                         originalFileName: typeof asset.metadata?.originalFileName === "string" ? asset.metadata.originalFileName : undefined,
                     },
                 };
-                setNodes((current) => [...current, node]);
+                setNodes((current) => [...current, inheritCanvasNodeSize(node, current, { preserveRatio: true })]);
                 if (!options.quiet) selectInsertedNode(id, "close");
                 return id;
             } catch (error) {
@@ -436,7 +436,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                 ...createCanvasNode(CanvasNodeType.Text, position || getCanvasCenter(), { content: trimmed, status: NODE_STATUS_SUCCESS }),
                 title: trimmed.slice(0, 32) || translate("canvasPage.upload.clipboardText"),
             };
-            setNodes((current) => [...current, node]);
+            setNodes((current) => [...current, inheritCanvasNodeSize(node, current)]);
             selectInsertedNode(node.id, "open");
             setContextMenu(null);
             return true;
@@ -1025,7 +1025,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                         createAssetPayloadNode(payload, {
                             x: origin.x + (index % BATCH_UPLOAD_COLUMNS) * BATCH_UPLOAD_COLUMN_GAP,
                             y: origin.y + Math.floor(index / BATCH_UPLOAD_COLUMNS) * BATCH_UPLOAD_ROW_GAP,
-                        }),
+                        }).then((node) => inheritCanvasNodeSize(node, nodesRef.current, { preserveRatio: node.type === CanvasNodeType.Image || node.type === CanvasNodeType.Video })),
                     ),
                 );
                 if (!session.active || scope !== getActiveUserScope()) return [];
@@ -1040,7 +1040,7 @@ export function useCanvasUpload({ canvasId, domainProjectId, nodesRef, selectedN
                 throw error;
             }
         },
-        [createAssetPayloadNode, message, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
+        [createAssetPayloadNode, message, nodesRef, setDialogNodeId, setNodes, setSelectedConnectionId, setSelectedNodeIds],
     );
 
     const handleAssetsInsert = useCallback(

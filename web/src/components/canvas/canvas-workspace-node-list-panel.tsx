@@ -36,25 +36,25 @@ export function CanvasWorkspaceNodeListPanel({
             <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2">
                 <Layers className="size-3.5 shrink-0" />
                 <span className="truncate text-xs font-semibold">{t("canvasC.nodeList.title")}</span>
-                <span className="tabular-nums text-foreground/32">{nodes.length.toLocaleString(currentLocale())}</span>
+                <span className="tabular-nums text-muted-foreground">{nodes.length.toLocaleString(currentLocale())}</span>
             </header>
             <div className="shrink-0 border-b border-border/70 p-2">
                 <label className="flex h-8 items-center gap-2 rounded-[var(--r-md)] bg-foreground/[.045] px-2 focus-within:ring-2 focus-within:ring-[var(--workspace-accent-soft)]">
-                    <Search className="size-3.5 shrink-0 text-foreground/32" />
+                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
                     <input
                         value={query}
                         onChange={(event) => onQueryChange(event.target.value)}
-                        className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-foreground/28"
+                        className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                         placeholder={t("canvasC.nodeList.searchPlaceholder")}
                         aria-label={t("canvasC.nodeList.searchLabel")}
                     />
                     {query ? (
-                        <button type="button" onClick={() => onQueryChange("")} className="grid size-5 shrink-0 place-items-center rounded text-foreground/32 hover:bg-surface-hover hover:text-foreground" aria-label={t("canvasC.nodeList.clearSearch")}>
+                        <button type="button" onClick={() => onQueryChange("")} className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-surface-hover hover:text-foreground" aria-label={t("canvasC.nodeList.clearSearch")}>
                             <X className="size-3" />
                         </button>
                     ) : null}
                 </label>
-                {deferredQuery ? <div className="mt-1 px-0.5 text-[var(--fs-micro)] tabular-nums text-foreground/35">{t("canvasC.nodeList.found", { count: results.length.toLocaleString(currentLocale()) })}</div> : null}
+                {deferredQuery ? <div className="mt-1 px-0.5 text-[var(--fs-micro)] tabular-nums text-muted-foreground">{t("canvasC.nodeList.found", { count: results.length.toLocaleString(currentLocale()) })}</div> : null}
             </div>
             <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain py-1" role="listbox" aria-label={t("canvasC.nodeList.listLabel")}>
                 {results.length ? (
@@ -92,12 +92,12 @@ const CanvasNodeListItem = memo(function CanvasNodeListItem({ node, config, acti
                         {node.title || getNodeListLabel(node.type)}
                     </span>
                 </span>
-                <span className="mt-0.5 block truncate text-[var(--fs-label)] leading-3 text-foreground/45" title={materialSummary}>
+                <span className="mt-0.5 block truncate text-[var(--fs-label)] leading-3 text-muted-foreground" title={materialSummary}>
                     {materialSummary}
                 </span>
-                <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[var(--fs-label)] leading-3 text-foreground/40">
+                <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[var(--fs-label)] leading-3 text-muted-foreground">
                     <Clock3 className="size-2.5 shrink-0" />
-                    <span className="mt-0.5 block text-[var(--fs-label)] tabular-nums text-foreground/35" title={fullTime(times.updatedAt)}>
+                    <span className="mt-0.5 block text-[var(--fs-label)] tabular-nums" title={fullTime(times.updatedAt)}>
                         {times.updatedLabel}
                     </span>
                 </span>

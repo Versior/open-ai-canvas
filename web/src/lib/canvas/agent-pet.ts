@@ -10,7 +10,7 @@ export const AGENT_PET_COLUMNS = 8;
 export const AGENT_PET_ASPECT = AGENT_PET_CELL_WIDTH / AGENT_PET_CELL_HEIGHT;
 export const AGENT_PET_LOOK_FIRST_ROW = 9;
 
-/** 形象大小：auto 跟随站点设置；固定档位最大到图集单格高度，再放大只会变糊。 */
+/** 形象大小：auto 跟随站点设置但不超过小号；固定档位最大到图集单格高度。 */
 export type AgentPetSize = "auto" | "s" | "m" | "l" | "xl";
 export const AGENT_PET_SIZE_OPTIONS: ReadonlyArray<{ id: AgentPetSize; label: string; height?: number }> = [
     { id: "s", label: "小", height: 96 },
@@ -21,12 +21,12 @@ export const AGENT_PET_SIZE_OPTIONS: ReadonlyArray<{ id: AgentPetSize; label: st
 ];
 
 /**
- * 宠物入口的高度。跟随站点时与其他大形象一致：离开画布编辑器或窄屏时封顶；
+ * 宠物入口的高度。自动不超过 96px，避免遮挡画布与输入控件；
  * 桌面上用户选了档位就按所选高度显示；窄屏统一缩小，避免遮住正文。
  */
 export function agentPetLauncherHeight(size: AgentPetSize, siteHeight: number, viewport: AgentLauncherViewport, inCanvasEditor: boolean) {
     const height = AGENT_PET_SIZE_OPTIONS.find((option) => option.id === size)?.height;
-    if (!height || viewport.width < AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH) return resolveAgentLauncherAvatarHeight(height ?? Math.min(siteHeight, AGENT_PET_CELL_HEIGHT), AGENT_PET_ASPECT, viewport, inCanvasEditor);
+    if (!height || viewport.width < AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH) return resolveAgentLauncherAvatarHeight(height ?? Math.min(siteHeight, 96), AGENT_PET_ASPECT, viewport, inCanvasEditor);
     return Math.max(40, Math.min(height, viewport.height - 60, (viewport.width - 40) / AGENT_PET_ASPECT));
 }
 

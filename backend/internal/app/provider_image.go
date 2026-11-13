@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/protocol"
 )
 
 func runImageTask(ctx context.Context, input canvasGenerationInput) (map[string]interface{}, error) {
@@ -578,7 +579,14 @@ func imageDataURLs(payload imageResponse) ([]map[string]string, error) {
 	images := make([]map[string]string, 0, len(payload.Data))
 	for _, item := range payload.Data {
 		if b64, ok := item["b64_json"].(string); ok && b64 != "" {
-			images = append(images, map[string]string{"dataUrl": "data:image/png;base64," + b64})
+			format := stringField(item, "output_format")
+			if format == "" {
+				format = stringField(item, "mime_type")
+			}
+			if format == "" {
+				format = stringField(item, "mimeType")
+			}
+			images = append(images, map[string]string{"dataUrl": protocol.NormalizeInlineMediaDataURL(b64, "image", format)})
 			continue
 		}
 		if url, ok := item["url"].(string); ok && url != "" {

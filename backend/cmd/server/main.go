@@ -128,6 +128,9 @@ func run(ctx context.Context) error {
 		slog.Info("storage migration completed", "tasks", summary.Tasks, "assets", summary.Assets, "projects", summary.Projects, "backup", summary.Backup)
 	}
 	r := gin.New()
+	if err := configureTrustedProxies(r, os.Getenv("CANVAS_TRUSTED_PROXIES")); err != nil {
+		return err
+	}
 	// 访问日志：成功的查询类请求只在 debug 级别输出，避免轮询和列表查询把日志打爆。
 	r.Use(logging.AccessLog(redactCanvasSharePath), logging.Recovery())
 	r.Use(handler.RequestCorrelationMiddleware())

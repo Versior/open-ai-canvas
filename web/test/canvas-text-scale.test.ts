@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import { canvasTextFontSize } from "@/lib/canvas/canvas-text-scale";
+import { canvasNodeStateScale, canvasTextFontSize } from "@/lib/canvas/canvas-text-scale";
+
+test("large node status stays readable after fitting the canvas, without overflowing thin nodes", () => {
+    const visibleFontSize = 13 * canvasNodeStateScale(2720, 4480) * 0.2;
+    expect(visibleFontSize).toBeCloseTo(20.8);
+    expect(canvasNodeStateScale(340, 560)).toBe(1);
+    expect(canvasNodeStateScale(2720, 120)).toBe(1);
+});
 
 describe("canvas text font scaling", () => {
     test("keeps the configured base size at the default node size", () => {

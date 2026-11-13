@@ -10,6 +10,7 @@ import { alignCanvasNodes, layoutCanvasAuto, layoutCanvasFlow, layoutCanvasNodes
 import { applyCanvasConnectionPromptSync } from "@/lib/canvas/canvas-resource-references";
 import { createCanvasNode, isHiddenBatchChild, removeCanvasNodes } from "@/lib/canvas/canvas-project-domain";
 import { isolateCopiedNodeMetadata, nextCopiedNodeTitle } from "@/lib/canvas/canvas-node-copy";
+import { inheritCanvasNodeSize } from "@/lib/canvas/canvas-node-size";
 import { createCanvasImageEditCopy } from "@/lib/canvas/canvas-image-edit-copy";
 import { copyImageLayerSources } from "@/lib/canvas/canvas-image-layers";
 import { adoptMediaVersion, createNodeFromMediaVersion, mediaVersionAdoptBlock, removeMediaVersion } from "@/lib/canvas/canvas-media-versions";
@@ -167,7 +168,7 @@ export function useCanvasNodeOperations({
             const workflowTitle = type === CanvasNodeType.Config && selectedWorkflowProvider === "runninghub" ? translate("canvasPage.connection.runningHubWorkflow") : undefined;
             const metadata: CanvasNodeMetadata | undefined =
                 type === CanvasNodeType.Drawing ? { drawingEngine: defaultDrawingEngine } : type === CanvasNodeType.Config ? { generationMode: "image", workflowProvider: selectedWorkflowProvider || "model" } : undefined;
-            const node = createCanvasNode(type, position || getCanvasCenter(), metadata);
+            const node = inheritCanvasNodeSize(createCanvasNode(type, position || getCanvasCenter(), metadata), nodesRef.current);
             if (workflowTitle) node.title = workflowTitle;
             commitNodes([...nodesRef.current, node]);
             selectNodes(new Set([node.id]));

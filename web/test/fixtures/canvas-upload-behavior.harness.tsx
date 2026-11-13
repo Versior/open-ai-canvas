@@ -267,6 +267,18 @@ test("library import retains long titles for every media type and uploaded text 
     expect(nodesRef.current[0].metadata?.originalFileName).toBe(title);
 });
 
+test("uploads and library inserts inherit the working size without stretching media", async () => {
+    nodesRef.current = [{ id: "large-video", type: CanvasNodeType.Video, title: "大视频", position: { x: 0, y: 0 }, width: 1600, height: 1200, metadata: { manualSize: true } }];
+    await act(async () => {
+        await api.createFileNode(new File(["video"], "new.mp4", { type: "video/mp4" }), { x: 3000, y: 600 });
+        await api.handleAssetsInsert([{ kind: "video", title: "portrait", url: "video", width: 600, height: 800 }]);
+    });
+    expect([nodesRef.current[1].width, nodesRef.current[1].height]).toEqual([1600, 1200]);
+    expect(nodesRef.current[1].metadata?.manualSize).toBe(true);
+    expect(nodesRef.current[2].width / nodesRef.current[2].height).toBeCloseTo(3 / 4);
+    expect(nodesRef.current[2].height).toBe(1200);
+});
+
 test("video play control keeps a media foreground in either theme and native keyboard semantics", async () => {
     const css = document.createElement("style");
     css.textContent = `:root { --canvas-card-media-chip-ink: #fff; } button { color: inherit; }`;

@@ -62,6 +62,8 @@ func testLoginIdentityAttempts(t *testing.T, accounts []string) []string {
 	for i, account := range accounts {
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(fmt.Sprintf(`{"username":%q,"password":"wrong"}`, account)))
 		req.Header.Set("Content-Type", "application/json")
+		// Account throttling must survive both changing IPs and login aliases.
+		req.RemoteAddr = fmt.Sprintf("198.51.100.%d:1234", i+1)
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 		want := http.StatusUnauthorized

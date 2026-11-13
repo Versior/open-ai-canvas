@@ -15,7 +15,7 @@ import { CANVAS_WHEEL_POPUP_SELECTOR } from "@/lib/canvas/canvas-wheel-intent";
 import { audioModelForConnectionInput } from "@/lib/model-selection";
 import { attachNodeToStoryboardRow, createCanvasNode, normalizeConnection, storyboardPromptTemplateMetadata, storyboardRowFromHandle, storyboardRowVideoPrompt } from "@/lib/canvas/canvas-project-domain";
 import { canvasImageNodeDimensions } from "@/lib/canvas/canvas-reference-image-size";
-import { imageNodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { imageNodeSizeFromRatio, inheritCanvasNodeSize } from "@/lib/canvas/canvas-node-size";
 import { createCanvasDrawingFromImage } from "@/lib/canvas/canvas-drawing-storage";
 import { isDrawingEngineAvailable, type CanvasDrawingEngine } from "@/lib/canvas/canvas-drawing-engine";
 import { normalizeRunningHubCapability, type AiConfig } from "@/stores/use-config-store";
@@ -330,26 +330,21 @@ export function useCanvasConnectionController({
                             }
                           : undefined;
             const sourceNodeForQuickCreate = pending.quick ? nodesRef.current.find((node) => node.id === pending.connection.nodeId) : undefined;
-            const spec = getNodeSpec(nodeType);
+            const initialNode = createCanvasNode(nodeType, pending.position, metadata);
+            // 从图片拖出的新图片节点按来源比例占位；显示大小沿用手动尺寸。
+            const referenceSize = nodeType === CanvasNodeType.Image && !batchSourceNodeIds.length ? canvasImageNodeDimensions(sourceNode) : undefined;
+            const referenceNodeSize = referenceSize ? imageNodeSizeFromRatio(`${referenceSize.width}:${referenceSize.height}`) : null;
+            const newNode = inheritCanvasNodeSize({ ...initialNode, ...referenceNodeSize }, nodesRef.current, { sourceNodeId: pending.connection.nodeId, preserveRatio: Boolean(referenceNodeSize) });
             const anchorY = sourceNodeForQuickCreate ? sourceNodeForQuickCreate.position.y + sourceNodeForQuickCreate.height * (pending.connection.anchorRatio ?? 0.5) : pending.position.y;
             const position = sourceNodeForQuickCreate
                 ? {
-                      x: pending.connection.handleType === "source" ? sourceNodeForQuickCreate.position.x + sourceNodeForQuickCreate.width + 96 + spec.width / 2 : sourceNodeForQuickCreate.position.x - 96 - spec.width / 2,
+                      x: pending.connection.handleType === "source" ? sourceNodeForQuickCreate.position.x + sourceNodeForQuickCreate.width + 96 + newNode.width / 2 : sourceNodeForQuickCreate.position.x - 96 - newNode.width / 2,
                       y: anchorY,
                   }
                 : batchSourceNodeIds.length
                   ? pending.position
-                  : connectedNodeCenterFromEdgeDrop(pending.position, spec, pending.connection.handleType);
-            const newNode = createCanvasNode(nodeType, position, metadata);
-            // 从图片拖出的新图片节点按来源比例占位；生成时未选尺寸也按这张参考图的比例。
-            const referenceSize = nodeType === CanvasNodeType.Image && !batchSourceNodeIds.length ? canvasImageNodeDimensions(sourceNode) : undefined;
-            const referenceNodeSize = referenceSize ? imageNodeSizeFromRatio(`${referenceSize.width}:${referenceSize.height}`) : null;
-            if (referenceNodeSize) {
-                // 新节点在来源右侧，保持靠近来源的左边缘和垂直中心。
-                newNode.position = { x: newNode.position.x, y: newNode.position.y + newNode.height / 2 - referenceNodeSize.height / 2 };
-                newNode.width = referenceNodeSize.width;
-                newNode.height = referenceNodeSize.height;
-            }
+                  : connectedNodeCenterFromEdgeDrop(pending.position, newNode, pending.connection.handleType);
+            newNode.position = { x: position.x - newNode.width / 2, y: position.y - newNode.height / 2 };
             if (nodeType === CanvasNodeType.Audio) {
                 const probe = normalizeConnection(pending.connection.nodeId, newNode.id, [...nodesRef.current, newNode], pending.connection.handleType);
                 const input = probe ? connectionInputSummary(newNode.id, [...nodesRef.current, newNode], connectionsRef.current, probe) : undefined;

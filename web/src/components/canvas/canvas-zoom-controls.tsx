@@ -156,7 +156,7 @@ export function CanvasZoomControls({ scale, onScaleChange, onFitContent, onAutoA
             icon: (
                 <span className="inline-flex h-full items-center justify-center whitespace-nowrap text-[var(--fs-caption)] font-semibold leading-none tabular-nums">
                     <span ref={dockLabelRef}>{Math.round(scale * 100)}</span>
-                    <span className="ml-px text-[var(--fs-micro)] font-medium leading-none opacity-50">%</span>
+                    <span className="ml-px text-[var(--fs-micro)] font-medium leading-none text-muted-foreground">%</span>
                 </span>
             ),
             active: precisionOpen,

@@ -93,7 +93,7 @@ export function LoadingContent({ node, theme, onOpenTaskDetails }: Pick<CanvasNo
     const hint = workflow ? "" : generationPhaseHint(phase, kind, metadata?.taskStage);
     const meta = uncertain ? "" : [progress !== null ? `${progress}%` : "", startedAt ? `已用时 ${elapsed}` : ""].filter(Boolean).join(" · ");
     return (
-        <div className="canvas-gen-state" data-phase={phase} data-saving={phase === "saving" ? generationTaskSavingState(metadata?.taskStage) : undefined} style={canvasGenerationStateStyle(theme)}>
+        <div className="canvas-node-state canvas-gen-state" data-phase={phase} data-saving={phase === "saving" ? generationTaskSavingState(metadata?.taskStage) : undefined} style={canvasGenerationStateStyle(theme)}>
             <span className="canvas-gen-indicator" aria-hidden="true">
                 {uncertain ? (
                     <AlertTriangle />
@@ -162,7 +162,7 @@ export function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTas
     };
     const actionProps = { type: "button" as const, onMouseDown: stopCanvasPointer, onPointerDown: stopCanvasPointer };
     return (
-        <div className="canvas-gen-state is-failure" data-tone={view.tone} style={canvasGenerationStateStyle(theme)}>
+        <div className="canvas-node-state canvas-gen-state is-failure" data-tone={view.tone} style={canvasGenerationStateStyle(theme)}>
             <span className="canvas-gen-indicator" aria-hidden="true">
                 <Icon />
             </span>
@@ -205,7 +205,7 @@ export function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTas
 
 export function UnknownNodeContent({ theme }: Pick<CanvasNodeContentProps, "theme">) {
     return (
-        <div className="flex h-full w-full items-center justify-center text-sm" style={{ color: theme.node.placeholder }}>
+        <div className="canvas-node-state flex h-full w-full items-center justify-center text-sm" style={{ color: theme.node.placeholder }}>
             未知节点
         </div>
     );

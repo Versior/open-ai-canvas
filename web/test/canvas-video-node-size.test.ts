@@ -51,4 +51,9 @@ describe("canvas video node sizing", () => {
         const unknown = videoNode();
         expect(ensureMediaNodeMinimumSize(unknown)).toBe(unknown);
     });
+
+    test("reload preserves a manually enlarged empty video even with a generation ratio", () => {
+        const node = videoNode({ width: 2160, height: 1215 }, { content: "", size: "16:9", manualSize: true });
+        expect(ensureMediaNodeMinimumSize(node)).toBe(node);
+    });
 });

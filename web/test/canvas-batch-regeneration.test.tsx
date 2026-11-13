@@ -11,6 +11,7 @@ import { isolateCopiedNodeMetadata } from "@/lib/canvas/canvas-node-copy";
 import { generationTaskMetadata } from "@/lib/canvas/canvas-project-generation";
 import { canvasTaskBindingStatus } from "@/lib/canvas/canvas-task-state";
 import { executeImageGeneration } from "@/pages/canvas/canvas-image-generation-executor";
+import { executeAudioGeneration, executeVideoGeneration } from "@/pages/canvas/canvas-media-generation-executors";
 import { defaultConfig } from "@/stores/use-config-store";
 import { useAssetStore, withAssetStorePersistenceSuppressed, type ImageAsset } from "@/stores/use-asset-store";
 import { CanvasNodeType, type CanvasGenerationBatch, type CanvasNodeData } from "@/types/canvas";
@@ -59,7 +60,7 @@ function dirty(nodes: CanvasNodeData[]) {
     return batchRowInputChanged(table, table.rows[0], new Map(nodes.map((node) => [node.id, node])));
 }
 
-async function executeCandidate(candidate: ReturnType<typeof prepare>, outcome: "failed" | "success", onReceipt?: (nodes: CanvasNodeData[]) => void) {
+async function executeCandidate(candidate: ReturnType<typeof prepare>, outcome: "failed" | "success", onReceipt?: (nodes: CanvasNodeData[]) => void, count = "1") {
     const nodesRef = { current: candidate.nodes };
     const connectionsRef = { current: candidate.connections };
     const target = candidate.targets[0];
@@ -77,7 +78,7 @@ async function executeCandidate(candidate: ReturnType<typeof prepare>, outcome: 
             prompt: target.inputSnapshot.prompt,
             effectivePrompt: target.inputSnapshot.context.prompt,
             generationContext: target.inputSnapshot.context,
-            generationConfig: { ...defaultConfig, model: defaultConfig.imageModel, count: "1" },
+            generationConfig: { ...defaultConfig, model: defaultConfig.imageModel, count },
             controller,
             projectId: "",
             editingTextNode: false,
@@ -119,6 +120,68 @@ async function executeCandidate(candidate: ReturnType<typeof prepare>, outcome: 
 }
 
 describe("batch regeneration result ownership", () => {
+    test("new video and audio placeholders inherit the working size before submitting a task", async () => {
+        for (const type of [CanvasNodeType.Video, CanvasNodeType.Audio]) {
+            const source: CanvasNodeData = { id: "large", type, title: "source", position: { x: 0, y: 0 }, width: 1600, height: 900, metadata: { manualSize: true, content: "/media", generationResultPlacement: "new-version" } };
+            const nodes = { current: [source] };
+            const stop = new Error("placeholder verified before network request");
+            const execute = type === CanvasNodeType.Video ? executeVideoGeneration : executeAudioGeneration;
+            await expect(
+                execute({
+                    nodeId: source.id,
+                    sourceNode: source,
+                    canvasNodes: nodes.current,
+                    canvasConnections: [],
+                    prompt: "test",
+                    effectivePrompt: "test",
+                    generationConfig: defaultConfig,
+                    generationContext: prepare(fixture()).targets[0].inputSnapshot.context,
+                    controller: new AbortController(),
+                    expectedUserScope: "test",
+                    projectId: "",
+                    editingTextNode: false,
+                    styleMetadata: {},
+                    skillMetadata: {},
+                    setNodes: createCanvasStateWriter(nodes, noop),
+                    setConnections: noop,
+                    setSelectedNodeIds: noop,
+                    setSelectedConnectionId: noop,
+                    setDialogNodeId: noop,
+                    startGenerationRequest: () => {
+                        throw stop;
+                    },
+                    finishGenerationRequest: noop,
+                    registerPendingNodeIds: noop,
+                    showError: noop,
+                    bindGenerationTask: noop,
+                    applyGenerationTaskResult: async () => {},
+                }),
+            ).rejects.toBe(stop);
+            expect(nodes.current).toHaveLength(2);
+            expect(nodes.current[1].width).toBe(type === CanvasNodeType.Video ? 900 : 1600);
+            expect(nodes.current[1].height).toBe(900);
+            expect(nodes.current[1].metadata?.manualSize).toBe(true);
+        }
+    });
+
+    test("new image results and batch children inherit the working size while preserving the requested square ratio", async () => {
+        for (const count of ["1", "2"]) {
+            const candidate = prepare(fixture());
+            const source = candidate.nodes.find((node) => node.id === candidate.targets[0].nodeId)!;
+            source.width = 1600;
+            source.height = 1200;
+            source.metadata = { ...source.metadata, manualSize: true, generationResultPlacement: "new-version" };
+            const result = await executeCandidate(candidate, "failed", undefined, count);
+            const newNodes = result.duringRequest.filter((node) => !candidate.nodes.some((old) => old.id === node.id));
+            expect(newNodes).toHaveLength(count === "1" ? 1 : 3);
+            for (const node of newNodes) {
+                expect(node.width).toBeCloseTo(1200);
+                expect(node.height).toBeCloseTo(1200);
+                expect(node.metadata?.manualSize).toBe(true);
+            }
+        }
+    });
+
     test("waiting and failed regeneration keep the old image, dirty marker and same target ID", async () => {
         const state = fixture();
         const candidate = prepare(state);

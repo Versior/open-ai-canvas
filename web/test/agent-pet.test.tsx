@@ -48,18 +48,17 @@ describe("agent pet atlas math", () => {
         expect(counts).toEqual([3, 1, 8, 8]);
     });
 
-    test("launcher size follows the site setting unless the user picks a size", () => {
+    test("automatic launcher stays small while explicit sizes remain available", () => {
         const desktop = { width: 1440, height: 900 };
-        // 跟随站点：不超过图集单格；离开画布编辑器封顶 120。
-        expect(agentPetLauncherHeight("auto", 260, desktop, true)).toBe(208);
-        expect(agentPetLauncherHeight("auto", 160, desktop, false)).toBe(120);
+        expect(agentPetLauncherHeight("auto", 260, desktop, true)).toBe(96);
+        expect(agentPetLauncherHeight("auto", 160, desktop, false)).toBe(96);
+        expect(agentPetLauncherHeight("auto", 64, desktop, true)).toBe(64);
         // 选了档位：画布外也按所选高度，只受视口约束。
         expect(agentPetLauncherHeight("s", 260, desktop, true)).toBe(96);
         expect(agentPetLauncherHeight("xl", 120, desktop, false)).toBe(208);
         expect(agentPetLauncherHeight("xl", 120, { width: 390, height: 844 }, false)).toBe(76);
         expect(agentPetLauncherHeight("auto", 160, { width: 390, height: 844 }, false)).toBe(76);
-        // 损坏的偏好按跟随站点处理。
-        expect(agentPetLauncherHeight("huge" as never, 160, desktop, true)).toBe(160);
+        expect(agentPetLauncherHeight("huge" as never, 160, desktop, true)).toBe(96);
     });
 });
 

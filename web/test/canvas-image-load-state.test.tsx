@@ -52,7 +52,8 @@ for (const [key, value] of Object.entries({
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { apiClient } = await import("../src/services/api/request");
-const { RetainedCanvasImage } = await import("../src/components/canvas/canvas-node-media-content");
+const { ImageContent, RetainedCanvasImage } = await import("../src/components/canvas/canvas-node-media-content");
+const { CanvasNodeType } = await import("../src/types/canvas");
 const { canvasThemes } = await import("../src/lib/canvas-theme");
 
 const accessRequests: unknown[] = [];
@@ -172,4 +173,36 @@ test("非资源图片失败时不请求访问地址，直接显示失败态", as
     expect(view.host.querySelector('.canvas-image-state[data-state="error"]')).not.toBeNull();
     expect(accessRequests).toHaveLength(0);
     await view.unmount();
+});
+
+test("GIF 节点在完整和概览模式均请求原图，静态图片继续使用缩略图", async () => {
+    for (const renderLOD of ["full", "preview"] as const) {
+        for (const mimeType of ["image/gif", "image/png"]) {
+            accessRequests.length = 0;
+            const id = `animation-${renderLOD}-${mimeType.slice(6)}`;
+            nextAccessUrl = `https://cdn.example.com/${id}`;
+            const host = document.createElement("div");
+            document.body.append(host);
+            const root = createRoot(host);
+            await act(async () =>
+                root.render(
+                    <ImageContent
+                        node={{ id, title: "图片", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, width: 340, height: 240, metadata: { storageKey: `resource:${id}`, mimeType } }}
+                        theme={canvasThemes.light}
+                        renderLOD={renderLOD}
+                        isBatchRoot={false}
+                        batchCount={0}
+                        batchExpanded={false}
+                        batchOpening={false}
+                        batchRecovering={false}
+                    />,
+                ),
+            );
+            await settle();
+            expect(accessRequests).toEqual([expect.objectContaining({ resourceId: id, variant: mimeType === "image/gif" ? "original" : "thumbnail" })]);
+            expect(host.querySelector("img")?.getAttribute("src")).toBe(nextAccessUrl);
+            await act(() => root.unmount());
+            host.remove();
+        }
+    }
 });

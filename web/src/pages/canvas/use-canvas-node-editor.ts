@@ -51,6 +51,7 @@ export function useCanvasNodeEditor({ config, canvasId, canvasTitle, domainProje
         (nodeId: string, width: number, height: number, position?: Position) => {
             setNodes((current) => {
                 let changed = false;
+                const manualSizeOrder = current.reduce((order, node) => Math.max(order, node.metadata?.manualSizeOrder || 0), 0) + 1;
                 const next = current.map((node) => {
                     if (node.id !== nodeId || node.metadata?.locked) return node;
                     const nextPosition = position || node.position;
@@ -58,7 +59,7 @@ export function useCanvasNodeEditor({ config, canvasId, canvasTitle, domainProje
                     changed = true;
                     // 打上「用户手动定过尺寸」标记：图片按真实比例自动适配时要避让它，
                     // 否则每次图片重新加载都会把用户拉过的尺寸改回去。
-                    const resized = { ...node, width, height, position: nextPosition, metadata: { ...node.metadata, manualSize: true } };
+                    const resized = { ...node, width, height, position: nextPosition, updatedAt: new Date().toISOString(), metadata: { ...node.metadata, manualSize: true, manualSizeOrder } };
                     if (!isFrameNode(node) || node.metadata?.frame?.collapsed) return resized;
                     return { ...resized, metadata: { ...resized.metadata, frame: { collapsed: false, expandedWidth: width, expandedHeight: height } } };
                 });

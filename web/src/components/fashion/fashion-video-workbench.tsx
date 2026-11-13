@@ -14,6 +14,7 @@ import {
     fashionVideoTool,
     planFashionVideos,
     type FashionVideoDraft,
+    type FashionVideoSource,
     type FashionVideoTool,
     type FashionVideoUnit,
     type FashionVideoWork,
@@ -37,10 +38,29 @@ import "./fashion-video.css";
 const ICONS = { tryon: Shirt, "multi-garment": Layers, "multi-model": Users, face: ScanFace, head: UserRound, motion: Move, print: Scissors, showcase: Play };
 const STATUSES = { pending: "待提交", submitting: "确认提交中", running: "视频生成中", rendering: "处理声音与交付", succeeded: "已交付", failed: "原任务已结束" };
 
-export function FashionVideoWorkbench({ initialTool = "tryon", onClose, inline, onBusyChange }: { initialTool?: FashionVideoTool; onClose: () => void; inline?: boolean; onBusyChange?: (busy: boolean) => void }) {
+export function FashionVideoWorkbench({
+    initialTool = "tryon",
+    initialSource,
+    initialNote = "",
+    onClose,
+    inline,
+    onBusyChange,
+}: {
+    initialTool?: FashionVideoTool;
+    initialSource?: FashionVideoSource;
+    initialNote?: string;
+    onClose: () => void;
+    inline?: boolean;
+    onBusyChange?: (busy: boolean) => void;
+}) {
     const { message } = App.useApp();
     const config = useEffectiveConfig();
-    const [draft, setDraft] = useState<FashionVideoDraft>(() => ({ ...emptyFashionVideoDraft(), tool: initialTool }));
+    const [draft, setDraft] = useState<FashionVideoDraft>(() => ({
+        ...emptyFashionVideoDraft(),
+        tool: initialTool,
+        note: initialNote,
+        ...(initialSource && fashionVideoTool(initialTool).source ? { source: initialSource, seconds: Math.min(120000, initialSource.durationMs) / 1000 } : {}),
+    }));
     const [model, setModel] = useState(config.videoModel);
     const [ratio, setRatio] = useState("");
     const [resolution, setResolution] = useState("");
