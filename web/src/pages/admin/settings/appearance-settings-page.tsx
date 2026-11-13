@@ -515,7 +515,7 @@ export default function AppearanceSettingsPage() {
                                     >
                                         <div className="admin-appearance-brand-layout">
                                             <Form className="admin-appearance-form" layout="vertical" requiredMark={false} disabled={saving || refreshing || restoring}>
-                                                <Form.Item label="品牌名称" extra="1–40 个字符。保存后同步到登录页、工作台、管理后台与浏览器标题。">
+                                                <Form.Item label="品牌名称" extra="1–40 个字符。保存后同步到登录页、工作台与管理后台；浏览器标题默认跟随品牌，可在 SEO 信息中单独设置。">
                                                     <Input value={brandName} maxLength={40} showCount placeholder="输入品牌名称" onChange={(event) => setBrandName(event.target.value)} />
                                                 </Form.Item>
                                                 <Form.Item label="英文品牌标识" extra="1–48 位小写字母、数字或连字符，例如 hima-studio。对象存储可一键采用该值作为路径前缀。">
@@ -704,7 +704,7 @@ export default function AppearanceSettingsPage() {
                                     >
                                         <Form className="admin-appearance-form admin-appearance-section-form" layout="vertical" requiredMark={false} disabled={saving || refreshing || restoring}>
                                             <div className="admin-appearance-form-grid">
-                                                <Form.Item label="SEO 标题" extra="建议简洁描述站点用途；留空时使用站点名称。">
+                                                <Form.Item label="SEO 标题" extra="用于浏览器标签页与分享标题，当前页面名称显示在它前面；留空时使用完整品牌名称。">
                                                     <Input value={seoTitle} maxLength={70} showCount placeholder={draftBrandName} onChange={(event) => setSeoTitle(event.target.value)} />
                                                 </Form.Item>
                                                 <Form.Item label="SEO 关键词" extra="以逗号分隔；Google 不使用该标签排名，仍可供其他工具读取。">

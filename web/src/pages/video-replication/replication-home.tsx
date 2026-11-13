@@ -154,6 +154,8 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
         model: composer.model,
         product,
         brief,
+        intent,
+        note: edited.current.has("note") ? note : "",
         paused: !history.ready || restoredMaterials || uploading || chat.busy || creating || tab !== "new" || Boolean(fashionTool),
         onResult: (result) => {
             setProduct((current) => ({ ...current, name: edited.current.has("name") ? current.name : result.name, sellingPoints: edited.current.has("sellingPoints") ? current.sellingPoints : result.sellingPoints }));
@@ -373,11 +375,12 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                                         从生图台选择商品
                                     </button>
                                     {materialAnalysis.busy ? <p role="status">正在识别图片中的主体与可见资料…</p> : null}
-                                    {materialAnalysis.error || restoredMaterials ? (
-                                        <p role="alert">
-                                            {materialAnalysis.error || "已恢复素材资料"}
+                                    {materialAnalysis.error || restoredMaterials || materialAnalysis.recognized ? (
+                                        <p role={materialAnalysis.error ? "alert" : "status"}>
+                                            {materialAnalysis.error || (restoredMaterials ? "已恢复素材资料" : "识别结果可以修改")}
                                             <button
                                                 disabled={locked}
+                                                title="按当前拍摄要求重新分析素材，会创建新的分析任务"
                                                 onClick={() => {
                                                     setRestoredImages("");
                                                     materialAnalysis.retry();

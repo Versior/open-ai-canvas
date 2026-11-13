@@ -3,6 +3,7 @@ import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-anal
 import { buildCreativeMaterialPrompt, parseCreativeMaterialSuggestion, type CreativeMaterialSuggestion } from "@/lib/remake/materials";
 import type { CreativeBrief } from "@/lib/remake/creative";
 import type { RemakeProduct } from "@/lib/remake/job";
+import type { VideoChatIntent } from "@/lib/remake/video-chat";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { runBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
@@ -12,14 +13,32 @@ import { replicaScriptImageCount, replicaScriptModelError } from "./replication-
 export const materialAnalysisDependencies = { run: runBackendGenerationTask };
 
 /** 素材变化时识别一次；失败由用户重试，旧素材或旧账号的结果不会回填。 */
-export function useMaterialAnalysis({ config, model, product, brief, paused, onResult }: { config: AiConfig; model: string; product: RemakeProduct; brief: CreativeBrief; paused: boolean; onResult: (result: CreativeMaterialSuggestion) => void }) {
+export function useMaterialAnalysis({
+    config,
+    model,
+    product,
+    brief,
+    intent,
+    note,
+    paused,
+    onResult,
+}: {
+    config: AiConfig;
+    model: string;
+    product: RemakeProduct;
+    brief: CreativeBrief;
+    intent: VideoChatIntent;
+    note: string;
+    paused: boolean;
+    onResult: (result: CreativeMaterialSuggestion) => void;
+}) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
     const [questions, setQuestions] = useState<string[]>([]);
     const [attempt, setAttempt] = useState(0);
     const [recognized, setRecognized] = useState(false);
-    const latest = useRef({ config, product, brief, onResult });
-    latest.current = { config, product, brief, onResult };
+    const latest = useRef({ config, product, brief, intent, note, onResult });
+    latest.current = { config, product, brief, intent, note, onResult };
     const tried = useRef("");
     const scope = getActiveUserScope();
     const images = product.images.map((image) => image.resourceId).join("|");
@@ -49,12 +68,12 @@ export function useMaterialAnalysis({ config, model, product, brief, paused, onR
                     const result = await materialAnalysisDependencies.run({
                         mode: "text",
                         config: generation,
-                        prompt: buildCreativeMaterialPrompt({ ...input.product, images: photos }, input.brief),
+                        prompt: buildCreativeMaterialPrompt({ ...input.product, images: photos }, input.brief, { intent: input.intent, note: input.note }),
                         expectedUserScope: scope,
                         signal: controller.signal,
                         streamText: false,
                         referenceImages: photos.map((image) => ({ id: image.id, name: "主体参考", type: "image/png", dataUrl: "", storageKey: resourceStorageKey(image.resourceId), width: image.width, height: image.height })),
-                        metadata: { source: "product-video-creative", stage: "material-analysis", ecommerceCapability: "dossier", ecommerceAnalysisFlow: "cap:dossier" },
+                        metadata: { source: "product-video-creative", stage: "material-analysis" },
                     });
                     if (controller.signal.aborted || scope !== getActiveUserScope()) return;
                     const suggestion = parseCreativeMaterialSuggestion(result.text || "", model);

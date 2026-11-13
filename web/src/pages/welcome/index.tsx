@@ -35,6 +35,7 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
     const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     const [failedLook, setFailedLook] = useState("");
     const [readyLook, setReadyLook] = useState("");
+    const [reelStarted, setReelStarted] = useState(false);
     const [menu, setMenu] = useState(false);
     const [showcase, setShowcase] = useState(0);
     const [hidden, setHidden] = useState(() => document.hidden);
@@ -53,7 +54,7 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
             setStoryVisible(rect.top > -rect.height + window.innerHeight);
             const progress = Math.max(0, Math.min(1, -rect.top / (rect.height - window.innerHeight)));
             progressRef.current = progress;
-            if (progress < 1 / 6) setReadyLook("");
+            if (progress > 1 / 12) setReelStarted(true);
             setChapter(Math.min(5, Math.floor(progress * 6)));
         };
         page?.addEventListener("scroll", onScroll, { passive: true });
@@ -68,12 +69,12 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
     }, []);
 
     const staticScene = reduced || failedLook === look.id;
-    const paused = hidden || !storyVisible;
+    const paused = hidden || !storyVisible || chapter === 0;
     useEffect(() => {
-        if (chapter === 0 || reduced || paused) return;
+        if (staticScene || paused) return;
         const timer = window.setInterval(() => setRemainingLooks((current) => (current.length > 1 ? current.slice(1) : shuffleWelcomeLooks(current[0].id))), 12_000);
         return () => window.clearInterval(timer);
-    }, [chapter, reduced, paused]);
+    }, [staticScene, paused]);
     const active = showcases[showcase];
 
     return (
@@ -98,15 +99,19 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
             <main>
                 <section ref={storyRef} id="story" className="welcome-story" aria-label={t("account.welcome.storyLabel")}>
                     <div className={`welcome-stage chapter-${chapter}${staticScene ? " is-static" : ""}`}>
-                        <div className={`welcome-poster${chapter > 0 && readyLook === look.id && !staticScene ? " is-ready" : ""}`} aria-hidden="true">
-                            <img src={look.frames[chapter * 2]} alt="" fetchPriority="high" />
-                        </div>
-                        {!staticScene && chapter > 0 ? (
-                            <SceneBoundary key={look.id} onError={() => setFailedLook(look.id)}>
-                                <Suspense fallback={null}>
-                                    <StoryReel look={look} progress={progressRef} paused={paused} onReady={() => setReadyLook(look.id)} onError={() => setFailedLook(look.id)} />
-                                </Suspense>
-                            </SceneBoundary>
+                        {staticScene && chapter > 0 ? (
+                            <div className="welcome-poster" aria-hidden="true">
+                                <img src={look.frames[chapter * 2]} alt="" fetchPriority="high" />
+                            </div>
+                        ) : null}
+                        {!staticScene && reelStarted ? (
+                            <div className={`welcome-reel${readyLook === look.id ? " is-ready" : ""}`} aria-hidden="true">
+                                <SceneBoundary key={look.id} onError={() => setFailedLook(look.id)}>
+                                    <Suspense fallback={null}>
+                                        <StoryReel look={look} progress={progressRef} paused={paused} onReady={() => setReadyLook(look.id)} onError={() => setFailedLook(look.id)} />
+                                    </Suspense>
+                                </SceneBoundary>
+                            </div>
                         ) : null}
                         {chapter === 0 ? <BrandFilm className="welcome-home-film" /> : null}
                         <div className="welcome-stage-shade" aria-hidden="true" />

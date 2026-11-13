@@ -215,6 +215,7 @@ body:has(.welcome-page) {
     background: var(--welcome-black);
 }
 .welcome-webgl,
+.welcome-reel,
 .welcome-poster {
     position: absolute;
     inset: 0;
@@ -229,7 +230,8 @@ body:has(.welcome-page) {
     height: 100%;
     object-fit: cover;
 }
-.welcome-poster.is-ready {
+.welcome-reel:not(.is-ready),
+.chapter-0 .welcome-reel {
     opacity: 0;
 }
 .welcome-stage-shade {

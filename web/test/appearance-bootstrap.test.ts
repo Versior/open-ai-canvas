@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
+import { Window } from "happy-dom";
 
-import { appearanceLogoURL, normalizePublicAppearance } from "../src/stores/use-appearance-store";
+import { appearanceLogoURL, applyAppearanceMetadata, normalizePublicAppearance } from "../src/stores/use-appearance-store";
 import { composeDocumentTitle } from "../src/lib/document-title";
+import { useDocumentTitleStore } from "../src/stores/use-document-title-store";
 import { moduleGroupSource } from "./helpers/module-group-source";
 
 test("initial HTML stays brand neutral until the public appearance is resolved", async () => {
@@ -39,12 +41,33 @@ test("login video autoplay defaults on and can be disabled explicitly", () => {
     expect(normalizePublicAppearance({ authVideoAutoplay: false }).authVideoAutoplay).toBe(false);
 });
 
-test("SEO copy cannot become the display brand or browser tab title", () => {
-    const appearance = normalizePublicAppearance({ brandName: "STAGE | 短剧·电商·空间设计·视频创意平台", seoTitle: "STAGE | 短剧·电商·空间设计·视频创意平台" });
-    expect(appearance.brandName).toBe("STAGE");
-    expect(appearance.seoTitle).toBe("STAGE | 短剧·电商·空间设计·视频创意平台");
-    expect(composeDocumentTitle(appearance)).toBe("STAGE");
-    expect(composeDocumentTitle({ ...appearance, pageTitle: "画布 1", attentionCount: 2, attentionLabel: "生成完成" })).toBe("(2) 生成完成 · 画布 1 - STAGE");
+test("saved brand names retain text after ASCII and full-width separators", () => {
+    for (const separator of ["|", "｜"]) {
+        const brandName = `STAGE ${separator} 短剧·电商·空间设计·视频创意平台`;
+        const appearance = normalizePublicAppearance({ brandName, seoTitle: "" });
+        expect(appearance.brandName).toBe(brandName);
+        expect(appearance.seoTitle).toBe(brandName);
+        expect(composeDocumentTitle(appearance)).toBe(brandName);
+        expect(composeDocumentTitle({ ...appearance, pageTitle: "画布 1", attentionCount: 2, attentionLabel: "生成完成" })).toBe(`(2) 生成完成 · 画布 1 - ${brandName}`);
+    }
+});
+
+test("configured SEO titles reach the document title without replacing the display brand", () => {
+    const appearance = normalizePublicAppearance({ brandName: "STAGE", seoTitle: "STAGE | 短剧·电商·空间设计·视频创意平台" });
+    const target = new Window({ url: "https://example.test/" });
+    const previousTitleState = useDocumentTitleStore.getState();
+    try {
+        useDocumentTitleStore.setState({ pageTitle: "", attentionCount: 0, attentionLabel: "" });
+        applyAppearanceMetadata(appearance, target.document);
+        expect(appearance.brandName).toBe("STAGE");
+        expect(target.document.title).toBe(appearance.seoTitle);
+        expect(target.document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content).toBe(appearance.seoTitle);
+        useDocumentTitleStore.setState({ pageTitle: "视频创作", attentionCount: 2, attentionLabel: "生成完成" });
+        applyAppearanceMetadata(appearance, target.document);
+        expect(target.document.title).toBe(`(2) 生成完成 · 视频创作 - ${appearance.seoTitle}`);
+    } finally {
+        useDocumentTitleStore.setState(previousTitleState);
+    }
 });
 
 test("appearance URLs reject executable and insecure remote schemes", () => {

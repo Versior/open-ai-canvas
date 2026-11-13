@@ -54,11 +54,23 @@ mock.module("@/components/model-picker", () => ({
 }));
 let applyMaterial: (value: import("@/lib/remake/materials").CreativeMaterialSuggestion) => void;
 let analysisPaused = false;
+let recognized = false;
+let retries = 0;
+let analysisContext = { intent: "", note: "" };
 mock.module("@/pages/video-replication/use-material-analysis", () => ({
-    useMaterialAnalysis: ({ onResult, paused }: { onResult: typeof applyMaterial; paused: boolean }) => {
+    useMaterialAnalysis: ({ onResult, paused, intent, note }: { onResult: typeof applyMaterial; paused: boolean; intent: string; note: string }) => {
         applyMaterial = onResult;
         analysisPaused = paused;
-        return { busy: false, error: "", questions: [], recognized: false, retry: () => {} };
+        analysisContext = { intent, note };
+        return {
+            busy: false,
+            error: "",
+            questions: [],
+            recognized,
+            retry: () => {
+                retries++;
+            },
+        };
     },
 }));
 let rejectBoard = false;
@@ -256,6 +268,12 @@ test("导演入口强校验图文模型，修改主体资料与图片后需要�
     expect(button("好，开始策划")).toBeUndefined();
     await click("从生图台选择商品");
     await click("选择测试商品");
+    recognized = true;
+    await render();
+    await click("重新识别");
+    expect(retries).toBe(1);
+    recognized = false;
+    await render();
 });
 
 test("切换用途与流程保留素材，创建时一次交接所有输入", async () => {
@@ -273,6 +291,7 @@ test("切换用途与流程保留素材，创建时一次交接所有输入", as
     await fill("画幅", "16:9");
     await fill("目标时长", "30");
     await closeSettings();
+    expect(analysisContext).toEqual({ intent: "creative", note: "展示杯身与使用动作" });
     await click("好，开始策划");
     expect(submitted).toHaveLength(1);
     expect(submitted[0]).toEqual([

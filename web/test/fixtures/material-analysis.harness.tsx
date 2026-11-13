@@ -30,6 +30,7 @@ const suggestions: CreativeMaterialSuggestion[] = [];
 let images = ["image_a"];
 let paused = false;
 let selectedModel = model;
+let note = "保留这位模特";
 let analysis: ReturnType<typeof useMaterialAnalysis>;
 function Harness() {
     analysis = useMaterialAnalysis({
@@ -37,6 +38,8 @@ function Harness() {
         model: selectedModel,
         product: { name: "", sellingPoints: "", images: images.map((resourceId) => ({ id: resourceId, resourceId, name: "参考" })) },
         brief: { scene: "selling", tone: "natural", seconds: 15, audience: "", objective: "", brand: "" },
+        intent: "structure",
+        note,
         paused,
         onResult: (value) => suggestions.push(value),
     });
@@ -69,7 +72,8 @@ test("上传批次防抖，只提交模型支持的图片与统一后端任务",
     expect(requests).toHaveLength(1);
     expect(requests[0].input.referenceImages?.map((image) => image.storageKey)).toEqual(["resource:image_a", "resource:image_b"]);
     expect(requests[0].input.expectedUserScope).toBe("user_a");
-    expect(requests[0].input.metadata).toMatchObject({ ecommerceCapability: "dossier", stage: "material-analysis" });
+    expect(requests[0].input.metadata).toEqual({ source: "product-video-creative", stage: "material-analysis" });
+    expect(requests[0].input.prompt).toContain("保留这位模特");
     await act(async () => requests[0].resolve(output("蓝色杯")));
     expect(suggestions[0].name).toBe("蓝色杯");
     expect(analysis.recognized).toBe(true);
@@ -118,9 +122,14 @@ test("失败不会自动重提，只有显式重试发起新请求", async () =>
     await render();
     await settle();
     expect(requests).toHaveLength(6);
+    note = "人物是主体，衣服只是穿着";
+    await render();
+    await settle();
+    expect(requests).toHaveLength(6);
     await act(async () => analysis.retry());
     await settle();
     expect(requests).toHaveLength(7);
+    expect(requests[6].input.prompt).toContain(note);
     await act(async () => requests[6].resolve(output("重试成功")));
     expect(analysis.recognized).toBe(true);
 });

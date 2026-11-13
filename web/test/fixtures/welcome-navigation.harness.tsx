@@ -48,7 +48,15 @@ for (const [key, value] of Object.entries({
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
 mock.module("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 mock.module("@/components/brand/brand-film", () => ({ BrandFilm: () => null }));
-mock.module("@/pages/welcome/story-reel", () => ({ default: ({ progress, paused }: { progress: { current: number }; paused: boolean }) => <canvas className="welcome-webgl" data-progress={progress.current} data-paused={paused} /> }));
+let sceneReady: () => void;
+let sceneError: () => void;
+mock.module("@/pages/welcome/story-reel", () => ({
+    default: ({ look, progress, paused, onReady, onError }: { look: { id: string }; progress: { current: number }; paused: boolean; onReady: () => void; onError: () => void }) => {
+        sceneReady = onReady;
+        sceneError = onError;
+        return <canvas className="welcome-webgl" data-look={look.id} data-progress={progress.current} data-paused={paused} />;
+    },
+}));
 const { act, StrictMode } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { default: WelcomePage } = await import("@/pages/welcome");
@@ -83,11 +91,19 @@ test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循�
         story.getBoundingClientRect = () => ({ top: -page.scrollTop, height: 5700 }) as DOMRect;
         Object.defineProperty(story, "offsetHeight", { value: 5700 });
         expect(cycleTimers.size, "品牌首幕不轮换演示素材").toBe(0);
+        expect(host.querySelector(".welcome-webgl"), "静止首幕不初始化圆环").toBeNull();
         const scrollChapter = (index: number) => page.scrollTo({ top: (5700 - window.innerHeight) * (index / 6 + (index ? 0.04 : 0)) });
+        await act(async () => page.scrollTo({ top: (5700 - window.innerHeight) / 10 }));
+        expect(host.querySelector(".welcome-stage")!.classList.contains("chapter-0")).toBe(true);
+        expect(host.querySelector(".welcome-webgl"), "接近下一幕时提前准备圆环").not.toBeNull();
+        expect(host.querySelector(".welcome-webgl")!.getAttribute("data-paused")).toBe("true");
         await act(async () => scrollChapter(1));
-        expect(calls).toBe(1);
+        expect(calls).toBe(2);
         expect(host.querySelector(".welcome-stage")!.classList.contains("chapter-1")).toBe(true);
         expect(host.querySelector(".welcome-webgl")).not.toBeNull();
+        expect(host.querySelector(".welcome-poster"), "圆环尚未就绪时也不闪现单张全屏素材").toBeNull();
+        await act(async () => sceneReady());
+        expect(host.querySelector(".welcome-reel")!.classList.contains("is-ready")).toBe(true);
         expect(host.querySelector(".welcome-look-picker")).toBeNull();
         expect(host.querySelector("#welcome-look-select")).toBeNull();
         expect(host.querySelector(".welcome-next")).toBeNull();
@@ -96,13 +112,15 @@ test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循�
         expect(host.querySelector(".welcome-media-credit")).toBeNull();
         expect(host.querySelector(".welcome-hero-actions a")!.getAttribute("href")).toBe("/create");
         expect(cycleTimers.size).toBe(1);
-        const lookId = () => host.querySelector(".welcome-poster img")!.getAttribute("src")!.split("/")[2];
+        const lookId = () => host.querySelector(".welcome-webgl")!.getAttribute("data-look")!;
         const looks = new Set([lookId()]);
         for (let tick = 0; tick < 2; tick++) {
             const previous = lookId();
             await act(async () => [...cycleTimers.values()].forEach((callback) => callback()));
             expect(lookId()).not.toBe(previous);
-            expect(host.querySelector(".welcome-poster img")!.getAttribute("src")).toContain(`/welcome/${lookId()}/`);
+            expect(host.querySelector(".welcome-poster")).toBeNull();
+            expect(host.querySelector(".welcome-reel")!.classList.contains("is-ready")).toBe(false);
+            await act(async () => sceneReady());
             looks.add(lookId());
         }
         expect(looks.size).toBe(3);
@@ -123,6 +141,7 @@ test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循�
         });
         expect(cycleTimers.size, "减少动画偏好停止自动轮换").toBe(0);
         expect(host.querySelector(".welcome-webgl")).toBeNull();
+        expect(host.querySelector(".welcome-poster img"), "减少动画保留静态降级").not.toBeNull();
         await act(async () => {
             reduced = false;
             motionListeners.forEach((callback) => callback());
@@ -135,6 +154,11 @@ test("欢迎页滚动切换章节，隐藏导航装饰，随机轮换并遵循�
             expect(host.querySelector(".welcome-stage")!.classList.contains(`chapter-${index}`)).toBe(true);
             if (index > 0) expect(Math.floor(Number(host.querySelector(".welcome-webgl")!.getAttribute("data-progress")) * 6)).toBe(index);
         }
+        expect(host.querySelector(".welcome-reel")!.classList.contains("is-ready"), "回首幕不丢弃已准备的圆环").toBe(true);
+        await act(async () => scrollChapter(1));
+        await act(async () => sceneError());
+        expect(host.querySelector(".welcome-webgl")).toBeNull();
+        expect(host.querySelector(".welcome-poster img"), "场景失败保留静态降级").not.toBeNull();
     } finally {
         await act(async () => root.unmount());
         expect(cycleTimers.size).toBe(0);

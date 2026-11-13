@@ -1,7 +1,35 @@
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
-import { parseCreativeMaterialSuggestion } from "@/lib/remake/materials";
+import { buildCreativeMaterialPrompt, parseCreativeMaterialSuggestion } from "@/lib/remake/materials";
 import { validTrendURL } from "@/lib/remake/trends";
+
+test("视频主体识别以模特为主体，不套用商品档案协议", () => {
+    const prompt = buildCreativeMaterialPrompt(
+        { name: "", sellingPoints: "", images: [{ id: "model", resourceId: "model", name: "模特图" }] },
+        { scene: "showcase", tone: "natural", seconds: 15, audience: "", objective: "", brand: "" },
+        { intent: "structure", note: "保留这位模特，复刻镜头结构" },
+    );
+    expect(prompt).toContain("保留这位模特，复刻镜头结构");
+    expect(prompt).toContain("复刻镜头结构");
+    expect(prompt).toContain("穿着服装的模特默认以人物为主体");
+    expect(prompt).toContain("多个主体");
+    expect(prompt).not.toContain("建立商品档案");
+    expect(prompt).not.toContain("卖家补充");
+    const result = parseCreativeMaterialSuggestion(
+        JSON.stringify({
+            name: "灰色开衫模特",
+            facts: [
+                { group: "identity", label: "主体", value: "长发人物", evidence: "visible" },
+                { group: "appearance", label: "穿着", value: "灰色开衫", evidence: "visible" },
+            ],
+            creative: {},
+            questions: [],
+        }),
+        "test-model",
+    );
+    expect(result.name).toBe("灰色开衫模特");
+    expect(result.sellingPoints).toBe("主体：长发人物\n穿着：灰色开衫");
+});
 
 test("素材识别只回填有事实依据的卖点，保留待确认信息", () => {
     const result = parseCreativeMaterialSuggestion(
