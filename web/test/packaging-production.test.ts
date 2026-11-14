@@ -73,6 +73,22 @@ describe("包装编辑历史", () => {
         expect(history.undo({ name: "now", document })?.name).toBe("after");
         expect(history.undo({ name: "after", document })?.name).toBe("before");
     });
+    test("长时间停顿的同一手势仍是一步；取消恢复原稿和 redo 分支", () => {
+        const history = new PackagingHistory();
+        history.record({ name: "original", document });
+        history.undo({ name: "redo", document });
+        history.beginGesture();
+        history.record({ name: "original", document }, "gesture", 1000);
+        history.record({ name: "moved", document }, "gesture", 3000);
+        expect(history.cancelGesture()?.name).toBe("original");
+        expect(history.canUndo).toBe(false);
+        expect(history.redo({ name: "original", document })?.name).toBe("redo");
+        history.beginGesture();
+        history.record({ name: "redo", document }, "gesture", 4000);
+        history.record({ name: "scaled", document }, "gesture", 10000);
+        history.endGroup();
+        expect(history.undo({ name: "end", document })?.name).toBe("redo");
+    });
 });
 
 describe("真尺寸白样", () => {

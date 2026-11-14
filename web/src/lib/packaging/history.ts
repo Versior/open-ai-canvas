@@ -7,6 +7,7 @@ export class PackagingHistory {
     private future: PackagingSnapshot[] = [];
     private group?: string;
     private editedAt = 0;
+    private gesture?: { snapshot?: PackagingSnapshot; past: PackagingSnapshot[]; future: PackagingSnapshot[] };
 
     get canUndo() {
         return this.past.length > 0;
@@ -16,7 +17,8 @@ export class PackagingHistory {
     }
 
     record(previous: PackagingSnapshot, group?: string, now = Date.now()) {
-        if (!group || group !== this.group || now - this.editedAt > 400) {
+        if (!group || group !== this.group || (!this.gesture && now - this.editedAt > 400)) {
+            if (this.gesture && !this.gesture.snapshot) this.gesture.snapshot = { name: previous.name, document: previous.document };
             this.past.push({ name: previous.name, document: previous.document });
             if (this.past.length > 60) this.past.shift();
         }
@@ -26,6 +28,7 @@ export class PackagingHistory {
     }
 
     undo(current: PackagingSnapshot) {
+        this.endGroup();
         const snapshot = this.past.pop();
         if (!snapshot) return;
         this.future.push({ name: current.name, document: current.document });
@@ -34,6 +37,7 @@ export class PackagingHistory {
     }
 
     redo(current: PackagingSnapshot) {
+        this.endGroup();
         const snapshot = this.future.pop();
         if (!snapshot) return;
         this.past.push({ name: current.name, document: current.document });
@@ -43,11 +47,28 @@ export class PackagingHistory {
 
     endGroup() {
         this.group = undefined;
+        this.gesture = undefined;
+    }
+
+    beginGesture() {
+        this.group = undefined;
+        this.gesture = { past: this.past.slice(), future: this.future };
+    }
+
+    cancelGesture() {
+        const snapshot = this.gesture?.snapshot;
+        if (this.gesture) {
+            this.past = this.gesture.past;
+            this.future = this.gesture.future;
+        }
+        this.endGroup();
+        return snapshot;
     }
 
     clear() {
         this.past = [];
         this.future = [];
         this.group = undefined;
+        this.gesture = undefined;
     }
 }

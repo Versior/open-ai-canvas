@@ -11,7 +11,9 @@ description: 影策后端核心持久化表与状态边界
 
 `packaging_projects` 保存用户、名称、盒型 ID、结构/材料快照、图稿、视图、备注、revision 与时间，按用户及更新时间索引。`packaging_project_resources` 使用项目 ID 与资源 ID 联合主键，供素材删除与清理检查。两表同事务更新，revision CAS 防止跨窗口覆盖。
 
-`system_settings.packaging_catalog` 保存目录、enabled、配额与 revision，目录和管理删除进入既有审计。跨数据库迁移列表包含两表；112 不改写旧创作数据，回滚须恢复同版本备份。
+`system_settings.packaging_catalog` 保存目录、enabled、mockupEnabled、配额与 revision，目录和管理删除进入既有审计。跨数据库迁移列表包含两表；112 不改写旧创作数据，回滚须恢复同版本备份。
+
+效果图复用 `tasks`、`resources`、素材和计费表，没有新增迁移。`tasks.input_json.metadata` 的 `source=packaging-mockup`、`packagingProjectId`、`packagingRevision`、`packagingReferenceId`、`packagingScene` 记录设计版本与参考；继续修改另存 `packagingParentTaskId`。图库按所有者、任务类型、来源、项目严格过滤；SQLite 使用 json_extract，PostgreSQL 使用 jsonb 查询。删除包装项目保留生成任务和素材，历史任务仍可在任务中心读取。
 
 ## 微信登录（Schema 109）
 

@@ -47,11 +47,12 @@ type Material struct {
 }
 
 type Catalog struct {
-	Revision    int64      `json:"revision"`
-	Enabled     bool       `json:"enabled"`
-	MaxProjects int        `json:"maxProjects"`
-	Templates   []Template `json:"templates"`
-	Materials   []Material `json:"materials"`
+	Revision      int64      `json:"revision"`
+	Enabled       bool       `json:"enabled"`
+	MockupEnabled bool       `json:"mockupEnabled"`
+	MaxProjects   int        `json:"maxProjects"`
+	Templates     []Template `json:"templates"`
+	Materials     []Material `json:"materials"`
 }
 
 type Artwork struct {
@@ -239,7 +240,7 @@ func DefaultCatalog() Catalog {
 	p := Parameters{Length: 120, Width: 60, Height: 180, Thickness: 0.45, Bleed: 3, Glue: 12, Tab: 15, Gap: 1, FrontHeight: 40, Inflation: 0.6, SpoutRadius: 8}
 	names := []string{"双插盒", "反插盒", "飞机盒", "开放托盘", "斜边展示盒", "天地盖", "抽屉礼盒", "书型翻盖盒", "对开精品盒", "枕形盒", "三边封袋", "吸嘴袋"}
 	descriptions := []string{"同向上下插盖，带粘口与防尘翼", "上下插盖反向，适合零售纸盒", "带一体翻盖与内折角片的邮寄盒", "开放四壁与角部粘接耳", "低前沿、高后背的展示托盘", "独立盖底、套合间隙与开盖预览", "外套筒与独立内抽屉", "书脊连接的外封套与内盒", "左右翻门与独立内托", "弧形封口和鼓起的枕形盒体", "双面软膜、三边封口与可调鼓胀", "软袋加吸嘴，袋体和吸嘴分别建模"}
-	result := Catalog{Revision: 0, Enabled: true, MaxProjects: 200, Templates: []Template{}, Materials: []Material{
+	result := Catalog{Revision: 0, Enabled: true, MockupEnabled: true, MaxProjects: 200, Templates: []Template{}, Materials: []Material{
 		{ID: "white-card", Name: "白卡纸", Color: "#f0ece3", InsideColor: "#e5ddcc", Thickness: 0.45, Roughness: 0.65, Enabled: true},
 		{ID: "kraft", Name: "牛皮纸", Color: "#af8956", InsideColor: "#a7804d", Thickness: 0.6, Roughness: 0.9, Enabled: true},
 		{ID: "corrugated", Name: "瓦楞纸", Color: "#b59163", InsideColor: "#aa8253", Thickness: 2, Roughness: 0.85, Enabled: true},

@@ -21,6 +21,7 @@ import {
     type Texture,
 } from "three";
 import type { PackagingDocument, PackagingLayout, PackagingPanel, Point } from "./types";
+import { packagingMaskLuminance } from "./artwork";
 
 export type PackagingTextures = { artwork: Texture; foil?: Texture; uv?: Texture; emboss?: Texture };
 export type PackagingScene = { root: Group; panels: Map<string, Group>; apply: (fold: number, open: number) => void; dispose: () => void };
@@ -246,10 +247,11 @@ export function buildPackagingTextures(d: PackagingDocument, layout: PackagingLa
             ctx.drawImage(images.get(art.resourceId)!, -art.width / 2, -art.height / 2, art.width, art.height);
             ctx.restore();
         }
-        if (role === "uv") {
+        if (role !== "artwork") {
             const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
             for (let i = 0; i < data.data.length; i += 4) {
-                const value = Math.round(255 * d.material.roughness * (1 - data.data[i + 1] / 255) + (35 * data.data[i + 1]) / 255);
+                const luminance = packagingMaskLuminance(data.data[i], data.data[i + 1], data.data[i + 2]);
+                const value = role === "uv" ? Math.round(255 * d.material.roughness * (1 - luminance / 255) + (35 * luminance) / 255) : luminance;
                 data.data[i] = value;
                 data.data[i + 1] = value;
                 data.data[i + 2] = value;
@@ -268,13 +270,13 @@ export function buildPackagingTextures(d: PackagingDocument, layout: PackagingLa
     };
 }
 
-export function packagingCamera(root: Group, aspect: number, axis: "front" | "back" | "left" | "right" | "top" | "bottom" | "iso") {
-    const box = new Box3().setFromObject(root);
+export function packagingCamera(root: Group, aspect: number, axis: "front" | "back" | "left" | "right" | "top" | "bottom" | "iso", box = new Box3().setFromObject(root)) {
     const center = box.getCenter(new Vector3());
     const size = box.getSize(new Vector3());
-    const distance = (Math.max(size.x, size.y, size.z) * 1.7) / Math.min(1, aspect);
+    const radius = size.length() / 2;
+    const distance = (radius * 1.1) / Math.sin(Math.atan(Math.tan(Math.PI / 9) * Math.min(1, aspect)));
     const direction = { front: [0, 0.001, -1], back: [0, 0.001, 1], left: [-1, 0, 0], right: [1, 0, 0], top: [0, 1, 0.001], bottom: [0, -1, 0.001], iso: [0.8, 0.65, -1] }[axis];
-    return { center, position: center.clone().add(new Vector3(...direction).normalize().multiplyScalar(distance)), span: Math.max(size.x, size.y, size.z) };
+    return { center, position: center.clone().add(new Vector3(...direction).normalize().multiplyScalar(distance)), span: Math.max(size.x, size.y, size.z), radius };
 }
 
 export function packagingFoldQuaternion(panel: PackagingPanel, fold: number) {

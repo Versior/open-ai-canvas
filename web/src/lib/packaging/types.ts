@@ -16,7 +16,7 @@ export type PackagingParameters = {
 };
 export type PackagingTemplate = { id: string; name: string; category: string; structure: PackagingStructure; description: string; enabled: boolean; defaults: PackagingParameters };
 export type PackagingMaterial = { id: string; name: string; color: string; insideColor: string; thickness: number; roughness: number; metalness: number; enabled: boolean };
-export type PackagingCatalog = { revision: number; enabled: boolean; maxProjects: number; templates: PackagingTemplate[]; materials: PackagingMaterial[] };
+export type PackagingCatalog = { revision: number; enabled: boolean; mockupEnabled: boolean; maxProjects: number; templates: PackagingTemplate[]; materials: PackagingMaterial[] };
 export type PackagingArtwork = { id: string; resourceId: string; name: string; panelId: string; role: "artwork" | "foil" | "uv" | "emboss"; x: number; y: number; width: number; height: number; rotation: number; opacity: number };
 export type PackagingView = {
     fold: number;

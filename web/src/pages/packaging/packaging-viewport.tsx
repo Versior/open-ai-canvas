@@ -1,15 +1,28 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera } from "@react-three/drei";
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { AmbientLight, Color, DirectionalLight, Mesh, PlaneGeometry, ShadowMaterial, OrthographicCamera as ThreeOrthographicCamera, PerspectiveCamera, Scene, WebGLRenderer } from "three";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { OrthographicCamera as ThreeOrthographicCamera, PerspectiveCamera } from "three";
 import type { OrbitControls as ThreeOrbitControls } from "three-stdlib";
-import { Download, Maximize2, Move, Pause, Play, RotateCcw, Rotate3D } from "lucide-react";
+import { Download, Maximize2, Move, Pause, Play, RotateCcw, Rotate3D, Sparkles } from "lucide-react";
 import { buildPackagingScene, buildPackagingTextures, packagingCamera, type PackagingScene } from "@/lib/packaging/scene";
 import { downloadPackaging, packagingGlb } from "@/lib/packaging/delivery";
 import type { PackagingDocument, PackagingLayout } from "@/lib/packaging/types";
+import { renderPackagingAnimation, renderPackagingPng } from "@/lib/packaging/render";
+import { packagingMotionBounds } from "@/lib/packaging/animation";
+import { captureUserSession, assertCurrentUserSession } from "@/lib/user-scope";
 
 type Axis = "front" | "back" | "left" | "right" | "top" | "bottom" | "iso";
-type Props = { document: PackagingDocument; layout: PackagingLayout; images: Map<string, HTMLImageElement>; imageRevision: number; onChange: (view: Partial<PackagingDocument["view"]>) => void; onError: (message: string) => void; name: string };
+type Props = {
+    document: PackagingDocument;
+    layout: PackagingLayout;
+    images: Map<string, HTMLImageElement>;
+    imageRevision: number;
+    onChange: (view: Partial<PackagingDocument["view"]>) => void;
+    onError: (message: string) => void;
+    name: string;
+    onMockup?: (blob: Blob) => void;
+    mockupDisabled?: boolean;
+};
 
 class PreviewBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
     state = { failed: false };
@@ -30,20 +43,44 @@ class PreviewBoundary extends Component<{ children: ReactNode }, { failed: boole
     }
 }
 
-function ModelScene({ built, doc, axis, move, rotate }: { built: PackagingScene; doc: PackagingDocument; axis: { value: Axis; seq: number }; move: boolean; rotate: boolean }) {
+function ModelScene({
+    built,
+    doc,
+    axis,
+    move,
+    rotate,
+    playing,
+    cameraRef,
+}: {
+    built: PackagingScene;
+    doc: PackagingDocument;
+    axis: { value: Axis; seq: number };
+    move: boolean;
+    rotate: boolean;
+    playing: boolean;
+    cameraRef: RefObject<PerspectiveCamera | ThreeOrthographicCamera | null>;
+}) {
     const { camera, size, invalidate } = useThree();
     const controls = useRef<ThreeOrbitControls>(null);
+    const motionBounds = useMemo(() => packagingMotionBounds(built, doc.view.fold, doc.view.open), [built]);
+    const framingMotion = playing || doc.view.fold < 1 || doc.view.open > 0;
+    useEffect(() => {
+        cameraRef.current = camera;
+        return () => {
+            cameraRef.current = null;
+        };
+    }, [camera, cameraRef]);
     useEffect(() => {
         built.apply(doc.view.fold, doc.view.open);
         invalidate();
     }, [built, doc.view.fold, doc.view.open, invalidate]);
     useEffect(() => {
-        const framing = packagingCamera(built.root, size.width / size.height, axis.value);
+        const framing = packagingCamera(built.root, size.width / size.height, axis.value, framingMotion ? motionBounds : undefined);
         camera.position.copy(framing.position);
         camera.near = Math.max(0.1, framing.span / 20);
         camera.far = Math.max(1000, framing.span * 20);
         if (camera instanceof ThreeOrthographicCamera) {
-            camera.zoom = Math.min(size.width, size.height) / (framing.span * 1.65);
+            camera.zoom = Math.min(size.width, size.height) / (framing.radius * 2.2);
             camera.updateProjectionMatrix();
         }
         if (camera instanceof PerspectiveCamera) camera.updateProjectionMatrix();
@@ -53,7 +90,7 @@ function ModelScene({ built, doc, axis, move, rotate }: { built: PackagingScene;
             controls.current.update();
         }
         invalidate();
-    }, [built, axis, camera, size.width, size.height, invalidate]);
+    }, [built, axis, camera, size.width, size.height, invalidate, framingMotion, motionBounds]);
     useFrame(() => {
         if (rotate && controls.current) controls.current.update();
     });
@@ -92,7 +129,18 @@ export function PackagingViewport(props: Props) {
     const [playing, setPlaying] = useState(false);
     const [exporting, setExporting] = useState(false);
     const [resolution, setResolution] = useState(2048);
+    const [videoProgress, setVideoProgress] = useState<number>();
+    const videoOperation = useRef<AbortController>(null);
+    const mounted = useRef(true);
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            videoOperation.current?.abort();
+        };
+    }, []);
     const host = useRef<HTMLDivElement>(null);
+    const camera = useRef<PerspectiveCamera | ThreeOrthographicCamera>(null);
     const ready = props.document.artworks.every((a) => props.images.has(a.resourceId));
     const textures = useMemo(() => (ready ? buildPackagingTextures(props.document, props.layout, props.images) : undefined), [props.document.artworks, props.document.material, props.layout, props.imageRevision, ready]);
     const built = useMemo(() => buildPackagingScene(props.document, props.layout, textures), [props.layout, props.document.material, props.document.view.finish, textures]);
@@ -113,64 +161,53 @@ export function PackagingViewport(props: Props) {
         }, 40);
         return () => window.clearInterval(timer);
     }, [playing]);
-    const exportFile = async (kind: "png" | "glb" | "animation") => {
-        if (!ready) throw new Error("图稿尚未加载完成，暂不能导出");
+    const exportFile = async (kind: "png" | "glb" | "animation" | "video") => {
+        if (!ready) {
+            props.onError("图稿尚未加载完成，暂不能导出");
+            return;
+        }
+        const session = captureUserSession();
+        const controller = new AbortController();
+        videoOperation.current = controller;
         setExporting(true);
+        setPlaying(false);
+        setRotate(false);
         try {
-            if (kind !== "png") {
-                if (kind === "animation" && props.layout.panels.some((p) => p.surface)) throw new Error("袋体曲面动画不能导出为铰链动画，请导出当前 GLB 姿态");
-                downloadPackaging(await packagingGlb(built.root, props.layout, kind === "animation"), props.name, "glb");
+            if (kind === "video") {
+                setVideoProgress(0);
+                const capturedTextures = textures ? { artwork: textures.artwork.clone(), foil: textures.foil?.clone(), uv: textures.uv?.clone(), emboss: textures.emboss?.clone() } : undefined;
+                const scene = buildPackagingScene(props.document, props.layout, capturedTextures);
+                try {
+                    const blob = await renderPackagingAnimation(scene, props.document, Math.min(resolution, 2048), axis.value, AbortSignal.any([controller.signal, session.signal]), setVideoProgress);
+                    assertCurrentUserSession(session);
+                    controller.signal.throwIfAborted();
+                    downloadPackaging(blob, `${props.name}-折叠开合`, blob.type === "video/mp4" ? "mp4" : "webm");
+                } finally {
+                    scene.dispose();
+                    if (capturedTextures) Object.values(capturedTextures).forEach((texture) => texture?.dispose());
+                }
                 return;
             }
-            const renderer = new WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
-            const groundGeometry = new PlaneGeometry(10000, 10000);
-            const groundMaterial = new ShadowMaterial({ opacity: 0.22 });
-            try {
-                renderer.setSize(resolution, resolution);
-                renderer.setPixelRatio(1);
-                const scene = new Scene();
-                if (props.document.view.background !== "transparent") scene.background = new Color(props.document.view.background === "dark" ? "#202329" : "#f5f2ec");
-                scene.add(built.root.clone(true));
-                const light = new DirectionalLight("#ffffff", props.document.view.light * 2);
-                light.position.set(400, 650, -500);
-                if (props.document.view.shadows) {
-                    renderer.shadowMap.enabled = true;
-                    light.castShadow = true;
-                    light.shadow.bias = -0.0002;
-                    light.shadow.normalBias = 0.1;
-                    light.shadow.mapSize.set(2048, 2048);
-                    light.shadow.camera.left = -1500;
-                    light.shadow.camera.right = 1500;
-                    light.shadow.camera.top = 1500;
-                    light.shadow.camera.bottom = -1500;
-                    light.shadow.camera.far = 5000;
-                    const ground = new Mesh(groundGeometry, groundMaterial);
-                    ground.rotation.x = -Math.PI / 2;
-                    ground.position.y = -2;
-                    ground.receiveShadow = true;
-                    scene.add(ground);
-                }
-                scene.add(light, new AmbientLight("#ffffff", props.document.view.light));
-                const framing = packagingCamera(built.root, 1, axis.value);
-                const camera = props.document.view.projection === "orthographic" ? new ThreeOrthographicCamera(-framing.span, framing.span, framing.span, -framing.span, 0.01, 10000) : new PerspectiveCamera(40, 1, 0.01, 10000);
-                camera.near = Math.max(0.1, framing.span / 20);
-                camera.far = Math.max(1000, framing.span * 20);
-                camera.updateProjectionMatrix();
-                camera.position.copy(framing.position);
-                camera.lookAt(framing.center);
-                renderer.render(scene, camera);
-                const blob = await new Promise<Blob>((resolve, reject) => renderer.domElement.toBlob((value) => (value ? resolve(value) : reject(new Error("PNG 编码失败"))), "image/png"));
-                downloadPackaging(blob, props.name, "png");
-            } finally {
-                groundGeometry.dispose();
-                groundMaterial.dispose();
-                renderer.dispose();
-                renderer.forceContextLoss();
+            if (kind !== "png") {
+                if (kind === "animation" && props.layout.panels.some((p) => p.surface)) throw new Error("袋体曲面动画不能导出为铰链动画，请导出当前 GLB 姿态");
+                const blob = await packagingGlb(built.root, props.layout, kind === "animation");
+                assertCurrentUserSession(session);
+                controller.signal.throwIfAborted();
+                downloadPackaging(blob, `${props.name}${kind === "animation" ? "-折叠开合" : ""}`, "glb");
+                return;
             }
+            const blob = await renderPackagingPng(built.root, props.document, resolution, axis.value);
+            assertCurrentUserSession(session);
+            controller.signal.throwIfAborted();
+            downloadPackaging(blob, props.name, "png");
         } catch (e) {
-            props.onError(e instanceof Error ? e.message : "导出失败");
+            if (!controller.signal.aborted && !session.signal.aborted && mounted.current) props.onError(e instanceof Error ? e.message : "导出失败");
         } finally {
-            setExporting(false);
+            if (mounted.current && !session.signal.aborted) {
+                setExporting(false);
+                setVideoProgress(undefined);
+            }
+            videoOperation.current = null;
         }
     };
     return (
@@ -195,7 +232,7 @@ export function PackagingViewport(props: Props) {
                 <PreviewBoundary>
                     <Canvas shadows camera={{ fov: 40, near: 0.01, far: 10000, position: [400, 300, -500] }} gl={{ alpha: true, antialias: true }}>
                         {props.document.view.projection === "orthographic" ? <OrthographicCamera makeDefault position={[400, 300, -500]} near={0.01} far={10000} /> : null}
-                        <ModelScene built={built} doc={props.document} axis={axis} move={move} rotate={rotate} />
+                        <ModelScene built={built} doc={props.document} axis={axis} move={move} rotate={rotate} playing={playing} cameraRef={camera} />
                     </Canvas>
                 </PreviewBoundary>
                 <div className="pkg-camera-actions">
@@ -236,6 +273,7 @@ export function PackagingViewport(props: Props) {
                     <button
                         type="button"
                         className="pkg-icon"
+                        aria-label={playing ? "暂停折叠" : "播放折叠"}
                         title={playing ? "暂停折叠" : "播放折叠"}
                         onClick={() => {
                             if (!playing) props.onChange({ fold: 0, open: 0 });
@@ -270,6 +308,25 @@ export function PackagingViewport(props: Props) {
                     </select>
                 </div>
                 <div className="pkg-toolbar">
+                    {props.onMockup ? (
+                        <button
+                            type="button"
+                            disabled={exporting || !ready || props.mockupDisabled}
+                            title="保存当前方案后，以此视角生成包装效果图"
+                            onClick={() => {
+                                setExporting(true);
+                                setPlaying(false);
+                                setRotate(false);
+                                void renderPackagingPng(built.root, props.document, 1024, axis.value, camera.current ?? undefined)
+                                    .then(props.onMockup)
+                                    .catch((error: unknown) => props.onError(error instanceof Error ? error.message : "包装参考图生成失败"))
+                                    .finally(() => setExporting(false));
+                            }}
+                        >
+                            <Sparkles size={15} />
+                            用此视角生成效果图
+                        </button>
+                    ) : null}
                     <select aria-label="导出图片尺寸" value={resolution} onChange={(e) => setResolution(Number(e.target.value))}>
                         <option value={1024}>1K</option>
                         <option value={2048}>2K</option>
@@ -301,9 +358,19 @@ export function PackagingViewport(props: Props) {
                             void exportFile("animation").catch((e: Error) => props.onError(e.message));
                         }}
                     >
-                        折叠动画
+                        动画 GLB
                     </button>
+                    <button type="button" disabled={exporting || !ready} onClick={() => void exportFile("video")}>
+                        {videoProgress === undefined ? "动画视频" : `录制 ${videoProgress}%`}
+                    </button>
+                    {videoProgress !== undefined ? (
+                        <button type="button" onClick={() => videoOperation.current?.abort()}>
+                            取消录制
+                        </button>
+                    ) : null}
                 </div>
+                <p className="pkg-help">动画视频：8 秒折叠与开合，最高 2K，下载 MP4 / WebM；录制期间保持此页打开。动画 GLB 需在三维软件中播放，袋体曲面请导出视频。</p>
+                {props.onMockup && props.mockupDisabled ? <p className="pkg-help">保存当前方案后可生成效果图；后台需开放包装写入与模型效果图。</p> : null}
             </div>
         </section>
     );

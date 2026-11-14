@@ -11,6 +11,8 @@ description: 从产品功能快速定位主要代码入口
 - 类型、结构、三维与交付：`web/src/lib/packaging/types.ts`、`geometry.ts`、`scene.ts`、`delivery.ts`；方案输入 `import-contract.ts`。
 - 后端合同 `internal/packaging/contract.go` → `handler/packaging.go` → `app/packaging.go` → `repository/packaging.go`；模型 `model/models_packaging.go`，Schema 112 与跨数据库清单同步。
 - 结构测试 `web/test/packaging.test.ts`，HTTP 测试 `handler/packaging_test.go`；视频依据与范围 `docs/plans/packaging-dieline.md`。
+- 图稿手势/检查/视频：`lib/packaging/artwork.ts`、`preflight.ts`、`animation.ts`、`render.ts`；专项位于 `web/test/packaging-*.test.ts`。
+- 模型效果图：`pages/packaging/packaging-mockups.tsx` → `services/packaging-generation.ts` → 通用任务；`app/packaging_mockup.go` 负责版本/来源/父任务准入和安全图库读模型，`repository/packaging.go` 负责任务过滤。参考资料见 `docs/plans/packaging-research.md`。
 
 ## 创作扩展与智能体皮肤
 

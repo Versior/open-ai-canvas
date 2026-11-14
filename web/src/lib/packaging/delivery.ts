@@ -6,30 +6,50 @@ import { packagingFoldQuaternion } from "./scene";
 import { type PackagingDocument, type PackagingLayout, type Point } from "./types";
 import { parsePackagingDocument } from "./import-contract";
 import { compilePackaging } from "./geometry";
+import { packagingPreflight, type PackagingImageSize } from "./preflight";
 
 export const packagingPath = (points: Point[], close = true) => points.map((point, index) => `${index ? "L" : "M"}${point[0].toFixed(3)} ${point[1].toFixed(3)}`).join(" ") + (close ? " Z" : "");
+
+function svgArtwork(d: PackagingDocument, layout: PackagingLayout, images: Map<string, string>) {
+    const ids = [...new Set(d.artworks.map((a) => a.resourceId))];
+    if (ids.some((id) => !images.has(id))) throw new Error("图稿尚未加载，无法导出完整设计");
+    const defs =
+        `<clipPath id="structure"><path d="${layout.cuts.map((v) => packagingPath(v)).join(" ")}" clip-rule="evenodd"/></clipPath>` +
+        layout.panels.map((p) => `<clipPath id="${p.id}"><path d="${[p.points, ...p.holes].map((v) => packagingPath(v)).join(" ")}" clip-rule="evenodd"/></clipPath>`).join("") +
+        ids.map((id) => `<image id="asset-${xmlText(id)}" width="1" height="1" preserveAspectRatio="none" href="${xmlText(images.get(id)!)}"/>`).join("") +
+        `<filter id="mask-luminance" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0.2126 0.7152 0.0722 0 0 0 0 0 1 0"/></filter>`;
+    const art = (role: PackagingDocument["artworks"][number]["role"]) =>
+        d.artworks
+            .filter((a) => a.role === role)
+            .map(
+                (a) =>
+                    `<g clip-path="url(#${xmlText(a.panelId || "structure")})"><g opacity="${a.opacity}" transform="rotate(${a.rotation} ${a.x + a.width / 2} ${a.y + a.height / 2})"${role === "artwork" ? "" : ' filter="url(#mask-luminance)"'}><use href="#asset-${xmlText(a.resourceId)}" transform="translate(${a.x} ${a.y}) scale(${a.width} ${a.height})"/></g></g>`,
+            )
+            .join("");
+    return { defs, art };
+}
 
 export function packagingSvg(d: PackagingDocument, layout: PackagingLayout, images: Map<string, string> = new Map(), withDimensions = true) {
     const b = layout.bounds;
     const pad = withDimensions ? 25 : 0;
-    const defs =
-        `<clipPath id="structure"><path d="${layout.cuts.map((v) => packagingPath(v)).join(" ")}" clip-rule="evenodd"/></clipPath>` +
-        layout.panels.map((p) => `<clipPath id="${p.id}"><path d="${[p.points, ...p.holes].map((v) => packagingPath(v)).join(" ")}" clip-rule="evenodd"/></clipPath>`).join("");
-    const art = d.artworks
-        .filter((a) => a.role === "artwork")
-        .map((a) =>
-            images.has(a.resourceId)
-                ? `<g clip-path="url(#${xmlText(a.panelId || "structure")})"><image x="${a.x}" y="${a.y}" width="${a.width}" height="${a.height}" opacity="${a.opacity}" transform="rotate(${a.rotation} ${a.x + a.width / 2} ${a.y + a.height / 2})" href="${xmlText(images.get(a.resourceId)!)}"/></g>`
-                : "",
-        )
-        .join("");
+    const content = svgArtwork(d, layout, images);
     const cuts = layout.cuts.map((p) => `<path d="${packagingPath(p)}"/>`).join("");
     const creases = layout.creases.map((p) => `<path d="${packagingPath(p, false)}"/>`).join("");
     const bleed = layout.bleed.map((p) => `<path d="${packagingPath(p)}"/>`).join("");
     const dimensions = withDimensions
         ? layout.dimensions.map((v) => `<path d="${packagingPath([v.a, v.b], false)}"/><text x="${(v.a[0] + v.b[0]) / 2}" y="${(v.a[1] + v.b[1]) / 2 - 2}" text-anchor="middle" stroke="none" fill="#555" font-size="4">${xmlText(v.label)}</text>`).join("")
         : "";
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width + pad * 2}mm" height="${b.height + pad * 2}mm" viewBox="${b.x - pad} ${b.y - pad} ${b.width + pad * 2} ${b.height + pad * 2}"><title>${xmlText(d.template.name)} · 包装刀板</title><desc>毫米单位；切线红色、折线蓝色、出血绿色。投产前核对白样与纸厚。</desc><defs>${defs}</defs><g id="ARTWORK">${art}</g><g fill="none" stroke-width="0.2"><g id="CUT" stroke="#d83243">${cuts}</g><g id="CREASE" stroke="#386dc2" stroke-dasharray="2 1">${creases}</g><g id="BLEED" stroke="#529858">${bleed}</g><g id="DIMENSION" stroke="#555">${dimensions}</g></g></svg>`;
+    const masks = (["foil", "uv", "emboss"] as const)
+        .filter((role) => d.artworks.some((a) => a.role === role))
+        .map((role) => `<g id="${role.toUpperCase()}" display="none"><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="black"/>${content.art(role)}</g>`)
+        .join("");
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width + pad * 2}mm" height="${b.height + pad * 2}mm" viewBox="${b.x - pad} ${b.y - pad} ${b.width + pad * 2} ${b.height + pad * 2}"><title>${xmlText(d.template.name)} · 包装刀板</title><desc>毫米单位；切线红色、折线蓝色、出血绿色。工艺组默认隐藏，白色生效、黑色无作用。图稿裁剪到切线，出血须印前补足。投产前核对白样与纸厚。</desc><defs>${content.defs}</defs><g id="ARTWORK">${content.art("artwork")}</g>${masks}<g fill="none" stroke-width="0.2"><g id="CUT" stroke="#d83243">${cuts}</g><g id="CREASE" stroke="#386dc2" stroke-dasharray="2 1">${creases}</g><g id="BLEED" stroke="#529858">${bleed}</g><g id="DIMENSION" stroke="#555">${dimensions}</g></g></svg>`;
+}
+
+export function packagingProcessSvg(d: PackagingDocument, layout: PackagingLayout, images: Map<string, string>, role: "foil" | "uv" | "emboss") {
+    const content = svgArtwork({ ...d, artworks: d.artworks.filter((a) => a.role === role) }, layout, images);
+    const b = layout.bounds;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${b.width + 50}mm" height="${b.height + 50}mm" viewBox="${b.x - 25} ${b.y - 25} ${b.width + 50} ${b.height + 50}"><title>${xmlText(d.template.name)} · ${role.toUpperCase()}</title><desc>与 dieline.svg 使用相同毫米画幅和坐标。白色作用、黑色无作用；灰度为预览强度，生产阈值与工艺线宽须由工厂核对。没有切折线。</desc><defs>${content.defs}</defs><g id="${role.toUpperCase()}"><rect x="${b.x - 25}" y="${b.y - 25}" width="${b.width + 50}" height="${b.height + 50}" fill="black"/>${content.art(role)}</g></svg>`;
 }
 
 export function packagingDxf(layout: PackagingLayout) {
@@ -121,9 +141,28 @@ export async function packagingGlb(root: Group, layout: PackagingLayout, animate
     return new Blob([result], { type: "model/gltf-binary" });
 }
 
-export async function packagingProjectZip(name: string, document: PackagingDocument, resources: Map<string, Blob>, layout: PackagingLayout) {
+export async function packagingProjectZip(name: string, document: PackagingDocument, resources: Map<string, Blob>, layout: PackagingLayout, images: Map<string, PackagingImageSize>) {
+    if (!name.trim() || [...name].length > 120) throw new Error("项目名称须为 1–120 个字符");
+    const preflight = packagingPreflight(document, layout, images);
+    if (preflight.status === "blocked")
+        throw new Error(
+            preflight.issues
+                .filter((i) => i.severity === "error")
+                .map((i) => i.message)
+                .join("；"),
+        );
+    const used = new Map(
+        [...new Set(document.artworks.map((a) => a.resourceId))].map((id) => {
+            const blob = resources.get(id);
+            if (!blob) throw new Error("方案缺少原始图稿，无法导出完整设计");
+            return [id, blob] as const;
+        }),
+    );
+    const projectJson = JSON.stringify({ format: "yingce-packaging", version: 1, name, document, resourceTypes: Object.fromEntries([...used].map(([id, blob]) => [id, blob.type])) }, null, 2);
+    if ([...used.values()].some((blob) => blob.size > 25 * 1024 * 1024)) throw new Error("单张图稿不能超过 25 MB");
+    if (strToU8(projectJson).length > 256 * 1024 || [...used.values()].reduce((sum, blob) => sum + blob.size, strToU8(projectJson).length) > 100 * 1024 * 1024) throw new Error("方案原稿总量超过 100 MB，无法生成可重新导入的方案包");
     const embedded = new Map<string, string>();
-    for (const [id, blob] of resources)
+    for (const [id, blob] of used)
         embedded.set(
             id,
             await new Promise<string>((resolve, reject) => {
@@ -134,13 +173,19 @@ export async function packagingProjectZip(name: string, document: PackagingDocum
             }),
         );
     const files: Record<string, Uint8Array> = {
-        "project.json": strToU8(JSON.stringify({ format: "yingce-packaging", version: 1, name, document, resourceTypes: Object.fromEntries([...resources].map(([id, blob]) => [id, blob.type])) }, null, 2)),
+        "project.json": strToU8(projectJson),
         "dieline.svg": strToU8(packagingSvg(document, layout, embedded)),
         "dieline.dxf": strToU8(packagingDxf(layout)),
-        "README.txt": strToU8("包装方案包含毫米刀版、图稿与参数。可在包装刀板页面导入。图稿与结构需经白样及印前校核；此包不表示已完成生产验证。"),
+        "preflight.json": strToU8(JSON.stringify(preflight, null, 2)),
+        "README.txt": strToU8(
+            "包装方案包含毫米刀版、图稿与参数，可在包装刀板页面导入。preflight.json 记录自动检查，警告需要人工复核。工艺 SVG 与 dieline.svg 的画幅/坐标一致，白色作用、黑色无作用，无切折线。SVG 图稿裁剪到切线，出血须在印前软件补足；RGB 未转 CMYK/专色。工艺灰度、线宽、套准、纸厚及结构须经工厂核对；此包不表示已完成生产验证。",
+        ),
     };
-    for (const [id, blob] of resources) files[`artworks/${id}`] = new Uint8Array(await blob.arrayBuffer());
-    return new Blob([zipSync(files, { level: 6 })], { type: "application/zip" });
+    for (const role of ["foil", "uv", "emboss"] as const) if (document.artworks.some((a) => a.role === role)) files[`process-${role}.svg`] = strToU8(packagingProcessSvg(document, layout, embedded, role));
+    for (const [id, blob] of used) files[`artworks/${id}`] = new Uint8Array(await blob.arrayBuffer());
+    const bytes = zipSync(files, { level: 6 });
+    if (bytes.length > 100 * 1024 * 1024) throw new Error("含交付文件的方案包超过 100 MB，请减少图稿后导出");
+    return new Blob([bytes], { type: "application/zip" });
 }
 
 export function readPackagingProjectZip(bytes: Uint8Array) {

@@ -9,6 +9,8 @@ type Props = {
     document: PackagingDocument;
     layout?: PackagingLayout;
     selected: string;
+    selectedArtwork: string;
+    onSelectArtwork: (id: string) => void;
     onDocument: (update: (d: PackagingDocument) => PackagingDocument, group?: string) => void;
     onSelect: (id: string) => void;
     onTemplate: (id: string) => void;
@@ -136,11 +138,29 @@ export function PackagingParametersPanel(props: Props) {
                     }}
                 />
                 {props.document.artworks.map((a) => (
-                    <details key={a.id} className="pkg-artwork">
-                        <summary>
+                    <details key={a.id} className={`pkg-artwork ${props.selectedArtwork === a.id ? "is-selected" : ""}`} open={props.selectedArtwork === a.id}>
+                        <summary
+                            onClick={(e) => {
+                                e.preventDefault();
+                                props.onSelectArtwork(props.selectedArtwork === a.id ? "" : a.id);
+                            }}
+                        >
                             {a.name}
                             <small>{{ artwork: "印刷", foil: "烫金", uv: "UV", emboss: "压凸" }[a.role]}</small>
                         </summary>
+                        <label>
+                            图稿名称
+                            <input aria-label="图稿名称" maxLength={200} value={a.name} onChange={(e) => changeArtwork(a.id, { name: e.target.value }, `artwork-${a.id}-name`)} />
+                        </label>
+                        <label>
+                            用途
+                            <select value={a.role} onChange={(e) => changeArtwork(a.id, { role: e.target.value as PackagingArtwork["role"] })}>
+                                <option value="artwork">印刷稿</option>
+                                <option value="foil">烫金掩膜</option>
+                                <option value="uv">局部 UV</option>
+                                <option value="emboss">压凸掩膜</option>
+                            </select>
+                        </label>
                         <label>
                             面板
                             <select value={a.panelId} onChange={(e) => changeArtwork(a.id, { panelId: e.target.value })}>
@@ -171,8 +191,8 @@ export function PackagingParametersPanel(props: Props) {
                                     {label}
                                     <input
                                         type="number"
-                                        min={key === "width" || key === "height" ? 0.1 : key === "opacity" ? 0 : undefined}
-                                        max={key === "opacity" ? 1 : undefined}
+                                        min={key === "width" || key === "height" ? 0.1 : key === "opacity" ? 0 : key === "rotation" ? -360 : -8000}
+                                        max={key === "opacity" ? 1 : key === "rotation" ? 360 : 8000}
                                         step={key === "opacity" ? 0.05 : 0.1}
                                         value={a[key]}
                                         onChange={(e) => {

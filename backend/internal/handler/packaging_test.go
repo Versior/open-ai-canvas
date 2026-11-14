@@ -82,6 +82,18 @@ func TestPackagingHTTPPersistencePermissionsAndCatalog(t *testing.T) {
 	if code, _ = call("GET", "/api/admin/packaging/projects/"+id, "", "pack-admin"); code != 200 {
 		t.Fatal("admin cannot inspect project")
 	}
+	if code, _ = call("GET", "/api/packaging/projects/"+id+"/mockups", "", "pack-other"); code != 404 {
+		t.Fatal("mockup history leaked across accounts")
+	}
+	if code, body = call("GET", "/api/packaging/projects/"+id+"/mockups?page=1&pageSize=12", "", "pack-owner"); code != 200 || !strings.Contains(body, `"items":[]`) {
+		t.Fatalf("owner mockup history: %d %s", code, body)
+	}
+	if code, _ = call("GET", "/api/admin/packaging/projects/"+id+"/mockups", "", "pack-owner"); code != 403 {
+		t.Fatal("ordinary user accessed admin mockup history")
+	}
+	if code, _ = call("GET", "/api/admin/packaging/projects/"+id+"/mockups", "", "pack-admin"); code != 200 {
+		t.Fatal("admin cannot read mockup history")
+	}
 	input["expectedRevision"] = 1
 	input["name"] = "更新方案"
 	raw, _ = json.Marshal(input)

@@ -310,6 +310,9 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 // Client metadata can request a stricter gate, but cannot grant an exemption.
 func (s *Service) requireTaskGenerationFeatures(userID, projectID, taskType, operation, workbenchKind string, input map[string]any) error {
 	metadata, _ := input["metadata"].(map[string]any)
+	if err := s.requirePackagingMockupTask(userID, taskType, input); err != nil {
+		return err
+	}
 	ecommerceID := strings.TrimSpace(stringValue(metadata["ecommerceProjectId"]))
 	ecommerce := false
 	if ecommerceID != "" {

@@ -71,6 +71,21 @@ func RegisterPackagingRoutes(r *gin.RouterGroup, svc *service.Service) {
 			c.Header("Cache-Control", "no-store")
 			ok(c, value)
 		})
+		r.GET(prefix+"/projects/:projectId/mockups", func(c *gin.Context) {
+			u, allowed := actor(c)
+			if !allowed {
+				return
+			}
+			page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+			size, _ := strconv.Atoi(c.DefaultQuery("pageSize", "12"))
+			value, err := svc.PackagingMockups(u, c.Param("projectId"), admin, page, size)
+			if err != nil {
+				failService(c, err)
+				return
+			}
+			c.Header("Cache-Control", "no-store")
+			ok(c, value)
+		})
 	}
 	r.PUT("/admin/packaging/catalog", func(c *gin.Context) {
 		u, allowed := actor(c)

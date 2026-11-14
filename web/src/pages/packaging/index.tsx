@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useBlocker, useSearchParams } from "react-router";
-import { Download, FolderOpen, LayoutPanelLeft, PackageOpen, Plus, Save, Settings2, X, Undo2, Redo2, Printer } from "lucide-react";
+import { Download, FolderOpen, LayoutPanelLeft, PackageOpen, Plus, Save, Settings2, X, Undo2, Redo2, Printer, Sparkles } from "lucide-react";
 import { App } from "antd";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { compilePackaging } from "@/lib/packaging/geometry";
 import { downloadPackaging, packagingProjectZip } from "@/lib/packaging/delivery";
-import { validatePackagingParameters } from "@/lib/packaging/types";
+import { validatePackagingParameters, type PackagingProject } from "@/lib/packaging/types";
+import { useUserStore } from "@/stores/use-user-store";
+import { captureUserSession, assertCurrentUserSession } from "@/lib/user-scope";
+import { packagingApi } from "@/services/api/packaging";
 import { PackagingDieline } from "./packaging-dieline";
 import { PackagingParametersPanel } from "./packaging-parameters";
 import { PackagingViewport } from "./packaging-viewport";
 import { usePackagingProject } from "./use-packaging-project";
 import { PackagingProduction } from "./packaging-production";
+import { PackagingPreflightPanel } from "./packaging-preflight";
+import { PackagingMockups } from "./packaging-mockups";
 import "./packaging.css";
 
 export default function PackagingPage() {
@@ -18,15 +23,26 @@ export default function PackagingPage() {
     const { modal } = App.useApp();
     const [search, setSearch] = useSearchParams();
     const [selected, setSelected] = useState("");
+    const [selectedArtwork, setSelectedArtwork] = useState("");
+    const [preflight, setPreflight] = useState(false);
     const [history, setHistory] = useState(false);
     const [parameters, setParameters] = useState(false);
     const [production, setProduction] = useState(false);
+    const [mockups, setMockups] = useState<{ project: PackagingProject; reference?: Blob }>();
+    const userId = useUserStore((s) => s.user?.id);
+    const currentProject = useRef(state.project);
+    currentProject.current = state.project;
     const [split, setSplit] = useState(50);
     const panels = useRef<HTMLDivElement>(null);
     const importer = useRef<HTMLInputElement>(null);
     const busy = state.status !== "ready";
     const blocker = useBlocker(({ currentLocation, nextLocation }) => state.dirty && currentLocation.pathname !== nextLocation.pathname);
     const doc = state.project?.document;
+    useEffect(() => setMockups(undefined), [userId, state.project?.id]);
+    useEffect(() => {
+        setSelected("");
+        setSelectedArtwork("");
+    }, [state.project?.id, doc?.template.structure]);
     const geometry = useMemo(() => {
         if (!doc) return { layout: undefined, error: "" };
         try {
@@ -92,6 +108,7 @@ export default function PackagingPage() {
         const apply = () => {
             state.updateDocument((d) => ({ ...d, template: structuredClone(template), parameters: { ...template.defaults, thickness: d.material.thickness }, artworks: [], view: { ...d.view, fold: 1, open: 0 } }));
             setSelected("");
+            setSelectedArtwork("");
         };
         if (doc?.artworks.length) {
             modal.confirm({ title: "切换包装结构", content: "各面的结构与尺寸将更新，当前贴图会移出此方案。原上传素材仍保留。", okText: "切换结构", onOk: apply });
@@ -202,6 +219,8 @@ export default function PackagingPage() {
                     document={doc}
                     layout={geometry.layout}
                     selected={selected}
+                    selectedArtwork={selectedArtwork}
+                    onSelectArtwork={setSelectedArtwork}
                     onSelect={setSelected}
                     onDocument={state.updateDocument}
                     onTemplate={changeTemplate}
@@ -231,14 +250,36 @@ export default function PackagingPage() {
                             <Printer size={15} />
                             生产试算
                         </button>
+                        <button type="button" disabled={!geometry.layout || busy} onClick={() => setPreflight(true)}>
+                            交付检查
+                        </button>
+                        <button
+                            type="button"
+                            disabled={!state.project.id || busy}
+                            onClick={() =>
+                                execute(async () => {
+                                    const session = captureUserSession();
+                                    const id = state.project!.id;
+                                    const saved = await packagingApi.project(id, session.signal);
+                                    assertCurrentUserSession(session);
+                                    if (currentProject.current?.id === id) setMockups({ project: saved });
+                                })
+                            }
+                        >
+                            <Sparkles size={15} />
+                            效果图库
+                        </button>
                         <button
                             type="button"
                             disabled={!geometry.layout || busy}
                             onClick={() =>
                                 execute(async () => {
+                                    const session = captureUserSession();
                                     if (doc.artworks.some((a) => !state.resources.has(a.resourceId))) throw new Error("图稿未加载完成，不能导出完整方案包");
                                     const used = new Map([...state.resources].filter(([id]) => doc.artworks.some((a) => a.resourceId === id)));
-                                    downloadPackaging(await packagingProjectZip(state.project!.name, doc, used, geometry.layout!), state.project!.name, "zip");
+                                    const blob = await packagingProjectZip(state.project!.name, doc, used, geometry.layout!, state.images);
+                                    assertCurrentUserSession(session);
+                                    downloadPackaging(blob, state.project!.name, "zip");
                                 })
                             }
                         >
@@ -259,6 +300,10 @@ export default function PackagingPage() {
                                     layout={geometry.layout}
                                     selected={selected}
                                     onSelect={setSelected}
+                                    selectedArtwork={selectedArtwork}
+                                    onSelectArtwork={setSelectedArtwork}
+                                    onInteractionStart={state.beginArtworkInteraction}
+                                    onInteractionCancel={state.cancelArtworkInteraction}
                                     onArtwork={(id, change) => state.updateDocument((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }), `drag-${id}`)}
                                     onInteractionEnd={state.endHistoryGroup}
                                     onUpload={(file) => execute(() => state.upload(file, selected))}
@@ -296,6 +341,14 @@ export default function PackagingPage() {
                                     onChange={(view) => state.updateDocument((d) => ({ ...d, view: { ...d.view, ...view } }), `view-${Object.keys(view).sort().join("-")}`)}
                                     onError={state.setError}
                                     name={state.project.name}
+                                    mockupDisabled={busy || state.dirty || !state.project.id || !state.catalog.enabled || !state.catalog.mockupEnabled}
+                                    onMockup={(reference) => {
+                                        if (currentProject.current !== state.project) {
+                                            state.setError("截图期间方案有变化，请保存后重新截取参考图");
+                                            return;
+                                        }
+                                        setMockups({ project: state.project!, reference });
+                                    }}
                                 />
                             ) : null}
                         </div>
@@ -311,8 +364,25 @@ export default function PackagingPage() {
                     </footer>
                 </div>
             </div>
+            <AppModal open={!!mockups} onCancel={() => setMockups(undefined)} title="包装模型效果图" width={960} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
+                {mockups ? <PackagingMockups key={`${userId}-${mockups.project.id}`} project={mockups.project} reference={mockups.reference} enabled={state.catalog.enabled && state.catalog.mockupEnabled} /> : null}
+            </AppModal>
             <AppModal open={production} onCancel={() => setProduction(false)} title="白样打印与用纸试算" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
                 {geometry.layout ? <PackagingProduction layout={geometry.layout} name={state.project.name} onError={state.setError} /> : null}
+            </AppModal>
+            <AppModal open={preflight} onCancel={() => setPreflight(false)} title="包装交付检查" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
+                {geometry.layout ? (
+                    <PackagingPreflightPanel
+                        document={doc}
+                        layout={geometry.layout}
+                        images={state.images}
+                        name={state.project.name}
+                        onSelect={(id) => {
+                            setSelectedArtwork(id);
+                            setPreflight(false);
+                        }}
+                    />
+                ) : null}
             </AppModal>
             <AppModal open={history} onCancel={() => setHistory(false)} title="包装项目" width={720} footer={null}>
                 <div className="pkg-project-list">

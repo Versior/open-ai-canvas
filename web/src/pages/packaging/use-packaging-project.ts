@@ -111,7 +111,7 @@ export function usePackagingProject() {
         setDirty(!matchesSaved(next));
     };
     const updateDocument = (update: (d: PackagingDocument) => PackagingDocument, group?: string) => edit((p) => ({ ...p, document: update(p.document) }), group);
-    const restore = (direction: "undo" | "redo") => {
+    const restore = (direction: "undo" | "redo" | "cancelGesture") => {
         if (!currentProject.current || status !== "ready") return;
         const snapshot = history.current[direction](currentProject.current);
         if (!snapshot) return;
@@ -181,6 +181,7 @@ export function usePackagingProject() {
     };
     const upload = async (file: File, panelId = "", role: PackagingDocument["artworks"][number]["role"] = "artwork") => {
         if (!project) return;
+        if (project.document.artworks.length >= 40) throw new Error("图稿与工艺最多 40 层");
         const session = captureUserSession();
         const base = project;
         const epoch = projectEpoch.current;
@@ -204,7 +205,9 @@ export function usePackagingProject() {
                       });
             const resource = await uploadResourceFile(uploadFile, "image", { fileName: uploadFile.name, expectedUserId: session.scope, signal: session.signal });
             assertCurrentUserSession(session);
-            if (epoch !== projectEpoch.current || currentProject.current?.document.parameters !== base.document.parameters) throw new Error("项目或尺寸已切换，请重新添加图稿；已上传文件保留在素材库");
+            if (epoch !== projectEpoch.current || currentProject.current?.document.parameters !== base.document.parameters || currentProject.current.document.template !== base.document.template)
+                throw new Error("项目或尺寸已切换，请重新添加图稿；已上传文件保留在素材库");
+            if (currentProject.current.document.artworks.length >= 40) throw new Error("图稿与工艺最多 40 层；已上传文件保留在素材库");
             const layout = compilePackaging(base.document);
             const panel = layout.panels.find((p) => p.id === panelId);
             const x = panel ? Math.min(...panel.points.map((p) => p[0])) : layout.bounds.x;
@@ -285,6 +288,8 @@ export function usePackagingProject() {
         undo: () => restore("undo"),
         redo: () => restore("redo"),
         endHistoryGroup: () => history.current.endGroup(),
+        beginArtworkInteraction: () => history.current.beginGesture(),
+        cancelArtworkInteraction: () => restore("cancelGesture"),
         images: images.current,
         resources: resources.current,
         imageRevision,

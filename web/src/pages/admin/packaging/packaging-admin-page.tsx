@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Input, InputNumber, Table, Tag } from "antd";
-import { Plus, RefreshCw, Save } from "lucide-react";
+import { Download, Plus, RefreshCw, Save } from "lucide-react";
 import { nanoid } from "nanoid";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { packagingApi } from "@/services/api/packaging";
@@ -11,6 +11,9 @@ import { compilePackaging } from "@/lib/packaging/geometry";
 import { newPackagingDocument, type PackagingCatalog, type PackagingMaterial, type PackagingParameters, type PackagingProject, type PackagingProjectSummary, type PackagingTemplate } from "@/lib/packaging/types";
 import { PackagingDieline } from "@/pages/packaging/packaging-dieline";
 import { PackagingViewport } from "@/pages/packaging/packaging-viewport";
+import { PackagingPreflightPanel } from "@/pages/packaging/packaging-preflight";
+import { PackagingMockups } from "@/pages/packaging/packaging-mockups";
+import { downloadPackaging, packagingProjectZip } from "@/lib/packaging/delivery";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminCallout, AdminSegmented, AdminSelect, AdminSwitch } from "../ui/controls";
 import "@/pages/packaging/packaging.css";
@@ -43,6 +46,11 @@ const parameterLabels: Record<keyof PackagingParameters, string> = {
 function ProjectPreview({ project, onError }: { project: PackagingProject; onError: (message: string) => void }) {
     const [doc, setDoc] = useState(project.document);
     const [selected, setSelected] = useState("");
+    const [checking, setChecking] = useState(false);
+    const [mockups, setMockups] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const exportOperation = useRef<AbortController>(null);
+    useEffect(() => () => exportOperation.current?.abort(), []);
     const [loaded, setLoaded] = useState({ resources: new Map<string, Blob>(), images: new Map<string, HTMLImageElement>() });
     const layout = useMemo(() => compilePackaging(doc), [doc.parameters, doc.template]);
     useEffect(() => {
@@ -78,6 +86,39 @@ function ProjectPreview({ project, onError }: { project: PackagingProject; onErr
     }, [project.id]);
     return (
         <div className="pkg-admin-preview pkg-workbench">
+            <div className="pkg-toolbar">
+                <button type="button" onClick={() => setChecking(true)}>
+                    交付检查
+                </button>
+                <button type="button" onClick={() => setMockups(true)}>
+                    效果图库
+                </button>
+                <button
+                    type="button"
+                    disabled={exporting || !doc.artworks.every((a) => loaded.images.has(a.resourceId))}
+                    onClick={() => {
+                        const session = captureUserSession();
+                        const controller = new AbortController();
+                        exportOperation.current = controller;
+                        setExporting(true);
+                        void packagingProjectZip(project.name, project.document, loaded.resources, layout, loaded.images)
+                            .then((blob) => {
+                                assertCurrentUserSession(session);
+                                controller.signal.throwIfAborted();
+                                downloadPackaging(blob, project.name, "zip");
+                            })
+                            .catch((error: unknown) => {
+                                if (!controller.signal.aborted && !session.signal.aborted) onError(error instanceof Error ? error.message : "方案包导出失败");
+                            })
+                            .finally(() => {
+                                if (!controller.signal.aborted && !session.signal.aborted) setExporting(false);
+                            });
+                    }}
+                >
+                    <Download size={15} />
+                    {exporting ? "正在导出…" : "方案包"}
+                </button>
+            </div>
             <div className="pkg-panels">
                 <PackagingDieline
                     document={doc}
@@ -97,6 +138,12 @@ function ProjectPreview({ project, onError }: { project: PackagingProject; onErr
             <p className="pkg-help">
                 预览开合仅在此窗口生效。记录版本 v{project.revision}；用户 ID：{project.userId}
             </p>
+            <AppModal open={mockups} onCancel={() => setMockups(false)} title="包装效果图库 · 管理员只读" width={960} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
+                <PackagingMockups project={project} enabled={false} admin />
+            </AppModal>
+            <AppModal open={checking} onCancel={() => setChecking(false)} title="包装交付检查" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
+                <PackagingPreflightPanel document={project.document} layout={layout} images={loaded.images} name={project.name} />
+            </AppModal>
         </div>
     );
 }
@@ -374,6 +421,10 @@ export default function PackagingAdminPage() {
                                     <AdminSwitch checked={catalog.enabled} onChange={(enabled) => updateCatalog((c) => ({ ...c, enabled }))} />
                                 </label>
                                 <label>
+                                    允许模型生成包装效果图
+                                    <AdminSwitch checked={catalog.mockupEnabled} onChange={(mockupEnabled) => updateCatalog((c) => ({ ...c, mockupEnabled }))} />
+                                </label>
+                                <label>
                                     每用户项目配额（1–500）
                                     <InputNumber
                                         min={1}
@@ -385,6 +436,7 @@ export default function PackagingAdminPage() {
                                     />
                                 </label>
                                 <p>当前目录版本 v{catalog.revision}。关闭写入不会删除项目或上传素材。</p>
+                                <p>模型效果图仍校验模型渠道、参考图能力与计费额度。关闭生成后，历史效果图仍可查看。</p>
                             </div>
                         ) : null}
                     </>

@@ -12,6 +12,23 @@ var ErrPackagingConflict = errors.New("packaging revision conflict")
 var ErrPackagingQuota = errors.New("packaging project quota reached")
 var ErrPackagingResource = errors.New("图稿不存在、尚未就绪或不属于当前用户")
 
+func (r *Repository) PackagingMockupTasks(userID, projectID string, limit, offset int) ([]model.Task, int64, error) {
+	query := r.db.Model(&model.Task{}).Where("user_id = ? AND type = ?", userID, "canvas_image")
+	if r.db.Dialector.Name() == "postgres" {
+		query = query.Where("input_json::jsonb -> 'metadata' ->> 'source' = ? AND input_json::jsonb -> 'metadata' ->> 'packagingProjectId' = ?", "packaging-mockup", projectID)
+	}
+	if r.db.Dialector.Name() != "postgres" {
+		query = query.Where("json_extract(input_json, '$.metadata.source') = ? AND json_extract(input_json, '$.metadata.packagingProjectId') = ?", "packaging-mockup", projectID)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	tasks := []model.Task{}
+	err := query.Order("created_at desc, id desc").Limit(limit).Offset(offset).Find(&tasks).Error
+	return tasks, total, err
+}
+
 func (r *Repository) PackagingProjects(userID, templateID string, page, pageSize int) ([]model.PackagingProject, int64, error) {
 	query := r.db.Model(&model.PackagingProject{})
 	if userID != "" {

@@ -115,6 +115,32 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /packaging/projects/{projectId}/mockups:
+    get:
+      tags: [workbench]
+      summary: 分页读取本人包装项目效果图任务
+      description: 返回安全任务摘要、保存版本、参考资源、父任务和结果资源 ID；不返回模型配置或原始任务输入。关闭生成仍可读取历史。响应禁止缓存。
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 30, default: 12 } }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingMockupPage" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/packaging/projects/{projectId}/mockups:
+    get:
+      tags: [admin]
+      summary: 管理员只读查看包装效果图任务
+      description: 先检查管理员权限和包装项目；查询项目所有者任务。资源仍由管理员文件接口读取。
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 30, default: 12 } }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingMockupPage" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
   /admin/packaging/catalog:
     get:
       tags: [admin]
@@ -7034,10 +7060,11 @@ components:
     PackagingCatalog:
       type: object
       additionalProperties: false
-      required: [revision, enabled, maxProjects, templates, materials]
+      required: [revision, enabled, mockupEnabled, maxProjects, templates, materials]
       properties:
         revision: { type: integer, minimum: 0 }
         enabled: { type: boolean }
+        mockupEnabled: { type: boolean, description: 是否开放模型包装效果图生成；与 enabled 同时开启才可提交，历史仍可读取 }
         maxProjects: { type: integer, minimum: 1, maximum: 500 }
         templates:
           type: array
@@ -7102,6 +7129,19 @@ components:
         revision: { type: integer, minimum: 1 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    PackagingMockupTask:
+      allOf:
+        - { $ref: "#/components/schemas/Task" }
+        - type: object
+          description: 仅安全任务摘要，不含 inputJson、resultJson 或供应商凭据
+          required: [packagingRevision, referenceResourceId, scene, outputResourceIds]
+          properties:
+            prompt: { type: string, description: 生成要求摘要，最多 500 字符 }
+            packagingRevision: { type: integer, minimum: 1 }
+            referenceResourceId: { type: string }
+            scene: { type: string, enum: [studio, campaign, lifestyle, detail, design] }
+            parentTaskId: { type: string, description: 继续修改时的原效果图任务 ID }
+            outputResourceIds: { type: array, items: { type: string } }
     PackagingProject:
       allOf:
         - { $ref: "#/components/schemas/PackagingProjectSummary" }
@@ -8891,6 +8931,22 @@ components:
           items: {type: string}
           description: metadata 或采用云端版本的消息 ID
   responses:
+    PackagingMockupPage:
+      description: 包装项目效果图任务分页
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Envelope" }
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items: { type: array, items: { $ref: "#/components/schemas/PackagingMockupTask" } }
+                      total: { type: integer }
+                      page: { type: integer }
+                      pageSize: { type: integer }
     PackagingCatalog:
       description: 包装盒型与材料目录
       content:
