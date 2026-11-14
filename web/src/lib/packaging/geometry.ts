@@ -17,8 +17,20 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
     const innerLength = p.length - p.thickness;
     const innerWidth = p.width - p.thickness;
     const innerHeight = p.height - p.thickness;
-    const add = (partId: string, id: string, name: string, points: Point[], parentId?: string, hinge?: [Point, Point], angle = Math.PI / 2, phase = 0, lid = false) => {
-        const panel: PackagingPanel = { partId, id: `${partId}-${id}`, name, points, holes: [], parentId: parentId ? `${partId}-${parentId}` : undefined, hinge, angle: parentId ? angle : 0, phase, lid };
+    const add = (partId: string, id: string, name: string, points: Point[], parentId?: string, hinge?: [Point, Point], angle = Math.PI / 2, phase = 0, lid = false, inset = 0) => {
+        const panel: PackagingPanel = {
+            partId,
+            id: `${partId}-${id}`,
+            name,
+            points: area(points) < 0 ? points.toReversed() : points,
+            holes: [],
+            parentId: parentId ? `${partId}-${parentId}` : undefined,
+            hinge,
+            angle: parentId ? angle : 0,
+            phase,
+            lid,
+            inset,
+        };
         panels.push(panel);
         return panel;
     };
@@ -66,7 +78,7 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                 [x, y],
             ],
         );
-        const ear = Math.min(p.glue, w / 4, depth / 4);
+        const ear = Math.min(p.glue, w / 4, depth / 4, front / 2);
         add(
             id,
             "ear-left",
@@ -84,6 +96,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
             ],
             Math.PI / 2,
             0.35,
+            false,
+            p.thickness,
         );
         add(
             id,
@@ -102,6 +116,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
             ],
             Math.PI / 2,
             0.35,
+            false,
+            p.thickness,
         );
         add(
             id,
@@ -120,6 +136,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
             ],
             Math.PI / 2,
             0.35,
+            false,
+            p.thickness,
         );
         add(
             id,
@@ -138,6 +156,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
             ],
             Math.PI / 2,
             0.35,
+            false,
+            p.thickness,
         );
     };
     const tube = (id: string, name: string, x: number, y: number, w: number, depth: number, h: number, caps: boolean) => {
@@ -171,6 +191,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
             ],
             Math.PI / 2,
             0.15,
+            false,
+            p.thickness,
         );
         if (!caps) return;
         const reverse = d.template.structure === "reverse-tuck";
@@ -214,6 +236,7 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                 Math.PI / 2,
                 0.7,
                 !bottom,
+                p.thickness,
             );
             for (const [side, sx] of [
                 ["right", x + w],
@@ -243,6 +266,7 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                     Math.PI / 2,
                     0.25,
                     !bottom,
+                    p.thickness,
                 );
             }
         }
@@ -253,10 +277,10 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
         tube("box", "", 0, 0, innerLength, innerWidth, innerHeight, true);
     }
     if (["tray", "display", "mailer"].includes(structure)) {
-        part("tray", "托盘", [-innerLength / 2, p.thickness / 2, innerWidth / 2]);
-        tub("tray", "", 0, 0, innerLength, innerWidth, p.height - p.thickness / 2, structure === "display" ? p.frontHeight - p.thickness / 2 : p.height - p.thickness / 2);
+        const wall = p.height - (structure === "mailer" ? p.thickness : p.thickness / 2);
+        part("tray", "托盘", [-innerLength / 2, p.thickness / 2, -innerWidth / 2]);
+        tub("tray", "", 0, 0, innerLength, innerWidth, wall, structure === "display" ? p.frontHeight - p.thickness / 2 : wall);
         if (structure === "mailer") {
-            const wall = p.height - p.thickness / 2;
             add(
                 "tray",
                 "lid",
@@ -284,35 +308,37 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                 Math.PI / 2,
                 0.8,
                 true,
+                p.thickness,
             );
         }
     }
     if (structure === "lid-base" || structure === "drawer" || structure === "book" || structure === "double-door") {
-        part("base", "内盒", [-innerLength / 2, p.thickness / 2, innerWidth / 2]);
+        part("base", "内盒", [-innerLength / 2, p.thickness / 2, -innerWidth / 2]);
         tub("base", "内盒", 0, 0, innerLength, innerWidth, p.height - p.thickness / 2);
         const offset = innerLength + 2 * p.height + p.glue * 2 + 30;
         if (structure === "lid-base") {
-            const lw = p.length + 2 * p.gap;
-            const ld = p.width + 2 * p.gap;
+            const lw = p.length + 2 * p.gap + p.thickness;
+            const ld = p.width + 2 * p.gap + p.thickness;
             const lh = Math.max(8, p.height * 0.4);
-            part("lid", "外盖", [-lw / 2, p.height + p.thickness, -ld / 2], [Math.PI / 2, 0, 0], [0, p.height, 0]);
+            part("lid", "外盖", [-lw / 2, p.height + p.gap + p.thickness / 2, ld / 2], [Math.PI / 2, 0, 0], [0, p.height, 0]);
             tub("lid", "外盖", offset, 0, lw, ld, lh);
         }
         if (structure === "drawer") {
-            const sw = p.length + 2 * (p.gap + p.thickness);
-            const sh = p.height + p.gap;
-            part("sleeve", "套筒", [-sw / 2, sh, innerWidth / 2], [Math.PI / 2, 0, 0]);
-            tube("sleeve", "套筒", offset, 0, sw, sh, innerWidth, false);
+            const sw = p.length + 2 * p.gap + p.thickness;
+            const sh = p.height + 2 * p.gap + p.thickness;
+            part("sleeve", "套筒", [-sw / 2, p.height + p.gap + p.thickness / 2, p.width / 2], [Math.PI / 2, 0, 0]);
+            tube("sleeve", "套筒", offset, 0, sw, sh, p.width, false);
             parts[0].openTranslation = [0, 0, innerWidth * 0.9];
         }
         if (structure === "book" || structure === "double-door") {
-            const coverWidth = p.length + 2 * p.gap;
+            const coverWidth = p.length + 2 * p.gap + p.thickness;
             const depth = p.width + 2 * p.gap;
-            part("cover", "封套", [-coverWidth / 2, 0, depth / 2]);
-            const coverX = offset + p.height + p.gap + coverWidth;
+            const spine = p.height + p.gap + p.thickness;
+            part("cover", "封套", [-coverWidth / 2, -p.thickness / 2, -depth / 2]);
+            const coverX = offset + spine + coverWidth;
             add("cover", "bottom", "封套底板", rectangle(coverX, 0, coverWidth, depth));
             if (structure === "book") {
-                add("cover", "spine", "书脊", rectangle(coverX - p.height - p.gap, 0, p.height + p.gap, depth), "bottom", [
+                add("cover", "spine", "书脊", rectangle(coverX - spine, 0, spine, depth), "bottom", [
                     [coverX, depth],
                     [coverX, 0],
                 ]);
@@ -323,8 +349,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                     rectangle(offset, 0, coverWidth, depth),
                     "spine",
                     [
-                        [coverX - p.height - p.gap, depth],
-                        [coverX - p.height - p.gap, 0],
+                        [coverX - spine, depth],
+                        [coverX - spine, 0],
                     ],
                     Math.PI / 2,
                     0.5,
@@ -335,12 +361,12 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                 for (const right of [false, true]) {
                     const edge = right ? coverX + coverWidth : coverX;
                     const key = right ? "right" : "left";
-                    const spineX = right ? edge : edge - p.height;
+                    const spineX = right ? edge : edge - spine;
                     add(
                         "cover",
                         `${key}-spine`,
                         "侧脊",
-                        rectangle(spineX, 0, p.height, depth),
+                        rectangle(spineX, 0, spine, depth),
                         "bottom",
                         right
                             ? [
@@ -352,8 +378,8 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
                                   [edge, 0],
                               ],
                     );
-                    const lidX = right ? edge + p.height : edge - p.height - coverWidth / 2;
-                    const foldX = right ? edge + p.height : edge - p.height;
+                    const lidX = right ? edge + spine : edge - spine - coverWidth / 2;
+                    const foldX = right ? edge + spine : edge - spine;
                     add(
                         "cover",
                         `${key}-lid`,
@@ -416,9 +442,11 @@ export function compilePackaging(d: PackagingDocument): PackagingLayout {
     );
     const contours: ClipperLib.Paths = [];
     union.Execute(ClipperLib.ClipType.ctUnion, contours, ClipperLib.PolyFillType.pftNonZero, ClipperLib.PolyFillType.pftNonZero);
-    const cuts = contours.map((path) => path.map(({ X, Y }): Point => [X / scale, Y / scale]));
+    // Dust wings meet cap corners at shared vertices; canonicalize before offset to remove doubled shared edges.
+    const canonical = ClipperLib.Clipper.SimplifyPolygons(contours, ClipperLib.PolyFillType.pftNonZero);
+    const cuts = canonical.map((path) => path.map(({ X, Y }): Point => [X / scale, Y / scale]));
     const offset = new ClipperLib.ClipperOffset(2, 0.25 * scale);
-    offset.AddPaths(contours, ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
+    offset.AddPaths(canonical, ClipperLib.JoinType.jtMiter, ClipperLib.EndType.etClosedPolygon);
     const expanded: ClipperLib.Paths = [];
     if (p.bleed > 0) offset.Execute(expanded, p.bleed * scale);
     const bleed = expanded.map((path) => path.map(({ X, Y }): Point => [X / scale, Y / scale]));

@@ -46,7 +46,7 @@ func (r *Repository) SavePackagingProject(item *model.PackagingProject, expected
 		// 与上传清理及管理员资源删除使用同一资源行锁，阻止引用写入与物理删除交错。
 		if len(refs) > 0 {
 			var resources []model.Resource
-			q := tx.Where("id IN ? AND user_id = ? AND status = ? AND kind = ?", refs, item.UserID, model.ResourceStatusReady, "image")
+			q := tx.Where("id IN ? AND user_id = ? AND status = ? AND kind = ?", refs, item.UserID, model.ResourceStatusReady, "image").Order("id")
 			if tx.Dialector.Name() == "postgres" {
 				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 			}
@@ -99,7 +99,7 @@ func (r *Repository) SavePackagingProject(item *model.PackagingProject, expected
 	})
 }
 
-func (r *Repository) DeletePackagingProject(userID, id string, expected int64) error {
+func (r *Repository) DeletePackagingProject(userID, id string, expected int64, audit *model.AdminAuditEvent) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("id = ? AND user_id = ? AND revision = ?", id, userID, expected).Delete(&model.PackagingProject{})
 		if result.Error != nil {
@@ -108,7 +108,30 @@ func (r *Repository) DeletePackagingProject(userID, id string, expected int64) e
 		if result.RowsAffected != 1 {
 			return ErrPackagingConflict
 		}
-		return tx.Where("project_id = ?", id).Delete(&model.PackagingProjectResource{}).Error
+		if err := tx.Where("project_id = ?", id).Delete(&model.PackagingProjectResource{}).Error; err != nil {
+			return err
+		}
+		if audit != nil {
+			return tx.Create(audit).Error
+		}
+		return nil
+	})
+}
+
+func (r *Repository) SavePackagingCatalog(before *model.SystemSetting, next *model.SystemSetting, audit *model.AdminAuditEvent) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		previous := ""
+		if before != nil {
+			previous = before.ValueJSON
+		}
+		swapped, err := New(tx).CompareAndSwapSystemSetting(next.Key, previous, before != nil, next.ValueJSON, next.UpdatedBy)
+		if err != nil {
+			return err
+		}
+		if !swapped {
+			return ErrPackagingConflict
+		}
+		return tx.Create(audit).Error
 	})
 }
 

@@ -121,7 +121,7 @@ export function PackagingParametersPanel(props: Props) {
                         添加
                     </button>
                 </div>
-                <p className="pkg-help">局部工艺用黑白图：白色作用，黑色保留纸面。SVG、PNG、JPG、WebP 均可作为图稿。</p>
+                <p className="pkg-help">局部工艺用黑白图：白色作用，黑色保留纸面。PNG、JPG、WebP 可直接上传；SVG 转为 PNG 贴图。</p>
                 <input
                     hidden
                     ref={file}

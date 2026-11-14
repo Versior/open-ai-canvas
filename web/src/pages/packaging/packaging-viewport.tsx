@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { ContactShadows, GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera } from "@react-three/drei";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AmbientLight, Color, DirectionalLight, Mesh, PlaneGeometry, ShadowMaterial, OrthographicCamera as ThreeOrthographicCamera, PerspectiveCamera, Scene, WebGLRenderer } from "three";
 import type { OrbitControls as ThreeOrbitControls } from "three-stdlib";
 import { Download, Maximize2, Move, Pause, Play, RotateCcw, Rotate3D } from "lucide-react";
@@ -10,6 +10,25 @@ import type { PackagingDocument, PackagingLayout } from "@/lib/packaging/types";
 
 type Axis = "front" | "back" | "left" | "right" | "top" | "bottom" | "iso";
 type Props = { document: PackagingDocument; layout: PackagingLayout; images: Map<string, HTMLImageElement>; imageRevision: number; onChange: (view: Partial<PackagingDocument["view"]>) => void; onError: (message: string) => void; name: string };
+
+class PreviewBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+    state = { failed: false };
+    static getDerivedStateFromError() {
+        return { failed: true };
+    }
+    render() {
+        if (this.state.failed)
+            return (
+                <div className="pkg-empty" role="alert">
+                    <p>三维预览无法启动。刀版与项目保存仍可使用。</p>
+                    <button type="button" onClick={() => this.setState({ failed: false })}>
+                        重新启动预览
+                    </button>
+                </div>
+            );
+        return this.props.children;
+    }
+}
 
 function ModelScene({ built, doc, axis, move, rotate }: { built: PackagingScene; doc: PackagingDocument; axis: { value: Axis; seq: number }; move: boolean; rotate: boolean }) {
     const { camera, size, invalidate } = useThree();
@@ -21,8 +40,8 @@ function ModelScene({ built, doc, axis, move, rotate }: { built: PackagingScene;
     useEffect(() => {
         const framing = packagingCamera(built.root, size.width / size.height, axis.value);
         camera.position.copy(framing.position);
-        camera.near = 0.01;
-        camera.far = Math.max(10000, framing.span * 100);
+        camera.near = Math.max(0.1, framing.span / 20);
+        camera.far = Math.max(1000, framing.span * 20);
         if (camera instanceof ThreeOrthographicCamera) {
             camera.zoom = Math.min(size.width, size.height) / (framing.span * 1.65);
             camera.updateProjectionMatrix();
@@ -41,7 +60,18 @@ function ModelScene({ built, doc, axis, move, rotate }: { built: PackagingScene;
     return (
         <>
             <ambientLight intensity={doc.view.light * 0.8} />
-            <directionalLight position={[400, 650, -500]} intensity={doc.view.light * 2} castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-1000} shadow-camera-right={1000} shadow-camera-top={1000} shadow-camera-bottom={-1000} />
+            <directionalLight
+                position={[400, 650, -500]}
+                intensity={doc.view.light * 2}
+                castShadow
+                shadow-bias={-0.0002}
+                shadow-normalBias={0.1}
+                shadow-mapSize={[2048, 2048]}
+                shadow-camera-left={-1000}
+                shadow-camera-right={1000}
+                shadow-camera-top={1000}
+                shadow-camera-bottom={-1000}
+            />
             <directionalLight position={[-350, 200, 300]} intensity={doc.view.light * 0.5} />
             <primitive object={built.root} />
             {doc.view.shadows ? (
@@ -106,6 +136,8 @@ export function PackagingViewport(props: Props) {
                 if (props.document.view.shadows) {
                     renderer.shadowMap.enabled = true;
                     light.castShadow = true;
+                    light.shadow.bias = -0.0002;
+                    light.shadow.normalBias = 0.1;
                     light.shadow.mapSize.set(2048, 2048);
                     light.shadow.camera.left = -1500;
                     light.shadow.camera.right = 1500;
@@ -121,6 +153,9 @@ export function PackagingViewport(props: Props) {
                 scene.add(light, new AmbientLight("#ffffff", props.document.view.light));
                 const framing = packagingCamera(built.root, 1, axis.value);
                 const camera = props.document.view.projection === "orthographic" ? new ThreeOrthographicCamera(-framing.span, framing.span, framing.span, -framing.span, 0.01, 10000) : new PerspectiveCamera(40, 1, 0.01, 10000);
+                camera.near = Math.max(0.1, framing.span / 20);
+                camera.far = Math.max(1000, framing.span * 20);
+                camera.updateProjectionMatrix();
                 camera.position.copy(framing.position);
                 camera.lookAt(framing.center);
                 renderer.render(scene, camera);
@@ -157,10 +192,12 @@ export function PackagingViewport(props: Props) {
                 </button>
             </header>
             <div className={`pkg-three is-${props.document.view.background}`}>
-                <Canvas shadows camera={{ fov: 40, near: 0.01, far: 10000, position: [400, 300, -500] }} gl={{ alpha: true, antialias: true }}>
-                    {props.document.view.projection === "orthographic" ? <OrthographicCamera makeDefault position={[400, 300, -500]} near={0.01} far={10000} /> : null}
-                    <ModelScene built={built} doc={props.document} axis={axis} move={move} rotate={rotate} />
-                </Canvas>
+                <PreviewBoundary>
+                    <Canvas shadows camera={{ fov: 40, near: 0.01, far: 10000, position: [400, 300, -500] }} gl={{ alpha: true, antialias: true }}>
+                        {props.document.view.projection === "orthographic" ? <OrthographicCamera makeDefault position={[400, 300, -500]} near={0.01} far={10000} /> : null}
+                        <ModelScene built={built} doc={props.document} axis={axis} move={move} rotate={rotate} />
+                    </Canvas>
+                </PreviewBoundary>
                 <div className="pkg-camera-actions">
                     {(
                         [

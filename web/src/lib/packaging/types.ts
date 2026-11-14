@@ -44,6 +44,7 @@ export type PackagingPanel = {
     angle: number;
     phase: number;
     lid: boolean;
+    inset: number;
     surface?: "pouch-front" | "pouch-back" | "pillow" | "pillow-back";
 };
 export type PackagingPart = { id: string; name: string; translation: [number, number, number]; rotation: [number, number, number]; openTranslation: [number, number, number] };

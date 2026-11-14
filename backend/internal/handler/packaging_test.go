@@ -113,7 +113,17 @@ func TestPackagingHTTPPersistencePermissionsAndCatalog(t *testing.T) {
 	if code, _ = call("GET", "/api/packaging/projects/"+id, "", "pack-owner"); code != 200 {
 		t.Fatal("disable destroyed access to saved project")
 	}
-	if code, _ = call("DELETE", "/api/packaging/projects/"+id+"?expectedRevision=2", "", "pack-owner"); code != 200 {
+	if code, _ = call("DELETE", "/api/admin/packaging/projects/"+id+"?expectedRevision=2", "", "pack-other"); code != 403 {
+		t.Fatal("non-admin can delete another user's project")
+	}
+	if code, _ = call("DELETE", "/api/admin/packaging/projects/"+id+"?expectedRevision=1", "", "pack-admin"); code != 409 {
+		t.Fatal("admin stale delete succeeded")
+	}
+	if code, _ = call("DELETE", "/api/admin/packaging/projects/"+id+"?expectedRevision=2", "", "pack-admin"); code != 200 {
 		t.Fatal("delete failed")
+	}
+	var audits int64
+	if err := db.Model(&model.AdminAuditEvent{}).Where("action = ?", "packaging.project.delete").Count(&audits).Error; err != nil || audits != 1 {
+		t.Fatal("admin deletion audit missing")
 	}
 }

@@ -96,6 +96,25 @@ export default function PackagingPage() {
                 <button type="button" onClick={() => window.location.reload()}>
                     重新读取
                 </button>
+                {state.catalog ? (
+                    <div className="pkg-project-list">
+                        <p>已有包装项目</p>
+                        {state.projects.map((p) => (
+                            <button type="button" key={p.id} onClick={() => execute(() => state.load(p.id))}>
+                                {p.name} · v{p.revision}
+                            </button>
+                        ))}
+                        <div className="pkg-toolbar">
+                            <button type="button" disabled={state.page <= 1} onClick={() => execute(() => state.loadPage(state.page - 1))}>
+                                上一页
+                            </button>
+                            <span>共 {state.total} 个</span>
+                            <button type="button" disabled={state.page * 30 >= state.total} onClick={() => execute(() => state.loadPage(state.page + 1))}>
+                                下一页
+                            </button>
+                        </div>
+                    </div>
+                ) : null}
             </div>
         );
     return (

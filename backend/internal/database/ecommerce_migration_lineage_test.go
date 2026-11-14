@@ -2,6 +2,7 @@ package database
 
 import (
 	"encoding/json"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -234,7 +235,11 @@ func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
 		{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92"},
 		{Version: 99, Name: "lut_library", Checksum: "sha256:lut-library-v99-20261109"},
 	}
-	got := schemaMigrations[71:99]
+	start := slices.IndexFunc(schemaMigrations, func(item migration) bool { return item.version == 72 })
+	if start < 0 {
+		t.Fatal("migration 72 missing")
+	}
+	got := schemaMigrations[start : start+len(want)]
 	for index, item := range want {
 		if got[index].version != item.Version || got[index].name != item.Name || got[index].checksum != item.Checksum {
 			t.Fatalf("migration tail[%d] = %#v, want %#v", index, got[index], item)

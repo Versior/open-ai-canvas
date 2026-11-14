@@ -80,6 +80,88 @@ describe("包装真实结构", () => {
             scene.dispose();
         }
     });
+    test("插舌、粘口和防尘翼按纸厚进入内层，不与外壁穿插", () => {
+        for (const structure of ["tuck", "reverse-tuck"] as const)
+            for (const thickness of [0.1, 0.45, 2]) {
+                const d = document(structure);
+                d.parameters.thickness = thickness;
+                const layout = compilePackaging(d);
+                const scene = buildPackagingScene(d, layout);
+                const box = (id: string) => new Box3().setFromObject(scene.root.getObjectByName(`box-${id}-paper`)!);
+                expect(box("top-tab").min.z - box("front").max.z).toBeGreaterThan(-0.001);
+                expect(box("glue").min.z - box("front").max.z).toBeGreaterThan(-0.001);
+                expect(box("top").min.y - box("top-right-wing").max.y).toBeGreaterThan(-0.001);
+                expect(box("top").min.y - box("top-left-wing").max.y).toBeGreaterThan(-0.001);
+                scene.apply(0, 0);
+                expect((scene.root.getObjectByName("box-top-tab-paper") as Mesh).position.z).toBe(0);
+                scene.dispose();
+            }
+    });
+    test("飞机盒闭合外高包含上下纸厚", () => {
+        for (const thickness of [0.1, 0.45, 2, 4]) {
+            const d = document("mailer");
+            d.parameters.thickness = thickness;
+            const scene = buildPackagingScene(d, compilePackaging(d));
+            expect(new Box3().setFromObject(scene.root).getSize(new Vector3()).y).toBeCloseTo(d.parameters.height, 1);
+            scene.dispose();
+        }
+    });
+    test("硬盒切线不包含铰链，粘耳保持连接", () => {
+        for (const structure of structures.filter((s) => !["pouch", "spout-pouch", "pillow"].includes(s))) {
+            const layout = compilePackaging(document(structure));
+            expect(layout.cuts.length).toBe(layout.parts.length);
+            for (const [a, b] of layout.creases) {
+                const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+                const projection = (p: [number, number]) => ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / length;
+                const cross = (p: [number, number]) => Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) / length;
+                for (const cut of layout.cuts)
+                    for (let i = 0; i < cut.length; i++) {
+                        const c = cut[i],
+                            e = cut[(i + 1) % cut.length];
+                        if (cross(c) > 0.01 || cross(e) > 0.01) continue;
+                        expect(Math.min(length, Math.max(projection(c), projection(e))) - Math.max(0, Math.min(projection(c), projection(e)))).toBeLessThan(0.01);
+                    }
+            }
+        }
+    });
+    test("多种纸厚和间隙下盖底、抽屉与翻盖真实套合", () => {
+        for (const structure of ["lid-base", "drawer", "book", "double-door"] as const)
+            for (const thickness of [0.1, 0.45, 2, 4])
+                for (const gap of [0.1, 1, 3]) {
+                    const d = document(structure);
+                    d.parameters = { ...d.parameters, width: 100, height: 60, thickness, gap };
+                    const layout = compilePackaging(d);
+                    const scene = buildPackagingScene(d, layout);
+                    const box = (name: string) => new Box3().setFromObject(scene.root.getObjectByName(name)!);
+                    const base = box("base");
+                    const part = structure === "lid-base" ? "lid" : structure === "drawer" ? "sleeve" : "cover";
+                    const top = structure === "lid-base" ? "bottom" : structure === "drawer" ? "front" : structure === "book" ? "lid" : "left-lid";
+                    expect(box(`${part}-${top}-paper`).min.y - base.max.y).toBeGreaterThanOrEqual(gap - 0.01);
+                    if (structure === "lid-base" || structure === "drawer") {
+                        expect(base.min.x - box(`${part}-left-paper`).max.x).toBeGreaterThanOrEqual(gap - 0.01);
+                        expect(box(`${part}-right-paper`).min.x - base.max.x).toBeGreaterThanOrEqual(gap - 0.01);
+                    }
+                    if (structure === "drawer") expect(base.min.y - box("sleeve-back-paper").max.y).toBeGreaterThanOrEqual(gap - 0.01);
+                    if (structure === "lid-base") {
+                        expect(base.min.z - box("lid-front-paper").max.z).toBeGreaterThanOrEqual(gap - 0.01);
+                        expect(box("lid-back-paper").min.z - base.max.z).toBeGreaterThanOrEqual(gap - 0.01);
+                    }
+                    scene.dispose();
+                }
+    });
+    test("软袋具有可渲染外面与内衬，封边不鼓胀，袋口可打开", () => {
+        const d = document("pouch");
+        const layout = compilePackaging(d);
+        const scene = buildPackagingScene(d, layout);
+        const face = scene.root.getObjectByName("bag-front-print") as Mesh;
+        expect(Array.isArray(face.material)).toBe(false);
+        expect(scene.root.getObjectByName("bag-front-lining")).toBeDefined();
+        const edge = face.geometry.getAttribute("position").getZ(16);
+        scene.apply(1, 1);
+        expect(face.geometry.getAttribute("position").getZ(16)).toBeLessThan(edge - 1);
+        expect(face.geometry.getAttribute("position").getZ(0)).toBeCloseTo(-d.parameters.thickness, 2);
+        scene.dispose();
+    });
     test("开窗同时进入切线和实体孔洞，过大窗口拒绝", () => {
         const d = document("tuck");
         d.parameters.windowWidth = 30;

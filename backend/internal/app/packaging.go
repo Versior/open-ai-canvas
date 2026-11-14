@@ -72,18 +72,35 @@ func (s *Service) SavePackagingCatalog(actor *model.User, input PackagingCatalog
 	if err := packaging.ValidateCatalog(input.Catalog); err != nil {
 		return packaging.Catalog{}, BadAuthRequest(err.Error())
 	}
-	value, err := updateSettingJSON(s, packagingCatalogKey, actor.ID, func(current *packaging.Catalog) error {
-		if current.Revision != *input.ExpectedRevision {
-			return &kernel.AppError{Status: 409, Code: 409, Message: "目录已在其他窗口修改，请重新加载", Reason: "packaging_catalog_conflict"}
-		}
-		*current = input.Catalog
-		current.Revision = *input.ExpectedRevision + 1
-		return nil
-	})
+	before, err := s.repo.SystemSettingOptional(packagingCatalogKey)
 	if err != nil {
-		return value, err
+		return packaging.Catalog{}, err
 	}
-	return value, s.appendAdminAudit(actor, "packaging.catalog.save", "packaging_catalog", packagingCatalogKey, "更新包装盒型、材料与功能配置", map[string]any{"revision": value.Revision, "templates": len(value.Templates), "materials": len(value.Materials)})
+	current := packaging.DefaultCatalog()
+	if before != nil {
+		if err := json.Unmarshal([]byte(before.ValueJSON), &current); err != nil {
+			return packaging.Catalog{}, err
+		}
+	}
+	conflict := &kernel.AppError{Status: 409, Code: 409, Message: "目录已在其他窗口修改，请重新加载", Reason: "packaging_catalog_conflict"}
+	if current.Revision != *input.ExpectedRevision {
+		return packaging.Catalog{}, conflict
+	}
+	value := input.Catalog
+	value.Revision = *input.ExpectedRevision + 1
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return packaging.Catalog{}, err
+	}
+	audit, err := newAdminAuditEvent(actor, "packaging.catalog.save", "packaging_catalog", packagingCatalogKey, "更新包装盒型、材料与功能配置", map[string]any{"revision": value.Revision, "templates": len(value.Templates), "materials": len(value.Materials)})
+	if err != nil {
+		return packaging.Catalog{}, err
+	}
+	err = s.repo.SavePackagingCatalog(before, &model.SystemSetting{Key: packagingCatalogKey, ValueJSON: string(raw), UpdatedBy: actor.ID}, audit)
+	if errors.Is(err, repository.ErrPackagingConflict) {
+		return packaging.Catalog{}, conflict
+	}
+	return value, err
 }
 
 func (s *Service) PackagingProjects(actor *model.User, admin bool, userID, templateID string, page, pageSize int) (*PackagingProjectPage, error) {
@@ -216,7 +233,7 @@ func (s *Service) DeletePackagingProject(actor *model.User, id string, expected 
 	}
 	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
-	if err := s.repo.DeletePackagingProject(actor.ID, id, expected); err != nil {
+	if err := s.repo.DeletePackagingProject(actor.ID, id, expected, nil); err != nil {
 		if errors.Is(err, repository.ErrPackagingConflict) {
 			return &kernel.AppError{Status: 409, Code: 409, Message: "项目已更新，未执行删除", Reason: "packaging_project_conflict"}
 		}
@@ -245,11 +262,15 @@ func (s *Service) AdminDeletePackagingProject(actor *model.User, id string, expe
 	}
 	s.storageMu.Lock()
 	defer s.storageMu.Unlock()
-	if err := s.repo.DeletePackagingProject(item.UserID, id, expected); err != nil {
+	audit, err := newAdminAuditEvent(actor, "packaging.project.delete", "packaging_project", id, "删除包装项目", map[string]any{"revision": expected})
+	if err != nil {
+		return err
+	}
+	if err := s.repo.DeletePackagingProject(item.UserID, id, expected, audit); err != nil {
 		if errors.Is(err, repository.ErrPackagingConflict) {
 			return &kernel.AppError{Status: 409, Code: 409, Message: "项目已更新，未执行删除", Reason: "packaging_project_conflict"}
 		}
 		return err
 	}
-	return s.appendAdminAudit(actor, "packaging.project.delete", "packaging_project", id, "删除包装项目", map[string]any{"revision": expected})
+	return nil
 }

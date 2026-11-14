@@ -1,4 +1,25 @@
-import { Box3, BufferAttribute, BufferGeometry, CanvasTexture, CylinderGeometry, DoubleSide, ExtrudeGeometry, Group, Mesh, MeshPhysicalMaterial, Path, Quaternion, Shape, ShapeGeometry, SRGBColorSpace, Vector2, Vector3, type Texture } from "three";
+import {
+    BackSide,
+    FrontSide,
+    Box3,
+    BufferAttribute,
+    BufferGeometry,
+    CanvasTexture,
+    CylinderGeometry,
+    DoubleSide,
+    ExtrudeGeometry,
+    Group,
+    Mesh,
+    MeshPhysicalMaterial,
+    Path,
+    Quaternion,
+    Shape,
+    ShapeGeometry,
+    SRGBColorSpace,
+    Vector2,
+    Vector3,
+    type Texture,
+} from "three";
 import type { PackagingDocument, PackagingLayout, PackagingPanel, Point } from "./types";
 
 export type PackagingTextures = { artwork: Texture; foil?: Texture; uv?: Texture; emboss?: Texture };
@@ -37,6 +58,9 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
         bumpScale: d.parameters.thickness * 0.15,
         clearcoat: d.view.finish === "gloss" ? 1 : 0,
         side: DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
     });
     const inside = new MeshPhysicalMaterial({ color: d.material.insideColor, roughness: 0.88, side: DoubleSide });
     const edge = new MeshPhysicalMaterial({ color: d.material.insideColor, roughness: 0.95 });
@@ -50,6 +74,7 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
         root.add(group);
     }
     const surfaces: { panel: PackagingPanel; geometry: BufferGeometry; original: Float32Array }[] = [];
+    const layers: { panel: PackagingPanel; meshes: Mesh[] }[] = [];
     for (const panel of layout.panels) {
         const group = new Group();
         group.name = panel.id;
@@ -72,11 +97,18 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
             const original = new Float32Array(geometry.getAttribute("position").array);
             surfaces.push({ panel, geometry, original });
             geometries.push(geometry);
-            const mesh = new Mesh(geometry, [outside, inside]);
+            const filmOutside = outside.clone();
+            filmOutside.side = FrontSide;
+            const filmInside = inside.clone();
+            filmInside.side = BackSide;
+            materials.push(filmOutside, filmInside);
+            const mesh = new Mesh(geometry, filmOutside);
             mesh.name = `${panel.id}-print`;
             mesh.castShadow = true;
-            mesh.receiveShadow = true;
             group.add(mesh);
+            const lining = new Mesh(geometry, filmInside);
+            lining.name = `${panel.id}-lining`;
+            group.add(lining);
             continue;
         }
         const shape = panelShape(panel);
@@ -85,7 +117,6 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
         const body = new Mesh(solid, [inside, edge]);
         body.name = `${panel.id}-paper`;
         body.castShadow = true;
-        body.receiveShadow = true;
         group.add(body);
         const face = new ShapeGeometry(shape, 12);
         const vertices = face.getAttribute("position");
@@ -98,8 +129,8 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
         const print = new Mesh(face, outside);
         print.name = `${panel.id}-print`;
         print.castShadow = true;
-        print.receiveShadow = true;
         group.add(print);
+        if (panel.inset) layers.push({ panel, meshes: [body, print] });
         geometries.push(solid, face);
     }
     if (d.template.structure === "spout-pouch") {
@@ -113,6 +144,7 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
         materials.push(material);
     }
     const apply = (fold: number, open: number) => {
+        for (const layer of layers) for (const mesh of layer.meshes) mesh.position.z = layer.panel.inset * fold;
         for (const panel of layout.panels) {
             if (!panel.hinge) continue;
             const progress = Math.min(1, Math.max(0, (fold - panel.phase * 0.5) / (1 - panel.phase * 0.5)));
@@ -134,7 +166,9 @@ export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayou
                 const v = -y / d.parameters.height;
                 const envelope = Math.sin(Math.PI * u) * Math.sin(Math.PI * v);
                 const sealed = !surface.panel.surface!.startsWith("pillow") && (x < d.parameters.glue || x > d.parameters.length - d.parameters.glue || -y > d.parameters.height - d.parameters.glue);
-                const bulge = sealed ? 0 : d.parameters.width * 0.5 * d.parameters.inflation * Math.pow(Math.max(0, envelope), 0.6);
+                const bulge = sealed
+                    ? 0
+                    : d.parameters.width * 0.5 * d.parameters.inflation * Math.pow(Math.max(0, envelope), 0.6) + (surface.panel.surface!.startsWith("pillow") ? 0 : d.parameters.width * 0.25 * open * Math.sin(Math.PI * u) * (1 - v) ** 2);
                 position.setXYZ(i, x - (origin[0] - firstOrigin[0]) * fold, y, (back ? 1 : -1) * (bulge + d.parameters.thickness) * fold);
             }
             position.needsUpdate = true;
@@ -172,7 +206,8 @@ function curvedPanelGeometry(panel: PackagingPanel, layout: PackagingLayout) {
             uv.push(...packagingUv([x, y], layout));
             if (row < 32 && col < 32) {
                 const a = row * 33 + col;
-                indices.push(a, a + 33, a + 1, a + 1, a + 33, a + 34);
+                const back = panel.surface === "pouch-back" || panel.surface === "pillow-back";
+                indices.push(...(back ? [a, a + 33, a + 1, a + 1, a + 33, a + 34] : [a, a + 1, a + 33, a + 1, a + 34, a + 33]));
             }
         }
     const geometry = new BufferGeometry();

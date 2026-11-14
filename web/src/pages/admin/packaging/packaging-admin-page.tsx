@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { App, Button, Input, InputNumber, Table, Tag } from "antd";
 import { Plus, RefreshCw, Save } from "lucide-react";
 import { nanoid } from "nanoid";
@@ -6,6 +6,7 @@ import { AppModal } from "@/components/ui/product/app-modal";
 import { packagingApi } from "@/services/api/packaging";
 import { adminResourceFileUrl } from "@/services/api/admin-storage";
 import { captureUserSession, assertCurrentUserSession } from "@/lib/user-scope";
+import { useUserStore } from "@/stores/use-user-store";
 import { compilePackaging } from "@/lib/packaging/geometry";
 import { newPackagingDocument, type PackagingCatalog, type PackagingMaterial, type PackagingParameters, type PackagingProject, type PackagingProjectSummary, type PackagingTemplate } from "@/lib/packaging/types";
 import { PackagingDieline } from "@/pages/packaging/packaging-dieline";
@@ -101,6 +102,8 @@ function ProjectPreview({ project, onError }: { project: PackagingProject; onErr
 }
 
 export default function PackagingAdminPage() {
+    const userId = useUserStore((s) => s.user?.id);
+    const draftSequence = useRef(0);
     const { modal, message } = App.useApp();
     const [tab, setTab] = useState<Tab>("overview");
     const [catalog, setCatalog] = useState<PackagingCatalog>();
@@ -133,26 +136,34 @@ export default function PackagingAdminPage() {
     };
     const reload = async () => {
         const session = captureUserSession();
+        const submitted = draftSequence.current;
         const [c, s, p] = await Promise.all([packagingApi.catalog(session.signal, true), packagingApi.overview(), packagingApi.projects(1, true, {}, session.signal)]);
         assertCurrentUserSession(session);
-        setCatalog(c);
+        if (submitted === draftSequence.current) {
+            setCatalog(c);
+            setDirty(false);
+        }
         setStats(s);
         setList(p);
-        setDirty(false);
     };
     useEffect(() => {
+        setCatalog(undefined);
+        setDirty(false);
+        draftSequence.current++;
         void run(reload);
-    }, []);
+    }, [userId]);
     const updateCatalog = (change: (c: PackagingCatalog) => PackagingCatalog) => {
+        draftSequence.current++;
         setCatalog((c) => (c ? change(c) : c));
         setDirty(true);
     };
     const saveCatalog = async () => {
         const session = captureUserSession();
+        const submitted = draftSequence.current;
         const saved = await packagingApi.saveCatalog(catalog!);
         assertCurrentUserSession(session);
-        setCatalog(saved);
-        setDirty(false);
+        setCatalog((current) => (submitted === draftSequence.current ? saved : current ? { ...current, revision: saved.revision } : saved));
+        setDirty(submitted !== draftSequence.current);
         void message.success("盒型、材料与配额已保存到服务器");
     };
     const removeProject = (p: PackagingProjectSummary) =>
@@ -166,7 +177,10 @@ export default function PackagingAdminPage() {
                 await packagingApi.remove(p.id, p.revision, session.signal, true);
                 assertCurrentUserSession(session);
                 setPreview(undefined);
-                await reload();
+                await loadProjects();
+                const value = await packagingApi.overview();
+                assertCurrentUserSession(session);
+                setStats(value);
             },
         });
     return (

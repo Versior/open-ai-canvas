@@ -94,10 +94,15 @@ export function usePackagingProject() {
         setDirty(true);
     };
     const updateDocument = (update: (d: PackagingDocument) => PackagingDocument) => edit((p) => ({ ...p, document: update(p.document) }));
-    const newProject = (template: PackagingTemplate) => {
+    const newProject = (template?: PackagingTemplate) => {
         const session = captureUserSession();
         sequence.current++;
         projectEpoch.current++;
+        if (!template || !catalog!.materials[0]) {
+            setProject(undefined);
+            setDirty(false);
+            return;
+        }
         setProject({ id: "", userId: session.scope, name: template.name, templateId: template.id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(template, catalog!.materials[0]) });
         setDirty(false);
         setError("");
@@ -114,10 +119,12 @@ export function usePackagingProject() {
     };
     const load = async (id: string) => {
         const epoch = ++projectEpoch.current;
+        const submitted = sequence.current;
         const session = captureUserSession();
         const value = await packagingApi.project(id, session.signal);
         assertCurrentUserSession(session);
         if (epoch !== projectEpoch.current) return;
+        if (submitted !== sequence.current) throw new Error("读取期间有新的编辑，已保留当前修改；请重新打开项目");
         setProject(value);
         setDirty(false);
         setError("");
@@ -149,6 +156,7 @@ export function usePackagingProject() {
         const session = captureUserSession();
         const base = project;
         const epoch = projectEpoch.current;
+        if (file.size > 25 * 1024 * 1024) throw new Error("图稿不能超过 25 MB");
         const blobUrl = URL.createObjectURL(file);
         setStatus("uploading");
         try {
@@ -156,7 +164,17 @@ export function usePackagingProject() {
             image.src = blobUrl;
             await image.decode();
             if (file.size > 25 * 1024 * 1024 || image.width * image.height > 40_000_000) throw new Error("图稿最多 25 MB / 4000 万像素");
-            const resource = await uploadResourceFile(file, "image", { fileName: file.name, expectedUserId: session.scope, signal: session.signal });
+            const uploadFile =
+                file.type !== "image/svg+xml"
+                    ? file
+                    : await new Promise<File>((resolve, reject) => {
+                          const canvas = document.createElement("canvas");
+                          canvas.width = image.width;
+                          canvas.height = image.height;
+                          canvas.getContext("2d")!.drawImage(image, 0, 0);
+                          canvas.toBlob((blob) => (blob ? resolve(new File([blob], file.name.replace(/\.svg$/i, "") + ".png", { type: "image/png" })) : reject(new Error("SVG 转换失败"))), "image/png");
+                      });
+            const resource = await uploadResourceFile(uploadFile, "image", { fileName: uploadFile.name, expectedUserId: session.scope, signal: session.signal });
             assertCurrentUserSession(session);
             if (epoch !== projectEpoch.current || currentProject.current?.document.parameters !== base.document.parameters) throw new Error("项目或尺寸已切换，请重新添加图稿；已上传文件保留在素材库");
             const layout = compilePackaging(base.document);
@@ -164,7 +182,7 @@ export function usePackagingProject() {
             const x = panel ? Math.min(...panel.points.map((p) => p[0])) : layout.bounds.x;
             const y = panel ? Math.min(...panel.points.map((p) => p[1])) : layout.bounds.y;
             const width = panel ? Math.max(...panel.points.map((p) => p[0])) - x : layout.bounds.width;
-            resources.current.set(resource.id, file);
+            resources.current.set(resource.id, uploadFile);
             images.current.set(resource.id, image);
             setImageRevision((v) => v + 1);
             updateDocument((d) => ({ ...d, artworks: [...d.artworks, { id: nanoid(), resourceId: resource.id, name: file.name, panelId, role, x, y, width, height: (width * image.height) / image.width, rotation: 0, opacity: 1 }] }));
@@ -176,8 +194,10 @@ export function usePackagingProject() {
     const importProject = async (file: File) => {
         if (file.size > 100 * 1024 * 1024) throw new Error("方案包不能超过 100 MB");
         const epoch = ++projectEpoch.current;
-        const imported = readPackagingProjectZip(new Uint8Array(await file.arrayBuffer()));
+        const submitted = sequence.current;
         const session = captureUserSession();
+        const imported = readPackagingProjectZip(new Uint8Array(await file.arrayBuffer()));
+        assertCurrentUserSession(session);
         const template = catalog!.templates.find((t) => t.id === imported.document.template.id && t.structure === imported.document.template.structure);
         const material = catalog!.materials.find((m) => m.id === imported.document.material.id);
         if (!template || !material) throw new Error("方案盒型或材料不在当前启用目录中");
@@ -203,6 +223,7 @@ export function usePackagingProject() {
                 ids.set(id, resource.id);
             }
             if (epoch !== projectEpoch.current) return;
+            if (submitted !== sequence.current) throw new Error("导入期间有新的编辑，已保留当前修改；请重新导入。已上传图稿保留在素材库");
             setProject({
                 id: "",
                 userId: session.scope,

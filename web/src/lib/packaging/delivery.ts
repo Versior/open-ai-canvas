@@ -73,7 +73,19 @@ export async function packagingGlb(root: Group, layout: PackagingLayout, animate
                         times.flatMap((time) => packagingFoldQuaternion(panel, time / 4).toArray()),
                     ),
             );
-        animations.push(new AnimationClip("Packaging fold", 4, tracks));
+        const layers = layout.panels
+            .filter((p) => p.inset)
+            .flatMap((panel) =>
+                ["paper", "print"].map(
+                    (face) =>
+                        new VectorKeyframeTrack(
+                            `${panel.id}-${face}.position`,
+                            times,
+                            times.flatMap((time) => [0, 0, (panel.inset * time) / 4]),
+                        ),
+                ),
+            );
+        animations.push(new AnimationClip("Packaging fold", 4, [...tracks, ...layers]));
         const opening = layout.panels
             .filter((p) => p.hinge)
             .map(
@@ -98,8 +110,10 @@ export async function packagingGlb(root: Group, layout: PackagingLayout, animate
                         times.flatMap((time) => part.translation.map((v, index) => v + (part.openTranslation[index] * time) / 4)),
                     ),
             );
-        animations.push(new AnimationClip("Packaging open", 4, [...opening, ...movement]));
+        const closedLayers = layout.panels.filter((p) => p.inset).flatMap((panel) => ["paper", "print"].map((face) => new VectorKeyframeTrack(`${panel.id}-${face}.position`, [0, 4], [0, 0, panel.inset, 0, 0, panel.inset])));
+        animations.push(new AnimationClip("Packaging open", 4, [...opening, ...movement, ...closedLayers]));
         for (const panel of layout.panels.filter((p) => p.hinge)) copy.getObjectByName(panel.id)!.quaternion.identity();
+        for (const panel of layout.panels.filter((p) => p.inset)) for (const face of ["paper", "print"]) copy.getObjectByName(`${panel.id}-${face}`)!.position.z = 0;
         for (const part of layout.parts) copy.getObjectByName(part.id)!.position.set(...part.translation);
     }
     const result = await new GLTFExporter().parseAsync(copy, { binary: true, animations, maxTextureSize: 4096, trs: true });
