@@ -10,6 +10,7 @@ type Props = {
     selected: string;
     onSelect: (id: string) => void;
     onArtwork: (id: string, change: Partial<PackagingArtwork>) => void;
+    onInteractionEnd?: () => void;
     onUpload: (file: File) => void;
     name: string;
     resources: Map<string, Blob>;
@@ -79,11 +80,13 @@ export function PackagingDieline(props: Props) {
                     onPointerUp={(e) => {
                         if (drag.current) {
                             drag.current = null;
+                            props.onInteractionEnd?.();
                             e.currentTarget.releasePointerCapture(e.pointerId);
                         }
                     }}
                     onPointerCancel={() => {
                         drag.current = null;
+                        props.onInteractionEnd?.();
                     }}
                 >
                     <defs>

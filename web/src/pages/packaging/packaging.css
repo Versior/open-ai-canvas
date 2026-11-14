@@ -160,6 +160,76 @@
     flex-direction: row !important;
     align-items: center;
 }
+.pkg-parameters .pkg-aspect-lock {
+    flex-direction: row;
+    align-items: center;
+}
+.pkg-production {
+    height: auto;
+    overflow: visible;
+    gap: 12px;
+    background: transparent;
+}
+.pkg-production label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 6px 0;
+    color: var(--pkg-muted);
+}
+.pkg-production-preview {
+    display: block;
+    width: 100%;
+    height: 240px;
+    background: var(--surface);
+    border: 1px solid var(--pkg-border);
+    border-radius: var(--radius-md);
+}
+.pkg-production-outline {
+    fill: none;
+    stroke: var(--foreground);
+    stroke-width: 0.7;
+    vector-effect: non-scaling-stroke;
+}
+.pkg-production-tile {
+    fill: var(--accent-soft);
+    fill-opacity: 0.15;
+    stroke: var(--muted-foreground);
+    stroke-width: 0.5;
+    stroke-dasharray: 3 2;
+    vector-effect: non-scaling-stroke;
+}
+.pkg-production-preview text {
+    fill: var(--foreground);
+}
+.pkg-production-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+.pkg-production-table td,
+.pkg-production-table th {
+    padding: 8px;
+    border-bottom: 1px solid var(--pkg-border);
+}
+.pkg-production-table .is-selected {
+    background: var(--accent-soft);
+}
+.pkg-production-summary {
+    margin: 0;
+    font-weight: 600;
+}
+.pkg-production-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    color: var(--pkg-muted);
+}
+.pkg-production-metrics strong {
+    display: block;
+    color: var(--pkg-text);
+    margin-top: 4px;
+}
 .pkg-help {
     font-size: 10px;
     color: var(--pkg-muted);

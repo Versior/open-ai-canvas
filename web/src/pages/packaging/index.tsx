@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useBlocker, useSearchParams } from "react-router";
-import { Download, FolderOpen, LayoutPanelLeft, PackageOpen, Plus, Save, Settings2, X } from "lucide-react";
+import { Download, FolderOpen, LayoutPanelLeft, PackageOpen, Plus, Save, Settings2, X, Undo2, Redo2, Printer } from "lucide-react";
 import { App } from "antd";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { compilePackaging } from "@/lib/packaging/geometry";
@@ -10,6 +10,7 @@ import { PackagingDieline } from "./packaging-dieline";
 import { PackagingParametersPanel } from "./packaging-parameters";
 import { PackagingViewport } from "./packaging-viewport";
 import { usePackagingProject } from "./use-packaging-project";
+import { PackagingProduction } from "./packaging-production";
 import "./packaging.css";
 
 export default function PackagingPage() {
@@ -19,6 +20,7 @@ export default function PackagingPage() {
     const [selected, setSelected] = useState("");
     const [history, setHistory] = useState(false);
     const [parameters, setParameters] = useState(false);
+    const [production, setProduction] = useState(false);
     const [split, setSplit] = useState(50);
     const panels = useRef<HTMLDivElement>(null);
     const importer = useRef<HTMLInputElement>(null);
@@ -57,6 +59,22 @@ export default function PackagingPage() {
         if (blocker.state !== "blocked") return;
         modal.confirm({ title: "离开包装刀板", content: "当前编辑尚未保存，离开后将放弃这些修改。", okText: "放弃并离开", cancelText: "继续编辑", onOk: () => blocker.proceed(), onCancel: () => blocker.reset() });
     }, [blocker.state]);
+    useEffect(() => {
+        const shortcut = (e: KeyboardEvent) => {
+            if (busy || !(e.metaKey || e.ctrlKey) || e.altKey || !(e.target instanceof HTMLElement) || e.target.closest("input, textarea, select, [contenteditable='true'], [role='dialog']")) return;
+            if (e.key.toLowerCase() === "z") {
+                e.preventDefault();
+                if (e.shiftKey) state.redo();
+                if (!e.shiftKey) state.undo();
+            }
+            if (e.key.toLowerCase() === "y") {
+                e.preventDefault();
+                state.redo();
+            }
+        };
+        window.addEventListener("keydown", shortcut);
+        return () => window.removeEventListener("keydown", shortcut);
+    }, [busy, state.undo, state.redo]);
     const execute = (operation: () => void | Promise<void>) => {
         void Promise.resolve()
             .then(operation)
@@ -124,11 +142,17 @@ export default function PackagingPage() {
                     <PackageOpen size={22} />
                     <div>
                         <h1>包装刀板</h1>
-                        <input aria-label="包装项目名称" maxLength={120} value={state.project.name} onChange={(e) => state.edit((p) => ({ ...p, name: e.target.value }))} />
+                        <input aria-label="包装项目名称" maxLength={120} value={state.project.name} onChange={(e) => state.edit((p) => ({ ...p, name: e.target.value }), "project-name")} />
                     </div>
                 </div>
                 <span className="pkg-save-state">{state.status === "saving" ? "保存中" : state.dirty ? "有未保存修改" : state.project.id ? `已保存到服务器 · v${state.project.revision}` : "新方案"}</span>
                 <div className="pkg-toolbar">
+                    <button type="button" aria-label="撤销包装编辑" title="撤销 · Ctrl/Cmd+Z" disabled={busy || !state.canUndo} onClick={state.undo}>
+                        <Undo2 size={16} />
+                    </button>
+                    <button type="button" aria-label="重做包装编辑" title="重做 · Ctrl/Cmd+Shift+Z" disabled={busy || !state.canRedo} onClick={state.redo}>
+                        <Redo2 size={16} />
+                    </button>
                     <button type="button" className="pkg-mobile-settings" onClick={() => setParameters((v) => !v)}>
                         <Settings2 size={16} />
                         参数
@@ -203,6 +227,10 @@ export default function PackagingPage() {
                         <span>
                             {state.project.document.template.name} · {doc.parameters.length} × {doc.parameters.width} × {doc.parameters.height} mm
                         </span>
+                        <button type="button" disabled={!geometry.layout || busy} onClick={() => setProduction(true)}>
+                            <Printer size={15} />
+                            生产试算
+                        </button>
                         <button
                             type="button"
                             disabled={!geometry.layout || busy}
@@ -231,7 +259,8 @@ export default function PackagingPage() {
                                     layout={geometry.layout}
                                     selected={selected}
                                     onSelect={setSelected}
-                                    onArtwork={(id, change) => state.updateDocument((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }))}
+                                    onArtwork={(id, change) => state.updateDocument((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }), `drag-${id}`)}
+                                    onInteractionEnd={state.endHistoryGroup}
                                     onUpload={(file) => execute(() => state.upload(file, selected))}
                                     name={state.project.name}
                                     resources={state.resources}
@@ -264,7 +293,7 @@ export default function PackagingPage() {
                                     layout={geometry.layout}
                                     images={state.images}
                                     imageRevision={state.imageRevision}
-                                    onChange={(view) => state.updateDocument((d) => ({ ...d, view: { ...d.view, ...view } }))}
+                                    onChange={(view) => state.updateDocument((d) => ({ ...d, view: { ...d.view, ...view } }), `view-${Object.keys(view).sort().join("-")}`)}
                                     onError={state.setError}
                                     name={state.project.name}
                                 />
@@ -282,6 +311,9 @@ export default function PackagingPage() {
                     </footer>
                 </div>
             </div>
+            <AppModal open={production} onCancel={() => setProduction(false)} title="白样打印与用纸试算" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
+                {geometry.layout ? <PackagingProduction layout={geometry.layout} name={state.project.name} onError={state.setError} /> : null}
+            </AppModal>
             <AppModal open={history} onCancel={() => setHistory(false)} title="包装项目" width={720} footer={null}>
                 <div className="pkg-project-list">
                     {state.projects.length ? (

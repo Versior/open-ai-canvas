@@ -7,6 +7,7 @@ import { newPackagingDocument, validatePackagingParameters, type PackagingCatalo
 import { readPackagingProjectZip } from "@/lib/packaging/delivery";
 import { compilePackaging } from "@/lib/packaging/geometry";
 import { useUserStore } from "@/stores/use-user-store";
+import { PackagingHistory, type PackagingSnapshot } from "@/lib/packaging/history";
 
 export function usePackagingProject() {
     const userId = useUserStore((s) => s.user?.id);
@@ -26,12 +27,22 @@ export function usePackagingProject() {
     const resources = useRef(new Map<string, Blob>());
     const images = useRef(new Map<string, HTMLImageElement>());
     const [imageRevision, setImageRevision] = useState(0);
+    const history = useRef(new PackagingHistory());
+    const savedSnapshot = useRef<PackagingSnapshot>(undefined);
+    const matchesSaved = (value: PackagingSnapshot) => savedSnapshot.current?.name === value.name && (savedSnapshot.current.document === value.document || JSON.stringify(savedSnapshot.current.document) === JSON.stringify(value.document));
+    const replaceProject = (value?: PackagingProject, changed = false) => {
+        history.current.clear();
+        savedSnapshot.current = value && !changed ? { name: value.name, document: value.document } : undefined;
+        currentProject.current = value;
+        setProject(value);
+        setDirty(changed);
+    };
     useEffect(() => {
         const controller = new AbortController();
         setStatus("loading");
         projectEpoch.current++;
         setCatalog(undefined);
-        setProject(undefined);
+        replaceProject();
         setProjects([]);
         resources.current.clear();
         images.current.clear();
@@ -44,7 +55,7 @@ export function usePackagingProject() {
                 setTotal(list.total);
                 setPage(1);
                 if (c.templates[0] && c.materials[0])
-                    setProject({ id: "", userId: session.scope, name: "未命名包装", templateId: c.templates[0].id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(c.templates[0], c.materials[0]) });
+                    replaceProject({ id: "", userId: session.scope, name: "未命名包装", templateId: c.templates[0].id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(c.templates[0], c.materials[0]) });
                 setStatus("ready");
                 setDirty(false);
                 setError("");
@@ -88,23 +99,37 @@ export function usePackagingProject() {
             });
         return () => controller.abort();
     }, [project?.id, project?.document.artworks.map((a) => a.resourceId).join("|")]);
-    const edit = (update: (p: PackagingProject) => PackagingProject) => {
+    const edit = (update: (p: PackagingProject) => PackagingProject, group?: string) => {
+        const previous = currentProject.current;
+        if (!previous) return;
+        const next = update(previous);
+        if (previous.name === next.name && previous.document === next.document) return;
+        history.current.record(previous, group);
         sequence.current++;
-        setProject((p) => (p ? update(p) : p));
-        setDirty(true);
+        currentProject.current = next;
+        setProject(next);
+        setDirty(!matchesSaved(next));
     };
-    const updateDocument = (update: (d: PackagingDocument) => PackagingDocument) => edit((p) => ({ ...p, document: update(p.document) }));
+    const updateDocument = (update: (d: PackagingDocument) => PackagingDocument, group?: string) => edit((p) => ({ ...p, document: update(p.document) }), group);
+    const restore = (direction: "undo" | "redo") => {
+        if (!currentProject.current || status !== "ready") return;
+        const snapshot = history.current[direction](currentProject.current);
+        if (!snapshot) return;
+        sequence.current++;
+        const next = { ...currentProject.current, ...snapshot };
+        currentProject.current = next;
+        setProject(next);
+        setDirty(!matchesSaved(next));
+    };
     const newProject = (template?: PackagingTemplate) => {
         const session = captureUserSession();
         sequence.current++;
         projectEpoch.current++;
         if (!template || !catalog!.materials[0]) {
-            setProject(undefined);
-            setDirty(false);
+            replaceProject();
             return;
         }
-        setProject({ id: "", userId: session.scope, name: template.name, templateId: template.id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(template, catalog!.materials[0]) });
-        setDirty(false);
+        replaceProject({ id: "", userId: session.scope, name: template.name, templateId: template.id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(template, catalog!.materials[0]) });
         setError("");
     };
     const loadPage = async (next: number) => {
@@ -125,8 +150,7 @@ export function usePackagingProject() {
         assertCurrentUserSession(session);
         if (epoch !== projectEpoch.current) return;
         if (submitted !== sequence.current) throw new Error("读取期间有新的编辑，已保留当前修改；请重新打开项目");
-        setProject(value);
-        setDirty(false);
+        replaceProject(value);
         setError("");
         sequence.current++;
     };
@@ -142,8 +166,12 @@ export function usePackagingProject() {
             const value = await packagingApi.save(copy ? "" : project.id, copy ? `${project.name} 副本` : project.name, project.document, copy ? 0 : project.revision, session.signal);
             assertCurrentUserSession(session);
             if (epoch !== projectEpoch.current) return;
-            setProject((current) => (submitted === sequence.current ? value : current ? { ...current, id: value.id, revision: value.revision, createdAt: value.createdAt, updatedAt: value.updatedAt } : value));
-            setDirty(submitted !== sequence.current);
+            savedSnapshot.current = { name: value.name, document: value.document };
+            history.current.endGroup();
+            const next = submitted === sequence.current ? value : { ...currentProject.current!, id: value.id, revision: value.revision, createdAt: value.createdAt, updatedAt: value.updatedAt };
+            currentProject.current = next;
+            setProject(next);
+            setDirty(!matchesSaved(next));
             await loadPage(1);
         } catch (e) {
             if (!session.signal.aborted && epoch === projectEpoch.current) setError(e instanceof Error ? e.message : "保存失败");
@@ -224,17 +252,19 @@ export function usePackagingProject() {
             }
             if (epoch !== projectEpoch.current) return;
             if (submitted !== sequence.current) throw new Error("导入期间有新的编辑，已保留当前修改；请重新导入。已上传图稿保留在素材库");
-            setProject({
-                id: "",
-                userId: session.scope,
-                name: imported.name,
-                templateId: template.id,
-                revision: 0,
-                createdAt: "",
-                updatedAt: "",
-                document: { ...imported.document, artworks: imported.document.artworks.map((a) => ({ ...a, resourceId: ids.get(a.resourceId)! })) },
-            });
-            setDirty(true);
+            replaceProject(
+                {
+                    id: "",
+                    userId: session.scope,
+                    name: imported.name,
+                    templateId: template.id,
+                    revision: 0,
+                    createdAt: "",
+                    updatedAt: "",
+                    document: { ...imported.document, artworks: imported.document.artworks.map((a) => ({ ...a, resourceId: ids.get(a.resourceId)! })) },
+                },
+                true,
+            );
             sequence.current++;
         } finally {
             if (!session.signal.aborted) setStatus("ready");
@@ -250,6 +280,11 @@ export function usePackagingProject() {
         setError,
         status,
         dirty,
+        canUndo: history.current.canUndo,
+        canRedo: history.current.canRedo,
+        undo: () => restore("undo"),
+        redo: () => restore("redo"),
+        endHistoryGroup: () => history.current.endGroup(),
         images: images.current,
         resources: resources.current,
         imageRevision,

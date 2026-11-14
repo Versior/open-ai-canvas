@@ -1,13 +1,15 @@
 import { useRef, useState } from "react";
 import { Copy, ImagePlus, Trash2 } from "lucide-react";
+import { nanoid } from "nanoid";
 import type { PackagingArtwork, PackagingCatalog, PackagingDocument, PackagingLayout, PackagingParameters } from "@/lib/packaging/types";
+import { fitPackagingArtwork, packagingPanelBounds } from "@/lib/packaging/production";
 
 type Props = {
     catalog: PackagingCatalog;
     document: PackagingDocument;
     layout?: PackagingLayout;
     selected: string;
-    onDocument: (update: (d: PackagingDocument) => PackagingDocument) => void;
+    onDocument: (update: (d: PackagingDocument) => PackagingDocument, group?: string) => void;
     onSelect: (id: string) => void;
     onTemplate: (id: string) => void;
     onUpload: (file: File, panelId: string, role: PackagingArtwork["role"]) => void;
@@ -18,14 +20,15 @@ export function PackagingParametersPanel(props: Props) {
     const [query, setQuery] = useState("");
     const [category, setCategory] = useState("");
     const [role, setRole] = useState<PackagingArtwork["role"]>("artwork");
+    const [aspectLocks, setAspectLocks] = useState<Record<string, boolean>>({});
     const file = useRef<HTMLInputElement>(null);
     const field = (key: keyof PackagingParameters, label: string, min: number, max: number, step = 0.1) => (
         <label key={key}>
             {label}
-            <input type="number" min={min} max={max} step={step} value={props.document.parameters[key]} onChange={(e) => props.onDocument((d) => ({ ...d, parameters: { ...d.parameters, [key]: Number(e.target.value) } }))} />
+            <input type="number" min={min} max={max} step={step} value={props.document.parameters[key]} onChange={(e) => props.onDocument((d) => ({ ...d, parameters: { ...d.parameters, [key]: Number(e.target.value) } }), `parameter-${key}`)} />
         </label>
     );
-    const changeArtwork = (id: string, change: Partial<PackagingArtwork>) => props.onDocument((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }));
+    const changeArtwork = (id: string, change: Partial<PackagingArtwork>, group?: string) => props.onDocument((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }), group);
     return (
         <aside className="pkg-parameters">
             <section>
@@ -149,6 +152,10 @@ export function PackagingParametersPanel(props: Props) {
                                 ))}
                             </select>
                         </label>
+                        <label className="pkg-aspect-lock">
+                            <input type="checkbox" checked={aspectLocks[a.id] !== false} onChange={(e) => setAspectLocks((v) => ({ ...v, [a.id]: e.target.checked }))} />
+                            保持当前宽高比例
+                        </label>
                         <div className="pkg-fields">
                             {(
                                 [
@@ -162,27 +169,62 @@ export function PackagingParametersPanel(props: Props) {
                             ).map(([key, label]) => (
                                 <label key={key}>
                                     {label}
-                                    <input type="number" step={key === "opacity" ? 0.05 : 0.1} value={a[key]} onChange={(e) => changeArtwork(a.id, { [key]: Number(e.target.value) })} />
+                                    <input
+                                        type="number"
+                                        min={key === "width" || key === "height" ? 0.1 : key === "opacity" ? 0 : undefined}
+                                        max={key === "opacity" ? 1 : undefined}
+                                        step={key === "opacity" ? 0.05 : 0.1}
+                                        value={a[key]}
+                                        onChange={(e) => {
+                                            const value = Number(e.target.value);
+                                            const linked =
+                                                aspectLocks[a.id] !== false && a.width > 0 && a.height > 0 && (key === "width" || key === "height")
+                                                    ? key === "width"
+                                                        ? { height: (a.height * value) / a.width }
+                                                        : { width: (a.width * value) / a.height }
+                                                    : {};
+                                            changeArtwork(a.id, { [key]: value, ...linked }, `artwork-${a.id}-${key}`);
+                                        }}
+                                    />
                                 </label>
                             ))}
                         </div>
                         <div className="pkg-toolbar">
+                            {(
+                                [
+                                    ["contain", "等比放入"],
+                                    ["cover", "等比铺满"],
+                                    ["center", "居中"],
+                                ] as const
+                            ).map(([mode, label]) => (
+                                <button
+                                    type="button"
+                                    key={mode}
+                                    disabled={!props.layout || a.width <= 0 || a.height <= 0}
+                                    onClick={() => {
+                                        const panel = props.layout!.panels.find((p) => p.id === a.panelId);
+                                        changeArtwork(a.id, fitPackagingArtwork(a, panel ? packagingPanelBounds(panel.points) : props.layout!.bounds, mode));
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                            <button type="button" onClick={() => changeArtwork(a.id, { rotation: (a.rotation + 90) % 360 })}>
+                                转 90°
+                            </button>
                             <button
                                 type="button"
-                                title="按当前面或整版适配图稿"
-                                onClick={() => {
-                                    const panel = props.layout?.panels.find((p) => p.id === a.panelId);
-                                    const b = props.layout?.bounds;
-                                    if (!b) return;
-                                    const x = panel ? Math.min(...panel.points.map((p) => p[0])) : b.x;
-                                    const y = panel ? Math.min(...panel.points.map((p) => p[1])) : b.y;
-                                    const width = panel ? Math.max(...panel.points.map((p) => p[0])) - x : b.width;
-                                    const height = panel ? Math.max(...panel.points.map((p) => p[1])) - y : b.height;
-                                    changeArtwork(a.id, { x, y, width, height, rotation: 0 });
-                                }}
+                                disabled={props.document.artworks.length >= 40 || props.busy}
+                                onClick={() => props.onDocument((d) => ({ ...d, artworks: [...d.artworks, { ...a, id: nanoid(), name: `${[...a.name].slice(0, 197).join("")} 副本`, x: a.x + 3, y: a.y + 3 }] }))}
                             >
                                 <Copy size={14} />
-                                适配
+                                复制
+                            </button>
+                            <button type="button" onClick={() => props.onDocument((d) => ({ ...d, artworks: [...d.artworks.filter((v) => v.id !== a.id), a] }))}>
+                                置顶
+                            </button>
+                            <button type="button" onClick={() => props.onDocument((d) => ({ ...d, artworks: [a, ...d.artworks.filter((v) => v.id !== a.id)] }))}>
+                                置底
                             </button>
                             <button type="button" onClick={() => props.onDocument((d) => ({ ...d, artworks: d.artworks.filter((v) => v.id !== a.id) }))}>
                                 <Trash2 size={14} />
@@ -197,11 +239,11 @@ export function PackagingParametersPanel(props: Props) {
                 <div className="pkg-fields">
                     <label>
                         纸面颜色
-                        <input type="color" value={props.document.material.color} onChange={(e) => props.onDocument((d) => ({ ...d, material: { ...d.material, color: e.target.value } }))} />
+                        <input type="color" value={props.document.material.color} onChange={(e) => props.onDocument((d) => ({ ...d, material: { ...d.material, color: e.target.value } }), "material-color")} />
                     </label>
                     <label>
                         内侧颜色
-                        <input type="color" value={props.document.material.insideColor} onChange={(e) => props.onDocument((d) => ({ ...d, material: { ...d.material, insideColor: e.target.value } }))} />
+                        <input type="color" value={props.document.material.insideColor} onChange={(e) => props.onDocument((d) => ({ ...d, material: { ...d.material, insideColor: e.target.value } }), "material-inside-color")} />
                     </label>
                     <label>
                         表面
@@ -223,7 +265,7 @@ export function PackagingParametersPanel(props: Props) {
                     </label>
                     <label>
                         灯光
-                        <input type="number" min={0.2} max={5} step={0.1} value={props.document.view.light} onChange={(e) => props.onDocument((d) => ({ ...d, view: { ...d.view, light: Number(e.target.value) } }))} />
+                        <input type="number" min={0.2} max={5} step={0.1} value={props.document.view.light} onChange={(e) => props.onDocument((d) => ({ ...d, view: { ...d.view, light: Number(e.target.value) } }), "view-light")} />
                     </label>
                 </div>
                 <label className="pkg-check">
@@ -237,7 +279,7 @@ export function PackagingParametersPanel(props: Props) {
             </details>
             <details>
                 <summary>方案备注</summary>
-                <textarea rows={4} maxLength={4000} value={props.document.notes} placeholder="材料批次、印刷要求或白样核对记录" onChange={(e) => props.onDocument((d) => ({ ...d, notes: e.target.value }))} />
+                <textarea rows={4} maxLength={4000} value={props.document.notes} placeholder="材料批次、印刷要求或白样核对记录" onChange={(e) => props.onDocument((d) => ({ ...d, notes: e.target.value }), "notes")} />
             </details>
         </aside>
     );
