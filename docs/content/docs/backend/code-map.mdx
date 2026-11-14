@@ -5,6 +5,13 @@ description: 从产品功能快速定位主要代码入口
 
 # 代码功能地图
 
+## 包装刀板
+
+- 用户页 `web/src/pages/packaging/`，后台 `web/src/pages/admin/packaging/`，API `web/src/services/api/packaging.ts`。
+- 类型、结构、三维与交付：`web/src/lib/packaging/types.ts`、`geometry.ts`、`scene.ts`、`delivery.ts`；方案输入 `import-contract.ts`。
+- 后端合同 `internal/packaging/contract.go` → `handler/packaging.go` → `app/packaging.go` → `repository/packaging.go`；模型 `model/models_packaging.go`，Schema 112 与跨数据库清单同步。
+- 结构测试 `web/test/packaging.test.ts`，HTTP 测试 `handler/packaging_test.go`；视频依据与范围 `docs/plans/packaging-dieline.md`。
+
 ## 创作扩展与智能体皮肤
 
 - 模特配对与要求：`web/src/lib/fashion/workflow.ts`；页面 `components/fashion/fashion-workbench.tsx`；后端任务与模型能力 `services/fashion-generation.ts`；私有作品 API `services/api/fashion.ts`，后端 `app/fashion_work.go` 校验输入和资源归属，复用 `ecommerce_product_video.go` 的 CAS 保存。

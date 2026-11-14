@@ -42,6 +42,169 @@ tags:
   - name: pose-library
     description: 站点姿势库：浏览、选用，管理员导入与图片同步
 paths:
+  /packaging/catalog:
+    get:
+      tags: [workbench]
+      summary: 读取启用的包装盒型和材料目录
+      description: 需要登录；停用写入时仍返回目录及 enabled=false，历史项目仍可读取。响应禁止缓存。
+      responses:
+        "200": { $ref: "#/components/responses/PackagingCatalog" }
+        "401": { $ref: "#/components/responses/Error" }
+  /packaging/projects:
+    get:
+      tags: [workbench]
+      summary: 分页读取本人包装项目摘要
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+        - { in: query, name: templateId, schema: { type: string } }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingProjectPage" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [workbench]
+      summary: 新建包装项目
+      description: 严格 JSON 最大 256 KiB；expectedRevision=0。校验盒型与材料启用状态、本人就绪图片资源和项目配额。项目与图稿关联在同一事务保存，不接受外部图稿 URL。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PackagingProjectInput" }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingProject" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /packaging/projects/{projectId}:
+    parameters:
+      - { in: path, name: projectId, required: true, schema: { type: string } }
+    get:
+      tags: [workbench]
+      summary: 读取本人包装项目与结构快照
+      responses:
+        "200": { $ref: "#/components/responses/PackagingProject" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [workbench]
+      summary: 按版本更新包装项目
+      description: expectedRevision 必须等于当前版本；冲突返回 409 / packaging_project_conflict，整个保存回滚。尺寸单位为毫米。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PackagingProjectInput" }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingProject" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [workbench]
+      summary: 按版本删除本人包装项目
+      description: 删除项目及关联；原始上传素材保留。停用写入不阻止本人删除项目。
+      parameters:
+        - { in: query, name: expectedRevision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/packaging/catalog:
+    get:
+      tags: [admin]
+      summary: 管理员读取全部包装目录
+      responses:
+        "200": { $ref: "#/components/responses/PackagingCatalog" }
+        "403": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      summary: 按版本保存盒型、材料和配额
+      description: 仅管理员；严格 JSON 最大 256 KiB。目录整体 CAS 更新，版本加一并写入管理审计；冲突返回 409 / packaging_catalog_conflict。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expectedRevision, catalog]
+              properties:
+                expectedRevision: { type: integer, minimum: 0 }
+                catalog: { $ref: "#/components/schemas/PackagingCatalog" }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingCatalog" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /admin/packaging/projects:
+    get:
+      tags: [admin]
+      summary: 管理员分页查看全部包装项目
+      parameters:
+        - { in: query, name: userId, schema: { type: string } }
+        - { in: query, name: templateId, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200": { $ref: "#/components/responses/PackagingProjectPage" }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/packaging/projects/{projectId}:
+    parameters:
+      - { in: path, name: projectId, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      summary: 管理员读取包装项目详情
+      description: 图稿通过已有 /admin/resources/{id}/file 接口读取，不扩展用户资源访问权限。
+      responses:
+        "200": { $ref: "#/components/responses/PackagingProject" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      summary: 管理员按版本删除包装项目并记录审计
+      parameters:
+        - { in: query, name: expectedRevision, required: true, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/packaging/overview:
+    get:
+      tags: [admin]
+      summary: 包装项目数量、用户数、近七日新建与盒型分布
+      responses:
+        "200":
+          description: 真实持久化统计
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          projects: { type: integer }
+                          users: { type: integer }
+                          last7Days: { type: integer }
+                          byTemplate:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                templateId: { type: string }
+                                total: { type: integer }
+        "403": { $ref: "#/components/responses/Error" }
   /timeline/renders:
     post:
       tags: [tasks]
@@ -6824,6 +6987,135 @@ components:
       in: cookie
       name: open_ai_canvas_session
   schemas:
+    PackagingParameters:
+      type: object
+      additionalProperties: false
+      required: [length, width, height, thickness, bleed, glue, tab, gap, frontHeight, windowWidth, windowHeight, inflation, spoutRadius]
+      description: 毫米外尺寸；纸厚不得超过最短边的五分之一，粘口和插舌不得超过长宽最短边。开窗同时为零或同时大于零，须距实际正面边缘至少二毫米；软包装曲面不支持实体开窗。
+      properties:
+        length: { type: number, minimum: 10, maximum: 1000 }
+        width: { type: number, minimum: 10, maximum: 1000 }
+        height: { type: number, minimum: 10, maximum: 1000 }
+        thickness: { type: number, minimum: 0.05, maximum: 10 }
+        bleed: { type: number, minimum: 0, maximum: 20 }
+        glue: { type: number, minimum: 2, maximum: 80 }
+        tab: { type: number, minimum: 2, maximum: 100 }
+        gap: { type: number, minimum: 0.1, maximum: 10 }
+        frontHeight: { type: number, minimum: 5, maximum: 1000 }
+        windowWidth: { type: number, minimum: 0, maximum: 996 }
+        windowHeight: { type: number, minimum: 0, maximum: 996 }
+        inflation: { type: number, minimum: 0, maximum: 1 }
+        spoutRadius: { type: number, minimum: 0, maximum: 250 }
+    PackagingTemplate:
+      type: object
+      additionalProperties: false
+      required: [id, name, category, structure, description, enabled, defaults]
+      properties:
+        id: { type: string, pattern: '^[A-Za-z0-9_-]{1,80}$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        category: { type: string, enum: [折叠纸盒, 礼盒, 托盘展示, 软包装] }
+        structure: { type: string, enum: [tuck, reverse-tuck, mailer, tray, display, lid-base, drawer, book, double-door, pillow, pouch, spout-pouch] }
+        description: { type: string, maxLength: 800 }
+        enabled: { type: boolean }
+        defaults: { $ref: "#/components/schemas/PackagingParameters" }
+    PackagingMaterial:
+      type: object
+      additionalProperties: false
+      required: [id, name, color, insideColor, thickness, roughness, metalness, enabled]
+      properties:
+        id: { type: string, pattern: '^[A-Za-z0-9_-]{1,80}$' }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        color: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        insideColor: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        thickness: { type: number, minimum: 0.05, maximum: 10 }
+        roughness: { type: number, minimum: 0, maximum: 1 }
+        metalness: { type: number, minimum: 0, maximum: 1 }
+        enabled: { type: boolean }
+    PackagingCatalog:
+      type: object
+      additionalProperties: false
+      required: [revision, enabled, maxProjects, templates, materials]
+      properties:
+        revision: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+        maxProjects: { type: integer, minimum: 1, maximum: 500 }
+        templates:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/PackagingTemplate" }
+        materials:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: "#/components/schemas/PackagingMaterial" }
+    PackagingDocument:
+      type: object
+      additionalProperties: false
+      required: [version, template, parameters, material, artworks, view, notes]
+      properties:
+        version: { type: integer, enum: [1] }
+        template: { $ref: "#/components/schemas/PackagingTemplate" }
+        parameters: { $ref: "#/components/schemas/PackagingParameters" }
+        material: { $ref: "#/components/schemas/PackagingMaterial" }
+        notes: { type: string, maxLength: 4000 }
+        artworks:
+          type: array
+          maxItems: 40
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, resourceId, name, panelId, role, x, y, width, height, rotation, opacity]
+            properties:
+              id: { type: string, pattern: '^[A-Za-z0-9_-]{1,80}$' }
+              resourceId: { type: string, pattern: '^[A-Za-z0-9_-]{1,80}$' }
+              name: { type: string, maxLength: 200 }
+              panelId: { type: string, description: 空串为整版；非空时必须是该结构的有效面板 ID }
+              role: { type: string, enum: [artwork, foil, uv, emboss] }
+              x: { type: number, minimum: -8000, maximum: 8000 }
+              y: { type: number, minimum: -8000, maximum: 8000 }
+              width: { type: number, minimum: 0.1, maximum: 8000 }
+              height: { type: number, minimum: 0.1, maximum: 8000 }
+              rotation: { type: number, minimum: -360, maximum: 360 }
+              opacity: { type: number, minimum: 0, maximum: 1 }
+        view:
+          type: object
+          additionalProperties: false
+          required: [fold, open, layout, background, projection, finish, light, shadows, dimensions]
+          properties:
+            fold: { type: number, minimum: 0, maximum: 1 }
+            open: { type: number, minimum: 0, maximum: 1 }
+            layout: { type: string, enum: [split, dieline, model] }
+            background: { type: string, enum: [transparent, light, dark] }
+            projection: { type: string, enum: [perspective, orthographic] }
+            finish: { type: string, enum: [paper, matte, gloss, foil, emboss] }
+            light: { type: number, minimum: 0.2, maximum: 5 }
+            shadows: { type: boolean }
+            dimensions: { type: boolean }
+    PackagingProjectSummary:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        name: { type: string, maxLength: 120 }
+        templateId: { type: string }
+        revision: { type: integer, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PackagingProject:
+      allOf:
+        - { $ref: "#/components/schemas/PackagingProjectSummary" }
+        - type: object
+          properties:
+            document: { $ref: "#/components/schemas/PackagingDocument" }
+    PackagingProjectInput:
+      type: object
+      additionalProperties: false
+      required: [name, expectedRevision, document]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        expectedRevision: { type: integer, minimum: 0 }
+        document: { $ref: "#/components/schemas/PackagingDocument" }
     MCPParameter:
       type: object
       additionalProperties: false
@@ -8599,6 +8891,44 @@ components:
           items: {type: string}
           description: metadata 或采用云端版本的消息 ID
   responses:
+    PackagingCatalog:
+      description: 包装盒型与材料目录
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Envelope" }
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/PackagingCatalog" }
+    PackagingProject:
+      description: 包装项目与文档快照
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Envelope" }
+              - type: object
+                properties:
+                  data: { $ref: "#/components/schemas/PackagingProject" }
+    PackagingProjectPage:
+      description: 分页摘要，不含完整文档
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/Envelope" }
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/PackagingProjectSummary" }
+                      total: { type: integer }
+                      page: { type: integer }
+                      pageSize: { type: integer }
     MCPCatalog:
       description: MCP 市场条目列表；空列表返回 items 数组
       content:

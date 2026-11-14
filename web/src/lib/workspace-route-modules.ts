@@ -12,6 +12,7 @@ export const workspaceRoutePages = {
     ecommerceStudio: preloadableLazy(() => import("@/pages/ecommerce-studio")),
     videoReplication: preloadableLazy(() => import("@/pages/video-replication")),
     interior: preloadableLazy(() => import("@/pages/interior")),
+    packaging: preloadableLazy(() => import("@/pages/packaging")),
     inspiration: preloadableLazy(() => import("@/pages/inspirations")),
     imageWorkbench: preloadableLazy(() => import("@/pages/workbench/image-workbench-route")),
     videoWorkbench: preloadableLazy(() => import("@/pages/workbench/video-workbench-page")),
@@ -43,6 +44,7 @@ const workspaceRouteSlugs: Record<string, keyof typeof workspaceRoutePages> = {
     studio: "ecommerceStudio",
     "video-replication": "videoReplication",
     interior: "interior",
+    packaging: "packaging",
     inspiration: "inspiration",
     inspirations: "inspiration",
 };

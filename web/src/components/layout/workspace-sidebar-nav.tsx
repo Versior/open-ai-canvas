@@ -54,6 +54,7 @@ const COLLAPSED_TITLE_KEYS: Record<string, string> = {
     tasks: "nav.collapsed.tasks",
     "video-replication": "nav.collapsed.videoReplication",
     interior: "nav.collapsed.interior",
+    packaging: "nav.collapsed.packaging",
 };
 
 function toolItem(slug: NavigationToolSlug, to: string, t: TFunction): WorkspaceNavItem {
@@ -68,6 +69,7 @@ function buildNav(features: FeatureAvailability, t: TFunction): { groups: Worksp
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
                 ...(features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Package, to: "/studio" }] : []),
                 ...(features.interiorEnabled ? [{ id: "interior", title: t("nav.sidebar.interior"), icon: Sofa, to: "/interior" }] : []),
+                { id: "packaging", title: t("nav.sidebar.packaging"), icon: Package, to: "/packaging" },
                 { ...toolItem("assets", "/assets", t), title: t("nav.sidebar.assets") },
                 { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
                 ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),

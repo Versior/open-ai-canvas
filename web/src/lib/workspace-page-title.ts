@@ -11,6 +11,7 @@ const PAGE_TITLE_KEYS: Record<string, string> = {
     studio: "nav.pageTitles.studio",
     "video-replication": "nav.pageTitles.videoReplication",
     interior: "nav.pageTitles.interior",
+    packaging: "nav.pageTitles.packaging",
     inspiration: "nav.pageTitles.inspiration",
     referral: "shell.account.referral",
 };

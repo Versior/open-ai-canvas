@@ -153,6 +153,11 @@ func (r *Repository) ResourceReferenceSnapshotExcludingAssets(userID string, exc
 	if err := r.interiorResourceReferences(userID, resourceIDs, &snapshot); err != nil {
 		return snapshot, err
 	}
+	packagingRefs, err := r.PackagingResourceReferences(resourceIDs)
+	if err != nil {
+		return snapshot, err
+	}
+	snapshot.Direct = append(snapshot.Direct, packagingRefs...)
 	var links []model.CreationConversationResource
 	if err := r.db.Where("user_id = ? AND resource_id IN ?", userID, resourceIDs).Find(&links).Error; err != nil {
 		return snapshot, err

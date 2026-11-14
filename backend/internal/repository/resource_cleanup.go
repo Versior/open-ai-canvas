@@ -78,6 +78,7 @@ func (r *Repository) DeleteDetachedResources(resources []model.Resource, deletio
 			model any
 			query string
 		}{
+			{&model.PackagingProjectResource{}, "resource_id IN ?"},
 			{&model.Announcement{}, "image_resource_id IN ?"},
 			{&model.AnnouncementImageDraft{}, "resource_id IN ?"},
 			{&model.AssetRepresentation{}, "resource_id IN ?"},

@@ -38,6 +38,7 @@ export const jaJP: Messages = {
         sidebar: {
             ecommerceStudio: "EC 画像スタジオ",
             interior: "インテリアデザイン",
+            packaging: "パッケージ展開図",
             videoReplication: "動画制作",
             conversations: "会話",
             canvases: "キャンバス",
@@ -75,6 +76,7 @@ export const jaJP: Messages = {
         collapsed: {
             videoReplication: "動画",
             interior: "内装",
+            packaging: "包装",
             inspiration: "ひらめき",
             home: "作成",
             projects: "ドラマ",
@@ -89,6 +91,7 @@ export const jaJP: Messages = {
             studio: "EC 画像スタジオ",
             videoReplication: "動画制作",
             interior: "インテリアデザイン",
+            packaging: "パッケージ展開図",
             inspiration: "インスピレーション",
             home: "作成",
             projects: "ショートドラマ制作",

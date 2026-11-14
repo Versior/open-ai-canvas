@@ -160,6 +160,11 @@ const adminNavigation: AdminNavigationGroup[] = [
         ],
     },
     {
+        key: "packaging",
+        label: "包装刀板",
+        items: [{ path: "/admin/packaging", keywords: "包装 刀板 刀版 盒型 材料 项目 配额", label: "包装刀板管理", shortLabel: "包装", icon: <Package className="size-4" /> }],
+    },
+    {
         key: "settings",
         label: "系统设置",
         items: [

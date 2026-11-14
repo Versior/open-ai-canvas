@@ -551,6 +551,8 @@ func migrations() []tableMigration {
 		migrateTable[model.InteriorMode]("interior_modes"),
 		migrateTable[model.InteriorPreset]("interior_presets"),
 		migrateTable[model.InteriorProject]("interior_projects"),
+		migrateTable[model.PackagingProject]("packaging_projects"),
+		migrateTable[model.PackagingProjectResource]("packaging_project_resources"),
 		migrateTable[model.InteriorKnowledgeEntry]("interior_knowledge_entries"),
 	}
 }

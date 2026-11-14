@@ -59,6 +59,8 @@ const AdminFeedbacksPage = lazyAdminPage(() => import("@/pages/admin/feedbacks/f
 const UsersPage = lazyAdminPage(() => import("@/pages/admin/users/users-page"));
 const UserGroupsPage = lazyAdminPage(() => import("@/pages/admin/user-groups/user-groups-page"));
 const InteriorAdminPage = lazyAdminPage(() => import("@/pages/admin/interior/interior-admin-page"));
+const PackagingAdminPage = lazyAdminPage(() => import("@/pages/admin/packaging/packaging-admin-page"));
+const PackagingPage = workspaceRoutePages.packaging;
 const AssetsPage = workspaceRoutePages.assets;
 const InspirationGalleryPage = workspaceRoutePages.inspiration;
 const WorkDetailPage = lazy(() => import("@/pages/inspiration/work-detail"));
@@ -169,6 +171,7 @@ export const router = createBrowserRouter([
         errorElement: <RouteErrorPage />,
         children: [
             { path: "/create", element: deferred(<CreatePage />) },
+            { path: "/packaging", element: <RequireAuth>{deferred(<PackagingPage />)}</RequireAuth> },
             { path: "/inspirations", element: <LegacyInspirationsRedirect /> },
             { path: "/ecommerce", element: <RequireAuth>{deferred(<EcommercePage />)}</RequireAuth> },
             // 电商生图台：独立于电商 Agent 的商品出图工作台。
@@ -329,6 +332,7 @@ export const router = createBrowserRouter([
                     { path: "interior/rooms", element: <InteriorAdminPage /> },
                     { path: "interior/knowledge", element: <InteriorAdminPage /> },
                     { path: "interior/settings", element: <InteriorAdminPage /> },
+                    { path: "packaging", element: <PackagingAdminPage /> },
                     { path: "plugins", element: <AdminPluginsPage /> },
                     { path: "mcp", element: <AdminMCPPage /> },
                     { path: "workbench-tools", element: <WorkbenchToolsPage /> },

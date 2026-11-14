@@ -38,6 +38,7 @@ export const frFR: Messages = {
         sidebar: {
             ecommerceStudio: "Studio e-commerce",
             interior: "Design intérieur",
+            packaging: "Découpes d’emballage",
             videoReplication: "Création vidéo",
             conversations: "Conversations",
             canvases: "Canevas",
@@ -75,6 +76,7 @@ export const frFR: Messages = {
         collapsed: {
             videoReplication: "Vidéo",
             interior: "Intérieur",
+            packaging: "Emballage",
             inspiration: "Idées",
             home: "Créer",
             projects: "Séries",
@@ -89,6 +91,7 @@ export const frFR: Messages = {
             studio: "Studio e-commerce",
             videoReplication: "Création vidéo",
             interior: "Design intérieur",
+            packaging: "Découpes d’emballage",
             inspiration: "Inspiration",
             home: "Créer",
             projects: "Courts métrages",

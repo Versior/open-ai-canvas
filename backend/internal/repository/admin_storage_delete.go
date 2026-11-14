@@ -74,6 +74,7 @@ func (r *Repository) DeleteAdminResources(resources []model.Resource, deletionJo
 			model any
 			query string
 		}{
+			{&model.PackagingProjectResource{}, "resource_id IN ?"},
 			{&model.Announcement{}, "image_resource_id IN ?"},
 			{&model.AssetRepresentation{}, "resource_id IN ?"},
 			{&model.VoiceProfile{}, "sample_resource_id IN ?"},

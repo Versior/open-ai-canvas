@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const CurrentSchemaVersion int64 = 111
+const CurrentSchemaVersion int64 = 112
 
 const baselineSchemaChecksum = "sha256:open-ai-canvas-schema-v1-20260830"
 const schemaMigrationAppliedAtIndexChecksum = "sha256:schema-migrations-applied-at-index-v2-20260830"
@@ -443,6 +443,9 @@ var schemaMigrations = []migration{
 	}},
 	{version: 110, name: "mcp_tenant_boundaries", checksum: "sha256:mcp-tenant-boundaries-v103", apply: migrateMCPTenantBoundaries},
 	{version: 111, name: "agent_storage_limits", checksum: "sha256:agent-storage-limits-v104", apply: migrateAgentStorageLimits},
+	{version: 112, name: "packaging_projects", checksum: "sha256:packaging-projects-v112", apply: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.PackagingProject{}, &model.PackagingProjectResource{})
+	}},
 }
 
 func migrateLUTLibrary(tx *gorm.DB) error {

@@ -1,0 +1,273 @@
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { ContactShadows, GizmoHelper, GizmoViewport, OrbitControls, OrthographicCamera } from "@react-three/drei";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AmbientLight, Color, DirectionalLight, Mesh, PlaneGeometry, ShadowMaterial, OrthographicCamera as ThreeOrthographicCamera, PerspectiveCamera, Scene, WebGLRenderer } from "three";
+import type { OrbitControls as ThreeOrbitControls } from "three-stdlib";
+import { Download, Maximize2, Move, Pause, Play, RotateCcw, Rotate3D } from "lucide-react";
+import { buildPackagingScene, buildPackagingTextures, packagingCamera, type PackagingScene } from "@/lib/packaging/scene";
+import { downloadPackaging, packagingGlb } from "@/lib/packaging/delivery";
+import type { PackagingDocument, PackagingLayout } from "@/lib/packaging/types";
+
+type Axis = "front" | "back" | "left" | "right" | "top" | "bottom" | "iso";
+type Props = { document: PackagingDocument; layout: PackagingLayout; images: Map<string, HTMLImageElement>; imageRevision: number; onChange: (view: Partial<PackagingDocument["view"]>) => void; onError: (message: string) => void; name: string };
+
+function ModelScene({ built, doc, axis, move, rotate }: { built: PackagingScene; doc: PackagingDocument; axis: { value: Axis; seq: number }; move: boolean; rotate: boolean }) {
+    const { camera, size, invalidate } = useThree();
+    const controls = useRef<ThreeOrbitControls>(null);
+    useEffect(() => {
+        built.apply(doc.view.fold, doc.view.open);
+        invalidate();
+    }, [built, doc.view.fold, doc.view.open, invalidate]);
+    useEffect(() => {
+        const framing = packagingCamera(built.root, size.width / size.height, axis.value);
+        camera.position.copy(framing.position);
+        camera.near = 0.01;
+        camera.far = Math.max(10000, framing.span * 100);
+        if (camera instanceof ThreeOrthographicCamera) {
+            camera.zoom = Math.min(size.width, size.height) / (framing.span * 1.65);
+            camera.updateProjectionMatrix();
+        }
+        if (camera instanceof PerspectiveCamera) camera.updateProjectionMatrix();
+        camera.lookAt(framing.center);
+        if (controls.current) {
+            controls.current.target.copy(framing.center);
+            controls.current.update();
+        }
+        invalidate();
+    }, [built, axis, camera, size.width, size.height, invalidate]);
+    useFrame(() => {
+        if (rotate && controls.current) controls.current.update();
+    });
+    return (
+        <>
+            <ambientLight intensity={doc.view.light * 0.8} />
+            <directionalLight position={[400, 650, -500]} intensity={doc.view.light * 2} castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-1000} shadow-camera-right={1000} shadow-camera-top={1000} shadow-camera-bottom={-1000} />
+            <directionalLight position={[-350, 200, 300]} intensity={doc.view.light * 0.5} />
+            <primitive object={built.root} />
+            {doc.view.shadows ? (
+                <ContactShadows position={[0, -2, 0]} opacity={0.35} scale={Math.max(doc.parameters.length, doc.parameters.width, doc.parameters.height) * 5} blur={2} far={Math.max(doc.parameters.height * 2, 200)} resolution={512} />
+            ) : null}
+            <OrbitControls ref={controls} makeDefault enableRotate={!move} enablePan enableDamping autoRotate={rotate} minDistance={10} maxDistance={10000} />
+            <GizmoHelper alignment="top-right" margin={[58, 60]}>
+                <GizmoViewport axisColors={["#d57c86", "#9cb95b", "#819ecb"]} labelColor="#20252c" />
+            </GizmoHelper>
+        </>
+    );
+}
+
+export function PackagingViewport(props: Props) {
+    const [axis, setAxis] = useState({ value: "iso" as Axis, seq: 0 });
+    const [move, setMove] = useState(false);
+    const [rotate, setRotate] = useState(false);
+    const [playing, setPlaying] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const [resolution, setResolution] = useState(2048);
+    const host = useRef<HTMLDivElement>(null);
+    const ready = props.document.artworks.every((a) => props.images.has(a.resourceId));
+    const textures = useMemo(() => (ready ? buildPackagingTextures(props.document, props.layout, props.images) : undefined), [props.document.artworks, props.document.material, props.layout, props.imageRevision, ready]);
+    const built = useMemo(() => buildPackagingScene(props.document, props.layout, textures), [props.layout, props.document.material, props.document.view.finish, textures]);
+    useEffect(() => () => built.dispose(), [built]);
+    useEffect(
+        () => () => {
+            if (textures) Object.values(textures).forEach((texture) => texture?.dispose());
+        },
+        [textures],
+    );
+    useEffect(() => {
+        if (!playing) return;
+        const started = performance.now();
+        const timer = window.setInterval(() => {
+            const fold = Math.min(1, (performance.now() - started) / 3500);
+            props.onChange({ fold });
+            if (fold === 1) setPlaying(false);
+        }, 40);
+        return () => window.clearInterval(timer);
+    }, [playing]);
+    const exportFile = async (kind: "png" | "glb" | "animation") => {
+        if (!ready) throw new Error("图稿尚未加载完成，暂不能导出");
+        setExporting(true);
+        try {
+            if (kind !== "png") {
+                if (kind === "animation" && props.layout.panels.some((p) => p.surface)) throw new Error("袋体曲面动画不能导出为铰链动画，请导出当前 GLB 姿态");
+                downloadPackaging(await packagingGlb(built.root, props.layout, kind === "animation"), props.name, "glb");
+                return;
+            }
+            const renderer = new WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
+            const groundGeometry = new PlaneGeometry(10000, 10000);
+            const groundMaterial = new ShadowMaterial({ opacity: 0.22 });
+            try {
+                renderer.setSize(resolution, resolution);
+                renderer.setPixelRatio(1);
+                const scene = new Scene();
+                if (props.document.view.background !== "transparent") scene.background = new Color(props.document.view.background === "dark" ? "#202329" : "#f5f2ec");
+                scene.add(built.root.clone(true));
+                const light = new DirectionalLight("#ffffff", props.document.view.light * 2);
+                light.position.set(400, 650, -500);
+                if (props.document.view.shadows) {
+                    renderer.shadowMap.enabled = true;
+                    light.castShadow = true;
+                    light.shadow.mapSize.set(2048, 2048);
+                    light.shadow.camera.left = -1500;
+                    light.shadow.camera.right = 1500;
+                    light.shadow.camera.top = 1500;
+                    light.shadow.camera.bottom = -1500;
+                    light.shadow.camera.far = 5000;
+                    const ground = new Mesh(groundGeometry, groundMaterial);
+                    ground.rotation.x = -Math.PI / 2;
+                    ground.position.y = -2;
+                    ground.receiveShadow = true;
+                    scene.add(ground);
+                }
+                scene.add(light, new AmbientLight("#ffffff", props.document.view.light));
+                const framing = packagingCamera(built.root, 1, axis.value);
+                const camera = props.document.view.projection === "orthographic" ? new ThreeOrthographicCamera(-framing.span, framing.span, framing.span, -framing.span, 0.01, 10000) : new PerspectiveCamera(40, 1, 0.01, 10000);
+                camera.position.copy(framing.position);
+                camera.lookAt(framing.center);
+                renderer.render(scene, camera);
+                const blob = await new Promise<Blob>((resolve, reject) => renderer.domElement.toBlob((value) => (value ? resolve(value) : reject(new Error("PNG 编码失败"))), "image/png"));
+                downloadPackaging(blob, props.name, "png");
+            } finally {
+                groundGeometry.dispose();
+                groundMaterial.dispose();
+                renderer.dispose();
+                renderer.forceContextLoss();
+            }
+        } catch (e) {
+            props.onError(e instanceof Error ? e.message : "导出失败");
+        } finally {
+            setExporting(false);
+        }
+    };
+    return (
+        <section className="pkg-model" ref={host}>
+            <header>
+                <div>
+                    <strong>3D 成品预览</strong>
+                    <span>{ready ? "拖动旋转 · 滚轮缩放" : "图稿加载中"}</span>
+                </div>
+                <button
+                    type="button"
+                    className="pkg-icon"
+                    title="全屏预览"
+                    onClick={() => {
+                        void host.current?.requestFullscreen().catch((e: Error) => props.onError(e.message));
+                    }}
+                >
+                    <Maximize2 size={16} />
+                </button>
+            </header>
+            <div className={`pkg-three is-${props.document.view.background}`}>
+                <Canvas shadows camera={{ fov: 40, near: 0.01, far: 10000, position: [400, 300, -500] }} gl={{ alpha: true, antialias: true }}>
+                    {props.document.view.projection === "orthographic" ? <OrthographicCamera makeDefault position={[400, 300, -500]} near={0.01} far={10000} /> : null}
+                    <ModelScene built={built} doc={props.document} axis={axis} move={move} rotate={rotate} />
+                </Canvas>
+                <div className="pkg-camera-actions">
+                    {(
+                        [
+                            ["front", "前"],
+                            ["back", "后"],
+                            ["left", "左"],
+                            ["right", "右"],
+                            ["top", "顶"],
+                            ["bottom", "底"],
+                            ["iso", "等轴"],
+                        ] as [Axis, string][]
+                    ).map(([value, label]) => (
+                        <button type="button" key={value} aria-pressed={axis.value === value} onClick={() => setAxis((v) => ({ value, seq: v.seq + 1 }))}>
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+            <div className="pkg-model-controls">
+                <div className="pkg-control-row">
+                    <label>
+                        折叠 <output>{Math.round(props.document.view.fold * 100)}%</output>
+                    </label>
+                    <input
+                        aria-label="折叠进度"
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={props.document.view.fold}
+                        onChange={(e) => {
+                            setPlaying(false);
+                            props.onChange({ fold: Number(e.target.value) });
+                        }}
+                    />
+                    <button
+                        type="button"
+                        className="pkg-icon"
+                        title={playing ? "暂停折叠" : "播放折叠"}
+                        onClick={() => {
+                            if (!playing) props.onChange({ fold: 0, open: 0 });
+                            setPlaying((v) => !v);
+                        }}
+                    >
+                        {playing ? <Pause size={16} /> : <Play size={16} />}
+                    </button>
+                </div>
+                <div className="pkg-control-row">
+                    <label>
+                        开合 <output>{Math.round(props.document.view.open * 100)}%</output>
+                    </label>
+                    <input aria-label="开合进度" type="range" min={0} max={1} step={0.01} value={props.document.view.open} onChange={(e) => props.onChange({ open: Number(e.target.value) })} />
+                </div>
+                <div className="pkg-toolbar">
+                    <button type="button" aria-pressed={move} onClick={() => setMove((v) => !v)}>
+                        <Move size={15} />
+                        平移
+                    </button>
+                    <button type="button" aria-pressed={rotate} onClick={() => setRotate((v) => !v)}>
+                        <Rotate3D size={15} />
+                        自动转动
+                    </button>
+                    <button type="button" onClick={() => setAxis((v) => ({ value: "iso", seq: v.seq + 1 }))}>
+                        <RotateCcw size={15} />
+                        复位
+                    </button>
+                    <select aria-label="投影方式" value={props.document.view.projection} onChange={(e) => props.onChange({ projection: e.target.value as PackagingDocument["view"]["projection"] })}>
+                        <option value="perspective">透视</option>
+                        <option value="orthographic">正交</option>
+                    </select>
+                </div>
+                <div className="pkg-toolbar">
+                    <select aria-label="导出图片尺寸" value={resolution} onChange={(e) => setResolution(Number(e.target.value))}>
+                        <option value={1024}>1K</option>
+                        <option value={2048}>2K</option>
+                        <option value={4096}>4K</option>
+                    </select>
+                    <button
+                        type="button"
+                        disabled={exporting || !ready}
+                        onClick={() => {
+                            void exportFile("png").catch((e: Error) => props.onError(e.message));
+                        }}
+                    >
+                        <Download size={15} />
+                        PNG
+                    </button>
+                    <button
+                        type="button"
+                        disabled={exporting || !ready}
+                        onClick={() => {
+                            void exportFile("glb").catch((e: Error) => props.onError(e.message));
+                        }}
+                    >
+                        GLB
+                    </button>
+                    <button
+                        type="button"
+                        disabled={exporting || !ready || props.layout.panels.some((p) => p.surface)}
+                        onClick={() => {
+                            void exportFile("animation").catch((e: Error) => props.onError(e.message));
+                        }}
+                    >
+                        折叠动画
+                    </button>
+                </div>
+            </div>
+        </section>
+    );
+}
