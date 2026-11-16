@@ -24,8 +24,11 @@ for (const [key, value] of Object.entries({
     Object.defineProperty(globalThis, key, { configurable: true, value });
 const { act, useState } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { MemoryRouter } = await import("react-router");
 const { App } = await import("antd");
 const { defaultConfig } = await import("@/stores/use-config-store");
+const { useUserStore } = await import("@/stores/use-user-store");
+useUserStore.setState({ user: { id: "synthetic-owner", username: "test", displayName: "测试", role: "user", status: "active" } });
 const { setActiveUserScope } = await import("@/lib/user-scope");
 setActiveUserScope("synthetic-owner");
 const spec = normalizeSceneSpec(
@@ -113,25 +116,27 @@ let project: InteriorProject = { id: "synthetic-project", name: "合成项目", 
 function Harness() {
     const [current, setCurrent] = useState(project);
     return (
-        <App>
-            <InteriorSceneStudio
-                catalog={catalog}
-                config={defaultConfig}
-                project={current}
-                header={null}
-                ensureProject={async () => project}
-                update={(_id, mutate) => {
-                    project = { ...project, document: mutate(project.document) };
-                    setCurrent(project);
-                }}
-                saveProject={async () => {}}
-                onBusyChange={() => {}}
-                removeScene={() => {}}
-                handoff={null}
-                onHandoffUsed={() => {}}
-                onRender={() => {}}
-            />
-        </App>
+        <MemoryRouter>
+            <App>
+                <InteriorSceneStudio
+                    catalog={catalog}
+                    config={defaultConfig}
+                    project={current}
+                    header={null}
+                    ensureProject={async () => project}
+                    update={(_id, mutate) => {
+                        project = { ...project, document: mutate(project.document) };
+                        setCurrent(project);
+                    }}
+                    saveProject={async () => {}}
+                    onBusyChange={() => {}}
+                    removeScene={() => {}}
+                    handoff={null}
+                    onHandoffUsed={() => {}}
+                    onRender={() => {}}
+                />
+            </App>
+        </MemoryRouter>
     );
 }
 

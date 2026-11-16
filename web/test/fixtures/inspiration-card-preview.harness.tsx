@@ -94,6 +94,7 @@ mock.module("@/services/api/libtv-gallery", () => ({
 }));
 mock.module("@/lib/localforage-storage", () => ({ localForageStorageForScope: () => ({ getItem: async () => null, setItem: async () => {}, removeItem: async () => {} }) }));
 const { useInspirationStore } = await import("../../src/stores/use-inspiration-store");
+const { useUserStore } = await import("../../src/stores/use-user-store");
 const { InspirationCard, InspirationHall, default: InspirationsPage } = await import("../../src/pages/inspirations");
 const { CreationFeaturedWorks } = await import("../../src/pages/create/creation-workspace-empty");
 const { CreationInspirationTunnel } = await import("../../src/pages/create/creation-inspiration-tunnel");
@@ -404,9 +405,11 @@ test("embedded hall follows composer modes, keeps appended order stable and resh
     const show = async (mode: "image" | "video") => {
         await act(async () =>
             root.render(
-                <App>
-                    <InspirationHall embedded creationMode={mode} onUse={noop} />
-                </App>,
+                <MemoryRouter>
+                    <App>
+                        <InspirationHall embedded creationMode={mode} onUse={noop} />
+                    </App>
+                </MemoryRouter>,
             ),
         );
     };
@@ -456,9 +459,11 @@ test("embedded hall removes its duplicate heading and appends cards without pagi
     const show = async (mode: "image" | "video") => {
         await act(async () =>
             root.render(
-                <App>
-                    <InspirationHall embedded creationMode={mode} onUse={noop} />
-                </App>,
+                <MemoryRouter>
+                    <App>
+                        <InspirationHall embedded creationMode={mode} onUse={noop} />
+                    </App>
+                </MemoryRouter>,
             ),
         );
     };
@@ -772,7 +777,8 @@ test("failed featured hero disappears and the next loaded card takes its place",
     client.clear();
 });
 
-test("standalone detail hands the selected prompt and mode to the creation route", async () => {
+test("signed-in standalone detail hands the selected prompt and mode to the creation route", async () => {
+    useUserStore.setState({ user: { id: "inspiration-fixture", username: "test", displayName: "测试", role: "user", status: "active" } });
     function CreationDestination() {
         const { state } = useLocation();
         return <output data-mode={state?.inspirationMode}>{state?.inspirationPrompt}</output>;

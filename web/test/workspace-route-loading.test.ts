@@ -64,7 +64,7 @@ describe("workspace route loading", () => {
         expect(router).toContain("if (!user && welcomeEnabled) return fullScreenDeferred(<WelcomePage />)");
         expect(router).toContain('{ path: "/create", element: deferred(<CreatePage />) }');
         expect(router).toContain("<RequireAuth allowAnonymous={isGuestWorkspacePath(pathname)}>");
-        expect(router).toContain('{ path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> }');
+        expect(router).toContain('{ path: "/assets", element: <RequireAuth allowAnonymous>{deferred(<AssetsPage />)}</RequireAuth> }');
         expect(router).toMatch(/path: "\/canvas\/:id",\s+element: \(\s+<RequireAuth>\s+<CanvasProjectPage \/>\s+<\/RequireAuth>\s+\),/);
         expect(router).not.toContain('path: "/home"');
         expect(router).not.toContain("HomePage");

@@ -45,7 +45,7 @@ const { useStudioEstimate } = await import("@/pages/ecommerce-studio/use-studio-
 const { loadStudioPromptConfig } = await import("@/pages/ecommerce-studio/studio-prompt-config");
 const { setStudioPromptOverrides, studioPromptText } = await import("@/lib/ecommerce-studio/prompt-overrides");
 const { useUserStore } = await import("@/stores/use-user-store");
-useUserStore.setState({ features: { ...useUserStore.getState().features, creditsEnabled: true } });
+useUserStore.setState({ user: { id: "quote-fixture", username: "test", displayName: "测试", role: "user", status: "active" }, features: { ...useUserStore.getState().features, creditsEnabled: true } });
 const host = dom.document.createElement("div");
 dom.document.body.append(host);
 const root = createRoot(host);
@@ -86,6 +86,16 @@ test("a late quote cannot replace the estimate for the new specifications", asyn
     await act(async () => root.render(<Probe inputs={[portrait]} />));
     await act(async () => finish({ quote: { amountMicrocredits: 99_000_000 } }));
     expect(host.textContent).toBe("预计约 11 积分");
+});
+
+test("guest browsing does not request model quotes", async () => {
+    const count = quoted.length;
+    await act(async () => {
+        useUserStore.setState({ user: null });
+        root.render(<Probe inputs={[square, portrait]} />);
+    });
+    expect(host.textContent).toBe("");
+    expect(quoted).toHaveLength(count);
 });
 
 test("prompt read failure clears stale overrides and cancelled responses preserve the current config", async () => {

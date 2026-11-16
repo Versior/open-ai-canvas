@@ -14,6 +14,7 @@ Object.defineProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT", { configurable: tr
 Object.defineProperty(globalThis, "getComputedStyle", { configurable: true, value: dom.getComputedStyle.bind(dom) });
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { MemoryRouter } = await import("react-router");
 const { App } = await import("antd");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { useUserStore } = await import("@/stores/use-user-store");
@@ -129,11 +130,13 @@ const props: ComponentProps<typeof ReplicationHome> = {
 const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.getAttribute("aria-label") === text || item.textContent?.trim() === text)!;
 function paint() {
     root.render(
-        <QueryClientProvider client={client}>
-            <App>
-                <ReplicationHome key={getActiveUserScope()} {...props} />
-            </App>
-        </QueryClientProvider>,
+        <MemoryRouter>
+            <QueryClientProvider client={client}>
+                <App>
+                    <ReplicationHome key={getActiveUserScope()} {...props} />
+                </App>
+            </QueryClientProvider>
+        </MemoryRouter>,
     );
 }
 async function render() {

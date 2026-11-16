@@ -72,9 +72,9 @@ export function createSiteTrafficCollector(browser: Window, send: typeof collect
         const page = resolveSiteTrafficPage(pathname);
         // RequireAuth 的跳转发生在组件中，router idle 仍可能只显示认证加载/重定向。
         if (auth && !auth.user && !isGuestWorkspacePath(pathname)) return null;
-        // 功能关闭时路由只展示门禁页，不能计入对应业务页面。
+        // 登录后功能关闭时只展示门禁页；游客仍可浏览功能展示。
         if (
-            auth &&
+            auth?.user &&
             ((page === "tools_image" && !auth.features.imageWorkbenchEnabled) ||
                 (page === "tools_video" && !auth.features.videoWorkbenchEnabled) ||
                 (page === "history" && !auth.features.taskCenterEnabled) ||

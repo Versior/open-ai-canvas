@@ -70,7 +70,7 @@ const { useCreationPreferencesStore } = await import("../../src/stores/use-creat
 const { useUserStore } = await import("../../src/stores/use-user-store");
 const { defaultModelCapabilityConfig } = await import("../../src/lib/model-capabilities");
 const { WorkbenchPage } = await import("../../src/pages/workbench/image-workbench-page");
-useUserStore.setState({ features: { ...useUserStore.getState().features, creditsEnabled: true } });
+useUserStore.setState({ user: { id: "workbench-fixture", username: "test", displayName: "测试", role: "user", status: "active" }, features: { ...useUserStore.getState().features, creditsEnabled: true } });
 try {
     for (const supportedAudio of [false, true]) {
         const protocol = "newapi-channel-2";

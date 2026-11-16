@@ -271,7 +271,7 @@ describe("site traffic page lifecycle and privacy", () => {
 
     test("anonymous direct protected routes wait for auth and never count the redirecting page", async () => {
         const clock = makeClock();
-        for (const pathname of ["/ecommerce", "/referral", "/canvas/guest-project", "/assets"]) {
+        for (const pathname of ["/referral", "/canvas/guest-project", "/projects/private-project"]) {
             useUserStore.setState({ hydrated: false, user: null });
             const tab = makeTab(clock);
             const router = makeRouter(pathname);
@@ -369,6 +369,14 @@ describe("site traffic page lifecycle and privacy", () => {
         for (const [pathname, page] of [
             ["/", "create"],
             ["/create", "create"],
+            ["/assets", "assets"],
+            ["/canvas", "canvas_list"],
+            ["/projects", "drama"],
+            ["/ecommerce", "ecommerce"],
+            ["/tasks", "history"],
+            ["/skills", "skills"],
+            ["/toolbox/image", "tools_image"],
+            ["/toolbox/video", "tools_video"],
         ]) {
             useUserStore.setState({ hydrated: false, user: null });
             const tab = makeTab(clock);
@@ -613,7 +621,7 @@ describe("site traffic explicit production wiring", () => {
 
     test("new-canvas explicit handlers count once and destination auto-create effects do not count", async () => {
         const canvas = await source("pages/canvas/index.tsx");
-        expect(canvas).toMatch(/const createAndEnter = \(\) => \{\s*trackSiteTrafficAction\("new_canvas"\);/);
+        expect(canvas).toMatch(/const createAndEnter = \(\) => \{\s*if \(!requireLogin\(\)\) return;\s*trackSiteTrafficAction\("new_canvas"\);/);
         expect(canvas.match(/trackSiteTrafficAction\(/g)).toHaveLength(1);
         expect(await source("pages/canvas/use-canvas-project-lifecycle.ts")).toMatch(/const createAndOpenProject = useCallback\(\(\) => \{\s*trackSiteTrafficAction\("new_canvas"\);/);
         expect(await source("pages/create/creation-recent-canvases.tsx")).toContain('trackSiteTrafficAction("new_canvas")');
