@@ -4388,6 +4388,29 @@ paths:
           $ref: "#/components/responses/Envelope"
         "401":
           $ref: "#/components/responses/Error"
+  /auth/settings:
+    get:
+      tags: [auth]
+      security: []
+      summary: 读取公开登录注册设置
+      description: 公开读取登录注册策略。启用 Turnstile 时返回用于浏览器渲染的站点密钥，不返回验证密钥原文。
+      responses:
+        "200":
+          description: 公开登录注册设置
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/Envelope" }
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          turnstileEnabled: { type: boolean }
+                          turnstileSiteKey: { type: string }
+        "500":
+          $ref: "#/components/responses/Error"
   /auth/login:
     post:
       tags: [auth]
@@ -4406,6 +4429,9 @@ paths:
                 autoRegister:
                   type: boolean
                   description: 一体表单提交；账号不存在且允许注册时返回 404 account_not_registered
+                turnstileToken:
+                  type: string
+                  description: 启用机器人保护时由 Cloudflare Turnstile 返回的一次性令牌
       responses:
         "200":
           $ref: "#/components/responses/Envelope"
@@ -4413,6 +4439,190 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+  /auth/register:
+    post:
+      tags: [auth]
+      security: []
+      summary: 注册并设置会话 Cookie
+      description: 首次创建管理员与公开注册都使用此接口；acceptedTerms 必须为 true。启用机器人保护时必须提供有效的 Cloudflare Turnstile 一次性令牌。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [acceptedTerms, password]
+              properties:
+                username: { type: string }
+                email: { type: string, format: email }
+                emailCode: { type: string }
+                phone: { type: string }
+                smsCode: { type: string }
+                ticket: { type: string }
+                displayName: { type: string }
+                password: { type: string }
+                acceptedTerms: { type: boolean }
+                referralCode: { type: string }
+                turnstileToken:
+                  type: string
+                  description: 启用机器人保护时由 Cloudflare Turnstile 返回的一次性令牌
+      responses:
+        "200":
+          $ref: "#/components/responses/Envelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /admin/settings/turnstile:
+    get:
+      tags: [admin]
+      summary: 读取 Cloudflare Turnstile 机器人保护配置
+      description: 仅管理员。data.setting 返回 enabled、siteKey、hasSecretKey、updatedBy、createdAt 和 updatedAt；永不返回 secretKey。
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [admin]
+      summary: 更新 Cloudflare Turnstile 机器人保护配置
+      description: 仅管理员。secretKey 加密保存；提交空字符串保留已保存密钥。启用时必须同时提供 siteKey 与 secretKey。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, siteKey, secretKey]
+              properties:
+                enabled: { type: boolean }
+                siteKey: { type: string }
+                secretKey:
+                  type: string
+                  writeOnly: true
+                  description: Cloudflare Turnstile 密钥；留空保留已保存值
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /admin/settings/wechat:
+    get:
+      tags: [admin]
+      summary: 读取微信网站应用登录配置
+      description: 仅管理员。data.setting 包含 enabled、appId、hasAppSecret、redirectUrl、updatedAt；不返回密钥。
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [admin]
+      summary: 更新微信网站应用登录配置
+      description: AppSecret 加密保存，留空保留；回调使用 HTTPS，路径固定为 /api/auth/wechat/callback。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled, appId, redirectUrl]
+              properties:
+                enabled: { type: boolean }
+                appId: { type: string }
+                appSecret: { type: string, writeOnly: true }
+                redirectUrl: { type: string, format: uri }
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /auth/wechat/start:
+    get:
+      tags: [auth]
+      security: []
+      summary: 发起微信网站应用登录
+      parameters:
+        - { name: next, in: query, schema: { type: string } }
+        - { name: acceptedTerms, in: query, schema: { type: boolean } }
+      responses:
+        "302": { description: 写入十分钟有效的 Secure HttpOnly 状态 Cookie，跳转微信官方授权页 }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/wechat/callback:
+    get:
+      tags: [auth]
+      security: []
+      summary: 处理微信授权回调
+      description: 同时验证浏览器 Cookie 与一次性 state；已有身份登录，新身份进入注册补全。绑定和重新核验检查原账号与原会话。Token 不进入浏览器或重定向 URL。
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string } }
+        - { name: code, in: query, required: true, schema: { type: string } }
+      responses:
+        "302": { description: 返回原页面、个人设置或注册补全页；授权失败返回对应入口 }
+        "400": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/wechat/registration:
+    get:
+      tags: [auth]
+      security: []
+      summary: 读取微信首次注册补全信息
+      description: 根据 HttpOnly Cookie 返回 displayName、next、acceptedTerms，不返回注册票据或微信身份标识。
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "400": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [auth]
+      security: []
+      summary: 完成微信注册并登录
+      description: 按本站策略验证联系方式与服务协议；同一事务消费票据和验证码、创建用户和身份。返回 user、next，写入会话 Cookie；无需用户名和密码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [acceptedTerms]
+              properties:
+                acceptedTerms: { type: boolean }
+                email: { type: string }
+                phone: { type: string }
+                ticket: { type: string }
+                emailCode: { type: string }
+                smsCode: { type: string }
+                referralCode: { type: string }
+                turnstileToken:
+                  type: string
+                  description: 启用机器人保护时由 Cloudflare Turnstile 返回的一次性令牌
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [auth]
+      security: []
+      summary: 退出注册补全并清除浏览器票据
+      responses:
+        "200": { $ref: "#/components/responses/Envelope" }
+  /auth/profile/wechat/bind:
+    get:
+      tags: [auth]
+      summary: 发起当前登录账号的微信绑定
+      description: state 绑定当前账号与会话。已有绑定或微信属于其他账号时拒绝，不能替换已有身份。
+      responses:
+        "302": { description: 写入浏览器状态 Cookie 并跳转微信授权页 }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /auth/profile/wechat/start:
+    get:
+      tags: [auth]
+      summary: 发起当前账号微信身份重新核验
+      description: 仅接受原绑定身份与原会话。核验有效期五分钟，不创建账号或新登录会话。
+      responses:
+        "302": { description: 写入浏览器状态 Cookie 并跳转微信授权页 }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /auth/oidc/start:
     get:
       tags: [auth]
@@ -6821,119 +7031,6 @@ paths:
           $ref: "#/components/responses/Error"
         "413":
           $ref: "#/components/responses/Error"
-  /admin/settings/wechat:
-    get:
-      tags: [admin]
-      summary: 读取微信网站应用登录配置
-      description: 仅管理员。data.setting 包含 enabled、appId、hasAppSecret、redirectUrl、updatedAt；不返回密钥。
-      responses:
-        "200": { $ref: "#/components/responses/Envelope" }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-    patch:
-      tags: [admin]
-      summary: 更新微信网站应用登录配置
-      description: AppSecret 加密保存，留空保留；回调使用 HTTPS，路径固定为 /api/auth/wechat/callback。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [enabled, appId, redirectUrl]
-              properties:
-                enabled: { type: boolean }
-                appId: { type: string }
-                appSecret: { type: string, writeOnly: true }
-                redirectUrl: { type: string, format: uri }
-      responses:
-        "200": { $ref: "#/components/responses/Envelope" }
-        "400": { $ref: "#/components/responses/Error" }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-  /auth/wechat/start:
-    get:
-      tags: [auth]
-      security: []
-      summary: 发起微信网站应用登录
-      parameters:
-        - { name: next, in: query, schema: { type: string } }
-        - { name: acceptedTerms, in: query, schema: { type: boolean } }
-      responses:
-        "302": { description: 写入十分钟有效的 Secure HttpOnly 状态 Cookie，跳转微信官方授权页 }
-        "403": { $ref: "#/components/responses/Error" }
-        "429": { $ref: "#/components/responses/Error" }
-  /auth/wechat/callback:
-    get:
-      tags: [auth]
-      security: []
-      summary: 处理微信授权回调
-      description: 同时验证浏览器 Cookie 与一次性 state；已有身份登录，新身份进入注册补全。绑定和重新核验检查原账号与原会话。Token 不进入浏览器或重定向 URL。
-      parameters:
-        - { name: state, in: query, required: true, schema: { type: string } }
-        - { name: code, in: query, required: true, schema: { type: string } }
-      responses:
-        "302": { description: 返回原页面、个人设置或注册补全页；授权失败返回对应入口 }
-        "400": { $ref: "#/components/responses/Error" }
-        "429": { $ref: "#/components/responses/Error" }
-  /auth/wechat/registration:
-    get:
-      tags: [auth]
-      security: []
-      summary: 读取微信首次注册补全信息
-      description: 根据 HttpOnly Cookie 返回 displayName、next、acceptedTerms，不返回注册票据或微信身份标识。
-      responses:
-        "200": { $ref: "#/components/responses/Envelope" }
-        "400": { $ref: "#/components/responses/Error" }
-    post:
-      tags: [auth]
-      security: []
-      summary: 完成微信注册并登录
-      description: 按本站策略验证联系方式与服务协议；同一事务消费票据和验证码、创建用户和身份。返回 user、next，写入会话 Cookie；无需用户名和密码。
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [acceptedTerms]
-              properties:
-                acceptedTerms: { type: boolean }
-                email: { type: string }
-                phone: { type: string }
-                ticket: { type: string }
-                emailCode: { type: string }
-                smsCode: { type: string }
-                referralCode: { type: string }
-      responses:
-        "200": { $ref: "#/components/responses/Envelope" }
-        "400": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-        "429": { $ref: "#/components/responses/Error" }
-    delete:
-      tags: [auth]
-      security: []
-      summary: 退出注册补全并清除浏览器票据
-      responses:
-        "200": { $ref: "#/components/responses/Envelope" }
-  /auth/profile/wechat/bind:
-    get:
-      tags: [auth]
-      summary: 发起当前登录账号的微信绑定
-      description: state 绑定当前账号与会话。已有绑定或微信属于其他账号时拒绝，不能替换已有身份。
-      responses:
-        "302": { description: 写入浏览器状态 Cookie 并跳转微信授权页 }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
-  /auth/profile/wechat/start:
-    get:
-      tags: [auth]
-      summary: 发起当前账号微信身份重新核验
-      description: 仅接受原绑定身份与原会话。核验有效期五分钟，不创建账号或新登录会话。
-      responses:
-        "302": { description: 写入浏览器状态 Cookie 并跳转微信授权页 }
-        "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
   /creation-conversations:
     get:
       summary: 分页列出当前账号创作历史及永久删除标记
