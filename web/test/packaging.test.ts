@@ -138,8 +138,8 @@ describe("包装真实结构", () => {
                     const top = structure === "lid-base" ? "bottom" : structure === "drawer" ? "front" : structure === "book" ? "lid" : "left-lid";
                     expect(box(`${part}-${top}-paper`).min.y - base.max.y).toBeGreaterThanOrEqual(gap - 0.01);
                     if (structure === "lid-base" || structure === "drawer") {
-                        expect(base.min.x - box(`${part}-left-paper`).max.x).toBeGreaterThanOrEqual(gap - 0.01);
-                        expect(box(`${part}-right-paper`).min.x - base.max.x).toBeGreaterThanOrEqual(gap - 0.01);
+                        expect(box(`${part}-left-paper`).min.x - base.max.x).toBeGreaterThanOrEqual(gap - 0.01);
+                        expect(base.min.x - box(`${part}-right-paper`).max.x).toBeGreaterThanOrEqual(gap - 0.01);
                     }
                     if (structure === "drawer") expect(base.min.y - box("sleeve-back-paper").max.y).toBeGreaterThanOrEqual(gap - 0.01);
                     if (structure === "lid-base") {
@@ -185,7 +185,7 @@ describe("包装交付边界", () => {
         const layout = compilePackaging(d);
         const svg = packagingSvg(d, layout, new Map([["image", "data:image/png;base64,AA=="]]));
         expect(svg).toContain('mm"');
-        expect(svg).toContain('clip-path="url(#structure)"');
+        expect(svg).toContain('clip-path="url(#print-art)"');
         expect(svg).toContain('id="CREASE"');
         expect(svg).toContain('id="BLEED"');
         expect(packagingDxf(layout)).toContain("$INSUNITS\r\n70\r\n4");

@@ -44,6 +44,8 @@ export default defineConfig({
         },
     },
     build: {
+        // iOS 微信仍有不支持媒体范围查询和新语法的 WebKit 内核。
+        target: ["chrome111", "edge111", "firefox114", "safari15"],
         rolldownOptions: {
             output: {
                 strictExecutionOrder: true,

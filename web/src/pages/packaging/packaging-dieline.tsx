@@ -1,10 +1,15 @@
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Download, ImagePlus, Minus, Plus, Scan } from "lucide-react";
 import { packagingPath, packagingDxf, packagingSvg, downloadPackaging } from "@/lib/packaging/delivery";
 import type { PackagingArtwork, PackagingDocument, PackagingLayout } from "@/lib/packaging/types";
 import { resourceFileUrl } from "@/services/api/resources";
 import { artworkBounds, artworkEditorBounds, artworkHandles, movePackagingArtwork, resizePackagingArtwork, rotatePackagingArtwork, type ArtworkHandle } from "@/lib/packaging/artwork";
 import { packagingPanelBounds } from "@/lib/packaging/production";
+import { packagingLayerMarkup, packagingResourceIds } from "@/lib/packaging/layers";
+import { packagingSafeArea } from "@/lib/packaging/design";
+import { packagingPreflight } from "@/lib/packaging/preflight";
+import { measurePackagingText } from "@/lib/packaging/typography";
+import { captureUserSession, assertCurrentUserSession } from "@/lib/user-scope";
 
 type Props = {
     document: PackagingDocument;
@@ -27,7 +32,8 @@ type Props = {
 
 export function PackagingDieline(props: Props) {
     const [zoom, setZoom] = useState(1);
-    const [layers, setLayers] = useState({ cut: true, crease: true, bleed: true, names: true, process: false });
+    const [layers, setLayers] = useState({ cut: true, crease: true, bleed: true, names: true, process: false, safe: false });
+    const [focused, setFocused] = useState(false);
     const [snap, setSnap] = useState(true);
     const [guides, setGuides] = useState<{ axis: "x" | "y"; value: number }[]>([]);
     const file = useRef<HTMLInputElement>(null);
@@ -39,21 +45,24 @@ export function PackagingDieline(props: Props) {
         return () => observer.disconnect();
     }, []);
     const drag = useRef<{ art: PackagingArtwork; start: [number, number]; bounds: PackagingLayout["bounds"]; action: "move" | "rotate" | ArtworkHandle }>(null);
-    const naturalBounds = artworkEditorBounds(props.layout, props.document.artworks);
-    const b = drag.current?.bounds ?? naturalBounds;
     const selectedArt = props.document.artworks.find((a) => a.id === props.selectedArtwork);
+    const focusedPanel = props.layout.panels.find((p) => p.id === (selectedArt?.panelId || props.selected));
+    const naturalBounds = focused && focusedPanel ? packagingPanelBounds(focusedPanel.points) : focused && selectedArt ? artworkBounds(selectedArt) : artworkEditorBounds(props.layout, props.document.artworks);
+    const b = drag.current?.bounds ?? naturalBounds;
+    const safe = useMemo(() => packagingSafeArea(props.layout), [props.layout]);
     const unitsPerPixel = () => 1 / Math.hypot(svg.current!.getScreenCTM()!.a, svg.current!.getScreenCTM()!.b);
-    const pad = 25;
+    const pad = focused ? 8 : 25;
     const handleSize = Math.max((b.width + pad * 2) / size.width, (b.height + pad * 2) / size.height) * 10;
     const pointer = (clientX: number, clientY: number) => {
         const point = new DOMPoint(clientX, clientY).matrixTransform(svg.current!.getScreenCTM()!.inverse());
         return point;
     };
     const start = (e: PointerEvent<SVGElement>, art: PackagingArtwork, action: "move" | "rotate" | ArtworkHandle) => {
-        if (props.readOnly || e.button !== 0) return;
+        if (e.button !== 0) return;
         e.stopPropagation();
-        const p = pointer(e.clientX, e.clientY);
         props.onSelectArtwork?.(art.id);
+        if (props.readOnly || art.locked) return;
+        const p = pointer(e.clientX, e.clientY);
         props.onInteractionStart?.();
         drag.current = { art, start: [p.x, p.y], bounds: naturalBounds, action };
         svg.current!.focus();
@@ -66,6 +75,10 @@ export function PackagingDieline(props: Props) {
         props.onInteractionEnd?.();
     };
     const exportSvg = async () => {
+        const session = captureUserSession();
+        await document.fonts.ready;
+        const errors = packagingPreflight(props.document, props.layout, new Map(), measurePackagingText).issues.filter((issue) => issue.severity === "error" && issue.code !== "resource_missing");
+        if (errors.length) throw new Error(errors.map((issue) => issue.message).join("；"));
         const images = new Map<string, string>();
         for (const [id, blob] of props.resources)
             images.set(
@@ -77,8 +90,9 @@ export function PackagingDieline(props: Props) {
                     reader.readAsDataURL(blob);
                 }),
             );
-        if (props.document.artworks.some((a) => !images.has(a.resourceId))) throw new Error("图稿尚未加载，无法导出完整设计");
-        downloadPackaging(new Blob([packagingSvg(props.document, props.layout, images)], { type: "image/svg+xml" }), props.name, "svg");
+        if (packagingResourceIds(props.document).some((id) => !images.has(id))) throw new Error("图稿尚未加载，无法导出完整设计");
+        assertCurrentUserSession(session);
+        downloadPackaging(new Blob([packagingSvg(props.document, props.layout, images, true, measurePackagingText)], { type: "image/svg+xml" }), props.name, "svg");
     };
     return (
         <section className="pkg-dieline">
@@ -90,7 +104,26 @@ export function PackagingDieline(props: Props) {
                     </span>
                 </div>
                 <div className="pkg-toolbar">
-                    <button type="button" className="pkg-icon" title="适配完整图稿" onClick={() => setZoom(1)}>
+                    <button
+                        type="button"
+                        aria-pressed={focused}
+                        disabled={!focusedPanel && !selectedArt && !focused}
+                        onClick={() => {
+                            setFocused((value) => !value);
+                            setZoom(1);
+                        }}
+                    >
+                        {focused ? "完整刀版" : "放大当前面"}
+                    </button>
+                    <button
+                        type="button"
+                        className="pkg-icon"
+                        title="适配完整图稿"
+                        onClick={() => {
+                            setFocused(false);
+                            setZoom(1);
+                        }}
+                    >
                         <Scan size={15} />
                     </button>
                     <button type="button" className="pkg-icon" title="缩小刀版" onClick={() => setZoom((v) => Math.max(0.5, v / 1.2))}>
@@ -122,7 +155,7 @@ export function PackagingDieline(props: Props) {
                             props.onSelectArtwork?.("");
                             return;
                         }
-                        if (!selectedArt || drag.current || e.metaKey || e.ctrlKey) return;
+                        if (!selectedArt || selectedArt.locked || drag.current || e.metaKey || e.ctrlKey) return;
                         const direction = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
                         if (!direction) return;
                         e.preventDefault();
@@ -160,6 +193,9 @@ export function PackagingDieline(props: Props) {
                     onLostPointerCapture={end}
                 >
                     <defs>
+                        <clipPath id="preview-focus">
+                            <rect x={b.x - pad} y={b.y - pad} width={b.width + pad * 2} height={b.height + pad * 2} />
+                        </clipPath>
                         <clipPath id="preview-structure">
                             <path d={props.layout.cuts.map((p) => packagingPath(p)).join(" ")} clipRule="evenodd" />
                         </clipPath>
@@ -169,117 +205,125 @@ export function PackagingDieline(props: Props) {
                             </clipPath>
                         ))}
                     </defs>
-                    {props.layout.panels.map((panel) => (
-                        <path
-                            key={panel.id}
-                            className={props.selected === panel.id ? "is-selected" : ""}
-                            d={[panel.points, ...panel.holes].map((p) => packagingPath(p)).join(" ")}
-                            fillRule="evenodd"
-                            fill={props.selected === panel.id ? "#dbe6bd" : "#fbfaf7"}
-                            stroke="#e2ded7"
-                            strokeWidth={0.2}
-                            onClick={() => {
-                                props.onSelectArtwork?.("");
-                                props.onSelect(props.selected === panel.id ? "" : panel.id);
-                            }}
-                        >
-                            <title>{panel.name}</title>
-                        </path>
-                    ))}
-                    {props.document.artworks
-                        .filter((a) => a.role === "artwork" || layers.process || a.id === props.selectedArtwork)
-                        .map((art) => (
-                            <g key={art.id} clipPath={`url(#preview-${art.panelId || "structure"})`}>
-                                <image
-                                    href={(props.resourceUrl || resourceFileUrl)(art.resourceId)}
-                                    x={art.x}
-                                    y={art.y}
-                                    width={art.width}
-                                    height={art.height}
-                                    opacity={art.opacity}
-                                    preserveAspectRatio="none"
-                                    transform={`rotate(${art.rotation} ${art.x + art.width / 2} ${art.y + art.height / 2})`}
-                                    className={`pkg-art-image ${art.role !== "artwork" ? "is-mask" : ""}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    onPointerDown={(e) => start(e, art, "move")}
-                                />
-                            </g>
+                    <g clipPath={focused ? "url(#preview-focus)" : undefined}>
+                        {props.layout.panels.map((panel) => (
+                            <path
+                                key={panel.id}
+                                className={props.selected === panel.id ? "is-selected" : ""}
+                                d={[panel.points, ...panel.holes].map((p) => packagingPath(p)).join(" ")}
+                                fillRule="evenodd"
+                                fill={props.selected === panel.id ? "#dbe6bd" : "#fbfaf7"}
+                                stroke="#e2ded7"
+                                strokeWidth={0.2}
+                                onClick={() => {
+                                    props.onSelectArtwork?.("");
+                                    props.onSelect(props.selected === panel.id ? "" : panel.id);
+                                }}
+                            >
+                                <title>{panel.name}</title>
+                            </path>
                         ))}
-                    {layers.cut ? (
-                        <g stroke="#ce4f60" strokeWidth={0.4} fill="none" pointerEvents="none">
-                            {props.layout.cuts.map((p, i) => (
-                                <path key={i} d={packagingPath(p)} />
+                        {props.document.artworks
+                            .filter((a) => a.visible !== false && (a.role === "artwork" || layers.process || a.id === props.selectedArtwork))
+                            .map((art) => (
+                                <g key={art.id} clipPath={`url(#preview-${art.panelId || "structure"})`}>
+                                    <g
+                                        opacity={art.opacity}
+                                        transform={`rotate(${art.rotation} ${art.x + art.width / 2} ${art.y + art.height / 2})`}
+                                        className={`pkg-art-image ${art.role !== "artwork" ? "is-mask" : ""}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onPointerDown={(e) => start(e, art, "move")}
+                                        dangerouslySetInnerHTML={{
+                                            __html: packagingLayerMarkup(
+                                                art,
+                                                art.content ? "" : (props.resourceUrl || resourceFileUrl)(art.resourceId),
+                                                art.role === "artwork" ? undefined : art.role === "foil" ? "#d9b465" : art.role === "silver" ? "#c6cbd6" : "#849f91",
+                                            ),
+                                        }}
+                                    />
+                                </g>
                             ))}
-                        </g>
-                    ) : null}
-                    {layers.crease ? (
-                        <g stroke="#4677c6" strokeWidth={0.35} strokeDasharray="2 1.3" fill="none" pointerEvents="none">
-                            {props.layout.creases.map((p, i) => (
-                                <path key={i} d={packagingPath(p, false)} />
-                            ))}
-                        </g>
-                    ) : null}
-                    {layers.bleed ? (
-                        <g stroke="#739c58" strokeWidth={0.25} fill="none" pointerEvents="none">
-                            {props.layout.bleed.map((p, i) => (
-                                <path key={i} d={packagingPath(p)} />
-                            ))}
-                        </g>
-                    ) : null}
-                    {layers.names
-                        ? props.layout.panels.map((panel) => (
-                              <text
-                                  key={panel.id}
-                                  x={panel.points.reduce((s, p) => s + p[0], 0) / panel.points.length}
-                                  y={panel.points.reduce((s, p) => s + p[1], 0) / panel.points.length}
-                                  fontSize={Math.max(3, Math.min(5, props.document.parameters.length / 25))}
-                                  textAnchor="middle"
-                                  fill="#776e61"
-                                  pointerEvents="none"
-                              >
-                                  {panel.name}
-                              </text>
-                          ))
-                        : null}
-                    {guides.map((guide) => (
-                        <line
-                            key={guide.axis}
-                            className="pkg-art-guide"
-                            pointerEvents="none"
-                            x1={guide.axis === "x" ? guide.value : b.x}
-                            x2={guide.axis === "x" ? guide.value : b.x + b.width}
-                            y1={guide.axis === "y" ? guide.value : b.y}
-                            y2={guide.axis === "y" ? guide.value : b.y + b.height}
-                        />
-                    ))}
-                    {selectedArt && !props.readOnly ? (
-                        <g className="pkg-art-transform" transform={`translate(${selectedArt.x + selectedArt.width / 2} ${selectedArt.y + selectedArt.height / 2}) rotate(${selectedArt.rotation})`}>
-                            <rect x={-selectedArt.width / 2} y={-selectedArt.height / 2} width={selectedArt.width} height={selectedArt.height} fill="none" pointerEvents="none" />
-                            <line x1={0} x2={0} y1={-selectedArt.height / 2} y2={-selectedArt.height / 2 - handleSize * 3} pointerEvents="none" />
-                            {artworkHandles.map((handle) => (
-                                <rect
-                                    key={handle.join()}
-                                    aria-label={`缩放图稿 ${handle.join(",")}`}
-                                    x={(handle[0] * selectedArt.width) / 2 - handleSize / 2}
-                                    y={(handle[1] * selectedArt.height) / 2 - handleSize / 2}
-                                    width={handleSize}
-                                    height={handleSize}
-                                    onPointerDown={(e) => start(e, selectedArt, handle)}
-                                />
-                            ))}
-                            <circle aria-label="旋转图稿" cx={0} cy={-selectedArt.height / 2 - handleSize * 3} r={handleSize * 0.65} onPointerDown={(e) => start(e, selectedArt, "rotate")} />
-                        </g>
-                    ) : null}
-                    {props.document.view.dimensions
-                        ? props.layout.dimensions.map((v, i) => (
-                              <g key={i} stroke="#79736a" strokeWidth={0.3}>
-                                  <path d={packagingPath([v.a, v.b], false)} fill="none" />
-                                  <text x={(v.a[0] + v.b[0]) / 2} y={(v.a[1] + v.b[1]) / 2 - 3} fontSize={4} fill="#555" stroke="none" textAnchor="middle">
-                                      {v.label}
+                        {layers.cut ? (
+                            <g stroke="#ce4f60" strokeWidth={0.4} fill="none" pointerEvents="none">
+                                {props.layout.cuts.map((p, i) => (
+                                    <path key={i} d={packagingPath(p)} />
+                                ))}
+                            </g>
+                        ) : null}
+                        {layers.crease ? (
+                            <g stroke="#4677c6" strokeWidth={0.35} strokeDasharray="2 1.3" fill="none" pointerEvents="none">
+                                {props.layout.creases.map((p, i) => (
+                                    <path key={i} d={packagingPath(p, false)} />
+                                ))}
+                            </g>
+                        ) : null}
+                        {layers.bleed ? (
+                            <g stroke="#739c58" strokeWidth={0.25} fill="none" pointerEvents="none">
+                                {props.layout.bleed.map((p, i) => (
+                                    <path key={i} d={packagingPath(p)} />
+                                ))}
+                            </g>
+                        ) : null}
+                        {layers.names
+                            ? props.layout.panels.map((panel) => (
+                                  <text
+                                      key={panel.id}
+                                      x={panel.points.reduce((s, p) => s + p[0], 0) / panel.points.length}
+                                      y={panel.points.reduce((s, p) => s + p[1], 0) / panel.points.length}
+                                      fontSize={Math.max(3, Math.min(5, props.document.parameters.length / 25))}
+                                      textAnchor="middle"
+                                      fill="#776e61"
+                                      pointerEvents="none"
+                                  >
+                                      {panel.name}
                                   </text>
-                              </g>
-                          ))
-                        : null}
+                              ))
+                            : null}
+                        {layers.safe ? (
+                            <g className="pkg-safe-outline" fill="none" strokeWidth={0.4} strokeDasharray="1.5 1" pointerEvents="none">
+                                <path d={safe.map((points) => packagingPath(points)).join(" ")} />
+                            </g>
+                        ) : null}
+                        {guides.map((guide) => (
+                            <line
+                                key={guide.axis}
+                                className="pkg-art-guide"
+                                pointerEvents="none"
+                                x1={guide.axis === "x" ? guide.value : b.x}
+                                x2={guide.axis === "x" ? guide.value : b.x + b.width}
+                                y1={guide.axis === "y" ? guide.value : b.y}
+                                y2={guide.axis === "y" ? guide.value : b.y + b.height}
+                            />
+                        ))}
+                        {selectedArt && !selectedArt.locked && selectedArt.visible !== false && !props.readOnly ? (
+                            <g className="pkg-art-transform" transform={`translate(${selectedArt.x + selectedArt.width / 2} ${selectedArt.y + selectedArt.height / 2}) rotate(${selectedArt.rotation})`}>
+                                <rect x={-selectedArt.width / 2} y={-selectedArt.height / 2} width={selectedArt.width} height={selectedArt.height} fill="none" pointerEvents="none" />
+                                <line x1={0} x2={0} y1={-selectedArt.height / 2} y2={-selectedArt.height / 2 - handleSize * 3} pointerEvents="none" />
+                                {artworkHandles.map((handle) => (
+                                    <rect
+                                        key={handle.join()}
+                                        aria-label={`缩放图稿 ${handle.join(",")}`}
+                                        x={(handle[0] * selectedArt.width) / 2 - handleSize / 2}
+                                        y={(handle[1] * selectedArt.height) / 2 - handleSize / 2}
+                                        width={handleSize}
+                                        height={handleSize}
+                                        onPointerDown={(e) => start(e, selectedArt, handle)}
+                                    />
+                                ))}
+                                <circle aria-label="旋转图稿" cx={0} cy={-selectedArt.height / 2 - handleSize * 3} r={handleSize * 0.65} onPointerDown={(e) => start(e, selectedArt, "rotate")} />
+                            </g>
+                        ) : null}
+                        {props.document.view.dimensions
+                            ? props.layout.dimensions.map((v, i) => (
+                                  <g key={i} stroke="#79736a" strokeWidth={0.3}>
+                                      <path d={packagingPath([v.a, v.b], false)} fill="none" />
+                                      <text x={(v.a[0] + v.b[0]) / 2} y={(v.a[1] + v.b[1]) / 2 - 3} fontSize={4} fill="#555" stroke="none" textAnchor="middle">
+                                          {v.label}
+                                      </text>
+                                  </g>
+                              ))
+                            : null}
+                    </g>
                 </svg>
             </div>
             <div className="pkg-dieline-footer">
@@ -291,6 +335,7 @@ export function PackagingDieline(props: Props) {
                             ["bleed", "出血"],
                             ["names", "面名"],
                             ["process", "工艺"],
+                            ["safe", "安全区"],
                         ] as const
                     ).map(([key, label]) => (
                         <label key={key}>

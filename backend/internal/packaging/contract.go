@@ -56,17 +56,45 @@ type Catalog struct {
 }
 
 type Artwork struct {
-	ID         string  `json:"id"`
-	ResourceID string  `json:"resourceId"`
-	Name       string  `json:"name"`
-	PanelID    string  `json:"panelId"`
-	Role       string  `json:"role"`
-	X          float64 `json:"x"`
-	Y          float64 `json:"y"`
-	Width      float64 `json:"width"`
-	Height     float64 `json:"height"`
-	Rotation   float64 `json:"rotation"`
-	Opacity    float64 `json:"opacity"`
+	ID         string        `json:"id"`
+	ResourceID string        `json:"resourceId"`
+	Name       string        `json:"name"`
+	PanelID    string        `json:"panelId"`
+	Role       string        `json:"role"`
+	X          float64       `json:"x"`
+	Y          float64       `json:"y"`
+	Width      float64       `json:"width"`
+	Height     float64       `json:"height"`
+	Rotation   float64       `json:"rotation"`
+	Opacity    float64       `json:"opacity"`
+	Content    *LayerContent `json:"content,omitempty"`
+	Visible    *bool         `json:"visible,omitempty"`
+	Locked     bool          `json:"locked,omitempty"`
+}
+
+type LayerContent struct {
+	Kind          string   `json:"kind"`
+	Value         string   `json:"value"`
+	Font          string   `json:"font,omitempty"`
+	Weight        int      `json:"weight,omitempty"`
+	Align         string   `json:"align,omitempty"`
+	Shape         string   `json:"shape,omitempty"`
+	Color         string   `json:"color"`
+	FontSize      *float64 `json:"fontSize,omitempty"`
+	LineHeight    *float64 `json:"lineHeight,omitempty"`
+	LetterSpacing *float64 `json:"letterSpacing,omitempty"`
+	Wrap          *bool    `json:"wrap,omitempty"`
+}
+
+type Surface struct {
+	Paper       string  `json:"paper"`
+	Film        string  `json:"film"`
+	Studio      string  `json:"studio"`
+	Inspection  string  `json:"inspection"`
+	Quality     int     `json:"quality"`
+	Depth       float64 `json:"depth"`
+	FoilColor   string  `json:"foilColor"`
+	SilverColor string  `json:"silverColor"`
 }
 
 type View struct {
@@ -88,10 +116,12 @@ type Document struct {
 	Material   Material   `json:"material"`
 	Artworks   []Artwork  `json:"artworks"`
 	View       View       `json:"view"`
+	Surface    *Surface   `json:"surface,omitempty"`
 	Notes      string     `json:"notes"`
 }
 
 var Structures = []string{"tuck", "reverse-tuck", "mailer", "tray", "display", "lid-base", "drawer", "book", "double-door", "pillow", "pouch", "spout-pouch"}
+var Roles = []string{"artwork", "foil", "silver", "uv", "gloss", "emboss", "deboss", "holo"}
 var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}$`)
 var color = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
@@ -188,9 +218,33 @@ func ValidateDocument(d Document) error {
 		return errors.New("预览设置无效")
 	}
 	ids := map[string]bool{}
+	if s := d.Surface; s != nil {
+		if !slices.Contains([]string{"smooth", "kraft", "linen"}, s.Paper) || !slices.Contains([]string{"none", "matte", "gloss", "soft"}, s.Film) || !slices.Contains([]string{"neutral", "commerce", "warm", "dramatic"}, s.Studio) || (!slices.Contains(Roles, s.Inspection) && s.Inspection != "checker") || !slices.Contains([]int{1024, 2048, 4096}, s.Quality) || !validNumber(s.Depth, 0.05, 1) || !color.MatchString(s.FoilColor) || !color.MatchString(s.SilverColor) {
+			return errors.New("包装材质或检查模式无效")
+		}
+	}
 	for _, a := range d.Artworks {
-		if !identifier.MatchString(a.ID) || ids[a.ID] || !identifier.MatchString(a.ResourceID) || (a.PanelID != "" && !slices.Contains(PanelIDs(d.Template.Structure), a.PanelID)) || utf8.RuneCountInString(a.Name) > 200 || !slices.Contains([]string{"artwork", "foil", "uv", "emboss"}, a.Role) || !validNumber(a.Width, 0.1, 8000) || !validNumber(a.Height, 0.1, 8000) || !validNumber(a.X, -8000, 8000) || !validNumber(a.Y, -8000, 8000) || !validNumber(a.Rotation, -360, 360) || !validNumber(a.Opacity, 0, 1) {
+		if !identifier.MatchString(a.ID) || ids[a.ID] || (a.PanelID != "" && !slices.Contains(PanelIDs(d.Template.Structure), a.PanelID)) || utf8.RuneCountInString(a.Name) > 200 || !slices.Contains(Roles, a.Role) || !validNumber(a.Width, 0.1, 8000) || !validNumber(a.Height, 0.1, 8000) || !validNumber(a.X, -8000, 8000) || !validNumber(a.Y, -8000, 8000) || !validNumber(a.Rotation, -360, 360) || !validNumber(a.Opacity, 0, 1) {
 			return errors.New("图稿引用、位置或工艺层参数无效")
+		}
+		if a.Content == nil {
+			if !identifier.MatchString(a.ResourceID) {
+				return errors.New("图片资源标识无效")
+			}
+		}
+		if c := a.Content; c != nil {
+			if a.ResourceID != "" || !color.MatchString(c.Color) || (c.Kind != "text" && c.Kind != "shape") {
+				return errors.New("原生图层类型或资源引用无效")
+			}
+			if c.Kind == "text" && (utf8.RuneCountInString(c.Value) > 2000 || !slices.Contains([]string{"sans", "serif", "mono"}, c.Font) || !slices.Contains([]int{400, 700}, c.Weight) || !slices.Contains([]string{"left", "center", "right"}, c.Align)) {
+				return errors.New("文字图层排版无效")
+			}
+			if c.Kind == "text" && ((c.FontSize != nil && !validNumber(*c.FontSize, 0.1, 2000)) || (c.LineHeight != nil && !validNumber(*c.LineHeight, 1, 3)) || (c.LetterSpacing != nil && !validNumber(*c.LetterSpacing, 0, 20))) {
+				return errors.New("文字字号、行距或字距无效")
+			}
+			if c.Kind == "shape" && !slices.Contains([]string{"rectangle", "ellipse"}, c.Shape) {
+				return errors.New("图形图层形状无效")
+			}
 		}
 		ids[a.ID] = true
 	}

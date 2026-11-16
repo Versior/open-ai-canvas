@@ -17,6 +17,12 @@ import { usePackagingProject } from "./use-packaging-project";
 import { PackagingProduction } from "./packaging-production";
 import { PackagingPreflightPanel } from "./packaging-preflight";
 import { PackagingMockups } from "./packaging-mockups";
+import { PackagingDesignPanel, PackagingLayerInspector } from "./packaging-design";
+import { PackagingSurfacePanel } from "./packaging-surface";
+import { PackagingDelivery } from "./packaging-delivery";
+import { packagingResourceIds } from "@/lib/packaging/layers";
+import type { PackagingDocument } from "@/lib/packaging/types";
+import { measurePackagingText } from "@/lib/packaging/typography";
 import "./packaging.css";
 
 export default function PackagingPage() {
@@ -28,6 +34,7 @@ export default function PackagingPage() {
     const [preflight, setPreflight] = useState(false);
     const [history, setHistory] = useState(false);
     const [parameters, setParameters] = useState(false);
+    const [stage, setStage] = useState<"structure" | "design" | "model" | "delivery">("model");
     const [production, setProduction] = useState(false);
     const [mockups, setMockups] = useState<{ project: PackagingProject; reference?: Blob }>();
     const userId = useUserStore((s) => s.user?.id);
@@ -40,6 +47,8 @@ export default function PackagingPage() {
     const requireLogin = useRequireLogin();
     const blocker = useBlocker(({ currentLocation, nextLocation }) => Boolean(userId) && state.dirty && currentLocation.pathname !== nextLocation.pathname);
     const doc = state.project?.document;
+    const viewLayout = doc?.view.layout === "split" ? "split" : stage === "model" ? "model" : "dieline";
+    useEffect(() => setParameters(false), [stage]);
     useEffect(() => setMockups(undefined), [userId, state.project?.id]);
     useEffect(() => {
         setSelected("");
@@ -119,6 +128,20 @@ export default function PackagingPage() {
         }
         apply();
     };
+    const editDesign = (update: (document: PackagingDocument) => PackagingDocument, group?: string) => {
+        if (!requireLogin()) return;
+        state.updateDocument(update, group);
+    };
+    const exportPackage = () =>
+        execute(async () => {
+            const session = captureUserSession();
+            if (packagingResourceIds(doc!).some((id) => !state.resources.has(id))) throw new Error("图稿未加载完成，不能导出完整方案包");
+            const used = new Map([...state.resources].filter(([id]) => packagingResourceIds(doc!).includes(id)));
+            await document.fonts.ready;
+            const blob = await packagingProjectZip(state.project!.name, doc!, used, geometry.layout!, state.images, measurePackagingText);
+            assertCurrentUserSession(session);
+            downloadPackaging(blob, state.project!.name, "zip");
+        });
     if (state.status === "loading")
         return (
             <div className="pkg-empty" role="status">
@@ -173,10 +196,12 @@ export default function PackagingPage() {
                     <button type="button" aria-label="重做包装编辑" title="重做 · Ctrl/Cmd+Shift+Z" disabled={busy || !state.canRedo} onClick={state.redo}>
                         <Redo2 size={16} />
                     </button>
-                    <button type="button" className="pkg-mobile-settings" onClick={() => setParameters((v) => !v)}>
-                        <Settings2 size={16} />
-                        参数
-                    </button>
+                    {stage !== "delivery" ? (
+                        <button type="button" className="pkg-mobile-settings" aria-pressed={parameters} onClick={() => setParameters((v) => !v)}>
+                            <Settings2 size={16} />
+                            {stage === "design" ? "图层" : stage === "model" ? "工艺" : "参数"}
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         disabled={busy}
@@ -216,88 +241,136 @@ export default function PackagingPage() {
                     </button>
                 </div>
             ) : null}
+            <nav className="pkg-stage-tabs" aria-label="包装工作区">
+                {(["structure", "design", "model", "delivery"] as const).map((value, i) => (
+                    <button
+                        type="button"
+                        key={value}
+                        aria-pressed={stage === value}
+                        onClick={() => {
+                            setStage(value);
+                            if (value !== "delivery") state.updateDocument((d) => ({ ...d, view: { ...d.view, layout: value === "model" ? "model" : "dieline" } }));
+                        }}
+                    >
+                        <span>{i + 1}</span>
+                        {["结构", "设计", "3D 与工艺", "交付"][i]}
+                    </button>
+                ))}
+                {!userId ? <span className="pkg-guest-label">完整示例展示 · 编辑与交付需登录</span> : null}
+            </nav>
             <div className="pkg-body">
-                <PackagingParametersPanel
-                    catalog={state.catalog}
-                    document={doc}
-                    layout={geometry.layout}
-                    selected={selected}
-                    selectedArtwork={selectedArtwork}
-                    onSelectArtwork={setSelectedArtwork}
-                    onSelect={setSelected}
-                    onDocument={state.updateDocument}
-                    onTemplate={changeTemplate}
-                    onUpload={(file, panelId, role) => execute(() => state.upload(file, panelId, role))}
-                    busy={busy}
-                />
+                {stage === "structure" ? (
+                    <PackagingParametersPanel
+                        catalog={state.catalog}
+                        document={doc}
+                        layout={geometry.layout}
+                        onDocument={state.updateDocument}
+                        onTemplate={changeTemplate}
+                        onDesign={() => {
+                            setStage("design");
+                            state.updateDocument((d) => ({ ...d, view: { ...d.view, layout: "dieline" } }));
+                        }}
+                        busy={busy}
+                    />
+                ) : null}
+                {stage === "design" && geometry.layout ? (
+                    <PackagingDesignPanel
+                        document={doc}
+                        layout={geometry.layout}
+                        selected={selected}
+                        selectedArtwork={selectedArtwork}
+                        busy={busy}
+                        onSelect={setSelected}
+                        onSelectArtwork={(id) => {
+                            setSelectedArtwork(id);
+                            setParameters(false);
+                        }}
+                        onDocument={editDesign}
+                        onUpload={(file, panelId, role) => execute(() => state.upload(file, panelId, role))}
+                    />
+                ) : null}
+                {stage === "model" ? <PackagingSurfacePanel document={doc} onChange={(surface) => state.updateDocument((d) => ({ ...d, surface }), "surface")} /> : null}
                 <div className="pkg-main">
-                    <div className="pkg-workspace-toolbar">
-                        <div className="pkg-toolbar">
-                            {(
-                                [
-                                    ["split", "并排"],
-                                    ["dieline", "刀版"],
-                                    ["model", "3D"],
-                                ] as const
-                            ).map(([layout, label]) => (
-                                <button type="button" key={layout} aria-pressed={doc.view.layout === layout} onClick={() => state.updateDocument((d) => ({ ...d, view: { ...d.view, layout } }))}>
-                                    {layout === "split" ? <LayoutPanelLeft size={15} /> : null}
-                                    {label}
-                                </button>
-                            ))}
+                    {stage !== "delivery" ? (
+                        <div className="pkg-workspace-toolbar">
+                            <div className="pkg-toolbar">
+                                {(
+                                    [
+                                        ["split", "并排"],
+                                        ["dieline", "刀版"],
+                                        ["model", "3D"],
+                                    ] as const
+                                ).map(([layout, label]) => (
+                                    <button
+                                        type="button"
+                                        key={layout}
+                                        aria-pressed={viewLayout === layout}
+                                        onClick={() => {
+                                            if (layout === "model") setStage("model");
+                                            if (layout === "dieline" && stage === "model") setStage("design");
+                                            state.updateDocument((d) => ({ ...d, view: { ...d.view, layout } }));
+                                        }}
+                                    >
+                                        {layout === "split" ? <LayoutPanelLeft size={15} /> : null}
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                            <span>
+                                {state.project.document.template.name} · {doc.parameters.length} × {doc.parameters.width} × {doc.parameters.height} mm
+                            </span>
+                            <button type="button" disabled={!geometry.layout || busy} onClick={() => setProduction(true)}>
+                                <Printer size={15} />
+                                生产试算
+                            </button>
+                            <button type="button" disabled={!geometry.layout || busy} onClick={() => setPreflight(true)}>
+                                交付检查
+                            </button>
+                            <button
+                                type="button"
+                                disabled={Boolean(userId) && (!state.project.id || busy)}
+                                onClick={() =>
+                                    execute(async () => {
+                                        const session = captureUserSession();
+                                        const id = state.project!.id;
+                                        const saved = await packagingApi.project(id, session.signal);
+                                        assertCurrentUserSession(session);
+                                        if (currentProject.current?.id === id) setMockups({ project: saved });
+                                    })
+                                }
+                            >
+                                <Sparkles size={15} />
+                                效果图库
+                            </button>
+                            <button type="button" disabled={!geometry.layout || busy} onClick={exportPackage}>
+                                <Download size={15} />
+                                方案包
+                            </button>
                         </div>
-                        <span>
-                            {state.project.document.template.name} · {doc.parameters.length} × {doc.parameters.width} × {doc.parameters.height} mm
-                        </span>
-                        <button type="button" disabled={!geometry.layout || busy} onClick={() => setProduction(true)}>
-                            <Printer size={15} />
-                            生产试算
-                        </button>
-                        <button type="button" disabled={!geometry.layout || busy} onClick={() => setPreflight(true)}>
-                            交付检查
-                        </button>
-                        <button
-                            type="button"
-                            disabled={Boolean(userId) && (!state.project.id || busy)}
-                            onClick={() =>
-                                execute(async () => {
-                                    const session = captureUserSession();
-                                    const id = state.project!.id;
-                                    const saved = await packagingApi.project(id, session.signal);
-                                    assertCurrentUserSession(session);
-                                    if (currentProject.current?.id === id) setMockups({ project: saved });
-                                })
-                            }
-                        >
-                            <Sparkles size={15} />
-                            效果图库
-                        </button>
-                        <button
-                            type="button"
-                            disabled={!geometry.layout || busy}
-                            onClick={() =>
-                                execute(async () => {
-                                    const session = captureUserSession();
-                                    if (doc.artworks.some((a) => !state.resources.has(a.resourceId))) throw new Error("图稿未加载完成，不能导出完整方案包");
-                                    const used = new Map([...state.resources].filter(([id]) => doc.artworks.some((a) => a.resourceId === id)));
-                                    const blob = await packagingProjectZip(state.project!.name, doc, used, geometry.layout!, state.images);
-                                    assertCurrentUserSession(session);
-                                    downloadPackaging(blob, state.project!.name, "zip");
-                                })
-                            }
-                        >
-                            <Download size={15} />
-                            方案包
-                        </button>
-                    </div>
+                    ) : null}
                     {geometry.error ? (
                         <div className="pkg-empty" role="alert">
                             <p>{geometry.error}</p>
                             <span>修正左侧参数后继续预览。</span>
                         </div>
+                    ) : geometry.layout && stage === "delivery" ? (
+                        <PackagingDelivery
+                            document={doc}
+                            layout={geometry.layout}
+                            images={state.images}
+                            name={state.project.name}
+                            onError={state.setError}
+                            onSelect={(id) => {
+                                setSelectedArtwork(id);
+                                setStage("design");
+                                state.updateDocument((d) => ({ ...d, view: { ...d.view, layout: "dieline" } }));
+                            }}
+                            onPackage={exportPackage}
+                            onProof={() => setProduction(true)}
+                        />
                     ) : geometry.layout ? (
-                        <div className={`pkg-panels is-${doc.view.layout}`} ref={panels} style={{ "--pkg-split": `${split}%` } as CSSProperties}>
-                            {doc.view.layout !== "model" ? (
+                        <div className={`pkg-panels is-${viewLayout}`} ref={panels} style={{ "--pkg-split": `${split}%` } as CSSProperties}>
+                            {viewLayout !== "model" ? (
                                 <PackagingDieline
                                     document={doc}
                                     layout={geometry.layout}
@@ -307,15 +380,16 @@ export default function PackagingPage() {
                                     onSelectArtwork={setSelectedArtwork}
                                     onInteractionStart={state.beginArtworkInteraction}
                                     onInteractionCancel={state.cancelArtworkInteraction}
-                                    onArtwork={(id, change) => state.updateDocument((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }), `drag-${id}`)}
+                                    onArtwork={(id, change) => editDesign((d) => ({ ...d, artworks: d.artworks.map((a) => (a.id === id ? { ...a, ...change } : a)) }), `drag-${id}`)}
                                     onInteractionEnd={state.endHistoryGroup}
                                     onUpload={(file) => execute(() => state.upload(file, selected))}
                                     name={state.project.name}
                                     resources={state.resources}
                                     onError={state.setError}
+                                    readOnly={!userId}
                                 />
                             ) : null}
-                            {doc.view.layout === "split" ? (
+                            {viewLayout === "split" ? (
                                 <div
                                     className="pkg-divider"
                                     role="separator"
@@ -335,7 +409,7 @@ export default function PackagingPage() {
                                     onPointerUp={(e) => e.currentTarget.releasePointerCapture(e.pointerId)}
                                 />
                             ) : null}
-                            {doc.view.layout !== "dieline" ? (
+                            {viewLayout !== "dieline" ? (
                                 <PackagingViewport
                                     document={doc}
                                     layout={geometry.layout}
@@ -367,11 +441,24 @@ export default function PackagingPage() {
                         </details>
                     </footer>
                 </div>
+                {stage === "design" && geometry.layout ? (
+                    <PackagingLayerInspector
+                        document={doc}
+                        layout={geometry.layout}
+                        selected={selected}
+                        selectedArtwork={selectedArtwork}
+                        busy={busy}
+                        onSelect={setSelected}
+                        onSelectArtwork={setSelectedArtwork}
+                        onDocument={editDesign}
+                        onUpload={(file, panelId, role) => execute(() => state.upload(file, panelId, role))}
+                    />
+                ) : null}
             </div>
             <AppModal open={!!mockups} onCancel={() => setMockups(undefined)} title="包装模型效果图" width={960} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
                 {mockups ? <PackagingMockups key={`${userId}-${mockups.project.id}`} project={mockups.project} reference={mockups.reference} enabled={state.catalog.enabled && state.catalog.mockupEnabled} /> : null}
             </AppModal>
-            <AppModal open={production} onCancel={() => setProduction(false)} title="白样打印与用纸试算" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
+            <AppModal open={production} onCancel={() => setProduction(false)} title="白样打印与整纸拼版" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>
                 {geometry.layout ? <PackagingProduction layout={geometry.layout} name={state.project.name} onError={state.setError} /> : null}
             </AppModal>
             <AppModal open={preflight} onCancel={() => setPreflight(false)} title="包装交付检查" width={760} footer={null} centered styles={{ body: { maxHeight: "calc(100dvh - 128px)", overflowY: "auto" } }} destroyOnHidden>

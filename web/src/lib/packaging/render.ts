@@ -2,6 +2,7 @@ import { AmbientLight, Color, DirectionalLight, Mesh, OrthographicCamera, Perspe
 import { packagingCamera, type PackagingScene } from "./scene";
 import { packagingAnimationDuration, packagingAnimationPose, packagingMotionBounds } from "./animation";
 import type { PackagingDocument } from "./types";
+import { packagingEnvironment, packagingSurface, packagingStudios } from "./surface";
 
 export type PackagingCameraAxis = "front" | "back" | "left" | "right" | "top" | "bottom" | "iso";
 
@@ -10,9 +11,12 @@ function packagingRender(root: Group, document: PackagingDocument, resolution: n
     renderer.setSize(resolution, resolution);
     renderer.setPixelRatio(1);
     const scene = new Scene();
+    const environment = packagingEnvironment(renderer);
+    scene.environment = environment.texture;
+    const studio = packagingStudios[packagingSurface(document).studio];
     if (document.view.background !== "transparent") scene.background = new Color(document.view.background === "dark" ? "#202329" : "#f5f2ec");
     scene.add(root);
-    const light = new DirectionalLight("#ffffff", document.view.light * 2);
+    const light = new DirectionalLight(studio.key, document.view.light * 2);
     light.position.set(400, 650, -500);
     const groundGeometry = new PlaneGeometry(10000, 10000);
     const groundMaterial = new ShadowMaterial({ opacity: 0.22 });
@@ -33,7 +37,9 @@ function packagingRender(root: Group, document: PackagingDocument, resolution: n
         ground.receiveShadow = true;
         scene.add(ground);
     }
-    scene.add(light, new AmbientLight("#ffffff", document.view.light));
+    const fill = new DirectionalLight(studio.fill, document.view.light * 0.5);
+    fill.position.set(-350, 200, 300);
+    scene.add(light, fill, new AmbientLight(studio.fill, document.view.light * 0.8 * studio.energy));
     const framing = packagingCamera(root, 1, axis, bounds);
     const camera = activeCamera?.clone() ?? (document.view.projection === "orthographic" ? new OrthographicCamera(-framing.span, framing.span, framing.span, -framing.span, 0.01, 10000) : new PerspectiveCamera(40, 1, 0.01, 10000));
     if (!activeCamera) {
@@ -54,6 +60,7 @@ function packagingRender(root: Group, document: PackagingDocument, resolution: n
         dispose: () => {
             groundGeometry.dispose();
             groundMaterial.dispose();
+            environment.dispose();
             renderer.dispose();
             renderer.forceContextLoss();
         },

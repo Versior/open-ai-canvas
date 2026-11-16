@@ -6,7 +6,7 @@
 
 现有工作台已具备十二参数结构、刀版/3D 共享几何、图稿和工艺、项目保存、后台目录与资源保护。下一步最有价值的是把“设计预览”连接到“可修订、可打样、可核算”的流程，而不是继续堆盒型名称。
 
-已实施方案撤销/重做、A4/A3 真尺寸白样、网格拼版、八向图稿操作、交付检查和工艺分层。最新补齐保存版本的模型效果图、自然语言补充、结果继续修改、后台开关/图库，以及可播放的折叠开合视频。效果图复用既有任务、资源和账务表，没有新增迁移；几何和印刷稿由包装工作台维护。
+已实施方案撤销/重做、A4/A3 真尺寸白样、网格拼版、八向图稿操作、交付检查和工艺分层。后续补齐保存版本的模型效果图、自然语言补充、结果继续修改、后台开关/图库，以及可播放的折叠开合视频。本次继续加入完整刀版的轮廓排料、搜索预算与取消，以及整纸 1:1 SVG/DXF/PDF。效果图复用既有任务、资源和账务表；排料在浏览器 Worker 中执行，没有新增依赖、数据库表或计算 API。
 
 ## GitHub 参考
 
@@ -18,7 +18,8 @@
 | [Rhino Packaging Toolkit](https://github.com/DDR68/Rhino_Packaging_Toolkit/tree/e062327c0f309a0bb3a374fb9a210713d97a13ca) | MIT | 结构与印前工具可分阶段交付；本次核对仓库和文档，未验证 Rhino 插件运行能力。 |
 | [packbox](https://github.com/sbarrak/packbox/tree/3b1b33e34500e1fe615dbfe2d486e818696c0c78) | MIT | 对本项目最直接的参考：图稿操作、历史、内外面、真尺寸分页和自包含方案。其 README 也承认自动锁底没有真实配对锁槽，不能以名称推断生产结构正确。 |
 | [OrigamiSimulator](https://github.com/amandaghassaei/OrigamiSimulator/tree/903ef27afcec7113390659935ae884798ed27188) | MIT | GPU 力学求解与 FOLD/SVG 输入有研究价值，但折纸运动不等于纸盒的纸厚、粘合、压痕及印前验证。 |
-| [SVGnest](https://github.com/Jack000/SVGnest/tree/1248dc21efd3f90d1aa52ba5785e27e5217ed2c9) | MIT | 真实轮廓 NFP/IFP、遗传排序、worker 可作为后续异形排料参考。本轮用明确标注的整套外框网格，不宣称实现 SVGnest 级嵌套优化。 |
+| [SVGnest](https://github.com/Jack000/SVGnest/tree/1248dc21efd3f90d1aa52ba5785e27e5217ed2c9) | MIT | NFP 排斥区、容器允许区、浏览器 Worker 与取消边界。现已自行实现有限预算的整套轮廓放置，保留网格基准；没有移植其遗传优化和孔内嵌套。 |
+| [Deepnest Next](https://github.com/deepnest-next/deepnest/tree/e33e8889df40fed870dd4c2c68be27fd46ea0fdc) | 主项目 MIT，子文件许可分别适用 | 缓存旋转组合的 NFP、贪心策略和真实轮廓复核值得借鉴。桌面版有原生计算模块、孔内放置及共线合并，本项目未接入这些模块或复制实现。 |
 | [packcad](https://github.com/ahzs645/packcad/tree/a42a53240cf107f8b4bf1c6f9f87f8b46e55bc4f) | MIT | 纸厚单位规则、几何 golden tests 与仿真误差边界值得参考。仓库使用外部 file: Atelier 依赖，README 未提供完整生产构建路径；未运行。 |
 | [fold-studio](https://github.com/hungvd194/fold-studio/tree/9cab63ce1d903dca269cce1884a821b53472c30d) | 未发现 LICENSE | README 的保守排版、独立顶底插片、撤销/手势取消和印前边界有参考价值；不能作为已获商用许可的代码依赖。 |
 | [ComfyUI](https://github.com/comfyanonymous/ComfyUI/tree/eee59185ff4f43ae2d9ad122b245619d27d9daad) | GPL 3.0 | `nodes.py` 的 VAEEncode 接受参考像素、KSampler 接受 latent_image/denoise，再通过 SaveImage 保存结果。说明参考输入、变化强度与结果保存是独立环节；本轮复用现有协议和任务，未嵌入 ComfyUI 源码。 |
@@ -33,7 +34,17 @@
 - packbox [`glbExport.ts`](https://github.com/sbarrak/packbox/blob/3b1b33e34500e1fe615dbfe2d486e818696c0c78/src/geometry/glbExport.ts)：导出当前姿态 GLB，不能把静态 GLB 当作视频。本项目区分静态 GLB、硬盒 fold/open 动画 GLB 和十二结构的 MP4/WebM 视频。
 - generator [`pdf.js`](https://github.com/NealZhouPanda/packaging-dieline-generator/blob/f14d352209b01420fd24f52a2a2cd1ca3667975e/src/pdf.js)：用 `72/25.4` 转换毫米；注释明确过早保留三位缩放会产生每米约 0.125mm 误差。本项目保留转换精度，并用独立 PDF 解析检查页面尺寸和路径变换。
 - SVGnest [`placementworker.js`](https://github.com/Jack000/SVGnest/blob/1248dc21efd3f90d1aa52ba5785e27e5217ed2c9/util/placementworker.js)：先算内 NFP，再合并已放置部件的排斥轮廓，差集得到可放位置。缺失 NFP 会跳过部件，结果还需独立检查全部部件是否放入。
-- SVGnest [`svgnest.js`](https://github.com/Jack000/SVGnest/blob/1248dc21efd3f90d1aa52ba5785e27e5217ed2c9/svgnest.js)：以定时器持续迭代；`stop()` 清掉定时器但没有在该方法中终止已启动 worker。未来接入必须有计算预算、取消与迟到结果隔离，不能直接将整个搜索循环放入 React 主线程。
+- SVGnest [`svgnest.js`](https://github.com/Jack000/SVGnest/blob/1248dc21efd3f90d1aa52ba5785e27e5217ed2c9/svgnest.js)：以定时器持续迭代；`stop()` 清掉定时器但没有在该方法中终止已启动 worker。本次独立实现采用计算预算、直接终止 Worker 与迟到结果隔离，搜索循环留在后台线程。
+- Deepnest Next [`main/background.js`](https://github.com/deepnest-next/deepnest/blob/e33e8889df40fed870dd4c2c68be27fd46ea0fdc/main/background.js)：旋转组合缓存 Minkowski 排斥区，合并已放置对象后选择紧凑位置；候选位置还须检查真实材料相交和纸张边界。它将局部放置包在遗传搜索中；本项目采用行/列优先和起始方向的有限确定性搜索，不宣称全局最优。
+
+## 本次轮廓排料与整纸交付
+
+- `nesting.ts` 把包含全部部件的整套刀版作为一个复合对象，部件相对位置保持不变。出血外轮廓用于排料，无出血时使用面板外轮廓；窗口与内部空洞填实，不将孔当成独立部件或孔内可放区域。
+- 用既有 `clipper-lib` 计算 0°/90° 组合的 Minkowski 排斥区，扣除已放对象得到候选点。尖角扩张可以保守限制搜索；合法性则检查真实出血轮廓相交与边到边距离，避免将尖角偏移的过度扩张误判为碰撞。
+- 几何整数精度为 0.001 mm，间距复核容差为 0.002 mm。容器扣除四边留白和上侧额外咬口，方向限制作用于每一套。始终保留完整网格基准；比较的是每张完整套数和实际净结构面积。
+- 浏览器模块 Worker 只在点击开始时运行，预算为 2/5/10 秒。复杂单次几何运算可能稍超过时间检查点；取消、改变几何参数、切换工作区或关闭弹窗会直接终止 Worker 并隔离迟到结果。搜索最多 500 套，整纸导出最多 2000 套；不会截断导出后仍声称完整。
+- SVG、DXF 和 PDF 采用同一套毫米位置，输出全部部件、孔洞、切线、折线与出血。SVG/PDF 的 REFERENCE、DXF 的 DIMENSION 仅作纸张/可用区域参考；不参与切割。上侧空间足够时添加 50 mm 校准尺，打印需关闭缩放。
+- 文件是整纸结构稿，不含彩稿、工艺掩膜、共刀、分部件拆排或孔内嵌套。全局最优、设备生产验收和工厂白样校准仍不在本次完成范围。
 
 ## 官方竞品对照
 

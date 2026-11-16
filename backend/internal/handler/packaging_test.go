@@ -57,6 +57,10 @@ func TestPackagingHTTPPersistencePermissionsAndCatalog(t *testing.T) {
 	}
 	c := packaging.DefaultCatalog()
 	d := packaging.Document{Version: 1, Template: c.Templates[0], Parameters: c.Templates[0].Defaults, Material: c.Materials[0], Artworks: []packaging.Artwork{}, View: packaging.View{Fold: 1, Layout: "split", Background: "dark", Projection: "perspective", Finish: "paper", Light: 1}}
+	d.Artworks = []packaging.Artwork{{ID: "brand", PanelID: "box-front", Role: "silver", X: 15, Y: 20, Width: 80, Height: 30, Opacity: 1, Content: &packaging.LayerContent{Kind: "text", Value: "原生文字", Font: "sans", Weight: 700, Align: "center", Color: "#223344"}}}
+	fontSize, leading, tracking, wrap := 5.0, 1.5, 0.0, true
+	d.Artworks[0].Content.FontSize, d.Artworks[0].Content.LineHeight, d.Artworks[0].Content.LetterSpacing, d.Artworks[0].Content.Wrap = &fontSize, &leading, &tracking, &wrap
+	d.Surface = &packaging.Surface{Paper: "kraft", Film: "matte", Studio: "warm", Inspection: "silver", Quality: 1024, Depth: 0.15, FoilColor: "#ddbb66", SilverColor: "#eeeeee"}
 	input := map[string]any{"name": "包装测试", "expectedRevision": 0, "document": d}
 	raw, _ := json.Marshal(input)
 	code, body := call("POST", "/api/packaging/projects", string(raw), "pack-owner")
@@ -65,8 +69,9 @@ func TestPackagingHTTPPersistencePermissionsAndCatalog(t *testing.T) {
 	}
 	var result struct {
 		Data struct {
-			ID       string `json:"id"`
-			Revision int64  `json:"revision"`
+			ID       string             `json:"id"`
+			Revision int64              `json:"revision"`
+			Document packaging.Document `json:"document"`
 		} `json:"data"`
 	}
 	if err = json.Unmarshal([]byte(body), &result); err != nil {
@@ -75,6 +80,15 @@ func TestPackagingHTTPPersistencePermissionsAndCatalog(t *testing.T) {
 	id := result.Data.ID
 	if id == "" || result.Data.Revision != 1 {
 		t.Fatal("invalid saved project")
+	}
+	if len(result.Data.Document.Artworks) != 1 || result.Data.Document.Artworks[0].Content.Value != "原生文字" || result.Data.Document.Surface.Studio != "warm" {
+		t.Fatal("native layers or surface lost on save")
+	}
+	if *result.Data.Document.Artworks[0].Content.FontSize != 5 || *result.Data.Document.Artworks[0].Content.LineHeight != 1.5 || *result.Data.Document.Artworks[0].Content.LetterSpacing != 0 || !*result.Data.Document.Artworks[0].Content.Wrap {
+		t.Fatal("typography lost on save")
+	}
+	if code, body = call("GET", "/api/packaging/projects/"+id, "", "pack-owner"); code != 200 || !strings.Contains(body, "原生文字") || !strings.Contains(body, `"role":"silver"`) {
+		t.Fatal("native project did not reload")
 	}
 	if code, _ = call("GET", "/api/packaging/projects/"+id, "", "pack-other"); code != 404 {
 		t.Fatal("project leaked across accounts")
@@ -96,9 +110,14 @@ func TestPackagingHTTPPersistencePermissionsAndCatalog(t *testing.T) {
 	}
 	input["expectedRevision"] = 1
 	input["name"] = "更新方案"
+	d.Artworks = append(d.Artworks, packaging.Artwork{ID: "empty-text", PanelID: "box-front", Role: "artwork", Width: 30, Height: 10, Opacity: 1, Content: &packaging.LayerContent{Kind: "text", Value: "", Font: "sans", Weight: 400, Align: "left", Color: "#223344"}})
+	input["document"] = d
 	raw, _ = json.Marshal(input)
 	if code, body = call("PUT", "/api/packaging/projects/"+id, string(raw), "pack-owner"); code != 200 {
 		t.Fatalf("update: %s", body)
+	}
+	if code, body = call("GET", "/api/packaging/projects/"+id, "", "pack-owner"); code != 200 || !strings.Contains(body, `"value":""`) {
+		t.Fatal("empty native text value disappeared on reload")
 	}
 	if code, body = call("PUT", "/api/packaging/projects/"+id, string(raw), "pack-owner"); code != 409 || !strings.Contains(body, "packaging_project_conflict") {
 		t.Fatal("stale save overwrote newer revision")

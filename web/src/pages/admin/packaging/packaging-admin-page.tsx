@@ -14,6 +14,8 @@ import { PackagingViewport } from "@/pages/packaging/packaging-viewport";
 import { PackagingPreflightPanel } from "@/pages/packaging/packaging-preflight";
 import { PackagingMockups } from "@/pages/packaging/packaging-mockups";
 import { downloadPackaging, packagingProjectZip } from "@/lib/packaging/delivery";
+import { measurePackagingText } from "@/lib/packaging/typography";
+import { packagingResourceIds } from "@/lib/packaging/layers";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminCallout, AdminSegmented, AdminSelect, AdminSwitch } from "../ui/controls";
 import "@/pages/packaging/packaging.css";
@@ -59,7 +61,7 @@ function ProjectPreview({ project, onError }: { project: PackagingProject; onErr
         const resources = new Map<string, Blob>();
         const images = new Map<string, HTMLImageElement>();
         Promise.all(
-            [...new Set(doc.artworks.map((a) => a.resourceId))].map(async (id) => {
+            packagingResourceIds(doc).map(async (id) => {
                 const response = await fetch(adminResourceFileUrl(id), { credentials: "include", signal: controller.signal });
                 if (!response.ok) throw new Error(`图稿读取失败（${response.status}）`);
                 const blob = await response.blob();
@@ -95,13 +97,14 @@ function ProjectPreview({ project, onError }: { project: PackagingProject; onErr
                 </button>
                 <button
                     type="button"
-                    disabled={exporting || !doc.artworks.every((a) => loaded.images.has(a.resourceId))}
+                    disabled={exporting || packagingResourceIds(doc).some((id) => !loaded.images.has(id))}
                     onClick={() => {
                         const session = captureUserSession();
                         const controller = new AbortController();
                         exportOperation.current = controller;
                         setExporting(true);
-                        void packagingProjectZip(project.name, project.document, loaded.resources, layout, loaded.images)
+                        void document.fonts.ready
+                            .then(() => packagingProjectZip(project.name, project.document, loaded.resources, layout, loaded.images, measurePackagingText))
                             .then((blob) => {
                                 assertCurrentUserSession(session);
                                 controller.signal.throwIfAborted();

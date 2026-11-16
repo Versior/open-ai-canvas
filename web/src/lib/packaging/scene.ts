@@ -20,10 +20,12 @@ import {
     Vector3,
     type Texture,
 } from "three";
-import type { PackagingDocument, PackagingLayout, PackagingPanel, Point } from "./types";
+import { packagingRoles, type PackagingDocument, type PackagingLayout, type PackagingPanel, type Point } from "./types";
 import { packagingMaskLuminance } from "./artwork";
+import { packagingVisibleLayers, renderPackagingArtworkCanvas } from "./layers";
+import { packagingSurface } from "./surface";
 
-export type PackagingTextures = { artwork: Texture; foil?: Texture; uv?: Texture; emboss?: Texture };
+export type PackagingTextures = { artwork: Texture; foil?: Texture; uv?: Texture; emboss?: Texture; coat?: Texture; normal?: Texture; holo?: Texture; inspection?: Texture };
 export type PackagingScene = { root: Group; panels: Map<string, Group>; apply: (fold: number, open: number) => void; dispose: () => void };
 
 export function panelOrigin(panel: PackagingPanel): Point {
@@ -44,25 +46,41 @@ function panelShape(panel: PackagingPanel) {
 export function buildPackagingScene(d: PackagingDocument, layout: PackagingLayout, textures?: PackagingTextures): PackagingScene {
     const root = new Group();
     root.name = "packaging";
+    // The dieline is viewed from its printed side; reflect the whole scene, keeping UVs continuous across faces.
+    root.scale.x = -1;
     const groups = new Map<string, Group>();
     const partGroups = new Map<string, Group>();
     const geometries: BufferGeometry[] = [];
     const materials: MeshPhysicalMaterial[] = [];
+    const surface = packagingSurface(d);
+    const checking = surface.inspection !== "artwork";
     const outside = new MeshPhysicalMaterial({
         color: textures ? "#ffffff" : d.material.color,
         roughness: textures?.uv ? 1 : d.view.finish === "gloss" ? 0.18 : d.view.finish === "matte" ? 0.95 : d.material.roughness,
         metalness: textures?.foil ? 1 : d.view.finish === "foil" ? 0.8 : d.material.metalness,
-        map: textures?.artwork ?? null,
-        metalnessMap: textures?.foil ?? null,
-        roughnessMap: textures?.uv ?? null,
-        bumpMap: textures?.emboss ?? null,
-        bumpScale: d.parameters.thickness * 0.15,
-        clearcoat: d.view.finish === "gloss" ? 1 : 0,
+        map: checking ? (textures?.inspection ?? null) : (textures?.artwork ?? null),
+        metalnessMap: checking ? null : (textures?.foil ?? null),
+        roughnessMap: checking ? null : (textures?.uv ?? null),
+        bumpMap: checking ? null : (textures?.emboss ?? null),
+        bumpScale: surface.depth,
+        normalMap: checking ? null : (textures?.normal ?? null),
+        clearcoatNormalMap: checking ? null : (textures?.normal ?? null),
+        clearcoat: checking ? 0 : textures?.coat ? 1 : surface.film === "gloss" ? 1 : 0,
+        clearcoatMap: checking ? null : (textures?.coat ?? null),
+        clearcoatRoughness: surface.film === "matte" || surface.film === "soft" ? 0.5 : 0.08,
+        iridescence: checking ? 0 : textures?.holo ? 1 : 0,
+        iridescenceMap: checking ? null : (textures?.holo ?? null),
+        iridescenceThicknessRange: [100, 650],
+        sheen: surface.film === "soft" ? 0.45 : 0,
         side: DoubleSide,
         polygonOffset: true,
         polygonOffsetFactor: -1,
         polygonOffsetUnits: -1,
     });
+    if (checking) {
+        outside.metalness = 0;
+        outside.roughness = 1;
+    }
     const inside = new MeshPhysicalMaterial({ color: d.material.insideColor, roughness: 0.88, side: DoubleSide });
     const edge = new MeshPhysicalMaterial({ color: d.material.insideColor, roughness: 0.95 });
     materials.push(outside, inside, edge);
@@ -220,54 +238,84 @@ function curvedPanelGeometry(panel: PackagingPanel, layout: PackagingLayout) {
 }
 
 export function buildPackagingTextures(d: PackagingDocument, layout: PackagingLayout, images: Map<string, HTMLImageElement>, resolution = 2048): PackagingTextures {
-    const make = (role: "artwork" | "foil" | "uv" | "emboss") => {
-        const canvas = document.createElement("canvas");
-        const scale = resolution / Math.max(layout.bounds.width, layout.bounds.height);
-        canvas.width = Math.max(1, Math.round(layout.bounds.width * scale));
-        canvas.height = Math.max(1, Math.round(layout.bounds.height * scale));
-        const ctx = canvas.getContext("2d")!;
-        ctx.fillStyle = role === "artwork" ? d.material.color : "black";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.scale(scale, scale);
-        ctx.translate(-layout.bounds.x, -layout.bounds.y);
-        for (const art of d.artworks.filter((a) => a.role === role)) {
-            ctx.save();
-            const targets = art.panelId ? layout.panels.filter((p) => p.id === art.panelId) : layout.panels;
-            ctx.beginPath();
-            for (const panel of targets)
-                for (const points of [panel.points, ...panel.holes]) {
-                    ctx.moveTo(...points[0]);
-                    points.slice(1).forEach((p) => ctx.lineTo(...p));
-                    ctx.closePath();
-                }
-            ctx.clip("evenodd");
-            ctx.globalAlpha = art.opacity;
-            ctx.translate(art.x + art.width / 2, art.y + art.height / 2);
-            ctx.rotate((art.rotation * Math.PI) / 180);
-            ctx.drawImage(images.get(art.resourceId)!, -art.width / 2, -art.height / 2, art.width, art.height);
-            ctx.restore();
-        }
-        if (role !== "artwork") {
-            const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            for (let i = 0; i < data.data.length; i += 4) {
-                const luminance = packagingMaskLuminance(data.data[i], data.data[i + 1], data.data[i + 2]);
-                const value = role === "uv" ? Math.round(255 * d.material.roughness * (1 - luminance / 255) + (35 * luminance) / 255) : luminance;
-                data.data[i] = value;
-                data.data[i + 1] = value;
-                data.data[i + 2] = value;
-            }
-            ctx.putImageData(data, 0, 0);
-        }
-        const texture = new CanvasTexture(canvas);
-        if (role === "artwork") texture.colorSpace = SRGBColorSpace;
-        return texture;
+    const surface = packagingSurface(d);
+    const color = renderPackagingArtworkCanvas(d, layout, images, resolution, "artwork");
+    const width = color.width,
+        height = color.height;
+    const masks = new Map<string, Uint8ClampedArray>();
+    for (const role of packagingRoles) {
+        if (role === "artwork" || !packagingVisibleLayers(d, role).length) continue;
+        const canvas = renderPackagingArtworkCanvas(d, layout, images, resolution, role);
+        masks.set(role, canvas.getContext("2d")!.getImageData(0, 0, width, height).data);
+    }
+    const channel = (role: string, i: number) => {
+        const mask = masks.get(role);
+        return mask ? packagingMaskLuminance(mask[i], mask[i + 1], mask[i + 2]) / 255 : 0;
     };
-    return {
-        artwork: make("artwork"),
-        foil: d.artworks.some((a) => a.role === "foil") ? make("foil") : undefined,
-        uv: d.artworks.some((a) => a.role === "uv") ? make("uv") : undefined,
-        emboss: d.artworks.some((a) => a.role === "emboss") ? make("emboss") : undefined,
+    const canvasOf = () => {
+        const c = document.createElement("canvas");
+        c.width = width;
+        c.height = height;
+        return c;
     };
+    const rough = canvasOf(),
+        metal = canvasOf(),
+        coat = canvasOf(),
+        bump = canvasOf(),
+        normal = canvasOf(),
+        holo = canvasOf(),
+        inspection = canvasOf();
+    const colorData = color.getContext("2d")!.getImageData(0, 0, width, height);
+    const channels = [rough, metal, coat, bump, holo, inspection].map((c) => c.getContext("2d")!.createImageData(width, height));
+    const gold = [1, 3, 5].map((i) => parseInt(surface.foilColor.slice(i, i + 2), 16));
+    const silver = [1, 3, 5].map((i) => parseInt(surface.silverColor.slice(i, i + 2), 16));
+    const baseRoughness = surface.film === "gloss" ? 0.18 : surface.film === "matte" || surface.film === "soft" ? 0.85 : d.material.roughness;
+    for (let i = 0; i < colorData.data.length; i += 4) {
+        const f = channel("foil", i),
+            s = channel("silver", i),
+            h = channel("holo", i),
+            u = channel("uv", i),
+            g = channel("gloss", i),
+            e = channel("emboss", i),
+            down = channel("deboss", i);
+        const x = (i / 4) % width,
+            y = Math.floor(i / 4 / width);
+        const grain = surface.paper === "smooth" ? 0 : surface.paper === "linen" ? Math.sin(x * 1.7) * Math.sin(y * 1.7) * 10 : (Math.sin(x * 4.13 + y * 7.31) + Math.sin(x * 0.43 + y * 0.83)) * 5;
+        const values = [
+            255 * (baseRoughness * (1 - Math.max(f, s, h, u, g)) + 0.16 * Math.max(f, s, h) + 0.08 * Math.max(u, g)),
+            255 * Math.max(d.material.metalness, f, s, h * 0.85),
+            255 * Math.max(surface.film === "none" ? 0 : 0.75, u),
+            Math.max(0, Math.min(255, 128 + (e - down) * 127 + grain)),
+            h * 255,
+            surface.inspection === "checker" ? ((Math.floor((x * layout.bounds.width) / width / 20) + Math.floor((y * layout.bounds.height) / height / 20)) % 2 ? 80 : 235) : channel(surface.inspection, i) * 255,
+        ];
+        channels.forEach((data, index) => {
+            data.data[i] = data.data[i + 1] = data.data[i + 2] = values[index];
+            data.data[i + 3] = 255;
+        });
+        for (let c = 0; c < 3; c++) colorData.data[i + c] = Math.max(0, Math.min(255, colorData.data[i + c] * (1 - Math.max(f, s, h)) + gold[c] * f + silver[c] * Math.max(s, h) + grain * 0.25));
+    }
+    color.getContext("2d")!.putImageData(colorData, 0, 0);
+    [rough, metal, coat, bump, holo, inspection].forEach((c, i) => c.getContext("2d")!.putImageData(channels[i], 0, 0));
+    const normalData = normal.getContext("2d")!.createImageData(width, height);
+    for (let i = 0; i < normalData.data.length; i += 4) {
+        const x = (i / 4) % width,
+            y = Math.floor(i / 4 / width);
+        const dx = channels[3].data[i + (x < width - 1 ? 4 : 0)] - channels[3].data[i - (x ? 4 : 0)];
+        const dy = channels[3].data[i + (y < height - 1 ? width * 4 : 0)] - channels[3].data[i - (y ? width * 4 : 0)];
+        normalData.data[i] = Math.max(0, Math.min(255, 128 - dx));
+        normalData.data[i + 1] = Math.max(0, Math.min(255, 128 + dy));
+        normalData.data[i + 2] = 255;
+        normalData.data[i + 3] = 255;
+    }
+    normal.getContext("2d")!.putImageData(normalData, 0, 0);
+    const texture = (canvas: HTMLCanvasElement, srgb = false) => {
+        const t = new CanvasTexture(canvas);
+        t.anisotropy = 4;
+        if (srgb) t.colorSpace = SRGBColorSpace;
+        return t;
+    };
+    return { artwork: texture(color, true), foil: texture(metal), uv: texture(rough), coat: texture(coat), emboss: texture(bump), normal: texture(normal), holo: masks.has("holo") ? texture(holo) : undefined, inspection: texture(inspection, true) };
 }
 
 export function packagingCamera(root: Group, aspect: number, axis: "front" | "back" | "left" | "right" | "top" | "bottom" | "iso", box = new Box3().setFromObject(root)) {

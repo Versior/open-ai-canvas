@@ -10,6 +10,8 @@ import type { PackagingDocument, PackagingLayout } from "@/lib/packaging/types";
 import { renderPackagingAnimation, renderPackagingPng } from "@/lib/packaging/render";
 import { packagingMotionBounds } from "@/lib/packaging/animation";
 import { captureUserSession, assertCurrentUserSession } from "@/lib/user-scope";
+import { packagingResourceIds } from "@/lib/packaging/layers";
+import { packagingEnvironment, packagingSurface, packagingStudios } from "@/lib/packaging/surface";
 
 type Axis = "front" | "back" | "left" | "right" | "top" | "bottom" | "iso";
 type Props = {
@@ -60,7 +62,17 @@ function ModelScene({
     playing: boolean;
     cameraRef: RefObject<PerspectiveCamera | ThreeOrthographicCamera | null>;
 }) {
-    const { camera, size, invalidate } = useThree();
+    const { camera, size, invalidate, gl, scene } = useThree();
+    const studio = packagingStudios[packagingSurface(doc).studio];
+    useEffect(() => {
+        const environment = packagingEnvironment(gl);
+        scene.environment = environment.texture;
+        invalidate();
+        return () => {
+            scene.environment = null;
+            environment.dispose();
+        };
+    }, [gl, scene, invalidate]);
     const controls = useRef<ThreeOrbitControls>(null);
     const motionBounds = useMemo(() => packagingMotionBounds(built, doc.view.fold, doc.view.open), [built]);
     const framingMotion = playing || doc.view.fold < 1 || doc.view.open > 0;
@@ -92,14 +104,17 @@ function ModelScene({
         invalidate();
     }, [built, axis, camera, size.width, size.height, invalidate, framingMotion, motionBounds]);
     useFrame(() => {
-        if (rotate && controls.current) controls.current.update();
+        if (!rotate || !controls.current) return;
+        controls.current.update();
+        invalidate();
     });
     return (
         <>
-            <ambientLight intensity={doc.view.light * 0.8} />
+            <ambientLight intensity={doc.view.light * 0.8 * studio.energy} color={studio.fill} />
             <directionalLight
                 position={[400, 650, -500]}
                 intensity={doc.view.light * 2}
+                color={studio.key}
                 castShadow
                 shadow-bias={-0.0002}
                 shadow-normalBias={0.1}
@@ -109,7 +124,7 @@ function ModelScene({
                 shadow-camera-top={1000}
                 shadow-camera-bottom={-1000}
             />
-            <directionalLight position={[-350, 200, 300]} intensity={doc.view.light * 0.5} />
+            <directionalLight position={[-350, 200, 300]} intensity={doc.view.light * 0.5} color={studio.fill} />
             <primitive object={built.root} />
             {doc.view.shadows ? (
                 <ContactShadows position={[0, -2, 0]} opacity={0.35} scale={Math.max(doc.parameters.length, doc.parameters.width, doc.parameters.height) * 5} blur={2} far={Math.max(doc.parameters.height * 2, 200)} resolution={512} />
@@ -141,9 +156,13 @@ export function PackagingViewport(props: Props) {
     }, []);
     const host = useRef<HTMLDivElement>(null);
     const camera = useRef<PerspectiveCamera | ThreeOrthographicCamera>(null);
-    const ready = props.document.artworks.every((a) => props.images.has(a.resourceId));
-    const textures = useMemo(() => (ready ? buildPackagingTextures(props.document, props.layout, props.images) : undefined), [props.document.artworks, props.document.material, props.layout, props.imageRevision, ready]);
-    const built = useMemo(() => buildPackagingScene(props.document, props.layout, textures), [props.layout, props.document.material, props.document.view.finish, textures]);
+    const ready = packagingResourceIds(props.document).every((id) => props.images.has(id));
+    const surface = packagingSurface(props.document);
+    const textures = useMemo(
+        () => (ready ? buildPackagingTextures(props.document, props.layout, props.images, surface.quality) : undefined),
+        [props.document.artworks, props.document.material, props.layout, props.imageRevision, surface.quality, surface.paper, surface.film, surface.foilColor, surface.silverColor, surface.inspection, ready],
+    );
+    const built = useMemo(() => buildPackagingScene(props.document, props.layout, textures), [props.layout, props.document.material, props.document.view.finish, surface.depth, surface.film, surface.inspection, textures]);
     useEffect(() => () => built.dispose(), [built]);
     useEffect(
         () => () => {
@@ -175,7 +194,18 @@ export function PackagingViewport(props: Props) {
         try {
             if (kind === "video") {
                 setVideoProgress(0);
-                const capturedTextures = textures ? { artwork: textures.artwork.clone(), foil: textures.foil?.clone(), uv: textures.uv?.clone(), emboss: textures.emboss?.clone() } : undefined;
+                const capturedTextures = textures
+                    ? {
+                          artwork: textures.artwork.clone(),
+                          foil: textures.foil?.clone(),
+                          uv: textures.uv?.clone(),
+                          emboss: textures.emboss?.clone(),
+                          coat: textures.coat?.clone(),
+                          normal: textures.normal?.clone(),
+                          holo: textures.holo?.clone(),
+                          inspection: textures.inspection?.clone(),
+                      }
+                    : undefined;
                 const scene = buildPackagingScene(props.document, props.layout, capturedTextures);
                 try {
                     const blob = await renderPackagingAnimation(scene, props.document, Math.min(resolution, 2048), axis.value, AbortSignal.any([controller.signal, session.signal]), setVideoProgress);
@@ -230,7 +260,7 @@ export function PackagingViewport(props: Props) {
             </header>
             <div className={`pkg-three is-${props.document.view.background}`}>
                 <PreviewBoundary>
-                    <Canvas shadows camera={{ fov: 40, near: 0.01, far: 10000, position: [400, 300, -500] }} gl={{ alpha: true, antialias: true }}>
+                    <Canvas frameloop="demand" shadows camera={{ fov: 40, near: 0.01, far: 10000, position: [400, 300, -500] }} gl={{ alpha: true, antialias: true }}>
                         {props.document.view.projection === "orthographic" ? <OrthographicCamera makeDefault position={[400, 300, -500]} near={0.01} far={10000} /> : null}
                         <ModelScene built={built} doc={props.document} axis={axis} move={move} rotate={rotate} playing={playing} cameraRef={camera} />
                     </Canvas>

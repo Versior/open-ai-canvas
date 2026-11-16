@@ -210,7 +210,7 @@ func (s *Service) SavePackagingProject(actor *model.User, id string, input Packa
 	item.DocumentJSON = string(raw)
 	refs := []string{}
 	for _, a := range input.Document.Artworks {
-		if !slices.Contains(refs, a.ResourceID) {
+		if a.Content == nil && !slices.Contains(refs, a.ResourceID) {
 			refs = append(refs, a.ResourceID)
 		}
 	}

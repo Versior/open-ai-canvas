@@ -13,10 +13,12 @@ export function BrandFilm({ className }: { className?: string }) {
     const ref = useRef<HTMLVideoElement>(null);
     const [failed, setFailed] = useState(false);
     const autoplay = appearance.authVideoAutoplay && !reducedMotion;
+    const [needsPlay, setNeedsPlay] = useState(!autoplay);
 
     useEffect(() => {
         setFailed(Boolean(ref.current?.error));
-    }, [appearance.authVideoUrl]);
+        setNeedsPlay(!autoplay);
+    }, [appearance.authVideoUrl, autoplay]);
 
     useEffect(() => {
         const video = ref.current;
@@ -24,8 +26,9 @@ export function BrandFilm({ className }: { className?: string }) {
         const update = () => {
             if (!autoplay || document.hidden) video.pause();
             else
-                void video.play().catch(() => {
+                void video.play().catch((error: DOMException) => {
                     if (video.error) setFailed(true);
+                    if (error.name === "NotAllowedError") setNeedsPlay(true);
                 });
         };
         update();
@@ -37,8 +40,9 @@ export function BrandFilm({ className }: { className?: string }) {
     const play = () => {
         if (ref.current?.error) ref.current.load();
         setFailed(false);
-        void ref.current?.play().catch(() => {
+        void ref.current?.play().catch((error: DOMException) => {
             if (ref.current?.error) setFailed(true);
+            if (error.name === "NotAllowedError") setNeedsPlay(true);
         });
     };
 
@@ -54,13 +58,19 @@ export function BrandFilm({ className }: { className?: string }) {
                 playsInline
                 preload="metadata"
                 aria-label={t("auth.brandFilm", { brand: appearance.brandName })}
+                onLoadedMetadata={(event) => {
+                    // iOS 没有 poster 时，显式定位首帧才能显示静止的视频画面。
+                    if (!appearance.authVideoPosterUrl && event.currentTarget.paused) event.currentTarget.currentTime = 0.001;
+                }}
+                onPlaying={() => setNeedsPlay(false)}
+                onPause={() => setNeedsPlay(true)}
                 onError={() => setFailed(true)}
             />
-            {failed ? (
+            {failed || needsPlay ? (
                 <div className="brand-film-status">
-                    <span role="alert">{t("auth.videoLoadFailed")}</span>
+                    {failed ? <span role="alert">{t("auth.videoLoadFailed")}</span> : null}
                     <button type="button" onClick={play}>
-                        {t("common.retry")}
+                        {t(failed ? "common.retry" : "auth.playVideo")}
                     </button>
                 </div>
             ) : null}

@@ -335,7 +335,7 @@ export function rewriteAgentNodeLinks(text: string, references: CanvasResourceRe
     const referenceByNodeId = new Map(references.filter((reference) => reference.nodeId).map((reference) => [reference.nodeId, reference]));
     const exactNodeIds = [...referenceByNodeId.keys()].sort((left, right) => right.length - left.length).map(escapeAgentNodePattern);
     const nodeIdPattern = exactNodeIds.length ? `(?:${exactNodeIds.join("|")}|${BUILTIN_AGENT_NODE_ID_PATTERN})` : BUILTIN_AGENT_NODE_ID_PATTERN;
-    const nodeTokenPattern = new RegExp(`(?<![A-Za-z0-9_-])(?:\\x60(${nodeIdPattern})\\x60|(${nodeIdPattern}))(?![A-Za-z0-9_-])`, "gu");
+    const nodeTokenPattern = new RegExp(`(?:\\x60(${nodeIdPattern})\\x60|(${nodeIdPattern}))(?![A-Za-z0-9_-])`, "gu");
     const newNodePrefixPattern = /(新节点|节点|新建节点)\s*ID(?=\s*[：:])/gu;
     let inFence = false;
 
@@ -351,7 +351,8 @@ export function rewriteAgentNodeLinks(text: string, references: CanvasResourceRe
             if (inFence) return part;
 
             const normalized = part.replace(newNodePrefixPattern, "$1");
-            return normalized.replace(nodeTokenPattern, (match, backtickedId: string | undefined, plainId: string | undefined) => {
+            return normalized.replace(nodeTokenPattern, (match, backtickedId: string | undefined, plainId: string | undefined, offset: number) => {
+                if (offset > 0 && /[A-Za-z0-9_-]/u.test(normalized[offset - 1])) return match;
                 const nodeId = backtickedId || plainId;
                 return nodeId ? createAgentNodeLink(nodeId, referenceByNodeId.get(nodeId)) : match;
             });

@@ -106,3 +106,45 @@ test("an early media error survives mount effects and retry reloads the same sou
         }
     }
 });
+
+test("autoplay rejection offers a gesture to play a custom film without a poster", async () => {
+    const prototype = dom.HTMLMediaElement.prototype;
+    const originals = new Map(["play", "error"].map((name) => [name, Object.getOwnPropertyDescriptor(prototype, name)]));
+    let blocked = true;
+    Object.defineProperties(prototype, {
+        error: { configurable: true, get: () => null },
+        play: {
+            configurable: true,
+            value() {
+                if (blocked) return Promise.reject(new dom.DOMException("A user gesture is required", "NotAllowedError"));
+                this.dispatchEvent(new dom.Event("playing"));
+                return Promise.resolve();
+            },
+        },
+    });
+    try {
+        useAppearanceStore.setState({ appearance: { ...DEFAULT_PUBLIC_APPEARANCE, authVideoUrl: "/custom-film.mp4?v=1", authVideoPosterUrl: "", authVideoConfigured: true } });
+        host = document.createElement("div");
+        document.body.append(host);
+        root = createRoot(host);
+        await act(async () => root!.render(createElement(I18nextProvider, { i18n: language }, createElement(BrandFilm))));
+        expect(host.querySelector("video")!.hasAttribute("playsinline")).toBe(true);
+        expect(host.querySelector("button")?.textContent).toBe("Play video");
+        expect(host.querySelector('[role="alert"]')).toBeNull();
+        await act(async () => host!.querySelector("video")!.dispatchEvent(new dom.Event("loadedmetadata")));
+        expect(host.querySelector("video")!.currentTime).toBe(0.001);
+        blocked = false;
+        await act(async () => host!.querySelector<HTMLButtonElement>("button")!.click());
+        expect(host.querySelector("button")).toBeNull();
+        expect(host.querySelector("video")!.controls).toBe(false);
+        await act(async () => host!.querySelector("video")!.dispatchEvent(new dom.Event("pause")));
+        expect(host.querySelector("button")?.textContent).toBe("Play video");
+        await act(async () => host!.querySelector<HTMLButtonElement>("button")!.click());
+        expect(host.querySelector("button")).toBeNull();
+    } finally {
+        for (const [name, descriptor] of originals) {
+            if (descriptor) Object.defineProperty(prototype, name, descriptor);
+            else Reflect.deleteProperty(prototype, name);
+        }
+    }
+});

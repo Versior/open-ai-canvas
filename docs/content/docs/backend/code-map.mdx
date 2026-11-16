@@ -12,6 +12,10 @@ description: 从产品功能快速定位主要代码入口
 - 后端合同 `internal/packaging/contract.go` → `handler/packaging.go` → `app/packaging.go` → `repository/packaging.go`；模型 `model/models_packaging.go`，Schema 112 与跨数据库清单同步。
 - 结构测试 `web/test/packaging.test.ts`，HTTP 测试 `handler/packaging_test.go`；视频依据与范围 `docs/plans/packaging-dieline.md`。
 - 图稿手势/检查/视频：`lib/packaging/artwork.ts`、`preflight.ts`、`animation.ts`、`render.ts`；专项位于 `web/test/packaging-*.test.ts`。
+- 原生图层与重排：`lib/packaging/layers.ts`、`sample.ts`；属性栏 `pages/packaging/packaging-design.tsx`。工艺贴图在 `scene.ts`，共用影棚在 `surface.ts`，外观栏在 `packaging-surface.tsx`。
+- 文字排版 `lib/packaging/typography.ts` 统一换行、字号、行距、字距与 Canvas 字形测量；`design.ts` 负责旋转外框对齐、跨面复制及安全区偏移。`packaging-dieline.tsx` 提供面板放大与辅助线，`preflight.ts` 检查溢出和开窗安全区；保存字段由前后端原有文档合同校验。
+- 彩稿与分版 PDF：`lib/packaging/print-artwork.ts` → `pages/packaging/packaging-delivery.tsx`；合同、ZIP、出血和 PDF 流回归见 `web/test/packaging-upgrade.test.ts`。原生内容与表面设置仅扩展现有文档 JSON，无新增 Schema。
+- 网格、轮廓排料与整纸导出：`production.ts` 负责用纸/白样试算，`nesting.ts` 负责复合轮廓、排斥区、位置及实际间距复核，`nesting.worker.ts` 执行有限预算搜索；`sheet-export.ts` 共用毫米位置输出 SVG/DXF/PDF。`pages/packaging/packaging-sheet.tsx` 管理参数、Worker 生命周期、对照和下载；专项见 `web/test/packaging-nesting.test.ts`。没有新增计算 API、依赖或 Schema。
 - 模型效果图：`pages/packaging/packaging-mockups.tsx` → `services/packaging-generation.ts` → 通用任务；`app/packaging_mockup.go` 负责版本/来源/父任务准入和安全图库读模型，`repository/packaging.go` 负责任务过滤。参考资料见 `docs/plans/packaging-research.md`。
 
 ## 创作扩展与智能体皮肤

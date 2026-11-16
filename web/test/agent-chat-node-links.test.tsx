@@ -46,15 +46,25 @@ test("leaves fenced code blocks untouched", () => {
     expect(rewritten).toContain("[视频节点 · 片头镜头](#agent-node:video-1790385749473-q4157)");
 });
 
+test("node links work without browser lookbehind support and preserve token boundaries", () => {
+    const NativeRegExp = globalThis.RegExp;
+    globalThis.RegExp = new Proxy(NativeRegExp, {
+        construct(target, args) {
+            if (/\(\?<([=!])/.test(String(args[0]))) throw new SyntaxError("Invalid regular expression: invalid group specifier name");
+            return Reflect.construct(target, args);
+        },
+    });
+    try {
+        expect(rewriteAgentNodeLinks("video-123,video-456 `video-789`")).toBe("[视频节点](#agent-node:video-123),[视频节点](#agent-node:video-456) [视频节点](#agent-node:video-789)");
+        expect(rewriteAgentNodeLinks("xvideo-123 _video-123")).toBe("xvideo-123 _video-123");
+        expect(rewriteAgentNodeLinks("`video-123`video-456")).toBe("`[视频节点](#agent-node:video-123)`[视频节点](#agent-node:video-456)");
+    } finally {
+        globalThis.RegExp = NativeRegExp;
+    }
+});
+
 test("renders an agent node link as a titled inline node card", () => {
-    const html = renderToStaticMarkup(
-        <AgentChatMessage
-            item={assistantMessage("新节点 ID：video-1790385749473-q4157")}
-            theme={canvasThemes.dark}
-            references={[videoReference]}
-            onFocusNode={() => {}}
-        />,
-    );
+    const html = renderToStaticMarkup(<AgentChatMessage item={assistantMessage("新节点 ID：video-1790385749473-q4157")} theme={canvasThemes.dark} references={[videoReference]} onFocusNode={() => {}} />);
     const visibleText = html.replace(/<[^>]+>/gu, "");
 
     expect(html).toContain('class="agent-message-node-link"');
@@ -67,12 +77,7 @@ test("renders an agent node link as a titled inline node card", () => {
 test("renders the image-to-previs user request with the existing canvas node card", () => {
     const imageReference = { ...videoReference, kind: "image" as const, sourceType: "image" as const, label: "道姑", title: "道姑" };
     const html = renderToStaticMarkup(
-        <AgentChatMessage
-            item={{ id: "user-previs", role: "user", text: "根据此图生成 3D 预演台", canvasReferenceNodeId: imageReference.nodeId }}
-            theme={canvasThemes.dark}
-            references={[imageReference]}
-            onFocusNode={() => {}}
-        />,
+        <AgentChatMessage item={{ id: "user-previs", role: "user", text: "根据此图生成 3D 预演台", canvasReferenceNodeId: imageReference.nodeId }} theme={canvasThemes.dark} references={[imageReference]} onFocusNode={() => {}} />,
     );
 
     expect(html).toContain('class="agent-message-node-link"');

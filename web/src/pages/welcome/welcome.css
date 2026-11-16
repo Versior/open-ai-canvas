@@ -27,6 +27,7 @@
     letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
     width: 100%;
+    height: 100vh;
     height: 100svh;
     overflow-y: auto;
     overflow-x: hidden;
@@ -98,6 +99,7 @@ body:has(.welcome-page) {
 }
 .welcome-brand {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     gap: 12px;
     font-size: 16px;
@@ -116,6 +118,7 @@ body:has(.welcome-page) {
 }
 
 .welcome-page .welcome-header-login {
+    flex-shrink: 0;
     color: var(--welcome-paper);
 }
 
@@ -128,13 +131,13 @@ body:has(.welcome-page) {
 }
 
 .welcome-home-film .brand-film-status {
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
-    padding-right: var(--welcome-gutter);
 }
 .welcome-nav {
     margin-left: auto;
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     gap: 32px;
 }
@@ -144,6 +147,7 @@ body:has(.welcome-page) {
     gap: 4px;
     color: var(--welcome-paper);
     font-size: 13px;
+    white-space: nowrap;
     transition: opacity 180ms;
 }
 .welcome-nav a:hover {
@@ -182,30 +186,13 @@ body:has(.welcome-page) {
     margin-top: var(--welcome-action-offset);
     pointer-events: auto;
 }
-.welcome-icon {
-    display: grid;
-    place-items: center;
-    background: transparent;
-    border: 0;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-}
-.welcome-icon:hover {
-    background: #ffffff12;
-}
-.welcome-icon svg {
-    width: 16px;
-    height: 16px;
-}
-.mobile-menu {
-    display: none;
-}
 .welcome-story {
     position: relative;
+    height: 570vh;
     height: 570svh;
 }
 .welcome-stage {
+    height: 100vh;
     height: 100svh;
     min-height: 560px;
     position: sticky;
@@ -451,29 +438,8 @@ body:has(.welcome-page) {
         width: 22px;
         height: 22px;
     }
-    .welcome-header-login {
-        margin-left: auto;
-    }
-    .mobile-menu {
-        display: grid;
-        width: 34px;
-        height: 44px;
-    }
-    .welcome-nav {
-        display: none;
-        position: absolute;
-        top: var(--welcome-header-height);
-        left: 0;
-        right: 0;
-        padding: 24px;
-        background: var(--welcome-black);
-    }
-    .welcome-nav.is-open {
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-    }
     .welcome-story {
+        height: 470vh;
         height: 470svh;
     }
     .welcome-stage {
@@ -566,6 +532,7 @@ body:has(.welcome-page) {
         scroll-behavior: auto !important;
     }
     .welcome-story {
+        height: 400vh;
         height: 400svh;
     }
 }

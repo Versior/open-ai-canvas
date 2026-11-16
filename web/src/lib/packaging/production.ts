@@ -1,4 +1,5 @@
 import type { PackagingArtwork, PackagingLayout, Point } from "./types";
+import { scalePackagingText } from "./typography";
 
 export type PrintOptions = { paper: "A4" | "A3"; margin: number; overlap: number };
 export type PrintTile = { row: number; column: number; x: number; y: number; width: number; height: number };
@@ -89,7 +90,7 @@ export function fitPackagingArtwork(artwork: PackagingArtwork, bounds: Packaging
     const factor = mode === "center" ? 1 : (mode === "contain" ? Math.min : Math.max)(bounds.width / artwork.width, bounds.height / artwork.height);
     const width = artwork.width * factor;
     const height = artwork.height * factor;
-    return { x: bounds.x + (bounds.width - width) / 2, y: bounds.y + (bounds.height - height) / 2, width, height, rotation: mode === "center" ? artwork.rotation : 0 };
+    return { ...scalePackagingText(artwork, factor), x: bounds.x + (bounds.width - width) / 2, y: bounds.y + (bounds.height - height) / 2, width, height, rotation: mode === "center" ? artwork.rotation : 0 };
 }
 
 export function packagingPanelBounds(points: Point[]) {

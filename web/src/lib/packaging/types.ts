@@ -17,7 +17,38 @@ export type PackagingParameters = {
 export type PackagingTemplate = { id: string; name: string; category: string; structure: PackagingStructure; description: string; enabled: boolean; defaults: PackagingParameters };
 export type PackagingMaterial = { id: string; name: string; color: string; insideColor: string; thickness: number; roughness: number; metalness: number; enabled: boolean };
 export type PackagingCatalog = { revision: number; enabled: boolean; mockupEnabled: boolean; maxProjects: number; templates: PackagingTemplate[]; materials: PackagingMaterial[] };
-export type PackagingArtwork = { id: string; resourceId: string; name: string; panelId: string; role: "artwork" | "foil" | "uv" | "emboss"; x: number; y: number; width: number; height: number; rotation: number; opacity: number };
+export const packagingRoles = ["artwork", "foil", "silver", "uv", "gloss", "emboss", "deboss", "holo"] as const;
+export type PackagingRole = (typeof packagingRoles)[number];
+export const packagingRoleNames: Record<PackagingRole, string> = { artwork: "四色印刷", foil: "烫金", silver: "烫银", uv: "局部 UV", gloss: "局部亮面", emboss: "击凸", deboss: "击凹", holo: "镭射" };
+export type PackagingText = { kind: "text"; value: string; font: "sans" | "serif" | "mono"; weight: 400 | 700; align: "left" | "center" | "right"; color: string; fontSize?: number; lineHeight?: number; letterSpacing?: number; wrap?: boolean };
+export type PackagingLayerContent = PackagingText | { kind: "shape"; shape: "rectangle" | "ellipse"; color: string };
+export type PackagingArtwork = {
+    id: string;
+    resourceId: string;
+    name: string;
+    panelId: string;
+    role: PackagingRole;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation: number;
+    opacity: number;
+    content?: PackagingLayerContent;
+    visible?: boolean;
+    locked?: boolean;
+};
+export type PackagingSurface = {
+    paper: "smooth" | "kraft" | "linen";
+    film: "none" | "matte" | "gloss" | "soft";
+    studio: "neutral" | "commerce" | "warm" | "dramatic";
+    inspection: PackagingRole | "checker";
+    quality: 1024 | 2048 | 4096;
+    depth: number;
+    foilColor: string;
+    silverColor: string;
+};
+export const defaultPackagingSurface: PackagingSurface = { paper: "smooth", film: "none", studio: "neutral", inspection: "artwork", quality: 2048, depth: 0.2, foilColor: "#d9b465", silverColor: "#dce0e7" };
 export type PackagingView = {
     fold: number;
     open: number;
@@ -29,7 +60,7 @@ export type PackagingView = {
     shadows: boolean;
     dimensions: boolean;
 };
-export type PackagingDocument = { version: 1; template: PackagingTemplate; parameters: PackagingParameters; material: PackagingMaterial; artworks: PackagingArtwork[]; view: PackagingView; notes: string };
+export type PackagingDocument = { version: 1; template: PackagingTemplate; parameters: PackagingParameters; material: PackagingMaterial; artworks: PackagingArtwork[]; view: PackagingView; surface?: PackagingSurface; notes: string };
 export type PackagingProject = { id: string; userId: string; name: string; templateId: string; revision: number; createdAt: string; updatedAt: string; document: PackagingDocument };
 export type PackagingProjectSummary = Omit<PackagingProject, "document">;
 export type Point = [number, number];
@@ -67,6 +98,7 @@ export function newPackagingDocument(template: PackagingTemplate, material: Pack
         parameters: { ...template.defaults, thickness: material.thickness },
         material: structuredClone(material),
         artworks: [],
+        surface: { ...defaultPackagingSurface },
         view: { fold: 1, open: 0, layout: "split", background: "dark", projection: "perspective", finish: "paper", light: 1.3, shadows: true, dimensions: false },
         notes: "",
     };

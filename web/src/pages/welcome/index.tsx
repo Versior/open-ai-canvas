@@ -1,11 +1,10 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button, ConfigProvider, Tabs } from "antd";
-import { ArrowUpRight, Menu, X } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { BrandWordmark } from "@/components/brand/brand-logo";
 import { BrandFilm } from "@/components/brand/brand-film";
-import { IconButton } from "@/components/ui/base/buttons";
 import { getAntThemeConfig } from "@/lib/app-theme";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { chapters, shuffleWelcomeLooks, showcases } from "./story";
@@ -36,7 +35,6 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
     const [failedLook, setFailedLook] = useState("");
     const [readyLook, setReadyLook] = useState("");
     const [reelStarted, setReelStarted] = useState(false);
-    const [menu, setMenu] = useState(false);
     const [showcase, setShowcase] = useState(0);
     const [hidden, setHidden] = useState(() => document.hidden);
     const [storyVisible, setStoryVisible] = useState(true);
@@ -86,15 +84,12 @@ function WelcomeExperience({ brandName }: { brandName: string }) {
                 <a className="welcome-brand" href="/welcome" aria-label={t("shell.brandHome", { brand: brandName })}>
                     <BrandWordmark theme="dark" builtinClassName="welcome-brand-wordmark" />
                 </a>
-                <nav className={menu ? "welcome-nav is-open" : "welcome-nav"} aria-label={t("account.welcome.nav")}>
-                    <a href="#workbench" onClick={() => setMenu(false)}>
-                        {t("account.welcome.navWorkbench")}
-                    </a>
+                <nav className="welcome-nav" aria-label={t("account.welcome.nav")}>
+                    <a href="#workbench">{t("account.welcome.navWorkbench")}</a>
                 </nav>
                 <Button className="welcome-header-login" type="text" href="/login?next=%2Fcreate">
                     {t("auth.login.submit")}
                 </Button>
-                <IconButton className="welcome-icon mobile-menu" variant="ghost" size="lg" icon={menu ? X : Menu} aria-label={menu ? t("account.welcome.closeMenu") : t("account.welcome.openMenu")} aria-expanded={menu} onClick={() => setMenu(!menu)} />
             </header>
             <main>
                 <section ref={storyRef} id="story" className="welcome-story" aria-label={t("account.welcome.storyLabel")}>

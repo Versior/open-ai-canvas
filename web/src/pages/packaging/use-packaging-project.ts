@@ -9,6 +9,8 @@ import { compilePackaging } from "@/lib/packaging/geometry";
 import { useUserStore } from "@/stores/use-user-store";
 import { useRequireLogin } from "@/hooks/use-require-login";
 import { PackagingHistory, type PackagingSnapshot } from "@/lib/packaging/history";
+import { packagingResourceIds, reflowPackagingLayers } from "@/lib/packaging/layers";
+import { packagingSampleDocument } from "@/lib/packaging/sample";
 
 export function usePackagingProject() {
     const requireLogin = useRequireLogin();
@@ -57,7 +59,7 @@ export function usePackagingProject() {
                 setTotal(list?.total || 0);
                 setPage(1);
                 if (c.templates[0] && c.materials[0])
-                    replaceProject({ id: "", userId: session.scope, name: "未命名包装", templateId: c.templates[0].id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(c.templates[0], c.materials[0]) });
+                    replaceProject({ id: "", userId: session.scope, name: "包装设计示例", templateId: c.templates[0].id, revision: 0, createdAt: "", updatedAt: "", document: packagingSampleDocument(c.templates[0], c.materials[0]) });
                 setStatus("ready");
                 setDirty(false);
                 setError("");
@@ -73,7 +75,7 @@ export function usePackagingProject() {
     useEffect(() => {
         const controller = new AbortController();
         const session = captureUserSession();
-        const ids = [...new Set(project?.document.artworks.map((a) => a.resourceId) ?? [])];
+        const ids = project ? packagingResourceIds(project.document) : [];
         Promise.all(
             ids.map(async (id) => {
                 if (images.current.has(id)) return;
@@ -100,7 +102,13 @@ export function usePackagingProject() {
                 if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "图稿读取失败");
             });
         return () => controller.abort();
-    }, [project?.id, project?.document.artworks.map((a) => a.resourceId).join("|")]);
+    }, [
+        project?.id,
+        project?.document.artworks
+            .filter((a) => !a.content)
+            .map((a) => a.resourceId)
+            .join("|"),
+    ]);
     const edit = (update: (p: PackagingProject) => PackagingProject, group?: string) => {
         const previous = currentProject.current;
         if (!previous) return;
@@ -112,7 +120,20 @@ export function usePackagingProject() {
         setProject(next);
         setDirty(!matchesSaved(next));
     };
-    const updateDocument = (update: (d: PackagingDocument) => PackagingDocument, group?: string) => edit((p) => ({ ...p, document: update(p.document) }), group);
+    const updateDocument = (update: (d: PackagingDocument) => PackagingDocument, group?: string) => {
+        try {
+            edit((p) => {
+                const document = update(p.document);
+                if (document.parameters !== p.document.parameters && document.template === p.document.template) {
+                    validatePackagingParameters(document.parameters);
+                    return { ...p, document: { ...document, artworks: reflowPackagingLayers(document, compilePackaging(p.document), compilePackaging(document)) } };
+                }
+                return { ...p, document };
+            }, group);
+        } catch (error) {
+            setError(error instanceof Error ? error.message : "包装编辑失败");
+        }
+    };
     const restore = (direction: "undo" | "redo" | "cancelGesture") => {
         if (!currentProject.current || status !== "ready") return;
         const snapshot = history.current[direction](currentProject.current);
@@ -271,7 +292,7 @@ export function usePackagingProject() {
                     revision: 0,
                     createdAt: "",
                     updatedAt: "",
-                    document: { ...imported.document, artworks: imported.document.artworks.map((a) => ({ ...a, resourceId: ids.get(a.resourceId)! })) },
+                    document: { ...imported.document, artworks: imported.document.artworks.map((a) => (a.content ? a : { ...a, resourceId: ids.get(a.resourceId)! })) },
                 },
                 true,
             );
