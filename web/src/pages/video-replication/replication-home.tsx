@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { useRequireLogin } from "@/hooks/use-require-login";
+import { useUserStore } from "@/stores/use-user-store";
 import { Checkbox } from "antd";
 import { ArrowUp, Film, Link2, LoaderCircle, Paperclip, Plus, SlidersHorizontal, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactNode } from "react";
@@ -58,6 +60,8 @@ const initialBrief = (): CreativeBrief => ({ scene: "showcase", tone: "natural",
 
 /** 对话整理需求，解析、素材识别、策划与生成使用现有真实任务。 */
 export function ReplicationHome({ composer, records, loading, error, activeRun, onOpen, tabs, tab, works, onCreative, creating, referenceId, onReferenceChange, onRemake }: Props) {
+    const requireLogin = useRequireLogin();
+    const user = useUserStore((state) => state.user);
     const skinPreference = useAgentPetPrefsStore((state) => state.skin);
     const { pet } = useActiveAgentPet();
     const skin = resolveAgentSkin(skinPreference, pet?.tone);
@@ -90,7 +94,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
     const reference = useQuery({
         queryKey: videoReplicationKeys.detail(scope, referenceId),
         queryFn: ({ signal }) => getVideoReplication(referenceId, signal),
-        enabled: Boolean(referenceId),
+        enabled: Boolean(user && referenceId),
         refetchInterval: (query) => (query.state.data?.task.status === "queued" || query.state.data?.task.status === "running" ? 2000 : false),
         select: (record) => {
             const bundle = record.task.status === "succeeded" ? parseVideoTeardownBundle(record.task) : null;
@@ -199,6 +203,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
         input.current?.focus();
     };
     const startSource = (value: ReplicationSource) => {
+        if (!requireLogin()) return false;
         const problem = videoTeardownModelError(composer.config, composer.model) || (value.kind === "link" && !composer.linkImportEnabled ? "链接解析暂未启用，可以上传本地视频" : "");
         if (problem) {
             setInputError(problem);
@@ -211,6 +216,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
         return true;
     };
     const send = () => {
+        if (!requireLogin()) return;
         if (!text.trim() || locked) return;
         if (/https?:\/\//i.test(text)) {
             if (startSource({ kind: "link", text: text.trim() })) submittedLink.current = text.trim();
@@ -231,6 +237,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
         setPanel(null);
     };
     const startPlan = async () => {
+        if (!requireLogin()) return;
         if (locked || planProblem) return;
         setStarting(true);
         setInputError("");
@@ -522,9 +529,9 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                         <button
                             type="submit"
                             className="agent-composer-send"
-                            disabled={locked || !text.trim()}
+                            disabled={Boolean(user) && (locked || !text.trim())}
                             aria-label="发送创作要求"
-                            style={{ background: locked || !text.trim() ? theme.spatial.surface : theme.accent.primary, color: locked || !text.trim() ? theme.node.muted : theme.accent.onPrimary }}
+                            style={{ background: user && (locked || !text.trim()) ? theme.spatial.surface : theme.accent.primary, color: user && (locked || !text.trim()) ? theme.node.muted : theme.accent.onPrimary }}
                         >
                             <span className="agent-composer-send-content">
                                 <ArrowUp size={14} />

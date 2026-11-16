@@ -39,10 +39,10 @@ export const navigationTools = [
     },
     {
         slug: "assets",
-        label: "素材",
+        label: "资产库",
         labelKey: "nav.tools.assets",
         icon: Images,
-        section: "创作空间",
+        section: "工作台管理",
     },
     {
         slug: "skills",

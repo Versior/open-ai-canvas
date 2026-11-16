@@ -17,6 +17,7 @@ import { isCustomInspiration, resolveInspirations } from "@/lib/inspirations/res
 import { loadInspirationCatalog, type InspirationCatalog } from "@/services/inspiration-catalog";
 import { useInspirationStore, type InspirationDraft } from "@/stores/use-inspiration-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { InspirationCover, InspirationDetailModal } from "./inspiration-detail-modal";
 import { InspirationEditorModal, type InspirationCategoryChoice } from "./inspiration-editor-modal";
 import "./inspirations.css";
@@ -77,19 +78,28 @@ function downloadText(text: string, fileName: string) {
 }
 
 export function InspirationHall({ onUse, creationMode, embedded = false }: { onUse: (item: CreationInspiration) => void; creationMode?: CreationInspiration["mode"]; embedded?: boolean }) {
+    const requireLogin = useRequireLogin();
+    const user = useUserStore((state) => state.user);
     const { message, modal } = App.useApp();
-    const inspirationSourcesVisible = useUserStore((state) => state.features.inspirationSourcesVisible);
+    const inspirationSourcesVisible = useUserStore((state) => !state.user || state.features.inspirationSourcesVisible);
 
-    const custom = useInspirationStore((state) => state.custom);
-    const overrides = useInspirationStore((state) => state.overrides);
-    const hidden = useInspirationStore((state) => state.hidden);
-    const favorites = useInspirationStore((state) => state.favorites);
+    const savedCustom = useInspirationStore((state) => state.custom);
+    const savedOverrides = useInspirationStore((state) => state.overrides);
+    const savedHidden = useInspirationStore((state) => state.hidden);
+    const savedFavorites = useInspirationStore((state) => state.favorites);
+    const custom = user ? savedCustom : [];
+    const overrides = user ? savedOverrides : {};
+    const hidden = user ? savedHidden : [];
+    const favorites = user ? savedFavorites : [];
     const hydrated = useInspirationStore((state) => state.hydrated);
     const createEntry = useInspirationStore((state) => state.createEntry);
     const updateEntry = useInspirationStore((state) => state.updateEntry);
     const removeEntry = useInspirationStore((state) => state.removeEntry);
     const restoreEntry = useInspirationStore((state) => state.restoreEntry);
-    const toggleFavorite = useInspirationStore((state) => state.toggleFavorite);
+    const saveFavorite = useInspirationStore((state) => state.toggleFavorite);
+    const toggleFavorite = (id: string) => {
+        if (requireLogin()) saveFavorite(id);
+    };
     const exportPayload = useInspirationStore((state) => state.exportPayload);
     const importPayload = useInspirationStore((state) => state.importPayload);
 
@@ -330,6 +340,7 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
 
     const handleDelete = useCallback(
         (item: CreationInspiration) => {
+            if (!requireLogin()) return;
             const id = catalogIdOf(item);
             const customItem = isCustomInspiration(id);
             modal.confirm({
@@ -346,11 +357,12 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                 },
             });
         },
-        [message, modal, removeEntry],
+        [message, modal, removeEntry, requireLogin],
     );
 
     const handleSubmit = useCallback(
         (draft: InspirationDraft) => {
+            if (!requireLogin()) return;
             if (editing) {
                 const id = catalogIdOf(editing);
                 updateEntry(id, draft);
@@ -369,16 +381,18 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
             setPage(1);
             message.success("灵感已创建");
         },
-        [createEntry, editing, message, updateEntry],
+        [createEntry, editing, message, updateEntry, requireLogin],
     );
 
     const handleExport = useCallback(() => {
+        if (!requireLogin()) return;
         downloadText(exportPayload(), exportFileName());
         message.success("已导出本地改动（自建条目 / 改写 / 隐藏 / 收藏）");
-    }, [exportPayload, message]);
+    }, [exportPayload, message, requireLogin]);
 
     const handleImportFile = useCallback(
         async (file: File) => {
+            if (!requireLogin()) return;
             try {
                 const result = importPayload(await file.text());
                 message.success(`导入完成：新增 ${result.created}，覆盖 ${result.updated}${result.skipped ? `，跳过 ${result.skipped} 条无效数据` : ""}`);
@@ -386,7 +400,7 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                 message.error(error instanceof Error ? error.message : "导入失败");
             }
         },
-        [importPayload, message],
+        [importPayload, message, requireLogin],
     );
 
     const advancedFilterCount = Number(source !== "all") + Number(category !== "all") + Number(view !== "all") + Number(sort !== "daily");
@@ -421,6 +435,7 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                             disabled={!hydrated}
                             icon={<Plus className="size-4" />}
                             onClick={() => {
+                                if (!requireLogin()) return;
                                 setEditing(null);
                                 setEditorOpen(true);
                             }}

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
+  <defs>
+    <linearGradient id="foil" x1="0" y1="0" x2="600" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e3e6fb"/>
+      <stop offset=".22" stop-color="#c4c8ee"/>
+      <stop offset=".46" stop-color="#f7f3fa"/>
+      <stop offset=".7" stop-color="#dbd5ef"/>
+      <stop offset="1" stop-color="#adb8dd"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="200" x2="600" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#a2c4fa" stop-opacity=".5"/>
+      <stop offset=".25" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".6" stop-color="#fff" stop-opacity=".75"/>
+      <stop offset=".82" stop-color="#fbcbd8" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="-130" y1="-130" x2="130" y2="130" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#48316f"/>
+      <stop offset=".5" stop-color="#30204f"/>
+      <stop offset="1" stop-color="#614283"/>
+    </linearGradient>
+    <pattern id="crimp" width="12" height="32" patternUnits="userSpaceOnUse">
+      <path d="M2 0v32 M6 0v32" stroke="#726b9b" stroke-opacity=".18" stroke-width="2"/>
+      <path d="M9 0v32" stroke="#fff" stroke-opacity=".65" stroke-width="2"/>
+    </pattern>
+    <clipPath id="packet"><rect x="2" y="2" width="596" height="796" rx="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#packet)">
+    <path fill="url(#foil)" d="M0 0h600v800H0z"/>
+    <path fill="url(#shine)" d="M0 0h600v800H0z"/>
+    <path fill="url(#crimp)" d="M0 0h600v38H0z M0 762h600v38H0z"/>
+    <path d="M22 44v712 M578 44v712" stroke="#fff" stroke-opacity=".55" stroke-width="3"/>
+    <path d="M30 44v712 M570 44v712" stroke="#706d9c" stroke-opacity=".12" stroke-width="2"/>
+    <path d="M34 55h532 M34 745h532" stroke="#8179aa" stroke-opacity=".3" stroke-width="2"/>
+    <text x="300" y="172" text-anchor="middle" fill="#30204f" font-family="Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="8">STAGE</text>
+    <g transform="translate(300 398) scale(1.15)" fill="url(#ink)">
+      <path d="M0-142 26-54 0-28-26-54z"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(45)"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(90)"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(135)"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(180)"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(225)"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(270)"/>
+      <path d="M0-142 26-54 0-28-26-54z" transform="rotate(315)"/>
+    </g>
+    <text x="300" y="634" text-anchor="middle" fill="#4a3268" font-family="Arial, sans-serif" font-size="32" font-weight="600" letter-spacing="4">IMAGINATION</text>
+    <path d="M252 655h96" stroke="#7b719f" stroke-opacity=".5" stroke-width="2"/>
+  </g>
+  <rect x="2" y="2" width="596" height="796" rx="24" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="3"/>
+</svg>

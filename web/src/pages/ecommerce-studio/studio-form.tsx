@@ -1,4 +1,6 @@
 import { App, Button, Input, Popover, Tooltip } from "antd";
+import { useRequireLogin } from "@/hooks/use-require-login";
+import { useUserStore } from "@/stores/use-user-store";
 import { ChevronDown, LayoutTemplate, ListChecks, RotateCcw, ScanSearch } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore, type ClipboardEvent, type ReactNode } from "react";
 import { studioPromptOverridesRevision, subscribeStudioPromptOverrides } from "@/lib/ecommerce-studio/prompt-overrides";
@@ -154,6 +156,8 @@ function FillModelPopover({ imageCount, purpose = "识别" }: { imageCount: numb
 }
 
 export function StudioForm({ product, edit, ensure, runner, onGenerated }: { product: StudioProduct; edit: Edit; ensure: () => string; runner: StudioRunner; onGenerated: () => void }) {
+    const requireLogin = useRequireLogin();
+    const user = useUserStore((state) => state.user);
     const { message, modal } = App.useApp();
     const image = useStudioModel("image");
     const text = useStudioModel("text");
@@ -262,6 +266,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
 
     /** 识别商品。quiet 时是「AI 分析并策划」的第一步：不弹替换确认，卖家写过的内容保留。返回是否成功。 */
     const fill = async (quiet = false) => {
+        if (!requireLogin()) return false;
         try {
             const result = await runner.fill(ensure(), text.value);
             if (quiet) return true;
@@ -284,6 +289,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
 
     /** 策划一次，返回是否成功；失败时已经提示过原因。 */
     const runPlan = async (revise: boolean) => {
+        if (!requireLogin()) return false;
         try {
             const result = await runner.plan(ensure(), text.value, { revise });
             const count = result.plan.screens.length;
@@ -308,6 +314,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
 
     /** 策划类操作的前置检查：要有星标商品图和文本模型；还没识别过商品时先识别（文本模型看不了图时跳过）。 */
     const prepare = async (reanalyze = false): Promise<boolean> => {
+        if (!requireLogin()) return false;
         if (!truthCount) return (void message.warning("先上传商品图并点亮星标，再分析"), false);
         if (!text.value) return (void message.warning("没有可用的文本模型，先到模型设置里添加"), false);
         if (!textSeesPhotos) {
@@ -358,6 +365,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
         else message.success("已重新识别商品");
     };
     const planDetail = () => {
+        if (!requireLogin()) return;
         const note = brief.planNote?.trim();
         if (note && storedPlan) return void analyzeAndPlan({ revise: true });
         if (!activePlan) return void analyzeAndPlan();
@@ -371,6 +379,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const lazyPlan = scope === "single" || scope === "template";
     const planBeforeGenerate = lazyPlan && !activePlan && Boolean(text.value);
     const generate = async ({ direct = false, firstOnly = false } = {}) => {
+        if (!requireLogin()) return;
         if (blocked) return void message.warning(blocked);
         if (planBeforeGenerate && !direct) {
             message.info(`先按这件商品策划这 ${planScreens} ${planUnit}，策划好就开始出图`);
@@ -405,7 +414,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             edit={edit}
             asking={asking}
             directing={directing}
-            disabled={!product.photos.length || Boolean(running && running !== "ask" && running !== "directions")}
+            disabled={Boolean(user) && (!product.photos.length || Boolean(running && running !== "ask" && running !== "directions"))}
             onAsk={() => void runAsk()}
             onDirections={() => void runDirections()}
         />
@@ -458,7 +467,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <h2>商品信息</h2>
                     <span className="es-field-actions">
                         <Tooltip title={!product.photos.length ? "先上传商品图" : scope && text.value ? "看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再问你几个商品图看不出来的问题" : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}>
-                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={!product.photos.length || Boolean(running && !filling && !asking)} onClick={() => void analyzeProduct()}>
+                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={Boolean(user) && (!product.photos.length || Boolean(running && !filling && !asking))} onClick={() => void analyzeProduct()}>
                                 {filling ? "分析商品中…" : asking ? "生成问题中…" : "AI 分析商品"}
                             </Button>
                         </Tooltip>
@@ -729,7 +738,13 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                 ) : null}
                                 {text.value ? (
                                     <span className="es-plan-card-actions">
-                                        <Button type={!activePlan && prepStep === "plan" ? "primary" : "default"} icon={<ListChecks size={14} />} loading={planning || filling} disabled={!product.photos.length || asking || directing} onClick={planDetail}>
+                                        <Button
+                                            type={!activePlan && prepStep === "plan" ? "primary" : "default"}
+                                            icon={<ListChecks size={14} />}
+                                            loading={planning || filling}
+                                            disabled={Boolean(user) && (!product.photos.length || asking || directing)}
+                                            onClick={planDetail}
+                                        >
                                             {filling
                                                 ? "分析商品中…"
                                                 : planning
@@ -750,7 +765,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                         </Button>
                                         <FillModelPopover imageCount={planningImages.images.length} purpose="策划" />
                                         {planBeforeGenerate ? (
-                                            <Button type="link" size="small" disabled={Boolean(blocked) || planning || filling} onClick={() => void generate({ direct: true })}>
+                                            <Button type="link" size="small" disabled={Boolean(user) && (Boolean(blocked) || planning || filling)} onClick={() => void generate({ direct: true })}>
                                                 {scope === "template" ? "不策划，按模板直接生成" : "不策划，直接生成"}
                                             </Button>
                                         ) : null}
@@ -804,12 +819,12 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     重置参数
                 </Button>
                 {scope === "detail" && activePlan && images > 1 ? (
-                    <Button size="large" disabled={Boolean(blocked) || Boolean(running)} onClick={() => void generate({ firstOnly: true })}>
+                    <Button size="large" disabled={Boolean(user) && (Boolean(blocked) || Boolean(running))} onClick={() => void generate({ firstOnly: true })}>
                         先试首屏
                     </Button>
                 ) : null}
                 <Tooltip title={blocked || undefined}>
-                    <Button type="primary" size="large" className="es-generate" disabled={Boolean(blocked) || planning || filling} loading={planBeforeGenerate && (planning || filling)} onClick={() => void generate()}>
+                    <Button type="primary" size="large" className="es-generate" disabled={Boolean(user) && (Boolean(blocked) || planning || filling)} loading={planBeforeGenerate && (planning || filling)} onClick={() => void generate()}>
                         {planBeforeGenerate
                             ? setKind
                                 ? `AI 策划并生成${setLabel}（${images} ${unit}）`

@@ -1,5 +1,6 @@
 import { ApiError, http, apiBaseURL, compactApiParams, serializeApiParams, type ApiParams } from "@/services/api/request";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { useUserStore } from "@/stores/use-user-store";
 
 let addedSkillsRequest: { scope: string; version: number; force: boolean; promise: Promise<{ skills: Skill[] }> } | null = null;
 let addedSkillsCache: { scope: string; value: { skills: Skill[] }; expiresAt: number } | null = null;
@@ -212,7 +213,7 @@ export type InstallGitHubSkillInput = {
 
 export function listSkills(input: ListSkillsInput = {}) {
     const params = serializeApiParams(compactApiParams(input as ApiParams));
-    return http.get<SkillList>(`/skills?${params.toString()}`);
+    return !useUserStore.getState().user ? http.get<SkillList>(`/public/skills?${params.toString()}`, { session: "public" }) : http.get<SkillList>(`/skills?${params.toString()}`);
 }
 
 export function listSkillLibraryCategories(scope: "mine" | "created" = "mine") {
@@ -232,7 +233,7 @@ export function setSkillLibraryCategory(skillId: string, categoryId: string) {
 }
 
 export function getSkill(id: string) {
-    return http.get<{ skill: Skill }>(`/skills/${encodeURIComponent(id)}`);
+    return !useUserStore.getState().user ? http.get<{ skill: Skill }>(`/public/skills/${encodeURIComponent(id)}`, { session: "public" }) : http.get<{ skill: Skill }>(`/skills/${encodeURIComponent(id)}`);
 }
 
 /** 场景预设目录：公开只读，与 /skills 同级的市场元数据，无需用户上下文。 */
@@ -248,7 +249,8 @@ export function listAddedSkills(options: { force?: boolean; afterRevision?: numb
     const scope = getActiveUserScope();
     const now = Date.now();
     // Explicit refreshes only share requests started after their freshness boundary.
-    if (addedSkillsRequest?.scope === scope && addedSkillsRequest.version === addedSkillsCacheVersion && (!options.force || addedSkillsRequest.force) && (options.afterRevision === undefined || addedSkillsRequest.version > options.afterRevision)) return addedSkillsRequest.promise;
+    if (addedSkillsRequest?.scope === scope && addedSkillsRequest.version === addedSkillsCacheVersion && (!options.force || addedSkillsRequest.force) && (options.afterRevision === undefined || addedSkillsRequest.version > options.afterRevision))
+        return addedSkillsRequest.promise;
     if (!options.force && addedSkillsCache?.scope === scope && addedSkillsCache.expiresAt > now) return Promise.resolve(addedSkillsCache.value);
     const version = ++addedSkillsCacheVersion;
     addedSkillsCache = null;

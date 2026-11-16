@@ -11,6 +11,87 @@ import (
 // RegisterGuestAccessRoutes 注册游客也能读的展示接口：功能开关、模型目录与 LibTV 公开作品。
 // 只读、无凭证、带应用层短缓存；生成、上传、保存、报价与导入仍走要求登录的原接口。
 func RegisterGuestAccessRoutes(r *gin.RouterGroup, svc *service.Service) {
+	r.GET("/public/skills", func(c *gin.Context) {
+		if !enforceGuestReadLimit(c, "skills", 60, 1200) {
+			return
+		}
+		page, pageSize, err := parsePaginationQuery(c, 20)
+		if err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		value, err := svc.GuestSkills(service.SkillListRequest{
+			Page: page, PageSize: pageSize, Scope: c.Query("scope"), Search: c.Query("search"), Tag: c.Query("tag"), Sort: c.Query("sort"),
+			PlatformRootID: c.Query("platformRootId"), PlatformCategoryID: c.Query("platformCategoryId"), PlatformUncategorized: c.Query("platformUncategorized") == "true",
+			LibraryCategoryID: c.Query("libraryCategoryId"), LibraryUncategorized: c.Query("libraryUncategorized") == "true",
+		})
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		ok(c, value)
+	})
+	r.GET("/public/skills/curation", func(c *gin.Context) {
+		if !enforceGuestReadLimit(c, "skills", 60, 1200) {
+			return
+		}
+		value, err := svc.GuestSkillCuration()
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		ok(c, value)
+	})
+	r.GET("/public/skills/:id", func(c *gin.Context) {
+		if !enforceGuestReadLimit(c, "skills", 60, 1200) {
+			return
+		}
+		value, err := svc.GuestSkillDetail(c.Param("id"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		ok(c, gin.H{"skill": value})
+	})
+	r.GET("/public/workbench/tools", func(c *gin.Context) {
+		if !enforceGuestReadLimit(c, "workbench", 30, 600) {
+			return
+		}
+		value, err := svc.GuestWorkbenchTools(c.Query("kind"))
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		ok(c, gin.H{"tools": value})
+	})
+	r.GET("/public/interior/catalog", func(c *gin.Context) {
+		if !enforceGuestReadLimit(c, "interior", 30, 600) {
+			return
+		}
+		value, err := svc.GuestInteriorCatalog()
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		ok(c, value)
+	})
+	r.GET("/public/packaging/catalog", func(c *gin.Context) {
+		if !enforceGuestReadLimit(c, "packaging", 30, 600) {
+			return
+		}
+		value, err := svc.GuestPackagingCatalog()
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		c.Header("Cache-Control", "private, no-store")
+		ok(c, value)
+	})
 	r.GET("/public/features", func(c *gin.Context) {
 		if !enforceGuestReadLimit(c, "features", 60, 1200) {
 			return

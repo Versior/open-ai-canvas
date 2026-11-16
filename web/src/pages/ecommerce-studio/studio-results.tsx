@@ -1,10 +1,13 @@
 import { App, Button, Dropdown, Spin, Tooltip } from "antd";
 import { saveAs } from "file-saver";
-import { Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
+import { CircleStop, Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { TaskSettlement } from "@/components/generation-cost-notice";
+import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioAttemptActive, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
@@ -126,7 +129,7 @@ function StudioResultArtwork({ product, group, shot, output }: { product: Studio
     );
 }
 
-function ResultTile({
+export function ResultTile({
     product,
     group,
     shot,
@@ -158,50 +161,64 @@ function ResultTile({
         <figure className="es-tile-wrap">
             {/* 出好的图按实际宽高显示：模型给的比例和要求的不一样时也不裁掉。 */}
             <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
-                {preview ? (
-                    <button type="button" className="es-tile-image" onClick={onView} aria-label={`查看${shot.title}`}>
-                        <StudioResultArtwork product={product} group={group} shot={shot} output={preview} />
-                    </button>
-                ) : null}
-                {!preview && active ? (
-                    <div className="es-tile-state">
-                        <Spin size="small" />
-                        <span>{STATUS_LABEL[status]}</span>
-                        {latest?.error ? (
-                            <>
-                                <span className="es-tile-error" role="status">
-                                    {latest.error}
-                                </span>
-                                <Button size="small" onClick={onSync}>
-                                    重新查询
+                <ImageGenerationPack
+                    pending={active}
+                    succeeded={status === "succeeded" && Boolean(latest?.outputs.some((output) => output.resourceId === preview?.resourceId))}
+                    label={<ImagePackProgress task={{ status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
+                    pendingActions={
+                        latest?.error ? (
+                            <Button size="small" onClick={onSync}>
+                                重新查询
+                            </Button>
+                        ) : undefined
+                    }
+                >
+                    {preview ? (
+                        <button type="button" data-image-pack-result className="es-tile-image" onClick={onView} aria-label={`查看${shot.title}`}>
+                            <StudioResultArtwork product={product} group={group} shot={shot} output={preview} />
+                        </button>
+                    ) : null}
+                    {!preview && active ? (
+                        <div className="es-tile-state">
+                            <Spin size="small" />
+                            <span>{STATUS_LABEL[status]}</span>
+                            {latest?.error ? (
+                                <>
+                                    <span className="es-tile-error" role="status">
+                                        {latest.error}
+                                    </span>
+                                    <Button size="small" onClick={onSync}>
+                                        重新查询
+                                    </Button>
+                                </>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {!preview && !active && failed ? (
+                        <div className="es-tile-state image-pack-notice" data-tone={status === "cancelled" ? "neutral" : "error"}>
+                            <ImagePackNoticeArtwork icon={status === "cancelled" ? CircleStop : ImageOff} tone={status === "cancelled" ? "neutral" : "error"} />
+                            <strong>{STATUS_LABEL[status]}</strong>
+                            <span className="es-tile-error" title={latest?.error}>
+                                {latest?.error || "调整设置后可以重新生成"}
+                            </span>
+                            <Tooltip title={blocked || undefined}>
+                                <Button size="small" icon={<RefreshCw size={14} aria-hidden />} disabled={Boolean(blocked)} onClick={onRerun}>
+                                    重新生成
                                 </Button>
-                            </>
-                        ) : null}
-                    </div>
-                ) : null}
-                {!preview && !active && failed ? (
-                    <div className="es-tile-state" data-tone="error">
-                        <ImageOff size={18} strokeWidth={1.5} aria-hidden />
-                        <span className="es-tile-error" title={latest?.error}>
-                            {latest?.error || STATUS_LABEL[status]}
-                        </span>
-                        <Tooltip title={blocked || undefined}>
-                            <Button size="small" disabled={Boolean(blocked)} onClick={onRerun}>
-                                重试
-                            </Button>
-                        </Tooltip>
-                    </div>
-                ) : null}
-                {!preview && !active && !failed ? (
-                    <div className="es-tile-state">
-                        <span>待生成</span>
-                        <Tooltip title={blocked || undefined}>
-                            <Button size="small" disabled={Boolean(blocked)} onClick={onRerun}>
-                                生成
-                            </Button>
-                        </Tooltip>
-                    </div>
-                ) : null}
+                            </Tooltip>
+                        </div>
+                    ) : null}
+                    {!preview && !active && !failed ? (
+                        <div className="es-tile-state">
+                            <span>待生成</span>
+                            <Tooltip title={blocked || undefined}>
+                                <Button size="small" disabled={Boolean(blocked)} onClick={onRerun}>
+                                    生成
+                                </Button>
+                            </Tooltip>
+                        </div>
+                    ) : null}
+                </ImageGenerationPack>
                 {preview && active ? (
                     <span className="es-tile-badge">
                         <Spin size="small" /> {STATUS_LABEL[status]}

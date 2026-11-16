@@ -277,6 +277,11 @@ export const koKR: DeepStringRecord<typeof zhCN> = {
             myFolders: "내 분류",
             noResults: "키워드나 왼쪽 분류를 조정하거나 필터를 해제해 전체를 확인하세요.",
         },
+        empty: {
+            title: "첫 번째 에셋부터 시작하세요",
+            description: "참고 이미지를 업로드하고 프롬프트를 저장하거나 기존 에셋을 가져오세요. 창작 결과를 다음 작업에서도 활용할 수 있습니다.",
+            canvas: "캔버스에서 창작 결과를 저장할 수도 있습니다",
+        },
         form: {
             editTitle: "소재 편집",
             uploading: "업로드 중",

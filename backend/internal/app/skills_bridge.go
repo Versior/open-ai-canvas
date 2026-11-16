@@ -79,6 +79,15 @@ func (s *Service) skillDomain() *skills.Service {
 func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error) {
 	return s.skillDomain().Skills(userID, req)
 }
+func (s *Service) GuestSkills(req SkillListRequest) (*SkillList, error) {
+	return s.skillDomain().GuestSkills(req)
+}
+func (s *Service) GuestSkillDetail(id string) (*SkillItem, error) {
+	return s.skillDomain().GuestSkillDetail(id)
+}
+func (s *Service) GuestSkillCuration() (*SkillCuration, error) {
+	return s.skillDomain().GuestSkillCuration()
+}
 
 func (s *Service) AddedSkills(userID string) ([]AddedSkillReference, error) {
 	return s.skillDomain().AddedSkills(userID)

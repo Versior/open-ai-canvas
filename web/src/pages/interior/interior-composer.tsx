@@ -1,4 +1,5 @@
 import { Button, Input, Select } from "antd";
+import { useUserStore } from "@/stores/use-user-store";
 import { ImagePlus, LoaderCircle, Sparkles, X } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { ModelPicker } from "@/components/model-picker";
@@ -166,6 +167,7 @@ type ComposerProps = {
 };
 
 export function InteriorComposer({ catalog, config, surface, draft, busy, error, professional: availableProfessional, useProfessional, onUseProfessional, onChange, onModeChange, onPickSource, onPickReference, onSubmit }: ComposerProps) {
+    const user = useUserStore((state) => state.user);
     const professional = useProfessional ? availableProfessional : undefined;
     const modes = useMemo(() => availableInteriorTasks(catalog, surface), [catalog, surface]);
     const mode = modes.find((item) => item.id === draft.modeId);
@@ -392,7 +394,14 @@ export function InteriorComposer({ catalog, config, surface, draft, busy, error,
                         {error}
                     </p>
                 ) : null}
-                <Button type="primary" size="large" block icon={busy ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden /> : <Sparkles className="size-4" aria-hidden />} disabled={Boolean(problem) || busy} onClick={onSubmit}>
+                <Button
+                    type="primary"
+                    size="large"
+                    block
+                    icon={busy ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
+                    disabled={Boolean(user) && (Boolean(problem) || busy)}
+                    onClick={onSubmit}
+                >
                     {busy ? "正在提交" : `生成效果图 · ${total} 张`}
                 </Button>
                 {problem && !busy ? <p className="itd-muted-note">{problem}</p> : null}

@@ -14203,6 +14203,9 @@
     .canvas-gen-state[data-tone="error"] {
         --canvas-gen-tone: var(--status-error);
     }
+    .canvas-gen-state[data-tone="neutral"] {
+        --canvas-gen-tone: var(--canvas-gen-muted);
+    }
     /* 保存失败后自动重试：仍在进行，但用警示色让用户看出这不是正常保存。 */
     .canvas-gen-state[data-saving="retrying"] {
         --canvas-gen-accent: var(--status-warning);
@@ -14230,7 +14233,7 @@
     }
     .canvas-gen-state.is-failure::before,
     .canvas-gen-state[data-phase="uncertain"]::before {
-        opacity: 0.7;
+        display: none;
         animation: none;
     }
     .canvas-gen-state.is-failure::after,
@@ -14257,8 +14260,10 @@
     }
     .canvas-gen-state.is-failure .canvas-gen-indicator,
     .canvas-gen-state[data-phase="uncertain"] .canvas-gen-indicator {
-        background: color-mix(in srgb, var(--canvas-gen-tone) 10%, var(--canvas-gen-surface));
-        box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--canvas-gen-tone) 36%, transparent);
+        width: 28px;
+        height: 28px;
+        background: transparent;
+        box-shadow: none;
         color: var(--canvas-gen-tone);
     }
     /* 彗尾弧线：沿环转动，配合 animate-spin 在减少动态效果下仍保持转动（加载指示例外）。 */
@@ -14379,6 +14384,25 @@
     }
     .canvas-gen-action.is-primary:active {
         box-shadow: var(--button-primary-active-shadow);
+    }
+    .canvas-gen-state.is-failure .canvas-gen-action.is-primary {
+        border: 1px solid var(--image-pack-notice-action-border);
+        background: var(--image-pack-notice-action-bg);
+        color: var(--image-pack-notice-accent) !important;
+        box-shadow: none;
+    }
+    .canvas-gen-state.is-failure .canvas-gen-action.is-primary:hover {
+        background: var(--image-pack-notice-action-hover);
+        opacity: 1;
+    }
+    .canvas-gen-state.is-failure {
+        --image-pack-notice-art-size: 60px;
+        gap: var(--space-2);
+    }
+    @container (max-height: 170px) {
+        .canvas-gen-state.is-failure .image-pack-notice-artwork {
+            --image-pack-notice-art-size: 36px;
+        }
     }
     .canvas-gen-action svg {
         width: 14px;
@@ -23245,60 +23269,41 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     outline-offset: 1px;
 }
 
-/* 失败卡片：标题说明发生了什么，正文说明下一步，主按钮只给最该做的那一件事。 */
+/* 异常提示只在图标上使用状态色，原因与恢复操作保持清晰。 */
 .creation-home .creation-media-notice {
-    --creation-notice-tone: var(--creation-muted);
     display: grid;
-    width: min(560px, calc(100% - var(--space-8)));
+    width: min(480px, calc(100% - var(--space-8)));
     grid-template-columns: auto minmax(0, 1fr);
-    gap: var(--space-3) var(--space-3);
+    align-items: center;
+    gap: var(--space-4);
     margin: var(--space-3) 0 0 var(--space-8);
-    border-radius: var(--r-lg);
-    background: color-mix(in srgb, var(--creation-notice-tone) 6%, var(--creation-surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--creation-notice-tone) 22%, transparent);
-    padding: var(--space-3) var(--space-4) var(--space-4) var(--space-3);
+    padding: var(--space-4) 0;
 }
-.creation-home .creation-media-notice.is-warning {
-    --creation-notice-tone: var(--status-warning);
-}
-.creation-home .creation-media-notice.is-error {
-    --creation-notice-tone: var(--status-error);
-}
-.creation-home .creation-media-notice-icon {
-    display: grid;
-    width: 32px;
-    height: 32px;
-    place-items: center;
-    border-radius: var(--r-full);
-    background: color-mix(in srgb, var(--creation-notice-tone) 14%, transparent);
-    color: var(--creation-notice-tone);
-}
-.creation-home .creation-media-notice-icon svg {
-    width: 16px;
-    height: 16px;
+.creation-home .creation-media-notice > .image-pack-notice-artwork {
+    --image-pack-notice-art-size: 88px;
+    grid-row: 1 / 3;
 }
 .creation-home .creation-media-notice-copy {
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 2px;
-    padding-top: 5px;
+    gap: var(--space-1);
 }
 .creation-home .creation-media-notice-copy strong {
     color: var(--creation-text);
-    font-size: var(--fs-body);
+    font-size: var(--fs-ui);
     font-weight: 600;
     line-height: var(--lh-heading);
 }
 .creation-home .creation-media-notice-copy p {
     margin: 0;
-    color: var(--creation-muted);
+    color: var(--text-secondary);
     font-size: var(--fs-caption);
     line-height: 1.6;
     overflow-wrap: anywhere;
 }
 .creation-home .creation-media-notice-copy small {
-    color: var(--creation-faint);
+    color: var(--text-secondary);
     font-size: var(--fs-label);
     line-height: 1.5;
     overflow-wrap: anywhere;
@@ -23308,18 +23313,23 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     flex-wrap: wrap;
     gap: var(--space-2);
     grid-column: 2;
+    max-width: none;
+    align-self: start;
 }
 .creation-home .creation-media-notice-actions button {
     min-height: var(--space-8);
     padding: 0 var(--space-3);
     font-size: var(--fs-caption);
+    background: transparent;
+    color: var(--creation-text);
 }
 .creation-home .creation-media-notice-actions button.is-primary {
-    background: var(--button-primary-bg);
-    color: var(--button-primary-fg);
+    border: 1px solid var(--image-pack-notice-action-border);
+    background: var(--image-pack-notice-action-bg);
+    color: var(--image-pack-notice-accent);
 }
 .creation-home .creation-media-notice-actions button.is-primary:hover:not(:disabled) {
-    background: var(--button-primary-hover-bg);
+    background: var(--image-pack-notice-action-hover);
 }
 .creation-home .creation-media-notice-actions svg {
     width: 14px;
@@ -23556,6 +23566,16 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     .creation-home .creation-media-notice {
         width: 100%;
         margin-left: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .creation-home .creation-media-notice {
+        grid-template-columns: auto minmax(0, 1fr);
+    }
+    .creation-home .creation-media-notice-actions {
+        grid-column: 2;
+        max-width: none;
     }
 }
 
@@ -26648,7 +26668,7 @@ html:not(.dark) .creation-home .creation-user-message-copy-wrap {
     border-radius: var(--r-md) !important;
     color: var(--user-ink) !important;
     font-size: var(--fs-body) !important;
-    font-weight: 600 !important;
+    font-weight: 500 !important;
     transition:
         background var(--user-motion),
         color var(--user-motion),

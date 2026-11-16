@@ -7,9 +7,11 @@ import { newPackagingDocument, validatePackagingParameters, type PackagingCatalo
 import { readPackagingProjectZip } from "@/lib/packaging/delivery";
 import { compilePackaging } from "@/lib/packaging/geometry";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { PackagingHistory, type PackagingSnapshot } from "@/lib/packaging/history";
 
 export function usePackagingProject() {
+    const requireLogin = useRequireLogin();
     const userId = useUserStore((s) => s.user?.id);
     const [catalog, setCatalog] = useState<PackagingCatalog>();
     const [project, setProject] = useState<PackagingProject>();
@@ -47,12 +49,12 @@ export function usePackagingProject() {
         resources.current.clear();
         images.current.clear();
         const session = captureUserSession();
-        Promise.all([packagingApi.catalog(controller.signal), packagingApi.projects(1, false, {}, controller.signal)])
+        Promise.all([packagingApi.catalog(controller.signal), userId ? packagingApi.projects(1, false, {}, controller.signal) : undefined])
             .then(([c, list]) => {
                 assertCurrentUserSession(session);
                 setCatalog(c);
-                setProjects(list.items);
-                setTotal(list.total);
+                setProjects(list?.items || []);
+                setTotal(list?.total || 0);
                 setPage(1);
                 if (c.templates[0] && c.materials[0])
                     replaceProject({ id: "", userId: session.scope, name: "未命名包装", templateId: c.templates[0].id, revision: 0, createdAt: "", updatedAt: "", document: newPackagingDocument(c.templates[0], c.materials[0]) });
@@ -133,6 +135,7 @@ export function usePackagingProject() {
         setError("");
     };
     const loadPage = async (next: number) => {
+        if (!requireLogin()) return;
         const request = ++pageRequest.current;
         const session = captureUserSession();
         const list = await packagingApi.projects(next, false, {}, session.signal);
@@ -143,6 +146,7 @@ export function usePackagingProject() {
         setPage(next);
     };
     const load = async (id: string) => {
+        if (!requireLogin()) return;
         const epoch = ++projectEpoch.current;
         const submitted = sequence.current;
         const session = captureUserSession();
@@ -155,6 +159,7 @@ export function usePackagingProject() {
         sequence.current++;
     };
     const save = async (copy = false) => {
+        if (!requireLogin()) return;
         if (!project || status !== "ready") return;
         const session = captureUserSession();
         validatePackagingParameters(project.document.parameters);
@@ -180,6 +185,7 @@ export function usePackagingProject() {
         }
     };
     const upload = async (file: File, panelId = "", role: PackagingDocument["artworks"][number]["role"] = "artwork") => {
+        if (!requireLogin()) return;
         if (!project) return;
         if (project.document.artworks.length >= 40) throw new Error("图稿与工艺最多 40 层");
         const session = captureUserSession();
@@ -223,6 +229,7 @@ export function usePackagingProject() {
         }
     };
     const importProject = async (file: File) => {
+        if (!requireLogin()) return;
         if (file.size > 100 * 1024 * 1024) throw new Error("方案包不能超过 100 MB");
         const epoch = ++projectEpoch.current;
         const submitted = sequence.current;

@@ -311,6 +311,7 @@ export function PackagingViewport(props: Props) {
                     {props.onMockup ? (
                         <button
                             type="button"
+                            data-requires-login
                             disabled={exporting || !ready || props.mockupDisabled}
                             title="保存当前方案后，以此视角生成包装效果图"
                             onClick={() => {
@@ -335,6 +336,7 @@ export function PackagingViewport(props: Props) {
                     <button
                         type="button"
                         disabled={exporting || !ready}
+                        data-requires-login
                         onClick={() => {
                             void exportFile("png").catch((e: Error) => props.onError(e.message));
                         }}
@@ -345,6 +347,7 @@ export function PackagingViewport(props: Props) {
                     <button
                         type="button"
                         disabled={exporting || !ready}
+                        data-requires-login
                         onClick={() => {
                             void exportFile("glb").catch((e: Error) => props.onError(e.message));
                         }}
@@ -354,13 +357,14 @@ export function PackagingViewport(props: Props) {
                     <button
                         type="button"
                         disabled={exporting || !ready || props.layout.panels.some((p) => p.surface)}
+                        data-requires-login
                         onClick={() => {
                             void exportFile("animation").catch((e: Error) => props.onError(e.message));
                         }}
                     >
                         动画 GLB
                     </button>
-                    <button type="button" disabled={exporting || !ready} onClick={() => void exportFile("video")}>
+                    <button type="button" data-requires-login disabled={exporting || !ready} onClick={() => void exportFile("video")}>
                         {videoProgress === undefined ? "动画视频" : `录制 ${videoProgress}%`}
                     </button>
                     {videoProgress !== undefined ? (

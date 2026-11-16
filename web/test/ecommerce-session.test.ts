@@ -179,7 +179,11 @@ describe("电商项目跨页面恢复", () => {
         await expect(pending).rejects.toThrow("登录账号已切换");
         expect(server.revisions).toEqual([]);
         await expect(session.save(emptyEcommerceDraft(), null)).rejects.toThrow("登录账号已切换");
-        expect(() => createEcommerceSession("guest")).toThrow("请先登录");
+        const guest = createEcommerceSession("guest", null, undefined, server.adapter);
+        expect(guest.project).toBeNull();
+        expect(() => guest.beginSubmission()).toThrow("请先登录");
+        await expect(guest.save(emptyEcommerceDraft(), null)).rejects.toThrow("请先登录");
+        expect(server.revisions).toEqual([]);
     });
 
     test("正在提交的旧页面写入任务 ID 后，返回页面同步获得同一用户检查点", async () => {

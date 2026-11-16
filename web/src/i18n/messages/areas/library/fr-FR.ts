@@ -277,6 +277,11 @@ export const frFR: DeepStringRecord<typeof zhCN> = {
             myFolders: "Mes catégories",
             noResults: "Modifiez les mots-clés ou les catégories, ou effacez les filtres pour tout afficher.",
         },
+        empty: {
+            title: "Commencez avec votre première ressource",
+            description: "Importez des images de référence, enregistrez des prompts ou ajoutez vos ressources existantes pour vos prochaines créations.",
+            canvas: "Vous pouvez aussi enregistrer vos créations depuis un canevas",
+        },
         form: {
             editTitle: "Modifier la ressource",
             uploading: "Import en cours",

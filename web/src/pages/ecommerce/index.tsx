@@ -34,6 +34,7 @@ import { getRemoteAsset } from "@/services/api/user-data";
 import { useCommerceAdminModels } from "./admin-models";
 import { getActiveUserScope } from "@/lib/user-scope";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import {
     createEcommerceSession,
     peekEcommerceWorkspace,
@@ -150,16 +151,18 @@ const mergeTaskAssets = (incoming: GenerationTask, previous?: GenerationTask): G
 
 export default function EcommercePage() {
     const scope = useUserStore((state) => state.user?.id) || getActiveUserScope();
-    return scope === "guest" ? null : <EcommerceWorkspace key={scope} scope={scope} />;
+    return <EcommerceWorkspace key={scope} scope={scope} />;
 }
 
 function EcommerceWorkspace({ scope }: { scope: string }) {
+    const requireLogin = useRequireLogin();
+    const user = useUserStore((state) => state.user);
     // 用 App 上下文里的 message：跟随明暗主题，并按全站规则去重，不会叠出一串同样的报错。
     const { message } = App.useApp();
     const config = useEffectiveConfig();
-    const ecommerceEnabled = useUserStore((state) => state.features.ecommerceEnabled);
-    const ecommerceVideoEnabled = useUserStore((state) => state.features.ecommerceVideoEnabled);
-    const videoWorkbenchEnabled = useUserStore((state) => state.features.videoWorkbenchEnabled);
+    const ecommerceEnabled = useUserStore((state) => !state.user || state.features.ecommerceEnabled);
+    const ecommerceVideoEnabled = useUserStore((state) => !state.user || state.features.ecommerceVideoEnabled);
+    const videoWorkbenchEnabled = useUserStore((state) => !state.user || state.features.videoWorkbenchEnabled);
     const nickname = useUserStore((state) => state.user?.displayName?.trim() || state.user?.username?.trim() || "创作者");
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -495,6 +498,10 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         });
     }, [imageModels]);
     useEffect(() => {
+        if (scope === "guest") {
+            setRestoring(false);
+            return;
+        }
         if (hydrated.current && (requestedProjectId === projectRef.current?.id || (!requestedProjectId && newWorkspaceId === sessionRef.current.id))) return;
         let cancelled = false;
         hydrated.current = false;
@@ -736,6 +743,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     );
 
     const saveDraft = async () => {
+        if (!requireLogin()) return;
         if (busy || uploading || uploadLock.current || restoring || submissionLock.current || !hydrated.current) return;
         const owner = session;
         submissionLock.current = true;
@@ -922,7 +930,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     }, [draft.directionsTaskId, draft.creativeDirectionId, session, restoring]);
 
     useEffect(() => {
-        if (!draft.imageModel) {
+        if (!user || !draft.imageModel) {
             setQuote(null);
             return;
         }
@@ -974,7 +982,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             setQuote({ image: costs.length === 1 ? costs[0] : imageTotal === null ? null : imageTotal / costs.length, imageTotal, agent: agentCost, vision: visionCost });
         });
         return () => controller.abort();
-    }, [config, creationMode, planningModel, directionsModel, commerceQuoteSignature(draft, plan, requestedCount)]);
+    }, [config, creationMode, planningModel, directionsModel, commerceQuoteSignature(draft, plan, requestedCount), user]);
 
     function composerFingerprint(source: EcommerceDraft) {
         const input = JSON.stringify([source.instruction, source.references.filter((ref) => ref.role !== "model").map((ref) => ref.resourceId), (source.layoutReferences || []).map((ref) => ref.resourceId)]);
@@ -1260,6 +1268,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     };
 
     const startPlanning = async () => {
+        if (!requireLogin()) return;
         if (restoring || !hydrated.current || submissionLock.current || planningPending) return;
         if (activeImages && !draftDiffersFromPlan) {
             message.info("当前图片仍在生成，可先修改配置，待本轮结束后开启新一轮策划");
@@ -2005,6 +2014,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         }
     };
     const beginConfirmedGeneration = (action = confirmAction) => {
+        if (!requireLogin()) return;
         setConfirmOpen(false);
         if (skipConfirm) localStorage.setItem(`ecommerce-confirm-skip:${scope}`, "1");
         // 发送后立即清空输入框（提示词与参考图），不等服务端回执。
@@ -2023,6 +2033,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         });
     };
     const requestGenerationConfirmation = async (action: "quick" | "plan" = "quick") => {
+        if (!requireLogin()) return;
         if (confirmingGeneration || (directionsPending && !draftDiffersFromPlan) || (activeImages && !draftDiffersFromPlan) || (action === "quick" && !(composerTextOverride ?? draft.instruction).trim())) return;
         setConfirmingGeneration(true);
         try {
@@ -2057,8 +2068,9 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     };
     const directionsOutdated = Boolean(creativeDirections.length && directionsInputSignatureRef.current !== commerceInputSignature(draft));
     // 后台阶段模型不可用时 AI 流程走不通：按钮直接置灰，原因常驻显示在按钮上方。
-    const adminBlocked = creationMode !== "direct" && Boolean(adminModelIssue);
-    const submitDisabled = !ecommerceEnabled || restoring || uploading || busy || planningPending || (directionsPending && !draftDiffersFromPlan) || (Boolean(activeImages) && !draftDiffersFromPlan) || confirmingGeneration || !composerText.trim();
+    const adminBlocked = Boolean(user) && creationMode !== "direct" && Boolean(adminModelIssue);
+    const submitDisabled =
+        Boolean(user) && (!ecommerceEnabled || restoring || uploading || busy || planningPending || (directionsPending && !draftDiffersFromPlan) || (Boolean(activeImages) && !draftDiffersFromPlan) || confirmingGeneration || !composerText.trim());
     /** Enter 发送，Shift+Enter 换行；输入法组字期间的回车只用于上屏。 */
     const submitComposerOnEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
         if (event.key !== "Enter" || event.shiftKey || event.altKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -2444,13 +2456,13 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                         </nav>
                         <div className="ecs-head-actions">
                             <AntTooltip title="保存草稿">
-                                <button type="button" className="ecs-icon-button" disabled={busy || uploading || restoring || !hydrated.current} onClick={() => void saveDraft()}>
+                                <button type="button" className="ecs-icon-button" disabled={Boolean(user) && (busy || uploading || restoring || !hydrated.current)} onClick={() => void saveDraft()}>
                                     <Save size={16} />
                                     <span className="sr-only">保存草稿</span>
                                 </button>
                             </AntTooltip>
                             <AntTooltip title="历史项目">
-                                <button type="button" className="ecs-icon-button" aria-haspopup="dialog" aria-expanded={historyOpen} onClick={() => setHistoryOpen(true)}>
+                                <button type="button" data-requires-login className="ecs-icon-button" aria-haspopup="dialog" aria-expanded={historyOpen} onClick={() => setHistoryOpen(true)}>
                                     <HistoryIcon size={16} />
                                     <span className="sr-only">历史项目</span>
                                 </button>

@@ -30,6 +30,7 @@ import { capabilitySupportedModes, createWorkbenchTask, listWorkbenchTasks, list
 import { useCreationPreferencesStore } from "@/stores/use-creation-preferences-store";
 import { logicalModelIDForConfig, modelDisplayName, modelOptionName, resolveModelChannel, resolveModelRequestConfig, selectableModelsByCapability, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 
 import {
     aspectRatioOf,
@@ -150,6 +151,8 @@ function mergeTaskUpdate(previous: GenerationTask | undefined, next: GenerationT
 }
 
 export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
+    const user = useUserStore((state) => state.user);
+    const requireLogin = useRequireLogin();
     const { message, modal } = App.useApp();
     const navigate = useNavigate();
     const config = useEffectiveConfig();
@@ -378,7 +381,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
 
     useEffect(() => {
         const setEstimate = (value: Omit<typeof estimateState, "key">) => setEstimateState({ ...value, key: estimateKey });
-        if (!creditsEnabled || !selectedModel || mediaSettingIssues(composerConfig, kind, selectedModel).length) {
+        if (!user || !creditsEnabled || !selectedModel || mediaSettingIssues(composerConfig, kind, selectedModel).length) {
             setEstimate({ credits: null, estimated: false, tone: "unavailable" });
             return;
         }
@@ -416,11 +419,16 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                 setEstimate({ credits: localTotal, estimated: false, tone: localTotal === null ? "unavailable" : "local" });
             });
         return () => controller.abort();
-    }, [capability, composerConfig, config, creditsEnabled, kind, plan, quoteRequirementsFor, seconds, selectedModel, estimateKey]);
+    }, [capability, composerConfig, config, creditsEnabled, kind, plan, quoteRequirementsFor, seconds, selectedModel, estimateKey, user]);
 
     // ---------- 任务列表轮询 ----------
     const loadFailedRef = useRef(false);
     const loadTasks = useCallback(async () => {
+        if (!user) {
+            setTasks([]);
+            setTasksLoading(false);
+            return [];
+        }
         try {
             const result = await listWorkbenchTasks(kind, 100);
             loadFailedRef.current = false;
@@ -433,7 +441,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
         } finally {
             setTasksLoading(false);
         }
-    }, [kind, message]);
+    }, [kind, message, user]);
     const taskIds = useMemo(() => new Set(tasks.map((task) => task.id)), [tasks]);
     const hasActiveWork = tasks.some(isActiveWorkbenchTask) || localBatches.some((batch) => batch.submitting || Object.values(batch.receipts).some((receipt) => !taskIds.has(receipt.id) && isActiveWorkbenchTask(receipt)));
     const hasActiveWorkRef = useRef(hasActiveWork);
@@ -573,24 +581,24 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
                     const detail = details[task.id];
                     const taskOutputs = workbenchTaskOutputs(task, kind, detail);
                     for (const output of taskOutputs) {
-                        tiles.push({ type: "output", key: output.key, output, task });
+                        tiles.push({ type: "output", key: `${task.id}:slot:${output.index}`, output, task });
                         outputs.push(output);
                     }
                     counts.done += taskOutputs.length;
                     const detailLoaded = Boolean(detail?.resultJson);
                     const missing = detailLoaded || detailErrors.has(task.id) ? 0 : Math.max(0, expected - taskOutputs.length);
-                    for (let slot = 0; slot < missing; slot += 1) tiles.push({ type: "loading", key: `${task.id}:loading:${slot}`, task });
-                    if (detailLoaded && !taskOutputs.length) tiles.push({ type: "failed", key: `${task.id}:missing`, task: { ...task, status: "failed", error: "作品已生成，但暂时无法载入预览" } });
+                    for (let slot = 0; slot < missing; slot += 1) tiles.push({ type: "loading", key: `${task.id}:slot:${taskOutputs.length + slot}`, task });
+                    if (detailLoaded && !taskOutputs.length) tiles.push({ type: "failed", key: `${task.id}:slot:0`, task: { ...task, status: "failed", error: "作品已生成，但暂时无法载入预览" } });
                     if (detailLoaded) counts.total += taskOutputs.length - expected;
                     return;
                 }
                 if (isActiveWorkbenchTask(task)) {
                     counts.active += expected;
-                    for (let slot = 0; slot < expected; slot += 1) tiles.push({ type: "active", key: `${task.id}:active:${slot}`, task, slot });
+                    for (let slot = 0; slot < expected; slot += 1) tiles.push({ type: "active", key: `${task.id}:slot:${slot}`, task, slot });
                     return;
                 }
                 counts.failed += expected;
-                tiles.push({ type: "failed", key: `${task.id}:failed`, task });
+                tiles.push({ type: "failed", key: `${task.id}:slot:0`, task });
             };
             let resumable = 0;
             if (local) {
@@ -806,6 +814,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
 
     const addFiles = async (files: FileList | File[], preferredSlotKey?: string) => {
+        if (!requireLogin()) return;
         const list = Array.from(files);
         const allowed = kind === "image" ? ["image"] : ["image", "video", "audio"];
         const typed = list.flatMap((file) => {
@@ -923,19 +932,21 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     const settingsError = mediaSettingIssues(composerConfig, kind, selectedModel)
         .map((item) => item.message)
         .join("；");
-    const disabledReason = settingsError
-        ? settingsError
-        : !selectedModel
-          ? `先选择${kindLabel}模型`
-          : missingInput
-            ? `请上传“${missingInput.name || "必填素材"}”`
-            : references.some((reference) => reference.uploading)
-              ? "素材上传中，请稍候"
-              : references.some((reference) => reference.error)
-                ? "请移除上传失败的素材"
-                : promptRequired && !prompt.trim()
-                  ? "请填写画面描述"
-                  : undefined;
+    const disabledReason = !user
+        ? undefined
+        : settingsError
+          ? settingsError
+          : !selectedModel
+            ? `先选择${kindLabel}模型`
+            : missingInput
+              ? `请上传“${missingInput.name || "必填素材"}”`
+              : references.some((reference) => reference.uploading)
+                ? "素材上传中，请稍候"
+                : references.some((reference) => reference.error)
+                  ? "请移除上传失败的素材"
+                  : promptRequired && !prompt.trim()
+                    ? "请填写画面描述"
+                    : undefined;
 
     const buildBatchRequest = (): BatchRequest | string => {
         if (settingsError) return settingsError;
@@ -1078,6 +1089,7 @@ export function WorkbenchPage({ kind }: { kind: WorkbenchKind }) {
     };
 
     const submit = async () => {
+        if (!requireLogin()) return;
         if (busy) return;
         const request = buildBatchRequest();
         if (typeof request === "string") {

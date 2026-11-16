@@ -17,6 +17,7 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { getVideoReplication, getVideoReplicationConfig, listVideoReplications, parseVideoTeardownBundle, type VideoReplicationDetail, type VideoTeardownBundle } from "@/services/api/video-replication";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { openVideoTeardownInCanvas, type VideoReplicaOptions } from "./replication-canvas";
 import { ReplicationHome, type ChatRemakeOptions } from "./replication-home";
 import { ReplicationTabs, type ReplicationTab } from "./replication-mode-switch";
@@ -44,6 +45,8 @@ function errorText(error: unknown) {
  * 「去画布复刻」再把它们铺到一张新画布上（复刻分镜、关键帧、商品图和报告），在画布里生成首帧、视频和成片。
  */
 export default function VideoReplicationPage() {
+    const requireLogin = useRequireLogin();
+    const user = useUserStore((state) => state.user);
     const { message } = App.useApp();
     const config = useEffectiveConfig();
     const [params, setParams] = useSearchParams();
@@ -63,10 +66,10 @@ export default function VideoReplicationPage() {
     const directorController = useRef<AbortController | undefined>(undefined);
     useEffect(() => () => directorController.current?.abort(), [scope]);
     const rootRef = useRef<HTMLDivElement>(null);
-    const linkImportEnabled = useUserStore((state) => state.features.socialVideoImportEnabled);
+    const linkImportEnabled = useUserStore((state) => !state.user || state.features.socialVideoImportEnabled);
 
     // 时长、镜头数上限和能不能识别口播以后台设置为准；没读到时不在前端拦，由服务端校验。
-    const limitsQuery = useQuery({ queryKey: videoReplicationKeys.config(scope), queryFn: ({ signal }) => getVideoReplicationConfig(signal), staleTime: 60_000 });
+    const limitsQuery = useQuery({ queryKey: videoReplicationKeys.config(scope), queryFn: ({ signal }) => getVideoReplicationConfig(signal), staleTime: 60_000, enabled: Boolean(user) });
     const limits = limitsQuery.data;
     const transcribeNote = limits && !limits.transcribeAvailable ? limits.transcribeNote || "暂时不能识别口播，口播从画面字幕识别" : "";
     const effectiveTranscribe = transcribe && !transcribeNote;
@@ -74,22 +77,24 @@ export default function VideoReplicationPage() {
     const history = useQuery({
         queryKey: videoReplicationKeys.list(scope),
         queryFn: ({ signal }) => listVideoReplications(signal),
+        enabled: Boolean(user),
         refetchInterval: (query) => (query.state.data?.some((record) => record.status === "queued" || record.status === "running") ? 3000 : false),
     });
     const records = history.data;
-    const selectedId = params.get("id") || "";
+    const selectedId = user ? params.get("id") || "" : "";
     const requestedView = params.get("view");
     const view: ReplicationView = requestedView === "plan" || requestedView === "canvas" ? requestedView : "teardown";
     const detail = useQuery({
         queryKey: videoReplicationKeys.detail(scope, selectedId),
         queryFn: ({ signal }) => getVideoReplication(selectedId, signal),
-        enabled: Boolean(selectedId),
+        enabled: Boolean(user && selectedId),
         refetchInterval: (query) => (query.state.data?.task.status === "queued" || query.state.data?.task.status === "running" ? 2000 : false),
     });
 
     const remakeId = params.get("remake") || "";
     const tab: ReplicationTab = !selectedId && (params.get("tab") === "works" || params.get("mode") === "replace") ? "works" : "new";
-    const works = useProductVideoStore((state) => state.jobs);
+    const savedWorks = useProductVideoStore((state) => state.jobs);
+    const works = user ? savedWorks : [];
     const selectedWork = works.find((job) => job.id === remakeId);
     const remakeStep: RemakeStep = params.get("step") === "edit" ? "edit" : params.get("step") === "produce" ? "produce" : params.get("step") === "recipe" ? "recipe" : remakeDefaultStep(isRemakeJob(selectedWork) ? selectedWork : undefined);
     const relatedWorks = works.filter((job) => isRemakeJob(job) && job.source?.teardownId === selectedId);
@@ -104,34 +109,37 @@ export default function VideoReplicationPage() {
     const configRef = useRef(config);
     configRef.current = config;
     useEffect(() => {
+        if (!user) return;
         const controller = new AbortController();
         void loadStudioPromptConfig(controller.signal).catch(() => {
             if (!controller.signal.aborted) message.warning("视频策划提示词配置读取失败，本次使用内置规则");
         });
         return () => controller.abort();
-    }, [scope, message]);
+    }, [scope, message, user]);
     // 作品列表一到就接着跑上次没跑完的复刻（刷新或关页面时打断的）。
     useEffect(() => {
+        if (!user) return;
         void loadProductVideos(true);
-    }, []);
+    }, [user]);
     const resumedWorks = useRef(false);
     useEffect(() => {
-        if (worksStatus !== "ready" || resumedWorks.current) return;
+        if (!user || worksStatus !== "ready" || resumedWorks.current) return;
         resumedWorks.current = true;
         const jobs = useProductVideoStore.getState().jobs;
         resumeRemakes(jobs.filter(isRemakeJob), configRef.current);
         resumeProductVideos(jobs.filter((job) => !isRemakeJob(job)) as Parameters<typeof resumeProductVideos>[0], configRef.current);
-    }, [worksStatus]);
+    }, [worksStatus, user]);
     // 记录列表一到就看看有没有上次刷新、关页面打断的拆解，有就接着跑。
     useEffect(() => {
-        if (records) resumePendingReplication(records, configRef.current);
-    }, [records]);
+        if (user && records) resumePendingReplication(records, configRef.current);
+    }, [records, user]);
     // 首页、记录和复刻方案之间切换时回到页面顶部。
     useEffect(() => {
         rootRef.current?.closest(".app-workspace-scroll")?.scrollTo({ top: 0 });
     }, [selectedId, view]);
 
     const startRun = (source: ReplicationSource, options: { model: string; transcribe: boolean }) => {
+        if (!requireLogin()) return;
         if (running) return;
         setChatReference({ scope, id: "" });
         dismissReplicationError();
@@ -140,6 +148,7 @@ export default function VideoReplicationPage() {
         });
     };
     const reanalyzeSelected = (fallbackTitle: string) => {
+        if (!requireLogin()) return;
         const error = videoTeardownModelError(config, model);
         if (error) {
             message.warning(error);
@@ -151,6 +160,7 @@ export default function VideoReplicationPage() {
         });
     };
     const openInCanvas = async (bundle: VideoTeardownBundle, analysis: VideoTeardownAnalysis & { model: string }, options: VideoReplicaOptions) => {
+        if (!requireLogin()) return null;
         setOpening(true);
         try {
             const created = await openVideoTeardownInCanvas(bundle, analysis, analysis.model || model, options);
@@ -167,6 +177,7 @@ export default function VideoReplicationPage() {
 
     // 拆解记录 → 复刻作品：带上镜头、AI 解读和复刻方案里填过的商品，进工作台的「换成我的」。
     const startRemakeFrom = async (record: VideoReplicationDetail, fallbackTitle: string, options?: ChatRemakeOptions) => {
+        if (!requireLogin()) return;
         if (remakeCreating.current) return;
         if (options && (!options.product.name.trim() || !options.product.images.length)) throw new Error("请先确认主体名称与图片");
         if (options?.mode === "style" && (!Number.isInteger(options.seconds) || options.seconds < 5 || options.seconds > 60)) throw new Error("风格复刻的目标片长须为5–60整数秒");
@@ -216,6 +227,7 @@ export default function VideoReplicationPage() {
     };
 
     const createCreative = async (product: RemakeProduct, start: { brief: CreativeBrief; note: string; ratio: string; director: { model: string; confirmedInput: string }; cast: CreativeCast }) => {
+        if (!requireLogin()) return;
         if (creativeCreating.current) return;
         if (!product.name.trim() || !product.images.length) {
             message.error("请先填写名称并添加主体图片");
@@ -260,7 +272,7 @@ export default function VideoReplicationPage() {
             setCreatingCreative(false);
         }
     };
-    if (remakeId)
+    if (user && remakeId)
         return (
             <RemakeWorkbench
                 key={remakeId}

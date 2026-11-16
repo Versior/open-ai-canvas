@@ -85,7 +85,7 @@ export function PackagingProduction({ layout, name, onError }: { layout: Packagi
                                     </g>
                                 ))}
                             </svg>
-                            <button type="button" className="pkg-primary" disabled={exporting} onClick={() => void exportPdf()}>
+                            <button type="button" data-requires-login className="pkg-primary" disabled={exporting} onClick={() => void exportPdf()}>
                                 <Printer size={16} />
                                 {exporting ? "正在生成 PDF…" : "下载 1:1 白样 PDF"}
                             </button>
@@ -194,6 +194,7 @@ export function PackagingProduction({ layout, name, onError }: { layout: Packagi
                                     <p className="pkg-production-summary">{price === "" ? "填写纸价后计算纸材成本" : `纸材成本 ¥${result.sheet.paperCost.toFixed(2)} · 每需求份 ¥${result.sheet.unitPaperCost.toFixed(4)}`}</p>
                                     <button
                                         type="button"
+                                        data-requires-login
                                         onClick={() =>
                                             downloadPackaging(
                                                 new Blob(

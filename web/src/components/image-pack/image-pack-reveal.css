@@ -1,0 +1,283 @@
+.image-generation-stage {
+    position: relative;
+    display: flow-root;
+    max-width: 680px;
+}
+.image-pack-slot {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+}
+.image-pack-slot-body {
+    width: 100%;
+    height: 100%;
+}
+.image-pack-content {
+    height: auto;
+}
+.image-pack-content[data-active] {
+    height: 300px;
+}
+.image-pack-content[data-active] > .image-pack-slot-body {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: auto;
+}
+.wb-tiles > .image-pack-slot {
+    aspect-ratio: var(--wb-tile-ratio, 1);
+}
+.commerce-output-card-frame:has(.image-pack-slot[data-active]),
+.es-tile:has(.image-pack-slot[data-active]) {
+    background: transparent;
+}
+.image-pack-slot[data-active] > .image-pack-slot-body {
+    opacity: 0;
+    pointer-events: none;
+}
+.image-pack-slot-waiting {
+    position: absolute;
+    inset: 0;
+    color: var(--text-secondary);
+    font-size: var(--fs-caption);
+    text-align: center;
+    container: image-pack-slot / size;
+    background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--palette-node-script) 6%, transparent), transparent 65%);
+}
+.image-pack-slot-waiting-content {
+    display: grid;
+    width: 100%;
+    height: 100%;
+    grid-template-rows: 58% 42%;
+    align-items: center;
+    justify-items: center;
+}
+.image-pack-slot-label {
+    align-self: start;
+    width: 100%;
+    padding: 0 var(--space-2);
+}
+.image-pack-slot-waiting .image-generation-packet {
+    width: min(36cqw, 34cqh, 120px);
+    height: auto;
+    aspect-ratio: 3 / 4;
+    flex: 0 0 auto;
+}
+@container image-pack-slot (max-height: 220px) {
+    .image-pack-slot-waiting-content {
+        grid-template-columns: 30% minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        gap: var(--space-2);
+        padding: var(--space-3);
+    }
+    .image-pack-slot-waiting .image-generation-packet {
+        width: min(24cqw, 48cqh, 76px);
+    }
+    .image-pack-slot-label {
+        align-self: center;
+        padding: 0;
+    }
+}
+.image-pack-slot-actions {
+    position: absolute;
+    bottom: var(--space-2);
+    right: var(--space-2);
+    z-index: 1;
+}
+.image-pack-slot-label .canvas-gen-state {
+    height: auto;
+    padding: 0;
+    gap: var(--space-1);
+    container-type: normal;
+}
+.image-pack-slot-label .canvas-gen-state::before,
+.image-pack-slot-label .canvas-gen-state::after,
+.image-pack-slot-label .canvas-gen-indicator {
+    display: none;
+}
+.image-pack-slot > .image-generation-reveal {
+    height: 100%;
+    max-width: none;
+}
+.image-pack-slot .image-pack-canvas {
+    height: 100%;
+}
+.image-pack-slot .image-generation-reveal-status {
+    left: 0;
+    bottom: var(--space-1);
+    width: 100%;
+    gap: 0;
+}
+.image-pack-slot .image-generation-reveal-status > span {
+    display: none;
+}
+.image-pack-slot:has(> .image-generation-reveal:is([data-phase="opening"], [data-phase="settling"])) > .image-pack-slot-waiting {
+    opacity: 0;
+    transition: opacity 180ms ease-out;
+}
+.creation-home .image-generation-results[data-concealed] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    opacity: 0;
+    pointer-events: none;
+}
+.image-generation-results[data-concealed] .creation-image-result > span {
+    display: none;
+}
+.creation-home .image-generation-results[hidden] {
+    display: none;
+}
+.image-generation-reveal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: 680px;
+    color: var(--workspace-text-muted);
+    font-size: var(--fs-caption);
+}
+.image-pack-canvas {
+    display: block;
+    width: 100%;
+    height: clamp(260px, 44vh, 360px);
+}
+.image-generation-reveal-status {
+    position: absolute;
+    bottom: var(--space-3);
+    left: var(--space-8);
+    display: flex;
+    width: min(var(--creation-media-pending-max-width), calc(100% - var(--space-8)));
+    justify-content: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    align-items: center;
+}
+.image-generation-reveal[data-phase="loading"] {
+    opacity: 0;
+    pointer-events: none;
+}
+.image-generation-stage:has(.image-generation-reveal:is([data-phase="opening"], [data-phase="settling"])) .creation-media-pending {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease-out;
+}
+.image-generation-reveal[data-phase="settling"] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease-out;
+}
+.image-generation-stage[data-complete] .creation-media-pending-foot {
+    visibility: hidden;
+}
+.image-generation-pack-stage {
+    --image-generation-glow: var(--palette-node-script);
+    position: relative;
+    display: grid;
+    width: 200px;
+    height: 168px;
+    flex: 0 0 auto;
+    place-items: center;
+    isolation: isolate;
+    margin-bottom: var(--space-1);
+}
+.image-generation-pack-stage::before {
+    position: absolute;
+    z-index: -1;
+    inset: -12px -24px;
+    background:
+        radial-gradient(ellipse at 38% 46%, color-mix(in srgb, var(--image-generation-glow) 14%, transparent), transparent 60%), radial-gradient(ellipse at 70% 58%, color-mix(in srgb, var(--palette-status-loading) 9%, transparent), transparent 55%);
+    content: "";
+}
+.image-generation-pack-stage::after {
+    position: absolute;
+    z-index: -1;
+    bottom: 0;
+    width: 120px;
+    height: 16px;
+    border-radius: var(--r-full);
+    background: radial-gradient(ellipse, color-mix(in srgb, var(--image-generation-glow) 15%, transparent), transparent 70%);
+    content: "";
+}
+.image-generation-packet {
+    position: relative;
+    display: block;
+    width: 108px;
+    height: 144px;
+    overflow: hidden;
+    border-radius: var(--r-xs);
+    background: url("./packet-artwork.svg") center / cover;
+    box-shadow:
+        var(--elevation-card),
+        0 14px 28px -8px color-mix(in srgb, var(--image-generation-glow) 25%, transparent);
+    transform: rotate(-7deg);
+    animation: image-generation-packet-float 4.5s ease-in-out infinite;
+}
+.image-generation-packet::after {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--color-neutral-0) 22%, transparent) 48%, transparent 66%);
+    content: "";
+    transform: translateX(-140%);
+    animation: image-generation-packet-sheen 4.8s ease-in-out infinite;
+}
+.creation-home .creation-media-pending.has-image-generation-pack {
+    min-height: 336px;
+    background: transparent;
+    box-shadow: none;
+}
+.creation-home .has-image-generation-pack .creation-media-pending-surface {
+    display: none;
+}
+.creation-home .has-image-generation-pack .creation-media-pending-spec {
+    background: transparent;
+    padding-left: 0;
+    color: var(--creation-muted);
+}
+.creation-home .has-image-generation-pack .creation-media-pending-body {
+    padding: var(--space-2) 0;
+    gap: var(--space-1);
+}
+.creation-home .has-image-generation-pack .creation-media-pending-title::before {
+    display: none;
+}
+.creation-home .has-image-generation-pack .creation-media-pending-foot {
+    padding-bottom: var(--space-2);
+}
+.creation-home .has-image-generation-pack[data-sync="interrupted"] .image-generation-packet,
+.creation-home .has-image-generation-pack[data-phase="uncertain"] .image-generation-packet,
+.creation-home .has-image-generation-pack[data-sync="interrupted"] .image-generation-packet::after,
+.creation-home .has-image-generation-pack[data-phase="uncertain"] .image-generation-packet::after {
+    animation-play-state: paused;
+}
+@media (max-width: 800px) {
+    .creation-assistant-message.is-image .creation-message-progress-copy {
+        display: none;
+    }
+    .image-generation-reveal-status {
+        left: 0;
+        width: min(var(--creation-media-pending-max-width), 100%);
+    }
+}
+@keyframes image-generation-packet-float {
+    50% {
+        transform: translateY(-5px) rotate(-5deg);
+    }
+}
+@keyframes image-generation-packet-sheen {
+    45%,
+    100% {
+        transform: translateX(140%);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .image-generation-packet,
+    .image-generation-packet::after {
+        animation: none;
+    }
+    .image-generation-packet::after {
+        display: none;
+    }
+}

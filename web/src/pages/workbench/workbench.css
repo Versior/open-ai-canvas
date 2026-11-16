@@ -1466,17 +1466,27 @@
     height: 14px;
 }
 .wb-tile.is-failed {
-    background: color-mix(in srgb, var(--status-error) 6%, var(--wb-muted));
+    --image-pack-notice-art-size: clamp(32px, 17cqw, 56px);
+    container-type: inline-size;
+    background: transparent;
 }
-.wb-tile.is-failed .wb-tile-state > svg {
-    color: var(--status-error);
+.wb-tile.is-failed .wb-tile-state .ant-btn {
+    margin-top: var(--space-1);
+    border-color: var(--image-pack-notice-action-border);
+    background: var(--image-pack-notice-action-bg);
+    color: var(--image-pack-notice-accent);
+    box-shadow: none;
 }
-.wb-tile.is-failed.is-cancelled {
-    background: var(--wb-muted);
+.wb-tile.is-failed .wb-tile-state .ant-btn:hover:not(:disabled) {
+    background: var(--image-pack-notice-action-hover);
+    color: var(--image-pack-notice-accent);
 }
-.wb-tile.is-failed.is-cancelled .wb-tile-state > svg,
 .wb-tile.is-pending .wb-tile-state > svg {
     color: var(--wb-ink-3);
+}
+.wb-tile.is-failed .wb-tile-error {
+    color: var(--wb-ink-2);
+    -webkit-line-clamp: 2;
 }
 /* 首次使用：空态落在内容区约 40% 处，下方给 3 个常用场景作为示例入口。 */
 .wb-empty {

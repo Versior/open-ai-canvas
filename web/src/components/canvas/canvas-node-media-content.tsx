@@ -27,35 +27,29 @@ import { useCachedResourceUrl } from "@/hooks/use-cached-resource-url";
 import { getResourceAccess, refreshResource, resourceIdFromStorageKey, resolveResourceAccessURL } from "@/services/api/resources";
 import type { CanvasNodeContentProps } from "./canvas-node-content";
 import { ErrorContent, LoadingContent } from "./canvas-node-status-content";
+import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
 
 export function ImageNodeContent(props: CanvasNodeContentProps) {
     const hasImage = Boolean(props.node.metadata?.content || props.node.metadata?.storageKey);
-    if (!hasImage && props.isBatchRoot) {
-        const content =
-            props.node.metadata?.status === "loading" ? (
+    const packDisabled = props.disableMediaEffects || (props.renderLOD !== undefined && props.renderLOD !== "full");
+    const [revealed, setRevealed] = useState(props.node.metadata?.status !== "loading");
+    useEffect(() => {
+        if (props.node.metadata?.status === "loading") setRevealed(false);
+    }, [props.node.metadata?.status]);
+    const completeReveal = useCallback(() => setRevealed(true), []);
+    const content = !hasImage ? (
+        props.node.metadata?.status === "loading" ? (
+            packDisabled ? (
                 <LoadingContent node={props.node} theme={props.theme} onOpenTaskDetails={props.onOpenTaskDetails} />
-            ) : props.node.metadata?.status === "error" ? (
-                <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onReloadResource={props.onReloadResource} onOpenTaskDetails={props.onOpenTaskDetails} />
-            ) : (
-                <EmptyImageContent {...props} isBatchRoot={false} />
-            );
-        return (
-            <BatchFrame
-                batchPreviewNodes={props.batchPreviewNodes}
-                batchCount={props.batchCount}
-                batchExpanded={props.batchExpanded}
-                batchOpening={props.batchOpening}
-                batchRecovering={props.batchRecovering}
-                theme={props.theme}
-                onToggleBatch={props.onToggleBatch}
-            >
-                {content}
-            </BatchFrame>
-        );
-    }
-    if (!hasImage) return <EmptyImageContent {...props} />;
-    return (
+            ) : null
+        ) : props.node.metadata?.status === "error" ? (
+            <ErrorContent node={props.node} theme={props.theme} onRetry={props.onRetry} onReloadResource={props.onReloadResource} onOpenTaskDetails={props.onOpenTaskDetails} />
+        ) : (
+            <EmptyImageContent {...props} isBatchRoot={false} />
+        )
+    ) : (
         <ImageContent
+            deferFit={!revealed && !packDisabled}
             renderLOD={props.renderLOD}
             batchPreviewNodes={props.batchPreviewNodes}
             node={props.node}
@@ -67,6 +61,31 @@ export function ImageNodeContent(props: CanvasNodeContentProps) {
             batchRecovering={props.batchRecovering}
             onToggleBatch={props.onToggleBatch}
         />
+    );
+    return (
+        <ImageGenerationPack
+            pending={props.node.metadata?.status === "loading"}
+            succeeded={props.node.metadata?.status === "success"}
+            disabled={packDisabled}
+            onComplete={completeReveal}
+            label={<LoadingContent node={props.node} theme={props.theme} onOpenTaskDetails={props.onOpenTaskDetails} />}
+        >
+            {!hasImage && props.isBatchRoot ? (
+                <BatchFrame
+                    batchPreviewNodes={props.batchPreviewNodes}
+                    batchCount={props.batchCount}
+                    batchExpanded={props.batchExpanded}
+                    batchOpening={props.batchOpening}
+                    batchRecovering={props.batchRecovering}
+                    theme={props.theme}
+                    onToggleBatch={props.onToggleBatch}
+                >
+                    {content}
+                </BatchFrame>
+            ) : (
+                content
+            )}
+        </ImageGenerationPack>
     );
 }
 
@@ -507,6 +526,7 @@ export function EmptyMediaContent({ icon, label, color }: { icon: ReactNode; lab
 }
 
 export function ImageContent({
+    deferFit = false,
     renderLOD = "full",
     node,
     theme,
@@ -517,7 +537,7 @@ export function ImageContent({
     batchOpening,
     batchRecovering,
     onToggleBatch,
-}: Pick<CanvasNodeContentProps, "renderLOD" | "node" | "theme" | "isBatchRoot" | "batchCount" | "batchPreviewNodes" | "batchExpanded" | "batchOpening" | "batchRecovering" | "onToggleBatch">) {
+}: Pick<CanvasNodeContentProps, "renderLOD" | "node" | "theme" | "isBatchRoot" | "batchCount" | "batchPreviewNodes" | "batchExpanded" | "batchOpening" | "batchRecovering" | "onToggleBatch"> & { deferFit?: boolean }) {
     const imageContainerRef = useRef<HTMLDivElement>(null);
     const nearViewport = useNearViewport(imageContainerRef, renderLOD !== "shell");
     const resourceVariant = node.metadata?.mimeType === "image/gif" || (renderLOD === "full" && (node.metadata?.imageLayer || node.metadata?.imageLayerGroup)) ? "original" : "thumbnail";
@@ -525,6 +545,7 @@ export function ImageContent({
     const importedFromLibTV = node.metadata?.importSource?.provider === "libtv";
     const { updateMediaNode } = useCanvasNodeActions();
     const measuredSizeRef = useRef<{ width: number; height: number } | null>(null);
+    const pendingFit = useRef<{ element: HTMLImageElement; size?: { width?: number; height?: number } } | null>(null);
 
     /**
      * 让节点跟随图片真实比例。
@@ -537,6 +558,10 @@ export function ImageContent({
      * 手动拉过（manualSize）或自由比例（freeResize）的节点只补记尺寸、不动宽高。
      */
     const fitToImage = (element: HTMLImageElement, sourceSize?: { width?: number; height?: number }) => {
+        if (deferFit) {
+            pendingFit.current = { element, size: sourceSize };
+            return;
+        }
         // LibTV 已提供原图尺寸和节点尺寸；960px 缩略图不能反向覆盖这些数据。
         if (importedFromLibTV) return;
         const naturalWidth = sourceSize?.width || element.naturalWidth;
@@ -562,6 +587,12 @@ export function ImageContent({
             };
         });
     };
+    useEffect(() => {
+        if (deferFit || !pendingFit.current) return;
+        const measured = pendingFit.current;
+        pendingFit.current = null;
+        fitToImage(measured.element, measured.size);
+    }, [deferFit]);
 
     return (
         <BatchFrame
@@ -726,6 +757,7 @@ export function RetainedCanvasImage({
     return (
         <>
             <img
+                data-image-pack-result
                 src={currentDisplayedSrc || undefined}
                 alt={alt || ""}
                 // 世界层每次缩放提交都会按新倍率重新栅格化；async 解码会让 Chromium 先画出

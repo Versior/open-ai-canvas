@@ -7,6 +7,9 @@ import { AppModal } from "@/components/ui/product/app-modal";
 import { cn } from "@/lib/utils";
 import type { InteriorImageRef, InteriorProjectDocument, InteriorRound, InteriorRoundItem } from "@/services/api/interior";
 import { TaskSettlement } from "@/components/generation-cost-notice";
+import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { interiorImageUrl } from "./interior-models";
 
 export type InteriorOutputTarget = { round: InteriorRound; item: InteriorRoundItem; output: InteriorImageRef; index: number };
@@ -66,10 +69,12 @@ function PendingCard({ round, item, stalled, busy, onRetryWatch, onReuse, index 
     const label = item.styleName || round.modeName;
     if (item.status === "failed") {
         return (
-            <div className="itd-card is-failed" role="group" aria-label={`${label}：生成失败`}>
-                <TriangleAlert className="size-5" aria-hidden />
+            <div className="itd-card is-failed image-pack-notice" role="group" aria-label={`${label}：生成失败`}>
+                <ImagePackNoticeArtwork icon={TriangleAlert} tone="error" />
                 <strong>{label} 没有生成出来</strong>
-                <span title={item.error}>{item.error || "生成失败"}</span>
+                <span className="itd-card-failure-reason" title={item.error}>
+                    {item.error || "生成失败"}
+                </span>
                 <Button size="small" icon={<RotateCcw className="size-3.5" aria-hidden />} disabled={busy} onClick={() => onReuse(round, item.styleKey)}>
                     用这组设置重试
                 </Button>
@@ -78,10 +83,10 @@ function PendingCard({ round, item, stalled, busy, onRetryWatch, onReuse, index 
     }
     if (stalled && item.taskId) {
         return (
-            <div className="itd-card is-failed is-warning" role="group" aria-label={`${label}：查询中断`}>
-                <RefreshCw className="size-5" aria-hidden />
+            <div className="itd-card is-failed is-warning image-pack-notice" role="group" aria-label={`${label}：查询中断`}>
+                <ImagePackNoticeArtwork icon={RefreshCw} tone="warning" />
                 <strong>结果查询中断</strong>
-                <span>图可能已经生成好了，重新查询一下</span>
+                <span className="itd-card-failure-reason">图可能已经生成好了，重新查询一下</span>
                 <Button size="small" onClick={() => onRetryWatch(item.taskId!)}>
                     重新查询
                 </Button>
@@ -154,38 +159,46 @@ export function InteriorBoard({ document, stalled, busy, downloadingRound, onRet
                             </figure>
                             {round.items.flatMap((item) => {
                                 const label = item.styleName || round.modeName;
-                                if (item.status !== "succeeded") {
-                                    const count = item.status === "pending" && !(item.taskId && stalled[item.taskId]) ? Math.max(1, round.count) : 1;
-                                    return Array.from({ length: count }, (_, index) => (
-                                        <PendingCard key={`${item.id}-${index}`} round={round} item={item} stalled={item.taskId ? stalled[item.taskId] : undefined} busy={busy} onRetryWatch={onRetryWatch} onReuse={onReuse} index={index} />
-                                    ));
-                                }
-                                return item.outputs.map((output, index) => {
+                                const count = item.status === "succeeded" ? item.outputs.length : item.status === "pending" && !(item.taskId && stalled[item.taskId]) ? Math.max(1, round.count) : 1;
+                                return Array.from({ length: count }, (_, index) => {
+                                    const output = item.outputs[index];
                                     const target = { round, item, output, index };
                                     return (
-                                        <div key={output.resourceId} className="itd-card is-output">
-                                            <button type="button" className="itd-card-media" aria-label={`放大查看「${label}」第 ${index + 1} 张，和原图对比`} onClick={() => onOpen(target)}>
-                                                <img src={interiorImageUrl(output.resourceId, true)} alt="" loading="lazy" />
-                                            </button>
-                                            <span className="itd-card-badge">{item.outputs.length > 1 ? `${label} · ${index + 1}` : label}</span>
-                                            <span className="itd-card-zoom" aria-hidden>
-                                                <Maximize2 className="size-3.5" />
-                                            </span>
-                                            <div className="itd-card-actions">
-                                                <button type="button" onClick={() => onDownload(target)}>
-                                                    <Download className="size-3.5" aria-hidden />
-                                                    下载
-                                                </button>
-                                                <button type="button" disabled={busy} onClick={() => onContinue(target)}>
-                                                    <PencilLine className="size-3.5" aria-hidden />
-                                                    继续改
-                                                </button>
-                                                <button type="button" disabled={busy} onClick={() => onTo3D(target)}>
-                                                    <Box className="size-3.5" aria-hidden />
-                                                    生成 3D
-                                                </button>
-                                            </div>
-                                        </div>
+                                        <ImageGenerationPack
+                                            key={`${item.id}-${index}`}
+                                            pending={item.status === "pending" && !stalled[item.taskId || ""]}
+                                            succeeded={item.status === "succeeded"}
+                                            style={{ aspectRatio: output ? aspectOf(output) : aspectOf(round.source) }}
+                                            label={<ImagePackProgress task={{ status: "running", createdAt: round.createdAt }} />}
+                                        >
+                                            {item.status !== "succeeded" ? (
+                                                <PendingCard round={round} item={item} stalled={item.taskId ? stalled[item.taskId] : undefined} busy={busy} onRetryWatch={onRetryWatch} onReuse={onReuse} index={index} />
+                                            ) : (
+                                                <div className="itd-card is-output" style={{ aspectRatio: aspectOf(output), height: "100%" }}>
+                                                    <button type="button" data-image-pack-result className="itd-card-media" aria-label={`放大查看「${label}」第 ${index + 1} 张，和原图对比`} onClick={() => onOpen(target)}>
+                                                        <img src={interiorImageUrl(output.resourceId, true)} alt="" loading="lazy" />
+                                                    </button>
+                                                    <span className="itd-card-badge">{item.outputs.length > 1 ? `${label} · ${index + 1}` : label}</span>
+                                                    <span className="itd-card-zoom" aria-hidden>
+                                                        <Maximize2 className="size-3.5" />
+                                                    </span>
+                                                    <div className="itd-card-actions">
+                                                        <button type="button" onClick={() => onDownload(target)}>
+                                                            <Download className="size-3.5" aria-hidden />
+                                                            下载
+                                                        </button>
+                                                        <button type="button" disabled={busy} onClick={() => onContinue(target)}>
+                                                            <PencilLine className="size-3.5" aria-hidden />
+                                                            继续改
+                                                        </button>
+                                                        <button type="button" disabled={busy} onClick={() => onTo3D(target)}>
+                                                            <Box className="size-3.5" aria-hidden />
+                                                            生成 3D
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </ImageGenerationPack>
                                     );
                                 });
                             })}

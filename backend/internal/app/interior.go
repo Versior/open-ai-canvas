@@ -117,6 +117,10 @@ func (s *Service) InteriorCatalog(actor *model.User) (*InteriorCatalog, error) {
 	if actor == nil {
 		return nil, Unauthorized("请先登录")
 	}
+	return s.GuestInteriorCatalog()
+}
+
+func (s *Service) GuestInteriorCatalog() (*InteriorCatalog, error) {
 	settings, err := s.interiorSettings()
 	if err != nil {
 		return nil, err

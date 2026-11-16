@@ -1,6 +1,8 @@
 // 画布节点的运行状态内容：生成中（阶段、耗时、三段进度）、失败（重新获取 / 重新保存 / 重新生成）与未知节点兜底。
 
 import { type GenerationTask } from "@/services/api/task-center";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import {
     generationPhaseHint,
     generationPhaseLabel,
@@ -12,7 +14,7 @@ import {
     type GenerationMediaKind,
     type GenerationPhase,
 } from "@/lib/generation-task-display";
-import { AlertCircle, AlertTriangle, AudioLines, CloudOff, FileText, Film, Image as ImageIcon, RefreshCw, RotateCcw, ShieldAlert, Type, type LucideIcon } from "lucide-react";
+import { AlertCircle, AlertTriangle, AudioLines, CircleStop, CloudOff, FileText, Film, Image as ImageIcon, RefreshCw, RotateCcw, ShieldAlert, Type, type LucideIcon } from "lucide-react";
 import { type CSSProperties, type MouseEvent } from "react";
 import { useTaskElapsed } from "@/hooks/use-task-elapsed";
 import { canvasNodeCanResyncTask } from "@/lib/canvas/canvas-task-state";
@@ -92,6 +94,13 @@ export function LoadingContent({ node, theme, onOpenTaskDetails }: Pick<CanvasNo
     const diagnostic = metadata?.errorDetails ? generationErrorMessage(metadata.errorDetails) : "";
     const hint = workflow ? "" : generationPhaseHint(phase, kind, metadata?.taskStage);
     const meta = uncertain ? "" : [progress !== null ? `${progress}%` : "", startedAt ? `已用时 ${elapsed}` : ""].filter(Boolean).join(" · ");
+    if (kind === "image" && !workflow && !metadata?.experimentalLayerPlan && !diagnostic)
+        return (
+            <div className="canvas-node-state canvas-gen-state" data-phase={phase} data-saving={phase === "saving" ? generationTaskSavingState(metadata?.taskStage) : undefined} style={canvasGenerationStateStyle(theme)}>
+                <ImagePackProgress task={{ ...displayTask, progress: progress ?? undefined, createdAt: startedAt }} phase={phase} />
+                <TaskDetailButton node={node} onOpenTaskDetails={onOpenTaskDetails} />
+            </div>
+        );
     return (
         <div className="canvas-node-state canvas-gen-state" data-phase={phase} data-saving={phase === "saving" ? generationTaskSavingState(metadata?.taskStage) : undefined} style={canvasGenerationStateStyle(theme)}>
             <span className="canvas-gen-indicator" aria-hidden="true">
@@ -129,7 +138,7 @@ function taskTerminalStatus(status?: string) {
 }
 
 type CanvasFailureKind = "uncertain" | "moderation" | "recover-media" | "resync" | "failed";
-type CanvasFailureView = { kind: CanvasFailureKind; tone: "error" | "warning"; icon: LucideIcon; title: string; description: string; detail?: string };
+type CanvasFailureView = { kind: CanvasFailureKind; tone: "error" | "warning" | "neutral"; icon: LucideIcon; title: string; description: string; detail?: string };
 
 /**
  * 失败态按“用户下一步该做什么”分类，而不是只回显错误原文：
@@ -138,6 +147,7 @@ type CanvasFailureView = { kind: CanvasFailureKind; tone: "error" | "warning"; i
 function canvasFailureView(node: CanvasNodeData): CanvasFailureView {
     const metadata = node.metadata;
     const reason = generationErrorMessage(metadata?.errorDetails);
+    if (metadata?.taskStatus === "cancelled") return { kind: "failed", tone: "neutral", icon: CircleStop, title: "已停止生成", description: "可以调整后重新生成", detail: metadata.errorDetails ? reason : undefined };
     if (isGenerationTaskSubmissionUncertain({ status: (metadata?.taskStatus || "failed") as GenerationTask["status"], stage: metadata?.taskStage })) {
         return { kind: "uncertain", tone: "warning", icon: AlertTriangle, title: "提交结果待确认", description: "为避免重复扣费，未自动重试，可在详情里核对", detail: reason };
     }
@@ -162,10 +172,8 @@ export function ErrorContent({ node, theme, onRetry, onReloadResource, onOpenTas
     };
     const actionProps = { type: "button" as const, onMouseDown: stopCanvasPointer, onPointerDown: stopCanvasPointer };
     return (
-        <div className="canvas-node-state canvas-gen-state is-failure" data-tone={view.tone} style={canvasGenerationStateStyle(theme)}>
-            <span className="canvas-gen-indicator" aria-hidden="true">
-                <Icon />
-            </span>
+        <div className="canvas-node-state canvas-gen-state is-failure image-pack-notice" data-tone={view.tone} style={canvasGenerationStateStyle(theme)}>
+            <ImagePackNoticeArtwork icon={Icon} tone={view.tone} />
             <span className="canvas-gen-copy">
                 <span className="canvas-gen-title">{view.title}</span>
                 <span className="canvas-gen-reason" title={view.detail}>

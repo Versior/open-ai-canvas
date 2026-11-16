@@ -3,6 +3,7 @@ import type { RenovationSpec } from "@/lib/interior/renovation";
 import type { SceneEditTarget } from "@/lib/interior/scene-local-edit";
 import type { InteriorDesignPlan } from "@/lib/interior/design-plan";
 import { compactApiParams, http } from "@/services/api/request";
+import { useUserStore } from "@/stores/use-user-store";
 
 export type InteriorSurface = "quick" | "pro";
 export type InteriorAudience = "quick" | "pro" | "both";
@@ -203,7 +204,7 @@ export const INTERIOR_PROJECT_CONFLICT = "interior_project_conflict";
 export const INTERIOR_VERSION_CONFLICT = "interior_version_conflict";
 
 export function getInteriorCatalog(signal?: AbortSignal) {
-    return http.get<InteriorCatalog>("/interior/catalog", { signal });
+    return useUserStore.getState().user ? http.get<InteriorCatalog>("/interior/catalog", { signal }) : http.get<InteriorCatalog>("/public/interior/catalog", { signal, session: "public" });
 }
 
 export function generateInterior(input: InteriorGenerateInput) {

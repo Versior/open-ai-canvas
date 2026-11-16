@@ -17,6 +17,12 @@
     border-top: 1px solid var(--user-border);
 }
 
+.app-workspace-sidebar-library {
+    padding-bottom: var(--space-2);
+    margin-bottom: var(--space-2);
+    border-bottom: 1px solid var(--user-border);
+}
+
 .app-workspace-sidebar-brand-row.is-collapsed {
     flex-direction: column;
     gap: var(--space-1);

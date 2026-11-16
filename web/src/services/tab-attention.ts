@@ -8,7 +8,7 @@ let listening = false;
 
 /**
  * 标签页在后台时记下完成数量：标题前缀「(2) 生成完成 ·」，图标右上角加一个成功色圆点。
- * 回到标签页立即清除。返回 false 表示页面当前可见，调用方应直接展示通知。
+ * 回到标签页立即清除。返回 false 表示页面当前可见，无需标签提醒。
  */
 export function remindHiddenTab(count: number) {
     if (typeof document === "undefined" || !document.hidden || count <= 0) return false;

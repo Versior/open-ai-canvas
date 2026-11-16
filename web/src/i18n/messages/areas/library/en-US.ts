@@ -277,6 +277,11 @@ export const enUS: DeepStringRecord<typeof zhCN> = {
             myFolders: "My categories",
             noResults: "Adjust keywords or categories, or clear filters to see everything.",
         },
+        empty: {
+            title: "Start with your first asset",
+            description: "Upload references, save prompts, or import your existing assets. Keep your creative work ready to use again.",
+            canvas: "You can also save your work from a canvas",
+        },
         form: {
             editTitle: "Edit asset",
             uploading: "Uploading",

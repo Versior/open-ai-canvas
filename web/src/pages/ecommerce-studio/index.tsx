@@ -28,6 +28,7 @@ import { useStudioStore } from "./use-studio-store";
 import "./studio.css";
 import { FashionWorkbench } from "@/components/fashion/fashion-workbench";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
@@ -39,6 +40,7 @@ const MAX_REFERENCES = 3;
  * 新建的商品先只在本页，第一次加图或填写时才写到服务器，不留下空商品。
  */
 export default function EcommerceStudioPage() {
+    const requireLogin = useRequireLogin();
     const userId = useUserStore((state) => state.user?.id);
     const { message } = App.useApp();
     const [params, setParams] = useSearchParams();
@@ -61,6 +63,7 @@ export default function EcommerceStudioPage() {
     const resumed = useRef("");
 
     useEffect(() => {
+        if (!userId) return;
         void load();
         resumed.current = "";
         setViewer(undefined);
@@ -68,6 +71,7 @@ export default function EcommerceStudioPage() {
 
     // 后台改过的出图提示词：读不到时按内置写法出图，并告诉用户这一次没用上后台的写法。
     useEffect(() => {
+        if (!userId) return;
         const controller = new AbortController();
         void loadStudioPromptConfig(controller.signal).catch((failure) => {
             if (!controller.signal.aborted) {
@@ -77,19 +81,19 @@ export default function EcommerceStudioPage() {
         return () => controller.abort();
     }, [message, userId]);
 
-    const ready = status === "ready";
-    const stored = products.find((item) => item.id === requested) || (!requested ? products[0] : undefined);
+    const ready = !userId || status === "ready";
+    const stored = userId ? products.find((item) => item.id === requested) || (!requested ? products[0] : undefined) : undefined;
     const product = stored || (!requested || requested === draft.id ? draft : undefined);
 
     // 地址里没写商品时钉住当前这个，免得别的商品更新后排到最前、页面跟着跳。
     useEffect(() => {
-        if (!ready) return;
+        if (!userId || !ready) return;
         if (!requested && stored) setParams({ product: stored.id }, { replace: true });
         else if (requested && !stored && requested !== draft.id) {
             message.warning("这个商品不存在或已被删除");
             setParams(products[0] ? { product: products[0].id } : {}, { replace: true });
         }
-    }, [draft.id, message, products, ready, requested, setParams, stored]);
+    }, [draft.id, message, products, ready, requested, setParams, stored, userId]);
 
     useEffect(() => {
         if (!stored || resumed.current === stored.id) return;
@@ -110,10 +114,14 @@ export default function EcommerceStudioPage() {
 
     const edit = useCallback<Edit>(
         (updater, options) => {
+            if (!userId) {
+                setDraft(updater);
+                return;
+            }
             const id = ensure();
             update(id, updater, options);
         },
-        [ensure, update],
+        [ensure, update, userId],
     );
 
     const create = () => {
@@ -156,6 +164,7 @@ export default function EcommerceStudioPage() {
 
     /** 大图里调整这一张：先把微调和文案写回这张镜头，再按它出一张新的；之前的结果都保留。 */
     const tune = async (group: StudioShotGroup, shot: StudioShot, patch: StudioShotPatch, revisionResourceId?: string) => {
+        if (!requireLogin()) return;
         if (!product) return;
         if (blocked) return void message.warning(blocked);
         try {
@@ -172,7 +181,7 @@ export default function EcommerceStudioPage() {
     return (
         <WorkspacePage fluid scroll={false} className="es-page">
             <div className="es-shell" data-tab={tab}>
-                {status === "error" && !products.length ? (
+                {userId && status === "error" && !products.length ? (
                     <div className="es-center">
                         <EmptyState
                             title="生图台没有加载出来"
@@ -202,8 +211,9 @@ export default function EcommerceStudioPage() {
                             <Button
                                 icon={<Clapperboard size={15} />}
                                 loading={openingVideo}
-                                disabled={!product.photos.length}
+                                disabled={Boolean(userId) && !product.photos.length}
                                 onClick={() => {
+                                    if (!requireLogin()) return;
                                     if (openingVideo) return;
                                     setOpeningVideo(true);
                                     void (async () => {

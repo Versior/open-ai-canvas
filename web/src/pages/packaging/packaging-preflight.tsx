@@ -79,7 +79,7 @@ export function PackagingPreflightPanel({ document, layout, images, name, onSele
                     ))}
                 </ul>
             ) : null}
-            <button type="button" onClick={() => downloadPackaging(new Blob([JSON.stringify({ name, ...report }, null, 2)], { type: "application/json" }), `${name}-交付检查`, "json")}>
+            <button type="button" data-requires-login onClick={() => downloadPackaging(new Blob([JSON.stringify({ name, ...report }, null, 2)], { type: "application/json" }), `${name}-交付检查`, "json")}>
                 <Download size={15} />
                 下载检查报告
             </button>

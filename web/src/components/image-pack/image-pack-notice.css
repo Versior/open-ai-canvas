@@ -1,0 +1,90 @@
+.image-pack-notice {
+    --image-pack-notice-accent: color-mix(in srgb, var(--palette-node-script) 72%, var(--foreground));
+    --image-pack-notice-action-bg: color-mix(in srgb, var(--palette-node-script) 9%, transparent);
+    --image-pack-notice-action-hover: color-mix(in srgb, var(--palette-node-script) 15%, transparent);
+    --image-pack-notice-action-border: color-mix(in srgb, var(--palette-node-script) 18%, transparent);
+}
+.image-pack-notice-artwork {
+    position: relative;
+    display: block;
+    flex: 0 0 auto;
+    width: var(--image-pack-notice-art-size, 72px);
+    aspect-ratio: 4 / 5;
+    overflow: visible;
+    animation: image-pack-notice-arrive 320ms var(--motion-ease-out) both;
+}
+.image-pack-notice-shadow {
+    position: absolute;
+    bottom: 0;
+    left: 5%;
+    width: 90%;
+    height: 12%;
+    background: radial-gradient(ellipse, color-mix(in srgb, var(--palette-node-script) 15%, transparent), transparent 70%);
+}
+.image-pack-notice-pouch {
+    position: absolute;
+    left: 12%;
+    top: 12%;
+    width: 76%;
+    height: 82%;
+    background: url("./packet-artwork.svg") center / 100% 100%;
+    clip-path: polygon(0 7%, 8% 9%, 17% 6%, 28% 10%, 41% 7%, 53% 9%, 66% 6%, 78% 9%, 90% 6%, 100% 8%, 100% 100%, 0 100%);
+    filter: drop-shadow(0 3px 4px color-mix(in srgb, var(--palette-node-script) 12%, transparent));
+    transform: rotate(-10deg);
+}
+.image-pack-notice-seal {
+    position: absolute;
+    left: 15%;
+    top: 6%;
+    width: 76%;
+    height: 7%;
+    border-radius: 2px;
+    background: repeating-linear-gradient(90deg, transparent 0 2px, color-mix(in srgb, var(--palette-node-script) 16%, transparent) 2px 3px), linear-gradient(110deg, #c4c8ee, #f7f3fa 45%, #dbd5ef);
+    transform: translateX(8%) rotate(9deg);
+}
+.image-pack-notice-mark {
+    position: absolute;
+    right: 0;
+    bottom: 8%;
+    display: grid;
+    place-items: center;
+    width: 34%;
+    aspect-ratio: 1;
+    border: 1px solid color-mix(in srgb, var(--palette-node-script) 18%, transparent);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--image-pack-notice-accent);
+    box-shadow: 0 3px 8px color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+.image-pack-notice-mark svg {
+    width: 58%;
+    height: 58%;
+    stroke-width: 1.6;
+}
+.image-pack-notice-artwork[data-tone="warning"] .image-pack-notice-mark {
+    color: var(--status-warning);
+}
+.image-pack-notice-artwork[data-tone="neutral"] .image-pack-notice-mark {
+    color: var(--muted-foreground);
+}
+.image-pack-notice-artwork[data-tone="neutral"] :is(.image-pack-notice-pouch, .image-pack-notice-seal) {
+    filter: saturate(0.5);
+}
+@keyframes image-pack-notice-arrive {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .image-pack-notice-artwork {
+        animation: none;
+    }
+}
+.no-motion .image-pack-notice-artwork {
+    animation: none;
+}

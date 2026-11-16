@@ -132,6 +132,14 @@ describe("画布节点失败态按下一步动作分类", () => {
         expect(markup).not.toContain("重新获取");
     });
 
+    test("取消生成使用中性提示，保留重新生成入口", () => {
+        const markup = renderNode({ status: "error", taskId: "task", taskStatus: "cancelled" });
+        expect(markup).toContain('data-tone="neutral"');
+        expect(markup).toContain("已停止生成");
+        expect(markup).toContain("重新生成");
+        expect(markup).not.toContain("生成失败");
+    });
+
     test("可重新获取的判定只认后端没确认失败的任务", () => {
         expect(canvasNodeCanResyncTask({ status: "error", taskId: "task", taskStatus: "running" })).toBe(true);
         expect(canvasNodeCanResyncTask({ status: "error", taskId: "task", taskStatus: "queued" })).toBe(true);

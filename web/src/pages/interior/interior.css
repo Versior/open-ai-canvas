@@ -925,17 +925,29 @@
 }
 
 .itd-card.is-failed {
-    padding: var(--space-3);
-    border: 1px solid color-mix(in srgb, var(--status-error) 30%, transparent);
-    background: color-mix(in srgb, var(--status-error) 6%, var(--itd-panel));
-    color: var(--status-error);
+    --image-pack-notice-art-size: 56px;
+    padding: var(--space-4);
+    border: 0;
+    background: transparent;
+    color: var(--itd-ink);
     text-align: center;
 }
 
 .itd-card.is-failed.is-warning {
-    border-color: color-mix(in srgb, var(--product-accent-orange) 35%, transparent);
-    background: color-mix(in srgb, var(--product-accent-orange) 6%, var(--itd-panel));
-    color: var(--product-accent-orange);
+    color: var(--status-warning);
+}
+
+.itd-card.is-failed .ant-btn {
+    margin-top: var(--space-1);
+    border-color: var(--image-pack-notice-action-border);
+    background: var(--image-pack-notice-action-bg);
+    color: var(--image-pack-notice-accent);
+    box-shadow: none;
+}
+
+.itd-card.is-failed .ant-btn:hover:not(:disabled) {
+    background: var(--image-pack-notice-action-hover);
+    color: var(--image-pack-notice-accent);
 }
 
 .itd-card.is-failed strong {
@@ -944,12 +956,13 @@
     font-weight: 600;
 }
 
-.itd-card.is-failed span {
+.itd-card.is-failed .itd-card-failure-reason {
     display: -webkit-box;
     overflow: hidden;
     color: var(--itd-ink-2);
     font-size: var(--fs-caption);
     line-height: var(--lh-body);
+    overflow-wrap: anywhere;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
 }

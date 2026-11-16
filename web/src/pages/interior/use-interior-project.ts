@@ -300,6 +300,10 @@ export function useInteriorProjects(userId: string) {
     }, [flush]);
 
     const reloadList = useCallback(async () => {
+        if (!userId) {
+            setProjects([]);
+            return;
+        }
         if (!isCurrent()) return;
         setListError("");
         try {

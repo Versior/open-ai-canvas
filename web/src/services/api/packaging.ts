@@ -1,11 +1,13 @@
 import { http, compactApiParams } from "./request";
+import { useUserStore } from "@/stores/use-user-store";
 import type { PackagingCatalog, PackagingDocument, PackagingProject, PackagingProjectSummary } from "@/lib/packaging/types";
 import type { GenerationTask } from "./task-center";
 
 export type PackagingMockupTask = GenerationTask & { packagingRevision: number; referenceResourceId: string; scene: string; parentTaskId?: string; outputResourceIds: string[] };
 
 export const packagingApi = {
-    catalog: (signal?: AbortSignal, admin = false) => http.get<PackagingCatalog>(`${admin ? "/admin" : ""}/packaging/catalog`, { signal }),
+    catalog: (signal?: AbortSignal, admin = false) =>
+        !admin && !useUserStore.getState().user ? http.get<PackagingCatalog>("/public/packaging/catalog", { signal, session: "public" }) : http.get<PackagingCatalog>(`${admin ? "/admin" : ""}/packaging/catalog`, { signal }),
     saveCatalog: (catalog: PackagingCatalog) => http.put<PackagingCatalog>("/admin/packaging/catalog", { catalog, expectedRevision: catalog.revision }),
     projects: (page = 1, admin = false, params: { userId?: string; templateId?: string } = {}, signal?: AbortSignal) =>
         http.get<{ items: PackagingProjectSummary[]; total: number; page: number; pageSize: number }>(`${admin ? "/admin" : ""}/packaging/projects`, { params: compactApiParams({ page, pageSize: 30, ...params }), signal }),

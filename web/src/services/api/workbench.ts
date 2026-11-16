@@ -1,4 +1,5 @@
 import { http } from "@/services/api/request";
+import { useUserStore } from "@/stores/use-user-store";
 import { getResourceAccess, resolveResourceAccessURL, resourceStorageKey } from "@/services/api/resources";
 import type { GenerationTask } from "@/services/api/task-center";
 import { observeGenerationTaskStatus, observeGenerationTaskStatuses } from "@/services/generation-completion-tracker";
@@ -111,13 +112,14 @@ export async function listWorkbenchTasks(kind: WorkbenchKind, limit = 100, activ
 }
 
 export async function listWorkbenchTools(kind: WorkbenchKind, signal?: AbortSignal, admin = false) {
-    const response = await http.get<{ tools: WorkbenchTool[] }>(admin ? "/admin/workbench/tools" : "/workbench/tools", { params: { kind }, signal });
+    const guest = !admin && !useUserStore.getState().user;
+    const response = await http.get<{ tools: WorkbenchTool[] }>(admin ? "/admin/workbench/tools" : guest ? "/public/workbench/tools" : "/workbench/tools", { params: { kind }, signal, ...(guest ? { session: "public" as const } : {}) });
     if (admin) return response;
     const tools = await Promise.all(
         response.tools.map(async (tool) => ({
             ...tool,
-            iconUrl: tool.iconUrl || (tool.iconResourceId ? await resourceDisplayUrl(tool.iconResourceId) : undefined),
-            coverUrl: tool.coverUrl || (tool.coverResourceId ? await resourceDisplayUrl(tool.coverResourceId) : undefined),
+            iconUrl: tool.iconUrl || (!guest && tool.iconResourceId ? await resourceDisplayUrl(tool.iconResourceId) : undefined),
+            coverUrl: tool.coverUrl || (!guest && tool.coverResourceId ? await resourceDisplayUrl(tool.coverResourceId) : undefined),
             presets: Array.isArray(tool.presets) ? tool.presets.filter((preset) => preset.enabled !== false) : [],
         })),
     );

@@ -16,7 +16,7 @@ type Estimate = { credits: number | null; tone: "quote" | "local" | "loading" | 
  */
 export function useStudioEstimate({ model, inputs }: { model: string; inputs: NonNullable<StudioAttempt["input"]>[] }) {
     const config = useEffectiveConfig();
-    const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
+    const creditsEnabled = useUserStore((state) => Boolean(state.user) && state.features.creditsEnabled);
     const [estimate, setEstimate] = useState<Estimate>({ credits: null, tone: "unavailable" });
     // 商品的任务状态和文案更新不影响报价，只跟踪实际计价输入。
     const inputKey = JSON.stringify(inputs.map((input) => ({ request: input.request, references: studioImageInputCount(input) })));

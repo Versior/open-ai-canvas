@@ -25,6 +25,7 @@ import { saveCanvasDrawing, type CanvasDrawingRenderDraft } from "@/lib/canvas/c
 import { hasRemoteUserDataSyncSession, loadCanvasProjectForEditing, saveRemoteUserDataNow, scheduleRemoteUserDataSync } from "@/services/user-data-sync";
 import { listRemoteCanvasProjectsPage, type CanvasLibrarySummary } from "@/services/api/user-data";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { listProjects } from "@/services/api/projects";
 import { loadCanvasProjectPage } from "@/lib/workspace-route-modules";
 import { resourceFileUrl, resourceStorageKey, uploadResourceFile } from "@/services/api/resources";
@@ -35,6 +36,7 @@ import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { trackSiteTrafficAction } from "@/services/site-traffic";
 
 export default function CanvasPage() {
+    const requireLogin = useRequireLogin();
     const { message } = App.useApp();
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const navigate = useNavigate();
@@ -48,9 +50,10 @@ export default function CanvasPage() {
     const [loadedProjectCount, setLoadedProjectCount] = useState(50);
     const [openingProjectId, setOpeningProjectId] = useState("");
     const openingProjectIdRef = useRef("");
-    const hydrated = useCanvasStore((state) => state.hydrated);
+    const canvasHydrated = useCanvasStore((state) => state.hydrated);
     const localProjects = useCanvasStore((state) => state.projects);
     const userId = useUserStore((state) => state.user?.id);
+    const hydrated = !userId || canvasHydrated;
     const sessionHydrated = useUserStore((state) => state.hydrated);
     const [debouncedKeyword, setDebouncedKeyword] = useState("");
     useEffect(() => {
@@ -80,7 +83,7 @@ export default function CanvasPage() {
     const projects = useMemo<CanvasLibrarySummary[]>(() => {
         // 登录后的列表由服务端筛选和分页，本机缓存不能冒充查询结果。
         if (userId) return sessionHydrated ? (libraryQuery.data?.pages.flatMap((page) => page.projects) ?? []) : [];
-        return sessionHydrated && hydrated ? localSummaries : [];
+        return [];
     }, [libraryQuery.data, localSummaries, userId, sessionHydrated, hydrated]);
     const totalProjects = userId ? (libraryQuery.data?.pages[0]?.total ?? 0) : projects.length;
     const importProject = useCanvasStore((state) => state.importProject);
@@ -90,7 +93,7 @@ export default function CanvasPage() {
     const [historyOpen, setHistoryOpen] = useState(false);
     const [associationOpen, setAssociationOpen] = useState(false);
     const [associationProjectId, setAssociationProjectId] = useState("");
-    const projectQuery = useQuery({ queryKey: ["projects"], queryFn: () => listProjects() });
+    const projectQuery = useQuery({ queryKey: ["projects", userId], queryFn: () => listProjects(), enabled: Boolean(userId) });
 
     const mode = searchParams.get("mode");
     const agentMode = mode === "new" || mode === "recent" || mode === "choose";
@@ -110,6 +113,7 @@ export default function CanvasPage() {
         [forwardedQuery, navigate, preloadProject],
     );
     const createAndEnter = () => {
+        if (!requireLogin()) return;
         trackSiteTrafficAction("new_canvas");
         const id = useCanvasStore.getState().createDraftProject(`自由画布 ${projects.length + 1}`);
         enterProject(id);
@@ -179,6 +183,7 @@ export default function CanvasPage() {
         }
     };
     const importCanvas = async (file?: File) => {
+        if (!requireLogin()) return;
         if (!file) return;
         const hideLoading = message.loading({ content: "正在解压并准备导入画布...", duration: 0 });
         try {
@@ -430,7 +435,7 @@ export default function CanvasPage() {
     };
 
     useEffect(() => {
-        if (!hydrated || !sessionHydrated || (userId && !libraryQuery.isSuccess) || autoOpenRef.current || (mode !== "new" && mode !== "recent" && mode !== "handoff")) return;
+        if (!userId || !hydrated || !sessionHydrated || !libraryQuery.isSuccess || autoOpenRef.current || (mode !== "new" && mode !== "recent" && mode !== "handoff")) return;
         autoOpenRef.current = true;
         if (mode === "recent" && projects[0]?.id) {
             enterProject(projects[0].id);
@@ -440,7 +445,7 @@ export default function CanvasPage() {
         enterProject(id);
     }, [hydrated, message, mode, projects, sessionHydrated, userId, libraryQuery.isSuccess]);
 
-    if (hydrated && !libraryQuery.isError && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
+    if (userId && hydrated && !libraryQuery.isError && (mode === "new" || mode === "recent" || mode === "handoff")) return <main className="flex h-full items-center justify-center bg-background text-sm text-stone-500">正在打开画布...</main>;
 
     return (
         <WorkspacePage className="studio-collection-page">
@@ -470,7 +475,13 @@ export default function CanvasPage() {
                         setSort("updated");
                     }}
                     trailing={
-                        <Button type="text" icon={<History />} onClick={() => setHistoryOpen(true)}>
+                        <Button
+                            type="text"
+                            icon={<History />}
+                            onClick={() => {
+                                if (requireLogin()) setHistoryOpen(true);
+                            }}
+                        >
                             创作历史
                         </Button>
                     }

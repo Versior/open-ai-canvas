@@ -318,6 +318,7 @@ export function PackagingDieline(props: Props) {
                     ) : null}
                     <button
                         type="button"
+                        data-requires-login
                         onClick={() => {
                             void exportSvg().catch((e: Error) => props.onError(e.message));
                         }}
@@ -325,7 +326,7 @@ export function PackagingDieline(props: Props) {
                         <Download size={15} />
                         SVG
                     </button>
-                    <button type="button" onClick={() => downloadPackaging(new Blob([packagingDxf(props.layout)], { type: "application/dxf" }), props.name, "dxf")}>
+                    <button type="button" data-requires-login onClick={() => downloadPackaging(new Blob([packagingDxf(props.layout)], { type: "application/dxf" }), props.name, "dxf")}>
                         DXF
                     </button>
                 </div>

@@ -5603,6 +5603,57 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "429": {$ref: "#/components/responses/Error"}
         "502": {$ref: "#/components/responses/Error"}
+  /public/workbench/tools:
+    get:
+      tags: [guest]
+      summary: 游客读取已发布图片或视频工具
+      parameters:
+        - {in: query, name: kind, required: true, schema: {type: string, enum: [image, video]}}
+      responses:
+        "200": {description: "标准信封 data.tools；只读已发布工具，不含账号资源权限"}
+        "400": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/interior/catalog:
+    get:
+      tags: [guest]
+      summary: 游客读取已发布室内目录
+      responses:
+        "200": {description: "结构同 GET /interior/catalog，不含个人项目"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/packaging/catalog:
+    get:
+      tags: [guest]
+      summary: 游客读取公开包装模板目录
+      responses:
+        "200": {description: "结构同非管理端 GET /packaging/catalog"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/skills:
+    get:
+      tags: [guest]
+      summary: 游客浏览公开技能广场
+      description: 只允许 scope=public，其他列表参数同 GET /skills。个人技能范围和个人分类返回 401。每分钟单地址 60 次、全站 1200 次，与公开技能详情和策展共用限流。
+      responses:
+        "200": {description: "结构同 GET /skills；不含账号加入或收藏状态"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/skills/curation:
+    get:
+      tags: [guest]
+      summary: 游客读取公开技能策展
+      responses:
+        "200": {description: "结构同非管理端 GET /skills/curation"}
+        "429": {$ref: "#/components/responses/Error"}
+  /public/skills/{id}:
+    get:
+      tags: [guest]
+      summary: 游客读取已上架公开技能详情
+      parameters:
+        - {in: path, name: id, required: true, schema: {type: string}}
+      responses:
+        "200": {description: "标准信封 data.skill"}
+        "403": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
   /public/features:
     get:
       tags: [guest]

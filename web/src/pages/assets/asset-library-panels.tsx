@@ -1,7 +1,7 @@
 // 素材库的批量操作条、空态、筛选组、详情抽屉与图片放大。
 
 import { Button, Drawer, Tag } from "antd";
-import { Box, CheckCheck, Clapperboard, Copy, Download, FileText, FileUp, Link2, Maximize2, Mic, Plus, RotateCcw, ShieldCheck, Trash2, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
+import { Box, CheckCheck, Clapperboard, Copy, Download, FileText, FileUp, Image as ImageIcon, Link2, Maximize2, Mic, Plus, RotateCcw, ShieldCheck, Trash2, Upload, ZoomIn, ZoomOut, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AudioPlayButton, CharacterAssetCover } from "@/components/assets/asset-rich-cover";
 import { CachedResourceImage } from "@/components/cached-resource-image";
@@ -10,7 +10,6 @@ import { useCopyText } from "@/hooks/use-copy-text";
 import { currentLocale } from "@/i18n";
 import { arkAssetStatusTone, arkCertificationBadgeKey, arkCertificationExpired, formatArkDate, type ArkLibraryProgress } from "@/lib/ark-assets";
 import { cn } from "@/lib/utils";
-import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { useThemePack } from "@/themes/use-theme-pack";
 import { assetCategoryLabel } from "@/lib/asset-category";
 import { formatBytes } from "@/lib/image-utils";
@@ -86,52 +85,48 @@ export function AssetsBatchBar({
     );
 }
 
-export const assetsEmptyBannerFrames = [
-    { src: "/short-drama-styles/retro-hong-kong.jpg", caption: "ASSET.01 · 天台重逢" },
-    { src: "/short-drama-styles/cyberpunk-neon.jpg", caption: "ASSET.02 · 雨夜霓虹" },
-    { src: "/short-drama-styles/suspense-noir.jpg", caption: "ASSET.03 · 暗巷追逐" },
-];
-
-export function AssetsEmptyState({ onNew, onImport, onGoCanvas }: { onNew: () => void; onImport: () => void; onGoCanvas: () => void }) {
-    const brandName = useAppearanceStore((state) => state.appearance.brandName);
-    // 当前皮肤的主题包带了示意图时用主题包的。
-    const frames = useThemePack()?.copy?.assetsEmptyFrames ?? assetsEmptyBannerFrames;
+export function AssetsEmptyState({ onNew, onUpload, onImport, onGoCanvas, guest = false }: { onNew: () => void; onUpload: () => void; onImport: () => void; onGoCanvas: () => void; guest?: boolean }) {
+    const { t } = useTranslation();
+    const frames = useThemePack()?.copy?.assetsEmptyFrames;
     return (
-        <div className="assets-empty">
-            <div className="assets-empty-banner" aria-hidden="true">
-                {frames.map((frame, index) => (
-                    <figure key={frame.caption} className={`assets-empty-banner-frame ${index === 1 ? "is-main" : index === 0 ? "is-back" : "is-front"}`}>
-                        <img src={frame.src} alt="" loading="lazy" decoding="async" />
-                        <span>{frame.caption}</span>
-                    </figure>
-                ))}
-                <span className="assets-empty-banner-caption">
-                    <span>{brandName}素材库</span>把每次创作的结果，留档成可复用的资产
-                </span>
+        <div className="assets-library-empty">
+            <div className="assets-library-empty-art" aria-hidden="true">
+                {frames?.length ? (
+                    frames.slice(0, 3).map((frame) => (
+                        <span key={frame.src}>
+                            <img src={frame.src} alt="" />
+                        </span>
+                    ))
+                ) : (
+                    <>
+                        <span>
+                            <FileText />
+                        </span>
+                        <span>
+                            <ImageIcon />
+                        </span>
+                        <span>
+                            <Clapperboard />
+                        </span>
+                    </>
+                )}
             </div>
-            <div className="assets-empty-cards">
-                <button type="button" className="assets-empty-card" onClick={onNew}>
-                    <span className="assets-empty-card-icon">
-                        <Plus />
-                    </span>
-                    <strong>新建素材</strong>
-                    <span>录入提示词、说明文案，或上传图片资产。</span>
-                </button>
-                <button type="button" className="assets-empty-card" onClick={onImport}>
-                    <span className="assets-empty-card-icon">
-                        <FileUp />
-                    </span>
-                    <strong>导入素材包</strong>
-                    <span>从素材压缩包一键恢复旧资产，继续创作。</span>
-                </button>
-                <button type="button" className="assets-empty-card" onClick={onGoCanvas}>
-                    <span className="assets-empty-card-icon">
-                        <Clapperboard />
-                    </span>
-                    <strong>去画布保存</strong>
-                    <span>把画布上满意的镜头与画面留档进素材库。</span>
-                </button>
+            <h2>{guest ? "你的创作素材，都可以放在这里" : t("library.assets.empty.title")}</h2>
+            <p>{guest ? "图片、视频、音频、文本和 3D 模型统一管理。登录后上传素材、创建文件夹，或导入已有素材包。" : t("library.assets.empty.description")}</p>
+            <div className="assets-library-empty-actions">
+                <Button type="primary" icon={<Upload />} onClick={onUpload}>
+                    {t("library.assets.page.uploadImages")}
+                </Button>
+                <Button icon={<Plus />} onClick={onNew}>
+                    {t("library.assets.page.create")}
+                </Button>
+                <Button type="text" icon={<FileUp />} onClick={onImport}>
+                    {t("library.assets.page.importPackage")}
+                </Button>
             </div>
+            <button type="button" className="assets-library-empty-link" onClick={onGoCanvas}>
+                {t("library.assets.empty.canvas")}
+            </button>
         </div>
     );
 }
@@ -155,7 +150,7 @@ export function AssetFilterGroup({
     className?: string;
 }) {
     return (
-        <div className={`collection-filter-group ${className}`}>
+        <div className={`collection-filter-group ${className}`} role="group" aria-label={title}>
             <span className="collection-filter-label">{title}</span>
             <div className="collection-filter-options">
                 {options.map((option) => {

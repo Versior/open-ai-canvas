@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, RefreshCw, Sparkles } from "lucide-react";
+import { CircleAlert, CircleStop, Download, RefreshCw, Sparkles } from "lucide-react";
 import { GenerationCostNotice, TaskSettlement } from "@/components/generation-cost-notice";
+import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { ImageSettingsPanel } from "@/components/image-settings-panel";
 import { ModelPicker } from "@/components/model-picker";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -207,32 +210,36 @@ export function PackagingMockups({ project, reference, enabled, admin = false }:
                                 <img src={imageUrl(task.referenceResourceId)} alt={`项目 v${task.packagingRevision} 的生成参考`} />
                             </details>
                         ) : null}
-                        {task.outputResourceIds.map((id) => (
-                            <div key={id}>
-                                <img src={imageUrl(id)} alt={`包装效果图 · ${task.id}`} />
-                                <div className="pkg-toolbar">
-                                    <button type="button" onClick={() => void download(id, task.id).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "下载失败"))}>
-                                        <Download size={14} />
-                                        下载效果图
-                                    </button>
-                                    {!admin ? (
-                                        <button
-                                            type="button"
-                                            disabled={busy || !enabled || task.packagingRevision !== project.revision}
-                                            title={task.packagingRevision !== project.revision ? "该结果属于旧方案版本，请从当前保存方案重新生成" : "基于这张效果图继续调整背景、材质与设计"}
-                                            onClick={() => void revise(id, task.id)}
-                                        >
-                                            继续修改
+                        <ImageGenerationPack
+                            className="image-pack-content"
+                            pending={task.status === "queued" || task.status === "running"}
+                            succeeded={task.status === "succeeded" && task.outputResourceIds.length > 0}
+                            label={<ImagePackProgress task={task} />}
+                        >
+                            {task.outputResourceIds.map((id) => (
+                                <div key={id}>
+                                    <img data-image-pack-result src={imageUrl(id)} alt={`包装效果图 · ${task.id}`} />
+                                    <div className="pkg-toolbar">
+                                        <button type="button" onClick={() => void download(id, task.id).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "下载失败"))}>
+                                            <Download size={14} />
+                                            下载效果图
                                         </button>
-                                    ) : null}
+                                        {!admin ? (
+                                            <button
+                                                type="button"
+                                                disabled={busy || !enabled || task.packagingRevision !== project.revision}
+                                                title={task.packagingRevision !== project.revision ? "该结果属于旧方案版本，请从当前保存方案重新生成" : "基于这张效果图继续调整背景、材质与设计"}
+                                                onClick={() => void revise(id, task.id)}
+                                            >
+                                                继续修改
+                                            </button>
+                                        ) : null}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </ImageGenerationPack>
                         {task.status === "queued" || task.status === "running" ? (
                             <>
-                                <p role="status">
-                                    {task.stage} · {task.progress}%
-                                </p>
                                 {!admin ? (
                                     <button type="button" disabled={Boolean(cancelling)} onClick={() => void cancel(task.id)}>
                                         {cancelling === task.id ? "正在取消…" : "取消生成"}
@@ -240,7 +247,15 @@ export function PackagingMockups({ project, reference, enabled, admin = false }:
                                 ) : null}
                             </>
                         ) : null}
-                        {task.status === "failed" ? <p className="pkg-help">{task.errorCode || "任务执行失败，可在任务中心查看详情"}</p> : null}
+                        {task.status === "failed" || task.status === "cancelled" ? (
+                            <div className="pkg-mockup-failure image-pack-notice" data-tone={task.status === "cancelled" ? "neutral" : "error"}>
+                                <ImagePackNoticeArtwork icon={task.status === "cancelled" ? CircleStop : CircleAlert} tone={task.status === "cancelled" ? "neutral" : "error"} />
+                                <div>
+                                    <strong>{task.status === "cancelled" ? "已取消生成" : "效果图生成失败"}</strong>
+                                    <p>{task.errorCode || (task.status === "cancelled" ? "可以在上方调整要求后重新生成。" : "可在任务中心查看详情，或在上方调整要求后重新生成。")}</p>
+                                </div>
+                            </div>
+                        ) : null}
                         <details>
                             <summary>生成要求</summary>
                             <p className="pkg-help">{task.prompt}</p>

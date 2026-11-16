@@ -7,6 +7,7 @@ import { compilePackaging } from "@/lib/packaging/geometry";
 import { downloadPackaging, packagingProjectZip } from "@/lib/packaging/delivery";
 import { validatePackagingParameters, type PackagingProject } from "@/lib/packaging/types";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { captureUserSession, assertCurrentUserSession } from "@/lib/user-scope";
 import { packagingApi } from "@/services/api/packaging";
 import { PackagingDieline } from "./packaging-dieline";
@@ -36,7 +37,8 @@ export default function PackagingPage() {
     const panels = useRef<HTMLDivElement>(null);
     const importer = useRef<HTMLInputElement>(null);
     const busy = state.status !== "ready";
-    const blocker = useBlocker(({ currentLocation, nextLocation }) => state.dirty && currentLocation.pathname !== nextLocation.pathname);
+    const requireLogin = useRequireLogin();
+    const blocker = useBlocker(({ currentLocation, nextLocation }) => Boolean(userId) && state.dirty && currentLocation.pathname !== nextLocation.pathname);
     const doc = state.project?.document;
     useEffect(() => setMockups(undefined), [userId, state.project?.id]);
     useEffect(() => {
@@ -54,23 +56,23 @@ export default function PackagingPage() {
     }, [doc?.parameters, doc?.template]);
     const restored = useRef(false);
     useEffect(() => {
-        if (!state.catalog || restored.current) return;
+        if (!userId || !state.catalog || restored.current) return;
         restored.current = true;
         const id = search.get("project");
         if (id) void state.load(id).catch((e: unknown) => state.setError(e instanceof Error ? e.message : "项目读取失败"));
-    }, [state.catalog]);
+    }, [state.catalog, userId]);
     useEffect(() => {
         if (state.project?.id) setSearch({ project: state.project.id }, { replace: true });
     }, [state.project?.id]);
     useEffect(() => {
-        if (!state.dirty) return;
+        if (!userId || !state.dirty) return;
         const warn = (e: BeforeUnloadEvent) => {
             e.preventDefault();
             e.returnValue = "";
         };
         window.addEventListener("beforeunload", warn);
         return () => window.removeEventListener("beforeunload", warn);
-    }, [state.dirty]);
+    }, [state.dirty, userId]);
     useEffect(() => {
         if (blocker.state !== "blocked") return;
         modal.confirm({ title: "离开包装刀板", content: "当前编辑尚未保存，离开后将放弃这些修改。", okText: "放弃并离开", cancelText: "继续编辑", onOk: () => blocker.proceed(), onCancel: () => blocker.reset() });
@@ -92,6 +94,7 @@ export default function PackagingPage() {
         return () => window.removeEventListener("keydown", shortcut);
     }, [busy, state.undo, state.redo]);
     const execute = (operation: () => void | Promise<void>) => {
+        if (!requireLogin()) return;
         void Promise.resolve()
             .then(operation)
             .catch((e: unknown) => state.setError(e instanceof Error ? e.message : "操作失败"));
@@ -255,7 +258,7 @@ export default function PackagingPage() {
                         </button>
                         <button
                             type="button"
-                            disabled={!state.project.id || busy}
+                            disabled={Boolean(userId) && (!state.project.id || busy)}
                             onClick={() =>
                                 execute(async () => {
                                     const session = captureUserSession();
@@ -341,8 +344,9 @@ export default function PackagingPage() {
                                     onChange={(view) => state.updateDocument((d) => ({ ...d, view: { ...d.view, ...view } }), `view-${Object.keys(view).sort().join("-")}`)}
                                     onError={state.setError}
                                     name={state.project.name}
-                                    mockupDisabled={busy || state.dirty || !state.project.id || !state.catalog.enabled || !state.catalog.mockupEnabled}
+                                    mockupDisabled={Boolean(userId) && (busy || state.dirty || !state.project.id || !state.catalog.enabled || !state.catalog.mockupEnabled)}
                                     onMockup={(reference) => {
+                                        if (!requireLogin()) return;
                                         if (currentProject.current !== state.project) {
                                             state.setError("截图期间方案有变化，请保存后重新截取参考图");
                                             return;

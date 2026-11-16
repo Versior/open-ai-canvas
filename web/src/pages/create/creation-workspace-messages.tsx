@@ -2,6 +2,8 @@
 
 import { conversationTimeFormatter, type CreationMessage } from "./creation-types";
 import { creationMessageNeedsResultSync } from "./creation-conversations";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { AlertCircle, AlertTriangle, CircleStop, CloudOff, Copy, Download, FileText, Film, Image as ImageIcon, ImageOff, Maximize2, Music2, Pencil, RefreshCw, RotateCcw, UserRound, X, type LucideIcon, Blocks } from "lucide-react";
 import { GenerationToolCard, type GenerationToolStatus } from "@/components/ai/generation-tool-card";
@@ -14,7 +16,7 @@ import { generationErrorMessage } from "@/lib/generation-error";
 import { isGenerationCostUncertainError } from "@/lib/canvas/canvas-generation-batch";
 import { generationPhaseHint, generationPhaseLabel, generationPhaseStep, generationTaskPhase, generationTaskSavingState, generationTaskShowsProgress, type GenerationPhase } from "@/lib/generation-task-display";
 import { useTaskElapsed } from "@/hooks/use-task-elapsed";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { type CreationReference, displayCreationPrompt } from "./creation-references";
 import { useUserStore } from "@/stores/use-user-store";
@@ -32,6 +34,9 @@ import { AppModal } from "@/components/ui/product/app-modal";
 import { creationResultEntries } from "./creation-result-urls";
 import { ActiveAgentAvatar } from "@/components/canvas/active-agent-avatar";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
+import "@/components/image-pack/image-pack-reveal.css";
+
+const ImagePackReveal = lazy(() => import("@/components/image-pack/image-pack-reveal"));
 
 export function CreationMessageView({
     item,
@@ -58,6 +63,11 @@ export function CreationMessageView({
 }) {
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const { pet } = useActiveAgentPet();
+    const [mediaRevealComplete, setMediaRevealComplete] = useState(item.status !== "pending");
+    const markMediaRevealed = useCallback(() => setMediaRevealComplete(true), []);
+    useEffect(() => {
+        if (item.status === "pending") setMediaRevealComplete(false);
+    }, [item.status]);
     if (item.role === "user") return <CreationUserMessage item={item} shotNumber={shotNumber} onEditUserMessage={onEditUserMessage} />;
     const mode = item.mode || "text";
     const messageState = creationMessageState(item);
@@ -75,8 +85,8 @@ export function CreationMessageView({
                     <ActiveAgentAvatar />
                 </span>
                 <strong>{mode === "image" ? "图像生成" : "视频生成"}</strong>
-                {item.status === "done" ? <span className="creation-message-progress-copy">你的{mode === "video" ? "视频" : "图像"}已创建</span> : null}
-                {item.status === "done" ? (
+                {item.status === "done" && (mode !== "image" || mediaRevealComplete) ? <span className="creation-message-progress-copy">你的{mode === "video" ? "视频" : "图像"}已创建</span> : null}
+                {item.status === "done" && mode !== "image" ? (
                     <button type="button" className="creation-message-variant-action" onClick={onCreateVariant}>
                         <RefreshCw />
                         生成同款
@@ -134,6 +144,7 @@ export function CreationMessageView({
                         onCreateVariant={onCreateVariant}
                         onContinueCanvas={onContinueCanvas}
                         openingCanvas={openingCanvas}
+                        onRevealComplete={markMediaRevealed}
                     />
                 </GenerationToolCard>
             )}
@@ -273,6 +284,7 @@ export function MediaResult({
     onCreateVariant,
     onContinueCanvas,
     openingCanvas,
+    onRevealComplete,
 }: {
     item: CreationMessage;
     onRetryFailure: () => void;
@@ -282,9 +294,14 @@ export function MediaResult({
     onCreateVariant: () => void;
     onContinueCanvas: (ids?: string[]) => void;
     openingCanvas: boolean;
+    onRevealComplete?: () => void;
 }) {
     const [previewUrl, setPreviewUrl] = useState("");
     const [previewType, setPreviewType] = useState<"image" | "video">("image");
+    const [revealState, setRevealState] = useState<"idle" | "pending" | "complete">(item.status === "pending" && item.mode !== "video" ? "pending" : "idle");
+    const [packetElement, setPacketElement] = useState<HTMLSpanElement | null>(null);
+    const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
+    const completeReveal = useCallback(() => setRevealState("complete"), []);
     const assets = useAssetStore((state) => state.assets);
     const storedResultUrls = item.resultUrls || [];
     const resultStorageKeys = item.resultStorageKeys?.length ? item.resultStorageKeys : creationResultStorageKeys(assets, { messageId: item.id, taskIds: item.taskIds || [], resultUrls: storedResultUrls });
@@ -341,6 +358,13 @@ export function MediaResult({
     }, [item.id, item.mode, resultStorageKeys.join("|"), storedResultUrls.join("|")]);
 
     const isVideo = item.mode === "video";
+    useEffect(() => {
+        if (item.status === "pending") {
+            setRevealState(isVideo ? "idle" : "pending");
+            return;
+        }
+        if (item.status === "error" || item.status === "cancelled") setRevealState("idle");
+    }, [item.status, isVideo]);
     // 每个结果的加载状态与重试次数按 storageKey 记录；重试会换一个元素重新请求，并强制续签访问地址。
     const [mediaStates, setMediaStates] = useState<Record<string, "loaded" | "error">>({});
     const [mediaAttempts, setMediaAttempts] = useState<Record<string, number>>({});
@@ -361,10 +385,17 @@ export function MediaResult({
     const resultAssetIds = alignedResultUrls.length || resultStorageKeys.length ? creationResultAssetIds(assets, { messageId: item.id, taskIds: item.taskIds || [], resultUrls: alignedResultUrls, resultStorageKeys }) : [];
     const expectedResultCount = resultStorageKeys.length || alignedResultUrls.length;
     const canContinueWithResults = expectedResultCount > 0 && resultAssetIds.length === expectedResultCount;
-    if (item.status === "pending") return <CreationMediaPending item={item} refreshing={refreshingResult} onRefresh={onRefreshResult} onRetry={onRetryFailure} />;
+    const revealImages = useMemo(() => resultEntries.map(({ url }, index) => ({ url, label: `作品 ${index + 1}` })), [displayResultUrls.join("|")]);
+    const showReveal = revealState === "pending" && item.status === "done" && !isVideo && expectedResultCount > 0 && expectedResultCount <= 8 && !resultEntries.some(({ key }) => mediaStates[key] === "error");
+    const showPackStage = (!isVideo && item.status === "pending") || showReveal;
+    useEffect(() => {
+        if (item.status === "done" && !showPackStage) onRevealComplete?.();
+    }, [item.status, showPackStage, onRevealComplete]);
+    const revealReady = !resolving && resultEntries.length === expectedResultCount && resultEntries.every(({ key }) => mediaStates[key] === "loaded");
+    if (item.status === "pending" && isVideo) return <CreationMediaPending item={item} refreshing={refreshingResult} onRefresh={onRefreshResult} onRetry={onRetryFailure} />;
     if ((item.status === "error" || item.status === "cancelled") && !expectedResultCount) return <CreationMediaFailure item={item} refreshing={refreshingResult} onRefresh={onRefreshResult} onRecoverMedia={onRecoverMedia} onRetry={onRetryFailure} />;
     // 远端结果首次解析中不显示空态，避免先闪「没有返回可预览结果」再出现结果。
-    if (!expectedResultCount || (!displayResultUrls.length && !resolving))
+    if (!showPackStage && (!expectedResultCount || (!displayResultUrls.length && !resolving)))
         return (
             <CreationMediaNotice
                 tone="neutral"
@@ -394,88 +425,101 @@ export function MediaResult({
     // 远端地址还在解析的结果位先按同样尺寸占位，不让结果区塌成一行操作按钮。
     const pendingImageKeys = !isVideo && resolving ? resultStorageKeys.filter((storageKey) => !resultEntries.some((entry) => entry.key === storageKey)) : [];
     return (
-        <div className="creation-media-result">
-            {isVideo ? (
-                <button
-                    type="button"
-                    className="creation-video-result"
-                    data-media-state={videoState}
-                    onClick={() => {
-                        if (videoState === "error") return retryResultMedia(videoKey);
-                        if (!displayResultUrls[0]) return;
-                        setPreviewType("video");
-                        setPreviewUrl(displayResultUrls[0]);
-                    }}
-                    aria-label={videoState === "error" ? "视频加载失败，点击重新加载" : "预览生成视频"}
-                >
-                    {displayResultUrls[0] ? (
-                        <video key={`${videoKey}:${mediaAttempts[videoKey] || 0}`} muted preload="metadata" src={displayResultUrls[0]} onLoadedMetadata={() => markResultMedia(videoKey, "loaded")} onError={() => markResultMedia(videoKey, "error")} />
-                    ) : null}
-                    {videoState === "error" ? <CreationResultMediaError label="视频加载失败，点击重试" /> : null}
-                    <span>
-                        <Maximize2 />
-                        预览视频
-                    </span>
-                </button>
-            ) : (
-                <div className="creation-image-result-grid">
-                    {resultEntries.map(({ key, url }) => (
-                        <button
-                            key={key}
-                            type="button"
-                            className="creation-image-result"
-                            data-media-state={mediaStates[key] || "loading"}
-                            style={creationResultTileStyle(naturalRatios[key] || creationResultAssetRatio(assets, key) || fallbackRatio)}
-                            onClick={() => {
-                                if (mediaStates[key] === "error") return retryResultMedia(key);
-                                if (mediaStates[key] !== "loaded") return;
-                                setPreviewType("image");
-                                setPreviewUrl(url);
-                            }}
-                            aria-label={mediaStates[key] === "error" ? "图片加载失败，点击重新加载" : mediaStates[key] === "loaded" ? "预览生成图片" : "图片加载中"}
-                            aria-busy={mediaStates[key] === "loaded" || mediaStates[key] === "error" ? undefined : true}
-                        >
-                            <img
-                                key={`${key}:${mediaAttempts[key] || 0}`}
-                                src={url}
-                                alt="生成结果"
-                                decoding="async"
-                                onLoad={(event) => {
-                                    const { naturalWidth, naturalHeight } = event.currentTarget;
-                                    if (naturalWidth > 0 && naturalHeight > 0) setNaturalRatios((current) => (current[key] === naturalWidth / naturalHeight ? current : { ...current, [key]: naturalWidth / naturalHeight }));
-                                    markResultMedia(key, "loaded");
+        <div className={isVideo ? "creation-media-result" : "image-generation-stage"} data-complete={showReveal ? true : undefined}>
+            {showPackStage ? <CreationMediaPending item={item} refreshing={refreshingResult} onRefresh={onRefreshResult} onRetry={onRetryFailure} packetRef={setPacketElement} preparing={showReveal} /> : null}
+            <div className={!isVideo ? "creation-media-result image-generation-results" : undefined} ref={setResultsElement} hidden={item.status === "pending"} data-concealed={showReveal ? true : undefined} inert={showReveal ? true : undefined}>
+                {item.status === "pending" ? null : isVideo ? (
+                    <button
+                        type="button"
+                        className="creation-video-result"
+                        data-media-state={videoState}
+                        onClick={() => {
+                            if (videoState === "error") return retryResultMedia(videoKey);
+                            if (!displayResultUrls[0]) return;
+                            setPreviewType("video");
+                            setPreviewUrl(displayResultUrls[0]);
+                        }}
+                        aria-label={videoState === "error" ? "视频加载失败，点击重新加载" : "预览生成视频"}
+                    >
+                        {displayResultUrls[0] ? (
+                            <video key={`${videoKey}:${mediaAttempts[videoKey] || 0}`} muted preload="metadata" src={displayResultUrls[0]} onLoadedMetadata={() => markResultMedia(videoKey, "loaded")} onError={() => markResultMedia(videoKey, "error")} />
+                        ) : null}
+                        {videoState === "error" ? <CreationResultMediaError label="视频加载失败，点击重试" /> : null}
+                        <span>
+                            <Maximize2 />
+                            预览视频
+                        </span>
+                    </button>
+                ) : (
+                    <div className="creation-image-result-grid">
+                        {resultEntries.map(({ key, url }) => (
+                            <button
+                                key={key}
+                                type="button"
+                                className="creation-image-result"
+                                data-media-state={mediaStates[key] || "loading"}
+                                style={creationResultTileStyle(naturalRatios[key] || creationResultAssetRatio(assets, key) || fallbackRatio)}
+                                onClick={() => {
+                                    if (mediaStates[key] === "error") return retryResultMedia(key);
+                                    if (mediaStates[key] !== "loaded") return;
+                                    setPreviewType("image");
+                                    setPreviewUrl(url);
                                 }}
-                                onError={() => markResultMedia(key, "error")}
-                            />
-                            {mediaStates[key] === "error" ? <CreationResultMediaError label="图片加载失败，点击重试" /> : null}
-                            <span>
-                                <Maximize2 />
-                            </span>
-                        </button>
-                    ))}
-                    {pendingImageKeys.map((storageKey) => (
-                        <i key={`pending:${storageKey}`} className="creation-image-result" data-media-state="loading" style={creationResultTileStyle(creationResultAssetRatio(assets, storageKey) || fallbackRatio)} aria-hidden="true" />
+                                aria-label={mediaStates[key] === "error" ? "图片加载失败，点击重新加载" : mediaStates[key] === "loaded" ? "预览生成图片" : "图片加载中"}
+                                aria-busy={mediaStates[key] === "loaded" || mediaStates[key] === "error" ? undefined : true}
+                            >
+                                <img
+                                    key={`${key}:${mediaAttempts[key] || 0}`}
+                                    src={url}
+                                    alt="生成结果"
+                                    decoding="async"
+                                    onLoad={(event) => {
+                                        const { naturalWidth, naturalHeight } = event.currentTarget;
+                                        if (naturalWidth > 0 && naturalHeight > 0) setNaturalRatios((current) => (current[key] === naturalWidth / naturalHeight ? current : { ...current, [key]: naturalWidth / naturalHeight }));
+                                        markResultMedia(key, "loaded");
+                                    }}
+                                    onError={() => markResultMedia(key, "error")}
+                                />
+                                {mediaStates[key] === "error" ? <CreationResultMediaError label="图片加载失败，点击重试" /> : null}
+                                <span>
+                                    <Maximize2 />
+                                </span>
+                            </button>
+                        ))}
+                        {pendingImageKeys.map((storageKey) => (
+                            <i key={`pending:${storageKey}`} className="creation-image-result" data-media-state="loading" style={creationResultTileStyle(creationResultAssetRatio(assets, storageKey) || fallbackRatio)} aria-hidden="true" />
+                        ))}
+                    </div>
+                )}
+                <div className="creation-media-actions">
+                    <span>{isVideo ? "视频结果" : `${displayResultUrls.length} 张图片`}</span>
+                    {!isVideo ? (
+                        <Button type="text" size="small" onClick={onCreateVariant}>
+                            生成同款
+                        </Button>
+                    ) : null}
+                    <Button type="link" size="small" loading={openingCanvas} disabled={!canContinueWithResults} title={canContinueWithResults ? undefined : "素材保存完成后才能转入画布"} onClick={() => onContinueCanvas(resultAssetIds)}>
+                        添加到画布
+                    </Button>
+                    {displayResultUrls.map((url, index) => (
+                        <a key={`download-${index}`} href={url} download>
+                            {displayResultUrls.length > 1 ? (
+                                `下载 ${index + 1}`
+                            ) : (
+                                <>
+                                    <Download />
+                                    下载
+                                </>
+                            )}
+                        </a>
                     ))}
                 </div>
-            )}
-            <div className="creation-media-actions">
-                <span>{isVideo ? "视频结果" : `${displayResultUrls.length} 张图片`}</span>
-                <Button type="link" size="small" loading={openingCanvas} disabled={!canContinueWithResults} title={canContinueWithResults ? undefined : "素材保存完成后才能转入画布"} onClick={() => onContinueCanvas(resultAssetIds)}>
-                    添加到画布
-                </Button>
-                {displayResultUrls.map((url, index) => (
-                    <a key={`download-${index}`} href={url} download>
-                        {displayResultUrls.length > 1 ? (
-                            `下载 ${index + 1}`
-                        ) : (
-                            <>
-                                <Download />
-                                下载
-                            </>
-                        )}
-                    </a>
-                ))}
             </div>
+            {showReveal && revealReady && packetElement && resultsElement ? (
+                <Suspense fallback={null}>
+                    <ImagePackReveal images={revealImages} anchor={packetElement} results={resultsElement} onComplete={completeReveal} />
+                </Suspense>
+            ) : null}
             <CreationMediaPreviewModal url={previewUrl} type={previewType} onClose={() => setPreviewUrl("")} />
         </div>
     );
@@ -485,7 +529,21 @@ export function MediaResult({
  * 生成中卡片：按最终画面比例占位，标题跟随真实任务阶段（排队 / 生成 / 保存 / 载入），
  * 底部三段进度与耗时；页面与任务连接中断时给出“立即刷新”，不把等待中断说成失败。
  */
-export function CreationMediaPending({ item, refreshing, onRefresh, onRetry }: { item: CreationMessage; refreshing: boolean; onRefresh: () => void; onRetry: () => void }) {
+export function CreationMediaPending({
+    item,
+    refreshing,
+    onRefresh,
+    onRetry,
+    packetRef,
+    preparing = false,
+}: {
+    item: CreationMessage;
+    refreshing: boolean;
+    onRefresh: () => void;
+    onRetry: () => void;
+    packetRef?: Ref<HTMLSpanElement>;
+    preparing?: boolean;
+}) {
     const mode: CreationMode = item.mode || "image";
     const kind = mode === "video" ? "video" : "image";
     const phase: GenerationPhase = item.taskIds?.length ? generationTaskPhase({ status: item.generationStatus || "running", stage: item.generationStage, mediaStage: item.generationMediaStage }) : "submitting";
@@ -503,7 +561,7 @@ export function CreationMediaPending({ item, refreshing, onRefresh, onRetry }: {
     const Icon = mode === "video" ? Film : ImageIcon;
     return (
         <div
-            className={`creation-media-pending is-${mode}`}
+            className={`creation-media-pending is-${mode}${mode === "image" ? " has-image-generation-pack" : ""}`}
             data-phase={phase}
             data-saving={phase === "saving" ? generationTaskSavingState(item.generationStage) : undefined}
             data-sync={item.syncInterrupted ? "interrupted" : undefined}
@@ -517,15 +575,34 @@ export function CreationMediaPending({ item, refreshing, onRefresh, onRetry }: {
                 </span>
             ) : null}
             <span className="creation-media-pending-body">
-                <span className="creation-media-pending-title" role="status">
-                    {generationPhaseLabel(phase, kind, item.generationStage)}
+                {mode === "image" ? (
+                    <span className="image-generation-pack-stage" aria-hidden="true">
+                        <span className="image-generation-packet" ref={packetRef} />
+                    </span>
+                ) : null}
+                {mode === "image" ? (
+                    <ImagePackProgress
+                        task={{ status: item.generationStatus || "running", stage: item.generationStage, mediaStage: item.generationMediaStage, progress: progress ?? undefined, createdAt: item.createdAt }}
+                        phase={phase}
+                        preparing={preparing}
+                    >
+                        {item.syncInterrupted ? <CreationSyncNotice refreshing={refreshing} onRefresh={onRefresh} onRetry={onRetry} /> : null}
+                    </ImagePackProgress>
+                ) : (
+                    <>
+                        <span className="creation-media-pending-title" role="status">
+                            {preparing ? "图片已生成" : generationPhaseLabel(phase, kind, item.generationStage)}
+                        </span>
+                        <span className="creation-media-pending-meta">{preparing ? "正在准备展开…" : [progress !== null ? `${progress}%` : "", item.createdAt ? `已用时 ${elapsed}` : ""].filter(Boolean).join(" · ")}</span>
+                        {hint ? <span className="creation-media-pending-hint">{hint}</span> : null}
+                    </>
+                )}
+            </span>
+            {mode !== "image" ? (
+                <span className="creation-media-pending-foot">
+                    {item.syncInterrupted ? <CreationSyncNotice refreshing={refreshing} onRefresh={onRefresh} onRetry={onRetry} /> : uncertain ? null : <GenerationPhaseSteps step={generationPhaseStep(phase)} progress={progress} />}
                 </span>
-                <span className="creation-media-pending-meta">{[progress !== null ? `${progress}%` : "", item.createdAt ? `已用时 ${elapsed}` : ""].filter(Boolean).join(" · ")}</span>
-                {hint ? <span className="creation-media-pending-hint">{hint}</span> : null}
-            </span>
-            <span className="creation-media-pending-foot">
-                {item.syncInterrupted ? <CreationSyncNotice refreshing={refreshing} onRefresh={onRefresh} onRetry={onRetry} /> : uncertain ? null : <GenerationPhaseSteps step={generationPhaseStep(phase)} progress={progress} />}
-            </span>
+            ) : null}
         </div>
     );
 }
@@ -663,10 +740,8 @@ function CreationMediaFailure({ item, refreshing, onRefresh, onRecoverMedia, onR
 
 function CreationMediaNotice({ tone, icon: Icon, title, description, detail, actions }: { tone: "warning" | "error" | "neutral"; icon: LucideIcon; title: string; description: string; detail?: string; actions: ReactNode }) {
     return (
-        <div className={`creation-media-notice is-${tone}`}>
-            <span className="creation-media-notice-icon" aria-hidden="true">
-                <Icon />
-            </span>
+        <div className={`creation-media-notice is-${tone} image-pack-notice`} role={tone === "neutral" ? "status" : "alert"}>
+            <ImagePackNoticeArtwork icon={Icon} tone={tone} />
             <div className="creation-media-notice-copy">
                 <strong>{title}</strong>
                 <p>{description}</p>

@@ -65,6 +65,7 @@ import {
     type SkillSort,
 } from "@/services/api/skills";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { Select } from "@/components/ui/base/select";
 import { useSkillCuration, curationQuery, curationIcon, effectiveCurationRoot } from "@/components/skills/skill-curation-browser";
 import { SkillRecommendationsModal } from "@/components/skills/skill-recommendations-modal";
@@ -97,6 +98,8 @@ const sortOptions: { label: string; value: SkillSort }[] = [
  * 范围切换会清空分类筛选，避免切到「我的技能」后仍带着广场分类这类看不见的过滤条件。
  */
 export default function SkillsPage() {
+    const user = useUserStore((state) => state.user);
+    const requireLogin = useRequireLogin();
     const { curation, error: curationError, retry: retryCuration } = useSkillCuration();
     const [platformCategory, setPlatformCategory] = useState("");
     const { message, modal } = App.useApp();
@@ -140,6 +143,7 @@ export default function SkillsPage() {
     const reload = useCallback(() => setReloadKey((value) => value + 1), []);
     const refreshCounts = useCallback(() => setCountsKey((value) => value + 1), []);
     const selectScope = (next: SkillScope) => {
+        if (next !== "public" && !requireLogin()) return;
         setScope(next);
         setTag("all");
         setPlatformCategory("");
@@ -168,6 +172,12 @@ export default function SkillsPage() {
 
     useEffect(() => {
         let cancelled = false;
+        if (!user && scope !== "public") {
+            setSkills([]);
+            setTotal(0);
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         setLoadError("");
         const libraryFilter = isLibraryScope ? (libraryCategoryId === "__uncategorized__" ? { libraryUncategorized: true } : libraryCategoryId !== "all" ? { libraryCategoryId } : {}) : {};
@@ -190,27 +200,32 @@ export default function SkillsPage() {
         return () => {
             cancelled = true;
         };
-    }, [debouncedSearch, isLibraryScope, libraryCategoryId, page, pageSize, reloadKey, scope, sort, tag, curation, platformCategory]);
+    }, [debouncedSearch, isLibraryScope, libraryCategoryId, page, pageSize, reloadKey, scope, sort, tag, curation, platformCategory, user]);
 
     /* 范围计数：每个范围只取 1 条记录读 totalCount，与当前搜索/分类无关，写操作后刷新。 */
     useEffect(() => {
         let cancelled = false;
-        void Promise.allSettled(scopeOptions.map((option) => listSkills({ scope: option.value, page: 1, pageSize: 1 }))).then((results) => {
+        const options = user ? scopeOptions : scopeOptions.filter((option) => option.value === "public");
+        void Promise.allSettled(options.map((option) => listSkills({ scope: option.value, page: 1, pageSize: 1 }))).then((results) => {
             if (cancelled) return;
             const next: Partial<Record<SkillScope, number>> = {};
             results.forEach((result, index) => {
-                if (result.status === "fulfilled") next[scopeOptions[index].value] = result.value.totalCount;
+                if (result.status === "fulfilled") next[options[index].value] = result.value.totalCount;
             });
             setScopeCounts(next);
         });
         return () => {
             cancelled = true;
         };
-    }, [reloadKey, countsKey]);
+    }, [reloadKey, countsKey, user]);
 
     useEffect(() => {
         let cancelled = false;
         setLibraryCategoryError("");
+        if (!user) {
+            setLibraryCategoryList(null);
+            return;
+        }
         listSkillLibraryCategories(libraryCategoryScope)
             .then((result) => {
                 if (!cancelled) setLibraryCategoryList(result);
@@ -224,7 +239,7 @@ export default function SkillsPage() {
         return () => {
             cancelled = true;
         };
-    }, [libraryCategoryScope, reloadKey]);
+    }, [libraryCategoryScope, reloadKey, user]);
 
     const curationRoots = curation?.enabled ? (curation.roots || []).filter((root) => root.enabled !== false) : [];
     const browseCategories: (SkillCategory & { iconKey?: string })[] = curation?.enabled ? curationRoots.map((root) => ({ value: root.id, label: root.name, iconKey: root.iconKey })) : categories;
@@ -272,6 +287,7 @@ export default function SkillsPage() {
     };
 
     const openEditor = async (skill?: Skill) => {
+        if (!requireLogin()) return;
         if (!skill) {
             setEditingSkill(null);
             setEditorOpen(true);
@@ -288,6 +304,7 @@ export default function SkillsPage() {
     };
 
     const openWorkbench = (skill: Skill) => {
+        if (!requireLogin()) return;
         if (!skill.isOwner) return;
         setActiveSkill(null);
         navigate(`/skills/${encodeURIComponent(skill.skillId)}/edit`);
@@ -299,6 +316,7 @@ export default function SkillsPage() {
     };
 
     const toggleAdded = async (skill: Skill) => {
+        if (!requireLogin()) return;
         if (skill.isOwner) return;
         setMutatingID(skill.skillId);
         try {
@@ -315,6 +333,7 @@ export default function SkillsPage() {
     };
 
     const toggleLiked = async (skill: Skill) => {
+        if (!requireLogin()) return;
         setMutatingID(skill.skillId);
         try {
             const result = skill.isLike ? await unlikeSkill(skill.skillId) : await likeSkill(skill.skillId);
@@ -330,6 +349,7 @@ export default function SkillsPage() {
     };
 
     const synchronizeSkill = async (skill: Skill) => {
+        if (!requireLogin()) return;
         setMutatingID(skill.skillId);
         try {
             const result = await syncSkill(skill.skillId);
@@ -344,6 +364,7 @@ export default function SkillsPage() {
     };
 
     const confirmDelete = (skill: Skill) => {
+        if (!requireLogin()) return;
         modal.confirm({
             title: `删除“${skill.skillName}”？`,
             content: "删除后，其他用户将无法继续使用该技能，已有加入和收藏关系也会一并移除。",
@@ -365,6 +386,7 @@ export default function SkillsPage() {
     };
 
     const saveLibraryCategory = async () => {
+        if (!requireLogin()) return;
         const name = categoryName.trim();
         if (!name) {
             message.error("请输入分类名称");
@@ -472,7 +494,13 @@ export default function SkillsPage() {
                     ) : scope === "mine" ? (
                         <Button onClick={() => selectScope("public")}>去技能广场</Button>
                     ) : scope === "created" || scope === "public" ? (
-                        <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
+                        <Button
+                            type="primary"
+                            icon={<Plus className="size-4" />}
+                            onClick={() => {
+                                if (requireLogin()) setInstallOpen(true);
+                            }}
+                        >
                             安装技能
                         </Button>
                     ) : undefined
@@ -613,7 +641,13 @@ export default function SkillsPage() {
                                         <Button icon={<Sparkles className="size-4" />} onClick={() => setRecommendationsOpen(true)}>
                                             按行业推荐
                                         </Button>
-                                        <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
+                                        <Button
+                                            type="primary"
+                                            icon={<Plus className="size-4" />}
+                                            onClick={() => {
+                                                if (requireLogin()) setInstallOpen(true);
+                                            }}
+                                        >
                                             安装技能
                                         </Button>
                                     </>

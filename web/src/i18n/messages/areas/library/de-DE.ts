@@ -277,6 +277,11 @@ export const deDE: DeepStringRecord<typeof zhCN> = {
             myFolders: "Meine Kategorien",
             noResults: "Passen Sie Suchbegriffe oder Kategorien an oder entfernen Sie die Filter, um alles zu sehen.",
         },
+        empty: {
+            title: "Beginne mit deinem ersten Asset",
+            description: "Lade Referenzbilder hoch, speichere Prompts oder importiere vorhandene Assets. Nutze deine kreativen Arbeiten jederzeit wieder.",
+            canvas: "Du kannst auch Ergebnisse aus einer Leinwand speichern",
+        },
         form: {
             editTitle: "Asset bearbeiten",
             uploading: "Wird hochgeladen",

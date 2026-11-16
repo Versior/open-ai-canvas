@@ -1,8 +1,10 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { createBrowserRouter, Navigate, Outlet, useLocation } from "react-router";
+import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, type RouteObject } from "react-router";
 import { lazyAdminPage } from "@/pages/admin/admin-page-loader";
 
 import { RequireAuth } from "@/components/auth/require-auth";
+import { AuthDialogHost } from "@/components/auth/auth-dialog-host";
+import { GuestWorkspaceActions } from "@/components/auth/guest-workspace-actions";
 // 功能开关守卫包在页面 Suspense 之外，懒加载会让整个工作区退回全屏加载页；体积很小，直接静态引入。
 import { RequireFeature } from "@/components/auth/require-feature";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
@@ -93,6 +95,16 @@ const AdminReferralPage = lazyAdminPage(() => import("@/pages/admin/referral/ref
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
 const WelcomePage = lazy(() => import("@/pages/welcome"));
 
+function RootLayout() {
+    const navigate = useNavigate();
+    return (
+        <>
+            <Outlet />
+            <AuthDialogHost navigate={(to) => void navigate(to)} />
+        </>
+    );
+}
+
 function SiteHomeLayout() {
     const hydrated = useUserStore((state) => state.hydrated);
     const user = useUserStore((state) => state.user);
@@ -125,7 +137,9 @@ function AuthenticatedWorkspaceLayout() {
         <RequireAuth allowAnonymous={isGuestWorkspacePath(pathname)}>
             <Suspense fallback={fallback}>
                 <UserLayout>
-                    <Outlet />
+                    <GuestWorkspaceActions>
+                        <Outlet />
+                    </GuestWorkspaceActions>
                 </UserLayout>
             </Suspense>
         </RequireAuth>
@@ -144,14 +158,16 @@ function devRoutes() {
     const FolderPreviewLab = lazy(() => import("@/pages/dev/folder-preview-lab"));
     const PrevisReproLab = lazy(() => import("@/pages/dev/previs-repro-lab"));
     const TestVoiceRecording = lazy(() => import("@/pages/test-voice-recording"));
+    const ImagePackLab = lazy(() => import("@/pages/dev/image-pack-lab"));
     return [
         { path: "/dev/folders", element: fullScreenDeferred(<FolderPreviewLab />), errorElement: <RouteErrorPage /> },
         { path: "/dev/previs-repro", element: fullScreenDeferred(<PrevisReproLab />), errorElement: <RouteErrorPage /> },
         { path: "/test-voice-recording", element: <RequireAuth>{fullScreenDeferred(<TestVoiceRecording />)}</RequireAuth>, errorElement: <RouteErrorPage /> },
+        { path: "/dev/image-pack", element: fullScreenDeferred(<ImagePackLab />), errorElement: <RouteErrorPage /> },
     ];
 }
 
-export const router = createBrowserRouter([
+const routes: RouteObject[] = [
     { path: "/", element: <SiteHomeLayout />, errorElement: <RouteErrorPage />, children: [{ index: true, element: deferred(<CreatePage />) }] },
     {
         element: <AuthScene />,
@@ -227,7 +243,7 @@ export const router = createBrowserRouter([
                     </RequireAuth>
                 ),
             },
-            { path: "/assets", element: <RequireAuth>{deferred(<AssetsPage />)}</RequireAuth> },
+            { path: "/assets", element: <RequireAuth allowAnonymous>{deferred(<AssetsPage />)}</RequireAuth> },
             { path: "/inspiration", element: <RequireAuth>{deferred(<InspirationGalleryPage />)}</RequireAuth> },
             { path: "/inspiration/:templateUuid", element: <RequireAuth>{deferred(<WorkDetailPage />)}</RequireAuth> },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
@@ -377,4 +393,6 @@ export const router = createBrowserRouter([
         ],
     },
     { path: "*", element: fullScreenDeferred(<NotFound />) },
-]);
+];
+
+export const router = createBrowserRouter([{ element: <RootLayout />, children: routes }]);

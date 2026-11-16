@@ -1462,8 +1462,29 @@
     font-size: var(--fs-caption);
     text-align: center;
 }
-.es-tile-state[data-tone="error"] {
+.es-tile-state[data-tone] {
+    --image-pack-notice-art-size: clamp(32px, 17cqw, 56px);
     color: var(--es-ink-2);
+}
+.es-tile[data-state="failed"] {
+    container-type: inline-size;
+    background: transparent;
+}
+.es-tile-state[data-tone] > strong {
+    color: var(--es-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+.es-tile-state[data-tone] .ant-btn {
+    margin-top: var(--space-1);
+    border-color: var(--image-pack-notice-action-border);
+    background: var(--image-pack-notice-action-bg);
+    color: var(--image-pack-notice-accent);
+    box-shadow: none;
+}
+.es-tile-state[data-tone] .ant-btn:hover:not(:disabled) {
+    background: var(--image-pack-notice-action-hover);
+    color: var(--image-pack-notice-accent);
 }
 .es-tile-error {
     display: -webkit-box;

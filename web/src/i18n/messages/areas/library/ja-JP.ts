@@ -277,6 +277,11 @@ export const jaJP: DeepStringRecord<typeof zhCN> = {
             myFolders: "マイカテゴリ",
             noResults: "キーワードや左側のカテゴリを調整するか、フィルターを解除してすべて表示してください。",
         },
+        empty: {
+            title: "最初の素材から始めましょう",
+            description: "参考画像のアップロード、プロンプトの保存、既存素材のインポート。制作の成果を、次の作品でも活用できます。",
+            canvas: "キャンバスから制作結果を保存することもできます",
+        },
         form: {
             editTitle: "素材を編集",
             uploading: "アップロード中",

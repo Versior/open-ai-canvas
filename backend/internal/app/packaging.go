@@ -45,6 +45,14 @@ func (s *Service) PackagingCatalog(actor *model.User, admin bool) (packaging.Cat
 			return packaging.Catalog{}, err
 		}
 	}
+	return s.packagingCatalog(admin)
+}
+
+func (s *Service) GuestPackagingCatalog() (packaging.Catalog, error) {
+	return s.packagingCatalog(false)
+}
+
+func (s *Service) packagingCatalog(admin bool) (packaging.Catalog, error) {
 	result := packaging.DefaultCatalog()
 	row, err := s.repo.SystemSettingOptional(packagingCatalogKey)
 	if err != nil {

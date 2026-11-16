@@ -19,6 +19,7 @@ import { fetchPlugins, setUserPluginEnabled, type BackendPlugin, type PluginStat
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 
 import { PluginDetailsModal } from "./plugin-documentation-modals";
 import "./plugins.css";
@@ -68,17 +69,20 @@ const protocolSectionMeta = [
 ] as const;
 
 export default function PluginsPage() {
+    const requireLogin = useRequireLogin();
     const { message } = App.useApp();
     const navigate = useNavigate();
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const user = useUserStore((state) => state.user);
     const features = useUserStore((state) => state.features);
-    const installations = usePluginStore((state) => state.installations);
+    const savedInstallations = usePluginStore((state) => state.installations);
+    const installations = user ? savedInstallations : [];
     const ensurePlugin = usePluginStore((state) => state.ensurePlugin);
     const setEnabled = usePluginStore((state) => state.setEnabled);
     const setRuntimeStatuses = usePluginStore((state) => state.setRuntimeStatuses);
     const setPluginStates = usePluginStore((state) => state.setPluginStates);
-    const pluginStates = usePluginStore((state) => state.pluginStates);
+    const savedPluginStates = usePluginStore((state) => state.pluginStates);
+    const pluginStates = user ? savedPluginStates : {};
     const updateConfig = usePluginStore((state) => state.updateConfig);
     const builtinPlugins = useMemo(() => listRegisteredPlugins(), []);
     const [backendPlugins, setBackendPlugins] = useState<BackendPlugin[]>([]);
@@ -98,10 +102,15 @@ export default function PluginsPage() {
     const [eagleFoldersError, setEagleFoldersError] = useState("");
 
     useEffect(() => {
+        if (!user) return;
         for (const plugin of builtinPlugins) ensurePlugin(plugin.manifest);
-    }, [builtinPlugins, ensurePlugin]);
+    }, [builtinPlugins, ensurePlugin, user]);
 
     const reloadBackendPlugins = async () => {
+        if (!user) {
+            setBackendPlugins([]);
+            return;
+        }
         setBackendPluginsLoading(true);
         try {
             const result = await fetchPlugins();
@@ -143,7 +152,7 @@ export default function PluginsPage() {
         return registeredPlugins.filter((plugin) => {
             const state = pluginStates[plugin.manifest.id];
             const isApplicationPlugin = backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id);
-            if (user?.role !== "admin" && !features.systemPluginsVisibleToUsers && !isApplicationPlugin) return false;
+            if (user && user.role !== "admin" && !features.systemPluginsVisibleToUsers && !isApplicationPlugin) return false;
             const installation = installations.find((item) => item.manifest.id === plugin.manifest.id);
             const enabled = state?.effectiveEnabled ?? Boolean(installation?.enabled);
             const manifest = plugin.manifest;
@@ -177,7 +186,7 @@ export default function PluginsPage() {
     };
 
     const categoryCounts = useMemo(() => {
-        const visiblePlugins = registeredPlugins.filter((plugin) => user?.role === "admin" || features.systemPluginsVisibleToUsers || isOfficialApplicationPluginId(plugin.manifest.id));
+        const visiblePlugins = registeredPlugins.filter((plugin) => !user || user.role === "admin" || features.systemPluginsVisibleToUsers || isOfficialApplicationPluginId(plugin.manifest.id));
         const counts: Record<string, number> = { all: visiblePlugins.length, text: 0, image: 0, video: 0, audio: 0, payment: 0, other: 0 };
         for (const plugin of visiblePlugins) {
             for (const section of protocolSectionMeta) {
@@ -194,11 +203,12 @@ export default function PluginsPage() {
     const detailsPlugin = detailsPluginId ? registeredPlugins.find((plugin) => plugin.manifest.id === detailsPluginId) : undefined;
 
     const hasPluginConfiguration = (plugin: RegisteredPlugin) => Boolean(plugin.manifest.configuration?.fields?.length);
-    const canConfigurePlugin = (plugin: RegisteredPlugin) => Boolean(pluginStates[plugin.manifest.id]?.canConfigure) && (hasPluginConfiguration(plugin) || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID);
+    const canConfigurePlugin = (plugin: RegisteredPlugin) => (!user || Boolean(pluginStates[plugin.manifest.id]?.canConfigure)) && (hasPluginConfiguration(plugin) || plugin.manifest.id === RUNNINGHUB_PLUGIN_ID);
 
     const isPluginEnabled = (plugin: RegisteredPlugin, installation = installations.find((item) => item.manifest.id === plugin.manifest.id)) => pluginStates[plugin.manifest.id]?.effectiveEnabled ?? Boolean(installation?.enabled);
 
     const togglePlugin = async (plugin: RegisteredPlugin, enabled: boolean) => {
+        if (!requireLogin()) return;
         try {
             const next = await setUserPluginEnabled(plugin.manifest.id, enabled);
             setEnabled(plugin.manifest.id, enabled);
@@ -213,6 +223,7 @@ export default function PluginsPage() {
     };
 
     const loadEagleFolders = async (url = eagleBaseUrl) => {
+        if (!requireLogin()) return;
         setEagleFoldersLoading(true);
         setEagleFoldersError("");
         try {
@@ -227,6 +238,7 @@ export default function PluginsPage() {
     };
 
     const saveEagleConfig = () => {
+        if (!requireLogin()) return;
         const baseUrl = eagleBaseUrl.trim().replace(/\/$/, "");
         if (!/^https?:\/\//i.test(baseUrl)) {
             message.error("Eagle 地址必须以 http:// 或 https:// 开头");
@@ -428,7 +440,7 @@ export default function PluginsPage() {
                                                                     </span>
                                                                     <Switch
                                                                         className="plugin-state-switch"
-                                                                        disabled={!state?.canToggle}
+                                                                        disabled={Boolean(user) && !state?.canToggle}
                                                                         checked={enabled}
                                                                         aria-label={`${plugin.manifest.name}，当前${enabled ? "已启用，点击停用" : "已停用，点击启用"}`}
                                                                         title={state?.blockedReason}
@@ -440,7 +452,9 @@ export default function PluginsPage() {
                                                                             icon={<Settings2 className="size-4" />}
                                                                             aria-expanded={settingsPluginId === plugin.manifest.id}
                                                                             aria-haspopup="dialog"
-                                                                            onClick={() => setSettingsPluginId(plugin.manifest.id)}
+                                                                            onClick={() => {
+                                                                                if (requireLogin()) setSettingsPluginId(plugin.manifest.id);
+                                                                            }}
                                                                         >
                                                                             设置
                                                                         </Button>

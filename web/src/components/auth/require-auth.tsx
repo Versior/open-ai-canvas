@@ -4,6 +4,7 @@ import { Navigate, useLocation } from "react-router";
 import { FullScreenLoader } from "@/components/ui/aceternity/full-screen-loader";
 import { useAuthLoginMode } from "@/hooks/use-auth-entry";
 import { authPageURL } from "@/lib/auth-entry";
+import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 import { useAuthDialogStore } from "@/stores/use-auth-dialog-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -13,7 +14,7 @@ export function RequireAuth({ children, allowAnonymous = false }: { children: Re
     const user = useUserStore((state) => state.user);
 
     if (!hydrated) return <FullScreenLoader />;
-    if (!user && !allowAnonymous) return <LoginRequired next={location.pathname + location.search} />;
+    if (!user && !allowAnonymous && !isGuestWorkspacePath(location.pathname)) return <LoginRequired next={location.pathname + location.search} />;
     return children;
 }
 

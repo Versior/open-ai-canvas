@@ -230,6 +230,25 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
+.pkg-mockup-failure {
+    --image-pack-notice-art-size: 64px;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+}
+.pkg-mockup-failure strong {
+    color: var(--pkg-text);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+.pkg-mockup-failure p {
+    margin: var(--space-1) 0 0;
+    color: var(--pkg-muted);
+    font-size: var(--fs-caption);
+    line-height: var(--lh-body);
+    overflow-wrap: anywhere;
+}
 .pkg-production-preview {
     display: block;
     width: 100%;

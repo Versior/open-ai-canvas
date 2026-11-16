@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 type NotificationPreferencesStore = {
-    /** 生成完成时弹出带动效的通知，后台时在标签页上提醒。 */
+    /** 生成完成时启用提示音与后台标签提醒。 */
     generationNotice: boolean;
     /** 生成完成时播放提示音；总开关关闭时不生效。 */
     generationSound: boolean;

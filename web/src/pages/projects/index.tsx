@@ -8,6 +8,8 @@ import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { PageHeader, PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
 import { WorkspaceErrorState, WorkspaceLoadingState, WorkspaceNoResultsState } from "@/components/layout/workspace-state";
 import { deleteDrama, listDramas, type DramaListItem, type DramaStatus } from "@/services/api/drama";
+import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 
 import { formatCredits, MediaThumb, STATUS_LABEL } from "./drama-shared";
 import { progressFillStyle } from "@/lib/progress-fill";
@@ -26,6 +28,8 @@ const STATUS_FILTERS: Array<{ value: DramaStatus | "all"; label: string }> = [
 const ACCEPT = ".txt,.md,.markdown,text/plain,text/markdown";
 
 export default function DramaListPage() {
+    const requireLogin = useRequireLogin();
+    const userId = useUserStore((state) => state.user?.id);
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { message, modal } = App.useApp();
@@ -39,9 +43,10 @@ export default function DramaListPage() {
     useEffect(() => setPage(1), [search, status, pageSize]);
 
     const query = useQuery({
-        queryKey: ["dramas", { page, pageSize, search, status }],
+        queryKey: ["dramas", userId, { page, pageSize, search, status }],
         queryFn: ({ signal }) => listDramas({ page, pageSize, q: search || undefined, status: status === "all" ? undefined : status }, signal),
         placeholderData: keepPreviousData,
+        enabled: Boolean(userId),
         refetchInterval: (state) => (state.state.data?.items.some((item) => item.status === "running") ? 8_000 : false),
     });
     const remove = useMutation({
@@ -56,7 +61,9 @@ export default function DramaListPage() {
     const counts = data?.statusCounts || {};
     const total = counts.all ?? 0;
     const filtered = Boolean(search || status !== "all");
-    const openFile = (file: File) => navigate("/projects/new", { state: { file } });
+    const openFile = (file: File) => {
+        if (requireLogin()) navigate("/projects/new", { state: { file } });
+    };
     const confirmDelete = (item: DramaListItem) => {
         modal.confirm({
             title: `删除《${item.project.name}》？`,
@@ -102,7 +109,12 @@ export default function DramaListPage() {
 
     const actions = (
         <div className="collection-header-actions">
-            <Button icon={<ClipboardPaste />} onClick={() => navigate("/projects/new?paste=1")}>
+            <Button
+                icon={<ClipboardPaste />}
+                onClick={() => {
+                    if (requireLogin()) navigate("/projects/new?paste=1");
+                }}
+            >
                 粘贴正文
             </Button>
             <Button type="primary" icon={<Plus />} onClick={() => fileRef.current?.click()}>
@@ -144,7 +156,12 @@ export default function DramaListPage() {
                 </div>
 
                 {!total ? (
-                    <UploadHero onPick={() => fileRef.current?.click()} onPaste={() => navigate("/projects/new?paste=1")} />
+                    <UploadHero
+                        onPick={() => fileRef.current?.click()}
+                        onPaste={() => {
+                            if (requireLogin()) navigate("/projects/new?paste=1");
+                        }}
+                    />
                 ) : data?.items.length ? (
                     <>
                         <div className={`drama-library-grid ${query.isPlaceholderData ? "is-stale" : ""}`}>

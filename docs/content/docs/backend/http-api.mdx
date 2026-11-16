@@ -224,10 +224,18 @@ OpenAPI 中的路径都相对于服务端前缀 `/api`；浏览器和部署环�
 | --- | --- |
 | `GET /api/public/features` | `data.features`：各功能开关与 `configured`，不含操作人与更新时间。单地址 60 次/分，全站 1200 次/分 |
 | `GET /api/public/model-catalog` | 结构同 `GET /api/model-catalog`；按默认分组的渠道可见性与价格计算，不附加可用率统计，不放开分组隐藏的渠道。单地址 30 次/分，全站 600 次/分 |
+| `GET /api/public/workbench/tools?kind=image\|video` | 只返回已发布工具目录 `data.tools`；单地址 30 次/分，全站 600 次/分 |
+| `GET /api/public/interior/catalog` | 已发布的室内出图方式、空间与风格目录；单地址 30 次/分，全站 600 次/分 |
+| `GET /api/public/packaging/catalog` | 非管理端包装模板和参数目录；单地址 30 次/分，全站 600 次/分 |
+| `GET /api/public/skills` | 只允许 `scope=public`，支持公开搜索、排序、分页及平台策展筛选；个人技能范围和个人分类返回 401 |
+| `GET /api/public/skills/:id` | 只读已上架公开技能详情；私有技能返回 403，不返回私有正文 |
+| `GET /api/public/skills/curation` | 公开策展目录，与技能列表/详情共用单地址 60 次/分、全站 1200 次/分限流 |
 | `GET /api/public/libtv/gallery` | 参数与返回同 `GET /api/libtv/gallery`；同一组参数（含 requestId）共用缓存，首页不带 requestId 时游客拿到同一个 requestId，翻页顺序一致。单地址 20 次/分，全站 200 次/分（与作品详情共用） |
 | `GET /api/public/libtv/works/:uuid` | 返回同 `GET /api/libtv/works/:uuid`，按作品缓存 |
 
 报价（`POST /api/model-catalog/quote`、`/available`）、生成、上传、保存与 LibTV 导入仍要求登录。`GET /api/auth/session` 对游客仍只返回 `{ "user": null }`，前端另读 `/api/public/features`。
+
+工作台目录直接读取当前已发布配置，不使用上文的 60 秒缓存。游客直接进入真实页面，可查看表单、模板与布局；实际上传、生成、收藏、导出和保存时打开登录弹窗。个人项目、任务历史和账号素材不通过这些公开接口提供。
 
 ## LibTV 公开作品与模板
 

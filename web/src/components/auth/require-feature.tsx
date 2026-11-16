@@ -31,6 +31,7 @@ export function RequireFeature({ feature, children }: { feature: FeatureKey; chi
     const [error, setError] = useState("");
 
     useEffect(() => {
+        if (!user) return;
         let cancelled = false;
         setError("");
         refreshFeatureAvailability()
@@ -45,6 +46,7 @@ export function RequireFeature({ feature, children }: { feature: FeatureKey; chi
         };
     }, [feature, user?.id]);
 
+    if (!user) return children;
     if (checking)
         return (
             <WorkspacePage>

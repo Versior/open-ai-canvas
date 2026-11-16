@@ -10,6 +10,7 @@ import { resourceStorageKey } from "@/services/api/resources";
 import { generateInterior, getInteriorCatalog, type InteriorCatalog, type InteriorMode, type InteriorProjectKind, type InteriorRound, type InteriorRoundItem, type InteriorSurface } from "@/services/api/interior";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { InteriorBoard, InteriorViewer, type InteriorOutputTarget } from "./interior-board";
 import { InteriorComposer, interiorCountLimit, interiorDraftProblem, uploadInteriorImage, visibleInteriorModes, type InteriorDraft, type InteriorUpload } from "./interior-composer";
 import { interiorDownloadName, interiorImageModelOptions, interiorInitialModel, interiorModelRef, newInteriorId } from "./interior-models";
@@ -71,6 +72,7 @@ function initialWorkspace(): InteriorWorkspace {
 
 /** 室内设计：房间照片、毛坯、线稿出装修效果图；快速出图给业主，专业模式给设计师和装企。 */
 export default function InteriorPage() {
+    const requireLogin = useRequireLogin();
     const { message, modal } = App.useApp();
     const user = useUserStore((state) => state.user);
     const config = useEffectiveConfig();
@@ -193,6 +195,7 @@ export default function InteriorPage() {
     };
 
     const upload = useCallback(async (file: File, apply: (value: InteriorUpload | null) => void) => {
+        if (!requireLogin()) return;
         const previewUrl = URL.createObjectURL(file);
         previewUrls.current.add(previewUrl);
         apply({ resourceId: "", name: file.name, uploading: true, previewUrl });
@@ -254,6 +257,7 @@ export default function InteriorPage() {
     };
 
     const submit = async () => {
+        if (!requireLogin()) return;
         if (!catalog || !mode || !draft.source || busy) return;
         const professional = useMaterials ? current?.document.professional : undefined;
         const problem = (professional && renovationProblem(professional)) || interiorDraftProblem(draft, mode, surface, config, siteDefault);
@@ -464,6 +468,7 @@ export default function InteriorPage() {
     };
 
     const submitDialog = async () => {
+        if (!requireLogin()) return;
         if (!dialog) return;
         const name = dialog.name.trim();
         if (!name) {
@@ -600,6 +605,7 @@ export default function InteriorPage() {
 
     if (workspace === "materials") {
         const createMaterialPlan = async () => {
+            if (!requireLogin()) return;
             try {
                 const project = await ensureProject();
                 projects.update(project.id, (document) => ({ ...document, professional: { ...DEFAULT_RENOVATION } }));

@@ -4,7 +4,7 @@ import { useUserStore } from "@/stores/use-user-store";
 
 /** 全部风格按服务端实际模型和参数报价；报价失败不伪造零积分，也不改变任务状态。 */
 export function useInteriorEstimate(input: InteriorGenerateInput | null) {
-    const enabled = useUserStore((state) => state.features.creditsEnabled);
+    const enabled = useUserStore((state) => Boolean(state.user) && state.features.creditsEnabled);
     const [label, setLabel] = useState("");
     const key = JSON.stringify(input);
     useEffect(() => {

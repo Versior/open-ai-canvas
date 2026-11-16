@@ -1,8 +1,11 @@
 import { Button, Dropdown, Input } from "antd";
-import { ArrowUpRight, CircleAlert, Clapperboard, Copy, Download, Ellipsis, ImageOff, ImagePlus, LoaderCircle, Maximize2, Play, RefreshCw, RotateCcw, Search, SquarePen, X } from "lucide-react";
+import { ArrowUpRight, CircleAlert, CircleStop, Clapperboard, Copy, Download, Ellipsis, ImageOff, ImagePlus, LoaderCircle, Maximize2, Play, RefreshCw, RotateCcw, Search, SquarePen, X } from "lucide-react";
 import { memo, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { WorkspaceNoResultsState, WorkspaceState } from "@/components/layout/workspace-state";
+import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { SegmentedControl } from "@/components/ui/base/segmented-control/segmented-control";
 import { AntTooltip as Tooltip } from "@/components/ui/base/tooltip/ant-tooltip";
 import { RelativeTime } from "@/components/ui/product/relative-time";
@@ -146,6 +149,7 @@ function OutputTile({ batch, tile, kind, actions }: { batch: GalleryBatch; tile:
     return (
         <div
             className={cn("wb-tile is-output", output.kind === "video" && "is-video")}
+            data-image-pack-result={output.kind === "image" || undefined}
             role="button"
             tabIndex={0}
             aria-label={output.kind === "video" ? "预览视频" : "预览图片"}
@@ -221,9 +225,9 @@ function ProgressTile({ tile, actions, busy }: { tile: Extract<GalleryTile, { ty
 function FailedTile({ task, actions, busy }: { task: GenerationTask; actions: GalleryActions; busy: boolean }) {
     const cancelled = task.status === "cancelled";
     return (
-        <div className={cn("wb-tile is-failed", cancelled && "is-cancelled")}>
+        <div className={cn("wb-tile is-failed image-pack-notice", cancelled && "is-cancelled")}>
             <span className="wb-tile-state">
-                <CircleAlert />
+                <ImagePackNoticeArtwork icon={cancelled ? CircleStop : CircleAlert} tone={cancelled ? "neutral" : "error"} />
                 <strong>{cancelled ? "已取消" : "生成失败"}</strong>
                 {!cancelled && task.error ? (
                     <small className="wb-tile-error" title={task.error}>
@@ -235,6 +239,45 @@ function FailedTile({ task, actions, busy }: { task: GenerationTask; actions: Ga
                 </Button>
             </span>
         </div>
+    );
+}
+
+export function WorkbenchGalleryTile({ batch, tile, kind, actions, busy }: { batch: GalleryBatch; tile: GalleryTile; kind: WorkbenchKind; actions: GalleryActions; busy: boolean }) {
+    const content =
+        tile.type === "output" ? (
+            <OutputTile batch={batch} tile={tile} kind={kind} actions={actions} />
+        ) : tile.type === "active" ? (
+            <ProgressTile tile={tile} actions={actions} busy={busy} />
+        ) : tile.type === "failed" ? (
+            <FailedTile task={tile.task} actions={actions} busy={busy} />
+        ) : tile.type === "loading" ? (
+            <div className="wb-tile is-active" aria-busy="true">
+                <span className="wb-tile-shimmer" aria-hidden />
+            </div>
+        ) : (
+            <div className={cn("wb-tile", tile.state === "submitting" ? "is-active" : "is-pending")} aria-busy={tile.state === "submitting"}>
+                <span className="wb-tile-state">
+                    {tile.state === "submitting" ? <LoaderCircle className="wb-spin" /> : <CircleAlert />}
+                    <strong>{tile.state === "submitting" ? "提交中" : "未提交"}</strong>
+                </span>
+            </div>
+        );
+    if (kind !== "image") return content;
+    return (
+        <ImageGenerationPack
+            pending={tile.type === "active" || (tile.type === "pending" && tile.state === "submitting")}
+            succeeded={tile.type === "output" || tile.type === "loading"}
+            label={<ImagePackProgress task={tile.type === "active" ? tile.task : { status: "running", stage: "submitting" }} />}
+            pendingActions={
+                tile.type === "active" && tile.slot === 0 ? (
+                    <button type="button" className="wb-tile-cancel" aria-label="取消任务" disabled={busy} onClick={() => actions.cancelTask(tile.task)}>
+                        <X />
+                    </button>
+                ) : undefined
+            }
+        >
+            {content}
+        </ImageGenerationPack>
     );
 }
 
@@ -329,27 +372,9 @@ const BatchCard = memo(function BatchCard({ batch, kind, actions, busyTaskIds }:
                 </div>
             ) : null}
             <div className="wb-tiles" style={style}>
-                {batch.tiles.map((tile) =>
-                    tile.type === "output" ? (
-                        <OutputTile key={tile.key} batch={batch} tile={tile} kind={kind} actions={actions} />
-                    ) : tile.type === "active" ? (
-                        <ProgressTile key={tile.key} tile={tile} actions={actions} busy={busyTaskIds.has(tile.task.id)} />
-                    ) : tile.type === "failed" ? (
-                        <FailedTile key={tile.key} task={tile.task} actions={actions} busy={busyTaskIds.has(tile.task.id)} />
-                    ) : tile.type === "loading" ? (
-                        <div key={tile.key} className="wb-tile is-active" aria-busy="true">
-                            <span className="wb-tile-shimmer" aria-hidden />
-                        </div>
-                    ) : (
-                        <div key={tile.key} className={cn("wb-tile", tile.state === "submitting" ? "is-active" : "is-pending")} aria-busy={tile.state === "submitting"}>
-                            {tile.state === "submitting" ? <span className="wb-tile-shimmer" aria-hidden /> : null}
-                            <span className="wb-tile-state">
-                                {tile.state === "submitting" ? <LoaderCircle className="wb-spin" /> : <CircleAlert />}
-                                <strong>{tile.state === "submitting" ? "提交中" : "未提交"}</strong>
-                            </span>
-                        </div>
-                    ),
-                )}
+                {batch.tiles.map((tile) => (
+                    <WorkbenchGalleryTile key={tile.key} batch={batch} tile={tile} kind={kind} actions={actions} busy={tile.type !== "pending" && busyTaskIds.has(tile.task.id)} />
+                ))}
             </div>
         </article>
     );

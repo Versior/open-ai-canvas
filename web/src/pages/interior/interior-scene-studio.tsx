@@ -1,4 +1,6 @@
 import { App, Button, Input, Select, Tooltip } from "antd";
+import { useRequireLogin } from "@/hooks/use-require-login";
+import { useUserStore } from "@/stores/use-user-store";
 import { BookOpen, Box, History, Info, LoaderCircle, Plus, SlidersHorizontal, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ModelPicker } from "@/components/model-picker";
@@ -78,6 +80,8 @@ type Props = {
  * 生成按所选文本模型计费。
  */
 export function InteriorSceneStudio({ catalog, config, project, header, ensureProject, update, saveProject, onBusyChange, removeScene, handoff, onHandoffUsed, onRender }: Props) {
+    const requireLogin = useRequireLogin();
+    const user = useUserStore((state) => state.user);
     const { message, modal } = App.useApp();
     const [scope, setScope] = useState<ScopeChoice>("auto");
     const [composerOpen, setComposerOpen] = useState(false);
@@ -198,6 +202,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
     const problem = reference?.uploading ? "图片还在上传" : reference?.error ? "请移除上传失败的图片" : !description.trim() && !room && !style && !reference?.resourceId ? "传一张户型图或照片、写一句话，或者选个空间和风格" : modelProblem;
 
     const pickReference = (file: File) => {
+        if (!requireLogin()) return;
         const previewUrl = URL.createObjectURL(file);
         previewUrls.current.add(previewUrl);
         setReference({ resourceId: "", name: file.name, uploading: true, previewUrl });
@@ -243,6 +248,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
      * 先读图确认空间，再按读图结果检索知识和建模；空需求不能只凭默认知识给户型套一座别墅。
      */
     const generate = async () => {
+        if (!requireLogin()) return;
         if (busy || knowledgeRequest.current) return;
         if (problem) {
             setError(problem);
@@ -630,7 +636,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                             size="large"
                             block
                             icon={busy ? <LoaderCircle className="size-4 motion-safe:animate-spin" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
-                            disabled={Boolean(problem) || busy}
+                            disabled={Boolean(user) && (Boolean(problem) || busy)}
                             onClick={() => void generate()}
                         >
                             {readingKnowledge ? "正在读取知识" : submitting ? "正在提交" : reference?.resourceId && !description.trim() ? "AI 分析并生成 3D 模型" : "生成 3D 模型"}

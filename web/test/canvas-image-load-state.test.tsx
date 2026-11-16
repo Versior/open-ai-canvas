@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
+import type { CanvasNodeData } from "../src/types/canvas";
 
 // 图片加载失败不再留下透明空白：先强制重签一次原图地址自动重试，仍失败才显示「重新加载」。
 const dom = new Window({ url: "http://localhost/" });
@@ -205,4 +206,31 @@ test("GIF 节点在完整和概览模式均请求原图，静态图片继续使�
             host.remove();
         }
     }
+});
+
+test("开包期间解码图片不提前改变节点尺寸，结束后再按原比例回写", async () => {
+    const { CanvasNodeActionContext } = await import("../src/components/canvas/canvas-node-action-context");
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const node: CanvasNodeData = { id: "deferred-fit", title: "图片", type: CanvasNodeType.Image, position: { x: 0, y: 0 }, width: 320, height: 240, metadata: { content: "https://provider.example.com/deferred.png" } };
+    const updates: CanvasNodeData[] = [];
+    const actions = { updateMediaNode: (_id: string, update: (current: CanvasNodeData) => CanvasNodeData) => updates.push(update(node)) };
+    const render = (deferFit: boolean) =>
+        root.render(
+            <CanvasNodeActionContext.Provider value={actions}>
+                <ImageContent node={node} theme={canvasThemes.light} deferFit={deferFit} renderLOD="full" isBatchRoot={false} batchCount={0} batchExpanded={false} batchOpening={false} batchRecovering={false} />
+            </CanvasNodeActionContext.Provider>,
+        );
+    await act(async () => render(true));
+    await settle();
+    expect(updates).toHaveLength(0);
+    const src = host.querySelector("img")?.getAttribute("src");
+    await act(async () => render(false));
+    expect(updates).toHaveLength(1);
+    expect(updates[0].metadata?.naturalWidth).toBe(1824);
+    expect(updates[0].width / updates[0].height).toBeCloseTo(1824 / 1024, 2);
+    expect(host.querySelector("img")?.getAttribute("src")).toBe(src);
+    await act(async () => root.unmount());
+    host.remove();
 });

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Button, Checkbox, Typography } from "antd";
-import { ArrowDownToLine, Clapperboard, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowDownToLine, CircleAlert, CircleStop, Clapperboard, Image as ImageIcon, RotateCcw, Trash2 } from "lucide-react";
 import { AppModal } from "@/components/ui/product/app-modal/app-modal";
 import type { GenerationTask } from "@/services/api/task-center";
 import type { EcommerceDraft, EcommercePlan, EcommercePlanImage } from "@/services/api/ecommerce";
@@ -11,6 +11,9 @@ import type { EcommerceExportItem } from "./export";
 import { imageTypes, labelOf } from "./catalog";
 import { commerceCanvasAspect } from "./canvas-layout";
 import { CommerceGeneratingArtwork, CommerceResultImage } from "./result-image";
+import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
+import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notice-artwork";
+import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { SingleImageEditor, imageResultAsset } from "./result-gallery";
 import "./output-gallery.css";
 
@@ -308,15 +311,27 @@ function OutputCard({
     return (
         <article className={`commerce-output-card${selected ? " is-selected" : ""}`} data-ecommerce-image-id={image.id} data-status={failed ? "failed" : working ? "working" : status === "已完成" ? "done" : "idle"}>
             <div className="commerce-output-card-frame">
-                <button type="button" className="commerce-output-card-media" disabled={!src} onClick={() => src && onPreview({ image, index, src, assetId, resourceId })} aria-label={`预览第 ${index + 1} 张图片`}>
-                    {src ? (
-                        <CommerceResultImage ratio={commerceCanvasAspect(image.ratio)} src={src} alt={`${labelOf(imageTypes, image.imageType)}生成结果`} loading="lazy" />
-                    ) : working ? (
-                        <CommerceGeneratingArtwork queued={!image.taskId || task?.status === "queued"} label={String(index + 1).padStart(2, "0")} />
-                    ) : (
-                        <span className="commerce-output-empty-card">{task?.error || "等待生成"}</span>
-                    )}
-                </button>
+                <ImageGenerationPack pending={working} succeeded={!working && task?.status === "succeeded" && Boolean(src)} style={{ aspectRatio: commerceCanvasAspect(image.ratio) }} label={<ImagePackProgress task={task || { status: "queued" }} />}>
+                    <button type="button" data-image-pack-result className="commerce-output-card-media" disabled={!src} onClick={() => src && onPreview({ image, index, src, assetId, resourceId })} aria-label={`预览第 ${index + 1} 张图片`}>
+                        {src ? (
+                            <CommerceResultImage ratio={commerceCanvasAspect(image.ratio)} src={src} alt={`${labelOf(imageTypes, image.imageType)}生成结果`} loading="lazy" />
+                        ) : working ? (
+                            <CommerceGeneratingArtwork queued={!image.taskId || task?.status === "queued"} label={String(index + 1).padStart(2, "0")} />
+                        ) : (
+                            <span className={`commerce-output-empty-card${failed ? " image-pack-notice" : ""}`} data-tone={task?.status === "cancelled" ? "neutral" : failed ? "error" : undefined}>
+                                {failed ? (
+                                    <>
+                                        <ImagePackNoticeArtwork icon={task?.status === "cancelled" ? CircleStop : CircleAlert} tone={task?.status === "cancelled" ? "neutral" : "error"} />
+                                        <strong>{status}</strong>
+                                        <span>{task?.error || "可以调整要求后重新生成"}</span>
+                                    </>
+                                ) : (
+                                    "等待生成"
+                                )}
+                            </span>
+                        )}
+                    </button>
+                </ImageGenerationPack>
                 <span className="commerce-output-card-check">
                     <Checkbox checked={selected} onChange={onSelect} aria-label={`选择第 ${index + 1} 张图片`} />
                 </span>

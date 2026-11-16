@@ -86,6 +86,14 @@ func (s *Service) PublicWorkbenchTools(kind string) ([]WorkbenchToolView, error)
 func (s *Service) AdminWorkbenchTools(actor *model.User, kind string) ([]WorkbenchToolView, error) {
 	return s.workbenchDomain().AdminTools(actor, kind)
 }
+
+// 游客读取与登录用户相同的已发布工具目录，功能关闭仍在任务创建处校验。
+func (s *Service) GuestWorkbenchTools(kind string) ([]WorkbenchToolView, error) {
+	if kind != workbench.KindImage && kind != workbench.KindVideo {
+		return nil, BadAuthRequest("工作台类型无效")
+	}
+	return s.workbenchDomain().PublicTools(kind)
+}
 func (s *Service) CreateWorkbenchTool(actor *model.User, req WorkbenchToolInput) (*WorkbenchToolView, error) {
 	return s.workbenchDomain().CreateTool(actor, req)
 }

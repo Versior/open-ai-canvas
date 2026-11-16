@@ -11,19 +11,22 @@ import type { ExternalAssetFolder, ExternalAssetItem } from "@/lib/plugins/plugi
 import type { Asset } from "@/stores/use-asset-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { usePluginStore } from "@/stores/use-plugin-store";
 import { CollectionGrid, ListToolbar, PageHeader, PaginationBar, WorkspacePage } from "@/components/layout/workspace-page";
 import { AssetLibraryCard, AssetLibraryCardMedia } from "@/components/assets/asset-library-card";
 import "./eagle.css";
 
 export default function EagleLibraryPage() {
+    const requireLogin = useRequireLogin();
     const navigate = useNavigate();
     const { message } = App.useApp();
+    const userId = useUserStore((state) => state.user?.id);
     const brandName = useAppearanceStore((state) => state.appearance.brandName);
     const installations = usePluginStore((state) => state.installations);
     const hydrated = usePluginStore((state) => state.hydrated);
     const ensurePlugin = usePluginStore((state) => state.ensurePlugin);
-    const installation = installations.find((item) => item.manifest.id === eagleAssetPlugin.manifest.id);
+    const installation = userId ? installations.find((item) => item.manifest.id === eagleAssetPlugin.manifest.id) : undefined;
     const enabled = usePluginStore(
         (state) =>
             state.pluginStates[eagleAssetPlugin.manifest.id]?.effectiveEnabled ??
@@ -31,7 +34,6 @@ export default function EagleLibraryPage() {
     );
     const savedBaseUrl = installation?.config.baseUrl;
     const baseUrl = typeof savedBaseUrl === "string" && savedBaseUrl.trim() ? savedBaseUrl.trim() : EAGLE_DEFAULT_BASE_URL;
-    const userId = useUserStore((state) => state.user?.id);
     const provider = useMemo(() => createEagleAssetSource(baseUrl), [baseUrl, userId]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const loadController = useRef<AbortController | null>(null);
@@ -57,11 +59,13 @@ export default function EagleLibraryPage() {
     const totalBytes = useMemo(() => items.reduce((total, item) => total + (item.bytes || 0), 0), [items]);
 
     useEffect(() => {
+        if (!userId) return;
         ensurePlugin(eagleAssetPlugin.manifest);
-    }, [ensurePlugin]);
+    }, [ensurePlugin, userId]);
 
     const load = async (folderId = selectedFolder, search = keyword) => {
-        if (!enabled) return;
+        if (!requireLogin()) return;
+        if (!userId || !enabled) return;
         loadController.current?.abort();
         const controller = new AbortController();
         loadController.current = controller;
@@ -87,14 +91,14 @@ export default function EagleLibraryPage() {
         setItems([]);
         setPreviewItem(null);
         setLoading(false);
-        if (!enabled) return;
+        if (!userId || !enabled) return;
         setSelectedFolder("");
         setKeyword("");
         void load("", "");
         return () => loadController.current?.abort();
         // provider 随本机 API 地址变化；页面进入或配置变化时重新读取 Eagle。
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enabled, provider]);
+    }, [enabled, provider, userId]);
 
     const handleFolderSelect = (nextFolder: string) => {
         const folderId = nextFolder === "root" ? "" : nextFolder;
@@ -106,6 +110,7 @@ export default function EagleLibraryPage() {
     };
 
     const handleCreateFolder = async () => {
+        if (!requireLogin()) return;
         const name = folderName.trim();
         if (!name || !provider.createFolder || creatingFolder) return;
         setCreatingFolder(true);
@@ -123,6 +128,7 @@ export default function EagleLibraryPage() {
     };
 
     const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+        if (!requireLogin()) return;
         const files = Array.from(event.target.files || []);
         event.target.value = "";
         if (!files.length || !provider.uploadFile || working) return;
@@ -146,7 +152,7 @@ export default function EagleLibraryPage() {
         }
     };
 
-    if (hydrated && !enabled) {
+    if (userId && hydrated && !enabled) {
         return (
             <WorkspacePage grid className="library-page eagle-library-page">
                 <PageHeader
@@ -179,7 +185,7 @@ export default function EagleLibraryPage() {
                     <PageHeader
                         title="Eagle 素材库"
                         description={`Eagle 是${brandName}的外部素材来源；这里复用${brandName}素材库的浏览方式，直接读取和写入 Eagle 原始文件。`}
-                        meta={<span className="app-projects-header-meta assets-header-meta">{error ? "Eagle · 连接异常" : "Eagle · 已连接"}</span>}
+                        meta={<span className="app-projects-header-meta assets-header-meta">{!userId ? "Eagle · 待连接" : error ? "Eagle · 连接异常" : "Eagle · 已连接"}</span>}
                         actions={
                             <div className="assets-header-actions">
                                 <div className="assets-header-action-buttons">
@@ -258,7 +264,7 @@ export default function EagleLibraryPage() {
                                         <Tree className="eagle-folder-tree" blockNode selectable selectedKeys={selectedFolder ? [selectedFolder] : []} treeData={treeData} onSelect={(keys) => handleFolderSelect(String(keys[0] || "root"))} />
                                     </div>
                                 ) : (
-                                    <div className="eagle-folder-empty">Eagle 中还没有文件夹</div>
+                                    <div className="eagle-folder-empty">{userId ? "Eagle 中还没有文件夹" : "登录后连接 Eagle 文件夹"}</div>
                                 )
                             ) : null}
                             <Button className="eagle-folder-create" icon={<FolderPlus className="size-3.5" />} onClick={() => setFolderName((value) => (value ? "" : "新文件夹"))}>
@@ -347,7 +353,7 @@ export default function EagleLibraryPage() {
                                 </>
                             ) : (
                                 <div className="eagle-empty-state">
-                                    <EmptyState size="compact" title="当前 Eagle 文件夹没有文件" />
+                                    <EmptyState size="compact" title={userId ? "当前 Eagle 文件夹没有文件" : "登录后连接 Eagle，浏览和管理原始文件"} />
                                 </div>
                             )}
                         </section>

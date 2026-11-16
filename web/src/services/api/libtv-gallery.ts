@@ -1,4 +1,5 @@
 import { http } from "@/services/api/request";
+import { useUserStore } from "@/stores/use-user-store";
 import type { LibTVGalleryParams, LibTVGalleryResponse, LibTVWorkDetailResponse } from "@/types/libtv-gallery";
 
 export const LIBTV_GALLERY_PAGE_SIZE = 20;
@@ -14,16 +15,18 @@ export function buildLibTVGalleryQuery(params: LibTVGalleryParams) {
 }
 
 export function getLibTVGallery(params: LibTVGalleryParams) {
+    if (!useUserStore.getState().user) return getGuestLibTVGallery(params);
     return http.get<LibTVGalleryResponse>(`/libtv/gallery?${buildLibTVGalleryQuery(params)}`);
 }
 
 export function getLibTVWorkDetail(templateUuid: string) {
+    if (!useUserStore.getState().user) return getGuestLibTVWorkDetail(templateUuid);
     return http.get<LibTVWorkDetailResponse>(`/libtv/works/${encodeURIComponent(templateUuid)}`);
 }
 /** 游客读取公开作品：参数与返回同登录接口，服务端短缓存并按来源限流。 */
 export function getGuestLibTVGallery(params: LibTVGalleryParams) {
-    return http.get<LibTVGalleryResponse>(`/public/libtv/gallery?${buildLibTVGalleryQuery(params)}`);
+    return http.get<LibTVGalleryResponse>(`/public/libtv/gallery?${buildLibTVGalleryQuery(params)}`, { session: "public" });
 }
 export function getGuestLibTVWorkDetail(templateUuid: string) {
-    return http.get<LibTVWorkDetailResponse>(`/public/libtv/works/${encodeURIComponent(templateUuid)}`);
+    return http.get<LibTVWorkDetailResponse>(`/public/libtv/works/${encodeURIComponent(templateUuid)}`, { session: "public" });
 }

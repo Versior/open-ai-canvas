@@ -146,51 +146,6 @@
 .asset-collection-date, .asset-collection-source { color: var(--user-ink-soft); font-size: var(--fs-caption); }
 .asset-collection-summary { color: var(--user-ink-muted); font-size: var(--fs-caption); }
 .app-product-workspace .asset-collection-body h2 { font-size: 14px; line-height: 1.6; }
-.assets-collection-layout {
-    display: grid;
-    grid-template-columns: 220px minmax(0, 1fr);
-    align-items: start;
-    gap: 28px;
-}
-.assets-collection-filters {
-    position: sticky;
-    top: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    max-height: calc(100dvh - 120px);
-    overflow: hidden;
-    margin-bottom: 0;
-}
-.assets-collection-filter-scroll {
-    display: flex;
-    min-height: 0;
-    flex: 1;
-    flex-direction: column;
-    gap: 16px;
-    overflow: auto;
-    padding-right: 4px;
-}
-.collection-filter-group { display: flex; flex-direction: column; gap: 8px; }
-.collection-filter-label { color: var(--user-ink-soft); font-size: 11px; font-weight: 600; letter-spacing: .04em; white-space: nowrap; }
-.collection-filter-options,
-.assets-collection-filters .collection-folder-list {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 2px;
-}
-.assets-collection-filters .assets-filter-item { width: 100%; }
-.assets-collection-filters .collection-folder-list > button,
-.assets-collection-filters .collection-folder-list .assets-folder-row { width: 100%; max-width: none; }
-.collection-folder-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
-.collection-folder-heading .collection-filter-label { padding: 0; }
-.collection-trash-entry {
-    flex-shrink: 0;
-    padding-top: 8px;
-    border-top: 1px solid color-mix(in srgb, var(--user-ink) 8%, transparent);
-}
-.app-user-workspace .assets-collection-content .assets-library-grid { margin-top: 0; }
 
 /* Shared component material replaces legacy per-page strokes and shadows. */
 @layer utilities {
@@ -271,19 +226,6 @@
     .collection-toolbar-controls > .ant-input-affix-wrapper { width: 100%; }
     .collection-toolbar-controls { flex-basis: 100%; }
     .canvas-collection-title { font-size: 14px; }
-    .assets-collection-layout { grid-template-columns: 1fr; gap: var(--space-4); }
-    .assets-collection-filters {
-        position: static;
-        max-height: none;
-        overflow: visible;
-    }
-    .assets-collection-filter-scroll { overflow: visible; }
-    .collection-filter-group { gap: var(--space-2); }
-    .assets-collection-filters .collection-filter-options,
-    .assets-collection-filters .collection-folder-list { flex-direction: row; flex-wrap: wrap; }
-    .assets-collection-filters .assets-filter-item { width: auto; }
-    .assets-collection-filters .collection-folder-list > button,
-    .assets-collection-filters .collection-folder-list .assets-folder-row { width: auto; max-width: 220px; }
     .story-launcher-panel { padding: var(--space-4); }
     .story-launcher-main { flex-wrap: wrap; }
 }

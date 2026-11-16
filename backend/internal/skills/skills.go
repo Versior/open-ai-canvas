@@ -198,6 +198,29 @@ func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error
 	}, nil
 }
 
+func (s *Service) GuestSkills(req SkillListRequest) (*SkillList, error) {
+	if req.Scope != "" && req.Scope != "public" || req.LibraryCategoryID != "" || req.LibraryUncategorized {
+		return nil, kernel.Unauthorized("请先登录")
+	}
+	req.Scope = "public"
+	return s.Skills("", req)
+}
+
+func (s *Service) GuestSkillDetail(id string) (*SkillItem, error) {
+	skill, err := s.visibleSkill("", id)
+	if err != nil {
+		return nil, err
+	}
+	if skill.IsPrivate {
+		return nil, kernel.Forbidden("该技能未公开")
+	}
+	items, err := s.skillItems("", []model.Skill{*skill}, true)
+	if err != nil {
+		return nil, err
+	}
+	return &items[0], nil
+}
+
 func (s *Service) AddedSkills(userID string) ([]AddedSkillReference, error) {
 	rows, _, err := s.repo.Skills(repository.SkillListFilter{UserID: userID, Scope: "mine", Sort: "updated", Limit: -1})
 	if err != nil {
@@ -412,7 +435,7 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 			instruction = skill.Instruction
 		}
 		agentMode := ""
-		if state.Added || skill.OwnerID == userID {
+		if userID != "" && (state.Added || skill.OwnerID == userID) {
 			agentMode = NormalizeSkillAgentMode(state.AgentMode)
 		}
 		items = append(items, SkillItem{
@@ -424,7 +447,7 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 			Source: skill.Source, Tag: skill.Tag, SortWeight: skill.SortWeight, IsPrivate: skill.IsPrivate,
 			LikeCount: metric.LikeCount, IsLike: state.Liked, OwnerUID: skill.OwnerID,
 			EffectiveUser: SkillEffectiveUser{Name: ownerName, AvatarURL: ownerAvatarURL, UID: skill.OwnerID}, ShowcaseMedia: showcaseMedia,
-			AddedCount: metric.AddedCount, ExtraInfo: skill.ExtraInfo, IsAdded: state.Added || skill.OwnerID == userID, IsOwner: skill.OwnerID == userID,
+			AddedCount: metric.AddedCount, ExtraInfo: skill.ExtraInfo, IsAdded: userID != "" && (state.Added || skill.OwnerID == userID), IsOwner: userID != "" && skill.OwnerID == userID,
 			LibraryCategoryID: state.LibraryCategoryID, AgentMode: agentMode,
 		})
 	}

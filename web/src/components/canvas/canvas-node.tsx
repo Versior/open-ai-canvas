@@ -298,7 +298,7 @@ export const CanvasNode = React.memo(function CanvasNode({
                 ref={shellRef}
                 className="canvas-node-shell relative h-full w-full overflow-visible rounded-[var(--node-radius)]"
                 data-node-state={nodeState}
-                data-generation-reveal={generationRevealing ? "true" : undefined}
+                data-generation-reveal={generationRevealing && data.type !== CanvasNodeType.Image ? "true" : undefined}
                 data-connection-tilt={connectionTilt ? "true" : undefined}
                 data-state={data.metadata?.status || (isActive ? "active" : isRelated ? "related" : "idle")}
                 style={

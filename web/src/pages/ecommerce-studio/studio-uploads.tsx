@@ -7,6 +7,7 @@ import type { PickedWorkbenchAsset } from "@/pages/workbench/workbench-asset-pic
 import { studioImageUrl } from "./studio-parts";
 import { guessStudioView, studioImageFiles, studioViewPatch, uploadStudioPhoto } from "./studio-upload";
 import { useStudioStore } from "./use-studio-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 
 const WorkbenchAssetPicker = lazy(() => import("@/pages/workbench/workbench-asset-picker").then((module) => ({ default: module.WorkbenchAssetPicker })));
 
@@ -33,6 +34,7 @@ function probeSize(url: string) {
  * 第一次加图时才把新商品写到服务器（ensure），之后每张图上传完立即保存。
  */
 export function useStudioUploads(ensure: () => string) {
+    const requireLogin = useRequireLogin();
     const { message } = App.useApp();
     const update = useStudioStore((state) => state.update);
     const [pending, setPending] = useState<Record<StudioUploadKind, number>>({ photos: 0, references: 0 });
@@ -57,6 +59,7 @@ export function useStudioUploads(ensure: () => string) {
 
     const addFiles = useCallback(
         async (kind: StudioUploadKind, list: FileList | File[] | null | undefined) => {
+            if (!requireLogin()) return;
             const files = studioImageFiles(list);
             if (!files.length) {
                 message.warning("请选择图片（JPG、PNG 或 WebP）");
@@ -78,11 +81,12 @@ export function useStudioUploads(ensure: () => string) {
                 }
             }
         },
-        [append, ensure, message, room],
+        [append, ensure, message, room, requireLogin],
     );
 
     const addAssets = useCallback(
         async (kind: StudioUploadKind, assets: PickedWorkbenchAsset[]) => {
+            if (!requireLogin()) return;
             const productId = ensure();
             const { left, offset } = room(kind, productId, assets.length);
             const accepted = assets.filter((asset) => asset.kind === "image").slice(0, left);
@@ -94,7 +98,7 @@ export function useStudioUploads(ensure: () => string) {
                 setPending((current) => ({ ...current, [kind]: Math.max(0, current[kind] - 1) }));
             }
         },
-        [append, ensure, room],
+        [append, ensure, room, requireLogin],
     );
 
     return { pending, addFiles, addAssets };
@@ -187,7 +191,7 @@ export function StudioUploadBox({
                         <button type="button" className="es-upload-btn" aria-label={`上传${label}`} onClick={() => input.current?.click()}>
                             <Plus size={18} strokeWidth={1.75} />
                         </button>
-                        <button type="button" className="es-upload-btn" aria-label={`从素材库选择${label}`} onClick={() => setPicking(true)}>
+                        <button type="button" data-requires-login className="es-upload-btn" aria-label={`从素材库选择${label}`} onClick={() => setPicking(true)}>
                             <Images size={16} strokeWidth={1.75} />
                             <span>素材库</span>
                         </button>

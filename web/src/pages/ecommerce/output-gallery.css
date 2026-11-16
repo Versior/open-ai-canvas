@@ -200,12 +200,26 @@
     width: 100%;
     min-height: 200px;
     place-items: center;
+    align-content: center;
+    gap: var(--space-2);
     padding: var(--space-4);
     color: var(--user-ink-muted);
     font-size: var(--fs-caption);
     line-height: var(--lh-body);
     text-align: center;
     overflow-wrap: anywhere;
+}
+.commerce-output-empty-card strong {
+    color: var(--user-ink);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+}
+.commerce-output-empty-card[data-tone] {
+    --image-pack-notice-art-size: 64px;
+    background: transparent;
+}
+.commerce-output-card[data-status="failed"] .commerce-output-card-frame {
+    background: transparent;
 }
 .commerce-output-card-meta {
     display: flex;

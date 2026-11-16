@@ -33,6 +33,7 @@ import { syncGenerationTaskToCanvasStore } from "@/lib/canvas/canvas-generation-
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { resolveModelRequestConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
+import { useRequireLogin } from "@/hooks/use-require-login";
 import { listProjects, type ProjectSummary } from "@/services/api/projects";
 import { TaskDetailModal } from "./task-detail-modal";
 import { TaskGridCard } from "./task-grid-card";
@@ -80,7 +81,10 @@ export default function TasksPage() {
     const [searchParams, setSearchParams] = useSearchParams();
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
-    const projects = useCanvasStore((state) => state.projects);
+    const user = useUserStore((state) => state.user);
+    const requireLogin = useRequireLogin();
+    const localProjects = useCanvasStore((state) => state.projects);
+    const projects = user ? localProjects : [];
     const shortDramaEnabled = useUserStore((state) => state.features.shortDramaEnabled);
     const creditsEnabled = useUserStore((state) => state.features.creditsEnabled);
     const [form] = Form.useForm<CreateTaskInput & { operation: string }>();
@@ -209,7 +213,7 @@ export default function TasksPage() {
     const renderTaskGridCard = (task: GenerationTask) => <TaskGridCard key={task.id} task={task} effectiveConfig={effectiveConfig} actingId={actingId} onOpen={() => void openTaskDetail(task)} onRetry={() => void runAction(task.id)} />;
 
     useEffect(() => {
-        if (!shortDramaEnabled) {
+        if (!user || !shortDramaEnabled) {
             setDomainProjects([]);
             return;
         }
@@ -227,7 +231,7 @@ export default function TasksPage() {
         return () => {
             cancelled = true;
         };
-    }, [shortDramaEnabled]);
+    }, [shortDramaEnabled, user]);
 
     useEffect(() => {
         const maxPage = Math.max(1, Math.ceil(filteredTasks.length / pageSize));
@@ -258,6 +262,10 @@ export default function TasksPage() {
 
     const loadTasks = useCallback(
         async (showLoading = false) => {
+            if (!user) {
+                setTasks([]);
+                return [];
+            }
             if (showLoading) setLoading(true);
             try {
                 const next = await listGenerationTasks();
@@ -271,7 +279,7 @@ export default function TasksPage() {
                 if (showLoading) setLoading(false);
             }
         },
-        [message, syncCompletedCanvasTasks, t],
+        [message, syncCompletedCanvasTasks, t, user],
     );
 
     const openTaskDetail = useCallback(
@@ -365,6 +373,7 @@ export default function TasksPage() {
     };
 
     const submitTask = async () => {
+        if (!requireLogin()) return;
         const values = await form.validateFields();
         setCreating(true);
         try {
@@ -436,7 +445,13 @@ export default function TasksPage() {
                             </span>
                         }
                         actions={
-                            <Button type="primary" icon={<Plus className="size-3.5" />} onClick={() => setCreateOpen(true)}>
+                            <Button
+                                type="primary"
+                                icon={<Plus className="size-3.5" />}
+                                onClick={() => {
+                                    if (requireLogin()) setCreateOpen(true);
+                                }}
+                            >
                                 {t("library.tasks.page.newTask")}
                             </Button>
                         }
@@ -545,7 +560,14 @@ export default function TasksPage() {
                             title={taskEmptyState(statusFilter).title}
                             description={taskEmptyState(statusFilter).description}
                             action={
-                                <Button className="library-primary-action" type="primary" icon={<Plus className="size-3.5" />} onClick={() => setCreateOpen(true)}>
+                                <Button
+                                    className="library-primary-action"
+                                    type="primary"
+                                    icon={<Plus className="size-3.5" />}
+                                    onClick={() => {
+                                        if (requireLogin()) setCreateOpen(true);
+                                    }}
+                                >
                                     {t("library.tasks.page.newTask")}
                                 </Button>
                             }

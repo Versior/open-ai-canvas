@@ -34,6 +34,8 @@ describe("登录入口打开方式", () => {
         expect(authDialogLanding("/create")).toBe("/create");
         expect(authDialogLanding("/share/canvas/token?x=1")).toBe("/share/canvas/token?x=1");
         expect(authDialogLanding("/canvas/abc")).toBe("/");
+        expect(authDialogLanding("/toolbox/image")).toBe("/toolbox/image");
+        expect(authDialogLanding("/assets")).toBe("/assets");
         expect(authDialogLanding("//evil.example")).toBe("/");
     });
 
@@ -53,7 +55,8 @@ describe("登录入口打开方式", () => {
         }
         // 首页创作输入框的未发送内容只在内存里，两种模式都必须用弹窗。
         expect(source("pages/create/index.tsx")).toContain("openAuth({ preferDialog: true })");
-        expect(source("application.tsx")).toContain("<AuthDialogHost navigate={navigateFromAuthDialog} />");
+        expect(source("router.tsx")).toContain("<AuthDialogHost navigate=");
+        expect(source("application.tsx")).not.toContain("<AuthDialogHost");
     });
 
     test("后台登录与注册页提供打开方式选择并保留原有分区", () => {

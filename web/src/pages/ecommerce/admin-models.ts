@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useUserStore } from "@/stores/use-user-store";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { getCommerceAgentSetting, type CommerceAgentModelRef, type CommerceAgentSetting } from "@/services/api/ecommerce-knowledge";
 import { modelOptionName } from "@/stores/config-model-options";
@@ -40,9 +41,11 @@ export type CommerceAdminModels = {
  * image input is used so a fresh deployment still works.
  */
 export function useCommerceAdminModels(config: AiConfig): CommerceAdminModels {
+    const user = useUserStore((state) => state.user);
     const [setting, setSetting] = useState<CommerceAgentSetting | null>(null);
     const [loadError, setLoadError] = useState("");
     useEffect(() => {
+        if (!user) return;
         let live = true;
         void getCommerceAgentSetting()
             .then((value) => {
@@ -54,7 +57,7 @@ export function useCommerceAdminModels(config: AiConfig): CommerceAdminModels {
         return () => {
             live = false;
         };
-    }, []);
+    }, [user]);
     const textModels = useMemo(() => selectableModelsByCapability(config, "text"), [config]);
     return useMemo(() => {
         if (!setting) return { planningModel: "", visionModel: "", loaded: false, problem: loadError };

@@ -1,5 +1,5 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, Home, History as HistoryIcon, Image as ImageIcon, Infinity as InfinityIcon, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleUserRound, Home, History as HistoryIcon, Image as ImageIcon, Images, Infinity as InfinityIcon, LibraryBig, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
@@ -62,37 +62,34 @@ function toolItem(slug: NavigationToolSlug, to: string, t: TFunction): Workspace
     return { id: slug, title: tool ? t(tool.labelKey) : slug, icon: tool?.icon, to };
 }
 
-function buildNav(features: FeatureAvailability, t: TFunction): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
+function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
     const groups: WorkspaceNavGroup[] = [
         {
             items: [
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
-                ...(features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Package, to: "/studio" }] : []),
-                ...(features.interiorEnabled ? [{ id: "interior", title: t("nav.sidebar.interior"), icon: Sofa, to: "/interior" }] : []),
-                { id: "packaging", title: t("nav.sidebar.packaging"), icon: Package, to: "/packaging" },
-                { ...toolItem("assets", "/assets", t), title: t("nav.sidebar.assets") },
                 { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
-                ...(features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
-                ...(features.videoReplicationEnabled ? [{ id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" }] : []),
-                ...(features.ecommerceEnabled ? [{ id: "ecommerce", title: t("nav.sidebar.ecommerce"), icon: ShoppingBag, to: "/ecommerce" }] : []),
+                ...(guest || features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
+                ...(guest || features.videoReplicationEnabled ? [{ id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" }] : []),
+                ...(guest || features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Images, to: "/studio" }] : []),
+                ...(guest || features.ecommerceEnabled ? [{ id: "ecommerce", title: t("nav.sidebar.ecommerce"), icon: ShoppingBag, to: "/ecommerce" }] : []),
+                ...(guest || features.interiorEnabled ? [{ id: "interior", title: t("nav.sidebar.interior"), icon: Sofa, to: "/interior" }] : []),
+                { id: "packaging", title: t("nav.sidebar.packaging"), icon: Package, to: "/packaging" },
             ],
         },
         {
             heading: t("nav.sidebar.headingTools"),
             items: [
-                ...(features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: t("nav.sidebar.toolboxImage"), icon: ImageIcon, to: "/toolbox/image" }] : []),
-                ...(features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: t("nav.sidebar.toolboxVideo"), icon: Video, to: "/toolbox/video" }] : []),
+                ...(guest || features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: t("nav.sidebar.toolboxImage"), icon: ImageIcon, to: "/toolbox/image" }] : []),
+                ...(guest || features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: t("nav.sidebar.toolboxVideo"), icon: Video, to: "/toolbox/video" }] : []),
                 { ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") },
-                ...(features.pluginCenterEnabled ? [{ ...toolItem("plugins", "/plugins", t), title: t("nav.sidebar.plugins") }] : []),
+                ...(guest || features.pluginCenterEnabled ? [{ ...toolItem("plugins", "/plugins", t), title: t("nav.sidebar.plugins") }] : []),
                 toolItem("inspiration", "/inspiration", t),
-                ...(features.taskCenterEnabled ? [{ id: "tasks", title: t("nav.sidebar.history"), icon: HistoryIcon, to: "/tasks" }] : []),
+                ...(guest || features.taskCenterEnabled ? [{ id: "tasks", title: t("nav.sidebar.history"), icon: HistoryIcon, to: "/tasks" }] : []),
             ],
         },
     ];
 
-    // 管理、设置和退出登录不再占据参考站式侧栏底部，而是通过用户卡片菜单进入。
-    // 路由和写操作仍保留，避免把用户端导航变成无法访问的装饰。
-    return { groups, footer: [] };
+    return { groups, footer: [{ ...toolItem("assets", "/assets", t), title: t("nav.sidebar.assets"), icon: LibraryBig }] };
 }
 
 function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user: NonNullable<ReturnType<typeof useUserStore.getState>["user"]> | null }) {
@@ -347,6 +344,7 @@ export function workspaceNavActiveId(pathname: string, section?: string | null) 
     if (segments[0] === "toolbox" && segments[1]) return `toolbox-${segments[1]}`;
     const slug = segments[0] || "home";
     if (slug === "create") return "home";
+    if (slug === "studio") return "ecommerce-studio";
     return slug === "settings" && section ? `settings:${section}` : slug;
 }
 
@@ -357,7 +355,7 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
     const user = useUserStore((state) => state.user);
     const { handleLogout } = useWorkspaceLogout();
     const { t, i18n } = useTranslation();
-    const { groups, footer } = useMemo(() => buildNav(features, t), [features, t, i18n.language]);
+    const { groups, footer } = useMemo(() => buildNav(features, t, !user), [features, t, i18n.language, user]);
 
     const activeId = workspaceNavActiveId(pathname, searchParams.get("section"));
 
@@ -407,24 +405,21 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
                         {!collapsed && user ? <WorkspaceSidebarHistory key={user.id} userId={user.id} onNavigate={onNavigate} /> : null}
                     </div>
                 </div>
-            </LayoutGroup>
-
-            <div className="app-workspace-sidebar-footer shrink-0 px-3 py-3">
-                {features.welcomeEnabled ? (
-                    <a href="/welcome" aria-label={t("auth.backHome")} title={t("auth.backHome")} className="flex h-9 items-center gap-3 rounded-md px-3 text-xs text-foreground/55 hover:bg-surface-hover hover:text-foreground" onClick={onNavigate}>
-                        <Home className="size-4 shrink-0" />
-                        {!collapsed ? <span>{t("auth.backHome")}</span> : null}
-                    </a>
-                ) : null}
-                <WorkspaceSidebarProfile collapsed={collapsed} user={user} />
-                {footer.length ? (
-                    <div className="mt-2 flex flex-col gap-0.5">
+                <div className="app-workspace-sidebar-footer shrink-0 px-3 py-3">
+                    <nav className="app-workspace-sidebar-library" aria-label={t("nav.sidebar.assets")}>
                         {footer.map((item) => (
                             <NavItem key={item.id} item={item} activeId={activeId} onSelect={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
                         ))}
-                    </div>
-                ) : null}
-            </div>
+                    </nav>
+                    {features.welcomeEnabled ? (
+                        <a href="/welcome" aria-label={t("auth.backHome")} title={t("auth.backHome")} className="flex h-9 items-center gap-3 rounded-md px-3 text-xs text-foreground/55 hover:bg-surface-hover hover:text-foreground" onClick={onNavigate}>
+                            <Home className="size-4 shrink-0" />
+                            {!collapsed ? <span>{t("auth.backHome")}</span> : null}
+                        </a>
+                    ) : null}
+                    <WorkspaceSidebarProfile collapsed={collapsed} user={user} />
+                </div>
+            </LayoutGroup>
         </div>
     );
 }
