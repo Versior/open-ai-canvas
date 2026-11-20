@@ -15,14 +15,20 @@ package_plugin() {
   rm -f "$temporary_file"
   (
     cd "$package_dir"
-    if [ "$package_id" = kling-v4-official ]; then
-      stage=$(mktemp -d)
-      trap 'rm -rf "$stage"' EXIT
-      cp -R manifest.json README.md docs LICENSE "$stage/"
-      cd "$stage"
-      export TZ=UTC
-      find . -type f -exec chmod 644 {} + -exec touch -t 200001010000 {} +
-    fi
+    case "$package_id" in
+      official-payment-*) ;;
+      *)
+        # Request releases are addressed by the SHA-256 of the entire ZIP.
+        stage=$(mktemp -d)
+        trap 'rm -rf "$stage"' EXIT
+        for item in manifest.json README.md docs assets web backend LICENSE; do
+          if [ -e "$item" ]; then cp -R "$item" "$stage/"; fi
+        done
+        cd "$stage"
+        export TZ=UTC
+        find . -type f -exec chmod 644 {} + -exec touch -t 200001010000 {} +
+        ;;
+    esac
     find manifest.json README.md docs assets web backend LICENSE -type f 2>/dev/null | LC_ALL=C sort | zip -X -q "$temporary_file" -@
   )
   mv "$temporary_file" "$output_file"

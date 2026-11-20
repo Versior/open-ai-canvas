@@ -95,7 +95,7 @@ imageSize 映射标准档位，并透传已校验的自定义图片分辨率；�
   "apiVersion": "yingce.plugin/v2",
   "id": "google-gemini-image",
   "name": "Google Gemini Image",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "author": "Google / 影策",
   "description": "Google Gemini Image 独立请求协议插件。",
   "documentation": "<当前插件的完整 documentation，由 README.md 与 docs/interface.md 拼接而成；为避免 JSON 递归，此处不重复展开正文。>",

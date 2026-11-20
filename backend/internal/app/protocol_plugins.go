@@ -134,6 +134,12 @@ func retainRequestPackage(record pluginRegistryRecord, next protocol.Manifest, d
 	return history, nil
 }
 
+// BootstrapOfflinePlugins performs the same installation and historical digest validation as startup.
+func BootstrapOfflinePlugins(dataDir string) error {
+	_, err := newPluginRuntime(dataDir)
+	return err
+}
+
 func newPluginRuntime(dataDir string) (*pluginRuntime, error) {
 	dataDir = strings.TrimSpace(dataDir)
 	if dataDir == "" {

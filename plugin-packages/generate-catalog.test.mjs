@@ -116,6 +116,15 @@ test("unknown selections fail before writing any package", async (t) => {
   assert.deepEqual(await snapshot(temp), before);
 });
 
+test("regeneration preserves versioned fork and audio request contracts", async (t) => {
+  const { temp } = await fixture(t);
+  const ids = ["openai-images", "google-gemini-image", "doubao-streaming-tts"];
+  generate(temp, ids);
+  for (const id of ids) {
+    assert.deepEqual(runtime(await json(join(temp, id, "manifest.json"))), runtime(await json(join(root, id, "manifest.json"))), id);
+  }
+});
+
 test("Seedream regeneration preserves the published layer decomposition contract", async (t) => {
   const { temp } = await fixture(t);
   const id = "volcengine-ark-seedream";

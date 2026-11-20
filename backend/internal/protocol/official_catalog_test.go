@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -24,6 +26,21 @@ func TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins(t *testing.T
 	if len(paths) < 70 {
 		t.Fatalf("official protocol packages = %d, want at least 70", len(paths))
 	}
+	// Append new id@version checksums; never replace an existing release. Multiple
+	// rows for one identity document conflicting historical packages from the old
+	// fork and upstream: neither may become current under that identity again.
+	ledger, err := os.ReadFile(filepath.Join("..", "..", "..", "plugin-packages", "request-releases.sha256"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	releases := map[string][]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(ledger)), "\n") {
+		digest, identity, ok := strings.Cut(line, "  ")
+		if !ok {
+			t.Fatalf("invalid request release checksum: %q", line)
+		}
+		releases[identity] = append(releases[identity], digest)
+	}
 	providerOwners := map[string]string{}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
@@ -38,6 +55,11 @@ func TestOfficialProtocolPackagesAreSelfContainedDeclarativePlugins(t *testing.T
 			// Payment packages use the yingce.payment/v1 executable ABI rather than
 			// the declarative AI provider contract covered by this catalog test.
 			continue
+		}
+		identity := pkg.Manifest.Metadata.ID + "@" + pkg.Manifest.Metadata.Version
+		digest := sha256.Sum256(data)
+		if known := releases[identity]; len(known) != 1 || known[0] != hex.EncodeToString(digest[:]) {
+			t.Errorf("request release %s has SHA-256 %x; recorded: %v. Publish changed ZIPs under a new version and append its checksum", identity, digest, known)
 		}
 		if pkg.Manifest.APIVersion != "yingce.plugin/v2" {
 			t.Fatalf("%s apiVersion = %q", filepath.Base(path), pkg.Manifest.APIVersion)
