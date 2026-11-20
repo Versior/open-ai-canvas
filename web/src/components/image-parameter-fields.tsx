@@ -362,32 +362,25 @@ export function ImageParameterSchemaEditor({ definitions, parameters, disabled, 
                                     <div className="grid grid-cols-2 gap-2">
                                         <label className="space-y-2 text-xs">
                                             <span>最小值</span>
-                                            <InputNumber
-                                                className="w-full"
-                                                aria-label={`${field.label}最小值`}
-                                                disabled={disabled}
-                                                max={field.max}
-                                                value={field.min}
-                                                onChange={(min) => update(field.name, { min: min ?? definition.min })}
-                                            />
+                                            <InputNumber className="w-full" aria-label={`${field.label}最小值`} disabled={disabled} max={field.max} value={field.min} onChange={(min) => update(field.name, { min: min ?? definition.min })} />
                                         </label>
                                         <label className="space-y-2 text-xs">
                                             <span>最大值</span>
-                                            <InputNumber
-                                                className="w-full"
-                                                aria-label={`${field.label}最大值`}
-                                                disabled={disabled}
-                                                min={field.min}
-                                                value={field.max}
-                                                onChange={(max) => update(field.name, { max: max ?? definition.max })}
-                                            />
+                                            <InputNumber className="w-full" aria-label={`${field.label}最大值`} disabled={disabled} min={field.min} value={field.max} onChange={(max) => update(field.name, { max: max ?? definition.max })} />
                                         </label>
                                     </div>
                                 ) : null}
                                 {(field.type === "number" || field.type === "integer") && !definition.values?.length ? (
                                     <label className="space-y-1.5 text-xs">
                                         <span>步长</span>
-                                        <InputNumber className="w-full" aria-label={`${field.label}步长`} disabled={disabled} min={field.type === "integer" ? 1 : undefined} value={field.step} onChange={(step) => update(field.name, { step: step ?? undefined })} />
+                                        <InputNumber
+                                            className="w-full"
+                                            aria-label={`${field.label}步长`}
+                                            disabled={disabled}
+                                            min={field.type === "integer" ? 1 : undefined}
+                                            value={field.step}
+                                            onChange={(step) => update(field.name, { step: step ?? undefined })}
+                                        />
                                     </label>
                                 ) : null}
                                 {!field.values?.length && (
