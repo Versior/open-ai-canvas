@@ -1,5 +1,26 @@
 import { Popover } from "antd";
-import { ChevronDown, ChevronRight, CircleUserRound, Home, History as HistoryIcon, Image as ImageIcon, Images, Infinity as InfinityIcon, LibraryBig, Package, PanelLeftClose, PanelLeftOpen, Plus, ScanSearch, ShoppingBag, Sofa, Video } from "lucide-react";
+import {
+    ChevronDown,
+    ChevronRight,
+    ChevronsUpDown,
+    CircleUserRound,
+    Home,
+    History as HistoryIcon,
+    Image as ImageIcon,
+    Images,
+    Infinity as InfinityIcon,
+    LibraryBig,
+    Package,
+    PanelLeftClose,
+    PanelLeftOpen,
+    Plus,
+    ScanSearch,
+    ShoppingBag,
+    Sofa,
+    Users,
+    Video,
+    Wallet,
+} from "lucide-react";
 import { LayoutGroup, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
@@ -9,7 +30,7 @@ import type { TFunction } from "i18next";
 import { AuthLoginLink } from "@/components/auth/auth-login-link";
 import { BrandLogoFrame } from "@/components/brand/brand-logo";
 import { UserAvatar } from "@/components/layout/user-avatar";
-import { UserGroupAvatarRing, UserGroupBadge } from "@/components/layout/user-group-badge";
+import { UserGroupAvatarRing } from "@/components/layout/user-group-badge";
 import { Kbd } from "@/components/ui/base/kbd";
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { useWorkspaceLogout } from "@/hooks/use-workspace-logout";
@@ -17,6 +38,7 @@ import { aceternityMotion } from "@/lib/aceternity-motion";
 import { cn } from "@/lib/utils";
 import { preloadWorkspaceRoute } from "@/lib/workspace-route-modules";
 import { useUserStore, type FeatureAvailability } from "@/stores/use-user-store";
+import { useSkillLibraryAccess } from "@/lib/skill-access";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { WorkspaceAccountCard } from "./workspace-account-card";
 import { WorkspaceSidebarCheckin } from "./workspace-sidebar-checkin";
@@ -24,6 +46,8 @@ import { WorkspaceSidebarStorageMeter } from "./workspace-sidebar-storage-meter"
 import { openWorkspaceWallet } from "@/lib/workspace-wallet";
 import { trackSiteTrafficAction } from "@/services/site-traffic";
 import { WorkspaceSidebarHistory } from "./workspace-sidebar-history";
+import { TeamSpaceSwitcher } from "./team-space-switcher";
+import { teamIdFromPath } from "@/lib/team-query-keys";
 import "./workspace-sidebar-history.css";
 
 export type WorkspaceNavItem = {
@@ -62,12 +86,13 @@ function toolItem(slug: NavigationToolSlug, to: string, t: TFunction): Workspace
     return { id: slug, title: tool ? t(tool.labelKey) : slug, icon: tool?.icon, to };
 }
 
-function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
+function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean, canUseSkills: boolean): { groups: WorkspaceNavGroup[]; footer: WorkspaceNavItem[] } {
     const groups: WorkspaceNavGroup[] = [
         {
             items: [
                 { ...toolItem("create", "/", t), id: "home", title: t("nav.sidebar.home") },
                 { ...toolItem("canvas", "/canvas", t), title: t("nav.sidebar.canvas") },
+                ...(!guest && features.teamsEnabled ? [{ id: "teams", title: "公司与团队", icon: Users, to: "/teams" }] : []),
                 ...(guest || features.shortDramaEnabled ? [{ ...toolItem("projects", "/projects", t), title: t("nav.sidebar.projects") }] : []),
                 ...(guest || features.videoReplicationEnabled ? [{ id: "video-replication", title: t("nav.sidebar.videoReplication"), icon: ScanSearch, to: "/video-replication" }] : []),
                 ...(guest || features.ecommerceStudioEnabled ? [{ id: "ecommerce-studio", title: t("nav.sidebar.ecommerceStudio"), icon: Images, to: "/studio" }] : []),
@@ -81,7 +106,7 @@ function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean): 
             items: [
                 ...(guest || features.imageWorkbenchEnabled ? [{ id: "toolbox-image", title: t("nav.sidebar.toolboxImage"), icon: ImageIcon, to: "/toolbox/image" }] : []),
                 ...(guest || features.videoWorkbenchEnabled ? [{ id: "toolbox-video", title: t("nav.sidebar.toolboxVideo"), icon: Video, to: "/toolbox/video" }] : []),
-                { ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") },
+                ...(guest || canUseSkills ? [{ ...toolItem("skills", "/skills", t), title: t("nav.sidebar.skills") }] : []),
                 ...(guest || features.pluginCenterEnabled ? [{ ...toolItem("plugins", "/plugins", t), title: t("nav.sidebar.plugins") }] : []),
                 toolItem("inspiration", "/inspiration", t),
                 ...(guest || features.taskCenterEnabled ? [{ id: "tasks", title: t("nav.sidebar.history"), icon: HistoryIcon, to: "/tasks" }] : []),
@@ -95,8 +120,9 @@ function buildNav(features: FeatureAvailability, t: TFunction, guest: boolean): 
 function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user: NonNullable<ReturnType<typeof useUserStore.getState>["user"]> | null }) {
     const [menuOpen, setMenuOpen] = useState(false);
     const { t } = useTranslation();
-    const userGroup = useUserStore((state) => state.userGroup);
     const profileName = user?.displayName || user?.username || t("shell.guest");
+    const profileMeta = user?.email || (user ? `@${user.username}` : "");
+    const teamId = teamIdFromPath(useLocation().pathname);
 
     if (!user) {
         return (
@@ -121,8 +147,8 @@ function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user
 
     return (
         <div className={cn("app-workspace-sidebar-account", collapsed && "is-collapsed")}>
-            <WorkspaceSidebarCheckin collapsed={collapsed} />
-            <WorkspaceSidebarStorageMeter collapsed={collapsed} />
+            {!teamId ? <WorkspaceSidebarCheckin collapsed={collapsed} /> : null}
+            {!teamId ? <WorkspaceSidebarStorageMeter collapsed={collapsed} /> : null}
             <div className={cn("app-workspace-sidebar-profile-row", collapsed && "is-collapsed")}>
                 <Popover open={menuOpen} onOpenChange={setMenuOpen} trigger="click" placement="topLeft" arrow={false} rootClassName="workspace-account-popover" content={content}>
                     <button type="button" className={cn("app-workspace-sidebar-profile", collapsed && "is-collapsed")} aria-label={t("shell.openAccountMenu")} title={profileName}>
@@ -132,9 +158,10 @@ function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user
                         {!collapsed ? (
                             <span className="app-workspace-sidebar-profile-copy">
                                 <strong>{profileName}</strong>
-                                {userGroup?.badgeStyle === "vip" || userGroup?.badgeStyle === "svip" ? <UserGroupBadge className="self-start" /> : <span>{t("shell.workbench")}</span>}
+                                <span>{profileMeta}</span>
                             </span>
                         ) : null}
+                        {!collapsed ? <ChevronsUpDown className="app-workspace-sidebar-profile-toggle" aria-hidden /> : null}
                     </button>
                 </Popover>
             </div>
@@ -145,6 +172,8 @@ function WorkspaceSidebarProfile({ collapsed, user }: { collapsed: boolean; user
 function WorkspaceSwitcher({ collapsed, onNavigate, onExpand, onCollapse }: { collapsed: boolean; onNavigate: () => void; onExpand: () => void; onCollapse: () => void }) {
     const appearance = useAppearanceStore((state) => state.appearance);
     const { t } = useTranslation();
+    const user = useUserStore((state) => state.user);
+    const teamsEnabled = useUserStore((state) => state.features.teamsEnabled);
     // 内置品牌只显示完整字母 Logo；自定义 Logo 使用中性浅底承托。
     const mark = (
         <BrandLogoFrame
@@ -156,9 +185,13 @@ function WorkspaceSwitcher({ collapsed, onNavigate, onExpand, onCollapse }: { co
     );
     return (
         <div className={cn("app-workspace-sidebar-brand-row relative shrink-0", collapsed && "is-collapsed")}>
-            <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
-                {mark}
-            </Link>
+            {user && teamsEnabled ? (
+                <TeamSpaceSwitcher collapsed={collapsed} onNavigate={onNavigate} />
+            ) : (
+                <Link to="/" onClick={onNavigate} className="app-workspace-sidebar-brand-button group" aria-label={t("shell.brandHome", { brand: appearance.brandName })}>
+                    {mark}
+                </Link>
+            )}
             <button
                 type="button"
                 className="product-icon-button app-workspace-brand-toggle"
@@ -257,6 +290,7 @@ function NavItem({
             {linkTo ? (
                 <Link
                     to={linkTo}
+                    viewTransition
                     aria-current={isActive ? "page" : undefined}
                     className={rowClassName}
                     data-nav-id={item.id}
@@ -355,9 +389,28 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
     const user = useUserStore((state) => state.user);
     const { handleLogout } = useWorkspaceLogout();
     const { t, i18n } = useTranslation();
-    const { groups, footer } = useMemo(() => buildNav(features, t, !user), [features, t, i18n.language, user]);
-
-    const activeId = workspaceNavActiveId(pathname, searchParams.get("section"));
+    const canUseSkills = useSkillLibraryAccess();
+    const personalNav = useMemo(() => buildNav(features, t, !user, canUseSkills), [features, t, i18n.language, user, canUseSkills]);
+    const teamId = features.teamsEnabled ? teamIdFromPath(pathname) : undefined;
+    const base = teamId ? `/teams/${encodeURIComponent(teamId)}` : "";
+    const { groups, footer } = teamId
+        ? {
+              groups: [
+                  {
+                      items: [
+                          ...[...personalNav.groups[0].items, ...personalNav.footer]
+                              .filter((item) => item.id === "canvas" || item.id === "assets" || (features.creditsEnabled && item.id === "home"))
+                              .map((item) => ({ ...item, to: `${base}${item.id === "home" ? "/create" : item.to}` })),
+                          { id: "team-members", title: "成员与邀请", icon: Users, to: `${base}/members` },
+                          ...(features.creditsEnabled ? [{ id: "team-wallet", title: "团队积分", icon: Wallet, to: `${base}/wallet` }] : []),
+                      ],
+                  },
+              ],
+              footer: [],
+          }
+        : personalNav;
+    const section = pathname.slice(base.length).split("/")[1];
+    const activeId = teamId && (section === "members" || section === "wallet") ? `team-${section}` : pathname === "/teams" ? "teams" : workspaceNavActiveId(pathname.slice(base.length) || "/canvas", searchParams.get("section"));
 
     const scrollRef = useRef<HTMLDivElement>(null);
     const sectionsRef = useRef<HTMLDivElement>(null);
@@ -402,7 +455,7 @@ export function WorkspaceSidebarNav({ collapsed, onNavigate, onOpenSearch, onExp
                                 <NavGroup key={index} group={group} activeId={activeId} onNavigate={onNavigate} onOpenSearch={onOpenSearch} onLogout={() => void handleLogout()} collapsed={collapsed} />
                             ))}
                         </nav>
-                        {!collapsed && user ? <WorkspaceSidebarHistory key={user.id} userId={user.id} onNavigate={onNavigate} /> : null}
+                        {!collapsed && user && !teamId ? <WorkspaceSidebarHistory key={user.id} userId={user.id} onNavigate={onNavigate} /> : null}
                     </div>
                 </div>
                 <div className="app-workspace-sidebar-footer shrink-0 px-3 py-3">

@@ -45,6 +45,7 @@ func TestCloudAgentReadArgumentsRejectBeforeReadingCanvas(t *testing.T) {
 }
 
 func TestCloudAgentReadArgumentFeedbackUsesAdvertisedSchema(t *testing.T) {
+	s, _, _, _ := creationTestService(t)
 	// skill_read_file 受服务端技能 scope 门禁：关闭时不得被广播。两种 scope 都要覆盖，
 	// 否则「未广播工具拿不到 schema」这条权限回归就失去了守卫。
 	for _, skillsEnabled := range []bool{true, false} {
@@ -56,7 +57,7 @@ func TestCloudAgentReadArgumentFeedbackUsesAdvertisedSchema(t *testing.T) {
 				call := cloudAgentCall{ID: "read-1"}
 				call.Function.Name = name
 				call.Function.Arguments = `{"private-value-do-not-echo":"private-value-do-not-echo"}`
-				_, err := cloudAgentReadTool(nil, "user", state, call)
+				_, err := cloudAgentReadTool(s.repo, "user", state, call)
 				if err == nil {
 					t.Fatal("unknown argument was accepted")
 				}

@@ -1,11 +1,13 @@
+import { hasSkillLibraryAccess, useSkillLibraryAccess } from "@/lib/skill-access";
 import { createClientUUID } from "@/lib/client-id";
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type DragEvent as ReactDragEvent } from "react";
 import { App, Button } from "antd";
 import { appQueryClient } from "@/lib/query-client";
 import { sameAgentRequestTarget, type AgentRequestTarget } from "@/lib/agent-page-context";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { EyeOff, FileText, ImagePlus, MoveDiagonal2, SquareDashedMousePointer, X } from "lucide-react";
+import { EyeOff, FileText, ImagePlus, MoveDiagonal2, X } from "lucide-react";
 import { canvasNodeMentionToken } from "@/lib/canvas/canvas-resource-references";
+import { observeCanvasGestureActive } from "@/lib/canvas/canvas-live-viewport";
 import { CANVAS_IMAGE_ASSET_DND_TYPE } from "@/lib/canvas/canvas-asset-dnd";
 import {
     AGENT_ATTACHMENT_MAX,
@@ -137,6 +139,7 @@ import { useAgentPanelDock } from "./use-agent-panel-dock";
 import { useAgentReasoningPreference } from "./use-agent-reasoning-preference";
 import "./canvas-cloud-agent.css";
 import { appendAgentError, appendUniqueMessage, applyAgentEvent, positiveNumber, type ApprovalState } from "./canvas-cloud-agent-events";
+import { ModelPicker } from "@/components/model-picker";
 import { AgentConversation, AgentHeader, AgentHistory, AgentLauncher, ComposerControls } from "./canvas-cloud-agent-panel-parts";
 import { useGlobalAgentStore, type AgentInsertedNode, type AgentPrefillRequest } from "@/stores/use-global-agent-store";
 
@@ -216,11 +219,17 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const onFocusNode = useGlobalAgentStore((state) => state.canvas?.onFocusNode);
     const insertAgentMarkdown = useGlobalAgentStore((state) => state.canvas?.insertAgentMarkdown);
     const open = useGlobalAgentStore((state) => state.open);
+    const panelElementRef = useRef<HTMLElement>(null);
+    useEffect(() => {
+        const panel = panelElementRef.current;
+        if (open && panel) return observeCanvasGestureActive(panel.ownerDocument, (active) => panel.toggleAttribute("data-canvas-busy", active));
+    }, [open]);
     const onOpen = useGlobalAgentStore((state) => state.openAgent);
     const onCollapse = useGlobalAgentStore((state) => state.closeAgent);
     const setDocked = useGlobalAgentStore((state) => state.setDocked);
     const dock = useAgentPanelDock();
     const userId = useUserStore((state) => state.user?.id);
+    const canUseSkills = useSkillLibraryAccess();
     const accountScope = getActiveUserScope();
     const accountIsCurrent = () => getActiveUserScope() === accountScope && useUserStore.getState().user?.id === userId;
     const baseTheme = canvasThemes[useActiveTheme()];
@@ -468,7 +477,16 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     }, [config, restoredModelResolution]);
     const thinking = useMemo(() => modelCapabilityConfigFor(config, selectedModel).text?.thinking || LEGACY_TEXT_THINKING_CONFIG, [config, selectedModel]);
     const [reasoningMode, setReasoningMode] = useAgentReasoningPreference(userId, selectedModel, thinking);
-    const installedSkills = useMemo(() => skills.filter((skill) => skill.isAdded), [skills]);
+    const browsingSkills = canUseSkills && open && view === "settings";
+    const welcomeReady = historyHydrated && pendingHydrated && !cloudOpeningId && (!canvasId || cloudHistoryReady);
+    const needsInstalledSkills = browsingSkills || (canUseSkills && open && view === "chat" && welcomeReady && !messages.length && !busy && !running && !approval);
+    const installedSkills = useMemo(() => (canUseSkills ? skills.filter((skill) => skill.isAdded) : []), [canUseSkills, skills]);
+    useEffect(() => {
+        setSkills([]);
+        setMarketSkills([]);
+        setSkillCatalogReady(false);
+        setSkillRecommendationsOpen(false);
+    }, [userId, canUseSkills]);
     const status = run?.status || "idle";
     const statusLabel =
         // 服务端 queued 是等待执行资源，叫「等待启动」，与输入框的排队消息区分开。
@@ -518,7 +536,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         });
     }, [clearGlobalPrefill, globalPrefillRequest, canvasPrefillRequest, canvasId, historyHydrated, pendingHydrated, cloudOpeningId]);
 
-    const reloadProfile = useCallback(async () => {
+    const fetchProfile = useCallback(async () => {
         const requestId = ++profileRequestRef.current;
         setProfileLoading(true);
         setProfileError(undefined);
@@ -526,12 +544,18 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         try {
             const result = await getAgentProfile({ projectId: domainProjectId, canvasId });
             if (profileRequestRef.current === requestId) setProfileView(result);
+            return result;
         } catch (cause) {
             if (profileRequestRef.current === requestId) setProfileError(cause instanceof Error ? cause.message : String(cause));
+            throw cause;
         } finally {
             if (profileRequestRef.current === requestId) setProfileLoading(false);
         }
     }, [canvasId, domainProjectId]);
+
+    const reloadProfile = useCallback(async () => {
+        await fetchProfile().catch(() => undefined);
+    }, [fetchProfile]);
 
     useEffect(() => {
         void reloadProfile();
@@ -555,9 +579,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     }, [skillSearch]);
 
     useEffect(() => {
+        if (!needsInstalledSkills) return;
         let active = true;
-        setSkills([]);
         const refresh = () => {
+            if (!hasSkillLibraryAccess()) return;
             void listAddedSkills()
                 .then((result) => {
                     if (!active) return;
@@ -573,16 +598,16 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         };
         refresh();
         window.addEventListener("canvas-skills-changed", refresh);
-        window.addEventListener("focus", refresh);
+        if (browsingSkills) window.addEventListener("focus", refresh);
         return () => {
             active = false;
             window.removeEventListener("canvas-skills-changed", refresh);
             window.removeEventListener("focus", refresh);
         };
-    }, [open, userId]);
+    }, [userId, needsInstalledSkills, browsingSkills]);
 
     useEffect(() => {
-        if (view !== "settings") return;
+        if (!browsingSkills) return;
         let active = true;
         setSkillsLoading(true);
         void listSkills({
@@ -607,9 +632,10 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         return () => {
             active = false;
         };
-    }, [view, debouncedSkillSearch]);
+    }, [browsingSkills, userId, debouncedSkillSearch]);
 
     const loadMoreSkills = async () => {
+        if (!hasSkillLibraryAccess()) return;
         const requestKey = skillBrowseKeyRef.current;
         if (skillsLoading || skillPageRequestRef.current || !skillHasMore || skillSearch.trim() !== debouncedSkillSearch) return;
         skillPageRequestRef.current = true;
@@ -1309,14 +1335,15 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             // Editing model settings or prompt must not silently create a new charge.
             if (pending?.request && pending.request.prompt !== value) throw new Error("上一条请求结果待确认，请先原样重试上一条消息，再发送新要求");
             if (!pending?.request) {
-                if (profileLoading) throw new Error("正在确认长期偏好快照，请稍后再发送");
-                if (!profileView || profileError) throw new Error("长期偏好快照尚未确认，请重新读取后再发送");
                 const capabilities = await getAgentCapabilities();
                 if (!accountIsCurrent() || currentScope.current !== scope) return "skipped";
                 if (!capabilities.permissionModes.includes(settings.permissionMode)) throw new Error("当前后端不支持所选 Agent 权限，请更新后端");
-                if (settings.skillIds.length && !capabilities.skills) throw new Error("当前后端尚未接入技能库");
                 // 请求使用点击发送时的目标；等待同步期间切页不能改变已确认的对象。
                 if (target.canvasId) await prepareCanvasForCloudAction(target.canvasId);
+                if (!accountIsCurrent() || currentScope.current !== scope) return "skipped";
+                // 新建画布在首次保存前只是浏览器草稿，服务端读不到它的偏好；所以偏好在画布落库之后读取，
+                // 打开面板时的预读失败（草稿画布）不能挡住发送。
+                const profile = profileView && !profileError && !profileLoading ? profileView : await fetchProfile();
                 if (!accountIsCurrent() || currentScope.current !== scope) return "skipped";
                 const agentConfig = { ...config, model: effectiveModel };
                 const requestConfig = resolveModelRequestConfig(agentConfig, effectiveModel);
@@ -1326,7 +1353,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                     ...target,
                     prompt: value,
                     reasoningMode: settings.reasoningMode,
-                    profileRevision: profileView.revision,
+                    profileRevision: profile.revision,
                     model: modelOptionName(effectiveModel) || undefined,
                     ...(logicalModelId ? { logicalModelId } : requestConfig.channelId ? { channelId: requestConfig.channelId, channelModelKey: modelOptionName(effectiveModel) || undefined } : {}),
                     focusNodeIds: target.canvasId ? focus.focusNodeIds : [],
@@ -1516,7 +1543,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             outboxDispatchRef.current = false;
         }
     };
-    const outboxDispatchReady = historyHydrated && pendingHydrated && outboxReady && !cloudOpeningId && Boolean(profileView) && !profileLoading && !profileError;
+    const outboxDispatchReady = historyHydrated && pendingHydrated && outboxReady && !cloudOpeningId && !profileLoading;
     const outboxDispatchBlocker = agentOutboxDispatchBlocker(outbox, {
         ready: outboxDispatchReady,
         requestInFlight: busy || Boolean(pendingSubmission.current?.request),
@@ -2016,7 +2043,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
     const visionMissing = composerAttachments.some((item) => item.kind === "image") && Boolean(selectedModel) && !modelSupportsImageInspection(config, selectedModel);
     const visionCandidate = visionMissing ? selectImageInspectionModel(config, selectedModel) : "";
     const contextBar =
-        pageContext || (canvasId && selectionCount > 0) || visionMissing || longTextVisible || (running && run && !sameAgentRequestTarget({ canvasId, pageContext }, run)) ? (
+        pageContext || visionMissing || longTextVisible || (running && run && !sameAgentRequestTarget({ canvasId, pageContext }, run)) ? (
             <>
                 {pageContext ? (
                     <AgentContextChip icon={<FileText className="size-3.5 shrink-0" aria-hidden="true" />} title="小影会读取当前页面的最新分镜，修改前展示审批预览">
@@ -2026,26 +2053,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 {running && run && !sameAgentRequestTarget({ canvasId, pageContext }, run) ? (
                     <AgentContextChip tone="warning" icon={<FileText className="size-3.5 shrink-0" aria-hidden="true" />}>
                         本轮仍在处理发起时的页面，下一条消息使用当前页面
-                    </AgentContextChip>
-                ) : null}
-                {canvasId && selectionCount > 0 ? (
-                    <AgentContextChip
-                        tone={selectionExcluded ? "off" : "default"}
-                        title="发送时会把选中的节点作为重点交给 Agent"
-                        icon={<SquareDashedMousePointer className="size-3.5 shrink-0" aria-hidden="true" />}
-                        actions={
-                            <button
-                                type="button"
-                                className="agent-context-chip-action"
-                                aria-pressed={selectionExcluded}
-                                aria-label={selectionExcluded ? "这条消息带上选中的节点" : "这条消息不带选中的节点"}
-                                onClick={() => setSelectionExcluded((value) => !value)}
-                            >
-                                {selectionExcluded ? "带上" : <X className="size-3" aria-hidden="true" />}
-                            </button>
-                        }
-                    >
-                        {selectionExcluded ? `这条不带选中的 ${selectionCount} 个节点` : selectionCount > AGENT_FOCUS_NODE_LIMIT ? `已选 ${selectionCount} 个节点，前 ${AGENT_FOCUS_NODE_LIMIT} 个作为重点` : `已选 ${selectionCount} 个节点`}
                     </AgentContextChip>
                 ) : null}
                 {visionMissing ? (
@@ -2264,7 +2271,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
         return parts.join(" · ");
     };
 
-    const showPendingRetry = Boolean(pendingRetryText) && !retryingPending && !busy;
+    const showPendingRetry = !busy && Boolean(pendingRetryText) && !retryingPending;
     const outboxTray =
         outbox.items.length || showPendingRetry ? (
             <AgentOutboxTray
@@ -2273,7 +2280,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 subtitle={outboxSubtitle}
                 primaryAction={outboxPrimaryAction}
                 itemMeta={outboxItemMeta}
-                pendingRetry={showPendingRetry ? { text: pendingRetryText, disabled: busy || !historyHydrated || !pendingHydrated, onRetry: () => void submit(pendingRetryText) } : null}
+                pendingRetry={showPendingRetry ? { text: pendingRetryText, disabled: !historyHydrated || !pendingHydrated, onRetry: () => void submit(pendingRetryText) } : null}
                 onPrimary={runOutboxPrimary}
                 onEdit={startOutboxEdit}
                 onRemove={removeOutboxItem}
@@ -2289,6 +2296,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
             <AnimatePresence>
                 {open ? (
                     <motion.aside
+                        ref={panelElementRef}
                         initial={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 20, scale: 0.975 }}
                         animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
                         exit={reducedMotion ? { opacity: 0 } : dock.active ? { opacity: 0, x: 24 } : { opacity: 0, y: 12, scale: 0.985 }}
@@ -2396,7 +2404,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         <AgentHistory
                                             conversations={conversations}
                                             activeConversationId={activeConversationId}
-                                            theme={theme}
+                                            disabledReason={canSwitchConversation() ? undefined : running || busy ? "本轮结束后可切换对话" : cloudOpeningId ? "正在打开对话…" : "当前对话尚未就绪，暂时无法切换"}
                                             onBack={() => setView("chat")}
                                             onNew={newConversation}
                                             onOpen={(conversation) => void openConversation(conversation)}
@@ -2409,7 +2417,14 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                         />
                                     </motion.div>
                                 ) : (
-                                    <motion.div key="chat" className="flex min-h-0 flex-1 flex-col" initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} transition={{ duration: reducedMotion ? 0 : 0.18 }}>
+                                    <motion.div
+                                        key="chat"
+                                        className={`flex min-h-0 flex-1 flex-col${pendingQuestion ? " overflow-y-auto overscroll-contain" : ""}`}
+                                        initial={{ opacity: 0, x: -12 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0, x: -12 }}
+                                        transition={{ duration: reducedMotion ? 0 : 0.18 }}
+                                    >
                                         <AgentHeader
                                             conversationTitle={conversations.find((conversation) => conversation.id === activeConversationId)?.title}
                                             theme={theme}
@@ -2474,7 +2489,6 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             key={activeConversationId}
                                             theme={theme}
                                             messages={messages}
-                                            onChooseSkill={() => setSkillRecommendationsOpen(true)}
                                             onFocusNode={onFocusNode}
                                             onUndo={busy || running || otherAgentRunning ? undefined : (target) => void undoCanvasStep(target)}
                                             undoStates={undoStates}
@@ -2488,7 +2502,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             approvalSubmitting={approvalSubmitting}
                                             approvalBlockedReason={approvalBlockedReason}
                                             onOpenSkillRecommendations={() => setSkillRecommendationsOpen(true)}
-                                            onDraftPrompt={historyHydrated && pendingHydrated && !cloudOpeningId && (!canvasId || cloudHistoryReady) ? (draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft)) : undefined}
+                                            onDraftPrompt={welcomeReady ? (draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft)) : undefined}
                                             onApprovalReasonChange={(reason) => setApproval((current) => (current ? { ...current, reason } : current))}
                                             onApprove={(settings) => void submitApproval("approve", settings)}
                                             onReject={() => void submitApproval("reject")}
@@ -2606,6 +2620,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                                 onReferenceSelection: referenceSelection,
                                             }}
                                             contextBar={contextBar}
+                                            canvasSelection={canvasId ? { count: selectionCount, excluded: selectionExcluded, onToggle: () => setSelectionExcluded((value) => !value) } : undefined}
                                             charLimit={AGENT_PROMPT_MAX_CHARS}
                                             blockReason={attachmentBlockReason}
                                             onLongTextPaste={insertAgentText ? (text) => setLongTextOffer({ text }) : undefined}
@@ -2613,13 +2628,28 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                                             stopping={stopping}
                                             references={references}
                                             includeAssetLibrary={false}
+                                            submitAccessory={
+                                                <ModelPicker
+                                                    config={config}
+                                                    value={selectedModel}
+                                                    capability="text"
+                                                    onChange={setModel}
+                                                    variant="creation"
+                                                    fullWidth
+                                                    adaptiveTrigger
+                                                    className="agent-composer-model-trigger !h-8 !min-w-0 !border-0 !shadow-none"
+                                                    popoverClassName="agent-model-picker-popover"
+                                                    showSelectedPrice={false}
+                                                    showOptionPrices
+                                                    placeholder="选择文本模型"
+                                                />
+                                            }
                                             left={
                                                 <ComposerControls
                                                     config={config}
                                                     selectedModel={selectedModel}
                                                     permissionMode={permissionMode}
                                                     theme={theme}
-                                                    onModelChange={setModel}
                                                     onPermissionChange={setPermissionMode}
                                                     reasoningMode={reasoningMode}
                                                     onReasoningModeChange={setReasoningMode}
@@ -2639,7 +2669,7 @@ export const CanvasCloudAgentPanel = memo(function CanvasCloudAgentPanel() {
                 </Suspense>
             ) : null}
             {/* 安装结果通过 canvas-skills-changed 事件刷新技能库，这里不重复拉取。 */}
-            <SkillRecommendationsModal open={skillRecommendationsOpen} onClose={() => setSkillRecommendationsOpen(false)} />
+            <SkillRecommendationsModal open={canUseSkills && skillRecommendationsOpen} onClose={() => setSkillRecommendationsOpen(false)} />
         </>
     );
 });

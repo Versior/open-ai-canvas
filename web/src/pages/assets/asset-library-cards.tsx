@@ -4,7 +4,7 @@
 
 import { Dropdown, type MenuProps } from "antd";
 import type { MouseEvent } from "react";
-import { AlertTriangle, AudioLines, Box, Clock3, Copy, Download, FileText, FolderOpen, MoreHorizontal, PencilLine, Play, RotateCcw, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
+import { AlertTriangle, AudioLines, Box, Clock3, Copy, Download, FileText, FolderOpen, MoreHorizontal, PencilLine, Play, RotateCcw, Send, ShieldAlert, ShieldCheck, ShieldX, Trash2 } from "lucide-react";
 import { AssetLibraryCard, AssetLibraryCardMedia } from "@/components/assets/asset-library-card";
 import { type AssetKind } from "@/stores/use-asset-store";
 import { AssetMediaPreview } from "@/components/asset-media-preview";
@@ -45,6 +45,7 @@ export function AssetCard({
     onSelect,
     onOpen,
     onEdit,
+    onRename,
     onCopy,
     onDownload,
     onRestore,
@@ -52,6 +53,7 @@ export function AssetCard({
     onDelete,
     folderOptions,
     onMoveToFolder,
+    onRecommend,
     arkProgress,
 }: {
     asset: LibraryAsset;
@@ -62,6 +64,7 @@ export function AssetCard({
     onSelect: (selected: boolean, range?: boolean) => void;
     onOpen: () => void;
     onEdit: () => void;
+    onRename?: () => void;
     onCopy: (asset: LibraryAsset) => void;
     onDownload: (asset: LibraryAsset) => void;
     onRestore?: () => void;
@@ -69,6 +72,7 @@ export function AssetCard({
     onDelete: () => void;
     folderOptions: Array<{ label: string; value: string }>;
     onMoveToFolder: (folderId: string) => void;
+    onRecommend?: (asset: LibraryAsset) => void;
     /** 这张图片最近一次方舟认证提交；已认证的展示以素材自身的 arkCertification 为准。 */
     arkProgress?: ArkLibraryProgress;
 }) {
@@ -78,9 +82,13 @@ export function AssetCard({
     const menuItems: MenuProps["items"] = isTrash
         ? [{ key: "restore", icon: <RotateCcw className="size-3.5" />, label: "还原到素材库", onClick: onRestore }, { type: "divider" as const }, { key: "delete", danger: true, icon: <Trash2 className="size-3.5" />, label: "彻底删除", onClick: onDelete }]
         : [
+              ...(onRename ? [{ key: "rename", icon: <PencilLine className="size-3.5" />, label: "修改名称", onClick: onRename }] : []),
               ...(asset.kind === "text" || asset.kind === "image" ? [{ key: "edit", icon: <PencilLine className="size-3.5" />, label: "编辑", onClick: onEdit }] : []),
               ...(asset.kind === "text" ? [{ key: "copy", icon: <Copy className="size-3.5" />, label: "复制文本", onClick: () => void onCopy(asset) }] : []),
               ...(asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" || asset.kind === "model" ? [{ key: "download", icon: <Download className="size-3.5" />, label: "下载", onClick: () => onDownload(asset) }] : []),
+              ...(onRecommend && (asset.kind === "image" || asset.kind === "video" || asset.kind === "audio" || asset.kind === "entity")
+                  ? [{ key: "recommend", icon: <Send className="size-3.5" />, label: "推荐为官方素材", onClick: () => onRecommend(asset) }]
+                  : []),
               { key: "move", icon: <FolderOpen className="size-3.5" />, label: "移动到文件夹", children: folderOptions.map((folder) => ({ key: folder.value || "uncategorized", label: folder.label, onClick: () => onMoveToFolder(folder.value) })) },
               { type: "divider" as const },
               { key: "archive", icon: <Trash2 className="size-3.5 text-amber-500" />, label: "移入回收站", onClick: onArchive },
@@ -96,40 +104,47 @@ export function AssetCard({
     return (
         <AssetLibraryCard selected={selected} className="assets-content-card">
             <AssetCover asset={asset} selected={selected} isTrash={isTrash} onSelect={onSelect} onOpen={handleCardClick} menuItems={menuItems} arkProgress={arkProgress} />
-            <button type="button" className="asset-collection-body assets-content-card-body text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--workspace-accent)]" onClick={handleCardClick}>
-                <div className="flex min-w-0 items-center justify-between gap-2">
-                    <h2 className="truncate text-[var(--fs-body)] font-semibold text-foreground" title={asset.title}>
-                        {asset.title}
-                    </h2>
-                </div>
-                {isTrash ? (
-                    <div className="mt-1 flex items-center gap-1 text-[var(--fs-tiny)] font-medium text-amber-600 dark:text-amber-400" title={formatExpirationDate(asset.updatedAt, retentionDays)}>
-                        <AlertTriangle className="size-3 shrink-0" />
-                        <span>{formatExpirationHint(asset.updatedAt, retentionDays)}</span>
+            <div className="relative flex flex-1 flex-col">
+                <button type="button" className="asset-collection-body assets-content-card-body text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--workspace-accent)]" onClick={handleCardClick}>
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                        <h2 className={`truncate text-[var(--fs-body)] font-semibold text-foreground ${!isTrash && onRename ? "pr-8" : ""}`} title={asset.title}>
+                            {asset.title}
+                        </h2>
                     </div>
-                ) : asset.kind === "audio" ? (
-                    <AudioAssetSummary asset={asset} />
-                ) : (
-                    <div className={`asset-collection-summary assets-content-card-summary ${asset.kind === "text" ? "is-text" : ""}`} title={assetSummaryDetail(asset)}>
-                        {summary}
+                    {isTrash ? (
+                        <div className="mt-1 flex items-center gap-1 text-[var(--fs-tiny)] font-medium text-amber-600 dark:text-amber-400" title={formatExpirationDate(asset.updatedAt, retentionDays)}>
+                            <AlertTriangle className="size-3 shrink-0" />
+                            <span>{formatExpirationHint(asset.updatedAt, retentionDays)}</span>
+                        </div>
+                    ) : asset.kind === "audio" ? (
+                        <AudioAssetSummary asset={asset} />
+                    ) : (
+                        <div className={`asset-collection-summary assets-content-card-summary ${asset.kind === "text" ? "is-text" : ""}`} title={assetSummaryDetail(asset)}>
+                            {summary}
+                        </div>
+                    )}
+                    {asset.source || project !== "未关联项目" ? (
+                        <div className="asset-collection-source assets-content-card-origin">
+                            {asset.source ? <span>{asset.source}</span> : null}
+                            {project !== "未关联项目" ? <span>{project}</span> : null}
+                        </div>
+                    ) : null}
+                    <div className="assets-content-card-footer">
+                        <span>
+                            <KindIcon aria-hidden />
+                            {assetKindLabel(asset.kind, asset.category)}
+                        </span>
+                        <time className="asset-collection-date" dateTime={asset.updatedAt}>
+                            {formatAssetTime(asset.updatedAt)}
+                        </time>
                     </div>
-                )}
-                {asset.source || project !== "未关联项目" ? (
-                    <div className="asset-collection-source assets-content-card-origin">
-                        {asset.source ? <span>{asset.source}</span> : null}
-                        {project !== "未关联项目" ? <span>{project}</span> : null}
-                    </div>
+                </button>
+                {!isTrash && onRename ? (
+                    <button type="button" className="product-icon-button absolute right-1 top-1" aria-label={`修改素材名称：${asset.title}`} title="修改名称" onClick={onRename}>
+                        <PencilLine className="size-3.5" />
+                    </button>
                 ) : null}
-                <div className="assets-content-card-footer">
-                    <span>
-                        <KindIcon aria-hidden />
-                        {assetKindLabel(asset.kind, asset.category)}
-                    </span>
-                    <time className="asset-collection-date" dateTime={asset.updatedAt}>
-                        {formatAssetTime(asset.updatedAt)}
-                    </time>
-                </div>
-            </button>
+            </div>
         </AssetLibraryCard>
     );
 }

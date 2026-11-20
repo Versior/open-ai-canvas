@@ -17,13 +17,16 @@
     "video-director-planning",
     "fashion-video-workbench",
     "video-token-billing",
+    "image-usage-billing",
     "credit-rewards",
     "task-runtime-stability",
     "newapi-channel-2",
     "model-metadata-presets",
     "bailian-minimax-video",
+    "minimax-h3-image",
     "system-update",
     "protocol-plugins",
+    "official-video-protocols",
     "canvas-data-structure",
     "canvas-operations-sync"
   ]

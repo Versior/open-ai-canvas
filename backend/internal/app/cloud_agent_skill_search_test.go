@@ -43,7 +43,8 @@ func TestCloudAgentPolicyRegistersSkillSearchAlongsideReadFile(t *testing.T) {
 }
 
 func TestCloudAgentSkillSearchDiscoversVisibleMarketplaceSkillsWithoutInstalling(t *testing.T) {
-	s, _, _, _ := creationTestService(t)
+	s, db, _, _ := creationTestService(t)
+	skillAdministratorFixture(t, db, "publisher", "other-user", "user")
 	publicSkill, err := s.CreateSkill("publisher", SkillMutationRequest{
 		SkillName:   "ecommerce-detail-page",
 		Description: "根据商品图片分析卖点并规划电商详情页",
@@ -147,7 +148,7 @@ func TestCloudAgentSkillSearchWithoutKeywordListsIndex(t *testing.T) {
 	}
 }
 
-func TestCloudAgentSkillSearchClampsLimitAndDegradesNoHit(t *testing.T) {
+func TestCloudAgentSkillSearchClampsLimitAndReturnsEmptyOnNoHit(t *testing.T) {
 	skills := skillSearchTestSkills()
 	result, err := cloudAgentSearchSkills(skills, "钩子", 99)
 	if err != nil {
@@ -167,20 +168,15 @@ func TestCloudAgentSkillSearchClampsLimitAndDegradesNoHit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 零命中降级：返回本轮可用技能索引而不是空列表——「没搜到」不该被模型
-	// 解读成「没有适用技能」后直接放弃技能裸做任务。降级条目没有 score。
-	degraded := result["matches"].([]map[string]any)
-	if len(degraded) != 1 {
-		t.Fatalf("zero-hit query must return one indexed skill at limit 1, got %v", result["matches"])
+	zeroHit := result["matches"].([]map[string]any)
+	if len(zeroHit) != 0 {
+		t.Fatalf("zero-hit query must return no indexed skills, got %v", result["matches"])
 	}
-	if _, scored := degraded[0]["score"]; scored {
-		t.Fatalf("degraded index entries must not carry a score: %v", degraded[0])
+	if result["total"].(int) != 0 {
+		t.Fatalf("expected total 0 on zero-hit search, got %v", result["total"])
 	}
-	if result["total"].(int) != 3 {
-		t.Fatalf("expected total 3 on degraded index, got %v", result["total"])
-	}
-	if guidance, _ := result["guidance"].(string); !strings.Contains(guidance, "skill_read_file") {
-		t.Fatalf("no-hit guidance must point at skill_read_file: %q", guidance)
+	if guidance, _ := result["guidance"].(string); !strings.Contains(guidance, "没有匹配") {
+		t.Fatalf("no-hit guidance must be explicit: %q", guidance)
 	}
 }
 
@@ -198,7 +194,8 @@ func TestCloudAgentSkillSearchEmptySkillsReturnsGuidance(t *testing.T) {
 }
 
 func TestCloudAgentMarketplaceSearchDoesNotFreezeUnrelatedOrUnscopedSkills(t *testing.T) {
-	s, _, _, _ := creationTestService(t)
+	s, db, _, _ := creationTestService(t)
+	skillAdministratorFixture(t, db, "publisher")
 	created, err := s.CreateSkill("publisher", SkillMutationRequest{
 		SkillName:   "ecommerce-detail-page",
 		Description: "根据商品图片分析卖点并规划电商详情页",
@@ -217,8 +214,8 @@ func TestCloudAgentMarketplaceSearchDoesNotFreezeUnrelatedOrUnscopedSkills(t *te
 		if matches := result["matches"].([]map[string]any); len(matches) != 0 {
 			t.Fatalf("keyword %q returned unrelated skills: %v", keyword, matches)
 		}
-		if len(state.Skills) != 0 {
-			t.Fatalf("keyword %q froze unrelated skills: %+v", keyword, state.Skills)
+		if len(state.SkillReferences) != 0 {
+			t.Fatalf("keyword %q froze unrelated skills: %+v", keyword, state.SkillReferences)
 		}
 	}
 	detail, err := s.SkillDetail("user", created.SkillID)
@@ -235,6 +232,7 @@ func TestCloudAgentSkillSearchToleratesStraySkillIDArgument(t *testing.T) {
 	// 被 decodeCloudAgentJSONObject（DisallowUnknownFields）拒绝 → tool_failed，
 	// 检索一次都没成功。这里走完整的工具分发路径，确保解码层真的容忍该字段。
 	s, db, _, _ := creationTestService(t)
+	skillAdministratorFixture(t, db, "u1")
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
@@ -246,7 +244,7 @@ func TestCloudAgentSkillSearchToleratesStraySkillIDArgument(t *testing.T) {
 		}
 		ids[skill.ID] = created.SkillID
 	}
-	pool, err := s.cloudAgentBuildSkillPool("u1", "", nil, defaultCloudAgentContextBudget())
+	pool, err := s.cloudAgentBuildSkillPool("u1", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,6 +460,7 @@ func TestCloudAgentSkillSearchMatchesNaturalPhraseViaGrams(t *testing.T) {
 // 真候选排到最后，验证 skill_search 能翻页命中它。
 func TestCloudAgentMarketplaceSearchPagesBeyondFirstCatalogPage(t *testing.T) {
 	s, db, _, _ := creationTestService(t)
+	skillAdministratorFixture(t, db, "publisher", "other-user")
 	noiseIDs := make([]string, 0, cloudAgentSkillCatalogLimit+5)
 	for index := 0; index < cloudAgentSkillCatalogLimit+5; index++ {
 		noise, err := s.CreateSkill("publisher", SkillMutationRequest{

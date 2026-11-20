@@ -54,7 +54,7 @@ export async function executeVideoGeneration({
     const parent = sourceNode?.position || { x: 0, y: 0 };
     const videoGenerationMetadata = buildVideoGenerationMetadata(sourceNode, generationContext, generationConfig);
     // 原位重新生成沿用用户起的名称（命名标记随旧 metadata 一起保留）；新建的结果节点仍按提示词命名。
-    const keptVideoTitle = reuseSourceNode ? manualNodeTitle(sourceNode) : undefined;
+    const keptVideoTitle = reuseSourceNode ? manualNodeTitle(canvasNodes.find((node) => node.id === nodeId)) : undefined;
     const videoNode: CanvasNodeData = {
         id: videoId,
         type: CanvasNodeType.Video,
@@ -66,6 +66,7 @@ export async function executeVideoGeneration({
             // 就地重生成不能继承旧任务的计时字段；媒体内容与提示词不在清理范围内。
             ...resetGenerationTaskMetadata(reuseSourceNode ? sourceNode?.metadata : undefined, NODE_STATUS_LOADING),
             manualSize: reuseSourceNode ? sourceNode?.metadata?.manualSize : spec.manualSize,
+            manualTitle: Boolean(keptVideoTitle),
             ...(reuseSourceNode ? mediaVersionFieldsBeforeReplace(sourceNode) : {}),
             taskCreatedAt: new Date().toISOString(),
             ...canvasGenerationPromptMetadata(prompt, effectivePrompt),
@@ -83,6 +84,9 @@ export async function executeVideoGeneration({
             watermark: generationConfig.videoWatermark,
             references: generationReferenceUrls(generationContext),
             ...videoGenerationMetadata,
+            videoReferenceMode:
+                sourceNode?.metadata?.videoReferenceMode ??
+                (sourceNode?.type === CanvasNodeType.Video && videoGenerationMetadata.videoEditOperation === "reference_to_video" && !videoGenerationMetadata.videoStartFrameNodeId && !videoGenerationMetadata.videoEndFrameNodeId ? "all" : undefined),
             ...styleMetadata,
             ...skillMetadata,
         },
@@ -136,6 +140,7 @@ export async function executeVideoGeneration({
                 signal: controller.signal,
                 expectedUserScope,
                 metadata: {
+                    assetTitle: videoNode.title,
                     sourceNodeId: nodeId,
                     ...taskContext,
                     resolvedCharacterVersions: generationContext.resolvedCharacterVersions,
@@ -185,7 +190,7 @@ export async function executeAudioGeneration({
     const isExistingAudioNode = sourceNode?.type === CanvasNodeType.Audio && Boolean(sourceNode.metadata?.content);
     const audioId = reuseSourceNode ? nodeId : nanoid();
     const parent = sourceNode?.position || { x: 0, y: 0 };
-    const keptAudioTitle = reuseSourceNode ? manualNodeTitle(sourceNode) : undefined;
+    const keptAudioTitle = reuseSourceNode ? manualNodeTitle(canvasNodes.find((node) => node.id === nodeId)) : undefined;
     const audioNode: CanvasNodeData = {
         id: audioId,
         type: CanvasNodeType.Audio,
@@ -195,10 +200,9 @@ export async function executeAudioGeneration({
         height: reuseSourceNode ? sourceNode!.height : spec.height,
         metadata: {
             ...(reuseSourceNode && isExistingAudioNode ? { ...resetGenerationTaskMetadata(sourceNode?.metadata, NODE_STATUS_LOADING), ...mediaVersionFieldsBeforeReplace(sourceNode) } : {}),
-            // 空音频节点原位生成会重建 metadata，命名标记要跟着保留，下次重新生成仍沿用名称。
-            ...(keptAudioTitle ? { manualTitle: true } : {}),
             manualSize: reuseSourceNode ? sourceNode?.metadata?.manualSize : spec.manualSize,
             manualSizeOrder: reuseSourceNode ? sourceNode?.metadata?.manualSizeOrder : undefined,
+            manualTitle: Boolean(keptAudioTitle),
             ...canvasGenerationPromptMetadata(prompt, effectivePrompt),
             status: NODE_STATUS_LOADING,
             ...buildAudioGenerationMetadata(generationConfig),
@@ -225,7 +229,15 @@ export async function executeAudioGeneration({
                 referenceAudios: generationContext.referenceAudios,
                 signal: controller.signal,
                 expectedUserScope,
-                metadata: { sourceNodeId: nodeId, ...taskContext, resolvedCharacterVersions: generationContext.resolvedCharacterVersions, resolvedCharacterVoiceKey: generationContext.resolvedCharacterVoices[0]?.voiceKey, ...skillMetadata },
+                metadata: {
+                    assetTitle: audioNode.title,
+                    sourceNodeId: nodeId,
+                    ...taskContext,
+                    ...(sourceNode?.metadata?.audioVoiceBindings?.length ? { audioVoiceBindings: sourceNode.metadata.audioVoiceBindings } : {}),
+                    resolvedCharacterVersions: generationContext.resolvedCharacterVersions,
+                    resolvedCharacterVoiceKey: generationContext.resolvedCharacterVoices[0]?.voiceKey,
+                    ...skillMetadata,
+                },
             },
             {
                 bindTask: (task) => bindGenerationTask(audioId, task),
@@ -238,6 +250,7 @@ export async function executeAudioGeneration({
 }
 
 function doubaoAudioPrompt(config: CanvasGenerationExecution["generationConfig"], prompt: string, audioCount: number, imageCount: number) {
+    if (config.audioMode === "tts") return prompt;
     if (!isDoubaoAudioConfig(config)) return prompt;
     // 参考图片模式的 text_prompt 只保留要合成的文本，图片走 references。
     if (imageCount > 0)

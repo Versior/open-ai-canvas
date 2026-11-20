@@ -1,10 +1,12 @@
+import { workspacePath, workspaceTeamId } from "@/lib/workspace-routes";
 import { uploadImage } from "@/services/image-storage";
 import { assetStorageUsageQueryKey, AssetStorageUsage } from "./asset-storage-usage";
 import { readFileAsDataUrl, readImageMeta, formatBytes } from "@/lib/image-utils";
 import { uploadMediaFile } from "@/services/file-storage";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
-import { WorkspacePage, PageHeader, CollectionGrid, PaginationBar } from "@/components/layout/workspace-page";
-import { Trash2, RotateCcw, Plus, Images, FolderOpen, FileUp, Upload, Download, MoreHorizontal, Search, LayoutGrid, FolderPlus, PencilLine, AlertTriangle, ShieldCheck } from "lucide-react";
+import { WorkspacePage, CollectionGrid, PageHeader, PaginationBar } from "@/components/layout/workspace-page";
+import { Trash2, RotateCcw, Plus, Images, FolderOpen, FileUp, Upload, Download, MoreHorizontal, LayoutGrid, FolderPlus, PencilLine, AlertTriangle, ShieldCheck } from "lucide-react";
+import { ListSearchInput } from "@/components/ui/base/list-search-input";
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { Select } from "@/components/ui/base/select";
 import { AssetFilterGroup, AssetsBatchBar, AssetsEmptyState, AssetDrawer } from "./asset-library-panels";
@@ -14,10 +16,13 @@ import { WorkspaceNoResultsState, WorkspaceState } from "@/components/layout/wor
 import { AssetCard } from "./asset-library-cards";
 import { resourceStorageTitle, resourceStorageLabel } from "@/lib/canvas/resource-storage-status";
 import { AssetBatchUploadModal } from "./asset-batch-upload-modal";
+import { AssetRenameModal } from "./asset-rename-modal";
 import { assetGridCardMinWidth, type AssetGridDensity, assetGridDensityOptions, parseAssetGridDensity } from "./asset-grid-density";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Form, Popconfirm, Button, Dropdown, Input, Modal, Space, Tag, Typography, Progress } from "antd";
+import { App, Form, Popconfirm, Button, Checkbox, Dropdown, Input, Modal, Space, Tag, Typography, Progress } from "antd";
+import { createOfficialAssetRecommendation } from "@/services/api/official-asset-recommendations";
+import { ensureAssetAvailableForRecommendation } from "@/services/user-data-sync";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { translate } from "@/i18n";
@@ -38,6 +43,7 @@ import { assetCountMap, assetSearchText, readAssetGridDensity, assetKindIcons } 
 import { ASSET_GRID_DENSITY_KEY, type LibraryAsset } from "./asset-library-format";
 import { selectAssetIds } from "./asset-library-selection";
 import "./assets-library.css";
+import { TeamAssetShareModal } from "@/components/assets/team-asset-share-modal";
 
 export { ASSET_GRID_DENSITY_KEY, type LibraryAsset, assetKindIcons } from "./asset-library-format";
 
@@ -145,12 +151,13 @@ export default function AssetsPage() {
 
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const userId = useUserStore((state) => state.user?.id || "");
-    const retentionDays = useUserStore((state) => state.runtimeLimits.recycleBinRetentionDays ?? 30);
+    const teamsEnabled = useUserStore((state) => state.features.teamsEnabled) && !workspaceTeamId;
+    const retentionDays = useUserStore((state) => (workspaceTeamId ? 0 : (state.runtimeLimits.recycleBinRetentionDays ?? 30)));
     // 方舟审核由服务端定时刷新；有审核中的素材时降频轮询概览，让认证角标跟上结果。
     const arkQuery = useQuery({
         queryKey: arkPortraitOverviewQueryKey,
         queryFn: ({ signal }) => getArkPortraitOverview(signal),
-        enabled: Boolean(userId),
+        enabled: Boolean(userId) && !workspaceTeamId,
         staleTime: 60_000,
         refetchInterval: (query) => (query.state.data?.groups.some((group) => group.owned && group.assets.some((asset) => asset.status === "processing")) ? 30_000 : false),
     });
@@ -167,11 +174,13 @@ export default function AssetsPage() {
     const [pageSize, setPageSize] = useState(40);
     const [gridDensity, setGridDensity] = useState<AssetGridDensity>(readAssetGridDensity);
     const [editingAsset, setEditingAsset] = useState<LibraryAsset | null>(null);
+    const [renamingAsset, setRenamingAsset] = useState<LibraryAsset | null>(null);
     const [isAssetOpen, setIsAssetOpen] = useState(false);
     const [previewAsset, setPreviewAsset] = useState<LibraryAsset | null>(null);
     const [deletingAsset, setDeletingAsset] = useState<LibraryAsset | null>(null);
     const [archivingAsset, setArchivingAsset] = useState<LibraryAsset | null>(null);
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [teamShareIds, setTeamShareIds] = useState<string[] | null>(null);
     const [selecting, setSelecting] = useState(false);
     const selectionAnchor = useRef<string | undefined>(undefined);
     const [batchWorking, setBatchWorking] = useState(false);
@@ -181,6 +190,10 @@ export default function AssetsPage() {
     const [folderEditor, setFolderEditor] = useState<AssetFolder | "new" | null>(null);
     const [folderName, setFolderName] = useState("");
     const [folderSaving, setFolderSaving] = useState(false);
+    const [recommendAsset, setRecommendAsset] = useState<LibraryAsset | null>(null);
+    const [recommendConsent, setRecommendConsent] = useState(false);
+    const [recommendNote, setRecommendNote] = useState("");
+    const [recommendSaving, setRecommendSaving] = useState(false);
 
     const [formKind, setFormKind] = useState<AssetKind>("text");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
@@ -533,6 +546,32 @@ export default function AssetsPage() {
             if (useUserStore.getState().user?.id !== userId) throw new Error(t("library.assets.accountSwitched"));
             for (const asset of result.assets) ids.add(asset.id);
             if (!result.hasMore) return [...ids];
+        }
+    };
+
+    const submitRecommendation = async () => {
+        if (!recommendAsset) return;
+        if (!recommendConsent) {
+            message.error("请先确认素材使用授权");
+            return;
+        }
+        setRecommendSaving(true);
+        try {
+            try {
+                await ensureAssetAvailableForRecommendation(recommendAsset.id);
+            } catch (error) {
+                throw new Error(`素材尚未同步到云端，推荐未提交：${error instanceof Error ? error.message : "请检查网络后重试"}`);
+            }
+            const result = await createOfficialAssetRecommendation({ assetId: recommendAsset.id, note: recommendNote.trim() || undefined, consentVersion: "commercial-use-v1" });
+            if (result.consentVersion !== "commercial-use-v1" || !result.consentAt) throw new Error("推荐已提交，但服务尚未记录授权；请联系管理员升级服务后退回并重新提交");
+            message.success("已提交官方素材推荐，等待管理员审核");
+            setRecommendAsset(null);
+            setRecommendNote("");
+            void invalidateAssetLibrary();
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "提交官方素材推荐失败");
+        } finally {
+            setRecommendSaving(false);
         }
     };
 
@@ -899,15 +938,14 @@ export default function AssetsPage() {
                                     setPage(1);
                                 }}
                             >
-                                <Input
-                                    allowClear
+                                <ListSearchInput
+                                    aria-label={t("library.assets.page.searchPlaceholder")}
                                     className="w-full sm:w-80"
-                                    prefix={<Search className="size-4 text-foreground/40" />}
                                     value={keyword}
                                     placeholder={t("library.assets.page.searchPlaceholder")}
-                                    onChange={(event) => {
+                                    onValueChange={(value) => {
                                         setPage(1);
-                                        setKeyword(event.target.value);
+                                        setKeyword(value);
                                     }}
                                 />
                                 <Select
@@ -971,6 +1009,7 @@ export default function AssetsPage() {
                                         selectionAnchor.current = undefined;
                                     }}
                                     onExport={() => void exportSelectedAssets()}
+                                    onShareTeam={userId && teamsEnabled ? () => setTeamShareIds([...selectedIds]) : undefined}
                                     onRestore={() => void changeAssetStatus(selectedIds, "confirmed")}
                                     onArchive={() => setBatchArchiveOpen(true)}
                                     onDelete={() => setBatchDeleteOpen(true)}
@@ -982,7 +1021,7 @@ export default function AssetsPage() {
                                 viewMode === "trash" ? (
                                     <WorkspaceState icon="assets" compact title={t("library.picker.recycleBinEmpty")} description={t("library.assets.trash.emptyDescription")} />
                                 ) : (
-                                    <AssetsEmptyState guest={!userId} onNew={openCreate} onUpload={openBatchUpload} onImport={openImport} onGoCanvas={() => navigate("/canvas")} />
+                                    <AssetsEmptyState guest={!userId} onNew={openCreate} onUpload={openBatchUpload} onImport={openImport} onGoCanvas={() => navigate(workspacePath("/canvas"))} />
                                 )
                             ) : (
                                 <>
@@ -1013,6 +1052,7 @@ export default function AssetsPage() {
                                                     onSelect={(selected, range) => selectAsset(asset.id, selected, range)}
                                                     onOpen={() => setPreviewAsset(asset)}
                                                     onEdit={() => void openEdit(asset)}
+                                                    onRename={() => setRenamingAsset(asset)}
                                                     onCopy={copyAssetText}
                                                     onDownload={downloadImage}
                                                     onRestore={() => void changeAssetStatus([asset.id], "confirmed")}
@@ -1020,6 +1060,15 @@ export default function AssetsPage() {
                                                     onDelete={() => setDeletingAsset(asset)}
                                                     folderOptions={folderSelectOptions}
                                                     onMoveToFolder={(folderId) => void moveAssetsToFolder([asset.id], folderId)}
+                                                    onRecommend={
+                                                        workspaceTeamId
+                                                            ? undefined
+                                                            : (candidate) => {
+                                                                  setRecommendAsset(candidate);
+                                                                  setRecommendNote("");
+                                                                  setRecommendConsent(false);
+                                                              }
+                                                    }
                                                     arkProgress={arkEnabled ? arkProgress.get(asset.id) : undefined}
                                                 />
                                             ))}
@@ -1043,6 +1092,17 @@ export default function AssetsPage() {
             </WorkspacePage>
 
             <ArkCertifyModal asset={certifyingAsset} onClose={() => setCertifyingAsset(null)} />
+            {renamingAsset ? (
+                <AssetRenameModal
+                    key={renamingAsset.id}
+                    asset={renamingAsset}
+                    onClose={() => setRenamingAsset(null)}
+                    onSaved={async (id, title) => {
+                        setPreviewAsset((current) => (current?.id === id ? { ...current, title } : current));
+                        await invalidateAssetLibrary();
+                    }}
+                />
+            ) : null}
             <Modal
                 className="workspace-modal workspace-modal-wide library-modal"
                 title={editingAsset ? t("library.assets.form.editTitle") : t("library.assets.page.create")}
@@ -1208,6 +1268,27 @@ export default function AssetsPage() {
                 }
             />
 
+            <Modal
+                className="library-modal library-confirm-modal"
+                title="推荐为官方素材"
+                open={Boolean(recommendAsset)}
+                onCancel={() => {
+                    if (!recommendSaving) setRecommendAsset(null);
+                }}
+                onOk={() => void submitRecommendation()}
+                confirmLoading={recommendSaving}
+                okText="提交审核"
+                cancelText="取消"
+            >
+                <Space direction="vertical" className="w-full">
+                    <Typography.Text>推荐「{recommendAsset?.title}」后，原个人素材仍保留；管理员审核通过后，官方库会直接引用同一份资源，不会为每个用户复制文件。</Typography.Text>
+                    <Checkbox checked={recommendConsent} onChange={(event) => setRecommendConsent(event.target.checked)}>
+                        我确认有权授权本平台及其用户使用此素材（包括商业用途）；版权仍归原权利人所有。
+                    </Checkbox>
+                    <Input.TextArea value={recommendNote} maxLength={2000} showCount rows={4} placeholder="可补充素材用途、来源或合规说明（选填）" onChange={(event) => setRecommendNote(event.target.value)} />
+                </Space>
+            </Modal>
+
             <AssetBatchUploadModal
                 open={batchUploadOpen}
                 defaultFolderId={folderFilter !== "all" && folderFilter !== "uncategorized" ? folderFilter : ""}
@@ -1308,6 +1389,7 @@ export default function AssetsPage() {
             >
                 {t("library.assets.delete.batchConfirm", { count: selectedIds.length })}
             </Modal>
+            {teamsEnabled && teamShareIds ? <TeamAssetShareModal key={userId} assetIds={teamShareIds} onClose={() => setTeamShareIds(null)} /> : null}
         </>
     );
 }

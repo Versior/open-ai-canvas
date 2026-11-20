@@ -14,12 +14,17 @@ func (s *Service) autoConfigureNewChannelModel(channel *model.ModelChannel, req 
 	explicitConfig := req.CapabilityConfig != nil
 	best, count := 0, 0
 	var template *model.ChannelModel
+	registry := s.protocolRegistry()
 	for index := range existing {
 		item := &existing[index]
 		if req.Capability != "" && req.Capability != item.Capability {
 			continue
 		}
-		if _, _, _, _, err := s.normalizeChannelModelContract(channel, ChannelModelRequest{ModelKey: id, Capability: item.Capability, Protocol: string(item.Protocol)}); err != nil {
+		release, err := selectModelRelease(registry, string(item.Protocol), item.ProtocolRelease, false)
+		if err != nil {
+			continue
+		}
+		if _, _, _, _, err := normalizeChannelModelContractWithRegistry(release.Registry, channel, ChannelModelRequest{ModelKey: id, Capability: item.Capability, Protocol: string(item.Protocol)}); err != nil {
 			continue
 		}
 		score := max(modelpreset.MatchScore(id, firstNonEmpty(item.ProviderModelKey, item.ModelKey), true), modelpreset.MatchScore(id, item.ModelKey, true))
@@ -36,24 +41,26 @@ func (s *Service) autoConfigureNewChannelModel(channel *model.ModelChannel, req 
 		if req.Capability == "" {
 			req.Capability = template.Capability
 		}
-		compatible := req.Protocol == "" || req.Protocol == string(template.Protocol)
+		compatible := (req.Protocol == "" || req.Protocol == string(template.Protocol)) && (req.ProtocolRelease == "" || req.ProtocolRelease == template.ProtocolRelease)
 		if req.Protocol == "" {
 			req.Protocol = string(template.Protocol)
 		}
 		if compatible {
+			req.ProtocolRelease = template.ProtocolRelease
 			if req.CapabilityConfig == nil && best >= 2 {
 				config, err := DecodeModelCapabilityConfig(template.CapabilityConfigJSON)
 				if err == nil {
 					req.CapabilityConfig = config
 				}
 			}
-			if req.PriceTiers == nil && req.BillingMode == "" && !req.PriceConfigured && req.UnitPriceMicrocredits == 0 && req.InputTokenPriceMicrocredits == 0 && req.OutputTokenPriceMicrocredits == 0 && req.CachedTokenPriceMicrocredits == 0 {
+			if req.PriceTiers == nil && req.BillingMode == "" && !req.PriceConfigured && req.UnitPriceMicrocredits == 0 && req.InputTokenPriceMicrocredits == 0 && req.OutputTokenPriceMicrocredits == 0 && req.CachedTokenPriceMicrocredits == 0 && req.CacheWriteTokenPriceMicrocredits == 0 {
 				for _, tier := range template.PriceTiers {
 					if !tier.PriceConfigured {
 						continue
 					}
-					enabled := tier.Enabled
-					req.PriceTiers = append(req.PriceTiers, ChannelModelPriceTierRequest{Selector: tier.Selector, Resolution: tier.Resolution, VideoSeconds: tier.VideoSeconds, ProviderModelKey: id, BillingMode: tier.BillingMode, UnitPriceMicrocredits: tier.UnitPriceMicrocredits, InputTokenPriceMicrocredits: tier.InputTokenPriceMicrocredits, OutputTokenPriceMicrocredits: tier.OutputTokenPriceMicrocredits, CachedTokenPriceMicrocredits: tier.CachedTokenPriceMicrocredits, CostPricing: tier.CostPricing, PriceConfigured: true, Enabled: &enabled})
+					copied := batchTierRequest(tier)
+					copied.ProviderModelKey = id
+					req.PriceTiers = append(req.PriceTiers, copied)
 				}
 			}
 		}
@@ -106,11 +113,15 @@ func (s *Service) prepareDiscoveredChannelModel(channel *model.ModelChannel, ite
 	if strings.TrimSpace(req.Capability) == "" {
 		return nil
 	}
-	_, _, capability, protocol, err := s.normalizeChannelModelContract(channel, req)
+	release, err := selectModelRelease(s.protocolRegistry(), req.Protocol, req.ProtocolRelease, true)
 	if err != nil {
 		return err
 	}
-	config, err := NormalizeModelCapabilityConfigForModel(capability, string(protocol), item.ProviderModelKey, req.CapabilityConfig, s.protocolRegistry())
+	_, _, capability, protocol, err := normalizeChannelModelContractWithRegistry(release.Registry, channel, req)
+	if err != nil {
+		return err
+	}
+	config, err := NormalizeModelCapabilityConfigForModel(capability, string(protocol), item.ProviderModelKey, req.CapabilityConfig, release.Registry)
 	if err != nil {
 		return err
 	}
@@ -126,7 +137,7 @@ func (s *Service) prepareDiscoveredChannelModel(channel *model.ModelChannel, ite
 	if err := validateChannelModelTierCapabilities(tiers, string(encoded), capability, string(protocol)); err != nil {
 		return err
 	}
-	item.Capability, item.Protocol, item.Icon = capability, protocol, req.Icon
+	item.Capability, item.Protocol, item.ProtocolRelease, item.Icon = capability, protocol, release.SHA256, req.Icon
 	if req.DisplayName != "" {
 		item.DisplayName = req.DisplayName
 	}

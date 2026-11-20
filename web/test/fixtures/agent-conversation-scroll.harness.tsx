@@ -1,4 +1,4 @@
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { CloudAgentChatMessage } from "@/components/canvas/canvas-cloud-agent-chat-ui";
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -25,13 +25,6 @@ for (const [key, value] of Object.entries({
     IS_REACT_ACT_ENVIRONMENT: true,
 }))
     Object.defineProperty(globalThis, key, { configurable: true, value });
-mock.module("@/components/canvas/live2d-avatar", () => ({ Live2DAvatar: () => null }));
-mock.module("@/components/canvas/canvas-cloud-agent-chat-ui", () => ({
-    AgentChatMessage: ({ item }: { item: CloudAgentChatMessage }) => <p>{item.content}</p>,
-    AgentOperationFeed: () => null,
-    AgentReasoningFeed: () => null,
-    AgentWorkingMessage: () => <p>正在思考</p>,
-}));
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AgentConversation } = await import("@/components/canvas/canvas-cloud-agent-panel-parts");
@@ -41,7 +34,7 @@ async function conversation() {
     const host = dom.document.createElement("div");
     dom.document.body.append(host);
     const root = createRoot(host);
-    let messages: CloudAgentChatMessage[] = [{ id: "reply-1", role: "assistant", content: "第一条回复" }];
+    let messages: CloudAgentChatMessage[] = [{ id: "reply-1", role: "assistant", text: "第一条回复" }];
     const render = async () => {
         await act(async () =>
             root.render(
@@ -103,11 +96,11 @@ async function conversation() {
             height = value;
         },
         append: async (role: "user" | "assistant") => {
-            messages = [...messages, { id: `message-${messages.length}`, role, content: "新消息" }];
+            messages = [...messages, { id: `message-${messages.length}`, role, text: "新消息" }];
             await render();
         },
-        stream: async (content: string) => {
-            messages = messages.map((message, index) => (index === messages.length - 1 ? { ...message, content } : message));
+        stream: async (text: string) => {
+            messages = messages.map((message, index) => (index === messages.length - 1 ? { ...message, text } : message));
             await render();
         },
         cleanup: async () => {

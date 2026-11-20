@@ -12,6 +12,7 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { AgentPetSprite } = await import("@/components/canvas/agent-pet-sprite");
 const { useAgentAvatarMotion } = await import("@/hooks/use-agent-avatar-motion");
+const { setCanvasGestureActive } = await import("@/lib/canvas/canvas-live-viewport");
 const { AgentAvatarVideo } = await import("@/components/canvas/agent-avatar-video");
 const { useAgentLauncherPosition } = await import("@/components/canvas/use-agent-launcher-position");
 const { AGENT_LAUNCHER_POSITION_KEY } = await import("@/lib/canvas/agent-launcher-position");
@@ -107,7 +108,7 @@ test("桌面拖拽位置不进入窄屏，窄屏移动与返回桌面各自恢�
     }
 });
 
-test("视频页面隐藏时停止解码，返回可见后恢复，减少动效不自动播放", async () => {
+test("视频在画布拖拽、切到后台或减少动效时暂停，恢复只播放可见且允许动画的形象", async () => {
     const proto = dom.HTMLVideoElement.prototype;
     const originalPlay = proto.play;
     const originalPause = proto.pause;
@@ -132,16 +133,28 @@ test("视频页面隐藏时停止解码，返回可见后恢复，减少动效�
     document.body.append(host);
     const root = createRoot(host);
     try {
-        await act(async () => root.render(<AgentAvatarVideo src="test-avatar.mp4" />));
+        await act(async () => root.render(<AgentAvatarVideo src="test-avatar.mp4" pauseDuringCanvasGesture />));
         expect(plays).toBeGreaterThan(0);
+        const beforeDrag = plays;
+        await act(async () => setCanvasGestureActive(host, "canvasNodeDragging", true));
+        expect(pauses).toBeGreaterThan(0);
+        expect(plays).toBe(beforeDrag);
         hidden = true;
+        await act(async () => setCanvasGestureActive(host, "canvasNodeDragging", false));
+        expect(plays).toBe(beforeDrag);
         await act(async () => document.dispatchEvent(new Event("visibilitychange")));
         expect(pauses).toBeGreaterThan(0);
         const before = plays;
         hidden = false;
         await act(async () => document.dispatchEvent(new Event("visibilitychange")));
         expect(plays).toBeGreaterThan(before);
-        await act(async () => root.render(<AgentAvatarVideo src="test-avatar.mp4" reducedMotion />));
+        const beforeReduced = plays;
+        await act(async () => root.render(<AgentAvatarVideo src="test-avatar.mp4" reducedMotion pauseDuringCanvasGesture />));
+        await act(async () => {
+            setCanvasGestureActive(host, "canvasViewportInteracting", true);
+            setCanvasGestureActive(host, "canvasViewportInteracting", false);
+        });
+        expect(plays).toBe(beforeReduced);
         expect(host.querySelector("video")!.autoplay).toBe(false);
     } finally {
         await act(async () => root.unmount());

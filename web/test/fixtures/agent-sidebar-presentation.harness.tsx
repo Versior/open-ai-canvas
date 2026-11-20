@@ -2,8 +2,8 @@ import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
 import { Window } from "happy-dom";
 import type { ComponentProps, ReactNode } from "react";
 import type { CloudAgentChatMessage } from "@/components/canvas/canvas-cloud-agent-chat-ui";
+import type { CloudAgentConversation } from "@/services/cloud-agent-conversations";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
-import type { SkillPreset } from "@/services/api/skills";
 
 // 子进程隔离 DOM 全局与真实 Zustand store，不替换组件、布局 hook、AntD 或动画库。
 const dom = new Window({ url: "http://localhost/", settings: { device: { prefersReducedMotion: "reduce" } } });
@@ -45,11 +45,11 @@ const { App, ConfigProvider } = await import("antd");
 const { MotionConfig } = await import("motion/react");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { MemoryRouter } = await import("react-router");
-const { AgentConversation, AgentHeader, ComposerControls } = await import("@/components/canvas/canvas-cloud-agent-panel-parts");
-const { AgentChatComposer, AgentQuestionBar, AgentSceneCapsules } = await import("@/components/canvas/canvas-cloud-agent-chat-ui");
-const { CanvasAgentSkillLibraryModal } = await import("@/components/canvas/canvas-agent-skill-library-modal");
+const { AgentConversation, AgentHeader, AgentHistory, ComposerControls } = await import("@/components/canvas/canvas-cloud-agent-panel-parts");
+const { AgentChatComposer, AgentQuestionBar } = await import("@/components/canvas/canvas-cloud-agent-chat-ui");
 const { useAgentPanelDock } = await import("@/components/canvas/use-agent-panel-dock");
 const { useGlobalAgentStore } = await import("@/stores/use-global-agent-store");
+const { useUserStore } = await import("@/stores/use-user-store");
 const { restoreAgentPanelDock } = await import("@/lib/canvas/agent-panel-dock");
 const { defaultConfig } = await import("@/stores/use-config-store");
 const { canvasThemes } = await import("@/lib/canvas-theme");
@@ -58,10 +58,6 @@ const theme = canvasThemes.light;
 const initialDock = { ...useGlobalAgentStore.getState().dock };
 const noop = () => {};
 const canvas = { canvasId: "sidebar-canvas", nodeCount: 1, selectedNodeIds: [], references: [] };
-const preset: SkillPreset = { presetId: "story", name: "短片起步组合", scene: "film", skillIds: ["story-skill"], rationale: "先梳理短片结构", source: "test", evidence: "fixture", upgrade: "" };
-const presetBuckets = [{ key: "film", label: "影视创作", presets: [preset], skills: [] }];
-const curationState = { curation: null, error: "", retry: noop };
-const installedIds = new Set<string>();
 const reference: CanvasResourceReference = { id: "video-123", nodeId: "video-123", kind: "video", label: "片头镜头", title: "片头镜头", sourceType: "video", active: true };
 const mutation: CloudAgentChatMessage = {
     id: "mutation-1",
@@ -91,10 +87,10 @@ let errors: unknown[];
 let historyClicks: number;
 let newClicks: number;
 let sent: string[];
-let chosenPresets: string[];
 
 beforeEach(() => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1280 });
+    useUserStore.setState({ hydrated: true, user: { id: "sidebar-admin", username: "sidebar-admin", displayName: "侧栏管理员", role: "admin", status: "active" } });
     useGlobalAgentStore.setState({ open: true, canvas, dock: { ...initialDock } });
     host = document.createElement("div");
     document.body.append(host);
@@ -104,7 +100,6 @@ beforeEach(() => {
     historyClicks = 0;
     newClicks = 0;
     sent = [];
-    chosenPresets = [];
 });
 afterEach(async () => {
     await act(async () => root.unmount());
@@ -207,7 +202,6 @@ function SidebarFixture() {
     const [prompt, setPrompt] = useState("");
     const [messages, setMessages] = useState<CloudAgentChatMessage[]>([]);
     const nodeCount = useGlobalAgentStore((state) => state.canvas?.nodeCount ?? null);
-    const [skillsOpen, setSkillsOpen] = useState(false);
     return (
         <>
             {!open ? (
@@ -219,6 +213,7 @@ function SidebarFixture() {
                     <AgentHeader
                         theme={theme}
                         hasMessages
+                        nodeCount={nodeCount}
                         conversationTitle="短片创作"
                         statusLabel="待命"
                         statusColor={theme.node.muted}
@@ -232,7 +227,7 @@ function SidebarFixture() {
                         onExport={noop}
                         exporting={false}
                     />
-                    {conversation({ messages, nodeCount, onChooseSkill: () => setSkillsOpen(true), onDraftPrompt: (draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft)) })}
+                    {conversation({ messages, nodeCount, onDraftPrompt: (draft) => setPrompt((current) => (current.trim() ? `${current}\n\n${draft}` : draft)) })}
                     <AgentChatComposer
                         prompt={prompt}
                         theme={theme}
@@ -244,47 +239,10 @@ function SidebarFixture() {
                             setPrompt("");
                         }}
                         includeAssetLibrary={false}
-                        left={
-                            <ComposerControls
-                                config={defaultConfig}
-                                selectedModel=""
-                                permissionMode="read_only"
-                                theme={theme}
-                                onModelChange={noop}
-                                onPermissionChange={noop}
-                                skillsOpen={skillsOpen}
-                                onSkillsOpenChange={setSkillsOpen}
-                                selectedSkillCount={0}
-                                reasoningMode="off"
-                                onReasoningModeChange={noop}
-                            />
-                        }
+                        left={<ComposerControls config={defaultConfig} selectedModel="" permissionMode="read_only" theme={theme} onPermissionChange={noop} reasoningMode="off" onReasoningModeChange={noop} />}
                     />
                 </aside>
             )}
-            <CanvasAgentSkillLibraryModal
-                open={skillsOpen}
-                curationState={curationState}
-                platformCategory=""
-                onPlatformCategoryChange={noop}
-                theme={theme}
-                installedSkills={[]}
-                marketSkills={[]}
-                selectedSkillIds={[]}
-                categories={[]}
-                libraryCategories={[]}
-                category="all"
-                search=""
-                loading={false}
-                hasMore={false}
-                onClose={() => setSkillsOpen(false)}
-                onCategoryChange={noop}
-                onSearch={noop}
-                onToggle={noop}
-                onInstall={async () => {}}
-                onLoadMore={async () => {}}
-                presets={skillsOpen ? <AgentSceneCapsules buckets={presetBuckets} installedIds={installedIds} theme={theme} onPick={(value) => chosenPresets.push(value.presetId)} onPickSkill={noop} /> : undefined}
-            />
         </>
     );
 }
@@ -303,6 +261,56 @@ test("空会话保留光球、居中欢迎文案和两个自动技能入口，�
     expect(button("发送").disabled).toBe(false);
     await click("发送");
     expect(sent).toEqual(["保留我的短片草稿"]);
+});
+
+test("普通用户输入斜线保留原草稿，不显示固定技能或场景组合", async () => {
+    useUserStore.setState({ user: { id: "sidebar-user", username: "sidebar-user", displayName: "侧栏用户", role: "user", status: "active" } });
+    await render(<SidebarFixture />);
+    await type("/分镜");
+    expect(host.querySelectorAll(".agent-welcome-actions button")).toHaveLength(2);
+    expect(host.textContent).toContain("Skills 自动匹配");
+    expect(host.querySelector('[aria-label*="打开 Skills 技能库"], .agent-scene-capsules, [role="listbox"]')).toBeNull();
+    await click("发送");
+    expect(sent).toEqual(["/分镜"]);
+});
+
+test("画布选择状态固定占一行，切换选区保留输入与其他上下文", async () => {
+    let toggles = 0;
+    const composer = (count: number, excluded = false) => (
+        <AgentChatComposer
+            prompt="保留我的草稿"
+            theme={theme}
+            placeholder="描述创作想法"
+            onPromptChange={noop}
+            onSubmit={noop}
+            includeAssetLibrary={false}
+            canvasSelection={{ count, excluded, onToggle: () => toggles++ }}
+            contextBar={<span>当前模型不能看图</span>}
+        />
+    );
+    await render(composer(0));
+    const row = host.querySelector(".agent-composer-canvas-selection");
+    const input = host.querySelector('[aria-label="Agent 输入"]');
+    const surface = host.querySelector(".agent-composer-surface");
+    const childCount = surface?.childElementCount;
+    expect(row?.textContent).toBe("未选中节点");
+    for (const count of [1, 24, 0]) {
+        await render(composer(count));
+        expect(host.querySelector(".agent-composer-canvas-selection")).toBe(row);
+        expect(host.querySelector('[aria-label="Agent 输入"]')).toBe(input);
+        expect(surface?.childElementCount).toBe(childCount);
+        expect(host.querySelector(".agent-composer-context")?.textContent).toBe("当前模型不能看图");
+        expect(input?.textContent).toBe("保留我的草稿");
+        if (count) {
+            expect(row?.textContent).toContain(`已选 ${count} 个节点`);
+            await click("这条消息不带选中的节点");
+        } else expect(row?.querySelector("button")).toBeNull();
+    }
+    expect(toggles).toBe(2);
+    await render(composer(2, true));
+    expect(row?.textContent).toContain("这条不带选中的 2 个节点");
+    await click("这条消息带上选中的节点");
+    expect(toggles).toBe(3);
 });
 
 test("原欢迎页创作入口只填草稿、保留已有输入，发送后收起", async () => {
@@ -335,9 +343,9 @@ test("欢迎页梳理入口仅在有画布节点时可用", async () => {
 test("历史恢复、执行与审批阶段不展示原欢迎页", async () => {
     await render(conversation());
     expect(host.querySelector(".agent-welcome")).toBeNull();
-    await render(conversation({ onDraftPrompt: noop, onChooseSkill: noop, busy: true }));
+    await render(conversation({ onDraftPrompt: noop, busy: true }));
     expect(host.querySelector(".agent-welcome")).toBeNull();
-    await render(conversation({ onDraftPrompt: noop, onChooseSkill: noop, approval: pendingApproval }));
+    await render(conversation({ onDraftPrompt: noop, approval: pendingApproval }));
     expect(host.querySelector(".agent-welcome")).toBeNull();
 });
 
@@ -392,7 +400,6 @@ test("自动技能路由不展示手动预设，草稿保留到明确提交", as
     await render(<SidebarFixture />);
     expect(document.querySelector(".agent-scene-capsules")).toBeNull();
     await type("请先分析当前画布");
-    expect(chosenPresets).toEqual([]);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(sent).toEqual([]);
     await click("发送");
@@ -411,6 +418,72 @@ test("执行工具时只保留过程行状态，展开可查看真实操作，�
     await render(conversation({ messages: [mutation, { id: "answer", role: "assistant", text: "镜头标题已调整。" }] }));
     expect(liveIndicators()).toHaveLength(0);
     expect(host.textContent).toContain("镜头标题已调整。");
+});
+
+test("思考和工具交替时只有一份记录，追加步骤保留展开和焦点", async () => {
+    const thought: CloudAgentChatMessage = { id: "think-1", role: "assistant", reasoning: true, text: "先整理镜头顺序" };
+    const failure: CloudAgentChatMessage = { id: "tool-fail", role: "tool", title: "canvas_inspect_image", text: "无法读取", detail: { eventType: "tool_failed" } };
+    await render(conversation({ busy: true, messages: [thought] }));
+    const toggle = host.querySelector<HTMLButtonElement>(".agent-operation-toggle")!;
+    await act(async () => {
+        toggle.focus();
+        toggle.click();
+    });
+    await render(conversation({ busy: true, messages: [thought, failure, mutation] }));
+    expect(host.querySelectorAll(".agent-activity")).toHaveLength(1);
+    expect(document.activeElement).toBe(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.textContent).toContain("2 步操作 · 1 段思考");
+    expect(toggle.textContent).toContain("1 步未完成");
+    const steps = Array.from(host.querySelectorAll(".agent-operation-list > li"), (row) => row.textContent);
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toContain(thought.text);
+    expect(steps[1]).toContain("未完成");
+    expect(steps[2]).toContain("已完成");
+});
+
+test("历史按本地日期分组，搜索人类可读的标题和摘要，保留正确会话身份", async () => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const cloud: CloudAgentConversation = {
+        id: "cloud",
+        serverConversationId: "remote",
+        title: "第一场戏",
+        permissionMode: "read_only",
+        run: null,
+        createdAt: today.toISOString(),
+        updatedAt: today.toISOString(),
+        messages: [{ id: "reply", role: "assistant", text: "留白用 **CUT** 转场" }, { id: "thought", role: "assistant", reasoning: true, text: "不显示的推理" }, mutation],
+    };
+    const local = { ...cloud, id: "local", serverConversationId: undefined, title: "镜头草稿", draft: "改用长镜头", updatedAt: yesterday.toISOString() };
+    const blank = { ...local, id: "blank", title: "新对话", draft: "", messages: [] };
+    const opened: string[] = [];
+    await render(<AgentHistory conversations={[local, cloud]} activeConversationId="cloud" onBack={noop} onNew={noop} onDelete={noop} onOpen={(item) => opened.push(item.id)} />);
+    expect(Array.from(host.querySelectorAll("h3"), (heading) => heading.textContent)).toEqual(["今天", "昨天"]);
+    expect(host.querySelectorAll(".canvas-agent-history-open")).toHaveLength(2);
+    expect(host.querySelector('[aria-current="page"]')?.textContent).toContain("留白用 CUT 转场");
+    expect(host.textContent).toContain("草稿 · 改用长镜头");
+    expect(host.textContent).not.toContain("不显示的推理");
+    expect(host.querySelectorAll(".canvas-agent-history-delete")).toHaveLength(1);
+    const search = host.querySelector<HTMLInputElement>('[aria-label="搜索标题或摘要"]')!;
+    const filter = async (value: string) =>
+        act(async () => {
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, value);
+            search.dispatchEvent(new InputEvent("input", { bubbles: true }));
+        });
+    await filter("cut");
+    expect(host.querySelector("mark")?.textContent).toBe("CUT");
+    expect(host.querySelectorAll(".canvas-agent-history-open")).toHaveLength(1);
+    await act(async () => host.querySelector<HTMLButtonElement>(".canvas-agent-history-open")!.click());
+    expect(opened).toEqual([cloud.id]);
+    await filter("没有这个结果");
+    expect(host.textContent).toContain("没有匹配的对话");
+    await click("清除搜索");
+    expect(document.activeElement).toBe(search);
+    expect(host.querySelectorAll(".canvas-agent-history-open")).toHaveLength(2);
+    await render(<AgentHistory conversations={[blank]} activeConversationId={blank.id} onBack={noop} onNew={noop} onDelete={noop} onOpen={noop} />);
+    expect(host.textContent).toContain("还没有历史对话");
 });
 
 test("流式思考与流式正文各自承担唯一工作状态", async () => {
@@ -432,7 +505,7 @@ for (const [activity, label] of [
         await render(conversation({ busy: true, activity, messages: [mutation] }));
         expect(liveIndicators()).toHaveLength(1);
         expect(host.querySelector('[role="status"]')?.textContent).toBe(label);
-        expect(host.querySelector(".agent-operation-feed.is-live")).toBeNull();
+        expect(host.querySelector(".agent-activity.is-live")).toBeNull();
     });
 }
 

@@ -67,7 +67,7 @@ func TestImportChannelModelsPersistsReusedTierAndPreservesExistingModel(t *testi
 	if err := db.Create(&source).Error; err != nil {
 		t.Fatal(err)
 	}
-	tier := model.ChannelModelPriceTier{ID: "old-tier", ChannelModelID: source.ID, SelectorKey: `{}`, SelectorJSON: `{}`, Resolution: "*", ProviderModelKey: source.ModelKey, BillingMode: "token", InputTokenPriceMicrocredits: 123, OutputTokenPriceMicrocredits: 456, PriceConfigured: true, Enabled: true, PriceVersion: 1}
+	tier := model.ChannelModelPriceTier{ID: "old-tier", ChannelModelID: source.ID, SelectorKey: `{}`, SelectorJSON: `{}`, Resolution: "*", ProviderModelKey: source.ModelKey, BillingMode: "token", InputTokenPriceMicrocredits: 123, OutputTokenPriceMicrocredits: 456, CacheWriteTokenPriceMicrocredits: 77, PriceConfigured: true, Enabled: true, PriceVersion: 1}
 	if err := db.Create(&tier).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestImportChannelModelsPersistsReusedTierAndPreservesExistingModel(t *testi
 		t.Fatal("imported metadata/price tier missing or unexpectedly enabled")
 	}
 	got := imported.PriceTiers[0]
-	if got.ID == tier.ID || got.ChannelModelID != imported.ID || got.ProviderModelKey != imported.ProviderModelKey || got.OutputTokenPriceMicrocredits != 456 {
+	if got.ID == tier.ID || got.ChannelModelID != imported.ID || got.ProviderModelKey != imported.ProviderModelKey || got.OutputTokenPriceMicrocredits != 456 || got.CacheWriteTokenPriceMicrocredits != 77 {
 		t.Fatal("imported tier retained source identity or lost price")
 	}
 	var metadata map[string]any

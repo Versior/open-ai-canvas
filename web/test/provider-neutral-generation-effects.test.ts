@@ -114,9 +114,9 @@ describe("生成副作用跨标签租约", () => {
             expect(owner.status).toBe("claimed");
             expect(contender.status).toBe("busy");
             if (owner.status !== "claimed") throw new Error("Expected a claimed lease");
-            await expect(first.invoke("renew", "materialize:shared-task:0", "shared-task", owner.binding)).resolves.toEqual({ fence: owner.fence });
+            expect(await first.invoke("renew", "materialize:shared-task:0", "shared-task", owner.binding)).toEqual({ fence: owner.fence });
             await first.invoke("complete", "materialize:shared-task:0", "shared-task", { materializedAssetId: "saved-asset" }, owner.binding);
-            await expect(second.invoke("claim", "materialize:shared-task:0", "shared-task")).resolves.toEqual({ status: "completed", result: { materializedAssetId: "saved-asset" } });
+            expect(await second.invoke("claim", "materialize:shared-task:0", "shared-task")).toEqual({ status: "completed", result: { materializedAssetId: "saved-asset" } });
             expect(harness.lockRequests).toBe(5);
         } finally {
             harness.dispose();
@@ -132,7 +132,7 @@ describe("生成副作用跨标签租约", () => {
             expect(owner.status).toBe("claimed");
             if (owner.status !== "claimed") throw new Error("Expected a claimed lease");
             await realm.invoke("complete", "materialize:no-lock:0", "no-lock", { materializedAssetId: "saved-without-web-locks" }, owner.binding);
-            await expect(realm.invoke("claim", "materialize:no-lock:0", "no-lock")).resolves.toEqual({
+            expect(await realm.invoke("claim", "materialize:no-lock:0", "no-lock")).toEqual({
                 status: "completed",
                 result: { materializedAssetId: "saved-without-web-locks" },
             });
@@ -152,7 +152,7 @@ describe("生成副作用跨标签租约", () => {
             expect(owner.status).toBe("claimed");
             if (owner.status !== "claimed") throw new Error("Expected a claimed lease");
             await realm.invoke("complete", "materialize:fallback:0", "fallback", {}, owner.binding);
-            await expect(realm.invoke("claim", "materialize:fallback:0", "fallback")).resolves.toEqual({ status: "completed", result: {} });
+            expect(await realm.invoke("claim", "materialize:fallback:0", "fallback")).toEqual({ status: "completed", result: {} });
             expect(harness.lockRequests).toBe(0);
         } finally {
             harness.dispose();

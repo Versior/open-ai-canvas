@@ -11,6 +11,14 @@
 - 验证：真实页面 hook 回归覆盖保存失败保留草稿、重复保存去重、上一版覆盖确认；配置缓存回归验证旧 GET 不覆盖新保存结果。前端源码生产构建及后端专项通过。实际浏览器已打开路由，现有旧后端返回“请求不存在”，故保存、主题与窄屏的真实联调仍待新后端加载。
 - 回退：先保存当前差异，只逐项撤销本轮路由、菜单、页面及依赖。完整备份产生时另有 merge，之后其他协作者已完成；禁止恢复旧 index、MERGE_HEAD 或整包覆盖。详见本地交付报告与回退清单。配置上一版通过页面载入后显式保存，无新增表或 Schema 迁移。
 
+## 系统更新来源选择
+
+- 目的：在系统更新页选择官方直连或 GH-Proxy + 南大 GHCR 镜像源，并允许分别设置两类来源。
+- 调整：新增页面私有来源卡、未保存提示、异步检测分项结果；保存成功后重新检查版本，检测或更新期间锁定控件。复用后台设置卡、状态和主题 token。
+- 文件：`web/src/pages/admin/settings/system-update-page.tsx`、`components/system-update-sources.tsx`、`components/system-update-sources.css`、`web/src/services/api/system-update.ts`。
+- 可验证原始基线：提交 `bae6a36c` 的 `system-update-page.tsx`，SHA-256 `7b8aab14d4453f5f4ba5b752e5415ab05ba2585cfbc0c2558cfb5c619cdc8172`；原始内容已保存到 `.local/ui-change-backups/update-sources/system-update-page.tsx`。来源组件和样式为新增文件。
+- 验证：真实组件 DOM 与 API 合同专项覆盖范围见待测试清单和交付；真实登录态、明暗主题和窄屏视觉仍需部署验收。
+
 ## 用户登录日志筛选布局收敛
 
 - 问题：用户搜索与嵌套筛选容器分别换行，IP 输入被基础样式撑满一行，实际 1280px 视口占四排、工具栏高 168px。

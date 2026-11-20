@@ -78,6 +78,10 @@ func TestGuestWorkspaceCatalogsKeepPrivateActionsProtected(t *testing.T) {
 	if private.Code != http.StatusForbidden || strings.Contains(private.Body.String(), "PRIVATE_INSTRUCTION") {
 		t.Fatalf("private detail: %d %s", private.Code, private.Body.String())
 	}
+	disabled := guestRequest(router, "/api/public/skills/disabled-skill", "198.51.100.20")
+	if disabled.Code != http.StatusBadRequest || strings.Contains(disabled.Body.String(), "DISABLED_INSTRUCTION") {
+		t.Fatalf("disabled detail: %d %s", disabled.Code, disabled.Body.String())
+	}
 	for _, path := range []string{"/api/public/skills?scope=mine", "/api/public/skills?scope=created", "/api/public/skills?scope=favorites", "/api/public/skills?libraryCategoryId=private"} {
 		if response := guestRequest(router, path, "198.51.100.20"); response.Code != http.StatusUnauthorized {
 			t.Fatalf("%s: %d", path, response.Code)

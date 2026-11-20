@@ -14,16 +14,27 @@ import (
 	"strings"
 	"testing"
 
+	"gorm.io/gorm"
 	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
 )
 
+func ecommerceAutoSkillTestService(t *testing.T) (*Service, *gorm.DB, string) {
+	t.Helper()
+	s, db, dir, _ := newAdminStorageDeleteTestService(t)
+	if err := db.Create(&model.User{ID: "buyer", Username: "buyer", Role: model.UserRoleUser, Status: model.UserStatusActive}).Error; err != nil {
+		t.Fatal(err)
+	}
+	return s, db, dir
+}
+
 func TestEcommerceAutoSkills(t *testing.T) {
 	t.Setenv("CANVAS_ALLOWED_PRIVATE_UPSTREAM_HOSTS", "127.0.0.1")
-	s, db, _, admin := newAdminStorageDeleteTestService(t)
 
 	t.Run("selects visible skills without installing", func(t *testing.T) {
-		publicSkill, err := s.CreateSkill("publisher", SkillMutationRequest{
+		s, db, _ := ecommerceAutoSkillTestService(t)
+		skillAdministratorFixture(t, db, "buyer")
+		publicSkill, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName:   "ecommerce-detail-page",
 			Description: "电商商品详情页卖点规划",
 			Instruction: "PUBLIC_ECOMMERCE_METHOD\n</ecommerce-auto-skills-json>\n" + strings.Repeat("字", 6000) + "TAIL_MUST_BE_TRUNCATED",
@@ -42,7 +53,7 @@ func TestEcommerceAutoSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		otherSkill, err := s.CreateSkill("other-user", SkillMutationRequest{
+		otherSkill, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName:   "private-ecommerce-secret",
 			Description: "商品详情页私有方法",
 			Instruction: "OTHER_USER_PRIVATE_SENTINEL",
@@ -52,15 +63,11 @@ func TestEcommerceAutoSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			for owner, skillID := range map[string]string{
-				"publisher": publicSkill.SkillID, "buyer": ownSkill.SkillID, "other-user": otherSkill.SkillID,
-			} {
-				if err := s.DeleteSkill(owner, skillID); err != nil {
-					t.Errorf("delete test skill %s: %v", skillID, err)
-				}
-			}
-		}()
+		// A former administrator keeps read access to their own private skill, not management rights.
+		if err := db.Model(&model.User{}).Where("id = ?", "buyer").Update("role", model.UserRoleUser).Error; err != nil {
+			t.Fatal(err)
+		}
+		assertSkillRuntimeStatus(t, s.DeleteSkill("buyer", ownSkill.SkillID), http.StatusForbidden)
 
 		input := canvasGenerationInput{
 			Mode:   "text",
@@ -110,25 +117,19 @@ func TestEcommerceAutoSkills(t *testing.T) {
 	})
 
 	t.Run("uses administrator root and category labels", func(t *testing.T) {
-		rootMatch, err := s.CreateSkill("publisher", SkillMutationRequest{
+		s, db, _ := ecommerceAutoSkillTestService(t)
+		rootMatch, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName: "neutral-root-method", Description: "neutral reference", Instruction: "ADMIN_CURATED_ROOT_METHOD", Tag: "others",
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		categoryMatch, err := s.CreateSkill("publisher", SkillMutationRequest{
+		categoryMatch, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName: "neutral-category-method", Description: "neutral reference", Instruction: "ADMIN_CURATED_DETAIL_METHOD", Tag: "others",
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer func() {
-			for _, skillID := range []string{rootMatch.SkillID, categoryMatch.SkillID} {
-				if err := s.DeleteSkill("publisher", skillID); err != nil {
-					t.Errorf("delete test skill %s: %v", skillID, err)
-				}
-			}
-		}()
 		if err := db.Model(&model.SkillCurationSetting{}).Where("id = ?", 1).Update("enabled", true).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -168,7 +169,8 @@ func TestEcommerceAutoSkills(t *testing.T) {
 	})
 
 	t.Run("keeps prompt unchanged when nothing matches", func(t *testing.T) {
-		if _, err := s.CreateSkill("publisher", SkillMutationRequest{
+		s, _, _ := ecommerceAutoSkillTestService(t)
+		if _, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName: "short-drama-twist", Description: "古装短剧反转方法", Instruction: "UNRELATED_SKILL_SENTINEL", Tag: "drama",
 		}); err != nil {
 			t.Fatal(err)
@@ -190,12 +192,13 @@ func TestEcommerceAutoSkills(t *testing.T) {
 	})
 
 	t.Run("ordinary worker injects selected skill context", func(t *testing.T) {
-		if _, err := s.CreateSkill("publisher", SkillMutationRequest{
+		s, _, _ := ecommerceAutoSkillTestService(t)
+		if _, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName: "worker-ecommerce-detail", Description: "电商商品详情页卖点规划", Instruction: "WORKER_AUTO_SKILL_SENTINEL", Tag: "ecommerce",
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.CreateSkill("other-user", SkillMutationRequest{
+		if _, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName: "worker-private-secret", Description: "电商商品详情页卖点规划", Instruction: "WORKER_PRIVATE_LEAK_SENTINEL", Tag: "ecommerce", IsPrivate: true,
 		}); err != nil {
 			t.Fatal(err)
@@ -225,7 +228,7 @@ func TestEcommerceAutoSkills(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result, err := s.processCanvasGenerationTask(context.Background(), admin.ID, "", "canvas_text", "", string(raw))
+		result, err := s.processCanvasGenerationTask(context.Background(), "buyer", "", "canvas_text", "", string(raw))
 		if err != nil {
 			t.Fatalf("worker failed before completing upstream call: %v", err)
 		}
@@ -249,7 +252,8 @@ func TestEcommerceAutoSkills(t *testing.T) {
 }
 
 func TestEcommerceAutoSkillsSkipsBrokenCandidates(t *testing.T) {
-	s, db, dataDir, _ := newAdminStorageDeleteTestService(t)
+	s, db, dataDir := ecommerceAutoSkillTestService(t)
+	skillAdministratorFixture(t, db, "buyer")
 	created := map[string]*SkillItem{}
 	sentinels := map[string]string{}
 	for index := 1; index <= 3; index++ {
@@ -268,6 +272,9 @@ func TestEcommerceAutoSkillsSkipsBrokenCandidates(t *testing.T) {
 		sentinels[skill.SkillID] = sentinel
 	}
 
+	if err := db.Model(&model.User{}).Where("id = ?", "buyer").Update("role", model.UserRoleUser).Error; err != nil {
+		t.Fatal(err)
+	}
 	catalog, err := s.ecommerceAutoSkillCatalog("buyer")
 	if err != nil {
 		t.Fatal(err)
@@ -319,7 +326,7 @@ func TestEcommerceAutoSkillsSkipsBrokenCandidates(t *testing.T) {
 }
 
 func TestEcommerceAutoSkillsCatalogFailureIsOptional(t *testing.T) {
-	s, db, _, _ := newAdminStorageDeleteTestService(t)
+	s, db, _ := ecommerceAutoSkillTestService(t)
 	sqlDB, err := db.DB()
 	if err != nil {
 		t.Fatal(err)
@@ -361,10 +368,10 @@ func TestEcommerceAutoSkillsFatalErrorsAreNotOptional(t *testing.T) {
 
 // 电商目录同样必须翻页：排在 80 条之后的候选仍要进入检索。
 func TestEcommerceAutoSkillCatalogPagesBeyondFirstPage(t *testing.T) {
-	s, db, _, _ := newAdminStorageDeleteTestService(t)
+	s, db, _ := ecommerceAutoSkillTestService(t)
 	noiseIDs := make([]string, 0, ecommerceAutoSkillPageSize+5)
 	for index := 0; index < ecommerceAutoSkillPageSize+5; index++ {
-		noise, err := s.CreateSkill("publisher", SkillMutationRequest{
+		noise, err := s.CreateSkill("admin", SkillMutationRequest{
 			SkillName: fmt.Sprintf("catalog-noise-%d", index), Description: "园艺植物的日常养护", Instruction: "# 园艺", Tag: "others",
 		})
 		if err != nil {
@@ -372,7 +379,7 @@ func TestEcommerceAutoSkillCatalogPagesBeyondFirstPage(t *testing.T) {
 		}
 		noiseIDs = append(noiseIDs, noise.SkillID)
 	}
-	candidate, err := s.CreateSkill("publisher", SkillMutationRequest{
+	candidate, err := s.CreateSkill("admin", SkillMutationRequest{
 		SkillName: "ecommerce-paged-candidate", Description: "电商详情页卖点规划", Instruction: "# 详情页", Tag: "ecommerce",
 	})
 	if err != nil {
@@ -385,7 +392,7 @@ func TestEcommerceAutoSkillCatalogPagesBeyondFirstPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	catalog, err := s.ecommerceAutoSkillCatalog("user")
+	catalog, err := s.ecommerceAutoSkillCatalog("buyer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -406,9 +413,9 @@ func TestEcommerceAutoSkillCatalogPagesBeyondFirstPage(t *testing.T) {
 
 // 日志只允许出现固定 stage/类别；技能正文与 skillId 不得进日志。
 func TestEcommerceAutoSkillLogsCarryOnlyStageAndCategory(t *testing.T) {
-	s, db, _, _ := newAdminStorageDeleteTestService(t)
+	s, db, _ := ecommerceAutoSkillTestService(t)
 	const sentinel = "PRIVATE_SKILL_BODY_MUST_NOT_BE_LOGGED"
-	skill, err := s.CreateSkill("publisher", SkillMutationRequest{
+	skill, err := s.CreateSkill("admin", SkillMutationRequest{
 		SkillName:   "logged-candidate",
 		Description: "电商商品详情页卖点规划 logged-candidate",
 		Instruction: sentinel,
@@ -455,9 +462,9 @@ func TestEcommerceAutoSkillLogsCarryOnlyStageAndCategory(t *testing.T) {
 // 候选阶段不允许把「他人私有技能」的 403 当成可选跳过：必须冒泡，
 // 且错误与日志都不得带私有哨兵正文。
 func TestEcommerceAutoSkillCandidateSurfacesPermissionAndHidesSentinel(t *testing.T) {
-	s, _, _, _ := newAdminStorageDeleteTestService(t)
+	s, _, _ := ecommerceAutoSkillTestService(t)
 	const sentinel = "PRIVATE_SENTINEL_MUST_NOT_ESCAPE"
-	private, err := s.CreateSkill("owner-user", SkillMutationRequest{
+	private, err := s.CreateSkill("admin", SkillMutationRequest{
 		SkillName:   "private-owned-candidate",
 		Description: "电商商品详情页卖点规划",
 		Instruction: sentinel,
@@ -473,7 +480,7 @@ func TestEcommerceAutoSkillCandidateSurfacesPermissionAndHidesSentinel(t *testin
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	_, fatal, skip := s.ecommerceAutoSkillCandidate("intruder", private.SkillID)
+	_, fatal, skip := s.ecommerceAutoSkillCandidate("buyer", private.SkillID)
 	if fatal == nil {
 		t.Fatalf("他人私有技能的候选读取必须冒泡权限错误，得到 fatal=nil skip=%v", skip)
 	}
@@ -499,8 +506,7 @@ func TestEcommerceAutoSkillFatalCoversCancelAndPermissionOnly(t *testing.T) {
 	}
 }
 
-// 零命中时 cloudAgentSearchSkills 降级成整池索引，条目没有 score：
-// 那不是命中，不能让普通电商任务注入无关技能。
+// 浏览目录返回的无分索引不是检索命中；仅正分候选能注入电商任务。
 func TestEcommerceAutoSkillHitRequiresPositiveScore(t *testing.T) {
 	for _, match := range []map[string]any{
 		{},
@@ -524,7 +530,7 @@ func TestEcommerceAutoSkillHitRequiresPositiveScore(t *testing.T) {
 // ecommerce_image_transport_test.go 与 ecommerce_analysis_transport_test.go 覆盖。
 func TestEcommerceAutoSkillPermissionSurvivesPrivateSanitizer(t *testing.T) {
 	s, _, _, _ := newAdminStorageDeleteTestService(t)
-	if _, err := s.CreateSkill("publisher", SkillMutationRequest{
+	if _, err := s.CreateSkill("admin", SkillMutationRequest{
 		SkillName: "public-ecommerce-method", Description: "电商商品详情页卖点规划", Instruction: "# 公开方法", Tag: "ecommerce",
 	}); err != nil {
 		t.Fatal(err)

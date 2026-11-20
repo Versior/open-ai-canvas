@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { checkSystemUpdate, getSystemUpdateStatus, rollbackSystemUpdate, startSystemUpdate, type SystemUpdateStatus, type UpdatePhase } from "@/services/api/system-update";
 import { AdminPageFrame } from "../components/admin-shell";
 import { AdminStatusBadge, SettingsSectionCard } from "../components/admin-ui";
+import { SystemUpdateSourcesPanel } from "./components/system-update-sources";
 
 const activePhases = new Set<UpdatePhase>(["checking", "preflight", "backing_up", "pulling", "draining", "migrating", "switching", "verifying", "rolling_back"]);
 
@@ -35,6 +36,8 @@ export default function SystemUpdatePage() {
     const [starting, setStarting] = useState(false);
     const [reconnecting, setReconnecting] = useState(false);
     const [loadError, setLoadError] = useState("");
+    const [sourceDirty, setSourceDirty] = useState(false);
+    const [sourceBusy, setSourceBusy] = useState(false);
     const mountedRef = useRef(true);
 
     const load = useCallback(
@@ -67,12 +70,12 @@ export default function SystemUpdatePage() {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
-        if (!status || !activePhases.has(status.operation.phase)) return;
+        if (!status || (!activePhases.has(status.operation.phase) && status.sourceProbe?.status !== "running")) return;
         const timer = window.setInterval(() => void load(false), 2500);
         return () => window.clearInterval(timer);
     }, [load, status]);
 
-    const operationActive = Boolean(status && activePhases.has(status.operation.phase));
+    const operationActive = Boolean(status && (activePhases.has(status.operation.phase) || status.sourceProbe?.status === "running")) || sourceBusy;
     const blockingCheckFailed = status?.checks.some((check) => check.blocking && check.status === "failed") ?? true;
 
     const requestCheck = async () => {
@@ -97,7 +100,7 @@ export default function SystemUpdatePage() {
             width: 560,
             content: (
                 <div className="space-y-3 text-sm text-foreground/70">
-                    <p>系统会先创建并校验数据库 ZIP 与数据目录备份，再停止旧服务、执行迁移并切换镜像。</p>
+                    <p>系统会先下载并校验目标文件和镜像，再停止旧服务、创建最终备份、执行迁移并切换镜像。</p>
                     <p>更新期间站点会短暂不可用。任何前置检查失败都不会切换服务；切换后验证失败会自动恢复旧版本和数据库。</p>
                 </div>
             ),
@@ -162,7 +165,7 @@ export default function SystemUpdatePage() {
             description="检查 GitHub Release，并在完成备份、迁移和健康验证后切换版本。"
             scroll
             actions={
-                <Button icon={<RefreshCw className="size-4" />} loading={checking} disabled={operationActive || !status?.supported} onClick={() => void requestCheck()}>
+                <Button icon={<RefreshCw className="size-4" />} loading={checking} disabled={operationActive || sourceDirty || !status?.supported} onClick={() => void requestCheck()}>
                     检查更新
                 </Button>
             }
@@ -179,6 +182,8 @@ export default function SystemUpdatePage() {
                     />
                 ) : null}
 
+                <SystemUpdateSourcesPanel status={status} busy={operationActive || checking || starting} onStatusChange={setStatus} onDirtyChange={setSourceDirty} onBusyChange={setSourceBusy} />
+
                 <div className="admin-system-update-grid">
                     <SettingsSectionCard
                         className="admin-system-update-release"
@@ -190,7 +195,7 @@ export default function SystemUpdatePage() {
                         footer={
                             <>
                                 <span className="text-xs leading-5 text-foreground/50">每次在线更新都会重新备份数据库，并校验镜像摘要、迁移结果和服务健康状态。</span>
-                                <Button type="primary" loading={starting} disabled={!status?.connected || !status.updateAvailable || operationActive || blockingCheckFailed} onClick={requestStart}>
+                                <Button type="primary" loading={starting} disabled={!status?.connected || !status.updateAvailable || operationActive || sourceDirty || blockingCheckFailed} onClick={requestStart}>
                                     开始更新
                                 </Button>
                             </>

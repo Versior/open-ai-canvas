@@ -1,3 +1,4 @@
+import { useSkillLibraryAccess } from "@/lib/skill-access";
 import { ArrowUpRight, Clapperboard, Layers3, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { agentCopy, type CanvasAppearance } from "@/lib/canvas/agent-appearance";
@@ -17,7 +18,8 @@ type AgentWelcomeProps = {
 
 export function AgentWelcome({ appearance, nodeCount, installedSkillCount = null, onOpenSkillRecommendations, onDraftPrompt }: AgentWelcomeProps) {
     const { t } = useTranslation();
-    const suggestRecommendations = Boolean(onOpenSkillRecommendations) && installedSkillCount !== null && installedSkillCount < RECOMMEND_SKILLS_BELOW;
+    const canUseSkills = useSkillLibraryAccess();
+    const suggestRecommendations = canUseSkills && Boolean(onOpenSkillRecommendations) && installedSkillCount !== null && installedSkillCount < RECOMMEND_SKILLS_BELOW;
     return (
         <section className="agent-welcome" aria-label={t("canvasA.welcome.label")}>
             <div className="agent-welcome-intro">

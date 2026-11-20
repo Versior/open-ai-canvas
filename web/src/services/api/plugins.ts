@@ -1,12 +1,13 @@
 import { http } from "@/services/api/request";
-import type { PluginManifest } from "@/lib/plugins/plugin-types";
+import type { RegisteredPlugin } from "@/lib/plugins/plugin-types";
 
 export type BackendPlugin = {
-    manifest: PluginManifest;
+    manifest: RegisteredPlugin["manifest"];
     source: "bundled" | "uploaded" | string;
     fileName: string;
     package: string;
     sha256: string;
+    releases?: Array<{ version: string; sha256: string }>;
     installedAt: string;
     updatedAt: string;
     status: "enabled" | "disabled" | "invalid" | string;

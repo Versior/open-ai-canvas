@@ -13,6 +13,7 @@ type StudioModelImportOptions = app.StudioModelImportOptions
 type StudioModelImportReport = app.StudioModelImportReport
 type StudioModelRemoteImportInput = app.StudioModelRemoteImportInput
 type AdminAgentPetBatchInput = app.AdminAgentPetBatchInput
+type Live2DImport = app.Live2DImport
 
 const (
 	WorkbenchKindImage = app.WorkbenchKindImage
@@ -448,6 +449,7 @@ type (
 	VideoTeardownRequest                   = app.VideoTeardownRequest
 	VoiceProfileSummary                    = app.VoiceProfileSummary
 	WalletSummary                          = app.WalletSummary
+	WalletHistorySummary                   = app.WalletHistorySummary
 	WorkflowField                          = app.WorkflowField
 )
 

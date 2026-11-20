@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { observeCanvasGestureActive } from "@/lib/canvas/canvas-live-viewport";
 
 /**
  * 绿幕形象视频：每帧把视频画到画布上做抠像。抠像在主线程逐像素处理，开销不小，
@@ -9,6 +10,7 @@ export function AgentAvatarVideo({
     loop = true,
     paused = false,
     reducedMotion = false,
+    pauseDuringCanvasGesture = false,
     onReady,
     onError,
     onContentBounds,
@@ -19,6 +21,7 @@ export function AgentAvatarVideo({
     loop?: boolean;
     paused?: boolean;
     reducedMotion?: boolean;
+    pauseDuringCanvasGesture?: boolean;
     onReady?: (src: string) => void;
     onError?: () => void;
     onContentBounds?: (bounds: { top: number; aspect: number }) => void;
@@ -43,6 +46,7 @@ export function AgentAvatarVideo({
         let animationFrame = 0;
         let videoFrame = 0;
         let disposed = false;
+        let canvasBusy = false;
         let lastFrameTime = -1;
         let measured = false;
         const drawFrame = () => {
@@ -92,7 +96,7 @@ export function AgentAvatarVideo({
             }
         };
         const scheduleFrame = () => {
-            if (disposed || paused || document.visibilityState === "hidden" || reducedMotion) return;
+            if (disposed || paused || reducedMotion || canvasBusy || document.hidden) return;
             if (typeof video.requestVideoFrameCallback === "function") {
                 videoFrame = video.requestVideoFrameCallback(() => {
                     drawFrame();
@@ -111,43 +115,38 @@ export function AgentAvatarVideo({
             animationFrame = 0;
             videoFrame = 0;
         };
-        // 回到前台时重新排帧；隐藏时 scheduleFrame 不再续排。
-        const resumeWhenVisible = () => {
+        // 窗沿收起或减少动态效果时仍要画出静止首帧、量出头部边界。
+        const drawVisibleFrame = () => {
+            if (!canvasBusy && !document.hidden) drawFrame();
+        };
+        const updatePlayback = () => {
             cancelFrame();
-            if (document.visibilityState === "hidden") {
+            drawVisibleFrame();
+            if (canvasBusy || document.hidden || paused || reducedMotion) {
                 video.pause();
                 return;
             }
-            if (!paused && !reducedMotion) void video.play().catch(() => undefined);
+            if (video.ended && !video.loop) return;
+            void video.play().catch(() => undefined);
             scheduleFrame();
         };
-        document.addEventListener("visibilitychange", resumeWhenVisible);
-        const loaded = () => {
-            drawFrame();
-            if (reducedMotion || paused || document.hidden) video.pause();
-        };
-        video.addEventListener("loadeddata", loaded);
-        drawFrame();
-        scheduleFrame();
+        video.addEventListener("loadeddata", drawVisibleFrame);
+        document.addEventListener("visibilitychange", updatePlayback);
+        const stopObserving = pauseDuringCanvasGesture
+            ? observeCanvasGestureActive(video.ownerDocument, (active) => {
+                  canvasBusy = active;
+                  updatePlayback();
+              })
+            : undefined;
+        if (!stopObserving) updatePlayback();
         return () => {
             disposed = true;
             cancelFrame();
-            document.removeEventListener("visibilitychange", resumeWhenVisible);
-            video.removeEventListener("loadeddata", loaded);
+            stopObserving?.();
+            video.removeEventListener("loadeddata", drawVisibleFrame);
+            document.removeEventListener("visibilitychange", updatePlayback);
         };
-    }, [src, paused, reducedMotion]);
-
-    useEffect(() => {
-        const video = videoRef.current;
-        if (!video) return;
-        video.loop = loop;
-        if (paused || document.hidden || (reducedMotion && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)) {
-            video.pause();
-            return;
-        }
-        // pause() 会清掉 autoplay 标记，恢复时必须显式播放；已在播放时 play() 不会重来。
-        void video.play().catch(() => undefined);
-    }, [src, loop, paused, reducedMotion]);
+    }, [src, paused, reducedMotion, pauseDuringCanvasGesture]);
 
     return (
         <>
@@ -155,7 +154,6 @@ export function AgentAvatarVideo({
             <video
                 ref={videoRef}
                 src={src}
-                autoPlay={!paused && !reducedMotion && !document.hidden}
                 muted
                 loop={loop}
                 playsInline

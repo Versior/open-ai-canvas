@@ -146,6 +146,13 @@ type SkillMutationRequest struct {
 }
 
 func (s *Service) Skills(userID string, req SkillListRequest) (*SkillList, error) {
+	if err := s.RequireSkillAccess(userID); err != nil {
+		return nil, err
+	}
+	return s.listSkills(userID, req)
+}
+
+func (s *Service) listSkills(userID string, req SkillListRequest) (*SkillList, error) {
 	req = normalizeSkillListRequest(req)
 	categoryID, uncategorized, err := s.curationFilter(req)
 	if err != nil {
@@ -203,11 +210,11 @@ func (s *Service) GuestSkills(req SkillListRequest) (*SkillList, error) {
 		return nil, kernel.Unauthorized("请先登录")
 	}
 	req.Scope = "public"
-	return s.Skills("", req)
+	return s.listSkills("", req)
 }
 
 func (s *Service) GuestSkillDetail(id string) (*SkillItem, error) {
-	skill, err := s.visibleSkill("", id)
+	skill, err := s.enabledSkill(id)
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +229,9 @@ func (s *Service) GuestSkillDetail(id string) (*SkillItem, error) {
 }
 
 func (s *Service) AddedSkills(userID string) ([]AddedSkillReference, error) {
+	if err := s.RequireSkillAccess(userID); err != nil {
+		return nil, err
+	}
 	rows, _, err := s.repo.Skills(repository.SkillListFilter{UserID: userID, Scope: "mine", Sort: "updated", Limit: -1})
 	if err != nil {
 		return nil, err
@@ -254,6 +264,9 @@ func (s *Service) SkillDetail(userID string, id string) (*SkillItem, error) {
 }
 
 func (s *Service) CreateSkill(userID string, req SkillMutationRequest) (*SkillItem, error) {
+	if err := s.RequireAdministrator(userID); err != nil {
+		return nil, err
+	}
 	normalized, mediaJSON, err := normalizeSkillMutationRequest(req, true)
 	if err != nil {
 		return nil, err
@@ -275,6 +288,9 @@ func (s *Service) CreateSkill(userID string, req SkillMutationRequest) (*SkillIt
 }
 
 func (s *Service) UpdateSkill(userID string, id string, req SkillMutationRequest) (*SkillItem, error) {
+	if err := s.RequireAdministrator(userID); err != nil {
+		return nil, err
+	}
 	skill, err := s.ownedSkill(userID, id)
 	if err != nil {
 		return nil, err
@@ -302,6 +318,9 @@ func (s *Service) UpdateSkill(userID string, id string, req SkillMutationRequest
 }
 
 func (s *Service) DeleteSkill(userID string, id string) error {
+	if err := s.RequireAdministrator(userID); err != nil {
+		return err
+	}
 	skill, err := s.ownedSkill(userID, id)
 	if err != nil {
 		return err
@@ -313,8 +332,8 @@ func (s *Service) DeleteSkill(userID string, id string) error {
 }
 
 func (s *Service) DeleteBuiltinSkill(actor *model.User, id string) error {
-	if actor == nil || actor.Role != model.UserRoleAdmin {
-		return kernel.Forbidden("只有管理员可以删除内置技能")
+	if err := s.requireSkillAdmin(actor); err != nil {
+		return err
 	}
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -456,6 +475,20 @@ func (s *Service) skillItems(userID string, skills []model.Skill, includeInstruc
 
 // 所有详情和关系写入都先经过同一可见性边界，避免私有技能通过加入、收藏或画布接口泄露正文。
 func (s *Service) visibleSkill(userID string, id string) (*model.Skill, error) {
+	if err := s.RequireSkillAccess(userID); err != nil {
+		return nil, err
+	}
+	skill, err := s.enabledSkill(id)
+	if err != nil {
+		return nil, err
+	}
+	if skill.IsPrivate && skill.OwnerID != userID {
+		return nil, kernel.Forbidden("该技能未公开")
+	}
+	return skill, nil
+}
+
+func (s *Service) enabledSkill(id string) (*model.Skill, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, kernel.BadAuthRequest("技能 ID 不能为空")
@@ -464,13 +497,7 @@ func (s *Service) visibleSkill(userID string, id string) (*model.Skill, error) {
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, kernel.BadAuthRequest("技能不存在或已删除")
 	}
-	if err != nil {
-		return nil, err
-	}
-	if skill.IsPrivate && skill.OwnerID != userID {
-		return nil, kernel.Forbidden("该技能未公开")
-	}
-	return skill, nil
+	return skill, err
 }
 
 func (s *Service) ownedSkill(userID string, id string) (*model.Skill, error) {

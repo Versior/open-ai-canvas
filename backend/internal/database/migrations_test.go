@@ -16,8 +16,17 @@ func TestCurrentSchemaVersionMatchesMigrationPlan(t *testing.T) {
 		t.Fatal("migration plan is empty")
 	}
 	for index, item := range schemaMigrations {
-		if index > 0 && item.version <= schemaMigrations[index-1].version {
-			t.Fatalf("migration versions must be strictly increasing: %d after %d", item.version, schemaMigrations[index-1].version)
+		want := int64(index + 1)
+		if want >= 44 { // Both published branches left 44 reserved.
+			want++
+		}
+		if item.version != want {
+			t.Fatalf("main migration %d has version %d, want %d", index, item.version, want)
+		}
+	}
+	for index, item := range yingceSchemaMigrations {
+		if item.version != int64(index+1) {
+			t.Fatalf("official migration %d has version %d", index+1, item.version)
 		}
 	}
 	latest := schemaMigrations[len(schemaMigrations)-1].version

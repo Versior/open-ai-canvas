@@ -1,3 +1,4 @@
+import { hasSkillLibraryAccess } from "@/lib/skill-access";
 import { http, apiBaseURL } from "@/services/api/request";
 import { consumeTaskTextStream, createTaskTextStreamParser } from "@/services/api/task-text-stream";
 import { assertCurrentUserSession, captureUserSession, isUserSessionInvalidated } from "@/lib/user-scope";
@@ -35,7 +36,21 @@ export type AgentProfileView = {
 };
 
 export type AgentApprovalPreviewOperation =
-    "add_node" | "update_node" | "connect_nodes" | "arrange_nodes" | "generate_media" | "generate_media_item" | "build_board" | "create_storyboard" | "edit_storyboard" | "create_character" | "plan_step" | "adopt_drama_media" | "update_drama_shot";
+    | "add_node"
+    | "update_node"
+    | "connect_nodes"
+    | "arrange_nodes"
+    | "generate_media"
+    | "generate_media_item"
+    | "build_board"
+    | "create_storyboard"
+    | "edit_storyboard"
+    | "create_character"
+    | "plan_step"
+    | "adopt_drama_media"
+    | "update_drama_shot"
+    | "previs_scene_create"
+    | "previs_apply_patch";
 
 export type AgentApprovalPreviewItem = {
     operation: AgentApprovalPreviewOperation;
@@ -177,11 +192,15 @@ async function submitAgentRequest(path: string, input: CreateAgentRunInput) {
 }
 
 export async function createAgentRun(input: CreateAgentRunInput) {
-    return submitAgentRequest("/agent/runs", input);
+    return submitAgentRequest("/agent/runs", { ...input, pinnedSkillIds: hasSkillLibraryAccess() ? input.pinnedSkillIds : [], contextScope: hasSkillLibraryAccess() ? input.contextScope : input.contextScope?.filter((scope) => scope !== "skills") });
 }
 
 export async function sendAgentMessage(runId: string, input: CreateAgentRunInput) {
-    return submitAgentRequest(`/agent/runs/${encodeURIComponent(runId)}/messages`, input);
+    return submitAgentRequest(`/agent/runs/${encodeURIComponent(runId)}/messages`, {
+        ...input,
+        pinnedSkillIds: hasSkillLibraryAccess() ? input.pinnedSkillIds : [],
+        contextScope: hasSkillLibraryAccess() ? input.contextScope : input.contextScope?.filter((scope) => scope !== "skills"),
+    });
 }
 
 export function sendAgentInterjection(runId: string, input: { text: string; messageId: string }) {

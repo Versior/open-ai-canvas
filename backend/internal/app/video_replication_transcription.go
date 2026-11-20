@@ -67,7 +67,7 @@ func (s *Service) videoReplicationTranscriptionModel(id string) (*videoReplicati
 // transcribeWithChannelModel 把 16k 单声道 wav 发给转写模型，按分句时间返回口播。
 // 模型只返回整段文字、没有分句时间时报错：口播要按时间分给镜头，整段文字分不了。
 func (s *Service) transcribeWithChannelModel(ctx context.Context, task *model.Task, choice videoReplicationTranscriptionChoice, wavPath, language string) ([]timelineTranscriptionSegment, string, error) {
-	config, err := s.resolveProviderConfig(providerConfig{ChannelID: choice.ChannelID, ChannelModelKey: choice.ModelKey, Model: choice.ModelKey})
+	config, err := s.resolveProviderConfig(providerConfig{ChannelID: choice.ChannelID, ChannelModelKey: choice.ModelKey, Model: choice.ModelKey}, nil)
 	if err != nil {
 		return nil, "", err
 	}

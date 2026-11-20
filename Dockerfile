@@ -16,6 +16,7 @@ COPY backend/internal/ecommerceagent/platform_knowledge.json /app/backend/intern
 COPY backend/internal/ecommerceagent/studio_design_catalog.json /app/backend/internal/ecommerceagent/studio_design_catalog.json
 COPY backend/internal/lutlibrary/presets.json /app/backend/internal/lutlibrary/presets.json
 COPY backend/internal/app/appearance_theme_packs.json /app/backend/internal/app/appearance_theme_packs.json
+COPY backend/internal/app/video_model_presets.json /app/backend/internal/app/video_model_presets.json
 ARG VITE_TLDRAW_LICENSE_KEY
 ARG BUILD_VERSION
 ARG BUILD_COMMIT=unknown

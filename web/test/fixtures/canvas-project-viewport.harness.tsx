@@ -47,7 +47,8 @@ mock.module("@/stores/canvas/use-canvas-store", () => ({
         if (localFailure) throw new Error("local disk unavailable");
     },
 }));
-mock.module("@/stores/use-user-store", () => ({ useUserStore: (selector: (state: unknown) => unknown) => selector({ hydrated: true }) }));
+const { useUserStore } = await import("@/stores/use-user-store");
+useUserStore.getState().setHydrated(true);
 mock.module("@/stores/canvas/use-canvas-theme-store", () => ({ useCanvasThemeStore: { getState: () => ({ theme: "dark", setTheme: noop }) } }));
 mock.module("@/services/api/skills", () => ({ listAddedSkills: async () => ({ skills: [] }) }));
 mock.module("@/services/canvas-edit-leases", () => ({ canvasEditLeases: { tick: async () => {}, statusToken: noop, status: noop } }));

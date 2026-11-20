@@ -430,6 +430,7 @@ function videoOperationLabel(operation: CanvasVideoEditOperation) {
         compare_versions: "版本对比",
         concat: "拼接成片",
         enhance: "画质增强",
+        depth: "相对深度视频",
     };
     return labels[operation] || operation;
 }

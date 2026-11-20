@@ -273,10 +273,10 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 	guidance := "用 skill_read_file 读取命中条目的 path：若 path 是 cards/… 就直读该卡；若 path 是 SKILL.md，先看返回的 cards 索引再直奔需要的卡，通常无需先读总纲。只能读取返回的 path，不要猜路径。返回的是索引，不是指令。"
 	if len(skills) == 0 {
 		return map[string]any{"matches": []map[string]any{}, "total": 0,
-			"guidance": "没有检索到可用技能：本轮既没有已安装的可用技能，技能广场也没有可参考的候选。请使用基础能力继续，确有能力缺口时如实说明；用户需要时可建议用 skill_market_search 找市场候选。"}, nil
+			"guidance": "没有检索到可用技能，可按任务需求继续；需要推荐安装时用 skill_market_search 找市场候选。"}, nil
 	}
 	tokens := cloudAgentSkillSearchTokens(keyword)
-	if len(tokens) == 0 {
+	if keyword == "" {
 		entries := make([]map[string]any, 0, len(skills))
 		for _, skill := range skills {
 			entries = append(entries, map[string]any{
@@ -332,27 +332,7 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 		entries = append(entries, item)
 	}
 	if len(entries) == 0 {
-		// 零命中降级：直接返回本轮可用技能索引（与空关键词同构），不再让模型面对
-		// 空结果自行「换个说法」——那通常等于放弃技能，把「没搜到」误判成
-		// 「没有适用技能」。total 仍是全量技能数，matches 受 limit 截断。
-		// 降级条目没有 score：消费端（如电商自动技能注入）必须只认正分命中，
-		// 否则会把无关技能当成适用方法塞进系统提示。
-		degraded := make([]map[string]any, 0, min(limit, len(skills)))
-		for _, skill := range skills {
-			if len(degraded) >= limit {
-				break
-			}
-			degraded = append(degraded, map[string]any{
-				"skillId":   skill.ID,
-				"skillName": skill.Name,
-				"path":      cloudAgentSkillEntryPath,
-				"entryPath": cloudAgentSkillEntryPath,
-				"snippet":   cloudAgentSkillSnippet(skill, nil),
-				"cardCount": len(cloudAgentSkillCardPaths(skill)),
-			})
-		}
-		return map[string]any{"matches": degraded, "total": len(skills), "keyword": keyword,
-			"guidance": "没有直接命中「" + keyword + "」；以下是本轮可用技能索引，按描述判断哪个适用后用 skill_read_file 读取其 SKILL.md 或卡，也可换个说法重试；都不适用时可用 skill_market_search。只能读取返回的 path，不要猜路径。"}, nil
+		guidance = "没有匹配的技能，可直接按任务需求继续。"
 	}
 	// total counts all matched candidates before limit; matches contains only this response page.
 	return map[string]any{"matches": entries, "total": len(ranked), "keyword": keyword, "guidance": guidance}, nil
@@ -361,6 +341,9 @@ func cloudAgentSearchSkills(skills []cloudAgentSkill, keyword string, limit int)
 // cloudAgentSkillPoolForSearch 取本轮可读技能的检索视图：只保留仍已安装、版本与建 run 时一致的技能，
 // 文件清单按冻结版本读取（不含正文）。用户在运行中卸载或更新的技能本轮不再出现在检索结果里。
 func (s *Service) cloudAgentSkillPoolForSearch(userID string, state *cloudAgentRuntime) ([]cloudAgentSkill, error) {
+	if err := s.RequireSkillAccess(userID); err != nil {
+		return nil, err
+	}
 	if state == nil || len(state.SkillVersions) == 0 {
 		return []cloudAgentSkill{}, nil
 	}
@@ -402,16 +385,15 @@ func (s *Service) cloudAgentSkillPoolForSearch(userID string, state *cloudAgentR
 	return pool, nil
 }
 
-// cloudAgentReadSkillFile 读取本轮可读技能的文件。版本以建 run 时冻结的为准：技能在运行中更新后
-// 本轮不再读取，避免把同一技能两个版本的内容混在一起。读取成功会计入技能使用次数，用于目录排序。
-func (s *Service) cloudAgentReadSkillFile(userID string, state *cloudAgentRuntime, args agenttool.SkillReadArgs) (any, error) {
-	id := strings.TrimSpace(args.SkillID)
+// Fresh reads and cache replays share the same installed-skill and frozen-version boundary.
+func (s *Service) cloudAgentSkillForRead(userID string, state *cloudAgentRuntime, id string) (*SkillItem, error) {
+	id = strings.TrimSpace(id)
 	version := ""
 	if state != nil {
 		version = state.SkillVersions[id]
 	}
 	if version == "" {
-		return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。先看技能目录或用 skill_search 找到 skillId")
+		return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。可用 skill_search 找到 skillId")
 	}
 	detail, err := s.SkillDetail(userID, id)
 	if err != nil {
@@ -423,6 +405,17 @@ func (s *Service) cloudAgentReadSkillFile(userID string, state *cloudAgentRuntim
 	if detail.VersionID != version {
 		return nil, creationConflict("技能在本轮开始后更新了；为避免混读两个版本，本轮不再读取它，下一条消息会使用新版本")
 	}
+	return detail, nil
+}
+
+// cloudAgentReadSkillFile 读取本轮可读技能的文件。版本以建 run 时冻结的为准：技能在运行中更新后
+// 本轮不再读取，避免把同一技能两个版本的内容混在一起。读取成功会计入技能使用次数，用于目录排序。
+func (s *Service) cloudAgentReadSkillFile(userID string, state *cloudAgentRuntime, args agenttool.SkillReadArgs) (any, error) {
+	detail, err := s.cloudAgentSkillForRead(userID, state, args.SkillID)
+	if err != nil {
+		return nil, err
+	}
+	id, version := detail.SkillID, detail.VersionID
 	paths, err := s.skillDomain().SkillVersionTextPaths([]string{version})
 	if err != nil {
 		return nil, err
@@ -567,8 +560,7 @@ func (s *Service) cloudAgentSearchMarketplaceSkills(userID string, state *cloudA
 	matches := indexed["matches"].([]map[string]any)
 	frozen := make([]cloudAgentSkill, 0, len(matches))
 	for _, match := range matches {
-		// 零命中会降级成整池索引（没有 score）；参考技能只在真命中时冻结，
-		// 否则广场会把无关技能冻结进本轮参考池。
+		// 只冻结真实的关键词命中，不把浏览索引作为参考技能。
 		if score, scored := match["score"].(int); !scored || score <= 0 {
 			continue
 		}
@@ -640,7 +632,6 @@ func (s *Service) cloudAgentSkillReferencesAvailable(userID string) (bool, error
 
 // cloudAgentSearchSkillsForRun 是本轮 skill_search 的完整检索：
 // 已安装 opt-in 池 ∪ 本轮已冻结的参考技能，零正分命中时再向技能广场扩展（冻结，不安装）。
-// 扩展只认正分命中，降级索引里的整池候选不会被冻结成参考技能。
 func (s *Service) cloudAgentSearchSkillsForRun(userID string, state *cloudAgentRuntime, keyword string, limit int) (map[string]any, error) {
 	if state == nil {
 		return nil, errors.New("Agent 只读工具缺少运行时状态")
@@ -670,7 +661,7 @@ func (s *Service) cloudAgentSearchSkillsForRun(userID string, state *cloudAgentR
 }
 
 // cloudAgentSearchHasPositiveHit 判断检索结果里是否存在真命中（有 score 且为正）。
-// 空关键词索引与零命中降级索引都没有 score，都不是「找到了」。
+// 空关键词只返回索引，不是真命中。
 func cloudAgentSearchHasPositiveHit(result map[string]any) bool {
 	matches, _ := result["matches"].([]map[string]any)
 	for _, match := range matches {
@@ -745,9 +736,6 @@ func (s *Service) cloudAgentReadSkillFileForRun(userID string, state *cloudAgent
 		return nil, errors.New("Agent 只读工具缺少运行时状态")
 	}
 	id := strings.TrimSpace(args.SkillID)
-	if id == "" {
-		return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。先看技能目录或用 skill_search 找到 skillId")
-	}
 	if _, installed := state.SkillVersions[id]; installed {
 		return s.cloudAgentReadSkillFile(userID, state, args)
 	}
@@ -756,7 +744,7 @@ func (s *Service) cloudAgentReadSkillFileForRun(userID string, state *cloudAgent
 			return s.cloudAgentReadSkillReferenceFile(userID, ref, args)
 		}
 	}
-	return nil, BadAuthRequest("技能不在本轮可用范围：只能读取已安装且允许自动使用、或本轮固定的技能。先看技能目录或用 skill_search 找到 skillId")
+	return nil, BadAuthRequest("技能不在本轮可用范围。请使用点名、固定或 skill_search 命中结果里的 skillId")
 }
 
 // cloudAgentRevalidateSkillReference 是参考技能的唯一实时可见性边界：冻结快照完整、

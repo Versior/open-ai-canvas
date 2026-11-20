@@ -18,7 +18,7 @@ export function identifyChannelModelConfiguration(values: ChannelModelFormValues
     const best = Math.max(0, ...ranked.map((item) => item.score));
     let candidates = ranked.filter((item) => best >= 2 && item.score === best);
     // Equal model aliases may share a contract, but conflicting contracts must be selected explicitly.
-    const contractKeys = () => new Set(candidates.map(({ model }) => canonicalize({ capability: model.capability, protocol: model.protocol, config: model.capabilityConfig })));
+    const contractKeys = () => new Set(candidates.map(({ model }) => canonicalize({ capability: model.capability, protocol: model.protocol, protocolRelease: model.protocolRelease, config: model.capabilityConfig })));
     if (contractKeys().size > 1) {
         const selected = candidates.filter(({ model }) => model.capability === values.capability && model.protocol === values.protocol);
         if (selected.length) candidates = selected;
@@ -61,6 +61,7 @@ export function identifyChannelModelConfiguration(values: ChannelModelFormValues
         icon: values.icon?.trim() || template?.icon || identity?.icon || "",
         capability,
         protocol: protocol.value,
+        protocolRelease: template?.protocol === protocol.value && template.protocolRelease ? template.protocolRelease : sameContract && values.protocolRelease ? values.protocolRelease : protocol.releases?.find((release) => release.current)?.sha256,
         capabilityConfig: capability === "audio" ? undefined : config,
     };
     if (preset && capability === "text") {

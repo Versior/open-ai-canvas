@@ -4,6 +4,12 @@ import { initReactI18next } from "react-i18next";
 import { useLocaleStore } from "@/stores/use-locale-store";
 import { DEFAULT_LOCALE, type AppLocale } from "./locales";
 import zhCN from "./catalogs/zh-CN";
+import { personalAppearanceMessages } from "./personal-appearance-messages";
+import { personalAvatarMessages } from "./personal-avatar-messages";
+
+function translation(locale: AppLocale, catalog: object) {
+    return { ...catalog, personalAppearance: personalAppearanceMessages[locale], personalAvatar: personalAvatarMessages[locale] };
+}
 
 const loaders = {
     "en-US": () => import("./catalogs/en-US"),
@@ -21,7 +27,7 @@ const loading = new Map<AppLocale, Promise<void>>();
 export const i18n = i18next.createInstance();
 
 void i18n.use(initReactI18next).init({
-    resources: { [DEFAULT_LOCALE]: { translation: zhCN } },
+    resources: { [DEFAULT_LOCALE]: { translation: translation(DEFAULT_LOCALE, zhCN) } },
     lng: DEFAULT_LOCALE,
     fallbackLng: DEFAULT_LOCALE,
     initAsync: false,
@@ -35,7 +41,7 @@ export function loadLocale(locale: AppLocale): Promise<void> {
     if (pending) return pending;
     const request = loaders[locale]()
         .then(({ default: catalog }) => {
-            i18n.addResourceBundle(locale, "translation", catalog);
+            i18n.addResourceBundle(locale, "translation", translation(locale, catalog));
         })
         .catch((error: unknown) => {
             loading.delete(locale);

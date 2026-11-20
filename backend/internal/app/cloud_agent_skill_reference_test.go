@@ -16,6 +16,7 @@ import (
 func skillReferenceFixture(t *testing.T) (*Service, string, *cloudAgentRuntime) {
 	t.Helper()
 	s, db, _, _ := creationTestService(t)
+	skillAdministratorFixture(t, db, "user")
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}

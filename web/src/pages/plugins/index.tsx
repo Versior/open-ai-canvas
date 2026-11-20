@@ -8,6 +8,7 @@ import { useNavigate } from "react-router";
 import { EmptyState } from "@/components/ui/product/empty-state";
 import { PageHeader } from "@/components/layout/workspace-page";
 import { listRegisteredPlugins } from "@/lib/plugins/plugin-registry";
+import { pluginMatchesSearch } from "@/lib/plugins/plugin-search";
 import "@/lib/plugins/builtin";
 import { EAGLE_PLUGIN_ID } from "@/lib/plugins/builtin/eagle";
 import { PROMPT_OPTIMIZER_PLUGIN_ID } from "@/lib/plugins/builtin/prompt-optimizer";
@@ -29,6 +30,7 @@ const categoryLabels: Record<string, string> = {
     provider: "模型渠道",
     "payment-provider": "支付协议",
     "canvas-node": "画布节点",
+    "editor-slot": "编辑器插槽",
     workflow: "工作流",
     transform: "媒体转换",
     "asset-source": "素材来源",
@@ -63,7 +65,7 @@ const pluginDateFormatter = new Intl.DateTimeFormat("zh-CN", { year: "numeric", 
 const protocolSectionMeta = [
     { key: "text", label: "文本协议", description: "对话、推理与流式响应", icon: MessageSquareText },
     { key: "image", label: "图片协议", description: "生成、编辑与参考图", icon: ImageIcon },
-    { key: "video", label: "视频协议", description: "创建任务、轮询与媒体结果", icon: Film },
+    { key: "video", label: "视频协议", description: "视频生成与媒体处理", icon: Film },
     { key: "audio", label: "音频协议", description: "语音与异步音频任务", icon: AudioLines },
     { key: "payment", label: "支付协议", description: "支付、查单、关单与对账", icon: CreditCard },
 ] as const;
@@ -148,7 +150,6 @@ export default function PluginsPage() {
     }, [eagle?.config.baseUrl, eagle?.config.autoUploadGenerated, eagle?.config.generatedFolderId]);
 
     const filteredPlugins = useMemo(() => {
-        const normalizedSearch = search.trim().toLocaleLowerCase();
         return registeredPlugins.filter((plugin) => {
             const state = pluginStates[plugin.manifest.id];
             const isApplicationPlugin = backendPluginById.get(plugin.manifest.id)?.management.kind === "application" || isOfficialApplicationPluginId(plugin.manifest.id);
@@ -156,9 +157,14 @@ export default function PluginsPage() {
             const installation = installations.find((item) => item.manifest.id === plugin.manifest.id);
             const enabled = state?.effectiveEnabled ?? Boolean(installation?.enabled);
             const manifest = plugin.manifest;
-            const contributionKinds = contributionKindsFor(manifest);
-            const searchableText = [manifest.name, manifest.description, manifest.author, manifest.id, ...contributionKinds.map((kind) => categoryLabels[kind] || kind)].filter(Boolean).join(" ").toLocaleLowerCase();
-            if (normalizedSearch && !searchableText.includes(normalizedSearch)) return false;
+            if (
+                !pluginMatchesSearch(
+                    manifest,
+                    search,
+                    contributionKindsFor(manifest).map((kind) => categoryLabels[kind] || kind),
+                )
+            )
+                return false;
             if (categoryFilter !== "all" && !pluginMatchesCategory(manifest, categoryFilter)) return false;
             if (trustFilter === "trusted" && !manifest.trusted) return false;
             if (statusFilter === "enabled" && !enabled) return false;
@@ -312,7 +318,7 @@ export default function PluginsPage() {
                                 prefix={<Search className="size-4 text-foreground/38" aria-hidden="true" />}
                                 value={search}
                                 allowClear
-                                placeholder="搜索插件名称、描述或作者"
+                                placeholder="搜索名称、Provider ID 或协议（如 Seedance、火山视频、/api/v3）"
                                 onChange={(event) => setSearch(event.target.value)}
                             />
                             <Select
@@ -425,9 +431,13 @@ export default function PluginsPage() {
                                                                         {(plugin.manifest.surfaces || []).map((surface) => (
                                                                             <span key={surface}>{surfaceLabels[surface] ?? surface}</span>
                                                                         ))}
-                                                                        {providerCapabilitiesFor(plugin.manifest).map((capability) => (
-                                                                            <span key={capability}>{capabilityLabel(capability)}</span>
-                                                                        ))}
+                                                                        {(plugin.manifest.contributes.providers || []).flatMap((provider) =>
+                                                                            provider.capabilities.map((capability) => (
+                                                                                <span key={`${provider.id}-${capability}`} title={`Provider：${provider.label}（${provider.id}）`}>
+                                                                                    {provider.kind === "processing" ? "处理工具" : "生成协议"} · {provider.kind === "processing" ? `${capabilityLabel(capability)}处理` : `${capabilityLabel(capability)}生成`}
+                                                                                </span>
+                                                                            )),
+                                                                        )}
                                                                         {plugin.manifest.contributes.providers?.some((provider) => provider.poll) ? <span>异步轮询</span> : null}
                                                                         <span>{plugin.manifest.permissions.length} 项能力</span>
                                                                     </div>
@@ -648,6 +658,7 @@ function contributionKindsFor(manifest: PluginManifest): string[] {
     if (contributions.paymentProviders?.length) kinds.push("payment-provider");
     if (contributions.workflows?.length) kinds.push("workflow");
     if (contributions.canvasNodes?.length) kinds.push("canvas-node");
+    if (manifest.apiVersion === "yingce.plugin/v2" && manifest.contributes.editorSlots?.length) kinds.push("editor-slot");
     if (contributions.transforms?.length) kinds.push("transform");
     if (contributions.assetSources?.length) kinds.push("asset-source");
     if (contributions.aiCapabilities?.length) kinds.push("ai-capability");

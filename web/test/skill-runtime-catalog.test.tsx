@@ -1,25 +1,28 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import React, { act } from "react";
 import { reconciler } from "@react-three/fiber";
 
 import { useSkillRuntimeCatalog } from "../src/components/skills/skill-runtime-picker";
 import { getActiveUserScope, setActiveUserScope } from "../src/lib/user-scope";
 import { apiClient } from "../src/services/api/request";
-import { addSkill, listAddedSkills } from "../src/services/api/skills";
+import { addSkill, getSkill, listAddedSkills, listSkills } from "../src/services/api/skills";
+import { getPublicSkillCuration } from "../src/services/api/skill-curation";
 import { useUserStore, type LocalUser } from "../src/stores/use-user-store";
 
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
 const originalRequest = apiClient.request;
-const originalUser = useUserStore.getState().user;
+const { user: originalUser, hydrated: originalHydrated } = useUserStore.getState();
 const originalScope = getActiveUserScope();
 const originalAct = Object.getOwnPropertyDescriptor(globalThis, "IS_REACT_ACT_ENVIRONMENT");
 let unmount: (() => Promise<void>) | undefined;
+
+beforeEach(() => useUserStore.setState({ hydrated: true, user: user("catalog-member") }));
 
 afterEach(async () => {
     await unmount?.();
     unmount = undefined;
     apiClient.request = originalRequest;
-    useUserStore.getState().setUser(originalUser);
+    useUserStore.setState({ user: originalUser, hydrated: originalHydrated });
     if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
     else Reflect.deleteProperty(globalThis, "window");
     setActiveUserScope(originalScope);
@@ -104,6 +107,36 @@ async function mountCatalog(count = 1) {
     };
     return () => catalog;
 }
+
+test("the guest skill marketplace only reads the public list, detail and curation", async () => {
+    browser();
+    useUserStore.getState().setUser(null);
+    const paths: string[] = [];
+    apiClient.request = (async (config) => {
+        paths.push(config.url!);
+        expect(config.headers?.["X-Canvas-Expected-User"]).toBeUndefined();
+        return envelope([]);
+    }) as typeof apiClient.request;
+    await listSkills({ scope: "public" }, "public");
+    await getSkill("example", "public");
+    await getPublicSkillCuration();
+    expect(paths).toEqual(["/public/skills?scope=public", "/public/skills/example", "/public/skills/curation"]);
+});
+
+test("a guest cannot load installed skills, including on manual refresh", async () => {
+    browser();
+    useUserStore.getState().setUser(null);
+    let reads = 0;
+    apiClient.request = (async () => {
+        reads += 1;
+        return envelope(["private"]);
+    }) as typeof apiClient.request;
+    const catalog = await mountCatalog();
+    await act(async () => catalog().refresh());
+    expect(catalog().skills).toEqual([]);
+    expect(catalog().loading).toBe(false);
+    expect(reads).toBe(0);
+});
 
 test("manual and focus refresh bypass cached skills and coalesce pending fresh reads", async () => {
     const target = browser();

@@ -54,7 +54,7 @@ func TestMigrationListCoversMigratedSchema(t *testing.T) {
 	if err := db.Raw("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").Scan(&tables).Error; err != nil {
 		t.Fatal(err)
 	}
-	copied := map[string]bool{"schema_migrations": true}
+	copied := map[string]bool{"schema_migrations": true, "yingce_schema_migrations": true}
 	for _, migration := range migrations() {
 		copied[migration.name] = true
 	}

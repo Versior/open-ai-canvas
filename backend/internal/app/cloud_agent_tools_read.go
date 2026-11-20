@@ -113,38 +113,34 @@ func cloudAgentReadCacheKeyForState(repo *repository.Repository, userID string, 
 	return key
 }
 
-// cloudAgentRevalidateCachedRead 在缓存命中前复核仍会变化的授权边界。
-// 目前只有本轮冻结的广场参考技能需要复核：它的缓存 key 里带着冻结版本，
-// 但停用、下架或版本变更后旧正文不能再回放。已安装技能与非技能读取不受影响。
+// 缓存 key 只绑定快照；每次回放仍按现读的归属、可见性及版本约束复核。
 func cloudAgentRevalidateCachedRead(userID string, state *cloudAgentRuntime, call cloudAgentCall, service *Service) error {
-	if state == nil || call.Function.Name != agenttool.SkillReadFile {
+	if agenttool.Of(call.Function.Name).CacheScope != agenttool.CacheSkillVersion {
 		return nil
 	}
-	var args struct {
-		SkillID string `json:"skillId"`
+	if service == nil {
+		return BadAuthRequest("技能服务不可用")
 	}
-	if json.Unmarshal([]byte(call.Function.Arguments), &args) != nil {
-		return nil
+	var args agenttool.SkillReadArgs
+	if err := decodeCloudAgentJSONObject(call.Function.Arguments, &args); err != nil {
+		return cloudAgentJSONArgumentError(err)
 	}
-	// 现读会对 skillId 做 TrimSpace，回放必须用同一口径匹配，否则「 id 」能绕过复核。
 	id := strings.TrimSpace(args.SkillID)
-	if _, installed := state.SkillVersions[id]; installed {
-		// 已安装技能走冻结版本合同，不放这里复核。
-		return nil
-	}
-	for _, ref := range state.SkillReferences {
-		if ref.ID != id {
-			continue
+	if _, installed := state.SkillVersions[id]; !installed {
+		for _, ref := range state.SkillReferences {
+			if ref.ID == id {
+				return service.cloudAgentRevalidateSkillReference(userID, ref)
+			}
 		}
-		if service == nil {
-			return BadAuthRequest("技能服务不可用")
-		}
-		return service.cloudAgentRevalidateSkillReference(userID, ref)
 	}
-	return nil
+	_, err := service.cloudAgentSkillForRead(userID, state, id)
+	return err
 }
 
 func cloudAgentReadToolCached(repo *repository.Repository, userID string, state *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {
+	if err := cloudAgentRequireSkillToolAccess(repo, userID, call.Function.Name, services...); err != nil {
+		return nil, err
+	}
 	if !cloudAgentReadToolReadOnly(call.Function.Name) {
 		return cloudAgentReadTool(repo, userID, state, call, services...)
 	}
@@ -241,6 +237,9 @@ func cloudAgentReadToolCached(repo *repository.Repository, userID string, state 
 }
 
 func cloudAgentReadTool(repo *repository.Repository, userID string, state *cloudAgentRuntime, call cloudAgentCall, services ...*Service) (any, error) {
+	if err := cloudAgentRequireSkillToolAccess(repo, userID, call.Function.Name, services...); err != nil {
+		return nil, err
+	}
 	binding, known := cloudAgentRegistry().Lookup(call.Function.Name)
 	if !known || binding.Handler.Read == nil {
 		return nil, BadAuthRequest("未知或不可读取的工具")

@@ -47,6 +47,9 @@ func main() {
 	if err := verifySQLite(source); err != nil {
 		log.Fatalf("SQLite 完整性检查失败：%v", err)
 	}
+	if err := database.RequireSchemaVersion(source); err != nil {
+		log.Fatalf("请先在 SQLite 副本完成迁移并核验版本：%v", err)
+	}
 	if err := verifyMigrationCoverage(source); err != nil {
 		log.Fatalf("迁移表清单检查失败：%v", err)
 	}
@@ -64,8 +67,13 @@ func main() {
 			if err := database.MigrateSchema(tx); err != nil {
 				return fmt.Errorf("创建目标表结构：%w", err)
 			}
-		} else if err := validateTargetTableNames(tableNames); err != nil {
-			return err
+		} else {
+			if err := validateTargetTableNames(tableNames); err != nil {
+				return err
+			}
+			if err := database.RequireSchemaVersion(tx); err != nil {
+				return err
+			}
 		}
 
 		total := 0
@@ -115,8 +123,7 @@ func publicTableNames(db *gorm.DB) ([]string, error) {
 
 // validateTargetTableNames compares the existing PostgreSQL schema against the
 // same business-table list used by Models() and migrations().
-// schema_migrations is created by database.MigrateSchema and is intentionally
-// not part of the row-copy list, so it is allowed as the only system table.
+// Both migration ledgers are created by database.MigrateSchema, not copied as business data.
 func validateTargetTableNames(actual []string) error {
 	expected := make(map[string]struct{}, len(migrations()))
 	for _, migration := range migrations() {
@@ -135,7 +142,7 @@ func validateTargetTableNames(actual []string) error {
 	}
 	extra := make([]string, 0)
 	for name := range actualSet {
-		if name == "schema_migrations" {
+		if name == "schema_migrations" || name == "yingce_schema_migrations" {
 			continue
 		}
 		if _, ok := expected[name]; !ok {
@@ -385,6 +392,10 @@ func migrations() []tableMigration {
 		migrateTable[model.Tool]("tools"),
 		migrateTable[model.ToolFavorite]("tool_favorites"),
 		migrateTable[model.User]("users"),
+		migrateTable[model.Team]("teams"),
+		migrateTable[model.TeamMembership]("team_memberships"),
+		migrateTable[model.TeamInvitation]("team_invitations"),
+		migrateTable[model.CreditTransfer]("credit_transfers"),
 		migrateTable[model.UserGroup]("user_groups"),
 		migrateTable[model.UserGroupChannel]("user_group_channels"),
 		migrateTable[model.UserAvatar]("user_avatars"),
@@ -469,6 +480,7 @@ func migrations() []tableMigration {
 		migrateTable[model.SkillCurationRoot]("skill_curation_roots"),
 		migrateTable[model.SkillCurationRootAssignment]("skill_curation_root_assignments"),
 		migrateTable[model.Resource]("resources"),
+		migrateTable[model.TeamAssetPublication]("team_asset_publications"),
 		migrateTable[model.ResourceDeletionJob]("resource_deletion_jobs"),
 		migrateTable[model.ResourceOffloadJob]("resource_offload_jobs"),
 		migrateTable[model.AnnouncementImageDraft]("announcement_image_drafts"),
@@ -551,6 +563,9 @@ func migrations() []tableMigration {
 		migrateTable[model.InteriorMode]("interior_modes"),
 		migrateTable[model.InteriorPreset]("interior_presets"),
 		migrateTable[model.InteriorProject]("interior_projects"),
+		migrateTable[model.OfficialAsset]("official_assets"),
+		migrateTable[model.OfficialAssetImport]("official_asset_imports"),
+		migrateTable[model.OfficialAssetRecommendation]("official_asset_recommendations"),
 		migrateTable[model.PackagingProject]("packaging_projects"),
 		migrateTable[model.PackagingProjectResource]("packaging_project_resources"),
 		migrateTable[model.InteriorKnowledgeEntry]("interior_knowledge_entries"),

@@ -36,7 +36,8 @@ mock.module("@/stores/use-asset-store", () => ({
             },
         }),
 }));
-mock.module("@/stores/use-user-store", () => ({ useUserStore: (selector: (state: { user: null }) => unknown) => selector({ user: null }) }));
+const userState = { user: null, features: { teamsEnabled: false } };
+mock.module("@/stores/use-user-store", () => ({ useUserStore: (selector: (state: typeof userState) => unknown) => selector(userState) }));
 mock.module("@/components/layout/app-top-nav", () => ({ AppWorkspaceShell: ({ children }: { children: import("react").ReactNode }) => children }));
 mock.module("@/components/canvas/use-agent-panel-dock", () => ({ useAgentPanelDock: () => ({ active: false, width: 0 }) }));
 mock.module("@/lib/app-theme", () => ({ getWorkspaceAntThemeConfig: () => ({}) }));

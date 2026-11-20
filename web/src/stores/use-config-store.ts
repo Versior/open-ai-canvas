@@ -8,6 +8,7 @@ import { modelProtocolCapability, normalizeModelProtocol, type ModelProtocol, ty
 import { normalizeVideoDuration, normalizeVideoResolution } from "@/lib/video-generation-options";
 import { type ModelCapabilityConfig } from "@/lib/model-capabilities";
 import { useUserStore } from "@/stores/use-user-store";
+import { workspaceTeamId } from "@/lib/workspace-routes";
 import type { CapabilitySpec, PublicChannelModelAvailability, PublicLogicalModelPriceTier } from "@/services/api/logical-models";
 import { type WorkflowFieldMapping, normalizeRunningHubCapability, normalizeRunningHubWorkflowKind, normalizeSavedWorkflowFields, mergeWorkflowFieldMappings, normalizeWorkflowFieldMappings } from "./config-workflow-fields";
 import {
@@ -108,7 +109,7 @@ export type ModelChannel = {
         /** 仅系统渠道：模型目录按插件 create 路径识别的文本请求格式。 */
         textWire?: TextWire;
         pricePolicy?: "channel" | "unified";
-        billingMode: "fixed_request" | "per_second" | "token";
+        billingMode: "fixed_request" | "per_second" | "token" | "image_usage";
         unitPriceMicrocredits: number;
         inputTokenPriceMicrocredits?: number;
         outputTokenPriceMicrocredits?: number;
@@ -145,6 +146,7 @@ export type AiConfig = {
     videoModel: string;
     textModel: string;
     audioModel: string;
+    audioMode?: string;
     audioVoice: string;
     audioFormat: string;
     audioSpeed: string;
@@ -504,7 +506,16 @@ function normalizeSelectedModel(value: string, channels: ModelChannel[], options
 export function useEffectiveConfig() {
     const config = useConfigStore((state) => state.config);
     const customChannelsEnabled = useUserStore((state) => state.features.customChannelsEnabled);
-    return useMemo(() => effectiveConfigForCustomChannels(config, customChannelsEnabled), [config, customChannelsEnabled]);
+    return useMemo(() => {
+        if (!workspaceTeamId) return effectiveConfigForCustomChannels(config, customChannelsEnabled);
+        const channels = config.channels
+            .filter((channel) => channel.scope === "system")
+            .map((channel) => ({
+                ...channel,
+                models: channel.models.filter((name) => channel.modelCosts?.some((cost) => cost.model === name && cost.available !== false && cost.capability === "text" && (cost.billingMode === "fixed_request" || cost.billingMode === "token"))),
+            }));
+        return normalizeConfigSnapshot({ config: { ...config, taskWorkflowProvider: "model", channels } }).config;
+    }, [config, customChannelsEnabled]);
 }
 
 export function effectiveConfigForCustomChannels(config: AiConfig, customChannelsEnabled: boolean): AiConfig {

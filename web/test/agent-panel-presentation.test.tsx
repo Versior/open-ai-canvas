@@ -42,7 +42,7 @@ test("agent request leaves skill routing to the backend marketplace search", () 
     const requestEnd = panel.indexOf("\n                };", requestStart);
     expect(requestStart).toBeGreaterThan(-1);
     expect(requestEnd).toBeGreaterThan(requestStart);
-    expect(panel.slice(requestStart, requestEnd)).not.toContain("skillIds:");
+    expect(panel.slice(requestStart, requestEnd)).not.toMatch(/(?:skillIds|pinnedSkillIds):/);
     expect(panel).not.toContain("<CanvasAgentSkillLibraryModal");
 });
 

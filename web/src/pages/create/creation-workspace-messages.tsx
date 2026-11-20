@@ -36,6 +36,8 @@ import { ActiveAgentAvatar } from "@/components/canvas/active-agent-avatar";
 import { useActiveAgentPet } from "@/hooks/use-active-agent-pet";
 import "@/components/image-pack/image-pack-reveal.css";
 
+import { CREATION_IMAGE_DRAG_TYPE } from "./creation-reference-drop";
+
 const ImagePackReveal = lazy(() => import("@/components/image-pack/image-pack-reveal"));
 
 export function CreationMessageView({
@@ -472,6 +474,15 @@ export function MediaResult({
                                     key={`${key}:${mediaAttempts[key] || 0}`}
                                     src={url}
                                     alt="生成结果"
+                                    draggable={mediaStates[key] === "loaded"}
+                                    onDragStart={(event) => {
+                                        if (mediaStates[key] !== "loaded") {
+                                            event.preventDefault();
+                                            return;
+                                        }
+                                        event.dataTransfer.effectAllowed = "copy";
+                                        event.dataTransfer.setData(CREATION_IMAGE_DRAG_TYPE, JSON.stringify({ messageId: item.id, resultKey: key }));
+                                    }}
                                     decoding="async"
                                     onLoad={(event) => {
                                         const { naturalWidth, naturalHeight } = event.currentTarget;

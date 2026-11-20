@@ -29,7 +29,7 @@
 
 STAGE 是一套可自部署的多模态 AI 创作与内容生产系统。它不是单一的生图页，也不是只会聊天的 Agent，而是一条从构想到交付的完整生产链。
 
-图片、视频、短剧、电商视觉、视频复刻、室内设计和 3D 预演共享同一套模型渠道、素材库、任务系统与管理后台。创作者可以从一句话开始，也可以在无限画布里精细控制每一步。
+图片、视频、短剧、电商视觉、视频复刻、室内设计和世界引擎（3D 预演）共享同一套模型渠道、素材库、任务系统与管理后台。创作者可以从一句话开始，也可以在无限画布里精细控制每一步。
 
 ### From fragmented tools to one production system
 
@@ -98,7 +98,7 @@ STAGE 是一套可自部署的多模态 AI 创作与内容生产系统。它不�
 <td width="50%"><img src="assets/screenshots/image-studio.jpg" alt="STAGE image studio"></td>
 </tr>
 <tr>
-<td><b>Canvas</b> — 节点、连线、分组、小地图、撤销重做、第三方画布导入与只读分享。</td>
+<td><b>Canvas</b> — 用节点和连线引用图片、视频、文本、音频与世界引擎场景；支持分组、小地图、撤销重做、第三方画布导入与只读分享。</td>
 <td><b>Image Studio</b> — 围绕出品目标管理模板、参考素材、生成参数、当前任务和历史结果。</td>
 </tr>
 </table>
@@ -126,7 +126,7 @@ STAGE 是一套可自部署的多模态 AI 创作与内容生产系统。它不�
   <img src="assets/screenshots/3d.png" width="100%" alt="STAGE spatial design and 3D previs">
 </p>
 
-STAGE 的 3D 预演台用于摆场、姿态、动画、摄影机和时间轴设计。构图截图、白模视频与深度图可以继续作为图片或视频模型的控制参考。
+从画布镜头节点打开世界引擎（3D 预演），摆放角色、布景与 A/B 标记点后，可以让 Agent 把「从 B 跑到 A」编成动作关键帧。时间轴支持推拉摇移、环绕、跟拍和希区柯克变焦；也可以让 Agent 按指定手法编排运镜，例如跟随御剑角色升空。构图截图、白模视频与深度图可作为图片或视频模型的控制参考。
 
 ### Keep models, assets and operations together
 
@@ -333,7 +333,7 @@ cd docs && bun run types:check
 
 STAGE 基于 [Open AI Canvas](https://github.com/ddcat-ai/open-ai-canvas) / 影策二次开发。感谢原项目作者和所有贡献者提供的产品基础与开源工作。
 
-原项目贡献者名单见 [项目贡献者](CONTRIBUTORS.md)，欢迎页从该名单展示团队信息。
+原项目贡献者名单见 [项目贡献者](CONTRIBUTORS.md)，欢迎页从该名单展示团队信息。上游合作方和支持者由影策维护，详见[上游赞助商](https://github.com/ddcat-ai/open-ai-canvas#赞助商)与[世界引擎赞助用户](https://github.com/ddcat-ai/open-ai-canvas#世界引擎赞助用户)。
 
 本项目继续采用 [MIT License](LICENSE)。依据许可证要求，原版权声明完整保留：
 

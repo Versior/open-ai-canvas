@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAgentPetChatter } from "@/hooks/use-agent-pet-chatter";
 import { useAgentAvatarMotion } from "@/hooks/use-agent-avatar-motion";
-import { agentAvatarClipForState, agentAvatarStateForRunStatus, DEFAULT_CANVAS_APPEARANCE, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
+import { agentAvatarClipForState, agentAvatarStateForRunStatus, isAgentAvatarBundleManifest, type AgentAvatarBundleManifest } from "@/lib/canvas/agent-appearance";
 import { agentAvatarBundleFileURL } from "@/services/api/appearance";
 import { agentPetSpritesheetURL, type AgentPet } from "@/services/api/agent-pets";
+import { useEffectiveCanvasAppearance } from "@/stores/use-appearance-preferences-store";
 import { useAppearanceStore } from "@/stores/use-appearance-store";
 import { AgentAvatarVideo } from "./agent-avatar-video";
 import { AgentPetSprite, useAgentPetSheetMetrics, type AgentPetAction } from "./agent-pet-sprite";
 
 /** 窗沿形象空闲后缩回；首页复用同一形象和动作，保持全身展示。 */
 export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch" }: { pet: AgentPet | null; status: string; reducedMotion: boolean; display?: "perch" | "full" }) {
-    const appearance = useAppearanceStore((store) => store.appearance.canvas) || DEFAULT_CANVAS_APPEARANCE;
+    const appearance = useEffectiveCanvasAppearance();
+    const assetScope = appearance.avatarAssetScope ?? "public";
     const revision = useAppearanceStore((store) => store.appearance.revision);
     const [manifest, setManifest] = useState<AgentAvatarBundleManifest | null>(null);
     const [failed, setFailed] = useState(false);
@@ -49,7 +51,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
         }
     }, [display, expanded, awake, reducedMotion, pet?.id]);
     const bundle = !pet && appearance.avatarType === "bundle";
-    const manifestUrl = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", false, revision) : "/doll/avatar.json";
+    const manifestUrl = appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, "avatar.json", assetScope, revision) : "/doll/avatar.json";
     useEffect(() => {
         setManifest(null);
         setVideoBounds(undefined);
@@ -91,7 +93,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     });
     const clip = avatarMotion.clip;
     const file = manifest?.clips[clip];
-    const media = file ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, file, false, revision) : `/doll/${encodeURIComponent(file)}`) : "";
+    const media = file ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, file, assetScope, revision) : `/doll/${encodeURIComponent(file)}`) : "";
     if ((!pet && !media) || failed) return null;
     const message = chatter.message?.text || (speaking ? "我在这里。下一步一起完成。" : "");
     const contentHeight = videoBounds ? Math.min(112, 104 / videoBounds.aspect) : 112;
@@ -162,7 +164,17 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                             onError={() => setFailed(true)}
                         />
                     ) : (
-                        <AgentAvatarVideo key={avatarMotion.key} src={media} reducedMotion={reducedMotion} paused={!expanded} loop={avatarMotion.loop} onEnded={avatarMotion.onEnded} onContentBounds={setVideoBounds} onError={() => setFailed(true)} />
+                        <AgentAvatarVideo
+                            key={avatarMotion.key}
+                            src={media}
+                            pauseDuringCanvasGesture
+                            reducedMotion={reducedMotion}
+                            paused={!expanded}
+                            loop={avatarMotion.loop}
+                            onEnded={avatarMotion.onEnded}
+                            onContentBounds={setVideoBounds}
+                            onError={() => setFailed(true)}
+                        />
                     )}
                 </span>
             </button>

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Window } from "happy-dom";
 import type { AxiosAdapter } from "axios";
+import "../src/i18n";
 import { createImageUploadPlaceholder, createFileUploadPlaceholder, interruptFileUpload, readUploadImageSize, uploadNodeType, uploadPercent, uploadPreviewClarity, uploadVeilOpacity } from "../src/lib/canvas/canvas-file-upload";
 import { CanvasNodeType, type CanvasNodeData } from "../src/types/canvas";
 import { isCanvasImageSourceNode } from "../src/lib/canvas/canvas-image-source";
@@ -428,7 +429,7 @@ describe("图片上传占位", () => {
         expect(create).toContain("if (!currentNode)");
         expect(create).toContain("fileUpload: undefined");
         const replace = hook.slice(hook.indexOf("const replaceNodeMedia"), hook.indexOf("const pasteSystemClipboard"));
-        expect(replace).toContain("await createFileNode(file, currentNode.position, nodeId)");
+        expect(replace).toContain("await createFileNode(file, currentNode.position, nodeId, options)");
         expect(create).toContain("original?.metadata?.content");
         expect(read("components/canvas/canvas-upload-modal.tsx").replace(/\r\n/g, "\n")).toContain("onClose();\n            await pendingUpload;");
         expect(read("styles/globals.css")).toContain("prefers-reduced-motion: reduce");
@@ -571,7 +572,7 @@ test("所有资源渲染真实百分比，100% 仍等待保存，磨砂渐淡但
 test("短剧关联顶栏链接回短剧制作台，且不再有旧电商画布的模式切换和模特库入口", async () => {
     const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
     const { MemoryRouter } = await import("react-router");
-    const { CanvasTopBar } = await import("../src/pages/canvas/canvas-project-top-bar");
+    const { CanvasProjectHeading, CanvasTopBar } = await import("../src/pages/canvas/canvas-project-top-bar");
     const noop = () => {};
     const html = renderToStaticMarkup(
         <QueryClientProvider client={new QueryClient()}>
@@ -579,28 +580,35 @@ test("短剧关联顶栏链接回短剧制作台，且不再有旧电商画布�
                 <CanvasTopBar
                     view="canvas"
                     onViewChange={noop}
-                    title="旧电商画布"
-                    titleDraft="旧电商画布"
-                    isTitleEditing={false}
-                    onTitleDraftChange={noop}
-                    onStartTitleEditing={noop}
-                    onFinishTitleEditing={noop}
-                    onCancelTitleEditing={noop}
-                    canUndo={false}
-                    canRedo={false}
-                    onCreateProject={noop}
-                    onDeleteProject={noop}
-                    onSave={noop}
-                    onImportImage={noop}
+                    projectHeading={
+                        <CanvasProjectHeading
+                            view="canvas"
+                            onViewChange={noop}
+                            title="旧电商画布"
+                            titleDraft="旧电商画布"
+                            isTitleEditing={false}
+                            onTitleDraftChange={noop}
+                            onStartTitleEditing={noop}
+                            onFinishTitleEditing={noop}
+                            onCancelTitleEditing={noop}
+                            canUndo={false}
+                            canRedo={false}
+                            onCreateProject={noop}
+                            onDeleteProject={noop}
+                            onSave={noop}
+                            onImportImage={noop}
+                            onUndo={noop}
+                            onRedo={noop}
+                            onOpenSearch={noop}
+                            projectContext={{ projectId: "demo drama", projectName: "短剧示例", kind: "drama", nodeCount: 3, selectedCount: 0, chapterLabel: "", shotLabel: "" }}
+                        />
+                    }
                     onImportLibTV={noop}
                     onImportTapNow={noop}
-                    onUndo={noop}
-                    onRedo={noop}
                     onShare={noop}
                     shortcutRequestNonce={0}
                     onOpenSearch={noop}
                     onEnterFocusMode={noop}
-                    projectContext={{ projectId: "demo drama", projectName: "短剧示例", kind: "drama", nodeCount: 3, selectedCount: 0, chapterLabel: "", shotLabel: "" }}
                 />
             </MemoryRouter>
         </QueryClientProvider>,

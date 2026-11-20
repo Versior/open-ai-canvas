@@ -167,8 +167,12 @@ func upstreamSchemaDatabase(t *testing.T, version int64) (*gorm.DB, map[int64]ti
 		}, time.Date(2026, 11, 8, 9, 0, 0, 0, time.UTC)},
 	}
 	for _, item := range schemaMigrations {
-		if item.version >= 100 {
-			fixtures = append(fixtures, migrationFixture{item.version - 7, item.name, item.checksum, item.apply, time.Date(2026, 11, 11, 9, int(item.version-100), 0, 0, time.UTC)})
+		if item.version >= 100 && item.version != 112 {
+			offset := int64(7)
+			if item.version > 112 {
+				offset = 8
+			}
+			fixtures = append(fixtures, migrationFixture{item.version - offset, item.name, item.checksum, item.apply, time.Date(2026, 11, 11, 9, int(item.version-100), 0, 0, time.UTC)})
 		}
 	}
 	applied := make(map[int64]time.Time, len(fixtures))
@@ -202,7 +206,7 @@ func requireMigration(t *testing.T, db *gorm.DB, want schemaMigration) {
 }
 
 func TestCanonicalEcommerceDramaMigrationLineage(t *testing.T) {
-	if CurrentSchemaVersion != 112 {
+	if CurrentSchemaVersion != 117 {
 		t.Fatalf("CurrentSchemaVersion = %d", CurrentSchemaVersion)
 	}
 	want := []schemaMigration{
@@ -403,7 +407,7 @@ func TestMigrateSchemaUpgradesFork97ReferenceControls(t *testing.T) {
 }
 
 func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
-	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104} {
+	for _, version := range []int64{72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109} {
 		t.Run(strconv.FormatInt(version, 10), func(t *testing.T) {
 			db, applied := upstreamSchemaDatabase(t, version)
 			project := model.EcommerceProject{ID: "upstream-shop", UserID: "upstream-owner", Name: "保温杯", Status: "completed", DraftJSON: "{}", PlanJSON: `{"images":[{"id":"kept"}]}`, Revision: 4}
@@ -452,6 +456,12 @@ func TestMigrateSchemaNormalizesUpstreamSchemas(t *testing.T) {
 				{Version: 96, Name: "drama_draft_form", Checksum: "sha256:drama-draft-form-v90-20261106", AppliedAt: applied[90]},
 				{Version: 97, Name: "email_logs_and_notifications", Checksum: "sha256:email-logs-and-notifications-v91-20261106", AppliedAt: applied[91]},
 				{Version: 98, Name: "drama_reference_controls", Checksum: "sha256:drama-reference-controls-v92", AppliedAt: applied[92]},
+				{Version: 112, Name: "packaging_projects", Checksum: "sha256:packaging-projects-v112"},
+				{Version: 113, Name: "image_usage_billing", Checksum: "sha256:image-usage-billing-v105", AppliedAt: applied[105]},
+				{Version: 114, Name: "team_workspaces", Checksum: "sha256:team-workspaces-v106", AppliedAt: applied[106]},
+				{Version: 115, Name: "company_workgroups", Checksum: "sha256:company-workgroups-v107", AppliedAt: applied[107]},
+				{Version: 116, Name: "shared_workspace_content", Checksum: "sha256:shared-workspace-content-v108", AppliedAt: applied[108]},
+				{Version: 117, Name: "model_protocol_releases", Checksum: "sha256:model-protocol-releases-v109", AppliedAt: applied[109]},
 			} {
 				requireMigration(t, db, want)
 			}
@@ -618,6 +628,10 @@ func TestMigrateSchemaRejectsUpstreamLedgerWithoutPhysicalSchema(t *testing.T) {
 			return db.Migrator().DropColumn(&model.BillingOrder{}, "cost_reference_video_unit_price_microcredits")
 		}},
 		{"draft form column", 90, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.DramaProduction{}, "DraftJSON") }},
+		{"billing image usage column", 105, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.BillingOrder{}, "ImageUsage") }},
+		{"team membership table", 106, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.TeamMembership{}) }},
+		{"workspace submission hash", 108, func(db *gorm.DB) error { return db.Migrator().DropColumn(&model.Task{}, "SubmissionHash") }},
+		{"model release index", 109, func(db *gorm.DB) error { return db.Migrator().DropIndex(&model.ChannelModel{}, "ProtocolRelease") }},
 		{"email log table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.EmailLog{}) }},
 		{"notification setting table", 91, func(db *gorm.DB) error { return db.Migrator().DropTable(&model.UserNotificationSetting{}) }},
 	}

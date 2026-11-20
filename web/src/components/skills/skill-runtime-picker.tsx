@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-
+import { useSkillLibraryAccess } from "@/lib/skill-access";
 import { getAddedSkillsCatalogRevision, listAddedSkills, type Skill } from "@/services/api/skills";
 import { SKILL_RUNTIME_PROFILES, type SkillRuntimeProfile } from "@/services/skill-runtime";
 import { Select } from "@/components/ui/base/select";
@@ -9,6 +8,7 @@ import { getActiveUserScope } from "@/lib/user-scope";
 import { useTranslation } from "react-i18next";
 
 export function useSkillRuntimeCatalog() {
+    const allowed = useSkillLibraryAccess();
     const userId = useUserStore((state) => state.user?.id);
     const [catalog, setCatalog] = useState({ userId, skills: [] as Skill[], loading: true, error: "" });
     const [revision, setRevision] = useState(-1);
@@ -24,6 +24,10 @@ export function useSkillRuntimeCatalog() {
     }, [refresh]);
 
     useEffect(() => {
+        if (!allowed) {
+            setCatalog({ userId, skills: [], loading: false, error: "" });
+            return;
+        }
         let cancelled = false;
         const scope = getActiveUserScope();
         const isCurrent = () => !cancelled && getActiveUserScope() === scope && useUserStore.getState().user?.id === userId;
@@ -38,21 +42,42 @@ export function useSkillRuntimeCatalog() {
         return () => {
             cancelled = true;
         };
-    }, [userId, revision]);
+    }, [allowed, userId, revision]);
 
     // A new account must not see the previous catalog before its effect has run.
-    const { skills, loading, error } = catalog.userId === userId ? catalog : { skills: [], loading: true, error: "" };
+    const { skills, loading, error } = allowed && catalog.userId === userId ? catalog : { skills: [], loading: allowed, error: "" };
     return { skills, loading, error, refresh };
 }
 
-export function SkillRuntimePicker({ skills, loading, value, onChange, placeholder, profile = "canvas", className, ariaLabel }: { skills: Skill[]; loading?: boolean; value: string[]; onChange: (skillIds: string[]) => void; placeholder?: string; profile?: SkillRuntimeProfile; /** 嵌在工具条里时传宽度类，默认撑满 */ className?: string; ariaLabel?: string }) {
+export function SkillRuntimePicker({
+    skills,
+    loading,
+    value,
+    onChange,
+    placeholder,
+    profile = "canvas",
+    className,
+    ariaLabel,
+}: {
+    skills: Skill[];
+    loading?: boolean;
+    value: string[];
+    onChange: (skillIds: string[]) => void;
+    placeholder?: string;
+    profile?: SkillRuntimeProfile;
+    /** 嵌在工具条里时传宽度类，默认撑满 */ className?: string;
+    ariaLabel?: string;
+}) {
     const { t } = useTranslation();
-    const options = useMemo(
-        () => skills.map((skill) => ({ value: skill.skillId, label: skill.skillName, title: skill.description })),
-        [skills],
-    );
+    const allowed = useSkillLibraryAccess();
+    const hydrated = useUserStore((state) => state.hydrated);
+    useEffect(() => {
+        if (hydrated && !allowed && value.length) onChange([]);
+    }, [allowed, hydrated, onChange, value]);
+    const options = useMemo(() => skills.map((skill) => ({ value: skill.skillId, label: skill.skillName, title: skill.description })), [skills]);
     const maxSkills = SKILL_RUNTIME_PROFILES[profile].maxSkills;
 
+    if (!allowed) return null;
     // 不传 className 就是「占满表单」（章节/分镜那些表单里的默认），
     // 传了就是嵌在工具条里的窄控件。两件事分开写，别让窄控件去覆盖表单的宽度。
     const sizingProps = className ? { className } : { className: "w-full", style: { width: "100%" } };

@@ -1,8 +1,9 @@
 import { useNavigate, useSearchParams } from "react-router";
 import { preconnect } from "react-dom";
 import { fillablePrompt } from "@/lib/inspirations/resolve";
-import { App, Button, Dropdown, Input } from "antd";
-import { ChevronDown, Download, Heart, Import, MoreHorizontal, Pencil, Play, Plus, RotateCcw, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { App, Button, Dropdown } from "antd";
+import { ListSearchInput } from "@/components/ui/base/list-search-input";
+import { ChevronDown, Download, Heart, Import, MoreHorizontal, Pencil, Play, Plus, RotateCcw, SlidersHorizontal, Trash2 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WorkspacePage } from "@/components/layout/workspace-page";
@@ -425,7 +426,7 @@ export function InspirationHall({ onUse, creationMode, embedded = false }: { onU
                             </button>
                         ))}
                     </div>
-                    <Input allowClear prefix={<Search className="size-4" />} placeholder="搜索灵感" aria-label="搜索灵感" value={search} onChange={(event) => setSearch(event.target.value)} className="inspiration-hall-search" />
+                    <ListSearchInput placeholder="搜索灵感" aria-label="搜索灵感" value={search} onValueChange={setSearch} className="inspiration-hall-search" />
                     <Button type="text" icon={<SlidersHorizontal className="size-4" />} aria-expanded={filtersOpen} aria-controls="inspiration-hall-filters" onClick={() => setFiltersOpen((open) => !open)} className="inspiration-hall-filter-toggle">
                         筛选{advancedFilterCount ? ` · ${advancedFilterCount}` : ""}
                         <ChevronDown className={filtersOpen ? "is-open" : undefined} aria-hidden="true" />

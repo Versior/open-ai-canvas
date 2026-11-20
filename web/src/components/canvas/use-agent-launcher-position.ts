@@ -13,12 +13,13 @@ import {
 const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
 const positionKey = () => (window.innerWidth < AGENT_LAUNCHER_COMPACT_VIEWPORT_WIDTH ? `${AGENT_LAUNCHER_POSITION_KEY}:compact` : AGENT_LAUNCHER_POSITION_KEY);
 
-const readPosition = (size: { width: number; height: number }) => {
+const readPosition = (size: { width: number; height: number }, inCanvasEditor: boolean, allowDock: boolean) => {
     try {
-        return restoreAgentLauncherPosition(localStorage.getItem(positionKey()), viewport(), size);
+        const restored = restoreAgentLauncherPosition(localStorage.getItem(positionKey()), viewport(), size, inCanvasEditor);
+        return allowDock || !restored.dock ? restored : clampAgentLauncherPosition({ right: restored.right, bottom: restored.bottom }, viewport(), size);
     } catch (error) {
         console.warn("Agent 入口位置无法读取", error);
-        return restoreAgentLauncherPosition(null, viewport(), size);
+        return restoreAgentLauncherPosition(null, viewport(), size, inCanvasEditor);
     }
 };
 
@@ -26,11 +27,9 @@ const readPosition = (size: { width: number; height: number }) => {
  * 入口的拖拽、点击与键盘移动。指针处理器（onPointer*）可以挂在入口按钮上，也可以挂在按钮内的身体热区上
  * （大形象外框不接收指针）；指针捕获落在挂处理器的元素上，因此该元素必须能被命中。
  */
-export function useAgentLauncherPosition(onOpen: () => void, width = 76, height = 76, allowDock = false) {
+export function useAgentLauncherPosition(onOpen: () => void, width = 76, height = 76, allowDock = false, inCanvasEditor = true) {
     const size = { width, height };
-    const [position, setPosition] = useState(() => readPosition(size));
-    const savedScope = useRef(positionKey());
-    const dockingAllowed = useRef(allowDock);
+    const [position, setPosition] = useState(() => readPosition(size, inCanvasEditor, allowDock));
     const [dragging, setDragging] = useState(false);
     const gestureRef = useRef<(AgentLauncherGesture & { pointerId: number }) | null>(null);
     const suppressClick = useRef(false);
@@ -44,19 +43,11 @@ export function useAgentLauncherPosition(onOpen: () => void, width = 76, height 
     };
 
     useEffect(() => {
-        const resize = () => {
-            const key = positionKey();
-            if (savedScope.current !== key || (allowDock && !dockingAllowed.current)) {
-                savedScope.current = key;
-                const restored = readPosition(size);
-                setPosition(clampAgentLauncherPosition(allowDock ? restored : { right: restored.right, bottom: restored.bottom }, viewport(), size));
-            } else setPosition((current) => clampAgentLauncherPosition(allowDock ? current : { right: current.right, bottom: current.bottom }, viewport(), size));
-            dockingAllowed.current = allowDock;
-        };
+        const resize = () => setPosition((current) => (gestureRef.current ? clampAgentLauncherPosition(current, viewport(), size) : readPosition(size, inCanvasEditor, allowDock)));
         resize();
         window.addEventListener("resize", resize);
         return () => window.removeEventListener("resize", resize);
-    }, [width, height, allowDock]);
+    }, [width, height, inCanvasEditor, allowDock]);
 
     const onPointerDown = (event: PointerEvent<HTMLElement>) => {
         event.stopPropagation();

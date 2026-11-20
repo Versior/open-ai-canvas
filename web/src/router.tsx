@@ -1,19 +1,23 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { createBrowserRouter, Navigate, Outlet, useLocation, useNavigate, type RouteObject } from "react-router";
+import { createBrowserRouter, Navigate, Outlet, redirectDocument, useLocation, type RouteObject } from "react-router";
 import { lazyAdminPage } from "@/pages/admin/admin-page-loader";
 
-import { RequireAuth } from "@/components/auth/require-auth";
 import { AuthDialogHost } from "@/components/auth/auth-dialog-host";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { GuestWorkspaceActions } from "@/components/auth/guest-workspace-actions";
+import { RequireSkillAdmin } from "@/components/auth/require-skill-admin";
 // 功能开关守卫包在页面 Suspense 之外，懒加载会让整个工作区退回全屏加载页；体积很小，直接静态引入。
 import { RequireFeature } from "@/components/auth/require-feature";
 import { FullScreenLoader, WorkspaceRouteLoader } from "@/components/ui/aceternity/full-screen-loader";
+import { StudioOpening } from "@/pages/projects/studio/studio-opening";
 import { workspaceRoutePages } from "@/lib/workspace-route-modules";
 import { CanvasRefreshShell } from "@/pages/canvas/canvas-refresh-shell";
 import { AuthScene } from "@/pages/auth/auth-scene";
 import RouteErrorPage from "@/pages/route-error";
 import { isGuestWorkspacePath } from "@/lib/guest-workspace";
 import { useUserStore } from "@/stores/use-user-store";
+import { teamIdFromPath } from "@/lib/team-query-keys";
+import { workspacePagePath, workspaceTeamId } from "@/lib/workspace-routes";
 
 const AdminPage = lazy(() => import("@/pages/admin"));
 const EcommerceManagementPage = lazyAdminPage(() => import("@/pages/admin/ecommerce-management-page"));
@@ -32,6 +36,8 @@ const ChannelsPage = lazyAdminPage(() => import("@/pages/admin/channels/channels
 const VideoReplicationAdminPage = lazyAdminPage(() => import("@/pages/admin/video-replication/video-replication-admin-page"));
 const LogicalModelsPage = lazyAdminPage(() => import("@/pages/admin/logical-models/logical-models-page"));
 const AdminPluginsPage = lazyAdminPage(() => import("@/pages/admin/plugins/plugins-page"));
+const AdminOfficialAssetsPage = lazyAdminPage(() => import("@/pages/admin/official-assets-page"));
+const AdminOfficialAssetRecommendationsPage = lazyAdminPage(() => import("@/pages/admin/official-asset-recommendations-page"));
 const AdminMCPPage = lazyAdminPage(() => import("@/pages/admin/mcp/mcp-page"));
 const SkillCurationPage = lazyAdminPage(() => import("@/pages/admin/skill-curation-page"));
 const AdminSkillsPage = lazyAdminPage(() => import("@/pages/admin/skills/skills-page"));
@@ -95,16 +101,6 @@ const AdminReferralPage = lazyAdminPage(() => import("@/pages/admin/referral/ref
 const UserLayout = lazy(() => import("@/layouts/user-layout"));
 const WelcomePage = lazy(() => import("@/pages/welcome"));
 
-function RootLayout() {
-    const navigate = useNavigate();
-    return (
-        <>
-            <Outlet />
-            <AuthDialogHost navigate={(to) => void navigate(to)} />
-        </>
-    );
-}
-
 function SiteHomeLayout() {
     const hydrated = useUserStore((state) => state.hydrated);
     const user = useUserStore((state) => state.user);
@@ -113,9 +109,13 @@ function SiteHomeLayout() {
     if (!user && welcomeEnabled) return fullScreenDeferred(<WelcomePage />);
     return <AuthenticatedWorkspaceLayout />;
 }
+const TeamsPage = lazy(() => import("@/pages/teams"));
+const TeamWorkspacePage = lazy(() => import("@/pages/teams").then((module) => ({ default: module.TeamWorkspacePage })));
+const TeamMembersPage = lazy(() => import("@/pages/teams/members").then((module) => ({ default: module.TeamMembersPane })));
+const TeamWalletPage = lazy(() => import("@/pages/teams/wallet").then((module) => ({ default: module.TeamWalletPane })));
 
-function deferred(element: ReactNode) {
-    return <Suspense fallback={<WorkspaceRouteLoader />}>{element}</Suspense>;
+function deferred(element: ReactNode, fallback: ReactNode = <WorkspaceRouteLoader />) {
+    return <Suspense fallback={fallback}>{element}</Suspense>;
 }
 
 function fullScreenDeferred(element: ReactNode) {
@@ -131,7 +131,7 @@ function LegacyInspirationsRedirect() {
 
 function AuthenticatedWorkspaceLayout() {
     const { pathname } = useLocation();
-    const isCanvasProjectRoute = pathname.startsWith("/canvas/");
+    const isCanvasProjectRoute = workspacePagePath(pathname).startsWith("/canvas/");
     const fallback = isCanvasProjectRoute ? <CanvasRefreshShell /> : <FullScreenLoader label="正在打开创作空间" detail="准备当前页面" />;
     return (
         <RequireAuth allowAnonymous={isGuestWorkspacePath(pathname)}>
@@ -143,6 +143,15 @@ function AuthenticatedWorkspaceLayout() {
                 </UserLayout>
             </Suspense>
         </RequireAuth>
+    );
+}
+
+function RootLayout() {
+    return (
+        <>
+            <Outlet />
+            <AuthDialogHost />
+        </>
     );
 }
 
@@ -246,8 +255,34 @@ const routes: RouteObject[] = [
             { path: "/assets", element: <RequireAuth allowAnonymous>{deferred(<AssetsPage />)}</RequireAuth> },
             { path: "/inspiration", element: <RequireAuth>{deferred(<InspirationGalleryPage />)}</RequireAuth> },
             { path: "/inspiration/:templateUuid", element: <RequireAuth>{deferred(<WorkDetailPage />)}</RequireAuth> },
+            {
+                path: "/teams",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="teamsEnabled">{deferred(<TeamsPage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+            },
+            {
+                path: "/teams/:teamId",
+                element: (
+                    <RequireAuth>
+                        <RequireFeature feature="teamsEnabled">{deferred(<TeamWorkspacePage />)}</RequireFeature>
+                    </RequireAuth>
+                ),
+                children: [
+                    { index: true, element: <Navigate to="canvas" replace /> },
+                    { path: "canvas", element: deferred(<CanvasPage />) },
+                    { path: "canvas/:id", element: deferred(<CanvasProjectPage />, <CanvasRefreshShell />) },
+                    { path: "assets", element: deferred(<AssetsPage />) },
+                    { path: "create", element: <RequireFeature feature="creditsEnabled">{deferred(<CreatePage />)}</RequireFeature> },
+                    { path: "members", element: deferred(<TeamMembersPage />) },
+                    { path: "wallet", element: <RequireFeature feature="creditsEnabled">{deferred(<TeamWalletPage />)}</RequireFeature> },
+                    { path: "*", element: deferred(<NotFound />) },
+                ],
+            },
             { path: "/skills", element: <RequireAuth>{deferred(<SkillsPage />)}</RequireAuth> },
-            { path: "/skills/:skillId/edit", element: <RequireAuth>{deferred(<SkillWorkbenchPage />)}</RequireAuth> },
+            { path: "/skills/:skillId/edit", element: <RequireSkillAdmin>{deferred(<SkillWorkbenchPage />)}</RequireSkillAdmin> },
             {
                 path: "/plugins",
                 element: (
@@ -290,7 +325,7 @@ const routes: RouteObject[] = [
                 path: "/projects/:projectId",
                 element: (
                     <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
+                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />, <StudioOpening />)}</RequireFeature>
                     </RequireAuth>
                 ),
             },
@@ -298,7 +333,7 @@ const routes: RouteObject[] = [
                 path: "/projects/:projectId/e/:episodeId",
                 element: (
                     <RequireAuth>
-                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />)}</RequireFeature>
+                        <RequireFeature feature="shortDramaEnabled">{deferred(<ProjectDetailPage />, <StudioOpening />)}</RequireFeature>
                     </RequireAuth>
                 ),
             },
@@ -350,6 +385,8 @@ const routes: RouteObject[] = [
                     { path: "interior/settings", element: <InteriorAdminPage /> },
                     { path: "packaging", element: <PackagingAdminPage /> },
                     { path: "plugins", element: <AdminPluginsPage /> },
+                    { path: "official-assets", element: <AdminOfficialAssetsPage /> },
+                    { path: "official-asset-recommendations", element: <AdminOfficialAssetRecommendationsPage /> },
                     { path: "mcp", element: <AdminMCPPage /> },
                     { path: "workbench-tools", element: <WorkbenchToolsPage /> },
                     // 视频复刻的统计、记录、解析接口和设置；关闭视频复刻只影响用户端，后台仍可进入。
@@ -395,4 +432,11 @@ const routes: RouteObject[] = [
     { path: "*", element: fullScreenDeferred(<NotFound />) },
 ];
 
-export const router = createBrowserRouter([{ element: <RootLayout />, children: routes }]);
+export const router = createBrowserRouter([
+    {
+        element: <RootLayout />,
+        children: routes,
+        loader: ({ request }) => (teamIdFromPath(new URL(request.url).pathname) !== workspaceTeamId ? redirectDocument(request.url) : null),
+        shouldRevalidate: ({ nextUrl }) => teamIdFromPath(nextUrl.pathname) !== workspaceTeamId,
+    },
+]);

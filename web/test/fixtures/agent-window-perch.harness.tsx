@@ -109,6 +109,38 @@ test("idle timeout, active work, focus, completion and full-body entry", async (
     await dom.happyDOM.abort();
 });
 
+test("selected pet takes precedence over the private avatar, which uses the private manifest and clip URLs", async () => {
+    const { useUserStore } = await import("@/stores/use-user-store");
+    const { useAppearancePreferencesStore } = await import("@/stores/use-appearance-preferences-store");
+    const originalFetch = globalThis.fetch;
+    const originalUser = useUserStore.getState().user;
+    const originalPreferences = useAppearancePreferencesStore.getState().byUser;
+    const requests: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+        requests.push(String(input));
+        return Response.json({ version: 1, width: 64, height: 64, clips: { idle: "idle.mp4" } });
+    }) as typeof fetch;
+    useUserStore.setState({ user: { id: "perch-user", username: "perch", displayName: "测试", role: "user", status: "active" } });
+    useAppearancePreferencesStore.getState().update("perch-user", { avatar: "custom", customAvatar: { type: "bundle", resourceId: "perch-bundle" } });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    try {
+        await act(async () => root.render(<AgentWindowPerch pet={pet} status="idle" reducedMotion />));
+        expect(requests).toEqual([]);
+        expect(host.querySelector(".agent-perch-character")?.getAttribute("aria-label")).toContain(pet.name);
+        await act(async () => root.render(<AgentWindowPerch pet={null} status="idle" reducedMotion />));
+        expect(requests.map((url) => new URL(url, document.baseURI).pathname)).toEqual(["/api/appearance/avatar/perch-bundle/avatar.json"]);
+        expect(new URL(host.querySelector("video")!.src).pathname).toBe("/api/appearance/avatar/perch-bundle/idle.mp4");
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+        globalThis.fetch = originalFetch;
+        useUserStore.setState({ user: originalUser });
+        useAppearancePreferencesStore.setState({ byUser: originalPreferences });
+    }
+});
+
 test("window dock stays in the composer positioning context", async () => {
     const composer = dom.document.createElement("div");
     composer.className = "relative";

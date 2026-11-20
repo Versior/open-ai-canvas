@@ -15,7 +15,10 @@ import (
 
 // Models 是应用持久化表的唯一清单，服务启动和跨数据库迁移必须共用它。
 func Models() []any {
-	return []any{
+	return append(teamModels(), []any{
+		&model.OfficialAsset{},
+		&model.OfficialAssetImport{},
+		&model.OfficialAssetRecommendation{},
 		&model.PackagingProject{},
 		&model.PackagingProjectResource{},
 		&model.LUTLibraryItem{},
@@ -193,7 +196,7 @@ func Models() []any {
 		// Fork 自有：室内设计知识库（迁移 93 建表）。
 		&model.InteriorKnowledgeEntry{},
 		&model.EcommerceRound{},
-	}
+	}...)
 }
 
 func migrateSchemaV1(db *gorm.DB) error {

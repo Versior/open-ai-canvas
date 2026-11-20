@@ -1,6 +1,7 @@
 import { CollectionToolbar } from "@/components/layout/collection-toolbar";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { App, Button, Dropdown, Input } from "antd";
+import { ListSearchInput } from "@/components/ui/base/list-search-input";
 import { Tooltip } from "@/components/ui/base/tooltip";
 
 import {
@@ -22,7 +23,6 @@ import {
     Pencil,
     Plus,
     Puzzle,
-    Search,
     ShoppingBag,
     Sparkles,
     Trash2,
@@ -66,6 +66,7 @@ import {
 } from "@/services/api/skills";
 import { useUserStore } from "@/stores/use-user-store";
 import { useRequireLogin } from "@/hooks/use-require-login";
+import { useSkillAdministrationAccess } from "@/lib/skill-access";
 import { Select } from "@/components/ui/base/select";
 import { useSkillCuration, curationQuery, curationIcon, effectiveCurationRoot } from "@/components/skills/skill-curation-browser";
 import { SkillRecommendationsModal } from "@/components/skills/skill-recommendations-modal";
@@ -99,8 +100,14 @@ const sortOptions: { label: string; value: SkillSort }[] = [
  */
 export default function SkillsPage() {
     const user = useUserStore((state) => state.user);
+    return <SkillBrowser key={user ? `${user.id}:${user.status}` : "guest"} />;
+}
+
+function SkillBrowser() {
+    const user = useUserStore((state) => state.user);
     const requireLogin = useRequireLogin();
-    const { curation, error: curationError, retry: retryCuration } = useSkillCuration();
+    const browseSession = user ? undefined : "public";
+    const { curation, error: curationError, retry: retryCuration } = useSkillCuration(true, browseSession);
     const [platformCategory, setPlatformCategory] = useState("");
     const { message, modal } = App.useApp();
     const navigate = useNavigate();
@@ -136,7 +143,7 @@ export default function SkillsPage() {
     const [installOpen, setInstallOpen] = useState(false);
     const [recommendationsOpen, setRecommendationsOpen] = useState(false);
     const [editingSkill, setEditingSkill] = useState<Skill | null>(null);
-    const isAdmin = useUserStore((state) => state.user?.role === "admin");
+    const isAdmin = useSkillAdministrationAccess();
     const isLibraryScope = scope === "mine" || scope === "created";
     const libraryCategoryScope = scope === "created" ? "created" : "mine";
 
@@ -181,7 +188,7 @@ export default function SkillsPage() {
         setLoading(true);
         setLoadError("");
         const libraryFilter = isLibraryScope ? (libraryCategoryId === "__uncategorized__" ? { libraryUncategorized: true } : libraryCategoryId !== "all" ? { libraryCategoryId } : {}) : {};
-        listSkills({ page, pageSize, scope, sort, search: debouncedSearch || undefined, tag: !isLibraryScope && tag !== "all" ? tag : undefined, ...libraryFilter, ...(isLibraryScope ? {} : curationQuery(curation, platformCategory)) })
+        listSkills({ page, pageSize, scope, sort, search: debouncedSearch || undefined, tag: !isLibraryScope && tag !== "all" ? tag : undefined, ...libraryFilter, ...(isLibraryScope ? {} : curationQuery(curation, platformCategory)) }, browseSession)
             .then((result) => {
                 if (cancelled) return;
                 setSkills(result.skills);
@@ -200,13 +207,13 @@ export default function SkillsPage() {
         return () => {
             cancelled = true;
         };
-    }, [debouncedSearch, isLibraryScope, libraryCategoryId, page, pageSize, reloadKey, scope, sort, tag, curation, platformCategory, user]);
+    }, [debouncedSearch, isLibraryScope, libraryCategoryId, page, pageSize, reloadKey, scope, sort, tag, curation, platformCategory, user, browseSession]);
 
     /* 范围计数：每个范围只取 1 条记录读 totalCount，与当前搜索/分类无关，写操作后刷新。 */
     useEffect(() => {
         let cancelled = false;
         const options = user ? scopeOptions : scopeOptions.filter((option) => option.value === "public");
-        void Promise.allSettled(options.map((option) => listSkills({ scope: option.value, page: 1, pageSize: 1 }))).then((results) => {
+        void Promise.allSettled(options.map((option) => listSkills({ scope: option.value, page: 1, pageSize: 1 }, browseSession))).then((results) => {
             if (cancelled) return;
             const next: Partial<Record<SkillScope, number>> = {};
             results.forEach((result, index) => {
@@ -217,7 +224,7 @@ export default function SkillsPage() {
         return () => {
             cancelled = true;
         };
-    }, [reloadKey, countsKey, user]);
+    }, [reloadKey, countsKey, user, browseSession]);
 
     useEffect(() => {
         let cancelled = false;
@@ -275,7 +282,7 @@ export default function SkillsPage() {
         setActiveSkill(skill);
         setDetailLoading(true);
         try {
-            const result = await getSkill(skill.skillId);
+            const result = await getSkill(skill.skillId, browseSession);
             setActiveSkill(result.skill);
             patchSkill(result.skill);
         } catch (error) {
@@ -287,7 +294,7 @@ export default function SkillsPage() {
     };
 
     const openEditor = async (skill?: Skill) => {
-        if (!requireLogin()) return;
+        if (!isAdmin) return;
         if (!skill) {
             setEditingSkill(null);
             setEditorOpen(true);
@@ -304,8 +311,7 @@ export default function SkillsPage() {
     };
 
     const openWorkbench = (skill: Skill) => {
-        if (!requireLogin()) return;
-        if (!skill.isOwner) return;
+        if (!isAdmin || !skill.isOwner) return;
         setActiveSkill(null);
         navigate(`/skills/${encodeURIComponent(skill.skillId)}/edit`);
     };
@@ -349,7 +355,7 @@ export default function SkillsPage() {
     };
 
     const synchronizeSkill = async (skill: Skill) => {
-        if (!requireLogin()) return;
+        if (!isAdmin) return;
         setMutatingID(skill.skillId);
         try {
             const result = await syncSkill(skill.skillId);
@@ -364,7 +370,7 @@ export default function SkillsPage() {
     };
 
     const confirmDelete = (skill: Skill) => {
-        if (!requireLogin()) return;
+        if (!isAdmin) return;
         modal.confirm({
             title: `删除“${skill.skillName}”？`,
             content: "删除后，其他用户将无法继续使用该技能，已有加入和收藏关系也会一并移除。",
@@ -460,6 +466,7 @@ export default function SkillsPage() {
                 categoryLabel={!isLibraryScope && !categoryFiltered ? rootLabel || skillCategoryLabel(skill.tag, categories) : undefined}
                 libraryCategories={libraryCategories}
                 canCategorize={isLibraryScope}
+                canManage={isAdmin && skill.isOwner}
                 loading={mutatingID === skill.skillId}
                 onOpen={() => void openSkill(skill)}
                 onAdd={() => void toggleAdded(skill)}
@@ -487,20 +494,24 @@ export default function SkillsPage() {
                 className="min-h-[188px]"
                 icon="skills"
                 title={filtersActive ? (search.trim() ? `没有找到与“${search.trim()}”相关的技能` : "没有符合筛选条件的技能") : scope === "created" ? "还没有创建技能" : scope === "public" ? "技能广场还是空的" : "这里还没有技能"}
-                description={filtersActive ? "换一个关键词或分类，或清除筛选后查看全部。" : scope === "favorites" ? "收藏的公开技能会显示在这里。" : scope === "mine" ? "从技能广场加入后会显示在这里。" : "创建并公开第一个技能，其他用户就能直接加入使用。"}
+                description={
+                    filtersActive
+                        ? "换一个关键词或分类，或清除筛选后查看全部。"
+                        : scope === "favorites"
+                          ? "收藏的公开技能会显示在这里。"
+                          : scope === "mine"
+                            ? "从技能广场加入后会显示在这里。"
+                            : isAdmin
+                              ? "创建并公开第一个技能，其他用户就能直接加入使用。"
+                              : "管理员发布的公开技能会显示在这里。"
+                }
                 action={
                     filtersActive ? (
                         <Button onClick={resetFilters}>清除筛选</Button>
                     ) : scope === "mine" ? (
                         <Button onClick={() => selectScope("public")}>去技能广场</Button>
-                    ) : scope === "created" || scope === "public" ? (
-                        <Button
-                            type="primary"
-                            icon={<Plus className="size-4" />}
-                            onClick={() => {
-                                if (requireLogin()) setInstallOpen(true);
-                            }}
-                        >
+                    ) : isAdmin && (scope === "created" || scope === "public") ? (
+                        <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
                             安装技能
                         </Button>
                     ) : undefined
@@ -638,30 +649,29 @@ export default function SkillsPage() {
                                 onReset={resetFilters}
                                 trailing={
                                     <>
-                                        <Button icon={<Sparkles className="size-4" />} onClick={() => setRecommendationsOpen(true)}>
-                                            按行业推荐
-                                        </Button>
                                         <Button
-                                            type="primary"
-                                            icon={<Plus className="size-4" />}
+                                            icon={<Sparkles className="size-4" />}
                                             onClick={() => {
-                                                if (requireLogin()) setInstallOpen(true);
+                                                if (requireLogin()) setRecommendationsOpen(true);
                                             }}
                                         >
-                                            安装技能
+                                            按行业推荐
                                         </Button>
+                                        {isAdmin ? (
+                                            <Button type="primary" icon={<Plus className="size-4" />} onClick={() => setInstallOpen(true)}>
+                                                安装技能
+                                            </Button>
+                                        ) : null}
                                     </>
                                 }
                             >
-                                <Input
+                                <ListSearchInput
                                     className="min-w-0 sm:!w-56"
-                                    prefix={<Search />}
                                     value={search}
-                                    allowClear
                                     placeholder="搜索技能或作者"
                                     aria-label="搜索技能或作者"
-                                    onChange={(event) => {
-                                        setSearch(event.target.value);
+                                    onValueChange={(value) => {
+                                        setSearch(value);
                                         setPage(1);
                                     }}
                                 />
@@ -781,19 +791,21 @@ export default function SkillsPage() {
                 onOpenWorkbench={openWorkbench}
                 onSync={(skill) => void synchronizeSkill(skill)}
             />
-            <SkillInstallModal
-                open={installOpen}
-                onClose={() => setInstallOpen(false)}
-                onInstalled={(skill) => {
-                    setInstallOpen(false);
-                    setActiveSkill(skill);
-                    reload();
-                }}
-                onManualCreate={() => {
-                    setInstallOpen(false);
-                    void openEditor();
-                }}
-            />
+            {isAdmin ? (
+                <SkillInstallModal
+                    open={installOpen}
+                    onClose={() => setInstallOpen(false)}
+                    onInstalled={(skill) => {
+                        setInstallOpen(false);
+                        setActiveSkill(skill);
+                        reload();
+                    }}
+                    onManualCreate={() => {
+                        setInstallOpen(false);
+                        void openEditor();
+                    }}
+                />
+            ) : null}
             <SkillRecommendationsModal
                 open={recommendationsOpen}
                 onClose={() => setRecommendationsOpen(false)}
@@ -804,17 +816,19 @@ export default function SkillsPage() {
                     }
                 }}
             />
-            <SkillEditorDrawer
-                open={editorOpen}
-                skill={editingSkill}
-                onClose={() => setEditorOpen(false)}
-                onSaved={(skill) => {
-                    setEditorOpen(false);
-                    setEditingSkill(null);
-                    setActiveSkill(skill);
-                    reload();
-                }}
-            />
+            {isAdmin ? (
+                <SkillEditorDrawer
+                    open={editorOpen}
+                    skill={editingSkill}
+                    onClose={() => setEditorOpen(false)}
+                    onSaved={(skill) => {
+                        setEditorOpen(false);
+                        setEditingSkill(null);
+                        setActiveSkill(skill);
+                        reload();
+                    }}
+                />
+            ) : null}
         </>
     );
 }
@@ -830,6 +844,7 @@ function SkillCard({
     categoryLabel,
     libraryCategories,
     canCategorize,
+    canManage,
     loading,
     onOpen,
     onAdd,
@@ -844,6 +859,7 @@ function SkillCard({
     categoryLabel?: string;
     libraryCategories: SkillLibraryCategory[];
     canCategorize: boolean;
+    canManage: boolean;
     loading: boolean;
     onOpen: () => void;
     onAdd: () => void;
@@ -860,9 +876,11 @@ function SkillCard({
     const likeLabel = `${skill.isLike ? "取消收藏" : "收藏"}，${skill.likeCount} 人已收藏`;
     const menuItems = [
         { key: "detail", label: "查看详情" },
-        ...(skill.isOwner
+        ...(canManage
             ? [{ key: "workbench", label: workbenchLabel }, { key: "edit", label: "编辑技能信息" }, { type: "divider" as const }, { key: "delete", label: "删除技能", danger: true }]
-            : [{ key: "toggle-added", label: skill.isAdded ? "从我的技能移除" : "加入我的技能", disabled: loading }]),
+            : skill.isOwner
+              ? []
+              : [{ key: "toggle-added", label: skill.isAdded ? "从我的技能移除" : "加入我的技能", disabled: loading }]),
     ];
     return (
         <article className={cn("product-collection-card skill-tile", skill.isAdded && "is-added")} data-accent={skillAccent(accentKey)}>
@@ -925,7 +943,7 @@ function SkillCard({
                 </span>
                 {/* 次要操作：hover / focus-within 显示，触屏常显；菜单展开时保持可见。 */}
                 <div className="skill-tile-actions">
-                    {skill.isOwner ? (
+                    {canManage ? (
                         <Tooltip title={workbenchLabel}>
                             <button type="button" className="product-icon-button skill-tile-edit" aria-label={`${workbenchLabel}：${skill.skillName}`} onClick={onOpenWorkbench}>
                                 <Pencil />
