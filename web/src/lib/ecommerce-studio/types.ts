@@ -197,7 +197,8 @@ export type StudioModelPick = { itemId: string; name: string; prompt: string; re
 export type StudioModelCast = { face?: StudioModelPick; figure?: StudioModelPick; pose?: StudioModelPick; style?: StudioModelPick };
 
 /** 模板里的一张图。ratio 来自模板的画幅；noText 表示模板要求这张图不放文字。 */
-export type StudioSuiteShot = { title: string; duty: string; ratio?: string; noText?: boolean };
+export type StudioSuiteLayout = { textZone?: string; whitespace?: string; occupancy?: string };
+export type StudioSuiteShot = { title: string; duty: string; layout?: StudioSuiteLayout; ratio?: string; noText?: boolean };
 
 /**
  * 「详情页策划」给这件商品排的一屏。role 对到最接近的镜头规格（平台规则、模特设定沿用）；
@@ -220,8 +221,9 @@ export type StudioPlannedScreen = {
     headline: string;
     subline: string;
     lines: string[];
-    /** 依据的事实名称，只用于展示。 */
+    /** 经商品资料核对的依据主题与来源标识；有量化宣称时可追溯到对应原文。 */
     facts: string[];
+    evidenceRefs?: string[];
     noText?: boolean;
 };
 
@@ -231,6 +233,22 @@ export type StudioPlanScope = "detail" | "main" | "single" | "template";
 export type StudioPlanTarget = { type: StudioOutputType; count: number };
 /** 设计调性：决定版面节奏、字体、文案语气和摄影，由策划按商品挑。 */
 export type StudioDesignToneId = "global-minimal" | "editorial" | "oriental" | "lifestyle" | "tech" | "care" | "hot-seller" | "playful";
+/**
+ * 图片模型执行的整组艺术导演方案。它不是固定模板，而是把创意世界、字形、材质
+ * 和逐屏变化交给模型；商品事实、平台规则和定稿文案仍由其它层锁定。
+ */
+export type StudioArtDirection = {
+    emotionalPromise?: string;
+    visualWorld?: string;
+    palette?: { name: string; hex?: string; role?: string }[];
+    typographyTreatment?: string;
+    materialEffects?: string[];
+    compositionGrammar?: string;
+    recurringMotifs?: string[];
+    screenVariationPlan?: string;
+    referenceDna?: string;
+    avoid?: string[];
+};
 /** 出图策划：按商品与用户选定数量排的一组图。 */
 export type StudioDetailPlan = {
     id: string;
@@ -257,6 +275,8 @@ export type StudioDetailPlan = {
     motifs?: string[];
     /** 从同类爆款套图和卖家给的参考图里借鉴了什么。 */
     inspiration?: string;
+    /** 图片模型执行的整组艺术导演方案；旧策划没有此字段时继续使用兼容路径。 */
+    artDirection?: StudioArtDirection;
     /** 单张图策划：策划时选中的类型和数量。 */
     targets?: StudioPlanTarget[];
     /** 模板套图策划：按哪套模板排的；换了模板策划就不再适用。 */
@@ -337,6 +357,7 @@ export type StudioBrief = {
     extra: string;
     /** 按参考图的版式出图（同款）；没有参考图时不生效。 */
     sameLayout: boolean;
+    useProofLayout?: true;
     count: number;
     /** 详情页的总屏数，与单张类型的每种数量分别保存。 */
     detailScreens: number;
@@ -382,7 +403,7 @@ export type StudioRun = {
     /** 商品与表单在点生成时的快照，后续编辑只影响新的一组。 */
     source?: StudioGenerationSource;
     /** 模板套图或策划：名字与整套视觉规范，在点生成那一刻定下来；策划另带设计调性和创意主线。 */
-    suite?: { id: string; name: string; style: string; designAnalysis?: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[] };
+    suite?: { id: string; name: string; style: string; designAnalysis?: string; tone?: StudioDesignToneId; concept?: string; motifs?: string[]; artDirection?: StudioArtDirection };
     shots: StudioShot[];
 };
 
@@ -398,8 +419,25 @@ export type StudioGenerationRequest = {
     createdAt: string;
 };
 
+export type StudioPlanReviewedScreen = { index: number; title: string; purpose: string; headline: string; visual: string };
+
+export type StudioPlanReceipt = {
+    scope: StudioPlanScope;
+    inputSignature: string;
+    model: string;
+    createdAt: string;
+    attemptId: string;
+    taskId?: string;
+    alternativeDirection?: boolean;
+    state: "submitted" | "task-failed" | "not-accepted" | "accepted";
+    message?: string;
+    review?: StudioPlanReviewedScreen[];
+    issues?: { index?: number; field: string; message: string }[];
+};
+
 export type StudioProduct = {
     lastAnalysisTaskId?: string;
+    planReceipt?: StudioPlanReceipt;
     schema: number;
     id: string;
     /** 服务端维护的商品修订号，保存时按它比较交换；本地新建、尚未保存时为 0。 */

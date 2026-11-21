@@ -36,7 +36,7 @@ func TestStudioExpandedDesignKnowledgeReachesWorker(t *testing.T) {
 	svc, _, _, _ := ecommerceCreationTestService(t)
 	input := canvasGenerationInput{Mode: "text", Prompt: "策划儿童眼镜", Metadata: map[string]any{
 		"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
-		"studioProductName": "儿童眼镜", "studioCategory": "眼镜", "studioPlatform": "taobao", "studioPlanKind": "detail", "studioDetailScreens": 4,
+		"studioProductName": "儿童眼镜", "studioCategory": "眼镜", "studioPlatform": "taobao", "studioPlanKind": "detail", "studioStep": "plan", "studioPlanScope": "detail", "studioPlanCount": 4, "studioPlanRoles": []string{"detail-hero"},
 	}}
 	if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestStudioSharedPosterMethodReachesDifferentProductWorkers(t *testing.T) {
 				input := canvasGenerationInput{Mode: "text", Prompt: "策划", Metadata: map[string]any{
 					"source": "ecommerce-studio", "ecommerceCapability": "detail-plan", "ecommerceAnalysisFlow": "cap:detail-plan",
 					"studioProductName": product.name, "studioCategory": product.name, "studioFamily": product.family,
-					"studioPlatform": "taobao", "studioPlanKind": kind, "studioPlanTargets": "poster", "studioDetailScreens": 2,
+					"studioPlatform": "taobao", "studioPlanKind": kind, "studioPlanTargets": "poster", "studioStep": "plan", "studioPlanScope": kind, "studioPlanCount": map[string]int{"detail": 2, "main": 5, "single": 1}[kind], "studioPlanRoles": []string{"detail-hero"},
 				}}
 				if err := svc.applyEcommerceAnalysisInstruction(&input); err != nil {
 					t.Fatal(err)
@@ -234,7 +234,10 @@ func TestEcommerceStudioDetailPlanUsesVisualKnowledge(t *testing.T) {
 
 	plan := task("detail-plan")
 	plan.Metadata["studioPlanKind"] = "detail"
-	plan.Metadata["studioDetailScreens"] = float64(4)
+	plan.Metadata["studioStep"] = "plan"
+	plan.Metadata["studioPlanScope"] = "detail"
+	plan.Metadata["studioPlanCount"] = float64(4)
+	plan.Metadata["studioPlanRoles"] = []any{"detail-hero", "detail-selling"}
 	plan.Metadata["studioTextMode"] = "model"
 	if err := svc.applyEcommerceAnalysisInstruction(&plan); err != nil {
 		t.Fatal(err)

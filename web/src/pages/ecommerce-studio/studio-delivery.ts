@@ -1,6 +1,9 @@
 import { ecommerceFileName, ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { rasterizeEcommerceDetailPage, type EcommerceDetailPageResult } from "@/lib/ecommerce/ecommerce-rasterize";
-import type { EcommerceSlicePlatform } from "@/lib/ecommerce/ecommerce-slice";
+import { rasterizeEcommerceDetailPage, rasterizeEcommerceLongImage } from "@/lib/ecommerce/ecommerce-rasterize";
+import { ecommerceSliceSpec } from "@/lib/ecommerce/ecommerce-slice";
+import { studioSlicePlatform } from "@/lib/ecommerce-studio/delivery-geometry";
+import { studioCandidateCopy } from "@/lib/ecommerce-studio/delivery-copy";
+import { studioLanguage } from "@/lib/ecommerce-studio/brief";
 import { studioModelAdapter, studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioActivePlan } from "@/lib/ecommerce-studio/runs";
@@ -19,11 +22,7 @@ import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-revie
  */
 export type StudioComposedShot = { shot: StudioShot; output: StudioOutput; url: string; composed: boolean };
 
-const SLICE_PLATFORMS: Partial<Record<StudioProduct["platform"], EcommerceSlicePlatform>> = { taobao: "taobao", jd: "jd", pdd: "pdd", douyin: "douyin" };
-
-export function studioSlicePlatform(product: StudioProduct): EcommerceSlicePlatform {
-    return SLICE_PLATFORMS[product.platform] || "generic";
-}
+export type StudioArchiveKind = "complete" | "originals" | "draft";
 
 /** 只为历史无字底图保留旧排字；新候选的实际模式优先于所在旧方案。 */
 export function studioOutputNeedsLegacyTypeset(plan: Pick<StudioPlan, "textMode">, shot: StudioShot, output: StudioOutput) {
@@ -95,20 +94,18 @@ export async function downloadStudioComposed(product: StudioProduct, plan: Studi
     }
 }
 
-export function bindStudioDetailPage(product: StudioProduct, shots: StudioComposedShot[]) {
-    // 屏与屏之间不留间隔：默认的 8px 白底间隔在长图里就是一道道白条。
-    return rasterizeEcommerceDetailPage({ imageUrls: shots.map((item) => item.url), platform: studioSlicePlatform(product), code: product.name || "详情页", gap: 0 });
+function deliveryRows(plan: StudioPlan, shots: StudioComposedShot[], kind: StudioArchiveKind) {
+    if (!shots.length) throw new Error("没有可交付的成品图");
+    const byId = new Map(shots.map((item) => [item.shot.id, item]));
+    const rows = plan.shots.map((shot, index) => ({ index: index + 1, shot, item: byId.get(shot.id) }));
+    const missing = rows.filter((row) => !row.item);
+    if (kind !== "draft" && missing.length) throw new Error(`完整交付缺第 ${missing.map((row) => row.index).join("、")} 张；请补齐，或明确下载已出分屏草稿。`);
+    return rows;
 }
 
-export function studioCopyText(product: StudioProduct) {
-    const lines = [`商品：${product.name || product.dossier?.name || "未命名商品"}`, `平台：${ecommercePlatform(product.platform)?.name || product.platform}`];
-    if (product.copy?.listingTitle) lines.push(`商品标题：${product.copy.listingTitle}`);
-    if (product.copy?.headline) lines.push(`主标题：${product.copy.headline}`);
-    if (product.copy?.subhead) lines.push(`副标题：${product.copy.subhead}`);
-    const points = product.sellingPoints.filter((point) => point.enabled);
-    if (points.length) lines.push("卖点：", ...points.map((point, index) => `${index + 1}. ${point.title}${point.detail ? `｜${point.detail}` : ""}`));
-    if (product.copy?.bullets.length) lines.push("要点：", ...product.copy.bullets.map((bullet) => `- ${bullet}`));
-    return lines.join("\n");
+export function bindStudioLongImage(product: StudioProduct, plan: StudioPlan, shots: StudioComposedShot[]) {
+    const rows = deliveryRows(plan, shots, "complete");
+    return rasterizeEcommerceLongImage({ imageUrls: rows.map((row) => row.item!.url), width: ecommerceSliceSpec(studioSlicePlatform(product.platform))!.width, gap: 0 });
 }
 
 async function bytes(url: string) {
@@ -123,26 +120,43 @@ function extension(type: string) {
     return "png";
 }
 
-export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, shots: StudioComposedShot[], detail?: EcommerceDetailPageResult, review?: StudioDeliveryReview) {
+export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, shots: StudioComposedShot[], kind: StudioArchiveKind, review: StudioDeliveryReview) {
     const code = product.name.trim() || "商品";
     const files: { name: string; data: BlobPart }[] = [];
-    const manifest: { index: number; role: string; title: string; resourceId: string; file: string; typeset: boolean }[] = [];
-    for (const [index, item] of shots.entries()) {
+    const rows = deliveryRows(plan, shots, kind);
+    const detail = kind === "complete" && plan.kind === "detail" ? await rasterizeEcommerceDetailPage({ imageUrls: rows.map((row) => row.item!.url), platform: studioSlicePlatform(product.platform), code, gap: 0 }) : undefined;
+    const label = kind === "draft" ? "草稿 · 仅已出分屏，不是完整交付" : kind === "originals" ? "原始分屏 · 未生成平台切片" : "完整文件包 · 上架前仍须人工复核";
+    const copyText = [label, `商品：${code}`, `平台：${ecommercePlatform(product.platform)?.name || product.platform}`, "按选购阅读顺序。定稿不等于图中实际文字，须对照成图复核。"];
+    if (product.copy?.listingTitle) copyText.push(`商品上架标题：${product.copy.listingTitle}`);
+    const manifest = [];
+    for (const { index, shot, item } of rows) {
+        copyText.push("", `第 ${index} 张 · ${shot.title}`);
+        if (!item) {
+            copyText.push("缺图，未交付");
+            continue;
+        }
         const blob = await bytes(item.url);
-        const spec = studioShotSpec(item.shot.role, product.dossier?.family || "generic");
-        const file = `${plan.kind === "detail" ? "分屏" : "主图"}/${ecommerceFileName({ code, role: spec.platformRole, index: index + 1, platformId: product.platform, extension: extension(blob.type) })}`;
-        manifest.push({ index: index + 1, role: item.shot.role, title: item.shot.title, resourceId: item.output.resourceId, file, typeset: item.composed });
+        const spec = studioShotSpec(shot.role, product.dossier?.family || "generic");
+        const file = `${plan.kind === "detail" ? "分屏" : "主图"}/${ecommerceFileName({ code, role: spec.platformRole, index, platformId: product.platform, extension: extension(blob.type) })}`;
+        const copy = studioCandidateCopy(shot, item.output, product.brief.language, item.composed);
+        const sourceLabel = copy.source === "plan-only" ? "仅策划记录；旧候选没有提交定稿快照，画面文字／译文待核对" : copy.source === "typeset" ? "本次排字使用的文案" : "该候选提交定稿";
+        copyText.push(`目标语言：${studioLanguage(copy.language).label} · ${sourceLabel}`);
+        if (copy.eyebrow) copyText.push(`栏目：${copy.eyebrow}`);
+        if (copy.headline) copyText.push(`主标题：${copy.headline}`);
+        if (copy.subline) copyText.push(`注解：${copy.subline}`);
+        copyText.push(...copy.lines.map((line) => `要点：${line}`));
+        if (!(copy.eyebrow || copy.headline || copy.subline || copy.lines.length)) copyText.push("无额外消费文案");
+        manifest.push({ index, role: shot.role, title: shot.title, resourceId: item.output.resourceId, file, typeset: item.composed, copy });
         files.push({ name: file, data: blob });
     }
     if (detail) {
         files.push({ name: "详情页长图.png", data: await bytes(detail.longImage.dataUrl) });
         for (const [index, piece] of detail.pieces.entries()) files.push({ name: `切片/${detail.fileNames[index]}`, data: await bytes(piece.dataUrl) });
     }
-    files.push({ name: "文案.txt", data: studioCopyText(product) });
-    if (review) {
-        files.push({ name: "交付检查.json", data: JSON.stringify(review, null, 2) });
-        files.push({ name: "交付检查.txt", data: [`已交付 ${review.delivered}/${review.total} 张`, ...review.issues.map((issue) => `- ${issue.title}：${issue.message}`), "人工复核：", ...review.manualChecks.map((item) => `- ${item}`)].join("\n") });
-    }
+    files.push({ name: "文案.txt", data: copyText.join("\n") });
+    files.push({ name: "交付检查.json", data: JSON.stringify(review, null, 2) });
+    const findings = review.issues.map((issue) => `- ${issue.title}：${issue.message}`);
+    files.push({ name: "交付检查.txt", data: [label, `成品文件 ${review.delivered}/${review.total} 张。图内文字、事实与平台上架资格尚未核实。`, ...findings, "人工复核：", ...review.manualChecks.map((item) => `- ${item}`)].join("\n") });
     files.push({
         name: "manifest.json",
         data: JSON.stringify(
@@ -150,13 +164,15 @@ export async function exportStudioZip(product: StudioProduct, plan: StudioPlan, 
                 product: { id: product.id, name: product.name, platform: product.platform },
                 plan: plan.kind,
                 textMode: plan.textMode,
+                archiveKind: kind,
                 exportedAt: new Date().toISOString(),
                 expectedShots: plan.shots.length,
-                complete: shots.length === plan.shots.length,
-                missingShots: plan.shots.filter((shot) => !shots.some((item) => item.shot.id === shot.id)).map((shot) => ({ id: shot.id, title: shot.title })),
+                complete: rows.every((row) => row.item),
+                missingShots: rows.filter((row) => !row.item).map(({ index, shot }) => ({ index, id: shot.id, title: shot.title })),
                 shots: manifest,
                 slices: detail?.fileNames || [],
-                ...(review ? { reviewIssues: review.issues.length } : {}),
+                reviewIssues: review.issues.length,
+                publication: review.publication,
             },
             null,
             2,

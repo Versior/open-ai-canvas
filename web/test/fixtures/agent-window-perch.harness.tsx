@@ -109,6 +109,20 @@ test("idle timeout, active work, focus, completion and full-body entry", async (
     await dom.happyDOM.abort();
 });
 
+test("an open panel waiting for approval keeps the character but does not prompt the user to open the panel", async () => {
+    const host = dom.document.createElement("div");
+    dom.document.body.append(host);
+    const root = createRoot(host);
+    try {
+        await act(async () => root.render(<AgentWindowPerch pet={pet} status="waiting_approval" reducedMotion />));
+        expect(host.querySelector(".agent-perch-character")).not.toBeNull();
+        expect(Boolean(host.querySelector(".agent-perch-bubble"))).toBe(false);
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});
+
 test("selected pet takes precedence over the private avatar, which uses the private manifest and clip URLs", async () => {
     const { useUserStore } = await import("@/stores/use-user-store");
     const { useAppearancePreferencesStore } = await import("@/stores/use-appearance-preferences-store");

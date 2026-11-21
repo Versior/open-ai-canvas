@@ -1,6 +1,6 @@
 import { ECOMMERCE_PLATFORMS, type EcommercePlatformId } from "@/lib/ecommerce/ecommerce-platform-specs";
-import { createStudioBrief, normalizeStudioBrief, STUDIO_OUTPUT_TYPES, studioCleanNotes } from "./brief";
-import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioEyebrowText, studioPlanMotifs, studioPlanTone, studioPlanStyleId } from "./detail-plan";
+import { createStudioBrief, normalizeStudioBrief, STUDIO_LANGUAGES, STUDIO_OUTPUT_TYPES, studioCleanNotes } from "./brief";
+import { STUDIO_DETAIL_LAYOUT_IDS, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_SHOT_VISUAL_MAX, studioArtDirectionOf, studioEyebrowText, studioPlanMotifs, studioPlanTone, studioPlanStyleId } from "./detail-plan";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_SUITE_LIMITS } from "./suites";
 import { studioCompositionOf } from "./art-direction";
@@ -22,6 +22,7 @@ import {
     type StudioOutputType,
     type StudioPhoto,
     type StudioPlan,
+    type StudioPlanReceipt,
     type StudioPlanKind,
     type StudioProduct,
     type StudioRun,
@@ -267,9 +268,17 @@ function normalizeAttemptInput(input: Record<string, unknown>, time: string): St
     const request = input.request;
     if (!isRecord(compiled) || !isRecord(request) || typeof compiled.prompt !== "string" || !isRecord(compiled.adapter) || !isRecord(request.imageSettings)) return undefined;
     const settings = request.imageSettings;
+    const copy = compiled.copySnapshot;
+    const language = isRecord(copy) ? STUDIO_LANGUAGES.find((item) => item.id === copy.language)?.id : undefined;
+    const copySnapshot =
+        isRecord(copy) && language && typeof copy.eyebrow === "string" && typeof copy.headline === "string" && typeof copy.subline === "string" && Array.isArray(copy.lines) && copy.lines.every((line): line is string => typeof line === "string")
+            ? { language, eyebrow: copy.eyebrow, headline: copy.headline, subline: copy.subline, lines: copy.lines }
+            : undefined;
+    if (copy !== undefined && !copySnapshot) throw new Error("生成记录的逐屏定稿无效，无法还原候选图文案");
     return {
         compiled: {
             prompt: compiled.prompt,
+            ...(copySnapshot ? { copySnapshot } : {}),
             layers: arrayOf(compiled.layers, (layer) =>
                 typeof layer.id === "string" && typeof layer.text === "string" ? { id: layer.id as NonNullable<StudioAttempt["input"]>["compiled"]["layers"][number]["id"], title: str(layer.title), source: str(layer.source), text: layer.text } : undefined,
             ),
@@ -280,7 +289,15 @@ function normalizeAttemptInput(input: Record<string, unknown>, time: string): St
             styleReferences: arrayOf(compiled.styleReferences, (photo) => normalizePhoto(photo, time, false)),
             ...(isRecord(compiled.revisionReference) ? { revisionReference: normalizePhoto(compiled.revisionReference, time, false) } : {}),
             ...(isRecord(compiled.layoutGuide) && studioCompositionOf(compiled.layoutGuide.composition) && typeof compiled.layoutGuide.ratio === "string"
-                ? { layoutGuide: { composition: studioCompositionOf(compiled.layoutGuide.composition)!, ratio: compiled.layoutGuide.ratio, ...(typeof compiled.layoutGuide.resourceId === "string" ? { resourceId: compiled.layoutGuide.resourceId } : {}) } }
+                ? {
+                      layoutGuide: {
+                          composition: studioCompositionOf(compiled.layoutGuide.composition)!,
+                          ratio: compiled.layoutGuide.ratio,
+                          ...(compiled.layoutGuide.proof === true ? { proof: true as const } : {}),
+                          ...(STUDIO_DETAIL_LAYOUT_IDS.includes(compiled.layoutGuide.layout as StudioDetailLayoutId) ? { layout: compiled.layoutGuide.layout as StudioDetailLayoutId } : {}),
+                          ...(typeof compiled.layoutGuide.resourceId === "string" ? { resourceId: compiled.layoutGuide.resourceId } : {}),
+                      },
+                  }
                 : {}),
             trimmed: strings(compiled.trimmed) as NonNullable<StudioAttempt["input"]>["compiled"]["trimmed"],
             ...(typeof compiled.textModeNotice === "string" ? { textModeNotice: compiled.textModeNotice } : {}),
@@ -347,6 +364,7 @@ function normalizeRun(run: Record<string, unknown>, fallbackTime: string): Studi
                       ...(studioPlanTone(run.suite.tone) ? { tone: studioPlanTone(run.suite.tone) } : {}),
                       ...(str(run.suite.concept).trim() ? { concept: str(run.suite.concept).trim().slice(0, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
                       ...(studioPlanMotifs(run.suite.motifs).length ? { motifs: studioPlanMotifs(run.suite.motifs) } : {}),
+                      ...(studioArtDirectionOf(run.suite.artDirection) ? { artDirection: studioArtDirectionOf(run.suite.artDirection) } : {}),
                   },
               }
             : {}),
@@ -393,6 +411,35 @@ function normalizeSellingPoint(point: Record<string, unknown>): StudioSellingPoi
     };
 }
 
+function normalizePlanReceipt(value: unknown): StudioPlanReceipt | undefined {
+    if (!isRecord(value)) return undefined;
+    const { scope, state, inputSignature, model, createdAt, taskId, attemptId } = value;
+    if (scope !== "template" && scope !== "detail" && scope !== "main" && scope !== "single") return undefined;
+    if (state !== "submitted" && state !== "task-failed" && state !== "not-accepted" && state !== "accepted") return undefined;
+    if (typeof inputSignature !== "string" || !inputSignature || typeof model !== "string" || typeof createdAt !== "string" || typeof attemptId !== "string" || !attemptId) return undefined;
+    const review = arrayOf(value.review, (item) =>
+        typeof item.index === "number" && Number.isInteger(item.index) && item.index >= 0 && typeof item.title === "string" && typeof item.purpose === "string" && typeof item.headline === "string" && typeof item.visual === "string"
+            ? { index: item.index, title: item.title, purpose: item.purpose, headline: item.headline, visual: item.visual }
+            : undefined,
+    );
+    const issues = arrayOf(value.issues, (item) =>
+        typeof item.field === "string" && typeof item.message === "string" ? { ...(typeof item.index === "number" && Number.isInteger(item.index) && item.index >= 0 ? { index: item.index } : {}), field: item.field, message: item.message } : undefined,
+    );
+    return {
+        scope,
+        state,
+        inputSignature,
+        model,
+        createdAt,
+        attemptId,
+        ...(typeof taskId === "string" && taskId ? { taskId } : {}),
+        ...(value.alternativeDirection === true ? { alternativeDirection: true } : {}),
+        ...(typeof value.message === "string" && value.message ? { message: value.message } : {}),
+        ...(review.length ? { review } : {}),
+        ...(issues.length ? { issues } : {}),
+    };
+}
+
 /** 服务端只保证是 JSON 对象；读取时补齐缺省字段，丢掉无法识别的记录，避免一条坏数据拖垮整个页面。 */
 export function normalizeStudioProduct(value: unknown): StudioProduct | undefined {
     if (!isRecord(value) || typeof value.id !== "string" || !value.id) return undefined;
@@ -403,6 +450,7 @@ export function normalizeStudioProduct(value: unknown): StudioProduct | undefine
     return {
         ...base,
         ...(str(value.lastAnalysisTaskId) ? { lastAnalysisTaskId: str(value.lastAnalysisTaskId) } : {}),
+        planReceipt: normalizePlanReceipt(value.planReceipt),
         name: str(value.name),
         updatedAt: str(value.updatedAt, time),
         platform,

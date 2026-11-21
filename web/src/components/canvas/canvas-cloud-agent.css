@@ -4094,6 +4094,13 @@ summary.agent-tool-step:hover {
     opacity: 0.5;
 }
 
+.agent-composer-status-row {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    column-gap: var(--space-2);
+}
+
 .agent-composer-canvas-selection {
     display: flex;
     min-width: 0;

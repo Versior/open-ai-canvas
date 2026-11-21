@@ -15,23 +15,36 @@ import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
 import { studioAttemptActive, studioAttemptNeedsReview, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
-import type { StudioAttemptStatus, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
+import type { StudioAttemptStatus, StudioGenerationSource, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
 import { configuredModelDisplayName } from "@/lib/model-selection";
 import { studioShotHasCopy } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioShotSpec } from "@/lib/ecommerce-studio/shot-specs";
 import { downloadBrowserMedia } from "@/services/browser-download";
 import { resourceStorageKey } from "@/services/api/resources";
 import { useEffectiveConfig } from "@/stores/use-config-store";
-import { bindStudioDetailPage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed, studioOutputNeedsLegacyTypeset } from "./studio-delivery";
+import { bindStudioLongImage, composeStudioShots, downloadStudioComposed, exportStudioZip, releaseComposed, studioOutputNeedsLegacyTypeset, type StudioArchiveKind } from "./studio-delivery";
 import { inspectStudioDelivery } from "./studio-delivery-review";
 import type { StudioDeliveryReview } from "@/lib/ecommerce-studio/delivery-review";
 import { ratioStyle, studioImageUrl } from "./studio-parts";
 import { studioShotPending, type StudioRunner, type StudioShotRef } from "./use-studio-runner";
+import "./studio-delivery.css";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
 
 /** 结果区里的一组图：表单生成的记录或助手排的方案，界面上按同一种卡片展示。 */
-export type StudioShotGroup = { key: string; ref: StudioShotRef; title: string; createdAt: string; kind?: StudioPlanKind; textMode: StudioTextMode; shots: StudioShot[]; fromAgent: boolean; styleId?: StudioPlan["styleId"]; tone?: StudioPlan["tone"] };
+export type StudioShotGroup = {
+    key: string;
+    ref: StudioShotRef;
+    title: string;
+    createdAt: string;
+    kind?: StudioPlanKind;
+    textMode: StudioTextMode;
+    shots: StudioShot[];
+    fromAgent: boolean;
+    styleId?: StudioPlan["styleId"];
+    tone?: StudioPlan["tone"];
+    source?: StudioGenerationSource;
+};
 
 export type StudioViewerTarget = { groupKey: string; shotId: string; resourceId?: string };
 
@@ -61,6 +74,7 @@ export function studioShotGroups(product: StudioProduct): StudioShotGroup[] {
         tone: run.suite?.tone,
         shots: run.shots,
         fromAgent: false,
+        source: run.source,
     }));
     return [...plans, ...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
@@ -78,7 +92,7 @@ async function downloadOutputs(items: { output: StudioOutput; fileName: string }
 }
 
 /** 列表也展示同一份排版成品；仅在进入视口后读取原图、加载字库。 */
-function StudioResultArtwork({ product, group, shot, output }: { product: StudioProduct; group: StudioShotGroup; shot: StudioShot; output: StudioOutput }) {
+function StudioResultArtwork({ product, group, shot, output, full = false }: { product: StudioProduct; group: StudioShotGroup; shot: StudioShot; output: StudioOutput; full?: boolean }) {
     const ref = useRef<HTMLSpanElement>(null);
     const [visible, setVisible] = useState(false);
     const [preview, setPreview] = useState<{ key: string; url?: string; error?: string }>();
@@ -119,7 +133,7 @@ function StudioResultArtwork({ product, group, shot, output }: { product: Studio
     return (
         <span ref={ref} className="es-result-artwork">
             {!overlay ? (
-                <img src={studioImageUrl(output.resourceId, true)} alt={shot.title} loading="lazy" />
+                <img src={studioImageUrl(output.resourceId, !full)} alt={shot.title} loading="lazy" />
             ) : preview?.key === key && preview.url ? (
                 <img src={preview.url} alt={`${shot.title} · 程序排版成品`} />
             ) : preview?.key === key && preview.error ? (
@@ -276,7 +290,8 @@ function GroupCard({
 }) {
     const { message, modal } = App.useApp();
     const config = useEffectiveConfig();
-    const [exporting, setExporting] = useState<"zip" | "long" | "review">();
+    const [exporting, setExporting] = useState<StudioArchiveKind | "long" | "review">();
+    const [reading, setReading] = useState(false);
     const [reviewResult, setReviewResult] = useState<{ signature: string; report: StudioDeliveryReview }>();
     const exportController = useRef<AbortController | undefined>(undefined);
     const scope = getActiveUserScope();
@@ -290,6 +305,7 @@ function GroupCard({
     );
     const shots = group.shots;
     const done = shots.filter((shot) => studioShotPreview(shot)).length;
+    const complete = done > 0 && done === shots.length;
     const active = shots.filter((shot) => shot.attempts.some(studioAttemptActive)).length;
     const failed = shots.filter((shot) => {
         const latest = studioShotLatestAttempt(shot);
@@ -311,7 +327,7 @@ function GroupCard({
         }
     };
 
-    const exportSet = async (mode: "zip" | "long" | "review") => {
+    const exportSet = async (mode: StudioArchiveKind | "long" | "review") => {
         const plan: StudioPlan = { id: group.key, kind: group.kind || "main", createdAt: group.createdAt, textMode: group.textMode, shots, styleId: group.styleId, tone: group.tone };
         setExporting(mode);
         const controller = new AbortController();
@@ -329,16 +345,15 @@ function GroupCard({
             if (mode === "review") return;
             const stem = studioDisplayName(product).replace(/[\\/:*?"<>|]+/g, "_");
             if (mode === "long") {
-                const detail = await bindStudioDetailPage(product, composed);
+                const longImage = await bindStudioLongImage(product, plan, composed);
                 assertCurrent();
-                saveAs(detail.longImage.dataUrl, `${stem}-详情长图.png`);
+                saveAs(longImage.dataUrl, `${stem}-完整原长图.png`);
             } else {
-                const detail = group.kind === "detail" ? await bindStudioDetailPage(product, composed) : undefined;
-                const zip = await exportStudioZip(product, plan, composed, detail, checked);
+                const zip = await exportStudioZip(product, plan, composed, mode, checked);
                 assertCurrent();
-                saveAs(zip, `${stem}-${group.kind === "detail" ? "详情页" : "商品图"}.zip`);
+                const name = mode === "draft" ? `分屏草稿-${composed.length}of${shots.length}` : mode === "originals" ? "原始分屏" : group.kind === "detail" ? "完整详情包" : "完整商品图";
+                saveAs(zip, `${stem}-${name}.zip`);
             }
-            if (composed.length < shots.length) message.info(`还有 ${shots.length - composed.length} 张没出好，导出时跳过了`);
         } catch (error) {
             if (!controller.signal.aborted && getActiveUserScope() === scope) message.error(error instanceof Error ? error.message : "导出失败，请重试");
         } finally {
@@ -409,24 +424,33 @@ function GroupCard({
                         </Tooltip>
                     ) : null}
                     {isSet ? (
-                        <Button size="small" icon={<Download size={13} />} loading={exporting === "zip"} disabled={!done || Boolean(exporting)} onClick={() => void exportSet("zip")}>
-                            下载整套
+                        <Button size="small" icon={<Download size={13} />} loading={exporting === "complete"} disabled={!complete || Boolean(exporting)} onClick={() => void exportSet("complete")}>
+                            下载完整文件包
                         </Button>
                     ) : null}
                     <Button size="small" loading={exporting === "review"} disabled={!done || Boolean(exporting)} onClick={() => void exportSet("review")}>
-                        交付检查
+                        文件与文案检查
                     </Button>
                     <Dropdown
                         trigger={["click"]}
                         menu={{
                             items: [
                                 ...(!isSet ? [{ key: "download", icon: <Download size={14} />, label: "全部下载", disabled: !done }] : []),
-                                ...(group.kind === "detail" ? [{ key: "long", icon: <Rows3 size={14} />, label: "只下载详情长图", disabled: !done || Boolean(exporting) }] : []),
+                                ...(group.kind === "detail"
+                                    ? [
+                                          { key: "reading", label: reading ? "收起整页预览" : "整页阅读预览（标出缺屏）" },
+                                          { key: "long", icon: <Rows3 size={14} />, label: "只下载完整原长图（不切片）", disabled: !complete || Boolean(exporting) },
+                                          { key: "originals", label: "下载完整原始分屏（不切片）", disabled: !complete || Boolean(exporting) },
+                                      ]
+                                    : []),
+                                ...(isSet && done > 0 && !complete ? [{ key: "draft", label: `下载已出分屏草稿（${done}/${shots.length}）`, disabled: Boolean(exporting) }] : []),
                                 { key: "remove", icon: <Trash2 size={14} />, label: "删除记录", danger: true },
                             ],
                             onClick: ({ key }) => {
                                 if (key === "download") downloadAll();
                                 if (key === "long") void exportSet("long");
+                                if (key === "reading") setReading((value) => !value);
+                                if (key === "originals" || key === "draft") void exportSet(key);
                                 if (key === "remove") remove();
                             },
                         }}
@@ -437,11 +461,28 @@ function GroupCard({
                     </Dropdown>
                 </div>
             </header>
+            {isSet && done > 0 && !complete ? <p className="es-delivery-note">缺第 {shots.flatMap((shot, index) => (studioShotPreview(shot) ? [] : [index + 1])).join("、")} 张。补齐后可下载完整文件；更多操作可导出分屏草稿。</p> : null}
+            {group.kind === "detail" && reading ? (
+                <section className="es-delivery-reading" aria-label="消费者整页阅读预览">
+                    <strong>{complete ? "整页阅读预览" : `草稿预览 · ${done}/${shots.length} 屏`}</strong>
+                    {shots.map((shot, index) => {
+                        const output = studioShotPreview(shot);
+                        return output ? (
+                            <StudioResultArtwork key={shot.id} product={product} group={group} shot={shot} output={output} full />
+                        ) : (
+                            <div key={shot.id} className="es-delivery-missing">
+                                第 {index + 1} 屏缺图 · {shot.title}
+                            </div>
+                        );
+                    })}
+                </section>
+            ) : null}
             {review ? (
                 <details className="es-delivery-review" open>
                     <summary>
-                        交付检查 · {review.delivered}/{review.total} 张 · {review.issues.length} 项提醒
+                        文件{review.fileSet === "complete" ? "齐全" : "未齐"} · {review.delivered}/{review.total} 张 · {review.issues.length} 项提醒
                     </summary>
+                    <p>这里只测文件并检查策划文案；图中实字、商品事实与平台上架资格未核对。</p>
                     <ul>
                         {review.issues.map((issue, index) => (
                             <li key={index}>
@@ -554,7 +595,7 @@ export function StudioResults({
                     />
                 ) : null}
                 {groups.map((group) => (
-                    <GroupCard key={group.key} product={product} group={group} blocked={blocked} imageModel={imageModel} runner={runner} edit={edit} onView={onView} onReference={onReference} />
+                    <GroupCard key={group.key} product={group.source ? { ...product, ...group.source } : product} group={group} blocked={blocked} imageModel={imageModel} runner={runner} edit={edit} onView={onView} onReference={onReference} />
                 ))}
                 {!groups.length && !request ? (
                     <div className="es-empty">

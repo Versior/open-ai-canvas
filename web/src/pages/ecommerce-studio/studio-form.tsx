@@ -22,6 +22,7 @@ import {
     studioMarket,
     studioOutputSpec,
     studioPlatformForbidsText,
+    studioRunRatio,
     studioRatioValid,
     studioInfoPoints,
     studioSingleTypes,
@@ -37,7 +38,10 @@ import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection
 import { studioChangeStyle } from "@/lib/ecommerce-studio/product";
 import { patchStudioDetailPlanScreen, STUDIO_DESIGN_TONES, STUDIO_DETAIL_PLAN_LIMITS, STUDIO_DETAIL_SCREEN_OPTIONS, studioDetailScreenCount, studioScreenCopyIssue, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES } from "@/lib/ecommerce-studio/detail-plan";
 import { studioAnsweredAsks, studioPickedDirection } from "@/lib/ecommerce-studio/plan-prep";
-import { createStudioRun, moveStudioSetEntry, studioActivePlan, studioPlanScopeOf, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { createStudioRun, moveStudioSetEntry, studioActivePlan, studioEntryRatio, studioPlanScopeOf, studioRevisionPlan, studioSetEntries, studioSetKind, toggleStudioSetEntry } from "@/lib/ecommerce-studio/runs";
+import { previewStudioDetailGeometry } from "@/lib/ecommerce-studio/delivery-geometry";
+import { studioSuiteUse } from "@/lib/ecommerce-studio/suites";
+import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
 import { STUDIO_STYLES, studioProductStyle } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioBrief, StudioLanguage, StudioMarket, StudioOutputType, StudioProduct, StudioShooting, StudioStyleId } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
@@ -46,6 +50,8 @@ import { StudioDossierCard } from "./studio-dossier";
 import { StudioModelCastSection } from "./studio-model-cast";
 import { StudioModelPicker, useStudioModel } from "./studio-parts";
 import { StudioPlanPrepPanel, studioPrepStep } from "./studio-plan-prep";
+import { StudioPlanPreview } from "./studio-plan-preview";
+import { StudioPlanReceiptPanel } from "./studio-plan-receipt";
 import { StudioShotList, type StudioPlannedScreenPatch } from "./studio-shot-list";
 import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
@@ -197,17 +203,20 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const castReferences = castRelevant ? [brief.model?.figure ?? brief.model?.face, brief.model?.pose].filter((pick) => pick?.resourceId).length : 0;
     const referenceCount = Math.min(profile?.references.maxImages || 4, truthCount + castReferences + product.references.length);
     const promptRevision = useSyncExternalStore(subscribeStudioPromptOverrides, studioPromptOverridesRevision);
-    const estimateInputs = useMemo(() => {
-        if (!image.value || !product.photos.length) return [];
+    const estimateSpec = useMemo(() => {
+        const inputs: ReturnType<typeof studioImageInput>[] = [];
+        if (!image.value || !product.photos.length) return { inputs, complete: false };
         try {
             let index = 0;
             const run = createStudioRun(product, () => `estimate-${++index}`);
-            return run.shots.map((shot) => studioImageInput(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite }, image.value, image.config));
+            for (const shot of run.shots)
+                inputs.push(studioImageInput(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, styleId: run.styleId, source: run.source, suite: run.suite }, image.value, image.config));
+            return { inputs, complete: true };
         } catch {
-            return [];
+            return { inputs: inputs.slice(0, 1), complete: false };
         }
     }, [product, image.value, image.config, promptRevision]);
-    const estimate = useStudioEstimate({ model: image.value, inputs: estimateInputs });
+    const estimate = useStudioEstimate({ model: image.value, inputs: estimateSpec.inputs });
     const suggestion = studioSuggestion(product);
     const issues = useMemo(() => studioCopyIssues(studioInfoPoints(product.sellerNotes), { headline: studioTitleOf(product), subhead: "", listingTitle: "", bullets: [] }), [product]);
     const adapter = studioModelAdapter(image.value);
@@ -222,16 +231,27 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const planScreens =
         scope === "detail" ? studioDetailScreenCount(brief) : scope === "single" ? singles.length * Math.max(1, Math.min(4, brief.count)) : scope === "template" ? brief.suite?.shots.length || 0 : scopeMeta?.screens || STUDIO_DETAIL_PLAN_LIMITS.screens;
     const planUnit = scope === "template" ? unit : scopeMeta?.unit || "张";
+    const geometry =
+        setKind === "detail" && (included.length || scope === "detail")
+            ? previewStudioDetailGeometry(
+                  product.platform,
+                  entries.length
+                      ? included.map((entry, index) => ({ title: entry.title, ratio: estimateSpec.inputs[index]?.request.aspectRatio || studioEntryRatio(entry, product) }))
+                      : Array.from({ length: planScreens }, () => ({ ratio: studioRunRatio("detail-hero", product) })),
+              )
+            : undefined;
     const planMissing = !activePlan && (scope === "detail" || (scope === "main" && Boolean(text.value)));
     const planField = scope ? STUDIO_PLAN_FIELD[scope] : "detailPlan";
-    const storedPlan = scope ? brief[planField] : undefined;
+    const storedPlan = studioRevisionPlan(product);
     const planOutdated = Boolean(storedPlan && !activePlan);
     const planningImages = studioPlanningImages(product, modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages ?? 2);
     const planTone = activePlan?.tone ? STUDIO_DESIGN_TONES[activePlan.tone].label : "";
     // 明确不收图的文本模型识别不了商品：「AI 分析并策划」跳过识别，直接按表单和档案的文字策划。
     const textSeesPhotos = !text.value || modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages !== 0;
+    const analysisBlock = !product.photos.length ? "先上传商品图，再分析或策划" : !truthCount ? "请点亮至少一张非吊牌商品图的星标，再分析或策划" : !text.value ? "请先选择文本模型" : "";
+    const canTryFirst = Boolean(activePlan && images > 1 && (scope === "detail" || scope === "template"));
     const copyProblem = included.map((entry) => ({ entry, issue: entry.copy ? studioScreenCopyIssue({ ...entry.copy, role: entry.role, eyebrow: entry.eyebrow, noText: entry.noText }) : undefined })).find((item) => item.issue);
-    const blocked = !product.photos.length
+    const setupBlock = !product.photos.length
         ? "先上传商品图"
         : !truthCount
           ? "至少点亮一张商品图的星标，出图以它为外观依据"
@@ -245,9 +265,10 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                   ? `先策划这 ${planScreens} ${planUnit}`
                   : (setKind || (scope === "single" && activePlan)) && !included.length
                     ? "镜头清单里至少留一张"
-                    : copyProblem
-                      ? `${copyProblem.entry.title}：${copyProblem.issue}`
-                      : "";
+                    : "";
+    const copyBlock = copyProblem ? `${copyProblem.entry.title}：${copyProblem.issue}` : "";
+    const blocked = setupBlock || copyBlock;
+    const firstBlocked = setupBlock || (copyProblem?.entry === included[0] ? copyBlock : "");
     const setLabel = brief.outputType === "template-set" ? "模板套图" : setKind === "detail" ? "详情页" : "主图套图";
     // 质感选「按商品推荐」：详情页由策划挑，其他出图类型按品类挑。
     const styleHint =
@@ -289,15 +310,16 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     };
 
     /** 策划一次，返回是否成功；失败时已经提示过原因。 */
-    const runPlan = async (revise: boolean) => {
+    const runPlan = async (revise: boolean, recheck = false) => {
         if (!requireLogin()) return false;
         try {
-            const result = await runner.plan(ensure(), text.value, { revise });
+            const result = await runner.plan(ensure(), text.value, { revise, recheck });
             const count = result.plan.screens.length;
             const notes = [
                 result.dropped ? `${result.dropped} ${planUnit}依据不够没收进来` : "",
                 result.ungrounded ? `去掉了 ${result.ungrounded} 处没有出处的数字` : "",
                 result.issues.length ? `${result.issues.length} 处用词需要留意` : "",
+                result.warnings.length ? `${result.warnings.length} 项核对提醒，见最近策划结果` : "",
                 result.tacky.length ? `文案里有「${result.tacky.join("」「")}」这类说法，可以在补充调整里要求换掉` : "",
                 // 详情页版式变化不够时如实提示，由用户决定要不要按补充调整重排。
                 scope === "detail" && count >= 4 && !product.brief.sameLayout && result.compositionKinds < Math.min(4, Math.ceil(count / 2)) ? "图文重心较相似，可逐屏调整构图" : "",
@@ -397,7 +419,8 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     const planQuote = useStudioTextEstimate(text.value, planBeforeGenerate ? planInputCount : null);
     const generate = async ({ direct = false, firstOnly = false } = {}) => {
         if (!requireLogin()) return;
-        if (blocked) return void message.warning(blocked);
+        const reason = firstOnly ? firstBlocked : blocked;
+        if (reason) return void message.warning(reason);
         if (planBeforeGenerate && !direct) {
             message.info(`先按这件商品策划这 ${planScreens} ${planUnit}，策划好就开始出图`);
             if (!(await analyzeAndPlan())) return;
@@ -431,7 +454,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             edit={edit}
             asking={asking}
             directing={directing}
-            disabled={Boolean(user) && (!product.photos.length || Boolean(running && running !== "ask" && running !== "directions"))}
+            disabled={Boolean(user) && (Boolean(analysisBlock) || Boolean(running && running !== "ask" && running !== "directions"))}
             onAsk={async () => {
                 if (await prepare()) await runAsk();
             }}
@@ -486,13 +509,14 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                     <h2>商品信息</h2>
                     <span className="es-field-actions">
                         <Tooltip title={!product.photos.length ? "先上传商品图" : scope && text.value ? "看商品图识别品牌、类型、标题和卖点（已经写了的不覆盖），再问你几个商品图看不出来的问题" : "看商品图，自动填品牌、类型、标题和卖点；已经写了的不覆盖"}>
-                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={Boolean(user) && (!product.photos.length || Boolean(running && !filling && !asking))} onClick={() => void analyzeProduct()}>
-                                {filling ? "分析商品中…" : asking ? "生成问题中…" : "AI 分析商品"}
+                            <Button size="small" icon={<ScanSearch size={14} />} loading={filling || asking} disabled={Boolean(user) && (Boolean(analysisBlock) || Boolean(running && !filling && !asking))} onClick={() => void analyzeProduct()}>
+                                {filling ? "识别商品中…" : asking ? "生成问题中…" : "AI 分析商品"}
                             </Button>
                         </Tooltip>
                         <FillModelPopover imageCount={product.photos.length} />
                     </span>
                 </div>
+                <p className="es-field-hint">{analysisBlock || "这里只识别资料和补充问题，不生成逐屏策划。要生成清单，请使用下方的策划按钮。"}</p>
                 <div className="es-grid">
                     <Field label="品牌名" span={3} htmlFor="es-brand">
                         <Input id="es-brand" variant="filled" size="large" value={brief.brand} placeholder="例如：NORDA" maxLength={40} onChange={(event) => editBrief({ brand: event.target.value })} />
@@ -692,7 +716,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                     <strong>{brief.suite ? brief.suite.name : "还没选模板"}</strong>
                                     <span>
                                         {brief.suite
-                                            ? [brief.suite.source === "admin" ? "后台精选" : "内置模板库", brief.suite.kind === "main" ? "按主图出" : "按详情页出", brief.suite.category].filter(Boolean).join(" · ")
+                                            ? [brief.suite.source === "admin" ? "后台精选" : "内置模板库", brief.suite.kind === "main" ? "按主图出" : "按详情页出", studioSuiteUse(brief.suite.shots), brief.suite.category].filter(Boolean).join(" · ")
                                             : "从后台精选或内置模板库挑一套，按模板逐张出图。"}
                                     </span>
                                 </span>
@@ -733,6 +757,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                                 : "添加文本模型后可以按商品策划。"}
                                     </span>
                                     {text.value && planningImages.notice ? <span>{planningImages.notice}</span> : null}
+                                    {analysisBlock ? <span>{analysisBlock}</span> : null}
                                     {activePlan?.positioning ? <span>定位：{activePlan.positioning}</span> : null}
                                     {activePlan?.concept ? <span>创意主线：{activePlan.concept}</span> : null}
                                     {activePlan?.motifs?.length ? <span>视觉元素：{activePlan.motifs.join(" · ")}</span> : null}
@@ -761,7 +786,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                             type={!activePlan && prepStep === "plan" ? "primary" : "default"}
                                             icon={<ListChecks size={14} />}
                                             loading={planning || filling}
-                                            disabled={Boolean(user) && (!product.photos.length || asking || directing)}
+                                            disabled={Boolean(user) && (Boolean(analysisBlock) || asking || directing)}
                                             onClick={planDetail}
                                         >
                                             {filling
@@ -780,7 +805,7 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                                         ? `按「${pickedDirection.angle}」策划 ${planScreens} ${planUnit}`
                                                         : product.dossier || !textSeesPhotos
                                                           ? `AI 策划 ${planScreens} ${planUnit}`
-                                                          : "AI 分析并策划"}
+                                                          : `识别商品并策划 ${planScreens} ${planUnit}`}
                                         </Button>
                                         <FillModelPopover imageCount={planningImages.images.length} purpose="策划" />
                                         {planBeforeGenerate ? (
@@ -803,7 +828,30 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                                         />
                                     </label>
                                 ) : null}
+                                {product.planReceipt ? (
+                                    <StudioPlanReceiptPanel
+                                        productId={product.id}
+                                        receipt={product.planReceipt}
+                                        current={scope === product.planReceipt.scope && product.planReceipt.inputSignature === studioPlanInputSignature(product)}
+                                        busy={Boolean(running)}
+                                        onRecheck={() => void runPlan(false, true)}
+                                    />
+                                ) : null}
                             </div>
+                        ) : null}
+                        {geometry && geometry.issues.length > 0 ? (
+                            <details className="es-inline-note" data-tone="warning">
+                                <summary>当前画幅的交付预检：{geometry.longImageAvailable ? "平台切片可能不可用" : "不能按当前规格装订"}</summary>
+                                <ul>
+                                    {geometry.issues.map((issue) => (
+                                        <li key={issue}>{issue}</li>
+                                    ))}
+                                </ul>
+                                <p>按所选画幅估算，不妨碍生成分屏；交付以成品实测为准。</p>
+                            </details>
+                        ) : null}
+                        {setKind === "detail" && activePlan ? (
+                            <StudioPlanPreview product={product} plan={activePlan} entries={entries} inputs={estimateSpec.inputs} onProofLayoutChange={(value) => editBrief({ useProofLayout: value ? true : undefined })} />
                         ) : null}
                         {entries.length && !planMissing ? (
                             <StudioShotList
@@ -838,15 +886,15 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         {planBeforeGenerate
                             ? `${needsRecognition ? `商品识别 ×1：${recognitionQuote || "报价中"}；` : ""}策划 ×1：${planQuote || (planInputCount === null ? "按实际参考图另行报价" : "报价中")}；策划成功后按最终方案出图。当前规格参考：`
                             : ""}
-                        {scope === "detail" && activePlan && images > 1 ? `先试首屏 ×1：${estimate.first}；` : ""}
-                        出图 ×{images}：{estimate.all}
+                        {canTryFirst ? `先试首屏 ×1：${estimate.first}；` : ""}
+                        出图 ×{images}：{estimateSpec.complete ? estimate.all : "整组规格未通过，暂无总价"}
                     </span>
                 ) : null}
                 <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
                     重置参数
                 </Button>
-                {scope === "detail" && activePlan && images > 1 ? (
-                    <Button size="large" disabled={Boolean(user) && (Boolean(blocked) || Boolean(running))} onClick={() => void generate({ firstOnly: true })}>
+                {canTryFirst ? (
+                    <Button size="large" disabled={Boolean(user) && (Boolean(firstBlocked) || Boolean(running))} onClick={() => void generate({ firstOnly: true })}>
                         先试首屏
                     </Button>
                 ) : null}

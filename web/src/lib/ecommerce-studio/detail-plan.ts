@@ -1,4 +1,6 @@
 import catalog from "../../../../backend/internal/ecommerceagent/studio_design_catalog.json";
+import { studioScreenCopyBudget } from "./copy-budget";
+export { studioScreenCopyBudget } from "./copy-budget";
 import { STUDIO_STYLES } from "./shot-specs";
 import { STUDIO_COMPOSITIONS, studioCompositionOf } from "./art-direction";
 import { studioEvidenceLayouts } from "./design-knowledge";
@@ -9,6 +11,7 @@ import {
     type StudioDesignToneId,
     type StudioDetailLayoutId,
     type StudioDetailPlan,
+    type StudioArtDirection,
     type StudioFact,
     type StudioPlanKind,
     type StudioPlannedScreen,
@@ -62,6 +65,10 @@ export const STUDIO_DETAIL_PLAN_LIMITS = {
     /** 从同类爆款和参考图里借鉴了什么。 */
     inspiration: 100,
     style: 800,
+    artDirectionText: 240,
+    artDirectionItems: 6,
+    artDirectionPalette: 5,
+    artDirectionColor: 40,
 } as const;
 
 /**
@@ -259,12 +266,6 @@ function studioReadyRoles(product: StudioProduct, roles: StudioShotRole[]): Stud
     return roles.filter((role) => ready[role] !== false);
 }
 
-export function studioScreenCopyBudget(role: StudioShotRole) {
-    const hero = role === "detail-hero" || role === "main-selling";
-    const information = ["detail-spec", "detail-size", "detail-steps"].includes(role);
-    return { lines: information ? 6 : hero ? 2 : 3, units: information ? 160 : hero ? 60 : 90 };
-}
-
 /** 购买沟通页控制阅读负担；参数和步骤页保留必要信息。英文按半个汉字的显示宽度计算。 */
 export function studioScreenCopyIssue(screen: { role: StudioShotRole; headline: string; subline: string; lines: string[]; eyebrow?: string; noText?: boolean }): string | undefined {
     if (screen.noText || screen.role === "main-white") return;
@@ -287,6 +288,42 @@ function textList(value: unknown, max: number, length: number) {
               .filter(Boolean)
               .slice(0, max)
         : [];
+}
+
+function artDirectionText(value: unknown) {
+    return text(value, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText);
+}
+
+/** 读回模型生成的艺术导演方案；字段短而明确，避免把整段自由文本重新变成隐形模板。 */
+export function studioArtDirectionOf(value: unknown): StudioArtDirection | undefined {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    const palette = Array.isArray(record.palette)
+        ? record.palette
+              .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item))
+              .map((item) => ({ name: text(item.name, STUDIO_DETAIL_PLAN_LIMITS.artDirectionColor), hex: text(item.hex, STUDIO_DETAIL_PLAN_LIMITS.artDirectionColor), role: text(item.role, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText) }))
+              .filter((item) => item.name)
+              .slice(0, STUDIO_DETAIL_PLAN_LIMITS.artDirectionPalette)
+        : [];
+    const direction: StudioArtDirection = {
+        ...(artDirectionText(record.emotionalPromise) ? { emotionalPromise: artDirectionText(record.emotionalPromise) } : {}),
+        ...(artDirectionText(record.visualWorld) ? { visualWorld: artDirectionText(record.visualWorld) } : {}),
+        ...(palette.length ? { palette } : {}),
+        ...(artDirectionText(record.typographyTreatment) ? { typographyTreatment: artDirectionText(record.typographyTreatment) } : {}),
+        ...(textList(record.materialEffects, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems * 2, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText).length
+            ? { materialEffects: textList(record.materialEffects, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems * 2, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText).slice(0, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems) }
+            : {}),
+        ...(artDirectionText(record.compositionGrammar) ? { compositionGrammar: artDirectionText(record.compositionGrammar) } : {}),
+        ...(textList(record.recurringMotifs, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems * 2, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText).length
+            ? { recurringMotifs: textList(record.recurringMotifs, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems * 2, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText).slice(0, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems) }
+            : {}),
+        ...(artDirectionText(record.screenVariationPlan) ? { screenVariationPlan: artDirectionText(record.screenVariationPlan) } : {}),
+        ...(artDirectionText(record.referenceDna) ? { referenceDna: artDirectionText(record.referenceDna) } : {}),
+        ...(textList(record.avoid, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems * 2, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText).length
+            ? { avoid: textList(record.avoid, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems * 2, STUDIO_DETAIL_PLAN_LIMITS.artDirectionText).slice(0, STUDIO_DETAIL_PLAN_LIMITS.artDirectionItems) }
+            : {}),
+    };
+    return Object.keys(direction).length ? direction : undefined;
 }
 
 /**
@@ -317,6 +354,7 @@ export function studioPlannedScreenOf(value: unknown, requireVisual = true): Stu
         subline: typeof record.subline === "string" ? record.subline.trim() : "",
         lines: Array.isArray(record.lines) ? record.lines.filter((line): line is string => typeof line === "string") : [],
         facts: textList(record.facts, limits.facts, 40),
+        ...(Array.isArray(record.evidenceRefs) ? { evidenceRefs: record.evidenceRefs.filter((ref): ref is string => typeof ref === "string" && Boolean(ref)) } : {}),
         ...(record.noText === true ? { noText: true } : {}),
     };
 }
@@ -336,6 +374,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
     const tone = studioPlanTone(record.tone);
     const targets = studioPlanTargets(record.targets);
     const suiteId = text(record.suiteId, 150);
+    const artDirection = studioArtDirectionOf(record.artDirection);
     return {
         id: record.id.slice(0, 40),
         createdAt: text(record.createdAt, 40),
@@ -348,6 +387,7 @@ export function normalizeStudioDetailPlan(value: unknown): StudioDetailPlan | un
         ...(text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) ? { concept: text(record.concept, STUDIO_DETAIL_PLAN_LIMITS.concept) } : {}),
         ...(studioPlanMotifs(record.motifs).length ? { motifs: studioPlanMotifs(record.motifs) } : {}),
         ...(text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) ? { inspiration: text(record.inspiration, STUDIO_DETAIL_PLAN_LIMITS.inspiration) } : {}),
+        ...(artDirection ? { artDirection } : {}),
         ...(styleId ? { styleId } : {}),
         ...(tone ? { tone } : {}),
         ...(targets.length ? { targets } : {}),

@@ -5,7 +5,16 @@ import { studioFactUsable, type StudioProduct, type StudioShot } from "./types";
 
 export type StudioDeliveryMeasure = { width: number; height: number; bytes: number; audit?: EcommerceImageAudit };
 export type StudioDeliveryIssue = { shotId?: string; title: string; message: string };
-export type StudioDeliveryReview = { total: number; delivered: number; issues: StudioDeliveryIssue[]; manualChecks: string[] };
+export type StudioDeliveryReview = {
+    total: number;
+    delivered: number;
+    fileSet: "complete" | "incomplete";
+    pixelText: "not-checked";
+    productFacts: "not-verified";
+    publication: "requires-human-review";
+    issues: StudioDeliveryIssue[];
+    manualChecks: string[];
+};
 
 /** 只采样边缘，不把它当成全图分割、商品一致性或 OCR 检测。透明边缘不算纯白。 */
 export function studioEdgeAudit(data: Uint8ClampedArray, width: number, height: number): EcommerceImageAudit {
@@ -67,9 +76,14 @@ export function reviewStudioDelivery(product: StudioProduct, shots: StudioShot[]
     }
     for (const point of product.sellingPoints.filter((point) => point.enabled && !["visible", "confirmed"].includes(point.evidence))) issues.push({ title: point.title, message: "启用的卖点尚未确认，请核对依据后再上架" });
     if (product.dossier?.facts.some((fact) => !studioFactUsable(fact))) issues.push({ title: "商品档案", message: "档案仍有推断或待确认信息，须由卖家核实" });
+    const delivered = shots.filter((shot) => deliveredIds.has(shot.id)).length;
     return {
         total: shots.length,
-        delivered: deliveredIds.size,
+        delivered,
+        fileSet: delivered > 0 && delivered === shots.length ? "complete" : "incomplete",
+        pixelText: "not-checked",
+        productFacts: "not-verified",
+        publication: "requires-human-review",
         issues,
         manualChecks: [
             "核对商品外观、颜色、包装文字与原图一致",

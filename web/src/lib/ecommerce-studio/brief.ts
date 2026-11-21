@@ -213,6 +213,7 @@ export function normalizeStudioBrief(value: unknown): StudioBrief {
         positioning: text(record.positioning, 60),
         extra: text(record.extra, 300),
         sameLayout: record.sameLayout === true,
+        ...(record.useProofLayout === true ? { useProofLayout: true as const } : {}),
         count: Number.isInteger(count) && STUDIO_COUNT_OPTIONS.includes(count) ? count : base.count,
         detailScreens:
             Number.isInteger(record.detailScreens) && Number(record.detailScreens) >= 2 && Number(record.detailScreens) <= 20

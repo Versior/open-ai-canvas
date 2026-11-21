@@ -27,10 +27,11 @@ export function compileStudioShot(product: StudioProduct, located: StudioLocated
     const profile = modelCapabilityConfigFor(config, model).image;
     const source = located.source ? { ...product, ...located.source } : product;
     const brief = located.fromForm ? source.brief : { ...source.brief, shooting: "auto" as const, sameLayout: false };
+    const request = studioImageRequest(profile, located.quality, located.shot.ratio, located.resolution);
     const compiled = compileStudioPrompt({
         product: source,
         textMode: located.textMode,
-        shot: located.shot,
+        shot: request.aspectRatio && request.aspectRatio !== located.shot.ratio ? { ...located.shot, ratio: request.aspectRatio } : located.shot,
         model,
         maxChars: profile?.references.promptMaxChars,
         maxReferences: profile?.references.maxImages,
@@ -39,13 +40,13 @@ export function compileStudioShot(product: StudioProduct, located: StudioLocated
         styleId: located.styleId,
         ...(located.suite ? { suite: located.suite } : {}),
     });
-    return { profile, compiled };
+    return { profile, compiled, request };
 }
 
 export function studioImageInput(product: StudioProduct, located: StudioLocatedShot, model: string, config: AiConfig, revisionResourceId?: string): NonNullable<StudioAttempt["input"]> {
-    const { profile, compiled } = compileStudioShot(product, located, model, config, revisionResourceId);
+    const { request, compiled } = compileStudioShot(product, located, model, config, revisionResourceId);
     if (!compiled.references.length) throw new Error("请先上传商品图，出图以它为外观依据");
-    return structuredClone({ compiled, request: studioImageRequest(profile, located.quality, located.shot.ratio, located.resolution) });
+    return structuredClone({ compiled, request });
 }
 
 export function studioImageInputCount(input: NonNullable<StudioAttempt["input"]>) {

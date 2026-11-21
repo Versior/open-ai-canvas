@@ -127,7 +127,7 @@ export function StudioShotTuner({
             </label>
             {copyAllowed ? (
                 <div className="es-tuner-copy">
-                    {reviewStudioCopy(patch).map((issue) => (
+                    {reviewStudioCopy({ ...patch, role: shot.role }).map((issue) => (
                         <p key={issue.code} className="es-prompt-note" data-tone="warning">
                             {issue.message}
                         </p>

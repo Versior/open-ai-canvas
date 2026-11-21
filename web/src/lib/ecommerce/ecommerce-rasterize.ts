@@ -6,7 +6,7 @@
  */
 import { ecommerceLayoutVisibleBlocks, ecommerceRatioValue, type EcommerceLayout, type EcommerceLayoutBlock } from "./ecommerce-layout";
 import type { EcommerceCopy } from "./ecommerce-contract";
-import { ecommerceSliceFileName, ecommerceSlicePlan, ecommerceSliceSpec, type EcommerceSlicePlan, type EcommerceSlicePlatform } from "./ecommerce-slice";
+import { ecommerceSliceFileName, ecommerceSliceIssues, ecommerceSlicePlan, ecommerceSliceSpec, type EcommerceSlicePlan, type EcommerceSlicePlatform } from "./ecommerce-slice";
 
 /** 与界面一致的无衬线栈，导出结果与预览观感一致。 */
 const FONT_STACK = '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif';
@@ -266,6 +266,28 @@ export type EcommerceLongImageResult = {
     screens: { top: number; height: number }[];
 };
 
+export function ecommerceLongImageGeometry(sizes: readonly EcommerceRasterSize[], width: number, gap = 0) {
+    let height = 0;
+    const screens = sizes.map((size) => {
+        const top = height;
+        const scaled = Math.max(1, Math.round((size.height * width) / size.width));
+        height += scaled + gap;
+        return { top, height: scaled };
+    });
+    height -= screens.length ? gap : 0;
+    return { width, height, screens, canvasSafe: width <= MAX_CANVAS_EDGE && height <= MAX_CANVAS_EDGE && width * height <= MAX_LONG_IMAGE_PIXELS };
+}
+
+export function ecommerceDetailSlices(platform: EcommerceSlicePlatform, geometry: Pick<EcommerceLongImageResult, "height" | "screens">) {
+    const spec = ecommerceSliceSpec(platform)!;
+    const plan = ecommerceSlicePlan({ totalHeight: geometry.height, platform, protected: geometry.screens.map((screen, index) => ({ ...screen, id: `screen-${index + 1}`, label: `第 ${index + 1} 屏` })) });
+    const issues = ecommerceSliceIssues(plan, platform).map((issue) => issue.message);
+    const oversized = geometry.screens.flatMap((screen, index) => (screen.height > spec.maxSliceHeight ? [`第 ${index + 1} 屏 ${screen.height}px`] : []));
+    if (oversized.length) issues.unshift(`${oversized.join("、")} 超过单片 ${spec.maxSliceHeight}px，没有可用的安全切点。请改用较矮画幅，或只下载原长图／分屏文件`);
+    if (plan.overTotalHeight) issues.push("请减少屏数或调低各屏高度；原长图可独立下载，不能当作平台切片。");
+    return { plan, issues };
+}
+
 async function rasterizeEcommerceLongImageCanvas(input: EcommerceLongImageInput) {
     const urls = input.imageUrls.filter(Boolean);
     if (!urls.length) throw new Error("没有可拼接的图");
@@ -278,16 +300,8 @@ async function rasterizeEcommerceLongImageCanvas(input: EcommerceLongImageInput)
         releaseImage(image);
     }
     const width = Math.max(1, Math.round(input.width || sourceSizes[0].width || 800));
-    const screens: { top: number; height: number }[] = [];
-    let cursor = 0;
-    for (const size of sourceSizes) {
-        const scale = width / (size.width || width);
-        const height = Math.max(1, Math.round((size.height || width) * scale));
-        screens.push({ top: cursor, height });
-        cursor += height + gap;
-    }
-    const totalHeight = Math.max(1, cursor - gap);
-    assertSafeCanvasSize({ width, height: totalHeight }, "长图超过浏览器安全合成尺寸，请减少屏数或降低导出宽度", MAX_LONG_IMAGE_PIXELS);
+    const { screens, height: totalHeight, canvasSafe } = ecommerceLongImageGeometry(sourceSizes, width, gap);
+    if (!canvasSafe) throw new Error("长图超过浏览器安全合成尺寸，请减少屏数或降低导出宽度");
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = totalHeight;
@@ -375,12 +389,8 @@ export async function rasterizeEcommerceDetailPage(input: {
     try {
         // 屏与屏之间的接缝即切点候选；保护区间用每屏自身的区间，
         // 这样切点只会落在屏边界，不会切穿某一屏里的商品。
-        const plan = ecommerceSlicePlan({
-            totalHeight: longImageSize.height,
-            platform: input.platform,
-            protected: longImageSize.screens.map((screen, index) => ({ id: `screen-${index + 1}`, top: screen.top, height: screen.height, label: `第 ${index + 1} 屏` })),
-        });
-        if (plan.conflicts.length || plan.overTotalHeight || plan.pieces.some((piece) => piece.height > spec.maxSliceHeight || piece.height < spec.minSliceHeight)) throw new Error("图片无法满足当前平台的切片尺寸与安全切点，请在交付节点调整");
+        const { plan, issues } = ecommerceDetailSlices(input.platform, longImageSize);
+        if (issues.length) throw new Error(issues.join("；"));
         const longImage = { dataUrl: canvas.toDataURL("image/png"), ...longImageSize };
         const pieces: EcommerceDetailPagePiece[] = [];
         const fileNames: string[] = [];

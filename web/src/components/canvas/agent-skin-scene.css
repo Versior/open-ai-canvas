@@ -6,46 +6,38 @@
 }
 .agent-window-perch {
     display: flex;
+    min-width: 0;
     align-items: center;
     justify-content: flex-end;
     gap: 8px;
-    height: 116px;
-    margin: 0 16px;
-    overflow: hidden;
     color: var(--agent-ink);
-    transition: height 280ms ease;
-}
-.agent-window-perch[data-expanded="false"] {
-    height: 48px;
-    align-items: flex-start;
 }
 .agent-window-perch[data-expanded="false"] .agent-perch-media {
-    transform: translateY(calc(-1 * var(--agent-perch-head-top)));
+    transform: translateY(calc(50% - var(--agent-perch-head-top)));
 }
 .agent-window-perch[data-display="full"] {
-    margin: 0;
     flex-direction: column;
-    height: auto;
     justify-content: center;
 }
 @media (prefers-reduced-motion: reduce) {
-    .agent-window-perch,
     .agent-window-perch .agent-perch-media {
         transition: none;
     }
 }
 .agent-perch-character {
+    display: grid;
     flex: none;
     position: relative;
-    width: 104px;
-    height: 112px;
+    width: var(--agent-perch-width);
+    height: var(--agent-perch-height);
+    overflow: hidden;
     cursor: pointer;
 }
 .agent-perch-media {
     position: relative;
     display: block;
-    width: 104px;
-    height: 112px;
+    width: var(--agent-perch-width);
+    height: var(--agent-perch-height);
     pointer-events: none;
     transition: transform 280ms ease;
 }
@@ -74,37 +66,20 @@
     text-align: left;
 }
 .agent-window-dock {
-    position: absolute;
-    right: 12px;
-    bottom: 100%;
-    width: 104px;
-    z-index: 12;
-    pointer-events: none;
-}
-.agent-window-dock .agent-window-perch {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-    height: auto;
-    max-width: 100%;
-    margin: 0;
-    overflow: visible;
-    pointer-events: auto;
+    flex: 1 1 44px;
+    min-width: 44px;
+    justify-content: flex-end;
+    margin-bottom: var(--space-2);
 }
-.agent-window-dock .agent-window-perch[data-expanded="false"] {
-    flex-direction: row;
-    align-items: flex-start;
-    height: 48px;
-    overflow: hidden;
+.agent-window-dock:empty {
+    display: none;
 }
 .agent-window-dock .agent-perch-bubble {
-    position: relative;
-    width: 180px;
-    max-width: min(180px, calc(100vw - 36px));
-    max-height: 200px;
+    max-width: 180px;
+    max-height: var(--agent-perch-height);
     overflow-y: auto;
-    text-align: left;
+    text-align: start;
 }
 :is(.canvas-agent-panel, .agent-chat-theme)[data-skin] .agent-message-body:not(.agent-message-user) {
     padding: 0;

@@ -1,7 +1,20 @@
-import type { StudioDesignToneId, StudioStylePresetId } from "./types";
+import type { StudioDesignToneId, StudioProduct, StudioStylePresetId } from "./types";
 
 export const STUDIO_SANS = '"Noto Sans SC Variable", sans-serif';
 export const STUDIO_SERIF = '"Noto Serif SC Variable", serif';
+
+export function studioCopyLanguageIssue(product: StudioProduct, copy: { headline: string; subline: string; lines: string[]; eyebrow?: string }) {
+    const { language, brand } = product.brief;
+    if (language !== "en" && language !== "ko" && language !== "ja") return;
+    const names = [brand, product.name, product.dossier?.name].filter((name): name is string => Boolean(name?.trim()));
+    const wrongScript = (text: string) => {
+        const value = names.reduce((remainder, name) => remainder.split(name.trim()).join(""), text);
+        if (language === "en") return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(value);
+        if (language === "ja") return /\p{Script=Hangul}/u.test(value);
+        return /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value);
+    };
+    if ([copy.headline, copy.subline, copy.eyebrow || "", ...copy.lines].some(wrongScript)) return "图内文案与所选语言不符，请先用目标语言策划或修改定稿；出图时不会临场翻译。";
+}
 export type StudioTypography = { family: string; headlineWeight: 300 | 400 | 500 | 600 | 700 | 800; headlineScale: number; tracking: number; lineHeight: number; sublineScale?: number };
 
 /** 没经过策划的单张图也沿用卖家所选质感的字体体系。 */
@@ -67,6 +80,16 @@ export function studioTypeInstruction(tone?: StudioDesignToneId) {
 
 /** 参数允许卖家常用的三种分隔符，保留值内的其余符号。 */
 export function studioCopyPair(line: string): [string, string] {
-    const match = /[｜：:]/.exec(line);
+    const match = /[|｜：:]/.exec(line);
     return match ? [line.slice(0, match.index).trim(), line.slice(match.index + 1).trim()] : [line.trim(), ""];
+}
+
+const measureGroup =
+    /([±≥≤<>]?\d+(?:[.,]\d+)*(?:[ \t]*(?:[×x~–-]|至)[ \t]*\d+(?:[.,]\d+)*)*[ \t]*(?:毫米|厘米|千米|毫升|千克|公斤|小时|分钟|毫安时|瓦特|摄氏度|克|米|升|秒|瓦|毫安|度|英寸|盎司|[°℃℉%％]|(?:mm|cm|km|kg|mg|ml|mah|wh|kw|khz|mhz|hz|lbs?|oz|inches|inch|hours?|hrs?|mins?|seconds?|sec|m|g|l|w|v|h|s)\b))/giu;
+
+export function studioTextRuns(value: string) {
+    return value
+        .split(measureGroup)
+        .map((text, index) => ({ text, atomic: index % 2 === 1 }))
+        .filter((run) => run.text);
 }

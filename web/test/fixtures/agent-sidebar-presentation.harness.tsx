@@ -274,6 +274,31 @@ test("普通用户输入斜线保留原草稿，不显示固定技能或场景�
     expect(sent).toEqual(["/分镜"]);
 });
 
+test("输入卡的角色与选区并排，加载或卸载角色不重建输入框", async () => {
+    const composer = (withCharacter: boolean) => (
+        <AgentChatComposer
+            prompt="尚未发送"
+            theme={theme}
+            placeholder="描述创作想法"
+            onPromptChange={noop}
+            onSubmit={noop}
+            canvasSelection={{ count: 1, onToggle: noop, excluded: false }}
+            character={withCharacter ? <button aria-label="角色互动">小影</button> : null}
+        />
+    );
+    await render(composer(false));
+    const input = host.querySelector('[aria-label="Agent 输入"]');
+    const selection = host.querySelector(".agent-composer-canvas-selection")!;
+    expect(input).not.toBeNull();
+    await render(composer(true));
+    const character = host.querySelector('[aria-label="角色互动"]');
+    expect(character?.parentElement === selection.parentElement).toBe(true);
+    expect(selection.parentElement?.contains(input)).toBe(false);
+    await render(composer(false));
+    expect(host.querySelector('[aria-label="Agent 输入"]')).toBe(input);
+    expect(input?.textContent).toBe("尚未发送");
+});
+
 test("画布选择状态固定占一行，切换选区保留输入与其他上下文", async () => {
     let toggles = 0;
     const composer = (count: number, excluded = false) => (

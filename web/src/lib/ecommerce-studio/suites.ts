@@ -1,4 +1,4 @@
-import type { StudioPlanKind, StudioShotRole, StudioSuite, StudioSuiteShot } from "./types";
+import type { StudioPlanKind, StudioShotRole, StudioSuite, StudioSuiteLayout, StudioSuiteShot } from "./types";
 
 /**
  * 模板套图：后台启用的模板或项目内置的 EcomGen 模板库，只给每张图的标题和职责。
@@ -6,7 +6,22 @@ import type { StudioPlanKind, StudioShotRole, StudioSuite, StudioSuiteShot } fro
  */
 export type StudioSuiteTemplateInput = { id: string; name: string; flow: string; category: string; style: string; shots: { title: string; duty: string }[] };
 
-export const STUDIO_SUITE_LIMITS = { shots: 30, title: 40, duty: 1200, style: 1500, name: 100, category: 200 } as const;
+export const STUDIO_SUITE_LIMITS = { shots: 30, title: 100, duty: 1200, style: 6000, layoutField: 1200, name: 100, category: 200 } as const;
+
+const LAYOUT_FIELDS = [
+    ["文字位置", "textZone"],
+    ["留白", "whitespace"],
+    ["主体占比", "occupancy"],
+] as const;
+
+export function studioSuiteLayoutLines(layout?: StudioSuiteLayout) {
+    return LAYOUT_FIELDS.flatMap(([label, key]) => (layout?.[key] ? [`${label}：${layout[key]}`] : []));
+}
+
+export function studioSuiteUse(shots: readonly { noText?: boolean }[]) {
+    const count = shots.filter((shot) => shot.noText).length;
+    return count && count === shots.length ? "纯摄影套图 · 全套无字" : count ? `图文混合 · ${count} 张无字${shots[0].noText ? "（含首屏）" : ""}` : "图文讲解 · 可排文字";
+}
 
 const RATIO_PATTERN = /^([1-9]\d?):([1-9]\d?)$/;
 const NONE_VALUE = /^(none|无|不需要|不放|n\/a)$/i;
@@ -24,6 +39,7 @@ function cleanDuty(duty: string): Omit<StudioSuiteShot, "title"> {
     let ratio: string | undefined;
     let noText = false;
     const kept: string[] = [];
+    const layout: StudioSuiteLayout = {};
     for (const raw of duty.split(/\n+/)) {
         const line = raw.trim();
         if (!line) continue;
@@ -40,10 +56,15 @@ function cleanDuty(duty: string): Omit<StudioSuiteShot, "title"> {
                 if (label === "文字位置") noText = true;
                 continue;
             }
+            const slot = LAYOUT_FIELDS.find(([name]) => name === label);
+            if (slot) {
+                layout[slot[1]] = clip(value, STUDIO_SUITE_LIMITS.layoutField);
+                continue;
+            }
         }
         kept.push(line);
     }
-    return { duty: clip(kept.join("\n"), STUDIO_SUITE_LIMITS.duty), ...(ratio ? { ratio } : {}), ...(noText ? { noText: true } : {}) };
+    return { duty: clip(kept.join("\n"), STUDIO_SUITE_LIMITS.duty), ...(Object.keys(layout).length ? { layout } : {}), ...(ratio ? { ratio } : {}), ...(noText ? { noText: true } : {}) };
 }
 
 export function studioSuiteFromTemplate(template: StudioSuiteTemplateInput, source: StudioSuite["source"]): StudioSuite {
@@ -75,7 +96,15 @@ export function normalizeStudioSuite(value: unknown): StudioSuite | undefined {
         .slice(0, STUDIO_SUITE_LIMITS.shots)
         .map((shot): StudioSuiteShot => {
             const ratio = typeof shot.ratio === "string" && RATIO_PATTERN.test(shot.ratio) ? shot.ratio : undefined;
-            return { title: str(shot.title, STUDIO_SUITE_LIMITS.title) || "未命名镜头", duty: str(shot.duty, STUDIO_SUITE_LIMITS.duty), ...(ratio ? { ratio } : {}), ...(shot.noText === true ? { noText: true } : {}) };
+            const parsedLayout = shot.layout;
+            const layout = isRecord(parsedLayout) ? Object.fromEntries(LAYOUT_FIELDS.flatMap(([, key]) => (typeof parsedLayout[key] === "string" && parsedLayout[key] ? [[key, str(parsedLayout[key], STUDIO_SUITE_LIMITS.layoutField)]] : []))) : undefined;
+            return {
+                title: str(shot.title, STUDIO_SUITE_LIMITS.title) || "未命名镜头",
+                duty: str(shot.duty, STUDIO_SUITE_LIMITS.duty),
+                ...(layout && Object.keys(layout).length ? { layout } : {}),
+                ...(ratio ? { ratio } : {}),
+                ...(shot.noText === true ? { noText: true } : {}),
+            };
         });
     if (!shots.length) return undefined;
     return {

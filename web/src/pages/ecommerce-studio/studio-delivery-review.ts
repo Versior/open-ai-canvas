@@ -1,4 +1,5 @@
 import { reviewStudioDelivery, studioEdgeAudit, type StudioDeliveryMeasure } from "@/lib/ecommerce-studio/delivery-review";
+import { studioCandidateCopy } from "@/lib/ecommerce-studio/delivery-copy";
 import type { StudioPlan, StudioProduct } from "@/lib/ecommerce-studio/types";
 import type { StudioComposedShot } from "./studio-delivery";
 
@@ -25,5 +26,10 @@ export async function inspectStudioDelivery(product: StudioProduct, plan: Studio
             bitmap.close();
         }
     }
-    return reviewStudioDelivery(product, plan.shots, measurements, new Set(shots.map((item) => item.shot.id)));
+    const delivered = new Map(shots.map((item) => [item.shot.id, item]));
+    const checkedShots = plan.shots.map((shot) => {
+        const item = delivered.get(shot.id);
+        return item ? { ...shot, ...studioCandidateCopy(shot, item.output, product.brief.language, item.composed) } : shot;
+    });
+    return reviewStudioDelivery(product, checkedShots, measurements, new Set(delivered.keys()));
 }

@@ -4,21 +4,21 @@ import { create } from "zustand";
 import { buildEcommerceAnalysisGeneration } from "@/lib/ecommerce/ecommerce-analysis-generation";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioBrandOf, studioCleanNotes, studioPointLine, studioProductTypeOf, studioTitleOf } from "@/lib/ecommerce-studio/brief";
-import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, studioDetailPlanRoles, studioTemplatePlanRoles } from "@/lib/ecommerce-studio/detail-plan";
-import { buildDetailPlanPrompt, parseDetailPlan, studioPlanTargetRoles, type StudioDetailPlanResult, type StudioPlanRequest } from "@/lib/ecommerce-studio/detail-plan-tasks";
+import { STUDIO_DETAIL_PLAN_CAPABILITY, STUDIO_PLAN_FIELD, STUDIO_PLAN_SCOPES, studioDetailPlanRoles, studioDetailScreenCount, studioTemplatePlanRoles } from "@/lib/ecommerce-studio/detail-plan";
+import { buildDetailPlanPrompt, parseDetailPlan, studioPlanTargetRoles, StudioPlanValidationError, type StudioDetailPlanResult, type StudioPlanRequest } from "@/lib/ecommerce-studio/detail-plan-tasks";
 import { mergeStudioDossier } from "@/lib/ecommerce-studio/dossier-review";
 import { buildFillPrompt, parseFill, studioAnalysisMetadata, type StudioFillResult } from "@/lib/ecommerce-studio/dossier-tasks";
 import { buildAskPrompt, buildDirectionsPrompt, parseAsks, parseDirections } from "@/lib/ecommerce-studio/plan-prep-tasks";
-import { buildStudioImageGeneration, compileStudioShot, locateStudioShot, studioImageInput, type StudioShotRef } from "@/lib/ecommerce-studio/generation-input";
+import { buildStudioImageGeneration, locateStudioShot, studioImageInput, type StudioShotRef, type StudioLocatedShot } from "@/lib/ecommerce-studio/generation-input";
 import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
 import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection";
 import { patchStudioShot, studioAttemptActive, studioAttemptNeedsReview, studioShotPreview, studioGenerationSource } from "@/lib/ecommerce-studio/product";
-import { appendStudioRun, createStudioRun, patchStudioRunShot, studioActivePlan, studioPlanScopeOf, studioSingleTargets, trimStudioRuns } from "@/lib/ecommerce-studio/runs";
-import { studioFactUsable, type StudioAsk, type StudioAttempt, type StudioAttemptStatus, type StudioDirection, type StudioOutput, type StudioPhoto, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
+import { appendStudioRun, createStudioRun, patchStudioRunShot, studioActivePlan, studioPlanScopeOf, studioRevisionPlan, studioSingleTargets, trimStudioRuns } from "@/lib/ecommerce-studio/runs";
+import { studioFactUsable, type StudioAsk, type StudioAttempt, type StudioAttemptStatus, type StudioDirection, type StudioOutput, type StudioPhoto, type StudioPlanReceipt, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
-import { getActiveUserScope } from "@/lib/user-scope";
-import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
+import { assertCurrentUserSession, captureUserSession, getActiveUserScope } from "@/lib/user-scope";
+import { parseBackendGenerationResult, runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
 import { emptyEcommerceDraft } from "@/services/api/ecommerce";
 import { isGenerationTaskTerminalError, waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
@@ -29,7 +29,7 @@ import { workbenchTaskOutputs } from "@/pages/workbench/workbench-batches";
 import { commerceSubmissionKeyConflict, commerceSubmissionRejected } from "@/pages/ecommerce/generation-slot";
 import { prepareCommerceReferenceViews } from "@/pages/ecommerce/long-reference-media";
 import { useStudioStore } from "./use-studio-store";
-import { studioLayoutGuideReference } from "./studio-layout-guide";
+import { renderStudioLayoutGuide, studioLayoutGuideReference } from "./studio-layout-guide";
 
 /**
  * 生图台的任务运行时：识别填表、按镜头出图。全部走后端统一任务（计费、取消、记录一致），
@@ -117,6 +117,19 @@ function inputSummary(imageCount: number) {
 
 type ModelConfigInput = Parameters<typeof buildEcommerceAnalysisGeneration>[0];
 
+function preflightImage(product: StudioProduct, located: StudioLocatedShot, model: string, config: ModelConfigInput, revisionResourceId?: string) {
+    try {
+        const input = studioImageInput(product, located, model, config, revisionResourceId);
+        buildStudioImageGeneration(config, model, input, located.shot.id);
+        if (input.compiled.layoutGuide?.proof) {
+            const canvas = renderStudioLayoutGuide(input.compiled.layoutGuide, input.compiled.copySnapshot);
+            canvas.width = canvas.height = 0;
+        }
+    } catch (error) {
+        throw new Error(`「${located.shot.title}」预检失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
 /** 商品身份与设计参考分组传递，容量由当前文本模型决定。 */
 async function planImages(product: StudioProduct, current: ModelConfigInput, textModel: string, withReferences = true, assertCurrent?: () => void) {
     const draft = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(0));
@@ -151,12 +164,32 @@ function planKnowledgeMetadata(product: StudioProduct) {
     const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
     return {
         studioPlanKind: suite ? suite.kind : scope || "detail",
-        ...(scope === "detail" ? { studioDetailScreens: product.brief.detailScreens } : {}),
         studioTextMode: "model",
         ...(targets?.length ? { studioPlanTargets: targets.map((target) => target.type).join(",") } : {}),
         ...(product.dossier?.family && product.dossier.family !== "generic" ? { studioFamily: product.dossier.family } : {}),
         ...(studioPlanMaterials(product) ? { studioMaterials: studioPlanMaterials(product) } : {}),
     };
+}
+
+function planSpecification(product: StudioProduct) {
+    const scope = studioPlanScopeOf(product);
+    if (!scope) throw new Error("先选择一套模板，再按模板策划");
+    const suite = scope === "template" ? product.brief.suite : undefined;
+    const targets = scope === "single" ? studioSingleTargets(product.brief) : undefined;
+    const roles = targets ? studioPlanTargetRoles(targets) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, scope === "main" ? "main" : "detail");
+    const count = targets ? roles.length : suite ? suite.shots.length : scope === "detail" ? studioDetailScreenCount(product.brief) : STUDIO_PLAN_SCOPES[scope].screens;
+    return { scope, targets, roles, metadata: { studioPlanScope: scope, studioPlanCount: count, studioPlanRoles: [...new Set(roles)], ...(suite ? { studioTemplateId: suite.id, studioTemplateSource: suite.source } : {}) } };
+}
+
+function checkPlanTask(task: GenerationTask, productId: string, receipt: StudioPlanReceipt) {
+    let metadata;
+    try {
+        metadata = JSON.parse(task.inputJson || "null")?.metadata;
+    } catch {
+        metadata = null;
+    }
+    if (task.id !== receipt.taskId || task.type !== "canvas_text" || metadata?.source !== "ecommerce-studio" || metadata.studioProductId !== productId || metadata.studioStep !== "plan" || metadata.studioPlanAttemptId !== receipt.attemptId)
+        throw new Error("原任务与这次商品策划不匹配，不能采用");
 }
 
 function knowledgeContext(product: StudioProduct) {
@@ -302,58 +335,95 @@ export function useStudioRunner() {
      * 原来的勾选和顺序清掉。revise 时带上这一版策划，按补充调整修改。
      */
     const plan = useCallback(
-        (productId: string, textModel: string, options: { revise?: boolean } = {}) =>
+        (productId: string, textModel: string, options: { revise?: boolean; recheck?: boolean } = {}) =>
             trackAnalysis(productId, "plan", async (): Promise<StudioDetailPlanResult> => {
                 const product = read(productId);
                 const inputFingerprint = studioPlanInputSignature(product);
-                const planScope = studioPlanScopeOf(product);
-                if (!planScope) throw new Error("先选择一套模板，再按模板策划");
-                const suite = planScope === "template" ? product.brief.suite : undefined;
-                const targets = planScope === "single" ? studioSingleTargets(product.brief) : undefined;
-                const current = configRef.current;
-                const assertCurrent = () => {
-                    if (studioPlanInputSignature(read(productId)) !== inputFingerprint) throw new Error("读取参考图期间商品信息或创作要求已修改，请重新策划");
-                };
-                const { photos, references, images, readingViews } = await planImages(product, current, textModel, true, assertCurrent);
-                const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
-                // 「按调整重新策划」带上这一版，模型只改卖家不满意的地方。
-                const request: StudioPlanRequest = {
+                const session = captureUserSession();
+                const { scope: planScope, targets, roles, metadata } = planSpecification(product);
+                const previousReceipt = options.recheck ? product.planReceipt : undefined;
+                if (options.recheck && (!previousReceipt?.taskId || previousReceipt.scope !== planScope || previousReceipt.inputSignature !== inputFingerprint || previousReceipt.state === "accepted"))
+                    throw new Error("只有相同输入的未采用策划才能重验，不会提交新的模型任务");
+                const previous = options.revise ? studioRevisionPlan(product) : undefined;
+                const alternative = !options.recheck && !options.revise ? studioActivePlan(product) : undefined;
+                let receipt: StudioPlanReceipt = previousReceipt || {
                     scope: planScope,
-                    ...(targets ? { targets } : {}),
-                    ...(options.revise ? { previous: product.brief[STUDIO_PLAN_FIELD[planScope]] } : {}),
-                    ...(!options.revise ? { alternative: studioActivePlan(product) } : {}),
-                    ...(images.length ? { images: { photos: photos.length, references: references.length, readingViews } } : {}),
+                    inputSignature: inputFingerprint,
+                    model: textModel,
+                    createdAt: new Date().toISOString(),
+                    attemptId: nanoid(16),
+                    state: "submitted",
+                    ...(alternative ? { alternativeDirection: true } : {}),
                 };
-                const roles = planScope === "single" ? studioPlanTargetRoles(targets || []) : suite ? studioTemplatePlanRoles(product, suite) : studioDetailPlanRoles(product, planScope === "main" ? "main" : "detail");
-                const result = await runBackendGenerationTask({
-                    mode: "text",
-                    expectedUserScope: scope,
-                    prompt: buildDetailPlanPrompt(product, roles, request),
-                    config: generation,
-                    referenceImages: images.map(photoReference),
-                    streamText: false,
-                    // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事，模板套图按模板用途取，单张图按选中的类型带打法；
-                    // 品类大类用来在同类爆款套图对不上时取同大类的参考，档案里的材质用来挑布光方法。
-                    metadata: { ...studioAnalysisMetadata(productId, "plan", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
-                    onTaskUpdate: (task) => rememberAnalysisTask(productId, task),
-                });
-                const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);
+                const request: StudioPlanRequest = { scope: planScope, targets, previous, alternative, alternativeDirection: receipt.alternativeDirection };
                 const field = STUDIO_PLAN_FIELD[planScope];
-                const staleMessage = "策划期间商品信息或出图要求已修改，请按当前输入重新策划";
-                if (studioPlanInputSignature(read(productId)) !== inputFingerprint) throw new Error(staleMessage);
-                let outdated = false;
-                update(productId, (value) => {
-                    if (studioPlanInputSignature(value) !== inputFingerprint) {
-                        outdated = true;
-                        return value;
+                const persist = (next: StudioPlanReceipt, result?: StudioDetailPlanResult) => {
+                    assertCurrentUserSession(session);
+                    receipt = next;
+                    if (
+                        !update(
+                            productId,
+                            (value) => {
+                                const canApply = result && studioPlanInputSignature(value) === inputFingerprint;
+                                const planReceipt: StudioPlanReceipt = result && !canApply ? { ...next, state: "not-accepted", message: "其他窗口已修改策划输入，未采用这份结果" } : next;
+                                return { ...value, ...(next.taskId ? { lastAnalysisTaskId: next.taskId } : {}), planReceipt, ...(canApply ? { brief: { ...value.brief, [field]: result.plan, shotOrder: [], shotSkip: [] } } : {}) };
+                            },
+                            { immediate: true },
+                        )
+                    )
+                        throw new Error("商品已删除，不能保存策划结果");
+                };
+                const assertCurrent = () => {
+                    if (studioPlanInputSignature(read(productId)) !== inputFingerprint) throw new Error("策划期间商品信息或出图要求已修改，不会把这份结果套到新输入");
+                };
+                let taskSucceeded = false;
+                let parsed: StudioDetailPlanResult;
+                try {
+                    let raw: string | undefined;
+                    if (previousReceipt?.taskId) {
+                        const task = await waitForGenerationTask(previousReceipt.taskId, { signal: session.signal });
+                        checkPlanTask(task, productId, previousReceipt);
+                        taskSucceeded = true;
+                        raw = parseBackendGenerationResult(task).text;
+                    } else {
+                        const current = configRef.current;
+                        const { photos, references, images, readingViews } = await planImages(product, current, textModel, true, assertCurrent);
+                        assertCurrent();
+                        const generation = buildEcommerceAnalysisGeneration(current, textModel, inputSummary(images.length));
+                        receipt.model = generation.model;
+                        if (images.length) request.images = { photos: photos.length, references: references.length, readingViews };
+                        const result = await runBackendGenerationTask({
+                            mode: "text",
+                            expectedUserScope: scope,
+                            signal: session.signal,
+                            prompt: buildDetailPlanPrompt(product, roles, request, modelCapabilityConfigFor(current, generation.model).text?.references.promptMaxChars),
+                            config: generation,
+                            referenceImages: images.map(photoReference),
+                            streamText: false,
+                            metadata: { ...studioAnalysisMetadata(productId, "plan", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product), ...metadata, studioPlanAttemptId: receipt.attemptId },
+                            onTaskUpdate: (task) => {
+                                if (task.status === "succeeded") taskSucceeded = true;
+                                if (receipt.taskId !== task.id) persist({ ...receipt, taskId: task.id });
+                            },
+                        });
+                        taskSucceeded = true;
+                        raw = result.text;
                     }
-                    return { ...value, brief: { ...value.brief, [field]: parsed.plan, shotOrder: [], shotSkip: [] } };
-                });
+                    assertCurrent();
+                    parsed = parseDetailPlan(raw || "", product, roles, { id: receipt.attemptId, model: receipt.model, createdAt: receipt.createdAt }, request);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : "策划未完成";
+                    const diagnosis = error instanceof StudioPlanValidationError ? { review: error.review, issues: error.issues } : {};
+                    persist({ ...receipt, state: taskSucceeded ? "not-accepted" : !receipt.taskId || isGenerationTaskTerminalError(error) ? "task-failed" : "submitted", message, ...diagnosis });
+                    await useStudioStore.getState().flush(productId);
+                    throw error;
+                }
+                persist({ ...receipt, state: "accepted", message: undefined, issues: parsed.warnings, review: undefined }, parsed);
                 await useStudioStore.getState().flush(productId);
-                if (outdated) throw new Error(staleMessage);
+                assertCurrent();
                 return parsed;
             }),
-        [read, rememberAnalysisTask, scope, update],
+        [read, scope, update],
     );
 
     /**
@@ -508,7 +578,7 @@ export function useStudioRunner() {
                 const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences].map(photoReference);
                 if (compiled.revisionReference) references.push(photoReference(compiled.revisionReference));
                 if (compiled.layoutGuide) {
-                    const guide = await studioLayoutGuideReference(compiled.layoutGuide, attemptId, scope, submission.signal);
+                    const guide = await studioLayoutGuideReference(compiled.layoutGuide, attemptId, scope, submission.signal, compiled.copySnapshot);
                     if (!compiled.layoutGuide.resourceId) {
                         const stable = { ...input, compiled: { ...compiled, layoutGuide: { ...compiled.layoutGuide, resourceId: guide.resourceId } } };
                         update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { input: stable }));
@@ -621,13 +691,14 @@ export function useStudioRunner() {
             const product = read(productId);
             if (!product.photos.length) throw new Error("请先上传商品图");
             const run = createStudioRun(product, () => nanoid(10));
-            // 全组先编译校验，避免出到一半才发现后续屏的版式或提示词无法执行。
-            for (const shot of run.shots) compileStudioShot(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, suite: run.suite }, imageModel, configRef.current);
+            const selected = options.firstOnly ? run.shots.slice(0, 1) : run.shots;
+            for (const shot of selected)
+                preflightImage(product, { shot, textMode: run.textMode, quality: run.quality, resolution: run.resolution || "", fromForm: true, styleId: run.styleId, source: run.source, suite: run.suite }, imageModel, configRef.current);
             update(productId, (value) => appendStudioRun(value, run), { immediate: true });
             await enqueue(
                 productId,
                 { runId: run.id },
-                (options.firstOnly ? run.shots.slice(0, 1) : run.shots).map((shot) => shot.id),
+                selected.map((shot) => shot.id),
                 imageModel,
             );
             return run.id;
@@ -645,7 +716,7 @@ export function useStudioRunner() {
             });
             for (const shotId of runnable) {
                 const located = locateStudioShot(product, ref, shotId);
-                if (located) compileStudioShot(product, located, imageModel, configRef.current, revisionResourceId);
+                if (located) preflightImage(product, located, imageModel, configRef.current, revisionResourceId);
             }
             if (runnable.length) await enqueue(productId, ref, runnable, imageModel, revisionResourceId);
             return runnable.length;

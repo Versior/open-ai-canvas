@@ -1,6 +1,7 @@
 import { Button, Input, Spin } from "antd";
 import { ChevronDown, Search } from "lucide-react";
 import { useEffect, useState } from "react";
+import { studioSuiteUse } from "@/lib/ecommerce-studio/suites";
 import { ECOMMERCE_CATALOG_PAGE_SIZE, getEcommerceCatalog, getEcommerceCatalogTemplate, type EcommerceCatalogCategory, type EcommerceCatalogEntry, type EcommerceSuiteTemplate } from "@/services/api/ecommerce-canvas";
 import "./ecommerce-template-catalog.css";
 
@@ -68,7 +69,7 @@ export type TemplatePreviewOptions = {
 export function renderTemplatePreview(template: EcommerceSuiteTemplate, options: TemplatePreviewOptions) {
     const shots = template.shots.map((shot) => shotView(shot.title, shot.duty));
     const ratios = [...new Set(shots.flatMap((shot) => (shot.ratio ? [shot.ratio] : [])))];
-    const tags = [...(options.tags ?? []), `${shots.length} 张`, ...(ratios.length ? [ratios.length > 4 ? `${ratios.slice(0, 4).join(" · ")} …` : ratios.join(" · ")] : [])];
+    const tags = [...(options.tags ?? []), `${shots.length} 张`, studioSuiteUse(shots), ...(ratios.length ? [ratios.length > 4 ? `${ratios.slice(0, 4).join(" · ")} …` : ratios.join(" · ")] : [])];
     return (
         <section className="etc-preview" aria-label="模板内容">
             <div className="etc-preview-scroll">

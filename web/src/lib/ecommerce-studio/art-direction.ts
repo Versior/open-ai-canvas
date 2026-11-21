@@ -1,4 +1,5 @@
 import catalog from "../../../../backend/internal/ecommerceagent/studio_design_catalog.json";
+import { studioScreenCopyBudget } from "./copy-budget";
 import type { StudioCompositionId, StudioShot, StudioProduct, StudioShotRole } from "./types";
 import type { StudioTextZone } from "./shot-specs";
 
@@ -15,10 +16,13 @@ export function studioCompositionOf(value: unknown): StudioCompositionId | undef
 export function studioCompositionConflict(shot: Pick<StudioShot, "composition" | "visual">) {
     if (shot.composition !== "left" && shot.composition !== "right") return false;
     const opposite = shot.composition === "left" ? "右" : "左";
-    return (
-        new RegExp(`${opposite}(?:侧|边|半边|半部)?(?:约?[一二三四五六七八九十两\\d]+(?:成|%|％))?(?:留白|文字区|文案区|为|放|排|放置|纵向|\\s|约|短|主|题签){0,8}(?:标题|文案|文字)`).test(shot.visual || "") ||
-        (shot.composition === "left" ? /左图右文/.test(shot.visual || "") : /左文右图/.test(shot.visual || ""))
+    const conflict = new RegExp(
+        `${opposite}(?:侧|边|半边|半部)?(?:约?[一二三四五六七八九十两\\d]+(?:成|%|％))?(?:留白|文字区|文案区|为|放|排|放置|纵向|\\s|约|短|主|题签){0,8}(?:标题|文案|文字)|${shot.composition === "left" ? "左图右文" : "左文右图"}`,
+        "g",
     );
+    return (shot.visual || "")
+        .split(/[，,。；;！？\n]|但(?:是)?|而是/)
+        .some((clause) => [...clause.matchAll(conflict)].some(({ index }) => !/(?:避免|不要|不应|不能|不可|不得|不用|禁止|切勿|不采用|并非|不是|而非|改掉|取代)[^，。；]{0,14}$/.test(clause.slice(0, index))));
 }
 
 /** 新生成的一组换构图，失败重试沿用记录里的构图；白底商品图不参与。 */
@@ -48,14 +52,15 @@ export function studioDesignZone(shot: Pick<StudioShot, "layout" | "composition"
     return fallback;
 }
 
-export function reviewStudioCopy(shot: Pick<StudioShot, "headline" | "subline" | "lines">) {
+export function reviewStudioCopy(shot: Pick<StudioShot, "headline" | "subline" | "lines"> & Partial<Pick<StudioShot, "role">>) {
     const issues: { code: string; message: string }[] = [];
     const text = [shot.headline, shot.subline, ...shot.lines].join(" ");
     if (/品质之选|匠心打造|焕新生活|重新定义|尊享|臻选|好物推荐|开启.*生活|更亮眼|更出众|陪你每一天/.test(text)) issues.push({ code: "generic", message: "口号缺少商品信息。把已确认卖点放进标题，用细节证明它。" });
     if (/最[好强佳]|第一|100%|绝对|根治|永久|全网最低/.test(text)) issues.push({ code: "claim", message: "检查绝对承诺或功效用语，删去没有证明的数据与结论。" });
     if (shot.headline.length > 18) issues.push({ code: "headline", message: "标题超过 18 字，手机缩略图难读。拆成主标题与说明。" });
     if (shot.subline.trim() && shot.subline.trim() === shot.headline.trim()) issues.push({ code: "repeat", message: "副标题重复主标题。改成材料、规格或使用条件。" });
-    if (shot.lines.length > 3) issues.push({ code: "density", message: "这一屏超过 3 个要点。建议拆屏，每张回答一个购买问题。" });
+    const budget = studioScreenCopyBudget(shot.role || "detail-selling");
+    if (shot.lines.filter((line) => line.trim()).length > budget.lines) issues.push({ code: "density", message: `这一屏超过 ${budget.lines} 个要点。建议拆屏，每张回答一个购买问题。` });
     return issues;
 }
 

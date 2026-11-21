@@ -191,7 +191,7 @@ func ecommerceStudioReferenceText(doc ecommerceCatalogDocument, index int, relat
 	}
 	shots := make([]string, 0, len(doc.Shots))
 	for _, shot := range doc.Shots {
-		text := fmt.Sprintf("%s %s（%s）", shot.Role, clip(shot.Title, 16), clip(shot.Intent, 34))
+		text := fmt.Sprintf("%s（%s）", clip(shot.Title, 16), clip(shot.Intent, 34))
 		if zone := clip(shot.TextZone, 60); zone != "" && zone != "none" {
 			text += " 文字：" + zone
 		}

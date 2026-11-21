@@ -166,7 +166,7 @@ export function StudioViewer({
                                 用作参考图
                             </Button>
                         </div>
-                        {product && !overlay ? <StudioArtworkCheck product={product} shot={shot} output={current} onRevision={(value) => setReviewRevision({ key: previewKey, value })} /> : null}
+                        {product && !overlay ? <StudioArtworkCheck product={group.source ? { ...product, ...group.source } : product} shot={shot} output={current} onRevision={(value) => setReviewRevision({ key: previewKey, value })} /> : null}
                         {product ? (
                             <StudioShotTuner
                                 key={`${shot.id}:${current.resourceId}:${shot.headline}:${shot.subline}`}

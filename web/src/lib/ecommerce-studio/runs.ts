@@ -2,7 +2,8 @@ import { STUDIO_SINGLE_TYPES, studioDisplayName, studioInfoPoints, studioInfoTex
 import { STUDIO_DETAIL_PLAN_NAME, STUDIO_PLAN_FIELD, studioDetailPlanKey, studioDetailScreenCount, studioPlannedShotVisual, studioSameTargets } from "./detail-plan";
 import { studioAttemptActive, studioShotCopy, studioGenerationSource } from "./product";
 import { studioPlanRoles, studioProductStyle, studioShotSpec } from "./shot-specs";
-import { studioSuiteShotRole } from "./suites";
+import { studioSuiteLayoutLines, studioSuiteShotRole } from "./suites";
+import { canonicalize } from "json-canonicalize";
 import { nextStudioComposition } from "./art-direction";
 import { studioDesignProfile } from "./design-knowledge";
 import { studioPlanInputSignature } from "./plan-input";
@@ -95,6 +96,22 @@ export function studioSingleTargets(brief: Pick<StudioBrief, "outputType" | "mix
     return studioSingleTypes(brief).map((type) => ({ type: type.id, count }));
 }
 
+export function studioRevisionPlan(product: StudioProduct): StudioDetailPlan | undefined {
+    const scope = studioPlanScopeOf(product);
+    if (!scope) return undefined;
+    const plan = product.brief[STUDIO_PLAN_FIELD[scope]];
+    if (scope !== "template") return plan;
+    const suite = product.brief.suite;
+    if (!suite || plan?.suiteId !== suite.id || !plan.inputSignature) return undefined;
+    let previous: unknown;
+    try {
+        previous = JSON.parse(plan.inputSignature)?.brief?.suite;
+    } catch {
+        return undefined;
+    }
+    return previous && canonicalize(previous) === canonicalize(suite) ? plan : undefined;
+}
+
 /** 当前商品与创作输入匹配的策划；历史生成组继续使用自己的快照。 */
 export function studioActivePlan(product: StudioProduct): StudioDetailPlan | undefined {
     const scope = studioPlanScopeOf(product);
@@ -141,7 +158,8 @@ function baseEntries(product: StudioProduct, kind: StudioPlanKind): Omit<StudioS
         return shots.map((shot, index) => {
             const role = studioSuiteShotRole(shot, kind, index, shots.length);
             const purpose = shot.duty.split("\n")[0] || studioShotSpec(role, family).purpose;
-            return { key: `s${index}`, role, title: shot.title, purpose, ...(shot.duty ? { duty: shot.duty } : {}), ...(shot.ratio ? { ratio: shot.ratio } : {}), ...(shot.noText ? { noText: true } : {}) };
+            const duty = [...studioSuiteLayoutLines(shot.layout), shot.duty].filter(Boolean).join("\n");
+            return { key: `s${index}`, role, title: shot.title, purpose, ...(duty ? { duty } : {}), ...(shot.ratio ? { ratio: shot.ratio } : {}), ...(shot.noText ? { noText: true } : {}) };
         });
     }
     return studioPlanRoles(kind, family).map((role) => {
@@ -234,6 +252,7 @@ export function createStudioRun(product: StudioProduct, createId: StudioIdFactor
               ...(plan.tone ? { tone: plan.tone } : {}),
               ...(plan.concept ? { concept: plan.concept } : {}),
               ...(plan.motifs?.length ? { motifs: plan.motifs } : {}),
+              ...(plan.artDirection ? { artDirection: plan.artDirection } : {}),
           }
         : undefined;
     if (kind) {

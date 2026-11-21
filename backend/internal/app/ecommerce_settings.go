@@ -235,7 +235,8 @@ func validateEcommerceSetting(value EcommerceSetting) error {
 // never contain administrator instructions. Model routing and billing stay on
 // the normal generation task path.
 func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput) error {
-	if err := s.validateEcommerceCapability(input); err != nil {
+	contract, err := s.ecommerceTaskContract(input)
+	if err != nil {
 		return err
 	}
 	raw, exists := input.Metadata["ecommerceAnalysisFlow"]
@@ -263,6 +264,9 @@ func (s *Service) applyEcommerceAnalysisInstruction(input *canvasGenerationInput
 		// 生图台的商品档案与详情页策划和电商 Agent 共用知识库；只在 worker 的内存请求里追加，不进入任务记录。
 		if knowledge := s.ecommerceStudioKnowledgePrompt(strings.TrimPrefix(id, "cap:"), input.Metadata); knowledge != "" {
 			input.Config.SystemPrompt += "\n\n" + knowledge
+		}
+		if contract != "" {
+			input.Config.SystemPrompt += "\n\n" + contract
 		}
 		return nil
 	}
@@ -304,44 +308,49 @@ func ecommerceCapabilityOpen(setting EcommerceSetting, id string, capability Eco
 
 // Validate on admission and again in the worker, before any provider request.
 func (s *Service) validateEcommerceCapability(input *canvasGenerationInput) error {
+	_, err := s.ecommerceTaskContract(input)
+	return err
+}
+
+func (s *Service) ecommerceTaskContract(input *canvasGenerationInput) (string, error) {
 	raw, marked := input.Metadata["ecommerceCapability"]
 	flow, flowMarked := input.Metadata["ecommerceAnalysisFlow"].(string)
 	if !marked {
 		if flowMarked && strings.HasPrefix(flow, "cap:") {
-			return BadAuthRequest("电商工作台任务缺少能力标识")
+			return "", BadAuthRequest("电商工作台任务缺少能力标识")
 		}
-		return nil
+		return "", nil
 	}
 	id, ok := raw.(string)
 	if !ok || input.AgentRequests != nil || (input.Mode != "text" && input.Mode != "image") {
-		return BadAuthRequest("电商能力任务格式无效")
+		return "", BadAuthRequest("电商能力任务格式无效")
 	}
 	_, setting, err := s.readEcommerceSetting()
 	if err != nil {
-		return err
+		return "", err
 	}
 	capability, ok := setting.Capabilities[id]
 	if !ok {
-		return BadAuthRequest("电商能力不存在")
+		return "", BadAuthRequest("电商能力不存在")
 	}
 	if !ecommerceCapabilityOpen(setting, id, capability) {
-		return BadAuthRequest("管理员已停用此电商能力")
+		return "", BadAuthRequest("管理员已停用此电商能力")
 	}
 	if id == "pipeline" {
 		for _, dependency := range []string{"pattern", "print-pack", "listing"} {
 			if !setting.Capabilities[dependency].Enabled {
-				return BadAuthRequest("成包流水线依赖的电商能力已停用")
+				return "", BadAuthRequest("成包流水线依赖的电商能力已停用")
 			}
 		}
 	}
 	if input.Mode == "text" {
 		if (id != "planning" && id != "suite-forge" && id != "listing" && id != "pipeline" && !ecommerceStudioCapability(id)) || flow != "cap:"+id {
-			return BadAuthRequest("电商文本任务与分析能力不一致")
+			return "", BadAuthRequest("电商文本任务与分析能力不一致")
 		}
 	} else if (id != "model-cast" && id != "pattern" && id != "planning") || input.Metadata["ecommerceAnalysisFlow"] != nil {
-		return BadAuthRequest("电商图片任务与能力不一致")
+		return "", BadAuthRequest("电商图片任务与能力不一致")
 	}
-	return nil
+	return ecommerceStudioPlanContract(input.Metadata)
 }
 
 func composeEcommerceDirectorPrompt(id, custom string) string {

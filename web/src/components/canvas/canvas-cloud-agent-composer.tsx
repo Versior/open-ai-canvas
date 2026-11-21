@@ -504,34 +504,39 @@ export function AgentChatComposer({
                     >
                         <span />
                     </button>
-                    {canvasSelection ? (
-                        <div className="agent-composer-canvas-selection">
-                            <AgentContextChip
-                                tone={!canvasSelection.count || canvasSelection.excluded ? "off" : "default"}
-                                title="发送时会把选中的节点作为重点交给 Agent"
-                                icon={<SquareDashedMousePointer className="size-3.5 shrink-0" aria-hidden="true" />}
-                                actions={
-                                    canvasSelection.count > 0 ? (
-                                        <button
-                                            type="button"
-                                            className="agent-context-chip-action"
-                                            aria-pressed={canvasSelection.excluded}
-                                            aria-label={canvasSelection.excluded ? "这条消息带上选中的节点" : "这条消息不带选中的节点"}
-                                            onClick={canvasSelection.onToggle}
-                                        >
-                                            {canvasSelection.excluded ? "带上" : <X className="size-3" aria-hidden="true" />}
-                                        </button>
-                                    ) : null
-                                }
-                            >
-                                {!canvasSelection.count
-                                    ? "未选中节点"
-                                    : canvasSelection.excluded
-                                      ? `这条不带选中的 ${canvasSelection.count} 个节点`
-                                      : canvasSelection.count > AGENT_FOCUS_NODE_LIMIT
-                                        ? `已选 ${canvasSelection.count} 个节点，前 ${AGENT_FOCUS_NODE_LIMIT} 个作为重点`
-                                        : `已选 ${canvasSelection.count} 个节点`}
-                            </AgentContextChip>
+                    {canvasSelection || character ? (
+                        <div className="agent-composer-status-row">
+                            {canvasSelection ? (
+                                <div className="agent-composer-canvas-selection">
+                                    <AgentContextChip
+                                        tone={!canvasSelection.count || canvasSelection.excluded ? "off" : "default"}
+                                        title="发送时会把选中的节点作为重点交给 Agent"
+                                        icon={<SquareDashedMousePointer className="size-3.5 shrink-0" aria-hidden="true" />}
+                                        actions={
+                                            canvasSelection.count > 0 ? (
+                                                <button
+                                                    type="button"
+                                                    className="agent-context-chip-action"
+                                                    aria-pressed={canvasSelection.excluded}
+                                                    aria-label={canvasSelection.excluded ? "这条消息带上选中的节点" : "这条消息不带选中的节点"}
+                                                    onClick={canvasSelection.onToggle}
+                                                >
+                                                    {canvasSelection.excluded ? "带上" : <X className="size-3" aria-hidden="true" />}
+                                                </button>
+                                            ) : null
+                                        }
+                                    >
+                                        {!canvasSelection.count
+                                            ? "未选中节点"
+                                            : canvasSelection.excluded
+                                              ? `这条不带选中的 ${canvasSelection.count} 个节点`
+                                              : canvasSelection.count > AGENT_FOCUS_NODE_LIMIT
+                                                ? `已选 ${canvasSelection.count} 个节点，前 ${AGENT_FOCUS_NODE_LIMIT} 个作为重点`
+                                                : `已选 ${canvasSelection.count} 个节点`}
+                                    </AgentContextChip>
+                                </div>
+                            ) : null}
+                            {character}
                         </div>
                     ) : null}
                     {contextBar ? <div className="agent-composer-context">{contextBar}</div> : null}
@@ -607,7 +612,6 @@ export function AgentChatComposer({
                         </div>
                     ) : null}
                     <div className="relative min-w-0" onKeyDownCapture={handleSlashKeyCapture} onPasteCapture={handlePasteCapture}>
-                        {character}
                         <div className="agent-composer-prompt-scroll" style={{ height: promptHeight }}>
                             <CanvasResourceMentionTextarea
                                 value={prompt}

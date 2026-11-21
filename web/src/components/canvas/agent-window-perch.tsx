@@ -24,7 +24,8 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const [petAction, setPetAction] = useState<AgentPetAction>();
     const actionTimer = useRef(0);
     const state = agentAvatarStateForRunStatus(status);
-    const chatter = useAgentPetChatter({ pet, state, approvalPending: state === "waiting_approval", active: Boolean(pet), hovered });
+    const waiting = state === "waiting_approval";
+    const chatter = useAgentPetChatter({ pet, state, approvalPending: waiting, active: Boolean(pet) && !(display === "perch" && waiting), hovered });
     const spriteUrl = pet ? agentPetSpritesheetURL(pet) : "";
     const { headTop } = useAgentPetSheetMetrics(spriteUrl, pet?.spriteVersion ?? 2);
     const resting = state !== "running" && state !== "queued" && state !== "waiting_approval";
@@ -96,8 +97,10 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
     const media = file ? (appearance.avatarBundleResourceId ? agentAvatarBundleFileURL(appearance.avatarBundleResourceId, file, assetScope, revision) : `/doll/${encodeURIComponent(file)}`) : "";
     if ((!pet && !media) || failed) return null;
     const message = chatter.message?.text || (speaking ? "我在这里。下一步一起完成。" : "");
-    const contentHeight = videoBounds ? Math.min(112, 104 / videoBounds.aspect) : 112;
-    const mediaTop = pet ? headTop * 112 : videoBounds ? (112 - contentHeight) / 2 + videoBounds.top * contentHeight : 112 * 0.12;
+    const width = display === "full" ? 104 : 44;
+    const height = display === "full" ? 112 : 48;
+    const contentHeight = videoBounds ? Math.min(height, width / videoBounds.aspect) : height;
+    const mediaTop = pet ? headTop * height : videoBounds ? (height - contentHeight) / 2 + videoBounds.top * contentHeight : height * 0.12;
     return (
         <div
             className="agent-window-perch"
@@ -105,7 +108,7 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
             data-expanded={expanded}
             data-action={speaking ? "talk" : state}
             data-avatar-clip={!pet ? clip : undefined}
-            style={{ "--agent-perch-head-top": `${mediaTop}px` } as CSSProperties}
+            style={{ "--agent-perch-width": `${width}px`, "--agent-perch-height": `${height}px`, "--agent-perch-head-top": `${mediaTop}px` } as CSSProperties}
             data-canvas-no-zoom
             onPointerDown={(event) => event.stopPropagation()}
         >
@@ -152,8 +155,8 @@ export function AgentWindowPerch({ pet, status, reducedMotion, display = "perch"
                             version={pet.spriteVersion}
                             state={state}
                             stateRows={pet.stateRows}
-                            width={104}
-                            height={112}
+                            width={width}
+                            height={height}
                             action={petAction}
                             ambient
                             lookAtPointer
