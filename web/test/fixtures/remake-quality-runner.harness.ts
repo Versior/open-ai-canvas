@@ -9,13 +9,13 @@ mock.module("@/lib/user-scope", () => ({ getActiveUserScope: () => "quality-user
 let stored: StoredWork;
 mock.module("@/services/api/product-video", () => ({
     PRODUCT_VIDEO_CONFLICT: "conflict",
-    listProductVideos: async () => [stored],
-    getProductVideo: async () => stored,
+    listProductVideos: async () => ({ revision: stored.revision, items: [stored] }),
+    getProductVideo: async () => ({ revision: stored.revision, item: stored }),
     saveProductVideo: async (value: StoredWork) => {
         stored = { ...structuredClone(value), revision: value.revision + 1 };
-        return stored;
+        return { revision: stored.revision, item: stored };
     },
-    deleteProductVideo: async () => undefined,
+    deleteProductVideo: async () => ({ revision: stored.revision + 1 }),
     createProductVideoSplit: async () => {
         throw new Error("测试片段已切好，不应再次切段");
     },

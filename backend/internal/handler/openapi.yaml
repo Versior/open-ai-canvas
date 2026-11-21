@@ -5157,6 +5157,7 @@ paths:
               additionalProperties: false
               required: [kind, prompt, model]
               properties:
+                idempotencyKey: { type: string, maxLength: 160, description: 可选；同一用户同一操作同一请求返回原任务。每张图片或批次槽位使用独立键，再生成一版使用新键。最多 160 字节。 }
                 kind: { type: string, enum: [image, video] }
                 ecommerceProjectId:
                   type: string
@@ -5223,6 +5224,8 @@ paths:
                         }
                       slotKey: { type: string }
       responses:
+        "409":
+          description: 同一操作键已用于不同请求，不创建新任务或预占单。
         "200":
           $ref: "#/components/responses/Envelope"
         "400":
@@ -5253,6 +5256,7 @@ paths:
     post:
       tags: [tasks]
       summary: 创建生成任务
+      description: 个人工作区的可选 idempotencyKey 按用户隔离。相同键和输入重放原任务，改变输入则冲突；省略时保持逐次创建。团队文本任务仍按团队报价确认机制处理。
       requestBody:
         required: true
         content:
@@ -5264,6 +5268,8 @@ paths:
           $ref: "#/components/responses/Envelope"
         "400":
           $ref: "#/components/responses/Error"
+        "409":
+          description: 单次操作标识已用于不同请求。
   /tasks/{id}/recover-media:
     post:
       tags: [tasks]
@@ -8169,7 +8175,7 @@ components:
       type: object
       required: [type]
       properties:
-        idempotencyKey: { type: string, description: 团队提交必须提供的单次操作标识 }
+        idempotencyKey: { type: string, maxLength: 160, description: 个人提交可选、团队提交必填；最多 160 字节。个人空间同键同意图不重复预占。 }
         maxChargeMicrocredits: { type: integer, format: int64, minimum: 0, description: 团队提交时确认的报价上限 }
         projectId: { type: string }
         type: { type: string }

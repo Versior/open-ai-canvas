@@ -75,6 +75,8 @@ export const jaJP: Messages = {
             headingAssets: "アセットと履歴",
         },
         collapsed: {
+            ecommerceStudio: "画像",
+            ecommerceAgent: "企画",
             videoReplication: "動画",
             interior: "内装",
             packaging: "包装",

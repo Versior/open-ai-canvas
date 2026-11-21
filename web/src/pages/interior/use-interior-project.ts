@@ -49,7 +49,7 @@ export function useInteriorProjects(userId: string) {
     const [listError, setListError] = useState("");
     const [current, setCurrent] = useState<InteriorProject | null>(null);
     const [projectLoading, setProjectLoading] = useState(false);
-    const [projectError, setProjectError] = useState("");
+    const [projectError, setProjectError] = useState<{ projectId: string; message: string } | null>(null);
     const [saveState, setSaveState] = useState<InteriorSaveState>("saved");
     const [saveError, setSaveError] = useState("");
 
@@ -190,7 +190,9 @@ export function useInteriorProjects(userId: string) {
             deletedRoundsRef.current.add(sceneId);
             update(projectId, (document) => {
                 const scenes = (document.scenes || []).filter((item) => item.id !== sceneId);
-                return scenes.length ? { ...document, scenes } : { version: 1, rounds: document.rounds };
+                const next: InteriorProjectDocument = { ...document, scenes };
+                if (!scenes.length) delete next.scenes;
+                return next;
             });
         },
         [update],
@@ -203,7 +205,7 @@ export function useInteriorProjects(userId: string) {
             await ensureSaved(discardUnsaved);
             if (!isCurrent() || navigation !== navigationRef.current) return;
             setProjectLoading(true);
-            setProjectError("");
+            setProjectError(null);
             try {
                 const project = withDocument(await getInteriorProject(projectId));
                 if (!isCurrent() || navigation !== navigationRef.current) return;
@@ -217,7 +219,7 @@ export function useInteriorProjects(userId: string) {
                 setSaveError("");
                 window.localStorage.setItem(lastProjectKey, project.id);
             } catch (error) {
-                if (isCurrent() && navigation === navigationRef.current) setProjectError(errorText(error, "项目读取失败"));
+                if (isCurrent() && navigation === navigationRef.current) setProjectError({ projectId, message: errorText(error, "项目读取失败") });
             } finally {
                 if (isCurrent() && navigation === navigationRef.current) setProjectLoading(false);
             }
@@ -241,6 +243,7 @@ export function useInteriorProjects(userId: string) {
             setProjects((list) => [summaryOf(project), ...(list || [])]);
             setLocal(project);
             setSaveState("saved");
+            setProjectError(null);
             window.localStorage.setItem(lastProjectKey, project.id);
             return project;
         },
@@ -323,7 +326,7 @@ export function useInteriorProjects(userId: string) {
         setLocal(null);
         setSaveState("saved");
         setSaveError("");
-        setProjectError("");
+        setProjectError(null);
         setProjectLoading(false);
         void reloadList();
         // 只在进入页面和切换账号时读取一次列表。

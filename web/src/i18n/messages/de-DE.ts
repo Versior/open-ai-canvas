@@ -75,6 +75,8 @@ export const deDE: Messages = {
             headingAssets: "Assets und Verlauf",
         },
         collapsed: {
+            ecommerceStudio: "Studio",
+            ecommerceAgent: "Agent",
             videoReplication: "Video",
             interior: "Innen",
             packaging: "Verpackung",

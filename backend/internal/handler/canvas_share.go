@@ -19,7 +19,7 @@ func RegisterCanvasShareRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		share, err := svc.CanvasShareStatus(user.ID, c.Param("id"))
 		if err != nil {
-			fail(c, http.StatusNotFound, errors.New("画布不存在"))
+			failService(c, err)
 			return
 		}
 		ok(c, gin.H{"share": share})

@@ -79,6 +79,7 @@ export type EcommerceDraft = {
 };
 export type EcommercePlanImage = {
     id: string;
+    operationId?: string;
     imageType: string;
     platform: string;
     language: string;
@@ -267,13 +268,14 @@ export function ecommerceProjectName(project: Pick<EcommerceProject, "name">, dr
     return sentence ? Array.from(sentence).slice(0, 24).join("") : project.name;
 }
 export function saveEcommerceProject(project: EcommerceProject, draft: EcommerceDraft, plan: EcommercePlan | null, options?: EcommerceSaveOptions) {
+    const activePlan = options?.historyMode === "rounds" && plan ? (plan.images.length || options.advanceRound ? { ...plan, previousImages: undefined } : null) : plan;
     return http.put<EcommerceProject>(`/ecommerce/projects/${encodeURIComponent(project.id)}`, {
         revision: project.revision,
         name: ecommerceProjectName(project, draft, plan),
         draft: { ...draft, skillIds: hasSkillLibraryAccess() ? draft.skillIds : [] },
         // Round-mode saves never upload archived rounds. The active plan is the
         // only plan the server stores on the project row.
-        ...(plan ? { plan: options?.historyMode === "rounds" ? { ...plan, previousImages: undefined } : plan } : {}),
+        ...(activePlan ? { plan: activePlan } : {}),
         ...(options?.historyMode ? { historyMode: options.historyMode, advanceRound: Boolean(options.advanceRound), ...(options.activeRoundId ? { activeRoundId: options.activeRoundId } : {}) } : {}),
     });
 }

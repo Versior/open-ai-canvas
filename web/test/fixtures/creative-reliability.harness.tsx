@@ -200,6 +200,7 @@ mock.module("@/lib/ecommerce-studio/prompt-compiler", () => ({
     }),
 }));
 const { createStudioProduct } = await import("@/lib/ecommerce-studio/product");
+const { locateStudioShot, studioImageInput } = await import("@/lib/ecommerce-studio/generation-input");
 const { useStudioStore } = await import("@/pages/ecommerce-studio/use-studio-store");
 const { useStudioRunner } = await import("@/pages/ecommerce-studio/use-studio-runner");
 let runner: ReturnType<typeof useStudioRunner>;
@@ -240,6 +241,11 @@ function studioProduct(taskId?: string) {
             ],
         },
     ];
+    if (!taskId) {
+        const attempt = product.runs[0].shots[0].attempts[0];
+        attempt.replaySafe = true;
+        attempt.input = studioImageInput(product, locateStudioShot(product, { runId: "run" }, "shot")!, attempt.model, defaultConfig);
+    }
     return product;
 }
 async function mountStudio(product: ReturnType<typeof studioProduct>) {
@@ -353,6 +359,7 @@ test("unmounting one studio runner preserves another runner's queued shot", asyn
     useUserStore.setState({ runtimeLimits: { ...previous, activeTaskLimit: 1 } });
     const a = studioProduct();
     a.runs[0].shots[0].attempts[0].id = "owner-a";
+    a.runs[0].shots.push({ ...a.runs[0].shots[0], id: "other-shot", attempts: [{ ...a.runs[0].shots[0].attempts[0], id: "earlier-uncertain" }] });
     const b = studioProduct();
     b.id = "product-b";
     b.runs[0].shots[0].attempts[0].id = "owner-b";
@@ -384,6 +391,7 @@ test("unmounting one studio runner preserves another runner's queued shot", asyn
     });
     expect(operations).toEqual(["owner-a"]);
     await act(async () => studioRoot.render(null));
+    expect(useStudioStore.getState().products.find((product) => product.id === a.id)!.runs[0].shots[1].attempts[0]).toMatchObject({ status: "submitting", id: "earlier-uncertain" });
     await act(async () => finishA(task("a-task", "succeeded")));
     expect(operations).toEqual(["owner-a", "owner-b"]);
     expect(useStudioStore.getState().products.find((item) => item.id === b.id)?.runs[0].shots[0].attempts[0].status).toBe("succeeded");

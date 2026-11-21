@@ -222,6 +222,7 @@ export async function runBackendGenerationTaskBatch(options: BackendGenerationTa
             createAndWaitGenerationTask(
                 {
                     ...scopedOptions,
+                    ...(scopedOptions.retryContextsByBatchIndex?.[batchIndex] ?? (scopedOptions.clientOperationId && count > 1 ? { clientOperationId: `${scopedOptions.clientOperationId}:slot:${batchIndex}` } : {})),
                     metadata: { ...scopedOptions.metadata, batchIndex, batchCount: count },
                 },
                 prepared,
@@ -361,6 +362,7 @@ function backendGenerationTaskInput(options: BackendGenerationTaskOptions, prepa
     const logicalModelId = workflow ? "" : logicalModelIDForConfig(config);
     return {
         ...(projectId ? { projectId } : {}),
+        ...(options.clientOperationId ? { idempotencyKey: options.clientOperationId } : {}),
         type: `canvas_${mode}`,
         operation: mode === "video" ? videoOperation : mode,
         prompt,

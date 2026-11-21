@@ -1178,7 +1178,7 @@ export async function saveRemoteUserDataNow(input?: string | readonly string[]) 
 export async function prepareCanvasForCloudAction(id: string) {
     try {
         useCanvasStore.getState().materializeDraft(id);
-        await flushCanvasStorePersistence();
+        await waitForCanvasSync(flushCanvasStorePersistence());
         await saveRemoteUserDataNow(id);
     } catch (error) {
         // Callers retain their input without adding sync errors to task UI.

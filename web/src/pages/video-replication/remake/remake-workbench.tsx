@@ -27,7 +27,7 @@ import { resourceStorageKey } from "@/services/api/resources";
 import { selectableModelsByCapability, useEffectiveConfig } from "@/stores/use-config-store";
 import { productVideoThumbUrl } from "../replace/product-video-assets";
 import { remakeLimitsFor } from "./remake-config";
-import { createProductVideo, loadProductVideos, useProductVideoStore, updateRemake } from "../replace/use-product-video-store";
+import { createProductVideo, loadProductVideos, saveEditedRecipe, useProductVideoStore, updateRemake } from "../replace/use-product-video-store";
 import { formatProductVideoCredits } from "../replace/use-product-video-estimate";
 import { rewriteRemakeDialogue } from "./remake-dialogue";
 import { RemakeJianyingModal } from "./remake-jianying";
@@ -43,26 +43,10 @@ import { RemakeEditor } from "./remake-editor";
 import type { EditorStore } from "@/stores/editor/editor-store";
 import type { StoreApi, UseBoundStore } from "zustand";
 import { CreativePlanner } from "./creative-planner";
-import { referenceReplicationInput } from "@/lib/remake/reference-replication";
+import { mergeRemakeRecipe, RecipeConflict } from "@/lib/remake/recipe-merge";
 import "./creative.css";
 
 export type { RemakeStep } from "@/lib/remake/editor";
-
-/** 配方里用户能改的字段：保存时只把这些套到服务端最新版本上，不覆盖生成流程写入的单元和状态。 */
-function recipeFields(job: RemakeJob) {
-    const { title, product, people, models, backgrounds, audio, language, voice, voiceReference, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId } = job;
-    return { title, product, people, models, backgrounds, audio, language, voice, voiceReference, subtitles, music, authorized, note, model, ratio, resolution, shots, campaign, directorPlans, activeDirectorPlanId };
-}
-
-function applyRecipe(latest: RemakeJob, draft: RemakeJob): RemakeJob {
-    if (latest.replication?.mode !== draft.replication?.mode) throw new Error("复刻方式已在另一窗口改变，请重新打开配方");
-    const next = { ...latest, ...recipeFields(draft), ...(latest.creative && draft.creative ? { creative: { ...latest.creative, brief: draft.creative.brief, confirmedInput: draft.creative.confirmedInput } } : {}) };
-    if (next.replication && draft.replication) {
-        next.replication = { ...next.replication, brief: draft.replication.brief, targetDurationMs: draft.replication.targetDurationMs };
-        if (next.replication.plan?.input !== referenceReplicationInput(next)) next.replication.confirmed = false;
-    }
-    return next;
-}
 
 function errorText(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
@@ -111,11 +95,13 @@ export function RemakeWorkbench({
     const progress = useRemakeRuntime((state) => state.progress[id]);
     const [draft, setDraft] = useState<RemakeJob | undefined>(job);
     const draftRef = useRef(draft);
-    draftRef.current = draft;
+    const editBase = useRef<RemakeJob | undefined>(undefined);
+    const saving = useRef<Promise<void> | undefined>(undefined);
     const timer = useRef<number | undefined>(undefined);
     const editVersion = useRef(0);
     const savedVersion = useRef(0);
     const [saveError, setSaveError] = useState("");
+    const [conflict, setConflict] = useState<RecipeConflict>();
     const editorStore = useRef<UseBoundStore<StoreApi<EditorStore>> | undefined>(undefined);
     const [rewriting, setRewriting] = useState(false);
     const [planningDirector, setPlanningDirector] = useState(false);
@@ -128,33 +114,40 @@ export function RemakeWorkbench({
     const versions = useProductVideoStore((state) => state.jobs.filter((item) => isRemakeJob(item) && item.variantOf?.id === id).length);
     const locked = Boolean(job && (REMAKE_ACTIVE.includes(job.status) || active || starting || creativeRunning));
 
-    // 换了作品或生成流程改了作品（单元、状态）时，配方之外的字段跟着服务端走；配方以本地为准，直到保存。
     useEffect(() => {
-        if (!job) return;
-        const current = draftRef.current;
-        const pending = current && current.id === job.id && editVersion.current > savedVersion.current;
-        if (pending && current.replication?.mode !== job.replication?.mode) {
-            setSaveError("复刻方式已在另一窗口改变，本地未保存配方仍保留，请重新核对作品");
-            return;
-        }
-        const next = pending ? applyRecipe(job, current) : job;
-        draftRef.current = next;
-        setDraft(next);
+        if (!job || editBase.current) return;
+        draftRef.current = job;
+        setDraft(job);
     }, [job]);
 
     const flush = useCallback(async () => {
         window.clearTimeout(timer.current);
         timer.current = undefined;
+        while (saving.current) await saving.current;
         const value = draftRef.current;
+        const base = editBase.current;
         const version = editVersion.current;
-        if (!value || version <= savedVersion.current) return;
-        try {
-            await updateRemake(value.id, (latest) => applyRecipe(latest, value));
-            savedVersion.current = Math.max(savedVersion.current, version);
+        if (!base || !value || version <= savedVersion.current) return;
+        const request = saveEditedRecipe(value.id, (latest) => mergeRemakeRecipe(base, value, latest)).then((saved) => {
+            savedVersion.current = version;
+            const pending = editVersion.current > version && draftRef.current;
+            editBase.current = pending ? value : undefined;
+            const next = pending ? mergeRemakeRecipe(value, pending, saved) : saved;
+            if (pending) editBase.current = saved;
+            draftRef.current = next;
+            setDraft(next);
             setSaveError("");
+            setConflict(undefined);
+        });
+        saving.current = request;
+        try {
+            await request;
         } catch (error) {
+            setConflict(error instanceof RecipeConflict ? error : undefined);
             setSaveError(errorText(error, "请重试"));
             throw error;
+        } finally {
+            saving.current = undefined;
         }
     }, []);
     useEffect(() => () => void flush().catch((error) => message.error(`配方没有保存：${errorText(error, "请重试")}`)), [flush, message]);
@@ -165,6 +158,8 @@ export function RemakeWorkbench({
             const current = draftRef.current;
             if (!current) return;
             const next = updater(current);
+            if (next === current) return;
+            editBase.current ??= current;
             draftRef.current = next;
             editVersion.current += 1;
             setDraft(next);
@@ -173,6 +168,20 @@ export function RemakeWorkbench({
         },
         [flush, message, locked],
     );
+
+    const resolveConflict = (choice: "remote" | "local") => {
+        const base = editBase.current,
+            value = draftRef.current;
+        if (!conflict || !base || !value) return;
+        const next = conflict.changedMode ? conflict.latest : mergeRemakeRecipe(base, value, conflict.latest, choice);
+        editBase.current = conflict.changedMode ? undefined : conflict.latest;
+        draftRef.current = next;
+        setDraft(next);
+        setConflict(undefined);
+        setSaveError("");
+        if (conflict.changedMode) savedVersion.current = editVersion.current;
+        else void flush().catch((error) => message.error(errorText(error, "配方未保存")));
+    };
 
     // 默认模型、画幅和清晰度：沿用全局默认的视频模型，画幅尽量跟随原片。
     const suitable = useMemo(() => selectableModelsByCapability(config, "video").filter((model) => typeof remakeLimitsFor(config, model, draft?.shots || []) !== "string"), [config, draft?.shots]);
@@ -474,9 +483,22 @@ export function RemakeWorkbench({
                         {saveError ? (
                             <p className="rw-warn" role="alert">
                                 配方未保存：{saveError}
-                                <Button size="small" onClick={() => void flush().catch(() => undefined)}>
-                                    重试保存
-                                </Button>
+                                {conflict ? (
+                                    <>
+                                        <Button size="small" onClick={() => resolveConflict("remote")}>
+                                            采用另一窗口版本
+                                        </Button>
+                                        {!conflict.changedMode && (
+                                            <Button size="small" onClick={() => resolveConflict("local")}>
+                                                保留本窗口修改
+                                            </Button>
+                                        )}
+                                    </>
+                                ) : (
+                                    <Button size="small" onClick={() => void flush().catch(() => undefined)}>
+                                        重试保存
+                                    </Button>
+                                )}
                             </p>
                         ) : null}
                         {currentStep !== "edit" ? cta : null}

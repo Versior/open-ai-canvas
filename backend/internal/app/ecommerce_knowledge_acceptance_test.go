@@ -450,7 +450,8 @@ func TestEcommerceSelectedDirectionFlowsToPlanningAndImageTask(t *testing.T) {
 	if !strings.Contains(plan.Images[0].Prompt, "本轮已选Skills图片执行约束") {
 		t.Fatal("managed skill execution rules did not reach image prompt")
 	}
-	imageTask, err := svc.CreateWorkbenchTask("user", WorkbenchTaskInput{Kind: WorkbenchKindImage, Prompt: plan.Images[0].Prompt, Model: "gpt-image-2", ChannelID: "image-channel", Parameters: map[string]any{"size": "1024x1024", "count": 1}}, "", "")
+	imageIntent := WorkbenchTaskInput{Kind: WorkbenchKindImage, Prompt: plan.Images[0].Prompt, Model: "gpt-image-2", ChannelID: "image-channel", Parameters: map[string]any{"size": "1024x1024", "count": 1}, IdempotencyKey: "selected-direction:image:1"}
+	imageTask, err := svc.CreateWorkbenchTask("user", imageIntent, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,6 +463,9 @@ func TestEcommerceSelectedDirectionFlowsToPlanningAndImageTask(t *testing.T) {
 	finished, err := restarted.Task("user", imageTask.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if replay, err := restarted.CreateWorkbenchTask("user", imageIntent, "", "new-http-request"); err != nil || replay.ID != imageTask.ID || replay.Status != model.TaskStatusSucceeded || replay.BillingOrderID != imageTask.BillingOrderID {
+		t.Fatalf("post-restart replay of completed image task: %+v, %v", replay, err)
 	}
 	storedImage, _ := svc.repo.Task(imageTask.ID)
 	var consume []model.CreditLedgerEntry

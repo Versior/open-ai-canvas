@@ -17,12 +17,34 @@ export function sceneModelProblem(config: AiConfig, model: string, imageCount: n
     return modelCompatibilityError(config, model, sceneModelRequirements(config, imageCount));
 }
 
+type InteriorSceneTransition = { projectId: string; sceneId: string; sourceTaskId?: string; repair?: number; confirmation?: { heights: number[]; furnishing: "preserve" | "auto" } };
+
+function sceneOperationId(stage: string, transition: InteriorSceneTransition, model: string, image?: InteriorImageRef) {
+    const identity = JSON.stringify([
+        transition.projectId,
+        transition.sceneId,
+        transition.sourceTaskId ?? null,
+        stage,
+        transition.repair ?? 0,
+        model,
+        image?.resourceId ?? null,
+        transition.confirmation?.heights ?? null,
+        transition.confirmation?.furnishing ?? null,
+    ]);
+    const fnv128Prime = BigInt("0x1000000000000000000013b");
+    let hash = BigInt("0x6c62272e07bb014262b821756295c58d");
+    for (const byte of new TextEncoder().encode(identity)) hash = BigInt.asUintN(128, (hash ^ BigInt(byte)) * fnv128Prime);
+    return `interior:v1:${hash.toString(16).padStart(32, "0")}`;
+}
+
 /** 提交一次搭模型的文本任务（不等结果）；任务带室内设计的来源标记，受「室内设计」开关控制，按所选模型计费。 */
-export function submitSceneTask(config: AiConfig, model: string, prompt: string, stage: string, image?: InteriorImageRef) {
+export function submitSceneTask(config: AiConfig, model: string, prompt: string, stage: string, image: InteriorImageRef | undefined, transition: InteriorSceneTransition, signal?: AbortSignal) {
     const requirements = sceneModelRequirements(config, image ? 1 : 0);
     return submitBackendGenerationTask({
         mode: "text",
         prompt,
+        signal,
+        clientOperationId: sceneOperationId(stage, transition, model, image),
         config: { ...buildGenerationConfig(config, undefined, "text", requirements), model },
         referenceImages: image ? [{ id: image.resourceId, name: "参考图", type: "image/jpeg", dataUrl: "", storageKey: resourceStorageKey(image.resourceId), width: image.width, height: image.height }] : [],
         // 流式返回：页面边收边读方案、边搭模型，用户不用干等。

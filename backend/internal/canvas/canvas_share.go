@@ -61,8 +61,16 @@ var publicCanvasForbiddenKeys = map[string]bool{
 	"errorDetails": true, "references": true,
 }
 
+func (s *Service) requireCanvasShareOwner(userID, projectID string) error {
+	_, err := s.repo.CanvasProjectMetadata(userID, projectID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return kernel.NotFound("画布不存在")
+	}
+	return err
+}
+
 func (s *Service) CanvasShareStatus(userID string, projectID string) (CanvasShareStatus, error) {
-	if _, err := s.repo.CanvasProjectForUser(userID, projectID); err != nil {
+	if err := s.requireCanvasShareOwner(userID, projectID); err != nil {
 		return CanvasShareStatus{}, err
 	}
 	share, err := s.repo.CanvasShareForProject(userID, projectID)
@@ -79,7 +87,7 @@ func (s *Service) CreateCanvasShare(userID string, projectID string, req CanvasS
 	if req.ExpiresDays < 0 || req.ExpiresDays > 365 {
 		return CanvasShareStatus{}, kernel.BadAuthRequest("分享有效期必须在 0 到 365 天之间")
 	}
-	if _, err := s.repo.CanvasProjectForUser(userID, projectID); err != nil {
+	if err := s.requireCanvasShareOwner(userID, projectID); err != nil {
 		return CanvasShareStatus{}, err
 	}
 	share, err := s.repo.CanvasShareForProject(userID, projectID)
@@ -112,7 +120,7 @@ func (s *Service) CreateCanvasShare(userID string, projectID string, req CanvasS
 }
 
 func (s *Service) DeleteCanvasShare(userID string, projectID string) error {
-	if _, err := s.repo.CanvasProjectForUser(userID, projectID); err != nil {
+	if err := s.requireCanvasShareOwner(userID, projectID); err != nil {
 		return err
 	}
 	return s.repo.DeleteCanvasShare(userID, projectID)

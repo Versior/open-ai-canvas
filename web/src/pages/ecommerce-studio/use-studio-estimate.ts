@@ -3,12 +3,20 @@ import { formatCompactCredits } from "@/constant/credits";
 import { buildStudioImageGeneration, studioImageInputCount } from "@/lib/ecommerce-studio/generation-input";
 import type { StudioAttempt } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
-import { modelQuoteRequest, requestCreditCost } from "@/lib/model-pricing";
+import { modelQuoteRequest, requestCreditCost, systemModelQuoteRequest } from "@/lib/model-pricing";
 import { quoteModel } from "@/services/api/logical-models";
 import { modelOptionName, resolveModelChannel, useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
-type Estimate = { credits: number | null; tone: "quote" | "local" | "loading" | "usage" | "unavailable" };
+type Estimate = { credits: number | null; tone: "quote" | "local" | "loading" | "usage" | "reserve" | "unavailable" };
+const unavailable: Estimate = { credits: null, tone: "unavailable" };
+
+function describeEstimate(value: Estimate) {
+    if (value.tone === "reserve") return `最多冻结 ${formatCompactCredits(value.credits! * 1_000_000)} 积分，按实际用量结算`;
+    if (value.credits !== null) return `预计约 ${formatCompactCredits(value.credits * 1_000_000)} 积分`;
+    if (value.tone === "loading") return "正在计算积分…";
+    return value.tone === "usage" ? "按实际用量计费" : "暂时算不出积分";
+}
 
 /**
  * 「本次预计消耗」：按每张实际尺寸、质量和参考图报价求和，相同规格共用一次报价。
@@ -17,13 +25,13 @@ type Estimate = { credits: number | null; tone: "quote" | "local" | "loading" | 
 export function useStudioEstimate({ model, inputs }: { model: string; inputs: NonNullable<StudioAttempt["input"]>[] }) {
     const config = useEffectiveConfig();
     const creditsEnabled = useUserStore((state) => Boolean(state.user) && state.features.creditsEnabled);
-    const [estimate, setEstimate] = useState<Estimate>({ credits: null, tone: "unavailable" });
+    const [estimate, setEstimate] = useState({ first: unavailable, all: unavailable });
     // 商品的任务状态和文案更新不影响报价，只跟踪实际计价输入。
     const inputKey = JSON.stringify(inputs.map((input) => ({ request: input.request, references: studioImageInputCount(input) })));
 
     useEffect(() => {
         if (!creditsEnabled || !model || !inputs.length) {
-            setEstimate({ credits: null, tone: "unavailable" });
+            setEstimate({ first: unavailable, all: unavailable });
             return;
         }
         const profile = modelCapabilityConfigFor(config, model).image;
@@ -47,36 +55,63 @@ export function useStudioEstimate({ model, inputs }: { model: string; inputs: No
                 else groups.set(key, { request, local, count: 1 });
             }
         } catch {
-            setEstimate({ credits: null, tone: "unavailable" });
+            setEstimate({ first: unavailable, all: unavailable });
             return;
         }
         const items = [...groups.values()];
-        const sum = (values: (number | null)[]) => (values.some((value) => value === null) ? null : values.reduce<number>((total, value) => total + value!, 0));
-        const local = sum(items.map((item) => (item.local === null ? null : item.local * item.count)));
+        const apply = (values: Estimate[]) => {
+            const unknown = values.find((item) => item.credits === null);
+            const all: Estimate = unknown || { credits: values.reduce((total, value, index) => total + value.credits! * items[index].count, 0), tone: values.some((value) => value.tone === "reserve") ? "reserve" : "quote" };
+            setEstimate({ first: values[0], all });
+        };
         const controller = new AbortController();
-        setEstimate(local === null ? { credits: null, tone: "loading" } : { credits: local, tone: "local" });
+        apply(items.map(({ local }) => ({ credits: local, tone: local === null ? "loading" : "local" })));
         void Promise.all(
             items.map(async (item): Promise<Estimate> => {
-                if (!item.request) return { credits: item.local === null ? null : item.local * item.count, tone: item.local === null ? "usage" : "local" };
+                if (!item.request) return { credits: item.local, tone: item.local === null ? "usage" : "local" };
                 try {
                     const { quote } = await quoteModel(item.request, controller.signal);
-                    return { credits: (quote.amountMicrocredits / 1_000_000) * item.count, tone: "quote" };
+                    return { credits: quote.amountMicrocredits / 1_000_000, tone: quote.billingMode === "image_usage" ? "reserve" : "quote" };
                 } catch {
-                    return { credits: item.local === null ? null : item.local * item.count, tone: item.local === null ? "unavailable" : "local" };
+                    return { credits: item.local, tone: item.local === null ? "unavailable" : "local" };
                 }
             }),
         ).then((results) => {
             if (controller.signal.aborted) return;
-            const credits = sum(results.map((result) => result.credits));
-            const tone = credits === null ? (results.some((result) => result.tone === "unavailable") ? "unavailable" : "usage") : results.every((result) => result.tone === "quote") ? "quote" : "local";
-            setEstimate({ credits, tone });
+            apply(results);
         });
         return () => controller.abort();
     }, [config, creditsEnabled, inputKey, model]);
 
-    if (!creditsEnabled) return "";
-    if (estimate.credits !== null) return `预计约 ${formatCompactCredits(estimate.credits * 1_000_000)} 积分`;
-    if (estimate.tone === "loading") return "正在计算积分…";
-    if (estimate.tone === "usage") return "按实际用量计费";
-    return model ? "暂时算不出积分" : "";
+    return creditsEnabled && model ? { first: describeEstimate(estimate.first), all: describeEstimate(estimate.all) } : { first: "", all: "" };
+}
+
+export function useStudioTextEstimate(model: string, imageCount: number | null) {
+    const config = useEffectiveConfig();
+    const enabled = useUserStore((state) => Boolean(state.user) && state.features.creditsEnabled);
+    const [label, setLabel] = useState("");
+    useEffect(() => {
+        if (!enabled || imageCount === null || !model) {
+            setLabel("");
+            return;
+        }
+        const requirements = { capability: "text" as const, input: { textCount: 0, imageCount, referenceImageCount: imageCount, videoCount: 0, audioCount: 0, characterCount: 0 } };
+        const request = systemModelQuoteRequest(config, model, "text", requirements);
+        if (!request) {
+            setLabel(resolveModelChannel(config, model).scope === "system" ? "暂无法报价" : "按所选渠道计费");
+            return;
+        }
+        const controller = new AbortController();
+        setLabel("报价中…");
+        void quoteModel(request, controller.signal).then(
+            ({ quote }) => {
+                if (!controller.signal.aborted) setLabel(`${formatCompactCredits(quote.amountMicrocredits)} 积分${quote.billingMode === "token" ? "（预估，按实际用量结算）" : ""}`);
+            },
+            () => {
+                if (!controller.signal.aborted) setLabel("暂无法报价");
+            },
+        );
+        return () => controller.abort();
+    }, [config, enabled, imageCount, model]);
+    return enabled && imageCount !== null ? label : "";
 }

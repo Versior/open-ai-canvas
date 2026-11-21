@@ -30,6 +30,15 @@ type taskAdmission struct {
 // 这是常规模型生成任务的写入口：客户端只提交创作意图，模型、渠道、协议和计价信息必须由服务端目录重新解析，
 // 以保证“可展示的模型”与“实际执行及扣费的模型”来自同一份有效配置。
 func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task, error) {
+	if req.creationPrepare != nil || req.admission != nil {
+		return s.createGenerationTask(userID, req, nil)
+	}
+	return s.submitPersonalTask(userID, req.IdempotencyKey, "task", req, func(submission *personalTaskSubmission) (*model.Task, error) {
+		return s.createGenerationTask(userID, req, submission)
+	})
+}
+
+func (s *Service) createGenerationTask(userID string, req CreateTaskRequest, submission *personalTaskSubmission) (*model.Task, error) {
 	if req.admission == nil && (strings.HasPrefix(req.Operation, "cloud_agent") || req.Input["cloudAgent"] != nil) {
 		return nil, BadAuthRequest("Agent 任务必须通过 Agent 接口创建")
 	}
@@ -171,7 +180,7 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 	}
 	// 前端自管的文本持久化任务：直连模型生成、增量上报 text-deltas，不排入 worker 队列生成。
 	if isTextReplayTaskRequest(normalizedInput) {
-		return s.createTextReplayTask(userID, req, normalizedInput)
+		return s.createTextReplayTask(userID, req, normalizedInput, submission)
 	}
 	if err := s.requireCustomChannelsForTaskInput(normalizedInput); err != nil {
 		return nil, err
@@ -209,6 +218,7 @@ func (s *Service) CreateTask(userID string, req CreateTaskRequest) (*model.Task,
 		workbenchKind = workbenchKindFromTaskInput(normalizedInput, taskType)
 	}
 	task := model.Task{ID: newID(), UserID: userID, TraceID: req.TraceID, RequestID: req.RequestID, ProjectID: req.ProjectID, Type: taskType, WorkbenchKind: workbenchKind, Status: model.TaskStatusQueued, Stage: "等待队列调度", Progress: 5, Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: req.Model}
+	submission.assign(&task)
 	var selected *model.ChannelModel
 	if routed != nil {
 		selected = &routed.ChannelModel
@@ -553,7 +563,7 @@ func workbenchKindFromTaskInput(input map[string]any, taskType string) string {
 
 // createTextReplayTask 创建前端自管的文本持久化任务：状态为 text_replay，
 // 不排队执行、不计 active 队列、不产生计费，仅作为正文增量（text-deltas）的存储容器。
-func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, normalizedInput map[string]any) (*model.Task, error) {
+func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, normalizedInput map[string]any, submission *personalTaskSubmission) (*model.Task, error) {
 	prompt := strings.TrimSpace(req.Prompt)
 	if prompt == "" {
 		prompt = strings.TrimSpace(fmt.Sprint(normalizedInput["prompt"]))
@@ -573,6 +583,7 @@ func (s *Service) createTextReplayTask(userID string, req CreateTaskRequest, nor
 		Type: taskType, Status: model.TaskStatusTextReplay, Stage: "文本持久化（前端自管）", Progress: 5,
 		Prompt: prompt, Operation: req.Operation, Provider: req.Provider, Model: strings.TrimSpace(req.Model),
 	}
+	submission.assign(&task)
 	if err := s.protectTaskSecrets(normalizedInput); err != nil {
 		return nil, err
 	}

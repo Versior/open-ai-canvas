@@ -12,7 +12,7 @@ import { RollingCreditAmount } from "@/components/rolling-credit-text";
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type DragEvent as ReactDragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { ApiError } from "@/services/api/request";
-import { archiveCommercePlan, commerceCanvasImages, continueCommercePlan, updateCommerceCanvasImage } from "./continuation";
+import { archiveCommercePlan, commerceCanvasImages, commercePlanWithHistory, continueCommercePlan, updateCommerceCanvasImage } from "./continuation";
 import { CommerceSubmittedRequest, restoreSubmittedCommerceRequest } from "./submitted-request";
 import { commerceFollowupDraft, commerceQuoteSignature } from "./conversation-context";
 import { CreativeOptionsPanel } from "./creative-options-panel";
@@ -270,21 +270,45 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     // Archived rounds are loaded a page at a time; the active plan never carries them.
     const roundsModeRef = useRef(false);
     const historyRoundsRef = useRef<EcommerceRound[]>([]);
+    const historyOwner = useRef("");
+    const historyRequest = useRef(0);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyHasMore, setHistoryHasMore] = useState(false);
-    const loadHistoryPage = useCallback(async (projectId: string, before = 0) => {
-        setHistoryLoading(true);
-        try {
-            const page = await listEcommerceRounds(projectId, { limit: 10, ...(before ? { before } : {}) });
-            const known = before ? historyRoundsRef.current : [];
-            const seen = new Set(known.map((round) => round.id));
-            historyRoundsRef.current = [...known, ...page.rounds.filter((round) => !seen.has(round.id))];
-            setHistoryHasMore(page.hasMore);
-            return page;
-        } finally {
-            setHistoryLoading(false);
-        }
+    const [historyFailure, setHistoryFailure] = useState<{ before: number; message: string } | null>(null);
+    const resetHistory = useCallback((projectId = "") => {
+        historyRequest.current++;
+        historyOwner.current = projectId;
+        historyRoundsRef.current = [];
+        roundsModeRef.current = false;
+        setHistoryLoading(false);
+        setHistoryHasMore(false);
+        setHistoryFailure(null);
     }, []);
+    const loadHistoryPage = useCallback(
+        async (projectId: string, before = 0) => {
+            if (!mounted.current || historyOwner.current !== projectId) return;
+            const request = ++historyRequest.current;
+            const current = () => mounted.current && getActiveUserScope() === scope && request === historyRequest.current && historyOwner.current === projectId;
+            setHistoryLoading(true);
+            setHistoryFailure(null);
+            try {
+                const page = await listEcommerceRounds(projectId, { limit: 10, ...(before ? { before } : {}) });
+                if (!current()) return;
+                const known = before ? historyRoundsRef.current : [];
+                const seen = new Set(known.map((round) => round.id));
+                historyRoundsRef.current = [...known, ...page.rounds.filter((round) => !seen.has(round.id))];
+                setHistoryHasMore(page.hasMore);
+                return page;
+            } catch (cause) {
+                if (!current()) return;
+                setHistoryFailure({ before, message: errorText(cause) });
+                throw cause;
+            } finally {
+                if (current()) setHistoryLoading(false);
+            }
+        },
+        [scope],
+    );
     const ensureRoundTarget = useCallback(
         async (imageId: string): Promise<{ round: EcommerceRound; image: EcommercePlanImage } | null> => {
             const find = () => {
@@ -301,6 +325,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             let before = historyRoundsRef.current[historyRoundsRef.current.length - 1]?.ordinal || 0;
             for (let pageIndex = 0; pageIndex < 5; pageIndex += 1) {
                 const page = await loadHistoryPage(projectId, before);
+                if (!page) return null;
                 const found = find();
                 if (found) return found;
                 if (!page.hasMore || !page.rounds.length) break;
@@ -311,21 +336,18 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         [loadHistoryPage],
     );
     const applyRoundUpdate = (updated: EcommerceRound) => {
+        if (updated.projectId !== historyOwner.current) return;
         historyRoundsRef.current = historyRoundsRef.current.map((round) => (round.id === updated.id ? updated : round));
     };
     const loadMoreHistory = useCallback(async () => {
         const projectId = projectRef.current?.id;
         if (!projectId || historyLoading) return;
         const last = historyRoundsRef.current[historyRoundsRef.current.length - 1];
-        if (!last) return;
-        try {
-            await loadHistoryPage(projectId, last.ordinal);
-            const previousImages = [...historyRoundsRef.current].reverse().flatMap((round) => round.plan?.images || []);
-            setPlan((current) => (current ? { ...current, previousImages: previousImages.length ? previousImages : undefined } : current));
-        } catch (cause) {
-            message.error(errorText(cause));
-        }
-    }, [historyLoading, loadHistoryPage, message]);
+        const page = await loadHistoryPage(projectId, historyFailure?.before ?? last?.ordinal ?? 0).catch(() => undefined);
+        if (!page || historyOwner.current !== projectId) return;
+        const rounds = historyRoundsRef.current;
+        setPlan((current) => (historyOwner.current === projectId ? commercePlanWithHistory(current, rounds) : current));
+    }, [historyFailure, historyLoading, loadHistoryPage]);
     const [tasks, setTasks] = useState<Record<string, GenerationTask>>({});
     const [qualityIssues, setQualityIssues] = useState<Record<string, string[]>>({});
     const inspectedAssets = useRef(new Set<string>());
@@ -391,12 +413,12 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
     const imageImportQueue = useRef<{ owner: EcommerceSession; tail: Promise<void>; pending: number } | null>(null);
     const [localBusy, setBusy] = useState(false);
     const busy = localBusy || session.submitting;
-    const draftDiffersFromPlan = Boolean(plan && plan.inputSignature !== commerceInputSignature(draft));
+    const draftDiffersFromPlan = Boolean(plan?.images.length && plan.inputSignature !== commerceInputSignature(draft));
     const [stageMessage, setStage] = useState("");
     const [planningTask, setPlanningTask] = useState<GenerationTask>();
     const [planningSaveError, setPlanningSaveError] = useState(false);
     const planningPending = Boolean(draft.planningTaskId && !plan?.images.length);
-    const [quote, setQuote] = useState<{ agent: number | null; vision: number | null; image: number | null; imageTotal: number | null } | null>(null);
+    const [quote, setQuote] = useState<{ agent: number | null; vision: number | null; imageTotal: number | null; agentUsage: boolean; visionUsage: boolean; imageReserve: boolean } | null>(null);
     const planningRecovered = useRef("");
     const planningSettling = useRef("");
     const autoStartRef = useRef(false);
@@ -504,6 +526,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         }
         if (hydrated.current && (requestedProjectId === projectRef.current?.id || (!requestedProjectId && newWorkspaceId === sessionRef.current.id))) return;
         let cancelled = false;
+        resetHistory();
         hydrated.current = false;
         setRestoring(true);
         setBusy(false);
@@ -535,9 +558,8 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                 setEcommerceActiveProject(scope, null);
                 setCacheError(compatibleCache ? "原项目已不存在，本机未提交的商品资料已保留为新草稿" : "原项目已不存在，已为你打开新草稿");
             }
-            roundsModeRef.current = false;
-            historyRoundsRef.current = [];
-            setHistoryHasMore(false);
+            if (cancelled || getActiveUserScope() !== scope) return;
+            historyOwner.current = saved?.id || "";
             let roundsMode = false;
             if (saved) {
                 try {
@@ -561,16 +583,11 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                         roundsMode = false;
                     }
                 }
-                if (roundsMode) {
-                    try {
-                        await loadHistoryPage(saved.id, 0);
-                    } catch {
-                        /* History stays retryable through "加载更多" / refresh. */
-                    }
-                }
+                if (cancelled || getActiveUserScope() !== scope) return;
+                if (roundsMode) await loadHistoryPage(saved.id, 0).catch(() => undefined);
             }
-            roundsModeRef.current = roundsMode;
             if (cancelled || getActiveUserScope() !== scope) return;
+            roundsModeRef.current = roundsMode;
             if (saved) {
                 owner.adopt(saved);
                 saved = owner.project;
@@ -582,9 +599,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                 // Archived rounds live only in round rows; the project row holds
                 // the active plan. A local cache never overrides that split.
                 const active = saved ? projectPlan(saved) : null;
-                const base = active || nextPlan;
-                const previousImages = [...historyRoundsRef.current].reverse().flatMap((round) => round.plan?.images || []);
-                if (base) nextPlan = { ...base, previousImages: previousImages.length ? previousImages : undefined };
+                nextPlan = commercePlanWithHistory(active || nextPlan, historyRoundsRef.current);
             }
             if (orphaned) nextDraft = { ...nextDraft, planningTaskId: undefined, directionsTaskId: undefined, creativeDirectionId: undefined, creativeRecommendationId: undefined };
             const receipt = saved && !nextPlan?.images.length ? getEcommercePlanningReceipt(scope, saved.id) : null;
@@ -630,6 +645,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         });
         return () => {
             cancelled = true;
+            historyRequest.current++;
         };
     }, [scope, requestedProjectId, requestedFocusId, newWorkspaceId, sourceCanvasId, searchParams.getAll("reference").join("|"), incomingImageModel, restoreVersion]);
 
@@ -719,9 +735,10 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             // to send in round mode even to an older server.
             const rounds = roundsModeRef.current || Boolean(owner.project?.activeRoundId) || (!owner.project && !hasHistory);
             const saved = await owner.save(nextDraft, nextPlan, rounds ? { historyMode: "rounds", advanceRound: Boolean(options?.advanceRound), activeRoundId: owner.project?.activeRoundId } : undefined);
-            if (saved.activeRoundId) roundsModeRef.current = true;
-            if (rounds && options?.advanceRound && saved.id) {
-                void loadHistoryPage(saved.id, 0).catch(() => undefined);
+            if (isCurrent(owner)) {
+                if (!historyOwner.current) historyOwner.current = saved.id;
+                if (saved.activeRoundId) roundsModeRef.current = true;
+                if (rounds && options?.advanceRound && saved.id) void loadHistoryPage(saved.id, 0).catch(() => undefined);
             }
             const cached = peekEcommerceWorkspace(scope);
             if (cached?.sessionId === owner.id || isCurrent(owner)) {
@@ -749,7 +766,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         submissionLock.current = true;
         setBusy(true);
         try {
-            if (!plan || plan.inputSignature === commerceInputSignature(draft)) {
+            if (!plan?.images.length || plan.inputSignature === commerceInputSignature(draft)) {
                 await save(draft, plan, owner);
                 if (isCurrent(owner)) message.success("草稿已保存到服务端");
                 return;
@@ -949,7 +966,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             const referenceCount =
                 draft.referenceMode === "detail"
                     ? commerceRequiredImageReferenceCount(draft)
-                    : activeCommerceReferences(draft).filter((ref) => ref.role !== "sku" || ref.resourceId === draft.skus.find((sku) => sku.id === ("skuId" in image ? image.skuId : undefined))?.resourceId).length || 1;
+                    : activeCommerceReferences(draft).filter((ref) => ref.role !== "sku" || ref.resourceId === draft.skus.find((sku) => sku.id === ("skuId" in image ? image.skuId : undefined))?.resourceId).length;
             // Quote the size the image is generated at (自动 resolves to the platform recommendation).
             const ratio = commerceGenerationRatio(config, draft, { imageModel: image.imageModel, ratio: image.ratio, imageType: "imageType" in image && typeof image.imageType === "string" ? image.imageType : undefined });
             return systemModelQuoteRequest(config, image.imageModel, "image", {
@@ -960,14 +977,15 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             });
         });
         const agentImageCount = commercePlanningReferenceCount(draft);
-        const textQuote = (model: string) =>
+        const textQuote = (model: string, imageCount: number) =>
             systemModelQuoteRequest(config, model, "text", {
                 capability: "text",
-                input: { textCount: 1, imageCount: agentImageCount, referenceImageCount: agentImageCount, videoCount: 0, audioCount: 0, characterCount: 0 },
+                input: { textCount: 1, imageCount, referenceImageCount: imageCount, videoCount: 0, audioCount: 0, characterCount: 0 },
             });
-        const agentRequest = textQuote(planningModel);
-        const separateVision = Boolean(directionsModel) && directionsModel !== planningModel;
-        const visionRequest = separateVision ? textQuote(directionsModel) : null;
+        const agentRequest = textQuote(planningModel, agentImageCount);
+        const visionImageCount = draft.references.filter((ref) => !["model", "style", "competitor"].includes(ref.role)).length;
+        const separateVision = directionsModel !== planningModel || visionImageCount !== agentImageCount;
+        const visionRequest = separateVision ? textQuote(directionsModel, visionImageCount) : null;
         void Promise.all([
             Promise.allSettled(imageRequests.map((request) => (request ? quoteModel(request, controller.signal) : Promise.reject(new Error("图片模型无法报价"))))),
             creationMode === "ai" && agentRequest ? quoteModel(agentRequest, controller.signal).catch(() => null) : Promise.resolve(null),
@@ -979,7 +997,14 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             const agentCost = agent ? agent.quote.amountMicrocredits / 1_000_000 : null;
             // One recognition call plus one planning call, each priced on its own model.
             const visionCost = !directionsModel ? null : separateVision ? (vision ? vision.quote.amountMicrocredits / 1_000_000 : null) : agentCost;
-            setQuote({ image: costs.length === 1 ? costs[0] : imageTotal === null ? null : imageTotal / costs.length, imageTotal, agent: agentCost, vision: visionCost });
+            setQuote({
+                imageTotal,
+                agent: agentCost,
+                vision: visionCost,
+                agentUsage: agent?.quote.billingMode === "token",
+                visionUsage: (separateVision ? vision : agent)?.quote.billingMode === "token",
+                imageReserve: images.some((result) => result.status === "fulfilled" && result.value.quote.billingMode === "image_usage"),
+            });
         });
         return () => controller.abort();
     }, [config, creationMode, planningModel, directionsModel, commerceQuoteSignature(draft, plan, requestedCount), user]);
@@ -1141,7 +1166,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error("图片模型无法接收当前商品参考图，请更换模型");
             return;
         }
-        if (!ratioChoices.includes(draft.ratio) || !resolutionChoices.includes(draft.resolution) || quote?.agent == null || quote.vision == null || quote.imageTotal == null) {
+        if (!ratioChoices.includes(draft.ratio) || !resolutionChoices.includes(draft.resolution) || quote?.vision == null) {
             message.error("请等待当前图片参数和模型的服务端报价");
             return;
         }
@@ -1258,7 +1283,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             setRecommendationId("");
             setAutoGenerate(true);
             setBusy(false);
-            await startPlanning();
+            await startPlanning(true);
         } catch (cause) {
             setBusy(false);
             message.error(errorText(cause));
@@ -1267,7 +1292,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         }
     };
 
-    const startPlanning = async () => {
+    const startPlanning = async (autoStartImages = false) => {
         if (!requireLogin()) return;
         if (restoring || !hydrated.current || submissionLock.current || planningPending) return;
         if (activeImages && !draftDiffersFromPlan) {
@@ -1339,14 +1364,14 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.error("后台指定的视觉策划模型暂时无法报价，请稍后重试或联系管理员");
             return;
         }
-        if (quote.imageTotal == null) {
+        if (autoStartImages && quote.imageTotal == null) {
             message.error("图片模型暂时无法报价，请稍后重试或更换图片模型");
             return;
         }
         const owner = session;
         if (owner !== session) planningDraft = { ...planningDraft, directionsTaskId: undefined };
         if (!owner.beginSubmission()) return;
-        autoStartRef.current = Boolean(planningDraft.creativeDirectionId) || (planningDraft.referenceMode !== "detail" && autoGenerate);
+        autoStartRef.current = autoStartImages;
         submissionLock.current = true;
         setBusy(true);
         setStage("正在保存商品资料");
@@ -1459,6 +1484,11 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         if (isCurrent(owner)) setBusy(true);
         let currentPlan = { ...selectedPlan, images: [...selectedPlan.images] };
         try {
+            if (currentPlan.images.some((image) => !image.taskId && !image.operationId)) {
+                currentPlan.images = currentPlan.images.map((image) => (image.taskId || image.operationId ? image : { ...image, operationId: createClientUUID() }));
+                await save(selectedDraft, currentPlan, owner);
+                if (isCurrent(owner)) setPlan(currentPlan);
+            }
             currentPlan = await prepareCommerceReferencePlan(selectedDraft, currentPlan, {
                 assertCurrent: () => {
                     if (!isCurrent(owner)) throw new Error("当前项目已切换，已停止参考图处理");
@@ -1517,6 +1547,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                           submit: () => {
                               if (isCurrent(owner)) setStage(`正在提交第 ${index + 1} / ${currentPlan.images.length} 张图片任务`);
                               return createWorkbenchTask({
+                                  idempotencyKey: planned.operationId,
                                   ecommerceProjectId: destination.id,
                                   kind: "image",
                                   prompt: commerceImagePrompt(selectedDraft, image, selectedPlan.productSummary, selectedPlan.visualStrategy, parameters),
@@ -1634,10 +1665,10 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         const parameters = commerceImageParameters(profile, generated.ratio, generated.resolution);
         const receiptKey = `ecommerce-edit:${originalProject.id}:${edited.id}`;
         const signature = JSON.stringify([edited.prompt, edited.copy, edited.negativePrompt, edited.imageModel, edited.ratio, edited.resolution]);
-        type EditReceipt = { projectId: string; signature: string; taskId?: string; submitting?: boolean };
+        type EditReceipt = { projectId: string; signature: string; taskId?: string; submitting?: boolean; input?: Parameters<typeof createWorkbenchTask>[0] };
         const receipt: EditReceipt | null = JSON.parse(sessionStorage.getItem(receiptKey) || "null");
         // 被服务端明确拒绝过的回执（submitting=false 且没有任务）只保留目标项目，可按本次编辑重新提交。
-        if (receipt && (receipt.taskId ? receipt.signature !== signature : receipt.submitting)) throw new Error("上次提交的回执尚未确认，请先查看创作历史，避免重复扣费");
+        if (receipt && (((receipt.taskId || receipt.submitting) && receipt.signature !== signature) || (receipt.submitting && !receipt.taskId && !receipt.input?.idempotencyKey))) throw new Error("上次提交的回执尚未确认，请先查看创作历史，避免重复扣费");
         if (!session.beginSubmission()) throw new Error("上一项操作仍在提交，请稍候");
         submissionLock.current = true;
         setBusy(true);
@@ -1648,22 +1679,22 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             if (originalImage.roundId && !target) throw new Error("历史轮次已更新，请刷新后重试");
             const activePlan = target ? null : projectPlan(destination);
             if (!target && (!activePlan || !commerceCanvasImages(activePlan).some((image) => image.id === edited.id))) throw new Error("当前图片已从画布移除，请刷新后查看任务历史");
-            const pending: EditReceipt = { ...(receipt || { projectId: destination.id }), signature, submitting: true };
-            sessionStorage.setItem(receiptKey, JSON.stringify(pending));
             const logicalModelId = logicalModelIDForConfig({ ...config, model: edited.imageModel });
-            // An unedited regeneration asks for a new take; otherwise the same prompt returns the same picture.
-            const variation = originalImage.prompt === edited.prompt ? `\n\n${commerceRegenerationVariation(source, edited)}` : "";
+            const input = (receipt?.signature === signature && receipt.input) || {
+                idempotencyKey: `ecommerce-edit:${originalImage.taskId || originalImage.operationId || createClientUUID()}`,
+                ecommerceProjectId: destination.id,
+                kind: "image" as const,
+                prompt: `${commerceImagePrompt(source, generated, originalImage.sourceDraft ? source.productName : plan.productSummary, originalImage.sourceDraft ? originalImage.prompt : plan.visualStrategy, parameters)}${originalImage.prompt === edited.prompt ? `\n\n${commerceRegenerationVariation(source, edited)}` : ""}`,
+                model: modelOptionName(edited.imageModel),
+                ...(logicalModelId ? { logicalModelId } : { channelId: resolveModelChannel(config, edited.imageModel).id }),
+                parameters,
+                references: refs.map((ref) => ({ resourceId: ref.resourceId, kind: "image" as const, role: "reference" as const })),
+            };
+            const pending: EditReceipt = { projectId: destination.id, taskId: receipt?.taskId, signature, submitting: true, input };
+            sessionStorage.setItem(receiptKey, JSON.stringify(pending));
             const task = pending.taskId
                 ? await queryGenerationTask(pending.taskId)
-                : await createWorkbenchTask({
-                      ecommerceProjectId: destination.id,
-                      kind: "image",
-                      prompt: `${commerceImagePrompt(source, generated, originalImage.sourceDraft ? source.productName : plan.productSummary, originalImage.sourceDraft ? originalImage.prompt : plan.visualStrategy, parameters)}${variation}`,
-                      model: modelOptionName(edited.imageModel),
-                      ...(logicalModelId ? { logicalModelId } : { channelId: resolveModelChannel(config, edited.imageModel).id }),
-                      parameters,
-                      references: refs.map((ref) => ({ resourceId: ref.resourceId, kind: "image" as const, role: "reference" as const })),
-                  }).catch((cause: unknown) => {
+                : await createWorkbenchTask(input).catch((cause: unknown) => {
                       // 明确拒绝（如积分不足）没有创建任务：解除“提交中”，补足积分或修改后可直接再试。
                       if (commerceSubmissionRejected(cause)) sessionStorage.setItem(receiptKey, JSON.stringify({ ...pending, submitting: false }));
                       throw cause;
@@ -1799,6 +1830,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
             message.info("请等待当前提交或上传完成");
             return;
         }
+        resetHistory();
         activateSession(createEcommerceSession(scope, item));
         hydrated.current = false;
         setRestoring(true);
@@ -1826,6 +1858,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
         navigate(`/ecommerce?project=${encodeURIComponent(item.id)}${focusId ? `&focus=${encodeURIComponent(focusId)}` : ""}`);
     };
     const newProject = () => {
+        resetHistory();
         setCompactHistoryOpen(false);
         setDirectionsStatus("idle");
         setDirectionsTask(undefined);
@@ -1962,8 +1995,11 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
           }
         : null;
     const pendingScreenCount = draft.referenceMode === "detail" && (!plan || plan.inputSignature !== commerceInputSignature(draft));
-    const agentEstimate = (quote?.agent || 0) + (quote?.vision || 0);
-    const estimate = pendingScreenCount || !quote || quote.imageTotal === null || (creationMode === "ai" && (quote.agent === null || quote.vision === null)) ? null : (creationMode === "direct" ? 0 : agentEstimate) + quote.imageTotal;
+    const actionCost = (action: "quick" | "plan") => (creationMode === "direct" ? quote?.imageTotal : action === "plan" ? quote?.agent : quote?.vision);
+    const estimate = actionCost("quick") ?? null;
+    const quoteLabel = (value: number | null | undefined, usage?: boolean, reserve?: boolean) =>
+        value == null ? "待报价" : `${reserve ? "最多冻结 " : ""}${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 6 }).format(value)} 积分${usage || reserve ? "（按实际用量结算）" : ""}`;
+    const imagePrice = pendingScreenCount ? "按策划后实际屏数另行报价" : quoteLabel(quote?.imageTotal, false, quote?.imageReserve);
     const startDirect = async () => {
         if (draft.imageType === "detail") {
             message.info("详情页必须先由 Agent 完成性能、场景与逐张文案策划");
@@ -2043,7 +2079,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                 message.error(adminModelIssue);
                 return;
             }
-            if (estimate === null && (creationMode === "direct" || quote?.agent == null)) {
+            if (actionCost(action) == null) {
                 message.error("当前配置尚未完成服务端报价，请稍后重试");
                 return;
             }
@@ -2365,7 +2401,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                             disabled={submitted > 0 || draft.imageType === "sku" || plan.images.length >= 30}
                             onClick={() => {
                                 const template = plan.images.at(-1);
-                                if (template) resizePlan([...plan.images, { ...template, id: createClientUUID(), taskId: undefined, goal: "新增图片", theme: "待编辑", prompt: "请描述这张商品图片的视觉目标与保真约束" }]);
+                                if (template) resizePlan([...plan.images, { ...template, id: createClientUUID(), operationId: createClientUUID(), taskId: undefined, goal: "新增图片", theme: "待编辑", prompt: "请描述这张商品图片的视觉目标与保真约束" }]);
                             }}
                         >
                             添加一张
@@ -2426,6 +2462,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                     regenerationPreviews={regenerationPreviews}
                     historyHasMore={historyHasMore}
                     historyLoading={historyLoading}
+                    historyError={historyFailure?.message}
                     onLoadMoreHistory={() => void loadMoreHistory()}
                     stage={stagePanel}
                     stageActive={stageActive}
@@ -2719,9 +2756,7 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                                     <span>积分</span>
                                 </strong>
                             )}
-                            <span>
-                                {displayCount} 张 · {creationMode === "direct" ? "按设置直接出图" : "先推荐视觉方向，选定后自动出图"}
-                            </span>
+                            <span>{creationMode === "direct" ? `本次出图 ${displayCount} 张${quote?.imageReserve ? "，显示预占上限" : ""}` : `本次仅商品识别 ×1${quote?.visionUsage ? "，按实际用量结算" : ""}；选定方向后另计策划和出图`}</span>
                         </div>
                         {creationMode === "direct" ? null : (
                             <AntTooltip title="不推荐视觉方向，直接写出整套图片方案，审阅后再出图">
@@ -2808,11 +2843,18 @@ function EcommerceWorkspace({ scope }: { scope: string }) {
                 </label>
                 <div className="commerce-confirm-footer">
                     <span>
-                        预估消耗 <strong>{estimate === null ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3 }).format(agentEstimate) : new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 3 }).format(estimate)}</strong> 积分
-                        {estimate === null ? "起 · 图片费用按识别屏数另行报价" : ""}
+                        本次：{creationMode === "direct" ? `出图 ×${requestedCount}` : confirmAction === "plan" ? "整套策划 ×1" : "商品识别 ×1"}，预估消耗{" "}
+                        <strong>{creationMode === "direct" ? imagePrice : confirmAction === "plan" ? quoteLabel(quote?.agent, quote?.agentUsage) : quoteLabel(quote?.vision, quote?.visionUsage)}</strong>
+                        {creationMode !== "direct" ? (
+                            <>
+                                <br />
+                                {confirmAction === "plan" ? "审阅并确认后：" : `选定方向后：策划 ×1 ${quoteLabel(quote?.agent, quote?.agentUsage)}；`}出图 {pendingScreenCount ? "" : `×${requestedCount} `}
+                                {imagePrice}
+                            </>
+                        ) : null}
                     </span>
                     <Button onClick={() => setConfirmOpen(false)}>取消</Button>
-                    <Button type="primary" onClick={() => beginConfirmedGeneration()} disabled={estimate === null && (creationMode === "direct" || quote?.agent == null)}>
+                    <Button type="primary" onClick={() => beginConfirmedGeneration()} disabled={actionCost(confirmAction) == null}>
                         {creationMode === "direct" ? "确认并出图" : confirmAction === "plan" ? "确认并策划" : "确认并开始"}
                     </Button>
                 </div>

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Download, ImagePlus, Minus, Plus, Scan } from "lucide-react";
-import { packagingPath, packagingDxf, packagingSvg, downloadPackaging } from "@/lib/packaging/delivery";
+import { packagingPath, packagingDxf, packagingSvg, downloadPackaging, embeddedPackagingResources } from "@/lib/packaging/delivery";
 import type { PackagingArtwork, PackagingDocument, PackagingLayout } from "@/lib/packaging/types";
 import { resourceFileUrl } from "@/services/api/resources";
 import { artworkBounds, artworkEditorBounds, artworkHandles, movePackagingArtwork, resizePackagingArtwork, rotatePackagingArtwork, type ArtworkHandle } from "@/lib/packaging/artwork";
 import { packagingPanelBounds } from "@/lib/packaging/production";
-import { packagingLayerMarkup, packagingResourceIds } from "@/lib/packaging/layers";
+import { packagingLayerMarkup } from "@/lib/packaging/layers";
 import { packagingSafeArea } from "@/lib/packaging/design";
 import { packagingPreflight } from "@/lib/packaging/preflight";
 import { measurePackagingText } from "@/lib/packaging/typography";
@@ -35,7 +35,7 @@ export function PackagingDieline(props: Props) {
     const [layers, setLayers] = useState({ cut: true, crease: true, bleed: true, names: true, process: false, safe: false });
     const [focused, setFocused] = useState(false);
     const [snap, setSnap] = useState(true);
-    const [guides, setGuides] = useState<{ axis: "x" | "y"; value: number }[]>([]);
+    const [preview, setPreview] = useState<{ layer: PackagingArtwork; guides: { axis: "x" | "y"; value: number }[] } | null>(null);
     const file = useRef<HTMLInputElement>(null);
     const svg = useRef<SVGSVGElement>(null);
     const [size, setSize] = useState({ width: 500, height: 500 });
@@ -44,8 +44,9 @@ export function PackagingDieline(props: Props) {
         observer.observe(svg.current!);
         return () => observer.disconnect();
     }, []);
-    const drag = useRef<{ art: PackagingArtwork; start: [number, number]; bounds: PackagingLayout["bounds"]; action: "move" | "rotate" | ArtworkHandle }>(null);
-    const selectedArt = props.document.artworks.find((a) => a.id === props.selectedArtwork);
+    const drag = useRef<{ art: PackagingArtwork; start: [number, number]; bounds: PackagingLayout["bounds"]; action: "move" | "rotate" | ArtworkHandle; pointerId: number; change?: Partial<PackagingArtwork> }>(null);
+    const artworks = preview ? props.document.artworks.map((art) => (art === drag.current?.art ? preview.layer : art)) : props.document.artworks;
+    const selectedArt = artworks.find((a) => a.id === props.selectedArtwork);
     const focusedPanel = props.layout.panels.find((p) => p.id === (selectedArt?.panelId || props.selected));
     const naturalBounds = focused && focusedPanel ? packagingPanelBounds(focusedPanel.points) : focused && selectedArt ? artworkBounds(selectedArt) : artworkEditorBounds(props.layout, props.document.artworks);
     const b = drag.current?.bounds ?? naturalBounds;
@@ -58,20 +59,24 @@ export function PackagingDieline(props: Props) {
         return point;
     };
     const start = (e: PointerEvent<SVGElement>, art: PackagingArtwork, action: "move" | "rotate" | ArtworkHandle) => {
-        if (e.button !== 0) return;
+        if (e.button !== 0 || drag.current) return;
         e.stopPropagation();
         props.onSelectArtwork?.(art.id);
         if (props.readOnly || art.locked) return;
+        e.preventDefault();
         const p = pointer(e.clientX, e.clientY);
         props.onInteractionStart?.();
-        drag.current = { art, start: [p.x, p.y], bounds: naturalBounds, action };
+        drag.current = { art, start: [p.x, p.y], bounds: naturalBounds, action, pointerId: e.pointerId };
         svg.current!.focus();
         svg.current!.setPointerCapture(e.pointerId);
     };
-    const end = () => {
-        if (!drag.current) return;
+    const end = (commit: boolean) => {
+        const gesture = drag.current;
+        if (!gesture) return;
         drag.current = null;
-        setGuides([]);
+        setPreview(null);
+        if (commit && gesture.change && props.document.artworks.includes(gesture.art)) props.onArtwork(gesture.art.id, gesture.change);
+        if (!commit) props.onInteractionCancel?.();
         props.onInteractionEnd?.();
     };
     const exportSvg = async () => {
@@ -79,18 +84,7 @@ export function PackagingDieline(props: Props) {
         await document.fonts.ready;
         const errors = packagingPreflight(props.document, props.layout, new Map(), measurePackagingText).issues.filter((issue) => issue.severity === "error" && issue.code !== "resource_missing");
         if (errors.length) throw new Error(errors.map((issue) => issue.message).join("；"));
-        const images = new Map<string, string>();
-        for (const [id, blob] of props.resources)
-            images.set(
-                id,
-                await new Promise<string>((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(String(reader.result));
-                    reader.onerror = () => reject(new Error("图稿编码失败"));
-                    reader.readAsDataURL(blob);
-                }),
-            );
-        if (packagingResourceIds(props.document).some((id) => !images.has(id))) throw new Error("图稿尚未加载，无法导出完整设计");
+        const images = await embeddedPackagingResources(props.document, props.resources);
         assertCurrentUserSession(session);
         downloadPackaging(new Blob([packagingSvg(props.document, props.layout, images, true, measurePackagingText)], { type: "image/svg+xml" }), props.name, "svg");
     };
@@ -150,8 +144,7 @@ export function PackagingDieline(props: Props) {
                         if (props.readOnly) return;
                         if (e.key === "Escape") {
                             e.stopPropagation();
-                            if (drag.current) props.onInteractionCancel?.();
-                            end();
+                            end(false);
                             props.onSelectArtwork?.("");
                             return;
                         }
@@ -166,31 +159,33 @@ export function PackagingDieline(props: Props) {
                         if (e.key.startsWith("Arrow")) props.onInteractionEnd?.();
                     }}
                     onPointerMove={(e) => {
-                        if (!drag.current) return;
+                        if (!drag.current || drag.current.pointerId !== e.pointerId) return;
                         const p = pointer(e.clientX, e.clientY);
                         const { art, start, action } = drag.current;
-                        if (action === "rotate") {
-                            props.onArtwork(art.id, rotatePackagingArtwork(art, start, [p.x, p.y], e.shiftKey));
-                            return;
+                        let change: Partial<PackagingArtwork>;
+                        let guides: { axis: "x" | "y"; value: number }[] = [];
+                        if (action === "move") {
+                            const panel = props.layout.panels.find((v) => v.id === art.panelId);
+                            const move = movePackagingArtwork(art, [p.x - start[0], p.y - start[1]], panel ? packagingPanelBounds(panel.points) : props.layout.bounds, unitsPerPixel() * 6, snap && !e.altKey);
+                            change = { x: move.x, y: move.y };
+                            guides = move.guides;
+                        } else {
+                            change = action === "rotate" ? rotatePackagingArtwork(art, start, [p.x, p.y], e.shiftKey) : resizePackagingArtwork(art, action, [p.x - start[0], p.y - start[1]], !e.altKey);
                         }
-                        if (action !== "move") {
-                            props.onArtwork(art.id, resizePackagingArtwork(art, action, [p.x - start[0], p.y - start[1]], !e.altKey));
-                            return;
-                        }
-                        const panel = props.layout.panels.find((v) => v.id === art.panelId);
-                        const move = movePackagingArtwork(art, [p.x - start[0], p.y - start[1]], panel ? packagingPanelBounds(panel.points) : props.layout.bounds, unitsPerPixel() * 6, snap && !e.altKey);
-                        setGuides(move.guides);
-                        props.onArtwork(art.id, { x: move.x, y: move.y });
+                        drag.current.change = change;
+                        setPreview({ layer: { ...art, ...change }, guides });
                     }}
                     onPointerUp={(e) => {
-                        end();
+                        if (drag.current?.pointerId !== e.pointerId) return;
+                        end(true);
                         if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
                     }}
-                    onPointerCancel={() => {
-                        props.onInteractionCancel?.();
-                        end();
+                    onPointerCancel={(e) => {
+                        if (drag.current?.pointerId === e.pointerId) end(false);
                     }}
-                    onLostPointerCapture={end}
+                    onLostPointerCapture={(e) => {
+                        if (drag.current?.pointerId === e.pointerId) end(false);
+                    }}
                 >
                     <defs>
                         <clipPath id="preview-focus">
@@ -223,7 +218,7 @@ export function PackagingDieline(props: Props) {
                                 <title>{panel.name}</title>
                             </path>
                         ))}
-                        {props.document.artworks
+                        {artworks
                             .filter((a) => a.visible !== false && (a.role === "artwork" || layers.process || a.id === props.selectedArtwork))
                             .map((art) => (
                                 <g key={art.id} clipPath={`url(#preview-${art.panelId || "structure"})`}>
@@ -284,7 +279,7 @@ export function PackagingDieline(props: Props) {
                                 <path d={safe.map((points) => packagingPath(points)).join(" ")} />
                             </g>
                         ) : null}
-                        {guides.map((guide) => (
+                        {preview?.guides.map((guide) => (
                             <line
                                 key={guide.axis}
                                 className="pkg-art-guide"

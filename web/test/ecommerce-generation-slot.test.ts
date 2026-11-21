@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { assertCommerceBatchHealthy, CommerceBatchPausedError, submitCommerceTaskWhenSlotAvailable, waitForCommerceGenerationSlot } from "../src/pages/ecommerce/generation-slot";
+import { assertCommerceBatchHealthy, CommerceBatchPausedError, commerceSubmissionRejected, submitCommerceTaskWhenSlotAvailable, waitForCommerceGenerationSlot } from "../src/pages/ecommerce/generation-slot";
 import { ApiError } from "../src/services/api/request";
 
 describe("commerce account task slots", () => {
+    test("任务号已被其他输入使用不能当作没有受理；普通参数拒绝仍可修正重试", () => {
+        expect(commerceSubmissionRejected(new ApiError("conflict", { status: 409, code: 40901 }))).toBe(false);
+        expect(commerceSubmissionRejected(new ApiError("invalid", { status: 400 }))).toBe(true);
+    });
     test("a failed image pauses the remaining batch when capacity becomes free", async () => {
         let status = "running";
         let submissions = 0;

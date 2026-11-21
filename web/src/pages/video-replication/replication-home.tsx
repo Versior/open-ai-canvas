@@ -176,6 +176,7 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
         },
     });
     const locked = !history.ready || chat.busy || composer.busy || uploading || castUploading || toolBusy || creating || starting || materialAnalysis.busy;
+    const pendingTurn = chat.turns.at(-1);
     const started = chat.turns.length > 0 || Boolean(referenceId);
     const factsInput = creativeFactsInput({ product });
     const modelProblem = !composer.model ? "请选择视频导演模型" : replicaScriptModelError(composer.config, composer.model);
@@ -453,6 +454,18 @@ export function ReplicationHome({ composer, records, loading, error, activeRun, 
                         <p role="alert" className="vchat-error">
                             {inputError || chat.error}
                         </p>
+                    ) : null}
+                    {pendingTurn?.role === "user" && (pendingTurn.operation || chat.error) && !locked ? (
+                        <div className="vchat-replies" aria-label="未完成的导演消息">
+                            {pendingTurn.operation && (
+                                <button type="button" onClick={() => void chat.send(pendingTurn.text)}>
+                                    接回这次回复
+                                </button>
+                            )}
+                            <button type="button" onClick={() => void chat.send(pendingTurn.text, true)}>
+                                重新生成（新任务）
+                            </button>
+                        </div>
                     ) : null}
                     {history.error ? (
                         <p role="alert" className="vchat-error">

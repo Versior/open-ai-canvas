@@ -2,10 +2,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } 
 import { Window } from "happy-dom";
 import localforage from "localforage";
 import type { EcommerceDraft, EcommercePlan, EcommerceProject, EcommerceRound } from "../../src/services/api/ecommerce";
-import type { GenerationTask } from "../../src/services/api/task-center";
+import type { CreateTaskInput, GenerationTask } from "../../src/services/api/task-center";
 import type { RemoteResource } from "../../src/services/api/resources";
+import type { StudioProduct } from "../../src/lib/ecommerce-studio/types";
 
 const dom = new Window({ url: "http://localhost:3000/ecommerce" });
+Object.defineProperty(dom.navigator, "locks", { configurable: true, value: { request: (_name: string, run: () => Promise<unknown>) => run() } });
 const globals = new Map<string, PropertyDescriptor | undefined>();
 for (const [key, value] of Object.entries({
     window: dom,
@@ -55,7 +57,7 @@ const { createRoot } = await import("react-dom/client");
 const { MemoryRouter, Routes, Route, useNavigate, useLocation } = await import("react-router");
 const { App, message, modal, notification } = await import("antd");
 const { emptyEcommerceDraft } = await import("../../src/services/api/ecommerce");
-const { http } = await import("../../src/services/api/request");
+const { ApiError, http } = await import("../../src/services/api/request");
 const taskApi = await import("../../src/services/api/task-center");
 const generationApi = await import("../../src/services/api/generation-task");
 const pricing = await import("../../src/lib/model-pricing");
@@ -75,8 +77,17 @@ const resourceApi = await import("../../src/services/api/resources");
 const workbenchApi = await import("../../src/services/api/workbench");
 const exportApi = await import("../../src/pages/ecommerce/export");
 const { commerceInputSignature } = await import("../../src/pages/ecommerce/planner");
+const { directCommercePlan } = await import("../../src/pages/ecommerce/direct-plan");
 const { default: EcommercePage } = await import("../../src/pages/ecommerce/index");
 const { mockEcommerceImageDelivery } = await import("../helpers/ecommerce-media-fixture");
+const { StudioForm } = await import("../../src/pages/ecommerce-studio/studio-form");
+const { useStudioRunner } = await import("../../src/pages/ecommerce-studio/use-studio-runner");
+const { useStudioStore } = await import("../../src/pages/ecommerce-studio/use-studio-store");
+const { createStudioProduct, normalizeStudioProduct } = await import("../../src/lib/ecommerce-studio/product");
+const { createStudioRun } = await import("../../src/lib/ecommerce-studio/runs");
+const studioGeneration = await import("../../src/lib/ecommerce-studio/generation-input");
+const analysisConfig = await import("../../src/lib/ecommerce/ecommerce-analysis-generation");
+const studioApi = await import("../../src/services/api/ecommerce-studio");
 
 let root: ReturnType<typeof createRoot> | undefined;
 let host: HTMLDivElement;
@@ -98,6 +109,7 @@ const observers = new Map<string, Set<(task: GenerationTask) => void>>();
 let completeCreateTask: ((value: GenerationTask) => void) | undefined;
 let delayTaskCreation = false;
 let failedSaves = 0;
+let beforeHistoryPage: ((id: string, before: number) => Promise<void>) | undefined;
 const originalUser = useUserStore.getState();
 
 function project(value: EcommerceDraft): EcommerceProject {
@@ -238,6 +250,7 @@ beforeEach(async () => {
     completeCreateTask = undefined;
     delayTaskCreation = false;
     failedSaves = 0;
+    beforeHistoryPage = undefined;
     route = "";
     draft = { ...emptyEcommerceDraft(), productName: "蓝色测试商品", count: 1, agentModel: "test::vision", imageModel: "test::image", ratio: "1:1", resolution: "1k", references: [{ resourceId: "owned-product", role: "primary" }] };
     config = { ...configStore.defaultConfig };
@@ -286,6 +299,7 @@ beforeEach(async () => {
             const query = new URLSearchParams(roundsMatch[2] || "");
             const limit = Math.min(Number(query.get("limit")) || 10, 20);
             const before = Number(query.get("before")) || 0;
+            await beforeHistoryPage?.(id, before);
             const all = (rounds.get(id) || []).slice().sort((left, right) => right.ordinal - left.ordinal);
             const list = all.filter((round) => !before || round.ordinal < before).slice(0, limit);
             return {
@@ -456,6 +470,293 @@ afterAll(() => {
 });
 
 describe("真实电商页面生命周期", () => {
+    function seedHistory(name: string, count: number) {
+        const saved = { ...project({ ...draft, productName: name }), activeRoundId: `active-${name}` };
+        const plan = { productSummary: name, confirmedFacts: [], uncertainFacts: [], qualityChecks: [], visualStrategy: name, images: [planImage(`${name}-active`, `${name}-active-task`)] };
+        saved.planJson = JSON.stringify(plan);
+        projects.set(saved.id, saved);
+        rounds.set(
+            saved.id,
+            Array.from({ length: count }, (_, index) => roundRecord(saved.id, index + 1, { ...plan, images: [{ ...planImage(`${name}-${index}`, `${name}-${index}-task`), resourceId: `${name}-${index}` }] })),
+        );
+        return saved;
+    }
+    for (const stage of ["analysis", "planning", "direct"] as const) {
+        test(`报价按这次操作显示 ${stage}，不把可选阶段计入当前`, async () => {
+            draft = { ...draft, instruction: "白底图", imageType: "main", count: 3 };
+            await sessions.writeEcommerceWorkspace(scope, { sessionId: crypto.randomUUID(), draft, plan: null, project: null, creationMode: stage === "direct" ? "direct" : "ai", autoGenerate: false });
+            await render();
+            const imageRequests = spyOn(workbenchApi, "createWorkbenchTask").mockImplementation(async (input) => {
+                const task = { ...runningTask(`image-${input.idempotencyKey}`), status: "succeeded" as const, outputs: [{ outputIndex: 0, materializedAssetId: "asset" }] };
+                tasks.set(task.id, task);
+                return task;
+            });
+            spyOn(taskApi, "listGenerationTasks").mockResolvedValue([]);
+            await act(async () => (stage === "planning" ? host.querySelector<HTMLButtonElement>(".ecommerce-plan-button") : host.querySelector<HTMLButtonElement>(".ecs-submit"))!.click());
+            const footer = document.querySelector(".commerce-confirm-footer");
+            expect(footer?.textContent).toContain(stage === "analysis" ? "本次：商品识别 ×1" : stage === "planning" ? "本次：整套策划 ×1" : "本次：出图 ×3");
+            expect(footer?.querySelector("strong")?.textContent).toContain(stage === "direct" ? "3 积分" : "1 积分");
+            if (stage === "planning") expect(footer?.textContent).not.toContain("识别");
+            expect(paidSubmissions).toHaveLength(0);
+            const confirm = Array.from(footer!.querySelectorAll("button")).find((button) => button.textContent?.trim().startsWith("确认并"));
+            expect(confirm).toBeDefined();
+            await act(async () => confirm!.click());
+            expect(paidSubmissions.map((input) => (input as { metadata: { stage: string } }).metadata.stage)).toEqual(stage === "direct" ? [] : [stage === "analysis" ? "creative-directions" : "planning"]);
+            expect(imageRequests.mock.calls.length).toBe(stage === "direct" ? 3 : 0);
+        });
+    }
+    const historySection = () => host.querySelector('[aria-label="之前的商品作品"]');
+
+    test("逐张收件超时后重开同一项目继续：先保存操作号，同张同键、不同张不同键", async () => {
+        draft = { ...draft, imageType: "main", count: 2, instruction: "拍水杯" };
+        const saved = { ...project(draft), activeRoundId: "audit-round", planJson: JSON.stringify(directCommercePlan(draft)) };
+        projects.set(saved.id, saved);
+        const requests: Array<Parameters<typeof workbenchApi.createWorkbenchTask>[0]> = [];
+        spyOn(taskApi, "listGenerationTasks").mockResolvedValue([]);
+        spyOn(workbenchApi, "createWorkbenchTask").mockImplementation(async (input) => {
+            requests.push(structuredClone(input));
+            const snapshot = JSON.parse(projects.get(saved.id)!.planJson) as EcommercePlan;
+            expect(snapshot.images.map((image) => image.operationId)).toContain(input.idempotencyKey);
+            if (requests.length === 1) throw new Error("模拟受理后的回执丢失");
+            const task = { ...runningTask(`task-${input.idempotencyKey}`), status: "succeeded" as const, outputs: [{ outputIndex: 0, materializedAssetId: "asset" }] };
+            tasks.set(task.id, task);
+            return task;
+        });
+        await render(`/ecommerce?project=${saved.id}`);
+        await press("按方案生成 2 张图片");
+        expect(requests).toHaveLength(1);
+        await act(async () => navigate("/other"));
+        await act(async () => navigate(`/ecommerce?project=${saved.id}`));
+        expect(requests).toHaveLength(1);
+        await press("按方案生成 2 张图片");
+        expect(requests).toHaveLength(3);
+        expect(requests[1]).toEqual(requests[0]);
+        expect(requests[0].idempotencyKey).toBeTruthy();
+        expect(requests[2].idempotencyKey).not.toBe(requests[0].idempotencyKey);
+    });
+
+    test("主动重新生成：回执不明沿用完整意图；已确认的下一次主动操作换键", async () => {
+        draft = { ...draft, imageType: "main", count: 1, instruction: "拍水杯" };
+        const plan = directCommercePlan(draft);
+        plan.images[0].taskId = "initial-photo";
+        const saved = { ...project(draft), activeRoundId: "audit-round", planJson: JSON.stringify(plan) };
+        projects.set(saved.id, saved);
+        const requests: Array<Parameters<typeof workbenchApi.createWorkbenchTask>[0]> = [];
+        const finished = (id: string) => ({ ...runningTask(id), type: "canvas_image", status: "succeeded" as const, outputs: [{ outputIndex: 0, materializedAssetId: "asset" }], resultJson: JSON.stringify({ images: [{ dataUrl: "/photo.png" }] }) });
+        tasks.set("initial-photo", finished("initial-photo"));
+        spyOn(workbenchApi, "createWorkbenchTask").mockImplementation(async (input) => {
+            requests.push(structuredClone(input));
+            if (requests.length === 1) throw new Error("模拟受理后的回执丢失");
+            const task = finished(`edit-${requests.length}`);
+            tasks.set(task.id, task);
+            return task;
+        });
+        await render(`/ecommerce?project=${saved.id}`);
+        const editing = async () => {
+            await press("修改这张");
+            const editor = document.querySelector<HTMLTextAreaElement>('[aria-label="图片修改要求"]')!;
+            await act(async () => {
+                Object.getOwnPropertyDescriptor(dom.HTMLTextAreaElement.prototype, "value")!.set!.call(editor, "加一点柔光");
+                editor.dispatchEvent(new Event("input", { bubbles: true }));
+            });
+        };
+        const submitEdit = async () => {
+            const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) => item.textContent?.trim() === "重新生成")!;
+            await act(async () => button.click());
+        };
+        await editing();
+        await submitEdit();
+        expect(requests).toHaveLength(1);
+        await submitEdit();
+        expect(requests[1]).toEqual(requests[0]);
+        expect(requests[0].idempotencyKey).toBeTruthy();
+        await editing();
+        await submitEdit();
+        expect(requests).toHaveLength(3);
+        expect(requests[2].idempotencyKey).not.toBe(requests[1].idempotencyKey);
+    });
+
+    for (const previousOutcome of ["success", "failure"] as const) {
+        test(`历史分页在 A→B→A 后丢弃最初 A 的迟到 ${previousOutcome}`, async () => {
+            roundsServer = true;
+            const first = seedHistory("first", 12);
+            const second = seedHistory("second", 1);
+            await render(`/ecommerce?project=${first.id}`);
+            expect(historySection()?.textContent).toContain("10 张");
+            const deferred = Promise.withResolvers<void>();
+            beforeHistoryPage = async (id, before) => {
+                if (id === first.id && before) await deferred.promise;
+            };
+            await press("加载更早的作品");
+            await act(async () => navigate(`/ecommerce?project=${second.id}`));
+            expect(historySection()?.textContent).toContain("1 张");
+            expect([...historySection()!.querySelectorAll<HTMLElement>("[data-ecommerce-image-id]")].map((card) => card.dataset.ecommerceImageId)).toEqual(["second-0"]);
+            await act(async () => navigate(`/ecommerce?project=${first.id}`));
+            await act(async () => (previousOutcome === "success" ? deferred.resolve() : deferred.reject(new Error("上一次打开时的错误"))));
+            expect(historySection()?.textContent).toContain("10 张");
+            expect([...historySection()!.querySelectorAll<HTMLElement>("[data-ecommerce-image-id]")].map((card) => card.dataset.ecommerceImageId)).toEqual(Array.from({ length: 10 }, (_, index) => `first-${index + 2}`));
+            expect(errors.join(" ") + host.textContent).not.toContain("上一次打开时的错误");
+            beforeHistoryPage = undefined;
+            await press("加载更早的作品");
+            expect(historySection()?.textContent).toContain("12 张");
+        });
+    }
+
+    for (const active of [true, false]) {
+        test(`历史首页读取失败可在原项目重试，${active ? "保留当前轮" : "当前轮为空也不丢归档"}`, async () => {
+            roundsServer = true;
+            const saved = seedHistory("history", 12);
+            if (!active) saved.planJson = "{}";
+            beforeHistoryPage = async () => {
+                throw new Error("历史网络中断");
+            };
+            await render(`/ecommerce?project=${saved.id}`);
+            expect(host.textContent).toContain("历史网络中断");
+            const currentRound = () => host.querySelector('[aria-label="当前创作批次"]');
+            if (active) expect(currentRound()?.textContent).toContain("1 张");
+            else expect(currentRound()).toBeNull();
+            beforeHistoryPage = undefined;
+            await press("重试历史");
+            expect(historySection()?.textContent).toContain("10 张");
+            await press("加载更早的作品");
+            expect(historySection()?.textContent).toContain("12 张");
+            if (!active) {
+                await act(async () => navigate("/other"));
+                await act(async () => navigate(`/ecommerce?project=${saved.id}`));
+                expect(historySection()?.textContent).toContain("10 张");
+                expect(currentRound()).toBeNull();
+                await press("保存草稿");
+                expect(saveBodies.at(-1)?.advanceRound).toBe(false);
+                expect(JSON.parse(projects.get(saved.id)!.planJson)).toEqual({});
+            }
+            expect(paidSubmissions).toHaveLength(0);
+        });
+    }
+
+    for (const action of ["全新商品分析", "已有档案提问", "明确重新识别"] as const) {
+        test(`生图台真实表单：${action}，十次回调只保存一次回执和一次终态`, async () => {
+            const product = createStudioProduct("fixture-studio");
+            product.photos.push({ id: "cup", resourceId: "cup", url: "", view: "front", truth: true, addedAt: "" });
+            if (action !== "全新商品分析") product.dossier = { name: "水杯", category: "杯具", family: "generic", summary: "水杯", invariants: [], facts: [], questions: [] };
+            if (action === "明确重新识别") product.brief.prep = { asks: [{ id: "known", question: "用途", options: ["家用", "办公"], picked: [], multi: false, note: "" }], directions: [] };
+            const writes: StudioProduct[] = [];
+            const steps: string[] = [];
+            useUserStore.setState({ features: { ...useUserStore.getState().features, creditsEnabled: true } });
+            spyOn(studioApi, "getStudioWorkspace").mockResolvedValue({ revision: 1, products: [product] });
+            spyOn(studioApi, "saveStudioProduct").mockImplementation(async (updated, revision) => {
+                writes.push(structuredClone(updated));
+                return { revision: revision + 1, product: { ...updated, revision: revision + 1 } };
+            });
+            spyOn(analysisConfig, "buildEcommerceAnalysisGeneration").mockImplementation((current, model) => ({ ...current, model: model! }));
+            spyOn(generationApi, "runBackendGenerationTask").mockImplementation(async (options) => {
+                const step = String(options.metadata?.studioStep);
+                steps.push(step);
+                for (let index = 0; index < 10; index++) {
+                    options.onTaskUpdate?.(runningTask(`${step}-${steps.length}`));
+                    await useStudioStore.getState().flush(product.id);
+                }
+                return {
+                    text: JSON.stringify(step === "ask" ? { asks: [{ question: "使用场景", options: ["家用", "办公"] }] } : { name: "新识别的水杯", category: "杯具", facts: [{ group: "appearance", label: "颜色", value: "白色", evidence: "visible" }] }),
+                };
+            });
+            await useStudioStore.getState().load(true);
+            function StudioHarness() {
+                const current = useStudioStore((state) => state.products[0]);
+                return <StudioForm product={current} edit={(change, options) => useStudioStore.getState().update(current.id, change, options)} ensure={() => current.id} runner={useStudioRunner()} onGenerated={() => undefined} />;
+            }
+            host = document.createElement("div");
+            document.body.append(host);
+            root = createRoot(host);
+            await act(async () =>
+                root!.render(
+                    <MemoryRouter>
+                        <StudioHarness />
+                    </MemoryRouter>,
+                ),
+            );
+            const cost = host.querySelector(".es-form-foot .es-estimate")?.textContent || "";
+            expect(cost.includes("商品识别 ×1：1 积分")).toBe(action === "全新商品分析");
+            expect(cost).toContain("策划 ×1：1 积分");
+            expect(cost).toContain("出图 ×1");
+            await press(action === "已有档案提问" ? "AI 问我几个问题" : "AI 分析商品");
+            await useStudioStore.getState().flush(product.id);
+            const expected = action === "全新商品分析" ? ["recognize", "ask"] : [action === "已有档案提问" ? "ask" : "recognize"];
+            expect(steps).toEqual(expected);
+            expect(writes.length).toBe(expected.length * 2);
+            if (expected.includes("recognize")) expect(writes.at(-1)?.dossier?.name).toBe("新识别的水杯");
+            if (expected.includes("ask")) expect(writes.at(-1)?.brief.prep?.asks[0].question).toBe("使用场景");
+        });
+    }
+    test("生图台回执恢复：不重发旧版未确认尝试，已知任务只查询，新版超时按原请求号接回", async () => {
+        const product = createStudioProduct("receipt-studio");
+        product.photos.push({ id: "cup", resourceId: "cup", url: "", view: "front", truth: true, addedAt: "" });
+        product.brief.count = 3;
+        const run = createStudioRun(product, () => crypto.randomUUID());
+        Object.assign(run.shots[2], { role: "main-selling", composition: "left", ratio: "1:1", headline: "方便携带" });
+        product.runs.push(run);
+        const attempt = { id: "legacy", status: "submitting" as const, model: "test::image", tweaks: [], createdAt: product.createdAt, outputs: [] };
+        run.shots[0].attempts.push(attempt);
+        run.shots[1].attempts.push({ ...attempt, id: "confirmed", taskId: "known-task", status: "queued" });
+        const saved = (value: StudioProduct) => normalizeStudioProduct(JSON.parse(JSON.stringify(value)))!;
+        let persisted = saved(product);
+        spyOn(studioApi, "getStudioWorkspace").mockImplementation(async () => ({ revision: persisted.revision, products: [saved(persisted)] }));
+        spyOn(studioApi, "saveStudioProduct").mockImplementation(async (updated, revision) => {
+            persisted = saved({ ...updated, revision: revision + 1 });
+            return { revision: revision + 1, product: persisted };
+        });
+        config = { ...config, channels: [configStore.createModelChannel({ id: "test", name: "测试", baseUrl: "/api", interfaceType: "openai", models: ["image"] })] };
+        spyOn(studioGeneration, "buildStudioImageGeneration").mockImplementation((current, model) => ({ ...current, model }));
+        const done = (id: string) => ({ ...runningTask(id), type: "canvas_image", status: "succeeded" as const, resultJson: JSON.stringify({ images: [{ storageKey: "resource:output", url: "/result" }] }) });
+        const watch = spyOn(taskApi, "waitForGenerationTask").mockImplementation(async (id) => done(id));
+        const drawing = spyOn(dom.HTMLCanvasElement.prototype, "getContext").mockReturnValue({ fillRect() {} } as CanvasRenderingContext2D);
+        const upload = spyOn(resourceApi, "uploadResourceFile").mockResolvedValue(uploadedImage("layout-res"));
+        spyOn(dom.HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) => callback(new Blob(["layout"], { type: "image/png" })));
+        const submits: CreateTaskInput[] = [];
+        spyOn(taskApi, "createGenerationTask").mockRestore();
+        spyOn(http, "post").mockImplementation((async (path: string, body: CreateTaskInput) => {
+            expect(path).toBe("/tasks");
+            expect(persisted.runs[0].shots[2].attempts[0].input?.compiled.layoutGuide?.resourceId).toBe("layout-res");
+            submits.push(structuredClone(body));
+            if (submits.length === 1) throw new ApiError("网络超时", { status: 408 });
+            return done("new-task");
+        }) as typeof http.post);
+        await useStudioStore.getState().load(true);
+        const current = () => useStudioStore.getState().products[0];
+        let runner!: ReturnType<typeof useStudioRunner>;
+        function Runner() {
+            runner = useStudioRunner();
+            return null;
+        }
+        host = document.body.appendChild(document.createElement("div"));
+        root = createRoot(host);
+        await act(async () => root!.render(<Runner />));
+        await act(async () => runner.resume(current()));
+        expect(submits).toHaveLength(0);
+        expect(watch.mock.calls.map(([id]) => id)).toEqual(["known-task"]);
+        expect(current().runs[0].shots[0].attempts[0].error).toContain("任务中心");
+        await act(async () => {
+            await runner.rerun(product.id, { runId: run.id }, [run.shots[2].id], attempt.model);
+        });
+        const pending = current().runs[0].shots[2].attempts[0];
+        expect({ requests: submits.length, taskId: pending.taskId, status: pending.status, error: pending.error }).toMatchObject({ requests: 1, status: "submitting", error: expect.stringContaining("待核对") });
+        expect(pending.status).toBe("submitting");
+        expect(pending.error).toContain("待核对");
+        expect(pending.input?.compiled.layoutGuide?.resourceId).toBe("layout-res");
+        expect(upload.mock.calls[0]?.[2]?.idempotencyKey).toBe(`studio-layout:${pending.id}`);
+        await useStudioStore.getState().flush(product.id);
+        await act(async () => root!.unmount());
+        await useStudioStore.getState().load(true);
+        root = createRoot(host);
+        await act(async () => root!.render(<Runner />));
+        await act(async () => runner.resume(current()));
+        expect(submits).toHaveLength(2);
+        expect(submits[1]).toEqual(submits[0]);
+        expect(submits[0]).toMatchObject({ idempotencyKey: pending.id, input: { prompt: pending.input!.compiled.prompt, referenceImages: [{ storageKey: "resource:cup" }, { storageKey: "resource:layout-res" }] } });
+        expect(current().runs[0].shots[2].attempts[0].taskId).toBe("new-task");
+        expect(upload).toHaveBeenCalledTimes(1);
+        expect(drawing).toHaveBeenCalledTimes(1);
+        expect(current().runs[0].shots[0].attempts[0].taskId).toBeUndefined();
+    });
     test("发送后从对话反复拖图复用原资源，连续导入不清空对话且刷新保留已发送快照", async () => {
         const observer = Object.getOwnPropertyDescriptor(globalThis, "IntersectionObserver");
         Object.defineProperty(globalThis, "IntersectionObserver", { value: undefined, configurable: true });

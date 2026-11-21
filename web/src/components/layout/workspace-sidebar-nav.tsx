@@ -77,6 +77,8 @@ const COLLAPSED_TITLE_KEYS: Record<string, string> = {
     plugins: "nav.collapsed.plugins",
     tasks: "nav.collapsed.tasks",
     "video-replication": "nav.collapsed.videoReplication",
+    "ecommerce-studio": "nav.collapsed.ecommerceStudio",
+    ecommerce: "nav.collapsed.ecommerceAgent",
     interior: "nav.collapsed.interior",
     packaging: "nav.collapsed.packaging",
 };
@@ -298,9 +300,9 @@ function NavItem({
                     aria-label={collapsed ? item.title : undefined}
                     title={collapsed ? item.title : undefined}
                     onClick={handleClick}
-                    onFocus={() => preloadWorkspaceRoute(linkTo)}
+                    onFocus={() => preloadWorkspaceRoute(linkTo, "preview")}
                     onPointerDown={() => preloadWorkspaceRoute(linkTo)}
-                    onPointerEnter={() => preloadWorkspaceRoute(linkTo)}
+                    onPointerEnter={() => preloadWorkspaceRoute(linkTo, "preview")}
                 >
                     {activePill}
                     {rowContent}

@@ -2,7 +2,9 @@ import { App, Button, Dropdown, Spin, Tooltip } from "antd";
 import { saveAs } from "file-saver";
 import { CircleStop, Download, Ellipsis, ImageOff, ImagePlus, Maximize2, RefreshCw, Rows3, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import { getActiveUserScope } from "@/lib/user-scope";
+import { workspacePath } from "@/lib/workspace-routes";
 import { RelativeTime } from "@/components/ui/product/relative-time";
 import { TaskSettlement } from "@/components/generation-cost-notice";
 import { ImageGenerationPack } from "@/components/image-pack/image-generation-pack";
@@ -10,7 +12,7 @@ import { ImagePackNoticeArtwork } from "@/components/image-pack/image-pack-notic
 import { ImagePackProgress } from "@/components/image-pack/image-pack-progress";
 import { ecommercePlatform } from "@/lib/ecommerce/ecommerce-platform-specs";
 import { studioDisplayName } from "@/lib/ecommerce-studio/brief";
-import { studioAttemptActive, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
+import { studioAttemptActive, studioAttemptNeedsReview, studioPlanOf, studioShotLatestAttempt, studioShotOutputs, studioShotPreview } from "@/lib/ecommerce-studio/product";
 import { studioRunTitle } from "@/lib/ecommerce-studio/runs";
 import { STUDIO_PLAN_META } from "@/lib/ecommerce-studio/shot-specs";
 import type { StudioAttemptStatus, StudioOutput, StudioPlan, StudioPlanKind, StudioProduct, StudioShot, StudioTextMode } from "@/lib/ecommerce-studio/types";
@@ -155,6 +157,14 @@ export function ResultTile({
     const latest = studioShotLatestAttempt(shot);
     const preview = studioShotPreview(shot);
     const active = Boolean(latest && studioAttemptActive(latest));
+    const review = latest && studioAttemptNeedsReview(latest);
+    const syncAction = review ? (
+        <Link to={workspacePath("/tasks")}>到任务中心核对</Link>
+    ) : latest?.error ? (
+        <Button size="small" onClick={onSync}>
+            重新查询
+        </Button>
+    ) : null;
     const failed = latest && (latest.status === "failed" || latest.status === "cancelled") && !active;
     const status = latest?.status || "idle";
     return (
@@ -162,16 +172,10 @@ export function ResultTile({
             {/* 出好的图按实际宽高显示：模型给的比例和要求的不一样时也不裁掉。 */}
             <div className="es-tile" style={ratioStyle(preview?.width && preview.height ? `${preview.width}:${preview.height}` : shot.ratio)} data-state={preview ? "done" : active ? "active" : failed ? "failed" : "idle"}>
                 <ImageGenerationPack
-                    pending={active}
+                    pending={active && !review}
                     succeeded={status === "succeeded" && Boolean(latest?.outputs.some((output) => output.resourceId === preview?.resourceId))}
                     label={<ImagePackProgress task={{ status: status === "queued" ? "queued" : "running", createdAt: latest?.createdAt }} phase={status === "submitting" ? "submitting" : undefined} />}
-                    pendingActions={
-                        latest?.error ? (
-                            <Button size="small" onClick={onSync}>
-                                重新查询
-                            </Button>
-                        ) : undefined
-                    }
+                    pendingActions={syncAction}
                 >
                     {preview ? (
                         <button type="button" data-image-pack-result className="es-tile-image" onClick={onView} aria-label={`查看${shot.title}`}>
@@ -180,18 +184,14 @@ export function ResultTile({
                     ) : null}
                     {!preview && active ? (
                         <div className="es-tile-state">
-                            <Spin size="small" />
-                            <span>{STATUS_LABEL[status]}</span>
-                            {latest?.error ? (
-                                <>
-                                    <span className="es-tile-error" role="status">
-                                        {latest.error}
-                                    </span>
-                                    <Button size="small" onClick={onSync}>
-                                        重新查询
-                                    </Button>
-                                </>
-                            ) : null}
+                            {!review && <Spin size="small" />}
+                            <span>{review ? "回执待核对" : STATUS_LABEL[status]}</span>
+                            {latest?.error && (
+                                <span className="es-tile-error" role="status">
+                                    {latest.error}
+                                </span>
+                            )}
+                            {syncAction}
                         </div>
                     ) : null}
                     {!preview && !active && failed ? (
@@ -221,12 +221,8 @@ export function ResultTile({
                 </ImageGenerationPack>
                 {preview && active ? (
                     <span className="es-tile-badge">
-                        <Spin size="small" /> {STATUS_LABEL[status]}
-                        {latest?.error ? (
-                            <Button size="small" onClick={onSync}>
-                                重新查询
-                            </Button>
-                        ) : null}
+                        {!review && <Spin size="small" />} {review ? "回执待核对" : STATUS_LABEL[status]}
+                        {syncAction}
                     </span>
                 ) : null}
                 {preview ? (

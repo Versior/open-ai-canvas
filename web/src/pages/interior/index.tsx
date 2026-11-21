@@ -569,10 +569,14 @@ export default function InteriorPage() {
             />
         ) : null;
     const boardHeader = (
-        <header className="itd-board-head">
-            {projectBar}
-            <div className="itd-board-switches">{surfaceSwitch}</div>
-        </header>
+        <>
+            <header className="itd-board-head">
+                {projectBar}
+                <div className="itd-board-switches">{surfaceSwitch}</div>
+            </header>
+            {projects.listError ? <WorkspaceErrorState compact title="项目列表读取失败" description={projects.listError} onRetry={() => void projects.reloadList()} /> : null}
+            {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError.message} onRetry={() => openProject(projects.projectError!.projectId)} /> : null}
+        </>
     );
 
     const projectDialog = (
@@ -694,8 +698,6 @@ export default function InteriorPage() {
                 <section className="itd-board" aria-label="出图记录">
                     {boardHeader}
                     <div className="itd-board-scroll thin-scrollbar">
-                        {projects.listError ? <WorkspaceErrorState compact title="项目列表读取失败" description={projects.listError} onRetry={() => void projects.reloadList()} /> : null}
-                        {projects.projectError ? <WorkspaceErrorState compact title="项目读取失败" description={projects.projectError} onRetry={() => (current ? openProject(current.id) : void projects.reloadList())} /> : null}
                         {projects.projectLoading && !current ? (
                             <WorkspaceLoadingState label="正在读取项目" rows={2} />
                         ) : (

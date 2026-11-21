@@ -453,36 +453,37 @@ function CanvasViewportPage() {
         [cleanupAssetImages, getHistoryCleanupContext],
     );
 
-    const { loadError, retryLoad, addedSkills, agentFocus, clearCanvasFiles, createAndOpenProject, currentProject, deleteCurrentProject, renameCurrentProject, saveCanvasProject, persistLocalEdits, updateProject } = useCanvasProjectLifecycle({
-        projectId,
-        projectLoaded,
-        nodes,
-        connections,
-        chatSessions,
-        activeChatId,
-        canvasAppearance,
-        backgroundMode,
-        showImageInfo,
-        viewport,
-        nodesRef,
-        connectionsRef,
-        chatSessionsRef,
-        activeChatIdRef,
-        viewportRef,
-        historyPausedRef,
-        setNodes,
-        setConnections,
-        setChatSessions,
-        setActiveChatId,
-        setCanvasAppearance,
-        setBackgroundMode,
-        setShowImageInfo,
-        setViewport,
-        setProjectLoaded,
-        resetHistory,
-        cleanupAssetImages,
-        cleanupCanvasFiles,
-    });
+    const { loadError, retryLoad, addedSkills, agentFocus, clearCanvasFiles, createAndOpenProject, currentProject, deleteCurrentProject, renameCurrentProject, saveCanvasProject, saveForSharing, persistLocalEdits, updateProject } =
+        useCanvasProjectLifecycle({
+            projectId,
+            projectLoaded,
+            nodes,
+            connections,
+            chatSessions,
+            activeChatId,
+            canvasAppearance,
+            backgroundMode,
+            showImageInfo,
+            viewport,
+            nodesRef,
+            connectionsRef,
+            chatSessionsRef,
+            activeChatIdRef,
+            viewportRef,
+            historyPausedRef,
+            setNodes,
+            setConnections,
+            setChatSessions,
+            setActiveChatId,
+            setCanvasAppearance,
+            setBackgroundMode,
+            setShowImageInfo,
+            setViewport,
+            setProjectLoaded,
+            resetHistory,
+            cleanupAssetImages,
+            cleanupCanvasFiles,
+        });
 
     const openAgent = useCallback(() => {
         if (workspaceTeamId) {
@@ -3058,7 +3059,9 @@ function CanvasViewportPage() {
                             ) : null}
 
                             {batchReferencePickerModal}
-                            {!workspaceTeamId && <CanvasShareModal projectId={projectId} open={shareModalOpen} onClose={() => setShareModalOpen(false)} beforeCreate={saveCanvasProject} />}
+                            {!workspaceTeamId && shareModalOpen && (
+                                <CanvasShareModal key={projectId} projectId={projectId} localOnly={currentProject?.revision === 0 && !currentProject.remoteContentHash} onClose={() => setShareModalOpen(false)} beforeCreate={saveForSharing} />
+                            )}
                             {libTVImportOpen ? (
                                 <Suspense fallback={null}>
                                     <LibTVImportDialog

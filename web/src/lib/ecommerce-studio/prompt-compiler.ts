@@ -88,7 +88,7 @@ export type StudioCompiledPrompt = {
     /** 模型能接收的参考图不够时，没带上的参考图说明。 */
     referenceNotice?: string;
     /** 生成前的区域参考；不替代商品真值，也不用于生成后的文字合成。 */
-    layoutGuide?: { composition: StudioCompositionId; ratio: string };
+    layoutGuide?: { composition: StudioCompositionId; ratio: string; resourceId?: string };
     /** 因长度上限被裁掉的层。 */
     trimmed: StudioPromptLayerId[];
 };

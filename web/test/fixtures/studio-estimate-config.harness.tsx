@@ -56,7 +56,8 @@ const base: NonNullable<StudioAttempt["input"]> = {
 const square = { ...base, compiled: { ...base.compiled, references: [{ id: "a", resourceId: "a", url: "/api/resources/a/file", view: "front" as const, truth: true, addedAt: "2026-11-09" }] } };
 const portrait = { ...square, compiled: { ...square.compiled, modelReferences: square.compiled.references }, request: { imageSettings: { size: "1024x1536", quality: "high" } } };
 function Probe({ inputs }: { inputs: NonNullable<StudioAttempt["input"]>[] }) {
-    return <span>{useStudioEstimate({ model, inputs })}</span>;
+    const estimate = useStudioEstimate({ model, inputs });
+    return <span data-first={estimate.first}>{estimate.all}</span>;
 }
 afterAll(async () => {
     await act(async () => root.unmount());
@@ -66,6 +67,7 @@ afterAll(async () => {
 test("mixed image specifications are quoted individually and identical ones share a quote", async () => {
     await act(async () => root.render(<Probe inputs={[square, square, portrait]} />));
     expect(host.textContent).toBe("预计约 17 积分");
+    expect(host.querySelector("span")?.getAttribute("data-first")).toBe("预计约 3 积分");
     expect(quoted).toHaveLength(2);
     expect(quoted.map((request) => [request.intent.options?.size, request.intent.inputs?.image])).toEqual([
         ["1024x1024", 1],
@@ -73,6 +75,13 @@ test("mixed image specifications are quoted individually and identical ones shar
     ]);
     await act(async () => root.render(<Probe inputs={structuredClone([square, square, portrait])} />));
     expect(quoted).toHaveLength(2);
+});
+
+test("按实际像素计价的首屏和整套显示各自的预占上限而非固定价格", async () => {
+    reply = async () => ({ quote: { billingMode: "image_usage", amountMicrocredits: 11_000_000 } });
+    await act(async () => root.render(<Probe inputs={[portrait, portrait]} />));
+    expect(host.querySelector("span")?.getAttribute("data-first")).toContain("最多冻结 11 积分");
+    expect(host.textContent).toContain("最多冻结 22 积分");
 });
 
 test("a late quote cannot replace the estimate for the new specifications", async () => {

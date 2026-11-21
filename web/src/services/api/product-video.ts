@@ -16,29 +16,29 @@ export function normalizeStoredWork(value: unknown): StoredWork | undefined {
     return version === REMAKE_VERSION ? normalizeRemakeJob(value) : normalizeProductVideoJob(value);
 }
 
-export async function listProductVideos(signal?: AbortSignal): Promise<StoredWork[]> {
+export async function listProductVideos(signal?: AbortSignal) {
     const data = await http.get<{ revision: number; items: unknown[] }>("/ecommerce/product-videos", { signal, timeout: 15000 });
-    return (Array.isArray(data.items) ? data.items : []).map(normalizeStoredWork).filter((item): item is StoredWork => Boolean(item));
+    return { revision: data.revision, items: (Array.isArray(data.items) ? data.items : []).map(normalizeStoredWork).filter((item): item is StoredWork => Boolean(item)) };
 }
 
-export async function getProductVideo(id: string, signal?: AbortSignal): Promise<StoredWork> {
+export async function getProductVideo(id: string, signal?: AbortSignal) {
     const data = await http.get<{ revision: number; item: unknown }>(`/ecommerce/product-videos/${encodeURIComponent(id)}`, { signal });
     const item = normalizeStoredWork(data.item);
     if (!item) throw new Error("服务端返回的作品数据无法识别");
-    return item;
+    return { revision: data.revision, item };
 }
 
 /** 按 expectedRevision 比较交换保存整条作品；返回服务端写入后的版本（带新的 revision）。 */
-export async function saveProductVideo(job: StoredWork, expectedRevision: number): Promise<StoredWork> {
+export async function saveProductVideo(job: StoredWork, expectedRevision: number) {
     const { revision: _revision, ...item } = job;
     const data = await http.put<{ revision: number; item: unknown }>(`/ecommerce/product-videos/${encodeURIComponent(job.id)}`, { item, expectedRevision });
     const saved = normalizeStoredWork(data.item);
     if (!saved) throw new Error("服务端返回的作品数据无法识别");
-    return saved;
+    return { revision: data.revision, item: saved };
 }
 
 export async function deleteProductVideo(id: string) {
-    await http.delete<{ revision: number }>(`/ecommerce/product-videos/${encodeURIComponent(id)}`);
+    return http.delete<{ revision: number }>(`/ecommerce/product-videos/${encodeURIComponent(id)}`);
 }
 
 /** ranges 不为空时按给定的几段原样切（复刻工作台的换元素单元），不检测切点。 */

@@ -141,6 +141,7 @@ type EcommercePlanTask struct {
 	Resolution           string                    `json:"resolution"`
 	SkuID                string                    `json:"skuId,omitempty"`
 	TaskID               string                    `json:"taskId,omitempty"`
+	OperationID          string                    `json:"operationId,omitempty"`
 	ReferenceScreen      *EcommerceReferenceScreen `json:"referenceScreen,omitempty"`
 	// RoundID is attached only when serving archived rounds, so the client can
 	// address a history edit without re-reading the whole project.

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Activity, useEffect, useState, type ReactNode } from "react";
 import { Button } from "antd";
 import { useNavigate } from "react-router";
 
@@ -35,42 +35,44 @@ const featureNames: Record<FeatureKey, string> = {
 };
 
 export function RequireFeature({ feature, children }: { feature: FeatureKey; children: ReactNode }) {
+    const userId = useUserStore((state) => state.user?.id);
+    if (!userId) return children;
+    return (
+        <SignedInFeature key={`${userId}:${feature}`} feature={feature}>
+            {children}
+        </SignedInFeature>
+    );
+}
+
+function SignedInFeature({ feature, children }: { feature: FeatureKey; children: ReactNode }) {
     const navigate = useNavigate();
-    const user = useUserStore((state) => state.user);
-    const features = useUserStore((state) => state.features);
+    const enabled = useUserStore((state) => state.features[feature]);
     const [checking, setChecking] = useState(() => !useUserStore.getState().features[feature]);
     const [error, setError] = useState("");
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
-        if (!user) return;
-        let cancelled = false;
-        setError("");
-        refreshFeatureAvailability()
+        const controller = new AbortController();
+        refreshFeatureAvailability(controller.signal)
+            .then(() => {
+                if (!controller.signal.aborted) setError("");
+            })
             .catch((reason) => {
-                if (!cancelled) setError(reason instanceof Error ? reason.message : "读取功能开放状态失败");
+                if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "读取功能开放状态失败");
             })
             .finally(() => {
-                if (!cancelled) setChecking(false);
+                if (!controller.signal.aborted) setChecking(false);
             });
-        return () => {
-            cancelled = true;
-        };
-    }, [feature, user?.id]);
+        return () => controller.abort();
+    }, [attempt]);
 
-    if (!user) return children;
-    if (checking)
+    if (checking && !error)
         return (
             <WorkspacePage>
                 <WorkspaceLoadingState label="正在确认功能状态" detail={featureNames[feature]} rows={3} />
             </WorkspacePage>
         );
-    if (error)
-        return (
-            <WorkspacePage>
-                <WorkspaceErrorState title="无法确认功能状态" description={error} actionLabel="返回创作台" onRetry={() => navigate("/", { replace: true })} />
-            </WorkspacePage>
-        );
-    if (!features[feature]) {
+    if (!enabled && !error) {
         // 管理员页面返回到管理后台首页，用户页面返回到创作台
         const isAdminFeature = feature === "frontendModelsEnabled";
         const backPath = isAdminFeature ? "/admin" : "/";
@@ -92,5 +94,24 @@ export function RequireFeature({ feature, children }: { feature: FeatureKey; chi
             </WorkspacePage>
         );
     }
-    return children;
+    return (
+        <>
+            {enabled ? <Activity mode={error ? "hidden" : "visible"}>{children}</Activity> : null}
+            {error ? (
+                <WorkspacePage>
+                    <WorkspaceErrorState
+                        title="无法确认功能状态"
+                        description={error}
+                        actionLabel={checking ? "正在重试…" : "重新确认"}
+                        onRetry={() => {
+                            if (!checking) {
+                                setChecking(true);
+                                setAttempt((previous) => previous + 1);
+                            }
+                        }}
+                    />
+                </WorkspacePage>
+            ) : null}
+        </>
+    );
 }

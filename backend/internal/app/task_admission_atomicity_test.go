@@ -38,7 +38,7 @@ func TestCreateTextReplayTaskRejectsForeignProject(t *testing.T) {
 		ProjectID: "foreign-project",
 		Type:      "canvas_text",
 		Prompt:    "draft",
-	}, map[string]any{"replay": true, "prompt": "draft"})
+	}, map[string]any{"replay": true, "prompt": "draft"}, nil)
 	if err == nil {
 		t.Fatal("createTextReplayTask() accepted another user's project")
 	}

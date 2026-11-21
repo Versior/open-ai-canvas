@@ -50,7 +50,8 @@ import { StudioShotList, type StudioPlannedScreenPatch } from "./studio-shot-lis
 import { StudioSuitePicker } from "./studio-suite-picker";
 import { StudioUploadBox, useStudioUploads } from "./studio-uploads";
 import { studioImageFiles } from "./studio-upload";
-import { useStudioEstimate } from "./use-studio-estimate";
+import { useStudioEstimate, useStudioTextEstimate } from "./use-studio-estimate";
+import { commerceReferenceViewRanges } from "@/pages/ecommerce/reference-plan";
 import { useStudioAnalysis, type StudioRunner } from "./use-studio-runner";
 
 type Edit = (updater: (product: StudioProduct) => StudioProduct, options?: { immediate?: boolean }) => void;
@@ -333,7 +334,6 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
 
     /** AI 问几个只有卖家知道的问题。quiet 时是识别商品之后自动接着问的。 */
     const runAsk = async (quiet = false) => {
-        if (!(await prepare())) return false;
         try {
             const asks = await runner.ask(ensure(), text.value);
             message.success(`${quiet ? "识别好了，" : ""}问了 ${asks.length} 个问题，点选答案就行，答得越多策划越准`);
@@ -378,6 +378,23 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
     // 文案直接用卖点原文，是最普通的出法。「不策划，直接生成」跳过这一步。
     const lazyPlan = scope === "single" || scope === "template";
     const planBeforeGenerate = lazyPlan && !activePlan && Boolean(text.value);
+    const needsRecognition = planBeforeGenerate && !product.dossier && textSeesPhotos;
+    const fillCount = Math.min(product.photos.length, modelCapabilityConfigFor(text.config, text.value).text?.references.maxImages || product.photos.length);
+    const recognitionQuote = useStudioTextEstimate(text.value, needsRecognition ? fillCount : null);
+    let planInputCount: number | null = planningImages.images.length;
+    for (const ref of planningImages.references) {
+        if (!ref.width || !ref.height) {
+            planInputCount = null;
+            break;
+        }
+        try {
+            planInputCount += commerceReferenceViewRanges(ref.width, ref.height).length;
+        } catch {
+            planInputCount = null;
+            break;
+        }
+    }
+    const planQuote = useStudioTextEstimate(text.value, planBeforeGenerate ? planInputCount : null);
     const generate = async ({ direct = false, firstOnly = false } = {}) => {
         if (!requireLogin()) return;
         if (blocked) return void message.warning(blocked);
@@ -415,7 +432,9 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
             asking={asking}
             directing={directing}
             disabled={Boolean(user) && (!product.photos.length || Boolean(running && running !== "ask" && running !== "directions"))}
-            onAsk={() => void runAsk()}
+            onAsk={async () => {
+                if (await prepare()) await runAsk();
+            }}
             onDirections={() => void runDirections()}
         />
     );
@@ -814,7 +833,15 @@ export function StudioForm({ product, edit, ensure, runner, onGenerated }: { pro
                         {copyProblem.entry.title}：{copyProblem.issue}
                     </span>
                 ) : null}
-                <span className="es-estimate">{estimate}</span>
+                {estimate.all ? (
+                    <span className="es-estimate" aria-live="polite">
+                        {planBeforeGenerate
+                            ? `${needsRecognition ? `商品识别 ×1：${recognitionQuote || "报价中"}；` : ""}策划 ×1：${planQuote || (planInputCount === null ? "按实际参考图另行报价" : "报价中")}；策划成功后按最终方案出图。当前规格参考：`
+                            : ""}
+                        {scope === "detail" && activePlan && images > 1 ? `先试首屏 ×1：${estimate.first}；` : ""}
+                        出图 ×{images}：{estimate.all}
+                    </span>
+                ) : null}
                 <Button size="large" icon={<RotateCcw size={15} />} onClick={() => edit((current) => ({ ...current, brief: resetStudioBriefParameters(current.brief) }))}>
                     重置参数
                 </Button>

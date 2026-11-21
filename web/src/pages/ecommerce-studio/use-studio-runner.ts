@@ -13,12 +13,11 @@ import { buildStudioImageGeneration, compileStudioShot, locateStudioShot, studio
 import { studioReferencePhotos } from "@/lib/ecommerce-studio/prompt-compiler";
 import { studioPlanInputSignature } from "@/lib/ecommerce-studio/plan-input";
 import { studioPlanningImages } from "@/lib/ecommerce-studio/reference-selection";
-import { patchStudioShot, studioAttemptActive, studioShotPreview, studioGenerationSource } from "@/lib/ecommerce-studio/product";
+import { patchStudioShot, studioAttemptActive, studioAttemptNeedsReview, studioShotPreview, studioGenerationSource } from "@/lib/ecommerce-studio/product";
 import { appendStudioRun, createStudioRun, patchStudioRunShot, studioActivePlan, studioPlanScopeOf, studioSingleTargets, trimStudioRuns } from "@/lib/ecommerce-studio/runs";
 import { studioFactUsable, type StudioAsk, type StudioAttempt, type StudioAttemptStatus, type StudioDirection, type StudioOutput, type StudioPhoto, type StudioProduct, type StudioShot } from "@/lib/ecommerce-studio/types";
 import { modelCapabilityConfigFor } from "@/lib/model-capabilities";
 import { getActiveUserScope } from "@/lib/user-scope";
-import { ApiError } from "@/services/api/request";
 import { runBackendGenerationTask, submitBackendGenerationTask } from "@/services/api/generation-task";
 import { resourceStorageKey } from "@/services/api/resources";
 import { emptyEcommerceDraft } from "@/services/api/ecommerce";
@@ -27,6 +26,7 @@ import { useEffectiveConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
 import { workbenchTaskOutputs } from "@/pages/workbench/workbench-batches";
+import { commerceSubmissionKeyConflict, commerceSubmissionRejected } from "@/pages/ecommerce/generation-slot";
 import { prepareCommerceReferenceViews } from "@/pages/ecommerce/long-reference-media";
 import { useStudioStore } from "./use-studio-store";
 import { studioLayoutGuideReference } from "./studio-layout-guide";
@@ -39,6 +39,7 @@ import { studioLayoutGuideReference } from "./studio-layout-guide";
  */
 const MAX_PARALLEL = 4;
 const MAX_ATTEMPTS = 8;
+const REVIEW_RECEIPT = "无法确认原请求的回执，已停止重新提交。请先到任务中心核对，不要重复生成";
 
 /** 镜头在哪：表单记录（runId）或助手方案（planKind）。 */
 export { compileStudioShot, locateStudioShot, type StudioShotRef, type StudioLocatedShot } from "@/lib/ecommerce-studio/generation-input";
@@ -48,7 +49,7 @@ const watching = new Set<string>();
 const submitting = new Set<string>();
 const uncertain = new Set<string>();
 const waiting = new Map<string, { productId: string; ref: StudioShotRef; shotId: string }>();
-const jobs: { attemptId: string; owner: symbol; run: () => Promise<void> }[] = [];
+const jobs: { attemptId: string; owner: symbol; recovering: boolean; run: () => Promise<void> }[] = [];
 
 function concurrency() {
     const limit = useUserStore.getState().runtimeLimits.activeTaskLimit;
@@ -208,7 +209,8 @@ export function useStudioRunner() {
             for (const job of dropped) {
                 const entry = waiting.get(job.attemptId);
                 waiting.delete(job.attemptId);
-                if (entry) update(entry.productId, (product) => patchAttempt(product, entry.ref, entry.shotId, job.attemptId, { status: "failed", error: "离开页面时还没提交，点重试再生成", completedAt: new Date().toISOString() }), { immediate: true });
+                if (entry && !job.recovering)
+                    update(entry.productId, (product) => patchAttempt(product, entry.ref, entry.shotId, job.attemptId, { status: "failed", error: "离开页面时还没提交，点重试再生成", completedAt: new Date().toISOString() }), { immediate: true });
             }
             for (const id of ownedAttempts.current) uncertain.delete(id);
             ownedAttempts.current.clear();
@@ -223,6 +225,13 @@ export function useStudioRunner() {
             return product;
         },
         [scope],
+    );
+
+    const rememberAnalysisTask = useCallback(
+        (productId: string, task: GenerationTask) => {
+            if (read(productId).lastAnalysisTaskId !== task.id) update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true });
+        },
+        [read, update],
     );
 
     /** 看图识别并填表：建档、品牌、类型、主标题和卖点一次写好。已经填过的字段不覆盖，档案里卖家确认过的信息保留。 */
@@ -252,7 +261,7 @@ export function useStudioRunner() {
                     referenceImages: photos.map(photoReference),
                     streamText: false,
                     metadata: studioAnalysisMetadata(productId, "recognize", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }),
-                    onTaskUpdate: (task) => update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true }),
+                    onTaskUpdate: (task) => rememberAnalysisTask(productId, task),
                 });
                 const parsed = parseFill(result.text || "", () => nanoid(10), generation.model);
                 const info = parsed.sellingPoints
@@ -284,7 +293,7 @@ export function useStudioRunner() {
                 );
                 return { ...parsed, info, infoKept, openQuestions, unsureFacts };
             }),
-        [read, update],
+        [read, rememberAnalysisTask, scope, update],
     );
 
     /**
@@ -326,7 +335,7 @@ export function useStudioRunner() {
                     // 服务端按策划范围取知识：主图取主图规范，详情页取详情页叙事，模板套图按模板用途取，单张图按选中的类型带打法；
                     // 品类大类用来在同类爆款套图对不上时取同大类的参考，档案里的材质用来挑布光方法。
                     metadata: { ...studioAnalysisMetadata(productId, "plan", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
-                    onTaskUpdate: (task) => update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true }),
+                    onTaskUpdate: (task) => rememberAnalysisTask(productId, task),
                 });
                 const parsed = parseDetailPlan(result.text || "", product, roles, { id: nanoid(10), model: generation.model, createdAt: new Date().toISOString() }, request);
                 const field = STUDIO_PLAN_FIELD[planScope];
@@ -344,7 +353,7 @@ export function useStudioRunner() {
                 if (outdated) throw new Error(staleMessage);
                 return parsed;
             }),
-        [read, update],
+        [read, rememberAnalysisTask, scope, update],
     );
 
     /**
@@ -366,7 +375,7 @@ export function useStudioRunner() {
                     referenceImages: images.map(photoReference),
                     streamText: false,
                     metadata: studioAnalysisMetadata(productId, "ask", knowledgeContext(product)),
-                    onTaskUpdate: (task) => update(productId, (value) => ({ ...value, lastAnalysisTaskId: task.id }), { immediate: true }),
+                    onTaskUpdate: (task) => rememberAnalysisTask(productId, task),
                 });
                 const asks = parseAsks(result.text || "", () => nanoid(10));
                 update(
@@ -383,7 +392,7 @@ export function useStudioRunner() {
                 );
                 return asks;
             }),
-        [read, update],
+        [read, rememberAnalysisTask, scope, update],
     );
 
     /** 给 3 个视角方案：带上卖家补充、电商知识库和同类爆款套图；新的一批替换原来的，原来挑的方向清掉。 */
@@ -476,7 +485,7 @@ export function useStudioRunner() {
     );
 
     const submit = useCallback(
-        async (productId: string, ref: StudioShotRef, shotId: string, attemptId: string, imageModel: string) => {
+        async (productId: string, ref: StudioShotRef, shotId: string, attemptId: string, imageModel: string, recovering = false) => {
             waiting.delete(attemptId);
             uncertain.delete(attemptId);
             submitting.add(attemptId);
@@ -489,9 +498,8 @@ export function useStudioRunner() {
                 if (!located) throw new Error("这张图已不在记录里");
                 const current = configRef.current;
                 const attempt = located.shot.attempts.find((item) => item.id === attemptId);
-                if (!attempt || !studioAttemptActive(attempt)) return;
-                const input = attempt.input ?? studioImageInput(product, located, imageModel, current, attempt.revisionResourceId);
-                if (!attempt.input) update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { input }));
+                if (!attempt || !studioAttemptActive(attempt) || !attempt.replaySafe || !attempt.input) return;
+                const input = attempt.input;
                 await useStudioStore.getState().flush(productId);
                 const saved = locateStudioShot(read(productId), ref, shotId)?.shot.attempts.find((item) => item.id === attemptId);
                 if (!saved || !studioAttemptActive(saved)) throw new Error("这次生成已不在记录里");
@@ -499,7 +507,15 @@ export function useStudioRunner() {
                 // 布局草图排最后，不挤掉商品、模特或卖家参考的名额。
                 const references = [...compiled.references, ...compiled.modelReferences, ...compiled.styleReferences].map(photoReference);
                 if (compiled.revisionReference) references.push(photoReference(compiled.revisionReference));
-                if (compiled.layoutGuide) references.push(studioLayoutGuideReference(compiled.layoutGuide));
+                if (compiled.layoutGuide) {
+                    const guide = await studioLayoutGuideReference(compiled.layoutGuide, attemptId, scope, submission.signal);
+                    if (!compiled.layoutGuide.resourceId) {
+                        const stable = { ...input, compiled: { ...compiled, layoutGuide: { ...compiled.layoutGuide, resourceId: guide.resourceId } } };
+                        update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { input: stable }));
+                        await useStudioStore.getState().flush(productId);
+                    }
+                    references.push(guide.image);
+                }
                 const generation = buildStudioImageGeneration(current, imageModel, input, shotId);
                 const task = await serializeSubmit(() => {
                     if (submission.signal.aborted || getActiveUserScope() !== scope) throw new DOMException("提交已中止", "AbortError");
@@ -520,7 +536,11 @@ export function useStudioRunner() {
                 await watch(productId, ref, shotId, attemptId, task.id, task);
             } catch (error) {
                 if (submission.signal.aborted || getActiveUserScope() !== scope) return;
-                if (requested && !(error instanceof ApiError && typeof error.status === "number" && error.status >= 400 && error.status < 500)) {
+                if (requested && commerceSubmissionKeyConflict(error)) {
+                    update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { replaySafe: undefined, error: REVIEW_RECEIPT }), { immediate: true });
+                    return;
+                }
+                if (recovering || (requested && !commerceSubmissionRejected(error))) {
                     uncertain.add(attemptId);
                     update(productId, (value) => patchAttempt(value, ref, shotId, attemptId, { error: "提交状态待核对，重新查询会使用同一个请求编号恢复" }), { immediate: true });
                     return;
@@ -544,6 +564,7 @@ export function useStudioRunner() {
                 shotId,
                 attempt: {
                     id: nanoid(12),
+                    replaySafe: true,
                     status: "submitting" as const,
                     model: imageModel,
                     textMode: "model" as const,
@@ -586,7 +607,7 @@ export function useStudioRunner() {
             for (const { shotId, attempt } of attempts) {
                 ownedAttempts.current.add(attempt.id);
                 waiting.set(attempt.id, { productId, ref, shotId });
-                jobs.push({ attemptId: attempt.id, owner: activeOwner, run: () => submit(productId, ref, shotId, attempt.id, imageModel) });
+                jobs.push({ attemptId: attempt.id, owner: activeOwner, recovering: false, run: () => submit(productId, ref, shotId, attempt.id, imageModel) });
             }
             pump();
         },
@@ -632,7 +653,6 @@ export function useStudioRunner() {
         [enqueue, read],
     );
 
-    /** 回到页面时接着同步还在跑的任务；提交中途断开的记录标为失败，让用户重试。 */
     const resume = useCallback(
         (product: StudioProduct) => {
             const groups: { ref: StudioShotRef; shots: StudioShot[] }[] = [
@@ -645,17 +665,21 @@ export function useStudioRunner() {
                         if (!studioAttemptActive(attempt)) continue;
                         if (attempt.taskId) void watch(product.id, ref, shot.id, attempt.id, attempt.taskId);
                         else if (!watching.has(attempt.id) && !submitting.has(attempt.id) && !waiting.has(attempt.id)) {
+                            if (studioAttemptNeedsReview(attempt)) {
+                                if (attempt.error !== REVIEW_RECEIPT) update(product.id, (value) => patchAttempt(value, ref, shot.id, attempt.id, { error: REVIEW_RECEIPT }), { immediate: true });
+                                continue;
+                            }
                             ownedAttempts.current.add(attempt.id);
                             uncertain.delete(attempt.id);
                             waiting.set(attempt.id, { productId: product.id, ref, shotId: shot.id });
-                            jobs.push({ attemptId: attempt.id, owner: owner.current, run: () => submit(product.id, ref, shot.id, attempt.id, attempt.model) });
+                            jobs.push({ attemptId: attempt.id, owner: owner.current, recovering: true, run: () => submit(product.id, ref, shot.id, attempt.id, attempt.model, true) });
                         }
                     }
                 }
             }
             pump();
         },
-        [submit, watch],
+        [submit, update, watch],
     );
 
     return { fill, ask, directions, plan, generate, rerun, resume };

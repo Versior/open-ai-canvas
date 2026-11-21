@@ -261,6 +261,7 @@ export default function PackagingPage() {
             <div className="pkg-body">
                 {stage === "structure" ? (
                     <PackagingParametersPanel
+                        key={state.project.id || "new"}
                         catalog={state.catalog}
                         document={doc}
                         layout={geometry.layout}

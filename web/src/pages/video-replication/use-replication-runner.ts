@@ -2,9 +2,11 @@ import { useEffect } from "react";
 import { create } from "zustand";
 
 import { appQueryClient } from "@/lib/query-client";
+import { createClientId } from "@/lib/client-id";
 import { formatDurationLimit, videoReplicationAnalysisDocument, type VideoTeardownOptions } from "@/lib/canvas/video-teardown";
 import { getActiveUserScope, scopedLocalStorage } from "@/lib/user-scope";
 import { getResource, uploadResourceFile } from "@/services/api/resources";
+import { ApiError } from "@/services/api/request";
 import { createSocialVideoImport, loadSocialVideoPlatforms, parseSocialVideoImportResult, socialVideoLinkFromText, socialVideoPlatformNames, validateSocialVideoResource } from "@/services/api/social-video";
 import { waitForGenerationTask, type GenerationTask } from "@/services/api/task-center";
 import { createVideoTeardown, getVideoReplication, parseVideoTeardownBundle, saveVideoReplicationAnalysis, type VideoReplicationRecord, type VideoTeardownBundle } from "@/services/api/video-replication";
@@ -27,7 +29,7 @@ export type ReplicationRun = { id?: string; stage: ReplicationStage; detail: str
  * 页面刷新或关掉后再打开时据此接着跑；textTasks 记着已提交的文本任务，接回时等它们的结果，不重复扣费。
  * failed 表示分析失败过：不再自动接着跑，但留着 textTasks，用户用同一个模型重试时已经成功的那几批直接取结果。
  */
-type PendingReplication = { id: string; model: string; transcribe: boolean; fallbackTitle: string; startedAt: number; textTasks: Record<string, string>; failed?: boolean };
+type PendingReplication = { id: string; model: string; transcribe: boolean; fallbackTitle: string; startedAt: number; textTasks: Record<string, string>; operations: Record<string, string>; failed?: boolean };
 
 const PENDING_KEY = "video-replication:pending";
 const PENDING_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -71,11 +73,20 @@ function readPending(): PendingReplication[] {
                 Date.now() - item.startedAt >= PENDING_MAX_AGE_MS
             )
                 return [];
-            const textTasks =
-                item.textTasks && typeof item.textTasks === "object" && !Array.isArray(item.textTasks)
-                    ? Object.fromEntries(Object.entries(item.textTasks).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1])))
-                    : {};
-            return [{ id: item.id, model: item.model, startedAt: item.startedAt, fallbackTitle: typeof item.fallbackTitle === "string" ? item.fallbackTitle : "视频拆解", transcribe: item.transcribe === true, textTasks, failed: item.failed === true }];
+            const identifiers = (values: unknown): Record<string, string> =>
+                values && typeof values === "object" && !Array.isArray(values) ? Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => typeof entry[1] === "string" && Boolean(entry[1]))) : {};
+            return [
+                {
+                    id: item.id,
+                    model: item.model,
+                    startedAt: item.startedAt,
+                    fallbackTitle: typeof item.fallbackTitle === "string" ? item.fallbackTitle : "视频拆解",
+                    transcribe: item.transcribe === true,
+                    textTasks: identifiers(item.textTasks),
+                    operations: identifiers(item.operations),
+                    failed: item.failed === true,
+                },
+            ];
         });
     } catch {
         return [];
@@ -167,7 +178,10 @@ async function execute(initial: ReplicationRun, body: (context: RunContext) => P
 async function finishReplication(pending: PendingReplication, config: AiConfig, context: RunContext, initialTask?: GenerationTask) {
     const { id } = pending;
     context.update({ id, stage: "teardown", detail: "切镜头、截关键帧" });
-    const task = await waitForGenerationTask(id, { initialTask, signal: context.signal, timeoutMs: TEARDOWN_TIMEOUT_MS, onTaskUpdate: (item) => context.update({ detail: item.stage || "切镜头、截关键帧", percent: taskPercent(item) }) });
+    const task =
+        initialTask?.status === "succeeded"
+            ? initialTask
+            : await waitForGenerationTask(id, { initialTask, signal: context.signal, timeoutMs: TEARDOWN_TIMEOUT_MS, onTaskUpdate: (item) => context.update({ detail: item.stage || "切镜头、截关键帧", percent: taskPercent(item) }) });
     context.assertCurrent();
     const bundle: VideoTeardownBundle = parseVideoTeardownBundle(task);
     context.update({ stage: "analyze", detail: `已切出 ${bundle.shots.length} 个镜头`, percent: undefined });
@@ -182,6 +196,19 @@ async function finishReplication(pending: PendingReplication, config: AiConfig, 
             existingTask: (key) => {
                 context.assertCurrent();
                 return readPending().find((item) => item.id === id)?.textTasks[key];
+            },
+            operationFor: (key, previousFailure) => {
+                context.assertCurrent();
+                let operation = "";
+                updatePending(id, (item) => {
+                    if (!item) throw new Error("未找到待办记录，未提交分析任务");
+                    const retryFailed = previousFailure !== undefined && item.textTasks[key] === previousFailure;
+                    operation = (!retryFailed && item.operations[key]) || createClientId();
+                    const textTasks = { ...item.textTasks };
+                    if (retryFailed) delete textTasks[key];
+                    return { ...item, textTasks, operations: { ...item.operations, [key]: operation } };
+                });
+                return operation;
             },
             onTaskCreated: (key, taskId) => {
                 context.assertCurrent();
@@ -245,7 +272,7 @@ export function startReplication(source: ReplicationSource, options: VideoTeardo
         update({ stage: "teardown", detail: "提交拆解任务", percent: undefined });
         const created = await createVideoTeardown({ resourceId, transcribe: options.transcribe }, signal);
         assertCurrent();
-        const pending: PendingReplication = { id: created.id, model: options.model, transcribe: options.transcribe, fallbackTitle, startedAt: Date.now(), textTasks: {} };
+        const pending: PendingReplication = { id: created.id, model: options.model, transcribe: options.transcribe, fallbackTitle, startedAt: Date.now(), textTasks: {}, operations: {} };
         updatePending(created.id, () => pending);
         update({ id: created.id });
         recordListener?.(created.id);
@@ -262,7 +289,8 @@ export function reanalyzeReplication(id: string, options: VideoTeardownOptions, 
         // 上次用同一个模型没分析完：接着用已经提交过的文本任务；换了模型就全部重来。
         const previous = readPending().find((item) => item.id === id);
         const textTasks = previous && previous.model === options.model ? previous.textTasks : {};
-        const pending: PendingReplication = { id, model: options.model, transcribe: options.transcribe, fallbackTitle, startedAt: Date.now(), textTasks };
+        const operations = previous && previous.model === options.model ? previous.operations : {};
+        const pending: PendingReplication = { id, model: options.model, transcribe: options.transcribe, fallbackTitle, startedAt: Date.now(), textTasks, operations };
         updatePending(id, () => pending);
         await finishReplication(pending, config, context, detail.task);
     });
@@ -272,19 +300,38 @@ export function reanalyzeReplication(id: string, options: VideoTeardownOptions, 
  * 打开页面时接着跑上次没跑完的拆解（刷新、关页面都会打断浏览器里的分析）。
  * 拆解失败或已经有分析的记录直接清掉；一次只接一条，接完下一条等下次打开页面或本次结束后再看。
  */
-export function resumePendingReplication(records: VideoReplicationRecord[], config: AiConfig) {
+export async function resumePendingReplication(records: VideoReplicationRecord[], config: AiConfig) {
     if (controller) return;
     const byId = new Map(records.map((record) => [record.id, record]));
     const pending = readPending().filter((item) => {
         const record = byId.get(item.id);
-        if (!record) return false;
+        if (!record) return !item.failed;
         const resumable = !record.analyzedAt && (record.status === "queued" || record.status === "running" || record.status === "succeeded");
         if (!resumable) updatePending(item.id, () => undefined);
         return resumable && !item.failed;
     });
-    const next = pending.sort((left, right) => right.startedAt - left.startedAt)[0];
-    if (!next) return;
-    void execute({ id: next.id, stage: "teardown", detail: "接着上次的拆解", resumed: true }, (context) => finishReplication(next, config, context));
+    pending.sort((left, right) => right.startedAt - left.startedAt);
+    if (!pending.length) return;
+    await execute({ id: pending[0].id, stage: "teardown", detail: "接着上次的拆解", resumed: true }, async (context) => {
+        for (const next of pending) {
+            context.assertCurrent();
+            context.update({ id: next.id, detail: "接着上次的拆解" });
+            if (byId.has(next.id)) {
+                await finishReplication(next, config, context);
+                continue;
+            }
+            const detail = await getVideoReplication(next.id, context.signal).catch((error: unknown) => {
+                if (error instanceof ApiError && error.status === 404) return null;
+                throw error;
+            });
+            context.assertCurrent();
+            if (!detail || detail.analyzedAt || detail.analysis || detail.task.status === "failed" || detail.task.status === "cancelled") {
+                updatePending(next.id, () => undefined);
+                continue;
+            }
+            await finishReplication(next, config, context, detail.task);
+        }
+    });
 }
 
 export function dismissReplicationError() {

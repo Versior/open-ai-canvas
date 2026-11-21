@@ -114,6 +114,12 @@ func (s *Service) SetWorkbenchPresetEnabled(actor *model.User, id string, enable
 }
 
 func (s *Service) CreateWorkbenchTask(userID string, req WorkbenchTaskInput, traceID, requestID string) (*model.Task, error) {
+	return s.submitPersonalTask(userID, req.IdempotencyKey, "workbench", req, func(submission *personalTaskSubmission) (*model.Task, error) {
+		return s.createWorkbenchGeneration(userID, req, traceID, requestID, submission)
+	})
+}
+
+func (s *Service) createWorkbenchGeneration(userID string, req WorkbenchTaskInput, traceID, requestID string, submission *personalTaskSubmission) (*model.Task, error) {
 	projectID := strings.TrimSpace(req.EcommerceProjectID)
 	if err := s.requireTaskGenerationFeatures(userID, "", "canvas_"+req.Kind, "", req.Kind, map[string]any{"metadata": map[string]any{"ecommerceProjectId": projectID}}); err != nil {
 		return nil, err
@@ -138,7 +144,7 @@ func (s *Service) CreateWorkbenchTask(userID string, req WorkbenchTaskInput, tra
 		return nil, BadAuthRequest("所选系统模型不可用")
 	}
 	resolved.Model = modelName
-	return s.CreateTask(userID, CreateTaskRequest{ProjectID: projectID, Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind})
+	return s.createGenerationTask(userID, CreateTaskRequest{ProjectID: projectID, Type: resolved.TaskType, Operation: resolved.Operation, Prompt: resolved.Prompt, Model: resolved.Model, LogicalModelID: resolved.LogicalModelID, Input: resolved.Input, TraceID: traceID, RequestID: requestID, workbenchKind: req.Kind}, submission)
 }
 
 func (s *Service) WorkbenchTasks(userID, kind string, activeOnly bool, limit int) ([]TaskSummary, error) {

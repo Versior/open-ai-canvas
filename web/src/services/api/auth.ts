@@ -525,12 +525,12 @@ export function getSystemChannels() {
     return http.get<{ channels: ModelChannel[] }>("/channels/system");
 }
 
-export function getFeatureAvailability() {
-    return http.get<{ features: FeatureAvailability }>("/features");
+export function getFeatureAvailability(signal?: AbortSignal) {
+    return http.get<{ features: FeatureAvailability }>("/features", { signal });
 }
 /** 游客读取功能开关：只有开关与是否已配置，不需要登录。 */
-export function getGuestFeatureAvailability() {
-    return http.get<{ features: FeatureAvailability }>("/public/features");
+export function getGuestFeatureAvailability(signal?: AbortSignal) {
+    return http.get<{ features: FeatureAvailability }>("/public/features", { signal });
 }
 
 export function getAdminFeatureAvailability() {

@@ -191,7 +191,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
                 `上一份读图：${JSON.stringify(parsed.value)}`,
             ].join("\n");
             if (signal.aborted) throw new DOMException("已离开", "AbortError");
-            const task = await submitSceneTask(configRef.current, item.model, prompt, "analyze", item.reference);
+            const task = await submitSceneTask(configRef.current, item.model, prompt, "analyze", item.reference, { projectId, sceneId: item.id, sourceTaskId: item.taskId, repair: 1 }, signal);
             window.dispatchEvent(new CustomEvent("wallet:updated"));
             return { taskId: task.id, analysisRepairCount: 1, notice: "正在校正读图尺寸、房间位置与门窗连接，尚未进入建模" };
         }
@@ -213,7 +213,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
         }
         const { knowledge, refs } = await fetchSceneKnowledge(sceneKnowledgeQuery(next));
         if (signal.aborted) throw new DOMException("已离开", "AbortError");
-        const task = await submitSceneTask(configRef.current, item.model, buildSceneSpecPrompt({ ...scenePromptInput(next, knowledge), ...catalogKeys(catalog) }), "spec", item.reference);
+        const task = await submitSceneTask(configRef.current, item.model, buildSceneSpecPrompt({ ...scenePromptInput(next, knowledge), ...catalogKeys(catalog) }), "spec", item.reference, { projectId, sceneId: item.id, sourceTaskId: item.taskId }, signal);
         window.dispatchEvent(new CustomEvent("wallet:updated"));
         const { id: _id, createdAt: _createdAt, status: _status, ...changed } = next;
         return { ...changed, stage: "spec", taskId: task.id, knowledge: refs };
@@ -247,7 +247,7 @@ export function useInteriorSceneTasks(project: InteriorProject | null, update: U
                 ...issues.map((issue) => `- ${issue}`),
                 `上一份方案：${JSON.stringify(value)}`,
             ].join("\n");
-            const task = await submitSceneTask(configRef.current, item.model, prompt, "repair", item.reference);
+            const task = await submitSceneTask(configRef.current, item.model, prompt, "repair", item.reference, { projectId, sceneId: item.id, sourceTaskId: item.taskId, repair: 1 }, signal);
             window.dispatchEvent(new CustomEvent("wallet:updated"));
             return { taskId: task.id, repairCount: 1, knowledge: refs, notice: "正在修正空间、尺寸和门洞检查发现的问题" };
         }

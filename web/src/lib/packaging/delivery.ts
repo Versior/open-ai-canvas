@@ -12,6 +12,22 @@ import type { PackagingTextMeasureFactory } from "./typography";
 
 export const packagingPath = (points: Point[], close = true) => points.map((point, index) => `${index ? "L" : "M"}${point[0].toFixed(3)} ${point[1].toFixed(3)}`).join(" ") + (close ? " Z" : "");
 
+export async function embeddedPackagingResources(document: PackagingDocument, resources: ReadonlyMap<string, Blob>) {
+    const embedded = new Map<string, string>();
+    for (const id of packagingResourceIds(document)) {
+        const blob = resources.get(id);
+        if (!blob) throw new Error("图稿尚未加载，无法导出完整设计");
+        const data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = () => reject(reader.error ?? new Error("图稿编码失败"));
+            reader.readAsDataURL(blob);
+        });
+        embedded.set(id, data);
+    }
+    return embedded;
+}
+
 function svgArtwork(d: PackagingDocument, layout: PackagingLayout, images: Map<string, string>, textMeasure?: PackagingTextMeasureFactory) {
     const ids = packagingResourceIds(d);
     if (ids.some((id) => !images.has(id))) throw new Error("图稿尚未加载，无法导出完整设计");
@@ -171,17 +187,7 @@ export async function packagingProjectZip(name: string, document: PackagingDocum
     const projectJson = JSON.stringify({ format: "yingce-packaging", version: 1, name, document, resourceTypes: Object.fromEntries([...used].map(([id, blob]) => [id, blob.type])) }, null, 2);
     if ([...used.values()].some((blob) => blob.size > 25 * 1024 * 1024)) throw new Error("单张图稿不能超过 25 MB");
     if (strToU8(projectJson).length > 256 * 1024 || [...used.values()].reduce((sum, blob) => sum + blob.size, strToU8(projectJson).length) > 100 * 1024 * 1024) throw new Error("方案原稿总量超过 100 MB，无法生成可重新导入的方案包");
-    const embedded = new Map<string, string>();
-    for (const [id, blob] of used)
-        embedded.set(
-            id,
-            await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(String(reader.result));
-                reader.onerror = () => reject(reader.error);
-                reader.readAsDataURL(blob);
-            }),
-        );
+    const embedded = await embeddedPackagingResources(document, used);
     const files: Record<string, Uint8Array> = {
         "project.json": strToU8(projectJson),
         "dieline.svg": strToU8(packagingSvg(document, layout, embedded, true, textMeasure)),

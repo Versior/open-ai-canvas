@@ -76,6 +76,8 @@ export const zhCN = {
             headingAssets: "资产与历史",
         },
         collapsed: {
+            ecommerceStudio: "生图",
+            ecommerceAgent: "策划",
             videoReplication: "视频",
             interior: "室内",
             packaging: "包装",

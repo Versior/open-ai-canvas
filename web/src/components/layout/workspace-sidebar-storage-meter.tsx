@@ -82,8 +82,8 @@ export function WorkspaceSidebarStorageMeter({ collapsed }: { collapsed: boolean
             title={stateMessage ? t("account.layout.storage.titleWithState", { summary, state: stateMessage }) : t("account.layout.storage.title", { summary })}
             aria-label={t("account.layout.storage.label", { summary })}
             aria-busy={query.isPending && !query.data}
-            onFocus={() => preloadWorkspaceRoute("/assets")}
-            onPointerEnter={() => preloadWorkspaceRoute("/assets")}
+            onFocus={() => preloadWorkspaceRoute("/assets", "preview")}
+            onPointerEnter={() => preloadWorkspaceRoute("/assets", "preview")}
         >
             <StorageGlyph />
             {collapsed ? (

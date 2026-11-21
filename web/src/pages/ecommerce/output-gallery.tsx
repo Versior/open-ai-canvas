@@ -45,6 +45,7 @@ export function EcommerceOutputGallery({
     regenerationPreviews = {},
     historyHasMore = false,
     historyLoading = false,
+    historyError,
     onLoadMoreHistory,
     stage,
     stageActive = false,
@@ -74,6 +75,7 @@ export function EcommerceOutputGallery({
     /** 历史轮次按页读取；还有更早的轮次时显示“加载更多”。 */
     historyHasMore?: boolean;
     historyLoading?: boolean;
+    historyError?: string;
     onLoadMoreHistory?: () => void;
     /** 本轮流程：已发送的需求、视觉方向、方案审阅与进度，显示在作品之上。 */
     stage?: ReactNode;
@@ -169,6 +171,14 @@ export function EcommerceOutputGallery({
             {progress}
             <div className="commerce-output-scroll" data-canvas-wheel-scroll>
                 {stageActive ? <div className="ecs-stage">{stage}</div> : null}
+                {historyError ? (
+                    <div className="commerce-output-history-more" role="alert">
+                        <span>历史作品读取失败：{historyError}</span>
+                        <Button size="small" loading={historyLoading} onClick={onLoadMoreHistory}>
+                            重试历史
+                        </Button>
+                    </div>
+                ) : null}
                 {!images.length ? (
                     stageActive ? null : (
                         <div className="commerce-output-empty" role="status">
@@ -199,7 +209,7 @@ export function EcommerceOutputGallery({
                                 <div className="commerce-output-grid">{previous.map(({ image, index }) => card(image, index, false))}</div>
                             </section>
                         ) : null}
-                        {historyHasMore && onLoadMoreHistory ? (
+                        {!historyError && historyHasMore && onLoadMoreHistory ? (
                             <div className="commerce-output-history-more">
                                 <Button size="small" loading={historyLoading} onClick={onLoadMoreHistory}>
                                     加载更早的作品

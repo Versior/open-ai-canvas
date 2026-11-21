@@ -75,6 +75,8 @@ export const frFR: Messages = {
             headingAssets: "Ressources et historique",
         },
         collapsed: {
+            ecommerceStudio: "Studio",
+            ecommerceAgent: "Agent",
             videoReplication: "Vidéo",
             interior: "Intérieur",
             packaging: "Emballage",

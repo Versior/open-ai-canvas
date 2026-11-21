@@ -47,6 +47,10 @@ const root = createRoot(document.createElement("div"));
 const settle = async () => {
     for (let i = 0; i < 4; i++) await act(() => new Promise((resolve) => setTimeout(resolve, 5)));
 };
+const waitSubmitted = async (count: number) => {
+    for (let step = 0; step < 50 && requests.length < count; step++) await act(() => Bun.sleep(2));
+    expect(requests).toHaveLength(count);
+};
 const render = async () => {
     await act(async () => root.render(<Harness key={getActiveUserScope()} />));
     await settle();
@@ -63,7 +67,7 @@ test("同时两次发送只创建一项文本任务，返回后才更新草稿",
         pending = chat.send("改成20秒");
         expect(await chat.send("再发一次")).toBe(false);
     });
-    expect(requests).toHaveLength(1);
+    await waitSubmitted(1);
     expect(results).toHaveLength(0);
     expect(chat.busy).toBe(true);
     expect(requests[0].input).toMatchObject({ mode: "text", expectedUserScope: "chat_user_a", metadata: { source: "video-creation-chat" } });
@@ -79,6 +83,7 @@ test("无效回复不修改草稿，显式重试不重复添加同一句话", as
     await act(async () => {
         void chat.send("再改一次");
     });
+    await waitSubmitted(2);
     await act(async () => requests[1].resolve({ text: "无法输出JSON" }));
     expect(results).toHaveLength(1);
     expect(chat.error).toBeTruthy();
@@ -88,6 +93,7 @@ test("无效回复不修改草稿，显式重试不重复添加同一句话", as
     await act(async () => {
         void chat.send("再改一次");
     });
+    await waitSubmitted(3);
     expect(chat.turns.filter((turn) => turn.text === "再改一次")).toHaveLength(1);
     await act(async () => requests[2].reject(new Error("任务失败")));
     expect(chat.error).toBe("任务失败");
@@ -97,6 +103,7 @@ test("新建对话中止旧回填，不影响新请求的状态", async () => {
     await act(async () => {
         void chat.send("旧请求");
     });
+    await waitSubmitted(4);
     await act(async () => chat.reset());
     expect(requests[3].input.signal?.aborted).toBe(true);
     expect(chat.turns).toHaveLength(0);
@@ -104,6 +111,7 @@ test("新建对话中止旧回填，不影响新请求的状态", async () => {
         void chat.send("新请求");
         requests[3].resolve(output);
     });
+    await waitSubmitted(5);
     expect(chat.busy).toBe(true);
     expect(results).toHaveLength(1);
     await act(async () => requests[4].resolve(output));
@@ -113,6 +121,7 @@ test("账号切换或卸载拒绝旧结果，访客不创建计费任务", async
     await act(async () => {
         void chat.send("账号A请求");
     });
+    await waitSubmitted(6);
     setActiveUserScope("chat_user_b");
     await render();
     expect(requests[5].input.signal?.aborted).toBe(true);
@@ -128,6 +137,7 @@ test("账号切换或卸载拒绝旧结果，访客不创建计费任务", async
     await act(async () => {
         void chat.send("离开页面");
     });
+    await waitSubmitted(7);
     await act(async () => root.render(null));
     expect(requests[6].input.signal?.aborted).toBe(true);
     await act(async () => requests[6].resolve(output));
@@ -241,5 +251,80 @@ test("两个页面保存不同会话不覆盖，同一会话冲突保留两版�
         expect(text).toContain("继续编辑分支");
     } finally {
         await act(async () => roots.forEach((page) => page.unmount()));
+    }
+});
+
+test("先持久化导演操作；丢回执并刷新时沿用旧操作，显式重新生成才更换", async () => {
+    setActiveUserScope("director_replay");
+    await render();
+    const storage = localForageStorageForScope("director_replay");
+    const inputs: Array<Parameters<typeof videoChatDependencies.run>[0]> = [];
+    const original = videoChatDependencies.run;
+    videoChatDependencies.run = async (input) => {
+        const archive = JSON.parse((await storage.getItem(VIDEO_CHAT_HISTORY_KEY)) || "null");
+        expect(input.clientOperationId).toBeTruthy();
+        expect(archive.sessions.find((session: { id: string }) => session.id === archive.activeId).turns.at(-1).operation.id).toBe(input.clientOperationId);
+        inputs.push(input);
+        throw new Error("创建回执丢失");
+    };
+    try {
+        await act(async () => expect(await chat.send("保留杯身颜色")).toBe(false));
+        expect(inputs).toHaveLength(1);
+        await act(() => root.render(null));
+        await render();
+        await act(async () => expect(await chat.send("保留杯身颜色")).toBe(false));
+        expect(inputs[1].clientOperationId).toBe(inputs[0].clientOperationId);
+        expect(inputs[1].prompt).toBe(inputs[0].prompt);
+        await act(async () => expect(await chat.send("保留杯身颜色", true)).toBe(false));
+        expect(inputs[2].clientOperationId).not.toBe(inputs[1].clientOperationId);
+        expect(chat.turns).toHaveLength(1);
+        expect(inputs[2].prompt).not.toContain(inputs[0].clientOperationId!);
+    } finally {
+        videoChatDependencies.run = original;
+    }
+});
+
+test("操作号存档失败不发送计费请求", async () => {
+    setActiveUserScope("director_no_storage");
+    await render();
+    const put = IDBObjectStore.prototype.put;
+    const original = videoChatDependencies.run;
+    let submitted = 0;
+    videoChatDependencies.run = async () => {
+        submitted++;
+        return output;
+    };
+    IDBObjectStore.prototype.put = () => {
+        throw new Error("测试存储写满");
+    };
+    try {
+        await act(async () => expect(await chat.send("不能发送这条")).toBe(false));
+        expect(submitted).toBe(0);
+        expect(chat.error).toContain("保存");
+    } finally {
+        IDBObjectStore.prototype.put = put;
+        videoChatDependencies.run = original;
+    }
+});
+
+test("升级前没有操作号的末条用户消息不能被悄悄重提", async () => {
+    setActiveUserScope("old_director_turn");
+    await render();
+    await act(async () => chat.say("user", "旧消息"));
+    await settle();
+    const original = videoChatDependencies.run;
+    let submissions = 0;
+    videoChatDependencies.run = async () => {
+        submissions++;
+        return output;
+    };
+    try {
+        await act(async () => expect(await chat.send("旧消息")).toBe(false));
+        expect(chat.error).toContain("重新生成");
+        expect(submissions).toBe(0);
+        await act(async () => expect(await chat.send("旧消息", true)).toBe(true));
+        expect(submissions).toBe(1);
+    } finally {
+        videoChatDependencies.run = original;
     }
 });

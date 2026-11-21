@@ -38,7 +38,7 @@ func TestCreateWorkbenchVideoTaskUsesReferenceModeAndPrice(t *testing.T) {
 		{name: "reference image", role: "reference", operation: "reference_to_video", price: "video-image-price"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := WorkbenchTaskInput{Kind: WorkbenchKindVideo, Prompt: "Animate the subject", Model: "MiniMax-H3", ChannelID: "channel", Parameters: map[string]any{"resolution": "480P", "ratio": "16:9", "seconds": 15}}
+			req := WorkbenchTaskInput{Kind: WorkbenchKindVideo, Prompt: "Animate the subject", Model: "MiniMax-H3", ChannelID: "channel", IdempotencyKey: "workbench-slot-" + tc.operation, Parameters: map[string]any{"resolution": "480P", "ratio": "16:9", "seconds": 15}}
 			if tc.role != "" {
 				req.References = []workbench.TaskReference{{ResourceID: "video-image", Kind: "image", Role: tc.role}}
 			}
@@ -53,6 +53,15 @@ func TestCreateWorkbenchVideoTaskUsesReferenceModeAndPrice(t *testing.T) {
 			task, err := s.CreateWorkbenchTask("user", req, "", "")
 			if err != nil {
 				t.Fatal(err)
+			}
+			replayed, err := s.CreateWorkbenchTask("user", req, "", "second-request")
+			if err != nil || replayed.ID != task.ID {
+				t.Fatalf("workbench replay: %v", err)
+			}
+			changed := req
+			changed.Prompt += " differently"
+			if _, err := s.CreateWorkbenchTask("user", changed, "", ""); !isSubmissionConflict(err) {
+				t.Fatalf("workbench slot reused for different input: %v", err)
 			}
 			var input struct {
 				Metadata struct {

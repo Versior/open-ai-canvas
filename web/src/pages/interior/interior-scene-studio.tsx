@@ -230,7 +230,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
             setSelectedId(id);
             await saveProject();
             if (getActiveUserScope() !== account) throw new Error("账号已切换，未提交生成");
-            const task = await submitSceneTask(config, model, prompt, item.stage || "plan", item.reference);
+            const task = await submitSceneTask(config, model, prompt, item.stage || "plan", item.reference, { projectId: target.id, sceneId: id });
             update(target.id, (document) => patchInteriorScene(document, id, { taskId: task.id }));
             window.dispatchEvent(new CustomEvent("wallet:updated"));
             return true;
@@ -319,7 +319,7 @@ export function InteriorSceneStudio({ catalog, config, project, header, ensurePr
                 buildSceneSpecPrompt({ ...scenePromptInput(next, knowledge), ...catalogKeys(catalog) }),
                 furnishing === "preserve" ? "用户选择保留原图布置：不要自动添加家具，保留结构里已有家具；只填写地面与配色。" : "用户确认层高与结构：可在保留房间、门窗和公共区域的前提下补充家具与装修。",
             ].join("\n");
-            const task = await submitSceneTask(config, selected.model, prompt, "spec", selected.reference);
+            const task = await submitSceneTask(config, selected.model, prompt, "spec", selected.reference, { projectId: project.id, sceneId: selected.id, sourceTaskId: selected.taskId, confirmation: { heights, furnishing } });
             if (getActiveUserScope() !== account) throw new Error("账号已切换，未更新项目");
             update(project.id, (document) => patchInteriorScene(document, selected.id, { brief: next.brief, furnishing, drawingConfirmed: true, status: "pending", stage: "spec", taskId: task.id, knowledge: refs, notice: undefined }));
             await saveProject();

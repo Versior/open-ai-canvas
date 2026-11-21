@@ -74,9 +74,10 @@ const renders: TimelineProject[] = [];
 const polled: string[] = [];
 mock.module("@/services/api/product-video", () => ({
     PRODUCT_VIDEO_CONFLICT: "product_video_conflict",
-    listProductVideos: async () => [saved],
-    getProductVideo: async () => saved,
-    saveProductVideo: async (value: RemakeJob) => {
+    listProductVideos: async () => ({ revision: saved.revision, items: [saved] }),
+    getProductVideo: async () => ({ revision: saved.revision, item: saved }),
+    saveProductVideo: async (value: RemakeJob, expectedRevision: number) => {
+        if (expectedRevision !== saved.revision) throw Object.assign(new Error("作品已变更"), { reason: "product_video_conflict" });
         snapshots.push(structuredClone(value));
         if (pauseSave) {
             pauseSave = false;
@@ -85,9 +86,9 @@ mock.module("@/services/api/product-video", () => ({
             });
         }
         saved = { ...structuredClone(value), revision: saved.revision + 1 };
-        return saved;
+        return { revision: saved.revision, item: saved };
     },
-    deleteProductVideo: async () => undefined,
+    deleteProductVideo: async () => ({ revision: saved.revision + 1 }),
 }));
 const configuration = await import("@/stores/use-config-store");
 mock.module("@/stores/use-config-store", () => ({ ...configuration, useEffectiveConfig: () => ({ ...defaultConfig, videoModel: "video-a" }), selectableModelsByCapability: () => ["video-a", "video-b"] }));
@@ -350,8 +351,66 @@ test("真实剪辑台的分割、撤销与服务端保存，重新打开后恢�
     host.remove();
 });
 
+test("配方冲突重放只合并实改字段，撤销授权不会回弹；同字段需明确选择", async () => {
+    saved = { ...structuredClone(job), revision: saved.revision + 1, authorized: true };
+    await loadProductVideos(true);
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const editName = (name: string) => {
+        const input = host.querySelector<HTMLInputElement>("input[aria-label='商品名称']")!;
+        Object.getOwnPropertyDescriptor(dom.HTMLInputElement.prototype, "value")!.set!.call(input, name);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    const flush = async () => {
+        const button = [...host.querySelectorAll<HTMLButtonElement>(".rw-steps button")].find((item) => item.textContent?.includes("出片对比"))!;
+        await act(async () => {
+            button.click();
+            await Bun.sleep(15);
+        });
+    };
+    try {
+        await act(async () =>
+            root.render(
+                <App>
+                    <RemakeWorkbench id={job.id} step="recipe" onStep={() => {}} onBack={() => {}} onOpen={() => {}} onOpenTeardown={() => {}} />
+                </App>,
+            ),
+        );
+        await act(async () => editName("本地商品名"));
+        saved = { ...saved, revision: saved.revision + 1, authorized: false, note: "另一窗口的备注", product: { ...saved.product, sellingPoints: "另一窗口的卖点" } };
+        await flush();
+        expect(saved).toMatchObject({ authorized: false, note: "另一窗口的备注", product: { name: "本地商品名", sellingPoints: "另一窗口的卖点" } });
+        await act(async () => editName("我的第二个商品名"));
+        saved = { ...saved, revision: saved.revision + 1, product: { ...saved.product, name: "其他人的商品名" } };
+        await flush();
+        expect(saved.product.name).toBe("其他人的商品名");
+        expect(host.querySelector('[role="alert"]')?.textContent).toContain("另一窗口");
+        const keep = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("保留本窗口修改"));
+        expect(keep).toBeTruthy();
+        await act(async () => {
+            keep!.click();
+            await Bun.sleep(15);
+        });
+        expect(saved.product.name).toBe("我的第二个商品名");
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});
+
+test("先更新商品资料再撤授权仍保留两者；同一授权字段并发改动必须核对", async () => {
+    const { mergeRemakeRecipe } = await import("@/lib/remake/recipe-merge");
+    const base = { ...structuredClone(job), authorized: true };
+    const local = { ...base, authorized: false };
+    const other = { ...structuredClone(base), revision: base.revision + 1, product: { ...base.product, name: "另一窗口的商品" } };
+    expect(mergeRemakeRecipe(base, local, other)).toMatchObject({ authorized: false, product: { name: "另一窗口的商品" } });
+    expect(() => mergeRemakeRecipe(base, local, { ...other, authorized: false })).toThrow("使用授权");
+    expect(() => mergeRemakeRecipe(base, { ...local, title: "本地标题" }, { ...other, authorized: false, title: "远端标题" })).toThrow("使用授权");
+});
+
 test("真实参考卡片切换模式、锁定规划、展示迁移依据、应用与过期后恢复", async () => {
-    saved = referenceFixture();
+    saved = { ...referenceFixture(), revision: saved.revision + 1 };
     await loadProductVideos(true);
     const host = document.createElement("div");
     document.body.append(host);

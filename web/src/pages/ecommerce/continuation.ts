@@ -1,8 +1,14 @@
-import type { EcommerceDraft, EcommercePlan, EcommercePlanImage } from "@/services/api/ecommerce";
+import type { EcommerceDraft, EcommercePlan, EcommercePlanImage, EcommerceRound } from "@/services/api/ecommerce";
 import { createClientUUID } from "@/lib/client-id";
 
 export function commerceCanvasImages(plan: EcommercePlan | null): EcommercePlanImage[] {
     return plan ? [...(plan.previousImages || []), ...plan.images] : [];
+}
+
+export function commercePlanWithHistory(active: EcommercePlan | null, rounds: EcommerceRound[]): EcommercePlan | null {
+    const previousImages = [...rounds].reverse().flatMap((round) => round.plan?.images || []);
+    if (active) return { ...active, previousImages: previousImages.length ? previousImages : undefined };
+    return previousImages.length ? { productSummary: "", confirmedFacts: [], uncertainFacts: [], visualStrategy: "", qualityChecks: [], images: [], previousImages } : null;
 }
 
 /** Archive admitted tasks only. Pending sketches never become historical results. */
@@ -24,7 +30,7 @@ export function continueCommercePlan(next: EcommercePlan, previous: EcommercePla
     const images = next.images.map((image) => {
         const id = ids.has(image.id) ? createClientUUID() : image.id;
         ids.add(id);
-        return id === image.id ? image : { ...image, id };
+        return { ...image, id, operationId: createClientUUID() };
     });
     return { ...next, images, previousImages };
 }

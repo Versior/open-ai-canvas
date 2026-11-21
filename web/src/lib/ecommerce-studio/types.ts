@@ -147,6 +147,7 @@ export type StudioAttemptStatus = "submitting" | "queued" | "running" | "succeed
 export type StudioAttempt = {
     id: string;
     taskId?: string;
+    replaySafe?: true;
     /** 单张修正所基于的成品；恢复提交时仍使用同一张图。 */
     revisionResourceId?: string;
     /** 排队前持久化的请求输入；不包含渠道配置或凭据。 */

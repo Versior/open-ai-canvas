@@ -5,6 +5,12 @@ description: 信封、错误码与 OpenAPI
 
 # HTTP API 合同
 
+## 个人生成任务的重试与预占
+
+`POST /api/tasks` 和 `POST /api/workbench/tasks` 接受正文中的可选 `idempotencyKey`（最多 160 字节，不能带首尾空白）。首次受理生成并预占；同一账号、同一入口、同一键与原始意图再次提交，返回已有任务，不再次预占。改变模型、提示词、资源或入口后沿用同一键，返回 HTTP 409。重放使用数据库现有的任务主键及 `submission_hash`，不需要新增表或迁移。未传键的旧客户端保持逐次创建，不能获得丢回执保护；团队文本仍要求成员报价确认。
+
+客户端须在发请求**之前**保存操作号和本次意图。一整套图片的每张图、3D 场景的不同阶段、主动要求生成的新版本，各用不同的操作号；仅在重试原意图时沿用。回执未知不等于任务失败，也不是再扣一次的依据。发布时先更新后端，再切换前端；旧后端遇到该字段不保证去重。
+
 ## 包装刀板
 
 `/api/packaging/catalog`、`/api/packaging/projects`、`/api/packaging/projects/:projectId` 读取目录及本人项目。新建版本 0，更新/删除提供当前 revision。严格 JSON 上限 256 KiB；尺寸、快照、就绪图片、归属、面板和配额由服务端校验。
@@ -1066,6 +1072,8 @@ Token 报价的 `estimated` 为 `true`，`quantity` 是预留 Token 数。`inten
 上传、工作流结构查询、取消查询和取消请求也不参与财务归属，即使日志被标记为可计费；它们不能代替生成请求承载订单金额。订单是否已结算以账单状态为准，保留人工核账后结算订单的统计能力。
 
 ## 画布保存与 operations 同步
+
+私人分享使用 `GET /canvas-projects/:id/share`：本人的云端画布尚未分享返回 `200` 和 `share.enabled=false`；画布尚未上云、不存在或不属于登录者，均返回 `404`。存储或令牌读取异常返回通用 `5xx`，不能解释为尚未分享。首次分享本地草稿须由用户确认，按原画布 ID 保存成功后再 `POST /canvas-projects/:id/share`。创建回执丢失时先读取同一端点核对，不自动重复创建或轮换链接；`DELETE` 可撤销已有分享。
 
 画布写入统一使用 `PATCH /canvas-projects/:id/operations`。请求只携带对象级或字段级变更，不提交整批画布快照；`mutationId` 是一次写入的幂等身份，客户端在响应丢失、断网、刷新或后台重试时必须复用同一个 ID 和原始 `operations`。`baseRevision` 记录生成请求时的已确认基线版本，用于诊断和响应；字段/对象的 `before`、`expected`、`beforeValue` 是实际并发校验，允许不同字段合并，拒绝同字段覆盖和缺失对象更新。可选顶层字段缺失时必须显式编码为 JSON `null`；服务端仅对早期客户端省略这些可选字段的 `value` 或 `beforeValue` 按 `null` 兼容处理，并继续执行基线校验。
 

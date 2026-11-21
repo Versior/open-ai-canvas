@@ -74,6 +74,8 @@ export const enUS: Messages = {
             headingAssets: "Assets & history",
         },
         collapsed: {
+            ecommerceStudio: "Studio",
+            ecommerceAgent: "Agent",
             videoReplication: "Video",
             interior: "Interior",
             packaging: "Packaging",

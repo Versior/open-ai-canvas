@@ -77,13 +77,18 @@ async function splitStep(id: string, signal: AbortSignal) {
     const job = read(id);
     if (job.split?.segments?.length) return;
     if (!job.reference) throw new Error("没有参考视频");
-    const split = job.split?.key ? job.split : { key: createClientId(), maxSegmentSeconds: job.split?.maxSegmentSeconds || 15 };
+    let previous = job.split?.taskId ? await queryGenerationTask(job.split.taskId, { signal }) : undefined;
+    const split = job.split?.key && (!previous || !terminal(previous)) ? job.split : { key: createClientId(), maxSegmentSeconds: job.split?.maxSegmentSeconds || 15 };
+    if (previous && terminal(previous)) previous = undefined;
     setProgress(id, { stage: "切分参考视频" });
     // 同一幂等键重放拿回同一个任务；键先写进作品再提交。
-    if (!job.split?.key) await updateProductVideo(id, (value) => ({ ...value, split }));
-    const created = await createProductVideoSplit({ resourceId: job.reference.resourceId, startMs: job.startMs, endMs: job.endMs, maxSegmentSeconds: split.maxSegmentSeconds }, split.key, signal);
+    if (job.split?.key !== split.key) await updateProductVideo(id, (value) => ({ ...value, split }));
+    const created = previous ?? (await createProductVideoSplit({ resourceId: job.reference.resourceId, startMs: job.startMs, endMs: job.endMs, maxSegmentSeconds: split.maxSegmentSeconds }, split.key, signal));
     if (job.split?.taskId !== created.id) await updateProductVideo(id, (value) => ({ ...value, split: { ...split, ...value.split, taskId: created.id } }));
-    const done = await waitForGenerationTask(created.id, { initialTask: created, signal, timeoutMs: SPLIT_TIMEOUT_MS, onTaskUpdate: (task) => setProgress(id, { stage: task.stage || "切分参考视频", percent: taskPercent(task) }) });
+    const done =
+        created.status === "succeeded"
+            ? created
+            : await waitForGenerationTask(created.id, { initialTask: created, signal, timeoutMs: SPLIT_TIMEOUT_MS, onTaskUpdate: (task) => setProgress(id, { stage: task.stage || "切分参考视频", percent: taskPercent(task) }) });
     const result = parseProductVideoSplitResult(done);
     await updateProductVideo(id, (value) => ({
         ...value,
@@ -148,7 +153,7 @@ async function shotStep(id: string, index: number, config: AiConfig, signal: Abo
         await updateProductVideo(id, patchShot(index, { status: "running", taskId: task.id }));
     }
     try {
-        const done = await waitForGenerationTask(task.id, { initialTask: task, signal, timeoutMs: VIDEO_TIMEOUT_MS });
+        const done = task.status === "succeeded" ? task : await waitForGenerationTask(task.id, { initialTask: task, signal, timeoutMs: VIDEO_TIMEOUT_MS });
         const result = parseBackendGenerationResult(done);
         const resourceId = resourceIdFromStorageKey(result.video?.storageKey);
         if (!resourceId) throw new Error("任务完成但没有可用的视频，请到任务中心核对");
@@ -255,18 +260,30 @@ export function runProductVideo(id: string, config: AiConfig) {
 /** 停止：取消还在跑的后端任务，作品标成未完成，已生成好的段保留。 */
 export async function stopProductVideo(id: string) {
     controllers.get(id)?.abort();
+    const scope = getActiveUserScope();
     const job = readProductVideo(id);
     if (!job) return;
     const running = [job.split?.segments?.length ? undefined : job.split?.taskId, ...job.shots.filter((shot) => shot.status === "running").map((shot) => shot.taskId), job.render?.resourceId ? undefined : job.render?.taskId].filter(
         (taskId): taskId is string => Boolean(taskId),
     );
-    await Promise.all(running.map((taskId) => cancelGenerationTask(taskId).catch(() => undefined)));
+    const confirmed = new Set<string>();
+    await Promise.all(
+        running.map(async (taskId) => {
+            try {
+                if (terminal(await cancelGenerationTask(taskId))) confirmed.add(taskId);
+            } catch {
+                return;
+            }
+        }),
+    );
+    if (scope !== getActiveUserScope()) return;
+    const uncertain = running.some((taskId) => !confirmed.has(taskId)) || job.shots.some((shot) => shot.status === "running" && !shot.taskId);
+    const unconfirmed = "取消未确认，接着生成会先核对原任务";
     await updateProductVideo(id, (value) => ({
         ...value,
         status: "failed",
-        error: "已停止",
-        shots: value.shots.map((shot) => (shot.status === "running" ? { ...shot, status: "failed", error: "已停止", taskId: undefined, attempt: shot.attempt + 1 } : shot)),
-        render: value.render?.resourceId ? value.render : undefined,
+        error: uncertain ? unconfirmed : "已停止",
+        shots: value.shots.map((shot) => (shot.status === "running" ? { ...shot, status: "failed", error: shot.taskId && confirmed.has(shot.taskId) ? "已停止" : unconfirmed } : shot)),
     }));
 }
 
@@ -276,9 +293,7 @@ export async function retryProductVideo(id: string, config: AiConfig) {
         ...value,
         status: value.split?.segments?.length ? "generating" : "splitting",
         error: undefined,
-        split: value.split?.segments?.length ? value.split : { key: createClientId(), maxSegmentSeconds: value.split?.maxSegmentSeconds || 15 },
-        shots: value.shots.map((shot) => (shot.status === "failed" ? { ...shot, status: "pending", error: undefined, taskId: undefined, attempt: shot.attempt + 1 } : shot)),
-        render: value.render?.resourceId ? value.render : undefined,
+        shots: value.shots.map((shot) => (shot.status === "failed" ? { ...shot, status: "pending", error: undefined } : shot)),
     }));
     runProductVideo(id, config);
 }

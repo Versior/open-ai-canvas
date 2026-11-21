@@ -372,8 +372,9 @@ function booleanOption(option: OptionConstraint | undefined, fallback: unknown) 
     return { supported, default: supported && String(fallback) === "true" };
 }
 
-export async function refreshFeatureAvailability() {
-    const payload = useUserStore.getState().user ? await getFeatureAvailability() : await getGuestFeatureAvailability();
+export async function refreshFeatureAvailability(signal?: AbortSignal) {
+    const payload = useUserStore.getState().user ? await getFeatureAvailability(signal) : await getGuestFeatureAvailability(signal);
+    signal?.throwIfAborted();
     useUserStore.getState().setFeatures(payload.features);
     return payload.features;
 }

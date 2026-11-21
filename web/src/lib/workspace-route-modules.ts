@@ -54,7 +54,8 @@ function warm(key: keyof typeof workspaceRoutePages) {
     void workspaceRoutePages[key].preload().catch(() => undefined);
 }
 
-export function preloadWorkspaceRoute(pathnameOrSlug: string) {
+export function preloadWorkspaceRoute(pathnameOrSlug: string, intent: "activate" | "preview" = "activate") {
+    if (intent === "preview" && typeof navigator !== "undefined" && (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
     // 根路径就是创作页，预加载时仍映射到其内部模块名。
     const segments = pathnameOrSlug.split(/[?#]/, 1)[0].split("/").filter(Boolean);
     const slug = segments[0] || "create";

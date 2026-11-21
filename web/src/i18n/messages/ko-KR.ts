@@ -75,6 +75,8 @@ export const koKR: Messages = {
             headingAssets: "에셋과 기록",
         },
         collapsed: {
+            ecommerceStudio: "이미지",
+            ecommerceAgent: "기획",
             videoReplication: "영상",
             interior: "인테리어",
             packaging: "포장",

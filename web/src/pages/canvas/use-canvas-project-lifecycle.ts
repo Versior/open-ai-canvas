@@ -503,40 +503,45 @@ export function useCanvasProjectLifecycle({
         [activeChatId, backgroundMode, canvasAppearance, chatSessions, connectionsRef, nodesRef, projectId, showImageInfo, updateProject, viewportRef],
     );
 
+    const saveForSharing = useCallback(async () => {
+        await persistLocalEdits({ flush: false });
+        await prepareCanvasForCloudAction(projectId);
+    }, [persistLocalEdits, projectId]);
+
     const saveCanvasProject = useCallback(
         async (options: { requireRemote?: boolean } = {}): Promise<boolean> => {
+            if (options.requireRemote !== false) {
+                try {
+                    await saveForSharing();
+                    message.success(translate("canvasPage.lifecycle.savedToCloud"));
+                    return true;
+                } catch (error) {
+                    message.error(error instanceof Error ? `画布未保存到云端：${error.message}` : "画布未保存到云端");
+                    return false;
+                }
+            }
             try {
                 await persistLocalEdits({ flush: false });
                 useCanvasStore.getState().materializeDraft(projectId);
                 await waitForCanvasSync(flushCanvasStorePersistence());
             } catch (error) {
                 console.warn("画布本地持久化暂未完成", error);
-                if (options.requireRemote === false) {
-                    message.error(error instanceof Error ? `画布本地保存失败：${error.message}` : "画布本地保存失败");
-                    return false;
-                }
+                message.error(error instanceof Error ? `画布本地保存失败：${error.message}` : "画布本地保存失败");
+                return false;
             }
             try {
-                if (options.requireRemote === false) {
-                    await saveRemoteUserDataNow(projectId);
-                    message.success(translate("canvasPage.lifecycle.savedToCloud"));
-                } else {
-                    await prepareCanvasForCloudAction(projectId);
-                    message.success(translate("canvasPage.lifecycle.savedToCloud"));
-                }
+                await saveRemoteUserDataNow(projectId);
+                message.success(translate("canvasPage.lifecycle.savedToCloud"));
                 return true;
             } catch (error) {
                 console.warn("画布等待后台同步", error);
-                if (options.requireRemote === false) {
-                    const retryable = !(error instanceof ApiError) || error.retryable;
-                    if (retryable) scheduleRemoteUserDataSync();
-                    message.warning(`本地已保存，云端同步失败：${error instanceof Error ? error.message : "请检查同步状态"}${retryable ? "，将自动重试" : "，请处理后重试"}`);
-                    return true;
-                }
-                return false;
+                const retryable = !(error instanceof ApiError) || error.retryable;
+                if (retryable) scheduleRemoteUserDataSync();
+                message.warning(`本地已保存，云端同步失败：${error instanceof Error ? error.message : "请检查同步状态"}${retryable ? "，将自动重试" : "，请处理后重试"}`);
+                return true;
             }
         },
-        [message, persistLocalEdits, projectId],
+        [message, persistLocalEdits, projectId, saveForSharing],
     );
 
     const clearCanvasFiles = useCallback(() => {
@@ -554,6 +559,7 @@ export function useCanvasProjectLifecycle({
         deleteCurrentProject,
         renameCurrentProject,
         saveCanvasProject,
+        saveForSharing,
         persistLocalEdits,
         updateProject,
     };

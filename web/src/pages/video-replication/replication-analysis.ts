@@ -29,6 +29,7 @@ type AnalyzeOptions = {
     onProgress: (detail: string) => void;
     /** 中断后接着跑：这一步之前已经提交过的文本任务 ID，有就等它的结果，不再新建（不重复扣费）。 */
     existingTask?: (key: string) => string | undefined;
+    operationFor: (key: string, previousFailure?: string) => string;
     /** 每个文本任务一建好就回报 ID，调用方记下来供中断后接回。 */
     onTaskCreated?: (key: string, taskId: string) => void;
 };
@@ -77,6 +78,7 @@ export async function analyzeVideoTeardown(bundle: VideoTeardownBundle, options:
                 height: grid.height,
             })),
             streamText: false,
+            clientOperationId: options.operationFor(key, existing),
             signal,
             expectedUserScope: options.expectedScope,
             onTaskUpdate: (task) => {

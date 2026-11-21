@@ -78,6 +78,7 @@ export type WorkbenchToolDirectory = {
 };
 
 export type CreateWorkbenchTaskInput = {
+    idempotencyKey?: string;
     ecommerceProjectId?: string;
     kind: WorkbenchKind;
     toolId?: string;

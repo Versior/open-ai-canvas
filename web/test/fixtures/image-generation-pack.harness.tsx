@@ -34,10 +34,12 @@ for (const [key, value] of Object.entries({
 }
 const { act, StrictMode } = await import("react");
 const { createRoot } = await import("react-dom/client");
+const { MemoryRouter } = await import("react-router");
 const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
 const { ImageGenerationPack } = await import("../../src/components/image-pack/image-generation-pack");
 const { ResultTile } = await import("../../src/pages/ecommerce-studio/studio-results");
 const { createStudioProduct } = await import("../../src/lib/ecommerce-studio/product");
+const { studioImageInput } = await import("../../src/lib/ecommerce-studio/generation-input");
 const { InteriorBoard } = await import("../../src/pages/interior/interior-board");
 const { WorkbenchGalleryTile } = await import("../../src/pages/workbench/workbench-gallery");
 const { EcommerceOutputGallery } = await import("../../src/pages/ecommerce/output-gallery");
@@ -267,6 +269,7 @@ test("历史图片、任务失败、取消和明确关闭动效不播放", async
 test("电商生图台的新结果保留袋子，旧采用图不会被冒充新结果开包", async () => {
     const view = mount();
     const product = createStudioProduct("sample", now);
+    product.photos = [{ id: "photo", resourceId: "product-front", url: "/front.png", view: "front", truth: true, addedAt: now }];
     const shot: StudioShot = {
         id: "shot",
         role: "main-white",
@@ -277,26 +280,40 @@ test("电商生图台的新结果保留袋子，旧采用图不会被冒充新�
         lines: [],
         sellingPointIds: [],
         tweaks: [],
-        attempts: [{ id: "attempt", status: "running", model: "sample", tweaks: [], createdAt: now, outputs: [] }],
+        attempts: [{ id: "legacy", status: "running", model: "sample", tweaks: [], createdAt: now, outputs: [] }],
     };
     const group = { key: "sample", ref: { planKind: "main" as const }, title: "主图", createdAt: now, textMode: "model" as const, shots: [shot], fromAgent: false };
-    const render = (current: StudioShot) => view.render(<ResultTile product={product} group={group} shot={current} blocked="" onView={noop} onDownload={noop} onReference={noop} onRerun={noop} onSync={noop} />);
-    await render({ ...shot, attempts: [{ ...shot.attempts[0], status: "submitting" }] });
+    const render = (current: StudioShot) =>
+        view.render(
+            <MemoryRouter initialEntries={["/studio"]}>
+                <ResultTile product={product} group={group} shot={current} blocked="" onView={noop} onDownload={noop} onReference={noop} onRerun={noop} onSync={noop} />
+            </MemoryRouter>,
+        );
+    await render(shot);
+    expect(view.host.textContent).toContain("回执待核对");
+    expect(view.host.querySelector('a[href="/tasks"]')).not.toBeNull();
+    expect(view.host.querySelector(".image-generation-packet")).toBeNull();
+
+    const input = studioImageInput(product, { shot, textMode: group.textMode, quality: product.brief.quality, resolution: product.brief.resolution, fromForm: true }, "sample", useConfigStore.getState().config);
+    const submitting = { ...shot.attempts[0], id: "attempt", status: "submitting" as const, input, replaySafe: true };
+    const running = { ...submitting, taskId: "task", status: "running" as const };
+    await render({ ...shot, attempts: [submitting] });
     expect(view.host.querySelector(".image-pack-progress")?.getAttribute("data-phase")).toBe("submitting");
     expect(view.host.textContent).toContain("正在提交");
-    await render(shot);
+    await render({ ...shot, attempts: [running] });
     const packet = view.host.querySelector(".image-generation-packet");
+    expect(packet).not.toBeNull();
     const output = { resourceId: "new-result", url: "/result.png" };
-    const done = { ...shot, attempts: [{ ...shot.attempts[0], status: "succeeded" as const, outputs: [output] }] };
+    const done = { ...shot, attempts: [{ ...running, status: "succeeded" as const, outputs: [output] }] };
     await render(done);
     expect(view.host.querySelector(".image-generation-packet")).toBe(packet);
     expect(view.host.querySelector("[data-image-pack-result] img")).not.toBeNull();
     await render({ ...done, adopted: { resourceId: "old-result", url: "/old.png" } });
     expect(view.host.querySelector(".image-generation-packet")).toBeNull();
-    await render({ ...shot, attempts: [{ ...shot.attempts[0], status: "failed", error: "模型暂时不可用", outputs: [] }] });
+    await render({ ...shot, attempts: [{ ...running, status: "failed", error: "模型暂时不可用", outputs: [] }] });
     expect(view.host.querySelector('.es-tile-state[data-tone="error"]')?.textContent).toContain("生成失败");
     expect(view.host.textContent).toContain("模型暂时不可用");
-    await render({ ...shot, attempts: [{ ...shot.attempts[0], status: "cancelled", outputs: [] }] });
+    await render({ ...shot, attempts: [{ ...running, status: "cancelled", outputs: [] }] });
     expect(view.host.querySelector('.es-tile-state[data-tone="neutral"]')?.textContent).toContain("已取消");
     await view.close();
 });

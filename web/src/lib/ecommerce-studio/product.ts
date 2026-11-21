@@ -168,6 +168,10 @@ export function studioAttemptActive(attempt: Pick<StudioAttempt, "status">) {
     return ACTIVE.includes(attempt.status);
 }
 
+export function studioAttemptNeedsReview(attempt: StudioAttempt) {
+    return studioAttemptActive(attempt) && !attempt.taskId && !(attempt.replaySafe && attempt.input);
+}
+
 export function studioShotLatestAttempt(shot: StudioShot) {
     return shot.attempts[shot.attempts.length - 1];
 }
@@ -244,6 +248,7 @@ function normalizeAttempt(attempt: Record<string, unknown>, fallbackTime: string
     return {
         id: attempt.id,
         taskId: typeof attempt.taskId === "string" ? attempt.taskId : undefined,
+        ...(attempt.replaySafe === true ? { replaySafe: true } : {}),
         revisionResourceId: typeof attempt.revisionResourceId === "string" ? attempt.revisionResourceId : undefined,
         ...(isRecord(attempt.input) ? { input: normalizeAttemptInput(attempt.input, fallbackTime) } : {}),
         status: (STATUSES.has(str(attempt.status)) ? attempt.status : "failed") as StudioAttemptStatus,
@@ -275,7 +280,7 @@ function normalizeAttemptInput(input: Record<string, unknown>, time: string): St
             styleReferences: arrayOf(compiled.styleReferences, (photo) => normalizePhoto(photo, time, false)),
             ...(isRecord(compiled.revisionReference) ? { revisionReference: normalizePhoto(compiled.revisionReference, time, false) } : {}),
             ...(isRecord(compiled.layoutGuide) && studioCompositionOf(compiled.layoutGuide.composition) && typeof compiled.layoutGuide.ratio === "string"
-                ? { layoutGuide: { composition: studioCompositionOf(compiled.layoutGuide.composition)!, ratio: compiled.layoutGuide.ratio } }
+                ? { layoutGuide: { composition: studioCompositionOf(compiled.layoutGuide.composition)!, ratio: compiled.layoutGuide.ratio, ...(typeof compiled.layoutGuide.resourceId === "string" ? { resourceId: compiled.layoutGuide.resourceId } : {}) } }
                 : {}),
             trimmed: strings(compiled.trimmed) as NonNullable<StudioAttempt["input"]>["compiled"]["trimmed"],
             ...(typeof compiled.textModeNotice === "string" ? { textModeNotice: compiled.textModeNotice } : {}),

@@ -11,6 +11,27 @@ type Props = {
     busy: boolean;
 };
 
+function PackagingWindowFields({ parameters, onDocument, busy }: { parameters: PackagingParameters; onDocument: Props["onDocument"]; busy: boolean }) {
+    const [width, setWidth] = useState(String(parameters.windowWidth));
+    const [height, setHeight] = useState(String(parameters.windowHeight));
+    const changed = Number(width) !== parameters.windowWidth || Number(height) !== parameters.windowHeight;
+    return (
+        <>
+            <label>
+                开窗宽
+                <input aria-label="开窗宽" type="number" min={0} max={parameters.length - 4} step={0.1} value={width} onChange={(event) => setWidth(event.target.value)} />
+            </label>
+            <label>
+                开窗高
+                <input aria-label="开窗高" type="number" min={0} max={parameters.height - 4} step={0.1} value={height} onChange={(event) => setHeight(event.target.value)} />
+            </label>
+            <button type="button" disabled={busy || !width || !height || !changed} onClick={() => onDocument((current) => ({ ...current, parameters: { ...current.parameters, windowWidth: Number(width), windowHeight: Number(height) } }))}>
+                应用开窗尺寸
+            </button>
+        </>
+    );
+}
+
 export function PackagingParametersPanel(props: Props) {
     const [query, setQuery] = useState("");
     const field = (key: keyof PackagingParameters, label: string, min: number, max: number, step = 0.1) => (
@@ -80,12 +101,11 @@ export function PackagingParametersPanel(props: Props) {
                 <summary>结构细节与开窗</summary>
                 <div className="pkg-fields">
                     {field("frontHeight", "展示前沿高", 5, props.document.parameters.height)}
-                    {field("windowWidth", "开窗宽", 0, props.document.parameters.length - 4)}
-                    {field("windowHeight", "开窗高", 0, props.document.parameters.height - 4)}
+                    <PackagingWindowFields key={`${props.document.template.id}:${props.document.parameters.windowWidth}:${props.document.parameters.windowHeight}`} parameters={props.document.parameters} onDocument={props.onDocument} busy={props.busy} />
                     {field("spoutRadius", "吸嘴半径", 0, 50)}
                     {field("inflation", "袋体鼓胀", 0, 1, 0.05)}
                 </div>
-                <p className="pkg-help">开窗宽高同时设为 0 可关闭。软袋鼓胀为曲面预览。</p>
+                <p className="pkg-help">宽高一起应用；两项设为 0 后应用可关闭开窗。软袋鼓胀为曲面预览。</p>
             </details>
             <section>
                 <h3>

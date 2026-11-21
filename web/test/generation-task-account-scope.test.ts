@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 
 import { setActiveUserScope } from "../src/lib/user-scope";
-import { runBackendGenerationTask, runBackendGenerationTaskBatch } from "../src/services/api/generation-task";
+import { prepareBackendGenerationTask, runBackendGenerationTask, runBackendGenerationTaskBatch } from "../src/services/api/generation-task";
 import type { GenerationTask } from "../src/services/api/task-center";
 import { createModelChannel, defaultConfig, encodeChannelModel } from "../src/stores/use-config-store";
 
@@ -56,6 +56,29 @@ function deferred<T>() {
     });
     return { promise, resolve };
 }
+
+test("personal submissions only opt in with an explicit operation and batch retries preserve each slot's identity", async () => {
+    installUserScope("user-a");
+    const base = { mode: "text" as const, prompt: "test", config: textConfig() };
+    expect((await prepareBackendGenerationTask(base)).idempotencyKey).toBeUndefined();
+    expect((await prepareBackendGenerationTask({ ...base, clientOperationId: "message-one" })).idempotencyKey).toBe("message-one");
+    const requests: Array<string | undefined> = [];
+    const dependencies = {
+        createId: () => "unused",
+        createTask: async (input: Awaited<ReturnType<typeof prepareBackendGenerationTask>>) => {
+            requests.push(input.idempotencyKey);
+            return task("succeeded");
+        },
+        waitTask: async () => task("succeeded"),
+    };
+    const retryContextsByBatchIndex = ["left", "right"].map((slot) => ({ retryOf: slot, attemptGroupId: "group", clientOperationId: `retry-${slot}` }));
+    await runBackendGenerationTaskBatch({ ...base, count: 2, retryContextsByBatchIndex }, dependencies);
+    expect(requests).toEqual(["retry-left", "retry-right"]);
+    requests.length = 0;
+    await runBackendGenerationTaskBatch({ ...base, count: 2, clientOperationId: "batch-key" }, dependencies);
+    expect(requests.every(Boolean)).toBe(true);
+    expect(new Set(requests).size).toBe(2);
+});
 
 test("account scope is rechecked after reference preparation and before task creation", async () => {
     installUserScope("user-a");

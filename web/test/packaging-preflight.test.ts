@@ -4,7 +4,7 @@ import { strFromU8, unzipSync } from "fflate";
 import { newPackagingDocument, type PackagingArtwork } from "../src/lib/packaging/types";
 import { compilePackaging } from "../src/lib/packaging/geometry";
 import { packagingPreflight } from "../src/lib/packaging/preflight";
-import { packagingProcessSvg, packagingProjectZip, packagingSvg, readPackagingProjectZip } from "../src/lib/packaging/delivery";
+import { embeddedPackagingResources, packagingProcessSvg, packagingProjectZip, packagingSvg, readPackagingProjectZip } from "../src/lib/packaging/delivery";
 
 const document = newPackagingDocument(
     {
@@ -60,6 +60,36 @@ describe("交付自动检查", () => {
 
 describe("工艺和方案交付", () => {
     const embedded = new Map([["r", "data:image/png;base64,AA=="]]);
+    test("独立 SVG 只编码当前工程引用的唯一原稿，缺失不静默交付", async () => {
+        const browser = new Window();
+        const original = globalThis.FileReader;
+        const blob = new browser.Blob([Uint8Array.of(1, 2, 3)], { type: "image/png" });
+        let reads = 0;
+        class Reader extends browser.FileReader {
+            readAsDataURL(value: typeof blob) {
+                reads++;
+                super.readAsDataURL(value);
+            }
+        }
+        Object.defineProperty(globalThis, "FileReader", { configurable: true, writable: true, value: Reader });
+        try {
+            const resources = new Map([
+                ["previous-project", blob],
+                ["r", blob],
+            ]) as unknown as Map<string, Blob>;
+            const current = { ...document, artworks: [art, { ...art, id: "again" }] };
+            const images = await embeddedPackagingResources(current, resources);
+            expect([...images.keys()]).toEqual(["r"]);
+            expect(reads).toBe(1);
+            expect(packagingSvg(current, compilePackaging(current), images)).toContain('href="data:image/png;base64,AQID"');
+            resources.delete("r");
+            await expect(embeddedPackagingResources(current, resources)).rejects.toThrow("图稿尚未加载");
+            expect(resources.has("previous-project")).toBe(true);
+        } finally {
+            Object.defineProperty(globalThis, "FileReader", { configurable: true, writable: true, value: original });
+            await browser.happyDOM.close();
+        }
+    });
     test("SVG 去重原稿、强制真实变换比例、完整隐藏工艺组", () => {
         const d = { ...document, artworks: [art, { ...art, id: "copy" }, { ...art, id: "foil", role: "foil" as const }, { ...art, id: "uv", role: "uv" as const }, { ...art, id: "emboss", role: "emboss" as const }] };
         const svg = packagingSvg(d, compilePackaging(d), embedded);

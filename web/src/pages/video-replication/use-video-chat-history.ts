@@ -55,14 +55,14 @@ export function useVideoChatHistory(draft: VideoChatDraft, onRestore: (draft: Vi
     const latest = useRef({ draft, onRestore });
     latest.current = { draft, onRestore };
     const current = useRef(archive);
-    const writes = useRef(Promise.resolve());
+    const writes = useRef(Promise.resolve(true));
     const savedSessions = useRef(new Map<string, VideoChatSession>());
     const sessionIds = useRef(new Map<string, string>());
     const mounted = useRef(false);
     const serializedDraft = JSON.stringify(draft);
 
     const save = (value: Archive) => {
-        if (scope === "guest") return;
+        if (scope === "guest") return Promise.resolve(false);
         setSaving(true);
         const session = value.sessions.find((item) => item.id === value.activeId)!;
         writes.current = writes.current.then(async () => {
@@ -71,7 +71,7 @@ export function useVideoChatHistory(draft: VideoChatDraft, onRestore: (draft: Vi
                 const stored = await saveVideoChatSession(scope, { ...session, id }, savedSessions.current.get(id));
                 sessionIds.current.set(session.id, stored.activeId);
                 savedSessions.current.set(stored.activeId, { ...session, id: stored.activeId });
-                if (!mounted.current) return;
+                if (!mounted.current) return true;
                 const sessions = current.current.sessions.map((item) => (item.id === session.id ? { ...item, id: stored.activeId } : item));
                 current.current = {
                     version: 1,
@@ -80,19 +80,22 @@ export function useVideoChatHistory(draft: VideoChatDraft, onRestore: (draft: Vi
                 };
                 setArchive(current.current);
                 setError("");
+                return true;
             } catch {
                 if (mounted.current) setError("对话未能保存到本机，请重试保存后再刷新。");
+                return false;
             }
         });
         const pending = writes.current;
         void pending.then(() => {
             if (mounted.current && pending === writes.current) setSaving(false);
         });
+        return pending;
     };
     const commit = (value: Archive) => {
         current.current = value;
         setArchive(value);
-        save(value);
+        return save(value);
     };
 
     useEffect(() => {
@@ -140,8 +143,8 @@ export function useVideoChatHistory(draft: VideoChatDraft, onRestore: (draft: Vi
         sessions: archive.sessions,
         turns: archive.sessions.find((session) => session.id === archive.activeId)!.turns,
         setTurns: (update: (turns: VideoChatTurn[]) => VideoChatTurn[]) => {
-            if (!ready) return;
-            commit({
+            if (!ready) return Promise.resolve(false);
+            return commit({
                 ...current.current,
                 sessions: current.current.sessions.map((session) => (session.id === current.current.activeId ? { ...session, turns: update(session.turns), draft: latest.current.draft, updatedAt: new Date().toISOString() } : session)),
             });
