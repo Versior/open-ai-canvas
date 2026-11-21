@@ -292,7 +292,7 @@ export function useStudioRunner() {
                     prompt,
                     config: generation,
                     referenceImages: photos.map(photoReference),
-                    streamText: false,
+                    streamText: true,
                     metadata: studioAnalysisMetadata(productId, "recognize", { platform: product.platform, category: studioProductTypeOf(product) || product.dossier?.category, productName: studioTitleOf(product) || product.name }),
                     onTaskUpdate: (task) => rememberAnalysisTask(productId, task),
                 });
@@ -399,7 +399,7 @@ export function useStudioRunner() {
                             prompt: buildDetailPlanPrompt(product, roles, request, modelCapabilityConfigFor(current, generation.model).text?.references.promptMaxChars),
                             config: generation,
                             referenceImages: images.map(photoReference),
-                            streamText: false,
+                            streamText: true,
                             metadata: { ...studioAnalysisMetadata(productId, "plan", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product), ...metadata, studioPlanAttemptId: receipt.attemptId },
                             onTaskUpdate: (task) => {
                                 if (task.status === "succeeded") taskSucceeded = true;
@@ -443,7 +443,7 @@ export function useStudioRunner() {
                     prompt: buildAskPrompt(product),
                     config: generation,
                     referenceImages: images.map(photoReference),
-                    streamText: false,
+                    streamText: true,
                     metadata: studioAnalysisMetadata(productId, "ask", knowledgeContext(product)),
                     onTaskUpdate: (task) => rememberAnalysisTask(productId, task),
                 });
@@ -479,7 +479,7 @@ export function useStudioRunner() {
                     prompt: buildDirectionsPrompt(product, studioPlanScopeOf(product), images.length ? { photos: photos.length, references: references.length, readingViews } : undefined),
                     config: generation,
                     referenceImages: images.map(photoReference),
-                    streamText: false,
+                    streamText: true,
                     metadata: { ...studioAnalysisMetadata(productId, "directions", knowledgeContext(product), STUDIO_DETAIL_PLAN_CAPABILITY), ...planKnowledgeMetadata(product) },
                 });
                 const items = parseDirections(result.text || "", () => nanoid(10), product);

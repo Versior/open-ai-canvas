@@ -15,6 +15,8 @@ export function StudioPlanReceiptPanel({ productId, receipt, current, busy, onRe
               ? "文本已完成 · 这次结果未采用"
               : receipt.state === "submitted"
                 ? "已取得任务编号 · 尚未确认可用策划"
+                : receipt.state === "task-failed"
+                  ? "文本任务失败 · 没有新策划"
                 : receipt.taskId
                   ? "文本任务未完成 · 没有新策划"
                   : "未取得任务编号 · 没有新策划";
@@ -71,7 +73,7 @@ export function StudioPlanReceiptPanel({ productId, receipt, current, busy, onRe
                     </ol>
                 </details>
             ) : null}
-            {receipt.taskId && (receipt.state === "not-accepted" || receipt.state === "submitted") ? (
+            {receipt.taskId && (receipt.state === "not-accepted" || receipt.state === "submitted" || receipt.state === "task-failed") ? (
                 <div>
                     <Button size="small" disabled={!current || busy} onClick={onRecheck}>
                         重验原任务（不扣费）

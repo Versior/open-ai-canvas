@@ -224,6 +224,7 @@ test("starred input, durable diagnostics, GET-only recovery, suite identity and 
         studioTemplateSource: "library",
         studioPlanRoles: expect.arrayContaining(["detail-scene"]),
     });
+    expect(requests[0].input?.textOptions).toMatchObject({ stream: true });
     expect(studioActivePlan(local())).toBeUndefined();
     expect(local().planReceipt?.review?.length).toBe(1);
     await act(async () => {
