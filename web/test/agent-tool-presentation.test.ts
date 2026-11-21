@@ -131,6 +131,8 @@ describe("Agent tool presentation", () => {
         expect(agentToolCategory("skill_market_search")).toBe("read");
         expect(friendlyAgentToolSummary("memory_update", "", { eventType: "tool_completed", result: { status: "pending_review" } })).toBe("记忆修改已提交，等你确认");
         expect(friendlyAgentToolSummary("memory_update", "", { eventType: "tool_completed", result: { status: "unchanged" } })).toBe("记忆里已有这些内容，未改动");
+        expect(friendlyAgentToolSummary("memory_update", "", { eventType: "tool_completed", result: { status: "rejected" } })).toBe("记忆修改已被拒绝，未写入");
+        expect(friendlyAgentToolSummary("memory_update", "", { eventType: "tool_completed", result: { status: "undone" } })).toBe("记忆修改已撤销，未重新写入");
         expect(friendlyAgentToolSummary("memory_update", "只读模式不能修改长期记忆", { eventType: "tool_failed" })).toBe("长期记忆未更新");
         expect(friendlyAgentToolSummary("skill_market_search", "", { eventType: "tool_completed", result: { matches: [{ skillId: "a" }, { skillId: "b" }] } })).toBe("技能市场找到 2 个候选");
         expect(friendlyAgentToolSummary("skill_market_search", "", { eventType: "tool_completed", result: { matches: [] } })).toBe("技能市场没有匹配的技能");

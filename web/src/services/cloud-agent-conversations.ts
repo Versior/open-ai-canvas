@@ -3,6 +3,7 @@ import { markdownPlainText } from "@/lib/markdown-plain-text";
 import { getActiveUserScope } from "@/lib/user-scope";
 import type { AgentPermissionMode, AgentRun } from "@/services/api/agent";
 import { isAgentPageContext, type AgentRequestTarget } from "@/lib/agent-page-context";
+import { loadAgentConversationRows, saveAgentConversationRows } from "@/services/cloud-agent-conversation-store";
 
 export type CloudAgentMessagePresentation = {
     displayText?: string;
@@ -44,6 +45,7 @@ export type CloudAgentConversation = {
     lastEventSeq?: number;
     /** 未发送草稿和主动选中的会话只属于本机，不由云端覆盖。 */
     draft?: string;
+    draftEditId?: string;
     /** 页面讨论的完整要求与原目标，随本机草稿保存，刷新不能改投当前页。 */
     draftPrefill?: CloudAgentDraftPrefill;
     localNewCanvasId?: string;
@@ -62,11 +64,13 @@ type CloudAgentConversationDocument = {
     version: 1;
     activeId: string | null;
     conversations: CloudAgentConversation[];
+    readOnly?: true;
 };
 
 export type CloudAgentPendingSubmission = CloudAgentMessagePresentation & {
     fingerprint: string;
     key: string;
+    draftEditId?: string;
     request?: import("@/services/api/agent").CreateAgentRunInput;
     parentRunId?: string;
     messageId?: string;
@@ -76,9 +80,15 @@ const CLOUD_AGENT_CONVERSATIONS_KEY = "cloud-agent-conversations-v2";
 
 // 平台只有一个 Agent：对话按账号保存，不再按画布分桶。每轮绑定哪个画布由发送时所在页面决定。
 export async function loadCloudAgentConversations(scope = getActiveUserScope()): Promise<CloudAgentConversationDocument> {
-    const value = await localForageStorageForScope(scope).getItem(storageKey());
-    if (!value) return emptyDocument();
+    const restored = await loadAgentConversationRows(CLOUD_AGENT_CONVERSATIONS_KEY, scope, parseLegacyArchive, (raw) => {
+        const row: unknown = JSON.parse(raw);
+        if (!isConversation(row)) throw new Error("Agent 对话历史格式无效");
+        return row;
+    });
+    return { version: 1, ...restored };
+}
 
+function parseLegacyArchive(value: string): CloudAgentConversationDocument {
     let parsed: unknown;
     try {
         parsed = JSON.parse(value);
@@ -89,23 +99,8 @@ export async function loadCloudAgentConversations(scope = getActiveUserScope()):
     return parsed;
 }
 
-const documentWrites = new Map<string, Promise<unknown>>();
-export async function saveCloudAgentConversations(activeId: string | null, conversations: CloudAgentConversation[], scope = getActiveUserScope()) {
-    // 流式标记只属于内存中的观察状态。若网络在最后一个 delta 后断开，
-    // 也不能让下次恢复把思考卡片误判为仍在实时展开。
-    // 发送中的插话气泡同理：结果未知，刷新后由事件回放补回已被接收的那条，原文仍在本机队列里。
-    const persistedConversations = conversations.map((conversation) => ({
-        ...conversation,
-        messages: conversation.messages.filter((message) => message.interjection !== "sending").map((message) => ({ ...message, streaming: false })),
-    }));
-    const document: CloudAgentConversationDocument = { version: 1, activeId, conversations: persistedConversations };
-    const write = (documentWrites.get(scope) || Promise.resolve()).catch(() => undefined).then(() => localForageStorageForScope(scope).setItem(storageKey(), JSON.stringify(document)));
-    documentWrites.set(scope, write);
-    try {
-        await write;
-    } finally {
-        if (documentWrites.get(scope) === write) documentWrites.delete(scope);
-    }
+export function saveCloudAgentConversations(activeId: string | null, conversation: CloudAgentConversation | undefined, scope = getActiveUserScope(), deleted: string[] = []) {
+    return saveAgentConversationRows(CLOUD_AGENT_CONVERSATIONS_KEY, scope, activeId, conversation, deleted);
 }
 
 // Keep the retry key outside the chat snapshot. If the response is lost, a
@@ -126,6 +121,7 @@ export async function loadCloudAgentPendingSubmission(conversationId: string, sc
         return {
             fingerprint: parsed.fingerprint,
             key: parsed.key,
+            ...(typeof parsed.draftEditId === "string" ? { draftEditId: parsed.draftEditId } : {}),
             request: renameLegacySkillIds(parsed.request),
             parentRunId: parsed.parentRunId,
             messageId: parsed.messageId,
@@ -172,35 +168,29 @@ function displayConversationTitle(value: string) {
     return markdownPlainText(value.replace(/@\[skill:[^\]]+\]/gu, "技能包")) || "新对话";
 }
 
-function storageKey() {
-    return `${CLOUD_AGENT_CONVERSATIONS_KEY}:global`;
-}
-
 function pendingStorageKey(conversationId: string) {
     return `${CLOUD_AGENT_CONVERSATIONS_KEY}:pending:${encodeURIComponent(conversationId)}`;
-}
-
-function emptyDocument(): CloudAgentConversationDocument {
-    return { version: 1, activeId: null, conversations: [] };
 }
 
 function isConversationDocument(value: unknown): value is CloudAgentConversationDocument {
     if (!value || typeof value !== "object") return false;
     const document = value as Partial<CloudAgentConversationDocument>;
     if (document.version !== 1 || !Array.isArray(document.conversations)) return false;
-    return document.conversations.every((conversation) => {
-        if (!conversation || typeof conversation !== "object") return false;
-        const candidate = conversation as Partial<CloudAgentConversation>;
-        return (
-            typeof candidate.id === "string" &&
-            typeof candidate.title === "string" &&
-            Array.isArray(candidate.messages) &&
-            typeof candidate.createdAt === "string" &&
-            typeof candidate.updatedAt === "string" &&
-            (candidate.draftPrefill === undefined || isDraftPrefill(candidate.draftPrefill)) &&
-            ["read_only", "auto", "request_approval"].includes(candidate.permissionMode || "")
-        );
-    });
+    return document.conversations.every(isConversation);
+}
+
+function isConversation(value: unknown): value is CloudAgentConversation {
+    if (!value || typeof value !== "object") return false;
+    const candidate = value as Partial<CloudAgentConversation>;
+    return (
+        typeof candidate.id === "string" &&
+        typeof candidate.title === "string" &&
+        Array.isArray(candidate.messages) &&
+        typeof candidate.createdAt === "string" &&
+        typeof candidate.updatedAt === "string" &&
+        (candidate.draftPrefill === undefined || isDraftPrefill(candidate.draftPrefill)) &&
+        ["read_only", "auto", "request_approval"].includes(candidate.permissionMode || "")
+    );
 }
 
 function isDraftPrefill(value: unknown): value is CloudAgentDraftPrefill {

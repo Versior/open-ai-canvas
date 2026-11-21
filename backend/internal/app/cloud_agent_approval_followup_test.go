@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"yingce/backend/internal/database"
@@ -84,6 +86,109 @@ func approvalFollowUpCanvas(t *testing.T, s *Service) (string, int64) {
 	}
 	title, _ := creationMaps(doc["nodes"])[0]["title"].(string)
 	return title, canvas.Revision
+}
+
+func TestCloudAgentLateStopKeepsSettledRejectionAndCancellation(t *testing.T) {
+	for _, terminal := range []string{"rejected", "cancelled"} {
+		t.Run(terminal, func(t *testing.T) {
+			s, runID, approvalID := approvalFollowUpFixture(t)
+			if terminal == "rejected" {
+				if err := s.DecideCloudAgentApproval("user", runID, approvalID, "reject", ""); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := s.CancelCloudAgent(context.Background(), "user", runID); err != nil {
+				t.Fatal(err)
+			}
+			before, err := s.CloudAgentRun("user", runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if before.Status != terminal || before.CleanupPending {
+				t.Fatalf("not settled: %s/%v", before.Status, before.CleanupPending)
+			}
+			if terminal == "cancelled" {
+				var conflict *AppError
+				if decisionErr := s.DecideCloudAgentApproval("user", runID, approvalID, "reject", ""); !errors.As(decisionErr, &conflict) || conflict.Status != 409 {
+					t.Fatalf("late approval must not rewrite a cancelled run: %v", decisionErr)
+				}
+			}
+			if err := s.CancelCloudAgent(context.Background(), "user", runID); err != nil {
+				t.Fatal(err)
+			}
+			after, err := s.CloudAgentRun("user", runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if after.Status != before.Status || after.Revision != before.Revision || after.EventCount != before.EventCount || after.CleanupPending {
+				t.Fatalf("late stop rewrote %s: %s/rev%d/events%d → %s/rev%d/events%d", terminal, before.Status, before.Revision, before.EventCount, after.Status, after.Revision, after.EventCount)
+			}
+		})
+	}
+}
+
+func TestCloudAgentApprovalReasonCodePoints(t *testing.T) {
+	for _, char := range []string{"a", "中", "🎬"} {
+		t.Run(char, func(t *testing.T) {
+			s, runID, approvalID := approvalFollowUpFixture(t)
+			reason := strings.Repeat(char, 2000)
+			if err := s.DecideCloudAgentApproval("user", runID, approvalID, "reject", reason+char); err == nil {
+				t.Fatal("accepted 2001 characters")
+			}
+			if err := s.DecideCloudAgentApproval("user", runID, approvalID, "reject", reason); err != nil {
+				t.Fatal(err)
+			}
+			run, err := s.CloudAgentRun("user", runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, event := range run.Events {
+				if event.Type == "approval_decided" && event.Payload["reason"] == reason {
+					return
+				}
+			}
+			t.Fatal("approval lost the original reason")
+		})
+	}
+}
+
+func TestCloudAgentLateStopRepairsUnmarkedLegacyChild(t *testing.T) {
+	s, db, root := reliableAgentRoot(t)
+	run, state := agentInterjectionState(t, s, root.ID)
+	child := model.Task{ID: "orphan-during-stop", UserID: "user", ProjectID: "agent-canvas", Type: "canvas_text", Status: model.TaskStatusQueued}
+	if err := db.Create(&child).Error; err != nil {
+		t.Fatal(err)
+	}
+	state.ActiveTaskID = child.ID
+	state.TaskIDs = append(state.TaskIDs, child.ID)
+	if err := s.repo.MutateCloudAgent("user", root.ID, run.Revision, func(current *model.CloudAgentExecution, _ *repository.Repository) error {
+		return cloudAgentSave(current, &state)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Task{}).Where("id = ?", root.ID).Update("status", model.TaskStatusCancelled).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.CloudAgentExecution{}).Where("id = ?", root.ID).Updates(map[string]any{"status": "cancelled", "cleanup_pending": false, "active_task_id": ""}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CancelCloudAgent(context.Background(), "user", root.ID); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := s.repo.TaskForUser("user", child.ID)
+	if err != nil || updated.Status != model.TaskStatusCancelled {
+		t.Fatalf("unmarked child remains %s: %v", updated.Status, err)
+	}
+	before, err := s.repo.CloudAgent("user", root.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CancelCloudAgent(context.Background(), "user", root.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := s.repo.CloudAgent("user", root.ID)
+	if err != nil || after.Revision != before.Revision || after.CleanupPending {
+		t.Fatal("replayed stop reopened completed cleanup", err)
+	}
 }
 
 // 决定落库后、被批准的调用执行前，运行已经是 running。这段间隙里启动的 Pi 会话

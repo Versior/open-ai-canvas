@@ -43,6 +43,7 @@ import type { CanvasNodeData } from "@/types/canvas";
 import type { AgentCanvasUndoState, AgentCanvasUndoTarget } from "@/lib/canvas/agent-canvas-undo";
 import type { AgentMediaSettings, AgentPermissionMode, AgentReasoningMode } from "@/services/api/agent";
 import { buildAgentFeedSegments } from "@/lib/canvas/agent-operation-feed";
+import { useAgentMemoryRevisionStatuses } from "@/hooks/use-agent-memory-revision-statuses";
 import { AgentWelcome } from "./canvas-agent-welcome";
 import { useEffectiveConfig } from "@/stores/use-config-store";
 import { agentPermissionLabel, agentPermissionMenuItems, agentPermissionShortLabel, agentPermissionVisual } from "./canvas-cloud-agent-settings";
@@ -816,6 +817,9 @@ export function AgentConversation({
     // 只渲染最近的一小段历史：几千条消息全部挂到 DOM 会让画布拖动明显掉帧。
     const [visibleCount, setVisibleCount] = useState(80);
     const startIndex = Math.max(0, segments.length - visibleCount);
+    const visibleSegments = useMemo(() => segments.slice(startIndex), [segments, startIndex]);
+    const memoryIds = useMemo(() => [...new Set(visibleSegments.flatMap((segment) => (segment.kind === "message" && segment.item.memoryUpdate?.revisionId ? [segment.item.memoryUpdate.revisionId] : [])))].sort(), [visibleSegments]);
+    const memoryStatuses = useAgentMemoryRevisionStatuses(memoryIds);
     const lastMessage = messages.at(-1);
     const tail = segments.at(-1);
     const liveActivity = busy && !approval && activity === "running";
@@ -950,7 +954,7 @@ export function AgentConversation({
                             查看更早的 {Math.min(startIndex, 80)} 条记录
                         </button>
                     ) : null}
-                    {segments.slice(startIndex).map((segment, offset) => {
+                    {visibleSegments.map((segment, offset) => {
                         const index = startIndex + offset;
                         const footer = segment.kind === "message" ? agentReplyFooterLabels(segment.item, modelLabel) : undefined;
                         return segment.kind === "activity" ? (
@@ -969,6 +973,8 @@ export function AgentConversation({
                             <AgentChatMessage
                                 key={segment.key}
                                 item={segment.item}
+                                memoryStatus={segment.item.memoryUpdate ? memoryStatuses.statusFor(segment.item.memoryUpdate.revisionId) : undefined}
+                                onRefreshMemoryStatus={segment.item.memoryUpdate ? memoryStatuses.retry : undefined}
                                 replyModelLabel={footer?.model}
                                 replyUsageLabel={footer?.usage}
                                 replyTimeLabel={footer?.time}
@@ -1205,7 +1211,7 @@ export function ApprovalCard({
                     onChange={(event) => onReasonChange(event.target.value)}
                     placeholder="告诉 Agent 为什么暂不执行"
                     autoSize={{ minRows: 2, maxRows: 3 }}
-                    maxLength={2000}
+                    count={{ max: 2000, strategy: (value) => Array.from(value).length, exceedFormatter: (value, { max }) => Array.from(value).slice(0, max).join("") }}
                     disabled={submitting}
                 />
             ) : null}

@@ -321,6 +321,7 @@ func TestCloudAgentPiPlanNudgeResumesAfterFinalAnswer(t *testing.T) {
 	state.Plan = []cloudAgentPlanItem{{ID: "step-1", Title: "创建文本节点", Status: "pending"}}
 	state.Step = 1
 	state.PiAssistantResponses = 1
+	state.Canonical.Messages = append(state.Canonical.Messages, map[string]any{"role": "assistant", "content": "准备创建节点。"})
 	interjectionSaveState(t, s, db, run, &state)
 
 	if err := s.completeCloudAgentPiRun("user", root.ID); err != nil {

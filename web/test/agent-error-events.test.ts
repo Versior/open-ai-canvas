@@ -82,6 +82,21 @@ test("completed, cancelled and rejected runs do not create a failure card", () =
     expect(reduceEvents(["completed", "cancelled", "rejected"].map((state) => event("run_status", { status: state })))).toEqual([]);
 });
 
+test("memory replay updates one card without resurrecting a rejected or undone change", () => {
+    const memory = (status: string) => event("memory_updated", { revisionId: "review-1", status, text: status });
+    for (const states of [
+        ["pending_review", "applied"],
+        ["pending_review", "rejected"],
+        ["applied", "undone"],
+    ]) {
+        const [previous, latest] = states;
+        const messages = reduceEvents([memory(previous), memory(latest), memory(previous), memory(latest)]);
+        expect(messages).toHaveLength(1);
+        expect(messages[0]).toMatchObject({ id: "memory-review-1", text: latest, memoryUpdate: { status: latest } });
+    }
+    expect(reduceEvents([memory("unknown")])).toEqual([]);
+});
+
 test("cached conversations fold only the event rows with a matching terminal run", () => {
     const initial: CloudAgentChatMessage[] = [
         { id: "ag-first:9", role: "error", text: "Agent 执行失败" },

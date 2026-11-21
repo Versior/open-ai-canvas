@@ -19,7 +19,7 @@ const api = "openai-completions";
 
 async function readRequest() {
   let raw = "";
-  for await (const chunk of process.stdin) raw += chunk;
+  for await (const chunk of process.stdin.setEncoding("utf8")) raw += chunk;
   if (!raw.trim()) throw new Error("Agent runtime input is empty");
   return JSON.parse(raw);
 }
@@ -51,6 +51,7 @@ function createMessage(model, result) {
     api: model.api,
     provider: model.provider,
     model: model.id,
+    ...(result.messageId ? { responseId: result.messageId } : {}),
     usage: {
       input: Number(result.usage?.input ?? 0),
       output: Number(result.usage?.output ?? 0),
@@ -64,6 +65,25 @@ function createMessage(model, result) {
   };
 }
 
+class BridgeRejection extends Error {}
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function hasText(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function validModelReply(result, purpose) {
+  if (result.pause !== undefined) return result.pause === true && result.reason === "awaiting_approval";
+  if (result.text !== undefined && typeof result.text !== "string") return false;
+  const calls = result.toolCalls ?? [];
+  if (!Array.isArray(calls) || calls.some(call => !isObject(call) || !hasText(call.id) || !hasText(call.name) || (call.arguments != null && !isObject(call.arguments)))) return false;
+  if (new Set(calls.map(call => call.id)).size !== calls.length) return false;
+  return purpose === "compaction" ? hasText(result.text) && calls.length === 0 : hasText(result.text) || calls.length > 0;
+}
+
 async function bridge(request, path, body, signal) {
   const response = await fetch(new URL(path, request.bridgeURL), {
     method: "POST",
@@ -74,8 +94,23 @@ async function bridge(request, path, body, signal) {
     body: JSON.stringify(body),
     signal,
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Agent bridge returned HTTP ${response.status}`);
+  let data;
+  try {
+    data = await response.json();
+  } catch (cause) {
+    throw new Error(`Agent ${path} returned invalid JSON (HTTP ${response.status})`, { cause });
+  }
+  if (!response.ok) {
+    if (hasText(data?.error)) throw new BridgeRejection(data.error);
+    throw new Error(`Agent ${path} returned HTTP ${response.status}`);
+  }
+  let valid = false;
+  if (isObject(data)) {
+    if (path === "/model") valid = validModelReply(data, body.purpose);
+    else if (path === "/tool") valid = data.pause === undefined ? hasText(data.content) && data.content.trim() !== "null" : data.pause === true && hasText(data.approvalId);
+    else valid = data.ok === true;
+  }
+  if (!valid) throw new Error(`Invalid Agent ${path} response`);
   return data;
 }
 
@@ -106,7 +141,16 @@ async function run() {
   // can always be correlated, while the closing phase no longer labels a
   // following normal model request as a summary request.
   let activeCompaction = null;
-  const eventChain = { current: Promise.resolve() };
+  let eventDelivery = Promise.resolve();
+  let bridgeFailure;
+  function queueDelivery(deliver) {
+    eventDelivery = eventDelivery.then(() => { if (!bridgeFailure) return deliver(); }).catch(error => { bridgeFailure = error; });
+    return eventDelivery;
+  }
+  async function flushEvents() {
+    await eventDelivery;
+    if (bridgeFailure) throw bridgeFailure;
+  }
   const modelRuntime = await ModelRuntime.create({
     authPath: join(isolatedDir, "auth.json"),
     modelsPath: join(isolatedDir, "models.json"),
@@ -154,7 +198,7 @@ async function run() {
           const purpose = activeCompaction?.phase === "summarizing" ? "compaction" : "conversation";
           // Deliver lifecycle events/snapshots before scheduling the next request.
           // In particular, compaction must be visible before its model call begins.
-          await eventChain.current;
+          await flushEvents();
           const result = await bridge(request, "/model", {
             modelId: model.id,
             purpose,
@@ -179,6 +223,7 @@ async function run() {
             await session.steer(text);
           }
           const message = createMessage(model, result);
+          partial.responseId = message.responseId;
           let contentIndex = 0;
           const thinking = message.content.find((item) => item.type === "thinking");
           if (thinking) {
@@ -229,13 +274,15 @@ async function run() {
     executionMode: tool.executionMode || "sequential",
     async execute(toolCallId, params, signal) {
       // SDK 在 execute 之前拒绝的调用也要先写回 Go 的调用游标。
-      await eventChain.current;
+      await flushEvents();
       executedToolCalls.add(toolCallId);
-      const result = await bridge(request, "/tool", {
-        callId: toolCallId,
-        name: tool.name,
-        arguments: params,
-      }, signal);
+      let result;
+      try {
+        result = await bridge(request, "/tool", { callId: toolCallId, name: tool.name, arguments: params }, signal);
+      } catch (error) {
+        if (!(error instanceof BridgeRejection)) bridgeFailure = error;
+        throw error;
+      }
       if (result.pause) {
         pausedForApproval = true;
         emit("approval_wait", { approvalId: result.approvalId, toolName: tool.name, callId: toolCallId });
@@ -247,11 +294,8 @@ async function run() {
           terminate: true,
         };
       }
-      // 工具结果必须是非空文本：交回 "null" 会让模型返回空回复。
-      let text = typeof result.content === "string" ? result.content : JSON.stringify(result.content ?? result ?? {});
-      if (!text || text === "null") text = JSON.stringify({ error: "工具没有返回结果" });
       return {
-        content: [{ type: "text", text }],
+        content: [{ type: "text", text: result.content }],
         details: result.details,
         isError: Boolean(result.isError),
         terminate: Boolean(result.terminate),
@@ -340,34 +384,14 @@ async function run() {
   });
 
   let runtimeError = null;
-  // 事件链串行执行。已有一次快照在排队时，它执行时读到的已是最新文件，
-  // 不必为每条新条目再整份上传一次。
-  let snapshotQueued = false;
-  const enqueueEvent = (payload) => {
-    const pending = eventChain.current.then(() => bridge(request, "/event", payload));
-    eventChain.current = pending;
-    return pending;
-  };
-  const enqueueSessionSnapshot = () => {
-    if (snapshotQueued) return;
-    snapshotQueued = true;
-    eventChain.current = eventChain.current.then(async () => {
-      snapshotQueued = false;
-      const sessionFile = sessionManager.getSessionFile();
-      if (!sessionFile) return;
-      let sessionJSONL;
-      try {
-        sessionJSONL = await readFile(sessionFile, "utf8");
-      } catch (error) {
-        if (error?.code === "ENOENT") return;
-        throw error;
-      }
-      return bridge(request, "/event", {
-        type: "session_snapshot",
-        sessionJSONL,
-        contextUsage: session.getContextUsage(),
-      });
-    });
+  let savedLeaf;
+  const enqueueEvent = payload => queueDelivery(() => bridge(request, "/event", payload));
+  const saveSessionSnapshot = async () => {
+    const leaf = sessionManager.getLeafId();
+    if (leaf === savedLeaf) return;
+    const sessionJSONL = await readFile(sessionManager.getSessionFile(), "utf8");
+    await bridge(request, "/event", { type: "session_snapshot", sessionJSONL, contextUsage: session.getContextUsage() });
+    savedLeaf = leaf;
   };
 
   session.subscribe((event) => {
@@ -381,11 +405,11 @@ async function run() {
           messageId: event.messageId,
         });
       }
-    } else if (event.type === "message_delta") {
+    } else if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       enqueueEvent({
         type: "message_delta",
-        delta: event.delta,
-        messageId: event.messageId,
+        delta: event.assistantMessageEvent.delta,
+        messageId: event.message.responseId,
       });
     } else if (event.type === "message_end") {
       const message = event.message;
@@ -484,16 +508,16 @@ async function run() {
         approval: event.approval,
         approvalId: event.approvalId,
       });
-    } else if (event.type === "entry_appended") {
-      enqueueSessionSnapshot();
+    } else if (event.type === "turn_end" && event.toolResults.length > 0 && !pausedForApproval) {
+      queueDelivery(saveSessionSnapshot);
     } else if (event.type === "compaction_start" || event.type === "compaction_end") {
       // Persist the compaction entry before reporting it to the server. If event
       // delivery fails, the summary and retained tail are still recoverable.
       if (event.type === "compaction_start") activeCompaction = { id: crypto.randomUUID(), phase: "summarizing" };
       const compaction = activeCompaction;
       if (event.type === "compaction_end" && compaction) compaction.phase = "closing";
-      if (event.type === "compaction_end") enqueueSessionSnapshot();
-      const eventDelivery = enqueueEvent({
+      if (event.type === "compaction_end") queueDelivery(saveSessionSnapshot);
+      const delivered = enqueueEvent({
         type: event.type,
         compactionId: compaction?.id,
         reason: event.reason,
@@ -506,7 +530,7 @@ async function run() {
         contextUsage: session.getContextUsage(),
       });
       if (event.type === "compaction_end" && compaction) {
-        eventDelivery.then(
+        delivered.then(
           () => {
             if (activeCompaction === compaction) activeCompaction = null;
           },
@@ -524,18 +548,12 @@ async function run() {
     } catch (error) {
       if (!pausedForApproval) throw error;
     }
-    await eventChain.current;
+    await flushEvents();
     if (runtimeError && !pausedForApproval) throw runtimeError;
-    const sessionFile = sessionManager.getSessionFile();
-    const sessionJSONL = await readFile(sessionFile, "utf8");
-    await bridge(request, "/event", {
-      type: "session_snapshot",
-      sessionJSONL,
-      contextUsage: session.getContextUsage(),
-    });
+    await saveSessionSnapshot();
     emit("settled", {
       contextUsage: session.getContextUsage(),
-      sessionFile,
+      sessionFile: sessionManager.getSessionFile(),
       entries: sessionManager.getEntries().length,
     });
   } finally {

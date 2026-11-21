@@ -5,6 +5,8 @@ export type AgentMemorySection = "user" | "notes";
 
 export type AgentMemoryMode = "auto" | "review" | "off";
 
+export type AgentMemoryRevisionStatus = "applied" | "pending" | "rejected" | "undone" | "unavailable";
+
 export type AgentMemoryEntry = {
     id: string;
     section: AgentMemorySection;
@@ -30,6 +32,7 @@ export type AgentMemoryDocChange = {
     id: string;
     section: AgentMemorySection;
     before?: string;
+    beforeSection?: AgentMemorySection;
     after?: string;
 };
 
@@ -42,6 +45,8 @@ export type AgentMemoryDocRevision = {
     baseRevision: number;
     revision: number;
     changes: AgentMemoryDocChange[];
+    reviewHash?: string;
+    reviewError?: string;
     canUndo: boolean;
     createdAt: string;
     decidedAt?: string;
@@ -81,10 +86,24 @@ export function listAgentMemoryRevisions(status?: AgentMemoryDocRevision["status
     });
 }
 
+export async function getAgentMemoryRevisionStatuses(revisionIds: readonly string[], signal: AbortSignal) {
+    const result: Record<string, AgentMemoryRevisionStatus> = Object.create(null);
+    for (let start = 0; start < revisionIds.length; start += 100) {
+        const batch = revisionIds.slice(start, start + 100);
+        const data = await http.post<{ statuses: Record<string, unknown> }>("/agent/memory/revisions/statuses", { revisionIds: batch }, { signal, timeout: 15_000 });
+        for (const id of batch) {
+            const status = data?.statuses?.[id];
+            if (status !== "applied" && status !== "pending" && status !== "rejected" && status !== "undone" && status !== "unavailable") throw new Error("未收到完整的记忆修订状态");
+            result[id] = status;
+        }
+    }
+    return result;
+}
+
 export function undoAgentMemoryRevision(id: string) {
     return http.post<AgentMemoryDocument>(`/agent/memory/revisions/${encodeURIComponent(id)}/undo`, {}, { timeout: 15_000 });
 }
 
-export function decideAgentMemoryRevision(id: string, decision: "approve" | "reject") {
-    return http.post<AgentMemoryDocument>(`/agent/memory/revisions/${encodeURIComponent(id)}/decide`, { decision }, { timeout: 15_000 });
+export function decideAgentMemoryRevision(id: string, decision: "approve" | "reject", reviewHash?: string) {
+    return http.post<AgentMemoryDocument>(`/agent/memory/revisions/${encodeURIComponent(id)}/decide`, { decision, reviewHash }, { timeout: 15_000 });
 }

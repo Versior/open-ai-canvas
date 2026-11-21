@@ -281,6 +281,12 @@ export function subscribeAgentEvents(
     };
     void (async () => {
         let failures = 0;
+        const deliver = (event: AgentEvent) => {
+            cursor = event.seq;
+            failures = 0;
+            options.onConnectionChange?.("connected");
+            onEvent({ ...event, localSeq: ++localSeq });
+        };
         while (!controller.signal.aborted) {
             let terminal = false;
             let retryAfterMs = 0;
@@ -330,6 +336,7 @@ export function subscribeAgentEvents(
                     void reader.cancel().catch(() => undefined);
                 };
                 attempt.signal.addEventListener("abort", cancelReader, { once: true });
+                let missingThrough = 0;
                 try {
                     while (!controller.signal.aborted && !attempt.signal.aborted) {
                         const { value, done } = await reader.read();
@@ -343,14 +350,17 @@ export function subscribeAgentEvents(
                                 if (item.event === "agent_event") {
                                     const event = item.data as AgentEvent;
                                     if (event.runId !== runId || !Number.isSafeInteger(event.seq) || event.seq <= cursor) return;
-                                    cursor = event.seq;
-                                    failures = 0;
-                                    options.onConnectionChange?.("connected");
-                                    onEvent({ ...event, localSeq: ++localSeq });
+                                    if (event.seq !== cursor + 1) {
+                                        missingThrough = event.seq;
+                                        throw new Error("Agent 事件序列不连续");
+                                    }
+                                    deliver(event);
                                 } else if (item.event === "run_snapshot") {
                                     const run = item.data as AgentRun;
                                     if (run.id !== runId) return;
                                     options.onConnectionChange?.("connected");
+                                    const finalSnapshot = !run.cleanupPending && ["completed", "failed", "cancelled", "rejected"].includes(run.status);
+                                    if (finalSnapshot && typeof run.eventCount === "number" && cursor < run.eventCount) return;
                                     if (run.activeMessage) {
                                         const messageKey = `${run.activeMessage.messageId}\u0000${run.activeMessage.text}`;
                                         if (messageKey !== lastActiveMessageKey) {
@@ -373,7 +383,7 @@ export function subscribeAgentEvents(
                                         lastStatusKey = statusKey;
                                         emit("run_status", statusPayload);
                                     }
-                                    terminal = !run.cleanupPending && ["completed", "failed", "cancelled", "rejected"].includes(run.status);
+                                    terminal = finalSnapshot;
                                 } else if (item.event === "error") throw new Error("Agent 状态读取失败");
                             },
                             done,
@@ -383,10 +393,28 @@ export function subscribeAgentEvents(
                         if (Date.now() - connectedAt >= 30_000 && value?.length) failures = 0;
                         if (done || terminal) break;
                     }
+                } catch (error) {
+                    if (!missingThrough) throw error;
                 } finally {
                     attempt.signal.removeEventListener("abort", cancelReader);
                     await reader.cancel().catch(() => undefined);
                     reader.releaseLock();
+                }
+                if (missingThrough) {
+                    while (cursor < missingThrough) {
+                        const { run } = await getAgentRun(runId, attempt.signal, { sinceSeq: cursor, fromStart: cursor === 0, eventLimit: Math.min(500, missingThrough - cursor) });
+                        assertCurrentUserSession(session);
+                        attempt.signal.throwIfAborted();
+                        if (run.id !== runId || !run.events?.length) throw new Error("Agent 历史事件未完整返回");
+                        for (const event of run.events) {
+                            attempt.signal.throwIfAborted();
+                            if (event.runId !== runId || event.seq !== cursor + 1) throw new Error("Agent 历史事件不连续");
+                            deliver(event);
+                            if (cursor === missingThrough) break;
+                        }
+                        touch();
+                    }
+                    continue;
                 }
                 if (terminal) return;
                 throw new Error("Agent 连接已中断，运行仍保留，可重新连接");

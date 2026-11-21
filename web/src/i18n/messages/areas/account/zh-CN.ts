@@ -898,6 +898,7 @@ export const zhCN = {
             deleted: "已删除，可在修改历史里撤销",
             approved: "已采纳，下一条消息起生效",
             decideFailed: "处理失败",
+            reviewUnavailable: "服务端未确认当前差异，暂不能采纳。请更新服务端后刷新，或拒绝该提案。",
             exportFailed: "导出失败",
             mode: "长期记忆模式",
             modeHint: "{{description}}。Agent 会在你纠正它、说明偏好或要求记住时自己整理这份记忆。",

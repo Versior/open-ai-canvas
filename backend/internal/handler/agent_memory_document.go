@@ -75,6 +75,26 @@ func registerAgentMemoryDocumentRoutes(r *gin.RouterGroup, svc *service.Service)
 		}
 		ok(c, gin.H{"revisions": revisions})
 	})
+	r.POST("/agent/memory/revisions/statuses", func(c *gin.Context) {
+		user, err := currentUser(c, svc)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		var req struct {
+			RevisionIDs []string `json:"revisionIds"`
+		}
+		if err := decodeAgentJSON(c, &req, 64<<10); err != nil {
+			fail(c, http.StatusBadRequest, err)
+			return
+		}
+		statuses, err := svc.AgentMemoryRevisionStatuses(user.ID, req.RevisionIDs)
+		if err != nil {
+			failService(c, err)
+			return
+		}
+		ok(c, gin.H{"statuses": statuses})
+	})
 	r.POST("/agent/memory/revisions/:revisionId/undo", func(c *gin.Context) {
 		user, err := currentUser(c, svc)
 		if err != nil {

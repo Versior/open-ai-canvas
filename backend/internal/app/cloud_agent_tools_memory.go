@@ -108,11 +108,19 @@ func cloudAgentHandleMemoryUpdate(repo *repository.Repository, userID string, st
 	if outcome.Duplicates > 0 {
 		result["duplicates"] = outcome.Duplicates
 	}
+	eventText := "长期记忆已更新"
 	switch outcome.Status {
 	case agentMemoryOutcomeApplied:
 		result["text"] = "已写入长期记忆，下一轮对话起出现在记忆快照里；本轮快照不会刷新，以本结果为准。用户可以在聊天里撤销。"
 	case agentMemoryOutcomePending:
 		result["text"] = "已提交给用户确认，确认前不会生效；不要对用户说已经记住。"
+		eventText = "Agent 想修改长期记忆，等你确认"
+	case agentMemoryOutcomeRejected:
+		eventText = "这条长期记忆修改已被拒绝，没有写入。"
+		result["text"] = eventText
+	case agentMemoryOutcomeUndone:
+		eventText = "这条长期记忆修改已撤销，没有重新写入。"
+		result["text"] = eventText
 	default:
 		result["text"] = "没有变化：这些内容已经在记忆里。"
 		return result, nil
@@ -120,10 +128,7 @@ func cloudAgentHandleMemoryUpdate(repo *repository.Repository, userID string, st
 	event := map[string]any{
 		"status": outcome.Status, "revisionId": outcome.RevisionID, "summary": outcome.Summary,
 		"changes": cloudAgentMemoryChangeItems(outcome.Changes), "charCount": outcome.CharCount, "capacity": outcome.Capacity,
-		"text": "长期记忆已更新",
-	}
-	if outcome.Status == agentMemoryOutcomePending {
-		event["text"] = "Agent 想修改长期记忆，等你确认"
+		"text": eventText,
 	}
 	state.event(runID, "memory_updated", event)
 	return result, nil

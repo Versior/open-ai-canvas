@@ -1,14 +1,92 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 	"yingce/backend/internal/model"
+	"yingce/backend/internal/repository"
 )
+
+type agentHistorySQLCount struct {
+	logger.Interface
+	queries int
+}
+
+func (counter *agentHistorySQLCount) Trace(context.Context, time.Time, func() (string, int64), error) {
+	counter.queries++
+}
+
+func TestCloudAgentConversationRunPageMatchesDetailWithinQueryBudget(t *testing.T) {
+	s, db, _, _ := creationTestServiceOnDatabase(t, agentPermissionsDB(t))
+	if err := db.Create(&model.CanvasProject{ID: "agent-canvas", UserID: "user", PayloadJSON: `{"nodes":[]}`}).Error; err != nil {
+		t.Fatal(err)
+	}
+	root, err := s.CreateCloudAgentRun("user", agentTestRequest(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("history query budget on %s", db.Dialector.Name())
+	known := []*CloudAgentRun{}
+	previous := root.ID
+	for turn := 0; turn < 20; turn++ {
+		if turn > 0 {
+			req := agentTestRequest()
+			req.IdempotencyKey = fmt.Sprintf("history-query-%d", turn)
+			child, err := s.CreateCloudAgentRun("user", req, previous)
+			if err != nil {
+				t.Fatal(err)
+			}
+			previous = child.ID
+		}
+		if turn == 0 {
+			growAgentJournal(t, s, previous, 65)
+		}
+		if turn < 19 {
+			finishConversationTestRun(t, db, previous)
+		} else if err := db.Model(&model.Task{}).Where("id = ?", previous).Update("text_draft", "真实草稿").Error; err != nil {
+			t.Fatal(err)
+		}
+		if turn == 5 {
+			if err := db.Model(&model.Task{}).Where("id = ?", previous).UpdateColumn("input_json", "{}").Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		detail, err := s.CloudAgentRun("user", previous)
+		if err != nil {
+			t.Fatal(err)
+		}
+		known = append(known, detail)
+	}
+	for _, size := range []int{1, 10, 20} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			counter := &agentHistorySQLCount{Interface: logger.Discard}
+			s.repo = repository.New(db.Session(&gorm.Session{Logger: counter}))
+			result, err := s.CloudAgentConversationRuns("user", root.ID, "", size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Items) != size || (result.NextCursor != "") != (size < 20) {
+				t.Fatal("wrong page size or cursor")
+			}
+			for index, item := range result.Items {
+				if !reflect.DeepEqual(item, known[index]) {
+					t.Fatalf("run %s differs from its detail: %+v != %+v", item.ID, item, known[index])
+				}
+			}
+			t.Logf("%d runs: %d queries", size, counter.queries)
+			if counter.queries > 8 {
+				t.Fatalf("%d SQL queries exceed per-page budget", counter.queries)
+			}
+		})
+	}
+}
 
 func finishConversationTestRun(t *testing.T, db *gorm.DB, runID string) {
 	t.Helper()

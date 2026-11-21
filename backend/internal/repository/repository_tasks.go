@@ -39,6 +39,12 @@ func (r *Repository) TaskForUser(userID string, id string) (*model.Task, error) 
 	return &task, nil
 }
 
+func (r *Repository) TaskDraftsForUser(userID string, ids []string) ([]model.Task, error) {
+	var tasks []model.Task
+	err := r.db.Select("id, text_draft").Where("user_id = ? AND id IN ?", userID, ids).Find(&tasks).Error
+	return tasks, err
+}
+
 func (r *Repository) ActiveTaskCountForUser(userID string) (int64, error) {
 	var count int64
 	err := r.db.Model(&model.Task{}).Where("user_id = ? AND status IN ?", userID, []model.TaskStatus{model.TaskStatusQueued, model.TaskStatusRunning}).Count(&count).Error

@@ -35,9 +35,11 @@ func TestCloudAgentPiSessionModelApprovalPause(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		invalidPurpose bool
+		incomplete     bool
 	}{
-		{"approval wait is a pause", false},
-		{"unrelated model error remains a failure", true},
+		{"approval wait is a pause", false, false},
+		{"durable pause survives missing settled frame", false, true},
+		{"unrelated model error remains a failure", true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, db, root := approvalPauseRoot(t)
@@ -77,6 +79,10 @@ func TestCloudAgentPiSessionModelApprovalPause(t *testing.T) {
 				w.Header().Set("Content-Type", "application/x-ndjson")
 				if resp.StatusCode != 200 {
 					_ = json.NewEncoder(w).Encode(map[string]any{"event": "runtime_error", "message": fmt.Sprint(result["error"])})
+					return
+				}
+				if tc.incomplete {
+					_, _ = fmt.Fprintln(w, `{"event":"approval_wait"}`)
 					return
 				}
 				_, _ = fmt.Fprintln(w, `{"event":"settled"}`)

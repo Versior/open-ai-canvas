@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +18,21 @@ import (
 
 	agentruntime "yingce/backend/internal/agent/runtime"
 )
+
+func TestRemoteRunRejectsHTTP200WithoutSettled(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/x-ndjson")
+		_, _ = io.WriteString(w, `{"event":"progress"}`+"\n")
+	}))
+	defer server.Close()
+	handler := func(context.Context, map[string]json.RawMessage) (any, error) {
+		return nil, errors.New("unexpected callback")
+	}
+	err := Run(t.Context(), server.URL, strings.Repeat("t", 32), "127.0.0.1", agentruntime.ProcessRequest{}, agentruntime.Bridge{Model: handler, Tool: handler, Event: handler})
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("remote stream without settled: %v", err)
+	}
+}
 
 func TestRemoteRunCallsBridgeAndRejectsBadToken(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {

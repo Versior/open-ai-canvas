@@ -144,6 +144,12 @@ func (r *Repository) CloudAgent(userID, id string) (*model.CloudAgentExecution, 
 	return &run, err
 }
 
+func (r *Repository) CloudAgentHasUnfinishedTasks(userID string, taskIDs []string) (bool, error) {
+	var active []string
+	err := r.db.Model(&model.Task{}).Where("user_id = ? AND id IN ? AND status IN ?", userID, taskIDs, []model.TaskStatus{model.TaskStatusQueued, model.TaskStatusRunning}).Limit(1).Pluck("id", &active).Error
+	return len(active) != 0, err
+}
+
 // CloudAgentJournalWindow 是载入执行状态时读取的事件窗口条数。
 //
 // 事件全量在 cloud_agent_event_records（append-only，主键 run_id + sequence），

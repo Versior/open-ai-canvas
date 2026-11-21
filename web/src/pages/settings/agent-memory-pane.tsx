@@ -10,6 +10,8 @@ import { Select } from "@/components/ui/base/select";
 import { SegmentedControl } from "@/components/ui/base/segmented-control";
 import { AppModal } from "@/components/ui/product/app-modal";
 import { Callout } from "@/components/ui/product/callout";
+import { publishMemoryRevisionStatus } from "@/hooks/use-agent-memory-revision-statuses";
+import { getActiveUserScope } from "@/lib/user-scope";
 import {
     AGENT_MEMORY_MODES,
     AGENT_MEMORY_SECTIONS,
@@ -26,6 +28,7 @@ import {
     type AgentMemorySection,
 } from "@/services/api/agent-memory";
 import { exportAgentMemories } from "@/services/api/agent-memories";
+import { ApiError } from "@/services/api/request";
 import { currentLocale, translate } from "@/i18n";
 
 const ENTRY_MAX_CHARS = 400;
@@ -46,9 +49,14 @@ function RevisionChanges({ revision }: { revision: AgentMemoryDocRevision }) {
     if (!revision.changes.length) return null;
     return (
         <ul className="mt-1 space-y-0.5 text-caption leading-5 text-muted-foreground">
-            {revision.changes.slice(0, 6).map((change, index) => (
+            {(revision.status === "pending" ? revision.changes : revision.changes.slice(0, 6)).map((change, index) => (
                 <li key={`${revision.id}-${index}`}>
-                    <span className="text-foreground/60">{translate("account.settings.memory.changeLine", { kind: CHANGE_KEYS[change.kind] ? translate(CHANGE_KEYS[change.kind]) : change.kind, section: sectionLabel(change.section) })}</span>
+                    <span className="text-foreground/60">
+                        {translate("account.settings.memory.changeLine", {
+                            kind: CHANGE_KEYS[change.kind] ? translate(CHANGE_KEYS[change.kind]) : change.kind,
+                            section: change.beforeSection ? `${sectionLabel(change.beforeSection)} → ${sectionLabel(change.section)}` : sectionLabel(change.section),
+                        })}
+                    </span>
                     {change.kind === "replace" ? `${change.before} → ${change.after}` : change.after || change.before}
                 </li>
             ))}
@@ -156,9 +164,12 @@ function MemoryHistory({ open, onClose, onChanged }: { open: boolean; onClose: (
     }, [load, open]);
 
     const undo = async (revision: AgentMemoryDocRevision) => {
+        const scope = getActiveUserScope();
         setBusyId(revision.id);
         try {
-            onChanged(await undoAgentMemoryRevision(revision.id));
+            const next = await undoAgentMemoryRevision(revision.id);
+            await publishMemoryRevisionStatus(scope, revision.id, "undone");
+            onChanged(next);
             message.success(t("account.settings.memory.undone"));
             await load();
         } catch (error) {
@@ -270,12 +281,16 @@ export default function AgentMemoryPane({ compact = false }: { compact?: boolean
     };
 
     const decide = async (revision: AgentMemoryDocRevision, decision: "approve" | "reject") => {
+        const scope = getActiveUserScope();
         setBusyId(revision.id);
         try {
-            await applyDoc(await decideAgentMemoryRevision(revision.id, decision));
+            const next = await decideAgentMemoryRevision(revision.id, decision, decision === "approve" ? revision.reviewHash : undefined);
+            await publishMemoryRevisionStatus(scope, revision.id, decision === "approve" ? "applied" : "rejected");
+            await applyDoc(next);
             message.success(decision === "approve" ? t("account.settings.memory.approved") : t("account.settings.memory.statusRejected"));
         } catch (error) {
             message.error(errorText(error, t("account.settings.memory.decideFailed")));
+            if (error instanceof ApiError && error.status === 409) await load();
         } finally {
             setBusyId(null);
         }
@@ -299,7 +314,7 @@ export default function AgentMemoryPane({ compact = false }: { compact?: boolean
     const usagePercent = doc ? Math.min(100, Math.round((doc.charCount * 100) / Math.max(1, doc.capacity))) : 0;
     const modeOption = AGENT_MEMORY_MODES.find((option) => option.value === doc?.mode);
 
-    if (loadError && !doc) return <WorkspaceErrorState compact title={t("account.settings.memory.loadFailed")} description={loadError} onRetry={() => void load()} />;
+    if (loadError) return <WorkspaceErrorState compact title={t("account.settings.memory.loadFailed")} description={loadError} onRetry={() => void load()} />;
 
     return (
         <div className={compact ? "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden" : "flex flex-col gap-5"}>
@@ -331,28 +346,36 @@ export default function AgentMemoryPane({ compact = false }: { compact?: boolean
                     </div>
                 </div>
             ) : null}
-            {pending.length ? (
-                <Callout tone="warning" title={t("account.settings.memory.pendingTitle", { count: pending.length })}>
-                    <div className="space-y-2">
-                        {pending.map((revision) => (
-                            <div key={revision.id} className="flex items-start gap-2">
-                                <div className="min-w-0 flex-1">
-                                    {revision.summary ? <p className="text-caption text-foreground/80">{revision.summary}</p> : null}
-                                    <RevisionChanges revision={revision} />
-                                </div>
-                                <Button size="small" type="primary" icon={<Check className="size-3.5" />} loading={busyId === revision.id} onClick={() => void decide(revision, "approve")}>
-                                    {t("account.settings.memory.approve")}
-                                </Button>
-                                <Button size="small" icon={<X className="size-3.5" />} loading={busyId === revision.id} onClick={() => void decide(revision, "reject")}>
-                                    {t("account.settings.memory.reject")}
-                                </Button>
-                            </div>
-                        ))}
-                    </div>
-                </Callout>
-            ) : null}
-
             <div className={compact ? "thin-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto" : "flex flex-col gap-4"}>
+                {pending.length ? (
+                    <Callout tone="warning" title={t("account.settings.memory.pendingTitle", { count: pending.length })}>
+                        <div className="space-y-2">
+                            {pending.map((revision) => (
+                                <div key={revision.id} className="flex items-start gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        {revision.summary ? <p className="text-caption text-foreground/80">{revision.summary}</p> : null}
+                                        {revision.reviewError || !revision.reviewHash ? <p role="alert">{revision.reviewError || t("account.settings.memory.reviewUnavailable")}</p> : null}
+                                        <RevisionChanges revision={revision} />
+                                    </div>
+                                    <Button
+                                        size="small"
+                                        type="primary"
+                                        disabled={loading || !revision.reviewHash || Boolean(revision.reviewError)}
+                                        icon={<Check className="size-3.5" />}
+                                        loading={busyId === revision.id}
+                                        onClick={() => void decide(revision, "approve")}
+                                    >
+                                        {t("account.settings.memory.approve")}
+                                    </Button>
+                                    <Button size="small" icon={<X className="size-3.5" />} loading={busyId === revision.id} onClick={() => void decide(revision, "reject")}>
+                                        {t("account.settings.memory.reject")}
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                    </Callout>
+                ) : null}
+
                 {loading && !doc ? (
                     <div className="space-y-2" aria-busy="true" aria-live="polite">
                         {[0, 1].map((index) => (

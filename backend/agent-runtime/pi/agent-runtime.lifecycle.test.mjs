@@ -47,7 +47,7 @@ test("real runtime directories are reclaimed after normal exit, HTTP cancellatio
           if (mode !== "normal") return;
           response.end(JSON.stringify({ text: "completed" }));
         } else {
-          response.end("{}");
+          response.end(JSON.stringify({ ok: true }));
         }
       });
       await new Promise(resolve => bridge.listen(0, "127.0.0.1", resolve));

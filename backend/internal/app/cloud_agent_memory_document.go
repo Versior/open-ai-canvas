@@ -73,11 +73,12 @@ type agentMemoryOperation struct {
 
 // AgentMemoryDocChange 是一条记忆的变化，用于修订记录、撤销和界面展示。
 type AgentMemoryDocChange struct {
-	Kind    string `json:"kind"`
-	ID      string `json:"id"`
-	Section string `json:"section"`
-	Before  string `json:"before,omitempty"`
-	After   string `json:"after,omitempty"`
+	Kind          string `json:"kind"`
+	ID            string `json:"id"`
+	Section       string `json:"section"`
+	BeforeSection string `json:"beforeSection,omitempty"`
+	Before        string `json:"before,omitempty"`
+	After         string `json:"after,omitempty"`
 }
 
 type agentMemoryEdit struct {
@@ -348,7 +349,11 @@ func agentMemoryDiff(before, after []model.AgentMemoryEntry) []AgentMemoryDocCha
 		case !existed:
 			changes = append(changes, AgentMemoryDocChange{Kind: "add", ID: entry.ID, Section: entry.Section, After: entry.Text})
 		case old.Text != entry.Text || old.Section != entry.Section:
-			changes = append(changes, AgentMemoryDocChange{Kind: "replace", ID: entry.ID, Section: entry.Section, Before: old.Text, After: entry.Text})
+			change := AgentMemoryDocChange{Kind: "replace", ID: entry.ID, Section: entry.Section, Before: old.Text, After: entry.Text}
+			if old.Section != entry.Section {
+				change.BeforeSection = old.Section
+			}
+			changes = append(changes, change)
 		}
 	}
 	for _, entry := range before {

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -20,18 +21,35 @@ import (
 	"yingce/backend/internal/repository"
 )
 
-func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgentState, options ...CloudAgentRunViewOptions) (*CloudAgentRun, error) {
-	run, err := s.repo.CloudAgent(task.UserID, task.ID)
-	if err != nil {
-		return nil, err
-	}
+func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgentState, run *model.CloudAgentExecution, options ...CloudAgentRunViewOptions) (*CloudAgentRun, error) {
 	state, stateErr := cloudAgentDecode(run)
 	if stateErr != nil {
-		// A terminal failed run must remain readable even if its durable runtime
-		// blob was damaged. Do not invent permissions or approval state; expose
-		// only the identity available from the original task input.
-		state = cloudAgentRuntime{Request: initial.Request, ParentID: initial.ParentID, CreativeAnchor: initial.CreativeAnchor, Skills: initial.Skills, SkillReferences: initial.SkillReferences, SkillVersions: initial.SkillVersions, SkillHints: initial.SkillHints, Memory: initial.Memory, Profile: initial.Profile, TaskIDs: []string{task.ID}, Events: []CloudAgentEvent{}}
+		state = cloudAgentFallbackViewState(task.ID, initial)
 	}
+	view := CloudAgentRunViewOptions{}
+	if len(options) > 0 {
+		view = options[0]
+	}
+	events := s.cloudAgentRunEventsForView(task.UserID, run, &state, view.SinceSeq, view.EventLimit, view.FromStart)
+	count := s.cloudAgentRunEventCount(task.UserID, run, &state)
+	item := projectCloudAgentRunView(task, initial, run, &state, events, count, view)
+	if err := s.attachCloudAgentViewTasks(task.UserID, []cloudAgentRunView{item}, map[string]*model.Task{task.ID: task}); err != nil {
+		return nil, err
+	}
+	return item.output, nil
+}
+
+type cloudAgentRunView struct {
+	output   *CloudAgentRun
+	taskIDs  []string
+	activeID string
+}
+
+func cloudAgentFallbackViewState(taskID string, initial cloudAgentState) cloudAgentRuntime {
+	return cloudAgentRuntime{Request: initial.Request, ParentID: initial.ParentID, CreativeAnchor: initial.CreativeAnchor, Skills: initial.Skills, SkillReferences: initial.SkillReferences, SkillVersions: initial.SkillVersions, SkillHints: initial.SkillHints, Memory: initial.Memory, Profile: initial.Profile, TaskIDs: []string{taskID}}
+}
+
+func projectCloudAgentRunView(task *model.Task, initial cloudAgentState, run *model.CloudAgentExecution, state *cloudAgentRuntime, events []CloudAgentEvent, count int, view CloudAgentRunViewOptions) cloudAgentRunView {
 	out := agentRunOutput(task, initial)
 	out.ConversationID = run.ConversationID
 	if out.ConversationID == "" {
@@ -40,13 +58,7 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 	out.Status = run.Status
 	out.Revision, out.CleanupPending, out.FailureMessage = run.Revision, run.CleanupPending, run.FailureMessage
 	out.UpdatedAt = run.UpdatedAt
-	view := CloudAgentRunViewOptions{}
-	if len(options) > 0 {
-		view = options[0]
-	}
-	// 事件已全量落库，运行详情只返回一页：默认是尾部窗口，sinceSeq 只取增量。
-	// 四个位置字段与 events 一起返回，客户端据此判断"是否还有更早的记录"。
-	out.Events = s.cloudAgentRunEventsForView(task.UserID, run, &state, view.SinceSeq, view.EventLimit, view.FromStart)
+	out.Events = events
 	// EventSeqBase 必须与真正返回的这一页对齐（eventLimit 把它收窄时也一样），
 	// 不变量 events[i].seq == eventSeqBase + i + 1 才成立。页为空时退回窗口水位：
 	// 那时没有"首条事件"，但仍然要能说明窗口在整条日志里的位置。
@@ -54,7 +66,7 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 	if len(out.Events) > 0 {
 		out.EventSeqBase = out.Events[0].Seq - 1
 	}
-	out.EventCount = s.cloudAgentRunEventCount(task.UserID, run, &state)
+	out.EventCount = count
 	if len(out.Events) > 0 {
 		out.LatestSeq = out.Events[len(out.Events)-1].Seq
 	}
@@ -66,14 +78,9 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 		out.Approval = nil
 	}
 	out.Step = state.Step
-	if stateErr == nil && state.ActiveTaskID != "" && (run.Status == "running" || run.Status == "queued") {
-		active, err := s.repo.TaskForUser(task.UserID, state.ActiveTaskID)
-		if err != nil {
-			return nil, err
-		}
-		if active.TextDraft != "" {
-			out.ActiveMessage = map[string]string{"messageId": active.ID, "text": active.TextDraft}
-		}
+	item := cloudAgentRunView{output: out, taskIDs: state.TaskIDs}
+	if run.Status == "running" || run.Status == "queued" {
+		item.activeID = state.ActiveTaskID
 	}
 	out.Skills = make([]cloudAgentSkill, 0, len(state.Skills))
 	for _, skill := range state.Skills {
@@ -81,21 +88,53 @@ func (s *Service) cloudAgentExecutionOutput(task *model.Task, initial cloudAgent
 		skill.Files = nil
 		out.Skills = append(out.Skills, skill)
 	}
-	orders, err := s.repo.BillingOrdersByTaskIDs(task.UserID, state.TaskIDs)
-	if err != nil {
-		return nil, err
+	return item
+}
+
+func (s *Service) attachCloudAgentViewTasks(userID string, views []cloudAgentRunView, tasks map[string]*model.Task) error {
+	var activeIDs, billingIDs []string
+	for _, view := range views {
+		if view.activeID != "" && tasks[view.activeID] == nil {
+			activeIDs = append(activeIDs, view.activeID)
+		}
+		billingIDs = append(billingIDs, view.taskIDs...)
 	}
-	for _, order := range orders {
-		// AmountMicrocredits is the reservation/quote, not necessarily the amount
-		// finally charged. A run can reserve 100000 microcredits and settle at
-		// 100000 microcredits (= 0.1 credits), or be refunded altogether. Never
-		// expose the reservation as spend, otherwise the Agent claims a charge
-		// that did not happen and budget/usage copy diverges from billing.
-		if order.Status == model.BillingStatusSettled {
-			out.SpentCredits += float64(order.ActualAmountMicrocredits) / float64(CreditScale)
+	if len(activeIDs) > 0 {
+		drafts, err := s.repo.TaskDraftsForUser(userID, activeIDs)
+		if err != nil {
+			return err
+		}
+		for index := range drafts {
+			tasks[drafts[index].ID] = &drafts[index]
 		}
 	}
-	return out, nil
+	settled := map[string]int64{}
+	for chunk := range slices.Chunk(billingIDs, 500) {
+		orders, err := s.repo.BillingOrdersByTaskIDs(userID, chunk)
+		if err != nil {
+			return err
+		}
+		for id, order := range orders {
+			if order.Status == model.BillingStatusSettled {
+				settled[id] = order.ActualAmountMicrocredits
+			}
+		}
+	}
+	for _, view := range views {
+		if id := view.activeID; id != "" {
+			active := tasks[id]
+			if active == nil {
+				return gorm.ErrRecordNotFound
+			}
+			if active.TextDraft != "" {
+				view.output.ActiveMessage = map[string]string{"messageId": id, "text": active.TextDraft}
+			}
+		}
+		for _, id := range view.taskIDs {
+			view.output.SpentCredits += float64(settled[id]) / float64(CreditScale)
+		}
+	}
+	return nil
 }
 
 // Runs one bounded transition at a time; no model HTTP call or approval wait holds a DB lock.

@@ -3195,9 +3195,49 @@ paths:
       responses:
         "200":
           {
-            description: "标准信封 data.revisions；每条含 id、actor（agent|user|restore|seed|admin）、runId、status、summary、baseRevision、revision、changes、canUndo、createdAt",
+            description: "标准信封 data.revisions。pending 的 changes 是在当前记忆上预演的完整差异（跨分区时含 beforeSection）。可采纳时返回 reviewHash；不可执行时返回 reviewError，仍可拒绝。其他修订返回历史差异、canUndo 及时间。",
           }
         "401": { $ref: "#/components/responses/Error" }
+  /agent/memory/revisions/statuses:
+    post:
+      tags: [agent]
+      summary: 批量读取记忆修订的当前状态
+      description: 只读，不返回记忆正文或修改历史事件。重复 ID 计入输入上限；结果按 ID 去重。已撤销返回 undone；不存在、不属于当前用户和已裁剪统一返回 unavailable。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revisionIds]
+              properties:
+                revisionIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, minLength: 1, maxLength: 36 }
+      responses:
+        "200":
+          description: 标准信封 data.statuses，包含每个请求 ID 的状态。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, data, msg]
+                properties:
+                  code: { type: integer, enum: [0] }
+                  msg: { type: string }
+                  data:
+                    type: object
+                    required: [statuses]
+                    properties:
+                      statuses:
+                        type: object
+                        additionalProperties: { type: string, enum: [applied, pending, rejected, undone, unavailable] }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /agent/memory/revisions/{revisionId}/undo:
     parameters:
       - { in: path, name: revisionId, required: true, schema: { type: string } }
@@ -3228,12 +3268,16 @@ paths:
               required: [decision]
               properties:
                 decision: { type: string, enum: [approve, reject] }
+                reviewHash:
+                  type: string
+                  pattern: '^[0-9a-f]{64}$'
+                  description: 采纳时原样回传所展示差异的指纹。未提供时只能采纳与最初提案完全一致的差异；拒绝无需指纹。
       responses:
         "200": { description: 返回处理后的记忆文件 }
         "400": { description: decision 无效，或这条修改已经处理过 }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
-        "409": { description: 记忆文件已在待确认修改之后变化，须重新查看 }
+        "409": { description: 相关条目或可采纳的差异已变化；刷新待确认列表并由用户重新核对，不自动重试采纳 }
   /agent/memories:
     get:
       tags: [agent]
@@ -3886,7 +3930,7 @@ paths:
       responses:
         "200":
           description: |
-            首次及 revision 变化时发送紧凑 run_snapshot；无变化时 heartbeat；agent_event.seq 为递增游标，cleanupPending 期间持续发送。
+            指定 after 或 Last-Event-ID 时从其后连续回放（显式 0 从第一条开始）；两者均未指定时从最近的事件窗口开始。每次先补齐至当前水位，再发送紧凑 run_snapshot；无变化时 heartbeat，cleanupPending 期间持续发送。
             canvas_updated 的 payload 可含 AgentCanvasUpdatedPayload 中的 undo 凭据。仅无已提交收费任务且有完整快照的普通写入提供非空凭据；缺省或 null 不显示可执行撤销。
           content:
             text/event-stream:

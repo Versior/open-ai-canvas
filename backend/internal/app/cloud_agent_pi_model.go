@@ -495,7 +495,7 @@ func (s *Service) runCloudAgentModelStep(ctx context.Context, userID, runID stri
 	} else if err := s.finishCloudAgentPiModelStep(userID, runID, task.ID, "", cloudAgentStepReasoning{}); err != nil {
 		return nil, false, err
 	}
-	delivered := map[string]any{"text": result.Text, "reasoning": result.Reasoning, "toolCalls": runtimeToolCalls(result.ToolCalls)}
+	delivered := map[string]any{"messageId": task.ID, "text": result.Text, "reasoning": result.Reasoning, "toolCalls": runtimeToolCalls(result.ToolCalls)}
 	if usage, available, usageErr := s.repo.APICallLogUsageForTask(userID, task.ID); usageErr != nil {
 		log.Printf("[Agent] Pi model usage unavailable run=%s task=%s: %v", runID, task.ID, usageErr)
 	} else if available {

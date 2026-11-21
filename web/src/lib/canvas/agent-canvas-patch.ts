@@ -94,41 +94,48 @@ function mergeItems<T extends { id: string }>(items: T[], changes: Change<T>[]):
  * only when the editor has not reordered the same list locally.
  */
 function mergeConnectionOrder(previous: CanvasConnection[], incoming: CanvasConnection[], editor: CanvasConnection[], merged: CanvasConnection[]) {
-    const targetIds = new Set([...previous, ...incoming, ...editor].map((connection) => connection.toNodeId));
-    const next = [...merged];
-    for (const targetId of targetIds) {
-        const targetOrder = (items: CanvasConnection[]) => items.filter((item) => item.toNodeId === targetId).map((item) => item.id);
-        const previousIds = targetOrder(previous);
-        const editorIds = targetOrder(editor);
-        // A local reorder for this target is an intentional edit and wins over
-        // the remote snapshot. Unrelated target connections can still merge.
-        const editorSharedIds = editorIds.filter((id) => previousIds.includes(id));
-        if (previousIds.length !== editorSharedIds.length || previousIds.some((id, index) => id !== editorSharedIds[index])) continue;
+    if (previous === incoming) return merged;
+    const orders = (connections: CanvasConnection[]) => {
+        const byTarget = new Map<string, string[]>();
+        for (const { toNodeId, id } of connections) {
+            const ids = byTarget.get(toNodeId);
+            if (ids) ids.push(id);
+            else byTarget.set(toNodeId, [id]);
+        }
+        return byTarget;
+    };
+    const previousOrder = orders(previous),
+        incomingOrder = orders(incoming),
+        editorOrder = orders(editor);
+    const slotsByTarget = new Map<string, number[]>();
+    merged.forEach(({ toNodeId }, index) => {
+        const slots = slotsByTarget.get(toNodeId);
+        if (slots) slots.push(index);
+        else slotsByTarget.set(toNodeId, [index]);
+    });
+    let next = merged;
+    for (const [target, slots] of slotsByTarget) {
+        const remote = incomingOrder.get(target);
+        if (slots.length < 2 || !remote?.length) continue;
+        const before = previousOrder.get(target) ?? [];
+        if (before.length === remote.length && before.every((id, index) => id === remote[index])) continue;
+        const local = editorOrder.get(target) ?? [];
+        const beforeIds = new Set(before);
+        const localShared = local.filter((id) => beforeIds.has(id));
+        if (before.length !== localShared.length || before.some((id, index) => id !== localShared[index])) continue;
 
-        const mergedById = new Map(next.filter((item) => item.toNodeId === targetId).map((item) => [item.id, item]));
-        const ordered = incoming
-            .filter((item) => item.toNodeId === targetId)
-            .flatMap((item) => {
-                const current = mergedById.get(item.id);
-                if (!current) return [];
-                mergedById.delete(item.id);
-                return [current];
-            });
-        // Keep locally added connections that are absent from the incoming
-        // snapshot after the server-defined order of shared connections.
-        editor
-            .filter((item) => item.toNodeId === targetId)
-            .forEach((item) => {
-                const current = mergedById.get(item.id);
-                if (!current) return;
-                mergedById.delete(item.id);
-                ordered.push(current);
-            });
-        const slots = next.flatMap((item, index) => (item.toNodeId === targetId ? [index] : []));
-        slots.forEach((index, orderIndex) => {
-            const connection = ordered[orderIndex];
-            if (connection) next[index] = connection;
-        });
+        const byId = new Map(slots.map((index) => [merged[index].id, merged[index]]));
+        let slot = 0;
+        for (const id of [...remote, ...local]) {
+            const connection = byId.get(id);
+            if (!connection) continue;
+            byId.delete(id);
+            const index = slots[slot++];
+            if (merged[index] !== connection) {
+                if (next === merged) next = [...merged];
+                next[index] = connection;
+            }
+        }
     }
     return next;
 }
@@ -162,6 +169,7 @@ export function applyAgentCanvasPatch(project: CanvasProject, patch: AgentCanvas
 
 export function mergeAgentCanvasEditor(previous: CanvasProject, incoming: CanvasProject, nodes: CanvasNodeData[], connections: CanvasConnection[], editorProject?: CanvasProject) {
     const changes = <T extends { id: string }>(before: T[], after: T[]): Change<T>[] => {
+        if (before === after) return [];
         const byId = new Map(before.map((item) => [item.id, item]));
         const afterIds = new Set(after.map((item) => item.id));
         return [...after.filter((item) => !equal(item, byId.get(item.id))).map((item) => ({ before: byId.get(item.id) ?? null, after: item })), ...before.filter((item) => !afterIds.has(item.id)).map((item) => ({ before: item, after: null }))];

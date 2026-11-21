@@ -904,6 +904,7 @@ export const enUS: DeepStringRecord<typeof zhCN> = {
             deleted: "Deleted. You can undo this in the change history.",
             approved: "Accepted. Takes effect from the next message.",
             decideFailed: "Action failed",
+            reviewUnavailable: "The server did not confirm these changes. Update the server and refresh before accepting, or reject this proposal.",
             exportFailed: "Export failed",
             mode: "Long-term memory mode",
             modeHint: "{{description}}. The Agent maintains this memory itself when you correct it, state a preference or ask it to remember something.",

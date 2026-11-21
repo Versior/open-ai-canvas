@@ -304,22 +304,27 @@ func agentRunOutput(task *model.Task, state cloudAgentState) *CloudAgentRun {
 	return &CloudAgentRun{PageContext: state.Request.PageContext, ID: task.ID, UserPrompt: state.Request.Prompt, IdempotencyKey: state.Request.IdempotencyKey, CanvasID: task.ProjectID, ParentID: state.ParentID, Status: status, PermissionMode: state.Request.PermissionMode, Model: task.Model, CreatedAt: task.CreatedAt, UpdatedAt: task.UpdatedAt, Skills: state.Skills}
 }
 
-func (s *Service) cloudAgentTask(userID, id string) (*model.Task, cloudAgentState, error) {
+func cloudAgentTaskInput(task *model.Task) (cloudAgentState, bool) {
 	var input struct {
 		Agent cloudAgentState `json:"cloudAgent"`
 	}
+	valid := json.Unmarshal([]byte(task.InputJSON), &input) == nil && input.Agent.Version == 1 && task.ID == cloudAgentID(task.UserID, input.Agent.Request.IdempotencyKey)
+	return input.Agent, valid
+}
+
+func (s *Service) cloudAgentTask(userID, id string) (*model.Task, cloudAgentState, error) {
 	task, err := s.repo.TaskForUser(userID, id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			err = kernel.NotFound("Agent 运行不存在")
 		}
-		return nil, input.Agent, err
+		return nil, cloudAgentState{}, err
 	}
 	if task.Operation != cloudAgentOperation {
-		return nil, input.Agent, kernel.NotFound("Agent 运行不存在")
+		return nil, cloudAgentState{}, kernel.NotFound("Agent 运行不存在")
 	}
-	if json.Unmarshal([]byte(task.InputJSON), &input) == nil && input.Agent.Version == 1 && task.ID == cloudAgentID(userID, input.Agent.Request.IdempotencyKey) {
-		return task, input.Agent, nil
+	if initial, ok := cloudAgentTaskInput(task); ok {
+		return task, initial, nil
 	}
 	// 成功、失败和取消任务的 InputJSON 都可能按存储配额策略压缩；执行
 	// 记录才是完成后轮次的持久来源。运行中如果无法解析执行记录，不能
@@ -329,23 +334,30 @@ func (s *Service) cloudAgentTask(userID, id string) (*model.Task, cloudAgentStat
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			err = kernel.NotFound("Agent 运行不存在")
 		}
-		return nil, input.Agent, err
+		return nil, cloudAgentState{}, err
 	}
-	state, err := cloudAgentDecode(run)
+	state, decodeErr := cloudAgentDecode(run)
+	initial, err := cloudAgentCheckpointIdentity(task, run, &state, decodeErr)
 	if err != nil {
+		return nil, cloudAgentState{}, err
+	}
+	return task, initial, nil
+}
+
+func cloudAgentCheckpointIdentity(task *model.Task, run *model.CloudAgentExecution, state *cloudAgentRuntime, decodeErr error) (cloudAgentState, error) {
+	if decodeErr != nil {
 		if cloudAgentTaskTerminal(task.Status) || cloudAgentRunTerminal(run.Status) {
 			// 终态运行仍应可查询，但绝不从损坏的 runtime 伪造审批、权限、
 			// 活动任务或技能内容。TaskForUser 已完成归属校验，画布 ID 仅
 			// 使用任务自身的归属字段作为安全展示降级。
-			return task, cloudAgentState{Version: 1, Request: CloudAgentRequest{CanvasID: task.ProjectID}}, nil
+			return cloudAgentState{Version: 1, Request: CloudAgentRequest{CanvasID: task.ProjectID}}, nil
 		}
-		return nil, input.Agent, kernel.NotFound("Agent 运行不存在")
+		return cloudAgentState{}, kernel.NotFound("Agent 运行不存在")
 	}
-	if task.ID != cloudAgentID(userID, state.Request.IdempotencyKey) || task.ProjectID != state.Request.CanvasID {
-		return nil, input.Agent, kernel.NotFound("Agent 运行不存在")
+	if task.ID != cloudAgentID(task.UserID, state.Request.IdempotencyKey) || task.ProjectID != state.Request.CanvasID {
+		return cloudAgentState{}, kernel.NotFound("Agent 运行不存在")
 	}
-	input.Agent = cloudAgentState{Version: 1, Request: state.Request, ParentID: state.ParentID, Fingerprint: state.Fingerprint, CreativeAnchor: state.CreativeAnchor, ConfirmationRounds: state.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), state.ConfirmationFingerprints...), PendingConfirmationFingerprint: state.PendingConfirmationFingerprint, Skills: state.Skills, SkillReferences: state.SkillReferences, SkillVersions: state.SkillVersions, SkillHints: state.SkillHints, Memory: state.Memory, Profile: state.Profile, Policy: state.Policy}
-	return task, input.Agent, nil
+	return cloudAgentState{Version: 1, Request: state.Request, ParentID: state.ParentID, Fingerprint: state.Fingerprint, CreativeAnchor: state.CreativeAnchor, ConfirmationRounds: state.ConfirmationRounds, ConfirmationFingerprints: append([]string(nil), state.ConfirmationFingerprints...), PendingConfirmationFingerprint: state.PendingConfirmationFingerprint, Skills: state.Skills, SkillReferences: state.SkillReferences, SkillVersions: state.SkillVersions, SkillHints: state.SkillHints, Memory: state.Memory, Profile: state.Profile, Policy: state.Policy}, nil
 }
 
 func cloudAgentTaskTerminal(status model.TaskStatus) bool {
@@ -366,7 +378,8 @@ func (s *Service) CloudAgentRun(userID, id string, options ...CloudAgentRunViewO
 	// runtime blob was compacted or damaged; the output path has a deliberately
 	// read-only, minimal fallback for that case. The ensure path is only for a
 	// legacy root task whose execution row has not been created yet.
-	if _, lookupErr := s.repo.CloudAgent(userID, id); errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+	run, lookupErr := s.repo.CloudAgent(userID, id)
+	if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
 		if err := s.ensureCloudAgentExecution(task, state); err != nil {
 			if agentStorageCapacityError(err) {
 				if cleanupErr := s.repo.FailCloudAgentReservation(userID, id, err.Error()); cleanupErr != nil {
@@ -375,10 +388,12 @@ func (s *Service) CloudAgentRun(userID, id string, options ...CloudAgentRunViewO
 			}
 			return nil, err
 		}
-	} else if lookupErr != nil {
+		run, lookupErr = s.repo.CloudAgent(userID, id)
+	}
+	if lookupErr != nil {
 		return nil, lookupErr
 	}
-	return s.cloudAgentExecutionOutput(task, state, options...)
+	return s.cloudAgentExecutionOutput(task, state, run, options...)
 }
 
 // CloudAgentRunIfChanged keeps idle event streams on a small indexed read.

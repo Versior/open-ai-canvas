@@ -2,10 +2,13 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"yingce/backend/internal/kernel"
 	"yingce/backend/internal/model"
 )
 
@@ -274,5 +277,64 @@ func TestAgentMemoryUndoRefusesWhenEntryChangedLater(t *testing.T) {
 	}
 	if _, err := s.UpdateAgentMemoryDocument("user", AgentMemoryDocUpdateRequest{Revision: view.Revision, Entries: nil}); err == nil {
 		t.Fatal("stale revision edit must conflict")
+	}
+}
+
+func TestAgentMemoryUndoApprovedAdditionChecksOnlyTarget(t *testing.T) {
+	const user, original, other = "user", "默认暖色", "使用自然光"
+	for _, scenario := range []struct {
+		name, section, text, otherText string
+		conflict                       bool
+	}{
+		{"moved, same text", "user", original, other, true},
+		{"edited text", "notes", "用户改为黑白", other, true},
+		{"unrelated edit", "notes", original, "使用侧光", false},
+		{"unchanged", "notes", original, other, false},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			service, _, _, _ := creationTestServiceOnDatabase(t, agentPermissionsDB(t))
+			initial, err := service.UpdateAgentMemoryDocumentSettings(user, AgentMemoryDocSettingsRequest{Mode: "review"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.UpdateAgentMemoryDocument(user, AgentMemoryDocUpdateRequest{Revision: initial.Revision, Entries: []AgentMemoryEntryInput{{Section: "notes", Text: other}}}); err != nil {
+				t.Fatal(err)
+			}
+			proposal, _, err := service.agentMemoryAgentWrite(user, "run", "call", []agentMemoryOperation{{Action: "add", Section: "notes", Text: original}}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			approved, err := service.DecideAgentMemoryRevision(user, proposal.RevisionID, AgentMemoryDocDecisionRequest{Decision: "approve"})
+			if err != nil || len(approved.Entries) != 2 || approved.Entries[1].Text != original {
+				t.Fatalf("approved document: %+v err=%v", approved, err)
+			}
+			targetID := approved.Entries[1].ID
+			before, err := service.UpdateAgentMemoryDocument(user, AgentMemoryDocUpdateRequest{Revision: approved.Revision, Entries: []AgentMemoryEntryInput{
+				{ID: approved.Entries[0].ID, Section: "notes", Text: scenario.otherText},
+				{ID: targetID, Section: scenario.section, Text: scenario.text},
+			}})
+			if err != nil || len(before.Entries) != 2 || before.Entries[1].ID != targetID || before.Entries[1].Section != scenario.section || before.Entries[1].Text != scenario.text || before.Entries[0].Text != scenario.otherText {
+				t.Fatalf("edit did not persist: %+v err=%v", before, err)
+			}
+			_, undoErr := service.UndoAgentMemoryRevision(user, proposal.RevisionID)
+			after, err := service.AgentMemoryDocument(user)
+			if err != nil {
+				t.Fatal(err)
+			}
+			revision, err := service.repo.AgentMemoryDocumentRevision(user, proposal.RevisionID)
+			if err != nil || revision.Status != model.AgentMemoryRevisionApplied {
+				t.Fatalf("approved revision: %+v err=%v", revision, err)
+			}
+			if scenario.conflict {
+				var conflict *kernel.AppError
+				if !errors.As(undoErr, &conflict) || conflict.Status != 409 || revision.RestoredAt != nil || !reflect.DeepEqual(after, before) {
+					t.Fatalf("expected unchanged document and proposal on conflict: err=%v restored=%v document v%d→v%d remaining=%d", undoErr, revision.RestoredAt != nil, before.Revision, after.Revision, len(after.Entries))
+				}
+				return
+			}
+			if undoErr != nil || revision.RestoredAt == nil || after.Revision != before.Revision+1 || !reflect.DeepEqual(after.Entries, before.Entries[:1]) {
+				t.Fatalf("expected only original addition undone: %+v err=%v", after, undoErr)
+			}
+		})
 	}
 }

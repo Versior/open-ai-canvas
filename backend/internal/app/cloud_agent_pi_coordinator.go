@@ -343,7 +343,11 @@ func (s *Service) runCloudAgentPiSession(ctx context.Context, userID, runID stri
 	// 直接收尾；再启动运行时会对同一提示词再调用一次模型、多扣一次费。
 	// 例外：完成闸写下的插话续跑与待办催办提示词（completeCloudAgentPiRun）晚于快照里的
 	// 最终回答，必须真正跑出去——清空收尾会让已标记送达的插话或催办永远到不了模型。
-	if ownSession && cloudAgentPiTurnSettled(sessionJSONL, &runtimeState) {
+	var lastSessionMessage map[string]any
+	if ownSession {
+		lastSessionMessage = lastPiSessionMessage(sessionJSONL)
+	}
+	if cloudAgentPiTurnSettled(lastSessionMessage, &runtimeState) {
 		if !cloudAgentPiResumePromptDeliversInterjection(&runtimeState) && !cloudAgentPiResumePromptNudgesPlan(&runtimeState) {
 			if runtimeState.PiResumePrompt != "" {
 				if err := s.saveCloudAgentPiResumePrompt(userID, runID, ""); err != nil {
@@ -371,8 +375,10 @@ func (s *Service) runCloudAgentPiSession(ctx context.Context, userID, runID stri
 	}
 
 	// 6. 如果是恢复会话，使用恢复提示词
-	if len(sessionJSONL) > 0 {
-		request.Prompt = firstNonEmpty(runtimeState.PiResumePrompt, state.Request.Prompt)
+	if runtimeState.PiResumePrompt != "" && sessionJSONL != "" {
+		request.Prompt = runtimeState.PiResumePrompt
+	} else if lastSessionMessage["role"] == "toolResult" {
+		request.Prompt = stringField(cloudAgentRuntimeMessage(cloudAgentRuntimeContext{Kind: "tool_checkpoint", Detail: stringField(lastSessionMessage, "toolCallId")}), "content")
 	}
 
 	// 7. 运行 Pi 会话
@@ -440,47 +446,27 @@ func (s *Service) cloudAgentRunPausedForInput(userID, runID string) bool {
 	return run.Status == "waiting_approval" || run.Status == "waiting_user"
 }
 
-// cloudAgentPiTurnSettled 判断本轮是否已在会话里完整结束：本轮已有成功的助手回复，
-// 没有挂着的任务或审批，且会话最后一条消息是不带工具调用的正常结束回复。
-// 只能用于本轮自己落库的快照：运行时的事件按顺序提交，助手回复计数增长之前，
-// 含本轮用户提示的快照已经落库，所以最后一条完成回复一定属于本轮。
-// 续轮沿用的上一轮会话最后一条也是完成回复，不能据此收尾。
-func cloudAgentPiTurnSettled(sessionJSONL string, state *cloudAgentRuntime) bool {
-	if sessionJSONL == "" || state == nil || state.PiAssistantResponses == 0 {
-		return false
-	}
-	if state.ActiveTaskID != "" || state.MediaTaskID != "" || state.Approval != nil || cloudAgentMediaBatchActive(state) {
-		return false
-	}
+func lastPiSessionMessage(sessionJSONL string) map[string]any {
 	lines := strings.Split(strings.TrimRight(sessionJSONL, "\n"), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		var entry struct {
-			Type    string `json:"type"`
-			Message struct {
-				Role       string `json:"role"`
-				StopReason string `json:"stopReason"`
-				Content    []struct {
-					Type string `json:"type"`
-				} `json:"content"`
-			} `json:"message"`
+			Type    string         `json:"type"`
+			Message map[string]any `json:"message"`
 		}
 		if err := json.Unmarshal([]byte(lines[i]), &entry); err != nil {
-			return false
+			return nil
 		}
 		if entry.Type != "message" {
 			continue
 		}
-		if entry.Message.Role != "assistant" || entry.Message.StopReason != "stop" {
-			return false
-		}
-		for _, block := range entry.Message.Content {
-			if block.Type == "toolCall" {
-				return false
-			}
-		}
-		return true
+		return entry.Message
 	}
-	return false
+	return nil
+}
+
+func cloudAgentPiTurnSettled(last map[string]any, state *cloudAgentRuntime) bool {
+	return state != nil && state.PiAssistantResponses > 0 && state.ActiveTaskID == "" && state.MediaTaskID == "" &&
+		state.Approval == nil && !cloudAgentMediaBatchActive(state) && last["stopReason"] == "stop" && validPiAssistantResponse(last)
 }
 
 // completeCloudAgentPiRun 完成运行
@@ -507,7 +493,7 @@ func (s *Service) completeCloudAgentPiRun(userID, runID string) error {
 		}
 
 		// 验证：必须有真实的助手响应（防止伪装完成）
-		if state.PiAssistantResponses == 0 {
+		if state.PiAssistantResponses == 0 || !cloudAgentPiHasCompletedOutput(&state) {
 			return fmt.Errorf("no assistant response, refusing to mark as completed")
 		}
 
@@ -562,4 +548,20 @@ func (s *Service) completeCloudAgentPiRun(userID, runID string) error {
 	}
 
 	return repository.ErrCreationConflict
+}
+
+func cloudAgentPiHasCompletedOutput(state *cloudAgentRuntime) bool {
+	messages := state.Canonical.Messages
+	if len(messages) == 0 || state.CallIndex < len(state.Calls) {
+		return false
+	}
+	last := messages[len(messages)-1]
+	if last["role"] == "assistant" {
+		return cloudAgentPiRunAtFinalAnswer(state) && strings.TrimSpace(runtimeContentText(last["content"])) != ""
+	}
+	if last["role"] == "tool" {
+		_, recorded := cloudAgentServerToolReceipts(messages)[stringField(last, "tool_call_id")]
+		return recorded
+	}
+	return false
 }

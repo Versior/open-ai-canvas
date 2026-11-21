@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -108,6 +110,24 @@ func noopBridge() Bridge {
 	return Bridge{Model: handler, Tool: handler, Event: handler}
 }
 
+func TestReadOutputRequiresExplicitSettlement(t *testing.T) {
+	for _, unfinished := range []string{"", `{"event":"progress"}`, `{"event":"approval_wait"}`} {
+		if err := ReadOutput(strings.NewReader(unfinished)); !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("%q: want premature EOF, got %v", unfinished, err)
+		}
+	}
+	for _, prefix := range []string{"", "{\"event\":\"approval_wait\"}\n"} {
+		if err := ReadOutput(strings.NewReader(prefix + `{"event":"settled"}`)); err != nil {
+			t.Errorf("confirmed settlement: %v", err)
+		}
+	}
+	for _, failure := range []string{`{"event":"runtime_error","message":"bad reply"}`, `{"event":"bridge_error"}`, `{`} {
+		if err := ReadOutput(strings.NewReader(failure + "\n" + `{"event":"settled"}`)); err == nil || errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Errorf("settled hid prior failure: %q: %v", failure, err)
+		}
+	}
+}
+
 // 回归：Wait 早于读完 stdout 时，大量输出后正常退出会被判成
 // "read |0: file already closed"。
 func TestRunDrainsStdoutBeforeWait(t *testing.T) {
@@ -169,6 +189,7 @@ try {
     if (error.code !== "ENOENT") throw error;
   }
   dir = "";
+  process.stdout.write('{"event":"settled"}\n');
 } catch (error) {
   if (dir) await rm(dir, { recursive: true, force: true });
   process.stdout.write(JSON.stringify({ event: "runtime_error", message: String(error.message || error) }) + "\n");
@@ -189,6 +210,8 @@ func TestRunDoesNotLeakBackendEnvironment(t *testing.T) {
 if (process.env.DATABASE_URL) {
   process.stdout.write(JSON.stringify({ event: "runtime_error", message: "leaked" }) + "\n");
   process.exitCode = 1;
+} else {
+  process.stdout.write('{"event":"settled"}\n');
 }
 `)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

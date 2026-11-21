@@ -10,6 +10,7 @@ import type { CloudAgentInterjectionState } from "@/services/cloud-agent-convers
 import type { CanvasTheme } from "@/lib/canvas-theme";
 import { AIMessageMarkdown } from "@/components/ai/ai-message-markdown";
 import { AgentMemoryUpdateCard, AgentSkillSuggestionCard } from "./canvas-cloud-agent-memory-cards";
+import type { MemoryCardStatus } from "@/hooks/use-agent-memory-revision-statuses";
 import { AgentReplyOptionCards } from "./canvas-agent-reply-options";
 import type { AgentReplyOptions } from "@/lib/canvas/agent-reply-options";
 import type { CanvasResourceReference } from "@/lib/canvas/canvas-resource-references";
@@ -121,7 +122,7 @@ export type CloudAgentChatMessage = {
 
 export type CloudAgentMemoryUpdate = {
     revisionId: string;
-    status: "applied" | "pending";
+    status: "applied" | "pending" | "rejected" | "undone";
     summary: string;
     changes: Array<{ kind: "add" | "replace" | "remove"; section: string; before?: string; after?: string }>;
 };
@@ -420,6 +421,8 @@ function createAgentMessageMarkdownComponents(references: CanvasResourceReferenc
 // 面板输入、流式输出都会让对话列表重渲染；消息组件 memo 后，只有自己的消息或展示参数变了才重新解析 Markdown。
 export const AgentChatMessage = memo(function AgentChatMessage({
     item,
+    memoryStatus,
+    onRefreshMemoryStatus,
     assistantName,
     theme,
     references = EMPTY_REFERENCES,
@@ -443,6 +446,8 @@ export const AgentChatMessage = memo(function AgentChatMessage({
     replyPinned = false,
 }: {
     item: CloudAgentChatMessage;
+    memoryStatus?: MemoryCardStatus;
+    onRefreshMemoryStatus?: () => void;
     assistantName?: string;
     theme: CanvasTheme;
     references?: CanvasResourceReference[];
@@ -514,7 +519,7 @@ export const AgentChatMessage = memo(function AgentChatMessage({
             </div>
         );
     }
-    if (item.memoryUpdate) return <AgentMemoryUpdateCard update={item.memoryUpdate} theme={theme} />;
+    if (item.memoryUpdate) return <AgentMemoryUpdateCard update={item.memoryUpdate} currentStatus={memoryStatus ?? "unavailable"} onRefresh={onRefreshMemoryStatus} theme={theme} />;
     if (item.skillSuggestion) return <AgentSkillSuggestionCard suggestion={item.skillSuggestion} theme={theme} />;
     if (isSystem) {
         return (

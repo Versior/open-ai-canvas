@@ -28,6 +28,8 @@ const (
 	agentMemoryOutcomeApplied   = "applied"
 	agentMemoryOutcomePending   = "pending_review"
 	agentMemoryOutcomeUnchanged = "unchanged"
+	agentMemoryOutcomeRejected  = "rejected"
+	agentMemoryOutcomeUndone    = "undone"
 )
 
 func agentMemoryEntriesJSON(entries []model.AgentMemoryEntry) (string, error) {
@@ -38,17 +40,27 @@ func agentMemoryEntriesJSON(entries []model.AgentMemoryEntry) (string, error) {
 	return string(raw), err
 }
 
-func agentMemoryOutcomeFromRevision(revision *model.AgentMemoryDocumentRevision, capacity int) agentMemoryWriteOutcome {
+func agentMemoryOutcomeFromRevision(revision *model.AgentMemoryDocumentRevision, doc *model.AgentMemoryDocument) (agentMemoryWriteOutcome, error) {
 	after := agentMemoryEntriesFromJSON(revision.AfterJSON)
-	status := agentMemoryOutcomeApplied
-	if revision.Status == model.AgentMemoryRevisionPending {
+	var status string
+	switch revision.Status {
+	case model.AgentMemoryRevisionPending:
 		status = agentMemoryOutcomePending
+	case model.AgentMemoryRevisionRejected:
+		status = agentMemoryOutcomeRejected
+	case model.AgentMemoryRevisionApplied:
+		status = agentMemoryOutcomeApplied
+		if revision.RestoredAt != nil {
+			status = agentMemoryOutcomeUndone
+		}
+	default:
+		return agentMemoryWriteOutcome{}, fmt.Errorf("unknown Agent memory revision status %q", revision.Status)
 	}
 	return agentMemoryWriteOutcome{
 		Status: status, RevisionID: revision.ID, Summary: revision.Summary,
 		Changes:   agentMemoryDiff(agentMemoryEntriesFromJSON(revision.BeforeJSON), after),
-		CharCount: agentMemoryCharCount(after), Capacity: capacity,
-	}
+		CharCount: doc.CharCount, Capacity: agentMemoryCapacityOf(doc),
+	}, nil
 }
 
 // agentMemoryCapacityDetail 在容量超限时把当前全部条目交还给 Agent，它才能在下一次调用里合并。
@@ -69,7 +81,12 @@ func agentMemoryCapacityDetail(entries []model.AgentMemoryEntry, capErr *agentMe
 func (s *Service) agentMemoryAgentWrite(userID, runID, callID string, ops []agentMemoryOperation, reason string) (agentMemoryWriteOutcome, map[string]any, error) {
 	if strings.TrimSpace(callID) != "" {
 		if prior, err := s.repo.AgentMemoryDocumentRevisionByCall(userID, callID); err == nil {
-			return agentMemoryOutcomeFromRevision(prior, agentMemoryDefaultCapacity), nil, nil
+			doc, err := s.repo.AgentMemoryDocument(userID)
+			if err != nil {
+				return agentMemoryWriteOutcome{}, nil, err
+			}
+			outcome, err := agentMemoryOutcomeFromRevision(prior, doc)
+			return outcome, nil, err
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return agentMemoryWriteOutcome{}, nil, err
 		}

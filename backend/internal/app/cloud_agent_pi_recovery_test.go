@@ -176,9 +176,10 @@ func TestCloudAgentPiTurnSettled(t *testing.T) {
 		{"no response this run", strings.Join([]string{header, user, done}, "\n"), &cloudAgentRuntime{}, false},
 		{"active task", strings.Join([]string{header, user, done}, "\n"), &cloudAgentRuntime{PiAssistantResponses: 1, ActiveTaskID: "t"}, false},
 		{"empty", "", settled, false},
+		{"empty assistant", `{"type":"message","message":{"role":"assistant","stopReason":"stop","content":[]}}`, settled, false},
 	}
 	for _, tc := range cases {
-		if got := cloudAgentPiTurnSettled(tc.jsonl, tc.state); got != tc.want {
+		if got := cloudAgentPiTurnSettled(lastPiSessionMessage(tc.jsonl), tc.state); got != tc.want {
 			t.Errorf("%s: settled = %v, want %v", tc.name, got, tc.want)
 		}
 	}

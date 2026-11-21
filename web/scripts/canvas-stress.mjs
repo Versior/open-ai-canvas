@@ -903,15 +903,15 @@ async function agentLayout(page, base) {
                 opening.onerror = () => reject(opening.error);
                 opening.onsuccess = () => resolve(opening.result);
             });
-            const key = "cloud-agent-conversations-v2:global:user:stress-user";
             try {
                 const conversation = { id: "layout-probe", title: "Paragraph spacing fixture", messages, run: null, permissionMode: "read_only", createdAt: date, updatedAt: date };
                 await new Promise((resolve, reject) => {
                     const transaction = database.transaction("app_state", "readwrite");
-                    transaction.objectStore("app_state").put(JSON.stringify({ version: 1, activeId: conversation.id, conversations: [conversation] }), key);
+                    transaction.objectStore("app_state").put(JSON.stringify(conversation), `cloud-agent-conversations-v2:by-session:stress-user:${conversation.id}`);
                     transaction.oncomplete = resolve;
                     transaction.onerror = () => reject(transaction.error);
                 });
+                sessionStorage.setItem("cloud-agent-conversations-v2:active:user:stress-user", conversation.id);
             } finally {
                 database.close();
             }

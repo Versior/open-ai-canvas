@@ -136,13 +136,13 @@ func Run(ctx context.Context, request ProcessRequest, bridge Bridge) error {
 	}
 	waitErr := cmd.Wait()
 	inputErr := <-inputDone
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if lineErr != nil {
 		return lineErr
 	}
 	if waitErr != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
 		return fmt.Errorf("agent runtime exited: %w", waitErr)
 	}
 	if inputErr != nil {
@@ -196,6 +196,7 @@ func ReadOutput(stdout io.Reader) error {
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), lineLimit)
 	var lastError error
+	settled := false
 	for scanner.Scan() {
 		var event struct {
 			Event   string `json:"event"`
@@ -205,14 +206,23 @@ func ReadOutput(stdout io.Reader) error {
 			lastError = fmt.Errorf("decode Agent runtime event: %w", err)
 			continue
 		}
-		if event.Event == "runtime_error" || event.Event == "bridge_error" {
+		switch event.Event {
+		case "settled":
+			settled = true
+		case "runtime_error", "bridge_error":
 			lastError = errors.New(firstNonEmpty(event.Message, "Agent runtime failed"))
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("read Agent runtime output: %w", err)
 	}
-	return lastError
+	if lastError != nil {
+		return lastError
+	}
+	if !settled {
+		return fmt.Errorf("agent runtime ended before settled: %w", io.ErrUnexpectedEOF)
+	}
+	return nil
 }
 
 func BridgeCall(w http.ResponseWriter, r *http.Request, expectedToken string, handler func(context.Context, map[string]json.RawMessage) (any, error)) {

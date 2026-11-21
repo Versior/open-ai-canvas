@@ -47,6 +47,7 @@ const { ApiError } = await import("@/services/api/request");
 let local: CloudAgentConversation[] = [];
 let remote: CloudAgentConversation[] = [];
 let activeId = "";
+let readOnlyHistory = false;
 let pending: CloudAgentPendingSubmission | null = null;
 let refreshOverride: (() => Promise<CloudAgentConversation[]>) | undefined;
 const subscriptions: Array<{ id: string; after: number; event: (event: AgentEvent) => void; connection: (status: string) => void; closed: boolean }> = [];
@@ -122,11 +123,12 @@ mock.module("@/services/api/agent", () => ({
 }));
 mock.module("@/services/cloud-agent-conversations", () => ({
     ...history,
-    loadCloudAgentConversations: async (scope: string) => (scope === "sync-user" ? { version: 1, activeId, conversations: local } : { version: 1, activeId: null, conversations: [] }),
-    saveCloudAgentConversations: async (id: string, conversations: CloudAgentConversation[], scope: string) => {
+    loadCloudAgentConversations: async (scope: string) => (scope === "sync-user" ? { version: 1, activeId, conversations: local, readOnly: readOnlyHistory } : { version: 1, activeId: null, conversations: [] }),
+    saveCloudAgentConversations: async (id: string, changed: CloudAgentConversation | undefined, scope: string, deleted: string[] = []) => {
         if (scope !== "sync-user") return;
         activeId = id;
-        local = conversations;
+        local = local.filter((item) => !deleted.includes(item.id) && item.id !== changed?.id);
+        if (changed) local.unshift(changed);
     },
     loadCloudAgentPendingSubmission: async (_id: string, scope: string) => (scope === "sync-user" ? pending : null),
     saveCloudAgentPendingSubmission: async (_id: string, value: CloudAgentPendingSubmission, scope: string) => {
@@ -282,13 +284,14 @@ async function mount(
     initialPending: CloudAgentPendingSubmission | null = null,
     target: AgentRequestTarget = { canvasId: "shared-canvas" },
     initialPrefill?: Omit<AgentPrefillRequest, "id">,
-    options: { draftCanvas?: boolean } = {},
+    options: { draftCanvas?: boolean; readOnlyOthers?: CloudAgentConversation[] } = {},
 ) {
     draftCanvasUntilPrepared = Boolean(options.draftCanvas);
     canvasPrepared = false;
     cloudCalls.length = 0;
     skillRequests.length = 0;
-    local = [initial];
+    readOnlyHistory = Boolean(options.readOnlyOthers);
+    local = [initial, ...(options.readOnlyOthers || [])];
     activeId = initial.id;
     remote = cloud;
     pending = initialPending;
@@ -368,6 +371,36 @@ test("普通聊天、窗口聚焦和输入斜线不加载或固定技能，只�
         await act(async () => header.onSettings());
         expect(skillRequests).toContain("installed");
         expect(skillRequests).toContain("public");
+    } finally {
+        await mounted.close();
+    }
+});
+
+test("只读恢复面板可切换复制不同的旧稿和正文；不挂接运行或恢复待计费提交", async () => {
+    const first = { ...chat("旧窗口一", null), draft: "未发送的本机稿" };
+    const second = { ...chat("旧窗口二", makeRun("old-active", "running")), draft: "另一个页面的稿子" };
+    const unconfirmed = { key: "possible-charge", fingerprint: "previous-attempt" };
+    const mounted = await mount(first, [], unconfirmed, { canvasId: "" }, undefined, { readOnlyOthers: [second] });
+    try {
+        const recovery = mounted.host.querySelector<HTMLElement>('[aria-label="旧对话只读恢复"]');
+        expect(recovery).not.toBeNull();
+        const picker = recovery!.querySelector("select")!,
+            copy = recovery!.querySelector("textarea")!;
+        expect(copy.readOnly).toBe(true);
+        expect(copy.value).toBe(first.draft);
+        await act(async () => {
+            picker.value = second.id;
+            picker.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        expect(copy.value).toContain(second.draft);
+        expect(copy.value).toContain(second.messages.at(-1)!.text);
+        await focus();
+        await persist();
+        expect(local).toEqual([first, second]);
+        expect(pending).toEqual(unconfirmed);
+        expect(subscriptions).toHaveLength(0);
+        expect(generated).toBe(0);
+        expect(sent).toBeEmpty();
     } finally {
         await mounted.close();
     }
@@ -1058,6 +1091,94 @@ test("等待提交时切换分镜，已点击发送的请求仍绑定原镜头",
         expect(sendInputs[0].pageContext).toEqual(dramaTarget.pageContext);
     } finally {
         release?.({ permissionModes: ["request_approval"], skills: true });
+        await mounted.close();
+    }
+});
+
+test.each([
+    ["不同正文", "下一轮新草稿", false],
+    ["重新输入相同正文", "第一条", false],
+    ["请求被拒绝", "下一轮新草稿", true],
+    ["请求被拒绝后保持已清空的草稿", "", true],
+] as const)("发送准备期间继续编辑：%s", async (_name, nextDraft, reject) => {
+    const initial = chat("slow-submit", makeRun("first"));
+    const mounted = await mount(initial, [initial]);
+    let release: ((value: unknown) => void) | undefined;
+    try {
+        capabilitiesOverride = () => new Promise((resolve) => (release = resolve));
+        if (reject) sendFailure = new ApiError("未接收请求", { status: 422, code: 422 });
+        await act(async () => composer.onPromptChange("第一条"));
+        await act(async () => {
+            composer.onSubmit();
+            await settle();
+        });
+        expect(release).toBeDefined();
+        await act(async () => composer.onPromptChange("正在重新编辑"));
+        await act(async () => composer.onPromptChange(nextDraft));
+        await act(async () => {
+            release!({ permissionModes: ["request_approval"], skills: true });
+            await settle();
+        });
+        await persist();
+        expect(sendInputs.map((input) => input.prompt)).toEqual(["第一条"]);
+        expect(composer.prompt).toBe(nextDraft);
+        expect(local.find((item) => item.id === activeId)?.draft || "").toBe(nextDraft);
+        if (reject) expect(composer.tray.props.outbox.items.map((item: { text: string }) => item.text)).toEqual(["第一条"]);
+    } finally {
+        release?.({ permissionModes: ["request_approval"], skills: true });
+        await mounted.close();
+    }
+});
+
+test("慢提交只消耗点发送时的附件，新加入的图片仍在输入区", async () => {
+    const initial = chat("slow-attachments", makeRun("first"));
+    const mounted = await mount(initial, [initial]);
+    let release: ((value: unknown) => void) | undefined;
+    try {
+        const canvas = useGlobalAgentStore.getState().canvas!;
+        const nodes = ["before", "after"].map((id) => ({ id, title: id, type: "image" as const, position: { x: 0, y: 0 }, metadata: { storageKey: `resource:${id}` } }));
+        await act(async () => useGlobalAgentStore.setState({ canvas: { ...canvas, canvasNodes: nodes, insertAgentFiles: (files) => files.map((file) => file.name.split(".")[0]) } }));
+        const file = (id: string) => new File(["fixture"], `${id}.png`, { type: "image/png" });
+        await act(async () => {
+            composer.onAddFiles([file("before")]);
+            composer.onPromptChange("原消息");
+        });
+        capabilitiesOverride = () => new Promise((resolve) => (release = resolve));
+        await act(async () => {
+            composer.onSubmit();
+            await settle();
+        });
+        expect(release).toBeDefined();
+        await act(async () => composer.onAddFiles([file("after")]));
+        await act(async () => {
+            release!({ permissionModes: ["request_approval"], skills: true });
+            await settle();
+        });
+        expect(sendInputs).toHaveLength(1);
+        expect(sendInputs[0].prompt).toContain("@[node:before]");
+        expect(sendInputs[0].prompt).not.toContain("@[node:after]");
+        expect(composer.attachments.map((item: { nodeId: string }) => item.nodeId)).toEqual(["after"]);
+    } finally {
+        release?.({ permissionModes: ["request_approval"], skills: true });
+        await mounted.close();
+    }
+});
+
+test("刷新未确认提交时保留后来编辑的草稿，即使与原请求同文也只重试原身份", async () => {
+    const initial = { ...chat("refresh-pending-draft", makeRun("first")), draft: "同样的新草稿", draftEditId: "fresh-edit" };
+    const previous = { key: "pending-retry", fingerprint: "frozen", draftEditId: "previous-edit", parentRunId: "first", request: { canvasId: "shared-canvas", prompt: "同样的新草稿", idempotencyKey: "pending-retry" } };
+    const mounted = await mount(initial, [initial], previous);
+    try {
+        expect(composer.prompt).toBe(initial.draft);
+        await act(async () => {
+            composer.tray.props.pendingRetry.onRetry();
+            await settle();
+        });
+        expect(sendInputs.map((item) => item.idempotencyKey)).toEqual([previous.key]);
+        expect(composer.prompt).toBe(initial.draft);
+        await persist();
+        expect(local.find((item) => item.id === activeId)?.draft).toBe(initial.draft);
+    } finally {
         await mounted.close();
     }
 });

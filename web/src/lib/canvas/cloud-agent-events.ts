@@ -6,7 +6,7 @@
 
 import type { AgentEvent, AgentRun } from "@/services/api/agent";
 import type { Dispatch, SetStateAction } from "react";
-import type { CloudAgentChatMessage, CloudAgentPlanItem } from "@/components/canvas/canvas-cloud-agent-chat-ui";
+import type { CloudAgentChatMessage, CloudAgentMemoryUpdate, CloudAgentPlanItem } from "@/components/canvas/canvas-cloud-agent-chat-ui";
 import { AGENT_APPROVAL_SUPERSEDED_BY_NODE } from "@/lib/canvas/agent-media-approval";
 import { agentToolRetry, mergeAgentToolRetry } from "@/lib/canvas/agent-tool-retry";
 import { agentErrorPresentation } from "@/lib/canvas/agent-error-presentation";
@@ -325,6 +325,8 @@ export function applyAgentEvent(
         return;
     }
     if (event.type === "memory_updated") {
+        const status = payload.status === "pending_review" ? "pending" : payload.status;
+        if (status !== "pending" && status !== "applied" && status !== "rejected" && status !== "undone") return;
         const revisionId = String(payload.revisionId || "");
         const changes = Array.isArray(payload.changes)
             ? (payload.changes as Array<Record<string, unknown>>).map((change) => ({
@@ -334,8 +336,15 @@ export function applyAgentEvent(
                   after: change.after === undefined ? undefined : String(change.after),
               }))
             : [];
-        const memoryUpdate = { revisionId, status: payload.status === "pending_review" ? ("pending" as const) : ("applied" as const), summary: String(payload.summary || ""), changes };
-        setMessages((current) => appendUniqueMessage(current, { id: `memory-${revisionId || event.eventId}`, role: "system", text: text || "长期记忆已更新", memoryUpdate }));
+        const memoryUpdate: CloudAgentMemoryUpdate = { revisionId, status, summary: String(payload.summary || ""), changes };
+        const message: CloudAgentChatMessage = { id: `memory-${revisionId || event.eventId}`, role: "system", text: text || "长期记忆修改记录", memoryUpdate };
+        setMessages((current) => {
+            const index = current.findIndex((item) => item.id === message.id);
+            if (index < 0) return [...current, message];
+            const previous = current[index].memoryUpdate?.status;
+            if (previous === status || previous === "rejected" || previous === "undone" || (previous === "applied" && status === "pending")) return current;
+            return current.map((item, at) => (at === index ? message : item));
+        });
         return;
     }
     if (event.type === "skill_install_suggested") {

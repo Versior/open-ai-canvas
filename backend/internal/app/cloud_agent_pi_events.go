@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"yingce/backend/internal/model"
 	"yingce/backend/internal/repository"
@@ -43,12 +44,11 @@ func (s *Service) handleMessageDelta(userID, runID string, data map[string]any) 
 	messageID, _ := data["messageId"].(string)
 	slog.Debug("agent message_delta", "run", runID, "message_id", messageID, "len", len(delta))
 
-	// 推送实时增量到前端
 	if err := s.broadcastAgentEvent(userID, runID, "message_delta", map[string]any{
 		"delta":     delta,
 		"messageId": messageID,
 	}); err != nil {
-		slog.Warn("agent message_delta broadcast failed", "run", runID, "error", err)
+		return nil, err
 	}
 
 	return map[string]any{"ok": true}, nil
@@ -60,16 +60,13 @@ func (s *Service) handleMessageEnd(userID, runID string, data map[string]any) (a
 
 	// 检查消息角色，防止将用户消息误认为助手消息
 	role, _ := data["role"].(string)
-	if role == "user" {
-		// 这是用户消息结束，不是助手响应，直接返回
-		slog.Debug("agent message_end ignored", "run", runID, "role", "user")
-		return map[string]any{"ok": true, "ignored": true, "reason": "user message"}, nil
-	}
-
-	// 只处理助手消息结束
 	if role != "assistant" {
 		slog.Debug("agent message_end ignored", "run", runID, "role", role)
 		return map[string]any{"ok": true, "ignored": true, "reason": fmt.Sprintf("non-assistant role: %s", role)}, nil
+	}
+	message, _ := data["message"].(map[string]any)
+	if !validPiAssistantResponse(message) {
+		return nil, errors.New("invalid Agent assistant message_end: expected a completed text response or tool call")
 	}
 
 	// 更新运行状态
@@ -96,6 +93,33 @@ func (s *Service) handleMessageEnd(userID, runID string, data map[string]any) (a
 	}
 
 	return map[string]any{"ok": true, "assistantResponses": state.PiAssistantResponses}, nil
+}
+
+func validPiAssistantResponse(message map[string]any) bool {
+	if message["role"] != "assistant" || stringField(message, "errorMessage") != "" {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, raw := range interfaceSlice(message["content"]) {
+		part, _ := raw.(map[string]any)
+		if part["type"] != "toolCall" {
+			continue
+		}
+		id, name := stringField(part, "id"), stringField(part, "name")
+		if strings.TrimSpace(id) == "" || strings.TrimSpace(name) == "" || seen[id] {
+			return false
+		}
+		if arguments := part["arguments"]; arguments != nil {
+			if _, ok := arguments.(map[string]any); !ok {
+				return false
+			}
+		}
+		seen[id] = true
+	}
+	if len(seen) > 0 {
+		return message["stopReason"] == "toolUse"
+	}
+	return message["stopReason"] == "stop" && strings.TrimSpace(runtimeContentText(message["content"])) != ""
 }
 
 // handleError 处理错误事件

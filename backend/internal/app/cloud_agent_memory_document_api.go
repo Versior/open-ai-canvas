@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,6 +43,8 @@ type AgentMemoryDocRevisionView struct {
 	BaseRevision int64                  `json:"baseRevision"`
 	Revision     int64                  `json:"revision"`
 	Changes      []AgentMemoryDocChange `json:"changes"`
+	ReviewHash   string                 `json:"reviewHash,omitempty"`
+	ReviewError  string                 `json:"reviewError,omitempty"`
 	CanUndo      bool                   `json:"canUndo"`
 	CreatedAt    time.Time              `json:"createdAt"`
 	DecidedAt    *time.Time             `json:"decidedAt,omitempty"`
@@ -64,7 +67,8 @@ type AgentMemoryDocSettingsRequest struct {
 }
 
 type AgentMemoryDocDecisionRequest struct {
-	Decision string `json:"decision"`
+	Decision   string `json:"decision"`
+	ReviewHash string `json:"reviewHash,omitempty"`
 }
 
 func (s *Service) agentMemoryDocumentView(doc *model.AgentMemoryDocument) (AgentMemoryDocumentView, error) {
@@ -218,10 +222,64 @@ func (s *Service) AgentMemoryDocumentRevisions(userID, status string, limit int)
 		return nil, err
 	}
 	views := make([]AgentMemoryDocRevisionView, 0, len(rows))
+	var doc *model.AgentMemoryDocument
+	var entries []model.AgentMemoryEntry
 	for _, row := range rows {
-		views = append(views, agentMemoryRevisionView(row))
+		view := agentMemoryRevisionView(row)
+		if row.Status == model.AgentMemoryRevisionPending {
+			if doc == nil {
+				doc, err = s.ensureAgentMemoryDocument(userID)
+				if err != nil {
+					return nil, err
+				}
+				entries, err = agentMemoryDocumentEntries(doc)
+				if err != nil {
+					return nil, err
+				}
+			}
+			changes, _, previewErr := agentMemoryReviewPreview(doc, entries, &row, time.Now())
+			if previewErr != nil {
+				view.ReviewError = previewErr.Error()
+				view.Changes = []AgentMemoryDocChange{}
+			} else {
+				view.Changes = changes
+				view.ReviewHash = agentMemoryReviewHash(changes)
+			}
+		}
+		views = append(views, view)
 	}
 	return views, nil
+}
+
+func agentMemoryReviewHash(changes []AgentMemoryDocChange) string {
+	reviewed := slices.Clone(changes)
+	for index := range reviewed {
+		if reviewed[index].Kind == "add" {
+			reviewed[index].ID = ""
+		}
+	}
+	encoded, _ := json.Marshal(reviewed)
+	return agentMemoryHash(encoded)
+}
+
+func agentMemoryReviewPreview(doc *model.AgentMemoryDocument, entries []model.AgentMemoryEntry, revision *model.AgentMemoryDocumentRevision, now time.Time) ([]AgentMemoryDocChange, agentMemoryEdit, error) {
+	var ops []agentMemoryOperation
+	if err := json.Unmarshal([]byte(revision.OpsJSON), &ops); err != nil || len(ops) == 0 {
+		return nil, agentMemoryEdit{}, BadAuthRequest("这条修改缺少可执行的操作，只能拒绝")
+	}
+	edit, err := applyAgentMemoryOperations(entries, agentMemoryNextSeq(doc, entries), ops, agentMemoryCapacityOf(doc), now, model.AgentMemoryActorAgent, revision.RunID)
+	var capErr *agentMemoryCapacityError
+	if errors.As(err, &capErr) {
+		return nil, edit, BadAuthRequest(fmt.Sprintf("采纳后记忆会有 %d 字，超过上限 %d 字；请先删除一些条目再采纳", capErr.After, capErr.Capacity))
+	}
+	if err != nil {
+		return nil, edit, creationConflict("这条修改依赖的记忆已经变化，无法采纳；可以拒绝后让 Agent 重新整理")
+	}
+	changes := agentMemoryDiff(entries, edit.entries)
+	if len(changes) == 0 {
+		return nil, edit, creationConflict("这条修改与当前记忆已没有差异，无需采纳；可以拒绝该提案")
+	}
+	return changes, edit, nil
 }
 
 func (s *Service) agentMemoryOwnedRevision(userID, revisionID string) (*model.AgentMemoryDocumentRevision, error) {
@@ -251,7 +309,7 @@ func agentMemoryInverse(current, before, after []model.AgentMemoryEntry, now tim
 			if at < 0 {
 				continue
 			}
-			if next[at].Text != change.After {
+			if next[at].Text != change.After || next[at].Section != change.Section {
 				return nil, errAgentMemoryUndoConflict
 			}
 			next = append(next[:at:at], next[at+1:]...)
@@ -322,9 +380,9 @@ func (s *Service) DecideAgentMemoryRevision(userID, revisionID string, req Agent
 	default:
 		return AgentMemoryDocumentView{}, BadAuthRequest("decision 只能是 approve 或 reject")
 	}
-	var ops []agentMemoryOperation
-	if err := json.Unmarshal([]byte(revision.OpsJSON), &ops); err != nil || len(ops) == 0 {
-		return AgentMemoryDocumentView{}, BadAuthRequest("这条修改缺少可执行的操作，只能拒绝")
+	expectedHash := req.ReviewHash
+	if expectedHash == "" {
+		expectedHash = agentMemoryReviewHash(agentMemoryRevisionView(*revision).Changes)
 	}
 	for attempt := 0; attempt < agentMemoryWriteAttempts; attempt++ {
 		doc, err := s.ensureAgentMemoryDocument(userID)
@@ -336,19 +394,12 @@ func (s *Service) DecideAgentMemoryRevision(userID, revisionID string, req Agent
 			return AgentMemoryDocumentView{}, err
 		}
 		now := time.Now()
-		edit, err := applyAgentMemoryOperations(entries, agentMemoryNextSeq(doc, entries), ops, agentMemoryCapacityOf(doc), now, model.AgentMemoryActorAgent, revision.RunID)
-		var capErr *agentMemoryCapacityError
-		if errors.As(err, &capErr) {
-			return AgentMemoryDocumentView{}, BadAuthRequest(fmt.Sprintf("采纳后记忆会有 %d 字，超过上限 %d 字；请先删除一些条目再采纳", capErr.After, capErr.Capacity))
-		}
+		changes, edit, err := agentMemoryReviewPreview(doc, entries, revision, now)
 		if err != nil {
-			return AgentMemoryDocumentView{}, creationConflict("这条修改依赖的记忆已经变化，无法采纳；可以拒绝后让 Agent 重新整理")
+			return AgentMemoryDocumentView{}, err
 		}
-		if len(edit.changes) == 0 {
-			if err := s.repo.RejectAgentMemoryDocumentRevision(userID, revision.ID, now); err != nil {
-				return AgentMemoryDocumentView{}, agentMemoryConflict(err)
-			}
-			return s.AgentMemoryDocument(userID)
+		if agentMemoryReviewHash(changes) != expectedHash {
+			return AgentMemoryDocumentView{}, creationConflict("待采纳的记忆差异已变化，请核对最新内容后重新确认")
 		}
 		before, err := agentMemoryEntriesJSON(entries)
 		if err != nil {

@@ -70,6 +70,53 @@ test("Agent refresh preserves moving the first reference to the fifth position l
     expect(merged.connections.map((connection) => connection.id)).toEqual(["image-two", "role-three", "image-four", "image-five", "role-one"]);
 });
 
+test("a node-only Agent write preserves the editor connection array without scanning its edges", () => {
+    let reads = 0;
+    const connections = Array.from({ length: 1000 }, (_, index) => ({
+        get id() {
+            reads++;
+            return `edge-${index}`;
+        },
+        fromNodeId: `source-${index}`,
+        get toNodeId() {
+            reads++;
+            return `target-${index}`;
+        },
+    }));
+    const previous = { ...project, connections };
+    const incoming = { ...previous, nodes: [{ ...node, title: "已改名" }] };
+    const edited = [...connections];
+    const merged = mergeAgentCanvasEditor(previous, incoming, previous.nodes, edited);
+    expect(merged.nodes[0].title).toBe("已改名");
+    expect(merged.connections === edited).toBe(true);
+    expect(reads).toBe(0);
+});
+
+test("reference ordering scans edges linearly and preserves other targets, local additions, and deletions", () => {
+    let visits = 0;
+    const edge = (id: string, target: string) => ({
+        id,
+        fromNodeId: id,
+        get toNodeId() {
+            visits++;
+            return target;
+        },
+    });
+    const bystanders = Array.from({ length: 400 }, (_, index) => edge(`bg-${index}`, `target-${index}`));
+    const first = edge("a", "main"),
+        second = edge("b", "main"),
+        removed = edge("old", "main"),
+        local = edge("local", "main"),
+        added = edge("new", "main");
+    const previous = { ...project, connections: [first, ...bystanders, second, removed] };
+    const incoming = { ...previous, connections: [added, second, ...bystanders, first] };
+    const editor = [first, ...bystanders, local, second, removed];
+    const merged = mergeAgentCanvasEditor(previous, incoming, previous.nodes, editor);
+    expect(merged.connections.filter((item) => item.toNodeId === "main").map((item) => item.id)).toEqual(["new", "b", "a", "local"]);
+    expect(merged.connections.slice(1, 1 + bystanders.length)).toEqual(bystanders);
+    expect(visits).toBeLessThan(32 * editor.length);
+});
+
 test("deleted nodes and a newer task binding are not overwritten", () => {
     expect(() => applyAgentCanvasPatch({ ...project, nodes: [] }, patch)).toThrow("冲突");
     // A replacement task can have the same running status; its task identity is a fence.
@@ -84,7 +131,6 @@ test("task state covers Agent, manual submissions and historical terminal tasks"
     expect(isCanvasNodeGenerating({ ...node, metadata: { status: "success", taskId: "historical" } })).toBe(false);
     expect(isCanvasNodeGenerating({ ...node, metadata: { status: "idle" } }, node.id)).toBe(true);
 });
-
 
 test("task progress ahead of the server checkpoint still accepts terminal state", () => {
     const queued = { ...node, metadata: { ...node.metadata, taskStatus: "queued", taskProgress: 0 } };

@@ -135,28 +135,52 @@ func (s *Service) CloudAgentConversationRuns(userID, conversationID, after strin
 	if err != nil {
 		return nil, err
 	}
-	exists, err := s.repo.CloudAgentConversationExists(userID, conversationID)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, kernel.NotFound("Agent 对话不存在")
-	}
-	rows, err := s.repo.CloudAgentConversationRuns(userID, conversationID, cursor, limit+1)
+	history, err := s.repo.CloudAgentConversationRuns(userID, conversationID, cursor, limit)
 	if err != nil {
 		return nil, err
 	}
 	page := &CloudAgentConversationRunPage{Items: []*CloudAgentRun{}}
-	if len(rows) > limit {
-		page.NextCursor = encodeCloudAgentHistoryCursor(rows[limit-1])
-		rows = rows[:limit]
-	}
-	for _, row := range rows {
-		run, err := s.CloudAgentRun(userID, row.ID)
-		if err != nil {
-			return nil, err
+	if len(history.Runs) == 0 {
+		if cursor != nil {
+			exists, readErr := s.repo.CloudAgentConversationExists(userID, conversationID)
+			if readErr != nil {
+				return nil, readErr
+			}
+			if exists {
+				return page, nil
+			}
 		}
-		page.Items = append(page.Items, run)
+		return nil, kernel.NotFound("Agent 对话不存在")
+	}
+	if history.HasMore {
+		page.NextCursor = encodeCloudAgentHistoryCursor(history.Runs[len(history.Runs)-1])
+	}
+	views := make([]cloudAgentRunView, 0, len(history.Runs))
+	for index := range history.Runs {
+		run := &history.Runs[index]
+		task := history.Tasks[run.ID]
+		if task == nil || task.Operation != cloudAgentOperation {
+			return nil, kernel.NotFound("Agent 运行不存在")
+		}
+		state, decodeErr := cloudAgentDecode(run)
+		initial, ok := cloudAgentTaskInput(task)
+		if !ok {
+			initial, err = cloudAgentCheckpointIdentity(task, run, &state, decodeErr)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if decodeErr != nil {
+			state = cloudAgentFallbackViewState(task.ID, initial)
+		}
+		events := append([]CloudAgentEvent(nil), state.Events[max(0, len(state.Events)-cloudAgentRunEventPageLimit):]...)
+		count := max(history.EventCounts[run.ID], run.EventCount, state.EventSeqBase+len(state.Events))
+		item := projectCloudAgentRunView(task, initial, run, &state, events, count, CloudAgentRunViewOptions{})
+		views = append(views, item)
+		page.Items = append(page.Items, item.output)
+	}
+	if err := s.attachCloudAgentViewTasks(userID, views, history.Tasks); err != nil {
+		return nil, err
 	}
 	return page, nil
 }

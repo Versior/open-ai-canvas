@@ -903,6 +903,7 @@ export const koKR: DeepStringRecord<typeof zhCN> = {
             deleted: "삭제했습니다. 수정 기록에서 실행 취소할 수 있습니다",
             approved: "채택했습니다. 다음 메시지부터 적용됩니다",
             decideFailed: "처리에 실패했습니다",
+            reviewUnavailable: "서버가 현재 변경 내용을 확인하지 않았습니다. 서버를 업데이트한 뒤 페이지를 새로 고쳐 채택하거나 제안을 거절하세요.",
             exportFailed: "내보내기에 실패했습니다",
             mode: "장기 기억 모드",
             modeHint: "{{description}}. Agent는 사용자가 바로잡거나 선호를 말하거나 기억해 달라고 요청할 때 이 기억을 스스로 정리합니다.",

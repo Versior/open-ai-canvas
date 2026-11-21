@@ -58,13 +58,13 @@ export function createAgentCanvasSync(options: Options) {
             if (patch && patch.canvasId === options.canvasId) {
                 patches.push(patch);
             } else if (
-                !patches.length &&
-                (event.type === "canvas_updated" ||
-                    event.type === "canvas_undone" ||
-                    event.type === "generation_task_created" ||
-                    event.type === "tool_failed" ||
-                    event.type === "run_failed" ||
-                    (event.type === "tool_completed" && ["canvas_apply_ops", "canvas_build_board", "generate_media", "generate_media_batch", "media_batch_control"].includes(String(event.payload.toolName))))
+                event.type === "canvas_updated" ||
+                event.type === "canvas_undone" ||
+                (!patches.length &&
+                    (event.type === "generation_task_created" ||
+                        event.type === "tool_failed" ||
+                        event.type === "run_failed" ||
+                        (event.type === "tool_completed" && ["canvas_apply_ops", "canvas_build_board", "generate_media", "generate_media_batch", "media_batch_control"].includes(String(event.payload.toolName)))))
             ) {
                 // A patch may be dropped even after earlier patches succeeded.
                 // Keep the snapshot fallback available for every meaningful task

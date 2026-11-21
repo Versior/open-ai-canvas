@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
@@ -35,15 +36,80 @@ func (r *Repository) CloudAgentConversations(userID, canvasID string, before *Cl
 	return rows, err
 }
 
-func (r *Repository) CloudAgentConversationRuns(userID, conversationID string, after *CloudAgentHistoryCursor, limit int) ([]model.CloudAgentExecution, error) {
-	rows := []model.CloudAgentExecution{}
-	query := r.db.Model(&model.CloudAgentExecution{}).Select(cloudAgentHistoryColumns).
-		Where("user_id = ? AND "+cloudAgentConversationIdentity+" = ?", userID, conversationID)
-	if after != nil {
-		query = query.Where("created_at > ? OR (created_at = ? AND id > ?)", after.CreatedAt, after.CreatedAt, after.ID)
-	}
-	err := query.Order("created_at ASC, id ASC").Limit(limit).Find(&rows).Error
-	return rows, err
+type CloudAgentHistoryPage struct {
+	Runs        []model.CloudAgentExecution
+	Tasks       map[string]*model.Task
+	EventCounts map[string]int
+	HasMore     bool
+}
+
+func (r *Repository) CloudAgentConversationRuns(userID, conversationID string, after *CloudAgentHistoryCursor, limit int) (*CloudAgentHistoryPage, error) {
+	page := &CloudAgentHistoryPage{Tasks: map[string]*model.Task{}, EventCounts: map[string]int{}}
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		query := tx.Where("user_id = ? AND "+cloudAgentConversationIdentity+" = ?", userID, conversationID)
+		if after != nil {
+			query = query.Where("created_at > ? OR (created_at = ? AND id > ?)", after.CreatedAt, after.CreatedAt, after.ID)
+		}
+		if err := query.Order("created_at ASC, id ASC").Limit(limit + 1).Find(&page.Runs).Error; err != nil {
+			return err
+		}
+		if len(page.Runs) == 0 {
+			return nil
+		}
+		if len(page.Runs) > limit {
+			page.HasMore = true
+			page.Runs = page.Runs[:limit]
+		}
+		ids := make([]string, 0, len(page.Runs))
+		versioned := make([]string, 0, len(page.Runs))
+		executions := make(map[string]*model.CloudAgentExecution, len(page.Runs))
+		for index := range page.Runs {
+			run := &page.Runs[index]
+			ids = append(ids, run.ID)
+			executions[run.ID] = run
+			if run.CheckpointVersion >= 2 {
+				versioned = append(versioned, run.ID)
+			}
+		}
+		var tasks []model.Task
+		if err := tx.Select("id,user_id,operation,status,project_id,input_json,model,created_at,updated_at,text_draft").Where("user_id = ? AND id IN ?", userID, ids).Find(&tasks).Error; err != nil {
+			return err
+		}
+		for index := range tasks {
+			page.Tasks[tasks[index].ID] = &tasks[index]
+		}
+		var counts []struct {
+			RunID string
+			Total int
+		}
+		if err := tx.Model(&model.CloudAgentEventRecord{}).Select("run_id, count(*) AS total").Where("user_id = ? AND run_id IN ?", userID, ids).Group("run_id").Scan(&counts).Error; err != nil {
+			return err
+		}
+		for _, count := range counts {
+			page.EventCounts[count.RunID] = count.Total
+		}
+		if len(versioned) == 0 {
+			return nil
+		}
+		var events []model.CloudAgentEventRecord
+		if err := tx.Table("cloud_agent_event_records AS j").Select("j.*").Joins("JOIN cloud_agent_executions AS e ON e.id = j.run_id AND e.user_id = j.user_id").Where("e.user_id = ? AND e.id IN ? AND j.sequence > e.event_count - ?", userID, versioned, CloudAgentJournalWindow).Order("j.run_id, j.sequence").Find(&events).Error; err != nil {
+			return err
+		}
+		for _, event := range events {
+			run := executions[event.RunID]
+			run.Journal = append(run.Journal, event)
+		}
+		var messages []model.CloudAgentMessageRecord
+		if err := tx.Where("user_id = ? AND run_id IN ?", userID, versioned).Order("run_id, kind, sequence").Find(&messages).Error; err != nil {
+			return err
+		}
+		for _, message := range messages {
+			run := executions[message.RunID]
+			run.Transcript = append(run.Transcript, message)
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return page, err
 }
 
 // CloudAgentConversationLatest 只读控制列，供客户端按 revision 判断对话是否变化，不载入事件。

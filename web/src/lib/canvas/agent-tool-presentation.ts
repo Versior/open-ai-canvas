@@ -125,14 +125,15 @@ export const AGENT_TOOL_METADATA: Record<string, AgentToolMetadataEntry> = {
         summary: ({ pending, detail }) => (pending ? "准备收尾并给出最终答复" : field(field(detail, "result"), "completionBlocked") === true ? "收尾被拦下，继续处理未完成项" : "已收尾并给出最终答复"),
         failureMessage: "收尾未完成",
     },
-    // 长期记忆只属于当前用户，不是画布写入；结果状态来自 memory_update 回执（applied / pending_review / unchanged）。
     memory_update: {
         summary: ({ pending, detail }) => {
             if (pending) return "准备整理长期记忆";
             const status = field(field(detail, "result"), "status");
             if (status === "pending_review") return "记忆修改已提交，等你确认";
             if (status === "unchanged") return "记忆里已有这些内容，未改动";
-            return "长期记忆已更新";
+            if (status === "rejected") return "记忆修改已被拒绝，未写入";
+            if (status === "undone") return "记忆修改已撤销，未重新写入";
+            return status === "applied" ? "长期记忆已更新" : "长期记忆修改记录";
         },
         failureMessage: "长期记忆未更新",
     },

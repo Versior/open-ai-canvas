@@ -31,6 +31,38 @@ const { imageParameterRequest, projectImageParameters } = await import("../../sr
 const { createModelChannel, defaultConfig, normalizeConfigSnapshot, useConfigStore } = await import("../../src/stores/use-config-store");
 type AgentMediaSettings = import("../../src/services/api/agent").AgentMediaSettings;
 
+test("审批理由输入框允许 2000 个 Unicode 码点，不切断 emoji", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    let reason = "";
+    try {
+        await act(async () =>
+            root.render(
+                <ApprovalCard
+                    approval={{ approvalId: "reason", detail: { toolName: "canvas_apply_ops" }, reason: "填写" }}
+                    theme={canvasThemes.dark}
+                    submitting={false}
+                    onReasonChange={(value) => (reason = value)}
+                    onApprove={() => {}}
+                    onReject={() => {}}
+                />,
+            ),
+        );
+        const input = host.querySelector("textarea")!;
+        expect(input.hasAttribute("maxlength")).toBe(false);
+        const expected = "影🎬".repeat(1000);
+        await act(async () => {
+            Object.getOwnPropertyDescriptor(dom.HTMLTextAreaElement.prototype, "value")!.set!.call(input, expected + "尾");
+            input.dispatchEvent(new dom.Event("input", { bubbles: true }) as unknown as Event);
+        });
+        expect(reason).toBe(expected);
+    } finally {
+        await act(async () => root.unmount());
+        host.remove();
+    }
+});
+
 const ratios = ["1:1", "4:3", "3:4", "16:9", "9:16", "21:9"];
 const tiers = ["1k", "2k", "4k"];
 const presets = tiers.flatMap((tier) => ratios.map((ratio) => imagePresetForRatio(tier, ratio)));

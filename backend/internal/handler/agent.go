@@ -337,7 +337,7 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 			failService(c, err)
 			return
 		}
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32<<10)
 		var req struct {
 			Decision      string                           `json:"decision"`
 			Reason        string                           `json:"reason"`
@@ -351,10 +351,6 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		}
 		if req.Decision != "approve" && req.Decision != "reject" {
 			fail(c, http.StatusBadRequest, errors.New("decision 无效"))
-			return
-		}
-		if req.Reason != "" && (!utf8.ValidString(req.Reason) || utf8.RuneCountInString(req.Reason) > 2000 || strings.ContainsAny(req.Reason, "\x00\r\n")) {
-			fail(c, http.StatusBadRequest, errors.New("reason 无效"))
 			return
 		}
 		if err := decoder.Decode(&struct{}{}); err != io.EOF {
@@ -380,7 +376,8 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 			fail(c, 400, err)
 			return
 		}
-		options := service.CloudAgentRunViewOptions{SinceSeq: int(after)}
+		explicitCursor := c.Query("after") != "" || c.GetHeader("Last-Event-ID") != ""
+		options := service.CloudAgentRunViewOptions{SinceSeq: int(after), FromStart: after == 0 && explicitCursor}
 		run, err := svc.CloudAgentRun(user.ID, c.Param("id"), options)
 		if err != nil {
 			failService(c, err)
@@ -394,17 +391,36 @@ func RegisterAgentRoutes(r *gin.RouterGroup, svc *service.Service) {
 		revision := run.Revision
 		lastWrite := time.Now()
 		for {
+			if c.Request.Context().Err() != nil {
+				return
+			}
 			if err != nil {
 				c.SSEvent("error", gin.H{"message": "Agent 状态读取失败"})
 				c.Writer.Flush()
 				return
 			}
 			if run != nil {
+				before := after
 				for _, event := range run.Events {
 					if int64(event.Seq) > after {
+						if (explicitCursor || after > 0) && int64(event.Seq) != after+1 {
+							c.SSEvent("error", gin.H{"message": "Agent 事件序列不连续"})
+							c.Writer.Flush()
+							return
+						}
 						writeAgentSSE(c, "agent_event", int64(event.Seq), event)
 						after = int64(event.Seq)
 					}
+				}
+				options.SinceSeq, options.FromStart = int(after), after == 0
+				if after < int64(run.EventCount) {
+					if after == before {
+						c.SSEvent("error", gin.H{"message": "Agent 事件未完整返回"})
+						c.Writer.Flush()
+						return
+					}
+					run, err = svc.CloudAgentRun(user.ID, c.Param("id"), options)
+					continue
 				}
 				// Snapshots are state observations, not replayable Agent events; they
 				// intentionally have no SSE id and therefore never advance the cursor.

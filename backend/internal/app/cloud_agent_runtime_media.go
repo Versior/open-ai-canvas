@@ -409,7 +409,10 @@ func (s *Service) DecideCloudAgentApproval(userID, id, approvalID, decision, rea
 	if decision != "approve" && decision != "reject" {
 		return BadAuthRequest("无效审批决定")
 	}
-	if len(reason) > 2000 {
+	if !utf8.ValidString(reason) || strings.ContainsAny(reason, "\x00\r\n") {
+		return BadAuthRequest("reason 无效")
+	}
+	if utf8.RuneCountInString(reason) > 2000 {
 		return BadAuthRequest("审批理由过长")
 	}
 	if _, _, err := s.cloudAgentTask(userID, id); err != nil {
@@ -769,23 +772,42 @@ func (s *Service) CancelCloudAgent(ctx context.Context, userID, id string) error
 	if err != nil {
 		return err
 	}
-	if run.Status == "completed" || (run.Status == "failed" && !run.CleanupPending) {
-		return nil
-	}
 	// 取消是用户操作，不能因为运行时正在并发写事件就失败：冲突时重读最新 revision 重试。
-	for attempt := 0; run.Status != "failed" && attempt < 8; attempt++ {
+	for attempt := 0; attempt < 8; attempt++ {
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 20 * time.Millisecond)
 			if run, err = s.repo.CloudAgent(userID, id); err != nil {
 				return err
 			}
-			if run.Status == "completed" || (run.Status == "failed" && !run.CleanupPending) {
+		}
+		if cloudAgentRunTerminal(run.Status) {
+			if run.CleanupPending {
+				break
+			}
+			if run.Status != "cancelled" {
 				return nil
+			}
+		}
+		state, decodeErr := cloudAgentDecode(run)
+		if run.Status == "cancelled" {
+			taskIDs := []string{id, run.ActiveTaskID, run.MediaTaskID}
+			if decodeErr == nil {
+				taskIDs = append(taskIDs, state.ActiveTaskID, state.MediaTaskID)
+				if state.MediaBatch != nil {
+					for _, item := range state.MediaBatch.Items {
+						if item.Status == cloudAgentMediaBatchItemSubmitted {
+							taskIDs = append(taskIDs, item.taskID())
+						}
+					}
+				}
+			}
+			pending, readErr := s.repo.CloudAgentHasUnfinishedTasks(userID, taskIDs)
+			if readErr != nil || !pending {
+				return readErr
 			}
 		}
 		// Persist intent independently of the transcript. Retrying also repairs
 		// legacy cancelled rows that crashed before cancelling their children.
-		state, decodeErr := cloudAgentDecode(run)
 		mediaContinues := false
 		if decodeErr == nil && state.MediaTaskID != "" {
 			if mediaTask, readErr := s.repo.TaskForUser(userID, state.MediaTaskID); readErr == nil {

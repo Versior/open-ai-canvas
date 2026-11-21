@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent, CreateAgentRunInput } from "../src/services/api/agent";
+import type { CloudAgentChatMessage } from "../src/components/canvas/canvas-cloud-agent-chat-ui";
+import { applyAgentEvent } from "../src/lib/canvas/cloud-agent-events";
 import { useUserStore } from "../src/stores/use-user-store";
 
 // Exercise the production protocol, isolating only transport/storage dependencies.
@@ -27,6 +29,7 @@ writeFileSync(
     join(dir, "conversations.ts"),
     readFileSync(new URL("services/cloud-agent-conversations.ts", root), "utf8")
         .replace('"@/lib/localforage-storage"', JSON.stringify(storagePath))
+        .replace('"@/services/cloud-agent-conversation-store"', JSON.stringify(fileURLToPath(new URL("services/cloud-agent-conversation-store.ts", root))))
         .replace('"@/lib/user-scope"', JSON.stringify(join(dir, "scope.ts")))
         .replace('"@/lib/agent-page-context"', JSON.stringify(fileURLToPath(new URL("lib/agent-page-context.ts", root))))
         .replace('"@/lib/markdown-plain-text"', JSON.stringify(fileURLToPath(new URL("lib/markdown-plain-text.ts", root)))),
@@ -88,6 +91,56 @@ function observe(options: { timeoutMs?: number; after?: number } = {}) {
 }
 
 describe("Agent SSE recovery", () => {
+    it.each([true, false])("never jumps over a missing sequence (history readable: %s)", async (readable) => {
+        const cursors: number[] = [],
+            pages: number[] = [];
+        const record = (seq: number) => ({ runId: "run", eventId: `run:${seq}`, seq, type: "tool_completed", payload: {} });
+        transport.http.get = async (_path: string, { params }: { params: { sinceSeq: number; fromStart: boolean; eventLimit: number } }) => {
+            pages.push(params.sinceSeq);
+            expect(params).toMatchObject({ sinceSeq: 0, fromStart: true, eventLimit: 3 });
+            return { run: { id: "run", events: (readable ? [1, 2, 3] : [3]).map(record) } };
+        };
+        globalThis.fetch = (async (url) => {
+            const cursor = Number(new URL(String(url)).searchParams.get("after"));
+            cursors.push(cursor);
+            return stream((cursor === 0 ? event(3) : event(2) + event(3) + event(4)) + snapshot("completed", { eventCount: cursor === 0 ? 3 : 4 }));
+        }) as typeof fetch;
+        const result = observe();
+        const outcome = await result.done;
+        expect(cursors).toEqual(readable ? [0, 3] : [0, 0, 0, 0, 0]);
+        expect(pages).toHaveLength(readable ? 1 : 5);
+        expect(result.events.filter((item) => item.seq > 0).map((item) => item.seq)).toEqual(readable ? [1, 2, 3, 4] : []);
+        if (!readable) {
+            expect(outcome).toBeInstanceOf(Error);
+            expect(result.events.some((item) => item.type === "run_status")).toBe(false);
+        }
+    });
+    it("finishes only after receiving the terminal snapshot's durable event count", async () => {
+        const cursors: number[] = [];
+        globalThis.fetch = (async (url) => {
+            const cursor = Number(new URL(String(url)).searchParams.get("after"));
+            cursors.push(cursor);
+            const to = Math.min(cursor + 500, 620);
+            return stream(Array.from({ length: to - cursor }, (_, index) => event(cursor + index + 1)).join("") + snapshot("completed", { eventCount: 620, latestSeq: to }));
+        }) as typeof fetch;
+        const result = observe({ after: 1 });
+        await result.done;
+        expect(cursors).toEqual([1, 501]);
+        expect(result.events.filter((item) => item.seq > 0).map((item) => item.seq)).toEqual(Array.from({ length: 619 }, (_, index) => index + 2));
+        expect(result.events.at(-1)?.type).toBe("run_status");
+        let messages: CloudAgentChatMessage[] = [];
+        for (const item of result.events) {
+            applyAgentEvent(
+                item,
+                (update) => {
+                    messages = typeof update === "function" ? update(messages) : update;
+                },
+                () => {},
+                () => {},
+            );
+        }
+        expect(messages.filter((message) => message.role === "tool").map((message) => message.id)).toEqual(Array.from({ length: 619 }, (_, index) => `run:${index + 2}`));
+    });
     it("sends the user's final image settings with the approval and keeps cancellation", async () => {
         const requests: unknown[][] = [];
         transport.http.post = async (...args: unknown[]) => {

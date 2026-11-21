@@ -905,6 +905,7 @@ export const jaJP: DeepStringRecord<typeof zhCN> = {
             deleted: "削除しました。変更履歴から取り消せます",
             approved: "採用しました。次のメッセージから反映されます",
             decideFailed: "処理に失敗しました",
+            reviewUnavailable: "サーバーが現在の変更内容を確認できませんでした。サーバーを更新してページを再読み込みしてから採用するか、この提案を却下してください。",
             exportFailed: "エクスポートに失敗しました",
             mode: "長期メモリのモード",
             modeHint: "{{description}}。Agent は、あなたが訂正したとき、好みを伝えたとき、覚えるよう頼んだときに、このメモリを自分で整理します。",

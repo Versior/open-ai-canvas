@@ -905,6 +905,7 @@ export const deDE: DeepStringRecord<typeof zhCN> = {
             deleted: "Gelöscht. Im Änderungsverlauf rückgängig machbar.",
             approved: "Übernommen. Gilt ab der nächsten Nachricht.",
             decideFailed: "Verarbeitung fehlgeschlagen",
+            reviewUnavailable: "Der Server hat diese Änderungen nicht bestätigt. Aktualisiere den Server und lade die Seite neu, bevor du sie annimmst, oder lehne den Vorschlag ab.",
             exportFailed: "Export fehlgeschlagen",
             mode: "Modus des Langzeitgedächtnisses",
             modeHint: "{{description}}. Der Agent pflegt dieses Gedächtnis selbst, wenn Sie ihn korrigieren, Vorlieben nennen oder ihn bitten, sich etwas zu merken.",

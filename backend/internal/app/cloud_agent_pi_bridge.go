@@ -664,8 +664,8 @@ func cloudAgentPiCompactionEvent(eventType string, data map[string]any) (string,
 // handlePiSessionSnapshot 持久化 Pi 原生会话 JSONL，用于审批恢复和续轮。
 func (s *Service) handlePiSessionSnapshot(userID, runID string, data map[string]any) (any, error) {
 	sessionJSONL, _ := data["sessionJSONL"].(string)
-	if sessionJSONL == "" {
-		return map[string]any{"ok": true}, nil
+	if strings.TrimSpace(sessionJSONL) == "" {
+		return nil, errors.New("missing Agent session snapshot")
 	}
 	for attempt := 0; attempt < 4; attempt++ {
 		var expected int64

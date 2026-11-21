@@ -905,6 +905,7 @@ export const frFR: DeepStringRecord<typeof zhCN> = {
             deleted: "Supprimé ; vous pouvez annuler depuis l'historique",
             approved: "Adopté, effectif dès le prochain message",
             decideFailed: "Échec du traitement",
+            reviewUnavailable: "Le serveur n’a pas confirmé ces modifications. Mettez le serveur à jour et rechargez la page avant de les accepter, ou refusez la proposition.",
             exportFailed: "Échec de l'export",
             mode: "Mode de mémoire à long terme",
             modeHint: "{{description}}. L'Agent organise lui-même cette mémoire quand vous le corrigez, exprimez une préférence ou lui demandez de retenir quelque chose.",
