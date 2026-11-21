@@ -451,6 +451,11 @@ function screenFieldIssue(record: Record<string, unknown>): StudioPlanIssue | un
     if (record.noText != null && typeof record.noText !== "boolean") return { field: "noText", message: "noText 应为布尔值" };
 }
 
+/** 模型常把提示词中的 [fact:id] 原样回传；内部统一保存不带包裹符的规范编号。 */
+function normalizeEvidenceRef(value: string) {
+    return value.trim().replace(/^[\[【(（]+|[\]】)）]+$/g, "").trim();
+}
+
 function narrativeKeys(screen: StudioPlannedScreen) {
     if (screen.noText || ["main-white", "detail-hero", "detail-closing"].includes(screen.role) || !screen.purpose || !screen.headline) return [];
     const key = (value: string) => value.toLowerCase().replace(/[\s\p{P}]/gu, "");
@@ -529,11 +534,15 @@ export function parseDetailPlan(raw: string, product: StudioProduct, roles: Stud
         const errorCount = errors.length;
         if (!layouts.has(screen.layout)) screen.layout = studioRoleLayout(screen.role);
         const refs = new Set<string>();
-        const sourceIds = screen.evidenceRefs || [];
-        const citedSources = sources.filter((source) => sourceIds.includes(source.id));
-        for (const id of sourceIds) {
-            if (!sources.some((entry) => entry.id === id)) reject("evidenceRefs", `资料里找不到依据编号「${id.slice(0, 60)}」`);
-            else refs.add(id);
+        const requestedEvidence = [...new Set((screen.evidenceRefs || []).map((raw) => ({ raw, id: normalizeEvidenceRef(raw) })).filter((item) => item.id))];
+        const requestedSourceIds = requestedEvidence.map((item) => item.id);
+        const sourceIds = requestedSourceIds.filter((id) => sources.some((entry) => entry.id === id));
+        const citedSources = sourceIds.length ? sources.filter((source) => sourceIds.includes(source.id)) : sources;
+        for (const { raw, id } of requestedEvidence) {
+            if (!sources.some((entry) => entry.id === id)) {
+                if (raw !== id) warnings.push({ index, field: "evidenceRefs", message: `资料里找不到依据编号「${raw.slice(0, 60)}」，已忽略并按当前商品资料重新核验` });
+                else reject("evidenceRefs", `资料里找不到依据编号「${id.slice(0, 60)}」`);
+            } else refs.add(id);
         }
         screen.facts = screen.facts.filter((reference) => {
             const entry = studioEvidenceMatch(sources, reference);

@@ -129,6 +129,26 @@ test("有依据的屏可追溯，资料少可用无字实拍，同一利益不�
     ).toHaveLength(2);
 });
 
+test("模型把来源编号包在方括号里时仍能采用整组策划", () => {
+    const product = sample();
+    product.brief.outputType = "detail-set";
+    product.brief.detailScreens = 2;
+    const result = parseDetailPlan(
+        JSON.stringify({
+            screens: [
+                { ...screen, role: "detail-hero", headline: "杯高24厘米", evidenceRefs: ["[fact:h]"] },
+                { ...screen, role: "detail-closeup", noText: true, evidenceRefs: ["[appearance:1]"] },
+            ],
+        }),
+        product,
+        ["detail-hero", "detail-closeup"],
+        { id: "bracketed", model: "fixture", createdAt: "" },
+    );
+    expect(result.plan.screens).toHaveLength(2);
+    expect(result.plan.screens[0].evidenceRefs).toEqual(["fact:h"]);
+    expect(result.plan.screens[1].evidenceRefs).toEqual(["appearance:1"]);
+});
+
 test("手改可见文案、画面或调整指令后，实际图像输入仍拒绝无来源性能", () => {
     const product = sample();
     product.brief.templatePlan = parse([screen, { ...screen, noText: true }], product).plan;
